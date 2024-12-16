@@ -1,0 +1,977 @@
+template <typename REG> class lambda7_kernel
+{
+public:
+  template <typename T1, typename T2, typename T3, typename T4, typename T5, typename T6, typename T7, typename T8,
+            typename T9, typename T10, typename T11, typename T12, typename T13, typename T14, typename T15,
+            typename T16, typename T17>
+  static __forceinline__ __host__ __device__ auto
+  kernel(const double q, const double q0, const double k, const T1 p0f, const T2 T, const T3 muq, const T4 gAqbq1,
+         const T5 etaA, const T6 etaQ, const T7 &MQ, const T8 lambda1, const T9 lambda2, const T10 lambda3,
+         const T11 lambda4, const T12 lambda5, const T13 lambda6, const T14 lambda7, const T15 lambda8,
+         const T16 lambda9, const T17 lambda10)
+  {
+    // optimization definitions
+    const double DiFfRGREPL1 = MQ(-1. * q);
+    const double DiFfRGREPL2 = MQ(q);
+    const double DiFfRGREPL3 = RB(powr<2>(k), powr<2>(q));
+    const double DiFfRGREPL4 = RBdot(powr<2>(k), powr<2>(q));
+    const double DiFfRGREPL5 = RF(powr<2>(k), powr<2>(q));
+    const double DiFfRGREPL6 = RFdot(powr<2>(k), powr<2>(q));
+
+    // flow
+    return real(
+        powr<2>(gAqbq1) *
+            (0.14814814814814814 * (-1. * DiFfRGREPL4 + DiFfRGREPL3 * etaA) *
+                 (complex<double>(0., -84.) * lambda7 * muq * q0 * powr<2>(q) + lambda1 * powr<2>(muq) * powr<2>(q) -
+                  46. * lambda7 * powr<2>(muq) * powr<2>(q) + 42. * lambda7 * powr<4>(q) -
+                  42. * lambda7 * powr<2>(muq) * powr<2>(q0) + 84. * lambda7 * powr<2>(q) * powr<2>(q0) +
+                  24. * lambda5 * powr<2>(DiFfRGREPL1) * (powr<2>(q) + powr<2>(q0)) +
+                  2. * DiFfRGREPL5 * q *
+                      (complex<double>(0., -1.) * lambda1 * muq * q0 + complex<double>(0., 4.) * lambda7 * muq * q0 +
+                       42. * lambda7 * powr<2>(q) + 42. * lambda7 * powr<2>(q0)) +
+                  powr<2>(DiFfRGREPL5) *
+                      (42. * lambda7 * powr<2>(q) - 1. * lambda1 * powr<2>(q0) + 46. * lambda7 * powr<2>(q0)) -
+                  complex<double>(0., 84.) * lambda7 * muq * powr<3>(q0) + 42. * lambda7 * powr<4>(q0)) *
+                 powr<-1>(powr<2>(q) + powr<2>(q0)) * powr<-2>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 powr<-2>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL1) +
+                          powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) -
+             0.04938271604938271 * (-1. * DiFfRGREPL4 + DiFfRGREPL3 * etaA) *
+                 (complex<double>(0., -18.) * lambda1 * muq * q0 * powr<2>(q) -
+                  complex<double>(0., 114.) * lambda8 * muq * q0 * powr<2>(q) -
+                  9. * lambda1 * powr<2>(muq) * powr<2>(q) - 29. * lambda8 * powr<2>(muq) * powr<2>(q) +
+                  9. * lambda1 * powr<4>(q) + 57. * lambda8 * powr<4>(q) - 9. * lambda1 * powr<2>(muq) * powr<2>(q0) -
+                  57. * lambda8 * powr<2>(muq) * powr<2>(q0) + 18. * lambda1 * powr<2>(q) * powr<2>(q0) +
+                  114. * lambda8 * powr<2>(q) * powr<2>(q0) +
+                  126. * lambda2 * powr<2>(DiFfRGREPL1) * (powr<2>(q) + powr<2>(q0)) +
+                  2. * DiFfRGREPL5 * q *
+                      (lambda8 * q0 * (complex<double>(0., -28.) * muq + 57. * q0) + 57. * lambda8 * powr<2>(q) +
+                       9. * lambda1 * (powr<2>(q) + powr<2>(q0))) +
+                  powr<2>(DiFfRGREPL5) *
+                      (9. * lambda1 * (powr<2>(q) + powr<2>(q0)) + lambda8 * (57. * powr<2>(q) + 29. * powr<2>(q0))) -
+                  complex<double>(0., 18.) * lambda1 * muq * powr<3>(q0) -
+                  complex<double>(0., 114.) * lambda8 * muq * powr<3>(q0) + 9. * lambda1 * powr<4>(q0) +
+                  57. * lambda8 * powr<4>(q0)) *
+                 powr<-1>(powr<2>(q) + powr<2>(q0)) * powr<-2>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 powr<-2>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL1) +
+                          powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) +
+             0.4444444444444444 * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * (DiFfRGREPL5 + q) *
+                 ((10. * lambda2 - 24. * lambda7 + 7. * lambda8) * powr<2>(DiFfRGREPL2) -
+                  1. * (24. * lambda7 - 7. * lambda8) *
+                      (-2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 - 1. * powr<2>(DiFfRGREPL5) +
+                       powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0))) *
+                 powr<-1>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 powr<-3>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL2) +
+                          powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) -
+             3.111111111111111 * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * lambda1 * (DiFfRGREPL5 + q) *
+                 powr<-1>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 powr<-2>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL2) +
+                          powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) -
+             0.07407407407407407 * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) *
+                 (complex<double>(0., 8.) * lambda7 * muq * q * q0 * powr<2>(DiFfRGREPL5) -
+                  complex<double>(0., 8.) * lambda8 * muq * q * q0 * powr<2>(DiFfRGREPL5) -
+                  complex<double>(0., 8.) * lambda7 * q * q0 * powr<3>(muq) +
+                  complex<double>(0., 8.) * lambda8 * q * q0 * powr<3>(muq) -
+                  complex<double>(0., 32.) * DiFfRGREPL5 * lambda7 * muq * q0 * powr<2>(q) -
+                  complex<double>(0., 22.) * DiFfRGREPL5 * lambda8 * muq * q0 * powr<2>(q) +
+                  24. * lambda7 * powr<3>(DiFfRGREPL5) * powr<2>(q) + 3. * lambda8 * powr<3>(DiFfRGREPL5) * powr<2>(q) +
+                  56. * DiFfRGREPL5 * lambda7 * powr<2>(muq) * powr<2>(q) +
+                  25. * DiFfRGREPL5 * lambda8 * powr<2>(muq) * powr<2>(q) -
+                  complex<double>(0., 40.) * lambda7 * muq * q0 * powr<3>(q) -
+                  complex<double>(0., 14.) * lambda8 * muq * q0 * powr<3>(q) +
+                  72. * lambda7 * powr<2>(DiFfRGREPL5) * powr<3>(q) + 9. * lambda8 * powr<2>(DiFfRGREPL5) * powr<3>(q) +
+                  56. * lambda7 * powr<2>(muq) * powr<3>(q) + 25. * lambda8 * powr<2>(muq) * powr<3>(q) +
+                  72. * DiFfRGREPL5 * lambda7 * powr<4>(q) + 9. * DiFfRGREPL5 * lambda8 * powr<4>(q) +
+                  24. * lambda7 * powr<5>(q) + 3. * lambda8 * powr<5>(q) +
+                  72. * lambda7 * q * powr<2>(DiFfRGREPL5) * powr<2>(q0) +
+                  9. * lambda8 * q * powr<2>(DiFfRGREPL5) * powr<2>(q0) +
+                  16. * lambda7 * powr<3>(DiFfRGREPL5) * powr<2>(q0) +
+                  11. * lambda8 * powr<3>(DiFfRGREPL5) * powr<2>(q0) +
+                  64. * DiFfRGREPL5 * lambda7 * powr<2>(muq) * powr<2>(q0) +
+                  17. * DiFfRGREPL5 * lambda8 * powr<2>(muq) * powr<2>(q0) +
+                  56. * lambda7 * q * powr<2>(muq) * powr<2>(q0) + 25. * lambda8 * q * powr<2>(muq) * powr<2>(q0) +
+                  104. * DiFfRGREPL5 * lambda7 * powr<2>(q) * powr<2>(q0) +
+                  4. * DiFfRGREPL5 * lambda8 * powr<2>(q) * powr<2>(q0) + 48. * lambda7 * powr<3>(q) * powr<2>(q0) +
+                  6. * lambda8 * powr<3>(q) * powr<2>(q0) +
+                  36. * DiFfRGREPL1 * DiFfRGREPL2 * (3. * lambda4 + lambda6) * (DiFfRGREPL5 + q) *
+                      (powr<2>(q) + powr<2>(q0)) -
+                  1. * powr<2>(DiFfRGREPL2) *
+                      (8. * lambda7 * q * q0 * (complex<double>(0., -1.) * muq + 3. * q0) +
+                       lambda8 * q * q0 * (complex<double>(0., 8.) * muq + 3. * q0) + 24. * lambda7 * powr<3>(q) +
+                       3. * lambda8 * powr<3>(q) +
+                       DiFfRGREPL5 * (24. * lambda7 * powr<2>(q) + 3. * lambda8 * powr<2>(q) +
+                                      16. * lambda7 * powr<2>(q0) + 11. * lambda8 * powr<2>(q0))) -
+                  complex<double>(0., 32.) * DiFfRGREPL5 * lambda7 * muq * powr<3>(q0) -
+                  complex<double>(0., 22.) * DiFfRGREPL5 * lambda8 * muq * powr<3>(q0) -
+                  complex<double>(0., 40.) * lambda7 * muq * q * powr<3>(q0) -
+                  complex<double>(0., 14.) * lambda8 * muq * q * powr<3>(q0) +
+                  32. * DiFfRGREPL5 * lambda7 * powr<4>(q0) - 5. * DiFfRGREPL5 * lambda8 * powr<4>(q0) +
+                  24. * lambda7 * q * powr<4>(q0) + 3. * lambda8 * q * powr<4>(q0)) *
+                 powr<-1>(powr<2>(q) + powr<2>(q0)) * powr<-1>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 powr<-1>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL1) +
+                          powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) *
+                 powr<-2>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL2) +
+                          powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) +
+             0.07407407407407407 * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * lambda1 *
+                 powr<-1>(powr<2>(q) + powr<2>(q0)) *
+                 (q * powr<2>(DiFfRGREPL5) * (q0 * (complex<double>(0., 1.) * muq + 9. * q0) + 9. * powr<2>(q)) +
+                  powr<3>(DiFfRGREPL5) * (3. * powr<2>(q) + 2. * powr<2>(q0)) -
+                  1. * powr<2>(DiFfRGREPL2) *
+                      (q * q0 * (complex<double>(0., -1.) * muq + 3. * q0) + 3. * powr<3>(q) +
+                       DiFfRGREPL5 * (3. * powr<2>(q) + 2. * powr<2>(q0))) +
+                  DiFfRGREPL5 * (9. * powr<4>(q) + 13. * powr<2>(q) * powr<2>(q0) -
+                                 complex<double>(0., 4.) * muq * q0 * (powr<2>(q) + powr<2>(q0)) +
+                                 powr<2>(muq) * (7. * powr<2>(q) + 8. * powr<2>(q0)) + 4. * powr<4>(q0)) +
+                  q * (complex<double>(0., -1.) * q0 * powr<3>(muq) -
+                       complex<double>(0., 5.) * muq * q0 * (powr<2>(q) + powr<2>(q0)) +
+                       7. * powr<2>(muq) * (powr<2>(q) + powr<2>(q0)) + 3. * powr<2>(powr<2>(q) + powr<2>(q0)))) *
+                 powr<-1>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 powr<-1>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL1) +
+                          powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) *
+                 powr<-2>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL2) +
+                          powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) -
+             0.07407407407407407 * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * (lambda1 + 4. * lambda7) *
+                 powr<-1>(powr<2>(q) + powr<2>(q0)) *
+                 (q * powr<2>(DiFfRGREPL5) * (q0 * (complex<double>(0., 1.) * muq + 9. * q0) + 9. * powr<2>(q)) +
+                  powr<3>(DiFfRGREPL5) * (3. * powr<2>(q) + 2. * powr<2>(q0)) -
+                  1. * powr<2>(DiFfRGREPL2) *
+                      (q * q0 * (complex<double>(0., -1.) * muq + 3. * q0) + 3. * powr<3>(q) +
+                       DiFfRGREPL5 * (3. * powr<2>(q) + 2. * powr<2>(q0))) +
+                  DiFfRGREPL5 * (9. * powr<4>(q) + 13. * powr<2>(q) * powr<2>(q0) -
+                                 complex<double>(0., 4.) * muq * q0 * (powr<2>(q) + powr<2>(q0)) +
+                                 powr<2>(muq) * (7. * powr<2>(q) + 8. * powr<2>(q0)) + 4. * powr<4>(q0)) +
+                  q * (complex<double>(0., -1.) * q0 * powr<3>(muq) -
+                       complex<double>(0., 5.) * muq * q0 * (powr<2>(q) + powr<2>(q0)) +
+                       7. * powr<2>(muq) * (powr<2>(q) + powr<2>(q0)) + 3. * powr<2>(powr<2>(q) + powr<2>(q0)))) *
+                 powr<-1>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 powr<-1>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL1) +
+                          powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) *
+                 powr<-2>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL2) +
+                          powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) -
+             0.024691358024691357 * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * powr<-1>(powr<2>(q) + powr<2>(q0)) *
+                 (powr<3>(DiFfRGREPL5) * (36. * lambda7 * powr<2>(q) + 3. * lambda8 * powr<2>(q) +
+                                          24. * lambda7 * powr<2>(q0) + 11. * lambda8 * powr<2>(q0)) +
+                  q * powr<2>(DiFfRGREPL5) *
+                      (12. * lambda7 * (complex<double>(0., 1.) * muq * q0 + 9. * powr<2>(q) + 9. * powr<2>(q0)) +
+                       lambda8 * (complex<double>(0., -8.) * muq * q0 + 9. * powr<2>(q) + 9. * powr<2>(q0))) -
+                  1. * powr<2>(DiFfRGREPL2) *
+                      (12. * lambda7 * q * q0 * (complex<double>(0., -1.) * muq + 3. * q0) +
+                       lambda8 * q * q0 * (complex<double>(0., 8.) * muq + 3. * q0) + 36. * lambda7 * powr<3>(q) +
+                       3. * lambda8 * powr<3>(q) +
+                       DiFfRGREPL5 * (36. * lambda7 * powr<2>(q) + 3. * lambda8 * powr<2>(q) +
+                                      24. * lambda7 * powr<2>(q0) + 11. * lambda8 * powr<2>(q0))) +
+                  DiFfRGREPL5 * (lambda8 * (9. * powr<4>(q) + 4. * powr<2>(q) * powr<2>(q0) -
+                                            complex<double>(0., 22.) * muq * q0 * (powr<2>(q) + powr<2>(q0)) +
+                                            powr<2>(muq) * (25. * powr<2>(q) + 17. * powr<2>(q0)) - 5. * powr<4>(q0)) +
+                                 12. * lambda7 *
+                                     (9. * powr<4>(q) + 13. * powr<2>(q) * powr<2>(q0) -
+                                      complex<double>(0., 4.) * muq * q0 * (powr<2>(q) + powr<2>(q0)) +
+                                      powr<2>(muq) * (7. * powr<2>(q) + 8. * powr<2>(q0)) + 4. * powr<4>(q0))) +
+                  q * (12. * lambda7 *
+                           (complex<double>(0., -1.) * q0 * powr<3>(muq) -
+                            complex<double>(0., 5.) * muq * q0 * (powr<2>(q) + powr<2>(q0)) +
+                            7. * powr<2>(muq) * (powr<2>(q) + powr<2>(q0)) + 3. * powr<2>(powr<2>(q) + powr<2>(q0))) +
+                       lambda8 * (complex<double>(0., 8.) * q0 * powr<3>(muq) -
+                                  complex<double>(0., 14.) * muq * q0 * (powr<2>(q) + powr<2>(q0)) +
+                                  25. * powr<2>(muq) * (powr<2>(q) + powr<2>(q0)) +
+                                  3. * powr<2>(powr<2>(q) + powr<2>(q0))))) *
+                 powr<-1>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 powr<-1>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL1) +
+                          powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) *
+                 powr<-2>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL2) +
+                          powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) -
+             0.024691358024691357 * (-1. * DiFfRGREPL4 + DiFfRGREPL3 * etaA) *
+                 (-3. * lambda1 * powr<2>(muq) * powr<2>(q) + 24. * lambda7 * powr<2>(muq) * powr<2>(q) +
+                  11. * lambda8 * powr<2>(muq) * powr<2>(q) + 36. * lambda7 * powr<4>(q) + 3. * lambda8 * powr<4>(q) +
+                  36. * lambda7 * powr<2>(muq) * powr<2>(q0) + 3. * lambda8 * powr<2>(muq) * powr<2>(q0) +
+                  72. * lambda7 * powr<2>(q) * powr<2>(q0) + 6. * lambda8 * powr<2>(q) * powr<2>(q0) +
+                  6. * DiFfRGREPL5 * (12. * lambda7 + lambda8) * q * (powr<2>(q) + powr<2>(q0)) +
+                  powr<2>(DiFfRGREPL5) *
+                      (36. * lambda7 * powr<2>(q) + 3. * lambda8 * powr<2>(q) - 3. * lambda1 * powr<2>(q0) +
+                       24. * lambda7 * powr<2>(q0) + 11. * lambda8 * powr<2>(q0)) +
+                  36. * lambda7 * powr<4>(q0) + 3. * lambda8 * powr<4>(q0)) *
+                 powr<-1>(powr<2>(q) + powr<2>(q0)) * powr<-2>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 powr<-1>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL1) +
+                          powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) *
+                 powr<-1>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL2) +
+                          powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) +
+             0.07407407407407407 * (-1. * DiFfRGREPL4 + DiFfRGREPL3 * etaA) * lambda1 *
+                 powr<-1>(powr<2>(q) + powr<2>(q0)) *
+                 (6. * DiFfRGREPL5 * q * (powr<2>(q) + powr<2>(q0)) +
+                  powr<2>(DiFfRGREPL5) * (3. * powr<2>(q) + 2. * powr<2>(q0)) +
+                  powr<2>(muq) * (2. * powr<2>(q) + 3. * powr<2>(q0)) + 3. * powr<2>(powr<2>(q) + powr<2>(q0))) *
+                 powr<-2>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 powr<-1>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL1) +
+                          powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) *
+                 powr<-1>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL2) +
+                          powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) -
+             0.14814814814814814 * (-1. * DiFfRGREPL4 + DiFfRGREPL3 * etaA) * powr<-1>(powr<2>(q) + powr<2>(q0)) *
+                 (3. * DiFfRGREPL1 * DiFfRGREPL2 * (3. * lambda4 + lambda6) * (powr<2>(q) + powr<2>(q0)) +
+                  2. * lambda7 *
+                      (6. * DiFfRGREPL5 * q * (powr<2>(q) + powr<2>(q0)) +
+                       powr<2>(DiFfRGREPL5) * (3. * powr<2>(q) + 2. * powr<2>(q0)) +
+                       powr<2>(muq) * (2. * powr<2>(q) + 3. * powr<2>(q0)) + 3. * powr<2>(powr<2>(q) + powr<2>(q0)))) *
+                 powr<-2>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 powr<-1>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL1) +
+                          powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) *
+                 powr<-1>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL2) +
+                          powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) +
+             0.07407407407407407 * powr<-2>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 (-30. * (DiFfRGREPL4 - 1. * DiFfRGREPL3 * etaA) * lambda2 * powr<2>(DiFfRGREPL1) *
+                      powr<-2>(powr<2>(DiFfRGREPL1) + powr<2>(DiFfRGREPL5 + q) -
+                               1. * powr<2>(muq + complex<double>(0., 1.) * q0)) +
+                  (-1. * DiFfRGREPL4 + DiFfRGREPL3 * etaA) * lambda1 * powr<-1>(powr<2>(q) + powr<2>(q0)) *
+                      (6. * DiFfRGREPL5 * q * (powr<2>(q) + powr<2>(q0)) +
+                       powr<2>(DiFfRGREPL5) * (3. * powr<2>(q) + powr<2>(q0)) +
+                       powr<2>(muq) * (powr<2>(q) + 3. * powr<2>(q0)) + 3. * powr<2>(powr<2>(q) + powr<2>(q0))) *
+                      powr<-1>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL1) +
+                               powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) *
+                      powr<-1>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL2) +
+                               powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0))) +
+             1.1111111111111112 * (DiFfRGREPL6 - 1. * DiFfRGREPL5 * etaQ) * lambda1 * (DiFfRGREPL5 + q) *
+                 (2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 - 3. * powr<2>(DiFfRGREPL2) +
+                  powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) *
+                 powr<-1>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 powr<-3>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                          powr<2>(complex<double>(0., 1.) * muq + q0)) -
+             0.4444444444444444 * (DiFfRGREPL6 - 1. * DiFfRGREPL5 * etaQ) * lambda1 * (DiFfRGREPL5 + q) *
+                 (2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 - 1. * powr<2>(DiFfRGREPL2) +
+                  powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) *
+                 powr<-1>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 powr<-3>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                          powr<2>(complex<double>(0., 1.) * muq + q0)) +
+             0.09876543209876543 * (DiFfRGREPL6 - 1. * DiFfRGREPL5 * etaQ) * lambda8 *
+                 (-3. * q * powr<2>(DiFfRGREPL5) *
+                      (q0 * (complex<double>(0., -14.) * muq + 3. * q0) + 3. * powr<2>(q)) -
+                  3. * powr<5>(q) +
+                  q * q0 *
+                      ((complex<double>(0., -14.) * muq + 3. * q0) * powr<2>(DiFfRGREPL2) +
+                       (complex<double>(0., 14.) * muq + 3. * q0) * powr<2>(muq - complex<double>(0., 1.) * q0)) +
+                  powr<3>(q) * (complex<double>(0., -20.) * muq * q0 + 3. * powr<2>(DiFfRGREPL2) + 31. * powr<2>(muq) -
+                                6. * powr<2>(q0)) -
+                  1. * powr<3>(DiFfRGREPL5) * (3. * powr<2>(q) + 17. * powr<2>(q0)) +
+                  DiFfRGREPL5 *
+                      (-9. * powr<4>(q) +
+                       (17. * powr<2>(DiFfRGREPL2) - 11. * powr<2>(muq - complex<double>(0., 1.) * q0)) * powr<2>(q0) +
+                       powr<2>(q) * (complex<double>(0., 22.) * muq * q0 + 3. * powr<2>(DiFfRGREPL2) +
+                                     31. * powr<2>(muq) + 2. * powr<2>(q0)))) *
+                 powr<-1>(powr<2>(q) + powr<2>(q0)) * powr<-1>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 powr<-3>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                          powr<2>(complex<double>(0., 1.) * muq + q0)) +
+             0.07407407407407407 * (DiFfRGREPL6 - 1. * DiFfRGREPL5 * etaQ) *
+                 (24. * lambda5 * (DiFfRGREPL5 + q) * powr<2>(DiFfRGREPL2) +
+                  15. * lambda1 * (DiFfRGREPL5 + q) *
+                      (2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 - 3. * powr<2>(DiFfRGREPL2) +
+                       powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) +
+                  2. * lambda1 * (muq * q + complex<double>(0., 1.) * DiFfRGREPL5 * q0) *
+                      (2. * DiFfRGREPL5 * muq * q + complex<double>(0., 1.) * q0 * powr<2>(DiFfRGREPL5) +
+                       (2. * muq - complex<double>(0., 1.) * q0) * powr<2>(q) +
+                       complex<double>(0., 1.) * q0 *
+                           (-1. * powr<2>(DiFfRGREPL2) + powr<2>(muq - complex<double>(0., 1.) * q0))) *
+                      powr<-1>(powr<2>(q) + powr<2>(q0))) *
+                 powr<-1>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 powr<-3>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                          powr<2>(complex<double>(0., 1.) * muq + q0)) +
+             0.07407407407407407 * (DiFfRGREPL6 - 1. * DiFfRGREPL5 * etaQ) *
+                 (-6. * lambda1 * (DiFfRGREPL5 + q) *
+                      (2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 - 1. * powr<2>(DiFfRGREPL2) +
+                       powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) -
+                  144. * lambda7 * (DiFfRGREPL5 + q) *
+                      (2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 - 1. * powr<2>(DiFfRGREPL2) +
+                       powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) +
+                  42. * lambda8 * (DiFfRGREPL5 + q) *
+                      (2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 - 1. * powr<2>(DiFfRGREPL2) +
+                       powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) -
+                  complex<double>(0., 1.) * lambda1 * (muq * q - complex<double>(0., 1.) * DiFfRGREPL5 * q0) *
+                      (complex<double>(0., -2.) * DiFfRGREPL5 * muq * q + q0 * powr<2>(DiFfRGREPL5) +
+                       (complex<double>(0., -2.) * muq - 1. * q0) * powr<2>(q) -
+                       1. * q0 * (powr<2>(DiFfRGREPL2) - 1. * powr<2>(muq - complex<double>(0., 1.) * q0))) *
+                      (powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) + powr<2>(complex<double>(0., 1.) * muq + q0)) *
+                      powr<-1>(powr<2>(DiFfRGREPL1) + powr<2>(DiFfRGREPL5 + q) -
+                               1. * powr<2>(muq + complex<double>(0., 1.) * q0)) *
+                      powr<-1>(powr<2>(q) + powr<2>(q0))) *
+                 powr<-1>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 powr<-3>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                          powr<2>(complex<double>(0., 1.) * muq + q0)) +
+             0.2962962962962963 * (DiFfRGREPL6 - 1. * DiFfRGREPL5 * etaQ) * lambda7 *
+                 powr<-1>(powr<2>(q) + powr<2>(q0)) *
+                 (3. * q * powr<2>(DiFfRGREPL5) * (q0 * (complex<double>(0., 2.) * muq + 15. * q0) + 15. * powr<2>(q)) -
+                  1. * powr<2>(DiFfRGREPL2) * (q * q0 * (complex<double>(0., 2.) * muq + 15. * q0) + 15. * powr<3>(q)) +
+                  powr<3>(DiFfRGREPL5) * (15. * powr<2>(q) + 13. * powr<2>(q0)) +
+                  DiFfRGREPL5 *
+                      (45. * powr<4>(q) +
+                       (-13. * powr<2>(DiFfRGREPL2) - 17. * powr<2>(muq - complex<double>(0., 1.) * q0)) * powr<2>(q0) +
+                       powr<2>(q) * (complex<double>(0., 34.) * muq * q0 - 15. * powr<2>(DiFfRGREPL2) -
+                                     11. * powr<2>(muq) + 62. * powr<2>(q0))) +
+                  q * (complex<double>(0., 2.) * q0 * powr<3>(muq) +
+                       complex<double>(0., 28.) * muq * q0 * (powr<2>(q) + powr<2>(q0)) -
+                       11. * powr<2>(muq) * (powr<2>(q) + powr<2>(q0)) + 15. * powr<2>(powr<2>(q) + powr<2>(q0)))) *
+                 powr<-1>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 powr<-3>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                          powr<2>(complex<double>(0., 1.) * muq + q0)) +
+             0.8888888888888888 * powr<-2>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 ((DiFfRGREPL4 - 1. * DiFfRGREPL3 * etaA) * lambda5 * powr<2>(DiFfRGREPL1) *
+                      powr<-2>(powr<2>(DiFfRGREPL1) + powr<2>(DiFfRGREPL5 + q) -
+                               1. * powr<2>(muq + complex<double>(0., 1.) * q0)) +
+                  14. * (DiFfRGREPL6 - 1. * DiFfRGREPL5 * etaQ) * lambda2 * (DiFfRGREPL5 + q) * powr<2>(DiFfRGREPL2) *
+                      (DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                      powr<-3>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                               powr<2>(complex<double>(0., 1.) * muq + q0))) +
+             0.2222222222222222 * lambda1 * powr<-2>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 (-2. * (DiFfRGREPL4 - 1. * DiFfRGREPL3 * etaA) *
+                      (2. * DiFfRGREPL5 * q + powr<2>(DiFfRGREPL5) + powr<2>(q) -
+                       1. * powr<2>(muq + complex<double>(0., 1.) * q0)) *
+                      powr<-2>(powr<2>(DiFfRGREPL1) + powr<2>(DiFfRGREPL5 + q) -
+                               1. * powr<2>(muq + complex<double>(0., 1.) * q0)) +
+                  (-1. * DiFfRGREPL4 + DiFfRGREPL3 * etaA) *
+                      (-9. * powr<2>(DiFfRGREPL1) -
+                       19. * (-2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 - 1. * powr<2>(DiFfRGREPL5) +
+                              powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0))) *
+                      powr<-2>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL1) +
+                               powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) -
+                  14. * (-1. * DiFfRGREPL4 + DiFfRGREPL3 * etaA) *
+                      powr<-1>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL1) +
+                               powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) -
+                  14. * (DiFfRGREPL6 - 1. * DiFfRGREPL5 * etaQ) * (DiFfRGREPL5 + q) *
+                      (DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                      (2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 - 3. * powr<2>(DiFfRGREPL2) +
+                       powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) *
+                      powr<-3>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                               powr<2>(complex<double>(0., 1.) * muq + q0))) +
+             0.07407407407407407 * lambda1 * powr<-1>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 (15. * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * (DiFfRGREPL5 + q) *
+                      powr<-2>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL2) +
+                               powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) +
+                  2. * (DiFfRGREPL6 - 1. * DiFfRGREPL5 * etaQ) *
+                      (complex<double>(0., -1.) * muq * q + DiFfRGREPL5 * q0) *
+                      (complex<double>(0., -2.) * DiFfRGREPL5 * muq * q + q0 * powr<2>(DiFfRGREPL5) +
+                       (complex<double>(0., -2.) * muq - 1. * q0) * powr<2>(q) -
+                       1. * q0 * (powr<2>(DiFfRGREPL2) - 1. * powr<2>(muq - complex<double>(0., 1.) * q0))) *
+                      powr<-1>(powr<2>(q) + powr<2>(q0)) *
+                      powr<-3>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                               powr<2>(complex<double>(0., 1.) * muq + q0))) +
+             0.07407407407407407 * powr<-1>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 (15. * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * lambda1 * (DiFfRGREPL5 + q) *
+                      powr<-2>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL2) +
+                               powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) -
+                  60. * (DiFfRGREPL6 - 1. * DiFfRGREPL5 * etaQ) * lambda2 * (DiFfRGREPL5 + q) * powr<2>(DiFfRGREPL2) *
+                      powr<-3>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                               powr<2>(complex<double>(0., 1.) * muq + q0)) +
+                  2. * (DiFfRGREPL6 - 1. * DiFfRGREPL5 * etaQ) * lambda1 *
+                      (complex<double>(0., -1.) * muq * q + DiFfRGREPL5 * q0) *
+                      (complex<double>(0., -2.) * DiFfRGREPL5 * muq * q + q0 * powr<2>(DiFfRGREPL5) +
+                       (complex<double>(0., -2.) * muq - 1. * q0) * powr<2>(q) -
+                       1. * q0 * (powr<2>(DiFfRGREPL2) - 1. * powr<2>(muq - complex<double>(0., 1.) * q0))) *
+                      powr<-1>(powr<2>(q) + powr<2>(q0)) *
+                      powr<-3>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                               powr<2>(complex<double>(0., 1.) * muq + q0))) +
+             0.024691358024691357 * powr<-1>(powr<2>(q) + powr<2>(q0)) *
+                 powr<-1>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 (-3. * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) *
+                      (36. * DiFfRGREPL1 * DiFfRGREPL2 * lambda4 * (DiFfRGREPL5 + q) * (powr<2>(q) + powr<2>(q0)) +
+                       lambda1 *
+                           (q * powr<2>(DiFfRGREPL5) *
+                                (q0 * (complex<double>(0., 1.) * muq + 9. * q0) + 9. * powr<2>(q)) +
+                            powr<3>(DiFfRGREPL5) * (3. * powr<2>(q) + 2. * powr<2>(q0)) -
+                            1. * powr<2>(DiFfRGREPL2) *
+                                (q * q0 * (complex<double>(0., -1.) * muq + 3. * q0) + 3. * powr<3>(q) +
+                                 DiFfRGREPL5 * (3. * powr<2>(q) + 2. * powr<2>(q0))) +
+                            DiFfRGREPL5 * (9. * powr<4>(q) + 13. * powr<2>(q) * powr<2>(q0) -
+                                           complex<double>(0., 4.) * muq * q0 * (powr<2>(q) + powr<2>(q0)) +
+                                           powr<2>(muq) * (7. * powr<2>(q) + 8. * powr<2>(q0)) + 4. * powr<4>(q0)) +
+                            q * (complex<double>(0., -1.) * q0 * powr<3>(muq) -
+                                 complex<double>(0., 5.) * muq * q0 * (powr<2>(q) + powr<2>(q0)) +
+                                 7. * powr<2>(muq) * (powr<2>(q) + powr<2>(q0)) +
+                                 3. * powr<2>(powr<2>(q) + powr<2>(q0))))) *
+                      powr<-1>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL1) +
+                               powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) *
+                      powr<-2>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL2) +
+                               powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) +
+                  2. * (DiFfRGREPL6 - 1. * DiFfRGREPL5 * etaQ) *
+                      (3. * lambda1 * (muq * q + complex<double>(0., 1.) * DiFfRGREPL5 * q0) *
+                           (2. * DiFfRGREPL5 * muq * q + complex<double>(0., 1.) * q0 * powr<2>(DiFfRGREPL5) +
+                            (2. * muq - complex<double>(0., 1.) * q0) * powr<2>(q) +
+                            complex<double>(0., 1.) * q0 *
+                                (-1. * powr<2>(DiFfRGREPL2) + powr<2>(muq - complex<double>(0., 1.) * q0))) +
+                       2. * lambda8 *
+                           (-3. * q * powr<2>(DiFfRGREPL5) *
+                                (q0 * (complex<double>(0., -14.) * muq + 3. * q0) + 3. * powr<2>(q)) -
+                            3. * powr<5>(q) +
+                            q * q0 *
+                                ((complex<double>(0., -14.) * muq + 3. * q0) * powr<2>(DiFfRGREPL2) +
+                                 (complex<double>(0., 14.) * muq + 3. * q0) *
+                                     powr<2>(muq - complex<double>(0., 1.) * q0)) +
+                            powr<3>(q) * (complex<double>(0., -20.) * muq * q0 + 3. * powr<2>(DiFfRGREPL2) +
+                                          31. * powr<2>(muq) - 6. * powr<2>(q0)) -
+                            1. * powr<3>(DiFfRGREPL5) * (3. * powr<2>(q) + 17. * powr<2>(q0)) +
+                            DiFfRGREPL5 *
+                                (-9. * powr<4>(q) +
+                                 (17. * powr<2>(DiFfRGREPL2) - 11. * powr<2>(muq - complex<double>(0., 1.) * q0)) *
+                                     powr<2>(q0) +
+                                 powr<2>(q) * (complex<double>(0., 22.) * muq * q0 + 3. * powr<2>(DiFfRGREPL2) +
+                                               31. * powr<2>(muq) + 2. * powr<2>(q0)))) +
+                       6. * lambda7 *
+                           (3. * q * powr<2>(DiFfRGREPL5) *
+                                (q0 * (complex<double>(0., 2.) * muq + 15. * q0) + 15. * powr<2>(q)) -
+                            1. * powr<2>(DiFfRGREPL2) *
+                                (q * q0 * (complex<double>(0., 2.) * muq + 15. * q0) + 15. * powr<3>(q)) +
+                            powr<3>(DiFfRGREPL5) * (15. * powr<2>(q) + 13. * powr<2>(q0)) +
+                            DiFfRGREPL5 *
+                                (45. * powr<4>(q) +
+                                 (-13. * powr<2>(DiFfRGREPL2) - 17. * powr<2>(muq - complex<double>(0., 1.) * q0)) *
+                                     powr<2>(q0) +
+                                 powr<2>(q) * (complex<double>(0., 34.) * muq * q0 - 15. * powr<2>(DiFfRGREPL2) -
+                                               11. * powr<2>(muq) + 62. * powr<2>(q0))) +
+                            q * (complex<double>(0., 2.) * q0 * powr<3>(muq) +
+                                 complex<double>(0., 28.) * muq * q0 * (powr<2>(q) + powr<2>(q0)) -
+                                 11. * powr<2>(muq) * (powr<2>(q) + powr<2>(q0)) +
+                                 15. * powr<2>(powr<2>(q) + powr<2>(q0))))) *
+                      powr<-3>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                               powr<2>(complex<double>(0., 1.) * muq + q0))) +
+             0.8888888888888888 * DiFfRGREPL1 * DiFfRGREPL2 * (DiFfRGREPL6 - 1. * DiFfRGREPL5 * etaQ) * lambda6 *
+                 (DiFfRGREPL5 + q) *
+                 powr<-1>(powr<2>(DiFfRGREPL1) + powr<2>(DiFfRGREPL5 + q) -
+                          1. * powr<2>(muq + complex<double>(0., 1.) * q0)) *
+                 powr<-1>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 powr<-2>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                          powr<2>(complex<double>(0., 1.) * muq + q0)) +
+             0.4444444444444444 * powr<-2>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 (2. * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * lambda1 * (DiFfRGREPL5 + q) *
+                      (DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                      (-10. * powr<2>(DiFfRGREPL2) +
+                       3. * (2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL5) -
+                             1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0))) *
+                      powr<-3>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL2) +
+                               powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) -
+                  1. * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * (DiFfRGREPL5 + q) *
+                      (DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                      ((7. * lambda1 + 28. * lambda2 - 16. * lambda5) * powr<2>(DiFfRGREPL2) +
+                       7. * lambda1 *
+                           (2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL5) -
+                            1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0))) *
+                      powr<-3>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL2) +
+                               powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) +
+                  4. * (DiFfRGREPL6 - 1. * DiFfRGREPL5 * etaQ) * lambda5 * (DiFfRGREPL5 + q) * powr<2>(DiFfRGREPL2) *
+                      (DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                      powr<-3>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                               powr<2>(complex<double>(0., 1.) * muq + q0)) +
+                  3. * DiFfRGREPL1 * DiFfRGREPL2 * (DiFfRGREPL4 - 1. * DiFfRGREPL3 * etaA) * lambda4 *
+                      powr<-1>(powr<2>(DiFfRGREPL1) + powr<2>(DiFfRGREPL5 + q) -
+                               1. * powr<2>(muq + complex<double>(0., 1.) * q0)) *
+                      powr<-1>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                               powr<2>(complex<double>(0., 1.) * muq + q0))) +
+             0.07407407407407407 * powr<-2>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 (-15. * (DiFfRGREPL4 - 1. * DiFfRGREPL3 * etaA) * lambda1 *
+                      (-2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL1) -
+                       1. * powr<2>(DiFfRGREPL5) + powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0)) *
+                      powr<-2>(powr<2>(DiFfRGREPL1) + powr<2>(DiFfRGREPL5 + q) -
+                               1. * powr<2>(muq + complex<double>(0., 1.) * q0)) +
+                  2. * (DiFfRGREPL4 - 1. * DiFfRGREPL3 * etaA) * lambda1 *
+                      powr<2>(muq * q - complex<double>(0., 1.) * DiFfRGREPL5 * q0) *
+                      powr<-2>(powr<2>(DiFfRGREPL1) + powr<2>(DiFfRGREPL5 + q) -
+                               1. * powr<2>(muq + complex<double>(0., 1.) * q0)) *
+                      powr<-1>(powr<2>(q) + powr<2>(q0)) +
+                  (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * lambda1 * (DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                      powr<-1>(powr<2>(q) + powr<2>(q0)) *
+                      (q * powr<2>(DiFfRGREPL5) * (q0 * (complex<double>(0., 2.) * muq + 9. * q0) + 9. * powr<2>(q)) +
+                       powr<3>(DiFfRGREPL5) * (3. * powr<2>(q) + powr<2>(q0)) -
+                       1. * powr<2>(DiFfRGREPL2) *
+                           (q * q0 * (complex<double>(0., -2.) * muq + 3. * q0) + 3. * powr<3>(q) +
+                            DiFfRGREPL5 * (3. * powr<2>(q) + powr<2>(q0))) +
+                       DiFfRGREPL5 * (9. * powr<4>(q) + 14. * powr<2>(q) * powr<2>(q0) -
+                                      complex<double>(0., 2.) * muq * q0 * (powr<2>(q) + powr<2>(q0)) +
+                                      powr<2>(muq) * (5. * powr<2>(q) + 7. * powr<2>(q0)) + 5. * powr<4>(q0)) +
+                       q * (complex<double>(0., -2.) * q0 * powr<3>(muq) -
+                            complex<double>(0., 4.) * muq * q0 * (powr<2>(q) + powr<2>(q0)) +
+                            5. * powr<2>(muq) * (powr<2>(q) + powr<2>(q0)) + 3. * powr<2>(powr<2>(q) + powr<2>(q0)))) *
+                      powr<-1>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL1) +
+                               powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) *
+                      powr<-2>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL2) +
+                               powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) +
+                  6. * DiFfRGREPL1 * DiFfRGREPL2 * (DiFfRGREPL4 - 1. * DiFfRGREPL3 * etaA) * lambda6 *
+                      powr<-1>(powr<2>(DiFfRGREPL1) + powr<2>(DiFfRGREPL5 + q) -
+                               1. * powr<2>(muq + complex<double>(0., 1.) * q0)) *
+                      powr<-1>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                               powr<2>(complex<double>(0., 1.) * muq + q0))) +
+             0.07407407407407407 * lambda1 * powr<-2>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 (-1. * (-1. * DiFfRGREPL4 + DiFfRGREPL3 * etaA) * powr<-1>(powr<2>(q) + powr<2>(q0)) *
+                      (6. * DiFfRGREPL5 * q * (powr<2>(q) + powr<2>(q0)) +
+                       powr<2>(DiFfRGREPL5) * (3. * powr<2>(q) + powr<2>(q0)) +
+                       powr<2>(muq) * (powr<2>(q) + 3. * powr<2>(q0)) + 3. * powr<2>(powr<2>(q) + powr<2>(q0))) *
+                      powr<-1>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL1) +
+                               powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) *
+                      powr<-1>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL2) +
+                               powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) +
+                  6. * (DiFfRGREPL6 - 1. * DiFfRGREPL5 * etaQ) * (DiFfRGREPL5 + q) *
+                      (DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                      (2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 - 1. * powr<2>(DiFfRGREPL2) +
+                       powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) *
+                      powr<-3>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                               powr<2>(complex<double>(0., 1.) * muq + q0)) +
+                  (DiFfRGREPL4 - 1. * DiFfRGREPL3 * etaA) * (muq * q - complex<double>(0., 1.) * DiFfRGREPL5 * q0) *
+                      (muq * q + complex<double>(0., 1.) * DiFfRGREPL5 * q0) *
+                      powr<-1>(powr<2>(DiFfRGREPL1) + powr<2>(DiFfRGREPL5 + q) -
+                               1. * powr<2>(muq + complex<double>(0., 1.) * q0)) *
+                      powr<-1>(powr<2>(q) + powr<2>(q0)) *
+                      powr<-1>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                               powr<2>(complex<double>(0., 1.) * muq + q0))) +
+             0.024691358024691357 * powr<-2>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                 (-3. * (-1. * DiFfRGREPL4 + DiFfRGREPL3 * etaA) * lambda1 * powr<-1>(powr<2>(q) + powr<2>(q0)) *
+                      (6. * DiFfRGREPL5 * q * (powr<2>(q) + powr<2>(q0)) +
+                       powr<2>(DiFfRGREPL5) * (3. * powr<2>(q) + powr<2>(q0)) +
+                       powr<2>(muq) * (powr<2>(q) + 3. * powr<2>(q0)) + 3. * powr<2>(powr<2>(q) + powr<2>(q0))) *
+                      powr<-1>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL1) +
+                               powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) *
+                      powr<-1>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL2) +
+                               powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) -
+                  1. * (-1. * DiFfRGREPL4 + DiFfRGREPL3 * etaA) * lambda8 * powr<-1>(powr<2>(q) + powr<2>(q0)) *
+                      (6. * DiFfRGREPL5 * q * (powr<2>(q) + powr<2>(q0)) +
+                       powr<2>(muq) * (11. * powr<2>(q) + 3. * powr<2>(q0)) +
+                       powr<2>(DiFfRGREPL5) * (3. * powr<2>(q) + 11. * powr<2>(q0)) +
+                       3. * powr<2>(powr<2>(q) + powr<2>(q0))) *
+                      powr<-1>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL1) +
+                               powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) *
+                      powr<-1>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 + powr<2>(DiFfRGREPL2) +
+                               powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0)) -
+                  288. * (DiFfRGREPL6 - 1. * DiFfRGREPL5 * etaQ) * lambda5 * (DiFfRGREPL5 + q) * powr<2>(DiFfRGREPL2) *
+                      (DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                      powr<-3>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                               powr<2>(complex<double>(0., 1.) * muq + q0)) +
+                  3. * (DiFfRGREPL4 - 1. * DiFfRGREPL3 * etaA) * lambda1 *
+                      (muq * q - complex<double>(0., 1.) * DiFfRGREPL5 * q0) *
+                      (muq * q + complex<double>(0., 1.) * DiFfRGREPL5 * q0) *
+                      powr<-1>(powr<2>(DiFfRGREPL1) + powr<2>(DiFfRGREPL5 + q) -
+                               1. * powr<2>(muq + complex<double>(0., 1.) * q0)) *
+                      powr<-1>(powr<2>(q) + powr<2>(q0)) *
+                      powr<-1>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                               powr<2>(complex<double>(0., 1.) * muq + q0)))) +
+        0.037037037037037035 * powr<4>(gAqbq1) * powr<-3>(DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+            ((DiFfRGREPL4 - 1. * DiFfRGREPL3 * etaA) * (-56. * powr<2>(DiFfRGREPL1) *
+                                                            powr<-2>(powr<2>(DiFfRGREPL1) + powr<2>(DiFfRGREPL5 + q) -
+                                                                     1. * powr<2>(muq + complex<double>(0., 1.) * q0)) +
+                                                        114. * powr<2>(DiFfRGREPL2) *
+                                                            powr<-2>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                                                                     powr<2>(complex<double>(0., 1.) * muq + q0)) -
+                                                        1. * DiFfRGREPL1 * DiFfRGREPL2 *
+                                                            powr<-1>(powr<2>(DiFfRGREPL1) + powr<2>(DiFfRGREPL5 + q) -
+                                                                     1. * powr<2>(muq + complex<double>(0., 1.) * q0)) *
+                                                            powr<-1>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                                                                     powr<2>(complex<double>(0., 1.) * muq + q0))) +
+             DiFfRGREPL2 *
+                 powr<-1>(-1. * powr<2>(DiFfRGREPL1) - 1. * powr<2>(DiFfRGREPL5 + q) +
+                          powr<2>(muq + complex<double>(0., 1.) * q0)) *
+                 powr<-3>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                          powr<2>(complex<double>(0., 1.) * muq + q0)) *
+                 (-228. * DiFfRGREPL2 * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * (DiFfRGREPL5 + q) *
+                      (-1. * powr<2>(DiFfRGREPL1) - 1. * powr<2>(DiFfRGREPL5 + q) +
+                       powr<2>(muq + complex<double>(0., 1.) * q0)) *
+                      (DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) +
+                  4. * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * (DiFfRGREPL5 + q) *
+                      (DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) *
+                      (28. * DiFfRGREPL2 *
+                           (-1. * powr<2>(DiFfRGREPL1) - 1. * powr<2>(DiFfRGREPL5 + q) +
+                            powr<2>(muq + complex<double>(0., 1.) * q0)) -
+                       1. * DiFfRGREPL1 *
+                           (powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                            powr<2>(complex<double>(0., 1.) * muq + q0))) +
+                  DiFfRGREPL1 *
+                      (powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) + powr<2>(complex<double>(0., 1.) * muq + q0)) *
+                      (-40. * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * (DiFfRGREPL5 + q) *
+                           (DiFfRGREPL3 + powr<2>(q) + powr<2>(q0)) +
+                       (DiFfRGREPL4 - 1. * DiFfRGREPL3 * etaA) * (powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                                                                  powr<2>(complex<double>(0., 1.) * muq + q0))) -
+                  20. * DiFfRGREPL1 * (-1. * DiFfRGREPL4 + DiFfRGREPL3 * etaA) *
+                      powr<2>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                              powr<2>(complex<double>(0., 1.) * muq + q0)))) +
+        0.0030864197530864196 * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * (DiFfRGREPL5 + q) *
+            (-1. * powr<2>(DiFfRGREPL2) *
+                 (18. * lambda1 * (71. * lambda2 - 56. * lambda3 + 14. * lambda5 + 148. * lambda7) +
+                  64. * lambda10 * (3. * lambda2 - 5. * lambda3 + 6. * lambda7 - 1. * lambda8) -
+                  153. * powr<2>(lambda1)) +
+             12. * (3. * (lambda1 * (20. * lambda3 - 53. * lambda5) + 16. * lambda5 * (-5. * lambda2 + 7. * lambda5)) *
+                        powr<2>(DiFfRGREPL2) +
+                    lambda1 * (20. * lambda3 - 39. * lambda5) *
+                        (-2. * DiFfRGREPL5 * q - 6.283185307179586 * q0 * T -
+                         complex<double>(0., 2.) * muq * (q0 + 3.141592653589793 * T) - 1. * powr<2>(DiFfRGREPL5) +
+                         powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0) - 9.869604401089358 * powr<2>(T))) +
+             48. * ((lambda7 * (-32. * lambda3 - 9. * lambda5 + 288. * lambda7) +
+                     3. * lambda1 * (39. * lambda7 - 10. * lambda8)) *
+                        powr<2>(DiFfRGREPL2) +
+                    (30. * lambda1 * lambda7 - 9. * lambda5 * lambda7 - 10. * lambda1 * lambda8) *
+                        (-2. * DiFfRGREPL5 * q - 6.283185307179586 * q0 * T -
+                         complex<double>(0., 2.) * muq * (q0 + 3.141592653589793 * T) - 1. * powr<2>(DiFfRGREPL5) +
+                         powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0) - 9.869604401089358 * powr<2>(T))) +
+             3. * lambda1 *
+                 (3. *
+                      (15. * lambda1 -
+                       2. * (5. * lambda2 - 56. * lambda3 + 20. * lambda5 + 208. * lambda7 + 40. * lambda9)) *
+                      powr<2>(DiFfRGREPL2) -
+                  5. *
+                      (9. * lambda1 -
+                       2. * (3. * lambda2 - 8. * lambda3 + 12. * lambda5 + 36. * lambda7 + 48. * lambda9)) *
+                      (-2. * DiFfRGREPL5 * q - 6.283185307179586 * q0 * T -
+                       complex<double>(0., 2.) * muq * (q0 + 3.141592653589793 * T) - 1. * powr<2>(DiFfRGREPL5) +
+                       powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0) - 9.869604401089358 * powr<2>(T))) +
+             (6. * lambda1 * (15. * lambda2 - 40. * lambda3 - 42. * lambda5) -
+              64. * lambda10 * (3. * lambda2 - 5. * lambda3 + 6. * lambda7 - 1. * lambda8) + 135. * powr<2>(lambda1)) *
+                 (-2. * DiFfRGREPL5 * q - 6.283185307179586 * q0 * T -
+                  complex<double>(0., 2.) * muq * (q0 + 3.141592653589793 * T) - 1. * powr<2>(DiFfRGREPL5) +
+                  powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0) - 9.869604401089358 * powr<2>(T))) *
+            powr<-3>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 +
+                     complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                     powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                     9.869604401089358 * powr<2>(T)) -
+        0.012345679012345678 * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * (DiFfRGREPL5 + q) *
+            (-1. * powr<2>(DiFfRGREPL2) *
+                 (lambda1 * (-90. * lambda2 + 180. * lambda3 + 63. * lambda5 - 96. * lambda8 + 810. * lambda9) +
+                  810. * powr<2>(lambda1) +
+                  2. * (8. * lambda10 * (-3. * lambda2 + lambda8) -
+                        9. * lambda2 * (48. * lambda3 - 63. * lambda7 - 12. * lambda8 + 35. * lambda9) +
+                        96. * powr<2>(lambda10) + 756. * powr<2>(lambda2) +
+                        8. * (-26. * lambda3 * lambda8 - 9. * lambda5 * lambda8 - 15. * lambda8 * lambda9 +
+                              36. * powr<2>(lambda3)))) -
+             1. *
+                 (lambda1 * (-45. * lambda2 + 60. * lambda3 + 63. * lambda5 + 270. * lambda9) -
+                  2. * (24. * lambda10 * lambda2 - 225. * lambda2 * lambda7 - 8. * lambda10 * lambda8 +
+                        60. * lambda2 * lambda8 + 72. * lambda5 * lambda8 + 315. * lambda2 * lambda9 +
+                        120. * lambda8 * lambda9) +
+                  270. * powr<2>(lambda1)) *
+                 (-2. * DiFfRGREPL5 * q - 6.283185307179586 * q0 * T -
+                  complex<double>(0., 2.) * muq * (q0 + 3.141592653589793 * T) - 1. * powr<2>(DiFfRGREPL5) +
+                  powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0) - 9.869604401089358 * powr<2>(T))) *
+            powr<-3>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 +
+                     complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                     powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                     9.869604401089358 * powr<2>(T)) +
+        0.006172839506172839 * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * (DiFfRGREPL5 + q) *
+            (-9. * lambda1 * (lambda1 + 20. * lambda2) * powr<2>(DiFfRGREPL2) -
+             24. *
+                 (36. * lambda2 * lambda8 + 189. * lambda1 * lambda9 - 147. * lambda2 * lambda9 +
+                  56. * lambda3 * lambda9) *
+                 powr<2>(DiFfRGREPL2) +
+             4. * powr<2>(DiFfRGREPL2) *
+                 (-1431. * lambda1 * lambda7 +
+                  8. * (81. * lambda5 * lambda7 + 17. * lambda3 * lambda8 - 297. * powr<2>(lambda7))) -
+             45. * lambda1 * (lambda1 + 2. * lambda2) *
+                 (-2. * DiFfRGREPL5 * q - 6.283185307179586 * q0 * T -
+                  complex<double>(0., 2.) * muq * (q0 + 3.141592653589793 * T) - 1. * powr<2>(DiFfRGREPL5) +
+                  powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0) - 9.869604401089358 * powr<2>(T)) -
+             288. * (7. * lambda1 - 9. * lambda5) * lambda7 *
+                 (-2. * DiFfRGREPL5 * q - 6.283185307179586 * q0 * T -
+                  complex<double>(0., 2.) * muq * (q0 + 3.141592653589793 * T) - 1. * powr<2>(DiFfRGREPL5) +
+                  powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0) - 9.869604401089358 * powr<2>(T)) +
+             168. *
+                 (4. * lambda2 * lambda8 - 9. * lambda1 * lambda9 + 21. * lambda2 * lambda9 - 8. * lambda3 * lambda9) *
+                 (-2. * DiFfRGREPL5 * q - 6.283185307179586 * q0 * T -
+                  complex<double>(0., 2.) * muq * (q0 + 3.141592653589793 * T) - 1. * powr<2>(DiFfRGREPL5) +
+                  powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0) - 9.869604401089358 * powr<2>(T)) +
+             36. * DiFfRGREPL1 * DiFfRGREPL2 * (32. * lambda4 * lambda6 + 9. * lambda1 * lambda7) *
+                 (2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 +
+                  complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T + powr<2>(DiFfRGREPL2) +
+                  powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                  9.869604401089358 * powr<2>(T)) *
+                 powr<-1>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 -
+                          complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                          powr<2>(DiFfRGREPL1) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                          9.869604401089358 * powr<2>(T))) *
+            powr<-3>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 +
+                     complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                     powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                     9.869604401089358 * powr<2>(T)) +
+        0.0030864197530864196 * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * (DiFfRGREPL5 + q) *
+            (-3. * lambda1 *
+                 ((-495. * lambda1 - 64. * lambda10 + 426. * lambda2 + 128. * lambda8) * powr<2>(DiFfRGREPL2) +
+                  (315. * lambda1 - 64. * lambda10 - 30. * lambda2) *
+                      (-2. * DiFfRGREPL5 * q - 6.283185307179586 * q0 * T -
+                       complex<double>(0., 2.) * muq * (q0 + 3.141592653589793 * T) - 1. * powr<2>(DiFfRGREPL5) +
+                       powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0) - 9.869604401089358 * powr<2>(T))) +
+             8. *
+                 ((8. * lambda10 * (5. * lambda3 - 6. * lambda7) +
+                   15. * lambda9 *
+                       (27. * lambda1 - 21. * lambda2 + 16. * lambda3 - 12. * lambda7 - 8. * lambda8 + 72. * lambda9)) *
+                      powr<2>(DiFfRGREPL2) +
+                  (8. * lambda10 * (5. * lambda3 - 6. * lambda7) +
+                   15. * (9. * lambda1 - 21. * lambda2 + 16. * lambda3 - 12. * lambda7 - 8. * lambda8) * lambda9) *
+                      (-2. * DiFfRGREPL5 * q - 6.283185307179586 * q0 * T -
+                       complex<double>(0., 2.) * muq * (q0 + 3.141592653589793 * T) - 1. * powr<2>(DiFfRGREPL5) +
+                       powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0) - 9.869604401089358 * powr<2>(T))) -
+             3. * lambda1 *
+                 ((-351. * lambda1 - 64. * lambda10 +
+                   6. * (5. * lambda2 + 34. * lambda5 + 60. * lambda7 + 40. * lambda9)) *
+                      powr<2>(DiFfRGREPL2) +
+                  (15. * lambda1 - 64. * lambda10 -
+                   6. * (5. * lambda2 + 6. * lambda5 + 60. * lambda7 + 80. * lambda9)) *
+                      (-2. * DiFfRGREPL5 * q - 6.283185307179586 * q0 * T -
+                       complex<double>(0., 2.) * muq * (q0 + 3.141592653589793 * T) - 1. * powr<2>(DiFfRGREPL5) +
+                       powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0) - 9.869604401089358 * powr<2>(T))) +
+             18. *
+                 (2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 +
+                  complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T + powr<2>(DiFfRGREPL2) +
+                  powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                  9.869604401089358 * powr<2>(T)) *
+                 (DiFfRGREPL1 * DiFfRGREPL2 * (7. * powr<2>(lambda1) + 384. * powr<2>(lambda4)) +
+                  12. * lambda1 * lambda4 *
+                      (2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 -
+                       complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T -
+                       1. * powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) + 3. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                       9.869604401089358 * powr<2>(T))) *
+                 powr<-1>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 -
+                          complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                          powr<2>(DiFfRGREPL1) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                          9.869604401089358 * powr<2>(T))) *
+            powr<-3>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 +
+                     complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                     powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                     9.869604401089358 * powr<2>(T)) +
+        0.006172839506172839 * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * (DiFfRGREPL5 + q) *
+            (-8. *
+                 (-4. * lambda10 * (6. * lambda2 - 10. * lambda3 + 6. * lambda7 - 1. * lambda8) -
+                  21. * (21. * lambda2 - 8. * lambda3 + 8. * lambda8) * lambda9 +
+                  lambda1 * (48. * lambda3 + 567. * lambda9)) *
+                 powr<2>(DiFfRGREPL2) +
+             powr<2>(DiFfRGREPL2) *
+                 (-32. * lambda10 * (12. * lambda10 + lambda8) +
+                  6. * lambda1 * (-16. * lambda10 + 93. * lambda2 + 30. * lambda5 + 252. * lambda7 + 32. * lambda8) -
+                  585. * powr<2>(lambda1)) -
+             12. * ((3. * lambda1 * (5. * lambda5 - 9. * lambda7) + 8. * (81. * lambda2 - 16. * lambda3) * lambda7) *
+                        powr<2>(DiFfRGREPL2) +
+                    15. * (lambda1 * lambda5 + 28. * lambda2 * lambda7) *
+                        (-2. * DiFfRGREPL5 * q - 6.283185307179586 * q0 * T -
+                         complex<double>(0., 2.) * muq * (q0 + 3.141592653589793 * T) - 1. * powr<2>(DiFfRGREPL5) +
+                         powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0) - 9.869604401089358 * powr<2>(T))) +
+             8. *
+                 (4. * lambda10 * (6. * lambda2 - 10. * lambda3 + 6. * lambda7 - 1. * lambda8) -
+                  21. * (9. * lambda1 - 21. * lambda2 + 8. * lambda3 - 8. * lambda8) * lambda9) *
+                 (-2. * DiFfRGREPL5 * q - 6.283185307179586 * q0 * T -
+                  complex<double>(0., 2.) * muq * (q0 + 3.141592653589793 * T) - 1. * powr<2>(DiFfRGREPL5) +
+                  powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0) - 9.869604401089358 * powr<2>(T)) -
+             2. *
+                 (lambda1 * (48. * lambda10 + 63. * lambda2 - 90. * lambda5 + 756. * lambda7) +
+                  16. * lambda10 * lambda8 + 63. * powr<2>(lambda1)) *
+                 (-2. * DiFfRGREPL5 * q - 6.283185307179586 * q0 * T -
+                  complex<double>(0., 2.) * muq * (q0 + 3.141592653589793 * T) - 1. * powr<2>(DiFfRGREPL5) +
+                  powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0) - 9.869604401089358 * powr<2>(T)) +
+             18. *
+                 (2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 +
+                  complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T + powr<2>(DiFfRGREPL2) +
+                  powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                  9.869604401089358 * powr<2>(T)) *
+                 (DiFfRGREPL1 * DiFfRGREPL2 * (64. * lambda4 * lambda6 + powr<2>(lambda1)) +
+                  18. * lambda1 * lambda4 *
+                      (2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 -
+                       complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T -
+                       1. * powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) + 3. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                       9.869604401089358 * powr<2>(T))) *
+                 powr<-1>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 -
+                          complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                          powr<2>(DiFfRGREPL1) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                          9.869604401089358 * powr<2>(T))) *
+            powr<-3>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 +
+                     complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                     powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                     9.869604401089358 * powr<2>(T)) +
+        0.006172839506172839 * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * (DiFfRGREPL5 + q) *
+            (-9. * powr<2>(DiFfRGREPL2) *
+                 (-56. * lambda1 * (lambda2 - 4. * lambda3) + 467. * powr<2>(lambda1) +
+                  12. * (-16. * lambda2 * lambda3 + 67. * powr<2>(lambda2) + 8. * powr<2>(lambda3))) +
+             16. * powr<2>(DiFfRGREPL2) *
+                 (252. * lambda1 * lambda8 - 54. * lambda2 * lambda8 + 34. * lambda3 * lambda8 +
+                  288. * lambda7 * lambda8 + 63. * lambda7 * lambda9 + 84. * lambda8 * lambda9 -
+                  108. * powr<2>(lambda8)) -
+             42. * lambda1 * (33. * lambda1 - 6. * lambda2 + 16. * lambda3) *
+                 (-2. * DiFfRGREPL5 * q - 6.283185307179586 * q0 * T -
+                  complex<double>(0., 2.) * muq * (q0 + 3.141592653589793 * T) - 1. * powr<2>(DiFfRGREPL5) +
+                  powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0) - 9.869604401089358 * powr<2>(T)) +
+             336. *
+                 (4. * lambda1 * lambda8 + 2. * lambda2 * lambda8 + 3. * lambda7 * lambda9 + 4. * lambda8 * lambda9) *
+                 (-2. * DiFfRGREPL5 * q - 6.283185307179586 * q0 * T -
+                  complex<double>(0., 2.) * muq * (q0 + 3.141592653589793 * T) - 1. * powr<2>(DiFfRGREPL5) +
+                  powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0) - 9.869604401089358 * powr<2>(T)) -
+             9. * lambda1 *
+                 (2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 +
+                  complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T + powr<2>(DiFfRGREPL2) +
+                  powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                  9.869604401089358 * powr<2>(T)) *
+                 (DiFfRGREPL1 * DiFfRGREPL2 * (-7. * lambda1 + 36. * lambda7) +
+                  4. * (6. * lambda4 + lambda6) *
+                      (2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 -
+                       complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T -
+                       1. * powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) + 3. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                       9.869604401089358 * powr<2>(T))) *
+                 powr<-1>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 -
+                          complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                          powr<2>(DiFfRGREPL1) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                          9.869604401089358 * powr<2>(T))) *
+            powr<-3>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 +
+                     complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                     powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                     9.869604401089358 * powr<2>(T)) +
+        0.2222222222222222 * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * (DiFfRGREPL5 + q) *
+            (9. * DiFfRGREPL1 * DiFfRGREPL2 * lambda7 * (lambda1 + 4. * lambda7) +
+             8. * (lambda6 * lambda7 + lambda4 * lambda8) *
+                 (2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 -
+                  complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T -
+                  1. * powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) + 3. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                  9.869604401089358 * powr<2>(T))) *
+            powr<-1>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 -
+                     complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                     powr<2>(DiFfRGREPL1) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                     9.869604401089358 * powr<2>(T)) *
+            powr<-2>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 +
+                     complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                     powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                     9.869604401089358 * powr<2>(T)) +
+        0.009259259259259259 * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * (DiFfRGREPL5 + q) *
+            (-3. * lambda1 *
+                 (DiFfRGREPL1 * DiFfRGREPL2 * (23. * lambda1 + 36. * lambda7) +
+                  16. * (3. * lambda4 + lambda6) *
+                      (2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 -
+                       complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T -
+                       1. * powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) + 3. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                       9.869604401089358 * powr<2>(T))) +
+             64. * lambda8 *
+                 (3. * DiFfRGREPL1 * DiFfRGREPL2 * lambda8 +
+                  (3. * lambda4 + 2. * lambda6) *
+                      (2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 -
+                       complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T -
+                       1. * powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) + 3. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                       9.869604401089358 * powr<2>(T))) +
+             32. * (8. * DiFfRGREPL1 * DiFfRGREPL2 * powr<2>(lambda6) +
+                    3. * (lambda1 * lambda6 + 2. * (6. * lambda4 + lambda6) * lambda7) *
+                        (2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 -
+                         complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T -
+                         1. * powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) + 3. * powr<2>(muq) + powr<2>(q) +
+                         powr<2>(q0) + 9.869604401089358 * powr<2>(T)))) *
+            powr<-1>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 -
+                     complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                     powr<2>(DiFfRGREPL1) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                     9.869604401089358 * powr<2>(T)) *
+            powr<-2>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 +
+                     complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                     powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                     9.869604401089358 * powr<2>(T)) +
+        0.012345679012345678 * (DiFfRGREPL5 + q) *
+            (2. * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) *
+                 ((27. * lambda2 * (21. * lambda7 + 4. * lambda8) -
+                   2. * (18. * (5. * lambda1 + 8. * (lambda7 - 2. * lambda8)) * lambda8 +
+                         9. * lambda5 * (3. * lambda7 + 4. * lambda8) +
+                         8. * lambda3 * (12. * lambda7 + 13. * lambda8))) *
+                      powr<2>(DiFfRGREPL2) +
+                  3. *
+                      (75. * lambda2 * lambda7 - 18. * lambda5 * lambda7 - 20. * lambda1 * lambda8 -
+                       20. * lambda2 * lambda8 - 24. * lambda5 * lambda8) *
+                      (-2. * DiFfRGREPL5 * q - 6.283185307179586 * q0 * T -
+                       complex<double>(0., 2.) * muq * (q0 + 3.141592653589793 * T) - 1. * powr<2>(DiFfRGREPL5) +
+                       powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0) - 9.869604401089358 * powr<2>(T))) *
+                 powr<-3>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 +
+                          complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                          powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                          9.869604401089358 * powr<2>(T)) -
+             3. * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * lambda1 *
+                 ((387. * lambda1 + 16. * lambda10 - 93. * lambda2 + 56. * lambda3 - 32. * lambda8 + 84. * lambda9) *
+                      powr<2>(DiFfRGREPL2) -
+                  1. * (231. * lambda1 - 16. * lambda10 - 21. * lambda2 + 56. * lambda3 - 84. * lambda9) *
+                      (-2. * DiFfRGREPL5 * q - 6.283185307179586 * q0 * T -
+                       complex<double>(0., 2.) * muq * (q0 + 3.141592653589793 * T) - 1. * powr<2>(DiFfRGREPL5) +
+                       powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0) - 9.869604401089358 * powr<2>(T))) *
+                 powr<-3>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 +
+                          complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                          powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                          9.869604401089358 * powr<2>(T)) -
+             3. * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) *
+                 (powr<2>(DiFfRGREPL2) *
+                      (64. * lambda1 * lambda3 + 168. * lambda9 * (-1. * lambda7 + 12. * lambda9) -
+                       6. * lambda1 * (19. * lambda5 + 43. * lambda7 + 42. * lambda9) + 21. * powr<2>(lambda1)) -
+                  3. *
+                      (56. * lambda7 * lambda9 - 6. * lambda1 * (3. * lambda5 + 14. * (lambda7 + lambda9)) +
+                       7. * powr<2>(lambda1)) *
+                      (-2. * DiFfRGREPL5 * q - 6.283185307179586 * q0 * T -
+                       complex<double>(0., 2.) * muq * (q0 + 3.141592653589793 * T) - 1. * powr<2>(DiFfRGREPL5) +
+                       powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0) - 9.869604401089358 * powr<2>(T))) *
+                 powr<-3>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 +
+                          complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                          powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                          9.869604401089358 * powr<2>(T)) +
+             63. * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * lambda1 * lambda2 *
+                 powr<-2>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 +
+                          complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                          powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                          9.869604401089358 * powr<2>(T)) -
+             168. * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * lambda1 * lambda3 *
+                 powr<-2>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 +
+                          complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                          powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                          9.869604401089358 * powr<2>(T)) +
+             63. * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * lambda1 * (lambda2 + 4. * (lambda5 + 3. * lambda9)) *
+                 powr<-2>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 +
+                          complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                          powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                          9.869604401089358 * powr<2>(T)) +
+             6. * (DiFfRGREPL6 - 1. * DiFfRGREPL5 * etaQ) *
+                 ((-3. * lambda1 * lambda7 - 16. * lambda10 * lambda7 + 42. * lambda1 * lambda9) *
+                      powr<2>(DiFfRGREPL2) -
+                  2. * (8. * lambda10 * lambda7 - 21. * lambda1 * lambda9) *
+                      (-2. * DiFfRGREPL5 * q - 6.283185307179586 * q0 * T -
+                       complex<double>(0., 2.) * muq * (q0 + 3.141592653589793 * T) - 1. * powr<2>(DiFfRGREPL5) +
+                       powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0) - 9.869604401089358 * powr<2>(T))) *
+                 powr<-3>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                          powr<2>(complex<double>(0., 1.) * muq + q0 + 3.141592653589793 * T))) +
+        0.027777777777777776 * (DiFfRGREPL5 + q) *
+            (8. * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) *
+                 ((14. * lambda1 * lambda2 + 48. * lambda2 * lambda3 + 37. * lambda1 * lambda5 +
+                   56. * lambda2 * lambda5) *
+                      powr<2>(DiFfRGREPL2) +
+                  lambda1 * (7. * lambda2 + 9. * lambda5) *
+                      (-2. * DiFfRGREPL5 * q - 6.283185307179586 * q0 * T -
+                       complex<double>(0., 2.) * muq * (q0 + 3.141592653589793 * T) - 1. * powr<2>(DiFfRGREPL5) +
+                       powr<2>(muq) - 1. * powr<2>(q) - 1. * powr<2>(q0) - 9.869604401089358 * powr<2>(T))) *
+                 powr<-3>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 +
+                          complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                          powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                          9.869604401089358 * powr<2>(T)) -
+             1. * (-1. * DiFfRGREPL6 + DiFfRGREPL5 * etaQ) * lambda1 *
+                 (9. * DiFfRGREPL1 * DiFfRGREPL2 * (lambda1 + 4. * lambda7) +
+                  8. * lambda6 *
+                      (2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 -
+                       complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T -
+                       1. * powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) + 3. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                       9.869604401089358 * powr<2>(T))) *
+                 powr<-1>(2. * DiFfRGREPL5 * q - complex<double>(0., 2.) * muq * q0 -
+                          complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                          powr<2>(DiFfRGREPL1) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                          9.869604401089358 * powr<2>(T)) *
+                 powr<-2>(2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * q0 +
+                          complex<double>(0., 6.283185307179586) * muq * T + 6.283185307179586 * q0 * T +
+                          powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) + powr<2>(q0) +
+                          9.869604401089358 * powr<2>(T)) +
+             16. * (DiFfRGREPL6 - 1. * DiFfRGREPL5 * etaQ) * lambda5 *
+                 (-28. * lambda2 * powr<2>(DiFfRGREPL2) + 40. * lambda5 * powr<2>(DiFfRGREPL2) +
+                  7. * lambda1 *
+                      (2. * DiFfRGREPL5 * q + complex<double>(0., 2.) * muq * (q0 + 3.141592653589793 * T) -
+                       3. * powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5) - 1. * powr<2>(muq) + powr<2>(q) +
+                       powr<2>(q0 + 3.141592653589793 * T))) *
+                 powr<-3>(powr<2>(DiFfRGREPL2) + powr<2>(DiFfRGREPL5 + q) +
+                          powr<2>(complex<double>(0., 1.) * muq + q0 + 3.141592653589793 * T))));
+  }
+
+  template <typename T1, typename T2, typename T3, typename T4, typename T5, typename T6, typename T7, typename T8,
+            typename T9, typename T10, typename T11, typename T12, typename T13, typename T14, typename T15,
+            typename T16, typename T17>
+  static __forceinline__ __host__ __device__ auto
+  constant(const double k, const T1 p0f, const T2 T, const T3 muq, const T4 gAqbq1, const T5 etaA, const T6 etaQ,
+           const T7 &MQ, const T8 lambda1, const T9 lambda2, const T10 lambda3, const T11 lambda4, const T12 lambda5,
+           const T13 lambda6, const T14 lambda7, const T15 lambda8, const T16 lambda9, const T17 lambda10)
+  {
+    // flow
+    return 2. * etaQ * lambda7;
+  }
+
+private:
+  static __forceinline__ __device__ __host__ auto RB(const auto k2, const auto p2) { return REG::RB(k2, p2); }
+  static __forceinline__ __device__ __host__ auto RF(const auto k2, const auto p2) { return REG::RF(k2, p2); }
+
+  static __forceinline__ __device__ __host__ auto RBdot(const auto k2, const auto p2) { return REG::RBdot(k2, p2); }
+  static __forceinline__ __device__ __host__ auto RFdot(const auto k2, const auto p2) { return REG::RFdot(k2, p2); }
+
+  static __forceinline__ __device__ __host__ auto dq2RB(const auto k2, const auto p2) { return REG::dq2RB(k2, p2); }
+  static __forceinline__ __device__ __host__ auto dq2RF(const auto k2, const auto p2) { return REG::dq2RF(k2, p2); }
+};

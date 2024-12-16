@@ -1,0 +1,978 @@
+template <typename REG> class ZA3_kernel
+{
+public:
+  template <typename T1, typename T2, typename T3, typename T4, typename T5, typename T6, typename T7, typename T8, typename T9, typename T10, typename T11, typename T12>
+  static __forceinline__ __host__ __device__ auto kernel(const double q, const double cos1, const double cos2, const double k, const T1 S0, const T2 S1, const T3 SPhi,
+                                                         const T4 &ZA3, const T5 &ZAcbc, const T6 &ZA4SP, const T7 &ZA4tadpole, const T8 &dtZc, const T9 &Zc, const T10 &dtZA,
+                                                         const T11 &ZA, const T12 m2A)
+  {
+    const double cosp1q = cos1;
+    const double cosp2q = 0.7071067811865475 * powr<-1>(sqrt(-1. * (-1. + powr<2>(S1) * powr<2>(sin(SPhi))) * (2. + 1.7320508075688772 * S1 * cos(SPhi) + S1 * sin(SPhi)))) *
+                          (-1. * cos1 * (sqrt(1. + S1 * sin(SPhi))) - 1.7320508075688772 * cos2 * (sqrt((-1. + powr<2>(cos1)) * (-1. + powr<2>(S1)) * (1. + S1 * sin(SPhi)))) +
+                           cos1 * S1 * (sqrt(1. + S1 * sin(SPhi))) * (-1.7320508075688772 * cos(SPhi) + sin(SPhi)));
+    const double cosp1p2 = 0.7071067811865475 * powr<-1>(sqrt(-1. * (-1. + S1 * sin(SPhi)) * (2. + 1.7320508075688772 * S1 * cos(SPhi) + S1 * sin(SPhi)))) *
+                           (-1. - 1.7320508075688772 * S1 * cos(SPhi) + S1 * sin(SPhi));
+    const double p1 = S0 * (sqrt(1. - 1. * S1 * sin(SPhi)));
+    const double p2 = S0 * (sqrt(1. + 0.5 * S1 * (1.7320508075688772 * cos(SPhi) + sin(SPhi))));
+    // optimization definitions
+    const double DiFfRGREPL1 = dtZA(pow(1. + powr<6>(k), 0.16666666666666666));
+    const double DiFfRGREPL2 = dtZc(k);
+    const double DiFfRGREPL3 = RB(powr<2>(k), powr<2>(q));
+    const double DiFfRGREPL4 = RB(powr<2>(k), -2. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q));
+    const double DiFfRGREPL5 = RB(powr<2>(k), 2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q));
+    const double DiFfRGREPL6 = RB(powr<2>(k), 2. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q));
+    const double DiFfRGREPL7 = RB(powr<2>(k), 2. * cosp1p2 * p1 * p2 + 2. * cosp1q * p1 * q + 2. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q));
+    const double DiFfRGREPL8 = RB(powr<2>(k), -2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q));
+    const double DiFfRGREPL9 = RB(powr<2>(k), 2. * cosp1p2 * p1 * p2 - 2. * cosp1q * p1 * q - 2. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q));
+    const double DiFfRGREPL10 = RBdot(powr<2>(k), powr<2>(q));
+    const double DiFfRGREPL11 = ZA(pow(1. + powr<6>(k), 0.16666666666666666));
+    const double DiFfRGREPL12 = ZA(1.02 * pow(1. + powr<6>(k), 0.16666666666666666));
+    const double DiFfRGREPL13 = ZA(q);
+    const double DiFfRGREPL14 = ZA((sqrt(2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q))));
+    const double DiFfRGREPL15 = ZA((sqrt(2. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q))));
+    const double DiFfRGREPL16 = ZA((sqrt(2. * cosp1p2 * p1 * p2 + 2. * cosp1q * p1 * q + 2. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))));
+    const double DiFfRGREPL17 = ZA3(0.816496580927726 * (sqrt(cosp2q * p2 * q + powr<2>(p2) + powr<2>(q))),
+                                    (sqrt(1. + 3. * (-1. + powr<2>(cosp2q)) * powr<2>(p2) * powr<2>(q) * powr<-2>(cosp2q * p2 * q + powr<2>(p2) + powr<2>(q)))),
+                                    atan2(1.7320508075688772 * q * (2. * cosp2q * p2 + q) * powr<-1>(cosp2q * p2 * q + powr<2>(p2) + powr<2>(q)),
+                                          -1. + 3. * p2 * (p2 + cosp2q * q) * powr<-1>(cosp2q * p2 * q + powr<2>(p2) + powr<2>(q))));
+    const double DiFfRGREPL18 =
+        ZA3(0.816496580927726 * (sqrt(2. * cosp1p2 * p1 * p2 + cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))),
+            0.5 * (sqrt(powr<-2>(2. * cosp1p2 * p1 * p2 + cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)) *
+                        (3. * powr<2>(2. * cosp1p2 * p1 * p2 + powr<2>(p1) + powr<2>(p2) - 1. * powr<2>(q)) +
+                         powr<2>(2. * cosp1p2 * p1 * p2 + 4. * cosp1q * p1 * q + 4. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))))),
+            atan2(-1. * (2. * cosp1p2 * p1 * p2 + powr<2>(p1) + powr<2>(p2) - 1. * powr<2>(q)) *
+                      (2. * cosp2q * p2 * q + 2. * p1 * (cosp1p2 * p2 + cosp1q * q) + powr<2>(p1) + powr<2>(p2) + powr<2>(q)) *
+                      powr<-1>(2. * cosp1p2 * p1 * p2 + cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)) *
+                      powr<-1>(sqrt((2. * cosp1p2 * p1 * p2 - 2. * (cosp1q * p1 + cosp2q * p2) * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)) *
+                                    (2. * cosp2q * p2 * q + 2. * p1 * (cosp1p2 * p2 + cosp1q * q) + powr<2>(p1) + powr<2>(p2) + powr<2>(q)))) *
+                      (sqrt(3. - 12. * (cosp1q * p1 + cosp2q * p2) * q *
+                                     powr<-1>(2. * cosp2q * p2 * q + 2. * p1 * (cosp1p2 * p2 + cosp1q * q) + powr<2>(p1) + powr<2>(p2) + powr<2>(q)))),
+                  -1. - 3. * (cosp1q * p1 + cosp2q * p2) * q * powr<-1>(2. * cosp1p2 * p1 * p2 + cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))));
+    const double DiFfRGREPL19 =
+        ZAcbc(0.816496580927726 * (sqrt(-1. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q))),
+              (sqrt((-2. * cosp2q * q * powr<3>(p2) + powr<4>(p2) + (-1. + 4. * powr<2>(cosp2q)) * powr<2>(p2) * powr<2>(q) - 2. * cosp2q * p2 * powr<3>(q) + powr<4>(q)) *
+                    powr<-2>(-1. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q)))),
+              atan2(-1.7320508075688772 * p2 * (p2 - 2. * cosp2q * q) * powr<-1>(-1. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q)),
+                    2. - 3. * powr<2>(p2) * powr<-1>(-1. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q))));
+    const double DiFfRGREPL20 = ZAcbc(0.816496580927726 * (sqrt(2. * cosp1p2 * p1 * p2 - 1. * (cosp1q * p1 + cosp2q * p2) * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))),
+                                      0.5 * (sqrt((3. * powr<2>(2. * cosp1p2 * p1 * p2 - 2. * (cosp1q * p1 + cosp2q * p2) * q + powr<2>(p1) + powr<2>(p2)) +
+                                                   powr<2>(2. * cosp1p2 * p1 * p2 + 2. * cosp1q * p1 * q + 2. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) - 2. * powr<2>(q))) *
+                                                  powr<-2>(2. * cosp1p2 * p1 * p2 - 1. * (cosp1q * p1 + cosp2q * p2) * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)))),
+                                      atan2(1.7320508075688772 * (2. * cosp1p2 * p1 * p2 + powr<2>(p1) + powr<2>(p2)) *
+                                                (2. * cosp1p2 * p1 * p2 - 2. * (cosp1q * p1 + cosp2q * p2) * q + powr<2>(p1) + powr<2>(p2)) *
+                                                powr<-1>(2. * cosp1p2 * p1 * p2 - 1. * (cosp1q * p1 + cosp2q * p2) * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)) *
+                                                powr<-1>(sqrt((2. * cosp1p2 * p1 * p2 + powr<2>(p1) + powr<2>(p2)) *
+                                                              (2. * cosp1p2 * p1 * p2 - 4. * (cosp1q * p1 + cosp2q * p2) * q + powr<2>(p1) + powr<2>(p2) + 4. * powr<2>(q)))) *
+                                                (sqrt((2. * cosp1p2 * p1 * p2 - 4. * (cosp1q * p1 + cosp2q * p2) * q + powr<2>(p1) + powr<2>(p2) + 4. * powr<2>(q)) *
+                                                      powr<-1>(2. * cosp1p2 * p1 * p2 + powr<2>(p1) + powr<2>(p2)))),
+                                            2. - 3. * (2. * cosp1p2 * p1 * p2 + powr<2>(p1) + powr<2>(p2)) *
+                                                     powr<-1>(2. * cosp1p2 * p1 * p2 - 1. * (cosp1q * p1 + cosp2q * p2) * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))));
+    const double DiFfRGREPL21 = ZAcbc(0.816496580927726 * (sqrt(cosp2q * p2 * q + powr<2>(p2) + powr<2>(q))),
+                                      (sqrt(1. + 3. * (-1. + powr<2>(cosp2q)) * powr<2>(p2) * powr<2>(q) * powr<-2>(cosp2q * p2 * q + powr<2>(p2) + powr<2>(q)))),
+                                      atan2(1.7320508075688772 * p2 * (p2 + 2. * cosp2q * q) * powr<-1>(cosp2q * p2 * q + powr<2>(p2) + powr<2>(q)),
+                                            2. - 3. * powr<2>(p2) * powr<-1>(cosp2q * p2 * q + powr<2>(p2) + powr<2>(q))));
+    const double DiFfRGREPL22 = ZAcbc(
+        0.816496580927726 * (sqrt(2. * cosp1p2 * p1 * p2 + cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))),
+        0.5 * (sqrt((3. * powr<2>(2. * p1 * (cosp1p2 * p2 + cosp1q * q) + p2 * (p2 + 2. * cosp2q * q) + powr<2>(p1)) +
+                     powr<2>(2. * cosp1p2 * p1 * p2 - 2. * cosp1q * p1 * q - 2. * q * (cosp2q * p2 + q) + powr<2>(p1) + powr<2>(p2))) *
+                    powr<-2>(2. * cosp1p2 * p1 * p2 + cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)))),
+        atan2(-1.7320508075688772 * (2. * p1 * (cosp1p2 * p2 + cosp1q * q) + p2 * (p2 + 2. * cosp2q * q) + powr<2>(p1)) * (2. * cosp1p2 * p1 * p2 + powr<2>(p1) + powr<2>(p2)) *
+                  powr<-1>(2. * cosp1p2 * p1 * p2 + cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)) *
+                  powr<-1>(sqrt((2. * cosp1p2 * p1 * p2 + powr<2>(p1) + powr<2>(p2)) *
+                                (2. * cosp1p2 * p1 * p2 + 4. * cosp1q * p1 * q + 4. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + 4. * powr<2>(q)))) *
+                  (sqrt((2. * cosp1p2 * p1 * p2 + 4. * cosp1q * p1 * q + 4. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + 4. * powr<2>(q)) *
+                        powr<-1>(2. * cosp1p2 * p1 * p2 + powr<2>(p1) + powr<2>(p2)))),
+              2. - 3. * (2. * cosp1p2 * p1 * p2 + powr<2>(p1) + powr<2>(p2)) *
+                       powr<-1>(2. * cosp1p2 * p1 * p2 + cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))));
+    const double DiFfRGREPL23 = Zc(k);
+    const double DiFfRGREPL24 = Zc(1.02 * k);
+    const double DiFfRGREPL25 = Zc(q);
+    const double DiFfRGREPL26 = Zc((sqrt(-2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q))));
+    const double DiFfRGREPL27 = Zc((sqrt(2. * cosp1p2 * p1 * p2 - 2. * cosp1q * p1 * q - 2. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))));
+    const double DiFfRGREPL28 = Zc((sqrt(-2. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q))));
+    const double DiFfRGREPL29 = Zc((sqrt(2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q))));
+    const double DiFfRGREPL30 = Zc((sqrt(2. * cosp1p2 * p1 * p2 + 2. * cosp1q * p1 * q + 2. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))));
+    const double DiFfRGREPL31 = Zc((sqrt(2. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q))));
+
+    // flow
+    return 6. * DiFfRGREPL17 *
+               ((p1 - 1. * cosp1q * q) * (p2 + cosp2q * q) * powr<5>(cosp1p2) * powr<4>(p1) * powr<4>(p2) +
+                powr<4>(cosp1q) * powr<4>(p1) * powr<3>(q) *
+                    (6. * q * powr<2>(p1) + 9. * q * powr<2>(p2) + cosp2q * p2 * (6. * powr<2>(p1) + 5. * (powr<2>(p2) + 2. * powr<2>(q))) + 6. * powr<3>(q)) +
+                powr<4>(cosp1p2) * powr<3>(p1) * powr<3>(p2) *
+                    (6. * (p2 + cosp2q * q) * powr<3>(p1) - 1. * cosp1q * powr<2>(p1) * (10. * p2 * q + p2 * q * powr<2>(cosp2q) + cosp2q * (powr<2>(p2) + 10. * powr<2>(q))) -
+                     1. * cosp1q * q * (10. * cosp2q * q * powr<2>(p2) + 6. * powr<3>(p2) + 5. * p2 * powr<2>(q) + cosp2q * powr<3>(q)) +
+                     p1 * (cosp2q * q * (10. + powr<2>(cosp1q)) * powr<2>(p2) + 6. * powr<3>(p2) + p2 * (9. + powr<2>(cosp1q) * powr<2>(cosp2q)) * powr<2>(q) +
+                           5. * cosp2q * powr<3>(q))) -
+                1. * (cosp2q * p2 + q) * powr<5>(cosp1q) * powr<5>(p1) * powr<4>(q) +
+                powr<3>(cosp1q) * powr<3>(p1) * powr<2>(q) *
+                    (2. * powr<3>(cosp2q) * powr<3>(p2) * powr<2>(q) + q * powr<2>(cosp2q) * powr<2>(p2) * (7. * powr<2>(p1) + 16. * powr<2>(p2) + 11. * powr<2>(q)) +
+                     cosp2q * (-3. * p2 * powr<4>(p1) + 10. * powr<5>(p2) + 19. * powr<3>(p2) * powr<2>(q) + powr<2>(p1) * (3. * powr<3>(p2) - 5. * p2 * powr<2>(q))) -
+                     1. * q * (3. * powr<4>(p1) - 9. * powr<4>(p2) + 2. * powr<2>(p2) * powr<2>(q) + powr<2>(p1) * (2. * powr<2>(p2) + 7. * powr<2>(q)) + 3. * powr<4>(q))) +
+                (-1. + powr<2>(cosp2q)) * powr<2>(p2) * powr<2>(q) *
+                    (-3. * powr<6>(p1) - 1. * powr<4>(p1) * (9. * cosp2q * p2 * q + 10. * powr<2>(p2) + 10. * powr<2>(q)) +
+                     powr<2>(p1) * (2. * cosp2q * q * powr<3>(p2) - 3. * powr<4>(p2) + (-10. + 9. * powr<2>(cosp2q)) * powr<2>(p2) * powr<2>(q) + 2. * cosp2q * p2 * powr<3>(q) -
+                                    3. * powr<4>(q)) +
+                     cosp2q * p2 * q *
+                         (6. * cosp2q * q * powr<3>(p2) + 3. * powr<4>(p2) + (8. + powr<2>(cosp2q)) * powr<2>(p2) * powr<2>(q) + 6. * cosp2q * p2 * powr<3>(q) + 3. * powr<4>(q))) +
+                powr<3>(cosp1p2) * powr<2>(p1) * powr<2>(p2) *
+                    (-6. * cosp1q * cosp2q * p2 * (p2 + cosp2q * q) * powr<4>(p1) + 3. * (p2 + cosp2q * q) * powr<5>(p1) +
+                     powr<3>(p1) * (5. * cosp2q * q * (1. + 2. * powr<2>(cosp1q)) * powr<2>(p2) + 7. * powr<3>(p2) +
+                                    p2 * (2. - 7. * powr<2>(cosp2q) + powr<2>(cosp1q) * (-11. + 12. * powr<2>(cosp2q))) * powr<2>(q) -
+                                    3. * cosp2q * (1. + 3. * powr<2>(cosp1q)) * powr<3>(q)) +
+                     cosp1q * powr<2>(p1) *
+                         (-5. * q * powr<3>(p2) + p2 * (19. + 2. * powr<2>(cosp1q)) * powr<3>(q) +
+                          powr<2>(cosp2q) * (-10. * q * powr<3>(p2) + p2 * (19. - 2. * powr<2>(cosp1q)) * powr<3>(q)) +
+                          cosp2q * (-6. * powr<4>(p2) + 8. * powr<2>(p2) * powr<2>(q) + 21. * powr<4>(q))) +
+                     cosp1q * q *
+                         (-3. * powr<5>(p2) + 3. * (1. + 3. * powr<2>(cosp2q)) * powr<3>(p2) * powr<2>(q) + 21. * cosp2q * powr<2>(p2) * powr<3>(q) +
+                          5. * p2 * (2. + powr<2>(cosp2q)) * powr<4>(q) + 3. * cosp2q * powr<5>(q)) +
+                     p1 * (6. * cosp2q * q * powr<2>(cosp1q) * powr<4>(p2) + 3. * powr<5>(p2) +
+                           (2. - 11. * powr<2>(cosp2q) + powr<2>(cosp1q) * (-7. + 12. * powr<2>(cosp2q))) * powr<3>(p2) * powr<2>(q) +
+                           cosp2q * (-19. - 2. * powr<2>(cosp2q) + powr<2>(cosp1q) * (-19. + 2. * powr<2>(cosp2q))) * powr<2>(p2) * powr<3>(q) -
+                           1. * p2 * (9. + 16. * powr<2>(cosp2q) + powr<2>(cosp1q) * (16. + 5. * powr<2>(cosp2q))) * powr<4>(q) -
+                           5. * cosp2q * (2. + powr<2>(cosp1q)) * powr<5>(q))) -
+                1. * q * powr<2>(cosp1q) * powr<2>(p1) *
+                    (powr<3>(cosp2q) * powr<3>(p2) * powr<2>(q) * (16. * powr<2>(p1) + 7. * powr<2>(p2) + 11. * powr<2>(q)) +
+                     q * powr<2>(cosp2q) * powr<2>(p2) *
+                         (15. * powr<4>(p1) + 15. * powr<4>(p2) + 41. * powr<2>(p2) * powr<2>(q) + powr<2>(p1) * (46. * powr<2>(p2) + 41. * powr<2>(q)) + 12. * powr<4>(q)) +
+                     q * (3. * powr<6>(p2) + 10. * powr<4>(p2) * powr<2>(q) + 3. * powr<4>(p1) * (powr<2>(p2) + 2. * powr<2>(q)) + 3. * powr<2>(p2) * powr<4>(q) +
+                          powr<2>(p1) * (10. * powr<4>(p2) + 19. * powr<2>(p2) * powr<2>(q) + 6. * powr<4>(q))) +
+                     cosp2q * p2 *
+                         (6. * powr<6>(p2) + 32. * powr<4>(p2) * powr<2>(q) + 3. * powr<4>(p1) * (3. * powr<2>(p2) + 5. * powr<2>(q)) + 25. * powr<2>(p2) * powr<4>(q) +
+                          powr<2>(p1) * (21. * powr<4>(p2) + 60. * powr<2>(p2) * powr<2>(q) + 25. * powr<4>(q)) + 3. * powr<6>(q))) +
+                cosp1q * p1 *
+                    (powr<3>(cosp2q) * powr<3>(p2) * powr<2>(q) *
+                         (10. * powr<4>(p1) - 3. * powr<4>(p2) - 5. * powr<2>(p2) * powr<2>(q) + powr<2>(p1) * (3. * powr<2>(p2) + 19. * powr<2>(q))) -
+                     1. * powr<4>(cosp2q) * powr<4>(p2) * (5. * powr<2>(p1) + 6. * powr<2>(p2) + 10. * powr<2>(q)) * powr<3>(q) - 1. * powr<5>(cosp2q) * powr<5>(p2) * powr<4>(q) +
+                     powr<2>(p1) * powr<3>(q) *
+                         (3. * powr<4>(p1) - 9. * powr<4>(p2) + 2. * powr<2>(p2) * powr<2>(q) + 2. * powr<2>(p1) * (powr<2>(p2) + 4. * powr<2>(q)) + 3. * powr<4>(q)) +
+                     q * powr<2>(cosp2q) * powr<2>(p2) *
+                         (6. * powr<6>(p1) + 15. * powr<4>(p2) * powr<2>(q) + powr<4>(p1) * (21. * powr<2>(p2) + 32. * powr<2>(q)) + 25. * powr<2>(p2) * powr<4>(q) +
+                          powr<2>(p1) * (9. * powr<4>(p2) + 60. * powr<2>(p2) * powr<2>(q) + 25. * powr<4>(q)) + 3. * powr<6>(q)) +
+                     cosp2q * p2 *
+                         (6. * powr<6>(p2) * powr<2>(q) + 3. * powr<6>(p1) * (powr<2>(p2) + 2. * powr<2>(q)) + 21. * powr<4>(p2) * powr<4>(q) +
+                          powr<4>(p1) * (8. * powr<4>(p2) + 24. * powr<2>(p2) * powr<2>(q) + 21. * powr<4>(q)) + 9. * powr<2>(p2) * powr<6>(q) +
+                          3. * powr<2>(p1) * (powr<6>(p2) + 8. * powr<4>(p2) * powr<2>(q) + 9. * powr<2>(p2) * powr<4>(q) + 3. * powr<6>(q)))) -
+                1. * p1 * p2 * powr<2>(cosp1p2) *
+                    (3. * powr<5>(p1) * (5. * cosp2q * q * powr<2>(p2) + 2. * powr<3>(p2) + p2 * (1. + 5. * powr<2>(cosp2q)) * powr<2>(q) + 3. * cosp2q * powr<3>(q)) -
+                     1. * cosp2q * (cosp2q * p2 + q) * powr<4>(cosp1q) * powr<3>(p1) * powr<4>(q) +
+                     powr<3>(cosp1q) * powr<2>(p1) * powr<2>(q) *
+                         (2. * powr<3>(cosp2q) * powr<2>(p2) * powr<2>(q) - 1. * p2 * q * (11. * powr<2>(p1) + 16. * powr<2>(p2) + 7. * powr<2>(q)) +
+                          p2 * q * powr<2>(cosp2q) * (12. * powr<2>(p1) - 5. * powr<2>(p2) + 12. * powr<2>(q)) +
+                          cosp2q * (-5. * powr<4>(p2) - 19. * powr<2>(p2) * powr<2>(q) + powr<2>(p1) * (-9. * powr<2>(p2) + 10. * powr<2>(q)) + 6. * powr<4>(q))) +
+                     powr<3>(p1) *
+                         (25. * cosp2q * q * powr<4>(p2) + 6. * powr<5>(p2) + (19. + 41. * powr<2>(cosp2q)) * powr<3>(p2) * powr<2>(q) +
+                          4. * cosp2q * (15. + 4. * powr<2>(cosp2q)) * powr<2>(p2) * powr<3>(q) + 2. * p2 * (5. + 23. * powr<2>(cosp2q)) * powr<4>(q) + 21. * cosp2q * powr<5>(q)) +
+                     p1 * q *
+                         (3. * q * powr<5>(p2) + 10. * powr<3>(p2) * powr<3>(q) + powr<3>(cosp2q) * (11. * powr<4>(p2) * powr<2>(q) + 7. * powr<2>(p2) * powr<4>(q)) +
+                          3. * p2 * powr<5>(q) + powr<2>(cosp2q) * (12. * q * powr<5>(p2) + 41. * powr<3>(p2) * powr<3>(q) + 15. * p2 * powr<5>(q)) +
+                          cosp2q * (3. * powr<6>(p2) + 25. * powr<4>(p2) * powr<2>(q) + 32. * powr<2>(p2) * powr<4>(q) + 6. * powr<6>(q))) +
+                     cosp1q * (powr<3>(cosp2q) * powr<2>(p2) * powr<2>(q) *
+                                   (-5. * powr<4>(p1) + 10. * powr<2>(p2) * powr<2>(q) - 1. * powr<2>(p1) * (9. * powr<2>(p2) + 19. * powr<2>(q)) + 6. * powr<4>(q)) +
+                               powr<4>(cosp2q) * powr<3>(p2) * powr<5>(q) +
+                               cosp2q * (3. * powr<6>(p1) * (powr<2>(p2) - 1. * powr<2>(q)) + powr<4>(p1) * (7. * powr<4>(p2) - 61. * powr<2>(p2) * powr<2>(q) - 25. * powr<4>(q)) -
+                                         1. * powr<2>(p2) * powr<2>(q) * (3. * powr<4>(p2) + 25. * powr<2>(p2) * powr<2>(q) + 15. * powr<4>(q)) +
+                                         powr<2>(p1) * (3. * powr<6>(p2) - 61. * powr<4>(p2) * powr<2>(q) - 126. * powr<2>(p2) * powr<4>(q) - 15. * powr<6>(q))) +
+                               p2 * q * powr<2>(cosp2q) *
+                                   (3. * powr<6>(p1) + powr<4>(p1) * (5. * powr<2>(p2) - 39. * powr<2>(q)) + 5. * powr<2>(p2) * powr<4>(q) -
+                                    3. * powr<2>(p1) * (27. * powr<2>(p2) * powr<2>(q) + 13. * powr<4>(q)) + 3. * powr<6>(q)) -
+                               1. * p2 * q *
+                                   (3. * powr<6>(p1) + 9. * powr<4>(p2) * powr<2>(q) + 25. * powr<4>(p1) * (powr<2>(p2) + powr<2>(q)) + 21. * powr<2>(p2) * powr<4>(q) +
+                                    powr<2>(p1) * (15. * powr<4>(p2) + 60. * powr<2>(p2) * powr<2>(q) + 32. * powr<4>(q)) + 6. * powr<6>(q))) -
+                     1. * p1 * q * powr<2>(cosp1q) *
+                         (powr<3>(cosp2q) * powr<2>(p2) * powr<2>(q) * (-5. * powr<2>(p1) + 12. * (powr<2>(p2) + powr<2>(q))) + powr<4>(cosp2q) * powr<3>(p2) * powr<3>(q) +
+                          3. * p2 * q * powr<2>(cosp2q) *
+                              (4. * powr<4>(p1) + 4. * powr<4>(p2) + powr<2>(p2) * powr<2>(q) + powr<2>(p1) * (powr<2>(p2) + powr<2>(q)) + 4. * powr<4>(q)) -
+                          1. * p2 * q *
+                              (12. * powr<4>(p1) + 15. * powr<4>(p2) + 46. * powr<2>(p2) * powr<2>(q) + 41. * powr<2>(p1) * (powr<2>(p2) + powr<2>(q)) + 15. * powr<4>(q)) +
+                          cosp2q * (powr<2>(p1) * (5. * powr<4>(p2) - 81. * powr<2>(p2) * powr<2>(q) + 5. * powr<4>(q)) +
+                                    3. * (powr<6>(p2) - 13. * powr<4>(p2) * powr<2>(q) - 13. * powr<2>(p2) * powr<4>(q) + powr<6>(q))))) +
+                cosp1p2 *
+                    (-3. * powr<7>(p1) *
+                         (cosp2q * q * (2. + powr<2>(cosp1q)) * powr<2>(p2) + powr<3>(p2) +
+                          p2 * (powr<2>(cosp1q) + 2. * powr<2>(cosp2q) - 1. * powr<2>(cosp1q) * powr<2>(cosp2q)) * powr<2>(q) -
+                          1. * cosp2q * (-1. + powr<2>(cosp1q)) * powr<3>(q)) -
+                     1. * cosp1q * (-1. + powr<2>(cosp2q)) * powr<3>(p2) * powr<3>(q) *
+                         (6. * cosp2q * q * powr<3>(p2) + 3. * powr<4>(p2) + (8. + powr<2>(cosp2q)) * powr<2>(p2) * powr<2>(q) + 6. * cosp2q * p2 * powr<3>(q) + 3. * powr<4>(q)) +
+                     3. * cosp1q * powr<6>(p1) *
+                         (powr<3>(cosp2q) * powr<2>(p2) * powr<2>(q) + 3. * p2 * q * (powr<2>(p2) + powr<2>(q)) +
+                          p2 * q * powr<2>(cosp2q) * (5. * powr<2>(p2) + (5. - 2. * powr<2>(cosp1q)) * powr<2>(q)) +
+                          cosp2q * (2. * powr<4>(p2) + 11. * powr<2>(p2) * powr<2>(q) - 2. * (-1. + powr<2>(cosp1q)) * powr<4>(q))) -
+                     1. * powr<5>(p1) *
+                         (cosp2q * q * (21. + 25. * powr<2>(cosp1q)) * powr<4>(p2) + 8. * powr<5>(p2) +
+                          (2. + 32. * powr<2>(cosp2q) + powr<2>(cosp1q) * (25. + 39. * powr<2>(cosp2q))) * powr<3>(p2) * powr<2>(q) +
+                          cosp2q * (24. - 10. * powr<4>(cosp1q) + 10. * powr<2>(cosp2q) + powr<2>(cosp1q) * (61. + 5. * powr<2>(cosp2q))) * powr<2>(p2) * powr<3>(q) -
+                          1. * p2 * (5. * powr<2>(cosp1q) * (-5. + powr<2>(cosp2q)) - 21. * powr<2>(cosp2q) + powr<4>(cosp1q) * (10. + powr<2>(cosp2q))) * powr<4>(q) -
+                          1. * cosp2q * (-8. + 7. * powr<2>(cosp1q) + powr<4>(cosp1q)) * powr<5>(q)) +
+                     p1 * powr<2>(p2) * powr<2>(q) *
+                         (powr<2>(cosp1q) * (3. * cosp2q * q * (-5. + 2. * powr<2>(cosp2q)) * powr<4>(p2) + 3. * (-2. + powr<2>(cosp2q)) * powr<5>(p2) +
+                                             (-21. + 5. * powr<2>(cosp2q) + powr<4>(cosp2q)) * powr<3>(p2) * powr<2>(q) +
+                                             5. * cosp2q * (-5. + 2. * powr<2>(cosp2q)) * powr<2>(p2) * powr<3>(q) - 9. * p2 * powr<4>(q) - 3. * cosp2q * powr<5>(q)) +
+                          cosp2q * (powr<4>(cosp2q) * powr<2>(p2) * powr<3>(q) + 2. * powr<3>(cosp2q) * (5. * powr<3>(p2) * powr<2>(q) + 3. * p2 * powr<4>(q)) -
+                                    1. * cosp2q * (3. * powr<5>(p2) + 25. * powr<3>(p2) * powr<2>(q) + 15. * p2 * powr<4>(q)) -
+                                    3. * (3. * q * powr<4>(p2) + 7. * powr<2>(p2) * powr<3>(q) + 2. * powr<5>(q)) +
+                                    powr<2>(cosp2q) * (5. * powr<2>(p2) * powr<3>(q) + 3. * powr<5>(q)))) +
+                     cosp1q * p2 * q * powr<2>(p1) *
+                         (3. * cosp2q * q * (11. + powr<2>(cosp1q)) * powr<5>(p2) + 3. * (2. + powr<2>(cosp2q)) * powr<6>(p2) +
+                          (24. + 61. * powr<2>(cosp2q) + 5. * powr<2>(cosp1q) * (2. + powr<2>(cosp2q)) - 10. * powr<4>(cosp2q)) * powr<4>(p2) * powr<2>(q) +
+                          cosp2q * (95. + 21. * powr<2>(cosp1q) + 8. * powr<2>(cosp2q) - 1. * powr<4>(cosp2q)) * powr<3>(p2) * powr<3>(q) +
+                          (24. + 61. * powr<2>(cosp2q) + powr<2>(cosp1q) * (3. + 9. * powr<2>(cosp2q)) - 10. * powr<4>(cosp2q)) * powr<2>(p2) * powr<4>(q) +
+                          33. * cosp2q * p2 * powr<5>(q) + 3. * (2. - 1. * powr<2>(cosp1q) + powr<2>(cosp2q)) * powr<6>(q)) +
+                     cosp1q * powr<4>(p1) *
+                         (21. * q * powr<5>(p2) + 21. * powr<3>(cosp2q) * powr<2>(p2) * powr<2>(q) * (powr<2>(p2) + powr<2>(q)) +
+                          (27. + 19. * powr<2>(cosp1q)) * powr<3>(p2) * powr<3>(q) - 1. * powr<4>(cosp2q) * powr<3>(p2) * powr<3>(q) +
+                          p2 * q * powr<2>(cosp2q) *
+                              (25. * powr<4>(p2) + (126. + 19. * powr<2>(cosp1q)) * powr<2>(p2) * powr<2>(q) + 5. * (5. - 2. * powr<2>(cosp1q)) * powr<4>(q)) -
+                          1. * p2 * (-21. + 5. * powr<2>(cosp1q) + powr<4>(cosp1q)) * powr<5>(q) +
+                          cosp2q * (6. * powr<6>(p2) + (95. + 21. * powr<2>(cosp1q)) * powr<4>(p2) * powr<2>(q) +
+                                    (95. + 8. * powr<2>(cosp1q) - 1. * powr<4>(cosp1q)) * powr<2>(p2) * powr<4>(q) - 6. * (-1. + powr<2>(cosp1q)) * powr<6>(q))) -
+                     1. * powr<3>(p1) *
+                         (3. * cosp2q * q * (3. + 5. * powr<2>(cosp1q)) * powr<6>(p2) + 3. * powr<7>(p2) +
+                          (2. + 25. * powr<2>(cosp2q) + powr<2>(cosp1q) * (32. + 39. * powr<2>(cosp2q))) * powr<5>(p2) * powr<2>(q) +
+                          cosp2q * (27. - 1. * powr<4>(cosp1q) + 19. * powr<2>(cosp2q) + powr<2>(cosp1q) * (126. + 19. * powr<2>(cosp2q))) * powr<4>(p2) * powr<3>(q) +
+                          (-9. - 5. * powr<4>(cosp1q) + 60. * powr<2>(cosp2q) + powr<2>(cosp1q) * (60. + 81. * powr<2>(cosp2q)) - 5. * powr<4>(cosp2q)) * powr<3>(p2) * powr<4>(q) +
+                          cosp2q * (-10. * powr<4>(cosp1q) + 3. * (8. + powr<2>(cosp2q)) + powr<2>(cosp1q) * (61. + 9. * powr<2>(cosp2q))) * powr<2>(p2) * powr<5>(q) +
+                          3. * p2 * (5. * powr<2>(cosp1q) - 2. * powr<4>(cosp1q) + 3. * powr<2>(cosp2q)) * powr<6>(q) - 3. * cosp2q * (-1. + powr<2>(cosp1q)) * powr<7>(q)))) *
+               powr<-1>(-1. + powr<2>(cosp1p2)) *
+               (DiFfRGREPL10 * DiFfRGREPL11 + DiFfRGREPL3 * (DiFfRGREPL1 + 50. * (-1. * DiFfRGREPL11 + DiFfRGREPL12) * powr<6>(k) * powr<-1>(1. + powr<6>(k)))) *
+               powr<-1>(6. * cosp1p2 * p2 * powr<3>(p1) + 3. * powr<4>(p1) + (8. + powr<2>(cosp1p2)) * powr<2>(p1) * powr<2>(p2) + 6. * cosp1p2 * p1 * powr<3>(p2) +
+                        3. * powr<4>(p2)) *
+               powr<-1>(-2. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q)) * powr<-1>(2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q)) *
+               powr<-2>(DiFfRGREPL11 * DiFfRGREPL3 + DiFfRGREPL13 * powr<2>(q)) *
+               powr<-1>(DiFfRGREPL11 * DiFfRGREPL5 + DiFfRGREPL14 * (2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q))) *
+               powr<-1>(DiFfRGREPL11 * DiFfRGREPL4 + (-2. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q)) * ZA((sqrt(-2. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q))))) *
+               ZA3(0.816496580927726 * (sqrt(-1. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q))),
+                   (sqrt((-2. * cosp1q * q * powr<3>(p1) + powr<4>(p1) + (-1. + 4. * powr<2>(cosp1q)) * powr<2>(p1) * powr<2>(q) - 2. * cosp1q * p1 * powr<3>(q) + powr<4>(q)) *
+                         powr<-2>(-1. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q)))),
+                   atan2(-1. * (p1 - 1. * q) * (p1 + q) * (-2. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q)) * powr<-1>(-1. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q)) *
+                             powr<-1>(sqrt(powr<4>(p1) + 2. * (1. - 2. * powr<2>(cosp1q)) * powr<2>(p1) * powr<2>(q) + powr<4>(q))) *
+                             (sqrt(3. + 12. * cosp1q * p1 * q * powr<-1>(-2. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q)))),
+                         -1. + 3. * cosp1q * p1 * q * powr<-1>(-1. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q)))) *
+               ZA3(0.816496580927726 * (sqrt(cosp1p2 * p1 * p2 - 1. * cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))),
+                   0.5 * (sqrt((3. * powr<2>(2. * cosp1p2 * p1 * p2 + (2. * cosp1q * p1 - 1. * q) * q + powr<2>(p2)) +
+                                powr<2>(-2. * cosp1p2 * p1 * p2 + 2. * cosp1q * p1 * q + 4. * cosp2q * p2 * q - 2. * powr<2>(p1) + powr<2>(p2) + powr<2>(q))) *
+                               powr<-2>(cosp1p2 * p1 * p2 - 1. * cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)))),
+                   atan2(-1. * (2. * cosp1p2 * p1 * p2 + (2. * cosp1q * p1 - 1. * q) * q + powr<2>(p2)) * (2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q)) *
+                             powr<-1>(cosp1p2 * p1 * p2 - 1. * cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)) *
+                             powr<-1>(sqrt((2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q)) *
+                                           (4. * cosp1p2 * p1 * p2 - 4. * cosp1q * p1 * q - 2. * cosp2q * p2 * q + 4. * powr<2>(p1) + powr<2>(p2) + powr<2>(q)))) *
+                             (sqrt(3. + 12. * (p1 * (p1 + cosp1p2 * p2) - 1. * (cosp1q * p1 + cosp2q * p2) * q) * powr<-1>(2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q)))),
+                         -1. + (3. * p1 * (p1 + cosp1p2 * p2) - 3. * (cosp1q * p1 + cosp2q * p2) * q) *
+                                   powr<-1>(cosp1p2 * p1 * p2 - 1. * cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)))) +
+           ZA3(0.816496580927726 * (sqrt(cosp1q * p1 * q + powr<2>(p1) + powr<2>(q))),
+               (sqrt(1. + 3. * (-1. + powr<2>(cosp1q)) * powr<2>(p1) * powr<2>(q) * powr<-2>(cosp1q * p1 * q + powr<2>(p1) + powr<2>(q)))),
+               atan2(1.7320508075688772 * q * (2. * cosp1q * p1 + q) * powr<-1>(cosp1q * p1 * q + powr<2>(p1) + powr<2>(q)),
+                     -1. + 3. * p1 * (p1 + cosp1q * q) * powr<-1>(cosp1q * p1 * q + powr<2>(p1) + powr<2>(q)))) *
+               (6. * DiFfRGREPL18 *
+                    (3. *
+                         (cosp1q * powr<2>(cosp1p2) * (cosp2q * p2 + 4. * q * (-1. + powr<2>(cosp1q))) - 1. * cosp1q * (cosp2q * p2 + 5. * q * (-1. + powr<2>(cosp1q))) +
+                          cosp1p2 * (p2 * (5. - 4. * powr<2>(cosp1q)) + cosp2q * q * (-1. + powr<2>(cosp1q))) + p2 * powr<3>(cosp1p2) * (-5. + 4. * powr<2>(cosp1q))) *
+                         powr<9>(p1) +
+                     3. * (-1. + powr<2>(cosp1p2)) * (-1. + powr<2>(cosp1q)) * powr<10>(p1) +
+                     powr<8>(p1) * (3. * p2 * q *
+                                        (cosp2q * (2. - 7. * powr<2>(cosp1q)) + 4. * cosp1q * powr<3>(cosp1p2) * (-4. + 3. * powr<2>(cosp1q)) +
+                                         cosp2q * powr<2>(cosp1p2) * (-7. + 10. * powr<2>(cosp1q)) + cosp1p2 * cosp1q * (21. - 16. * powr<2>(cosp1q) + powr<2>(cosp2q))) +
+                                    (-1. + powr<2>(cosp1p2)) *
+                                        (12. * cosp1p2 * cosp1q * cosp2q + 11. * (-1. + powr<2>(cosp1q)) + powr<2>(cosp1p2) * (-25. + 13. * powr<2>(cosp1q))) * powr<2>(p2) +
+                                    (-1. + powr<2>(cosp1q)) * (-11. + 12. * cosp1p2 * cosp1q * cosp2q - 25. * powr<2>(cosp1q) + powr<2>(cosp1p2) * (11. + 13. * powr<2>(cosp1q))) *
+                                        powr<2>(q)) +
+                     powr<7>(p1) *
+                         (cosp1q * powr<4>(cosp1p2) * (13. * cosp2q * p2 - 62. * q + 26. * q * powr<2>(cosp1q)) * powr<2>(p2) +
+                          powr<5>(cosp1p2) * (-15. + 2. * powr<2>(cosp1q)) * powr<3>(p2) +
+                          2. * p2 * powr<3>(cosp1p2) *
+                              (cosp2q * p2 * q * (-22. + 31. * powr<2>(cosp1q)) + (-12. + 13. * powr<2>(cosp1q)) * powr<2>(p2) +
+                               (-22. - 3. * powr<2>(cosp1q) + 13. * powr<4>(cosp1q)) * powr<2>(q)) -
+                          1. * cosp1q *
+                              (6. * q * powr<2>(cosp2q) * powr<2>(p2) + q * (-1. + powr<2>(cosp1q)) * (44. * powr<2>(p2) + 3. * (13. + 5. * powr<2>(cosp1q)) * powr<2>(q)) +
+                               cosp2q * (11. * powr<3>(p2) + 4. * p2 * (-2. + 11. * powr<2>(cosp1q)) * powr<2>(q))) +
+                          2. * cosp1q * powr<2>(cosp1p2) *
+                              (-3. * q * (-9. + powr<2>(cosp1q)) * powr<2>(p2) + 9. * q * powr<2>(cosp2q) * powr<2>(p2) -
+                               1. * cosp2q * (powr<3>(p2) + p2 * (25. - 31. * powr<2>(cosp1q)) * powr<2>(q)) + (-14. + 13. * powr<2>(cosp1q) + powr<4>(cosp1q)) * powr<3>(q)) +
+                          cosp1p2 * (2. * cosp2q * q * (4. - 25. * powr<2>(cosp1q)) * powr<2>(p2) + (39. - 28. * powr<2>(cosp1q)) * powr<3>(p2) +
+                                     2. * p2 * (22. - 31. * powr<4>(cosp1q) - 3. * powr<2>(cosp2q) + 9. * powr<2>(cosp1q) * (3. + powr<2>(cosp2q))) * powr<2>(q) +
+                                     cosp2q * (-11. - 2. * powr<2>(cosp1q) + 13. * powr<4>(cosp1q)) * powr<3>(q))) -
+                     1. * (cosp1p2 * cosp1q - 1. * cosp2q) * (-1. + powr<2>(cosp2q)) * powr<3>(p2) * powr<3>(q) *
+                         (6. * cosp2q * q * powr<3>(p2) + 3. * powr<4>(p2) + (8. + powr<2>(cosp2q)) * powr<2>(p2) * powr<2>(q) + 6. * cosp2q * p2 * powr<3>(q) + 3. * powr<4>(q)) +
+                     powr<6>(p1) *
+                         (q *
+                              (2. * cosp2q * (7. - 29. * powr<2>(cosp1q)) + 2. * cosp1q * powr<5>(cosp1p2) * (-14. + powr<2>(cosp1q)) +
+                               31. * cosp2q * powr<4>(cosp1p2) * (-1. + powr<2>(cosp1q)) + cosp2q * powr<2>(cosp1p2) * (-37. + 33. * powr<2>(cosp1q)) -
+                               2. * cosp1p2 * cosp1q * (-64. + 42. * powr<2>(cosp1q) + powr<2>(cosp2q)) +
+                               2. * cosp1q * powr<3>(cosp1p2) * (-23. + 26. * powr<2>(cosp1q) + 13. * powr<2>(cosp2q))) *
+                              powr<3>(p2) -
+                          1. * (-1. + powr<2>(cosp1p2)) *
+                              (-28. * cosp1p2 * cosp1q * cosp2q - 2. * cosp1q * cosp2q * powr<3>(cosp1p2) + 2. * powr<4>(cosp1p2) +
+                               powr<2>(cosp1p2) * (41. - 13. * powr<2>(cosp1q)) - 11. * (-1. + powr<2>(cosp1q))) *
+                              powr<4>(p2) +
+                          (29. + 6. * cosp1q * cosp2q * powr<3>(cosp1p2) * (-13. + 12. * powr<2>(cosp1q)) - 51. * powr<4>(cosp1q) +
+                           powr<4>(cosp1p2) * (-51. - 5. * powr<2>(cosp1q) + 5. * powr<4>(cosp1q)) + powr<2>(cosp1q) * (22. - 14. * powr<2>(cosp2q)) -
+                           6. * cosp1p2 * cosp1q * cosp2q * (3. + 13. * powr<2>(cosp1q) - 1. * powr<2>(cosp2q)) + 5. * powr<2>(cosp2q) +
+                           powr<2>(cosp1p2) * (22. - 5. * powr<4>(cosp1q) - 14. * powr<2>(cosp2q) + powr<2>(cosp1q) * (88. + 65. * powr<2>(cosp2q)))) *
+                              powr<2>(p2) * powr<2>(q) +
+                          p2 *
+                              (cosp2q * (14. - 37. * powr<2>(cosp1q) - 31. * powr<4>(cosp1q)) + 2. * cosp1q * powr<3>(cosp1p2) * (-42. + 26. * powr<2>(cosp1q) + powr<4>(cosp1q)) +
+                               cosp2q * powr<2>(cosp1p2) * (-58. + 33. * powr<2>(cosp1q) + 31. * powr<4>(cosp1q)) -
+                               2. * cosp1p2 * cosp1q * (-64. + 14. * powr<4>(cosp1q) + powr<2>(cosp1q) * (23. - 13. * powr<2>(cosp2q)) + powr<2>(cosp2q))) *
+                              powr<3>(q) +
+                          (-1. + powr<2>(cosp1q)) *
+                              (-11. - 41. * powr<2>(cosp1q) + 2. * cosp1p2 * cosp1q * cosp2q * (14. + powr<2>(cosp1q)) + powr<2>(cosp1p2) * (11. + 13. * powr<2>(cosp1q)) -
+                               2. * powr<4>(cosp1q)) *
+                              powr<4>(q)) -
+                     1. * powr<5>(p1) *
+                         (2. * cosp1q * q * powr<6>(cosp1p2) * powr<4>(p2) +
+                          powr<5>(cosp1p2) * powr<3>(p2) * (cosp2q * p2 * q * (5. - 2. * powr<2>(cosp1q)) + 13. * powr<2>(p2) + (14. + powr<2>(cosp1q)) * powr<2>(q)) -
+                          1. * cosp1q * powr<4>(cosp1p2) * powr<2>(p2) *
+                              (13. * q * (-5. + powr<2>(cosp1q)) * powr<2>(p2) + 5. * q * powr<2>(cosp2q) * powr<2>(p2) + 13. * cosp2q * powr<3>(p2) +
+                               cosp2q * p2 * (-53. + 6. * powr<2>(cosp1q)) * powr<2>(q) + 2. * (-29. + 8. * powr<2>(cosp1q)) * powr<3>(q)) +
+                          p2 * powr<3>(cosp1p2) *
+                              (13. * cosp2q * q * (5. - 6. * powr<2>(cosp1q)) * powr<3>(p2) - 2. * (-5. + 6. * powr<2>(cosp1q)) * powr<4>(p2) -
+                               2. * (-29. + 8. * powr<4>(cosp1q) - 3. * powr<2>(cosp2q) + powr<2>(cosp1q) * (36. + 26. * powr<2>(cosp2q))) * powr<2>(p2) * powr<2>(q) -
+                               2. * cosp2q * p2 * (-44. + 20. * powr<2>(cosp1q) + 3. * powr<4>(cosp1q)) * powr<3>(q) +
+                               (33. + 4. * powr<2>(cosp1q) - 13. * powr<4>(cosp1q)) * powr<4>(q)) +
+                          cosp1q * (-5. * powr<3>(cosp2q) * powr<3>(p2) * powr<2>(q) +
+                                    2. * powr<2>(cosp2q) * (7. * q * powr<4>(p2) + 3. * (-1. + powr<2>(cosp1q)) * powr<2>(p2) * powr<3>(q)) +
+                                    q * (-1. + powr<2>(cosp1q)) *
+                                        (33. * powr<4>(p2) + 2. * (36. + 7. * powr<2>(cosp1q)) * powr<2>(p2) * powr<2>(q) + (23. + 13. * powr<2>(cosp1q)) * powr<4>(q)) +
+                                    cosp2q * (11. * powr<5>(p2) + 2. * (1. + 44. * powr<2>(cosp1q)) * powr<3>(p2) * powr<2>(q) +
+                                              p2 * (-16. + 65. * powr<2>(cosp1q) + 5. * powr<4>(cosp1q)) * powr<4>(q))) -
+                          1. * cosp1q * powr<2>(cosp1p2) *
+                              (-4. * q * (-22. + powr<2>(cosp1q)) * powr<4>(p2) + 16. * powr<3>(cosp2q) * powr<3>(p2) * powr<2>(q) +
+                               (76. + 72. * powr<2>(cosp1q) - 1. * powr<4>(cosp1q)) * powr<2>(p2) * powr<3>(q) +
+                               powr<2>(cosp2q) * (39. * q * powr<4>(p2) + (11. + 52. * powr<2>(cosp1q)) * powr<2>(p2) * powr<3>(q)) -
+                               2. * cosp2q *
+                                   (powr<5>(p2) + 2. * (23. - 10. * powr<2>(cosp1q)) * powr<3>(p2) * powr<2>(q) -
+                                    1. * p2 * (-43. + 39. * powr<2>(cosp1q) + powr<4>(cosp1q)) * powr<4>(q)) +
+                               12. * (-1. + powr<2>(cosp1q)) * powr<5>(q)) +
+                          cosp1p2 * (2. * cosp2q * q * (-8. + 43. * powr<2>(cosp1q)) * powr<4>(p2) + (-23. + 12. * powr<2>(cosp1q)) * powr<5>(p2) +
+                                     (58. * powr<4>(cosp1q) - 6. * (12. + powr<2>(cosp2q)) - 1. * powr<2>(cosp1q) * (76. + 11. * powr<2>(cosp2q))) * powr<3>(p2) * powr<2>(q) +
+                                     cosp2q * (2. + 53. * powr<4>(cosp1q) + powr<2>(cosp1q) * (92. - 16. * powr<2>(cosp2q)) - 5. * powr<2>(cosp2q)) * powr<2>(p2) * powr<3>(q) +
+                                     p2 *
+                                         (-33. + 2. * powr<6>(cosp1q) - 5. * powr<4>(cosp1q) * (-13. + powr<2>(cosp2q)) + 14. * powr<2>(cosp2q) -
+                                          1. * powr<2>(cosp1q) * (88. + 39. * powr<2>(cosp2q))) *
+                                         powr<4>(q) +
+                                     cosp2q * (11. + 2. * powr<2>(cosp1q) - 13. * powr<4>(cosp1q)) * powr<5>(q))) -
+                     1. * (cosp1p2 * cosp1q - 1. * cosp2q) * p1 * powr<2>(p2) * powr<2>(q) *
+                         (cosp1q *
+                              (3. * cosp2q * q * (-3. + 2. * powr<2>(cosp2q)) * powr<4>(p2) + 3. * (-2. + powr<2>(cosp2q)) * powr<5>(p2) +
+                               (-27. + 23. * powr<2>(cosp2q) + powr<4>(cosp2q)) * powr<3>(p2) * powr<2>(q) + cosp2q * (-11. + 14. * powr<2>(cosp2q)) * powr<2>(p2) * powr<3>(q) +
+                               3. * p2 * (-5. + 6. * powr<2>(cosp2q)) * powr<4>(q) + 3. * cosp2q * powr<5>(q)) +
+                          cosp1p2 * (powr<4>(cosp2q) * powr<2>(p2) * powr<3>(q) + cosp2q * (3. * powr<5>(p2) - 11. * powr<3>(p2) * powr<2>(q) - 9. * p2 * powr<4>(q)) +
+                                     2. * powr<3>(cosp2q) * (7. * powr<3>(p2) * powr<2>(q) + 3. * p2 * powr<4>(q)) -
+                                     3. * (5. * q * powr<4>(p2) + 9. * powr<2>(p2) * powr<3>(q) + 2. * powr<5>(q)) +
+                                     powr<2>(cosp2q) * (18. * q * powr<4>(p2) + 23. * powr<2>(p2) * powr<3>(q) + 3. * powr<5>(q)))) +
+                     powr<4>(p1) *
+                         (q *
+                              (-13. * cosp1q * powr<5>(cosp1p2) + cosp2q * (6. - 39. * powr<2>(cosp1q)) + 13. * cosp2q * powr<4>(cosp1p2) * (-2. + powr<2>(cosp1q)) +
+                               2. * cosp2q * powr<2>(cosp1p2) * (-8. + 7. * powr<2>(cosp1q)) + cosp1p2 * cosp1q * (57. - 24. * powr<2>(cosp1q) - 2. * powr<2>(cosp2q)) +
+                               2. * cosp1q * powr<3>(cosp1p2) * (-4. + 6. * powr<2>(cosp1q) + 13. * powr<2>(cosp2q))) *
+                              powr<5>(p2) -
+                          3. * (-1. + powr<2>(cosp1p2)) * (1. - 4. * cosp1p2 * cosp1q * cosp2q + 4. * powr<2>(cosp1p2) - 1. * powr<2>(cosp1q)) * powr<6>(p2) +
+                          (-5. * cosp1q * cosp2q * powr<5>(cosp1p2) - 22. * powr<4>(cosp1q) + powr<2>(cosp1q) * (1. - 31. * powr<2>(cosp2q)) + 3. * (7. + powr<2>(cosp2q)) +
+                           2. * cosp1q * cosp2q * powr<3>(cosp1p2) * (-51. + 8. * powr<2>(cosp1q) + 3. * powr<2>(cosp2q)) +
+                           cosp1p2 * cosp1q * cosp2q * (-34. - 76. * powr<2>(cosp1q) + 27. * powr<2>(cosp2q)) +
+                           powr<4>(cosp1p2) * (-35. - 2. * powr<2>(cosp2q) + powr<2>(cosp1q) * (14. + powr<2>(cosp2q))) +
+                           powr<2>(cosp1p2) * (14. + 7. * powr<4>(cosp1q) + 8. * powr<2>(cosp2q) + 9. * powr<2>(cosp1q) * (13. + 8. * powr<2>(cosp2q)))) *
+                              powr<4>(p2) * powr<2>(q) +
+                          (-2. * cosp1q * powr<5>(cosp1p2) - 1. * cosp2q * powr<4>(cosp1p2) * (33. + 10. * powr<2>(cosp1q)) +
+                           2. * powr<3>(cosp1p2) * (-2. * cosp1q * (6. + powr<2>(cosp2q)) + powr<3>(cosp1q) * (37. + powr<2>(cosp2q))) +
+                           cosp2q * (-33. * powr<4>(cosp1q) + 2. * (7. + 6. * powr<2>(cosp2q)) + powr<2>(cosp1q) * (-97. + 17. * powr<2>(cosp2q))) +
+                           cosp2q * powr<2>(cosp1p2) * (-97. - 10. * powr<4>(cosp1q) + 17. * powr<2>(cosp2q) + powr<2>(cosp1q) * (17. + 27. * powr<2>(cosp2q))) +
+                           cosp1p2 * cosp1q * (142. - 2. * powr<4>(cosp1q) + 15. * powr<2>(cosp2q) - 4. * powr<2>(cosp1q) * (6. + powr<2>(cosp2q)) + 3. * powr<4>(cosp2q))) *
+                              powr<3>(p2) * powr<3>(q) +
+                          (4. * cosp1q * cosp2q * powr<3>(cosp1p2) * (-19. + 4. * powr<2>(cosp1q)) + powr<4>(cosp1p2) * (-22. + 7. * powr<2>(cosp1q)) +
+                           3. * (7. + powr<2>(cosp2q)) - 1. * powr<4>(cosp1q) * (35. + 2. * powr<2>(cosp2q)) + 2. * powr<2>(cosp1q) * (7. + 4. * powr<2>(cosp2q)) +
+                           cosp1p2 * cosp1q * cosp2q * (-34. - 5. * powr<4>(cosp1q) + 6. * powr<2>(cosp1q) * (-17. + powr<2>(cosp2q)) + 27. * powr<2>(cosp2q)) +
+                           powr<2>(cosp1p2) * (1. - 31. * powr<2>(cosp2q) + powr<4>(cosp1q) * (14. + powr<2>(cosp2q)) + 9. * powr<2>(cosp1q) * (13. + 8. * powr<2>(cosp2q)))) *
+                              powr<2>(p2) * powr<4>(q) +
+                          p2 *
+                              (12. * cosp1q * powr<3>(cosp1p2) * (-2. + powr<2>(cosp1q)) - 2. * cosp2q * (-3. + 8. * powr<2>(cosp1q) + 13. * powr<4>(cosp1q)) +
+                               cosp2q * powr<2>(cosp1p2) * (-39. + 14. * powr<2>(cosp1q) + 13. * powr<4>(cosp1q)) +
+                               cosp1p2 * cosp1q * (57. - 13. * powr<4>(cosp1q) - 2. * powr<2>(cosp2q) + powr<2>(cosp1q) * (-8. + 26. * powr<2>(cosp2q)))) *
+                              powr<5>(q) +
+                          3. * (-1. + 4. * cosp1p2 * cosp1q * cosp2q + powr<2>(cosp1p2) - 4. * powr<2>(cosp1q)) * (-1. + powr<2>(cosp1q)) * powr<6>(q)) -
+                     1. * p2 * q * powr<2>(p1) *
+                         (-1. * p2 * q *
+                              (cosp2q * q * (-5. + 11. * powr<2>(cosp2q)) * powr<3>(p2) + 3. * powr<4>(p2) +
+                               (10. - 12. * powr<2>(cosp2q) + 11. * powr<4>(cosp2q)) * powr<2>(p2) * powr<2>(q) + cosp2q * p2 * (-5. + 11. * powr<2>(cosp2q)) * powr<3>(q) +
+                               3. * powr<4>(q)) +
+                          cosp1q * p2 * powr<3>(cosp1p2) *
+                              (18. * cosp2q * q * powr<4>(p2) + 3. * powr<5>(p2) + 3. * (-7. + 9. * powr<2>(cosp2q)) * powr<3>(p2) * powr<2>(q) +
+                               cosp2q * (7. + 4. * powr<2>(cosp2q)) * powr<2>(p2) * powr<3>(q) + p2 * (-22. + 13. * powr<2>(cosp2q)) * powr<4>(q) + 3. * cosp2q * powr<5>(q)) +
+                          cosp1p2 * cosp1q *
+                              (3. * cosp2q * q * (5. + powr<2>(cosp1q) - 6. * powr<2>(cosp2q)) * powr<5>(p2) - 3. * (2. + powr<2>(cosp2q)) * powr<6>(p2) +
+                               (-27. + 2. * powr<2>(cosp2q) + powr<2>(cosp1q) * (-22. + 13. * powr<2>(cosp2q)) - 14. * powr<4>(cosp2q)) * powr<4>(p2) * powr<2>(q) +
+                               cosp2q * (49. - 68. * powr<2>(cosp2q) + powr<2>(cosp1q) * (7. + 4. * powr<2>(cosp2q)) - 1. * powr<4>(cosp2q)) * powr<3>(p2) * powr<3>(q) +
+                               (-27. + 2. * powr<2>(cosp2q) + 3. * powr<2>(cosp1q) * (-7. + 9. * powr<2>(cosp2q)) - 14. * powr<4>(cosp2q)) * powr<2>(p2) * powr<4>(q) -
+                               3. * cosp2q * p2 * (-5. - 6. * powr<2>(cosp1q) + 6. * powr<2>(cosp2q)) * powr<5>(q) +
+                               3. * (-2. + powr<2>(cosp1q) - 1. * powr<2>(cosp2q)) * powr<6>(q)) +
+                          powr<2>(cosp1q) * (3. * q * powr<5>(p2) + 10. * powr<3>(p2) * powr<3>(q) - 4. * powr<4>(cosp2q) * powr<3>(p2) * powr<3>(q) -
+                                             1. * powr<3>(cosp2q) * (11. * powr<4>(p2) * powr<2>(q) + 25. * powr<2>(p2) * powr<4>(q)) + 3. * p2 * powr<5>(q) +
+                                             powr<2>(cosp2q) * (9. * q * powr<5>(p2) + 13. * powr<3>(p2) * powr<3>(q) - 6. * p2 * powr<5>(q)) +
+                                             cosp2q * (6. * powr<6>(p2) + 44. * powr<4>(p2) * powr<2>(q) + 43. * powr<2>(p2) * powr<4>(q) + 3. * powr<6>(q))) +
+                          powr<2>(cosp1p2) *
+                              (q * (3. - 30. * powr<2>(cosp1q)) * powr<5>(p2) +
+                               powr<3>(cosp2q) * powr<2>(p2) * powr<2>(q) * ((-25. + 12. * powr<2>(cosp1q)) * powr<2>(p2) + (-11. + 12. * powr<2>(cosp1q)) * powr<2>(q)) +
+                               (10. - 91. * powr<2>(cosp1q)) * powr<3>(p2) * powr<3>(q) + (-4. + powr<2>(cosp1q)) * powr<4>(cosp2q) * powr<3>(p2) * powr<3>(q) +
+                               p2 * q * powr<2>(cosp2q) *
+                                   (6. * (-1. + powr<2>(cosp1q)) * powr<4>(p2) + (13. + 59. * powr<2>(cosp1q)) * powr<2>(p2) * powr<2>(q) +
+                                    3. * (3. + 2. * powr<2>(cosp1q)) * powr<4>(q)) +
+                               3. * p2 * (1. - 10. * powr<2>(cosp1q)) * powr<5>(q) +
+                               cosp2q * (-3. * (-1. + powr<2>(cosp1q)) * powr<6>(p2) + (43. - 15. * powr<2>(cosp1q)) * powr<4>(p2) * powr<2>(q) +
+                                         (44. - 15. * powr<2>(cosp1q)) * powr<2>(p2) * powr<4>(q) - 3. * (-2. + powr<2>(cosp1q)) * powr<6>(q)))) +
+                     powr<3>(p1) *
+                         (-1. * cosp1q * q * powr<4>(cosp1p2) * powr<3>(p2) *
+                              (26. * cosp2q * q * powr<2>(p2) + 12. * powr<3>(p2) + p2 * (-5. + 6. * powr<2>(cosp2q)) * powr<2>(q) + 9. * cosp2q * powr<3>(q)) -
+                          1. * p2 * powr<3>(cosp1p2) *
+                              (-6. * cosp2q * q * (-3. + 2. * powr<2>(cosp1q)) * powr<5>(p2) + 3. * powr<6>(p2) +
+                               (20. - 43. * powr<2>(cosp1q) + powr<2>(cosp2q)) * powr<4>(p2) * powr<2>(q) +
+                               cosp2q * (69. - 4. * powr<2>(cosp2q) + powr<2>(cosp1q) * (11. + 2. * powr<2>(cosp2q))) * powr<3>(p2) * powr<3>(q) +
+                               (31. + 14. * powr<2>(cosp2q) + 7. * powr<2>(cosp1q) * (-11. + 3. * powr<2>(cosp2q))) * powr<2>(p2) * powr<4>(q) -
+                               1. * cosp2q * p2 * (-34. + powr<2>(cosp1q)) * powr<5>(q) - 3. * (-2. + powr<2>(cosp1q)) * powr<6>(q)) +
+                          cosp1q * p2 * powr<2>(cosp1p2) *
+                              (3. * q * (7. + powr<2>(cosp1q)) * powr<5>(p2) +
+                               q * powr<2>(cosp2q) * powr<3>(p2) * (18. * powr<2>(p2) + (13. - 21. * powr<2>(cosp1q)) * powr<2>(q)) +
+                               powr<3>(cosp2q) * powr<2>(p2) * powr<2>(q) * (27. * powr<2>(p2) + (35. - 2. * powr<2>(cosp1q)) * powr<2>(q)) +
+                               (59. + 77. * powr<2>(cosp1q)) * powr<3>(p2) * powr<3>(q) + 4. * powr<4>(cosp2q) * powr<3>(p2) * powr<3>(q) +
+                               p2 * (32. + 43. * powr<2>(cosp1q)) * powr<5>(q) +
+                               cosp2q * (3. * powr<6>(p2) + (-40. + powr<2>(cosp1q)) * powr<4>(p2) * powr<2>(q) - 1. * (67. + 11. * powr<2>(cosp1q)) * powr<2>(p2) * powr<4>(q) +
+                                         3. * (-7. + 4. * powr<2>(cosp1q)) * powr<6>(q))) +
+                          cosp1q * (powr<3>(cosp2q) * powr<3>(p2) * powr<2>(q) * (6. * powr<2>(p2) + (41. + 4. * powr<2>(cosp1q)) * powr<2>(q)) +
+                                    7. * powr<4>(cosp2q) * powr<4>(p2) * powr<3>(q) -
+                                    1. * q * powr<2>(cosp2q) * powr<2>(p2) *
+                                        (6. * powr<4>(p2) + 2. * (10. + 7. * powr<2>(cosp1q)) * powr<2>(p2) * powr<2>(q) + (-10. + powr<2>(cosp1q)) * powr<4>(q)) -
+                                    1. * q * (-1. + powr<2>(cosp1q)) * (6. * powr<6>(p2) + 31. * powr<4>(p2) * powr<2>(q) + 20. * powr<2>(p2) * powr<4>(q) + 3. * powr<6>(q)) -
+                                    1. * cosp2q * p2 *
+                                        (3. * powr<6>(p2) + 2. * (9. + 17. * powr<2>(cosp1q)) * powr<4>(p2) * powr<2>(q) +
+                                         (26. + 69. * powr<2>(cosp1q)) * powr<2>(p2) * powr<4>(q) + 3. * (-1. + 6. * powr<2>(cosp1q)) * powr<6>(q))) +
+                          cosp1p2 *
+                              (3. * cosp2q * q * (1. - 7. * powr<2>(cosp1q)) * powr<6>(p2) + 3. * powr<7>(p2) +
+                               2. * (16. * powr<2>(cosp1q) + 5. * (2. + powr<2>(cosp2q))) * powr<5>(p2) * powr<2>(q) +
+                               cosp2q * (-26. - 9. * powr<4>(cosp1q) + 41. * powr<2>(cosp2q) + powr<2>(cosp1q) * (-67. + 35. * powr<2>(cosp2q))) * powr<4>(p2) * powr<3>(q) +
+                               (31. + powr<4>(cosp1q) * (5. - 6. * powr<2>(cosp2q)) - 20. * powr<2>(cosp2q) + 7. * powr<4>(cosp2q) +
+                                powr<2>(cosp1q) * (59. + 13. * powr<2>(cosp2q) + 4. * powr<4>(cosp2q))) *
+                                   powr<3>(p2) * powr<4>(q) +
+                               cosp2q * (-26. * powr<4>(cosp1q) + 6. * (-3. + powr<2>(cosp2q)) + powr<2>(cosp1q) * (-40. + 27. * powr<2>(cosp2q))) * powr<2>(p2) * powr<5>(q) -
+                               3. * p2 * (4. * powr<4>(cosp1q) + 2. * (-1. + powr<2>(cosp2q)) - 1. * powr<2>(cosp1q) * (7. + 6. * powr<2>(cosp2q))) * powr<6>(q) +
+                               3. * cosp2q * (-1. + powr<2>(cosp1q)) * powr<7>(q)))) *
+                    powr<-1>(-1. + powr<2>(cosp1p2)) *
+                    (DiFfRGREPL10 * DiFfRGREPL11 + DiFfRGREPL3 * (DiFfRGREPL1 + 50. * (-1. * DiFfRGREPL11 + DiFfRGREPL12) * powr<6>(k) * powr<-1>(1. + powr<6>(k)))) *
+                    powr<-1>(6. * cosp1p2 * p2 * powr<3>(p1) + 3. * powr<4>(p1) + (8. + powr<2>(cosp1p2)) * powr<2>(p1) * powr<2>(p2) + 6. * cosp1p2 * p1 * powr<3>(p2) +
+                             3. * powr<4>(p2)) *
+                    powr<-1>(2. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q)) *
+                    powr<-1>(2. * cosp2q * p2 * q + 2. * p1 * (cosp1p2 * p2 + cosp1q * q) + powr<2>(p1) + powr<2>(p2) + powr<2>(q)) *
+                    powr<-2>(DiFfRGREPL11 * DiFfRGREPL3 + DiFfRGREPL13 * powr<2>(q)) *
+                    powr<-1>(DiFfRGREPL11 * DiFfRGREPL6 + DiFfRGREPL15 * (2. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q))) *
+                    powr<-1>(DiFfRGREPL11 * DiFfRGREPL7 + DiFfRGREPL16 * (2. * cosp2q * p2 * q + 2. * p1 * (cosp1p2 * p2 + cosp1q * q) + powr<2>(p1) + powr<2>(p2) + powr<2>(q))) *
+                    ZA3(0.816496580927726 * (sqrt(cosp1p2 * p1 * p2 + 2. * cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))),
+                        (sqrt(1. + 3. * (-1. * powr<2>(p2) * (2. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q)) + powr<2>(cosp1p2 * p1 * p2 + cosp2q * p2 * q)) *
+                                       powr<-2>(cosp1p2 * p1 * p2 + 2. * cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)))),
+                        atan2((q * (2. * cosp2q * p2 + q) + 2. * p1 * (cosp1p2 * p2 + cosp1q * q) + powr<2>(p1)) * (2. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q)) *
+                                  powr<-1>(cosp1p2 * p1 * p2 + 2. * cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)) *
+                                  powr<-1>(sqrt((2. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q)) *
+                                                (4. * cosp1p2 * p1 * p2 + 2. * cosp1q * p1 * q + 4. * cosp2q * p2 * q + powr<2>(p1) + 4. * powr<2>(p2) + powr<2>(q)))) *
+                                  (sqrt(3. + 12. * p2 * (cosp1p2 * p1 + p2 + cosp2q * q) * powr<-1>(2. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q)))),
+                              -1. + 3. * p2 * (cosp1p2 * p1 + p2 + cosp2q * q) *
+                                        powr<-1>(cosp1p2 * p1 * p2 + 2. * cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)))) -
+                4.5 * powr<2>(p1) *
+                    (p1 * p2 * q *
+                         (cosp1p2 * (6. * cosp2q * p2 + q * (-12. + powr<2>(cosp1p2))) * powr<2>(cosp1q) + p2 * (-8. + powr<2>(cosp1p2)) * powr<3>(cosp1q) +
+                          cosp1p2 * (4. * cosp2q * p2 - 8. * q * (-1. + powr<2>(cosp1p2)) + q * powr<2>(cosp2q)) +
+                          cosp1q * (2. * cosp2q * q * (2. + 3. * powr<2>(cosp1p2)) + p2 * (8. - 12. * powr<2>(cosp1p2) + powr<2>(cosp2q)))) +
+                     (2. * cosp1q * cosp2q * p2 + 5. * cosp1q * q + cosp1q * powr<2>(cosp1p2) * (4. * cosp2q * p2 + q * (-7. + powr<2>(cosp1q))) +
+                      p2 * powr<3>(cosp1p2) * (-5. + powr<2>(cosp1q)) + cosp1p2 * (p2 * (5. - 7. * powr<2>(cosp1q)) + 2. * cosp2q * q * (1. + 2. * powr<2>(cosp1q))) -
+                      5. * q * powr<3>(cosp1q)) *
+                         powr<3>(p1) +
+                     (3. + 2. * cosp1p2 * cosp1q * cosp2q + powr<2>(cosp1p2) * (-3. + powr<2>(cosp1q)) - 3. * powr<2>(cosp1q)) * powr<4>(p1) +
+                     (8. + 6. * cosp1p2 * cosp1q * cosp2q + powr<2>(cosp1p2) * (-8. + powr<2>(cosp1q)) - 8. * powr<2>(cosp1q) + powr<2>(cosp2q)) * powr<2>(p2) * powr<2>(q) +
+                     powr<2>(p1) * (p2 * q *
+                                        (cosp1q * powr<3>(cosp1p2) * (-12. + powr<2>(cosp1q)) + 2. * cosp2q * (1. + 2. * powr<2>(cosp1q)) +
+                                         2. * cosp2q * powr<2>(cosp1p2) * (2. + 3. * powr<2>(cosp1q)) + cosp1p2 * cosp1q * (6. - 12. * powr<2>(cosp1q) + powr<2>(cosp2q))) +
+                                    (5. + 4. * cosp1p2 * cosp1q * cosp2q + powr<2>(cosp1p2) * (-5. + powr<2>(cosp1q)) - 5. * powr<2>(cosp1q)) * powr<2>(p2) +
+                                    (5. + 4. * cosp1p2 * cosp1q * cosp2q + powr<2>(cosp1p2) * (-5. + powr<2>(cosp1q)) - 5. * powr<2>(cosp1q)) * powr<2>(q))) *
+                    powr<-1>(-1. + powr<2>(cosp1p2)) *
+                    (DiFfRGREPL10 * DiFfRGREPL11 + DiFfRGREPL3 * (DiFfRGREPL1 + 50. * (-1. * DiFfRGREPL11 + DiFfRGREPL12) * powr<6>(k) * powr<-1>(1. + powr<6>(k)))) *
+                    powr<-1>(6. * cosp1p2 * p2 * powr<3>(p1) + 3. * powr<4>(p1) + (8. + powr<2>(cosp1p2)) * powr<2>(p1) * powr<2>(p2) + 6. * cosp1p2 * p1 * powr<3>(p2) +
+                             3. * powr<4>(p2)) *
+                    powr<-1>(2. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q)) * powr<-2>(DiFfRGREPL11 * DiFfRGREPL3 + DiFfRGREPL13 * powr<2>(q)) *
+                    powr<-1>(DiFfRGREPL11 * DiFfRGREPL6 + DiFfRGREPL15 * (2. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q))) *
+                    ZA4SP(0.7071067811865475 * (sqrt(cosp1p2 * p1 * p2 + cosp1q * p1 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))))) +
+           DiFfRGREPL17 *
+               (-6. * DiFfRGREPL18 *
+                    (2. * (p2 + cosp2q * q) * powr<6>(cosp1p2) * powr<4>(p1) * powr<5>(p2) -
+                     1. * powr<4>(cosp1q) * powr<4>(p1) *
+                         (4. * q * powr<2>(cosp2q) * powr<2>(p2) + q * (6. * powr<2>(p1) + 11. * powr<2>(p2) + 6. * powr<2>(q)) +
+                          cosp2q * p2 * (6. * powr<2>(p1) + 7. * (powr<2>(p2) + 2. * powr<2>(q)))) *
+                         powr<3>(q) +
+                     powr<5>(cosp1p2) * powr<3>(p1) * powr<4>(p2) *
+                         (13. * (p2 + cosp2q * q) * powr<2>(p1) - 2. * cosp2q * q * (-14. + powr<2>(cosp2q)) * powr<2>(p2) + (15. - 2. * powr<2>(cosp2q)) * powr<3>(p2) +
+                          p2 * (14. + powr<2>(cosp2q)) * powr<2>(q) +
+                          cosp1q * p1 * (5. * p2 * q - 2. * p2 * q * powr<2>(cosp2q) - 2. * cosp2q * powr<2>(p2) + 5. * cosp2q * powr<2>(q)) + 2. * cosp2q * powr<3>(q)) -
+                     1. * (cosp2q * p2 + q) * powr<5>(cosp1q) * powr<5>(p1) * powr<4>(q) -
+                     1. * powr<3>(cosp1q) * powr<3>(p1) * powr<2>(q) *
+                         (4. * powr<3>(cosp2q) * powr<3>(p2) * powr<2>(q) + q * powr<2>(cosp2q) * powr<2>(p2) * (11. * powr<2>(p1) + 17. * powr<2>(p2) + 25. * powr<2>(q)) +
+                          q * (3. * powr<4>(p1) + 12. * powr<4>(p2) + 11. * powr<2>(p2) * powr<2>(q) + powr<2>(p1) * (11. * powr<2>(p2) + 7. * powr<2>(q)) + 3. * powr<4>(q)) +
+                          cosp2q * p2 *
+                              (3. * powr<4>(p1) + 5. * powr<4>(p2) + 41. * powr<2>(p2) * powr<2>(q) + powr<2>(p1) * (6. * powr<2>(p2) + 23. * powr<2>(q)) + 18. * powr<4>(q))) +
+                     powr<4>(cosp1p2) * powr<2>(p1) * powr<3>(p2) *
+                         (12. * (p2 + cosp2q * q) * powr<4>(p1) -
+                          13. * cosp1q * powr<3>(p1) * (-2. * p2 * q + p2 * q * powr<2>(cosp2q) + cosp2q * (powr<2>(p2) - 2. * powr<2>(q))) -
+                          1. * powr<2>(p1) *
+                              (cosp2q * q * (5. * powr<2>(cosp1q) + 13. * (-5. + powr<2>(cosp2q))) * powr<2>(p2) + 13. * (-3. + powr<2>(cosp2q)) * powr<3>(p2) +
+                               p2 * (powr<2>(cosp1q) * (-2. + powr<2>(cosp2q)) + 7. * (-5. + 2. * powr<2>(cosp2q))) * powr<2>(q) +
+                               cosp2q * (5. - 6. * powr<2>(cosp1q)) * powr<3>(q)) +
+                          p2 * ((62. * cosp2q * q - 26. * q * powr<3>(cosp2q)) * powr<3>(p2) + (25. - 13. * powr<2>(cosp2q)) * powr<4>(p2) +
+                                (51. + 5. * powr<2>(cosp2q) - 5. * powr<4>(cosp2q)) * powr<2>(p2) * powr<2>(q) + 2. * cosp2q * p2 * (29. - 8. * powr<2>(cosp2q)) * powr<3>(q) +
+                                (22. - 7. * powr<2>(cosp2q)) * powr<4>(q)) +
+                          cosp1q * p1 *
+                              (31. * q * powr<3>(p2) - 6. * powr<3>(cosp2q) * powr<2>(p2) * powr<2>(q) + 33. * p2 * powr<3>(q) +
+                               powr<2>(cosp2q) * (-31. * q * powr<3>(p2) + 10. * p2 * powr<3>(q)) +
+                               cosp2q * (-13. * powr<4>(p2) + 53. * powr<2>(p2) * powr<2>(q) + 9. * powr<4>(q)))) +
+                     (-1. + powr<2>(cosp2q)) * powr<2>(p2) * (2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q)) *
+                         (3. * powr<6>(p1) + powr<4>(p1) * (11. * cosp2q * p2 * q + 11. * powr<2>(p2) + 10. * powr<2>(q)) +
+                          powr<2>(p1) * (22. * cosp2q * q * powr<3>(p2) + 11. * powr<4>(p2) + (18. + 7. * powr<2>(cosp2q)) * powr<2>(p2) * powr<2>(q) +
+                                         14. * cosp2q * p2 * powr<3>(q) + 3. * powr<4>(q)) +
+                          p2 * (9. * cosp2q * q * powr<4>(p2) + 3. * powr<5>(p2) + (8. + 7. * powr<2>(cosp2q)) * powr<3>(p2) * powr<2>(q) +
+                                cosp2q * (14. + powr<2>(cosp2q)) * powr<2>(p2) * powr<3>(q) + 3. * p2 * (1. + 2. * powr<2>(cosp2q)) * powr<4>(q) + 3. * cosp2q * powr<5>(q))) +
+                     q * powr<2>(cosp1q) * powr<2>(p1) *
+                         (powr<3>(cosp2q) * powr<3>(p2) * powr<2>(q) * (14. * powr<2>(p1) + 6. * powr<2>(p2) + powr<2>(q)) + 2. * powr<4>(cosp2q) * powr<4>(p2) * powr<3>(q) +
+                          q * (-5. * powr<6>(p2) + 6. * powr<4>(p1) * powr<2>(q) - 3. * powr<4>(p2) * powr<2>(q) -
+                               3. * powr<2>(p1) * (powr<4>(p2) - 4. * powr<2>(p2) * powr<2>(q) - 2. * powr<4>(q))) +
+                          q * powr<2>(cosp2q) * powr<2>(p2) *
+                              (9. * powr<4>(p1) + 14. * powr<4>(p2) - 8. * powr<2>(p2) * powr<2>(q) + powr<2>(p1) * (31. * powr<2>(p2) + 13. * powr<2>(q)) - 6. * powr<4>(q)) +
+                          cosp2q * p2 *
+                              (6. * powr<6>(p2) - 6. * powr<4>(p2) * powr<2>(q) + powr<4>(p1) * (6. * powr<2>(p2) + 9. * powr<2>(q)) - 10. * powr<2>(p2) * powr<4>(q) +
+                               powr<2>(p1) * (14. * powr<4>(p2) + 20. * powr<2>(p2) * powr<2>(q) + 11. * powr<4>(q)) - 3. * powr<6>(q))) +
+                     p1 * powr<3>(cosp1p2) * powr<2>(p2) *
+                         (3. * (p2 + cosp2q * q) * powr<6>(p1) -
+                          6. * cosp1q * powr<5>(p1) * (-3. * p2 * q + 2. * p2 * q * powr<2>(cosp2q) + 2. * cosp2q * powr<2>(p2) - 3. * cosp2q * powr<2>(q)) +
+                          powr<4>(p1) * (-2. * cosp2q * q * (-4. + 13. * powr<2>(cosp1q) + 6. * powr<2>(cosp2q)) * powr<2>(p2) - 2. * (-5. + 6. * powr<2>(cosp2q)) * powr<3>(p2) +
+                                         p2 * (20. + powr<2>(cosp1q) - 43. * powr<2>(cosp2q)) * powr<2>(q) + 3. * cosp2q * (-7. + 9. * powr<2>(cosp1q)) * powr<3>(q)) +
+                          cosp1q * powr<3>(p1) *
+                              (65. * q * powr<3>(p2) - 16. * powr<3>(cosp2q) * powr<2>(p2) * powr<2>(q) + p2 * (69. - 4. * powr<2>(cosp1q)) * powr<3>(q) +
+                               powr<2>(cosp2q) * (-78. * q * powr<3>(p2) + p2 * (11. + 2. * powr<2>(cosp1q)) * powr<3>(q)) +
+                               cosp2q * (-26. * powr<4>(p2) - 6. * (-17. + powr<2>(cosp1q)) * powr<2>(p2) * powr<2>(q) + (7. + 4. * powr<2>(cosp1q)) * powr<4>(q))) +
+                          powr<2>(p1) * (-2. * cosp2q * q * (-23. + 13. * powr<2>(cosp1q) + 26. * powr<2>(cosp2q)) * powr<4>(p2) + (24. - 26. * powr<2>(cosp2q)) * powr<5>(p2) -
+                                         2. * (-29. + 36. * powr<2>(cosp2q) + powr<2>(cosp1q) * (-3. + 26. * powr<2>(cosp2q)) + 8. * powr<4>(cosp2q)) * powr<3>(p2) * powr<2>(q) -
+                                         2. * cosp2q * (-12. + powr<2>(cosp1q) * (-2. + powr<2>(cosp2q)) + 37. * powr<2>(cosp2q)) * powr<2>(p2) * powr<3>(q) +
+                                         p2 * (31. - 77. * powr<2>(cosp2q) + 7. * powr<2>(cosp1q) * (2. + 3. * powr<2>(cosp2q))) * powr<4>(q) +
+                                         cosp2q * (-22. + 13. * powr<2>(cosp1q)) * powr<5>(q)) -
+                          1. * cosp1q * p1 *
+                              (6. * powr<4>(cosp2q) * powr<3>(p2) * powr<3>(q) + p2 * q * powr<2>(cosp2q) * (62. * powr<4>(p2) + 40. * powr<2>(p2) * powr<2>(q) + powr<4>(q)) -
+                               2. * p2 * q * (22. * powr<4>(p2) + 44. * powr<2>(p2) * powr<2>(q) + 17. * powr<4>(q)) +
+                               8. * powr<3>(cosp2q) * (9. * powr<4>(p2) * powr<2>(q) + 2. * powr<2>(p2) * powr<4>(q)) +
+                               cosp2q * (12. * powr<6>(p2) - 78. * powr<4>(p2) * powr<2>(q) - 76. * powr<2>(p2) * powr<4>(q) - 3. * powr<6>(q))) +
+                          p2 * (12. * cosp2q * q * (4. - 3. * powr<2>(cosp2q)) * powr<5>(p2) - 3. * (-5. + 4. * powr<2>(cosp2q)) * powr<6>(p2) +
+                                2. * (22. + 3. * powr<2>(cosp2q) - 13. * powr<4>(cosp2q)) * powr<4>(p2) * powr<2>(q) -
+                                2. * cosp2q * (-42. + 26. * powr<2>(cosp2q) + powr<4>(cosp2q)) * powr<3>(p2) * powr<3>(q) +
+                                (33. + 4. * powr<2>(cosp2q) - 13. * powr<4>(cosp2q)) * powr<2>(p2) * powr<4>(q) - 12. * cosp2q * p2 * (-2. + powr<2>(cosp2q)) * powr<5>(q) -
+                                3. * (-2. + powr<2>(cosp2q)) * powr<6>(q))) +
+                     cosp1q * p1 *
+                         (powr<4>(cosp2q) * powr<4>(p2) * (33. * powr<2>(p1) + 31. * powr<2>(p2) + 26. * powr<2>(q)) * powr<3>(q) +
+                          5. * powr<5>(cosp2q) * powr<5>(p2) * powr<4>(q) +
+                          powr<3>(cosp2q) * powr<3>(p2) * powr<2>(q) *
+                              (34. * powr<4>(p1) + 44. * powr<4>(p2) + 65. * powr<2>(p2) * powr<2>(q) + powr<2>(p1) * (88. * powr<2>(p2) + 69. * powr<2>(q)) + 18. * powr<4>(q)) +
+                          q * powr<2>(cosp2q) * powr<2>(p2) *
+                              (6. * powr<6>(p1) + 21. * powr<6>(p2) + 37. * powr<4>(p2) * powr<2>(q) + powr<4>(p1) * (39. * powr<2>(p2) + 44. * powr<2>(q)) +
+                               16. * powr<2>(p2) * powr<4>(q) + powr<2>(p1) * (58. * powr<4>(p2) + 97. * powr<2>(p2) * powr<2>(q) + 43. * powr<4>(q)) + 3. * powr<6>(q)) +
+                          q * (3. * powr<6>(p1) * powr<2>(q) + powr<4>(p1) * (-6. * powr<4>(p2) + 5. * powr<2>(p2) * powr<2>(q) + 8. * powr<4>(q)) -
+                               2. * (3. * powr<8>(p2) + 7. * powr<6>(p2) * powr<2>(q) + 3. * powr<4>(p2) * powr<4>(q)) +
+                               powr<2>(p1) * (-14. * powr<6>(p2) - 14. * powr<4>(p2) * powr<2>(q) + 5. * powr<2>(p2) * powr<4>(q) + 3. * powr<6>(q))) +
+                          cosp2q * p2 *
+                              (3. * powr<8>(p2) - 8. * powr<6>(p2) * powr<2>(q) + 3. * powr<6>(p1) * (powr<2>(p2) + 2. * powr<2>(q)) - 16. * powr<4>(p2) * powr<4>(q) +
+                               powr<4>(p1) * (11. * powr<4>(p2) + 18. * powr<2>(p2) * powr<2>(q) + 27. * powr<4>(q)) - 3. * powr<2>(p2) * powr<6>(q) +
+                               powr<2>(p1) * (11. * powr<6>(p2) + 2. * powr<4>(p2) * powr<2>(q) + 26. * powr<2>(p2) * powr<4>(q) + 15. * powr<6>(q)))) -
+                     1. * p2 * powr<2>(cosp1p2) *
+                         (-1. * powr<4>(cosp1q) * powr<4>(p1) * (-4. * p2 * q + p2 * q * powr<2>(cosp2q) + cosp2q * (-4. * powr<2>(p2) + powr<2>(q))) * powr<3>(q) +
+                          3. * powr<6>(p1) *
+                              (cosp2q * q * (7. + powr<2>(cosp2q)) * powr<2>(p2) + (3. + powr<2>(cosp2q)) * powr<3>(p2) + p2 * (-1. + 10. * powr<2>(cosp2q)) * powr<2>(q) +
+                               5. * cosp2q * powr<3>(q)) +
+                          powr<3>(cosp1q) * powr<3>(p1) * powr<2>(q) *
+                              (3. * p2 * q * powr<2>(cosp2q) * (-4. * powr<2>(p1) + 9. * powr<2>(p2) - 4. * powr<2>(q)) - 2. * powr<3>(cosp2q) * powr<2>(p2) * powr<2>(q) +
+                               p2 * q * (25. * powr<2>(p1) + 17. * powr<2>(p2) + 11. * powr<2>(q)) +
+                               cosp2q * (16. * powr<4>(p2) + powr<2>(p1) * (27. * powr<2>(p2) - 14. * powr<2>(q)) + 35. * powr<2>(p2) * powr<2>(q) - 6. * powr<4>(q))) +
+                          powr<4>(p1) *
+                              (-4. * cosp2q * q * (-22. + powr<2>(cosp2q)) * powr<4>(p2) - 2. * (-15. + powr<2>(cosp2q)) * powr<5>(p2) +
+                               (14. + 117. * powr<2>(cosp2q) + 7. * powr<4>(cosp2q)) * powr<3>(p2) * powr<2>(q) +
+                               cosp2q * (59. + 77. * powr<2>(cosp2q)) * powr<2>(p2) * powr<3>(q) + p2 * (-10. + 91. * powr<2>(cosp2q)) * powr<4>(q) + 27. * cosp2q * powr<5>(q)) +
+                          q * powr<2>(cosp1q) * powr<2>(p1) *
+                              (powr<3>(cosp2q) * powr<2>(p2) * (-21. * powr<2>(p1) + 52. * powr<2>(p2)) * powr<2>(q) + powr<4>(cosp2q) * powr<3>(p2) * powr<3>(q) +
+                               p2 * q * powr<2>(cosp2q) *
+                                   (-6. * powr<4>(p1) + 65. * powr<4>(p2) + powr<2>(p1) * (72. * powr<2>(p2) - 59. * powr<2>(q)) + 72. * powr<2>(p2) * powr<2>(q) -
+                                    6. * powr<4>(q)) -
+                               1. * p2 * q *
+                                   (-6. * powr<4>(p1) + 14. * powr<4>(p2) + 31. * powr<2>(p2) * powr<2>(q) + powr<2>(p1) * (-8. * powr<2>(p2) + 13. * powr<2>(q)) +
+                                    9. * powr<4>(q)) +
+                               cosp2q * (18. * powr<6>(p2) + 18. * powr<4>(p1) * (powr<2>(p2) - 1. * powr<2>(q)) + 11. * powr<4>(p2) * powr<2>(q) +
+                                         powr<2>(p1) * (39. * powr<4>(p2) + 13. * powr<2>(p2) * powr<2>(q) - 23. * powr<4>(q)) - 3. * powr<6>(q))) +
+                          (-1. + powr<2>(cosp2q)) * powr<3>(p2) *
+                              (12. * cosp2q * q * powr<5>(p2) + 3. * powr<6>(p2) + (11. + 13. * powr<2>(cosp2q)) * powr<4>(p2) * powr<2>(q) +
+                               2. * cosp2q * (14. + powr<2>(cosp2q)) * powr<3>(p2) * powr<3>(q) + (11. + 13. * powr<2>(cosp2q)) * powr<2>(p2) * powr<4>(q) +
+                               12. * cosp2q * p2 * powr<5>(q) + 3. * powr<6>(q)) +
+                          cosp1q * p1 *
+                              (powr<4>(cosp2q) * powr<3>(p2) * (-10. * powr<2>(p1) + 31. * powr<2>(p2) + 13. * powr<2>(q)) * powr<3>(q) +
+                               2. * powr<5>(cosp2q) * powr<4>(p2) * powr<4>(q) +
+                               powr<3>(cosp2q) * powr<2>(p2) * powr<2>(q) *
+                                   (powr<4>(p1) + 62. * powr<4>(p2) + powr<2>(p1) * (40. * powr<2>(p2) - 11. * powr<2>(q)) + 78. * powr<2>(p2) * powr<2>(q) + 12. * powr<4>(q)) +
+                               p2 * q * powr<2>(cosp2q) *
+                                   (3. * powr<6>(p1) + 30. * powr<6>(p2) + 33. * powr<4>(p2) * powr<2>(q) + powr<4>(p1) * (14. * powr<2>(p2) + 15. * powr<2>(q)) +
+                                    14. * powr<2>(p2) * powr<4>(q) + powr<2>(p1) * (33. * powr<4>(p2) + 17. * powr<2>(p2) * powr<2>(q) + 15. * powr<4>(q)) + 3. * powr<6>(q)) -
+                               1. * p2 * q *
+                                   (3. * powr<6>(p1) + 21. * powr<6>(p2) + 58. * powr<4>(p2) * powr<2>(q) + powr<4>(p1) * (16. * powr<2>(p2) + 43. * powr<2>(q)) +
+                                    39. * powr<2>(p2) * powr<4>(q) + powr<2>(p1) * (37. * powr<4>(p2) + 97. * powr<2>(p2) * powr<2>(q) + 44. * powr<4>(q)) + 6. * powr<6>(q)) +
+                               cosp2q * (3. * powr<8>(p2) + 3. * powr<6>(p1) * (powr<2>(p2) - 1. * powr<2>(q)) - 50. * powr<6>(p2) * powr<2>(q) - 86. * powr<4>(p2) * powr<4>(q) +
+                                         powr<4>(p1) * (-2. * powr<4>(p2) - 40. * powr<2>(p2) * powr<2>(q) + 11. * powr<4>(q)) -
+                                         1. * powr<2>(p1) * (2. * powr<6>(p2) + 92. * powr<4>(p2) * powr<2>(q) + 67. * powr<2>(p2) * powr<4>(q) - 9. * powr<6>(q)) -
+                                         21. * powr<2>(p2) * powr<6>(q))) +
+                          powr<2>(p1) * (-6. * cosp2q * q * (-9. + powr<2>(cosp2q)) * powr<6>(p2) - 2. * (-7. + powr<2>(cosp2q)) * powr<7>(p2) +
+                                         (22. + 88. * powr<2>(cosp2q) - 5. * powr<4>(cosp2q)) * powr<5>(p2) * powr<2>(q) +
+                                         cosp2q * (76. + 72. * powr<2>(cosp2q) - 1. * powr<4>(cosp2q)) * powr<4>(p2) * powr<3>(q) +
+                                         (1. + 117. * powr<2>(cosp2q) + 14. * powr<4>(cosp2q)) * powr<3>(p2) * powr<4>(q) +
+                                         cosp2q * (32. + 43. * powr<2>(cosp2q)) * powr<2>(p2) * powr<5>(q) + 3. * p2 * (-1. + 10. * powr<2>(cosp2q)) * powr<6>(q) +
+                                         6. * cosp2q * powr<7>(q))) -
+                     1. * cosp1p2 *
+                         (3. * powr<7>(p1) *
+                              (cosp2q * q * (2. + powr<2>(cosp1q)) * powr<2>(p2) + powr<3>(p2) +
+                               p2 * (-1. * powr<2>(cosp1q) * (-1. + powr<2>(cosp2q)) + 2. * powr<2>(cosp2q)) * powr<2>(q) - 1. * cosp2q * (-1. + powr<2>(cosp1q)) * powr<3>(q)) -
+                          3. * cosp1q * powr<6>(p1) *
+                              (powr<3>(cosp2q) * powr<2>(p2) * powr<2>(q) - 1. * p2 * q * (powr<2>(p2) + (-5. + 6. * powr<2>(cosp1q)) * powr<2>(q)) +
+                               powr<2>(cosp2q) * (7. * q * powr<3>(p2) + p2 * (-3. + 2. * powr<2>(cosp1q)) * powr<3>(q)) +
+                               cosp2q * (4. * powr<4>(p2) + (5. - 6. * powr<2>(cosp1q)) * powr<2>(p2) * powr<2>(q) + 2. * (-1. + powr<2>(cosp1q)) * powr<4>(q))) +
+                          powr<5>(p1) *
+                              (cosp2q * q * (57. - 2. * powr<2>(cosp1q) - 24. * powr<2>(cosp2q)) * powr<4>(p2) + (23. - 12. * powr<2>(cosp2q)) * powr<5>(p2) +
+                               2. * (10. + 5. * powr<2>(cosp1q) + 16. * powr<2>(cosp2q)) * powr<3>(p2) * powr<2>(q) +
+                               cosp2q * (27. + 14. * powr<4>(cosp1q) + 22. * powr<2>(cosp2q) - 1. * powr<2>(cosp1q) * (2. + 13. * powr<2>(cosp2q))) * powr<2>(p2) * powr<3>(q) -
+                               1. * p2 * (powr<4>(cosp1q) * (-14. + powr<2>(cosp2q)) - 27. * powr<2>(cosp2q) + powr<2>(cosp1q) * (11. + 23. * powr<2>(cosp2q))) * powr<4>(q) -
+                               1. * cosp2q * (-8. + 7. * powr<2>(cosp1q) + powr<4>(cosp1q)) * powr<5>(q)) +
+                          cosp1q * q * (-1. + powr<2>(cosp2q)) * powr<3>(p2) *
+                              (12. * cosp2q * q * powr<5>(p2) + 3. * powr<6>(p2) + (11. + 13. * powr<2>(cosp2q)) * powr<4>(p2) * powr<2>(q) +
+                               2. * cosp2q * (14. + powr<2>(cosp2q)) * powr<3>(p2) * powr<3>(q) + (11. + 13. * powr<2>(cosp2q)) * powr<2>(p2) * powr<4>(q) +
+                               12. * cosp2q * p2 * powr<5>(q) + 3. * powr<6>(q)) +
+                          cosp1q * powr<4>(p1) *
+                              (16. * q * powr<5>(p2) + (-26. + 41. * powr<2>(cosp1q)) * powr<3>(p2) * powr<3>(q) - 9. * powr<4>(cosp2q) * powr<3>(p2) * powr<3>(q) -
+                               1. * powr<3>(cosp2q) * (76. * powr<4>(p2) * powr<2>(q) + (7. + 4. * powr<2>(cosp1q)) * powr<2>(p2) * powr<4>(q)) +
+                               p2 * (-27. + 23. * powr<2>(cosp1q) + powr<4>(cosp1q)) * powr<5>(q) +
+                               powr<2>(cosp2q) *
+                                   (-86. * q * powr<5>(p2) + (-67. + 35. * powr<2>(cosp1q)) * powr<3>(p2) * powr<3>(q) + p2 * (11. - 14. * powr<2>(cosp1q)) * powr<5>(q)) +
+                               cosp2q * (-28. * powr<6>(p2) + (-34. + 27. * powr<2>(cosp1q)) * powr<4>(p2) * powr<2>(q) +
+                                         (-49. + 68. * powr<2>(cosp1q) + powr<4>(cosp1q)) * powr<2>(p2) * powr<4>(q) - 6. * (-1. + powr<2>(cosp1q)) * powr<6>(q))) +
+                          powr<3>(p1) * (-2. * cosp2q * q * (-64. + powr<2>(cosp1q) + 42. * powr<2>(cosp2q)) * powr<6>(p2) + (39. - 28. * powr<2>(cosp2q)) * powr<7>(p2) +
+                                         (72. + 76. * powr<2>(cosp2q) + powr<2>(cosp1q) * (6. + 11. * powr<2>(cosp2q)) - 58. * powr<4>(cosp2q)) * powr<5>(p2) * powr<2>(q) +
+                                         cosp2q * (3. * powr<4>(cosp1q) + powr<2>(cosp1q) * (15. - 4. * powr<2>(cosp2q)) - 2. * (-71. + 12. * powr<2>(cosp2q) + powr<4>(cosp2q))) *
+                                             powr<4>(p2) * powr<3>(q) +
+                                         (31. + 59. * powr<2>(cosp2q) + powr<4>(cosp1q) * (7. + 4. * powr<2>(cosp2q)) +
+                                          powr<2>(cosp1q) * (-20. + 13. * powr<2>(cosp2q) - 6. * powr<4>(cosp2q)) + 5. * powr<4>(cosp2q)) *
+                                             powr<3>(p2) * powr<4>(q) +
+                                         cosp2q * (14. * powr<4>(cosp1q) + 3. * (9. + 7. * powr<2>(cosp2q)) - 1. * powr<2>(cosp1q) * (2. + 27. * powr<2>(cosp2q))) * powr<2>(p2) *
+                                             powr<5>(q) +
+                                         3. * p2 * (2. * powr<4>(cosp1q) + 5. * powr<2>(cosp2q) - 3. * powr<2>(cosp1q) * (1. + 2. * powr<2>(cosp2q))) * powr<6>(q) -
+                                         3. * cosp2q * (-1. + powr<2>(cosp1q)) * powr<7>(q)) +
+                          p1 * powr<2>(p2) *
+                              (3. * cosp2q * q * (21. + powr<2>(cosp1q) - 16. * powr<2>(cosp2q)) * powr<6>(p2) - 3. * (-5. + 4. * powr<2>(cosp2q)) * powr<7>(p2) +
+                               2. * (22. + 27. * powr<2>(cosp2q) + powr<2>(cosp1q) * (-3. + 9. * powr<2>(cosp2q)) - 31. * powr<4>(cosp2q)) * powr<5>(p2) * powr<2>(q) -
+                               2. * cosp2q * (-64. + powr<2>(cosp1q) * (1. - 13. * powr<2>(cosp2q)) + 23. * powr<2>(cosp2q) + 14. * powr<4>(cosp2q)) * powr<4>(p2) * powr<3>(q) +
+                               (33. + 88. * powr<2>(cosp2q) - 65. * powr<4>(cosp2q) + powr<2>(cosp1q) * (-14. + 39. * powr<2>(cosp2q) + 5. * powr<4>(cosp2q)) -
+                                2. * powr<6>(cosp2q)) *
+                                   powr<3>(p2) * powr<4>(q) +
+                               cosp2q * (57. - 8. * powr<2>(cosp2q) + powr<2>(cosp1q) * (-2. + 26. * powr<2>(cosp2q)) - 13. * powr<4>(cosp2q)) * powr<2>(p2) * powr<5>(q) +
+                               3. * p2 * (2. + 7. * powr<2>(cosp2q) + powr<2>(cosp1q) * (-2. + 6. * powr<2>(cosp2q)) - 4. * powr<4>(cosp2q)) * powr<6>(q) +
+                               3. * cosp2q * (2. + powr<2>(cosp1q) - 1. * powr<2>(cosp2q)) * powr<7>(q)) +
+                          cosp1q * p2 * powr<2>(p1) *
+                              (8. * q * powr<6>(p2) + (-2. + 5. * powr<2>(cosp1q)) * powr<4>(p2) * powr<3>(q) - 5. * powr<5>(cosp2q) * powr<3>(p2) * powr<4>(q) +
+                               6. * (-3. + powr<2>(cosp1q)) * powr<2>(p2) * powr<5>(q) - 1. * powr<4>(cosp2q) * (53. * powr<4>(p2) * powr<3>(q) + 26. * powr<2>(p2) * powr<5>(q)) -
+                               6. * powr<3>(cosp2q) * (13. * powr<5>(p2) * powr<2>(q) - 1. * (-17. + powr<2>(cosp1q)) * powr<3>(p2) * powr<4>(q) + 3. * p2 * powr<6>(q)) +
+                               cosp2q * (-12. * powr<7>(p2) + 6. * (-3. + powr<2>(cosp1q)) * powr<5>(p2) * powr<2>(q) + (-34. + 27. * powr<2>(cosp1q)) * powr<3>(p2) * powr<4>(q) +
+                                         3. * p2 * (-5. + 6. * powr<2>(cosp1q)) * powr<6>(q)) +
+                               3. * (-2. + powr<2>(cosp1q)) * powr<7>(q) -
+                               1. * powr<2>(cosp2q) *
+                                   (50. * q * powr<6>(p2) + 4. * (23. - 4. * powr<2>(cosp1q)) * powr<4>(p2) * powr<3>(q) +
+                                    (40. - 27. * powr<2>(cosp1q)) * powr<2>(p2) * powr<5>(q) + 3. * powr<7>(q))))) *
+                    powr<-1>(-1. + powr<2>(cosp1p2)) *
+                    (DiFfRGREPL10 * DiFfRGREPL11 + DiFfRGREPL3 * (DiFfRGREPL1 + 50. * (-1. * DiFfRGREPL11 + DiFfRGREPL12) * powr<6>(k) * powr<-1>(1. + powr<6>(k)))) *
+                    powr<-1>(6. * cosp1p2 * p2 * powr<3>(p1) + 3. * powr<4>(p1) + (8. + powr<2>(cosp1p2)) * powr<2>(p1) * powr<2>(p2) + 6. * cosp1p2 * p1 * powr<3>(p2) +
+                             3. * powr<4>(p2)) *
+                    powr<-1>(2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q)) *
+                    powr<-1>(2. * cosp2q * p2 * q + 2. * p1 * (cosp1p2 * p2 + cosp1q * q) + powr<2>(p1) + powr<2>(p2) + powr<2>(q)) *
+                    powr<-2>(DiFfRGREPL11 * DiFfRGREPL3 + DiFfRGREPL13 * powr<2>(q)) *
+                    powr<-1>(DiFfRGREPL11 * DiFfRGREPL5 + DiFfRGREPL14 * (2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q))) *
+                    powr<-1>(DiFfRGREPL11 * DiFfRGREPL7 + DiFfRGREPL16 * (2. * cosp2q * p2 * q + 2. * p1 * (cosp1p2 * p2 + cosp1q * q) + powr<2>(p1) + powr<2>(p2) + powr<2>(q))) *
+                    ZA3(0.816496580927726 * (sqrt(cosp1p2 * p1 * p2 + cosp1q * p1 * q + 2. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))),
+                        (sqrt(1. + 3. * (-1. * powr<2>(p1) * (2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q)) + powr<2>(cosp1p2 * p1 * p2 + cosp1q * p1 * q)) *
+                                       powr<-2>(cosp1p2 * p1 * p2 + cosp1q * p1 * q + 2. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)))),
+                        atan2((2. * cosp1p2 * p1 * p2 + 2. * cosp2q * p2 * q + q * (2. * cosp1q * p1 + q) + powr<2>(p2)) * (2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q)) *
+                                  powr<-1>(cosp1p2 * p1 * p2 + cosp1q * p1 * q + 2. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)) *
+                                  powr<-1>(sqrt((2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q)) *
+                                                (2. * cosp2q * p2 * q + 4. * p1 * (cosp1p2 * p2 + cosp1q * q) + 4. * powr<2>(p1) + powr<2>(p2) + powr<2>(q)))) *
+                                  (sqrt(3. + 12. * p1 * (p1 + cosp1p2 * p2 + cosp1q * q) * powr<-1>(2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q)))),
+                              -1. + 3. * p1 * (p1 + cosp1p2 * p2 + cosp1q * q) *
+                                        powr<-1>(cosp1p2 * p1 * p2 + cosp1q * p1 * q + 2. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)))) -
+                4.5 * powr<2>(p2) *
+                    (powr<2>(p1) * (p2 * q *
+                                        (cosp2q * (8. + powr<2>(cosp1q) - 8. * powr<2>(cosp2q)) + cosp2q * powr<2>(cosp1p2) * (-12. + powr<2>(cosp2q)) +
+                                         2. * cosp1p2 * cosp1q * (2. + 3. * powr<2>(cosp2q))) +
+                                    (5. + 4. * cosp1p2 * cosp1q * cosp2q + powr<2>(cosp1p2) * (-5. + powr<2>(cosp2q)) - 5. * powr<2>(cosp2q)) * powr<2>(p2) +
+                                    (8. + 6. * cosp1p2 * cosp1q * cosp2q + powr<2>(cosp1q) + powr<2>(cosp1p2) * (-8. + powr<2>(cosp2q)) - 8. * powr<2>(cosp2q)) * powr<2>(q)) +
+                     powr<2>(p2) * (p2 * q *
+                                        (cosp2q * powr<2>(cosp1p2) * (-7. + powr<2>(cosp2q)) - 5. * cosp2q * (-1. + powr<2>(cosp2q)) +
+                                         2. * cosp1p2 * (cosp1q + 2. * cosp1q * powr<2>(cosp2q))) +
+                                    (3. + 2. * cosp1p2 * cosp1q * cosp2q + powr<2>(cosp1p2) * (-3. + powr<2>(cosp2q)) - 3. * powr<2>(cosp2q)) * powr<2>(p2) +
+                                    (5. + 4. * cosp1p2 * cosp1q * cosp2q + powr<2>(cosp1p2) * (-5. + powr<2>(cosp2q)) - 5. * powr<2>(cosp2q)) * powr<2>(q)) +
+                     p1 * p2 *
+                         (2. * cosp1q * powr<2>(cosp1p2) * (2. * p2 * q + 3. * p2 * q * powr<2>(cosp2q) + 2. * cosp2q * powr<2>(p2) + 3. * cosp2q * powr<2>(q)) +
+                          cosp1p2 * (cosp2q * p2 * q * (6. + powr<2>(cosp1q) - 12. * powr<2>(cosp2q)) + (5. - 7. * powr<2>(cosp2q)) * powr<2>(p2) +
+                                     (8. + powr<2>(cosp1q) - 12. * powr<2>(cosp2q)) * powr<2>(q)) +
+                          powr<3>(cosp1p2) * (cosp2q * p2 * q * (-12. + powr<2>(cosp2q)) + (-5. + powr<2>(cosp2q)) * powr<2>(p2) + (-8. + powr<2>(cosp2q)) * powr<2>(q)) +
+                          2. * cosp1q * (p2 * q + 2. * p2 * q * powr<2>(cosp2q) + cosp2q * (powr<2>(p2) + 2. * powr<2>(q))))) *
+                    powr<-1>(-1. + powr<2>(cosp1p2)) *
+                    (DiFfRGREPL10 * DiFfRGREPL11 + DiFfRGREPL3 * (DiFfRGREPL1 + 50. * (-1. * DiFfRGREPL11 + DiFfRGREPL12) * powr<6>(k) * powr<-1>(1. + powr<6>(k)))) *
+                    powr<-1>(6. * cosp1p2 * p2 * powr<3>(p1) + 3. * powr<4>(p1) + (8. + powr<2>(cosp1p2)) * powr<2>(p1) * powr<2>(p2) + 6. * cosp1p2 * p1 * powr<3>(p2) +
+                             3. * powr<4>(p2)) *
+                    powr<-1>(2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q)) * powr<-2>(DiFfRGREPL11 * DiFfRGREPL3 + DiFfRGREPL13 * powr<2>(q)) *
+                    powr<-1>(DiFfRGREPL11 * DiFfRGREPL5 + DiFfRGREPL14 * (2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q))) *
+                    ZA4SP(0.7071067811865475 * (sqrt(cosp1p2 * p1 * p2 + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))))) -
+           4.5 * DiFfRGREPL18 *
+               ((-6. * cosp1q * cosp2q * p2 + 5. * cosp1q * q + cosp1q * powr<2>(cosp1p2) * (10. * cosp2q * p2 + q * (-7. + powr<2>(cosp1q))) +
+                 p2 * powr<3>(cosp1p2) * (-13. + 3. * powr<2>(cosp1q)) - 5. * q * powr<3>(cosp1q) +
+                 cosp1p2 * (2. * cosp2q * q * (1. + 2. * powr<2>(cosp1q)) + p2 * (13. - 9. * powr<2>(cosp1q) + 2. * powr<2>(cosp2q)))) *
+                    powr<5>(p1) +
+                (3. + 2. * cosp1p2 * cosp1q * cosp2q + powr<2>(cosp1p2) * (-3. + powr<2>(cosp1q)) - 3. * powr<2>(cosp1q)) * powr<6>(p1) +
+                powr<4>(p1) * (p2 * q *
+                                   (5. * cosp2q * (1. - 3. * powr<2>(cosp1q)) + cosp1q * powr<3>(cosp1p2) * (-16. + powr<2>(cosp1q)) +
+                                    powr<2>(cosp1p2) * (cosp2q + 13. * cosp2q * powr<2>(cosp1q)) + cosp1p2 * cosp1q * (10. - 6. * powr<2>(cosp1q) + 7. * powr<2>(cosp2q))) +
+                               (-16. * cosp1p2 * cosp1q * cosp2q + 14. * cosp1q * cosp2q * powr<3>(cosp1p2) + 2. * powr<4>(cosp1p2) * (-8. + powr<2>(cosp1q)) -
+                                3. * (-3. + 2. * powr<2>(cosp1q) + powr<2>(cosp2q)) + powr<2>(cosp1p2) * (7. + 9. * powr<2>(cosp2q))) *
+                                   powr<2>(p2) +
+                               (5. + 4. * cosp1p2 * cosp1q * cosp2q + powr<2>(cosp1p2) * (-5. + powr<2>(cosp1q)) - 5. * powr<2>(cosp1q)) * powr<2>(q)) +
+                powr<4>(p2) *
+                    (p2 * q *
+                         (cosp2q * powr<2>(cosp1p2) * (-7. + powr<2>(cosp2q)) - 5. * cosp2q * (-1. + powr<2>(cosp2q)) + 2. * cosp1p2 * (cosp1q + 2. * cosp1q * powr<2>(cosp2q))) +
+                     (3. + 2. * cosp1p2 * cosp1q * cosp2q + powr<2>(cosp1p2) * (-3. + powr<2>(cosp2q)) - 3. * powr<2>(cosp2q)) * powr<2>(p2) +
+                     (5. + 4. * cosp1p2 * cosp1q * cosp2q + powr<2>(cosp1p2) * (-5. + powr<2>(cosp2q)) - 5. * powr<2>(cosp2q)) * powr<2>(q)) +
+                powr<2>(p1) * powr<2>(p2) *
+                    (p2 * q *
+                         (-4. * cosp2q * powr<4>(cosp1p2) + cosp1p2 * cosp1q * (12. + 3. * powr<2>(cosp1q) - 16. * powr<2>(cosp2q)) -
+                          5. * cosp2q * (-2. + 3. * powr<2>(cosp1q) + powr<2>(cosp2q)) + cosp1q * powr<3>(cosp1p2) * (-8. + 7. * powr<2>(cosp2q)) +
+                          cosp2q * powr<2>(cosp1p2) * (-10. + 19. * powr<2>(cosp1q) + 7. * powr<2>(cosp2q))) +
+                     (-16. * cosp1p2 * cosp1q * cosp2q + 14. * cosp1q * cosp2q * powr<3>(cosp1p2) + powr<2>(cosp1p2) * (7. + 9. * powr<2>(cosp1q)) +
+                      2. * powr<4>(cosp1p2) * (-8. + powr<2>(cosp2q)) - 3. * (-3. + powr<2>(cosp1q) + 2. * powr<2>(cosp2q))) *
+                         powr<2>(p2) +
+                     (-10. * cosp1p2 * cosp1q * cosp2q + 6. * cosp1q * cosp2q * powr<3>(cosp1p2) - 4. * powr<4>(cosp1p2) - 5. * (-2. + powr<2>(cosp1q) + powr<2>(cosp2q)) +
+                      powr<2>(cosp1p2) * (-6. + 7. * powr<2>(cosp1q) + 7. * powr<2>(cosp2q))) *
+                         powr<2>(q)) +
+                p2 * powr<3>(p1) *
+                    (4. * cosp1q * p2 * (cosp2q * p2 - 1. * q) * powr<4>(cosp1p2) +
+                     cosp1q * q * powr<2>(cosp1p2) * (12. * cosp2q * q + p2 * (-10. + 7. * powr<2>(cosp1q) + 19. * powr<2>(cosp2q))) - 4. * powr<5>(cosp1p2) * powr<2>(p2) +
+                     powr<3>(cosp1p2) *
+                         (cosp2q * p2 * q * (-8. + 7. * powr<2>(cosp1q)) + 11. * (-2. + powr<2>(cosp1q) + powr<2>(cosp2q)) * powr<2>(p2) + (-12. + powr<2>(cosp1q)) * powr<2>(q)) +
+                     cosp1p2 * (cosp2q * p2 * q * (12. - 16. * powr<2>(cosp1q) + 3. * powr<2>(cosp2q)) + (26. - 7. * powr<2>(cosp1q) - 7. * powr<2>(cosp2q)) * powr<2>(p2) +
+                                3. * (4. - 2. * powr<2>(cosp1q) + powr<2>(cosp2q)) * powr<2>(q)) -
+                     1. * cosp1q * (5. * p2 * q * (-2. + powr<2>(cosp1q)) + 15. * p2 * q * powr<2>(cosp2q) + 2. * cosp2q * (6. * powr<2>(p2) + 5. * powr<2>(q)))) +
+                p1 * powr<3>(p2) *
+                    (-1. * cosp1q * (-5. * p2 * q + 15. * p2 * q * powr<2>(cosp2q) + 6. * cosp2q * powr<2>(p2) + 10. * cosp2q * powr<2>(q)) +
+                     cosp1p2 * (cosp2q * p2 * q * (10. + 7. * powr<2>(cosp1q) - 6. * powr<2>(cosp2q)) + (13. + 2. * powr<2>(cosp1q) - 9. * powr<2>(cosp2q)) * powr<2>(p2) +
+                                3. * (4. + powr<2>(cosp1q) - 2. * powr<2>(cosp2q)) * powr<2>(q)) +
+                     powr<3>(cosp1p2) * (cosp2q * p2 * q * (-16. + powr<2>(cosp2q)) + (-13. + 3. * powr<2>(cosp2q)) * powr<2>(p2) + (-12. + powr<2>(cosp2q)) * powr<2>(q)) +
+                     cosp1q * powr<2>(cosp1p2) * (p2 * q + 13. * p2 * q * powr<2>(cosp2q) + 2. * cosp2q * (5. * powr<2>(p2) + 6. * powr<2>(q))))) *
+               powr<-1>(-1. + powr<2>(cosp1p2)) *
+               (DiFfRGREPL10 * DiFfRGREPL11 + DiFfRGREPL3 * (DiFfRGREPL1 + 50. * (-1. * DiFfRGREPL11 + DiFfRGREPL12) * powr<6>(k) * powr<-1>(1. + powr<6>(k)))) *
+               powr<-1>(6. * cosp1p2 * p2 * powr<3>(p1) + 3. * powr<4>(p1) + (8. + powr<2>(cosp1p2)) * powr<2>(p1) * powr<2>(p2) + 6. * cosp1p2 * p1 * powr<3>(p2) +
+                        3. * powr<4>(p2)) *
+               powr<-1>(2. * cosp2q * p2 * q + 2. * p1 * (cosp1p2 * p2 + cosp1q * q) + powr<2>(p1) + powr<2>(p2) + powr<2>(q)) *
+               powr<-2>(DiFfRGREPL11 * DiFfRGREPL3 + DiFfRGREPL13 * powr<2>(q)) *
+               powr<-1>(DiFfRGREPL11 * DiFfRGREPL7 + DiFfRGREPL16 * (2. * cosp2q * p2 * q + 2. * p1 * (cosp1p2 * p2 + cosp1q * q) + powr<2>(p1) + powr<2>(p2) + powr<2>(q))) *
+               ZA4SP(0.7071067811865475 * (sqrt(cosp1p2 * p1 * p2 + cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)))) +
+           0.75 * DiFfRGREPL19 * DiFfRGREPL20 * (DiFfRGREPL10 * DiFfRGREPL23 + (DiFfRGREPL2 - 50. * DiFfRGREPL23 + 50. * DiFfRGREPL24) * DiFfRGREPL3) *
+               (cosp2q * p2 * q * powr<2>(cosp1q) * powr<2>(p1) + q * powr<3>(cosp1q) * powr<3>(p1) +
+                p1 * powr<3>(cosp1p2) * (cosp1q * cosp2q * p1 - 1. * p2 * (-2. + powr<2>(cosp2q))) * powr<2>(p2) +
+                (-1. + powr<2>(cosp2q)) * (p2 * (p2 - 1. * cosp2q * q) + powr<2>(p1)) * powr<2>(p2) +
+                cosp1q * (-1. * q * powr<3>(p1) - 1. * p1 * q * powr<2>(cosp2q) * powr<2>(p2) + cosp2q * p1 * p2 * (powr<2>(p1) + powr<2>(p2))) +
+                p2 * powr<2>(cosp1p2) *
+                    (-1. * (p2 + cosp2q * q) * powr<2>(cosp1q) * powr<2>(p1) + (p2 + 2. * cosp2q * q - 2. * p2 * powr<2>(cosp2q)) * powr<2>(p1) +
+                     cosp1q * p1 * (-2. * p2 * q + p2 * q * powr<2>(cosp2q) + cosp2q * (powr<2>(p1) - 1. * powr<2>(p2))) - 1. * (-1. + powr<2>(cosp2q)) * powr<3>(p2)) +
+                cosp1p2 * (p2 * q * powr<3>(cosp1q) * powr<2>(p1) - 1. * powr<2>(cosp1q) * ((p2 + cosp2q * q) * powr<3>(p1) - 1. * cosp2q * p1 * q * powr<2>(p2)) +
+                           cosp1q * p2 * (cosp2q * p2 * powr<2>(p1) + q * powr<2>(cosp2q) * (-1. * powr<2>(p1) + powr<2>(p2)) - 1. * q * (2. * powr<2>(p1) + powr<2>(p2))) +
+                           p1 * (-1. * q * powr<3>(cosp2q) * powr<2>(p2) + cosp2q * q * (powr<2>(p1) + 2. * powr<2>(p2)) - 2. * powr<3>(p2) +
+                                 powr<2>(cosp2q) * (-1. * p2 * powr<2>(p1) + powr<3>(p2))))) *
+               powr<2>(q) * powr<-1>(-1. + powr<2>(cosp1p2)) *
+               powr<-1>(6. * cosp1p2 * p2 * powr<3>(p1) + 3. * powr<4>(p1) + (8. + powr<2>(cosp1p2)) * powr<2>(p1) * powr<2>(p2) + 6. * cosp1p2 * p1 * powr<3>(p2) +
+                        3. * powr<4>(p2)) *
+               powr<-2>(DiFfRGREPL23 * DiFfRGREPL3 + DiFfRGREPL25 * powr<2>(q)) *
+               powr<-1>(DiFfRGREPL23 * DiFfRGREPL8 + DiFfRGREPL26 * (-2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q))) *
+               powr<-1>(DiFfRGREPL23 * DiFfRGREPL9 +
+                        DiFfRGREPL27 * (2. * cosp1p2 * p1 * p2 - 2. * cosp1q * p1 * q - 2. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))) *
+               ZAcbc(0.816496580927726 * (sqrt(cosp1p2 * p1 * p2 - 1. * cosp1q * p1 * q - 2. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))),
+                     0.5 * (sqrt((3. * powr<2>(p1) * powr<2>(p1 + 2. * cosp1p2 * p2 - 2. * cosp1q * q) +
+                                  powr<2>(powr<2>(p1) - 2. * (cosp1p2 * p1 * p2 - 2. * cosp2q * p2 * q + q * (-1. * cosp1q * p1 + q) + powr<2>(p2)))) *
+                                 powr<-2>(cosp1p2 * p1 * p2 - 1. * cosp1q * p1 * q - 2. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)))),
+                     atan2(-1.7320508075688772 * p1 * (p1 + 2. * cosp1p2 * p2 - 2. * cosp1q * q) *
+                               powr<-1>(cosp1p2 * p1 * p2 - 1. * cosp1q * p1 * q - 2. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)),
+                           2. - 3. * powr<2>(p1) * powr<-1>(cosp1p2 * p1 * p2 - 1. * cosp1q * p1 * q - 2. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)))) +
+           ZAcbc(0.816496580927726 * (sqrt(-1. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q))),
+                 (sqrt((-2. * cosp1q * q * powr<3>(p1) + powr<4>(p1) + (-1. + 4. * powr<2>(cosp1q)) * powr<2>(p1) * powr<2>(q) - 2. * cosp1q * p1 * powr<3>(q) + powr<4>(q)) *
+                       powr<-2>(-1. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q)))),
+                 atan2(-1.7320508075688772 * p1 * (p1 - 2. * cosp1q * q) * powr<-1>(-1. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q)),
+                       2. - 3. * powr<2>(p1) * powr<-1>(-1. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q)))) *
+               (0.75 * DiFfRGREPL20 * (DiFfRGREPL10 * DiFfRGREPL23 + (DiFfRGREPL2 - 50. * DiFfRGREPL23 + 50. * DiFfRGREPL24) * DiFfRGREPL3) *
+                    (p2 *
+                         (q * (cosp2q * powr<2>(cosp1p2) * (-2. + powr<2>(cosp1q)) - 1. * cosp2q * powr<2>(cosp1q) +
+                               cosp1p2 * cosp1q * (2. - 1. * powr<2>(cosp1q) + powr<2>(cosp2q))) +
+                          p2 * (-1. + cosp1p2 * cosp1q * cosp2q + cosp1q * cosp2q * powr<3>(cosp1p2) + powr<2>(cosp1q) -
+                                1. * powr<2>(cosp1p2) * (-1. + 2. * powr<2>(cosp1q) + powr<2>(cosp2q)))) *
+                         powr<2>(p1) +
+                     (-1. * cosp1q * cosp2q * p2 * powr<2>(cosp1p2) + cosp1p2 * p2 * (-2. + powr<2>(cosp1q)) - 1. * p2 * powr<3>(cosp1p2) * (-2. + powr<2>(cosp1q)) +
+                      cosp1p2 * cosp2q * q * (-1. + powr<2>(cosp1q)) + cosp1q * (cosp2q * p2 + q - 1. * q * powr<2>(cosp1q))) *
+                         powr<3>(p1) -
+                     1. * (-1. + powr<2>(cosp1p2)) * (-1. + powr<2>(cosp1q)) * powr<4>(p1) -
+                     1. * (cosp1p2 * cosp1q - 1. * cosp2q) * p1 * (cosp1q * (p2 + cosp2q * q) + cosp1p2 * (-1. * cosp2q * p2 - 2. * q + q * powr<2>(cosp2q))) * powr<2>(p2) -
+                     1. * (cosp1p2 * cosp1q - 1. * cosp2q) * q * (-1. + powr<2>(cosp2q)) * powr<3>(p2)) *
+                    powr<2>(q) * powr<-1>(-1. + powr<2>(cosp1p2)) *
+                    powr<-1>(6. * cosp1p2 * p2 * powr<3>(p1) + 3. * powr<4>(p1) + (8. + powr<2>(cosp1p2)) * powr<2>(p1) * powr<2>(p2) + 6. * cosp1p2 * p1 * powr<3>(p2) +
+                             3. * powr<4>(p2)) *
+                    powr<-2>(DiFfRGREPL23 * DiFfRGREPL3 + DiFfRGREPL25 * powr<2>(q)) *
+                    powr<-1>(DiFfRGREPL23 * DiFfRGREPL4 + DiFfRGREPL28 * (-2. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q))) *
+                    powr<-1>(DiFfRGREPL23 * DiFfRGREPL9 +
+                             DiFfRGREPL27 * (2. * cosp1p2 * p1 * p2 - 2. * cosp1q * p1 * q - 2. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))) *
+                    ZAcbc(0.816496580927726 * (sqrt(cosp1p2 * p1 * p2 - 2. * cosp1q * p1 * q - 1. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))),
+                          0.5 * (sqrt((3. * powr<2>(p2) * powr<2>(2. * cosp1p2 * p1 + p2 - 2. * cosp2q * q) +
+                                       powr<2>(-2. * cosp1p2 * p1 * p2 + 4. * cosp1q * p1 * q + 2. * cosp2q * p2 * q - 2. * powr<2>(p1) + powr<2>(p2) - 2. * powr<2>(q))) *
+                                      powr<-2>(cosp1p2 * p1 * p2 - 2. * cosp1q * p1 * q - 1. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)))),
+                          atan2(-1.7320508075688772 * p2 * (2. * cosp1p2 * p1 + p2 - 2. * cosp2q * q) *
+                                    powr<-1>(cosp1p2 * p1 * p2 - 2. * cosp1q * p1 * q - 1. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)),
+                                2. - 3. * powr<2>(p2) * powr<-1>(cosp1p2 * p1 * p2 - 2. * cosp1q * p1 * q - 1. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)))) -
+                0.75 * DiFfRGREPL21 * (DiFfRGREPL10 * DiFfRGREPL23 + (DiFfRGREPL2 - 50. * DiFfRGREPL23 + 50. * DiFfRGREPL24) * DiFfRGREPL3) *
+                    (-1. * p2 * (p2 + cosp2q * q) * powr<2>(cosp1q) * powr<2>(p1) - 1. * q * powr<3>(cosp1q) * powr<3>(p1) +
+                     (-1. + powr<2>(cosp2q)) * (cosp2q * p2 * q - 1. * powr<2>(p1)) * powr<2>(p2) + cosp1q * cosp2q * powr<3>(cosp1p2) * powr<2>(p1) * powr<2>(p2) +
+                     cosp1q * p1 * (q * powr<2>(p1) + q * powr<2>(cosp2q) * powr<2>(p2) + cosp2q * p2 * (powr<2>(p1) + powr<2>(p2))) +
+                     p1 * p2 * powr<2>(cosp1p2) *
+                         (p1 * (-1. * p2 + cosp2q * q) * powr<2>(cosp1q) - 1. * p1 * (p2 + 2. * cosp2q * q + p2 * powr<2>(cosp2q)) +
+                          cosp1q * (2. * p2 * q - 1. * p2 * q * powr<2>(cosp2q) + cosp2q * (powr<2>(p1) + powr<2>(p2)))) -
+                     1. * cosp1p2 *
+                         (p2 * q * powr<3>(cosp1q) * powr<2>(p1) + p1 * powr<2>(cosp1q) * ((p2 - 1. * cosp2q * q) * powr<2>(p1) + (p2 + cosp2q * q) * powr<2>(p2)) -
+                          1. * cosp1q * p2 * (3. * cosp2q * p2 * powr<2>(p1) + q * powr<2>(cosp2q) * (powr<2>(p1) - 1. * powr<2>(p2)) + q * (2. * powr<2>(p1) + powr<2>(p2))) +
+                          cosp2q * p1 * (-1. * q * powr<2>(cosp2q) * powr<2>(p2) + cosp2q * p2 * (powr<2>(p1) + powr<2>(p2)) + q * (powr<2>(p1) + 2. * powr<2>(p2))))) *
+                    powr<2>(q) * powr<-1>(-1. + powr<2>(cosp1p2)) *
+                    powr<-1>(6. * cosp1p2 * p2 * powr<3>(p1) + 3. * powr<4>(p1) + (8. + powr<2>(cosp1p2)) * powr<2>(p1) * powr<2>(p2) + 6. * cosp1p2 * p1 * powr<3>(p2) +
+                             3. * powr<4>(p2)) *
+                    powr<-2>(DiFfRGREPL23 * DiFfRGREPL3 + DiFfRGREPL25 * powr<2>(q)) *
+                    powr<-1>(DiFfRGREPL23 * DiFfRGREPL4 + DiFfRGREPL28 * (-2. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q))) *
+                    powr<-1>(DiFfRGREPL23 * DiFfRGREPL5 + DiFfRGREPL29 * (2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q))) *
+                    ZAcbc(0.816496580927726 * (sqrt(cosp1p2 * p1 * p2 - 1. * cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))),
+                          0.5 * (sqrt((3. * powr<2>(-2. * cosp1q * p1 * q - 1. * p2 * (p2 + 2. * cosp2q * q) + powr<2>(p1)) +
+                                       powr<2>(4. * cosp1p2 * p1 * p2 + 2. * cosp1q * p1 * q - 2. * q * (cosp2q * p2 + q) + powr<2>(p1) + powr<2>(p2))) *
+                                      powr<-2>(cosp1p2 * p1 * p2 - 1. * cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)))),
+                          atan2(1.7320508075688772 * (-2. * cosp1q * p1 * q - 1. * p2 * (p2 + 2. * cosp2q * q) + powr<2>(p1)) *
+                                    (2. * cosp1p2 * p1 * p2 + powr<2>(p1) + powr<2>(p2)) *
+                                    powr<-1>(cosp1p2 * p1 * p2 - 1. * cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)) *
+                                    powr<-1>(sqrt((2. * cosp1p2 * p1 * p2 + powr<2>(p1) + powr<2>(p2)) *
+                                                  (4. * cosp2q * p2 * q - 2. * p1 * (cosp1p2 * p2 + 2. * cosp1q * q) + powr<2>(p1) + powr<2>(p2) + 4. * powr<2>(q)))) *
+                                    (sqrt((-2. * cosp1p2 * p1 * p2 - 4. * cosp1q * p1 * q + 4. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + 4. * powr<2>(q)) *
+                                          powr<-1>(2. * cosp1p2 * p1 * p2 + powr<2>(p1) + powr<2>(p2)))),
+                                2. - 3. * (2. * cosp1p2 * p1 * p2 + powr<2>(p1) + powr<2>(p2)) *
+                                         powr<-1>(cosp1p2 * p1 * p2 - 1. * cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))))) +
+           ZAcbc(0.816496580927726 * (sqrt(cosp1q * p1 * q + powr<2>(p1) + powr<2>(q))),
+                 (sqrt(1. + 3. * (-1. + powr<2>(cosp1q)) * powr<2>(p1) * powr<2>(q) * powr<-2>(cosp1q * p1 * q + powr<2>(p1) + powr<2>(q)))),
+                 atan2(1.7320508075688772 * p1 * (p1 + 2. * cosp1q * q) * powr<-1>(cosp1q * p1 * q + powr<2>(p1) + powr<2>(q)),
+                       2. - 3. * powr<2>(p1) * powr<-1>(cosp1q * p1 * q + powr<2>(p1) + powr<2>(q)))) *
+               (0.75 * DiFfRGREPL19 * (DiFfRGREPL10 * DiFfRGREPL23 + (DiFfRGREPL2 - 50. * DiFfRGREPL23 + 50. * DiFfRGREPL24) * DiFfRGREPL3) *
+                    (p2 * (p2 - 1. * cosp2q * q) * powr<2>(cosp1q) * powr<2>(p1) - 1. * q * powr<3>(cosp1q) * powr<3>(p1) -
+                     1. * cosp1q * cosp2q * powr<3>(cosp1p2) * powr<2>(p1) * powr<2>(p2) + (-1. + powr<2>(cosp2q)) * (cosp2q * p2 * q + powr<2>(p1)) * powr<2>(p2) +
+                     cosp1q * p1 * (q * powr<2>(p1) + q * powr<2>(cosp2q) * powr<2>(p2) - 1. * cosp2q * p2 * (powr<2>(p1) + powr<2>(p2))) +
+                     p1 * p2 * powr<2>(cosp1p2) *
+                         (p1 * (p2 + cosp2q * q) * powr<2>(cosp1q) + p1 * (p2 - 2. * cosp2q * q + p2 * powr<2>(cosp2q)) -
+                          1. * cosp1q * (-2. * p2 * q + p2 * q * powr<2>(cosp2q) + cosp2q * (powr<2>(p1) + powr<2>(p2)))) +
+                     cosp1p2 * (-1. * p2 * q * powr<3>(cosp1q) * powr<2>(p1) + p1 * powr<2>(cosp1q) * ((p2 + cosp2q * q) * powr<2>(p1) + (p2 - 1. * cosp2q * q) * powr<2>(p2)) +
+                                cosp1q * p2 * (-3. * cosp2q * p2 * powr<2>(p1) + q * powr<2>(cosp2q) * (powr<2>(p1) - 1. * powr<2>(p2)) + q * (2. * powr<2>(p1) + powr<2>(p2))) +
+                                cosp2q * p1 * (q * powr<2>(cosp2q) * powr<2>(p2) + cosp2q * p2 * (powr<2>(p1) + powr<2>(p2)) - 1. * q * (powr<2>(p1) + 2. * powr<2>(p2))))) *
+                    powr<2>(q) * powr<-1>(-1. + powr<2>(cosp1p2)) *
+                    powr<-1>(6. * cosp1p2 * p2 * powr<3>(p1) + 3. * powr<4>(p1) + (8. + powr<2>(cosp1p2)) * powr<2>(p1) * powr<2>(p2) + 6. * cosp1p2 * p1 * powr<3>(p2) +
+                             3. * powr<4>(p2)) *
+                    powr<-2>(DiFfRGREPL23 * DiFfRGREPL3 + DiFfRGREPL25 * powr<2>(q)) *
+                    powr<-1>(DiFfRGREPL23 * DiFfRGREPL6 + DiFfRGREPL31 * (2. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q))) *
+                    powr<-1>(DiFfRGREPL23 * DiFfRGREPL8 + DiFfRGREPL26 * (-2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q))) *
+                    ZAcbc(0.816496580927726 * (sqrt(cosp1p2 * p1 * p2 + cosp1q * p1 * q - 1. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))),
+                          0.5 * (sqrt((3. * powr<2>(2. * cosp1q * p1 * q - 1. * p2 * (p2 - 2. * cosp2q * q) + powr<2>(p1)) +
+                                       powr<2>(4. * cosp1p2 * p1 * p2 - 2. * cosp1q * p1 * q + 2. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) - 2. * powr<2>(q))) *
+                                      powr<-2>(cosp1p2 * p1 * p2 + cosp1q * p1 * q - 1. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)))),
+                          atan2(-1.7320508075688772 * (2. * cosp1q * p1 * q - 1. * p2 * (p2 - 2. * cosp2q * q) + powr<2>(p1)) *
+                                    (2. * cosp1p2 * p1 * p2 + powr<2>(p1) + powr<2>(p2)) *
+                                    powr<-1>(cosp1p2 * p1 * p2 + cosp1q * p1 * q - 1. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)) *
+                                    powr<-1>(sqrt((2. * cosp1p2 * p1 * p2 + powr<2>(p1) + powr<2>(p2)) *
+                                                  (-2. * cosp1p2 * p1 * p2 + 4. * cosp1q * p1 * q - 4. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + 4. * powr<2>(q)))) *
+                                    (sqrt((-2. * cosp1p2 * p1 * p2 + 4. * cosp1q * p1 * q - 4. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + 4. * powr<2>(q)) *
+                                          powr<-1>(2. * cosp1p2 * p1 * p2 + powr<2>(p1) + powr<2>(p2)))),
+                                2. - 3. * (2. * cosp1p2 * p1 * p2 + powr<2>(p1) + powr<2>(p2)) *
+                                         powr<-1>(cosp1p2 * p1 * p2 + cosp1q * p1 * q - 1. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)))) -
+                0.75 * DiFfRGREPL22 * (DiFfRGREPL10 * DiFfRGREPL23 + (DiFfRGREPL2 - 50. * DiFfRGREPL23 + 50. * DiFfRGREPL24) * DiFfRGREPL3) *
+                    (-1. * p2 *
+                         (q * (-1. * cosp2q * powr<2>(cosp1p2) * (-2. + powr<2>(cosp1q)) + cosp2q * powr<2>(cosp1q) +
+                               cosp1p2 * cosp1q * (-2. + powr<2>(cosp1q) - 1. * powr<2>(cosp2q))) +
+                          p2 * (-1. + cosp1p2 * cosp1q * cosp2q + cosp1q * cosp2q * powr<3>(cosp1p2) + powr<2>(cosp1q) -
+                                1. * powr<2>(cosp1p2) * (-1. + 2. * powr<2>(cosp1q) + powr<2>(cosp2q)))) *
+                         powr<2>(p1) +
+                     (cosp1q * cosp2q * p2 * powr<2>(cosp1p2) - 1. * cosp1p2 * p2 * (-2. + powr<2>(cosp1q)) + p2 * powr<3>(cosp1p2) * (-2. + powr<2>(cosp1q)) +
+                      cosp1p2 * cosp2q * q * (-1. + powr<2>(cosp1q)) + cosp1q * (-1. * cosp2q * p2 + q - 1. * q * powr<2>(cosp1q))) *
+                         powr<3>(p1) +
+                     (-1. + powr<2>(cosp1p2)) * (-1. + powr<2>(cosp1q)) * powr<4>(p1) -
+                     1. * (cosp1p2 * cosp1q - 1. * cosp2q) * p1 *
+                         (-1. * cosp1q * p2 + cosp1p2 * cosp2q * p2 - 2. * cosp1p2 * q + cosp1q * cosp2q * q + cosp1p2 * q * powr<2>(cosp2q)) * powr<2>(p2) -
+                     1. * (cosp1p2 * cosp1q - 1. * cosp2q) * q * (-1. + powr<2>(cosp2q)) * powr<3>(p2)) *
+                    powr<2>(q) * powr<-1>(-1. + powr<2>(cosp1p2)) *
+                    powr<-1>(6. * cosp1p2 * p2 * powr<3>(p1) + 3. * powr<4>(p1) + (8. + powr<2>(cosp1p2)) * powr<2>(p1) * powr<2>(p2) + 6. * cosp1p2 * p1 * powr<3>(p2) +
+                             3. * powr<4>(p2)) *
+                    powr<-2>(DiFfRGREPL23 * DiFfRGREPL3 + DiFfRGREPL25 * powr<2>(q)) *
+                    powr<-1>(DiFfRGREPL23 * DiFfRGREPL6 + DiFfRGREPL31 * (2. * cosp1q * p1 * q + powr<2>(p1) + powr<2>(q))) *
+                    powr<-1>(DiFfRGREPL23 * DiFfRGREPL7 + DiFfRGREPL30 * (2. * cosp2q * p2 * q + 2. * p1 * (cosp1p2 * p2 + cosp1q * q) + powr<2>(p1) + powr<2>(p2) + powr<2>(q))) *
+                    ZAcbc(0.816496580927726 * (sqrt(cosp1p2 * p1 * p2 + 2. * cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))),
+                          0.5 * (sqrt(powr<-2>(cosp1p2 * p1 * p2 + 2. * cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)) *
+                                      (3. * powr<2>(p2) * powr<2>(2. * cosp1p2 * p1 + p2 + 2. * cosp2q * q) +
+                                       powr<2>(2. * cosp1p2 * p1 * p2 + 4. * cosp1q * p1 * q + 2. * cosp2q * p2 * q + 2. * powr<2>(p1) - 1. * powr<2>(p2) + 2. * powr<2>(q))))),
+                          atan2(1.7320508075688772 * p2 * (2. * cosp1p2 * p1 + p2 + 2. * cosp2q * q) *
+                                    powr<-1>(cosp1p2 * p1 * p2 + 2. * cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)),
+                                2. - 3. * powr<2>(p2) * powr<-1>(cosp1p2 * p1 * p2 + 2. * cosp1q * p1 * q + cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))))) +
+           0.75 * DiFfRGREPL21 * DiFfRGREPL22 * (DiFfRGREPL10 * DiFfRGREPL23 + (DiFfRGREPL2 - 50. * DiFfRGREPL23 + 50. * DiFfRGREPL24) * DiFfRGREPL3) *
+               (-1. * cosp2q * p2 * q * powr<2>(cosp1q) * powr<2>(p1) - 1. * q * powr<3>(cosp1q) * powr<3>(p1) +
+                p1 * powr<3>(cosp1p2) * (cosp1q * cosp2q * p1 - 1. * p2 * (-2. + powr<2>(cosp2q))) * powr<2>(p2) +
+                (-1. + powr<2>(cosp2q)) * (p2 * (p2 + cosp2q * q) + powr<2>(p1)) * powr<2>(p2) +
+                cosp1q * p1 * (q * powr<2>(p1) + q * powr<2>(cosp2q) * powr<2>(p2) + cosp2q * p2 * (powr<2>(p1) + powr<2>(p2))) +
+                p2 * powr<2>(cosp1p2) *
+                    ((-1. * p2 + cosp2q * q) * powr<2>(cosp1q) * powr<2>(p1) + (p2 - 2. * cosp2q * q - 2. * p2 * powr<2>(cosp2q)) * powr<2>(p1) +
+                     cosp1q * p1 * (2. * p2 * q - 1. * p2 * q * powr<2>(cosp2q) + cosp2q * (powr<2>(p1) - 1. * powr<2>(p2))) - 1. * (-1. + powr<2>(cosp2q)) * powr<3>(p2)) +
+                cosp1p2 *
+                    (-1. * p2 * q * powr<3>(cosp1q) * powr<2>(p1) - 1. * powr<2>(cosp1q) * ((p2 - 1. * cosp2q * q) * powr<3>(p1) + cosp2q * p1 * q * powr<2>(p2)) +
+                     cosp1q * p2 * (cosp2q * p2 * powr<2>(p1) + q * powr<2>(cosp2q) * (powr<2>(p1) - 1. * powr<2>(p2)) + q * (2. * powr<2>(p1) + powr<2>(p2))) -
+                     1. * p1 *
+                         (p2 * powr<2>(cosp2q) * (powr<2>(p1) - 1. * powr<2>(p2)) - 1. * q * powr<3>(cosp2q) * powr<2>(p2) + cosp2q * q * (powr<2>(p1) + 2. * powr<2>(p2)) +
+                          2. * powr<3>(p2)))) *
+               powr<2>(q) * powr<-1>(-1. + powr<2>(cosp1p2)) *
+               powr<-1>(6. * cosp1p2 * p2 * powr<3>(p1) + 3. * powr<4>(p1) + (8. + powr<2>(cosp1p2)) * powr<2>(p1) * powr<2>(p2) + 6. * cosp1p2 * p1 * powr<3>(p2) +
+                        3. * powr<4>(p2)) *
+               powr<-2>(DiFfRGREPL23 * DiFfRGREPL3 + DiFfRGREPL25 * powr<2>(q)) *
+               powr<-1>(DiFfRGREPL23 * DiFfRGREPL5 + DiFfRGREPL29 * (2. * cosp2q * p2 * q + powr<2>(p2) + powr<2>(q))) *
+               powr<-1>(DiFfRGREPL23 * DiFfRGREPL7 + DiFfRGREPL30 * (2. * cosp2q * p2 * q + 2. * p1 * (cosp1p2 * p2 + cosp1q * q) + powr<2>(p1) + powr<2>(p2) + powr<2>(q))) *
+               ZAcbc(0.816496580927726 * (sqrt(cosp1p2 * p1 * p2 + cosp1q * p1 * q + 2. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))),
+                     0.5 * (sqrt((3. * powr<2>(p1) * powr<2>(p1 + 2. * cosp1p2 * p2 + 2. * cosp1q * q) +
+                                  powr<2>(powr<2>(p1) - 2. * (cosp1p2 * p1 * p2 + 2. * cosp2q * p2 * q + q * (cosp1q * p1 + q) + powr<2>(p2)))) *
+                                 powr<-2>(cosp1p2 * p1 * p2 + cosp1q * p1 * q + 2. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)))),
+                     atan2(1.7320508075688772 * p1 * (p1 + 2. * cosp1p2 * p2 + 2. * cosp1q * q) *
+                               powr<-1>(cosp1p2 * p1 * p2 + cosp1q * p1 * q + 2. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q)),
+                           2. - 3. * powr<2>(p1) * powr<-1>(cosp1p2 * p1 * p2 + cosp1q * p1 * q + 2. * cosp2q * p2 * q + powr<2>(p1) + powr<2>(p2) + powr<2>(q))));
+  }
+
+  template <typename T1, typename T2, typename T3, typename T4, typename T5, typename T6, typename T7, typename T8, typename T9, typename T10, typename T11, typename T12>
+  static __forceinline__ __host__ __device__ auto constant(const double k, const T1 S0, const T2 S1, const T3 SPhi, const T4 &ZA3, const T5 &ZAcbc, const T6 &ZA4SP,
+                                                           const T7 &ZA4tadpole, const T8 &dtZc, const T9 &Zc, const T10 &dtZA, const T11 &ZA, const T12 m2A)
+  {
+    // flow
+    return 0.;
+  }
+
+private:
+  static __forceinline__ __device__ __host__ auto RB(const auto k2, const auto p2) { return REG::RB(k2, p2); }
+  static __forceinline__ __device__ __host__ auto RF(const auto k2, const auto p2) { return REG::RF(k2, p2); }
+
+  static __forceinline__ __device__ __host__ auto RBdot(const auto k2, const auto p2) { return REG::RBdot(k2, p2); }
+  static __forceinline__ __device__ __host__ auto RFdot(const auto k2, const auto p2) { return REG::RFdot(k2, p2); }
+
+  static __forceinline__ __device__ __host__ auto dq2RB(const auto k2, const auto p2) { return REG::dq2RB(k2, p2); }
+  static __forceinline__ __device__ __host__ auto dq2RF(const auto k2, const auto p2) { return REG::dq2RF(k2, p2); }
+};
