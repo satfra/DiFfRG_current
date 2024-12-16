@@ -1,0 +1,61 @@
+name: Documentation
+run-name: Build and deploy the documentation
+on: [push]
+jobs:
+  # Build job
+  build:
+    # Specify runner +  build & upload the static files as an artifact
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+      - name: Install doxygen
+        run: | 
+          sudo apt-get update
+          sudo apt-get install cmake build-essential python3 graphviz
+          wget https://www.doxygen.nl/files/doxygen-1.12.0.linux.bin.tar.gz
+          tar xfv doxygen-1.12.0.linux.bin.tar.gz
+          cd doxygen-1.12.0/
+          sudo make install
+          cd ..
+      - name: Create temporary working-directory
+        run: mkdir build
+      - name: Build doxygen documentation
+        run: |
+          cd build
+          cmake -DDiFfRG_ONLY_DOCUMENTATION=ON -DCMAKE_INSTALL_PREFIX=../install/ ../DiFfRG 
+          make documentation
+          make install
+          cd ..
+      - name: Build python documentation
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install pdoc python/dist/DiFfRG-1.0.0-py3-none-any.whl
+          cd python
+          pdoc -o python DiFfRG
+          cd ..
+      - name: Assemble
+        run: |
+          mkdir documentation
+          mv install/documentation/html documentation/cpp
+          mv python/python documentation/python
+      - name: Upload static files as artifact
+        id: deployment
+        uses: actions/upload-pages-artifact@v3 # or specific "vX.X.X" version tag for this action
+        with:
+          path: ./documentation
+  # Deployment job
+  deploy:
+    permissions:
+      id-token: write
+      pages: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+        - name: Deploy to GitHub Pages
+          id: deployment
+          uses: actions/deploy-pages@v4
