@@ -1,0 +1,56 @@
+{
+  "physical": {
+    "Lambda" : 1.0,
+    "a" : 0.0,
+    "b" : 1.0,
+    "c" : 0.0,
+    "d" : 0.0
+  },
+  "discretization": {
+    "fe_order": 3,
+    "threads": 8,
+    "batch_size": 64,
+    "overintegration": 0,
+    "output_subdivisions": 2,
+
+    "EoM_abs_tol": 1e-10,
+    "EoM_max_iter": 200,
+
+    "grid": {
+      "x_grid": "0:1e-2:1",
+      "y_grid": "0:0.1:1",
+      "z_grid": "0:0.1:1",
+      "refine": 0
+    },
+    "adaptivity": {
+      "start_adapt_at": 0E0,
+      "adapt_dt": 1E-1,
+      "level": 0,
+      "refine_percent": 1E-1,
+      "coarsen_percent": 5E-2
+    }
+  },
+  "timestepping": {
+    "final_time": 10.0,
+    "output_dt": 1E-1,
+    "explicit": {
+      "dt": 1E-4,
+      "minimal_dt": 1E-6,
+      "maximal_dt": 1E-1,
+      "abs_tol": 1E-12,
+      "rel_tol": 1E-4
+    },
+    "implicit": {
+      "dt": 1E-4,
+      "minimal_dt": 1E-6,
+      "maximal_dt": 1E-1,
+      "abs_tol": 1E-13,
+      "rel_tol": 1E-7
+    }
+  },
+  "output": {
+    "verbosity": 1,
+    "folder": "./",
+    "name": "output"
+  }
+}
