@@ -1,3 +1,6 @@
+[![Doxygen](https://img.shields.io/badge/doxygen-2C4AA8?style=for-the-badge&logo=doxygen&logoColor=white)](https://satfra.github.io/DiFfRG/cpp/index.html)
+[![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://satfra.github.io/DiFfRG/python/index.html)
+
 # DiFfRG - A Discretization Framework for functional Renormalization Group flows
 
 DiFfRG is a set of tools for the discretization of flow equations arising in the functional Renormalization Group (fRG).
