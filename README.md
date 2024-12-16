@@ -4,19 +4,16 @@
 # DiFfRG - A Discretization Framework for functional Renormalization Group flows
 
 DiFfRG is a set of tools for the discretization of flow equations arising in the functional Renormalization Group (fRG).
+It supports the setup and calculation of large systems of flow equations allowing for complex combinations of vertex and derivative expansions.
 
-For spatial discretizations, i.e. discretizations of field space, DiFfRG makes different finite element (FE) methods available. These include:
+For spatial discretizations, i.e. discretizations of field space mostly used for derivative expansions, DiFfRG makes different finite element (FE) methods available. These include:
 - Continuous Galerkin FE
 - Discontinuos Galerkin FE
 - Direct discontinuous Galerkin FE
 - Local discontinuous Galerkin FE (including derived finite volume (FV) schemes)
 
-The FEM methods included in DiFfRG are built upon the deal.ii FEM suite and are highly parallelized and optimized.
-
-Both RG-time dependent flows, as well as stationary equations can be solved together in the flow, allowing for techniques like flowing fields in a very accessible way.
-
-The spatial discretization can be furthermore extended by momentum dependencies and coupled non-field-dependent systems of flow equations.
-As an example, one can implement a vertex expansion for the gluonic sector of QCD together with a derivative expansion for the mesons and quarks, where the latter is implemented using FEM.
+The FEM methods included in DiFfRG are built upon the [deal.ii](https://www.dealii.org/) finite element library, which is highly parallelized and allows for great performance and flexibility.
+PDEs consisting of RG-time dependent equations, as well as stationary equations can be solved together during the flow, allowing for techniques like flowing fields in a very accessible way.
 
 Both explicit and implicit timestepping methods are available and allow thus for efficient RG-time integration in the symmetric and symmetry-broken regime.
 
