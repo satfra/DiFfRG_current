@@ -22,8 +22,7 @@ Both explicit and implicit timestepping methods are available and allow thus for
 
 We also include a set of tools for the evaluation of integrals and discretization of momentum dependencies.
 
-For an overview, please see the [accompanying paper](https://arxiv.org/abs/...), the ***[tutorial page](#TutorialTOC)*** in the local documentation and the examples in `Examples/`. The documentation is built automatically when running the setup script, as described below.
-
+For an overview, please see the [accompanying paper](https://arxiv.org/abs/...), the ***[tutorial page](https://satfra.github.io/DiFfRG/cpp/TutorialTOC.html)*** in the [documentation](https://satfra.github.io/DiFfRG/cpp/index.html) and the examples in `Examples/`. 
 
 ## Citation
 
@@ -161,7 +160,7 @@ The `update_DiFfRG.sh` script takes the following optional arguments:
 
 ## Getting started with simulating fRG flows
 
-For an overview, please see the ***[tutorial page](#TutorialTOC)*** in the local documentation. The documentation is built automatically when running the setup script, but can also be built manually by running
+For an overview, please see the ***[tutorial page](https://satfra.github.io/DiFfRG/cpp/TutorialTOC.html)*** in the [documentation](https://satfra.github.io/DiFfRG/cpp/index.html). A local documentation is also always built automatically when running the setup script, but can also be built manually by running
 ```bash
 $ make documentation
 ```
