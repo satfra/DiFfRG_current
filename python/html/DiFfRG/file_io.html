@@ -1,0 +1,646 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
+<meta name="generator" content="pdoc3 0.11.5">
+<title>DiFfRG.file_io API documentation</title>
+<meta name="description" content="">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/sanitize.min.css" integrity="sha512-y1dtMcuvtTMJc1yPgEqF0ZjQbhnc/bFhyvIyVNb9Zk5mIGtqVaAB1Ttl28su8AvFMOY0EwRbAe+HCLqj6W7/KA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/13.0.0/typography.min.css" integrity="sha512-Y1DYSb995BAfxobCkKepB1BqJJTPrOp3zPL74AWFugHHmmdcvO+C48WLrUOlhGMc0QG7AE3f7gmvvcrmX2fDoA==" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css" crossorigin>
+<style>:root{--highlight-color:#fe9}.flex{display:flex !important}body{line-height:1.5em}#content{padding:20px}#sidebar{padding:1.5em;overflow:hidden}#sidebar > *:last-child{margin-bottom:2cm}.http-server-breadcrumbs{font-size:130%;margin:0 0 15px 0}#footer{font-size:.75em;padding:5px 30px;border-top:1px solid #ddd;text-align:right}#footer p{margin:0 0 0 1em;display:inline-block}#footer p:last-child{margin-right:30px}h1,h2,h3,h4,h5{font-weight:300}h1{font-size:2.5em;line-height:1.1em}h2{font-size:1.75em;margin:2em 0 .50em 0}h3{font-size:1.4em;margin:1.6em 0 .7em 0}h4{margin:0;font-size:105%}h1:target,h2:target,h3:target,h4:target,h5:target,h6:target{background:var(--highlight-color);padding:.2em 0}a{color:#058;text-decoration:none;transition:color .2s ease-in-out}a:visited{color:#503}a:hover{color:#b62}.title code{font-weight:bold}h2[id^="header-"]{margin-top:2em}.ident{color:#900;font-weight:bold}pre code{font-size:.8em;line-height:1.4em;padding:1em;display:block}code{background:#f3f3f3;font-family:"DejaVu Sans Mono",monospace;padding:1px 4px;overflow-wrap:break-word}h1 code{background:transparent}pre{border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin:1em 0}#http-server-module-list{display:flex;flex-flow:column}#http-server-module-list div{display:flex}#http-server-module-list dt{min-width:10%}#http-server-module-list p{margin-top:0}.toc ul,#index{list-style-type:none;margin:0;padding:0}#index code{background:transparent}#index h3{border-bottom:1px solid #ddd}#index ul{padding:0}#index h4{margin-top:.6em;font-weight:bold}@media (min-width:200ex){#index .two-column{column-count:2}}@media (min-width:300ex){#index .two-column{column-count:3}}dl{margin-bottom:2em}dl dl:last-child{margin-bottom:4em}dd{margin:0 0 1em 3em}#header-classes + dl > dd{margin-bottom:3em}dd dd{margin-left:2em}dd p{margin:10px 0}.name{background:#eee;font-size:.85em;padding:5px 10px;display:inline-block;min-width:40%}.name:hover{background:#e0e0e0}dt:target .name{background:var(--highlight-color)}.name > span:first-child{white-space:nowrap}.name.class > span:nth-child(2){margin-left:.4em}.inherited{color:#999;border-left:5px solid #eee;padding-left:1em}.inheritance em{font-style:normal;font-weight:bold}.desc h2{font-weight:400;font-size:1.25em}.desc h3{font-size:1em}.desc dt code{background:inherit}.source > summary,.git-link-div{color:#666;text-align:right;font-weight:400;font-size:.8em;text-transform:uppercase}.source summary > *{white-space:nowrap;cursor:pointer}.git-link{color:inherit;margin-left:1em}.source pre{max-height:500px;overflow:auto;margin:0}.source pre code{font-size:12px;overflow:visible;min-width:max-content}.hlist{list-style:none}.hlist li{display:inline}.hlist li:after{content:',\2002'}.hlist li:last-child:after{content:none}.hlist .hlist{display:inline;padding-left:1em}img{max-width:100%}td{padding:0 .5em}.admonition{padding:.1em 1em;margin:1em 0}.admonition-title{font-weight:bold}.admonition.note,.admonition.info,.admonition.important{background:#aef}.admonition.todo,.admonition.versionadded,.admonition.tip,.admonition.hint{background:#dfd}.admonition.warning,.admonition.versionchanged,.admonition.deprecated{background:#fd4}.admonition.error,.admonition.danger,.admonition.caution{background:lightpink}</style>
+<style media="screen and (min-width: 700px)">@media screen and (min-width:700px){#sidebar{width:30%;height:100vh;overflow:auto;position:sticky;top:0}#content{width:70%;max-width:100ch;padding:3em 4em;border-left:1px solid #ddd}pre code{font-size:1em}.name{font-size:1em}main{display:flex;flex-direction:row-reverse;justify-content:flex-end}.toc ul ul,#index ul ul{padding-left:1em}.toc > ul > li{margin-top:.5em}}</style>
+<style media="print">@media print{#sidebar h1{page-break-before:always}.source{display:none}}@media print{*{background:transparent !important;color:#000 !important;box-shadow:none !important;text-shadow:none !important}a[href]:after{content:" (" attr(href) ")";font-size:90%}a[href][title]:after{content:none}abbr[title]:after{content:" (" attr(title) ")"}.ir a:after,a[href^="javascript:"]:after,a[href^="#"]:after{content:""}pre,blockquote{border:1px solid #999;page-break-inside:avoid}thead{display:table-header-group}tr,img{page-break-inside:avoid}img{max-width:100% !important}@page{margin:0.5cm}p,h2,h3{orphans:3;widows:3}h1,h2,h3,h4,h5,h6{page-break-after:avoid}}</style>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha512-D9gUyxqja7hBtkWpPWGt9wfbfaMGVt9gnyCvYa+jojwwPHLCzUm5i8rpk7vD7wNee9bA35eYIjobYPaQuKS1MQ==" crossorigin></script>
+<script>window.addEventListener('DOMContentLoaded', () => {
+hljs.configure({languages: ['bash', 'css', 'diff', 'graphql', 'ini', 'javascript', 'json', 'plaintext', 'python', 'python-repl', 'rust', 'shell', 'sql', 'typescript', 'xml', 'yaml']});
+hljs.highlightAll();
+/* Collapse source docstrings */
+setTimeout(() => {
+[...document.querySelectorAll('.hljs.language-python > .hljs-string')]
+.filter(el => el.innerHTML.length > 200 && ['"""', "'''"].includes(el.innerHTML.substring(0, 3)))
+.forEach(el => {
+let d = document.createElement('details');
+d.classList.add('hljs-string');
+d.innerHTML = '<summary>"""</summary>' + el.innerHTML.substring(3);
+el.replaceWith(d);
+});
+}, 100);
+})</script>
+</head>
+<body>
+<main>
+<article id="content">
+<header>
+<h1 class="title">Module <code>DiFfRG.file_io</code></h1>
+</header>
+<section id="section-intro">
+</section>
+<section>
+</section>
+<section>
+</section>
+<section>
+<h2 class="section-title" id="header-functions">Functions</h2>
+<dl>
+<dt id="DiFfRG.file_io.get_parameters_from_name"><code class="name flex">
+<span>def <span class="ident">get_parameters_from_name</span></span>(<span>name: str) ‑> dict</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_parameters_from_name(name: str) -&gt; dict:
+    if name[-1] == &#34;/&#34;:
+        raise Exception(&#34;cannot read params from folder name&#34;)
+    if name[-4:] == &#34;.pvd&#34; or name[-4:] == &#34;.csv&#34;:
+        raw_filename = name.split(&#34;/&#34;)[-1][:-4]
+    else:
+        raw_filename = name.split(&#34;/&#34;)[-1]
+
+    params = {}
+    splits = raw_filename.split(&#34;_&#34;)
+    # merge a split with the next one if it does not contain a &#34;=&#34;
+    i = 0
+    while i &lt; len(splits):
+        if not &#34;:&#34; in splits[i]:
+            if i == len(splits) - 1:
+                splits.pop(i)
+            else:
+                splits[i] = splits[i] + &#34;_&#34; + splits[i + 1]
+                splits.pop(i + 1)
+        i += 1
+
+    for p in splits:
+        if len(p.split(&#34;:&#34;)) == 1:
+            continue
+        if not len(p.split(&#34;:&#34;)) == 2:
+            raise Exception(
+                &#34;naming for file &#34; + raw_filename + &#34; could not be understood!&#34;
+            )
+        param = p.split(&#34;:&#34;)[0]
+        value = float(p.split(&#34;:&#34;)[1])
+        params[param] = value
+    return params</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="DiFfRG.file_io.get_vtk_data"><code class="name flex">
+<span>def <span class="ident">get_vtk_data</span></span>(<span>vtkdata)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_vtk_data(vtkdata):
+    &#34;&#34;&#34;Utility function to extract nodes and data from a (loaded) vtk file.
+
+    Args:
+        vtkdata : The loaded vtk data.
+
+    Returns:
+        tuple: A tuple containing a numpy array of nodes and a dict with the arrays in the vtkdata.
+    &#34;&#34;&#34;
+    
+    nodes = vtk_to_numpy(vtkdata.GetPoints().GetData())
+    data = {}
+
+    number_of_arrays = vtkdata.GetPointData().GetNumberOfArrays()
+    for i in range(number_of_arrays):
+        name = vtkdata.GetPointData().GetArray(i).GetName()
+        data[name] = vtk_to_numpy(vtkdata.GetPointData().GetAbstractArray(name))
+
+    return nodes, data</code></pre>
+</details>
+<div class="desc"><p>Utility function to extract nodes and data from a (loaded) vtk file.</p>
+<h2 id="args">Args</h2>
+<p>vtkdata : The loaded vtk data.</p>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>tuple</code></dt>
+<dd>A tuple containing a numpy array of nodes and a dict with the arrays in the vtkdata.</dd>
+</dl></div>
+</dd>
+<dt id="DiFfRG.file_io.mkdir"><code class="name flex">
+<span>def <span class="ident">mkdir</span></span>(<span>path: str)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def mkdir(path: str):
+    &#34;&#34;&#34;Creates a directory if it does not exist.
+
+    Args:
+        path (str): The path to the directory to be created.
+    &#34;&#34;&#34;
+    if not os.path.exists(path):
+        os.makedirs(path)</code></pre>
+</details>
+<div class="desc"><p>Creates a directory if it does not exist.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>path</code></strong> :&ensp;<code>str</code></dt>
+<dd>The path to the directory to be created.</dd>
+</dl></div>
+</dd>
+<dt id="DiFfRG.file_io.read_csv"><code class="name flex">
+<span>def <span class="ident">read_csv</span></span>(<span>csv, delim=',', header='infer')</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def read_csv(csv, delim=&#34;,&#34;, header=&#34;infer&#34;):
+    &#34;&#34;&#34;Reads a csv file and returns a pandas dataframe.
+
+    Args:
+        csv (str): The path to the csv file.
+        delim (str, optional): Delimiter used in the csv file. Defaults to &#34;,&#34;.
+        header (str, optional): Header argument for pandas. Use None if no header exists. Defaults to &#34;infer&#34;.
+
+    Returns:
+        pandas.DataFrame: The data in the csv file.
+    &#34;&#34;&#34;
+    data = pandas.read_csv(csv, comment=&#34;#&#34;, delimiter=delim, header=header)
+    return data</code></pre>
+</details>
+<div class="desc"><p>Reads a csv file and returns a pandas dataframe.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>csv</code></strong> :&ensp;<code>str</code></dt>
+<dd>The path to the csv file.</dd>
+<dt><strong><code>delim</code></strong> :&ensp;<code>str</code>, optional</dt>
+<dd>Delimiter used in the csv file. Defaults to ",".</dd>
+<dt><strong><code>header</code></strong> :&ensp;<code>str</code>, optional</dt>
+<dd>Header argument for pandas. Use None if no header exists. Defaults to "infer".</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>pandas.DataFrame</code></dt>
+<dd>The data in the csv file.</dd>
+</dl></div>
+</dd>
+<dt id="DiFfRG.file_io.read_k_csv"><code class="name flex">
+<span>def <span class="ident">read_k_csv</span></span>(<span>filename, delim=',', kName='kGeV')</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def read_k_csv(filename, delim=&#34;,&#34;, kName=&#34;kGeV&#34;):
+    &#34;&#34;&#34;Reads a csv file which contains data for different values of k and returns the data split into separate csvs for each value of k.
+
+    Args:
+        filename (str): The path to the csv file.
+        delim (str, optional): Delimiter used in the csv file. Defaults to &#34;,&#34;.
+        kName (str, optional): The name of the column which contains the values of k. Defaults to &#34;kGeV&#34;.
+
+    Returns:
+        tuple: A tuple containing a list with the unique values of k and a list of pandas dataframes for each value of k.
+
+    &#34;&#34;&#34;
+
+    csv = read_csv(filename, delim=delim)
+    # We need to split the data into separate csvs for each value of k
+    ks = csv[kName]
+    k_values = np.unique(ks)
+    data = []
+    for k in k_values:
+        mask = ks == k
+        data.append(csv[mask])
+    return k_values, data</code></pre>
+</details>
+<div class="desc"><p>Reads a csv file which contains data for different values of k and returns the data split into separate csvs for each value of k.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>filename</code></strong> :&ensp;<code>str</code></dt>
+<dd>The path to the csv file.</dd>
+<dt><strong><code>delim</code></strong> :&ensp;<code>str</code>, optional</dt>
+<dd>Delimiter used in the csv file. Defaults to ",".</dd>
+<dt><strong><code>kName</code></strong> :&ensp;<code>str</code>, optional</dt>
+<dd>The name of the column which contains the values of k. Defaults to "kGeV".</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>tuple</code></dt>
+<dd>A tuple containing a list with the unique values of k and a list of pandas dataframes for each value of k.</dd>
+</dl></div>
+</dd>
+<dt id="DiFfRG.file_io.split_csv"><code class="name flex">
+<span>def <span class="ident">split_csv</span></span>(<span>csv, name='kGeV')</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def split_csv(csv, name=&#34;kGeV&#34;):
+    &#34;&#34;&#34;Reads a csv file which contains data for different values of k and returns the data split into separate csvs for each value of k.
+
+    Args:
+        filename (str): The path to the csv file.
+        delim (str, optional): Delimiter used in the csv file. Defaults to &#34;,&#34;.
+        kName (str, optional): The name of the column which contains the values of k. Defaults to &#34;kGeV&#34;.
+
+    Returns:
+        tuple: A tuple containing a list with the unique values of k and a list of pandas dataframes for each value of k.
+
+    &#34;&#34;&#34;
+
+    vs = csv[name]
+    v_values = np.unique(vs)
+    data = []
+    for v in v_values:
+        mask = vs == v
+        data.append(csv[mask])
+    return v_values, data</code></pre>
+</details>
+<div class="desc"><p>Reads a csv file which contains data for different values of k and returns the data split into separate csvs for each value of k.</p>
+<h2 id="args">Args</h2>
+<dl>
+<dt><strong><code>filename</code></strong> :&ensp;<code>str</code></dt>
+<dd>The path to the csv file.</dd>
+<dt><strong><code>delim</code></strong> :&ensp;<code>str</code>, optional</dt>
+<dd>Delimiter used in the csv file. Defaults to ",".</dd>
+<dt><strong><code>kName</code></strong> :&ensp;<code>str</code>, optional</dt>
+<dd>The name of the column which contains the values of k. Defaults to "kGeV".</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><code>tuple</code></dt>
+<dd>A tuple containing a list with the unique values of k and a list of pandas dataframes for each value of k.</dd>
+</dl></div>
+</dd>
+</dl>
+</section>
+<section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="DiFfRG.file_io.FEMData"><code class="flex name class">
+<span>class <span class="ident">FEMData</span></span>
+<span>(</span><span>filename: str)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class FEMData:
+    def __read_pvd(self, only_one: bool = False, at_t: int = -1, pool_size: int = 32):
+        @globalize
+        def load_one_step(i):
+            file = self.files[i]
+            t = self.timesteps[i]
+
+            # check if the data is already loaded
+            if t in self.slice_cache:
+                return self.slice_cache[t]
+
+            reader = vtk.vtkXMLUnstructuredGridReader()
+            reader.SetFileName(file)
+            reader.Update()
+            polydata = reader.GetOutput()
+            nodes, data = get_vtk_data(polydata)
+
+            # check if there are any NaNs in the data
+            for sub_data in data.values():
+                if np.any(np.isnan(sub_data)):
+                    print(&#34;NaNs in data at t = &#34;, t)
+
+                    # remove this timestep from the cache
+                    m_idx = int(np.argmin(np.abs(self.timesteps - t)))
+                    if np.isclose(self.timesteps[m_idx], t):
+                        self.timesteps = np.delete(self.timesteps, m_idx)
+                        self.files.pop(m_idx)
+
+                        new_idx = int(np.argmin(np.abs(self.timesteps - t)))
+                        return load_one_step(new_idx)
+
+            self.slice_cache[t] = {&#34;t&#34;: t, &#34;nodes&#34;: nodes, &#34;point_data&#34;: data}
+
+            return self.slice_cache[t]
+
+        if only_one:
+            if at_t &lt; 0:
+                idx = -1
+            else:
+                idx = np.argmin(np.abs(self.timesteps - at_t))
+            return load_one_step(idx)
+
+        pool = Pool(pool_size)
+        return pool.map(load_one_step, range(len(self.files)))
+
+    def __init__(self, filename : str):
+        self.filename = filename
+        self.slice_cache = {}
+
+        if filename[-4:] != &#34;.pvd&#34;:
+            raise Exception(&#34;only .pvd files are supported!&#34;)
+
+        self.dir = os.path.dirname(os.path.abspath(filename))
+        if self.dir[-1] != &#34;/&#34;:
+            self.dir = self.dir + &#34;/&#34;
+
+        self.timesteps = []
+        self.files = []
+        tree = ET.parse(filename)
+        root = tree.getroot()
+        for timestep_data in root.iter(&#34;DataSet&#34;):
+            self.timesteps.append(float(timestep_data.get(&#34;timestep&#34;)))
+            self.files.append(self.dir + timestep_data.get(&#34;file&#34;))
+        self.timesteps = np.array(self.timesteps)
+
+    def get_full_data(self):
+        if not self.data:
+            self.data = FEMData.__read_pvd(self.filename)
+        return self.data
+
+    def get_data_slice(self, t : float = -1):
+        if t &lt; 0:
+            t = self.timesteps[-1]
+        t = self.timesteps[np.argmin(np.abs(self.timesteps - t))]
+        if t in self.slice_cache:
+            return self.slice_cache[t]
+        self.slice_cache[t] = self.__read_pvd(only_one=True, at_t=t)
+        return self.slice_cache[t]</code></pre>
+</details>
+<div class="desc"></div>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="DiFfRG.file_io.FEMData1D" href="#DiFfRG.file_io.FEMData1D">FEMData1D</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="DiFfRG.file_io.FEMData.get_data_slice"><code class="name flex">
+<span>def <span class="ident">get_data_slice</span></span>(<span>self, t: float = -1)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_data_slice(self, t : float = -1):
+    if t &lt; 0:
+        t = self.timesteps[-1]
+    t = self.timesteps[np.argmin(np.abs(self.timesteps - t))]
+    if t in self.slice_cache:
+        return self.slice_cache[t]
+    self.slice_cache[t] = self.__read_pvd(only_one=True, at_t=t)
+    return self.slice_cache[t]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="DiFfRG.file_io.FEMData.get_full_data"><code class="name flex">
+<span>def <span class="ident">get_full_data</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_full_data(self):
+    if not self.data:
+        self.data = FEMData.__read_pvd(self.filename)
+    return self.data</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="DiFfRG.file_io.FEMData1D"><code class="flex name class">
+<span>class <span class="ident">FEMData1D</span></span>
+<span>(</span><span>filename: str, cs=0, mass_name='u')</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class FEMData1D(FEMData):
+    def __init__(self, filename : str, cs=0, mass_name=&#34;u&#34;):
+        super().__init__(filename)
+
+    def get_raw_x(self, t : float = -1):
+        return self.get_data_slice(t)[&#34;nodes&#34;][:, 0]
+    
+    def get_raw_array(self, name : str, t : float = -1):
+        return self.get_data_slice(t)[&#34;point_data&#34;][name]
+    
+    def get_x(self, t : float = -1):
+        x = self.get_raw_x(t)
+        # find all duplicates
+        duplicates = np.where(np.diff(x) == 0)[0]
+        # merge duplicates in x and average in y
+        x = np.delete(x, duplicates)
+        return x
+    
+    def get_array(self, name : str, t : float = -1):
+        x = self.get_raw_x(t)
+        y = self.get_raw_array(name, t)
+        # find all duplicates
+        duplicates = np.where(np.diff(x) == 0)[0]
+        # merge duplicates in x and average in y
+        x = np.delete(x, duplicates)
+        # average in y
+        y[duplicates] = (y[duplicates] + y[duplicates + 1]) / 2
+        y = np.delete(y, duplicates + 1)
+        return y</code></pre>
+</details>
+<div class="desc"></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="DiFfRG.file_io.FEMData" href="#DiFfRG.file_io.FEMData">FEMData</a></li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="DiFfRG.file_io.SimulationData1D" href="#DiFfRG.file_io.SimulationData1D">SimulationData1D</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="DiFfRG.file_io.FEMData1D.get_array"><code class="name flex">
+<span>def <span class="ident">get_array</span></span>(<span>self, name: str, t: float = -1)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_array(self, name : str, t : float = -1):
+    x = self.get_raw_x(t)
+    y = self.get_raw_array(name, t)
+    # find all duplicates
+    duplicates = np.where(np.diff(x) == 0)[0]
+    # merge duplicates in x and average in y
+    x = np.delete(x, duplicates)
+    # average in y
+    y[duplicates] = (y[duplicates] + y[duplicates + 1]) / 2
+    y = np.delete(y, duplicates + 1)
+    return y</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="DiFfRG.file_io.FEMData1D.get_raw_array"><code class="name flex">
+<span>def <span class="ident">get_raw_array</span></span>(<span>self, name: str, t: float = -1)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_raw_array(self, name : str, t : float = -1):
+    return self.get_data_slice(t)[&#34;point_data&#34;][name]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="DiFfRG.file_io.FEMData1D.get_raw_x"><code class="name flex">
+<span>def <span class="ident">get_raw_x</span></span>(<span>self, t: float = -1)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_raw_x(self, t : float = -1):
+    return self.get_data_slice(t)[&#34;nodes&#34;][:, 0]</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+<dt id="DiFfRG.file_io.FEMData1D.get_x"><code class="name flex">
+<span>def <span class="ident">get_x</span></span>(<span>self, t: float = -1)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_x(self, t : float = -1):
+    x = self.get_raw_x(t)
+    # find all duplicates
+    duplicates = np.where(np.diff(x) == 0)[0]
+    # merge duplicates in x and average in y
+    x = np.delete(x, duplicates)
+    return x</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="DiFfRG.file_io.SimulationData1D"><code class="flex name class">
+<span>class <span class="ident">SimulationData1D</span></span>
+<span>(</span><span>name)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">class SimulationData1D(FEMData1D):
+    def __init__(self, name):
+        self.pvd_file = name + &#34;.pvd&#34;
+        super().__init__(self.pvd_file)
+
+        self.params = json.load(open(name + &#34;.log.json&#34;))
+
+        # find all associated csv files
+        self.csv_files = glob.glob(name + &#34;_*.csv&#34;)
+        # load them using pandas
+        self.csv_data = {}
+        for f in self.csv_files:
+            self.csv_data[f] = pandas.read_csv(f)
+
+    def get_csv(self, name):
+        for f in self.csv_files:
+            if name in f:
+                return self.csv_data[f]
+        return None</code></pre>
+</details>
+<div class="desc"></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="DiFfRG.file_io.FEMData1D" href="#DiFfRG.file_io.FEMData1D">FEMData1D</a></li>
+<li><a title="DiFfRG.file_io.FEMData" href="#DiFfRG.file_io.FEMData">FEMData</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="DiFfRG.file_io.SimulationData1D.get_csv"><code class="name flex">
+<span>def <span class="ident">get_csv</span></span>(<span>self, name)</span>
+</code></dt>
+<dd>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_csv(self, name):
+    for f in self.csv_files:
+        if name in f:
+            return self.csv_data[f]
+    return None</code></pre>
+</details>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+</dl>
+</section>
+</article>
+<nav id="sidebar">
+<div class="toc">
+<ul></ul>
+</div>
+<ul id="index">
+<li><h3>Super-module</h3>
+<ul>
+<li><code><a title="DiFfRG" href="index.html">DiFfRG</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-functions">Functions</a></h3>
+<ul class="">
+<li><code><a title="DiFfRG.file_io.get_parameters_from_name" href="#DiFfRG.file_io.get_parameters_from_name">get_parameters_from_name</a></code></li>
+<li><code><a title="DiFfRG.file_io.get_vtk_data" href="#DiFfRG.file_io.get_vtk_data">get_vtk_data</a></code></li>
+<li><code><a title="DiFfRG.file_io.mkdir" href="#DiFfRG.file_io.mkdir">mkdir</a></code></li>
+<li><code><a title="DiFfRG.file_io.read_csv" href="#DiFfRG.file_io.read_csv">read_csv</a></code></li>
+<li><code><a title="DiFfRG.file_io.read_k_csv" href="#DiFfRG.file_io.read_k_csv">read_k_csv</a></code></li>
+<li><code><a title="DiFfRG.file_io.split_csv" href="#DiFfRG.file_io.split_csv">split_csv</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="DiFfRG.file_io.FEMData" href="#DiFfRG.file_io.FEMData">FEMData</a></code></h4>
+<ul class="">
+<li><code><a title="DiFfRG.file_io.FEMData.get_data_slice" href="#DiFfRG.file_io.FEMData.get_data_slice">get_data_slice</a></code></li>
+<li><code><a title="DiFfRG.file_io.FEMData.get_full_data" href="#DiFfRG.file_io.FEMData.get_full_data">get_full_data</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="DiFfRG.file_io.FEMData1D" href="#DiFfRG.file_io.FEMData1D">FEMData1D</a></code></h4>
+<ul class="">
+<li><code><a title="DiFfRG.file_io.FEMData1D.get_array" href="#DiFfRG.file_io.FEMData1D.get_array">get_array</a></code></li>
+<li><code><a title="DiFfRG.file_io.FEMData1D.get_raw_array" href="#DiFfRG.file_io.FEMData1D.get_raw_array">get_raw_array</a></code></li>
+<li><code><a title="DiFfRG.file_io.FEMData1D.get_raw_x" href="#DiFfRG.file_io.FEMData1D.get_raw_x">get_raw_x</a></code></li>
+<li><code><a title="DiFfRG.file_io.FEMData1D.get_x" href="#DiFfRG.file_io.FEMData1D.get_x">get_x</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="DiFfRG.file_io.SimulationData1D" href="#DiFfRG.file_io.SimulationData1D">SimulationData1D</a></code></h4>
+<ul class="">
+<li><code><a title="DiFfRG.file_io.SimulationData1D.get_csv" href="#DiFfRG.file_io.SimulationData1D.get_csv">get_csv</a></code></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</nav>
+</main>
+<footer id="footer">
+<p>Generated by <a href="https://pdoc3.github.io/pdoc" title="pdoc: Python API documentation generator"><cite>pdoc</cite> 0.11.5</a>.</p>
+</footer>
+</body>
+</html>
