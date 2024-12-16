@@ -12,34 +12,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 project(DiFfRG LANGUAGES CXX)
 
 # ##############################################################################
-# Setup build system : Libraries
-# ##############################################################################
-
-add_subdirectory(${CMAKE_SOURCE_DIR}/cmake)
-include(${CMAKE_SOURCE_DIR}/cmake/setup_build_system.cmake)
-include(${CMAKE_SOURCE_DIR}/cmake/setup_targets.cmake)
-
-# ##############################################################################
-# DiFfRG library and models
-# ##############################################################################
-
-include_directories(include)
-
-add_subdirectory(include)
-add_subdirectory(src)
-
-# ##############################################################################
-# Testing
-# ##############################################################################
-
-option(DiFfRG_BUILD_TESTS "Build documentation" ON)
-
-if(DiFfRG_BUILD_TESTS)
-  enable_testing()
-  add_subdirectory(tests)
-endif()
-
-# ##############################################################################
 # Documentation
 # ##############################################################################
 
@@ -69,6 +41,38 @@ if(DiFfRG_BUILD_DOCUMENTATION AND DOXYGEN_FOUND)
 
 elseif(DiFfRG_BUILD_DOCUMENTATION AND DOXYGEN_FOUND)
   message("Doxygen needs to be installed to generate the doxygen documentation")
+endif()
+
+if(DiFfRG_ONLY_DOCUMENTATION)
+  return()
+endif()
+
+# ##############################################################################
+# Setup build system : Libraries
+# ##############################################################################
+
+add_subdirectory(${CMAKE_SOURCE_DIR}/cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/setup_build_system.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/setup_targets.cmake)
+
+# ##############################################################################
+# DiFfRG library and models
+# ##############################################################################
+
+include_directories(include)
+
+add_subdirectory(include)
+add_subdirectory(src)
+
+# ##############################################################################
+# Testing
+# ##############################################################################
+
+option(DiFfRG_BUILD_TESTS "Build documentation" ON)
+
+if(DiFfRG_BUILD_TESTS)
+  enable_testing()
+  add_subdirectory(tests)
 endif()
 
 # ##############################################################################
