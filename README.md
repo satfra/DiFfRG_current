@@ -1,7 +1,5 @@
 # DiFfRG - A Discretization Framework for functional Renormalization Group flows
 
-[TOC]
-
 DiFfRG is a set of tools for the discretization of flow equations arising in the functional Renormalization Group (fRG).
 
 For spatial discretizations, i.e. discretizations of field space, DiFfRG makes different finite element (FE) methods available. These include:
@@ -178,8 +176,8 @@ To see how fast the simulation progresses, one can set the `verbosity` parameter
 ```json
 {
   "output": {
-    "verbosity": 1,
-  }
+    "verbosity": 1
+  },
 }
 ```
 or from the CLI,
@@ -187,6 +185,20 @@ or from the CLI,
 $ ./my_simulation -si /output/verbosity=1
 ```
 
+## Modifying parameters from the CLI
+
+Any DiFfRG simulation using the `DiFfRG::ConfigurationHelper` class can be asked to give some syntax pertaining to the configuration:
+```
+$ ./my_simulation --help
+This is a DiFfRG simulation. You can pass the following optional parameters:
+  --help                      shows this text
+  --generate-parameter-file   generates a parameter file with some default values
+  -p                          specifiy a parameter file other than the standard parameter.json
+  -sd                         overwrite a double parameter. This should be in the format '-s physical/T=0.1'
+  -si                         overwrite an integer parameter. This should be in the format '-s physical/Nc=1'
+  -sb                         overwrite a boolean parameter. This should be in the format '-s physical/use_sth=true'
+  -ss                         overwrite a string parameter. This should be in the format '-s physical/a=hello'
+```
 
 ## Timestepper choice
 
