@@ -1,0 +1,10 @@
+@PACKAGE_INIT@
+
+set(DiFfRG_BASE_DIR @CMAKE_INSTALL_PREFIX@)
+set(DiFfRG_INCLUDE_DIR @CMAKE_INSTALL_PREFIX@/include)
+set(DiFfRG_CMAKE_DIR @CMAKE_INSTALL_PREFIX@/cmake)
+
+set(DiFfRG_USE_CUDA @USE_CUDA@)
+
+include(${CMAKE_CURRENT_LIST_DIR}/DiFfRGTargets.cmake)
+include(${DiFfRG_CMAKE_DIR}/setup_build_system.cmake)

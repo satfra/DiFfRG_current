@@ -1,0 +1,380 @@
+(* Content-type: application/vnd.wolfram.mathematica *)
+
+(*** Wolfram Notebook File ***)
+(* http://www.wolfram.com/nb *)
+
+(* CreatedBy='Wolfram 14.1' *)
+
+(*CacheID: 234*)
+(* Internal cache information:
+NotebookFileLineBreakTest
+NotebookFileLineBreakTest
+NotebookDataPosition[       154,          7]
+NotebookDataLength[     17439,        372]
+NotebookOptionsPosition[     15580,        337]
+NotebookOutlinePosition[     15969,        353]
+CellTagsIndexPosition[     15926,        350]
+WindowFrame->Normal*)
+
+(* Beginning of Notebook Content *)
+Notebook[{
+
+Cell[CellGroupData[{
+Cell[BoxData[{
+ RowBox[{"Needs", "[", "\"\<NumericalDifferentialEquationAnalysis`\>\"", 
+  "]"}], "\[IndentingNewLine]", 
+ RowBox[{"Get", "[", "\"\<DiFfRG`\>\"", "]"}], "\[IndentingNewLine]", 
+ RowBox[{"SetDirectory", "[", 
+  RowBox[{"GetDirectory", "[", "]"}], "]"}]}], "Input",
+ CellChangeTimes->{{3.941699365644108*^9, 3.941699373149414*^9}, {
+  3.941699430077612*^9, 3.941699434801564*^9}, {3.941699483537874*^9, 
+  3.941699495053598*^9}},
+ CellLabel->"In[1]:=",ExpressionUUID->"134bc41d-f2d5-4980-9358-01fbdf02492d"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData["\<\"Mathematica package \
+\\!\\(\\*\\nStyleBox[\\\"DiFfRG\\\",\\nFontWeight->\\\"Bold\\\"]\\)\\!\\(\\*\\\
+nStyleBox[\\\" \
+\\\",\\nFontWeight->\\\"Bold\\\"]\\)loaded\\n\\!\\(\\*\\nStyleBox[\\\"Authors\
+\\\",\\nFontWeight->\\\"Bold\\\"]\\): Franz Richard \
+Sattler\\n\\!\\(\\*\\nStyleBox[\\\"Version\\\",\\nFontWeight->\\\"Bold\\\"]\\)\
+: 1.0\\n\\!\\(\\*\\nStyleBox[\\\"Year\\\",\\nFontWeight->\\\"Bold\\\"]\\): \
+2024\\n\"\>"], "Print",
+ CellChangeTimes->{
+  3.941699435221941*^9, {3.9416994801731377`*^9, 3.941699495456127*^9}, 
+   3.94170136561738*^9, 3.941726915093327*^9},
+ CellLabel->
+  "During evaluation of \
+In[1]:=",ExpressionUUID->"79c4bafa-a1f9-46b0-9b90-fbaedfe44c38"],
+
+Cell[BoxData["\<\"Mathematica package \
+\\!\\(\\*\\nStyleBox[\\\"TensorBases\\\",\\nFontWeight->\\\"Bold\\\"]\\)\\!\\(\
+\\*\\nStyleBox[\\\" \
+\\\",\\nFontWeight->\\\"Bold\\\"]\\)loaded\\n\\!\\(\\*\\nStyleBox[\\\"Authors\
+\\\",\\nFontWeight->\\\"Bold\\\"]\\): Andreas Gei\[SZ]el, Franz Richard \
+Sattler\\n\\!\\(\\*\\nStyleBox[\\\"Version\\\",\\nFontWeight->\\\"Bold\\\"]\\)\
+: 1.0\\n\\!\\(\\*\\nStyleBox[\\\"Year\\\",\\nFontWeight->\\\"Bold\\\"]\\): \
+2024\\n\\nFor a list of available bases, call \\!\\(\\*\\nStyleBox[\\\"TBInfo\
+\\\",\\nFontColor->RGBColor[1, 0.5, 0]]\\)[]. For further information on a \
+particular basis, call \
+\\!\\(\\*\\nStyleBox[\\\"TBInfo\\\",\\nFontColor->RGBColor[1, 0.5, \
+0]]\\)[\\\"\\!\\(\\*\\nStyleBox[\\\"BasisName\\\",\\nFontColor->GrayLevel[0.5]\
+]\\)\\\"].\\n\\nThis package provides the methods \
+\\!\\(\\*\\nStyleBox[\\\"TBGetBasisElement\\\",\\nFontColor->RGBColor[1, 0.5, \
+0]]\\), \\!\\(\\*\\nStyleBox[\\\"TBGetInnerProduct\\\",\\nFontColor->RGBColor[\
+1, 0.5, 0]]\\), \
+\\!\\(\\*\\nStyleBox[\\\"TBGetMetric\\\",\\nFontColor->RGBColor[1, 0.5, \
+0]]\\), \\!\\(\\*\\nStyleBox[\\\"TBGetInverseMetric\\\",\\nFontColor->\
+RGBColor[1, 0.5, 0]]\\), \
+\\!\\(\\*\\nStyleBox[\\\"TBGetProjector\\\",\\nFontColor->RGBColor[1, 0.5, \
+0]]\\) for every tensor basis available.\\nFor closer explanations, please \
+call their usage messages, e.g. \
+\\!\\(\\*\\nStyleBox[\\\"TBGetProjector\\\",\\nFontColor->RGBColor[1, 0.5, \
+0]]\\)::\\!\\(\\*\\nStyleBox[\\\"usage\\\",\\nFontColor->RGBColor[0, 0, \
+1]]\\).\\n\\nTo build or manipulate bases, please call \
+\\!\\(\\*\\nStyleBox[\\\"TBInfo\\\",\\nFontColor->RGBColor[1, 0.5, \
+0]]\\)[\\\"BaseBuilder\\\"].\\n\"\>"], "Print",
+ CellChangeTimes->{
+  3.941699435221941*^9, {3.9416994801731377`*^9, 3.941699495456127*^9}, 
+   3.94170136561738*^9, 3.941726915104648*^9},
+ CellLabel->
+  "During evaluation of \
+In[1]:=",ExpressionUUID->"e57bb4ea-780d-4243-9f4f-3f61ea1c83aa"],
+
+Cell[BoxData["\<\"\\!\\(\\*\\nStyleBox[\\\"FormTracer\\\",\\nFontWeight->\\\"\
+Bold\\\"]\\) package loaded. \"\>"], "Print",
+ CellChangeTimes->{
+  3.941699435221941*^9, {3.9416994801731377`*^9, 3.941699495456127*^9}, 
+   3.94170136561738*^9, 3.9417269156961107`*^9},
+ CellLabel->
+  "During evaluation of \
+In[1]:=",ExpressionUUID->"0e49d6cf-ae35-455b-b1a9-624dca80cef2"],
+
+Cell[BoxData["\<\"To see all (user-defined and package-defined) FormTracer \
+definitions, call \
+\\!\\(\\*\\nStyleBox[\\\"TBInfo\\\",\\nFontColor->RGBColor[1, 0.5, \
+0]]\\)[\\\"FormTracer\\\"].\\nFurthermore, \
+\\!\\(\\*\\nStyleBox[\\\"TensorBases\\\",\\nFontWeight->\\\"Bold\\\"]\\)\\!\\(\
+\\*\\nStyleBox[\\\" \\\",\\nFontWeight->\\\"Bold\\\"]\\)extends \
+\\!\\(\\*\\nStyleBox[\\\"FormTracer\\\",\\nFontWeight->\\\"Bold\\\"]\\). To \
+see all extensions, call \
+\\!\\(\\*\\nStyleBox[\\\"TBInfo\\\",\\nFontColor->RGBColor[1, 0.5, \
+0]]\\)[\\\"Extensions\\\"]\"\>"], "Print",
+ CellChangeTimes->{
+  3.941699435221941*^9, {3.9416994801731377`*^9, 3.941699495456127*^9}, 
+   3.94170136561738*^9, 3.941726915707509*^9},
+ CellLabel->
+  "During evaluation of \
+In[1]:=",ExpressionUUID->"e80bc8fa-0eae-48fc-b273-11e5238e155d"],
+
+Cell[BoxData["\<\"\\!\\(\\*\\nStyleBox[\\\"Lorentz\\\",\\nFontSize->10,\\\
+nFontColor->RGBColor[0.5, 0, 0.5]]\\)\\!\\(\\*\\nStyleBox[\\\" \
+\\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\\\"group\\\",\\nFontSize->10]\\)\
+\\!\\(\\*\\nStyleBox[\\\" \
+\\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\\\"undefined\\\",\\nFontSize->\
+10]\\)\\!\\(\\*\\nStyleBox[\\\",\\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\
+\\\" \\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\\\"using\\\",\\nFontSize->\
+10]\\)\\!\\(\\*\\nStyleBox[\\\" \\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\
+\\\"default\\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\\\" \
+\\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\\\"names\\\",\\nFontSize->10]\\)\
+\\!\\(\\*\\nStyleBox[\\\".\\\",\\nFontSize->10]\\)\"\>"], "Print",
+ CellChangeTimes->{
+  3.941699435221941*^9, {3.9416994801731377`*^9, 3.941699495456127*^9}, 
+   3.94170136561738*^9, 3.941726915708708*^9},
+ CellLabel->
+  "During evaluation of \
+In[1]:=",ExpressionUUID->"5e23395f-4f55-433d-933b-f499f197465a"],
+
+Cell[BoxData["\<\"\\!\\(\\*\\nStyleBox[\\\"Group\\\",\\nFontSize->10]\\)\\!\\(\
+\\*\\nStyleBox[\\\" \
+\\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\\\"with\\\",\\nFontSize->10]\\)\
+\\!\\(\\*\\nStyleBox[\\\" \
+\\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\\\"name\\\",\\nFontSize->10]\\)\
+\\!\\(\\*\\nStyleBox[\\\" \
+\\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\\\"color\\\",\\nFontSize->10,\\\
+nFontColor->RGBColor[0.5, 0, 0.5]]\\)\\!\\(\\*\\nStyleBox[\\\" \
+\\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\\\"undefined\\\",\\nFontSize->\
+10]\\)\\!\\(\\*\\nStyleBox[\\\",\\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\
+\\\" \\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\\\"using\\\",\\nFontSize->\
+10]\\)\\!\\(\\*\\nStyleBox[\\\" \\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\
+\\\"default\\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\\\" \
+\\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\\\"names\\\",\\nFontSize->10]\\)\
+\\!\\(\\*\\nStyleBox[\\\".\\\",\\nFontSize->10]\\)\"\>"], "Print",
+ CellChangeTimes->{
+  3.941699435221941*^9, {3.9416994801731377`*^9, 3.941699495456127*^9}, 
+   3.94170136561738*^9, 3.9417269159381523`*^9},
+ CellLabel->
+  "During evaluation of \
+In[1]:=",ExpressionUUID->"1314fb12-88c3-4b40-8a9a-ca135ba1bdb4"],
+
+Cell[BoxData["\<\"\\!\\(\\*\\nStyleBox[\\\"Group\\\",\\nFontSize->10]\\)\\!\\(\
+\\*\\nStyleBox[\\\" \
+\\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\\\"with\\\",\\nFontSize->10]\\)\
+\\!\\(\\*\\nStyleBox[\\\" \
+\\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\\\"name\\\",\\nFontSize->10]\\)\
+\\!\\(\\*\\nStyleBox[\\\" \
+\\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\\\"flavor\\\",\\nFontSize->10,\\\
+nFontColor->RGBColor[0.5, 0, 0.5]]\\)\\!\\(\\*\\nStyleBox[\\\" \
+\\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\\\"undefined\\\",\\nFontSize->\
+10]\\)\\!\\(\\*\\nStyleBox[\\\",\\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\
+\\\" \\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\\\"using\\\",\\nFontSize->\
+10]\\)\\!\\(\\*\\nStyleBox[\\\" \\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\
+\\\"default\\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\\\" \
+\\\",\\nFontSize->10]\\)\\!\\(\\*\\nStyleBox[\\\"names\\\",\\nFontSize->10]\\)\
+\\!\\(\\*\\nStyleBox[\\\".\\\",\\nFontSize->10]\\)\"\>"], "Print",
+ CellChangeTimes->{
+  3.941699435221941*^9, {3.9416994801731377`*^9, 3.941699495456127*^9}, 
+   3.94170136561738*^9, 3.941726916068324*^9},
+ CellLabel->
+  "During evaluation of \
+In[1]:=",ExpressionUUID->"e7150404-954c-49a0-b983-a53002f91ab5"],
+
+Cell[BoxData["\<\"\\nTo see all momentum transformations that can be \
+performed by \\!\\(\\*\\nStyleBox[\\\"TensorBases\\\",\\nFontWeight->\\\"Bold\
+\\\"]\\), call \\!\\(\\*\\nStyleBox[\\\"TBInfo\\\",\\nFontColor->RGBColor[1, \
+0.5, 0]]\\)[\\\"Momenta\\\"].\\n\"\>"], "Print",
+ CellChangeTimes->{
+  3.941699435221941*^9, {3.9416994801731377`*^9, 3.941699495456127*^9}, 
+   3.94170136561738*^9, 3.941726916756344*^9},
+ CellLabel->
+  "During evaluation of \
+In[1]:=",ExpressionUUID->"cfb6bbed-4871-412e-9452-0fdc1af8eb9f"],
+
+Cell[BoxData["\<\"Flow output directory: \
+/mnt/data/Documents/Uni/Code/DiFfRG/DiFfRG/include/DiFfRG/physics/quadrature/\
+flows/\"\>"], "Print",
+ CellChangeTimes->{
+  3.941699435221941*^9, {3.9416994801731377`*^9, 3.941699495456127*^9}, 
+   3.94170136561738*^9, 3.9417269173068743`*^9},
+ CellLabel->
+  "During evaluation of \
+In[1]:=",ExpressionUUID->"f4cc72a1-d276-4ce2-994f-d1a638a65be3"]
+}, Open  ]],
+
+Cell[BoxData["\<\"/mnt/data/Documents/Uni/Code/DiFfRG/DiFfRG/include/DiFfRG/\
+physics/quadrature\"\>"], "Output",
+ CellChangeTimes->{3.941699498127563*^9, 3.94170136921524*^9, 
+  3.941726917354703*^9},
+ CellLabel->"Out[3]=",ExpressionUUID->"c3804868-a5c7-4152-9de9-88576363aa0c"]
+}, Open  ]],
+
+Cell[BoxData[{
+ RowBox[{
+  RowBox[{
+  "GeneralCodeStart", "=", 
+   "\"\<#pragma once\n\nnamespace DiFfRG \n{\ntemplate<size_t N, typename \
+ctype>\nstruct GLQuadrature {\n  static_assert(N, \\\"Requested quadrature \
+order has not been implemented.\\\");\n};\n\n\>\""}], 
+  ";"}], "\[IndentingNewLine]", 
+ RowBox[{
+  RowBox[{"GeneralCodeEnd", "=", "\"\<}\>\""}], ";"}]}], "Input",
+ CellChangeTimes->{{3.941700430351595*^9, 3.941700447335546*^9}, 
+   3.941700568695963*^9, {3.941700750098666*^9, 3.9417007977779217`*^9}, {
+   3.9417008791135473`*^9, 3.941700903493545*^9}, {3.941700935057357*^9, 
+   3.9417009428933*^9}, {3.941701141653079*^9, 3.9417011417609158`*^9}, {
+   3.941701331289072*^9, 3.941701360764976*^9}, 3.941702085122835*^9},
+ CellLabel->"In[4]:=",ExpressionUUID->"888a4918-e495-4cd6-a66a-98d088bd7e90"],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{
+   RowBox[{"GenerateQuadCode", "[", "order_", "]"}], ":=", 
+   RowBox[{"Module", "[", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{
+      "rule", ",", "i", ",", "lines", ",", "start", ",", "end", ",", "body"}],
+       "}"}], ",", "\[IndentingNewLine]", 
+     RowBox[{
+      RowBox[{"rule", "=", 
+       RowBox[{"GaussianQuadratureWeights", "[", 
+        RowBox[{"order", ",", "0", ",", "1", ",", "32"}], "]"}]}], ";", 
+      "\[IndentingNewLine]", 
+      RowBox[{"lines", "=", 
+       RowBox[{"Table", "[", 
+        RowBox[{
+         RowBox[{"{", 
+          RowBox[{
+           RowBox[{"\"\<    x[\>\"", "<>", 
+            RowBox[{"ToString", "[", 
+             RowBox[{"i", "-", "1"}], "]"}], "<>", "\"\<] = \>\"", "<>", 
+            RowBox[{"ToString", "[", 
+             RowBox[{"rule", "[", 
+              RowBox[{"[", 
+               RowBox[{"i", ",", "1"}], "]"}], "]"}], "]"}], "<>", 
+            "\"\<;\\n\>\""}], ",", 
+           RowBox[{"\"\<    w[\>\"", "<>", 
+            RowBox[{"ToString", "[", 
+             RowBox[{"i", "-", "1"}], "]"}], "<>", "\"\<] = \>\"", "<>", 
+            RowBox[{"ToString", "[", 
+             RowBox[{"rule", "[", 
+              RowBox[{"[", 
+               RowBox[{"i", ",", "2"}], "]"}], "]"}], "]"}], "<>", 
+            "\"\<;\\n\>\""}]}], "}"}], ",", 
+         RowBox[{"{", 
+          RowBox[{"i", ",", "1", ",", "order"}], "}"}]}], "]"}]}], ";", 
+      "\[IndentingNewLine]", 
+      RowBox[{"body", "=", 
+       RowBox[{"StringJoin", "@", 
+        RowBox[{"Flatten", "@", 
+         RowBox[{"Transpose", "@", "lines"}]}]}]}], ";", 
+      "\[IndentingNewLine]", "\[IndentingNewLine]", 
+      RowBox[{"start", "=", 
+       RowBox[{
+       "\"\<template<typename ctype> struct GLQuadrature<\>\"", "<>", 
+        RowBox[{"ToString", "[", "order", "]"}], "<>", 
+        "\"\<, ctype> {\n  __constant__ ctype x[\>\"", "<>", 
+        RowBox[{"ToString", "[", "order", "]"}], "<>", 
+        "\"\<];\n  __constant__ ctype w[\>\"", "<>", 
+        RowBox[{"ToString", "[", "order", "]"}], "<>", 
+        "\"\<];\n  consteval GLQuadrature() {\n\>\""}]}], ";", 
+      "\[IndentingNewLine]", "\[IndentingNewLine]", 
+      RowBox[{"end", "=", "\"\<  }\n};\n\n\>\""}], ";", "\[IndentingNewLine]",
+       "\[IndentingNewLine]", 
+      RowBox[{"Return", "[", 
+       RowBox[{"start", "<>", "body", "<>", "end"}], "]"}], ";"}]}], 
+    "\[IndentingNewLine]", "]"}]}], ";"}]], "Input",
+ CellChangeTimes->{{3.941699504530219*^9, 3.941699517493882*^9}, {
+  3.9416995689742727`*^9, 3.941699600586334*^9}, {3.941699649234784*^9, 
+  3.941699929354101*^9}, {3.9417004485359707`*^9, 3.9417005730535297`*^9}, {
+  3.9417007663630123`*^9, 3.941700802470487*^9}, {3.941701145894905*^9, 
+  3.941701147373384*^9}, {3.941701282805394*^9, 3.94170129437745*^9}, {
+  3.941701930790848*^9, 3.941701932380539*^9}, {3.9417269008109827`*^9, 
+  3.941726909187481*^9}},
+ CellLabel->"In[6]:=",ExpressionUUID->"91dd7c4a-ca48-494c-937e-7f4c8a6ca7a6"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[{
+ RowBox[{
+  RowBox[{"code", "=", 
+   RowBox[{
+    RowBox[{"Join", "[", 
+     RowBox[{
+      RowBox[{"{", "GeneralCodeStart", "}"}], ",", "\[IndentingNewLine]", 
+      RowBox[{"Table", "[", 
+       RowBox[{
+        RowBox[{"GenerateQuadCode", "[", "i", "]"}], ",", 
+        RowBox[{"{", 
+         RowBox[{"i", ",", "1", ",", "16"}], "}"}]}], "]"}], ",", 
+      "\[IndentingNewLine]", 
+      RowBox[{"Map", "[", 
+       RowBox[{"GenerateQuadCode", ",", 
+        RowBox[{"{", 
+         RowBox[{
+         "20", ",", "24", ",", "32", ",", "48", ",", "64", ",", "96", ",", 
+          "128"}], "}"}]}], "]"}], ",", "\[IndentingNewLine]", 
+      RowBox[{"{", "GeneralCodeEnd", "}"}]}], "\[IndentingNewLine]", "]"}], "//",
+     "StringJoin"}]}], ";"}], "\[IndentingNewLine]", 
+ RowBox[{"ExportCode", "[", 
+  RowBox[{"\"\<quadratures.hh\>\"", ",", "code"}], "]"}]}], "Input",
+ CellChangeTimes->{{3.94170057570093*^9, 3.941700611843758*^9}, {
+  3.941700805558114*^9, 3.941700869837614*^9}, {3.9417009468975897`*^9, 
+  3.941701013397171*^9}, {3.941701287477129*^9, 3.9417012876541853`*^9}},
+ CellLabel->"In[7]:=",ExpressionUUID->"c3d8c5bd-4eca-436c-98f1-deb7c5e724e2"],
+
+Cell[BoxData["\<\"Exported to quadratures.hh\"\>"], "Print",
+ CellChangeTimes->{{3.94170128813902*^9, 3.941701295993586*^9}, {
+   3.941701341998254*^9, 3.94170136949936*^9}, 3.941701934962264*^9, 
+   3.941702096669413*^9, 3.94172691778723*^9},
+ CellLabel->
+  "During evaluation of \
+In[7]:=",ExpressionUUID->"a7537f29-5bec-43da-9b85-101cf448da9b"],
+
+Cell[BoxData[
+ RowBox[{"\[LeftAssociation]", 
+  RowBox[{
+   RowBox[{"\<\"ExitCode\"\>", "\[Rule]", "0"}], ",", 
+   RowBox[{"\<\"StandardOutput\"\>", "\[Rule]", "\<\"\"\>"}], ",", 
+   RowBox[{"\<\"StandardError\"\>", "\[Rule]", "\<\"\"\>"}]}], 
+  "\[RightAssociation]"}]], "Output",
+ CellChangeTimes->{{3.941701288177662*^9, 3.941701296141638*^9}, {
+   3.94170134213614*^9, 3.94170136952668*^9}, 3.9417019350647593`*^9, 
+   3.941702096779933*^9, 3.941726917803749*^9},
+ CellLabel->"Out[8]=",ExpressionUUID->"76007a43-80fe-4dbd-a5dd-909eca8a125f"]
+}, Open  ]]
+},
+WindowSize->{1185, 714},
+WindowMargins->{{0, Automatic}, {Automatic, 0}},
+FrontEndVersion->"14.1 for Linux x86 (64-bit) (July 16, 2024)",
+StyleDefinitions->"Default.nb",
+ExpressionUUID->"ea9f4a9a-039f-45fe-b151-ae54a4b4fb52"
+]
+(* End of Notebook Content *)
+
+(* Internal cache information *)
+(*CellTagsOutline
+CellTagsIndex->{}
+*)
+(*CellTagsIndex
+CellTagsIndex->{}
+*)
+(*NotebookFileOutline
+Notebook[{
+Cell[CellGroupData[{
+Cell[576, 22, 521, 9, 75, "Input",ExpressionUUID->"134bc41d-f2d5-4980-9358-01fbdf02492d"],
+Cell[CellGroupData[{
+Cell[1122, 35, 694, 13, 98, "Print",ExpressionUUID->"79c4bafa-a1f9-46b0-9b90-fbaedfe44c38"],
+Cell[1819, 50, 1941, 32, 249, "Print",ExpressionUUID->"e57bb4ea-780d-4243-9f4f-3f61ea1c83aa"],
+Cell[3763, 84, 370, 7, 23, "Print",ExpressionUUID->"0e49d6cf-ae35-455b-b1a9-624dca80cef2"],
+Cell[4136, 93, 817, 15, 41, "Print",ExpressionUUID->"e80bc8fa-0eae-48fc-b273-11e5238e155d"],
+Cell[4956, 110, 1016, 16, 23, "Print",ExpressionUUID->"5e23395f-4f55-433d-933b-f499f197465a"],
+Cell[5975, 128, 1230, 20, 23, "Print",ExpressionUUID->"1314fb12-88c3-4b40-8a9a-ca135ba1bdb4"],
+Cell[7208, 150, 1229, 20, 23, "Print",ExpressionUUID->"e7150404-954c-49a0-b983-a53002f91ab5"],
+Cell[8440, 172, 521, 9, 60, "Print",ExpressionUUID->"cfb6bbed-4871-412e-9452-0fdc1af8eb9f"],
+Cell[8964, 183, 390, 8, 23, "Print",ExpressionUUID->"f4cc72a1-d276-4ce2-994f-d1a638a65be3"]
+}, Open  ]],
+Cell[9369, 194, 279, 4, 33, "Output",ExpressionUUID->"c3804868-a5c7-4152-9de9-88576363aa0c"]
+}, Open  ]],
+Cell[9663, 201, 818, 15, 249, "Input",ExpressionUUID->"888a4918-e495-4cd6-a66a-98d088bd7e90"],
+Cell[10484, 218, 2986, 66, 516, "Input",ExpressionUUID->"91dd7c4a-ca48-494c-937e-7f4c8a6ca7a6"],
+Cell[CellGroupData[{
+Cell[13495, 288, 1171, 26, 142, "Input",ExpressionUUID->"c3d8c5bd-4eca-436c-98f1-deb7c5e724e2"],
+Cell[14669, 316, 347, 6, 23, "Print",ExpressionUUID->"a7537f29-5bec-43da-9b85-101cf448da9b"],
+Cell[15019, 324, 545, 10, 36, "Output",ExpressionUUID->"76007a43-80fe-4dbd-a5dd-909eca8a125f"]
+}, Open  ]]
+}
+]
+*)
+
