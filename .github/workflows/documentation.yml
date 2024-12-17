@@ -31,7 +31,7 @@ jobs:
         run: |
           python -m venv .venv
           source .venv/bin/activate
-          pip install pdoc python/dist/DiFfRG-1.0.0-py3-none-any.whl
+          pip install pdoc python/dist/DiFfRG.whl
           cd python
           pdoc -o python DiFfRG
           cd ..
