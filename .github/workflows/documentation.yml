@@ -40,6 +40,7 @@ jobs:
           mkdir documentation
           mv install/documentation/html documentation/cpp
           mv python/python documentation/python
+          mv Mathematica/DiFfRG/doc_built documentation/wolfram
       - name: Upload static files as artifact
         id: deployment
         uses: actions/upload-pages-artifact@v3 # or specific "vX.X.X" version tag for this action
