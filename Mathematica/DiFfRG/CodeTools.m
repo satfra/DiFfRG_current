@@ -66,7 +66,7 @@ MakeFlowClassFiniteT::usage = "MakeFlowClassFiniteT[name_String,kernels_List]
 This creates a file flows.hh inside the flow directory, containing a class with the specified name, as well as several other files. All defined kernels have a corresponding integrator object in this class.
 Automatically calls MakeCMakeFile wiht the passed list of kernels.";
 
-MakeKernel::usage = "MakeKernel[kernel_Association, parameterList_List,integrandFlow_,constantFlow_:0., integrandDefinitions_String:"", constantDefinitions_String:""]
+MakeKernel::usage = "MakeKernel[kernel_Association, parameterList_List,integrandFlow_,constantFlow_:0., integrandDefinitions_String:\"\", constantDefinitions_String:\"\"]
 Make a kernel from a given flow equation, parmeter list and kernel. The kernel must be a valid specification of an integration kernel.
 This Function creates an integrator that evaluates (constantFlow + \[Integral]integrandFlow). One can prepend additional c++ definitions to the flow equation by using the integrandDefinitions and constantDefinitions parameters. 
 These are prepended to the respective methods of the integration kernel, allowing one to e.g. define specific angles one needs for the flow code.";
@@ -89,6 +89,10 @@ AddCodeOptimizeFunctions::usage="";
 ShowCodeOptimizeFunctions::usage="";
 ClearCodeOptimizeFunctions::usage="";
 UseKernelOptimizations::usage="";
+
+SetKernelDefinitions::usage="SetKernelDefinitions[definitionCode_String] sets the kernel definitions to definitionCode.
+SetKernelDefinitions[] resets the kernel definitions to the standard.";
+ShowKernelDefinitions::usage="ShowKernelDefinitions[]";
 
 
 Begin["`Private`"];
@@ -640,6 +644,7 @@ Set[$KernelDefinitions,definitionCode];
 SetKernelDefinitions[]:=Module[{},
 Set[$KernelDefinitions,$StandardKernelDefinitions];
 ]
+ShowKernelDefinitions[]:=Print[$KernelDefinitions]
 
 
 (* ::Input::Initialization:: *)

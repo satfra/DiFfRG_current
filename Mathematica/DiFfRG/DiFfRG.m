@@ -132,6 +132,40 @@ UseSU3GellMannTrace::usage="SU3GellMannTrace[value_?BooleanQ,groupName_String:\"
 Traces the generators of the fundamental representation in the given group as SU(3) Gell-Mann matrices explicitly.";
 
 
+PreTrace::usage="PreTrace[expr_]
+Resolve charge conjugation and perform possibly the explicit color trace."
+
+
+FormMomentumExpansion::usage="FormMomentumExpansion[momenta___]"
+FiniteTFormMomentumExpansion[momenta__]
+
+
+MakeP0FormRule::usage="MakeP0FormRule[q_,{momenta__},{projections__}]"
+GetFTSynonym::usage="GetFTSynonym[symbol_]"
+MakeSPFormRule::usage="MakeSPFormRule[q_,p_,momenta__]"
+MakeSPFormRule::usage="MakeSPFormRule[q_,p_,momenta__]"
+MakeSPFiniteTFormRule::usage="MakeSPFiniteTFormRule[q_,p_,momenta__]"
+ExtendedFormTrace::usage="ExtendedFormTrace[expr_,disentangle:_?BooleanQ:True,preRepRules_List:{},postRepRules_List:{}]"
+
+SeparateScalarProductsFiniteT::usage="SeparateScalarProductsFiniteT[expr_]"
+ExpandScalarProductsFiniteT::usage="ExpandScalarProductsFiniteT[expr_]"
+ExpandScalarProducts::usage="ExpandScalarProducts[expr_]"
+SimplifyAllMomenta::usage="SimplifyAllMomenta[q_,expr_]"
+ProjectToSymmetricPoint::usage="ProjectToSymmetricPoint[expr_,q_Symbol,p_Symbol,momenta___Symbol]"
+ProjectToSymmetricPointFiniteT::usage="ProjectToSymmetricPointFiniteT[expr_,q_Symbol,p_Symbol,momenta___Symbol]"
+
+QuickSimplify::usage="QuickSimplify[expr_]"
+SetStandardQuickSimplify::usage="SetStandardQuickSimplify[sim_]"
+SetStandardSimplify::usage="SetStandardSimplify[sim_]"
+
+SetDisentangle::usage="SetDisentangle[ex_]"
+SumDiagrams::usage="SumDiagrams[nKernels_Integer,postfix_String,number_Integer:0,operation_:$StandardQuickSimplify,saveName_String:\"sum\"]";
+TraceDiagrams::usage="TraceDiagrams[simpFunc_,nKernels_Integer,postfix_String,ex_,preRepRules_List:{},postRepRules_List:{}]"
+
+
+(*Begin["`Private`"]*)
+
+
 Unprotect[GetDirectory];
 GetDirectory[]:=If[$Notebooks,NotebookDirectory[],Directory[]]<>"/";
 
@@ -176,8 +210,8 @@ SetAttributes[AutoSaveRestoreQuiet,HoldRest]
 
 ClearTraceCache[name_String:""]:=Module[{},
 If[name=="",
-DeleteDirectory[Global`GetDirectory[]~~"TraceBuffer/",DeleteContents->True]//Quiet;,
-DeleteDirectory[Global`GetDirectory[]~~"TraceBuffer/"~~name~~"/",DeleteContents->True]//Quiet;
+DeleteDirectory[GetDirectory[]~~"TraceBuffer/",DeleteContents->True]//Quiet;,
+DeleteDirectory[GetDirectory[]~~"TraceBuffer/"~~name~~"/",DeleteContents->True]//Quiet;
 ];
 ];
 
@@ -1042,18 +1076,18 @@ Total[Flatten@Map[ExtendedFormTrace[#,disentangle,preRepRules,postRepRules]&,exp
 ]
 
 
-separateScalarProductsFiniteT[expr_]:=Module[{},UseLorentzLinearity[expr]//.InsertOutputNaming@{TBsp[q_,p_]:>TBsps[q,p]+TBvec[q,0]TBvec[p,0],TBvec[p_,mu_/;mu=!=0]:>TBvecs[p,mu]+TBdeltaLorentz[mu,0]TBvec[p,0]}]
+SeparateScalarProductsFiniteT[expr_]:=Module[{},UseLorentzLinearity[expr]//.InsertOutputNaming@{TBsp[q_,p_]:>TBsps[q,p]+TBvec[q,0]TBvec[p,0],TBvec[p_,mu_/;mu=!=0]:>TBvecs[p,mu]+TBdeltaLorentz[mu,0]TBvec[p,0]}]
 
-expandScalarProductsFiniteT[expr_]:=Module[{q,p},UseLorentzLinearity[expr]//.InsertOutputNaming@{TBsp[q_,p_]->TBsps[q,p]+TBvec[q,0]TBvec[p,0]}//.InsertOutputNaming@{TBsps[q_,p_]->q p cos[q,p], cos[p_,p_]->1}]
+ExpandScalarProductsFiniteT[expr_]:=Module[{q,p},UseLorentzLinearity[expr]//.InsertOutputNaming@{TBsp[q_,p_]->TBsps[q,p]+TBvec[q,0]TBvec[p,0]}//.InsertOutputNaming@{TBsps[q_,p_]->q p cos[q,p], cos[p_,p_]->1}]
 
-expandScalarProducts[expr_]:=Module[{q,p},UseLorentzLinearity[expr]//.InsertOutputNaming@{TBsp[q_,p_]->q p cos[q,p], cos[p_,p_]->1}]
+ExpandScalarProducts[expr_]:=Module[{q,p},UseLorentzLinearity[expr]//.InsertOutputNaming@{TBsp[q_,p_]->q p cos[q,p], cos[p_,p_]->1}]
 
 SetAttributes[cos, Orderless];
 Derivative[0,1][cos][p_,q_]=0;
 Derivative[1,0][cos][p_,q_]=0;
 cos[p_,p_]=1;
 
-simplifyAllMomenta[q_,expr_]:=UseLorentzLinearity[expr]//.InsertOutputNaming@{
+SimplifyAllMomenta[q_,expr_]:=UseLorentzLinearity[expr]//.InsertOutputNaming@{
 cos[p_,Symbol[ToString[q]<>"f"]]:>Symbol["cos"<>ToString[p]<>ToString[q]],
 TBvec[q,0]:>Symbol[ToString[q]<>"0"],
 TBvec[Symbol[ToString[q]<>"f"],0]:>(ClearAll[T];Symbol[ToString[q]<>"0"]+\[Pi] T)
@@ -1171,9 +1205,6 @@ $Disentangle=ex;
 $Disentangle=True;
 
 
-SumDiagrams::usage="SumDiagrams[nKernels_Integer,postfix_String,number_Integer:0,operation_:$StandardQuickSimplify,saveName_String:\"sum\"]";
-
-
 SumDiagrams[nKernels_Integer,postfix_String,number_Integer:0,operation_:$StandardQuickSimplify,saveName_String:"sum"]:=Module[
 {tempDir,files,data,mAssume,returnValue},
 
@@ -1289,7 +1320,13 @@ Print["...done."];
 ]
 
 
+(*End[]*)
+
+
 Protect["DiFfRG`*"];
 
 
 (*EndPackage[];*)
+
+
+AddCodeOptimizeFunctions[RBdot[__],RFdot[__],RB[__],RF[__]]

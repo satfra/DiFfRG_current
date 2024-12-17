@@ -4,11 +4,14 @@ public:
   template <typename T1, typename T2, typename T3, typename T4, typename T5>
   static __forceinline__ __host__ __device__ auto kernel(const double q, const double k, const T1 N, const T2 T, const T3 rhoPhi, const T4 m2Pi, const T5 m2Sigma)
   {
+    // optimization definitions
+    const double DiFfRGREPL1 = RB(powr<2>(k), powr<2>(q));
+
     // flow
     return 0.25 *
-           (CothFiniteT((sqrt(m2Sigma + powr<2>(q) + RB(powr<2>(k), powr<2>(q)))), T) * (sqrt(m2Pi + powr<2>(q) + RB(powr<2>(k), powr<2>(q)))) +
-            (-1. + N) * CothFiniteT((sqrt(m2Pi + powr<2>(q) + RB(powr<2>(k), powr<2>(q)))), T) * (sqrt(m2Sigma + powr<2>(q) + RB(powr<2>(k), powr<2>(q))))) *
-           powr<-1>(sqrt((m2Pi + powr<2>(q) + RB(powr<2>(k), powr<2>(q))) * (m2Sigma + powr<2>(q) + RB(powr<2>(k), powr<2>(q))))) * RBdot(powr<2>(k), powr<2>(q));
+           (CothFiniteT((sqrt(DiFfRGREPL1 + m2Sigma + powr<2>(q))), T) * (sqrt(DiFfRGREPL1 + m2Pi + powr<2>(q))) +
+            (-1. + N) * CothFiniteT((sqrt(DiFfRGREPL1 + m2Pi + powr<2>(q))), T) * (sqrt(DiFfRGREPL1 + m2Sigma + powr<2>(q)))) *
+           powr<-1>(sqrt((DiFfRGREPL1 + m2Pi + powr<2>(q)) * (DiFfRGREPL1 + m2Sigma + powr<2>(q)))) * RBdot(powr<2>(k), powr<2>(q));
   }
 
   template <typename T1, typename T2, typename T3, typename T4, typename T5>

@@ -129,11 +129,11 @@ G\[Sigma]\[Sigma][{p1_,p2_}]:>GSigma[p1],
 };
 
 sanity=(\[CapitalGamma]\[CapitalPi]\[CapitalPi][{-p,a1,p,a2}]+R\[CapitalPi]\[CapitalPi][{-p,a1,p,a2}])G\[CapitalPi]\[CapitalPi][{p,a2,-p,a1}]//.PreTraceRulesMesonic//FormTrace;
-sanity=sanity//.PostTraceRulesMesonic//expandScalarProductsFiniteT//FullSimplify;
+sanity=sanity//.PostTraceRulesMesonic//ExpandScalarProductsFiniteT//FullSimplify;
 Print[sanity," should be -1+\!\(\*SuperscriptBox[\(Nf\), \(2\)]\)"]
 
 sanity=(\[CapitalGamma]\[Sigma]\[Sigma][{-p,p}]+R\[Sigma]\[Sigma][{-p,p}])G\[Sigma]\[Sigma][{p,-p}]//.PreTraceRulesMesonic//FormTrace;
-sanity=sanity//.PostTraceRulesMesonic//expandScalarProductsFiniteT//FullSimplify;
+sanity=sanity//.PostTraceRulesMesonic//ExpandScalarProductsFiniteT//FullSimplify;
 Print[sanity," should be 1"]
 
 
@@ -306,14 +306,14 @@ RQ[__],RPhi[__],
 RQdot[__],RPhidot[__]
 };
 QCDSimp[expr_]:=Module[{ret},
-ret=expr//UseLorentzLinearity//expandScalarProductsFiniteT//simplifyAllMomenta[q,#]&;
+ret=expr//UseLorentzLinearity//ExpandScalarProductsFiniteT//SimplifyAllMomenta[q,#]&;
 ret=ret/.Map[(Head[#][a___]:>FullSimplify[Head[#][a]])&,otherList\[Union]dotsList];
 ret=Collect[ret,couplingsList\[Union]dotsList,QuickSimplify];
 ret=Collect[ret,couplingsList\[Union]dotsList,Simplify];
 Return[ret];
 ];
 QCDQuickSimp[expr_]:=Module[{ret},
-ret=expr//UseLorentzLinearity//expandScalarProductsFiniteT//simplifyAllMomenta[q,#]&;
+ret=expr//UseLorentzLinearity//ExpandScalarProductsFiniteT//SimplifyAllMomenta[q,#]&;
 ret=ret/.Map[(Head[#][a___]:>FullSimplify[Head[#][a]])&,otherList\[Union]dotsList];
 ret=Collect[ret,couplingsList\[Union]dotsList,QuickSimplify];
 Return[ret];
@@ -426,7 +426,7 @@ PlotSuperindexDiagram[DiagramsVsidx,SetupfRG,"EdgeStyle"->DiagramStyle]
 $Assumptions=$Assumptions&&A0>=0&& gAqbq1>=0&&muq>=0&&q>p>0&&q>0&&k>0&&-1<cos<1&&-d1V-q^2-2 d2V rhoPhi-RB[k^2,q^2]<0&&-d1V-q^2-RB[k^2,q^2]<0&&-m2Quark-q^2-2 q RF[k^2,q^2]-RF[k^2,q^2]^2<0;
 
 ProjectedV=DiagramsV//.PreTraceRules;
-VLoop=expandScalarProductsFiniteT[Map[FormTrace[PreTrace[#]]&,ProjectedV]]//Simplify;
+VLoop=ExpandScalarProductsFiniteT[Map[FormTrace[PreTrace[#]]&,ProjectedV]]//Simplify;
 VLoop=VLoop//.PostTraceRules//.hPhi->Sqrt[(m2Quark 2Nf)/(2rhoPhi)]//.2 d2V rhoPhi->m2Sigma-d1V//QCDSimp;
 VLoop=(Map[MatsubaraSum[#,q0,T]&,VLoop]//Expand)//.Tanh[a__]:>Tanh[FullSimplify[a]]//SafeFiniteTFunctions[#,T]&//QCDSimp;
 

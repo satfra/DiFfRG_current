@@ -180,7 +180,7 @@ ex1=Flatten@ParallelMap[If[Head[#]===Plus,List@@#,#]&,ex1];
 ex1=Map[{ReleaseHold[#]}&,ex1];
 Return[ex1]
 ]
-Finalize[expr_]:=simplifyAllMomenta[q,expandScalarProductsFiniteT[expr]]
+Finalize[expr_]:=SimplifyAllMomenta[q,ExpandScalarProductsFiniteT[expr]]
 
 
 kernelLambda1=<|"Path"->"qbqqbq","Name"->"lambda1","Type"->"Quadratureq0","Angles"->0,"d"->4,"AD"->False,"ctype"->"double","Device"->"CPU"|>;

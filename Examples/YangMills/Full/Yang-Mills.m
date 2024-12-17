@@ -231,14 +231,14 @@ otherList={
 dtZA[__],ZA[__],etac[__],RA[__],Rc[__],RAdot[__],Rcdot[__]
 };
 QCDSimp[expr_]:=Module[{ret},
-ret=expr//.Nc->3//.qf->q//UseLorentzLinearity//expandScalarProducts//simplifyAllMomenta[q,#]&;
+ret=expr//.Nc->3//.qf->q//UseLorentzLinearity//ExpandScalarProducts//SimplifyAllMomenta[q,#]&;
 ret=ret/.Map[(Head[#][a___]:>FullSimplify[Head[#][a]])&,couplingsList\[Union]otherList];
 ret=Collect[ret,couplingsList,QuickSimplify];
 ret=Collect[ret,couplingsList,Simplify];
 Return[ret]
 ];
 QCDQuickSimp[expr_]:=Module[{ret},
-ret=expr//.Nc->3//.qf->q//UseLorentzLinearity//expandScalarProducts//simplifyAllMomenta[q,#]&;
+ret=expr//.Nc->3//.qf->q//UseLorentzLinearity//ExpandScalarProducts//SimplifyAllMomenta[q,#]&;
 ret=ret/.Map[(Head[#][a___]:>FullSimplify[Head[#][a]])&,couplingsList\[Union]otherList];
 ret=Collect[ret,couplingsList,QuickSimplify];
 Return[ret]
@@ -335,11 +335,11 @@ PlotSuperindexDiagram[DiagramsAAsidx,SetupfRG,"EdgeStyle"->DiagramStyle]
 ProjectorZA=TBGetProjector["AA",1,{-p,v1,a1},{p,v2,a2}];
 
 (*Sanity Check*)
-sanity=(FormTrace[ProjectorZA ((\[CapitalGamma]AA[{-p,v2,a2,p,v1,a1}]-\[CapitalGamma]AA[{-q,v2,a2,q,v1,a1}])/sp[p,p])//.PreTraceRules]//.PostTraceRules//expandScalarProducts)//.{cos[p,q]->1,q->0}//Simplify;
+sanity=(FormTrace[ProjectorZA ((\[CapitalGamma]AA[{-p,v2,a2,p,v1,a1}]-\[CapitalGamma]AA[{-q,v2,a2,q,v1,a1}])/sp[p,p])//.PreTraceRules]//.PostTraceRules//ExpandScalarProducts)//.{cos[p,q]->1,q->0}//Simplify;
 Print["Projection check is ", sanity, ", should be ZA[p]"]
 
 (*Sanity Check*)
-sanity=simplifyAllMomenta[q,FormTrace[ProjectorZA \[CapitalGamma]AA[{-p,v2,a2,p,v1,a1}]//.PreTraceRules]//.PostTraceRules//expandScalarProducts//Simplify]//.p->0;
+sanity=SimplifyAllMomenta[q,FormTrace[ProjectorZA \[CapitalGamma]AA[{-p,v2,a2,p,v1,a1}]//.PreTraceRules]//.PostTraceRules//ExpandScalarProducts//Simplify]//.p->0;
 Print["Projection check is ", sanity, ", should be m2A"]
 
 
@@ -425,7 +425,7 @@ ProjectorZAcbc base//FormTrace//Simplify
 (*Projection*)
 ProjectorZAcbc=TBGetProjector["Acbc",1,{p1,v1,a1},{-p2-p1,a3},{p2,a2}]//UseLorentzLinearity//FullSimplify;
 (*Sanity check*)
-sanity=Simplify[ProjectorZAcbc \[CapitalGamma]Acbc[{p1,v1,a1,p2,a2,-p1-p2,a3}]//.PreTraceRules//FormTrace]//.PostTraceRules//transf3PTo//expandScalarProducts//FullSimplify;
+sanity=Simplify[ProjectorZAcbc \[CapitalGamma]Acbc[{p1,v1,a1,p2,a2,-p1-p2,a3}]//.PreTraceRules//FormTrace]//.PostTraceRules//transf3PTo//ExpandScalarProducts//FullSimplify;
 Print["Projection check is ", sanity, ", should be ZAcbc[S0,S1,SPhi]"]
 
 
