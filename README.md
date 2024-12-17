@@ -1,7 +1,7 @@
 [![arXiv](https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg?style=for-the-badge)](https://arxiv.org/abs/1234.56789)
 [![Doxygen](https://img.shields.io/badge/doxygen-2C4AA8?style=for-the-badge&logo=doxygen&logoColor=white)](https://satfra.github.io/DiFfRG/cpp/index.html)
-[![Wolfram](https://img.shields.io/badge/wolfram-cf1c10?style=for-the-badge&logo=wolfram)](https://satfra.github.io/DiFfRG/wolfram/html/guide/DiFfRG.html)
-[![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://satfra.github.io/DiFfRG/python/index.html)
+[![Wolfram](https://img.shields.io/badge/wolfram_doc-cf1c10?style=for-the-badge&logo=wolfram)](https://satfra.github.io/DiFfRG/wolfram/html/guide/DiFfRG.html)
+[![Python](https://img.shields.io/badge/python_doc-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://satfra.github.io/DiFfRG/python/index.html)
 
 # DiFfRG - A Discretization Framework for functional Renormalization Group flows
 
