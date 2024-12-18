@@ -36,7 +36,7 @@ CodeForm::usage = "CodeForm[expr_]
 Obtain properly formatted and processed C++ code from an expression.";
 
 SetCppNames::usage = "SetCppNames[rules___]
-Set additional replacement rules used when invoking CodeForm[expr_].
+Set additional replacement rules used when invoking CodeForm[expr].
 
 Example Call: SetCppNames[\"k\"->\"k_bosonic\", \"Arccos(\"->\"std::arccos(\"]";
 
@@ -53,7 +53,7 @@ Thus, to compile the flows, simply add them as source files:
     add_executable(QCD QCD.cc ${flow_sources})";
 
 
-SetFlowDirectory::usage="SetFlowDirectory[dir_String]
+SetFlowDirectory::usage="SetFlowDirectory[dir]
 Set the current flow directory, i.e. where all generated files are saved. Default is ./flows/";
 ShowFlowDirectory::usage="ShowFlowDirectory[]
 Show the current flow directory, i.e. where all generated files are saved. Default is ./flows/";
@@ -71,25 +71,73 @@ Make a kernel from a given flow equation, parmeter list and kernel. The kernel m
 This Function creates an integrator that evaluates (constantFlow + \[Integral]integrandFlow). One can prepend additional c++ definitions to the flow equation by using the integrandDefinitions and constantDefinitions parameters. 
 These are prepended to the respective methods of the integration kernel, allowing one to e.g. define specific angles one needs for the flow code.";
 
-DeclareSymmetricPoints4DP4::usage="";
-DeclareSymmetricPoints4DP3::usage="";
-DeclareSymmetricPoints3DP4::usage="";
-DeclareSymmetricPoints3DP3::usage="";
-DeclareSymmetricPoints2DP4::usage="";
-DeclareSymmetricPoints2DP3::usage="";
+DeclareSymmetricPoints4DP4::usage="DeclareSymmetricPoints4DP4[]
+Obtain C++ code declaring angles for a four-point symmetric configuration in 4D.
+The angles will have the names cosp1q, cosp2q, cosp3q and cosp4q.
+DeclareSymmetricPoints4DP4[computeType]
+Set the type of the declared C++ variables (should be double or float).";
 
-DeclareAnglesP34Dpqr::usage="";
+DeclareSymmetricPoints4DP3::usage="DeclareSymmetricPoints4DP3[]
+Obtain C++ code declaring angles for a four-point symmetric configuration in 4D.
+The angles will have the names cosp1q, cosp2q, cosp3q and cosp4q.
+DeclareSymmetricPoints4DP3[computeType]
+Set the type of the declared C++ variables (should be double or float).";
+
+DeclareSymmetricPoints3DP4::usage="DeclareSymmetricPoints3DP4[]
+Obtain C++ code declaring angles for a four-point symmetric configuration in 3D.
+The angles will have the names cosp1q, cosp2q, cosp3q and cosp4q.
+DeclareSymmetricPoints3DP4[computeType]
+Set the type of the declared C++ variables (should be double or float).";
+
+DeclareSymmetricPoints3DP3::usage="DeclareSymmetricPoints3DP3[]
+Obtain C++ code declaring angles for a three-point symmetric configuration in 3D.
+The angles will have the names cosp1q, cosp2q and cosp3q.
+DeclareSymmetricPoints3DP3[computeType]
+Set the type of the declared C++ variables (should be double or float).";
+
+DeclareSymmetricPoints2DP4::usage="DeclareSymmetricPoints2DP4[]
+Obtain C++ code declaring angles for a four-point symmetric configuration in 2D.
+The angles will have the names cosp1q, cosp2q, cosp3q and cosp4q.
+DeclareSymmetricPoints2DP4[computeType]
+Set the type of the declared C++ variables (should be double or float).";
+
+DeclareSymmetricPoints2DP3::usage="DeclareSymmetricPoints2DP3[]
+Obtain C++ code declaring angles for a three-point symmetric configuration in 2D.
+The angles will have the names cosp1q, cosp2q and cosp3q.
+DeclareSymmetricPoints2DP3[computeType]
+Set the type of the declared C++ variables (should be double or float).";
+
+DeclareAnglesP34Dpqr::usage="DeclareAnglesP34Dpqr[q,p,r]
+Obtain C++ code declaring angles for the angles in a full three-point function in 4D.
+The angles will have the names cospq and cosqr, where q,p,r are replaced by the given Symbol names and ordered alphabetically.
+DeclareAnglesP34Dpqr[q,p,r,computeType]
+Set the type of the declared C++ variables (should be double or float).";
 
 SafeFiniteTFunctions::usage="";
-ShowTypes::usage="";
-AddCodeOptimizeFunctions::usage="";
-ShowCodeOptimizeFunctions::usage="";
-ClearCodeOptimizeFunctions::usage="";
-UseKernelOptimizations::usage="";
+
+ShowTypes::usage="ShowTypes[]
+Show a list of all types available for use in a parameter list to make a kernel.";
+
+AddCodeOptimizeFunctions::usage="AddCodeOptimizeFunctions[func1[__], func2[__],...]
+Add the functions func1, func2, ... to the functions to be optimized out, i.e. calculated only once in auto-generated kernel code.";
+
+ShowCodeOptimizeFunctions::usage="ShowCodeOptimizeFunctions[]
+Show a list of all functions which DiFfRG will try to optimize out when generating C++ code.";
+
+ClearCodeOptimizeFunctions::usage="ClearCodeOptimizeFunctions[]
+Remove all optimization functions from the internal list";
+
+UseKernelOptimizations::usage="UseKernelOptimizations[True]
+Turn on code optimizations in auto-generation of C++ code.
+UseKernelOptimizations[False]
+Turn off code optimizations in auto-generation of C++ code.
+";
 
 SetKernelDefinitions::usage="SetKernelDefinitions[definitionCode_String] sets the kernel definitions to definitionCode.
 SetKernelDefinitions[] resets the kernel definitions to the standard.";
-ShowKernelDefinitions::usage="ShowKernelDefinitions[]";
+
+ShowKernelDefinitions::usage="ShowKernelDefinitions[]
+Show the currently specified kernel definitions code.";
 
 
 Begin["`Private`"];
