@@ -124,7 +124,7 @@ Afterwards, one proceeds with the above Rocky Linux setup.
 
 If all requirements are met, you can clone the git to a directory of your choice,
 ```bash
-$ git clone https://lin0.thphys.uni-heidelberg.de:4443/frg-codes/DiFfRG.git
+$ git clone https://github.com/satfra/DiFfRG.git
 ```
 and start the build after switching to the git directory.
 ```bash
