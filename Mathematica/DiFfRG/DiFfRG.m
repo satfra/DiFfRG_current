@@ -1122,7 +1122,7 @@ rules=Map[conv@TBsps[#[[1]],#[[2]]]->-(1/(nMomenta-1))conv@TBsps[p,p]&,Subsets[m
 \[Union]Map[conv@TBsps[#,q]->Symbol["cos"~~ToString[#]~~"q"] p q&,momentaList]
 \[Union]Map[conv@TBsps[#,qf]->Symbol["cos"~~ToString[#]~~"q"] p qf&,momentaList]
 (*\[Union]{momentaList[[nMomenta]]->-Total[momentaList[[1;;nMomenta-1]]]}*);
-(separateScalarProductsFiniteT[UseLorentzLinearity[expr]]//.rules//UseLorentzLinearity)//.rules
+(SeparateScalarProductsFiniteT[UseLorentzLinearity[expr]]//.rules//UseLorentzLinearity)//.rules
 ]
 
 
