@@ -33,7 +33,7 @@ jobs:
           source .venv/bin/activate
           pip install pdoc python/dist/DiFfRG-1.0.0-py3-none-any.whl
           cd python
-          pdoc -o python DiFfRG
+          pdoc -o python ./DiFfRG
           cd ..
       - name: Assemble
         run: |
