@@ -81,9 +81,6 @@ DeclareSymmetricPoints2DP3::usage="";
 DeclareAnglesP34Dpqr::usage="";
 
 SafeFiniteTFunctions::usage="";
-SetDevice::usage="";
-ShowFlowDir::usage="Show Directory for flow export";
-ShowDevice::usage="";
 ShowTypes::usage="";
 AddCodeOptimizeFunctions::usage="";
 ShowCodeOptimizeFunctions::usage="";

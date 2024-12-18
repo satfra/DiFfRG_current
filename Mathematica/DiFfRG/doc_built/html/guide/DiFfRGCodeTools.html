@@ -1,0 +1,50 @@
+
+		<!DOCTYPE html>
+		<html lang="en">
+
+		<head>
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<meta charset="utf-8">
+	
+
+<title>DiFfRG`CodeTools`&mdash;Wolfram Language Documentation</title>
+<meta name="buildnumber" content="0000000">
+<meta name="historydata" content="{XX, , , }" />
+<meta name="keywords" content="DiFfRGCodeTools" />
+
+<meta name="description" content="The code-generation sub-package of DiFfRG" />
+<link rel="stylesheet" href="../../common/framework/css/framework.en.css"><link rel="stylesheet" href="../../common/framework/css/gui.en.css"><link rel="stylesheet" href="../../common/js/clipboard/2.0/clipboard.css"><link rel="stylesheet" href="../../fonts/source-code-pro/1.0/all.css"><link rel="stylesheet" href="../../fonts/source-sans-pro/1.0/global.css"><link rel="stylesheet" href="../../language-assets/css/entities.css"><link rel="stylesheet" href="../../language-assets/css/footer.css"><link rel="stylesheet" href="../../language-assets/css/global.css"><link rel="stylesheet" href="../../language-assets/css/guide.css"><link rel="stylesheet" href="../../language-assets/css/header-language.css"><link rel="stylesheet" href="../../language-assets/css/iconography.css"><link rel="stylesheet" href="../../language-assets/css/icons.css"><link rel="stylesheet" href="../../language-assets/css/in-out.css"><link rel="stylesheet" href="../../language-assets/css/language-specific.css"><link rel="stylesheet" href="../../language-assets/css/language.css"><link rel="stylesheet" href="../../language-assets/css/man-page.css"><link rel="stylesheet" href="../../language-assets/css/related-links.css"><link rel="stylesheet" href="../../language-assets/css/root-guide-language.css"><link rel="stylesheet" href="../../language-assets/css/special-styles.css"><link rel="stylesheet" href="../../language-assets/css/tables.css"><link rel="stylesheet" href="../../language-assets/css/technotes.css"><link rel="stylesheet" href="../../language-assets/css/tooltips.css"><link rel="stylesheet" href="../../language-assets/css/workflows.css">
+<script>var baselang = 'DiFfRGCodeTools.en';</script>
+</head>
+
+<body id="guide">
+  <main class="main">
+  <nav class="topContentWrap"><span class="badge">DI FF R G GUIDE</span></nav><div class="main-heading"><h1 class="main-title">DiFfRG`CodeTools`</h1><div class="iconography" data-src="f= s= d= m= c= u= l= n= e="></div></div><p class="intro"><a name="1876200119"></a>The code-generation sub-package of <a href="../guide/DiFfRG.html">DiFfRG</a></p><div class="GuideDelimiterSubsection"><!-- --></div><h3><a name="1827706316"></a>Auto-Generating C++ Code</h3><p class="singleFunction"><a name="1985301020"></a><span class="IFSansUnlinked">MakeFlowClass</span> <span class="dash">&mdash;</span> Create a base class that holds all integration kernel objects and generate CMake information.</p><p class="singleFunction"><a name="902934030"></a><span class="IFSansUnlinked">MakeFlowClassFiniteT</span> <span class="dash">&mdash;</span> Create a base class that holds all integration kernel objects and generate CMake information.</p><p class="singleFunction"><a name="213186801"></a><span class="IFSansUnlinked">MakeKernel</span> <span class="dash">&mdash;</span> Generate code for an integration kernel.</p><p class="singleFunction"><a name="1199000698"></a><span class="IFSansUnlinked">CodeForm</span> <span class="dash">&mdash;</span> Convert an expression to a C++ string.</p><p class="singleFunction"><a name="2011523411"></a><span class="IFSansUnlinked">SafeFiniteTFunctions</span> <span class="dash">&mdash;</span> Replace mathematical functions by alternatives with built-in safety.</p><h3><a name="166074364"></a>Declaring angular configurations</h3><p class="singleFunction"><a name="512800718"></a><span class="IFSansUnlinked">DeclareSymmetricPoints4DP4</span> <span class="dash">&mdash;</span> Declare angles for a four-point symmetric point in 4D</p><p class="singleFunction"><a name="1927091195"></a><span class="IFSansUnlinked">DeclareSymmetricPoints4DP3</span> <span class="dash">&mdash;</span> Declare angles for a three-point symmetric point in 4D</p><p class="singleFunction"><a name="1020453959"></a><span class="IFSansUnlinked">DeclareSymmetricPoints3DP4</span> <span class="dash">&mdash;</span> Declare angles for a four-point symmetric point in 3D</p><p class="singleFunction"><a name="1004755025"></a><span class="IFSansUnlinked">DeclareSymmetricPoints3DP3</span> <span class="dash">&mdash;</span> Declare angles for a three-point symmetric point in 3D</p><p class="singleFunction"><a name="1342673521"></a><span class="IFSansUnlinked">DeclareSymmetricPoints2DP4</span> <span class="dash">&mdash;</span> Declare angles for a four-point symmetric point in 2D</p><p class="singleFunction"><a name="1009221507"></a><span class="IFSansUnlinked">DeclareSymmetricPoints2DP3</span> <span class="dash">&mdash;</span> Declare angles for a three-point symmetric point in 2D</p><p class="singleFunction"><a name="688717433"></a><span class="IFSansUnlinked">DeclareAnglesP34Dpqr</span> <span class="dash">&mdash;</span> Declare angles for a full three-point vertex in 4D</p><h3><a name="1681748365"></a>Setting the global output directory</h3><p class="inlineFunctionList">
+  <a name="791635117"></a>
+  <span class="IFSansUnlinked">SetFlowDirectory</span>
+  <span class="inlineBullet">&nbsp;&#9642;&nbsp;</span>
+  <span class="IFSansUnlinked">ShowFlowDirectory</span>
+ </p><p class="singleFunction"><a name="1430134266"></a><span class="IFSansUnlinked">ShowTypes</span> <span class="dash">&mdash;</span> Information about the usable types.</p><h3><a name="1719506283"></a>Configure code optimizations</h3><p class="inlineFunctionList">
+  <a name="260420587"></a>
+  <span class="IFSansUnlinked">AddCodeOptimizeFunctions</span>
+  <span class="inlineBullet">&nbsp;&#9642;&nbsp;</span>
+  <span class="IFSansUnlinked">ShowCodeOptimizeFunctions</span>
+  <span class="inlineBullet">&nbsp;&#9642;&nbsp;</span>
+  <span class="IFSansUnlinked">ClearCodeOptimizeFunctions</span>
+ </p><p class="singleFunction"><a name="250037707"></a><span class="IFSansUnlinked">UseKernelOptimizations</span> <span class="dash">&mdash;</span> Toggle kernel optimizations.</p><h3><a name="1650693706"></a>Configure C++ and kernel export</h3><p class="inlineFunctionList">
+  <a name="276437412"></a>
+  <span class="IFSansUnlinked">SetKernelDefinitions</span>
+  <span class="inlineBullet">&nbsp;&#9642;&nbsp;</span>
+  <span class="IFSansUnlinked">ShowKernelDefinitions</span>
+ </p><p class="singleFunction"><a name="1911454445"></a><span class="IFSansUnlinked">SetCppNames</span> <span class="dash">&mdash;</span> Set additional replacements for C++ generation.</p>
+  
+
+  
+		</main>
+		<div id="_footer-offset"></div>
+		<div id="_footer"></div>
+		<script src="../../common/js/jquery/2.2.4/jquery.min.js"></script><script src="../../common/js/jquery/plugins/hoverintent/1.8.0/hoverintent.min.j2"></script><script src="../../common/js/clipboard/2.0/clipboard.js"></script><script src="../../common/js/clipboard/2.0/code-clipboard.js"></script><script src="../../common/framework/js/body.en.js"></script><script src="../../common/framework/js/head.en.js"></script><script src="../../language-assets/js/dropdowns.js"></script><script src="../../language-assets/js/global.js"></script><script src="../../language-assets/js/language-specific.js.en"></script><script src="../../language-assets/js/language.js"></script><script src="../../language-assets/js/temporary.js"></script><script src="../../language-assets/js/toggles.js"></script><script src="../../language-assets/js/tooltips.js"></script><script src="../../language-assets/js/workflows.js"></script>
+</body>
+
+</html>
