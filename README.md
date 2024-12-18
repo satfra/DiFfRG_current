@@ -27,15 +27,14 @@ For an overview, please see the [accompanying paper](https://arxiv.org/abs/...),
 
 If you use DiFfRG in your scientific work, please cite the corresponding paper:
 ```
-@article{DiFfRG2024,
+@article{Sattler:2024ozv,
     author = "Sattler, Franz R. and Pawlowski, Jan M.",
-    title = "{DiFfRG - A Discretization Framework for functional Renormalization Group flows}",
-    eprint = "",
-    archivePrefix = "",
-    primaryClass = "",
-    month = "",
-    year = "2024",
-    journal = ""
+    title = "{DiFfRG: A Discretisation Framework for functional Renormalisation Group flows}",
+    eprint = "2412.13043",
+    archivePrefix = "arXiv",
+    primaryClass = "hep-ph",
+    month = "12",
+    year = "2024"
 }
 ```
 
