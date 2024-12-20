@@ -10,7 +10,7 @@ source ./build_scripts/setup_folders.sh
 cd $BUILD_PATH
 
 cmake -DENABLE_OPENMP=ON \
-  -DENABLE_MPI=ON \
+  -DENABLE_MPI=OFF \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_C_FLAGS_RELEASE="${C_FLAGS} -O3 -DNDEBUG" \
   -DCMAKE_EXE_LINKER_FLAGS="${EXE_LINKER_FLAGS}" \
