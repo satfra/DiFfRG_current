@@ -13,6 +13,7 @@
 
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/discretization/FV/assembler/KurganovTadmor.hh>
 
 namespace DiFfRG
 {
@@ -44,6 +45,12 @@ namespace DiFfRG
       const auto &get_json() const { return json; }
 
       void reinit() {}
+
+      std::vector<uint> get_block_structure() const
+      {
+        //return Components::get_block_structure(triangulation);
+        return std::vector<uint>{0,0};
+      }
 
     protected:
       Mesh &mesh;
