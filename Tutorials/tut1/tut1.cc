@@ -30,7 +30,7 @@ int main(int argc, char *argv[])
   TimeStepper time_stepper(json, &assembler);
 
   // Set up the initial condition
-  FlowingVariables initial_condition(discretization);
+  FE::FlowingVariables initial_condition(discretization);
   initial_condition.interpolate(model);
 
   // Now we start the timestepping

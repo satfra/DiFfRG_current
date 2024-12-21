@@ -60,7 +60,7 @@
     }
   },
   "output": {
-    "verbosity": 0,
+    "verbosity": 1,
     "folder": "./",
     "name": "output"
   }

@@ -25,8 +25,7 @@ bool run(const JSONValue &json, const std::string logger)
   // Define the objects needed to run the simulation
   Model model(json);
   Assembler assembler(model, json);
-  DataOutput<0, VectorType> data_out(config_helper.get_top_folder(), config_helper.get_output_name(), config_helper.get_output_folder(), json);
-  TimeStepper time_stepper(&assembler, data_out, nullptr, json);
+  TimeStepper time_stepper(json, &assembler);
 
   // Set up the initial condition
   FlowingVariables initial_condition;
