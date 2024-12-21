@@ -5,7 +5,7 @@ TabWidth: 2
 BreakBeforeBraces: Linux
 AllowShortIfStatementsOnASingleLine: true
 IndentCaseLabels: false
-ColumnLimit: 180
+ColumnLimit: 120
 AccessModifierOffset: -2
 NamespaceIndentation: All
 AllowShortEnumsOnASingleLine: true

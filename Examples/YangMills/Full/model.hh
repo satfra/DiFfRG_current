@@ -21,7 +21,7 @@ struct Parameters {
       tilt_A3 = json.get_double("/physical/tilt_A3");
       tilt_A4 = json.get_double("/physical/tilt_A4");
       tilt_Acbc = json.get_double("/physical/tilt_Acbc");
-      
+
       m2A = json.get_double("/physical/m2A");
 
       p_grid_min = json.get_double("/discretization/p_grid_min");
@@ -45,23 +45,21 @@ static constexpr uint p_grid_size = 96;
 static constexpr uint S1_size = 8;
 static constexpr uint SPhi_size = 7;
 // As for components, we have one FE function (u) and several extractors.
-using VariableDesc = VariableDescriptor<
-          Scalar<"m2A">, 
+using VariableDesc =
+    VariableDescriptor<Scalar<"m2A">,
 
-          FunctionND<"ZA3", p_grid_size, S1_size, SPhi_size>, 
-          FunctionND<"ZAcbc", p_grid_size, S1_size, SPhi_size>, 
-          FunctionND<"ZA4tadpole", p_grid_size, S1_size, SPhi_size>, 
-          FunctionND<"ZA4SP", p_grid_size>,
+                       FunctionND<"ZA3", p_grid_size, S1_size, SPhi_size>,
+                       FunctionND<"ZAcbc", p_grid_size, S1_size, SPhi_size>,
+                       FunctionND<"ZA4tadpole", p_grid_size, S1_size, SPhi_size>, FunctionND<"ZA4SP", p_grid_size>,
 
-          FunctionND<"ZA", p_grid_size>, 
-          FunctionND<"Zc", p_grid_size>
-          >;
+                       FunctionND<"ZA", p_grid_size>, FunctionND<"Zc", p_grid_size>>;
 using Components = ComponentDescriptor<FEFunctionDescriptor<>, VariableDesc, ExtractorDescriptor<>>;
 
 constexpr auto idxv = VariableDesc{};
 
 /**
- * @brief This class implements the numerical model for the quark-meson model at finite temperature and chemical potential.
+ * @brief This class implements the numerical model for the quark-meson model at finite temperature and chemical
+ * potential.
  */
 class YangMills : public def::AbstractModel<YangMills, Components>,
                   public def::fRG,        // this handles the fRG time
@@ -71,7 +69,8 @@ class YangMills : public def::AbstractModel<YangMills, Components>,
 
   using Coordinates1D = LogarithmicCoordinates1D<float>;
   using CoordinatesAng = LinearCoordinates1D<float>;
-  using Coordinates3D = CoordinatePackND<LogarithmicCoordinates1D<float>, LinearCoordinates1D<float>, LinearCoordinates1D<float>>;
+  using Coordinates3D =
+      CoordinatePackND<LogarithmicCoordinates1D<float>, LinearCoordinates1D<float>, LinearCoordinates1D<float>>;
   const Coordinates1D coordinates1D;
   const CoordinatesAng S1_coordinates;
   const CoordinatesAng SPhi_coordinates;
@@ -89,18 +88,14 @@ class YangMills : public def::AbstractModel<YangMills, Components>,
 
 public:
   YangMills(const JSONValue &json)
-      : def::fRG(json.get_double("/physical/Lambda")), prm(json), 
-        coordinates1D(p_grid_size, prm.p_grid_min, prm.p_grid_max, prm.p_grid_bias), 
-        S1_coordinates(S1_size, 0.0, 0.9999), 
-        SPhi_coordinates(SPhi_size, 0.0, 2. * M_PI),
-        coordinates3D(coordinates1D, S1_coordinates, SPhi_coordinates),
-        grid1D(make_grid(coordinates1D)), 
-        S1_grid(make_grid(S1_coordinates)), 
-        SPhi_grid(make_grid(SPhi_coordinates)), 
-        grid3D(make_grid(coordinates3D)),
-        flow_equations(json),
-        dtZc(coordinates1D), dtZA(coordinates1D), ZA(coordinates1D), Zc(coordinates1D),   // propagators
-        ZA4SP(coordinates1D),  // 1D couplings
+      : def::fRG(json.get_double("/physical/Lambda")), prm(json),
+        coordinates1D(p_grid_size, prm.p_grid_min, prm.p_grid_max, prm.p_grid_bias),
+        S1_coordinates(S1_size, 0.0, 0.9999), SPhi_coordinates(SPhi_size, 0.0, 2. * M_PI),
+        coordinates3D(coordinates1D, S1_coordinates, SPhi_coordinates), grid1D(make_grid(coordinates1D)),
+        S1_grid(make_grid(S1_coordinates)), SPhi_grid(make_grid(SPhi_coordinates)), grid3D(make_grid(coordinates3D)),
+        flow_equations(json), dtZc(coordinates1D), dtZA(coordinates1D), ZA(coordinates1D),
+        Zc(coordinates1D),                                                  // propagators
+        ZA4SP(coordinates1D),                                               // 1D couplings
         ZAcbc(coordinates3D), ZA3(coordinates3D), ZA4tadpole(coordinates3D) // 3D couplings
   {
     flow_equations.set_k(prm.Lambda);
@@ -112,9 +107,12 @@ public:
     for (uint i = 0; i < p_grid_size; ++i) {
       for (uint j = 0; j < S1_size; ++j) {
         for (uint k = 0; k < SPhi_size; ++k) {
-          values[idxv("ZA3") + i * S1_size * SPhi_size + j * SPhi_size + k] = std::sqrt(4. * M_PI * prm.alphaA3) + prm.tilt_A3 * std::log(grid1D[i] / prm.p_grid_max);
-          values[idxv("ZAcbc") + i * S1_size * SPhi_size + j * SPhi_size + k] = std::sqrt(4. * M_PI * prm.alphaAcbc) + prm.tilt_Acbc * std::log(grid1D[i] / prm.p_grid_max);
-          values[idxv("ZA4tadpole") + i * S1_size * SPhi_size + j * SPhi_size + k] = 4. * M_PI * prm.alphaA4 + prm.tilt_A4 * std::log(grid1D[i] / prm.p_grid_max);
+          values[idxv("ZA3") + i * S1_size * SPhi_size + j * SPhi_size + k] =
+              std::sqrt(4. * M_PI * prm.alphaA3) + prm.tilt_A3 * std::log(grid1D[i] / prm.p_grid_max);
+          values[idxv("ZAcbc") + i * S1_size * SPhi_size + j * SPhi_size + k] =
+              std::sqrt(4. * M_PI * prm.alphaAcbc) + prm.tilt_Acbc * std::log(grid1D[i] / prm.p_grid_max);
+          values[idxv("ZA4tadpole") + i * S1_size * SPhi_size + j * SPhi_size + k] =
+              4. * M_PI * prm.alphaA4 + prm.tilt_A4 * std::log(grid1D[i] / prm.p_grid_max);
         }
       }
 
@@ -147,11 +145,9 @@ public:
 
     ZA.update(&variables.data()[idxv("ZA")]);
     Zc.update(&variables.data()[idxv("Zc")]);
-    
 
     // set up arguments for the integrators
-    const auto arguments = std::tie(ZA3, ZAcbc, ZA4SP, ZA4tadpole,
-                                    dtZc, Zc, dtZA, ZA, m2A);
+    const auto arguments = std::tie(ZA3, ZAcbc, ZA4SP, ZA4tadpole, dtZc, Zc, dtZA, ZA, m2A);
 
     // copy the propagators for comparison
     std::vector<double> old_dtZA(p_grid_size);
@@ -207,9 +203,11 @@ public:
       residual[idxv("Zc") + i] = dtZc.data()[i];
     }
 
-    std::apply([&](const auto &...args) { residual[idxv("m2A")] = flow_equations.m2A_integrator.get<double>(k, 0., args...); }, arguments);
+    std::apply(
+        [&](const auto &...args) { residual[idxv("m2A")] = flow_equations.m2A_integrator.get<double>(k, 0., args...); },
+        arguments);
 
-    if(Zc[0] < 0) throw std::runtime_error("Zc < 0");
+    if (Zc[0] < 0) throw std::runtime_error("Zc < 0");
 
     /*for (uint i = 0; i < p_grid_size; ++i) {
       if(!std::isfinite(residual[idxv("ZA") + i])) std::cout << "res ZA not finite" << std::endl;
@@ -217,8 +215,9 @@ public:
 
       for (uint j = 0; j < S1_size; ++j) {
         for (uint k = 0; k < SPhi_size; ++k) {
-          if(!std::isfinite(residual[idxv("ZA3") + i * S1_size * SPhi_size + j * SPhi_size + k])) std::cout << "res ZA3 not finite" << std::endl;
-          if(!std::isfinite(residual[idxv("ZAcbc") + i * S1_size * SPhi_size + j * SPhi_size + k])) std::cout << "res ZAcbc not finite" << std::endl;
+          if(!std::isfinite(residual[idxv("ZA3") + i * S1_size * SPhi_size + j * SPhi_size + k])) std::cout << "res ZA3
+    not finite" << std::endl; if(!std::isfinite(residual[idxv("ZAcbc") + i * S1_size * SPhi_size + j * SPhi_size + k]))
+    std::cout << "res ZAcbc not finite" << std::endl;
         }
       }
 
@@ -226,7 +225,8 @@ public:
     }*/
   }
 
-  template <int dim, typename DataOut, typename Solutions> void readouts(DataOut &output, const Point<dim> &, const Solutions &sol) const
+  template <int dim, typename DataOut, typename Solutions>
+  void readouts(DataOut &output, const Point<dim> &, const Solutions &sol) const
   {
     const auto &variables = get<"variables">(sol);
     const auto m2A = variables[idxv("m2A")];
@@ -244,7 +244,7 @@ public:
       Zs_data[i][0] = k;
       Zs_data[i][1] = grid1D[i];
       Zs_data[i][2] = ZA[i];
-      Zs_data[i][3] = (ZA[i]);// * powr<2>(grid1D[i]) + m2A) / powr<2>(grid1D[i]);
+      Zs_data[i][3] = (ZA[i]); // * powr<2>(grid1D[i]) + m2A) / powr<2>(grid1D[i]);
       Zs_data[i][4] = Zc[i];
     }
 
@@ -253,7 +253,7 @@ public:
     const auto *ZA4SP = &variables.data()[idxv("ZA4SP")];
     std::vector<std::vector<double>> strong_couplings_data(grid1D.size(), std::vector<double>(5, 0.));
     for (uint i = 0; i < p_grid_size; ++i) {
-      const double ZA_p = (ZA[i]);// * powr<2>(grid1D[i]) + m2A) / powr<2>(grid1D[i]);
+      const double ZA_p = (ZA[i]); // * powr<2>(grid1D[i]) + m2A) / powr<2>(grid1D[i]);
       const double Zc_p = Zc[i];
       const size_t cur_idx = i * S1_size * SPhi_size;
       strong_couplings_data[i][0] = k;
@@ -274,16 +274,16 @@ public:
           const auto S1 = S1_grid[j];
           const auto SPhi = SPhi_grid[k];
 
-          const auto p = S0*(sqrt(1.f-1.f*S1*sin(SPhi)));
-          const auto r = S0*(sqrt(1.f+0.5f*S1*(1.7320508075688772f*cos(SPhi)+sin(SPhi))));
-          const auto s = 0.7071067811865475f*S0*(sqrt(2.f-1.7320508075688772f*S1*cos(SPhi)+S1*sin(SPhi)));
+          const auto p = S0 * (sqrt(1.f - 1.f * S1 * sin(SPhi)));
+          const auto r = S0 * (sqrt(1.f + 0.5f * S1 * (1.7320508075688772f * cos(SPhi) + sin(SPhi))));
+          const auto s = 0.7071067811865475f * S0 * (sqrt(2.f - 1.7320508075688772f * S1 * cos(SPhi) + S1 * sin(SPhi)));
 
           const double Zc_r = this->Zc(r);
           const double Zc_s = this->Zc(s);
 
-          const double Z_p = (this->ZA(p));// * powr<2>(p) + m2A) / powr<2>(p);
-          const double Z_r = (this->ZA(r));// * powr<2>(r) + m2A) / powr<2>(r);
-          const double Z_s = (this->ZA(s));// * powr<2>(s) + m2A) / powr<2>(s);
+          const double Z_p = (this->ZA(p)); // * powr<2>(p) + m2A) / powr<2>(p);
+          const double Z_r = (this->ZA(r)); // * powr<2>(r) + m2A) / powr<2>(r);
+          const double Z_s = (this->ZA(s)); // * powr<2>(s) + m2A) / powr<2>(s);
 
           strong_couplings_3D_data[cur_idx][0] = this->k;
           strong_couplings_3D_data[cur_idx][1] = grid3D[cur_idx][0];
@@ -299,8 +299,10 @@ public:
     }
 
     if (is_close(t, 0.)) {
-      const std::vector<std::string> strong_couplings_header = std::vector<std::string>{"k [GeV]", "p [GeV]", "alphaAcbc", "alphaA3", "alphaA4"};
-      const std::vector<std::string> strong_couplings_3D_header = std::vector<std::string>{"k [GeV]", "S0 [GeV]", "S1", "SPhi", "ZAcbc", "ZA3", "ZA4tadpole", "alphaA3", "alphaAcbc"};
+      const std::vector<std::string> strong_couplings_header =
+          std::vector<std::string>{"k [GeV]", "p [GeV]", "alphaAcbc", "alphaA3", "alphaA4"};
+      const std::vector<std::string> strong_couplings_3D_header = std::vector<std::string>{
+          "k [GeV]", "S0 [GeV]", "S1", "SPhi", "ZAcbc", "ZA3", "ZA4tadpole", "alphaA3", "alphaAcbc"};
       const std::vector<std::string> Zs_header = std::vector<std::string>{"k [GeV]", "p [GeV]", "ZAbar", "ZA", "Zc"};
 
       output.dump_to_csv("strong_couplings.csv", strong_couplings_data, false, strong_couplings_header);
@@ -311,6 +313,5 @@ public:
       output.dump_to_csv("strong_couplings_3D.csv", strong_couplings_3D_data, true);
       output.dump_to_csv("Zs.csv", Zs_data, true);
     }
-
   }
 };

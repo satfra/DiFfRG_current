@@ -88,6 +88,13 @@ namespace DiFfRG
         return dof;
       }
 
+      std::vector<uint> get_block_structure() const
+      {
+        std::vector<uint> block_structure{dof_handler[0]->n_dofs()};
+        if (Components::count_variables() > 0) block_structure.push_back(Components::count_variables());
+        return block_structure;
+      }
+
     protected:
       void setup_dofs()
       {

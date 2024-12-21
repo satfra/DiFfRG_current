@@ -137,7 +137,7 @@ We now use the types we defined above to construct objects of all the classes de
 With everything prepared, we are now ready to set up and run the equation system. To do so, we create an initial condition on the discretization (i.e. FEM space) we set up before,
 ```Cpp
   // Set up the initial condition
-  FlowingVariables initial_condition(discretization);
+  FE::FlowingVariables initial_condition(discretization);
   initial_condition.interpolate(model);
 ```
 and use it to run the time-stepper from RG-time 0 to the final RG-time, which we infer from the parameter file:

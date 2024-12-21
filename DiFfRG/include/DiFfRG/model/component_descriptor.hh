@@ -165,13 +165,6 @@ namespace DiFfRG
       return dofs_per_component;
     }
 
-    template <typename DoFH> static std::vector<uint> get_block_structure(const DoFH &dofh)
-    {
-      std::vector<uint> block_structure{dofh.n_dofs()};
-      if (n_variables > 0) block_structure.push_back(n_variables);
-      return block_structure;
-    }
-
   private:
     template <typename T> using SubsystemMatrix = std::array<std::array<T, n_fe_subsystems>, n_fe_subsystems>;
 
