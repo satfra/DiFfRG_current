@@ -23,9 +23,7 @@ jobs:
       - name: Pull doxygen-awesome
         run: |
           cd external
-          cd doxygen-awesome-css
-          git submodule update --init
-          cd ..
+          git submodule update --init doxygen-awesome-css
           cd ..
       - name: Build doxygen documentation
         run: |
