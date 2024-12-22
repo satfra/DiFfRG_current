@@ -1,7 +1,6 @@
 name: Documentation
 run-name: Build and deploy the documentation
 on: [push]
-if: github.ref == 'refs/heads/main'
 jobs:
   # Build job
   build:
@@ -49,6 +48,7 @@ jobs:
           path: ./documentation
   # Deployment job
   deploy:
+    if: github.ref == 'refs/heads/main'
     permissions:
       id-token: write
       pages: write
