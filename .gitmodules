@@ -34,3 +34,6 @@
 [submodule "external/thread-pool"]
 	path = external/thread-pool
 	url = https://github.com/bshoshany/thread-pool.git
+[submodule "external/doxygen-awesome-css"]
+	path = external/doxygen-awesome-css
+	url = https://github.com/jothepro/doxygen-awesome-css.git
