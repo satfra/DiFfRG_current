@@ -42,6 +42,7 @@ jobs:
           mv python/python documentation/python
           mv Mathematica/DiFfRG/doc_built documentation/wolfram
       - name: Upload static files as artifact
+        if: github.ref == 'refs/heads/main'
         id: deployment
         uses: actions/upload-pages-artifact@v3 # or specific "vX.X.X" version tag for this action
         with:

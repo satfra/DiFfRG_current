@@ -412,7 +412,7 @@ $ cat output.log
 
 After invoking `$ paraview output.pvd`, we open a new tab and choose line chart view:
 
-![Caption text](images/paraview_FEM.jpg){html: width=80%, latex: width=5cm}
+![Paraview interface](images/paraview_FEM.jpg){html: width=80%, latex: width=5cm}
 
 - At the red marked field, one can change the currently displayed time of the FEM function.
 - The field marked in blue defines what the x-axis is. The default sets this to indices, but this does not work well in general and especially for irregularily spaced grids. Therefore, one would usually set this to `Points_Magnitude` for a 1D FEM simulation.
