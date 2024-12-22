@@ -20,6 +20,11 @@ jobs:
           cd ..
       - name: Create temporary working-directory
         run: mkdir build
+      - name: Pull doxygen-awesome
+        run: |
+          cd external
+          git submodule update --init doxygen-awesome-css
+          cd ..
       - name: Build doxygen documentation
         run: |
           cd build
