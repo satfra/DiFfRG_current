@@ -20,6 +20,11 @@ jobs:
           cd ..
       - name: Create temporary working-directory
         run: mkdir build
+      - name: Pull doxygen-awesome
+        run: |
+          cd external
+          git submodule update --init doxygen-awesome-css
+          cd ..
       - name: Build doxygen documentation
         run: |
           cd build
@@ -42,12 +47,14 @@ jobs:
           mv python/python documentation/python
           mv Mathematica/DiFfRG/doc_built documentation/wolfram
       - name: Upload static files as artifact
+        if: github.ref == 'refs/heads/main'
         id: deployment
         uses: actions/upload-pages-artifact@v3 # or specific "vX.X.X" version tag for this action
         with:
           path: ./documentation
   # Deployment job
   deploy:
+    if: github.ref == 'refs/heads/main'
     permissions:
       id-token: write
       pages: write
