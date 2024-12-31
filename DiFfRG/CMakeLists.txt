@@ -37,7 +37,9 @@ if(DiFfRG_BUILD_DOCUMENTATION AND DOXYGEN_FOUND)
 
   install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/documentation
           DESTINATION ${CMAKE_INSTALL_PREFIX}) # target directory
-  install(CODE "file(CREATE_LINK ${CMAKE_INSTALL_PREFIX}/documentation/html/index.html ${CMAKE_INSTALL_PREFIX}/Documentation.html SYMBOLIC)")
+  install(
+    CODE "file(CREATE_LINK ${CMAKE_INSTALL_PREFIX}/documentation/html/index.html ${CMAKE_INSTALL_PREFIX}/Documentation.html SYMBOLIC)"
+  )
 
 elseif(DiFfRG_BUILD_DOCUMENTATION AND DOXYGEN_FOUND)
   message("Doxygen needs to be installed to generate the doxygen documentation")
@@ -102,3 +104,46 @@ install(
         "${CMAKE_CURRENT_BINARY_DIR}/DiFfRGConfigVersion.cmake"
         "${CMAKE_CURRENT_BINARY_DIR}/DiFfRGTargets.cmake"
   DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/DiFfRG")
+
+# ##############################################################################
+# licenses
+# ##############################################################################
+
+set(CPM_PACKAGE_deal.II_SOURCE_DIR
+    ${CMAKE_CURRENT_SOURCE_DIR}/../external/dealii)
+set(CPM_PACKAGE_sundials_SOURCE_DIR
+    ${CMAKE_CURRENT_SOURCE_DIR}/../external/sundials)
+set(CPM_PACKAGE_boost_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../external/boost)
+
+# Add CPMLicenses for disclaimers
+cpmaddpackage(NAME CPMLicenses.cmake GITHUB_REPOSITORY
+              cpm-cmake/CPMLicenses.cmake VERSION 0.0.5)
+
+message("deal.II source directory: ${deal.II_SOURCE_DIR}")
+
+message("packages: ${CPM_PACKAGES};deal.II;sundials;boost")
+
+cpm_licenses_create_disclaimer_target(
+  write-licenses "${CMAKE_CURRENT_SOURCE_DIR}/../third_party.txt"
+  "${CPM_PACKAGES};deal.II;sundials;boost")
+
+# ##############################################################################
+# other scripts
+# ##############################################################################
+
+cpmaddpackage("gh:StableCoder/cmake-scripts#24.04")
+
+include(${cmake-scripts_SOURCE_DIR}/formatting.cmake)
+
+file(GLOB_RECURSE headers CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hh")
+file(GLOB_RECURSE sources CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/source/*.cc")
+file(GLOB_RECURSE cuda_sources CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/source/*.cu")
+
+clang_format(TARGET_NAME ${headers} ${sources} ${cuda_sources})
+
+file(GLOB_RECURSE CMAKE_FILES CMakeLists.txt)
+
+cmake_format(TARGET_NAME ${CMAKE_FILES} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/setup_build_system.cmake)
