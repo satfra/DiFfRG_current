@@ -1,6 +1,5 @@
 # add_compile_definitions(CUDA_API_PER_THREAD_DEFAULT_STREAM)
-add_library(
-  DiFfRG STATIC
+set(DiFfRG_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/boost_json.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/configuration_helper.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/csv_reader.cc
@@ -30,9 +29,7 @@ add_library(
   ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/trbdf2.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/flow_equations.cc)
 if(USE_CUDA)
-  target_sources(
-    DiFfRG
-    PRIVATE
+  list(APPEND DiFfRG_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/cuda_prefix.cu
       ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/integration/quadrature_provider.cu
       ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/linear_interpolation_1D.cu
@@ -43,9 +40,7 @@ if(USE_CUDA)
       ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_1D_stack.cu
   )
 else()
-  target_sources(
-    DiFfRG
-    PRIVATE
+  list(APPEND DiFfRG_SOURCES
       ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/integration/quadrature_provider.cc
       ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/linear_interpolation_1D.cc
       ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/linear_interpolation_2D.cc
@@ -55,6 +50,8 @@ else()
       ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_1D_stack.cc
   )
 endif()
+
+add_library(DiFfRG STATIC ${DiFfRG_SOURCES})
 
 setup_target(DiFfRG)
 

@@ -20,6 +20,7 @@ namespace DiFfRG
   {
   public:
     static constexpr uint dim = dim_;
+    static constexpr bool is_rectangular = true;
 
     /**
      * @brief Construct a new RectangularMesh object.
