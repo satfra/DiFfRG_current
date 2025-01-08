@@ -108,7 +108,7 @@ if [[ ${install_dir} != "n" ]] && [[ ${install_dir} != "N" ]]; then
 
   # Make sure the install directory is absolute
   idir=$(expandPath ${install_dir}/)
-  idir=$(readlink --canonicalize ${idir})
+  #idir=$(readlink --canonicalize ${idir})
   echo "DiFfRG library will be installed in ${idir}"
 
   # Check if the install directory is writable

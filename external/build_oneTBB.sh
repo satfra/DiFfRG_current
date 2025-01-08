@@ -23,4 +23,4 @@ cmake -DCMAKE_BUILD_TYPE=Release \
   2>&1 | tee $CMAKE_LOG_FILE
 
 make -j $THREADS 2>&1 | tee $MAKE_LOG_FILE
-make -j $THREADS install
+$SuperUser make -j $THREADS install

@@ -13,15 +13,15 @@ source $SCRIPT_PATH/build_scripts/setup_folders.sh
 
 cd $BUILD_PATH
 
-      #-DKokkos_ARCH_NATIVE=ON \
+#-DKokkos_ARCH_NATIVE=ON \
 cmake -DKokkos_ENABLE_SERIAL=ON \
-      -DKokkos_ENABLE_OPENMP=OFF \
-      -DKokkos_ENABLE_CUDA=OFF \
-      -DCMAKE_CXX_FLAGS="${CXX_FLAGS}" \
-      -DCMAKE_EXE_LINKER_FLAGS="${EXE_LINKER_FLAGS}" \
-      -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} \
-      -S ${SOURCE_PATH} \
-      2>&1 | tee $CMAKE_LOG_FILE
+  -DKokkos_ENABLE_OPENMP=OFF \
+  -DKokkos_ENABLE_CUDA=OFF \
+  -DCMAKE_CXX_FLAGS="${CXX_FLAGS}" \
+  -DCMAKE_EXE_LINKER_FLAGS="${EXE_LINKER_FLAGS}" \
+  -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} \
+  -S ${SOURCE_PATH} \
+  2>&1 | tee $CMAKE_LOG_FILE
 
 make -j $THREADS 2>&1 | tee $MAKE_LOG_FILE
-make -j $THREADS install
+$SuperUser make -j $THREADS install
