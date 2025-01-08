@@ -257,7 +257,6 @@ if(USE_CUDA)
 
 endif()
 
-if(NOT spdlog_ADDED)
   cpmaddpackage(
     NAME
     spdlog
@@ -266,12 +265,8 @@ if(NOT spdlog_ADDED)
     VERSION
     1.14.1
     OPTIONS
-    "CMAKE_BUILD_TYPE Release")
-  if(spdlog_ADDED)
-    install(TARGETS spdlog
-      EXPORT DiFfRGTargets)
-  endif()
-endif()
+    "CMAKE_BUILD_TYPE Release"
+    "SPDLOG_INSTALL ON")
 
 # ##############################################################################
 # Helper functions
