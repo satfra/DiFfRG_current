@@ -257,16 +257,21 @@ if(USE_CUDA)
 
 endif()
 
-cpmaddpackage(
-  NAME
-  spdlog
-  GITHUB_REPOSITORY
-  gabime/spdlog
-  VERSION
-  1.14.1
-  OPTIONS
-  "CMAKE_BUILD_TYPE Release"
-  "CMAKE_CXX_FLAGS \"-O3 -DNDEBUG\"")
+if(NOT spdlog_ADDED)
+  cpmaddpackage(
+    NAME
+    spdlog
+    GITHUB_REPOSITORY
+    gabime/spdlog
+    VERSION
+    1.14.1
+    OPTIONS
+    "CMAKE_BUILD_TYPE Release")
+  if(spdlog_ADDED)
+    install(TARGETS spdlog
+      EXPORT DiFfRGTargets)
+  endif()
+endif()
 
 # ##############################################################################
 # Helper functions
