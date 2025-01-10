@@ -5,146 +5,198 @@
 #include <DiFfRG/common/polynomials.hh>
 #include <DiFfRG/physics/integration/integrator_3D_cpu.hh>
 #include <DiFfRG/physics/integration/integrator_3D_gpu.hh>
+#include <DiFfRG/physics/integration/integrator_4D_2ang_gpu.hh>
+#include <DiFfRG/physics/integration/integrator_4D_2ang_cpu.hh>
 #include <DiFfRG/physics/integration/quadrature_provider.hh>
+#include <DiFfRG/physics/utils.hh>
 
 using namespace DiFfRG;
+
+#include "../boilerplate/2_angle/flows.hh"  
 
 //--------------------------------------------
 // Quadrature integration
 
-class PolyIntegrand
+TEST_CASE("Benchmark 4D momentum integrals with 2 angles", "[4D integration][quadrature integration]")
 {
-public:
-  static __forceinline__ __host__ __device__ auto
-  kernel(const double q, const double cos, const double phi, const double /*k*/, const double /*c*/, const double x0,
-         const double x1, const double x2, const double x3, const double x4, const double x5, const double cos_x0,
-         const double cos_x1, const double cos_x2, const double cos_x3, const double phi_x0, const double phi_x1,
-         const double phi_x2, const double phi_x3)
-  {
-    return (x0 + x1 * powr<1>(q) + x2 * powr<2>(q) + x3 * powr<3>(q) + x4 * powr<4>(q) + x5 * powr<5>(q)) *
-           (cos_x0 + cos_x1 * powr<1>(cos) + cos_x2 * powr<2>(cos) + cos_x3 * powr<3>(cos)) *
-           (phi_x0 + phi_x1 * powr<1>(phi) + phi_x2 * powr<2>(phi) + phi_x3 * powr<3>(phi));
+  JSONValue json = json::value({{"physical", {{"Lambda", 1.}}},
+                                {"integration",
+                                 {{"x_quadrature_order", 32},
+                                  {"angle_quadrature_order", 8},
+                                  {"x0_quadrature_order", 16},
+                                  {"x0_summands", 8},
+                                  {"q0_quadrature_order", 16},
+                                  {"q0_summands", 8},
+                                  {"x_extent_tolerance", 1e-3},
+                                  {"x0_extent_tolerance", 1e-3},
+                                  {"q0_extent_tolerance", 1e-3},
+                                  {"jacobian_quadrature_factor", 0.5},
+
+                                  {"cudathreadsperblock", 32},
+                                  {"cudablocks", 64},
+
+                                  {"rel_tol", 1e-3},
+                                  {"abs_tol", 1e-12},
+                                  {"max_eval", 10000},
+                                  {"minn", 512},
+                                  {"minm", 16}}},
+                                {"output", {{"verbosity", 0}}}});
+
+  const uint p_grid_size = 32;
+  const double p_min = 1e-3;
+  const double p_max = 40.0;
+  const double p_bias = 6.0;
+
+  using Coordinates1D = LogarithmicCoordinates1D<float>;
+  Coordinates1D coordinates1D(p_grid_size, p_min, p_max, p_bias);
+  auto grid1D = make_grid(coordinates1D);
+
+  const double k = 20.0;
+  const double m2A = 1.0;
+  const double alphaA3 = 0.21;
+  const double alphaAcbc = 0.21;
+  const double alphaA4 = 0.21;
+  TexLinearInterpolator1D<double, Coordinates1D> dtZc(coordinates1D);
+  TexLinearInterpolator1D<double, Coordinates1D> dtZA(coordinates1D);
+  TexLinearInterpolator1D<double, Coordinates1D> ZA(coordinates1D);
+  TexLinearInterpolator1D<double, Coordinates1D> Zc(coordinates1D);
+  TexLinearInterpolator1D<double, Coordinates1D> ZA4(coordinates1D);
+  TexLinearInterpolator1D<double, Coordinates1D> ZAcbc(coordinates1D);
+  TexLinearInterpolator1D<double, Coordinates1D> ZA3(coordinates1D);
+
+  for (uint i = 0; i < p_grid_size; ++i) {
+    // add some random noise to the data
+    ZA3[i] = std::sqrt(4. * M_PI * alphaA3) + 0.01 * (rand() / (double)RAND_MAX);
+    ZAcbc[i] = std::sqrt(4. * M_PI * alphaAcbc) + 0.01 * (rand() / (double)RAND_MAX);
+    ZA4[i] = 4. * M_PI * alphaA4 + 0.01 * (rand() / (double)RAND_MAX);
+    ZA[i] = (powr<2>(grid1D[i]) + m2A) / powr<2>(grid1D[i]) + 0.01 * (rand() / (double)RAND_MAX);
+    Zc[i] = 1. + 0.01 * (rand() / (double)RAND_MAX);
+    dtZc[i] = 0.01 * (rand() / (double)RAND_MAX);
+    dtZA[i] = 0.01 * (rand() / (double)RAND_MAX);
   }
 
-  static __forceinline__ __host__ __device__ auto
-  constant(const double /*k*/, const double c, const double /*x0*/, const double /*x1*/, const double /*x2*/,
-           const double /*x3*/, const double /*x4*/, const double /*x5*/, const double /*cos_x0*/,
-           const double /*cos_x1*/, const double /*cos_x2*/, const double /*cos_x3*/, const double /*phi_x0*/,
-           const double /*phi_x1*/, const double /*phi_x2*/, const double /*phi_x3*/)
-  {
-    return c;
-  }
-};
+  ZA3.update();
+  ZAcbc.update();
+  ZA4.update();
+  ZA.update();
+  Zc.update();
+  dtZc.update();
+  dtZA.update();
 
-TEST_CASE("Benchmark 3D momentum integrals", "[3D integration][quadrature integration]")
+  const auto arguments = std::tie(ZA3, ZAcbc, ZA4, dtZc, Zc, dtZA, ZA, m2A);
+
+  YangMillsFlowEquations<Integrator4D2AngTBB> flows_TBB(json);
+  flows_TBB.set_k(k);
+  YangMillsFlowEquations<Integrator4D2AngGPU> flows_GPU(json);
+  flows_GPU.set_k(k);
+
+  std::vector<double> dummy_data(p_grid_size, 0.);
+
+  BENCHMARK_ADVANCED("GPU")(Catch::Benchmark::Chronometer meter)
+  {
+    meter.measure([&] {
+      auto futures_ZA3 = request_data<double>(flows_GPU.ZA3_integrator, grid1D, k, arguments);
+      update_data(futures_ZA3, &(dummy_data[0]));
+    });
+  };
+
+  BENCHMARK_ADVANCED("CPU")(Catch::Benchmark::Chronometer meter)
+  {
+    meter.measure([&] {
+      auto futures_ZA3 = request_data<double>(flows_TBB.ZA3_integrator, grid1D, k, arguments);
+      update_data(futures_ZA3, &(dummy_data[0]));
+    });
+  };
+}
+
+TEST_CASE("Benchmark 3D momentum integrals with 2 angles", "[3D integration][quadrature integration]")
 {
-  constexpr int dim = 3;
+  JSONValue json = json::value({{"physical", {{"Lambda", 1.}}},
+                                {"integration",
+                                 {{"x_quadrature_order", 32},
+                                  {"angle_quadrature_order", 8},
+                                  {"x0_quadrature_order", 16},
+                                  {"x0_summands", 8},
+                                  {"q0_quadrature_order", 16},
+                                  {"q0_summands", 8},
+                                  {"x_extent_tolerance", 1e-3},
+                                  {"x0_extent_tolerance", 1e-3},
+                                  {"q0_extent_tolerance", 1e-3},
+                                  {"jacobian_quadrature_factor", 0.5},
 
-  const double x_extent = GENERATE(take(1, random(1., 2.)));
-  QuadratureProvider quadrature_provider;
+                                  {"cudathreadsperblock", 32},
+                                  {"cudablocks", 64},
 
-  constexpr uint take_n = 1;
-  const auto poly = Polynomial({
-      dim == 1 ? 0. : GENERATE(take(take_n, random(-1., 1.))), // x0
-      GENERATE(take(take_n, random(-1., 1.))),                 // x1
-      GENERATE(take(take_n, random(-1., 1.))),                 // x2
-      GENERATE(take(1, random(-1., 1.))),                      // x3
-      GENERATE(take(1, random(-1., 1.))),                      // x4
-      GENERATE(take(1, random(-1., 1.))),                      // x5
-  });
-  const auto cos_poly = Polynomial({
-      GENERATE(take(take_n, random(-1., 1.))), // x0
-      GENERATE(take(take_n, random(-1., 1.))), // x1
-      GENERATE(take(1, random(-1., 1.))),      // x2
-      GENERATE(take(1, random(-1., 1.)))       // x3
-  });
-  const auto phi_poly = Polynomial({
-      GENERATE(take(take_n, random(-1., 1.))), // x0
-      GENERATE(take(take_n, random(-1., 1.))), // x1
-      GENERATE(take(1, random(-1., 1.))),      // x2
-      GENERATE(take(1, random(-1., 1.)))       // x3
-  });
+                                  {"rel_tol", 1e-3},
+                                  {"abs_tol", 1e-12},
+                                  {"max_eval", 10000},
+                                  {"minn", 512},
+                                  {"minm", 16}}},
+                                {"output", {{"verbosity", 0}}}});
 
-  const double k = GENERATE(take(take_n, random(0., 1.)));
-  const double q_extent = std::sqrt(x_extent * powr<2>(k));
-  const double constant = GENERATE(take(take_n, random(-1., 1.)));
+  const uint p_grid_size = 32;
+  const double p_min = 1e-3;
+  const double p_max = 40.0;
+  const double p_bias = 6.0;
 
-  {
-    Integrator3DGPU<double, PolyIntegrand> integrator(quadrature_provider, {{32, 12, 12}}, x_extent);
-    BENCHMARK_ADVANCED("GPU")(Catch::Benchmark::Chronometer meter)
-    {
-      meter.measure([&] {
-        integrator
-            .request(k, constant, poly[0], poly[1], poly[2], poly[3], poly[4], poly[5], cos_poly[0], cos_poly[1],
-                     cos_poly[2], cos_poly[3], phi_poly[0], phi_poly[1], phi_poly[2], phi_poly[3])
-            .get();
-      });
-    };
-    BENCHMARK_ADVANCED("get GPU")(Catch::Benchmark::Chronometer meter)
-    {
-      meter.measure([&] {
-        integrator.get(k, constant, poly[0], poly[1], poly[2], poly[3], poly[4], poly[5], cos_poly[0], cos_poly[1],
-                       cos_poly[2], cos_poly[3], phi_poly[0], phi_poly[1], phi_poly[2], phi_poly[3]);
-      });
-    };
-    BENCHMARK_ADVANCED("GPU 128x")(Catch::Benchmark::Chronometer meter)
-    {
-      meter.measure([&] {
-        std::vector<std::future<double>> futures;
-        for (int i = 0; i < 128; ++i)
-          futures.emplace_back(std::move(integrator.request(k, constant, poly[0], poly[1], poly[2], poly[3], poly[4],
-                                                            poly[5], cos_poly[0], cos_poly[1], cos_poly[2], cos_poly[3],
-                                                            phi_poly[0], phi_poly[1], phi_poly[2], phi_poly[3])));
-        for (auto &f : futures)
-          f.get();
-      });
-    };
-    BENCHMARK_ADVANCED("get GPU 128x")(Catch::Benchmark::Chronometer meter)
-    {
-      meter.measure([&] {
-        for (int i = 0; i < 128; ++i)
-          integrator.get(k, constant, poly[0], poly[1], poly[2], poly[3], poly[4], poly[5], cos_poly[0], cos_poly[1],
-                         cos_poly[2], cos_poly[3], phi_poly[0], phi_poly[1], phi_poly[2], phi_poly[3]);
-      });
-    };
+  using Coordinates1D = LogarithmicCoordinates1D<float>;
+  Coordinates1D coordinates1D(p_grid_size, p_min, p_max, p_bias);
+  auto grid1D = make_grid(coordinates1D);
+
+  const double k = 20.0;
+  const double m2A = 1.0;
+  const double alphaA3 = 0.21;
+  const double alphaAcbc = 0.21;
+  const double alphaA4 = 0.21;
+  TexLinearInterpolator1D<double, Coordinates1D> dtZc(coordinates1D);
+  TexLinearInterpolator1D<double, Coordinates1D> dtZA(coordinates1D);
+  TexLinearInterpolator1D<double, Coordinates1D> ZA(coordinates1D);
+  TexLinearInterpolator1D<double, Coordinates1D> Zc(coordinates1D);
+  TexLinearInterpolator1D<double, Coordinates1D> ZA4(coordinates1D);
+  TexLinearInterpolator1D<double, Coordinates1D> ZAcbc(coordinates1D);
+  TexLinearInterpolator1D<double, Coordinates1D> ZA3(coordinates1D);
+
+  for (uint i = 0; i < p_grid_size; ++i) {
+    // add some random noise to the data
+    ZA3[i] = std::sqrt(4. * M_PI * alphaA3) + 0.01 * (rand() / (double)RAND_MAX);
+    ZAcbc[i] = std::sqrt(4. * M_PI * alphaAcbc) + 0.01 * (rand() / (double)RAND_MAX);
+    ZA4[i] = 4. * M_PI * alphaA4 + 0.01 * (rand() / (double)RAND_MAX);
+    ZA[i] = (powr<2>(grid1D[i]) + m2A) / powr<2>(grid1D[i]) + 0.01 * (rand() / (double)RAND_MAX);
+    Zc[i] = 1. + 0.01 * (rand() / (double)RAND_MAX);
+    dtZc[i] = 0.01 * (rand() / (double)RAND_MAX);
+    dtZA[i] = 0.01 * (rand() / (double)RAND_MAX);
   }
+
+  ZA3.update();
+  ZAcbc.update();
+  ZA4.update();
+  ZA.update();
+  Zc.update();
+  dtZc.update();
+  dtZA.update();
+
+  const auto arguments = std::tie(ZA3, ZAcbc, ZA4, dtZc, Zc, dtZA, ZA, m2A);
+
+  YangMillsFlowEquations<Integrator3DTBB> flows_TBB(json);
+  flows_TBB.set_k(k);
+  YangMillsFlowEquations<Integrator3DGPU> flows_GPU(json);
+  flows_GPU.set_k(k);
+
+  std::vector<double> dummy_data(p_grid_size, 0.);
+
+  BENCHMARK_ADVANCED("GPU")(Catch::Benchmark::Chronometer meter)
   {
-    Integrator3DTBB<double, PolyIntegrand> integrator(quadrature_provider, {{32, 12, 12}}, x_extent);
-    BENCHMARK_ADVANCED("CPU")(Catch::Benchmark::Chronometer meter)
-    {
-      meter.measure([&] {
-        integrator
-            .request(k, constant, poly[0], poly[1], poly[2], poly[3], poly[4], poly[5], cos_poly[0], cos_poly[1],
-                     cos_poly[2], cos_poly[3], phi_poly[0], phi_poly[1], phi_poly[2], phi_poly[3])
-            .get();
-      });
-    };
-    BENCHMARK_ADVANCED("get CPU")(Catch::Benchmark::Chronometer meter)
-    {
-      meter.measure([&] {
-        integrator.get(k, constant, poly[0], poly[1], poly[2], poly[3], poly[4], poly[5], cos_poly[0], cos_poly[1],
-                       cos_poly[2], cos_poly[3], phi_poly[0], phi_poly[1], phi_poly[2], phi_poly[3]);
-      });
-    };
-    BENCHMARK_ADVANCED("CPU 128x")(Catch::Benchmark::Chronometer meter)
-    {
-      meter.measure([&] {
-        std::vector<std::future<double>> futures;
-        for (int i = 0; i < 128; ++i)
-          futures.emplace_back(std::move(integrator.request(k, constant, poly[0], poly[1], poly[2], poly[3], poly[4],
-                                                            poly[5], cos_poly[0], cos_poly[1], cos_poly[2], cos_poly[3],
-                                                            phi_poly[0], phi_poly[1], phi_poly[2], phi_poly[3])));
-        for (auto &f : futures)
-          f.get();
-      });
-    };
-    BENCHMARK_ADVANCED("get CPU 128x")(Catch::Benchmark::Chronometer meter)
-    {
-      meter.measure([&] {
-        for (int i = 0; i < 128; ++i)
-          integrator.get(k, constant, poly[0], poly[1], poly[2], poly[3], poly[4], poly[5], cos_poly[0], cos_poly[1],
-                         cos_poly[2], cos_poly[3], phi_poly[0], phi_poly[1], phi_poly[2], phi_poly[3]);
-      });
-    };
-  }
+    meter.measure([&] {
+      auto futures_ZA3 = request_data<double>(flows_GPU.ZA3_integrator, grid1D, k, arguments);
+      update_data(futures_ZA3, &(dummy_data[0]));
+    });
+  };
+
+  BENCHMARK_ADVANCED("CPU")(Catch::Benchmark::Chronometer meter)
+  {
+    meter.measure([&] {
+      auto futures_ZA3 = request_data<double>(flows_TBB.ZA3_integrator, grid1D, k, arguments);
+      update_data(futures_ZA3, &(dummy_data[0]));
+    });
+  };
 }
