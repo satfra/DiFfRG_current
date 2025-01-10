@@ -70,7 +70,7 @@ add_subdirectory(src)
 # Testing
 # ##############################################################################
 
-option(DiFfRG_BUILD_TESTS "Build documentation" ON)
+option(DiFfRG_BUILD_TESTS "Build tests" ON)
 
 if(DiFfRG_BUILD_TESTS)
   enable_testing()

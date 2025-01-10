@@ -15,6 +15,7 @@ cpmaddpackage(
   OPTIONS
   "CATCH_INSTALL_DOCS OFF"
   "CATCH_INSTALL_HELPERS OFF")
+list(APPEND CMAKE_MODULE_PATH ${Catch2_SOURCE_DIR}/extras)
 
 function(setup_test TARGET)
   setup_target(${TARGET})
@@ -27,7 +28,6 @@ function(setup_benchmark TARGET)
   target_link_libraries(${TARGET} DiFfRG::DiFfRG Catch2::Catch2WithMain)
 endfunction()
 
-list(APPEND CMAKE_MODULE_PATH ${lib_Catch2_SOURCE_DIR}/extras)
 include(CTest)
 include(Catch)
 

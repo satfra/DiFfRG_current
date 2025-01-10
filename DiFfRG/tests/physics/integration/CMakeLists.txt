@@ -81,13 +81,6 @@ if(USE_CUDA)
 
   add_executable(test_integrator_4D_qmc_gpu integrator_4D_qmc.cu)
   setup_test(test_integrator_4D_qmc_gpu)
-
-  find_package(OpenACC REQUIRED)
-  add_executable(test_integrator_4D_oacc integrator_4D_oacc.cu)
-  target_compile_options(
-    test_integrator_4D_oacc PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:
-                                    --compiler-options -fopenacc >)
-  setup_test(test_integrator_4D_oacc)
 endif()
 
 # ##############################################################################
