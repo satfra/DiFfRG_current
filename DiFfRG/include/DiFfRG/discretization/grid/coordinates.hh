@@ -10,6 +10,14 @@
 #include <DiFfRG/common/cuda_prefix.hh>
 #include <DiFfRG/common/utils.hh>
 
+// A concept for what is a coordinate class
+template <typename T>
+concept IsCoordinate = requires(T t) {
+  T::ctype;
+  T::dim;
+  t.size();
+};
+
 namespace DiFfRG
 {
   /**

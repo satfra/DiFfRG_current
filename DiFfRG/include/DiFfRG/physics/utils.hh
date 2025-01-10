@@ -29,6 +29,7 @@ namespace DiFfRG
    * @return std::shared_ptr<std::vector<std::future<NT>>> A vector of futures which will yield the requested data
    */
   template <typename NT, typename FUN, typename Coordinates, typename... T>
+    requires IsCoordinate<Coordinates>
   std::shared_ptr<std::vector<std::future<NT>>> request_data(FUN &fun, Coordinates &coordinates, const double k,
                                                              std::tuple<T...> args)
   {
@@ -52,6 +53,7 @@ namespace DiFfRG
    * @return std::shared_ptr<std::vector<std::future<NT>>> A vector of futures which will yield the requested data
    */
   template <typename NT, typename FUN, typename Coordinates, typename... T>
+    requires IsCoordinate<Coordinates>
   std::shared_ptr<std::vector<std::future<NT>>> request_data(FUN &fun, Coordinates &coordinates, const double k,
                                                              T... args)
   {
@@ -85,6 +87,7 @@ namespace DiFfRG
    * @return std::shared_ptr<std::vector<std::future<NT>>> A vector of futures which will yield the requested data
    */
   template <typename NT, typename FUN, typename GRID, typename... T>
+    requires IsContainer<GRID>
   std::shared_ptr<std::vector<std::future<NT>>> request_data(FUN &fun, const GRID &grid, const double k,
                                                              std::tuple<T...> args)
   {
@@ -108,6 +111,7 @@ namespace DiFfRG
    * @return std::shared_ptr<std::vector<std::future<NT>>> A vector of futures which will yield the requested data
    */
   template <typename NT, typename FUN, typename GRID, typename... T>
+    requires IsContainer<GRID>
   std::shared_ptr<std::vector<std::future<NT>>> request_data(FUN &fun, const GRID &grid, const double k, T... args)
   {
     auto futures = std::make_shared<std::vector<std::future<NT>>>();
