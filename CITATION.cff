@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+title: DiFfRG
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Franz Richard
+    family-names: Sattler
+    email: sattler@thphys.uni-heidelberg.de
+    affiliation: Heidelberg University
+    orcid: 'https://orcid.org/0000-0003-1744-9456'
+identifiers:
+  - type: url
+    value: 'https://arxiv.org/abs/2412.13043'
+    description: arxiv
+repository-code: 'https://github.com/satfra/DiFfRG'
+url: 'https://satfra.github.io/DiFfRG/cpp/index.html'
+abstract: >-
+  The Discretization Framework for functional
+  Renormalization Group flows 
+keywords:
+  - 'c-plus-plus '
+  - mathematica
+  - functional renormalization group
+  - computational-physics
+  - high-energy-physics
+  - numerical-hydrodynamics
+license: GPL-3.0
+
