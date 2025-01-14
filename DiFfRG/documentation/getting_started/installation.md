@@ -22,9 +22,11 @@ The framework has been tested with the following systems:
 ```bash
 $ pacman -S git cmake gcc blas-openblas blas64-openblas paraview python doxygen cuda graphviz gsl
 ```
-A further installation of the `gcc12` package from the AUR is necessary for setups with CUDA; with your AUR helper of choice (here `yay`) this can be done with
+In case you want to run with CUDA, as of January 2025 you have to have very specific versions of CUDA and gcc installed. Currently, the gcc13 compiler in the Arch package repository is incompatible with CUDA. To configure a system with a compatible CUDA+gcc configuration, them install directly from the Arch package archive
 ```bash
-$ yay -S gcc12
+$ pacman -U https://archive.archlinux.org/packages/g/gcc12/gcc12-12.3.0-6-x86_64.pkg.tar.zst \
+            https://archive.archlinux.org/packages/g/gcc12-libs/gcc12-libs-12.3.0-6-x86_64.pkg.tar.zst \
+            https://archive.archlinux.org/packages/c/cuda/cuda-12.3.2-1-x86_64.pkg.tar.zst
 ```
 
 #### Rocky Linux

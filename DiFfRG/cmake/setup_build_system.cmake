@@ -240,6 +240,9 @@ cpmaddpackage(
   "AUTODIFF_BUILD_PYTHON OFF"
   "Eigen3_DIR ${Eigen3_BINARY_DIR}")
 
+# This is for spdlog usage. We need to hide the local spdlog installation, otherwise we will have problems with the linking process.
+set(CMAKE_DISABLE_FIND_PACKAGE_spdlog TRUE)
+
 if(USE_CUDA)
   cpmaddpackage(NAME CCCL GITHUB_REPOSITORY "nvidia/cccl" GIT_TAG "v2.7.0")
 
@@ -257,7 +260,7 @@ if(USE_CUDA)
 
 endif()
 
-  cpmaddpackage(
+cpmaddpackage(
     NAME
     spdlog
     GITHUB_REPOSITORY
