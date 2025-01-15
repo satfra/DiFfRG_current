@@ -92,8 +92,7 @@ namespace DiFfRG
    */
   template <typename NumberType> constexpr __forceinline__ __host__ __device__ double sign(const NumberType x)
   {
-    if (x >= 0) return 1.;
-    return -1.;
+    return x >= 0. ? 1. : -1.;
   }
 
   /**
