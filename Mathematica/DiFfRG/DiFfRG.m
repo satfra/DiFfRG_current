@@ -87,9 +87,27 @@ StyleBox[\"TensorBases\",\nFontWeight->\"Bold\"]\) to run."];Abort[];
 ];
 
 
+Print["\!\(\*
+StyleBox[\"Loading\",\nFontSize->10,\nFontSlant->\"Italic\"]\)\!\(\*
+StyleBox[\" \",\nFontSize->10,\nFontSlant->\"Italic\"]\)\!\(\*
+StyleBox[\"external\",\nFontSize->10,\nFontSlant->\"Italic\"]\)\!\(\*
+StyleBox[\" \",\nFontSize->10,\nFontSlant->\"Italic\"]\)\!\(\*
+StyleBox[\"packages\",\nFontSize->10,\nFontSlant->\"Italic\"]\)"];
 Get["QMeSderivation`"]
+Print["\!\(\*
+StyleBox[\"QMeS\",\nFontSize->10,\nFontSlant->\"Italic\"]\)\!\(\*
+StyleBox[\" \",\nFontSize->10,\nFontSlant->\"Italic\"]\)\!\(\*
+StyleBox[\"loaded\",\nFontSize->10,\nFontSlant->\"Italic\"]\)"];
 Get["TensorBases`"]
+Print["\!\(\*
+StyleBox[\"TensorBases\",\nFontSize->10,\nFontSlant->\"Italic\"]\)\!\(\*
+StyleBox[\" \",\nFontSize->10,\nFontSlant->\"Italic\"]\)\!\(\*
+StyleBox[\"loaded\",\nFontSize->10,\nFontSlant->\"Italic\"]\)"];
 Get["DiFfRG`CodeTools`"];
+Print["\!\(\*
+StyleBox[\"CodeTools\",\nFontSize->10,\nFontSlant->\"Italic\"]\)\!\(\*
+StyleBox[\" \",\nFontSize->10,\nFontSlant->\"Italic\"]\)\!\(\*
+StyleBox[\"loaded\",\nFontSize->10,\nFontSlant->\"Italic\"]\)"];
 
 
 (* ::Input::Initialization:: *)

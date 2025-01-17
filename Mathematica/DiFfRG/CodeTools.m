@@ -139,6 +139,10 @@ SetKernelDefinitions[] resets the kernel definitions to the standard.";
 ShowKernelDefinitions::usage="ShowKernelDefinitions[]
 Show the currently specified kernel definitions code.";
 
+AddParameterType::usage="AddParameterType[name,cppType,cppTypeAD,Reference,computeTypeName]
+Add a recognized parameter to the list of useable kernel parameter types.
+"
+
 
 Begin["`Private`"];
 
@@ -267,48 +271,94 @@ head~~prefix~~integrand~~"};"
 
 
 (* ::Input::Initialization:: *)
-ArgType:=<|
+ArgType=<|
 "Constant"->"",
 "Variable"->"",
 "ComplexConstant"->"",
 "ComplexVariable"->"",
 "FunctionTex1D"->"&",
+"FunctionTex2D"->"&",
 "FunctionTex3D"->"&",
 "FunctionTex3DLogLinLin"->"&",
 "Function1D"->"&",
+"Function2D"->"&",
+"Function2DLinLin"->"&",
 "Function3D"->"&",
 "Function3DLogLinLin"->"&",
 "FunctionTex1DBosonicFT"->"&",
 "FunctionTex1DFermionicFT"->"&"
 |>;
-CppType[computeType_String]:=<|
-"Constant"->computeType,
-"Variable"->computeType,
-"ComplexConstant"->"complex<"<>computeType<>">",
-"ComplexVariable"->"complex<"<>computeType<>">",
+$CppType=<|
+"Constant"->"$computeType",
+"Variable"->"$computeType",
+"ComplexConstant"->"complex<$computeType>",
+"ComplexVariable"->"complex<$computeType>",
+
 "FunctionTex1D"->"TexLinearInterpolator1D<double, LogarithmicCoordinates1D<float>>",
+
+"FunctionTex2D"->"TexLinearInterpolator3D<double, CoordinatePackND<LogarithmicCoordinates1D<float>, LogarithmicCoordinates1D<float>>>",
+"FunctionTex2DLinLin"->"TexLinearInterpolator3D<double, CoordinatePackND<LinearCoordinates1D<float>, LinearCoordinates1D<float>>>",
+
 "FunctionTex3D"->"TexLinearInterpolator3D<double, CoordinatePackND<LogarithmicCoordinates1D<float>, LogarithmicCoordinates1D<float>, LinearCoordinates1D<float>>>",
 "FunctionTex3DLogLinLin"->"TexLinearInterpolator3D<double, CoordinatePackND<LogarithmicCoordinates1D<float>, LinearCoordinates1D<float>, LinearCoordinates1D<float>>>",
+
 "Function1D"->"LinearInterpolator1D<double, LogarithmicCoordinates1D<float>>",
+
+"Function2D"->"LinearInterpolator1D<double, CoordinatePackND<LogarithmicCoordinates1D<float>, LogarithmicCoordinates1D<float>>>",
+"Function2DLinLin"->"LinearInterpolator1D<double, CoordinatePackND<LinearCoordinates1D<float>, LinearCoordinates1D<float>>>",
+
 "Function3D"->"LinearInterpolator3D<double, CoordinatePackND<LogarithmicCoordinates1D<float>, LogarithmicCoordinates1D<float>, LinearCoordinates1D<float>>>",
 "Function3DLogLinLin"->"LinearInterpolator3D<double, CoordinatePackND<LogarithmicCoordinates1D<float>, LinearCoordinates1D<float>, LinearCoordinates1D<float>>>",
+
 "FunctionTex1DBosonicFT"->"TexLinearInterpolator1DStack<double, BosonicCoordinates1DFiniteT<int, float>>",
 "FunctionTex1DFermionicFT"->"TexLinearInterpolator1DStack<double, FermionicCoordinates1DFiniteT<int, float>>"
 |>;
-CppTypeAD[computeType_String]:=<|
-"Constant"->computeType,
+CppType[computeType_String]:=Map[StringReplace[#,"$computeType"->computeType]&,$CppType]
+$CppTypeAD=<|
+"Constant"->"$computeType",
 "Variable"->"autodiff::real",
-"ComplexConstant"->"complex<"<>computeType<>">",
+"ComplexConstant"->"complex<$computeType>",
 "ComplexVariable"->"complex<autodiff::real>",
-"FunctionTex1D"->"TexLinearInterpolator1D<autodiff::real, LogarithmicCoordinates1D<float>>&",
+
+"FunctionTex1D"->"TexLinearInterpolator1D<autodiff::real, LogarithmicCoordinates1D<float>>",
+
+"FunctionTex2D"->"TexLinearInterpolator3D<autodiff::real, CoordinatePackND<LogarithmicCoordinates1D<float>, LogarithmicCoordinates1D<float>>>",
+"FunctionTex2DLinLin"->"TexLinearInterpolator3D<autodiff::real, CoordinatePackND<LinearCoordinates1D<float>, LinearCoordinates1D<float>>>",
+
 "FunctionTex3D"->"TexLinearInterpolator3D<autodiff::real, CoordinatePackND<LogarithmicCoordinates1D<float>, LogarithmicCoordinates1D<float>, LinearCoordinates1D<float>>>",
 "FunctionTex3DLogLinLin"->"TexLinearInterpolator3D<autodiff::real, CoordinatePackND<LogarithmicCoordinates1D<float>, LinearCoordinates1D<float>, LinearCoordinates1D<float>>>",
-"Function1D"->"LinearInterpolator1D<autodiff::real, LogarithmicCoordinates1D<float>>&",
+
+"Function1D"->"LinearInterpolator1D<autodiff::real, LogarithmicCoordinates1D<float>>",
+
+"Function2D"->"LinearInterpolator1D<autodiff::real, CoordinatePackND<LogarithmicCoordinates1D<float>, LogarithmicCoordinates1D<float>>>",
+"Function2DLinLin"->"LinearInterpolator1D<autodiff::real, CoordinatePackND<LinearCoordinates1D<float>, LinearCoordinates1D<float>>>",
+
 "Function3D"->"LinearInterpolator3D<autodiff::real, CoordinatePackND<LogarithmicCoordinates1D<float>, LogarithmicCoordinates1D<float>, LinearCoordinates1D<float>>>",
 "Function3DLogLinLin"->"LinearInterpolator3D<autodiff::real, CoordinatePackND<LogarithmicCoordinates1D<float>, LinearCoordinates1D<float>, LinearCoordinates1D<float>>>",
+
 "FunctionTex1DBosonicFT"->"TexLinearInterpolator1DStack<autodiff::real, BosonicCoordinates1DFiniteT<int, float>>&",
 "FunctionTex1DFermionicFT"->"TexLinearInterpolator1DStack<autodiff::real, FermionicCoordinates1DFiniteT<int, float>>&"
-|>
+|>;
+CppTypeAD[computeType_String]:=Map[StringReplace[#,"$computeType"->computeType]&,$CppTypeAD]
+
+AddParameterType[name_String,cppType_String,cppTypeAD_String,Reference_:True,computeTypeName_String:"$computeType"]:=Module[{},
+If[MemberQ[Keys[ArgType],name]||MemberQ[Keys[$CppType],name]||MemberQ[Keys[$CppTypeAD],name],
+Print["Parameter type with name \""<>name<>"\" already exists!"];Abort[]];
+
+If[Reference,
+AppendTo[ArgType,name->"&"],
+AppendTo[ArgType,name->""]
+];
+
+AppendTo[$CppType,name->cppType];
+AppendTo[$CppTypeAD,name->cppTypeAD];
+];
+
+ShowTypes[]:=Module[{},
+Print["Available argument types (for double) are: ",Dataset[Association[Map[{#->{$CppType[#],$CppTypeAD[#]}}&,Keys[$CppType]]],MaxItems->20000]];
+]
+
+
 GridSelector=<|
 0->"grid_size_int",
 1->"grid_sizes_angle_int",
@@ -324,10 +374,6 @@ GridSelectorFiniteT=<|
 DeviceChoice["CPU"]="TBB";
 DeviceChoice["TBB"]="TBB";
 DeviceChoice["GPU"]="GPU";
-
-ShowTypes[]:=Module[{},
-Print["Available argument types are: ",Dataset[CppType["double"],MaxItems->20000]];
-]
 
 
 (* ::Input::Initialization:: *)

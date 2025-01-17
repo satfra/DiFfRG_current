@@ -20,7 +20,7 @@ endif()
 message(STATUS "DiFfRG include directory: ${BASE_DIR}/include")
 
 # No matter what we are building, we need to set the include directory
-#include_directories(${BASE_DIR}/include)
+# include_directories(${BASE_DIR}/include)
 
 # By default, we build in Release mode, i.e. if the user does not make any other
 # choice. After all, even if the user is unaware of cmake build types, we want
@@ -325,7 +325,6 @@ if(USE_CUDA)
     Off
     OPTIONS
     "BUILD_TESTS OFF")
-
 endif()
 
 cpmaddpackage(
