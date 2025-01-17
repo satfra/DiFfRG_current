@@ -7,6 +7,8 @@
 #include <deal.II/lac/block_vector.h>
 #include <deal.II/lac/sparse_direct.h>
 
+#include<DiFfRG/common/complex_math.hh>
+
 namespace DiFfRG
 {
 
@@ -74,13 +76,29 @@ namespace DiFfRG
       template <> struct _ctype<double> {
         using value = double;
       };
-
-      template <> struct _ctype<autodiff::Real<1, double>> {
+      
+      template <> struct _ctype<complex<float>> {
+        using value = float;
+      };
+      
+      template <> struct _ctype<complex<double>> {
         using value = double;
       };
 
       template <> struct _ctype<autodiff::Real<1, float>> {
         using value = float;
+      };
+
+      template <> struct _ctype<autodiff::Real<1, double>> {
+        using value = double;
+      };
+
+      template <> struct _ctype<autodiff::Real<1, complex<float>>> {
+        using value = float;
+      };
+
+      template <> struct _ctype<autodiff::Real<1, complex<double>>> {
+        using value = double;
       };
     } // namespace internal
 
