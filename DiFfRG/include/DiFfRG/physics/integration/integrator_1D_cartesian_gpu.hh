@@ -148,7 +148,7 @@ namespace DiFfRG
 
 namespace DiFfRG
 {
-  template <typename NT, typename KERNEL> class Integrator1DCartesianGPU : public IntegratorTBB<d, NT, KERNEL>
+  template <typename NT, typename KERNEL> class Integrator1DCartesianGPU : public Integrator1DCartesianTBB<NT, KERNEL>
   {
   public:
     using ctype = typename get_type::ctype<NT>;
