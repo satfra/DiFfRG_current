@@ -296,16 +296,16 @@ $CppType=<|
 
 "FunctionTex1D"->"TexLinearInterpolator1D<double, LogarithmicCoordinates1D<float>>",
 
-"FunctionTex2D"->"TexLinearInterpolator3D<double, CoordinatePackND<LogarithmicCoordinates1D<float>, LogarithmicCoordinates1D<float>>>",
-"FunctionTex2DLinLin"->"TexLinearInterpolator3D<double, CoordinatePackND<LinearCoordinates1D<float>, LinearCoordinates1D<float>>>",
+"FunctionTex2D"->"TexLinearInterpolator2D<double, CoordinatePackND<LogarithmicCoordinates1D<float>, LogarithmicCoordinates1D<float>>>",
+"FunctionTex2DLinLin"->"TexLinearInterpolator2D<double, CoordinatePackND<LinearCoordinates1D<float>, LinearCoordinates1D<float>>>",
 
 "FunctionTex3D"->"TexLinearInterpolator3D<double, CoordinatePackND<LogarithmicCoordinates1D<float>, LogarithmicCoordinates1D<float>, LinearCoordinates1D<float>>>",
 "FunctionTex3DLogLinLin"->"TexLinearInterpolator3D<double, CoordinatePackND<LogarithmicCoordinates1D<float>, LinearCoordinates1D<float>, LinearCoordinates1D<float>>>",
 
 "Function1D"->"LinearInterpolator1D<double, LogarithmicCoordinates1D<float>>",
 
-"Function2D"->"LinearInterpolator1D<double, CoordinatePackND<LogarithmicCoordinates1D<float>, LogarithmicCoordinates1D<float>>>",
-"Function2DLinLin"->"LinearInterpolator1D<double, CoordinatePackND<LinearCoordinates1D<float>, LinearCoordinates1D<float>>>",
+"Function2D"->"LinearInterpolator2D<double, CoordinatePackND<LogarithmicCoordinates1D<float>, LogarithmicCoordinates1D<float>>>",
+"Function2DLinLin"->"LinearInterpolator2D<double, CoordinatePackND<LinearCoordinates1D<float>, LinearCoordinates1D<float>>>",
 
 "Function3D"->"LinearInterpolator3D<double, CoordinatePackND<LogarithmicCoordinates1D<float>, LogarithmicCoordinates1D<float>, LinearCoordinates1D<float>>>",
 "Function3DLogLinLin"->"LinearInterpolator3D<double, CoordinatePackND<LogarithmicCoordinates1D<float>, LinearCoordinates1D<float>, LinearCoordinates1D<float>>>",
@@ -322,16 +322,16 @@ $CppTypeAD=<|
 
 "FunctionTex1D"->"TexLinearInterpolator1D<autodiff::real, LogarithmicCoordinates1D<float>>",
 
-"FunctionTex2D"->"TexLinearInterpolator3D<autodiff::real, CoordinatePackND<LogarithmicCoordinates1D<float>, LogarithmicCoordinates1D<float>>>",
-"FunctionTex2DLinLin"->"TexLinearInterpolator3D<autodiff::real, CoordinatePackND<LinearCoordinates1D<float>, LinearCoordinates1D<float>>>",
+"FunctionTex2D"->"TexLinearInterpolator2D<autodiff::real, CoordinatePackND<LogarithmicCoordinates1D<float>, LogarithmicCoordinates1D<float>>>",
+"FunctionTex2DLinLin"->"TexLinearInterpolator2D<autodiff::real, CoordinatePackND<LinearCoordinates1D<float>, LinearCoordinates1D<float>>>",
 
 "FunctionTex3D"->"TexLinearInterpolator3D<autodiff::real, CoordinatePackND<LogarithmicCoordinates1D<float>, LogarithmicCoordinates1D<float>, LinearCoordinates1D<float>>>",
 "FunctionTex3DLogLinLin"->"TexLinearInterpolator3D<autodiff::real, CoordinatePackND<LogarithmicCoordinates1D<float>, LinearCoordinates1D<float>, LinearCoordinates1D<float>>>",
 
 "Function1D"->"LinearInterpolator1D<autodiff::real, LogarithmicCoordinates1D<float>>",
 
-"Function2D"->"LinearInterpolator1D<autodiff::real, CoordinatePackND<LogarithmicCoordinates1D<float>, LogarithmicCoordinates1D<float>>>",
-"Function2DLinLin"->"LinearInterpolator1D<autodiff::real, CoordinatePackND<LinearCoordinates1D<float>, LinearCoordinates1D<float>>>",
+"Function2D"->"LinearInterpolator2D<autodiff::real, CoordinatePackND<LogarithmicCoordinates1D<float>, LogarithmicCoordinates1D<float>>>",
+"Function2DLinLin"->"LinearInterpolator2D<autodiff::real, CoordinatePackND<LinearCoordinates1D<float>, LinearCoordinates1D<float>>>",
 
 "Function3D"->"LinearInterpolator3D<autodiff::real, CoordinatePackND<LogarithmicCoordinates1D<float>, LogarithmicCoordinates1D<float>, LinearCoordinates1D<float>>>",
 "Function3DLogLinLin"->"LinearInterpolator3D<autodiff::real, CoordinatePackND<LogarithmicCoordinates1D<float>, LinearCoordinates1D<float>, LinearCoordinates1D<float>>>",
