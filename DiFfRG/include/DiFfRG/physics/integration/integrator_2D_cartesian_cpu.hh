@@ -11,11 +11,29 @@
 
 namespace DiFfRG
 {
+  /**
+   * @brief Integration of an arbitrary 2D function from (qx_min, qy_min) to (qx_max, qy_max) using TBB.
+   *
+   * @tparam NT The numerical type of the result.
+   * @tparam KERNEL The kernel to integrate.
+   */
   template <typename NT, typename KERNEL> class Integrator2DCartesianTBB
   {
   public:
+    /**
+     * @brief Numerical type to be used for integration tasks e.g. the argument or possible jacobians.
+     */
     using ctype = typename get_type::ctype<NT>;
 
+    /**
+     * @brief Construct a new Integrator2DCartesianTBB object
+     *
+     * @param quadrature_provider The quadrature provider to use.
+     * @param grid_sizes The number of grid points in x and y direction.
+     * @param x_extent The extent of the x integration range. This argument is not used, but kept for compatibility with
+     * flow classes.
+     * @param json The JSON object to read additional parameters from.
+     */
     Integrator2DCartesianTBB(QuadratureProvider &quadrature_provider, const std::array<uint, 2> grid_sizes,
                              const ctype x_extent, const JSONValue &json)
         : Integrator2DCartesianTBB(quadrature_provider, grid_sizes, x_extent, 0,
@@ -26,6 +44,20 @@ namespace DiFfRG
     {
     }
 
+    /**
+     * @brief Construct a new Integrator2DCartesianTBB object
+     *
+     * @param quadrature_provider The quadrature provider to use.
+     * @param grid_sizes The number of grid points in x and y direction.
+     * @param x_extent The extent of the x integration range. This argument is not used, but kept for compatibility with
+     * flow classes.
+     * @param max_block_size The maximum block size to use on GPU. This argument is not used, but kept for
+     * compatibility.
+     * @param qx_min The minimum value of the x integration range.
+     * @param qy_min The minimum value of the y integration range.
+     * @param qx_max The maximum value of the x integration range.
+     * @param qy_max The maximum value of the y integration range.
+     */
     Integrator2DCartesianTBB(QuadratureProvider &quadrature_provider, std::array<uint, 2> grid_sizes,
                              const ctype x_extent, const uint max_block_size = 0, const ctype qx_min = -M_PI,
                              const ctype qy_min = -M_PI, const ctype qx_max = M_PI, const ctype qy_max = M_PI)
@@ -69,6 +101,13 @@ namespace DiFfRG
      */
     void set_qy_max(const ctype qy_max) { this->qy_extent = qy_max - qy_min; }
 
+    /**
+     * @brief Get the value of the integral.
+     *
+     * @param k The current RG scale.
+     * @param t The additional parameters for the kernel.
+     * @return The value of the integral.
+     */
     template <typename... T> NT get(const ctype k, const T &...t) const
     {
       constexpr int d = 2;
@@ -93,6 +132,13 @@ namespace DiFfRG
                             [&](NT x, NT y) -> NT { return x + y; });
     }
 
+    /**
+     * @brief Get the value of the integral asynchronously.
+     *
+     * @param k The current RG scale.
+     * @param t The additional parameters for the kernel.
+     * @return An std::future<NT> which returns the value of the integral.
+     */
     template <typename... T> std::future<NT> request(const ctype k, const T &...t) const
     {
       return std::async(std::launch::deferred, [=, this]() { return get(k, t...); });

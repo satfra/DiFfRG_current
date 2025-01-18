@@ -17,6 +17,13 @@
 
 namespace DiFfRG
 {
+  /**
+   * @brief GPU kernel for the integration of an arbitrary 2D function from qx_min to qx_max and qy_min to qy_max.
+   *
+   * @tparam ctype The numerical type of the integration points and weights.
+   * @tparam NT The numerical type of the result.
+   * @tparam KERNEL The kernel to integrate.
+   */
   template <typename ctype, typename NT, typename KERNEL, typename... T>
   __global__ void gridreduce_2d_cartesian(NT *dest, const ctype *x_quadrature_p, const ctype *x_quadrature_w,
                                           const ctype *y_quadrature_p, const ctype *y_quadrature_w, const ctype qx_min,
@@ -38,11 +45,28 @@ namespace DiFfRG
     dest[idx] = int_element * weight * KERNEL::kernel(qx, qy, k, t...);
   }
 
+  /**
+   * @brief Integration of an arbitrary 2D function from (qx_min, qy_min) to (qx_max, qy_max) using TBB.
+   *
+   * @tparam NT The numerical type of the result.
+   * @tparam KERNEL The kernel to integrate.
+   */
   template <typename NT, typename KERNEL> class Integrator2DCartesianGPU
   {
   public:
+    /**
+     * @brief Numerical type to be used for integration tasks e.g. the argument or possible jacobians.
+     */
     using ctype = typename get_type::ctype<NT>;
 
+    /**
+     * @brief Construct a new Integrator2DCartesianGPU object
+     *
+     * @param quadrature_provider The quadrature provider to use.
+     * @param grid_sizes The number of grid points in x and y direction.
+     * @param x_extent This argument is not used, but kept for compatibility with flow classes.
+     * @param json The JSON object containing the configuration.
+     */
     Integrator2DCartesianGPU(QuadratureProvider &quadrature_provider, const std::array<uint, 2> grid_sizes,
                              const ctype x_extent, const JSONValue &json)
         : Integrator2DCartesianGPU(quadrature_provider, grid_sizes, x_extent,
@@ -50,6 +74,17 @@ namespace DiFfRG
     {
     }
 
+    /**
+     * @brief Construct a new Integrator2DCartesianGPU object
+     *
+     * @param quadrature_provider The quadrature provider to use.
+     * @param grid_sizes The number of grid points in x and y direction.
+     * @param x_extent This argument is not used, but kept for compatibility with flow classes.
+     * @param max_block_size The maximum block size to use on GPU.
+     * @param qy_min The minimum value of the y integration range.
+     * @param qx_max The maximum value of the x integration range.
+     * @param qy_max The maximum value of the y integration range.
+     */
     Integrator2DCartesianGPU(QuadratureProvider &quadrature_provider, std::array<uint, 2> grid_sizes,
                              const ctype x_extent = 0., const uint max_block_size = 256, const ctype qx_min = -M_PI,
                              const ctype qy_min = -M_PI, const ctype qx_max = M_PI, const ctype qy_max = M_PI)
@@ -87,6 +122,11 @@ namespace DiFfRG
       this->qy_extent = qy_max - qy_min;
     }
 
+    /**
+     * @brief Copy a Integrator2DCartesianGPU object
+     *
+     * @param other The other Integrator2DCartesianGPU object to copy.
+     */
     Integrator2DCartesianGPU(const Integrator2DCartesianGPU &other)
         : grid_sizes(other.grid_sizes), ptr_x_quadrature_p(other.ptr_x_quadrature_p),
           ptr_x_quadrature_w(other.ptr_x_quadrature_w), ptr_y_quadrature_p(other.ptr_y_quadrature_p),
@@ -132,6 +172,13 @@ namespace DiFfRG
      */
     void set_qy_max(const ctype qy_max) { this->qy_extent = qy_max - qy_min; }
 
+    /**
+     * @brief Get the result of the integration.
+     *
+     * @param k The current RG scale.
+     * @param t The remaining arguments of the kernel.
+     * @return The result of the integration.
+     */
     template <typename... T> NT get(const ctype k, const T &...t) const
     {
       const auto cuda_stream = cuda_stream_pool.get_stream();
@@ -144,6 +191,13 @@ namespace DiFfRG
                                                         device_data.end(), NT(0.), thrust::plus<NT>());
     }
 
+    /**
+     * @brief Get the result of the integration asynchronously.
+     *
+     * @param k The current RG scale.
+     * @param t The remaining arguments of the kernel.
+     * @return An std::future<NT> which returns the result of the integration.
+     */
     template <typename... T> std::future<NT> request(const ctype k, const T &...t) const
     {
       const auto cuda_stream = cuda_stream_pool.get_stream();
