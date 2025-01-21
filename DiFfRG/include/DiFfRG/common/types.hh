@@ -1,13 +1,14 @@
 #pragma once
 
+// DiFfRG
+#include <DiFfRG/common/math.hh>
+
 // external libraries
 #include <autodiff/forward/real.hpp>
 #include <deal.II/lac/block_sparse_matrix.h>
 #include <deal.II/lac/block_sparsity_pattern.h>
 #include <deal.II/lac/block_vector.h>
 #include <deal.II/lac/sparse_direct.h>
-
-#include<DiFfRG/common/complex_math.hh>
 
 namespace DiFfRG
 {
@@ -76,11 +77,11 @@ namespace DiFfRG
       template <> struct _ctype<double> {
         using value = double;
       };
-      
+
       template <> struct _ctype<complex<float>> {
         using value = float;
       };
-      
+
       template <> struct _ctype<complex<double>> {
         using value = double;
       };

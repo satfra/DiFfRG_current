@@ -1,67 +1,143 @@
 #pragma once
 
-// external libraries
-#include <autodiff/forward/real.hpp>
-
 // DiFfRG
 #include <DiFfRG/common/cuda_prefix.hh>
+
+// external libraries
+#include <autodiff/common/numbertraits.hpp>
 
 #ifdef USE_CUDA
 
 #include <cuda/std/complex>
 
-// Specialize isArithmetic for complex to make it compatible with real
-namespace autodiff::detail
-{
-  template <typename T> struct ArithmeticTraits<::cuda::std::__4::complex<T>> : ArithmeticTraits<T> {
-  };
-} // namespace autodiff::detail
 namespace DiFfRG
 {
   using ::cuda::std::atan2;
   using ::cuda::std::complex;
   using ::cuda::std::cos;
+  using ::cuda::std::cosh;
   using ::cuda::std::imag;
   using ::cuda::std::log;
   using ::cuda::std::pow;
   using ::cuda::std::real;
   using ::cuda::std::sin;
+  using ::cuda::std::sinh;
   using ::cuda::std::sqrt;
+  using ::cuda::std::tan;
+  using ::cuda::std::tanh;
+  template <typename NT> constexpr auto cot(const NT x) { return NT(1) / tan(x); }
 
-  template <size_t N, typename T> using cxreal = autodiff::Real<N, complex<T>>;
-  using cxReal = autodiff::Real<1, complex<double>>;
 } // namespace DiFfRG
 
 #else
 
 #include <complex>
-
-// Specialize isArithmetic for complex to make it compatible with real
-namespace autodiff::detail
-{
-  template <typename T> struct ArithmeticTraits<::std::complex<T>> : ArithmeticTraits<T> {
-  };
-} // namespace autodiff::detail
 namespace DiFfRG
 {
   using ::std::atan2;
   using ::std::complex;
   using ::std::cos;
+  using ::std::cosh;
   using ::std::imag;
   using ::std::log;
   using ::std::pow;
   using ::std::real;
   using ::std::sin;
+  using ::std::sinh;
   using ::std::sqrt;
-
-  template <size_t N, typename T> using cxreal = autodiff::Real<N, complex<T>>;
-  using cxReal = autodiff::Real<1, complex<double>>;
+  using ::std::tan;
+  using ::std::tanh;
+  template <typename NT> constexpr auto cot(const NT x) { return NT(1) / tan(x); }
 } // namespace DiFfRG
 
 #endif
 
+#ifdef USE_CUDA
+
+// Specialize isArithmetic for complex to make it compatible with real
+namespace autodiff::detail
+{
+  using ::cuda::std::complex;
+  template <typename T> struct ArithmeticTraits<::cuda::std::__4::complex<T>> : ArithmeticTraits<T> {
+  };
+} // namespace autodiff::detail
+
+#else
+
+// Specialize isArithmetic for complex to make it compatible with real
+namespace autodiff::detail
+{
+  using ::std::complex;
+  template <typename T> struct ArithmeticTraits<::std::complex<T>> : ArithmeticTraits<T> {
+  };
+} // namespace autodiff::detail
+
+#endif
+
+namespace autodiff::detail
+{
+  // operators for multiplication of float and complex
+  template <typename T1, typename T2>
+    requires(!std::is_same_v<T1, T2>) && std::is_arithmetic_v<T1> && std::is_arithmetic_v<T2>
+  __host__ __device__ auto operator*(const T1 x, const complex<T2> y)
+  {
+    return complex<decltype(T1(1.) * T2(1.))>(x * y.real(), x * y.imag());
+  }
+  template <typename T1, typename T2>
+    requires(!std::is_same_v<T1, T2>) && std::is_arithmetic_v<T1> && std::is_arithmetic_v<T2>
+  __host__ __device__ auto operator*(const complex<T1> &x, const T2 &y)
+  {
+    return complex<decltype(T1(1.) * T2(1.))>(y * x.real(), y * x.imag());
+  }
+  // operators for addition of real and complex
+  template <typename T1, typename T2>
+    requires(!std::is_same_v<T1, T2>) && std::is_arithmetic_v<T1> && std::is_arithmetic_v<T2>
+  __host__ __device__ auto operator+(const T1 &x, const complex<T2> &y)
+  {
+    return complex<decltype(T1(1.) + T2(1.))>(x + y.real(), y.imag());
+  }
+  template <typename T1, typename T2>
+    requires(!std::is_same_v<T1, T2>) && std::is_arithmetic_v<T1> && std::is_arithmetic_v<T2>
+  __host__ __device__ auto operator+(const complex<T1> &x, const T2 &y)
+  {
+    return complex<decltype(T1(1.) + T2(1.))>(x.real() + y, x.imag());
+  }
+  // operators for subtraction of real and complex
+  template <typename T1, typename T2>
+    requires(!std::is_same_v<T1, T2>) && std::is_arithmetic_v<T1> && std::is_arithmetic_v<T2>
+  __host__ __device__ auto operator-(const T1 &x, const complex<T2> &y)
+  {
+    return complex<decltype(T1(1.) + T2(1.))>(x - y.real(), -y.imag());
+  }
+  template <typename T1, typename T2>
+    requires(!std::is_same_v<T1, T2>) && std::is_arithmetic_v<T1> && std::is_arithmetic_v<T2>
+  __host__ __device__ auto operator-(const complex<T1> &x, const T2 &y)
+  {
+    return complex<decltype(T1(1.) + T2(1.))>(x.real() - y, x.imag());
+  }
+  // operators for division of real and complex
+  template <typename T1, typename T2>
+    requires(!std::is_same_v<T1, T2>) && std::is_arithmetic_v<T1> && std::is_arithmetic_v<T2>
+  __host__ __device__ auto operator/(const T1 &x, const complex<T2> &y)
+  {
+    return complex<decltype(T1(1.) + T2(1.))>(x * y.real(), -x * y.imag()) / (powr<2>(y.real()) + powr<2>(y.imag()));
+  }
+  template <typename T1, typename T2>
+    requires(!std::is_same_v<T1, T2>) && std::is_arithmetic_v<T1> && std::is_arithmetic_v<T2>
+  __host__ __device__ auto operator/(const complex<T1> x, const T2 &y)
+  {
+    return complex<decltype(T1(1.) + T2(1.))>(x.real() / y, x.imag() / y);
+  }
+} // namespace autodiff::detail
+
+// external libraries
+#include <autodiff/forward/real.hpp>
+
 namespace DiFfRG
 {
+  template <size_t N, typename T> using cxreal = autodiff::Real<N, complex<T>>;
+  using cxReal = autodiff::Real<1, complex<double>>;
+
   template <size_t N, typename T> AUTODIFF_DEVICE_FUNC auto real(const autodiff::Real<N, T> &a) { return a; }
   template <size_t N, typename T> constexpr AUTODIFF_DEVICE_FUNC auto imag(const autodiff::Real<N, T> &) { return 0.; }
 
@@ -320,8 +396,4 @@ namespace DiFfRG
   {
     return complex<decltype(T1(1.) + T2(1.))>(x.real() / y, x.imag() / y);
   }
-
-  // ------------------------------------------------------------------
-  // operators for complex<T1> and complex<T2>
-  // ------------------------------------------------------------------
 } // namespace DiFfRG
