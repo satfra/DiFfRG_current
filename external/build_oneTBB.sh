@@ -10,6 +10,7 @@ source $SCRIPT_PATH/build_scripts/parse_flags.sh
 source $SCRIPT_PATH/build_scripts/populate_paths.sh
 source $SCRIPT_PATH/build_scripts/cleanup_build_if_asked.sh
 source $SCRIPT_PATH/build_scripts/setup_folders.sh
+source $SCRIPT_PATH/../config
 
 cd $BUILD_PATH
 
@@ -20,7 +21,7 @@ cmake -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_CXX_STANDARD=20 \
   -DCMAKE_INSTALL_PREFIX=${INSTALL_PATH} \
   -S ${SOURCE_PATH} \
-  2>&1 | tee $CMAKE_LOG_FILE
+  &> $CMAKE_LOG_FILE
 
-make -j $THREADS 2>&1 | tee $MAKE_LOG_FILE
-$SuperUser make -j $THREADS install
+make -j $THREADS &> $MAKE_LOG_FILE
+$SuperUser make -j $THREADS install >> $MAKE_LOG_FILE 2>&1

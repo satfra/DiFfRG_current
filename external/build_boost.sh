@@ -10,6 +10,7 @@ source $SCRIPT_PATH/build_scripts/parse_flags.sh
 source $SCRIPT_PATH/build_scripts/populate_paths.sh
 source $SCRIPT_PATH/build_scripts/cleanup_build_if_asked.sh
 source $SCRIPT_PATH/build_scripts/setup_folders.sh
+source $SCRIPT_PATH/../config
 
 cd $BUILD_PATH
 
@@ -25,10 +26,9 @@ if [ -z "$COMPILER" ]; then
   echo "No compiler for boost build specified, choosing ${COMPILER}"
 fi
 
-echo $COMPILER
 cd $SOURCE_PATH
 
-$SuperUser ./bootstrap.sh --prefix=${INSTALL_PATH}
+$SuperUser ./bootstrap.sh --prefix=${INSTALL_PATH} &>/dev/null
 $SuperUser ./b2 --build-dir=${BUILD_PATH} \
   --prefix=${INSTALL_PATH} \
   --with-headers \
@@ -40,4 +40,4 @@ $SuperUser ./b2 --build-dir=${BUILD_PATH} \
   --with-thread \
   -j ${THREADS} \
   cxxflags="${CXX_FLAGS} -std=c++20" \
-  install | tee $MAKE_LOG_FILE
+  install &> $MAKE_LOG_FILE
