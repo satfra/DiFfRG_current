@@ -67,8 +67,8 @@ namespace DiFfRG
       using std::sqrt, std::exp, std::log;
 
       const ctype integral_start = (2 * q0_summands * (ctype)M_PI * m_T);
-      const ctype log_start = log(integral_start);
-      const ctype log_ext = log(q0_extent / integral_start);
+      const ctype log_start = log(integral_start + (m_T == 0) * ctype(1e-3));
+      const ctype log_ext = log(q0_extent / (integral_start + (m_T == 0) * ctype(1e-3)));
 
       const auto constant = KERNEL::constant(k, t...);
       return constant +
@@ -80,7 +80,8 @@ namespace DiFfRG
                      for (uint idx_y = r.cols().begin(); idx_y != r.cols().end(); ++idx_y) {
                        // integral part
                        if (idx_y >= q0_summands) {
-                         const ctype q0 = exp(log_start + log_ext * ptr_q0_quadrature_p[idx_y - q0_summands]);
+                         const ctype q0 = exp(log_start + log_ext * ptr_q0_quadrature_p[idx_y - q0_summands]) -
+                                          (m_T == 0) * ctype(1e-3);
                          const ctype int_element = S_dm1                                      // solid nd angle
                                                    * (powr<d - 3>(q) / (ctype)2 * powr<2>(k)) // x = p^2 / k^2 integral
                                                    / powr<d>(2 * (ctype)M_PI);                // fourier factor

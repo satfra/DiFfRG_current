@@ -47,11 +47,11 @@ namespace DiFfRG
                                   / powr<d>(2 * (ctype)M_PI);              // fourier factor
 
     const ctype integral_start = (2 * x0_summands * (ctype)M_PI * m_T) / k;
-    const ctype log_start = log(integral_start);
-    const ctype log_ext = log(x0_extent / integral_start);
+    const ctype log_start = log(integral_start + (m_T == 0) * ctype(1e-3));
+    const ctype log_ext = log(x0_extent / (integral_start + (m_T == 0) * ctype(1e-3)));
 
     for (uint idx_0 = 0; idx_0 < x0_quadrature_size; ++idx_0) {
-      const ctype q0 = k * exp(log_start + log_ext * x0_quadrature_p[idx_0]);
+      const ctype q0 = k * (exp(log_start + log_ext * x0_quadrature_p[idx_0]) - (m_T == 0) * ctype(1e-3));
 
       const ctype m_weight = weight * (x0_quadrature_w[idx_0] * log_ext * q0 / k);
 

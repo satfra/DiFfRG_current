@@ -71,6 +71,7 @@ TEST_CASE("Test 4D gpu momentum integrals with finite T (q0)", "[4D integration]
                 << "| relative error: " << std::abs(reference_integral - integral) / std::abs(reference_integral)
                 << std::endl;
     }
+    CHECK(isfinite(integral));
     CHECK(is_close(reference_integral, integral, 5e-5));
   }
 }

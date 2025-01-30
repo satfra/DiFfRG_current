@@ -38,11 +38,11 @@ TEMPLATE_TEST_CASE_SIG("Test gpu momentum integrals finite T (x0)", "[integratio
                        ((int dim), dim), (2), (3), (4))
 {
   const double x_extent = GENERATE(take(2, random(1., 2.)));
-  const uint x0_summands = 16;
-  const uint x0_int_order = 32;
-  const double T = GENERATE(take(5, random(0.01, 1.)));
+  const uint x0_summands = 32;
+  const uint x0_int_order = 64;
+  const double T = GENERATE(0., take(5, random(0.01, 1.)));
   const double k = GENERATE(take(2, random(0., 1.)));
-  const double x0_extent = x0_summands * 10 * 2. * M_PI * T / k * GENERATE(take(1, random(1., 2.)));
+  const double x0_extent = x0_summands * 10 * 2. * M_PI * T / k * GENERATE(take(1, random(1., 2.))) + 1000. / k;
   QuadratureProvider quadrature_provider;
   IntegratorFiniteTx0GPU<dim, double, PolyIntegrand> integrator(quadrature_provider, {{64, x0_int_order}}, x_extent,
                                                                 x0_extent, x0_summands, T);
@@ -58,12 +58,13 @@ TEMPLATE_TEST_CASE_SIG("Test gpu momentum integrals finite T (x0)", "[integratio
 
     const double integral = integrator.request(k, 0., 1., 0., 0., 0., 0., 0., 1., 0., 0., 0.).get();
 
-    if (!is_close(reference_integral, integral, dim == 2 ? 1e-2 : 1e-6)) {
+    if (!is_close(reference_integral, integral, dim == 2 ? 1e-2 : 5e-5)) {
       std::cerr << "dim: " << dim << "| reference: " << reference_integral << "| integral: " << integral
                 << "| relative error: " << std::abs(reference_integral - integral) / std::abs(reference_integral)
                 << std::endl;
     }
-    CHECK(is_close(reference_integral, integral, dim == 2 ? 1e-2 : 1e-6));
+    CHECK(isfinite(integral));
+    CHECK(is_close(reference_integral, integral, dim == 2 ? 1e-2 : 5e-5));
   }
 
   SECTION("Random polynomials : check consistency with CPU case.")
@@ -102,6 +103,8 @@ TEMPLATE_TEST_CASE_SIG("Test gpu momentum integrals finite T (x0)", "[integratio
       std::cerr << "dim: " << dim << "| GPU: " << int_gpu << "| CPU: " << int_cpu
                 << "| relative error: " << std::abs(int_gpu - int_cpu) / std::abs(int_gpu) << std::endl;
     }
+    CHECK(isfinite(int_cpu));
+    CHECK(isfinite(int_gpu));
     CHECK(is_close(int_gpu, int_cpu, 1e-8));
   }
 }

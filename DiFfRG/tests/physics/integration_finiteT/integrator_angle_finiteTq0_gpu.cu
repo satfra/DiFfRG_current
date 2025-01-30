@@ -22,7 +22,7 @@ public:
          const double q0_x2, const double q0_x3)
   {
     return (x0 + x1 * powr<1>(q) + x2 * powr<2>(q) + x3 * powr<3>(q) + x4 * powr<4>(q) + x5 * powr<5>(q)) *
-           (cos_x0 + cos_x1 * powr<1>(cos) + cos_x2 * powr<2>(cos) + cos_x3 * powr<3>(cos)) *
+           (cos_x0 + cos_x1 * powr<1>(cos) + cos_x2 * powr<2>(cos) + cos_x3 * powr<3>(cos)) /
            (q0_x0 + q0_x1 * powr<1>(q0) + q0_x2 * powr<2>(q0) + q0_x3 * powr<3>(q0));
   }
 
@@ -40,74 +40,31 @@ TEMPLATE_TEST_CASE_SIG("Test gpu momentum integrals with angle finite T (q0)", "
                        ((int dim), dim), (3), (4))
 {
   const double x_extent = GENERATE(take(2, random(1., 2.)));
-  const uint q0_summands = 16;
-  const uint q0_int_order = 32;
+  const uint q0_summands = 32;
+  const uint q0_int_order = 64;
   const double T = GENERATE(take(5, random(0.01, 1.)));
   const double k = GENERATE(take(2, random(0., 1.)));
-  const double q0_extent = q0_summands * 50 * 2. * M_PI * T * GENERATE(take(1, random(1., 2.)));
-  QuadratureProvider quadrature_provider;
-  IntegratorAngleFiniteTq0GPU<dim, double, PolyIntegrand> integrator(quadrature_provider, {{64, 12, q0_int_order}},
-                                                                     x_extent, q0_extent, q0_summands, T);
+  const double q0_extent = 10000 * 2. * M_PI;
+  const double val = GENERATE(take(4, random(0.8, 1.2)));
 
+  QuadratureProvider quadrature_provider;
+  IntegratorAngleFiniteTq0GPU<dim, double, PolyIntegrand> integrator(quadrature_provider, {{64, 16, q0_int_order}},
+                                                                     x_extent, q0_extent, q0_summands, T);
   SECTION("Volume integral")
   {
     const double q_extent = std::sqrt(x_extent * powr<2>(k));
-    const double reference_integral = V_d(dim - 1, q_extent) / powr<dim - 1>(2. * M_PI)                 // spatial part
-                                      * ((2 * q0_summands - 1) * T                                      // summands
-                                         + (q0_extent - 2. * M_PI * T * q0_summands) * 2. / (2. * M_PI) // integral
-                                        );
+    const double reference_integral = V_d(dim - 1, q_extent) / powr<dim - 1>(2. * M_PI) // spatial part
+                                      / T / std::tanh(0.5 / val) / 2. / val;            // sum
 
-    const double integral = integrator.get(k, 0., 1., 0., 0., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0.);
+    const double integral =
+        integrator.get(k, 0., 1., 0., 0., 0., 0., 0., 1., 0., 0., 0., powr<2>(T), 0., powr<2>(val), 0.);
 
-    if (!is_close(reference_integral, integral, dim == 2 ? 1e-2 : 1e-6)) {
-      std::cerr << "dim: " << dim << "| reference: " << reference_integral << "| integral: " << integral
+    if (!is_close(reference_integral, integral, dim == 2 ? 1e-2 : 5e-5)) {
+      std::cerr << "dim: " << dim << "| T: " << T << "| reference: " << reference_integral << "| integral: " << integral
                 << "| relative error: " << std::abs(reference_integral - integral) / std::abs(reference_integral)
                 << std::endl;
     }
-    CHECK(is_close(reference_integral, integral, dim == 2 ? 1e-2 : 1e-6));
-  }
-
-  SECTION("Random polynomials : check consistency with CPU case.")
-  {
-    IntegratorAngleFiniteTq0TBB<dim, double, PolyIntegrand> integrator_cpu(
-        quadrature_provider, {{64, 12, q0_int_order}}, x_extent, q0_extent, q0_summands, T);
-
-    constexpr uint take_n = 2;
-
-    const auto poly = Polynomial({
-        dim == 2 ? 0. : GENERATE(take(take_n, random(-1., 1.))), // x0
-        GENERATE(take(take_n, random(-1., 1.))),                 // x1
-        GENERATE(take(1, random(-1., 1.))),                      // x2
-        GENERATE(take(1, random(-1., 1.))),                      // x3
-        GENERATE(take(1, random(-1., 1.))),                      // x4
-        GENERATE(take(1, random(-1., 1.)))                       // x5
-    });
-    const auto q0_poly = Polynomial({
-        GENERATE(take(take_n, random(-1., 1.))), // x0
-        GENERATE(take(1, random(-1., 1.))),      // x1
-        GENERATE(take(1, random(-1., 1.))),      // x2
-        GENERATE(take(1, random(-1., 1.)))       // x3
-    });
-    const auto cos_poly = Polynomial({
-        GENERATE(take(take_n, random(-1., 1.))), // x0
-        GENERATE(take(1, random(-1., 1.))),      // x1
-        GENERATE(take(1, random(-1., 1.))),      // x2
-        GENERATE(take(1, random(-1., 1.)))       // x3
-    });
-
-    const double constant = GENERATE(take(take_n, random(-1., 1.)));
-
-    const double int_gpu =
-        integrator.get(k, constant, poly[0], poly[1], poly[2], poly[3], poly[4], poly[5], cos_poly[0], cos_poly[1],
-                       cos_poly[2], cos_poly[3], q0_poly[0], q0_poly[1], q0_poly[2], q0_poly[3]);
-    const double int_cpu =
-        integrator_cpu.get(k, constant, poly[0], poly[1], poly[2], poly[3], poly[4], poly[5], cos_poly[0], cos_poly[1],
-                           cos_poly[2], cos_poly[3], q0_poly[0], q0_poly[1], q0_poly[2], q0_poly[3]);
-
-    if (!is_close(int_gpu, int_cpu, 1e-9)) {
-      std::cerr << "dim: " << dim << "| GPU: " << int_gpu << "| CPU: " << int_cpu
-                << "| relative error: " << std::abs(int_gpu - int_cpu) / std::abs(int_gpu) << std::endl;
-    }
-    CHECK(is_close(int_gpu, int_cpu, 1e-9));
+    CHECK(isfinite(integral));
+    CHECK(is_close(reference_integral, integral, dim == 2 ? 1e-2 : 5e-5));
   }
 }

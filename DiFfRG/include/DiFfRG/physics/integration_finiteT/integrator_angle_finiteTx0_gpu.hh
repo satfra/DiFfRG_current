@@ -39,10 +39,10 @@ namespace DiFfRG
 
     if (idx_z >= x0_summands) {
       const ctype integral_start = (2 * x0_summands * (ctype)M_PI * m_T) / k;
-      const ctype log_start = log(integral_start);
-      const ctype log_ext = log(x0_extent / integral_start);
+      const ctype log_start = log(integral_start + (m_T == 0) * ctype(1e-3));
+      const ctype log_ext = log(x0_extent / (integral_start + (m_T == 0) * ctype(1e-3)));
 
-      const ctype q0 = k * exp(log_start + log_ext * x0_quadrature_p[idx_z - x0_summands]);
+      const ctype q0 = k * (exp(log_start + log_ext * x0_quadrature_p[idx_z - x0_summands]) - (m_T == 0) * ctype(1e-3));
 
       const ctype int_element = S_dm1                                      // solid nd angle
                                 * (powr<d - 3>(q) / (ctype)2 * powr<2>(k)) // x = p^2 / k^2 integral

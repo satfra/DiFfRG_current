@@ -129,7 +129,9 @@ namespace DiFfRG
    * @return bool
    */
   template <typename T1, typename T2, typename T3>
-    requires std::is_floating_point<T3>::value
+    requires(std::is_floating_point<T1>::value || std::is_same_v<T1, autodiff::real>) &&
+            (std::is_floating_point<T2>::value || std::is_same_v<T2, autodiff::real>) &&
+            std::is_floating_point<T3>::value
   bool __forceinline__ __host__ __device__ is_close(T1 a, T2 b, T3 eps_)
   {
     if constexpr (std::is_same_v<T1, autodiff::real> || std::is_same_v<T2, autodiff::real>)
@@ -148,16 +150,17 @@ namespace DiFfRG
    *
    * @return bool
    */
-  template <typename T1, typename T2> bool __forceinline__ __host__ __device__ is_close(T1 a, T2 b)
+  template <typename T1, typename T2>
+    requires(std::is_floating_point<T1>::value || std::is_same_v<T1, autodiff::real>) &&
+            (std::is_floating_point<T2>::value || std::is_same_v<T2, autodiff::real>)
+  bool __forceinline__ __host__ __device__ is_close(T1 a, T2 b)
   {
     if constexpr (std::is_same_v<T1, autodiff::real> || std::is_same_v<T2, autodiff::real>) {
       constexpr auto eps_ = std::numeric_limits<double>::epsilon() * 10.;
       return is_close((double)a, (double)b, eps_);
     } else {
       constexpr auto eps_ = std::max(std::numeric_limits<T1>::epsilon(), std::numeric_limits<T2>::epsilon());
-      T1 diff = std::fabs(a - b);
-      if (diff <= eps_) return true;
-      if (diff <= std::fmax(std::fabs(a), std::fabs(b)) * eps_) return true;
+      return is_close(a, b, eps_);
     }
     return false;
   }
