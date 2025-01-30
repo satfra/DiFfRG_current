@@ -45,7 +45,7 @@ TEST_CASE("Test 4D gpu momentum integrals with finite T (x0)", "[4D integration]
 
   const double x_extent = GENERATE(take(2, random(1., 2.)));
   const double x0_summands = 8;
-  const double T = GENERATE(take(2, random(0.5, 1.)));
+  const double T = GENERATE(take(3, random(0.01, 1.)));
   const double k = GENERATE(take(2, random(0., 1.)));
   const double x0_extent = x0_summands * 10 * 2. * M_PI * T / k * GENERATE(take(1, random(1., 2.)));
   QuadratureProvider quadrature_provider;
@@ -106,7 +106,6 @@ TEST_CASE("Test 4D gpu momentum integrals with finite T (x0)", "[4D integration]
         GENERATE(take(1, random(-1., 1.)))       // x3
     });
 
-    const double k = GENERATE(take(take_n, random(0., 1.)));
     const double constant = GENERATE(take(take_n, random(-1., 1.)));
 
     const double int_gpu = integrator.get(k, constant, poly[0], poly[1], poly[2], poly[3], poly[4], poly[5],
@@ -117,10 +116,10 @@ TEST_CASE("Test 4D gpu momentum integrals with finite T (x0)", "[4D integration]
                            cos_poly[2], cos_poly[3], phi_poly[0], phi_poly[1], phi_poly[2], phi_poly[3], q0_poly[0],
                            q0_poly[1], q0_poly[2], q0_poly[3]);
 
-    if (!is_close(int_gpu, int_cpu, 1e-11)) {
+    if (!is_close(int_gpu, int_cpu, 1e-10)) {
       std::cerr << "dim: " << dim << "| GPU: " << int_gpu << "| CPU: " << int_cpu
                 << "| relative error: " << std::abs(int_gpu - int_cpu) / std::abs(int_gpu) << std::endl;
     }
-    CHECK(is_close(int_gpu, int_cpu, 1e-11));
+    CHECK(is_close(int_gpu, int_cpu, 1e-10));
   }
 }

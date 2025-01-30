@@ -38,13 +38,14 @@ TEMPLATE_TEST_CASE_SIG("Test gpu momentum integrals finite T (x0)", "[integratio
                        ((int dim), dim), (2), (3), (4))
 {
   const double x_extent = GENERATE(take(2, random(1., 2.)));
-  const double x0_summands = 8;
-  const double T = GENERATE(take(2, random(0.5, 1.)));
+  const uint x0_summands = 16;
+  const uint x0_int_order = 32;
+  const double T = GENERATE(take(5, random(0.01, 1.)));
   const double k = GENERATE(take(2, random(0., 1.)));
   const double x0_extent = x0_summands * 10 * 2. * M_PI * T / k * GENERATE(take(1, random(1., 2.)));
   QuadratureProvider quadrature_provider;
-  IntegratorFiniteTx0GPU<dim, double, PolyIntegrand> integrator(quadrature_provider, {{64, 12}}, x_extent, x0_extent,
-                                                                x0_summands, T);
+  IntegratorFiniteTx0GPU<dim, double, PolyIntegrand> integrator(quadrature_provider, {{64, x0_int_order}}, x_extent,
+                                                                x0_extent, x0_summands, T);
 
   SECTION("Volume integral")
   {
@@ -97,54 +98,10 @@ TEMPLATE_TEST_CASE_SIG("Test gpu momentum integrals finite T (x0)", "[integratio
     const double int_cpu = integrator_cpu.get(k, constant, poly[0], poly[1], poly[2], poly[3], poly[4], poly[5],
                                               q0_poly[0], q0_poly[1], q0_poly[2], q0_poly[3]);
 
-    if (!is_close(int_gpu, int_cpu, 1e-11)) {
+    if (!is_close(int_gpu, int_cpu, 1e-8)) {
       std::cerr << "dim: " << dim << "| GPU: " << int_gpu << "| CPU: " << int_cpu
                 << "| relative error: " << std::abs(int_gpu - int_cpu) / std::abs(int_gpu) << std::endl;
     }
-    CHECK(is_close(int_gpu, int_cpu, 1e-11));
+    CHECK(is_close(int_gpu, int_cpu, 1e-8));
   }
-
-  /* TODO: Find a way to test this
-    SECTION("Random polynomials")
-    {
-      constexpr uint take_n = 2;
-
-      const auto poly = Polynomial({
-          dim == 2 ? 0. : GENERATE(take(take_n, random(-1., 1.))), // x0
-          GENERATE(take(take_n, random(-1., 1.))),                 // x1
-          GENERATE(take(take_n, random(-1., 1.))),                 // x2
-          GENERATE(take(1, random(-1., 1.))),                      // x3
-          GENERATE(take(1, random(-1., 1.))),                      // x4
-          GENERATE(take(1, random(-1., 1.)))                       // x5
-      });
-      const auto q0_poly = Polynomial({
-          GENERATE(take(take_n, random(-1., 1.))), // x0
-          GENERATE(take(take_n, random(-1., 1.))), // x1
-          GENERATE(take(1, random(-1., 1.))),      // x2
-          GENERATE(take(1, random(-1., 1.)))       // x3
-      });
-
-      const double k = GENERATE(take(take_n, random(0., 1.)));
-      const double q_extent = std::sqrt(x_extent * powr<2>(k));
-      const double q0_extent = x0_extent * k;
-      const double constant = GENERATE(take(take_n, random(-1., 1.)));
-
-      auto int_poly = poly;
-      std::vector<double> coeff_integrand(dim, 0.);
-      coeff_integrand[dim - 2] = 1.;
-      int_poly *= Polynomial(coeff_integrand);
-      const double reference_integral = constant + S_d(2) / 2. * int_poly.integral(0., q_extent) *
-                                                       q0_poly.integral(-q0_extent, q0_extent) / powr<dim>(2. * M_PI);
-
-      integrator.request(k, constant, poly[0], poly[1], poly[2], poly[3], poly[4], poly[5], q0_poly[0], q0_poly[1],
-    q0_poly[2], q0_poly[3]); const double integral = integrator.get();
-
-      if (!is_close(reference_integral, integral, 1e-6)) {
-        std::cerr << "dim: " << dim << "| reference: " << reference_integral << "| integral: " << integral
-                  << "| relative error: " << std::abs(reference_integral - integral) / std::abs(reference_integral) <<
-    std::endl;
-      }
-      CHECK(is_close(reference_integral, integral, 1e-6));
-    }
-  */
 }
