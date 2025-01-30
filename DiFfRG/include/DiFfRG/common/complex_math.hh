@@ -107,26 +107,26 @@ namespace autodiff::detail
     requires(!std::is_same_v<T1, T2>) && std::is_arithmetic_v<T1> && std::is_arithmetic_v<T2>
   __host__ __device__ auto operator-(const T1 &x, const complex<T2> &y)
   {
-    return complex<decltype(T1(1.) + T2(1.))>(x - y.real(), -y.imag());
+    return complex<decltype(T1(1.) - T2(1.))>(x - y.real(), -y.imag());
   }
   template <typename T1, typename T2>
     requires(!std::is_same_v<T1, T2>) && std::is_arithmetic_v<T1> && std::is_arithmetic_v<T2>
   __host__ __device__ auto operator-(const complex<T1> &x, const T2 &y)
   {
-    return complex<decltype(T1(1.) + T2(1.))>(x.real() - y, x.imag());
+    return complex<decltype(T1(1.) - T2(1.))>(x.real() - y, x.imag());
   }
   // operators for division of real and complex
   template <typename T1, typename T2>
     requires(!std::is_same_v<T1, T2>) && std::is_arithmetic_v<T1> && std::is_arithmetic_v<T2>
   __host__ __device__ auto operator/(const T1 &x, const complex<T2> &y)
   {
-    return complex<decltype(T1(1.) + T2(1.))>(x * y.real(), -x * y.imag()) / (powr<2>(y.real()) + powr<2>(y.imag()));
+    return complex<decltype(T1(1.) / T2(1.))>(x * y.real(), -x * y.imag()) / (powr<2>(y.real()) + powr<2>(y.imag()));
   }
   template <typename T1, typename T2>
     requires(!std::is_same_v<T1, T2>) && std::is_arithmetic_v<T1> && std::is_arithmetic_v<T2>
   __host__ __device__ auto operator/(const complex<T1> x, const T2 &y)
   {
-    return complex<decltype(T1(1.) + T2(1.))>(x.real() / y, x.imag() / y);
+    return complex<decltype(T1(1.) / T2(1.))>(x.real() / y, x.imag() / y);
   }
 } // namespace autodiff::detail
 
