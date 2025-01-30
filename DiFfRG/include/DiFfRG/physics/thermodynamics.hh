@@ -5,13 +5,11 @@
 
 // DiFfRG
 #include <DiFfRG/common/cuda_prefix.hh>
-#include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/utils.hh>
 
 namespace DiFfRG
 {
   using std::cosh, std::sinh, std::tanh, std::exp, std::expm1;
-  template <size_t N, typename T> bool isfinite(autodiff::Real<N, T> &x);
 
   // ----------------------------------------------------------------------------------------------------
   // For convenience, all hyperbolic functions
