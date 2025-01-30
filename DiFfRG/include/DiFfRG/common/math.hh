@@ -18,6 +18,18 @@
 namespace DiFfRG
 {
   /**
+   * @brief Finite-ness check for autodiff::real
+   *
+   * @param x Number to check
+   * @return Whether x and its derivative are finite
+   */
+  template <size_t N, typename T> bool isfinite(const autodiff::Real<N, T> &x)
+  {
+    return std::isfinite(autodiff::val(x)) && std::isfinite(autodiff::derivative(x));
+  }
+  using std::isfinite;
+
+  /**
    * @brief A compile-time evaluatable power function for whole number exponents
    *
    * @tparam n Exponent of type int
@@ -122,9 +134,11 @@ namespace DiFfRG
   {
     if constexpr (std::is_same_v<T1, autodiff::real> || std::is_same_v<T2, autodiff::real>)
       return is_close((double)a, (double)b, (double)eps_);
-    T1 diff = std::fabs(a - b);
-    if (diff <= eps_) return true;
-    if (diff <= std::fmax(std::fabs(a), std::fabs(b)) * eps_) return true;
+    else {
+      T1 diff = std::fabs(a - b);
+      if (diff <= eps_) return true;
+      if (diff <= std::fmax(std::fabs(a), std::fabs(b)) * eps_) return true;
+    }
     return false;
   }
 
