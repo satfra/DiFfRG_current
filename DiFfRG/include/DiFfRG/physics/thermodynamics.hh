@@ -5,11 +5,13 @@
 
 // DiFfRG
 #include <DiFfRG/common/cuda_prefix.hh>
+#include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/utils.hh>
 
 namespace DiFfRG
 {
   using std::cosh, std::sinh, std::tanh, std::exp, std::expm1;
+  template <size_t N, typename T> bool isfinite(autodiff::Real<N, T> &x);
 
   // ----------------------------------------------------------------------------------------------------
   // For convenience, all hyperbolic functions
@@ -25,21 +27,35 @@ namespace DiFfRG
   // Finite temperature hyperbolic functions
   // ----------------------------------------------------------------------------------------------------
 
-  template <typename T1, typename T2> auto __forceinline__ __device__ __host__ CothFiniteT(const T1 x, const T2 T)
+  template <typename T1, typename T2>
+    requires(std::is_arithmetic_v<T2>)
+  auto __forceinline__ __device__ __host__ CothFiniteT(const T1 x, const T2 T)
   {
-    return is_close(T, T2(0)) ? (x < 0 ? -1. : 1.) : Coth(x / (2. * T));
+    using R = decltype(Coth(x / (2 * T)));
+    return is_close(T / x, T2(0)) ? (R)(x < 0 ? -1 : 1) : Coth(x / (2 * T));
   }
-  template <typename T1, typename T2> auto __forceinline__ __device__ __host__ TanhFiniteT(const T1 x, const T2 T)
+  template <typename T1, typename T2>
+    requires(std::is_arithmetic_v<T2>)
+  auto __forceinline__ __device__ __host__ TanhFiniteT(const T1 x, const T2 T)
   {
-    return is_close(T, T2(0)) ? (x < 0 ? -1. : 1.) : Tanh(x / (2. * T));
+    using R = decltype(Tanh(x / (2 * T)));
+    return is_close(T / x, T2(0)) ? (R)(x < 0 ? -1 : 1) : Tanh(x / (2 * T));
   }
-  template <typename T1, typename T2> auto __forceinline__ __device__ __host__ SechFiniteT(const T1 x, const T2 T)
+  template <typename T1, typename T2>
+    requires(std::is_arithmetic_v<T2>)
+  auto __forceinline__ __device__ __host__ SechFiniteT(const T1 x, const T2 T)
   {
-    return is_close(T, T2(0)) ? 0. : 1. / Cosh(x / (2. * T));
+    using R = decltype(Cosh(x / (2 * T)));
+    const auto res = Cosh(x / (2 * T));
+    return !isfinite(res) ? (R)0 : (R)(1) / res;
   }
-  template <typename T1, typename T2> auto __forceinline__ __device__ __host__ CschFiniteT(const T1 x, const T2 T)
+  template <typename T1, typename T2>
+    requires(std::is_arithmetic_v<T2>)
+  auto __forceinline__ __device__ __host__ CschFiniteT(const T1 x, const T2 T)
   {
-    return is_close(T, T2(0)) ? 0. : 1. / Sinh(x / (2. * T));
+    using R = decltype(Sinh(x / (2 * T)));
+    const auto res = Sinh(x / (2 * T));
+    return !isfinite(res) ? (R)0 : (R)(1) / res;
   }
 
   // ----------------------------------------------------------------------------------------------------
