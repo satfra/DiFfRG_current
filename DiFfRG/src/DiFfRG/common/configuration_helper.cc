@@ -136,7 +136,15 @@ namespace DiFfRG
   void ConfigurationHelper::print_usage_message()
   {
     std::string help_text = R"(
-This is a DiFfRG simulation. You can pass the following optional parameters:
+  ╭━━━╮ ╭━━━╮╭━┳━━━┳━━━╮
+  ╰╮╭╮┃ ┃╭━━╯┃╭┫╭━╮┃╭━╮┃
+   ┃┃┃┣━┫╰━━┳╯╰┫╰━╯┃┃ ╰╯
+   ┃┃┃┣━┫╭━━┻╮╭┫╭╮╭┫┃╭━╮
+  ╭╯╰╯┃ ┃┃   ┃┃┃┃┃╰┫╰┻━┃
+  ╰━━━┻━┻╯   ╰╯╰╯╰━┻━━━╯
+    The Discretisation Framework for functional Renormalisation Group flows.
+
+This is a DiFfRG simulation. You can pass the following optional parameters to this executable:
   --help                      shows this text
   --generate-parameter-file   generates a parameter file with some default values
   -p                          specifiy a parameter file other than the standard parameter.json
