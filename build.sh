@@ -1,7 +1,5 @@
 #!/bin/bash
 
-source $SCRIPT_PATH/build_scripts/expand_path.sh
-
 usage_msg="Build script for setting up the DiFfRG library and its dependencies. 
 For configuration of build flags, please edit the config file.
 
@@ -51,6 +49,8 @@ mkdir -p ${LOGPATH}
 
 # Obtain possibly user-defined configuration
 source ${SCRIPTPATH}/${config_file}
+
+source $SCRIPT_PATH/build_scripts/expand_path.sh
 
 # ##############################################################################
 # Build bundled libraries
