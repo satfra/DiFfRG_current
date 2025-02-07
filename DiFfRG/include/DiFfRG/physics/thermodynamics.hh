@@ -30,14 +30,14 @@ namespace DiFfRG
   auto __forceinline__ __device__ __host__ CothFiniteT(const T1 x, const T2 T)
   {
     using R = decltype(Coth(x / (2 * T)));
-    return is_close(T / x, T2(0)) ? (R)(x < 0 ? -1 : 1) : Coth(x / (2 * T));
+    return is_close(T / x, T2(0)) ? (R)(real(x) < 0 ? -1 : 1) : Coth(x / (2 * T));
   }
   template <typename T1, typename T2>
     requires(std::is_arithmetic_v<T2>)
   auto __forceinline__ __device__ __host__ TanhFiniteT(const T1 x, const T2 T)
   {
     using R = decltype(Tanh(x / (2 * T)));
-    return is_close(T / x, T2(0)) ? (R)(x < 0 ? -1 : 1) : Tanh(x / (2 * T));
+    return is_close(T / x, T2(0)) ? (R)(real(x) < 0 ? -1 : 1) : Tanh(x / (2 * T));
   }
   template <typename T1, typename T2>
     requires(std::is_arithmetic_v<T2>)

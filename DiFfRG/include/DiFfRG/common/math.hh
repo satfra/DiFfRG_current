@@ -129,12 +129,14 @@ namespace DiFfRG
    * @return bool
    */
   template <typename T1, typename T2, typename T3>
-    requires(std::is_floating_point<T1>::value || std::is_same_v<T1, autodiff::real>) &&
-            (std::is_floating_point<T2>::value || std::is_same_v<T2, autodiff::real>) &&
+    requires(std::is_floating_point<T1>::value || std::is_same_v<T1, autodiff::real> || is_complex<T1>::value) &&
+            (std::is_floating_point<T2>::value || std::is_same_v<T2, autodiff::real> || is_complex<T2>::value) &&
             std::is_floating_point<T3>::value
   bool __forceinline__ __host__ __device__ is_close(T1 a, T2 b, T3 eps_)
   {
-    if constexpr (std::is_same_v<T1, autodiff::real> || std::is_same_v<T2, autodiff::real>)
+    if constexpr (is_complex<T1>::value || is_complex<T2>::value) {
+      return is_close(real(a), real(b), eps_) && is_close(imag(a), imag(b), eps_);
+    } else if constexpr (std::is_same_v<T1, autodiff::real> || std::is_same_v<T2, autodiff::real>)
       return is_close((double)a, (double)b, (double)eps_);
     else {
       T1 diff = std::fabs(a - b);
@@ -151,11 +153,13 @@ namespace DiFfRG
    * @return bool
    */
   template <typename T1, typename T2>
-    requires(std::is_floating_point<T1>::value || std::is_same_v<T1, autodiff::real>) &&
-            (std::is_floating_point<T2>::value || std::is_same_v<T2, autodiff::real>)
+    requires(std::is_floating_point<T1>::value || std::is_same_v<T1, autodiff::real> || is_complex<T1>::value) &&
+            (std::is_floating_point<T2>::value || std::is_same_v<T2, autodiff::real> || is_complex<T1>::value)
   bool __forceinline__ __host__ __device__ is_close(T1 a, T2 b)
   {
-    if constexpr (std::is_same_v<T1, autodiff::real> || std::is_same_v<T2, autodiff::real>) {
+    if constexpr (is_complex<T1>::value || is_complex<T2>::value) {
+      return is_close(real(a), real(b)) && is_close(imag(a), imag(b));
+    } else if constexpr (std::is_same_v<T1, autodiff::real> || std::is_same_v<T2, autodiff::real>) {
       constexpr auto eps_ = std::numeric_limits<double>::epsilon() * 10.;
       return is_close((double)a, (double)b, eps_);
     } else {

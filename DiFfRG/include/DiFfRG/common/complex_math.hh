@@ -138,6 +138,13 @@ namespace DiFfRG
   template <size_t N, typename T> using cxreal = autodiff::Real<N, complex<T>>;
   using cxReal = autodiff::Real<1, complex<double>>;
 
+  template <typename T> struct is_complex : public std::false_type {
+  };
+  template <typename T> struct is_complex<complex<T>> : public std::true_type {
+  };
+  template <size_t N, typename T> struct is_complex<cxreal<N, T>> : public std::true_type {
+  };
+
   template <size_t N, typename T> AUTODIFF_DEVICE_FUNC auto real(const autodiff::Real<N, T> &a) { return a; }
   template <size_t N, typename T> constexpr AUTODIFF_DEVICE_FUNC auto imag(const autodiff::Real<N, T> &) { return 0.; }
 
