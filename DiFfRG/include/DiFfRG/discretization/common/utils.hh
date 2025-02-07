@@ -36,7 +36,7 @@ namespace DiFfRG
                                   typename dealii::DoFHandler<dim>::cell_iterator &EoM_cell)
     {
       using namespace dealii;
-      using CellIterator = typename dealii::DoFHandler<1>::cell_iterator;
+      using CellIterator = typename dealii::DoFHandler<dim>::cell_iterator;
 
       auto l1_norm = [](const Point<dim> &p) {
         double norm = 0.;
