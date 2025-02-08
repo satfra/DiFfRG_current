@@ -136,12 +136,12 @@ namespace DiFfRG
   void ConfigurationHelper::print_usage_message()
   {
     std::string help_text = R"(
-  ╭━━━╮ ╭━━━╮╭━┳━━━┳━━━╮
-  ╰╮╭╮┃ ┃╭━━╯┃╭┫╭━╮┃╭━╮┃
-   ┃┃┃┣━┫╰━━┳╯╰┫╰━╯┃┃ ╰╯
-   ┃┃┃┣━┫╭━━┻╮╭┫╭╮╭┫┃╭━╮
-  ╭╯╰╯┃ ┃┃   ┃┃┃┃┃╰┫╰┻━┃
-  ╰━━━┻━┻╯   ╰╯╰╯╰━┻━━━╯
+  ╭━━━━╮ ╭━━━╮╭━┳━━━━┳━━━━╮
+  ╰╮╭╮ ┃ ┃╭━━╯┃╭┫╭━━╮┃╭━╮ ┃
+   ┃┃┃ ┣━┫╰━━┳╯╰┫╰━━╯┃┃ ╰━╯
+   ┃┃┃ ┣━┫╭━━┻╮╭┫╭╮ ╭┫┃╭━━╮
+  ╭╯╰╯ ┃ ┃┃for┃┃┃┃┃ ╰┫╰┻━━┃
+  ╰━━━━┻━┻╯   ╰╯╰╯╰━━┻━━━━╯
     The Discretisation Framework for functional Renormalisation Group flows.
 
 This is a DiFfRG simulation. You can pass the following optional parameters to this executable:

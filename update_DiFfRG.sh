@@ -115,7 +115,7 @@ if [[ ${option_install_library} != "n" ]] && [[ ${option_install_library} != "N"
 
   echo "  Updating DiFfRG..."
   make -j ${THREADS} &>${LOGPATH}/DiFfRG_make.log || {
-    echo "    Failed to build DiFfRG, see logfile in '$SCRIPTPATH/log/DiFfRG_make.log'."
+    echo "    Failed to build DiFfRG, see logfile in '${LOGPATH}/DiFfRG_make.log'."
     exit 1
   }
 
@@ -125,7 +125,7 @@ if [[ ${option_install_library} != "n" ]] && [[ ${option_install_library} != "N"
   SuperUser=$(get_execution_permissions $INSTALLPATH)
   echo "  Installing library..."
   $SuperUser make install -j ${THREADS} &>${LOGPATH}/DiFfRG_install.log || {
-    echo "    Failed to install DiFfRG, see logfile in '$SCRIPTPATH/log/DiFfRG_install.log'."
+    echo "    Failed to install DiFfRG, see logfile in '${LOGPATH}/DiFfRG_install.log'."
     exit 1
   }
   echo "  Python package is being installed to ${INSTALLPATH}python/"
@@ -188,11 +188,11 @@ fi
 # ##############################################################################
 
 echo "Done. Have fun with 
-  ╭━━━╮ ╭━━━╮╭━┳━━━┳━━━╮
-  ╰╮╭╮┃ ┃╭━━╯┃╭┫╭━╮┃╭━╮┃
-   ┃┃┃┣━┫╰━━┳╯╰┫╰━╯┃┃ ╰╯
-   ┃┃┃┣━┫╭━━┻╮╭┫╭╮╭┫┃╭━╮
-  ╭╯╰╯┃ ┃┃   ┃┃┃┃┃╰┫╰┻━┃
-  ╰━━━┻━┻╯   ╰╯╰╯╰━┻━━━╯
+  ╭━━━━╮ ╭━━━╮╭━┳━━━━┳━━━━╮
+  ╰╮╭╮ ┃ ┃╭━━╯┃╭┫╭━━╮┃╭━╮ ┃
+   ┃┃┃ ┣━┫╰━━┳╯╰┫╰━━╯┃┃ ╰━╯
+   ┃┃┃ ┣━┫╭━━┻╮╭┫╭╮ ╭┫┃╭━━╮
+  ╭╯╰╯ ┃ ┃┃for┃┃┃┃┃ ╰┫╰┻━━┃
+  ╰━━━━┻━┻╯   ╰╯╰╯╰━━┻━━━━╯
     The Discretisation Framework for functional Renormalisation Group flows.
   "

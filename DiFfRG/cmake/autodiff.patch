@@ -1,5 +1,5 @@
 diff --git a/autodiff/forward/real/real.hpp b/autodiff/forward/real/real.hpp
-index d283f61..bd8516e 100644
+index d283f61..220dc95 100644
 --- a/autodiff/forward/real/real.hpp
 +++ b/autodiff/forward/real/real.hpp
 @@ -418,7 +418,7 @@ AUTODIFF_DEVICE_FUNC constexpr auto sqrt(const Real<N, T>& x)
@@ -38,7 +38,14 @@ index d283f61..bd8516e 100644
          Real<N, T> a = c * log(x);
          For<1, N + 1>([&](auto i) constexpr {
              res[i] = Sum<0, i>([&](auto j) constexpr {
-@@ -849,7 +849,7 @@ AUTODIFF_DEVICE_FUNC constexpr auto abs(const Real<N, T>& x)
+@@ -844,12 +844,13 @@ AUTODIFF_DEVICE_FUNC constexpr auto atanh(const Real<N, T>& x)
+ template<size_t N, typename T>
+ AUTODIFF_DEVICE_FUNC constexpr auto abs(const Real<N, T>& x)
+ {
++    using std::abs;
+     Real<N, T> res;
+-    res[0] = std::abs(x[0]);
++    res[0] = abs(x[0]);
      if constexpr (N > 0)
      {
          // assert(x[0] != 0 && "autodiff::abs(x) has undefined derivatives when x = 0");
