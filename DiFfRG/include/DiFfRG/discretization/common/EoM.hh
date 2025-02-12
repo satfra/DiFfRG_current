@@ -8,6 +8,7 @@
 #include <gsl/gsl_multiroots.h>
 #include <gsl/gsl_vector.h>
 #include <gsl/gsl_vector_double.h>
+#include <iostream>
 #include <sys/types.h>
 #include <tbb/parallel_for.h>
 
@@ -22,14 +23,16 @@ namespace DiFfRG
   {
     template <int dim> int gsl_unwrap(const gsl_vector *gsl_x, void *params, gsl_vector *gsl_f)
     {
-      dealii::Point<dim> x;
-      for (int i = 0; i < dim; ++i)
+      const int subdim = gsl_x->size;
+
+      dealii::Point<dim> x{};
+      for (int i = 0; i < subdim; ++i)
         x[i] = gsl_vector_get(gsl_x, i);
 
       auto fp = static_cast<std::function<std::array<double, dim>(const dealii::Point<dim> &)> *>(params);
       const auto f = (*fp)(x);
 
-      for (int i = 0; i < dim; ++i)
+      for (int i = 0; i < subdim; ++i)
         gsl_vector_set(gsl_f, i, f[i]);
 
       return GSL_SUCCESS;
@@ -138,14 +141,14 @@ namespace DiFfRG
     fe_function.vector_value(secondary_point, values);
     const auto secondary_val = get_EoM(secondary_point, values);
 
-    double total_origin_val = 0.;
-    double total_secondary_val = 0.;
+    bool origin_EoM = true;
+    bool secondary_EoM = true;
     for (uint d = 0; d < dim; ++d) {
-      total_origin_val += origin_val[d];
-      total_secondary_val += secondary_val[d];
+      origin_EoM = origin_EoM && (origin_val[d] > EoM_abs_tol);
+      secondary_EoM = secondary_EoM && (secondary_val[d] > 0);
     }
 
-    if (total_origin_val >= EoM_abs_tol && total_origin_val >= 0) {
+    if (origin_EoM && secondary_EoM) {
       EoM = origin;
       return EoM;
     }
@@ -315,19 +318,25 @@ namespace DiFfRG
     fe_function.vector_value(secondary_point, values);
     const auto secondary_val = get_EoM(secondary_point, values);
 
-    double total_origin_val = 0.;
-    double total_secondary_val = 0.;
-    for (uint d = 0; d < dim; ++d) {
-      total_origin_val += origin_val[d];
-      total_secondary_val += secondary_val[d];
-    }
+    // this actually constrains the EoM to one axis, possibly.
+    // in a future version, we should exploit this to reduce the dimensionality of the problem.
+    std::array<bool, dim> axis_restrictions{{}};
+    for (uint d = 0; d < dim; ++d)
+      axis_restrictions[d] = (origin_val[d] >= 0) && (secondary_val[d] >= 0);
 
-    if (total_origin_val >= EoM_abs_tol && total_origin_val >= 0) {
+    const bool any_axis_restricted =
+        std::any_of(std::begin(axis_restrictions), std::end(axis_restrictions), [](bool i) { return i; });
+    const bool all_axis_restricted =
+        std::all_of(std::begin(axis_restrictions), std::end(axis_restrictions), [](bool i) { return i; });
+
+    if (all_axis_restricted) {
       EoM = origin;
       return EoM;
     }
 
     auto check_cell = [&](const CellIterator &cell) -> bool {
+      if (any_axis_restricted && !cell->has_boundary_lines()) return false;
+
       // Obtain the values at the vertices of the cell.
       std::array<EoMType, GeometryInfo<dim>::vertices_per_cell> EoM_vals;
       std::array<Point<dim>, GeometryInfo<dim>::vertices_per_cell> vertices;
@@ -341,15 +350,52 @@ namespace DiFfRG
         EoM_vals[i] = get_EoM(vertices[i], values);
       }
 
+      if (any_axis_restricted)
+        for (uint d = 0; d < dim; ++d)
+          if (axis_restrictions[d]) {
+            bool has_zero_boundary = false;
+            for (uint i = 0; i < GeometryInfo<dim>::vertices_per_cell; ++i)
+              if (is_close(origin[d], vertices[i][d], 1e-12)) {
+                has_zero_boundary = true;
+                break;
+              }
+            if (!has_zero_boundary) return false;
+          }
+
       std::array<bool, dim> cell_has_EoM{{}};
       // Find if the cell has an EoM point, i.e. if the values at some vertices have different signs.
-      for (uint i = 0; i < GeometryInfo<dim>::vertices_per_cell; ++i)
-        for (uint j = 0; j < i; ++j)
-          for (uint d = 0; d < dim; ++d)
-            cell_has_EoM[d] = cell_has_EoM[d] || (EoM_vals[i][d] * EoM_vals[j][d] < 0.);
+      if (!any_axis_restricted) {
+        for (uint i = 0; i < GeometryInfo<dim>::vertices_per_cell; ++i)
+          for (uint j = 0; j < i; ++j)
+            for (uint d = 0; d < dim; ++d)
+              cell_has_EoM[d] = cell_has_EoM[d] || (EoM_vals[i][d] * EoM_vals[j][d] < 0.);
+      } else {
+        std::vector<bool> valid_vertices(GeometryInfo<dim>::vertices_per_cell, true);
 
+        for (uint d = 0; d < dim; ++d)
+          if (axis_restrictions[d])
+            for (uint i = 0; i < GeometryInfo<dim>::vertices_per_cell; ++i)
+              // if there is a vertex with smaller coordinate in direction d, we set the vertex to invalid
+              for (uint j = 0; j < i; ++j) {
+                if (vertices[i][d] > vertices[j][d]) {
+                  valid_vertices[i] = false;
+                  break;
+                }
+              }
+
+        for (uint i = 0; i < GeometryInfo<dim>::vertices_per_cell; ++i)
+          if (valid_vertices[i])
+            for (uint j = 0; j < i; ++j)
+              if (valid_vertices[j])
+                for (uint d = 0; d < dim; ++d)
+                  cell_has_EoM[d] = cell_has_EoM[d] || (EoM_vals[i][d] * EoM_vals[j][d] < 0.);
+      }
+
+      bool has_EoM = true;
+      for (uint d = 0; d < dim; ++d)
+        if (!axis_restrictions[d]) has_EoM = has_EoM && cell_has_EoM[d];
       // if all components have a potential crossing, we return true
-      return std::all_of(std::begin(cell_has_EoM), std::end(cell_has_EoM), [](bool i) { return i; });
+      return has_EoM;
     };
 
     gsl_set_error_handler_off();
@@ -360,30 +406,121 @@ namespace DiFfRG
       Vector<typename VectorType::value_type> values(dof_handler.get_fe().n_components());
       fe_function.set_active_cell(cell);
 
+      // find the cell boundaries
+      std::array<std::array<double, 2>, dim> cell_boundaries{{}};
+      for (uint d = 0; d < dim; ++d) {
+        for (uint i = 0; i < GeometryInfo<dim>::vertices_per_cell; ++i) {
+          cell_boundaries[d][0] = std::min(cell_boundaries[d][0], cell->vertex(i)[d]);
+          cell_boundaries[d][1] = std::max(cell_boundaries[d][1], cell->vertex(i)[d]);
+        }
+      }
+
+      int subdim = dim;
+      for (uint d = 0; d < dim; ++d)
+        if (axis_restrictions[d]) subdim--;
+
+      if (subdim == 1) {
+        uint dir = 0;
+        for (uint d = 0; d < dim; ++d)
+          if (!axis_restrictions[d]) dir = d;
+
+        // utlize the fact that we have a 1D problem and we can just do a bisection
+        Point<dim> p1{};
+        Point<dim> p2{};
+        for (uint d = 0; d < dim; ++d) {
+          p1[d] = cell_boundaries[d][0];
+          p2[d] = cell_boundaries[d][0];
+        }
+        p2[dir] = cell_boundaries[dir][1];
+        auto p = (p1 + p2) / 2.;
+
+        fe_function.vector_value(p, values);
+        EoM_val = get_EoM(p, values)[dir];
+        double err = 1e100;
+        uint iter = 0;
+
+        while (err > EoM_abs_tol) {
+          if (EoM_val < 0.)
+            p1 = p;
+          else
+            p2 = p;
+          p = (p1 + p2) / 2.;
+
+          fe_function.vector_value(p, values);
+          EoM_val = get_EoM(p, values)[dir];
+          err = std::abs(EoM_val);
+
+          if (iter > max_iter) {
+            m_EoM = EoM_postprocess(p, values);
+            m_EoM_cell = cell;
+            return false;
+          }
+          iter++;
+        }
+
+        m_EoM = EoM_postprocess(p, values);
+        m_EoM_cell = cell;
+
+        return true;
+      }
+
       std::function<std::array<double, dim>(const dealii::Point<dim> &)> eval_on_point =
           [&](const Point<dim> &p) -> std::array<double, dim> {
+        Point<dim> p_proj = p;
+        for (uint d = 0, i = 0; d < dim; ++d)
+          p_proj[d] = axis_restrictions[d] ? origin[d] : p[i++];
+
+        // check if the point is inside the cell
+        std::array<double, dim> out_distance{{}};
+        for (uint d = 0; d < dim; ++d) {
+          if (p_proj[d] < cell_boundaries[d][0]) {
+            out_distance[d] = std::abs(p_proj[d] - cell_boundaries[d][0]);
+            p_proj[d] = cell_boundaries[d][0];
+          } else if (p_proj[d] > cell_boundaries[d][1]) {
+            out_distance[d] = std::abs(p_proj[d] - cell_boundaries[d][1]);
+            p_proj[d] = cell_boundaries[d][1];
+          }
+        }
+
         try {
-          fe_function.vector_value(p, values);
+          fe_function.vector_value(p_proj, values);
         } catch (...) {
           // if p is outside the triangulation, give a default value
-          return std::array<double, dim>{{1.}};
+          return std::array<double, dim>{{
+              std::numeric_limits<double>::quiet_NaN(),
+          }};
         }
-        return get_EoM(p, values);
+
+        auto EoM = get_EoM(p, values);
+
+        // if (out_distance[d] > 0), linearly extrapolate the value
+        for (uint d = 0; d < dim; ++d)
+          if (out_distance[d] > 0) EoM[d] = EoM[d] * (1 + out_distance[d]);
+
+        // reshuflle the values to the correct order
+        std::array<double, dim> EoM_out{{}};
+        for (uint d = 0, i = 0; d < dim; ++d)
+          if (!axis_restrictions[d]) EoM_out[d] = EoM[i++];
+
+        return EoM_out;
       };
 
       const auto cell_center = cell->center();
+      std::vector<double> subdim_center(subdim);
+      for (uint d = 0, i = 0; d < dim; ++d)
+        if (!axis_restrictions[d]) subdim_center[i++] = cell_center[d];
 
       // Create GSL multiroot solver
       const gsl_multiroot_fsolver_type *T = gsl_multiroot_fsolver_hybrids;
-      gsl_multiroot_fsolver *s = gsl_multiroot_fsolver_alloc(T, dim);
+      gsl_multiroot_fsolver *s = gsl_multiroot_fsolver_alloc(T, subdim);
 
       // Create GSL function
-      gsl_multiroot_function f = {&internal::gsl_unwrap<dim>, dim, &eval_on_point};
+      gsl_multiroot_function f = {&internal::gsl_unwrap<dim>, (size_t)subdim, &eval_on_point};
 
       // Create initial guess
-      gsl_vector *x = gsl_vector_alloc(dim);
-      for (uint d = 0; d < dim; ++d)
-        gsl_vector_set(x, d, cell_center[d]);
+      gsl_vector *x = gsl_vector_alloc(subdim);
+      for (int d = 0; d < subdim; ++d)
+        gsl_vector_set(x, d, subdim_center[d]);
 
       // Set the solver with the function and initial guess
       gsl_multiroot_fsolver_set(s, &f, x);
@@ -401,10 +538,8 @@ namespace DiFfRG
       } while (status == GSL_CONTINUE && iter < max_iter);
 
       EoM_val = 0.;
-      for (uint d = 0; d < dim; ++d) {
-        m_EoM[d] = gsl_vector_get(s->x, d);
-        EoM_val += std::abs(gsl_vector_get(s->f, d));
-      }
+      for (uint d = 0, sd = 0; d < dim; ++d)
+        m_EoM[d] = axis_restrictions[d] ? origin[d] : gsl_vector_get(s->x, sd++);
 
       // don't leak memory. Stupid C
       gsl_multiroot_fsolver_free(s);

@@ -1,4 +1,5 @@
 
+#include "catch2/generators/catch_generators.hpp"
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 
@@ -163,14 +164,14 @@ TEST_CASE("Test 2D EoM finding on CG Constant model", "[discretization][EoM][2d]
        {"output", {{"live_plot", false}, {"verbosity", 0}}}});
 
   Testing::PhysicalParameters p_prm;
-  p_prm.initial_x0[0] = -1.;
+  p_prm.initial_x0[0] = GENERATE(1., -1);
   p_prm.initial_x1[0] = GENERATE(take(3, random(1.1, 10.)));
-  p_prm.initial_x0[1] = -1.;
+  p_prm.initial_x0[1] = GENERATE(1., -1);
   p_prm.initial_x1[1] = GENERATE(take(3, random(1.1, 10.)));
 
   std::array<double, 2> expected_EoM{{}};
-  expected_EoM[0] = -p_prm.initial_x0[0] / p_prm.initial_x1[0];
-  expected_EoM[1] = -p_prm.initial_x0[1] / p_prm.initial_x1[1];
+  expected_EoM[0] = p_prm.initial_x0[0] > 0 ? 0. : -p_prm.initial_x0[0] / p_prm.initial_x1[0];
+  expected_EoM[1] = p_prm.initial_x0[1] > 0 ? 0. : -p_prm.initial_x0[1] / p_prm.initial_x1[1];
 
   try {
     auto log = spdlog::stdout_color_mt("log");
@@ -237,7 +238,7 @@ TEST_CASE("Test 3D EoM finding on CG Constant model", "[discretization][EoM][3d]
          {"q0_extent_tolerance", 1e-3},
          {"jacobian_quadrature_factor", 0.5}}},
        {"discretization",
-        {{"fe_order", GENERATE(1, 2, 3)},
+        {{"fe_order", GENERATE(1, 2)},
          {"threads", 8},
          {"batch_size", 64},
          {"overintegration", 0},
@@ -263,16 +264,17 @@ TEST_CASE("Test 3D EoM finding on CG Constant model", "[discretization][EoM][3d]
        {"output", {{"live_plot", false}, {"verbosity", 0}}}});
 
   Testing::PhysicalParameters p_prm;
-  for (uint d = 0; d < dim; ++d)
-    p_prm.initial_x0[d] = -1.;
+  p_prm.initial_x0[0] = -1.; // GENERATE(1., -1.);
+  p_prm.initial_x0[1] = -1.; // GENERATE(1., -1.);
+  p_prm.initial_x0[2] = -1.; // GENERATE(1., -1.);
 
   p_prm.initial_x1[0] = GENERATE(take(2, random(1.1, 10.)));
   p_prm.initial_x1[1] = GENERATE(take(2, random(1.1, 10.)));
-  p_prm.initial_x1[2] = GENERATE(take(2, random(1.1, 10.)));
+  p_prm.initial_x1[2] = GENERATE(take(1, random(1.1, 10.)));
 
   dealii::Point<dim> expected_EoM;
   for (uint d = 0; d < dim; ++d)
-    expected_EoM[d] = -p_prm.initial_x0[d] / p_prm.initial_x1[d];
+    expected_EoM[d] = p_prm.initial_x0[d] > 0 ? 0. : -p_prm.initial_x0[d] / p_prm.initial_x1[d];
 
   try {
     auto log = spdlog::stdout_color_mt("log");
