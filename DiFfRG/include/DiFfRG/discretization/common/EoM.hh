@@ -112,7 +112,7 @@ namespace DiFfRG
    * @return Point<dim> the point where the EoM is zero.
    */
   template <typename VectorType, typename EoMFUN, typename EoMPFUN>
-  Point<1> get_EoM_point_1D(
+  dealii::Point<1> get_EoM_point_1D(
       typename dealii::DoFHandler<1>::cell_iterator &EoM_cell, const VectorType &sol,
       const dealii::DoFHandler<1> &dof_handler, const dealii::Mapping<1> &mapping, const EoMFUN &get_EoM,
       const EoMPFUN &EoM_postprocess = [](const auto &p, const auto &values) { return p; },
@@ -291,7 +291,7 @@ namespace DiFfRG
    * @return Point<dim> the point where the EoM is zero.
    */
   template <int dim, typename VectorType, typename EoMFUN, typename EoMPFUN>
-  Point<dim> get_EoM_point_ND(
+  dealii::Point<dim> get_EoM_point_ND(
       typename dealii::DoFHandler<dim>::cell_iterator &EoM_cell, const VectorType &sol,
       const dealii::DoFHandler<dim> &dof_handler, const dealii::Mapping<dim> &mapping, const EoMFUN &get_EoM,
       const EoMPFUN &EoM_postprocess = [](const auto &p, const auto &values) { return p; },
@@ -490,7 +490,7 @@ namespace DiFfRG
    * @return Point<dim> the point where the EoM is zero.
    */
   template <int dim, typename VectorType, typename EoMFUN, typename EoMPFUN>
-  Point<dim> get_EoM_point(
+  dealii::Point<dim> get_EoM_point(
       typename dealii::DoFHandler<dim>::cell_iterator &EoM_cell, const VectorType &sol,
       const dealii::DoFHandler<dim> &dof_handler, const dealii::Mapping<dim> &mapping, const EoMFUN &get_EoM,
       const EoMPFUN &EoM_postprocess = [](const auto &p, const auto &values) { return p; },
