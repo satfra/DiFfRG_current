@@ -922,7 +922,7 @@ ccFlow="#include \"flows.hh\"
                     grid_sizes_4D_int_fT{{x_quadrature_order, angle_quadrature_order, angle_quadrature_order, x0_quadrature_order}},
 
                     grid_sizes_2D_cartesian_int{{x_quadrature_order, x_quadrature_order}},
-                    grid_sizes_3D_cartesian_int{{x_quadrature_order, x_quadrature_order, x_quadrature_order}}
+                    grid_sizes_3D_cartesian_int{{x_quadrature_order, x_quadrature_order, x_quadrature_order}},
 
                     quadrature_provider(json)
 "<>
