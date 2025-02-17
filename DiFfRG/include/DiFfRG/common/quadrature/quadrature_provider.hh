@@ -9,6 +9,7 @@
 #include <DiFfRG/common/utils.hh>
 
 // standard library
+#include <mutex>
 #include <vector>
 
 namespace DiFfRG
@@ -29,6 +30,8 @@ namespace DiFfRG
        */
       template <typename NT = double> MatsubaraQuadrature<NT> &get_matsubara_quadrature(const NT T, const NT E)
       {
+        std::lock_guard<std::mutex> lock(m_mutex);
+
         if constexpr (std::is_same_v<NT, double>) {
           auto T_it = find_T_d(T);
           auto E_it = find_E_d(E, T_it);
@@ -43,6 +46,10 @@ namespace DiFfRG
       }
 
       void set_verbosity(int v);
+
+      void set_vacuum_quad_size(const int size);
+
+      void set_precision_factor(const int factor);
 
     private:
       MatsubaraQuadrature<double> &get_matsubara_quadrature_d(const double T, const double E);
@@ -64,6 +71,10 @@ namespace DiFfRG
       StorageType<float> quadratures_f;
 
       int verbosity = 0;
+      int vacuum_quad_size = 48;
+      int precision_factor = 1;
+
+      std::mutex m_mutex;
     };
 
     /**
@@ -76,6 +87,8 @@ namespace DiFfRG
     public:
       template <typename NT = double> Quadrature<NT> &get_quadrature(const size_t order, const QuadratureType type)
       {
+        std::lock_guard<std::mutex> lock(m_mutex);
+
         if constexpr (std::is_same_v<NT, double>) {
           auto type_it = find_type_d(type);
           auto order_it = find_order_d(order, type_it);
@@ -111,6 +124,8 @@ namespace DiFfRG
       StorageType<float> quadratures_f;
 
       int verbosity = 0;
+
+      std::mutex m_mutex;
     };
   } // namespace internal
 

@@ -111,14 +111,11 @@ namespace DiFfRG
       m_E = is_close(E, 0.) ? 10 * m_T : E;
       manual_E = !is_close(E, 0.);
 
-      const auto old_size = grid_sizes[1];
       grid_sizes[1] = quadrature_provider.get_matsubara_points<ctype>(m_T, m_E).size();
 
-      if (old_size != grid_sizes[1]) {
-        ptr_matsubara_quadrature_p = quadrature_provider.get_device_matsubara_points<ctype>(m_T, m_E);
-        ptr_matsubara_quadrature_w = quadrature_provider.get_device_matsubara_weights<ctype>(m_T, m_E);
-        reinit();
-      }
+      ptr_matsubara_quadrature_p = quadrature_provider.get_device_matsubara_points<ctype>(m_T, m_E);
+      ptr_matsubara_quadrature_w = quadrature_provider.get_device_matsubara_weights<ctype>(m_T, m_E);
+      reinit();
     }
 
     /**

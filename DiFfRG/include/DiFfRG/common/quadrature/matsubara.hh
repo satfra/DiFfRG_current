@@ -46,7 +46,8 @@ namespace DiFfRG
      * @param max_size Maximum number of nodes.
      */
     MatsubaraQuadrature(const NT T, const NT typical_E = 1., const int step = 2, const int min_size = 0,
-                        const int max_size = powr<10>(2));
+                        const int max_size = powr<10>(2), const int vacuum_quad_size = 48,
+                        const int precision_factor = 1);
 
     MatsubaraQuadrature();
 
@@ -59,8 +60,8 @@ namespace DiFfRG
      * @param min_size Minimum number of nodes.
      * @param max_size Maximum number of nodes.
      */
-    void reinit(const NT T, const NT typical_E = 1., const int step = 1, const int min_size = 0,
-                const int max_size = powr<10>(2));
+    void reinit(const NT T, const NT typical_E = 1., const int step = 2, const int min_size = 0,
+                const int max_size = powr<10>(2), const int vacuum_quad_size = 48, const int precision_factor = 1);
 
     /**
      * @brief Get the nodes of the quadrature rule.
@@ -162,5 +163,6 @@ namespace DiFfRG
     void reinit_0();
 
     int vacuum_quad_size;
+    int precision_factor;
   };
 } // namespace DiFfRG

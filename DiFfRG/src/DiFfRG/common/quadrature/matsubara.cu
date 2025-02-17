@@ -12,9 +12,9 @@ namespace DiFfRG
   template <typename NT> int MatsubaraQuadrature<NT>::predict_size(const NT T, const NT typical_E, const int step)
   {
     const NT relative_distance = abs(typical_E) / abs(T + 1e-16);
-    if (is_close(T, NT(0)) || relative_distance > 4.4e+2) return -vacuum_quad_size;
+    if (is_close(T, NT(0)) || relative_distance > 1e+2) return -vacuum_quad_size;
 
-    const NT E_max = 20 * std::abs(typical_E);
+    const NT E_max = (precision_factor + 100) * std::abs(typical_E);
     int size = 5 + int(std::sqrt(4 * E_max / (M_PI * M_PI * std::abs(T))));
     size = (int)std::ceil(size / (double)step) * step;
     return size;
@@ -22,19 +22,28 @@ namespace DiFfRG
 
   template <typename NT>
   MatsubaraQuadrature<NT>::MatsubaraQuadrature(const NT T, const NT typical_E, const int step, const int min_size,
-                                               const int max_size)
-      : vacuum_quad_size(48)
-
+                                               const int max_size, const int vacuum_quad_size,
+                                               const int precision_factor)
   {
-    reinit(T, typical_E, step, min_size, max_size);
+    reinit(T, typical_E, step, min_size, max_size, vacuum_quad_size, precision_factor);
   }
 
   template <typename NT> MatsubaraQuadrature<NT>::MatsubaraQuadrature() : m_size(0), vacuum_quad_size(48) {}
 
   template <typename NT>
   void MatsubaraQuadrature<NT>::reinit(const NT T, const NT typical_E, const int step, const int min_size,
-                                       const int max_size)
+                                       const int max_size, const int vacuum_quad_size, const int precision_factor)
   {
+    if (precision_factor <= 0)
+      this->precision_factor = 1;
+    else
+      this->precision_factor = precision_factor;
+
+    if (vacuum_quad_size <= 6)
+      this->vacuum_quad_size = 6;
+    else
+      this->vacuum_quad_size = vacuum_quad_size;
+
     this->T = T;
     this->typical_E = typical_E;
 
@@ -131,8 +140,8 @@ namespace DiFfRG
     w.resize(m_size);
 
     // strategy: divide into two parts, one with linear and one with logarithmic scaling
-    // the dividing point is an order of magnitude above the typical energy scale
-    const long double div = 1e+1 * abs(typical_E);
+    // the dividing point is somewhat above the typical energy scale
+    const long double div = 2 * abs(typical_E);
 
     // the nodes with a linear scale
     for (int i = 0; i < m_size / 2; ++i) {

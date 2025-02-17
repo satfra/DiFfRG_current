@@ -57,9 +57,6 @@ namespace DiFfRG
       m_E = is_close(E, 0.) ? 10 * m_T : E;
       manual_E = !is_close(E, 0.);
 
-      std::cout << "m_T: " << m_T << std::endl;
-      std::cout << "m_E: " << m_E << std::endl;
-
       grid_sizes[2] = quadrature_provider.get_matsubara_points<ctype>(m_T, m_E).size();
       ptr_matsubara_quadrature_p = quadrature_provider.get_matsubara_points<ctype>(m_T, m_E).data();
       ptr_matsubara_quadrature_w = quadrature_provider.get_matsubara_weights<ctype>(m_T, m_E).data();

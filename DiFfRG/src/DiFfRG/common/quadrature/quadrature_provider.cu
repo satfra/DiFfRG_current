@@ -49,7 +49,7 @@ namespace DiFfRG
       // create new entry in quadratures_d
       auto new_it = map.insert(std::make_pair(E, MatsubaraQuadrature<double>())).first;
       // Initialize the quadrature
-      new_it->second.reinit(T_it->first, E);
+      new_it->second.reinit(T_it->first, E, 2, vacuum_quad_size / 2, 128, vacuum_quad_size, precision_factor);
 
       if (verbosity >= 0)
         spdlog::get("QuadratureProvider")
@@ -98,7 +98,7 @@ namespace DiFfRG
       // create new entry in quadratures_f
       auto new_it = map.insert(std::make_pair(E, MatsubaraQuadrature<float>())).first;
       // Initialize the quadrature
-      new_it->second.reinit(T_it->first, E);
+      new_it->second.reinit(T_it->first, E, 2, vacuum_quad_size / 2, 128, vacuum_quad_size, precision_factor);
 
       if (verbosity >= 0)
         spdlog::get("QuadratureProvider")
@@ -109,6 +109,16 @@ namespace DiFfRG
     }
 
     void MatsubaraStorage::set_verbosity(int v) { verbosity = v; }
+    void MatsubaraStorage::set_vacuum_quad_size(const int size)
+    {
+      if (size <= 0) throw std::invalid_argument("MatsubaraStorage: Vacuum quadrature size must be positive.");
+      vacuum_quad_size = size;
+    }
+    void MatsubaraStorage::set_precision_factor(const int factor)
+    {
+      if (factor <= 0) throw std::invalid_argument("MatsubaraStorage: Precision factor must be positive.");
+      precision_factor = factor;
+    }
 
     QuadratureStorage::TypeIterator<double> QuadratureStorage::find_type_d(const QuadratureType type)
     {
@@ -201,5 +211,11 @@ namespace DiFfRG
 
     matsubara_storage.set_verbosity(verbosity);
     quadrature_storage.set_verbosity(verbosity);
+
+    const int vacuum_quad_size = json.get_uint("/integration/q0_quadrature_order", 48);
+    matsubara_storage.set_vacuum_quad_size(vacuum_quad_size);
+
+    const int precision_factor = json.get_uint("/integration/precision_factor", 1);
+    matsubara_storage.set_precision_factor(precision_factor);
   }
 } // namespace DiFfRG
