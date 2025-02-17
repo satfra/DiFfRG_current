@@ -47,7 +47,7 @@ namespace DiFfRG
      */
     void set_T(const ctype T, const ctype E = 0)
     {
-      if (is_close(T, m_T) && (std::abs(E - m_E) / std::max(E, m_E) > 2.5e-2)) return;
+      if (is_close(T, m_T) && (std::abs(E - m_E) / std::max(E, m_E) < 2.5e-2)) return;
 
       m_T = T;
       // the default typical energy scale will default the matsubara size to 11.

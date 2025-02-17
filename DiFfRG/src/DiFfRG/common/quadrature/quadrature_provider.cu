@@ -181,7 +181,12 @@ namespace DiFfRG
     void QuadratureStorage::set_verbosity(int v) { verbosity = v; }
   } // namespace internal
 
-  QuadratureProvider::QuadratureProvider() {}
+  QuadratureProvider::QuadratureProvider()
+  {
+    verbosity = -1;
+    matsubara_storage.set_verbosity(verbosity);
+    quadrature_storage.set_verbosity(verbosity);
+  }
 
   QuadratureProvider::QuadratureProvider(const JSONValue &json)
   {
@@ -192,10 +197,9 @@ namespace DiFfRG
     // create a spdlog logger for the quadrature provider
     build_logger("QuadratureProvider", folder + output_name + "_quadrature.log");
 
-    if (verbosity >= 0) {
-      spdlog::get("QuadratureProvider")->info("QuadratureProvider: Initialized quadrature provider.");
-      matsubara_storage.set_verbosity(verbosity);
-      quadrature_storage.set_verbosity(verbosity);
-    }
+    if (verbosity >= 0) spdlog::get("QuadratureProvider")->info("QuadratureProvider: Initialized quadrature provider.");
+
+    matsubara_storage.set_verbosity(verbosity);
+    quadrature_storage.set_verbosity(verbosity);
   }
 } // namespace DiFfRG

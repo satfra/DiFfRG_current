@@ -48,12 +48,17 @@ namespace DiFfRG
      */
     void set_T(const ctype T, const ctype E = 0)
     {
-      if (is_close(T, m_T) && (std::abs(E - m_E) / std::max(E, m_E) > 2.5e-2)) return;
+      if (is_close(T, m_T) && (std::abs(E - m_E) / std::max(E, m_E) < 2.5e-2)) return;
+
+      std::cout << "SETTING T" << std::endl;
 
       m_T = T;
       // the default typical energy scale will default the matsubara size to 11.
       m_E = is_close(E, 0.) ? 10 * m_T : E;
       manual_E = !is_close(E, 0.);
+
+      std::cout << "m_T: " << m_T << std::endl;
+      std::cout << "m_E: " << m_E << std::endl;
 
       grid_sizes[2] = quadrature_provider.get_matsubara_points<ctype>(m_T, m_E).size();
       ptr_matsubara_quadrature_p = quadrature_provider.get_matsubara_points<ctype>(m_T, m_E).data();

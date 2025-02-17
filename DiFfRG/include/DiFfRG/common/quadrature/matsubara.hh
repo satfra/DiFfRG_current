@@ -34,7 +34,7 @@ namespace DiFfRG
      * @return int The number of nodes needed. If the number is negative, the T=0-limit has been reached (usually if
      * typical_E / T > 4.4e+2, which is 64 nodes).
      */
-    int predict_size(const NT T, const NT typical_E = 1., const int step = 1);
+    int predict_size(const NT T, const NT typical_E = 1., const int step = 2);
 
     /**
      * @brief Create a new quadrature rule for Matsubara frequencies.
@@ -45,7 +45,7 @@ namespace DiFfRG
      * @param min_size Minimum number of nodes.
      * @param max_size Maximum number of nodes.
      */
-    MatsubaraQuadrature(const NT T, const NT typical_E = 1., const int step = 1, const int min_size = 0,
+    MatsubaraQuadrature(const NT T, const NT typical_E = 1., const int step = 2, const int min_size = 0,
                         const int max_size = powr<10>(2));
 
     MatsubaraQuadrature();

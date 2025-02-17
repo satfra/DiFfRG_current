@@ -82,7 +82,7 @@ namespace DiFfRG
       uint optimize_dim = 1;
       while (block_sizes[0] * block_sizes[1] > max_block_size || block_sizes[0] > grid_sizes[0] ||
              block_sizes[1] > grid_sizes[1]) {
-        block_sizes[optimize_dim]--;
+        if (block_sizes[optimize_dim] > 1) block_sizes[optimize_dim]--;
         while (grid_sizes[optimize_dim] % block_sizes[optimize_dim] != 0)
           block_sizes[optimize_dim]--;
         optimize_dim = (optimize_dim + 1) % 2;
