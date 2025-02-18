@@ -34,7 +34,7 @@ namespace DiFfRG
   void MatsubaraQuadrature<NT>::reinit(const NT T, const NT typical_E, const int step, const int min_size,
                                        const int max_size, const int vacuum_quad_size, const int precision_factor)
   {
-    if (precision_factor <= 0)
+    if (precision_factor < 0)
       this->precision_factor = 1;
     else
       this->precision_factor = precision_factor;

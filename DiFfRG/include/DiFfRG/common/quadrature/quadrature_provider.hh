@@ -48,8 +48,8 @@ namespace DiFfRG
       void set_verbosity(int v);
 
       void set_vacuum_quad_size(const int size);
-
-      void set_precision_factor(const int factor);
+      void set_min_matsubara_size(const int value);
+      void set_add_matsubara_size(const int value);
 
     private:
       MatsubaraQuadrature<double> &get_matsubara_quadrature_d(const double T, const double E);
@@ -72,7 +72,8 @@ namespace DiFfRG
 
       int verbosity = 0;
       int vacuum_quad_size = 48;
-      int precision_factor = 1;
+      int add_matsubara_size = 0;
+      int min_matsubara_size = 32;
 
       std::mutex m_mutex;
     };

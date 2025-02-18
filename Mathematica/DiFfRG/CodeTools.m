@@ -155,6 +155,8 @@ CodeFormatted[expr_,computeType_String:"double"] :=Module[{Powergen,Powery,Sqrty
 
 	RemoveFormat[exp_]:=Module[{ret},
 		ret=exp;
+		ret=StringReplace[ret,{"Max(":>"max("}];
+		ret=StringReplace[ret,{"Min(":>"min("}];
 		ret=StringReplace[ret,{"Re(":>"real("}];
 		ret=StringReplace[ret,{"Im(":>"imag("}];
 		ret=StringReplace[ret,{"Sqrt(":>"sqrt("}];
