@@ -368,12 +368,12 @@ namespace DiFfRG
               }
             if (!has_zero_boundary) {
               // std::cout << "No zero boundary for cell with vertices: ";
-              for (uint i = 0; i < GeometryInfo<dim>::vertices_per_cell; ++i) {
-                // std::cout << "vertex " << i << ": ";
-                for (uint d = 0; d < dim; ++d)
-                // std::cout << vertices[i][d] << " ";
-                // std::cout << std::endl;
-              }
+              // for (uint i = 0; i < GeometryInfo<dim>::vertices_per_cell; ++i) {
+              // std::cout << "vertex " << i << ": ";
+              // for (uint d = 0; d < dim; ++d)
+              // std::cout << vertices[i][d] << " ";
+              // std::cout << std::endl;
+              // }
 
               return false;
             }
