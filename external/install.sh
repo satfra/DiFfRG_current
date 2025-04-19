@@ -34,6 +34,12 @@ bash ./build_oneTBB.sh -j ${threads} -i ${install_dir} || {
   exit 1
 }
 
+echo "    Building AdaptiveCpp..."
+bash ./build_AdaptiveCpp.sh -j ${threads} -i ${install_dir} || {
+  echo "    Failed to build AdaptiveCpp, aborting."
+  exit 1
+}
+
 echo "    Building kokkos..."
 bash ./build_kokkos.sh -j ${threads} -i ${install_dir} || {
   echo "    Failed to build kokkos, aborting."

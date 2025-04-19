@@ -31,6 +31,10 @@ cd $SOURCE_PATH
 $SuperUser ./bootstrap.sh --prefix=${INSTALL_PATH} &>/dev/null
 $SuperUser ./b2 --build-dir=${BUILD_PATH} \
   --prefix=${INSTALL_PATH} \
+  --with-atomic \
+  --with-context \
+  --with-fiber \
+  --with-filesystem \
   --with-headers \
   --with-iostreams \
   --with-json \
@@ -38,6 +42,6 @@ $SuperUser ./b2 --build-dir=${BUILD_PATH} \
   --with-serialization \
   --with-system \
   --with-thread \
+  cxxflags="${CXX_FLAGS} -fPIC -O3 -ffat-lto-objects -std=c++20" \
   -j ${THREADS} \
-  cxxflags="${CXX_FLAGS} -std=c++20" \
-  install &> $MAKE_LOG_FILE
+  install &>$MAKE_LOG_FILE

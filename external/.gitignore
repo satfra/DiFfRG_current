@@ -1,5 +1,7 @@
 oneTBB_build/
 oneTBB_install/
+AdaptiveCpp_build/
+AdaptiveCpp_install/
 boost_build/
 boost_install/
 dealii_build/
