@@ -56,7 +56,7 @@ source ${SCRIPTPATH}/build_scripts/expand_path.sh
 # Build bundled libraries
 # ##############################################################################
 
-git submodule update --init --recursive --jobs ${threads}
+#git submodule update --init --recursive --jobs ${threads}
 
 if [[ -z ${INSTALLPATH} ]]; then
   echo
@@ -92,12 +92,12 @@ fi
 # ##############################################################################
 
 if [[ "$full_inst" == "y" ]] && [[ "$INSTALLPATH" != "" ]]; then
-  bash ${SCRIPTPATH}/update_DiFfRG.sh -j ${threads} -m ${cuda_flag} ${config_flag} -i ${INSTALLPATH}
+  bash ${SCRIPTPATH}/update_DiFfRG.sh -j ${threads} ${cuda_flag} ${config_flag} -i ${INSTALLPATH}
 else
   if [[ "$full_inst" == "y" ]]; then
-    bash ${SCRIPTPATH}/update_DiFfRG.sh -j ${threads} -m ${cuda_flag} ${config_flag}
+    bash ${SCRIPTPATH}/update_DiFfRG.sh -j ${threads} ${cuda_flag} ${config_flag} -i ${INSTALLPATH}
   else
-    bash ${SCRIPTPATH}/update_DiFfRG.sh -j ${threads} ${config_flag}
+    bash ${SCRIPTPATH}/update_DiFfRG.sh -j ${threads} ${config_flag} -i ${INSTALLPATH}
   fi
 fi
 

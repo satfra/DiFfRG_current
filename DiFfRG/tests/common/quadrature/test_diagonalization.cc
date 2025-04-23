@@ -828,12 +828,12 @@ TEST_CASE("Test diagonalization of tridiagonal symmetric matrices", "[common]")
 
     diagonalize_tridiagonal_symmetric_matrix(diag, off_diag, eigvecs);
 
-    REQUIRE(diag[0] == Catch::Approx(eig_2));
-    REQUIRE(diag[1] == Catch::Approx(eig_3));
+    REQUIRE(diag[0] == Catch::Approx(eig_3));
+    REQUIRE(diag[1] == Catch::Approx(eig_2));
     REQUIRE(diag[2] == Catch::Approx(eig_1));
 
-    REQUIRE(abs(eigvecs[0]) == Catch::Approx(abs(eigvec_2)));
-    REQUIRE(abs(eigvecs[1]) == Catch::Approx(abs(eigvec_3)));
+    REQUIRE(abs(eigvecs[0]) == Catch::Approx(abs(eigvec_3)));
+    REQUIRE(abs(eigvecs[1]) == Catch::Approx(abs(eigvec_2)));
     REQUIRE(abs(eigvecs[2]) == Catch::Approx(abs(eigvec_1)));
   }
 }

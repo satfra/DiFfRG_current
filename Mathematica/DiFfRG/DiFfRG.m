@@ -93,6 +93,11 @@ StyleBox[\" \",\nFontSize->10,\nFontSlant->\"Italic\"]\)\!\(\*
 StyleBox[\"external\",\nFontSize->10,\nFontSlant->\"Italic\"]\)\!\(\*
 StyleBox[\" \",\nFontSize->10,\nFontSlant->\"Italic\"]\)\!\(\*
 StyleBox[\"packages\",\nFontSize->10,\nFontSlant->\"Italic\"]\)"];
+Get["FunKit`"]
+Print["\!\(\*
+StyleBox[\"FunKit\",\nFontSize->10,\nFontSlant->\"Italic\"]\)\!\(\*
+StyleBox[\" \",\nFontSize->10,\nFontSlant->\"Italic\"]\)\!\(\*
+StyleBox[\"loaded\",\nFontSize->10,\nFontSlant->\"Italic\"]\)"];
 Get["QMeSderivation`"]
 Print["\!\(\*
 StyleBox[\"QMeS\",\nFontSize->10,\nFontSlant->\"Italic\"]\)\!\(\*
@@ -1184,6 +1189,7 @@ Return[ResourceFunction["DynamicMap"][#1,#2,Parallel->nKernels]&]
 ];
 
 
+ClearAll[IterativelySum];
 IterativelySum[expr_List,nKernels_Integer]:=Module[
 {returnValue},
 

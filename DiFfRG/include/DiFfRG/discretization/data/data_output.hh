@@ -110,12 +110,6 @@ namespace DiFfRG
     DataOutput(const JSONValue &json);
 
     /**
-     * @brief Returns a reference to the FEOutput object used to write FEM functions to .vtu files and .pvd time series.
-     * In this case (d=0), the object is empty.
-     */
-    FEOutput<dim, VectorType> &fe_output();
-
-    /**
      * @brief Returns a reference to the CsvOutput object associated with the given name, which is used to write scalar
      * values to .csv files. If the object does not exist, it is created.
      */
@@ -164,7 +158,6 @@ namespace DiFfRG
     std::vector<double> time_values;
     std::vector<double> k_values;
 
-    FEOutput<dim, VectorType> fe_out;
     std::map<std::string, CsvOutput> csv_files;
   };
 } // namespace DiFfRG

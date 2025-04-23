@@ -14,11 +14,10 @@ namespace DiFfRG
   using namespace dealii;
 
   template <uint dim, typename VectorType>
-  FEOutput<dim, VectorType>::FEOutput(std::string top_folder,
-                                      std::string output_name, std::string output_folder, const JSONValue &json)
-      : top_folder(make_folder(top_folder)), output_name(output_name),
-        output_folder(make_folder(output_folder)), series_number(0),
-        subdivisions(json.get_uint("/discretization/output_subdivisions"))
+  FEOutput<dim, VectorType>::FEOutput(std::string top_folder, std::string output_name, std::string output_folder,
+                                      const JSONValue &json)
+      : top_folder(make_folder(top_folder)), output_name(output_name), output_folder(make_folder(output_folder)),
+        series_number(0), subdivisions(json.get_uint("/discretization/output_subdivisions"))
   {
     create_folder(top_folder);
     create_folder(top_folder + output_folder);
@@ -92,9 +91,4 @@ namespace DiFfRG
   template class FEOutput<1, dealii::BlockVector<double>>;
   template class FEOutput<2, dealii::BlockVector<double>>;
   template class FEOutput<3, dealii::BlockVector<double>>;
-
-  void FEOutput<0, Vector<double>>::flush(double) {}
-  void FEOutput<0, Vector<double>>::attach(const DoFHandler<0> &, const Vector<double> &, const std::string &) {}
-  void FEOutput<0, Vector<double>>::attach(const DoFHandler<0> &, const Vector<double> &, const std::vector<std::string> &) {}
-
 } // namespace DiFfRG

@@ -21,11 +21,11 @@ set(DiFfRG_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/explicit_euler.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/implicit_euler.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/rk.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/sundials_arkode.cc
+    # ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/sundials_arkode.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/sundials_ida.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/sundials_ida_boost_rk.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/sundials_ida_boost_abm.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/sundials_ida_arkode.cc
+    # ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/sundials_ida_arkode.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/trbdf2.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/flow_equations.cc)
 if(USE_CUDA)

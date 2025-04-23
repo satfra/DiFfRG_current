@@ -11,7 +11,7 @@ cpmaddpackage(
   GITHUB_REPOSITORY
   catchorg/Catch2
   VERSION
-  3.7.1
+  3.8.1
   OPTIONS
   "CATCH_INSTALL_DOCS OFF"
   "CATCH_INSTALL_HELPERS OFF")

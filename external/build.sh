@@ -33,18 +33,6 @@ bash -i ./build_oneTBB.sh -j ${threads} &>/dev/null || {
   exit 1
 }
 
-echo "    Building AdaptiveCpp..."
-bash -i ./build_AdaptiveCpp.sh -j ${threads} &>/dev/null || {
-  echo "    Failed to build AdaptiveCpp, aborting."
-  exit 1
-}
-
-echo "    Building kokkos..."
-bash -i ./build_kokkos.sh -j ${threads} &>/dev/null || {
-  echo "    Failed to build kokkos, aborting."
-  exit 1
-}
-
 echo "    Building sundials..."
 bash -i ./build_sundials.sh -j ${threads} &>/dev/null || {
   echo "    Failed to build SUNDIALS, aborting."

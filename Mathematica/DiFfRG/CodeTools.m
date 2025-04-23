@@ -141,7 +141,9 @@ Show the currently specified kernel definitions code.";
 
 AddParameterType::usage="AddParameterType[name,cppType,cppTypeAD,Reference,computeTypeName]
 Add a recognized parameter to the list of useable kernel parameter types.
-"
+";
+
+SetCodeParser::usage="";
 
 
 Begin["`Private`"];
@@ -250,16 +252,6 @@ ExportCode[fileName_String,expression_String]:=Module[{tmpfileName},
 		RunProcess[$SystemShell, All, "mv "<>tmpfileName<>" "<>fileName]
 	]
 ]
-
-
-(* ::Input::Initialization:: *)
-JuliaForm[expr_]:=Module[{Fstr},
-Fstr=ToString[FortranForm[expr//.{E^x_:>exp[x]}]];StringReplace[Fstr,{a_~~"(i)"->a~~"[i]",a_~~"(-1 + i)"->a~~"[i-1]",a_~~"(1 + i)"->a~~"[i+1]","**"->"^",".*"->"*",".+"->"+","Pi"->"\[Pi]","Sqrt"->"sqrt","Coth"->"coth","Tanh"->"tanh"}]]
-
-UnicodeClip=ExternalFunction["Java","static void uniclip(String string) {
-     var s = new java.awt.datatransfer.StringSelection(string);
-     java.awt.Toolkit.getDefaultToolkit().getSystemClipboard().setContents(s, s);
-   }"];
 
 
 FlowKernel[expr_,name_String,NT_String:"auto",addprefix_String:""]:=Module[{head,prefix,integrand},
@@ -942,225 +934,42 @@ MakeCMakeFile[kernels];
 ];
 
 
-MakeKernelConstMethod[flow_,parameterList_List,definitions_String,computeType_String]:=Module[{templateList,head, body},
-If[Not@IsValidParameterList[parameterList],Print["Invalid parameter List!"];Abort[]];
-
-templateList=StringDrop[StringJoin[Table["typename T"<>ToString[i]<>", ",{i,1,Length[parameterList]}]],-2];
-templateList="  template <"<>templateList<>">";
-head="  static __forceinline__ __host__ __device__ auto
-  kernel(const "<>computeType<>" k, ";
-head=
-head<>StringDrop[StringJoin[Table["const T"<>ToString[i]<>ArgType[parameterList[[i]]["Type"]]<>" "<>ToString[parameterList[[i]]["Name"]]<>", ",{i,1,Length[parameterList]}]],-2]<>")";
-body="";
-If[definitions=!="",
-body=body<>"    // definitions\n"<>definitions<>"\n"
-];
-body=body<>GetOptimizedKernelCode[flow,parameterList,computeType];
-body=IndentCode[body,2];
-templateList<>"\n"<>head<>"\n  {\n"<>body<>"\n  }"
-];
-
-
-MakeKernelCartesian1DMethod[flow_,parameterList_List,definitions_String,computeType_String]:=Module[{templateList,head, body},
-If[Not@IsValidParameterList[parameterList],Print["Invalid parameter List!"];Abort[]];
-
-templateList=StringDrop[StringJoin[Table["typename T"<>ToString[i]<>", ",{i,1,Length[parameterList]}]],-2];
-templateList="  template <"<>templateList<>">";
-head="  static __forceinline__ __host__ __device__ auto
-  kernel(const "<>computeType<>" q, const "<>computeType<>" k, ";
-head=
-head<>StringDrop[StringJoin[Table["const T"<>ToString[i]<>ArgType[parameterList[[i]]["Type"]]<>" "<>ToString[parameterList[[i]]["Name"]]<>", ",{i,1,Length[parameterList]}]],-2]<>")";
-body="";
-If[definitions=!="",
-body=body<>definitions<>"\n"
-];
-body=body<>GetOptimizedKernelCode[flow,parameterList,computeType];
-body=IndentCode[body,2];
-templateList<>"\n"<>head<>"\n  {\n"<>body<>"\n  }"
-];
-
-
-MakeKernelCartesian2DMethod[flow_,parameterList_List,definitions_String,computeType_String]:=Module[{templateList,head, body},
-If[Not@IsValidParameterList[parameterList],Print["Invalid parameter List!"];Abort[]];
-
-templateList=StringDrop[StringJoin[Table["typename T"<>ToString[i]<>", ",{i,1,Length[parameterList]}]],-2];
-templateList="  template <"<>templateList<>">";
-head="  static __forceinline__ __host__ __device__ auto
-  kernel(const "<>computeType<>" qx, const "<>computeType<>" qy, const "<>computeType<>" k, ";
-head=
-head<>StringDrop[StringJoin[Table["const T"<>ToString[i]<>ArgType[parameterList[[i]]["Type"]]<>" "<>ToString[parameterList[[i]]["Name"]]<>", ",{i,1,Length[parameterList]}]],-2]<>")";
-body="";
-If[definitions=!="",
-body=body<>definitions<>"\n"
-];
-body=body<>GetOptimizedKernelCode[flow,parameterList,computeType];
-body=IndentCode[body,2];
-templateList<>"\n"<>head<>"\n  {\n"<>body<>"\n  }"
-];
-
-
-MakeKernelCartesian3DMethod[flow_,parameterList_List,definitions_String,computeType_String]:=Module[{templateList,head, body},
-If[Not@IsValidParameterList[parameterList],Print["Invalid parameter List!"];Abort[]];
-
-templateList=StringDrop[StringJoin[Table["typename T"<>ToString[i]<>", ",{i,1,Length[parameterList]}]],-2];
-templateList="  template <"<>templateList<>">";
-head="  static __forceinline__ __host__ __device__ auto
-  kernel(const "<>computeType<>" qx, const "<>computeType<>" qy, const "<>computeType<>" qz, const "<>computeType<>" k, ";
-head=
-head<>StringDrop[StringJoin[Table["const T"<>ToString[i]<>ArgType[parameterList[[i]]["Type"]]<>" "<>ToString[parameterList[[i]]["Name"]]<>", ",{i,1,Length[parameterList]}]],-2]<>")";
-body="";
-If[definitions=!="",
-body=body<>definitions<>"\n"
-];
-body=body<>GetOptimizedKernelCode[flow,parameterList,computeType];
-body=IndentCode[body,2];
-templateList<>"\n"<>head<>"\n  {\n"<>body<>"\n  }"
-];
+$codeParser="Cpp";
+SetCodeParser[str_String]:=Set[$codeParser,str]
 
 
 (* ::Input::Initialization:: *)
-MakeKernel0AngleMethod[flow_,parameterList_List,definitions_String,computeType_String]:=Module[{templateList,head, body},
-If[Not@IsValidParameterList[parameterList],Print["Invalid parameter List!"];Abort[]];
+MakeKernelClass[kernel_Association,parameterList_List,integrandFlow_,constantFlow_,integrandDefinitions_String,constantDefinitions_String]:=Module[
+{computeType,integrationVariables},
 
-templateList=StringDrop[StringJoin[Table["typename T"<>ToString[i]<>", ",{i,1,Length[parameterList]}]],-2];
-templateList="  template <"<>templateList<>">";
-head="  static __forceinline__ __host__ __device__ auto
-  kernel(const "<>computeType<>" q, const "<>computeType<>" k, ";
-head=
-head<>StringDrop[StringJoin[Table["const T"<>ToString[i]<>ArgType[parameterList[[i]]["Type"]]<>" "<>ToString[parameterList[[i]]["Name"]]<>", ",{i,1,Length[parameterList]}]],-2]<>")";
-body="";
-If[definitions=!="",
-body=body<>definitions<>"\n"
-];
-body=body<>GetOptimizedKernelCode[flow,parameterList,computeType];
-body=IndentCode[body,2];
-templateList<>"\n"<>head<>"\n  {\n"<>body<>"\n  }"
-];
-
-
-MakeKernel1AngleMethod[flow_,parameterList_List,definitions_String,computeType_String]:=Module[{templateList,head, body},
-If[Not@IsValidParameterList[parameterList],Print["Invalid parameter List!"];Abort[]];
-
-templateList=StringDrop[StringJoin[Table["typename T"<>ToString[i]<>", ",{i,1,Length[parameterList]}]],-2];
-templateList="  template <"<>templateList<>">";
-head="  static __forceinline__ __host__ __device__ auto kernel(const "<>computeType<>" q, const "<>computeType<>" cos1, const "<>computeType<>" k, ";
-head=head<>StringDrop[StringJoin[Table["const T"<>ToString[i]<>ArgType[parameterList[[i]]["Type"]]<>" "<>ToString[parameterList[[i]]["Name"]]<>", ",{i,1,Length[parameterList]}]],-2]<>")";
-body="";
-If[definitions=!="",
-body=body<>definitions<>"\n"
-];
-body=body<>GetOptimizedKernelCode[flow,parameterList,computeType];
-body=IndentCode[body,2];
-templateList<>"\n"<>head<>"\n  {\n"<>body<>"\n  }"
-];
-
-
-MakeKernel2AngleMethod[flow_,parameterList_List,definitions_String,computeType_String]:=Module[{templateList,head, body},
-If[Not@IsValidParameterList[parameterList],Print["Invalid parameter List!"];Abort[]];
-
-templateList=StringDrop[StringJoin[Table["typename T"<>ToString[i]<>", ",{i,1,Length[parameterList]}]],-2];
-templateList="  template <"<>templateList<>">";
-head="  static __forceinline__ __host__ __device__ auto kernel(const "<>computeType<>" q, const "<>computeType<>" cos1, const "<>computeType<>" phi, const "<>computeType<>" k, ";
-head=head<>StringDrop[StringJoin[Table["const T"<>ToString[i]<>ArgType[parameterList[[i]]["Type"]]<>" "<>ToString[parameterList[[i]]["Name"]]<>", ",
-{i,1,Length[parameterList]}]],-2]<>")";
-body="";
-If[definitions=!="",
-body=body<>definitions<>"\n"
-];
-body=body<>GetOptimizedKernelCode[flow,parameterList,computeType];
-body=IndentCode[body,2];
-templateList<>"\n"<>head<>"\n  {\n"<>body<>"\n  }"
-];
-
-
-MakeKernel2AngleMethodAlt[flow_,parameterList_List,definitions_String,computeType_String]:=Module[{templateList,head, body},
-If[Not@IsValidParameterList[parameterList],Print["Invalid parameter List!"];Abort[]];
-
-templateList=StringDrop[StringJoin[Table["typename T"<>ToString[i]<>", ",{i,1,Length[parameterList]}]],-2];
-templateList="  template <"<>templateList<>">";
-head="  static __forceinline__ __host__ __device__ auto kernel(const "<>computeType<>" q, const "<>computeType<>" cos1, const "<>computeType<>" cos2, const "<>computeType<>" k, ";
-head=head<>StringDrop[StringJoin[Table["const T"<>ToString[i]<>ArgType[parameterList[[i]]["Type"]]<>" "<>ToString[parameterList[[i]]["Name"]]<>", ",
-{i,1,Length[parameterList]}]],-2]<>")";
-body="";
-If[definitions=!="",
-body=body<>definitions<>"\n"
-];
-body=body<>GetOptimizedKernelCode[flow,parameterList,computeType];
-body=IndentCode[body,2];
-templateList<>"\n"<>head<>"\n  {\n"<>body<>"\n  }"
-];
-
-
-MakeKernel3AngleMethod[flow_,parameterList_List,definitions_String,computeType_String]:=Module[{templateList,head, body},
-If[Not@IsValidParameterList[parameterList],Print["Invalid parameter List!"];Abort[]];
-
-templateList=StringDrop[StringJoin[Table["typename T"<>ToString[i]<>", ",{i,1,Length[parameterList]}]],-2];
-templateList="  template <"<>templateList<>">";
-head="  static __forceinline__ __host__ __device__ auto kernel(const "<>computeType<>" q, const "<>computeType<>" cos1, const "<>computeType<>" cos2, const "<>computeType<>" phi, const "<>computeType<>" k, ";
-head=head<>StringDrop[StringJoin[Table["const T"<>ToString[i]<>ArgType[parameterList[[i]]["Type"]]<>" "<>ToString[parameterList[[i]]["Name"]]<>", ",{i,1,Length[parameterList]}]],-2]<>")";
-body="";
-If[definitions=!="",
-body=body<>definitions<>"\n"
-];
-body=body<>GetOptimizedKernelCode[flow,parameterList,computeType];
-body=IndentCode[body,2];
-templateList<>"\n"<>head<>"\n  {\n"<>body<>"\n  }"
-];
-
-
-MakeConstantMethod[flow_,parameterList_List,definitions_String,computeType_String]:=Module[{templateList,head, body},
-If[Not@IsValidParameterList[parameterList],Print["Invalid parameter List!"];Abort[]];
-
-templateList=StringDrop[StringJoin[Table["typename T"<>ToString[i]<>", ",{i,1,Length[parameterList]}]],-2];
-templateList="  template <"<>templateList<>">";
-head="  static __forceinline__ __host__ __device__ auto constant(const "<>computeType<>" k, ";
-head=head<>StringDrop[StringJoin[Table["const T"<>ToString[i]<>ArgType[parameterList[[i]]["Type"]]<>" "<>ToString[parameterList[[i]]["Name"]]<>", ",{i,1,Length[parameterList]}]],-2]<>")";
-body="";
-If[definitions=!="",
-body=body<>definitions<>"\n"
-];
-body=body<>GetOptimizedKernelCode[flow,parameterList,computeType];
-body=IndentCode[body,2];
-templateList<>"\n"<>head<>"\n  {\n"<>body<>"\n  }"
-];
-
-
-(* ::Input::Initialization:: *)
-MakeKernelClass[kernel_Association,parameterList_List,integrandFlow_,constantFlow_,integrandDefinitions_String,constantDefinitions_String]:=Module[{computeType,head, body,tail},
 If[Not@IsValidKernelSpec[kernel],Print["DiFfRG::CodeTools::MakeKernelClass: Invalid kernel!"];Abort[]];
 If[Not@IsValidParameterList[parameterList],Print["DiFfRG::CodeTools::MakeKernelClass: Invalid parameter List!"];Abort[]];
 
 computeType=kernel["ctype"];
 
-head="template <typename REG> class "<>ToString[kernel["Name"]]<>"_kernel
-{
-public:";
-
 If[kernel["Angles"]<0,Print["DiFfRG::CodeTools::MakeKernelClass: T = 0 kernel cannot have < 0 angles!"];Abort[]];
+
 If[kernel["Type"]==="Constant",
-body=MakeKernelConstMethod[integrandFlow,parameterList,integrandDefinitions,computeType],
+integrationVariables={},
 If[kernel["Type"]==="CartesianQuadrature",
 If[kernel["Angles"]!=0,Print["Cartesian integrator cannot have angles!"];Abort[];];
 Switch[kernel["d"],
-1,body=MakeKernelCartesian1DMethod[integrandFlow,parameterList,integrandDefinitions,computeType],
-2,body=MakeKernelCartesian2DMethod[integrandFlow,parameterList,integrandDefinitions,computeType],
-3,body=MakeKernelCartesian3DMethod[integrandFlow,parameterList,integrandDefinitions,computeType],
+1,integrationVariables={"q"},
+2,integrationVariables={"qx","qy"},
+3,integrationVariables={"qx","qy","qz"},
 _,Print["Cartesian integrator for dimension "<>ToString[kernel["d"]]<>" not implemented!"];Abort[];
 ],
-If[kernel["Angles"]==0,body=MakeKernel0AngleMethod[integrandFlow,parameterList,integrandDefinitions,computeType]];
-If[kernel["Angles"]==1,body=MakeKernel1AngleMethod[integrandFlow,parameterList,integrandDefinitions,computeType]];
-If[kernel["Angles"]==2&&kernel["d"]==4,body=MakeKernel2AngleMethodAlt[integrandFlow,parameterList,integrandDefinitions,computeType]];
-If[kernel["Angles"]==2&&kernel["d"]!=4,body=MakeKernel2AngleMethod[integrandFlow,parameterList,integrandDefinitions,computeType]];
-If[kernel["Angles"]==3,body=MakeKernel3AngleMethod[integrandFlow,parameterList,integrandDefinitions,computeType]];
+If[kernel["Angles"]==0,integrationVariables={"q"}];
+If[kernel["Angles"]==1,integrationVariables={"q","cos1"}];
+If[kernel["Angles"]==2&&kernel["d"]==4,integrationVariables={"q","cos1","cos2"}];
+If[kernel["Angles"]==2&&kernel["d"]!=4,integrationVariables={"q","cos1","phi"}];
+If[kernel["Angles"]==3,integrationVariables={"q","cos1","cos2","phi"}];
 If[kernel["Angles"]>3,Print["DiFfRG::CodeTools::MakeKernelClass: T = 0 kernel cannot have > 3 angles!"];Abort[]];
 ];
 ];
 
-body=body<>"\n\n"<>MakeConstantMethod[constantFlow,parameterList,constantDefinitions,computeType];
-
-tail="\nprivate:\n"<>$KernelDefinitions<>"\n};";
-
-ExportCode[flowDir<>""<>kernel["Path"]<>"/"<>kernel["Name"]<>".kernel",KernelPrepend<>head<>"\n"<>body<>"\n"<>tail];
+ExportCode[flowDir<>""<>kernel["Path"]<>"/"<>kernel["Name"]<>".kernel",Global`CreateKernelClass[ToString[kernel["Name"]]<>"_kernel",integrandFlow,constantFlow,"integrandBody"->integrandDefinitions,"constantBody"->constantDefinitions,"integrationVariables"->integrationVariables,"parameters"->Join[{<|"Name"->"k"|>},parameterList],"CodeParser"->$codeParser]
+];
 ];
 
 
@@ -1386,100 +1195,23 @@ ExportCode[flowDir<>""<>kernel["Path"]<>"/"<>cuFile,cu];
 ];
 
 
-MakeConstantMethodFiniteT[flow_,parameterList_,definitions_String,computeType_String]:=Module[{templateList,head, body},
-If[Not@IsValidParameterList[parameterList],Print["Invalid parameter List!"];Abort[]];
-
-templateList=StringDrop[StringJoin[Table["typename T"<>ToString[i]<>", ",{i,1,Length[parameterList]}]],-2];
-templateList="  template <"<>templateList<>">";
-head="  static __forceinline__ __host__ __device__ auto constant(const "<>computeType<>" k, ";
-head=head<>StringDrop[StringJoin[Table["const T"<>ToString[i]<>ArgType[parameterList[[i]]["Type"]]<>" "<>ToString[parameterList[[i]]["Name"]]<>", ",{i,1,Length[parameterList]}]],-2]<>")";
-body="";
-If[definitions=!="",
-body=body<>"    // definitions\n"<>definitions<>"\n"
-];
-body=body<>GetOptimizedKernelCode[flow,parameterList,computeType];
-body=IndentCode[body,2];
-templateList<>"\n"<>head<>"\n  {\n"<>body<>"\n  }"
-];
-
-
 (* ::Input::Initialization:: *)
-MakeKernel0AngleMethodFiniteT[flow_,parameterList_List,definitions_String,computeType_String]:=Module[{templateList,head, body},
-If[Not@IsValidParameterList[parameterList],Print["Invalid parameter List!"];Abort[]];
-
-templateList=StringDrop[StringJoin[Table["typename T"<>ToString[i]<>", ",{i,1,Length[parameterList]}]],-2];
-templateList="  template <"<>templateList<>">";
-head="  static __forceinline__ __host__ __device__ auto
-  kernel(const "<>computeType<>" q, const "<>computeType<>" q0, const "<>computeType<>" k, ";
-head=
-head<>StringDrop[StringJoin[Table["const T"<>ToString[i]<>ArgType[parameterList[[i]]["Type"]]<>" "<>ToString[parameterList[[i]]["Name"]]<>", ",{i,1,Length[parameterList]}]],-2]<>")";
-body="";
-If[definitions=!="",
-body=body<>"    // definitions\n"<>definitions<>"\n"
-];
-body=body<>GetOptimizedKernelCode[flow,parameterList,computeType];
-body=IndentCode[body,2];
-templateList<>"\n"<>head<>"\n  {\n"<>body<>"\n  }"
-];
-
-
-MakeKernel1AngleMethodFiniteT[flow_,parameterList_List,definitions_String,computeType_String]:=Module[{templateList,head, body},
-If[Not@IsValidParameterList[parameterList],Print["Invalid parameter List!"];Abort[]];
-
-templateList=StringDrop[StringJoin[Table["typename T"<>ToString[i]<>", ",{i,1,Length[parameterList]}]],-2];
-templateList="  template <"<>templateList<>">";
-head="  static __forceinline__ __host__ __device__ auto kernel(const "<>computeType<>" q, const "<>computeType<>" cos1, const "<>computeType<>" q0, const "<>computeType<>" k, ";
-head=head<>StringDrop[StringJoin[Table["const T"<>ToString[i]<>ArgType[parameterList[[i]]["Type"]]<>" "<>ToString[parameterList[[i]]["Name"]]<>", ",{i,1,Length[parameterList]}]],-2]<>")";
-body="";
-If[definitions=!="",
-body=body<>"    // definitions\n"<>definitions<>"\n"
-];
-body=body<>GetOptimizedKernelCode[flow,parameterList,computeType];
-body=IndentCode[body,2];
-templateList<>"\n"<>head<>"\n  {\n"<>body<>"\n  }"
-];
-
-
-MakeKernel2AngleMethodFiniteT[flow_,parameterList_,definitions_String,computeType_String]:=Module[{templateList,head, body},
-If[Not@IsValidParameterList[parameterList],Print["Invalid parameter List!"];Abort[]];
-
-templateList=StringDrop[StringJoin[Table["typename T"<>ToString[i]<>", ",{i,1,Length[parameterList]}]],-2];
-templateList="  template <"<>templateList<>">";
-head="  static __forceinline__ __host__ __device__ auto kernel(const "<>computeType<>" q, const "<>computeType<>" cos1, const "<>computeType<>" phi, const "<>computeType<>" q0, const "<>computeType<>" k, ";
-head=head<>StringDrop[StringJoin[Table["const T"<>ToString[i]<>ArgType[parameterList[[i]]["Type"]]<>" "<>ToString[parameterList[[i]]["Name"]]<>", ",
-{i,1,Length[parameterList]}]],-2]<>")";
-body="";
-If[definitions=!="",
-body=body<>"    // definitions\n"<>definitions<>"\n"
-];
-body=body<>GetOptimizedKernelCode[flow,parameterList,computeType];
-body=IndentCode[body,2];
-templateList<>"\n"<>head<>"\n  {\n"<>body<>"\n  }"
-];
-
-
-(* ::Input::Initialization:: *)
-MakeKernelClassFiniteT[kernel_Association,parameterList_List,integrandFlow_,constantFlow_,integrandDefinitions_String,constantDefinitions_String]:=Module[{computeType,head, body,tail},
+MakeKernelClassFiniteT[kernel_Association,parameterList_List,integrandFlow_,constantFlow_,integrandDefinitions_String,constantDefinitions_String]:=Module[
+{computeType,integrationVariables},
 If[Not@IsValidKernelSpec[kernel],Print["DiFfRG::CodeTools::MakeKernelClassFiniteT: Invalid kernel!"];Abort[]];
 If[Not@IsValidParameterList[parameterList],Print["DiFfRG::CodeTools::MakeKernelClassFiniteT: Invalid parameter List!"];Abort[]];
 
 computeType=kernel["ctype"];
 
-head="template <typename REG> class "<>ToString[kernel["Name"]]<>"_kernel
-{
-public:";
-
 If[kernel["Angles"]<0,Print["DiFfRG::CodeTools::MakeKernelClassFiniteT: finite T kernel cannot have < 0 angles!"];Abort[]];
-If[kernel["Angles"]==0,body=MakeKernel0AngleMethodFiniteT[integrandFlow,parameterList,integrandDefinitions,computeType]];
-If[kernel["Angles"]==1,body=MakeKernel1AngleMethodFiniteT[integrandFlow,parameterList,integrandDefinitions,computeType]];
-If[kernel["Angles"]==2,body=MakeKernel2AngleMethodFiniteT[integrandFlow,parameterList,integrandDefinitions,computeType]];
+If[kernel["Angles"]==0,integrationVariables={"q","q0"}];
+If[kernel["Angles"]==1,integrationVariables={"q","cos1","q0"}];
+If[kernel["Angles"]==2,integrationVariables={"q","cos1","phi","q0"}];
 If[kernel["Angles"]>2,Print["DiFfRG::CodeTools::MakeKernelClassFiniteT: finite T kernel cannot have > 2 angles!"];Abort[]];
 
-        body=body<>"\n\n"<>MakeConstantMethodFiniteT[constantFlow,parameterList,constantDefinitions,computeType];
-
-tail="\nprivate:\n"<>$KernelDefinitions<>"\n};";
-
-ExportCode[flowDir<>""<>kernel["Path"]<>"/"<>ToString[kernel["Name"]]<>".kernel",KernelPrepend<>head<>"\n"<>body<>"\n"<>tail];
+ExportCode[flowDir<>""<>kernel["Path"]<>"/"<>kernel["Name"]<>".kernel",
+CreateKernelClass[ToString[kernel["Name"]],integrandFlow,constantFlow,"body"->integrandDefinitions,"integrationVariables"->integrationVariables,"parameters"->parameterList,"CodeParser"->$codeParser]
+];
 ];
 
 

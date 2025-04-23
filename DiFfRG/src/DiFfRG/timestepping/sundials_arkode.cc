@@ -88,7 +88,7 @@ namespace DiFfRG
       last_t = t;
     };
     ode_solver.jacobian_preconditioner_setup = [&](const double t, const VectorType &y, const VectorType & /*fy*/,
-                                                   const int /*jok*/, int & /*jcur*/, const double gamma) {
+                                                   const int /*jok*/, int & /*jcur*/, const double gamma) -> int {
       auto now = std::chrono::high_resolution_clock::now();
 
       jacobian = 0;
@@ -110,17 +110,19 @@ namespace DiFfRG
       }
 
       last_t = t;
+
+      return 0;
     };
     ode_solver.jacobian_preconditioner_solve = [&](const double, const VectorType &, const VectorType &,
                                                    const VectorType &, VectorType &, const double, const double,
-                                                   const int) {};
-    ode_solver.jacobian_times_setup = [&](const double, const VectorType &, const VectorType &) {};
+                                                   const int) -> int {};
+    ode_solver.jacobian_times_setup = [&](const double, const VectorType &, const VectorType &) -> int {};
     ode_solver.jacobian_times_vector = [&](const VectorType &v, VectorType &Jv, const double /*t*/,
                                            const VectorType & /*y*/,
-                                           const VectorType & /*fy*/) { jacobian.vmult(Jv, v); };
+                                           const VectorType & /*fy*/) -> int { jacobian.vmult(Jv, v); };
     ode_solver.solve_linearized_system = [&](SUNDIALS::SundialsOperator<VectorType> &,
                                              SUNDIALS::SundialsPreconditioner<VectorType> &, VectorType &x,
-                                             const VectorType &b, double tol) {
+                                             const VectorType &b, double tol) -> int {
       const auto now = std::chrono::high_resolution_clock::now();
       const auto sol_iterations = linSolver.solve(b, x, tol);
       if (sol_iterations >= 0) {

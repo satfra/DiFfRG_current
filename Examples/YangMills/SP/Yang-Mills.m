@@ -39,18 +39,17 @@ Zc,ZA,dtZA];
 
 TBUnregister["AAA"]//Quiet
 TBUnregister["AAA2"]//Quiet
-TBImportBasis["../../bases/AAA.m"]
-TBImportBasis["../../bases/AAA2.m"]
-
 TBUnregister["AAAA"]//Quiet
 TBUnregister["AAAA2"]//Quiet
+TBUnregister["Acbc"]//Quiet
+TBUnregister["AA"]//Quiet
+
+
+TBImportBasis["../../bases/AAA.m"]
+TBImportBasis["../../bases/AAA2.m"]
 TBImportBasis["../../bases/AAAA.m"]
 TBImportBasis["../../bases/AAAA2.m"]
-
-TBUnregister["Acbc"]//Quiet
 TBImportBasis["../../bases/Acbc.m"]
-
-TBUnregister["AA"]//Quiet
 TBImportBasis["../../bases/AA.m"]
 
 
@@ -174,15 +173,15 @@ kernelZA3,kernelZAcbc,kernelZA4
 
 kernelParameterListBase={
 (*strong couplings*)
-<|"Name"->"ZA3","Type"->"FunctionTex1D","AD"->False|>,
-<|"Name"->"ZAcbc","Type"->"FunctionTex1D","AD"->False|>,
-<|"Name"->"ZA4","Type"->"FunctionTex1D","AD"->False|>,
+<|"Name"->"ZA3","Type"->"FunctionTex1D","AD"->False,"Reference"->True|>,
+<|"Name"->"ZAcbc","Type"->"FunctionTex1D","AD"->False,"Reference"->True|>,
+<|"Name"->"ZA4","Type"->"FunctionTex1D","AD"->False,"Reference"->True|>,
 (*ghost propagator*)
-<|"Name"->"dtZc","Type"->"FunctionTex1D","AD"->False|>,
-<|"Name"->"Zc","Type"->"FunctionTex1D","AD"->False|>,
+<|"Name"->"dtZc","Type"->"FunctionTex1D","AD"->False,"Reference"->True|>,
+<|"Name"->"Zc","Type"->"FunctionTex1D","AD"->False,"Reference"->True|>,
 (*glue propagator*)
-<|"Name"->"dtZA","Type"->"FunctionTex1D","AD"->False|>,
-<|"Name"->"ZA","Type"->"FunctionTex1D","AD"->False|>,
+<|"Name"->"dtZA","Type"->"FunctionTex1D","AD"->False,"Reference"->True|>,
+<|"Name"->"ZA","Type"->"FunctionTex1D","AD"->False,"Reference"->True|>,
 <|"Name"->"m2A","Type"->"Variable","AD"->False|>
 };
 
@@ -356,7 +355,7 @@ SetDisentangle[True];
 DefineFormExecutable["tform"]
 
 ProjectionZA4=(ProjectorZA4 DiagramsA4)//.PreTraceRules;
-TraceDiagrams[5,"ZA4",ProjectionZA4,{},postRepRule];
+TraceDiagrams[5,"ZA4",ProjectionZA4,{},postRepRule]//AbsoluteTiming
 
 ZA4Loop=SumDiagrams[5,"ZA4",0,QCDSimp[#//.PostTraceRules//ProjectToSymmetricPoint[#,q,p,p1,p2,p3,p4]&]&,"sum"];
 MakeKernel[kernelZA4,kernelParameterList,ZA4Loop,0,SP4Defs]

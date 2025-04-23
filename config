@@ -11,14 +11,14 @@
 #   export C_FLAGS="-march=core-avx2 -fPIC"
 #   export CXX_FLAGS="-march=core-avx2 -fPIC"
 #   export CUDA_FLAGS="-arch=sm_35"
-export C_FLAGS="-march=native -fPIC -O3 -ffast-math -fno-finite-math-only"
+export C_FLAGS="" #"-march=native -fPIC -O3 -ffast-math -fno-finite-math-only"
 export CXX_FLAGS="${C_FLAGS}"
-export CUDA_FLAGS="-arch=native --use_fast_math"
+export CUDA_FLAGS="" #"-arch=native --use_fast_math"
 
 # Configure linker flags for the current machine. If gcc is present, the gold linker is used
-if [[ "$CC" == *"gcc"* ]] || [[ "$CXX" == *"gcc"* ]]; then
-  export EXE_LINKER_FLAGS="-fuse-ld=gold"
-fi
+#if [[ "$CC" == *"gcc"* ]] || [[ "$CXX" == *"gcc"* ]]; then
+#export EXE_LINKER_FLAGS="-fuse-ld=gold"
+#fi
 
 # Also, the name of the python executable may vary for your system. You can set this here
 export pythoncmd=python3
