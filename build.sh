@@ -56,7 +56,7 @@ source ${SCRIPTPATH}/build_scripts/expand_path.sh
 # Build bundled libraries
 # ##############################################################################
 
-#git submodule update --init --recursive --jobs ${threads}
+git submodule update --init --recursive --jobs ${threads}
 
 if [[ -z ${INSTALLPATH} ]]; then
   echo

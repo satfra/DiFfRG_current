@@ -68,8 +68,8 @@ find_package(Kokkos REQUIRED HINTS ${BUNDLED_DIR}/kokkos_install)
 message(STATUS "Found Kokkos in ${Kokkos_DIR}")
 
 # Find Boost
-find_package(Boost 1.80 REQUIRED HINTS ${BUNDLED_DIR}/boost_install
-             COMPONENTS thread random iostreams math serialization system)
+find_package(Boost 1.81 REQUIRED HINTS ${BUNDLED_DIR}/boost_install/ ${BUNDLED_DIR}/boost_install/lib/
+             COMPONENTS thread iostreams serialization system)
 message(STATUS "Boost version: ${Boost_VERSION}")
 message(STATUS "Boost include dir: ${Boost_INCLUDE_DIRS}")
 message(STATUS "Boost libraries: ${Boost_LIBRARIES}")
