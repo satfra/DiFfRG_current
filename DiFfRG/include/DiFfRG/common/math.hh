@@ -2,7 +2,6 @@
 
 // DiFfRG
 #include <DiFfRG/common/complex_math.hh>
-#include <DiFfRG/common/cuda_prefix.hh>
 #include <DiFfRG/common/utils.hh>
 
 // standard library

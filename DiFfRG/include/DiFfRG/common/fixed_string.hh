@@ -1,5 +1,6 @@
 #pragma once
 
+#include <initializer_list>
 namespace DiFfRG
 {
   /**
@@ -20,6 +21,15 @@ namespace DiFfRG
     {
       for (unsigned i = 0; i != N; ++i)
         buf[i] = s[i];
+    }
+
+    constexpr FixedString(std::initializer_list<char> s)
+    {
+      unsigned i = 0;
+      for (auto c : s) {
+        buf[i] = c;
+        ++i;
+      }
     }
 
     constexpr operator char const *() const { return buf; }

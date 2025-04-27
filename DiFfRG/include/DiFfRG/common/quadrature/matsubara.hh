@@ -2,6 +2,7 @@
 
 // DiFfRG
 #include <DiFfRG/common/cuda_prefix.hh>
+#include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/math.hh>
 
 // C++ standard library
@@ -64,23 +65,9 @@ namespace DiFfRG
                 const int max_size = powr<10>(2), const int vacuum_quad_size = 48, const int precision_factor = 1);
 
     /**
-     * @brief Get the nodes of the quadrature rule.
-     *
-     * @return The nodes of the quadrature rule.
-     */
-    const std::vector<NT> &nodes() const;
-
-    /**
-     * @brief Get the weights of the quadrature rule.
-     *
-     * @return The weights of the quadrature rule.
-     */
-    const std::vector<NT> &weights() const;
-
-    /**
      * @brief Get the size of the quadrature rule.
      */
-    int size() const;
+    size_t size() const;
 
     /**
      * @brief Get the temperature of the quadrature rule.
@@ -103,59 +90,47 @@ namespace DiFfRG
     {
       auto sum = T * f(static_cast<NT>(0));
       for (int i = 0; i < m_size; ++i)
-        sum += w[i] * (f(x[i]) + f(-x[i]));
+        sum += host_weights[i] * (f(host_nodes[i]) + f(-host_nodes[i]));
       return sum;
     }
 
-#ifdef USE_CUDA
-    /**
-     * @brief Return the device-side nodes of the quadrature rule.
-     *
-     * @return const NT*
-     */
-    const NT *device_nodes();
+    template <typename MemorySpace> Kokkos::View<const NT *, MemorySpace> nodes() const
+    {
+      if constexpr (std::is_same_v<MemorySpace, Kokkos::DefaultExecutionSpace::memory_space>) {
+        return device_nodes;
+      } else if constexpr (std::is_same_v<MemorySpace, Kokkos::DefaultHostExecutionSpace::memory_space>) {
+        return host_nodes;
+      } else {
+        throw std::runtime_error("Invalid memory space");
+      }
+    }
 
-    /**
-     * @brief Return the device-side weights of the quadrature rule.
-     *
-     * @return const NT*
-     */
-    const NT *device_weights();
-#endif
+    template <typename MemorySpace> Kokkos::View<const NT *, MemorySpace> weights() const
+    {
+      if constexpr (std::is_same_v<MemorySpace, Kokkos::DefaultExecutionSpace::memory_space>) {
+        return device_weights;
+      } else if constexpr (std::is_same_v<MemorySpace, Kokkos::DefaultHostExecutionSpace::memory_space>) {
+        return host_weights;
+      } else {
+        throw std::runtime_error("Invalid memory space");
+      }
+    }
 
   private:
     NT T, typical_E;
-    /**
-     * @brief Nodes of the quadrature rule.
-     */
-    std::vector<NT> x;
 
-    /**
-     * @brief Weights of the quadrature rule.
-     */
-    std::vector<NT> w;
+    Kokkos::View<NT *, GPU_memory> device_nodes;
+    Kokkos::View<NT *, GPU_memory> device_weights;
+
+    Kokkos::View<NT *, CPU_memory> host_nodes;
+    Kokkos::View<NT *, CPU_memory> host_weights;
 
     /**
      * @brief The number of nodes in the quadrature rule.
      */
     int m_size;
 
-#ifdef __CUDACC__
-    /**
-     * @brief Device-side nodes of the quadrature rule.
-     */
-    thrust::device_vector<NT> device_x;
-
-    /**
-     * @brief Device-side weights of the quadrature rule.
-     */
-    thrust::device_vector<NT> device_w;
-#endif
-
-    /**
-     * @brief Move the nodes and weights to the device, if they are not already there.
-     */
-    void move_device_data();
+    void write_data(const std::vector<NT> &x, const std::vector<NT> &w);
 
     /**
      * @brief Construct a quadrature rule for T=0.

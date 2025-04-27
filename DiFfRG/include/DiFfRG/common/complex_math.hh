@@ -1,78 +1,46 @@
 #pragma once
 
 // DiFfRG
-#include <DiFfRG/common/cuda_prefix.hh>
+#include <DiFfRG/common/kokkos.hh>
 
 // external libraries
 #include <autodiff/common/numbertraits.hpp>
 
-#ifdef USE_CUDA
-
-#include <cuda/std/complex>
-
 namespace DiFfRG
 {
-  using ::cuda::std::atan2;
-  using ::cuda::std::complex;
-  using ::cuda::std::cos;
-  using ::cuda::std::cosh;
-  using ::cuda::std::imag;
-  using ::cuda::std::log;
-  using ::cuda::std::pow;
-  using ::cuda::std::real;
-  using ::cuda::std::sin;
-  using ::cuda::std::sinh;
-  using ::cuda::std::sqrt;
-  using ::cuda::std::tan;
-  using ::cuda::std::tanh;
-  template <typename NT> constexpr auto cot(const NT x) { return NT(1) / tan(x); }
+  using ::Kokkos::complex;
 
+  namespace compute
+  {
+    using ::Kokkos::abs;
+    using ::Kokkos::atan;
+    using ::Kokkos::cos;
+    using ::Kokkos::cosh;
+    using ::Kokkos::imag;
+    using ::Kokkos::log;
+    using ::Kokkos::pow;
+    using ::Kokkos::real;
+    using ::Kokkos::sin;
+    using ::Kokkos::sinh;
+    using ::Kokkos::sqrt;
+    using ::Kokkos::tan;
+    using ::Kokkos::tanh;
+
+    template <typename NT> constexpr auto cot(const NT x) { return NT(1) / tan(x); }
+    template <typename NT> constexpr auto coth(const NT x) { return NT(1) / tanh(x); }
+  } // namespace compute
+
+  using ::Kokkos::imag;
+  using ::Kokkos::real;
 } // namespace DiFfRG
-
-#else
-
-#include <complex>
-namespace DiFfRG
-{
-  using ::std::atan2;
-  using ::std::complex;
-  using ::std::cos;
-  using ::std::cosh;
-  using ::std::imag;
-  using ::std::log;
-  using ::std::pow;
-  using ::std::real;
-  using ::std::sin;
-  using ::std::sinh;
-  using ::std::sqrt;
-  using ::std::tan;
-  using ::std::tanh;
-  template <typename NT> constexpr auto cot(const NT x) { return NT(1) / tan(x); }
-} // namespace DiFfRG
-
-#endif
-
-#ifdef USE_CUDA
 
 // Specialize isArithmetic for complex to make it compatible with real
 namespace autodiff::detail
 {
-  using ::cuda::std::complex;
-  template <typename T> struct ArithmeticTraits<::cuda::std::__4::complex<T>> : ArithmeticTraits<T> {
+  using ::Kokkos::complex;
+  template <typename T> struct ArithmeticTraits<::Kokkos::complex<T>> : ArithmeticTraits<T> {
   };
 } // namespace autodiff::detail
-
-#else
-
-// Specialize isArithmetic for complex to make it compatible with real
-namespace autodiff::detail
-{
-  using ::std::complex;
-  template <typename T> struct ArithmeticTraits<::std::complex<T>> : ArithmeticTraits<T> {
-  };
-} // namespace autodiff::detail
-
-#endif
 
 namespace autodiff::detail
 {

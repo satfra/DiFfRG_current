@@ -42,13 +42,14 @@ namespace DiFfRG
 
     template <typename... T> static constexpr auto v_tie(T &&...t)
     {
-      return named_tuple<std::tuple<T &...>, "variables", "extractors">(std::tie(t...));
+      return named_tuple<std::tuple<T &...>, StringSet<"variables", "extractors">>(std::tie(t...));
     }
 
     template <typename... T> static constexpr auto e_tie(T &&...t)
     {
-      return named_tuple<std::tuple<T &...>, "fe_functions", "fe_derivatives", "fe_hessians", "extractors",
-                         "variables">(std::tie(t...));
+      return named_tuple<std::tuple<T &...>,
+                         StringSet<"fe_functions", "fe_derivatives", "fe_hessians", "extractors", "variables">>(
+          std::tie(t...));
     }
 
   public:

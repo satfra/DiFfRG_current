@@ -15,13 +15,15 @@ namespace DiFfRG
 
     template <typename... T> auto fe_tie(T &&...t)
     {
-      return named_tuple<std::tuple<T &...>, "fe_functions", "fe_derivatives", "fe_hessians", "extractors",
-                         "variables">(std::tie(t...));
+      return named_tuple<std::tuple<T &...>,
+                         StringSet<"fe_functions", "fe_derivatives", "fe_hessians", "extractors", "variables">>(
+          std::tie(t...));
     }
 
     template <typename... T> auto i_tie(T &&...t)
     {
-      return named_tuple<std::tuple<T &...>, "fe_functions", "fe_derivatives", "fe_hessians">(std::tie(t...));
+      return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "fe_derivatives", "fe_hessians">>(
+          std::tie(t...));
     }
 
     namespace internal
@@ -221,7 +223,8 @@ namespace DiFfRG
         DoFTools::make_sparsity_pattern(dof_handler, dsp, discretization.get_constraints(),
                                         /*keep_constrained_dofs = */ true);
         for (uint row = 0; row < dsp.n_rows(); ++row)
-          dsp.add_row_entries(row, extractor_dof_indices);
+          for (const auto &col : extractor_dof_indices)
+            dsp.add(row, col);
         sparsity_pattern_jacobian.copy_from(dsp);
       }
 

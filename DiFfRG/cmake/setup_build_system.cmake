@@ -24,15 +24,19 @@ message(STATUS "DiFfRG bundle directory: ${BUNDLED_DIR}")
 # Set standard and language
 # ##############################################################################
 
+set(CMAKE_CXX_STANDARD_REQUIRED On)
 if(NOT DEFINED CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 20)
+  set(CMAKE_CUDA_STANDARD 20)
 else()
   if(CMAKE_CXX_STANDARD LESS 20)
     message(FATAL_ERROR "C++ standard must be at least 20")
   endif()
 endif()
 
-set(CMAKE_CXX_STANDARD_REQUIRED On)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+set(CMAKE_CXX_EXTENSIONS OFF)
 enable_language(CXX)
 
 # By default, we build in Release mode, i.e. if the user does not make any other
@@ -48,28 +52,25 @@ endif()
 # ##############################################################################
 
 # Find deal.II
-find_package(
-  deal.II
-  9.4.2
-  QUIET
-  REQUIRED
-  HINTS
-  ${DEAL_II_DIR}
-  ${BUNDLED_DIR}/dealii_install)
+find_package(deal.II 9.4.2 QUIET REQUIRED HINTS ${BUNDLED_DIR}/dealii_install)
 deal_ii_initialize_cached_variables()
 message(STATUS "Found deal.II in  ${deal.II_DIR}")
+# deal.II link dir
+link_directories(${BUNDLED_DIR}/dealii_install/lib/)
 
 # Find TBB
 find_package(TBB 2022.0.0 REQUIRED HINTS ${BUNDLED_DIR}/oneTBB_install)
 message(STATUS "Found TBB in ${TBB_DIR}")
 
-# Find TBB
+# Find Kokkos
 find_package(Kokkos REQUIRED HINTS ${BUNDLED_DIR}/kokkos_install)
 message(STATUS "Found Kokkos in ${Kokkos_DIR}")
 
 # Find Boost
-find_package(Boost 1.81 REQUIRED HINTS ${BUNDLED_DIR}/boost_install/ ${BUNDLED_DIR}/boost_install/lib/
-             COMPONENTS thread iostreams serialization system)
+find_package(
+  Boost 1.81 REQUIRED HINTS ${BUNDLED_DIR}/boost_install/
+  ${BUNDLED_DIR}/boost_install/lib/ COMPONENTS thread iostreams serialization
+                                               system)
 message(STATUS "Boost version: ${Boost_VERSION}")
 message(STATUS "Boost include dir: ${Boost_INCLUDE_DIRS}")
 message(STATUS "Boost libraries: ${Boost_LIBRARIES}")
@@ -163,29 +164,60 @@ cpmaddpackage(
   1.14.1
   OPTIONS
   "CMAKE_BUILD_TYPE Release"
-  "SPDLOG_INSTALL ON")
+  "SPDLOG_INSTALL ON"
+  "DSPDLOG_BUILD_SHARED=OFF")
 
 # ##############################################################################
 # Convenience functions
 # ##############################################################################
 
-set(USE_CUDA OFF)
+# We redefine the deal_ii_setup_target function here such that we can choose
+# precisely how to propagate flags and other details
+function(setup_dealii TARGET)
+  target_link_libraries(${TARGET} PUBLIC deal_II)
+  target_link_libraries(${TARGET} INTERFACE deal_II)
+  target_include_directories(${TARGET} SYSTEM PUBLIC ${DEAL_II_INCLUDE_DIRS})
+
+  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(_build "DEBUG")
+  elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(_build "RELEASE")
+  endif()
+
+  set(_cflags "${DEAL_II_CXX_FLAGS} ${DEAL_II_CXX_FLAGS_${_build}}")
+  # remove c++20 flag and O2 flag - CMake adds them automatically and we thus
+  # avoid the nvcc_wrapper warnings
+  string(REPLACE "-std=c++20" "" _cflags ${_cflags})
+  string(REPLACE "-O2" "" _cflags ${_cflags})
+  separate_arguments(_cflags)
+  target_compile_options(${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:${_cflags}>)
+
+  set(_lflags "${DEAL_II_LINKER_FLAGS} ${DEAL_II_LINKER_FLAGS_${_build}}")
+  separate_arguments(_lflags)
+  target_link_options(${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:${_lflags}>)
+
+  message(STATUS "CXX flags: ${_cflags}")
+  message(STATUS "Linker flags: ${_lflags}")
+endfunction()
 
 function(setup_target TARGET)
-  # target_link_libraries(${TARGET} PUBLIC dealii::dealii)
-  deal_ii_setup_target(${TARGET})
+  setup_dealii(${TARGET})
 
   # Check if the target is DiFfRG
   if(${TARGET} STREQUAL "DiFfRG")
     target_include_directories(${TARGET} PRIVATE ${autodiff_SOURCE_DIR})
   else()
-    target_link_libraries(${TARGET} autodiff::autodiff)
+    target_link_libraries(${TARGET} PUBLIC autodiff::autodiff)
   endif()
 
-  target_link_libraries(${TARGET} GSL::gsl)
-  target_link_libraries(${TARGET} Eigen3)
-  target_link_libraries(${TARGET} spdlog::spdlog)
-  target_link_libraries(${TARGET} ${Boost_LIBRARIES})
-  target_link_libraries(${TARGET} TBB::tbb)
-  target_link_libraries(${TARGET} Kokkos::kokkos)
+  # Do not warn about missing braces
+  target_compile_options(${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:
+                                          -Wno-missing-braces>)
+
+  target_link_libraries(${TARGET} PUBLIC GSL::gsl)
+  target_link_libraries(${TARGET} PUBLIC Eigen3)
+  target_link_libraries(${TARGET} PUBLIC spdlog::spdlog)
+  target_link_libraries(${TARGET} PUBLIC ${Boost_LIBRARIES})
+  target_link_libraries(${TARGET} PUBLIC TBB::tbb)
+  target_link_libraries(${TARGET} PUBLIC Kokkos::kokkos)
 endfunction()

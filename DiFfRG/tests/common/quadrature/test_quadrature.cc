@@ -1,7 +1,9 @@
+#include "DiFfRG/common/kokkos.hh"
 #include "catch2/catch_test_macros.hpp"
 #include <catch2/catch_all.hpp>
 #include <catch2/catch_approx.hpp>
 
+#include <DiFfRG/common/initialize.hh>
 #include <DiFfRG/common/quadrature/gauss_legendre.hh>
 #include <DiFfRG/common/quadrature/quadrature.hh>
 
@@ -30,4 +32,35 @@ TEMPLATE_TEST_CASE_SIG("Test correct creation of quadrature rules at example of 
 
   REQUIRE(x[order - 1] == Catch::Approx(2. * gl.x[order - 1] - 1.));
   REQUIRE(w[order - 1] == Catch::Approx(2. * gl.w[order - 1]));
+}
+
+TEMPLATE_TEST_CASE_SIG("Test the quadrature class at the example of Gauss-Legendre", "[double][quadrature]",
+                       ((size_t order), order), (4), (8), (16), (32), (64), (128))
+{
+  DiFfRG::Initialize();
+
+  const Quadrature<double> q(order, QuadratureType::legendre);
+
+  REQUIRE(q.nodes<CPU_memory>().size() == order);
+  REQUIRE(q.weights<CPU_memory>().size() == order);
+
+  REQUIRE(q.nodes<GPU_memory>().size() == order);
+  REQUIRE(q.weights<GPU_memory>().size() == order);
+
+  const GLQuadrature<order, double> gl;
+
+  for (size_t i = 0; i < order; ++i) {
+    REQUIRE(q.nodes<CPU_memory>()[i] == Catch::Approx(gl.x[i]));
+    REQUIRE(q.weights<CPU_memory>()[i] == Catch::Approx(gl.w[i]));
+  }
+
+  auto gpu_nodes = Kokkos::create_mirror_view(q.nodes<GPU_memory>());
+  auto gpu_weights = Kokkos::create_mirror_view(q.weights<GPU_memory>());
+  Kokkos::deep_copy(gpu_nodes, q.nodes<GPU_memory>());
+  Kokkos::deep_copy(gpu_weights, q.weights<GPU_memory>());
+
+  for (size_t i = 0; i < order; ++i) {
+    REQUIRE(gpu_nodes[i] == Catch::Approx(gl.x[i]));
+    REQUIRE(gpu_weights[i] == Catch::Approx(gl.w[i]));
+  }
 }

@@ -12,15 +12,36 @@
 
 namespace DiFfRG
 {
-  template <FixedString _str, size_t... _val> struct NDBlock {
+  /**
+   * @brief A class to describe a function with a compile-time name and a fixed number of dimensions.
+   *
+   * @tparam _str The name of the function.
+   * @tparam _val The dimensions of the function.
+   */
+  template <FixedString _str, size_t... _val> struct FunctionND {
     static constexpr FixedString name = _str;
     static constexpr size_t size = (_val * ...);
     static constexpr size_t dim = sizeof...(_val);
     static constexpr std::array<size_t, dim> nd_sizes{{_val...}};
   };
 
-  template <FixedString _str> using Scalar = NDBlock<_str, 1>;
-  template <FixedString _str, size_t... _val> using FunctionND = NDBlock<_str, _val...>;
+  /*
+   * @brief A class to describe a scalar variable.
+   *
+   * @tparam _str The name of the variable.
+   */
+  template <FixedString _str> struct Scalar {
+    /*
+    You're probably wondering why this is not a specialization of FunctionND.
+    Well, depending on your compiler, this may end up in a wierd bug, where it messes up the internals of the array in
+    FixedString. I was not able to fully debug this, and therefore we circumvent the problem by very explicitly defining
+    the Scalar class.
+    */
+    static constexpr FixedString name = _str;
+    static constexpr size_t size = 1;
+    static constexpr size_t dim = 1;
+    static constexpr std::array<size_t, dim> nd_sizes{{1}};
+  };
 
   template <typename... _descriptors> struct SubDescriptor {
     static constexpr std::array<const char *, sizeof...(_descriptors)> names{{_descriptors::name...}};

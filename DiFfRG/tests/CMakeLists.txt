@@ -19,13 +19,13 @@ list(APPEND CMAKE_MODULE_PATH ${Catch2_SOURCE_DIR}/extras)
 
 function(setup_test TARGET)
   setup_target(${TARGET})
-  target_link_libraries(${TARGET} DiFfRG::DiFfRG Catch2::Catch2WithMain)
+  target_link_libraries(${TARGET} PRIVATE DiFfRG::DiFfRG Catch2::Catch2WithMain)
   catch_discover_tests(${TARGET})
 endfunction()
 
 function(setup_benchmark TARGET)
   setup_target(${TARGET})
-  target_link_libraries(${TARGET} DiFfRG::DiFfRG Catch2::Catch2WithMain)
+  target_link_libraries(${TARGET} PRIVATE DiFfRG::DiFfRG Catch2::Catch2WithMain)
 endfunction()
 
 include(CTest)

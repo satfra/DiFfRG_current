@@ -1,51 +1,61 @@
+#include <Kokkos_Core_fwd.hpp>
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 
 #include <DiFfRG/common/complex_math.hh>
-#include <DiFfRG/common/cuda_prefix.hh>
+#include <DiFfRG/common/initialize.hh>
+#include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/math.hh>
 
 using namespace DiFfRG;
 
+constexpr double eps = 10 * std::numeric_limits<double>::epsilon();
+
 TEST_CASE("Test autodiff on CPU", "[autodiff][cpu]")
 {
   auto validate_no_ad = [](const auto &x, const auto &value, std::string name = "") {
-    if (!is_close(real(x), real(value), std::numeric_limits<double>::epsilon())) {
+    // check the real part of the value
+    if (!is_close(real(x), real(value), eps)) {
       std::cout << "is: real(" << name << ") = " << real(x) << std::endl;
       std::cout << "should: real(value) = " << real(value) << std::endl;
     }
-    CHECK(is_close(real(x), real(value), std::numeric_limits<double>::epsilon()));
+    CHECK(is_close(real(x), real(value), eps));
 
-    if (!is_close(imag(x), imag(value), std::numeric_limits<double>::epsilon())) {
+    // check the imaginary part of the value
+    if (!is_close(imag(x), imag(value), eps)) {
       std::cout << "is: imag(" << name << ") = " << imag(x) << std::endl;
       std::cout << "should: imag(value) = " << imag(value) << std::endl;
     }
-    CHECK(is_close(imag(x), imag(value), std::numeric_limits<double>::epsilon()));
+    CHECK(is_close(imag(x), imag(value), eps));
   };
   auto validate = [](const auto &x, const auto &value, const auto &derivative, std::string name = "") {
-    if (!is_close(real(autodiff::val(x)), real(value), std::numeric_limits<double>::epsilon())) {
+    // check the real part of the value
+    if (!is_close(real(autodiff::val(x)), real(value), eps)) {
       std::cout << "is: real(autodiff::val(" << name << ")) = " << real(autodiff::val(x)) << std::endl;
       std::cout << "should: real(value) = " << real(value) << std::endl;
     }
-    CHECK(is_close(real(autodiff::val(x)), real(value), std::numeric_limits<double>::epsilon()));
+    CHECK(is_close(real(autodiff::val(x)), real(value), eps));
 
-    if (!is_close(imag(autodiff::val(x)), imag(value), std::numeric_limits<double>::epsilon())) {
+    // check the imaginary part of the value
+    if (!is_close(imag(autodiff::val(x)), imag(value), eps)) {
       std::cout << "is: imag(autodiff::val(" << name << ")) = " << imag(autodiff::val(x)) << std::endl;
       std::cout << "should: imag(value) = " << imag(value) << std::endl;
     }
-    CHECK(is_close(imag(autodiff::val(x)), imag(value), std::numeric_limits<double>::epsilon()));
+    CHECK(is_close(imag(autodiff::val(x)), imag(value), eps));
 
-    if (!is_close(real(autodiff::derivative(x)), real(derivative), std::numeric_limits<double>::epsilon())) {
+    // check the real part of the derivative
+    if (!is_close(real(autodiff::derivative(x)), real(derivative), eps)) {
       std::cout << "is: real(autodiff::derivative(" << name << ")) = " << real(autodiff::derivative(x)) << std::endl;
       std::cout << "should: real(derivative) = " << real(derivative) << std::endl;
     }
-    CHECK(is_close(real(autodiff::derivative(x)), real(derivative), std::numeric_limits<double>::epsilon()));
+    CHECK(is_close(real(autodiff::derivative(x)), real(derivative), 10 * eps));
 
-    if (!is_close(imag(autodiff::derivative(x)), imag(derivative), std::numeric_limits<double>::epsilon())) {
+    // check the imaginary part of the derivative
+    if (!is_close(imag(autodiff::derivative(x)), imag(derivative), 10 * eps)) {
       std::cout << "is: imag(autodiff::derivative(" << name << ")) = " << imag(autodiff::derivative(x)) << std::endl;
       std::cout << "should: imag(derivative) = " << imag(derivative) << std::endl;
     }
-    CHECK(is_close(imag(autodiff::derivative(x)), imag(derivative), std::numeric_limits<double>::epsilon()));
+    CHECK(is_close(imag(autodiff::derivative(x)), imag(derivative), 10 * eps));
   };
 
   const double x = 2.0;
@@ -174,5 +184,171 @@ TEST_CASE("Test autodiff on CPU", "[autodiff][cpu]")
 
     // ad_c_x, ad_c_x
     validate(ad_c_x / ad_c_x, complex<double>(1., 0.), complex<double>(0., 0.), "ad_c_x / ad_c_x");
+  }
+}
+
+TEST_CASE("Test autodiff with Kokkos", "[autodiff][kokkos]")
+{
+  DiFfRG::Initialize();
+
+  auto validate = [](const auto &x, const auto &value, const auto &derivative, std::string name = "") {
+    // check the real part of the value
+    if (!is_close(real(autodiff::val(x)), real(value), eps)) {
+      std::cout << "is: real(autodiff::val(" << name << ")) = " << real(autodiff::val(x)) << std::endl;
+      std::cout << "should: real(value) = " << real(value) << std::endl;
+    }
+    CHECK(is_close(real(autodiff::val(x)), real(value), eps));
+
+    // check the imaginary part of the value
+    if (!is_close(imag(autodiff::val(x)), imag(value), eps)) {
+      std::cout << "is: imag(autodiff::val(" << name << ")) = " << imag(autodiff::val(x)) << std::endl;
+      std::cout << "should: imag(value) = " << imag(value) << std::endl;
+    }
+    CHECK(is_close(imag(autodiff::val(x)), imag(value), eps));
+
+    // check the real part of the derivative
+    if (!is_close(real(autodiff::derivative(x)), real(derivative), eps)) {
+      std::cout << "is: real(autodiff::derivative(" << name << ")) = " << real(autodiff::derivative(x)) << std::endl;
+      std::cout << "should: real(derivative) = " << real(derivative) << std::endl;
+    }
+    CHECK(is_close(real(autodiff::derivative(x)), real(derivative), eps));
+
+    // check the imaginary part of the derivative
+    if (!is_close(imag(autodiff::derivative(x)), imag(derivative), eps)) {
+      std::cout << "is: imag(autodiff::derivative(" << name << ")) = " << imag(autodiff::derivative(x)) << std::endl;
+      std::cout << "should: imag(derivative) = " << imag(derivative) << std::endl;
+    }
+    CHECK(is_close(imag(autodiff::derivative(x)), imag(derivative), eps));
+  };
+
+  // Take a derivative of a matrix multiplication
+  // A: N x M, v: M x 1, result: N x 1
+  const long N = GENERATE(take(4, random(powr<4>(2), powr<13>(2))));
+  const long M = GENERATE(take(4, random(powr<4>(2), powr<13>(2))));
+
+  SECTION("GPU")
+  {
+    Kokkos::View<complex<double> **, GPU_memory> A("A", N, M);
+    Kokkos::View<cxReal *, GPU_memory> v("v", M);
+    Kokkos::View<cxReal *, GPU_memory> result("result", N);
+
+    Kokkos::Random_XorShift64_Pool<GPU_exec> random_pool(/*seed=*/12345);
+
+    // Fill A and v with random values
+    Kokkos::parallel_for(
+        "Fill A", Kokkos::MDRangePolicy<GPU_exec, Kokkos::Rank<2>>({0, 0}, {N, M}),
+        KOKKOS_LAMBDA(const size_t i, const size_t j) {
+          // acquire the state of the random number generator engine
+          auto generator = random_pool.get_state();
+
+          A(i, j) = complex<double>(generator.drand(0., 1.), generator.drand(0., 1.));
+
+          // do not forget to release the state of the engine
+          random_pool.free_state(generator);
+        });
+
+    Kokkos::parallel_for(
+        "Fill v", Kokkos::RangePolicy<GPU_exec>(0, M), KOKKOS_LAMBDA(const size_t i) {
+          // acquire the state of the random number generator engine
+          auto generator = random_pool.get_state();
+
+          v(i) = cxReal({complex<double>(generator.drand(0., 1.), generator.drand(0., 1.)), complex<double>(1., 0.)});
+
+          // do not forget to release the state of the engine
+          random_pool.free_state(generator);
+        });
+
+    Kokkos::fence();
+
+    // Compute the matrix-vector product
+    Kokkos::parallel_for(
+        "Matrix-vector multiplication", Kokkos::RangePolicy<GPU_exec>(0, N), KOKKOS_LAMBDA(const size_t i) {
+          cxReal temp{};
+          for (long j = 0; j < M; ++j) {
+            temp += A(i, j) * v(j);
+          }
+          result(i) = temp;
+        });
+
+    Kokkos::fence();
+
+    // make host mirrors
+    auto A_h = Kokkos::create_mirror_view(A);
+    auto v_h = Kokkos::create_mirror_view(v);
+    auto result_h = Kokkos::create_mirror_view(result);
+
+    // copy data to host
+    Kokkos::deep_copy(A_h, A);
+    Kokkos::deep_copy(v_h, v);
+    Kokkos::deep_copy(result_h, result);
+
+    // Check the result
+    for (long i = 0; i < N; ++i) {
+      complex<double> expected_value = 0;
+      complex<double> expected_derivative = 0;
+      for (long j = 0; j < M; ++j) {
+        expected_value += A_h(i, j) * autodiff::val(v_h(j));
+        expected_derivative += A_h(i, j);
+      }
+      validate(result_h(i), expected_value, expected_derivative, "result(" + std::to_string(i) + ")");
+    }
+  }
+
+  SECTION("CPU")
+  {
+    Kokkos::View<complex<double> **, CPU_memory> A("A", N, M);
+    Kokkos::View<cxReal *, CPU_memory> v("v", M);
+    Kokkos::View<cxReal *, CPU_memory> result("result", N);
+
+    Kokkos::Random_XorShift64_Pool<CPU_exec> random_pool(/*seed=*/12345);
+
+    // Fill A and v with random values
+    Kokkos::parallel_for(
+        "Fill A", Kokkos::MDRangePolicy<CPU_exec, Kokkos::Rank<2>>({0, 0}, {N, M}),
+        KOKKOS_LAMBDA(const size_t i, const size_t j) {
+          // acquire the state of the random number generator engine
+          auto generator = random_pool.get_state();
+
+          A(i, j) = complex<double>(generator.drand(0., 1.), generator.drand(0., 1.));
+
+          // do not forget to release the state of the engine
+          random_pool.free_state(generator);
+        });
+
+    Kokkos::parallel_for(
+        "Fill v", Kokkos::RangePolicy<CPU_exec>(0, M), KOKKOS_LAMBDA(const size_t i) {
+          // acquire the state of the random number generator engine
+          auto generator = random_pool.get_state();
+
+          v(i) = cxReal({complex<double>(generator.drand(0., 1.), generator.drand(0., 1.)), complex<double>(1., 0.)});
+
+          // do not forget to release the state of the engine
+          random_pool.free_state(generator);
+        });
+
+    Kokkos::fence();
+
+    // Compute the matrix-vector product
+    Kokkos::parallel_for(
+        "Matrix-vector multiplication", Kokkos::RangePolicy<CPU_exec>(0, N), KOKKOS_LAMBDA(const size_t i) {
+          cxReal temp{};
+          for (long j = 0; j < M; ++j) {
+            temp += A(i, j) * v(j);
+          }
+          result(i) = temp;
+        });
+
+    Kokkos::fence();
+
+    // Check the result
+    for (long i = 0; i < N; ++i) {
+      complex<double> expected_value = 0;
+      complex<double> expected_derivative = 0;
+      for (long j = 0; j < M; ++j) {
+        expected_value += A(i, j) * autodiff::val(v(j));
+        expected_derivative += A(i, j);
+      }
+      validate(result(i), expected_value, expected_derivative, "result(" + std::to_string(i) + ")");
+    }
   }
 }

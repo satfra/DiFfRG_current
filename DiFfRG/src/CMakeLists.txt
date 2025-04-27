@@ -4,6 +4,7 @@ set(DiFfRG_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/configuration_helper.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/csv_reader.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/external_data_interpolator.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/initialize.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/interpolation.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/json.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/math.cc
@@ -36,13 +37,13 @@ if(USE_CUDA)
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/quadrature/matsubara.cu
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/quadrature/quadrature_provider.cu
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/quadrature/quadrature.cu
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/linear_interpolation_1D.cu
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/linear_interpolation_2D.cu
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/linear_interpolation_3D.cu
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_1D.cu
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_2D.cu
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_3D.cu
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_1D_stack.cu
+    # ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/linear_interpolation_1D.cu
+    # ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/linear_interpolation_2D.cu
+    # ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/linear_interpolation_3D.cu
+    # ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_1D.cu
+    # ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_2D.cu
+    # ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_3D.cu
+    # ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_1D_stack.cu
   )
 else()
   list(
@@ -51,13 +52,13 @@ else()
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/quadrature/matsubara.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/quadrature/quadrature_provider.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/quadrature/quadrature.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/linear_interpolation_1D.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/linear_interpolation_2D.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/linear_interpolation_3D.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_1D.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_2D.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_3D.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_1D_stack.cc
+    # ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/linear_interpolation_1D.cc
+    # ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/linear_interpolation_2D.cc
+    # ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/linear_interpolation_3D.cc
+    # ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_1D.cc
+    # ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_2D.cc
+    # ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_3D.cc
+    # ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_1D_stack.cc
   )
 endif()
 

@@ -2,12 +2,12 @@
 
 // DiFfRG
 #include <DiFfRG/common/cuda_prefix.hh>
+#include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/quadrature/diagonalization.hh>
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/common/utils.hh>
 
 // standard library
-#include <string>
 #include <vector>
 
 namespace DiFfRG
@@ -54,26 +54,40 @@ namespace DiFfRG
 
     void reinit(const size_t order, const QuadratureType _t);
 
-    const std::vector<NT> &nodes() const;
-    const std::vector<NT> &weights() const;
+    template <typename MemorySpace> Kokkos::View<const NT *, MemorySpace> nodes() const
+    {
+      if constexpr (std::is_same_v<MemorySpace, Kokkos::DefaultExecutionSpace::memory_space>) {
+        return device_nodes;
+      } else if constexpr (std::is_same_v<MemorySpace, Kokkos::DefaultHostExecutionSpace::memory_space>) {
+        return host_nodes;
+      } else {
+        throw std::runtime_error("Invalid memory space");
+      }
+    }
 
-    const NT *device_nodes();
-    const NT *device_weights();
+    template <typename MemorySpace> Kokkos::View<const NT *, MemorySpace> weights() const
+    {
+      if constexpr (std::is_same_v<MemorySpace, Kokkos::DefaultExecutionSpace::memory_space>) {
+        return device_weights;
+      } else if constexpr (std::is_same_v<MemorySpace, Kokkos::DefaultHostExecutionSpace::memory_space>) {
+        return host_weights;
+      } else {
+        throw std::runtime_error("Invalid memory space");
+      }
+    }
 
     size_t size() const;
+
     QuadratureType get_type() const;
 
   private:
     QuadratureType _t;
     uint order;
 
-    std::vector<NT> m_nodes;
-    std::vector<NT> m_weights;
-#ifdef __CUDACC__
-    thrust::device_vector<NT> m_device_nodes;
-    thrust::device_vector<NT> m_device_weights;
+    Kokkos::View<NT *, GPU_memory> device_nodes;
+    Kokkos::View<NT *, GPU_memory> device_weights;
 
-    void move_device_data();
-#endif
+    Kokkos::View<NT *, CPU_memory> host_nodes;
+    Kokkos::View<NT *, CPU_memory> host_weights;
   };
 } // namespace DiFfRG

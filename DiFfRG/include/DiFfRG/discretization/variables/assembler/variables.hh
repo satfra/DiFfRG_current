@@ -29,11 +29,10 @@ namespace DiFfRG
   namespace Variables
   {
     using namespace dealii;
-    using std::array;
 
     template <typename... T> auto fe_tie(T &&...t)
     {
-      return named_tuple<std::tuple<T &...>, "variables">(std::tie(t...));
+      return named_tuple<std::tuple<T &...>, StringSet<"variables">>(std::tie(t...));
     }
 
     /**

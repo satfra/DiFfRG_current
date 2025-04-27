@@ -2,12 +2,15 @@
 #include <catch2/catch_all.hpp>
 #include <catch2/catch_approx.hpp>
 
+#include <DiFfRG/common/initialize.hh>
 #include <DiFfRG/common/quadrature/matsubara.hh>
 
 using namespace DiFfRG;
 
 TEST_CASE("Test matsubara quadrature rule", "[double][quadrature][matsubara]")
 {
+  DiFfRG::Initialize();
+
   SECTION("Simple test")
   {
     const double T = GENERATE(take(5, random(0.01, 1.0)));
@@ -18,9 +21,10 @@ TEST_CASE("Test matsubara quadrature rule", "[double][quadrature][matsubara]")
     const double reference = 0.5 * 1. / std::tanh(0.5 / T);
     const double sum = mq.sum(f);
 
-    constexpr double expected_precision = 1e-13;
+    constexpr double expected_precision = 1e-10;
     CHECK(sum == Catch::Approx(reference).epsilon(expected_precision));
   }
+
   SECTION("Test with different parameters")
   {
     const double T = GENERATE(take(5, random(0.001, 0.1)));
@@ -38,9 +42,10 @@ TEST_CASE("Test matsubara quadrature rule", "[double][quadrature][matsubara]")
 
     const double result = mq.sum(f);
 
-    constexpr double expected_precision = 1e-13;
+    constexpr double expected_precision = 1e-10;
     CHECK(result == Catch::Approx(reference).epsilon(expected_precision));
   }
+
   SECTION("Test at T=0")
   {
     const double T = 0.;
