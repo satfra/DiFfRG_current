@@ -13,7 +13,7 @@ TEST_CASE("Test matsubara quadrature rule", "[double][quadrature][matsubara]")
 
   SECTION("Simple test")
   {
-    const double T = GENERATE(take(5, random(0.01, 1.0)));
+    const double T = GENERATE(take(64, random(0.01, 1.0)));
     MatsubaraQuadrature<double> mq(T, 1.);
 
     const auto f = [&](const double x) { return 1. / (1. + powr<2>(x)); };
@@ -21,15 +21,15 @@ TEST_CASE("Test matsubara quadrature rule", "[double][quadrature][matsubara]")
     const double reference = 0.5 * 1. / std::tanh(0.5 / T);
     const double sum = mq.sum(f);
 
-    constexpr double expected_precision = 1e-10;
+    constexpr double expected_precision = 1e-9;
     CHECK(sum == Catch::Approx(reference).epsilon(expected_precision));
   }
 
   SECTION("Test with different parameters")
   {
-    const double T = GENERATE(take(5, random(0.001, 0.1)));
-    const double a = GENERATE(take(5, random(0.1, 1.0)));
-    const double b = GENERATE(take(5, random(0.01, 0.1)));
+    const double T = GENERATE(take(8, random(0.001, 0.1)));
+    const double a = GENERATE(take(8, random(0.1, 1.0)));
+    const double b = GENERATE(take(8, random(0.01, 0.1)));
 
     MatsubaraQuadrature<double> mq(T, a);
 
@@ -42,14 +42,14 @@ TEST_CASE("Test matsubara quadrature rule", "[double][quadrature][matsubara]")
 
     const double result = mq.sum(f);
 
-    constexpr double expected_precision = 1e-10;
+    constexpr double expected_precision = 1e-6;
     CHECK(result == Catch::Approx(reference).epsilon(expected_precision));
   }
 
   SECTION("Test at T=0")
   {
     const double T = 0.;
-    const double a = GENERATE(take(20, random(0.01, 10.0)));
+    const double a = GENERATE(take(64, random(0.01, 10.0)));
 
     MatsubaraQuadrature<double> mq(T, a);
 

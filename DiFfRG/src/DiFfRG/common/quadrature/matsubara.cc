@@ -15,7 +15,7 @@ namespace DiFfRG
     const NT relative_distance = abs(typical_E) / abs(T + 1e-16);
     if (is_close(T, NT(0)) || relative_distance > 1e+2) return -vacuum_quad_size;
 
-    const NT E_max = (precision_factor + 100) * std::abs(typical_E);
+    const NT E_max = 1e4 * precision_factor * std::abs(typical_E);
     int size = 5 + int(std::sqrt(4 * E_max / (M_PI * M_PI * std::abs(T))));
     size = (int)std::ceil(size / (double)step) * step;
     return size;
