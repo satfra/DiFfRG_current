@@ -4,10 +4,11 @@
 #include <cmath>
 #include <stdexcept>
 #include <tuple>
+#include <type_traits>
 #include <vector>
 
 // DiFfRG
-#include <DiFfRG/common/cuda_prefix.hh>
+#include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/utils.hh>
 
 // A concept for what is a coordinate class
@@ -46,29 +47,27 @@ namespace DiFfRG
      */
     CoordinatePackND(Coordinates... coordinates) : coordinates(coordinates...) {}
 
-    template <typename... I> __forceinline__ __host__ __device__ std::array<ctype, dim> forward(I &&...i) const
+    template <typename... I> KOKKOS_FORCEINLINE_FUNCTION std::array<ctype, dim> forward(I &&...i) const
     {
       static_assert(sizeof...(I) == sizeof...(Coordinates));
       return forward_impl(std::make_integer_sequence<int, sizeof...(I)>(), std::forward<I>(i)...);
     }
 
     template <typename... I, int... Is>
-    __forceinline__ __host__ __device__ std::array<ctype, dim> forward_impl(std::integer_sequence<int, Is...>,
-                                                                            I &&...i) const
+    KOKKOS_FORCEINLINE_FUNCTION std::array<ctype, dim> forward_impl(std::integer_sequence<int, Is...>, I &&...i) const
     {
       return {{std::get<Is>(coordinates).forward(std::get<Is>(std::tie(i...)))...}};
     }
 
-    template <typename... I>
-    __forceinline__ __host__ __device__ std::array<ctype, sizeof...(I)> backward(I &&...i) const
+    template <typename... I> KOKKOS_FORCEINLINE_FUNCTION std::array<ctype, sizeof...(I)> backward(I &&...i) const
     {
       static_assert(sizeof...(I) == sizeof...(Coordinates));
       return backward_impl(std::make_integer_sequence<int, sizeof...(I)>(), std::forward<I>(i)...);
     }
 
     template <typename... I, int... Is>
-    std::array<ctype, sizeof...(I)> __forceinline__ __host__ __device__ backward_impl(std::integer_sequence<int, Is...>,
-                                                                                      I &&...i) const
+    std::array<ctype, sizeof...(I)> KOKKOS_FORCEINLINE_FUNCTION backward_impl(std::integer_sequence<int, Is...>,
+                                                                              I &&...i) const
     {
       return {{std::get<Is>(coordinates).backward(std::get<Is>(std::tie(i...)))...}};
     }
@@ -94,7 +93,9 @@ namespace DiFfRG
     const std::tuple<Coordinates...> coordinates;
   };
 
-  template <typename NT> class LinearCoordinates1D
+  template <typename NT>
+    requires std::is_floating_point_v<NT>
+  class LinearCoordinates1D
   {
   public:
     using ctype = NT;
@@ -119,7 +120,7 @@ namespace DiFfRG
      * @param x grid coordinate
      * @return NumberType physical coordinate
      */
-    NT __forceinline__ __device__ __host__ forward(const uint &x) const { return start + a * x; }
+    NT KOKKOS_FORCEINLINE_FUNCTION forward(const uint &x) const { return start + a * x; }
 
     /**
      * @brief Transform from the physical space to the grid
@@ -127,7 +128,7 @@ namespace DiFfRG
      * @param y physical coordinate
      * @return double grid coordinate
      */
-    NT __forceinline__ __device__ __host__ backward(const NT &y) const { return (y - start) / a; }
+    NT KOKKOS_FORCEINLINE_FUNCTION backward(const NT &y) const { return (y - start) / a; }
 
     uint size() const { return grid_extent; }
 
@@ -138,7 +139,9 @@ namespace DiFfRG
     NT a;
   };
 
-  template <typename NT> class LogarithmicCoordinates1D
+  template <typename NT>
+    requires std::is_floating_point_v<NT>
+  class LogarithmicCoordinates1D
   {
   public:
     using ctype = NT;
@@ -149,7 +152,7 @@ namespace DiFfRG
           gem1inv(1. / (grid_extent - 1.))
     {
       if (grid_extent == 0) throw std::runtime_error("LogarithmicCoordinates1D: grid_extent must be > 0");
-      using std::expm1;
+      using Kokkos::expm1;
       a = bias;
       b = (stop - start) / expm1(a);
       c = start;
@@ -167,9 +170,9 @@ namespace DiFfRG
      * @param x grid coordinate
      * @return NumberType physical coordinate
      */
-    NT __forceinline__ __device__ __host__ forward(const uint &x) const
+    NT KOKKOS_FORCEINLINE_FUNCTION forward(const uint &x) const
     {
-      using std::expm1;
+      using Kokkos::expm1;
       return b * expm1(a * x * gem1inv) + c;
     }
 
@@ -179,13 +182,13 @@ namespace DiFfRG
      * @param y physical coordinate
      * @return double grid coordinate
      */
-    NT __forceinline__ __device__ __host__ backward(const NT &y) const
+    NT KOKKOS_FORCEINLINE_FUNCTION backward(const NT &y) const
     {
-      using std::log1p;
+      using Kokkos::log1p;
       return log1p((y - c) / b) * gem1 / a;
     }
 
-    NT __forceinline__ __device__ __host__ backward_derivative(const NT &y) const { return 1. / (y - c) * gem1 / a; }
+    NT KOKKOS_FORCEINLINE_FUNCTION backward_derivative(const NT &y) const { return 1. / (y - c) * gem1 / a; }
 
     uint size() const { return grid_extent; }
 

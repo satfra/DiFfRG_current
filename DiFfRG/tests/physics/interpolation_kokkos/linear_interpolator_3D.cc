@@ -2,11 +2,9 @@
 #include <catch2/catch_all.hpp>
 
 #include <DiFfRG/common/initialize.hh>
-#include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/types.hh>
-#include <DiFfRG/discretization/grid/coordinates.hh>
-#include <DiFfRG/physics/interpolation_kokkos/linear_interpolator.hh>
+#include <DiFfRG/physics/interpolation.hh>
 
 using namespace DiFfRG;
 
