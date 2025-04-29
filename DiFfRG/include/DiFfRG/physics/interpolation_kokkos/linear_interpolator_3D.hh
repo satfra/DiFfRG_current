@@ -1,0 +1,127 @@
+#pragma once
+
+// DiFfRG
+#include "DiFfRG/common/utils.hh"
+#include <DiFfRG/common/kokkos.hh>
+#include <DiFfRG/common/math.hh>
+
+namespace DiFfRG
+{
+  /**
+   * @brief A linear interpolator for 3D data, both on GPU and CPU
+   *
+   * @tparam NT input data type
+   * @tparam Coordinates coordinate system of the input data
+   */
+  template <typename MemorySpace, typename NT, typename Coordinates> class LinearInterpolator3D
+  {
+    static_assert(Coordinates::dim == 3, "LinearInterpolator3D requires 3D coordinates");
+
+  public:
+    using memory_space = MemorySpace;
+    using ctype = typename Coordinates::ctype;
+
+    /**
+     * @brief Construct a LinearInterpolator3D with internal, zeroed data and a coordinate system.
+     *
+     * @param size size of the internal data
+     * @param coordinates coordinate system of the data
+     */
+    LinearInterpolator3D(const Coordinates &coordinates)
+        : coordinates(coordinates), sizes(coordinates.sizes()), total_size(sizes[0] * sizes[1] * sizes[2])
+    {
+      // Allocate Kokkos View
+      device_data = Kokkos::View<NT ***, MemorySpace>("LinearInterpolator3D_data", sizes[0], sizes[1], sizes[2]);
+      // Create host mirror
+      host_data = Kokkos::create_mirror_view(device_data);
+    }
+    /**
+     * @brief Construct a LinearInterpolator3D object from a pointer to data and a coordinate system.
+     *
+     * @param data pointer to the data
+     * @param size size of the data
+     * @param coordinates coordinate system of the data
+     */
+    LinearInterpolator3D(const NT *in_data, const Coordinates &coordinates)
+        : coordinates(coordinates), sizes(coordinates.sizes()), total_size(sizes[0] * sizes[1] * sizes[2])
+    {
+      // Allocate Kokkos View
+      device_data = Kokkos::View<NT ***, MemorySpace>("LinearInterpolator3D_data", sizes[0], sizes[1], sizes[2]);
+      // Create host mirror
+      host_data = Kokkos::create_mirror_view(device_data);
+      // Update device data
+      update(in_data);
+    }
+
+    template <typename NT2> void update(const NT2 *in_data)
+    {
+      // Populate host mirror
+      for (uint i = 0; i < sizes[0]; ++i)
+        for (uint j = 0; j < sizes[1]; ++j)
+          for (uint k = 0; k < sizes[2]; ++k)
+            host_data(i, j, k) = static_cast<NT>(in_data[i * sizes[1] * sizes[2] + j * sizes[2] + k]);
+      // Copy data to device
+      Kokkos::deep_copy(device_data, host_data);
+    }
+
+    /**
+     * @brief Interpolate the data at a given point.
+     *
+     * @param x the point at which to interpolate
+     * @return NT the interpolated value
+     */
+    NT KOKKOS_INLINE_FUNCTION operator()(const ctype &x, const ctype &y, const ctype &z) const
+    {
+      auto [idx_x, idx_y, idx_z] = coordinates.backward(x, y, z);
+      idx_x = max(static_cast<decltype(idx_x)>(0), min(idx_x, static_cast<decltype(idx_x)>(sizes[0] - 1)));
+      idx_y = max(static_cast<decltype(idx_y)>(0), min(idx_y, static_cast<decltype(idx_y)>(sizes[1] - 1)));
+      idx_z = max(static_cast<decltype(idx_z)>(0), min(idx_z, static_cast<decltype(idx_z)>(sizes[2] - 1)));
+
+      // Clamp the (upper) index to the range [1, sizes - 1]
+      uint x1 = min(ceil(idx_x + static_cast<decltype(idx_x)>(1e-16)), static_cast<decltype(idx_x)>(sizes[0] - 1));
+      uint y1 = min(ceil(idx_y + static_cast<decltype(idx_y)>(1e-16)), static_cast<decltype(idx_y)>(sizes[1] - 1));
+      uint z1 = min(ceil(idx_z + static_cast<decltype(idx_z)>(1e-16)), static_cast<decltype(idx_z)>(sizes[2] - 1));
+
+      const auto corner000 = device_data(x1 - 1, y1 - 1, z1 - 1);
+      const auto corner010 = device_data(x1 - 1, y1, z1 - 1);
+      const auto corner100 = device_data(x1, y1 - 1, z1 - 1);
+      const auto corner110 = device_data(x1, y1, z1 - 1);
+      const auto corner001 = device_data(x1 - 1, y1 - 1, z1);
+      const auto corner011 = device_data(x1 - 1, y1, z1);
+      const auto corner101 = device_data(x1, y1 - 1, z1);
+      const auto corner111 = device_data(x1, y1, z1);
+
+      const auto tx = x1 - idx_x;
+      const auto ty = y1 - idx_y;
+      const auto tz = z1 - idx_z;
+
+      if constexpr (std::is_arithmetic_v<NT>)
+        return Kokkos::fma(
+            tx,
+            Kokkos::fma(ty, Kokkos::fma(tz, corner000, Kokkos::fma(-tz, corner001, corner001)),
+                        (1 - ty) * Kokkos::fma(tz, corner010, Kokkos::fma(-tz, corner011, corner011))),
+            (1 - tx) * Kokkos::fma(ty, Kokkos::fma(tz, corner100, Kokkos::fma(-tz, corner101, corner101)),
+                                   (1 - ty) * Kokkos::fma(tz, corner110, Kokkos::fma(-tz, corner111, corner111))));
+      else
+        return corner000 * tx * ty * tz + corner001 * tx * ty * (1 - tz) + corner010 * tx * (1 - ty) * tz +
+               corner011 * tx * (1 - ty) * (1 - tz) + corner100 * (1 - tx) * ty * tz +
+               corner101 * (1 - tx) * ty * (1 - tz) + corner110 * (1 - tx) * (1 - ty) * tz +
+               corner111 * (1 - tx) * (1 - ty) * (1 - tz);
+    }
+
+    /**
+     * @brief Get the coordinate system of the data.
+     *
+     * @return const Coordinates& the coordinate system
+     */
+    const Coordinates &get_coordinates() const { return coordinates; }
+
+  private:
+    const Coordinates coordinates;
+    const std::array<uint, 3> sizes;
+    const uint total_size;
+
+    Kokkos::View<NT ***, MemorySpace> device_data;
+    Kokkos::View<NT ***, MemorySpace>::HostMirror host_data;
+  };
+} // namespace DiFfRG

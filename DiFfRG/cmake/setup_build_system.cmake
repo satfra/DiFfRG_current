@@ -195,9 +195,6 @@ function(setup_dealii TARGET)
   set(_lflags "${DEAL_II_LINKER_FLAGS} ${DEAL_II_LINKER_FLAGS_${_build}}")
   separate_arguments(_lflags)
   target_link_options(${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:${_lflags}>)
-
-  message(STATUS "CXX flags: ${_cflags}")
-  message(STATUS "Linker flags: ${_lflags}")
 endfunction()
 
 function(setup_target TARGET)
