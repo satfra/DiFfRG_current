@@ -44,7 +44,7 @@ namespace DiFfRG
     }
   }
 
-  enum class QuadratureType { legendre, chebyshev, laguerre, hermite, jacobi, count };
+  enum class QuadratureType { legendre, chebyshev, chebyshev2, laguerre, hermite, jacobi, count };
 
   template <typename NT> class Quadrature
   {

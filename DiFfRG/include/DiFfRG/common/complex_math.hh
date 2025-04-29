@@ -10,26 +10,6 @@ namespace DiFfRG
 {
   using ::Kokkos::complex;
 
-  namespace compute
-  {
-    using ::Kokkos::abs;
-    using ::Kokkos::atan;
-    using ::Kokkos::cos;
-    using ::Kokkos::cosh;
-    using ::Kokkos::imag;
-    using ::Kokkos::log;
-    using ::Kokkos::pow;
-    using ::Kokkos::real;
-    using ::Kokkos::sin;
-    using ::Kokkos::sinh;
-    using ::Kokkos::sqrt;
-    using ::Kokkos::tan;
-    using ::Kokkos::tanh;
-
-    template <typename NT> constexpr auto cot(const NT x) { return NT(1) / tan(x); }
-    template <typename NT> constexpr auto coth(const NT x) { return NT(1) / tanh(x); }
-  } // namespace compute
-
   using ::Kokkos::imag;
   using ::Kokkos::real;
 } // namespace DiFfRG

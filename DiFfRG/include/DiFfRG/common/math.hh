@@ -16,6 +16,26 @@
 
 namespace DiFfRG
 {
+  namespace compute
+  {
+    using ::Kokkos::abs;
+    using ::Kokkos::atan;
+    using ::Kokkos::cos;
+    using ::Kokkos::cosh;
+    using ::Kokkos::imag;
+    using ::Kokkos::log;
+    using ::Kokkos::pow;
+    using ::Kokkos::real;
+    using ::Kokkos::sin;
+    using ::Kokkos::sinh;
+    using ::Kokkos::sqrt;
+    using ::Kokkos::tan;
+    using ::Kokkos::tanh;
+
+    template <typename NT> constexpr auto cot(const NT x) { return NT(1) / tan(x); }
+    template <typename NT> constexpr auto coth(const NT x) { return NT(1) / tanh(x); }
+  } // namespace compute
+
   /**
    * @brief Finite-ness check for autodiff::real
    *
@@ -41,7 +61,7 @@ namespace DiFfRG
       x *x;
       NumberType(1.) / x;
     }
-  constexpr __forceinline__ __host__ __device__ NumberType powr(const NumberType x)
+  constexpr KOKKOS_INLINE_FUNCTION NumberType powr(const NumberType x)
   {
     if constexpr (n == 0)
       return NumberType(1.);
@@ -59,7 +79,7 @@ namespace DiFfRG
    * @tparam NT Type of the number
    * @param d Dimension of the sphere
    */
-  template <typename NT> constexpr __forceinline__ __host__ __device__ double V_d(NT d)
+  template <typename NT> constexpr KOKKOS_INLINE_FUNCTION double V_d(NT d)
   {
     using std::pow;
     using std::tgamma;
@@ -74,7 +94,7 @@ namespace DiFfRG
    * @param d Dimension of the sphere
    * @param extent Extent of the sphere
    */
-  template <typename NT1, typename NT2> constexpr __forceinline__ __host__ __device__ double V_d(NT1 d, NT2 extent)
+  template <typename NT1, typename NT2> constexpr KOKKOS_INLINE_FUNCTION double V_d(NT1 d, NT2 extent)
   {
     using std::pow;
     using std::tgamma;
@@ -87,7 +107,7 @@ namespace DiFfRG
    * @tparam NT Type of the number
    * @param d Dimension of the sphere
    */
-  template <typename NT> constexpr __forceinline__ __host__ __device__ double S_d(NT d)
+  template <typename NT> constexpr KOKKOS_INLINE_FUNCTION double S_d(NT d)
   {
     using std::pow;
     using std::tgamma;
@@ -124,7 +144,7 @@ namespace DiFfRG
    */
   template <typename NumberType>
     requires requires(NumberType x) { x >= 0; }
-  constexpr __forceinline__ __host__ __device__ auto heaviside_theta(const NumberType x)
+  constexpr KOKKOS_INLINE_FUNCTION auto heaviside_theta(const NumberType x)
   {
     if constexpr (std::is_same_v<NumberType, autodiff::real>)
       return x >= 0. ? 1. : 0.;
@@ -137,7 +157,7 @@ namespace DiFfRG
    */
   template <typename NumberType>
     requires requires(NumberType x) { x >= 0; }
-  constexpr __forceinline__ __host__ __device__ auto sign(const NumberType x)
+  constexpr KOKKOS_INLINE_FUNCTION auto sign(const NumberType x)
   {
     if constexpr (std::is_same_v<NumberType, autodiff::real>)
       return x >= 0. ? 1. : -1.;
@@ -156,7 +176,7 @@ namespace DiFfRG
     requires(std::is_floating_point<T1>::value || std::is_same_v<T1, autodiff::real> || is_complex<T1>::value) &&
             (std::is_floating_point<T2>::value || std::is_same_v<T2, autodiff::real> || is_complex<T2>::value) &&
             std::is_floating_point<T3>::value
-  bool __forceinline__ __host__ __device__ is_close(T1 a, T2 b, T3 eps_)
+  bool KOKKOS_INLINE_FUNCTION is_close(T1 a, T2 b, T3 eps_)
   {
     if constexpr (is_complex<T1>::value || is_complex<T2>::value) {
       return is_close(real(a), real(b), eps_) && is_close(imag(a), imag(b), eps_);
@@ -179,7 +199,7 @@ namespace DiFfRG
   template <typename T1, typename T2>
     requires(std::is_floating_point<T1>::value || std::is_same_v<T1, autodiff::real> || is_complex<T1>::value) &&
             (std::is_floating_point<T2>::value || std::is_same_v<T2, autodiff::real> || is_complex<T1>::value)
-  bool __forceinline__ __host__ __device__ is_close(T1 a, T2 b)
+  bool KOKKOS_INLINE_FUNCTION is_close(T1 a, T2 b)
   {
     if constexpr (is_complex<T1>::value || is_complex<T2>::value) {
       return is_close(real(a), real(b)) && is_close(imag(a), imag(b));

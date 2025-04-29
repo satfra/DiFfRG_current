@@ -9,7 +9,7 @@
 
 namespace DiFfRG
 {
-  template <typename NT, typename KERNEL, typename ExecutionSpace> class Integrator1D
+  template <typename NT, typename KERNEL, typename ExecutionSpace> class Integrator2D
   {
   public:
     /**
@@ -18,18 +18,24 @@ namespace DiFfRG
     using ctype = typename get_type::ctype<NT>;
     using execution_space = ExecutionSpace;
 
-    Integrator1D(QuadratureProvider &quadrature_provider, const std::array<uint, 1> grid_size,
-                 const std::array<ctype, 1> grid_min, const std::array<ctype, 1> grid_max,
-                 const std::array<QuadratureType, 1> quadrature_type = {QuadratureType::legendre})
+    Integrator2D(QuadratureProvider &quadrature_provider, const std::array<uint, 2> grid_size,
+                 std::array<ctype, 2> grid_min, std::array<ctype, 2> grid_max,
+                 const std::array<QuadratureType, 2> quadrature_type = {QuadratureType::legendre,
+                                                                        QuadratureType::legendre})
         : quadrature_provider(quadrature_provider), grid_size(grid_size), grid_extents{grid_min, grid_max}
     {
       x_nodes = quadrature_provider.template nodes<ctype, typename ExecutionSpace::memory_space>(grid_size[0],
                                                                                                  quadrature_type[0]);
       x_weights = quadrature_provider.template weights<ctype, typename ExecutionSpace::memory_space>(
           grid_size[0], quadrature_type[0]);
+
+      y_nodes = quadrature_provider.template nodes<ctype, typename ExecutionSpace::memory_space>(grid_size[1],
+                                                                                                 quadrature_type[1]);
+      y_weights = quadrature_provider.template weights<ctype, typename ExecutionSpace::memory_space>(
+          grid_size[1], quadrature_type[1]);
     }
 
-    void set_grid_extents(const std::array<ctype, 1> grid_min, const std::array<ctype, 1> grid_max)
+    void set_grid_extents(const std::array<ctype, 2> grid_min, const std::array<ctype, 2> grid_max)
     {
       grid_extents = {grid_min, grid_max};
     }
@@ -48,20 +54,26 @@ namespace DiFfRG
     {
       const auto args = std::make_tuple(t...);
 
-      const auto &x_n = x_nodes;
-      const auto &x_w = x_weights;
-      const auto &x_start = grid_extents[0][0];
-      const auto x_scale = (grid_extents[1][0] - grid_extents[0][0]);
-
       Kokkos::View<NT, typename ExecutionSpace::memory_space> result("result");
 
+      const auto &x_n = x_nodes;
+      const auto &x_w = x_weights;
+      const auto &y_n = y_nodes;
+      const auto &y_w = y_weights;
+      const auto &x_start = grid_extents[0][0];
+      const auto &y_start = grid_extents[0][1];
+      const auto x_scale = (grid_extents[1][0] - grid_extents[0][0]);
+      const auto y_scale = (grid_extents[1][1] - grid_extents[0][1]);
+
       Kokkos::parallel_reduce(
-          "integral_1D",                                                                 // name of the kernel
-          Kokkos::RangePolicy<ExecutionSpace, Kokkos::IndexType<uint>>(0, grid_size[0]), // range of the kernel
-          KOKKOS_LAMBDA(const uint idx_x, NT &update) {
+          "integral_2D", // name of the kernel
+          Kokkos::MDRangePolicy<ExecutionSpace, Kokkos::Rank<2>>({0, 0},
+                                                                 {grid_size[0], grid_size[1]}), // range of the kernel
+          KOKKOS_LAMBDA(const uint idx_x, const uint idx_y, NT &update) {
             const ctype x = Kokkos::fma(x_scale, x_n[idx_x], x_start);
-            const ctype weight = x_w[idx_x] * x_scale;
-            const NT result = std::apply([&](const auto &...args) { return KERNEL::kernel(x, args...); }, args);
+            const ctype y = Kokkos::fma(y_scale, y_n[idx_y], y_start);
+            const ctype weight = x_w[idx_x] * x_scale * y_w[idx_y] * y_scale;
+            const NT result = std::apply([&](const auto &...args) { return KERNEL::kernel(x, y, args...); }, args);
             update += weight * result;
           },
           SumPlus<NT, NT, ExecutionSpace>(result, KERNEL::constant(t...)));
@@ -90,16 +102,22 @@ namespace DiFfRG
 
       const auto &x_n = x_nodes;
       const auto &x_w = x_weights;
+      const auto &y_n = y_nodes;
+      const auto &y_w = y_weights;
       const auto &x_start = grid_extents[0][0];
+      const auto &y_start = grid_extents[0][1];
       const auto x_scale = (grid_extents[1][0] - grid_extents[0][0]);
+      const auto y_scale = (grid_extents[1][1] - grid_extents[0][1]);
 
       Kokkos::parallel_reduce(
-          "integral_1D",                                                                 // name of the kernel
-          Kokkos::RangePolicy<ExecutionSpace, Kokkos::IndexType<uint>>(0, grid_size[0]), // range of the kernel
-          KOKKOS_LAMBDA(const uint idx_x, NT &update) {
+          "integral_2D", // name of the kernel
+          Kokkos::MDRangePolicy<ExecutionSpace, Kokkos::Rank<2>>({0, 0},
+                                                                 {grid_size[0], grid_size[1]}), // range of the kernel
+          KOKKOS_LAMBDA(const uint idx_x, const uint idx_y, NT &update) {
             const ctype x = Kokkos::fma(x_scale, x_n[idx_x], x_start);
-            const ctype weight = x_w[idx_x] * x_scale;
-            const NT result = std::apply([&](const auto &...args) { return KERNEL::kernel(x, args...); }, args);
+            const ctype y = Kokkos::fma(y_scale, y_n[idx_y], y_start);
+            const ctype weight = x_w[idx_x] * x_scale * y_w[idx_y] * y_scale;
+            const NT result = std::apply([&](const auto &...args) { return KERNEL::kernel(x, y, args...); }, args);
             update += weight * result;
           },
           SumPlus<NT, NT, ExecutionSpace>(dest, KERNEL::constant(t...)));
@@ -110,27 +128,34 @@ namespace DiFfRG
     {
       const auto &x_n = x_nodes;
       const auto &x_w = x_weights;
+      const auto &y_n = y_nodes;
+      const auto &y_w = y_weights;
       const auto &x_start = grid_extents[0][0];
+      const auto &y_start = grid_extents[0][1];
       const auto x_scale = (grid_extents[1][0] - grid_extents[0][0]);
+      const auto y_scale = (grid_extents[1][1] - grid_extents[0][1]);
 
       Kokkos::parallel_reduce(
-          Kokkos::TeamThreadRange(team, 0, grid_size[0]), // range of the kernel
-          [=](const uint idx_x, NT &update) {
+          Kokkos::TeamThreadMDRange(team, {0, 0}, {grid_size[0], grid_size[1]}), // range of the kernel
+          [=](const uint idx_x, const uint idx_y, NT &update) {
             const ctype x = Kokkos::fma(x_scale, x_n[idx_x], x_start);
-            const ctype weight = x_w[idx_x] * x_scale;
-            const NT result = KERNEL::kernel(x, t...);
+            const ctype y = Kokkos::fma(y_scale, y_n[idx_y], y_start);
+            const ctype weight = x_w[idx_x] * x_scale * y_w[idx_y] * y_scale;
+            const NT result = KERNEL::kernel(x, y, t...);
             update += weight * result;
           },
           SumPlus<NT, NT, ExecutionSpace>(dest, KERNEL::constant(t...)));
     }
 
-    const std::array<uint, 1> grid_size;
+    const std::array<uint, 2> grid_size;
 
   private:
     QuadratureProvider &quadrature_provider;
-    std::array<std::array<ctype, 1>, 2> grid_extents;
+    std::array<std::array<ctype, 2>, 2> grid_extents;
 
     Kokkos::View<const ctype *, typename ExecutionSpace::memory_space> x_nodes;
     Kokkos::View<const ctype *, typename ExecutionSpace::memory_space> x_weights;
+    Kokkos::View<const ctype *, typename ExecutionSpace::memory_space> y_nodes;
+    Kokkos::View<const ctype *, typename ExecutionSpace::memory_space> y_weights;
   };
 } // namespace DiFfRG

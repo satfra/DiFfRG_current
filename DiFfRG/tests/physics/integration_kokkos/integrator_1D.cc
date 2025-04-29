@@ -33,16 +33,18 @@ TEMPLATE_TEST_CASE_SIG("Test 1D integrals on device", "[double][float][complex][
 {
   DiFfRG::Initialize();
 
-  const double x_min = GENERATE(take(2, random(-2., -1.)));
-  const double x_max = GENERATE(take(2, random(1., 2.)));
+  using ctype = typename get_type::ctype<T>;
+
+  const ctype x_min = GENERATE(take(2, random(-2., -1.)));
+  const ctype x_max = GENERATE(take(2, random(1., 2.)));
   const uint size = GENERATE(16, 32, 64, 128, 256);
 
   QuadratureProvider quadrature_provider;
-  Integrator1D<T, PolyIntegrand, GPU_exec> integrator(quadrature_provider, {size}, {x_min, x_max});
+  Integrator1D<T, PolyIntegrand, GPU_exec> integrator(quadrature_provider, {size}, {x_min}, {x_max});
 
   SECTION("Volume integral")
   {
-    const double reference_integral = (x_max - x_min);
+    const ctype reference_integral = (x_max - x_min);
 
     T integral{};
     integrator.get(integral, 0., 1., 0., 0., 0.);
@@ -53,6 +55,7 @@ TEMPLATE_TEST_CASE_SIG("Test 1D integrals on device", "[double][float][complex][
                 << "| relative error: " << abs(reference_integral - integral) / std::abs(reference_integral)
                 << std::endl;
     }
+
     CHECK(is_close(reference_integral, integral, 1e-6));
   }
 }
@@ -62,16 +65,18 @@ TEMPLATE_TEST_CASE_SIG("Test 1D integrals on host", "[double][float][complex][au
 {
   DiFfRG::Initialize();
 
-  const double x_min = GENERATE(take(2, random(-2., -1.)));
-  const double x_max = GENERATE(take(2, random(1., 2.)));
+  using ctype = typename get_type::ctype<T>;
+
+  const ctype x_min = GENERATE(take(2, random(-2., -1.)));
+  const ctype x_max = GENERATE(take(2, random(1., 2.)));
   const uint size = GENERATE(16, 32, 64, 128, 256);
 
   QuadratureProvider quadrature_provider;
-  Integrator1D<T, PolyIntegrand, CPU_exec> integrator(quadrature_provider, {size}, {x_min, x_max});
+  Integrator1D<T, PolyIntegrand, CPU_exec> integrator(quadrature_provider, {size}, {x_min}, {x_max});
 
   SECTION("Volume integral")
   {
-    const double reference_integral = (x_max - x_min);
+    const ctype reference_integral = (x_max - x_min);
 
     T integral{};
     integrator.get(integral, 0., 1., 0., 0., 0.);
@@ -82,6 +87,7 @@ TEMPLATE_TEST_CASE_SIG("Test 1D integrals on host", "[double][float][complex][au
                 << "| relative error: " << abs(reference_integral - integral) / std::abs(reference_integral)
                 << std::endl;
     }
+
     CHECK(is_close(reference_integral, integral, 1e-6));
   }
 }
@@ -95,7 +101,7 @@ TEST_CASE("Test 1D device integrals", "[double][gpu][integration][quadrature]")
   const uint size = GENERATE(16, 32, 64, 128, 256);
 
   QuadratureProvider quadrature_provider;
-  Integrator1D<double, PolyIntegrand, GPU_exec> integrator(quadrature_provider, {size}, {x_min, x_max});
+  Integrator1D<double, PolyIntegrand, GPU_exec> integrator(quadrature_provider, {size}, {x_min}, {x_max});
 
   SECTION("Volume integral")
   {
@@ -105,12 +111,14 @@ TEST_CASE("Test 1D device integrals", "[double][gpu][integration][quadrature]")
     integrator.get(integral, 0., 2., 0., 0., 0.);
     Kokkos::fence();
 
-    if (!is_close(reference_integral, integral, 1e-6)) {
+    if (!is_close(reference_integral, integral, 1e-9)) {
       std::cerr << "reference: " << reference_integral << "| integral: " << integral
                 << "| relative error: " << abs(reference_integral - integral) / std::abs(reference_integral)
                 << std::endl;
     }
-    CHECK(is_close(reference_integral, integral, 1e-6));
+
+    constexpr double expected_precision = 1e-9;
+    CHECK(integral == Catch::Approx(reference_integral).epsilon(expected_precision));
   }
 
   SECTION("Random polynomials")
@@ -131,12 +139,14 @@ TEST_CASE("Test 1D device integrals", "[double][gpu][integration][quadrature]")
     integrator.get(integral, constant, x_poly[0], x_poly[1], x_poly[2], x_poly[3]);
     Kokkos::fence();
 
-    if (!is_close(reference_integral, integral, 1e-6)) {
+    if (!is_close(reference_integral, integral, 1e-9)) {
       std::cerr << "reference: " << reference_integral << "| integral: " << integral
                 << "| relative error: " << std::abs(reference_integral - integral) / std::abs(reference_integral)
                 << std::endl;
     }
-    CHECK(is_close(reference_integral, integral, 1e-6));
+
+    constexpr double expected_precision = 1e-9;
+    CHECK(integral == Catch::Approx(reference_integral).epsilon(expected_precision));
   }
 }
 
@@ -149,7 +159,7 @@ TEST_CASE("Test 1D host integrals", "[double][cpu][integration][quadrature]")
   const uint size = GENERATE(16, 32, 64, 128, 256);
 
   QuadratureProvider quadrature_provider;
-  Integrator1D<double, PolyIntegrand, CPU_exec> integrator(quadrature_provider, {size}, {x_min, x_max});
+  Integrator1D<double, PolyIntegrand, CPU_exec> integrator(quadrature_provider, {size}, {x_min}, {x_max});
 
   SECTION("Volume integral")
   {
@@ -159,12 +169,14 @@ TEST_CASE("Test 1D host integrals", "[double][cpu][integration][quadrature]")
     integrator.get(integral, 0., 1., 0., 0., 0.);
     Kokkos::fence();
 
-    if (!is_close(reference_integral, integral, 1e-6)) {
+    if (!is_close(reference_integral, integral, 1e-9)) {
       std::cerr << "reference: " << reference_integral << "| integral: " << integral
                 << "| relative error: " << abs(reference_integral - integral) / std::abs(reference_integral)
                 << std::endl;
     }
-    CHECK(is_close(reference_integral, integral, 1e-6));
+
+    constexpr double expected_precision = 1e-9;
+    CHECK(integral == Catch::Approx(reference_integral).epsilon(expected_precision));
   }
 
   SECTION("Random polynomials")

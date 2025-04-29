@@ -74,7 +74,7 @@ TEST_CASE("Benchmark cpu momentum integrals", "[integration][quadrature integrat
       constexpr uint rsize = powr<j>(2);
       constexpr uint isize = powr<i>(2);
       {
-        Integrator1D<double, PolyIntegrand, CPU_exec> integrator(quadrature_provider, {isize}, {x_min, x_max});
+        Integrator1D<double, PolyIntegrand, CPU_exec> integrator(quadrature_provider, {isize}, {x_min}, {x_max});
         Kokkos::View<double *, CPU_memory> integral_view("cpu_integral_results", rsize);
 
         BENCHMARK_ADVANCED("host isize=" + std::to_string(isize) +
@@ -91,7 +91,7 @@ TEST_CASE("Benchmark cpu momentum integrals", "[integration][quadrature integrat
         };
       }
       {
-        Integrator1D<double, PolyIntegrand, GPU_exec> integrator(quadrature_provider, {isize}, {x_min, x_max});
+        Integrator1D<double, PolyIntegrand, GPU_exec> integrator(quadrature_provider, {isize}, {x_min}, {x_max});
         Kokkos::View<double *, GPU_memory> integral_view("cpu_integral_results", rsize);
 
         BENCHMARK_ADVANCED("device isize=" + std::to_string(isize) +
@@ -108,7 +108,7 @@ TEST_CASE("Benchmark cpu momentum integrals", "[integration][quadrature integrat
         };
       }
       {
-        Integrator1D<double, PolyIntegrand, CPU_exec> integrator(quadrature_provider, {isize}, {x_min, x_max});
+        Integrator1D<double, PolyIntegrand, CPU_exec> integrator(quadrature_provider, {isize}, {x_min}, {x_max});
         Kokkos::View<double *, CPU_memory> integral_view("cpu_integral_results", rsize);
         auto integral_host = Kokkos::create_mirror_view(integral_view);
 
@@ -135,7 +135,7 @@ TEST_CASE("Benchmark cpu momentum integrals", "[integration][quadrature integrat
         }
       }
       {
-        Integrator1D<double, PolyIntegrand, GPU_exec> integrator(quadrature_provider, {isize}, {x_min, x_max});
+        Integrator1D<double, PolyIntegrand, GPU_exec> integrator(quadrature_provider, {isize}, {x_min}, {x_max});
         Kokkos::View<double *, GPU_memory> integral_view("cpu_integral_results", rsize);
         auto integral_host = Kokkos::create_mirror_view(integral_view);
 

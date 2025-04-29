@@ -28,6 +28,10 @@ namespace DiFfRG
       T = gsl_integration_fixed_chebyshev;
       name = "chebyshev";
       break;
+    case QuadratureType::chebyshev2:
+      T = gsl_integration_fixed_chebyshev2;
+      name = "chebyshev2";
+      break;
     case QuadratureType::hermite:
       T = gsl_integration_fixed_hermite;
       name = "hermite";
