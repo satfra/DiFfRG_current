@@ -156,7 +156,7 @@ namespace DiFfRG
 
       if (verbosity >= 0)
         spdlog::get("QuadratureProvider")
-            ->info("Created Quadrature<double> with order = {0} and type = {1}", order, (uint)type_it->first);
+            ->info("Created Quadrature<double> with order = {0} and type = {1}", order, (uint)type_it->first.kind);
 
       return new_it;
     }
@@ -190,7 +190,7 @@ namespace DiFfRG
 
       if (verbosity >= 0)
         spdlog::get("QuadratureProvider")
-            ->info("Created Quadrature<float> with order = {0} and type = {1}", order, (uint)type_it->first);
+            ->info("Created Quadrature<float> with order = {0} and type = {1}", order, (uint)type_it->first.kind);
 
       return new_it;
     }

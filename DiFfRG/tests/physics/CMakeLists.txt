@@ -2,12 +2,7 @@
 # Add subdirectories
 # ##############################################################################
 
-add_subdirectory(integration_kokkos)
-add_subdirectory(interpolation_kokkos)
-
 add_subdirectory(integration)
-add_subdirectory(integration_finiteT)
-add_subdirectory(integration_lattice)
 add_subdirectory(interpolation)
 
 # ##############################################################################

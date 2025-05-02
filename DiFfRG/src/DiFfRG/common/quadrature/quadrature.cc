@@ -6,6 +6,39 @@
 
 namespace DiFfRG
 {
+  QuadratureType::QuadratureType(const QuadratureKind kind) : kind(kind)
+  {
+    if (kind == QuadratureKind::legendre) {
+      a = 0.;
+      b = 1.;
+    } else if (kind == QuadratureKind::chebyshev) {
+      a = -1.;
+      b = 1.;
+    } else if (kind == QuadratureKind::chebyshev2) {
+      a = -1.;
+      b = 1.;
+    } else if (kind == QuadratureKind::hermite) {
+      a = 0.;
+      b = 1.;
+    } else if (kind == QuadratureKind::jacobi) {
+      a = 0.;
+      b = 1.;
+    } else if (kind == QuadratureKind::laguerre) {
+      a = 0.;
+      b = 1.;
+    }
+  }
+
+  bool operator<(const QuadratureType &x, const QuadratureType &y)
+  {
+    if (x.kind != y.kind) return static_cast<int>(x.kind) < static_cast<int>(y.kind);
+    if (!is_close(x.a, y.a)) return x.a < y.a;
+    if (!is_close(x.b, y.b)) return x.b < y.b;
+    if (!is_close(x.alpha, y.alpha)) return x.alpha < y.alpha;
+    if (!is_close(x.beta, y.beta)) return x.beta < y.beta;
+    return false;
+  }
+
   template <typename NT> Quadrature<NT>::Quadrature(const size_t order, const QuadratureType _t) { reinit(order, _t); }
   template <typename NT> Quadrature<NT>::Quadrature() {}
 
@@ -19,7 +52,7 @@ namespace DiFfRG
 
     // create gsl workspace and set quadrature type
     std::string name;
-    switch (_t) {
+    switch (_t.kind) {
     case QuadratureType::legendre:
       T = gsl_integration_fixed_legendre;
       name = "legendre";
@@ -47,7 +80,7 @@ namespace DiFfRG
     default:
       throw std::runtime_error("Unknown quadrature type");
     }
-    w = gsl_integration_fixed_alloc(T, order, 0.0, 1.0, 0.0, 0.0);
+    w = gsl_integration_fixed_alloc(T, order, _t.a, _t.b, _t.alpha, _t.beta);
 
     // get nodes and weights
     const double *gsl_nodes = gsl_integration_fixed_nodes(w);

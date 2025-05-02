@@ -54,7 +54,7 @@ namespace DiFfRG
     }
 
     template <typename... I, int... Is>
-    KOKKOS_FORCEINLINE_FUNCTION std::array<ctype, dim> forward_impl(std::integer_sequence<int, Is...>, I &&...i) const
+    std::array<ctype, dim> KOKKOS_FORCEINLINE_FUNCTION forward_impl(std::integer_sequence<int, Is...>, I &&...i) const
     {
       return {{std::get<Is>(coordinates).forward(std::get<Is>(std::tie(i...)))...}};
     }
@@ -74,7 +74,7 @@ namespace DiFfRG
 
     template <uint i> const auto &get_coordinates() const { return std::get<i>(coordinates); }
 
-    uint size() const
+    uint KOKKOS_FORCEINLINE_FUNCTION size() const
     {
       // multiply all sizes
       uint size = 1;
@@ -82,11 +82,23 @@ namespace DiFfRG
       return size;
     }
 
-    std::array<uint, sizeof...(Coordinates)> sizes() const
+    std::array<uint, sizeof...(Coordinates)> KOKKOS_FORCEINLINE_FUNCTION sizes() const
     {
       std::array<uint, sizeof...(Coordinates)> sizes;
       constexpr_for<0, sizeof...(Coordinates), 1>([&](auto i) { sizes[i] = std::get<i>(coordinates).size(); });
       return sizes;
+    }
+
+    std::array<uint, sizeof...(Coordinates)> KOKKOS_FORCEINLINE_FUNCTION from_continuous_index(size_t s) const
+    {
+      std::array<uint, sizeof...(Coordinates)> idx;
+      // calculate the index for each coordinate system
+      constexpr_for<0, sizeof...(Coordinates), 1>([&](auto i) {
+        idx[sizeof...(Coordinates) - 1 - i] = s % std::get<sizeof...(Coordinates) - 1 - i>(coordinates).size();
+        s = s / std::get<sizeof...(Coordinates) - 1 - i>(coordinates).size();
+      });
+
+      return idx;
     }
 
   protected:
@@ -114,13 +126,23 @@ namespace DiFfRG
     {
     }
 
+    std::array<uint, 1> KOKKOS_FORCEINLINE_FUNCTION from_continuous_index(auto i) const
+    {
+      return std::array<uint, 1>{i};
+    }
+
     /**
      * @brief Transform from the grid to the physical space
      *
      * @param x grid coordinate
      * @return NumberType physical coordinate
      */
-    NT KOKKOS_FORCEINLINE_FUNCTION forward(const uint &x) const { return start + a * x; }
+    template <typename IT> NT KOKKOS_FORCEINLINE_FUNCTION forward(const IT &x) const { return start + a * x; }
+
+    template <typename IT> std::array<NT, 1> KOKKOS_FORCEINLINE_FUNCTION forward(const std::array<IT, 1> &x) const
+    {
+      return {forward(x[0])};
+    }
 
     /**
      * @brief Transform from the physical space to the grid
@@ -130,7 +152,7 @@ namespace DiFfRG
      */
     NT KOKKOS_FORCEINLINE_FUNCTION backward(const NT &y) const { return (y - start) / a; }
 
-    uint size() const { return grid_extent; }
+    uint KOKKOS_FORCEINLINE_FUNCTION size() const { return grid_extent; }
 
     const NT start, stop;
 
@@ -164,16 +186,26 @@ namespace DiFfRG
     {
     }
 
+    std::array<uint, 1> KOKKOS_FORCEINLINE_FUNCTION from_continuous_index(auto i) const
+    {
+      return std::array<uint, 1>{i};
+    }
+
     /**
      * @brief Transform from the grid to the physical space
      *
      * @param x grid coordinate
      * @return NumberType physical coordinate
      */
-    NT KOKKOS_FORCEINLINE_FUNCTION forward(const uint &x) const
+    template <typename IT> NT KOKKOS_FORCEINLINE_FUNCTION forward(const IT &x) const
     {
       using Kokkos::expm1;
       return b * expm1(a * x * gem1inv) + c;
+    }
+
+    template <typename IT> std::array<NT, 1> KOKKOS_FORCEINLINE_FUNCTION forward(const std::array<IT, 1> &x) const
+    {
+      return {forward(x[0])};
     }
 
     /**
@@ -190,7 +222,7 @@ namespace DiFfRG
 
     NT KOKKOS_FORCEINLINE_FUNCTION backward_derivative(const NT &y) const { return 1. / (y - c) * gem1 / a; }
 
-    uint size() const { return grid_extent; }
+    uint KOKKOS_FORCEINLINE_FUNCTION size() const { return grid_extent; }
 
     const NT start, stop, bias;
 

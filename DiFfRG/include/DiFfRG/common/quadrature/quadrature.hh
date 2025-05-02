@@ -44,7 +44,16 @@ namespace DiFfRG
     }
   }
 
-  enum class QuadratureType { legendre, chebyshev, chebyshev2, laguerre, hermite, jacobi, count };
+  struct QuadratureType {
+    enum QuadratureKind { legendre, chebyshev, chebyshev2, laguerre, hermite, jacobi, count };
+    QuadratureKind kind;
+    double a = 0., b = 1.;
+    double alpha = 1., beta = 2.;
+
+    QuadratureType(const QuadratureKind kind);
+    QuadratureType() = default;
+  };
+  bool operator<(const QuadratureType &x, const QuadratureType &y);
 
   template <typename NT> class Quadrature
   {

@@ -4,23 +4,17 @@
 
 cmake_minimum_required(VERSION 3.26.4)
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CUDA_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED On)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
-
-project(DiFfRG LANGUAGES CXX)
+project(DiFfRG)
 
 # ##############################################################################
 # Documentation
 # ##############################################################################
 
-option(DiFfRG_BUILD_DOCUMENTATION "Build documentation" ON)
+option(DiFfRG_DOCUMENTATION "Build documentation" ON)
 
 # check if Doxygen is installed
 find_package(Doxygen)
-if(DiFfRG_BUILD_DOCUMENTATION AND DOXYGEN_FOUND)
+if(DiFfRG_DOCUMENTATION AND DOXYGEN_FOUND)
   # set input and output files
   set(DOXYGEN_IN ${CMAKE_CURRENT_SOURCE_DIR}/documentation/Doxyfile.in)
   set(DOXYGEN_OUT ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile)
@@ -30,7 +24,7 @@ if(DiFfRG_BUILD_DOCUMENTATION AND DOXYGEN_FOUND)
   message(STATUS "Documentation target configured")
 
   add_custom_target(
-    documentation
+    documentation ALL
     COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT}
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     COMMENT "Generating API documentation with Doxygen"
@@ -42,7 +36,7 @@ if(DiFfRG_BUILD_DOCUMENTATION AND DOXYGEN_FOUND)
     CODE "file(CREATE_LINK ${CMAKE_INSTALL_PREFIX}/documentation/html/index.html ${CMAKE_INSTALL_PREFIX}/Documentation.html SYMBOLIC)"
   )
 
-elseif(DiFfRG_BUILD_DOCUMENTATION AND DOXYGEN_FOUND)
+elseif(DiFfRG_DOCUMENTATION AND DOXYGEN_FOUND)
   message("Doxygen needs to be installed to generate the doxygen documentation")
 endif()
 
@@ -56,7 +50,6 @@ endif()
 
 add_subdirectory(${CMAKE_SOURCE_DIR}/cmake)
 include(${CMAKE_SOURCE_DIR}/cmake/setup_build_system.cmake)
-include(${CMAKE_SOURCE_DIR}/cmake/setup_targets.cmake)
 
 # ##############################################################################
 # DiFfRG library and models
@@ -71,8 +64,8 @@ add_subdirectory(src)
 # Testing
 # ##############################################################################
 
-option(DiFfRG_BUILD_TESTS "Build tests" ON)
-if(DiFfRG_BUILD_TESTS)
+option(DiFfRG_TEST "Build tests" ON)
+if(DiFfRG_TEST)
   enable_testing()
   add_subdirectory(tests)
 endif()
@@ -104,47 +97,3 @@ install(
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/DiFfRGConfig.cmake"
               "${CMAKE_CURRENT_BINARY_DIR}/DiFfRGConfigVersion.cmake"
         DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/DiFfRG")
-
-# ##############################################################################
-# licenses
-# ##############################################################################
-
-set(CPM_PACKAGE_deal.II_SOURCE_DIR
-    ${CMAKE_CURRENT_SOURCE_DIR}/../external/dealii)
-set(CPM_PACKAGE_sundials_SOURCE_DIR
-    ${CMAKE_CURRENT_SOURCE_DIR}/../external/sundials)
-set(CPM_PACKAGE_boost_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../external/boost)
-
-# Add CPMLicenses for disclaimers
-cpmaddpackage(NAME CPMLicenses.cmake GITHUB_REPOSITORY
-              cpm-cmake/CPMLicenses.cmake VERSION 0.0.5)
-
-message(STATUS "deal.II source directory: ${CPM_PACKAGE_deal.II_SOURCE_DIR}")
-
-message(STATUS "packages: ${CPM_PACKAGES};deal.II;sundials;boost")
-
-cpm_licenses_create_disclaimer_target(
-  write-licenses "${CMAKE_CURRENT_SOURCE_DIR}/../third_party.txt"
-  "${CPM_PACKAGES};deal.II;sundials;boost")
-
-# ##############################################################################
-# other scripts
-# ##############################################################################
-
-cpmaddpackage("gh:StableCoder/cmake-scripts#24.04")
-
-include(${cmake-scripts_SOURCE_DIR}/formatting.cmake)
-
-file(GLOB_RECURSE headers CONFIGURE_DEPENDS
-     "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hh")
-file(GLOB_RECURSE sources CONFIGURE_DEPENDS
-     "${CMAKE_CURRENT_SOURCE_DIR}/source/*.cc")
-file(GLOB_RECURSE cuda_sources CONFIGURE_DEPENDS
-     "${CMAKE_CURRENT_SOURCE_DIR}/source/*.cu")
-
-clang_format(format ${headers} ${sources} ${cuda_sources})
-
-file(GLOB_RECURSE CMAKE_FILES CMakeLists.txt)
-
-cmake_format(cmake-format ${CMAKE_FILES}
-             ${CMAKE_CURRENT_SOURCE_DIR}/cmake/setup_build_system.cmake)

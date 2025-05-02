@@ -1,0 +1,187 @@
+#pragma once
+
+// DiFfRG
+#include <DiFfRG/common/kokkos.hh>
+#include <DiFfRG/common/quadrature/quadrature_provider.hh>
+
+// standard libraries
+#include <array>
+
+namespace DiFfRG
+{
+  template <typename NT, typename KERNEL, typename ExecutionSpace> class Integrator1D
+  {
+  public:
+    /**
+     * @brief Numerical type to be used for integration tasks e.g. the argument or possible jacobians.
+     */
+    using ctype = typename get_type::ctype<NT>;
+    using execution_space = ExecutionSpace;
+
+    Integrator1D(QuadratureProvider &quadrature_provider, const std::array<uint, 1> grid_size,
+                 const std::array<ctype, 1> grid_min, const std::array<ctype, 1> grid_max,
+                 const std::array<QuadratureType, 1> quadrature_type = {QuadratureType::legendre})
+        : quadrature_provider(quadrature_provider), grid_size(grid_size), grid_extents{grid_min, grid_max}
+    {
+      x_nodes = quadrature_provider.template nodes<ctype, typename ExecutionSpace::memory_space>(grid_size[0],
+                                                                                                 quadrature_type[0]);
+      x_weights = quadrature_provider.template weights<ctype, typename ExecutionSpace::memory_space>(
+          grid_size[0], quadrature_type[0]);
+    }
+
+    void set_grid_extents(const std::array<ctype, 1> grid_min, const std::array<ctype, 1> grid_max)
+    {
+      grid_extents = {grid_min, grid_max};
+    }
+
+    /**
+     * @brief Request a future for the integral of the kernel.
+     *
+     * @tparam T Types of the parameters for the kernel.
+     * @param k RG-scale.
+     * @param t Parameters forwarded to the kernel.
+     *
+     * @return std::future<NT> future holding the integral of the kernel plus the constant part.
+     *
+     */
+    template <typename... T> void get(NT &dest, const T &...t) const
+    {
+      const auto args = std::make_tuple(t...);
+
+      const auto &x_n = x_nodes;
+      const auto &x_w = x_weights;
+      const auto &x_start = grid_extents[0][0];
+      const auto x_scale = (grid_extents[1][0] - grid_extents[0][0]);
+
+      Kokkos::View<NT, typename ExecutionSpace::memory_space> result("result");
+
+      Kokkos::parallel_reduce(
+          "integral_1D",                                                                 // name of the kernel
+          Kokkos::RangePolicy<ExecutionSpace, Kokkos::IndexType<uint>>(0, grid_size[0]), // range of the kernel
+          KOKKOS_LAMBDA(const uint idx_x, NT &update) {
+            const ctype x = Kokkos::fma(x_scale, x_n[idx_x], x_start);
+            const ctype weight = x_w[idx_x] * x_scale;
+            const NT result = std::apply([&](const auto &...args) { return KERNEL::kernel(x, args...); }, args);
+            update += weight * result;
+          },
+          SumPlus<NT, NT, ExecutionSpace>(result, KERNEL::constant(t...)));
+
+      Kokkos::fence();
+      auto result_host = Kokkos::create_mirror_view(result);
+      Kokkos::deep_copy(result_host, result);
+      dest = result_host();
+    }
+
+    /**
+     * @brief Request a future for the integral of the kernel.
+     *
+     * @tparam T Types of the parameters for the kernel.
+     * @param k RG-scale.
+     * @param t Parameters forwarded to the kernel.
+     *
+     * @return std::future<NT> future holding the integral of the kernel plus the constant part.
+     *
+     */
+    template <typename OT, typename... T>
+      requires(!std::is_same_v<OT, NT>)
+    void get(OT &dest, const T &...t) const
+    {
+      const auto args = std::make_tuple(t...);
+
+      const auto &x_n = x_nodes;
+      const auto &x_w = x_weights;
+      const auto &x_start = grid_extents[0][0];
+      const auto x_scale = (grid_extents[1][0] - grid_extents[0][0]);
+
+      Kokkos::parallel_reduce(
+          "integral_1D",                                                                 // name of the kernel
+          Kokkos::RangePolicy<ExecutionSpace, Kokkos::IndexType<uint>>(0, grid_size[0]), // range of the kernel
+          KOKKOS_LAMBDA(const uint idx_x, NT &update) {
+            const ctype x = Kokkos::fma(x_scale, x_n[idx_x], x_start);
+            const ctype weight = x_w[idx_x] * x_scale;
+            const NT result = std::apply([&](const auto &...args) { return KERNEL::kernel(x, args...); }, args);
+            update += weight * result;
+          },
+          SumPlus<NT, NT, ExecutionSpace>(dest, KERNEL::constant(t...)));
+    }
+
+    template <typename view_type, typename Coordinates, typename... Args>
+    void map(ExecutionSpace &space, const view_type integral_view, const Coordinates &coordinates, const Args &...args)
+    {
+      const auto m_args = std::make_tuple(args...);
+
+      using TeamPolicy = Kokkos::TeamPolicy<ExecutionSpace>;
+      using TeamType = Kokkos::TeamPolicy<ExecutionSpace>::member_type;
+      using Scratch = typename ExecutionSpace::scratch_memory_space;
+
+      const auto &x_n = x_nodes;
+      const auto &x_w = x_weights;
+      const auto &x_start = grid_extents[0][0];
+      const auto x_scale = (grid_extents[1][0] - grid_extents[0][0]);
+
+      Kokkos::parallel_for(
+          Kokkos::TeamPolicy(space, integral_view.size(), Kokkos::AUTO), KOKKOS_LAMBDA(const TeamType &team) {
+            // get the current (continuous) index
+            const uint k = team.league_rank();
+            // make subview
+            auto subview = Kokkos::subview(integral_view, k);
+            // get the position for the current index
+            const auto idx = coordinates.from_continuous_index(k);
+            const auto pos = coordinates.forward(idx);
+
+            const auto full_args = std::tuple_cat(pos, m_args);
+
+            // compute the constant value
+            // TODO: do this only once...
+            const auto constant =
+                std::apply([&](const auto &...iargs) { return KERNEL::constant(iargs...); }, full_args);
+
+            Kokkos::parallel_reduce(
+                Kokkos::TeamThreadRange(team, 0, x_n.size()), // range of the kernel
+                [&](const uint idx_x, NT &update) {
+                  const ctype x = Kokkos::fma(x_scale, x_n[idx_x], x_start);
+                  const ctype weight = x_w[idx_x] * x_scale;
+                  const NT result =
+                      std::apply([&](const auto &...iargs) { return KERNEL::kernel(x, iargs...); }, full_args);
+                  update += weight * result;
+                },
+                SumPlus<NT, NT, ExecutionSpace>(subview, constant));
+          });
+    }
+
+    template <typename Coordinates, typename... Args>
+    auto map(NT *dest, const Coordinates &coordinates, const Args &...args)
+    {
+      // create an execution space
+      ExecutionSpace space;
+
+      // create unmanaged host view for dest
+      auto dest_view = Kokkos::View<NT *, CPU_memory, Kokkos::MemoryUnmanaged>(dest, coordinates.size());
+
+      // create device view for dest
+      auto dest_device_view = Kokkos::View<NT *, ExecutionSpace>(
+          Kokkos::view_alloc(space, "MapIntegrators_device_view"), coordinates.size());
+
+      // run the map function
+      map(space, dest_device_view, coordinates, args...);
+
+      // copy the result from device to host
+      auto dest_host_view = Kokkos::create_mirror_view(space, dest_device_view);
+      Kokkos::deep_copy(space, dest_host_view, dest_device_view);
+
+      // copy the result from the mirror to the requested destination
+      Kokkos::deep_copy(space, dest_view, dest_host_view);
+
+      return std::move(space);
+    }
+
+    const std::array<uint, 1> grid_size;
+
+  private:
+    QuadratureProvider &quadrature_provider;
+    std::array<std::array<ctype, 1>, 2> grid_extents;
+
+    Kokkos::View<const ctype *, typename ExecutionSpace::memory_space> x_nodes;
+    Kokkos::View<const ctype *, typename ExecutionSpace::memory_space> x_weights;
+  };
+} // namespace DiFfRG
