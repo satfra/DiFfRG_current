@@ -179,9 +179,13 @@ Several simulations are defined in the Applications directory, which can be used
 
 ## Logfiles and install issues
 
-During building and installing DiFfRG, logs are created at every step. You may find the logs for the setup of external dependencies in `external/logs` and the logs for the build of DiFfRG itself in `logs/`.
+If DiFfRG fails to build on your machine, first check the appropriate logs. You find the main log at `~/.local/share/DiFfRG/build/DiFfRG.log` if you are using the CMake install. Otherwise, you can redirect the output of the build, e.g.
+```bash
+cmake --build ./ -- -j8 | tee DiFfRG.log
+```
+and analyze the result.
 
-If DiFfRG fails to build on your machine, first check the appropriate logfile. If DiFfRG proves to be incompatible with your machine, please open an Issue on GitHub [here](https://github.com/satfra/DiFfRG/issues), or alternatively send an email to the author (see the [publication](https://arxiv.org/abs/2412.13043)).
+If DiFfRG proves to be incompatible with your machine, please open an Issue on GitHub [here](https://github.com/satfra/DiFfRG/issues), or, alternatively, send an email to the author (see the [publication](https://arxiv.org/abs/2412.13043)).
 
 
 ## Contributing
@@ -251,12 +255,11 @@ The following third-party libraries are utilised by DiFfRG. They are automatical
 
 - The main backend for field-space discretization is [deal.II](https://www.dealii.org/), which provides the entire FEM-machinery as well as many other utility components.
 - For performant and convenient calculation of Jacobian matrices we use the [autodiff](https://github.com/autodiff/autodiff) library, which implements automatic forward and backwards differentiation in C++ and also in CUDA.
+- [Kokkos](https://github.com/kokkos/kokkos), a performance portability framework for shared-memory parallelization on GPU and CPU. We use it for the integration routines for flow equations.
 - Time integration relies heavily on the [SUNDIALS](https://computing.llnl.gov/projects/sundials) suite, specifically on the IDAs solver.
+- [Boost](https://www.boost.org/) provides explicit time-stepping and various math algorithms.
 - [Rapidcsv](https://github.com/d99kris/rapidcsv) for quick processing of .csv files.
 - [Catch2](https://github.com/catchorg/Catch2) for unit testing.
-- [RMM](https://github.com/rapidsai/rmm), a memory manager for CUDA, which is used for GPU-accelerated loop integrations.
-- [QMC](https://github.com/mppmu/qmc) for adaptive Quasi-Monte-Carlo integration.
 - [spdlog](https://github.com/gabime/spdlog) for logging.
 - [Doxygen Awesome](https://github.com/jothepro/doxygen-awesome-css) for a modern doxygen theme.
-- [Boost](https://www.boost.org/) provides explicit time-stepping and various math algorithms.
 - [Eigen](https://eigen.tuxfamily.org/) for some linear-algebra related tasks.
