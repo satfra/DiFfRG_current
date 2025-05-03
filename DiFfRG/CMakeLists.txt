@@ -24,14 +24,13 @@ if(DiFfRG_DOCUMENTATION AND DOXYGEN_FOUND)
   message(STATUS "Documentation target configured")
 
   add_custom_target(
-    documentation
+    documentation ALL
     COMMAND
       bash -c
       "${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT} &> ${CMAKE_CURRENT_BINARY_DIR}/doxygen.log"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     COMMENT "Generating API documentation with Doxygen"
     VERBATIM)
-  install(TARGETS documentation)
   install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/documentation
           DESTINATION ${CMAKE_INSTALL_PREFIX}) # target directory
   install(
