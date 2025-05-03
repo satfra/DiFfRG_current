@@ -27,7 +27,7 @@ if(DiFfRG_DOCUMENTATION AND DOXYGEN_FOUND)
     documentation ALL
     COMMAND
       bash -c
-      "${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT} &> {CMAKE_CURRENT_BINARY_DIR}/doxygen.log"
+      "${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT} &> ${CMAKE_CURRENT_BINARY_DIR}/doxygen.log"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     COMMENT "Generating API documentation with Doxygen"
     VERBATIM)
