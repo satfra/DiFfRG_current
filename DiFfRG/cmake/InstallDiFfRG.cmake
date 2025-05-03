@@ -74,7 +74,7 @@ execute_process(
   COMMAND
     bash -c
     "cmake --build ${DiFfRG_BUILD_DIR} --config Release --target all -- -j ${PARALLEL_JOBS} | tee ${DiFfRG_BUILD_DIR}/DiFfRG.log"
-  )
+)
 message(STATUS "DiFfRG installed to ${DiFfRG_INSTALL_DIR}")
 
 # ##############################################################################

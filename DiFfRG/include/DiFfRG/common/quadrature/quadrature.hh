@@ -1,7 +1,6 @@
 #pragma once
 
 // DiFfRG
-#include <DiFfRG/common/cuda_prefix.hh>
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/quadrature/diagonalization.hh>
 #include <DiFfRG/common/types.hh>

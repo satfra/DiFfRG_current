@@ -1,9 +1,8 @@
 #pragma once
 
 // DiFfRG
-#include "DiFfRG/common/json.hh"
-#include "DiFfRG/common/kokkos.hh"
-#include <DiFfRG/common/cuda_prefix.hh>
+#include <DiFfRG/common/json.hh>
+#include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/quadrature/matsubara.hh>
 #include <DiFfRG/common/quadrature/quadrature.hh>
 #include <DiFfRG/common/types.hh>
