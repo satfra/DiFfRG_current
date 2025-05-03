@@ -129,11 +129,10 @@ Then, create a build directory and run cmake
 $ cd DiFfRG
 $ mkdir build
 $ cd build
-$ cmake --build ./ --config Release --target all -- -j8"
+$ cmake ../ -DCMAKE_INSTALL_PREFIX=~/.local/share/DiFfRG/ -DCMAKE_BUILD_TYPE=Release
+$ cmake --build ./ -- -j8"
 ```
-
 By default, the library will install itself to `$HOME/.local/shared/DiFfRG`, but you can control the destination by pointing `CMAKE_INSTALL_PREFIX` to a directory of your choice.
-
 
 ### Docker and other container runtime environments
 
