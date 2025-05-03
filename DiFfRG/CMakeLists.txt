@@ -25,8 +25,9 @@ if(DiFfRG_DOCUMENTATION AND DOXYGEN_FOUND)
 
   add_custom_target(
     documentation ALL
-    COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT} &>
-            ${PROJECT_BINARY_DIR}/build/logs/DiFfRG/doxygen.log
+    COMMAND
+      bash -c
+      "${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT} &> {CMAKE_CURRENT_BINARY_DIR}/doxygen.log"
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     COMMENT "Generating API documentation with Doxygen"
     VERBATIM)
