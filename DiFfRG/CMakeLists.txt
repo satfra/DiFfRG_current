@@ -24,7 +24,7 @@ if(DiFfRG_DOCUMENTATION AND DOXYGEN_FOUND)
   message(STATUS "Documentation target configured")
 
   add_custom_target(
-    documentation ALL
+    documentation
     COMMAND
       bash -c
       "${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT} &> ${CMAKE_CURRENT_BINARY_DIR}/doxygen.log"

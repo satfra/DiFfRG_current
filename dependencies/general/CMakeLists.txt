@@ -5,6 +5,13 @@ project(general_dep)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 set(CMAKE_BUILD_TYPE Release)
 
+# if DiFfRG_MPI is not set, set it to OFF
+if(NOT DEFINED DiFfRG_MPI)
+  set(DiFfRG_MPI
+      OFF
+      CACHE BOOL "Enable MPI support")
+endif()
+
 # Set up external dependencies
 
 # download CPM.cmake
@@ -17,6 +24,7 @@ file(
 include(${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake)
 
 # oneTBB
+message(STATUS "Adding oneTBB...")
 cpmaddpackage(
   NAME
   oneTBB
@@ -32,13 +40,14 @@ cpmaddpackage(
   v2022.1.0)
 
 # sundials
+message(STATUS "Adding SUNDIALS...")
 cpmaddpackage(
   NAME
   sundials
   VERSION
   6.7.0
   OPTIONS
-  "ENABLE_MPI OFF"
+  "ENABLE_MPI ${DiFfRG_MPI}"
   "CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE}"
   "EXAMPLES_ENABLE_C OFF"
   "EXAMPLES_ENABLE_CXX OFF"
@@ -48,6 +57,7 @@ cpmaddpackage(
   v6.7.0)
 
 # Get Eigen3
+message(STATUS "Adding Eigen3...")
 cpmaddpackage(
   NAME
   Eigen3
@@ -95,6 +105,7 @@ if(Eigen3_ADDED)
 endif()
 
 # Get GSL
+message(STATUS "Adding GSL...")
 find_package(GSL)
 if(NOT GSL_FOUND)
   cpmfindpackage(
@@ -113,6 +124,7 @@ else()
 endif()
 
 # Get rapidcsv
+message(STATUS "Adding rapidcsv...")
 cpmaddpackage(
   NAME
   rapidcsv
@@ -129,6 +141,7 @@ install(
   COMPONENT Development)
 
 # Get spdlog
+message(STATUS "Adding spdlog...")
 cpmaddpackage(
   NAME
   spdlog

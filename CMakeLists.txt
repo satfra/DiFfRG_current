@@ -31,58 +31,10 @@ message(STATUS "Dependencies will be installed to ${DEPEND_INSTALL_PREFIX}")
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
-# Set up external dependencies
-include(ExternalProject)
-
 # ##############################################################################
-# Various basics
-# ##############################################################################
-
-# build general deps
-ExternalProject_Add(
-  general_dep
-  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/general
-  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/general
-  INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
-  LOG_DIR ${CMAKE_CURRENT_BINARY_DIR}/logs/general/
-  BUILD_COMMAND make all
-  INSTALL_COMMAND make install
-  # Propagate DEPEND_INSTALL_PREFIX to the dependencies
-  CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
-
-# build autodiff
-ExternalProject_Add(
-  autodiff_dep
-  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/autodiff
-  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/autodiff
-  INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
-  LOG_DIR ${CMAKE_CURRENT_BINARY_DIR}/logs/autodiff/
-  DEPENDS general_dep
-  BUILD_COMMAND make all
-  INSTALL_COMMAND make install
-  # Propagate DEPEND_INSTALL_PREFIX to the dependencies
-  CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
-
-# build boost
-ExternalProject_Add(
-  boost_dep
-  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/boost
-  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/boost
-  INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
-  LOG_DIR ${CMAKE_CURRENT_BINARY_DIR}/logs/boost/
-  BUILD_COMMAND make
-  INSTALL_COMMAND make install
-  # Propagate DEPEND_INSTALL_PREFIX to the dependencies
-  CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
-
-# ##############################################################################
-# Kokkos
-# ##############################################################################
-
 # Find out which backends are available
+# ##############################################################################
+
 include(CheckLanguage)
 
 check_language(CUDA)
@@ -98,7 +50,6 @@ else()
     set(HAVE_HIP OFF)
   endif()
 endif()
-message(STATUS "HIP: ${HAVE_HIP}")
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
   set(OpenMP_ROOT "/opt/homebrew/opt/libomp")
@@ -112,11 +63,71 @@ else()
   set(HAVE_OPENMP OFF)
   set(HAVE_THREADS ON)
 endif()
+# if DiFfRG_MPI is not set, set it to OFF
+if(NOT DEFINED DiFfRG_MPI)
+  find_package(MPI)
+  if(MPI_FOUND)
+    set(DiFfRG_MPI
+        ON
+        CACHE BOOL "Enable MPI support")
+  else()
+    set(DiFfRG_MPI
+        OFF
+        CACHE BOOL "Enable MPI support")
+  endif()
+endif()
 
+message(STATUS "MPI: ${DiFfRG_MPI}")
 message(STATUS "OpenMP: ${HAVE_OPENMP}")
 message(STATUS "CUDA: ${HAVE_CUDA}")
 message(STATUS "HIP: ${HAVE_HIP}")
 message(STATUS "Threads: ${HAVE_THREADS}")
+
+# ##############################################################################
+# Dependencies
+# ##############################################################################
+
+include(ExternalProject)
+
+# build general deps
+ExternalProject_Add(
+  general_dep
+  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/general
+  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/general
+  INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+  BUILD_COMMAND make all
+  INSTALL_COMMAND make install
+  # Propagate DEPEND_INSTALL_PREFIX to the dependencies
+  CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+                   -DDiFfRG_MPI:BOOL=${DiFfRG_MPI})
+
+# build autodiff
+ExternalProject_Add(
+  autodiff_dep
+  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/autodiff
+  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/autodiff
+  INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+  DEPENDS general_dep
+  BUILD_COMMAND make all
+  INSTALL_COMMAND make install
+  # Propagate DEPEND_INSTALL_PREFIX to the dependencies
+  CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
+
+# build boost
+ExternalProject_Add(
+  boost_dep
+  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/boost
+  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/boost
+  INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+  CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
+  BUILD_COMMAND make
+  INSTALL_COMMAND make install
+  # Propagate DEPEND_INSTALL_PREFIX to the dependencies
+  CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
+
+# ##############################################################################
+# Kokkos
+# ##############################################################################
 
 # add the Kokkos dependency to the build
 ExternalProject_Add(
@@ -155,14 +166,14 @@ ExternalProject_Add(
   DEPENDS general_dep boost_dep
   BUILD_COMMAND make
   INSTALL_COMMAND make install
-  LOG_DIR ${CMAKE_CURRENT_BINARY_DIR}/logs/deal.II
   CMAKE_CACHE_ARGS
     -DCMAKE_BUILD_TYPE:STRING=DebugRelease
-    -DCMAKE_POLICY_VERSION_MINIMUM:STRING=3.5
-    -DENABLE_MPI:BOOL=OFF
+    -DCMAKE_POLICY_VERSION_MINIMUM:STRING=3.31
+    -DCMAKE_POLICY_DEFAULT_CMP0167:STRING=NEW
+    -DCMAKE_WARN_DEPRECATED:BOOL=OFF
     -DDEAL_II_COMPONENT_EXAMPLES:BOOL=OFF
     -DDEAL_II_COMPONENT_DOCUMENTATION:BOOL=OFF
-    -DDEAL_II_WITH_MPI:BOOL=OFF
+    -DDEAL_II_WITH_MPI:BOOL=${DiFfRG_MPI}
     -DDEAL_II_WITH_KOKKOS:BOOL=OFF
     -DDEAL_II_WITH_UMFPACK:BOOL=ON
     -DDEAL_II_WITH_TASKFLOW:BOOL=OFF
