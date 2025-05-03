@@ -17,7 +17,7 @@ For spatial discretizations, i.e. discretizations of field space mostly used for
 The FEM methods included in DiFfRG are built upon the [deal.ii](https://www.dealii.org/) finite element library, which is highly parallelized and allows for great performance and flexibility.
 PDEs consisting of RG-time dependent equations, as well as stationary equations can be solved together during the flow, allowing for techniques like flowing fields in a very accessible way.
 
-Both explicit and implicit timestepping methods are available and allow thus for efficient RG-time integration in the symmetric and symmetry-broken regime.
+Both explicit and implicit time-stepping methods are available and allow thus for efficient RG-time integration in the symmetric and symmetry-broken regime.
 
 We also include a set of tools for the evaluation of integrals and discretization of momentum dependencies.
 
@@ -124,41 +124,42 @@ $ enroot start --root --rw -m ./:/DiFfRG_source DiFfRG bash
 ```
 Afterwards, one proceeds with the above Rocky Linux setup.
 
-## Setup
+## Installation
 
-If all requirements are met, you can clone the git to a directory of your choice,
+### CMake
+
+You can download a script to install DiFfRG locally directly from a CMake file by putting into your `CMakeLists.txt` the lines
+```CMake
+file(DOWNLOAD
+  https://raw.githubusercontent.com/satfra/DiFfRG/refs/heads/Implement-Kokkos/DiFfRG/cmake/InstallDiFfRG.cmake
+  ${CURRENT_BINARY_DIR}/cmake/InstallDiFfRG.cmake)
+include(${CURRENT_BINARY_DIR}/cmake/InstallDiFfRG.cmake)
+```
+This will fetch a script, which will automatically download and install DiFfRG and all of its dependencies to `$HOME/.local/share/DiFfRG`.
+If you wish to change this directory, or some other default values, you can set the following optional variables:
+```CMake
+set(DiFfRG_INSTALL_DIR $ENV{HOME}/.local/share/DiFfRG/)
+set(DiFfRG_BUILD_DIR $ENV{HOME}/.local/share/DiFfRG/build/)
+set(DiFfRG_SOURCE_DIR $ENV{HOME}/.local/share/DiFfRG/src/)
+set(TRY_DiFfRG_VERSION Implement-Kokkos)
+set(PARALLEL_JOBS 8)
+```
+
+### Manual installation
+
+You can also manually clone DiFfRG to a directory of your choice
 ```bash
 $ git clone https://github.com/satfra/DiFfRG.git
 ```
-and start the build after switching to the git directory.
+Then, create a build directory and run cmake
 ```bash
 $ cd DiFfRG
-$ bash -i  build.sh -j8 -cf -i /opt/DiFfRG
+$ mkdir build
+$ cd build
+$ cmake --build ./ --config Release --target all -- -j8"
 ```
-The `build_DiFfRG.sh` bash script will build and setup the DiFfRG project and all its requirements. This can take up to half an hour as the deal.ii library is quite large.
-This script has the following options:
--  `-f`              Perform a full build and install of everything without confirmations.
--  `-c`              Use CUDA when building the DiFfRG library.
--  `-i <directory>`  Set the installation directory for the library.
--  `-j <threads>`    Set the number of threads passed to make and git fetch.
--  `--help`          Display this information.
 
-Depending on your amount of CPU cores, you should adjust the `-j` parameter which indicates the number of threads used in the build process. Note that choosing this too large may lead to extreme RAM usage, so tread carefully.
-
-As soon as the build has finished, you can find a full install of the library in the `DiFfRG_install` subdirectory.
-
-If you have changes to the library code, you can update the library by running
-```bash
-$ bash -i update_DiFfRG.sh -clm -j8 -i /opt/DiFfRG
-```
-where once again the `-j` parameter should be adjusted to your amount of CPU cores.
-The `update_DiFfRG.sh` script takes the following optional arguments:
-- `-c`               Use CUDA when building the DiFfRG library.
-- `-l`               Build the DiFfRG library.
-- `-i <directory>`   Set the installation directory for the library.
-- `-j <threads>`     Set the number of threads passed to make and git fetch.
-- `-m`               Install the Mathematica package locally.
-- `--help`           Display this information.
+By default, the library will install itself to `$HOME/.local/shared/DiFfRG`, but you can control the destination by pointing `CMAKE_INSTALL_PREFIX` to a directory of your choice.
 
 ## Getting started with simulating fRG flows
 

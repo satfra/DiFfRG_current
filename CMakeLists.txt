@@ -183,6 +183,9 @@ ExternalProject_Add(
     -DBOOST_DIR:STRING=${DEPEND_INSTALL_PREFIX}
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
 
+# create a directory necessary for using deal.II
+file(MAKE_DIRECTORY ${DEPEND_INSTALL_PREFIX}/include/deal.II/bundled)
+
 # ##############################################################################
 # DiFfRG
 # ##############################################################################
