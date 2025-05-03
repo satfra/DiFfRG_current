@@ -31,7 +31,7 @@ if(DiFfRG_DOCUMENTATION AND DOXYGEN_FOUND)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     COMMENT "Generating API documentation with Doxygen"
     VERBATIM)
-
+  install(TARGET documentation)
   install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/documentation
           DESTINATION ${CMAKE_INSTALL_PREFIX}) # target directory
   install(
