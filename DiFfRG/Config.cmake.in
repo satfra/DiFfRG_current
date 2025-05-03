@@ -4,6 +4,7 @@
 set(DiFfRG_BASE_DIR @CMAKE_INSTALL_PREFIX@)
 set(DiFfRG_INCLUDE_DIR @CMAKE_INSTALL_PREFIX@/include)
 set(DiFfRG_CMAKE_DIR @CMAKE_INSTALL_PREFIX@/cmake)
+set(BUNDLED_DIR @CMAKE_INSTALL_PREFIX@/bundled/)
 
 # Propagate the usage of CUDA from the package to an application
 set(DiFfRG_USE_CUDA @USE_CUDA@)
