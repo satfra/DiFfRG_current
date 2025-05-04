@@ -52,77 +52,33 @@ namespace DiFfRG
       grid_extents = {grid_min, grid_max};
     }
 
-    /**
-     * @brief Request a future for the integral of the kernel.
-     *
-     * @tparam T Types of the parameters for the kernel.
-     * @param k RG-scale.
-     * @param t Parameters forwarded to the kernel.
-     *
-     * @return std::future<NT> future holding the integral of the kernel plus the constant part.
-     *
-     */
     template <typename... T> void get(NT &dest, const T &...t) const
     {
-      const auto args = std::make_tuple(t...);
+      // create an execution space
+      ExecutionSpace space;
 
-      Kokkos::View<NT, typename ExecutionSpace::memory_space> result("result");
+      Kokkos::View<NT, typename ExecutionSpace::memory_space> result(Kokkos::view_alloc(space, "result"));
 
-      const auto &x_n = x_nodes;
-      const auto &x_w = x_weights;
-      const auto &y_n = y_nodes;
-      const auto &y_w = y_weights;
-      const auto &z_n = z_nodes;
-      const auto &z_w = z_weights;
-      const auto &w_n = w_nodes;
-      const auto &w_w = w_weights;
+      get(space, result, t...);
+      space.fence();
 
-      const auto &x_start = grid_extents[0][0];
-      const auto &y_start = grid_extents[0][1];
-      const auto &z_start = grid_extents[0][2];
-      const auto &w_start = grid_extents[0][3];
-
-      const auto x_scale = (grid_extents[1][0] - grid_extents[0][0]);
-      const auto y_scale = (grid_extents[1][1] - grid_extents[0][1]);
-      const auto z_scale = (grid_extents[1][2] - grid_extents[0][2]);
-      const auto w_scale = (grid_extents[1][3] - grid_extents[0][3]);
-
-      Kokkos::parallel_reduce(
-          "integral_4D", // name of the kernel
-          Kokkos::MDRangePolicy<ExecutionSpace, Kokkos::Rank<4>>(
-              {0, 0, 0, 0}, {grid_size[0], grid_size[1], grid_size[2], grid_size[3]}), // range of the kernel
-          KOKKOS_LAMBDA(const uint idx_x, const uint idx_y, const uint idx_z, const uint idx_w, NT &update) {
-            const ctype x = Kokkos::fma(x_scale, x_n[idx_x], x_start);
-            const ctype y = Kokkos::fma(y_scale, y_n[idx_y], y_start);
-            const ctype z = Kokkos::fma(z_scale, z_n[idx_z], z_start);
-            const ctype w = Kokkos::fma(w_scale, w_n[idx_w], w_start);
-            const ctype weight =
-                x_w[idx_x] * x_scale * y_w[idx_y] * y_scale * z_w[idx_z] * z_scale * w_w[idx_w] * w_scale;
-            const NT result = std::apply([&](const auto &...t) { return KERNEL::kernel(x, y, z, w, t...); }, args);
-            update += weight * result;
-          },
-          SumPlus<NT, NT, ExecutionSpace>(result, KERNEL::constant(t...)));
-
-      Kokkos::fence();
       auto result_host = Kokkos::create_mirror_view(result);
-      Kokkos::deep_copy(result_host, result);
+      Kokkos::deep_copy(space, result_host, result);
       dest = result_host();
     }
 
-    /**
-     * @brief Request a future for the integral of the kernel.
-     *
-     * @tparam T Types of the parameters for the kernel.
-     * @param k RG-scale.
-     * @param t Parameters forwarded to the kernel.
-     *
-     * @return std::future<NT> future holding the integral of the kernel plus the constant part.
-     *
-     */
     template <typename OT, typename... T>
       requires(!std::is_same_v<OT, NT>)
     void get(OT &dest, const T &...t) const
     {
+      ExecutionSpace space;
+      get(space, dest, t...);
+    }
+
+    template <typename OT, typename... T>
+      requires(!std::is_same_v<OT, NT>)
+    void get(ExecutionSpace &space, OT &dest, const T &...t) const
+    {
       const auto args = std::make_tuple(t...);
 
       const auto &x_n = x_nodes;
@@ -147,7 +103,7 @@ namespace DiFfRG
       Kokkos::parallel_reduce(
           "integral_4D", // name of the kernel
           Kokkos::MDRangePolicy<ExecutionSpace, Kokkos::Rank<4>>(
-              {0, 0, 0, 0}, {grid_size[0], grid_size[1], grid_size[2], grid_size[3]}), // range of the kernel
+              space, {0, 0, 0, 0}, {grid_size[0], grid_size[1], grid_size[2], grid_size[3]}), // range of the kernel
           KOKKOS_LAMBDA(const uint idx_x, const uint idx_y, const uint idx_z, const uint idx_w, NT &update) {
             const ctype x = Kokkos::fma(x_scale, x_n[idx_x], x_start);
             const ctype y = Kokkos::fma(y_scale, y_n[idx_y], y_start);
@@ -156,44 +112,6 @@ namespace DiFfRG
             const ctype weight =
                 x_w[idx_x] * x_scale * y_w[idx_y] * y_scale * z_w[idx_z] * z_scale * w_w[idx_w] * w_scale;
             const NT result = std::apply([&](const auto &...t) { return KERNEL::kernel(x, y, z, w, t...); }, args);
-            update += weight * result;
-          },
-          SumPlus<NT, NT, ExecutionSpace>(dest, KERNEL::constant(t...)));
-    }
-
-    template <typename output_type, typename team_type, typename... T>
-    void KOKKOS_INLINE_FUNCTION get_nested(output_type &dest, const team_type &team, const T &...t) const
-    {
-      const auto &x_n = x_nodes;
-      const auto &x_w = x_weights;
-      const auto &y_n = y_nodes;
-      const auto &y_w = y_weights;
-      const auto &z_n = z_nodes;
-      const auto &z_w = z_weights;
-      const auto &w_n = w_nodes;
-      const auto &w_w = w_weights;
-
-      const auto &x_start = grid_extents[0][0];
-      const auto &y_start = grid_extents[0][1];
-      const auto &z_start = grid_extents[0][2];
-      const auto &w_start = grid_extents[0][3];
-
-      const auto x_scale = (grid_extents[1][0] - grid_extents[0][0]);
-      const auto y_scale = (grid_extents[1][1] - grid_extents[0][1]);
-      const auto z_scale = (grid_extents[1][2] - grid_extents[0][2]);
-      const auto w_scale = (grid_extents[1][3] - grid_extents[0][3]);
-
-      Kokkos::parallel_reduce(
-          Kokkos::TeamThreadMDRange(team, {0, 0, 0, 0},
-                                    {grid_size[0], grid_size[1], grid_size[2], grid_size[3]}), // range of the kernel
-          [=](const uint idx_x, const uint idx_y, const uint idx_z, const uint idx_w, NT &update) {
-            const ctype x = Kokkos::fma(x_scale, x_n[idx_x], x_start);
-            const ctype y = Kokkos::fma(y_scale, y_n[idx_y], y_start);
-            const ctype z = Kokkos::fma(z_scale, z_n[idx_z], z_start);
-            const ctype w = Kokkos::fma(w_scale, w_n[idx_w], w_start);
-            const ctype weight =
-                x_w[idx_x] * x_scale * y_w[idx_y] * y_scale * z_w[idx_z] * z_scale * w_w[idx_w] * w_scale;
-            const NT result = KERNEL::kernel(x, y, z, w, t...);
             update += weight * result;
           },
           SumPlus<NT, NT, ExecutionSpace>(dest, KERNEL::constant(t...)));
@@ -210,8 +128,27 @@ namespace DiFfRG
 
       const auto &x_n = x_nodes;
       const auto &x_w = x_weights;
+      const auto &y_n = y_nodes;
+      const auto &y_w = y_weights;
+      const auto &z_n = z_nodes;
+      const auto &z_w = z_weights;
+      const auto &w_n = w_nodes;
+      const auto &w_w = w_weights;
+
       const auto &x_start = grid_extents[0][0];
+      const auto &y_start = grid_extents[0][1];
+      const auto &z_start = grid_extents[0][2];
+      const auto &w_start = grid_extents[0][3];
+
       const auto x_scale = (grid_extents[1][0] - grid_extents[0][0]);
+      const auto y_scale = (grid_extents[1][1] - grid_extents[0][1]);
+      const auto z_scale = (grid_extents[1][2] - grid_extents[0][2]);
+      const auto w_scale = (grid_extents[1][3] - grid_extents[0][3]);
+
+      const auto &x_size = grid_size[0];
+      const auto &y_size = grid_size[1];
+      const auto &z_size = grid_size[2];
+      const auto &w_size = grid_size[3];
 
       Kokkos::parallel_for(
           Kokkos::TeamPolicy(space, integral_view.size(), Kokkos::AUTO), KOKKOS_LAMBDA(const TeamType &team) {
@@ -225,25 +162,31 @@ namespace DiFfRG
 
             const auto full_args = std::tuple_cat(pos, m_args);
 
-            // compute the constant value
-            // TODO: do this only once...
-            const auto constant =
-                std::apply([&](const auto &...iargs) { return KERNEL::constant(iargs...); }, full_args);
-
+            NT res = 0;
             Kokkos::parallel_reduce(
-                Kokkos::TeamThreadRange(team, 0, x_n.size()), // range of the kernel
-                [&](const uint idx_x, NT &update) {
+                Kokkos::TeamThreadMDRange(team, x_size, y_size, z_size, w_size), // range of the kernel
+                [&](const uint idx_x, const uint idx_y, const uint idx_z, const uint idx_w, NT &update) {
                   const ctype x = Kokkos::fma(x_scale, x_n[idx_x], x_start);
-                  const ctype weight = x_w[idx_x] * x_scale;
+                  const ctype y = Kokkos::fma(y_scale, y_n[idx_y], y_start);
+                  const ctype z = Kokkos::fma(z_scale, z_n[idx_z], z_start);
+                  const ctype w = Kokkos::fma(w_scale, w_n[idx_w], w_start);
+                  const ctype weight =
+                      x_w[idx_x] * x_scale * y_w[idx_y] * y_scale * z_w[idx_z] * z_scale * w_w[idx_w] * w_scale;
                   const NT result =
-                      std::apply([&](const auto &...iargs) { return KERNEL::kernel(x, iargs...); }, full_args);
+                      std::apply([&](const auto &...iargs) { return KERNEL::kernel(x, y, z, w, iargs...); }, full_args);
                   update += weight * result;
                 },
-                SumPlus<NT, NT, ExecutionSpace>(subview, constant));
+                res);
+
+            // add the constant value
+            team.team_barrier();
+            Kokkos::single(Kokkos::PerTeam(team), [=]() {
+              subview() = res + std::apply([&](const auto &...iargs) { return KERNEL::constant(iargs...); }, full_args);
+            });
           });
     }
 
-    template <typename NT, typename Coordinates, typename... Args>
+    template <typename Coordinates, typename... Args>
     auto map(NT *dest, const Coordinates &coordinates, const Args &...args)
     {
       // create an execution space

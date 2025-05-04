@@ -34,58 +34,33 @@ namespace DiFfRG
       grid_extents = {grid_min, grid_max};
     }
 
-    /**
-     * @brief Request a future for the integral of the kernel.
-     *
-     * @tparam T Types of the parameters for the kernel.
-     * @param k RG-scale.
-     * @param t Parameters forwarded to the kernel.
-     *
-     * @return std::future<NT> future holding the integral of the kernel plus the constant part.
-     *
-     */
     template <typename... T> void get(NT &dest, const T &...t) const
     {
-      const auto args = std::make_tuple(t...);
+      // create an execution space
+      ExecutionSpace space;
 
-      const auto &x_n = x_nodes;
-      const auto &x_w = x_weights;
-      const auto &x_start = grid_extents[0][0];
-      const auto x_scale = (grid_extents[1][0] - grid_extents[0][0]);
+      Kokkos::View<NT, typename ExecutionSpace::memory_space> result(Kokkos::view_alloc(space, "result"));
 
-      Kokkos::View<NT, typename ExecutionSpace::memory_space> result("result");
+      get(space, result, t...);
+      space.fence();
 
-      Kokkos::parallel_reduce(
-          "integral_1D",                                                                 // name of the kernel
-          Kokkos::RangePolicy<ExecutionSpace, Kokkos::IndexType<uint>>(0, grid_size[0]), // range of the kernel
-          KOKKOS_LAMBDA(const uint idx_x, NT &update) {
-            const ctype x = Kokkos::fma(x_scale, x_n[idx_x], x_start);
-            const ctype weight = x_w[idx_x] * x_scale;
-            const NT result = std::apply([&](const auto &...args) { return KERNEL::kernel(x, args...); }, args);
-            update += weight * result;
-          },
-          SumPlus<NT, NT, ExecutionSpace>(result, KERNEL::constant(t...)));
-
-      Kokkos::fence();
       auto result_host = Kokkos::create_mirror_view(result);
-      Kokkos::deep_copy(result_host, result);
+      Kokkos::deep_copy(space, result_host, result);
       dest = result_host();
     }
 
-    /**
-     * @brief Request a future for the integral of the kernel.
-     *
-     * @tparam T Types of the parameters for the kernel.
-     * @param k RG-scale.
-     * @param t Parameters forwarded to the kernel.
-     *
-     * @return std::future<NT> future holding the integral of the kernel plus the constant part.
-     *
-     */
     template <typename OT, typename... T>
       requires(!std::is_same_v<OT, NT>)
     void get(OT &dest, const T &...t) const
     {
+      ExecutionSpace space;
+      get(space, dest, t...);
+    }
+
+    template <typename OT, typename... T>
+      requires(!std::is_same_v<OT, NT>)
+    void get(ExecutionSpace &space, OT &dest, const T &...t) const
+    {
       const auto args = std::make_tuple(t...);
 
       const auto &x_n = x_nodes;
@@ -94,8 +69,8 @@ namespace DiFfRG
       const auto x_scale = (grid_extents[1][0] - grid_extents[0][0]);
 
       Kokkos::parallel_reduce(
-          "integral_1D",                                                                 // name of the kernel
-          Kokkos::RangePolicy<ExecutionSpace, Kokkos::IndexType<uint>>(0, grid_size[0]), // range of the kernel
+          "integral_1D",                                                                        // name of the kernel
+          Kokkos::RangePolicy<ExecutionSpace, Kokkos::IndexType<uint>>(space, 0, grid_size[0]), // range of the kernel
           KOKKOS_LAMBDA(const uint idx_x, NT &update) {
             const ctype x = Kokkos::fma(x_scale, x_n[idx_x], x_start);
             const ctype weight = x_w[idx_x] * x_scale;
