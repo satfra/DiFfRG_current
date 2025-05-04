@@ -153,6 +153,22 @@ ExternalProject_Add(
     -DCMAKE_CXX_FLAGS:STRING=-fPIC)
 
 # ##############################################################################
+# PETSc
+# ##############################################################################
+
+# build PETSc
+ExternalProject_Add(
+  petsc_dep
+  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/petsc
+  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/petsc
+  INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+  CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
+  BUILD_COMMAND make
+  INSTALL_COMMAND make install
+  # Propagate DEPEND_INSTALL_PREFIX to the dependencies
+  CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
+
+# ##############################################################################
 # deal.II
 # ##############################################################################
 
@@ -163,7 +179,7 @@ ExternalProject_Add(
   GIT_TAG v9.4.2
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/deal.II
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  DEPENDS general_dep boost_dep
+  DEPENDS general_dep boost_dep petsc_dep
   BUILD_COMMAND make
   INSTALL_COMMAND make install
   CMAKE_CACHE_ARGS
@@ -177,6 +193,8 @@ ExternalProject_Add(
     -DDEAL_II_WITH_KOKKOS:BOOL=OFF
     -DDEAL_II_WITH_UMFPACK:BOOL=ON
     -DDEAL_II_WITH_TASKFLOW:BOOL=OFF
+    -DPETSC_DIR:PATH=${DEPEND_INSTALL_PREFIX}
+    -DPETSC_ARCH:STRING=arch-linux-c-opt
     -DCMAKE_CXX_STANDARD:STRING=17
     -DTBB_DIR:STRING=${DEPEND_INSTALL_PREFIX}
     -DSUNDIALS_DIR:STRING=${DEPEND_INSTALL_PREFIX}

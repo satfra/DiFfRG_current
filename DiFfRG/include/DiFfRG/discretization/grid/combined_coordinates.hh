@@ -2,10 +2,8 @@
 
 // standard library
 #include <cmath>
-#include <tuple>
 
 // DiFfRG
-#include <DiFfRG/common/cuda_prefix.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/discretization/grid/coordinates.hh>
 #include <DiFfRG/discretization/grid/stack_coordinates.hh>

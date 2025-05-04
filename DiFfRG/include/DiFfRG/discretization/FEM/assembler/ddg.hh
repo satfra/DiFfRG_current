@@ -208,8 +208,7 @@ namespace DiFfRG
                                           /*keep_constrained_dofs = */ true);
           sparsity_pattern_mass.copy_from(dsp);
           mass_matrix.reinit(sparsity_pattern_mass);
-          MatrixCreator::create_mass_matrix(dof_handler, quadrature, mass_matrix,
-                                            (const Function<dim, NumberType> *const)nullptr,
+          MatrixCreator::create_mass_matrix(dof_handler, quadrature, mass_matrix, (Function<dim, NumberType> *)nullptr,
                                             discretization.get_constraints());
         }
         // Jacobian sparsity pattern

@@ -506,8 +506,7 @@ namespace DiFfRG
             mass_matrix.reinit(sparsity_pattern_mass);
 
             MatrixCreator::create_mass_matrix(*(dof_handler_list[0]), quadrature, mass_matrix,
-                                              (const Function<dim, NumberType> *const)nullptr,
-                                              discretization.get_constraints(0));
+                                              (Function<dim, NumberType> *)nullptr, discretization.get_constraints(0));
             build_inverse(mass_matrix.block(0, 0), component_mass_matrix_inverse);
           } else {
             sol_vector[i].reinit(dofs_per_component);
