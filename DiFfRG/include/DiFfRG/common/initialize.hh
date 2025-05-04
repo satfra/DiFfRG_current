@@ -3,6 +3,12 @@
 // DiFfRG
 #include <DiFfRG/common/configuration_helper.hh>
 
+// external libraries
+#include <deal.II/base/mpi.h>
+
+// standard libraries
+#include <memory>
+
 namespace DiFfRG
 {
   class Initialize
@@ -21,5 +27,6 @@ namespace DiFfRG
     std::string parameter_file;
     int argc;
     char **argv;
+    static dealii::Utilities::MPI::MPI_InitFinalize *mpi_initialization;
   };
 } // namespace DiFfRG
