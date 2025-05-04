@@ -3,10 +3,9 @@
 #include <catch2/catch_all.hpp>
 
 #include <DiFfRG/common/initialize.hh>
+#include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/polynomials.hh>
-#include <DiFfRG/common/utils.hh>
-#include <DiFfRG/physics/integration/integrator_1D.hh>
-#include <DiFfRG/physics/interpolation.hh>
+#include <DiFfRG/physics/integration/lattice/integrator_lat_1D.hh>
 
 using namespace DiFfRG;
 
@@ -29,71 +28,25 @@ public:
   }
 };
 
-TEMPLATE_TEST_CASE_SIG("Test 1D integrals on device", "[double][float][complex][autodiff]", ((typename T), T), double,
-                       float, complex<double>, complex<float>, autodiff::real)
+TEMPLATE_TEST_CASE_SIG("Test 1D lattice integrals on device", "[lattice][double][float][complex][autodiff]",
+                       ((typename T), T), double, float, complex<double>, complex<float>, autodiff::real)
 {
   DiFfRG::Initialize();
 
   using ctype = typename get_type::ctype<T>;
 
-  const ctype x_min = GENERATE(take(2, random(-2., -1.)));
-  const ctype x_max = GENERATE(take(2, random(1., 2.)));
+  const ctype a = GENERATE(take(2, random(0.01, 1.)));
   const uint size = GENERATE(16, 32, 64, 128, 256);
 
   QuadratureProvider quadrature_provider;
-  Integrator1D<T, PolyIntegrand, GPU_exec> integrator(quadrature_provider, {size}, {x_min}, {x_max});
+  IntegratorLat1D<T, PolyIntegrand, GPU_exec> integrator({size}, {a});
 
   SECTION("Volume integral")
   {
-    const ctype reference_integral = (x_max - x_min);
+    const ctype reference_integral = 1 / a;
 
     T integral{};
     integrator.get(integral, 0., 1., 0., 0., 0.);
-    Kokkos::fence();
-
-    if (!is_close(reference_integral, integral, 1e-6)) {
-      std::cerr << "reference: " << reference_integral << "| integral: " << integral
-                << "| relative error: " << abs(reference_integral - integral) / std::abs(reference_integral)
-                << std::endl;
-    }
-
-    CHECK(is_close(reference_integral, integral, 1e-6));
-  }
-
-  SECTION("Volume map")
-  {
-    const uint rsize = GENERATE(16, 32);
-    std::vector<T> integral_view(rsize);
-    LinearCoordinates1D<ctype> coordinates(rsize, 0., 1.);
-
-    integrator.map(integral_view.data(), coordinates, 1., 0., 0., 0.).fence();
-
-    for (uint i = 0; i < rsize; ++i)
-      CHECK(is_close(integral_view[i], coordinates.forward(i) + (x_max - x_min), 1e-6));
-  };
-}
-
-TEMPLATE_TEST_CASE_SIG("Test 1D integrals on host", "[double][float][complex][autodiff]", ((typename T), T), double,
-                       float, complex<double>, complex<float>, autodiff::real)
-{
-  DiFfRG::Initialize();
-
-  using ctype = typename get_type::ctype<T>;
-
-  const ctype x_min = GENERATE(take(2, random(-2., -1.)));
-  const ctype x_max = GENERATE(take(2, random(1., 2.)));
-  const uint size = GENERATE(16, 32, 64, 128, 256);
-
-  QuadratureProvider quadrature_provider;
-  Integrator1D<T, PolyIntegrand, CPU_exec> integrator(quadrature_provider, {size}, {x_min}, {x_max});
-
-  SECTION("Volume integral")
-  {
-    const ctype reference_integral = (x_max - x_min);
-
-    T integral{};
-    integrator.get(integral, 0., 1., 0., 0., 0.);
-    Kokkos::fence();
 
     if (!is_close(reference_integral, integral, 1e-6)) {
       std::cerr << "reference: " << reference_integral << "| integral: " << integral
@@ -105,6 +58,36 @@ TEMPLATE_TEST_CASE_SIG("Test 1D integrals on host", "[double][float][complex][au
   }
 }
 
+TEMPLATE_TEST_CASE_SIG("Test 1D lattice integrals on host", "[lattice][double][float][complex][autodiff]",
+                       ((typename T), T), double, float, complex<double>, complex<float>, autodiff::real)
+{
+  DiFfRG::Initialize();
+
+  using ctype = typename get_type::ctype<T>;
+
+  const ctype a = GENERATE(take(2, random(0.01, 1.)));
+  const uint size = GENERATE(16, 32, 64, 128, 256);
+
+  QuadratureProvider quadrature_provider;
+  IntegratorLat1D<T, PolyIntegrand, CPU_exec> integrator({size}, {a});
+
+  SECTION("Volume integral")
+  {
+    const ctype reference_integral = 1 / a;
+
+    T integral{};
+    integrator.get(integral, 0., 1., 0., 0., 0.);
+
+    if (!is_close(reference_integral, integral, 1e-6)) {
+      std::cerr << "reference: " << reference_integral << "| integral: " << integral
+                << "| relative error: " << abs(reference_integral - integral) / std::abs(reference_integral)
+                << std::endl;
+    }
+
+    CHECK(is_close(reference_integral, integral, 1e-6));
+  }
+}
+/*
 TEST_CASE("Test 1D device integrals", "[double][gpu][integration][quadrature]")
 {
   DiFfRG::Initialize();
@@ -115,6 +98,24 @@ TEST_CASE("Test 1D device integrals", "[double][gpu][integration][quadrature]")
 
   QuadratureProvider quadrature_provider;
   Integrator1D<double, PolyIntegrand, GPU_exec> integrator(quadrature_provider, {size}, {x_min}, {x_max});
+
+  SECTION("Volume integral")
+  {
+    const double reference_integral = 2. * (x_max - x_min);
+
+    double integral{};
+    integrator.get(integral, 0., 2., 0., 0., 0.);
+    Kokkos::fence();
+
+    if (!is_close(reference_integral, integral, 1e-9)) {
+      std::cerr << "reference: " << reference_integral << "| integral: " << integral
+                << "| relative error: " << abs(reference_integral - integral) / std::abs(reference_integral)
+                << std::endl;
+    }
+
+    constexpr double expected_precision = 1e-9;
+    CHECK(integral == Catch::Approx(reference_integral).epsilon(expected_precision));
+  }
 
   SECTION("Random polynomials")
   {
@@ -156,6 +157,24 @@ TEST_CASE("Test 1D host integrals", "[double][cpu][integration][quadrature]")
   QuadratureProvider quadrature_provider;
   Integrator1D<double, PolyIntegrand, CPU_exec> integrator(quadrature_provider, {size}, {x_min}, {x_max});
 
+  SECTION("Volume integral")
+  {
+    const double reference_integral = (x_max - x_min);
+
+    double integral{};
+    integrator.get(integral, 0., 1., 0., 0., 0.);
+    Kokkos::fence();
+
+    if (!is_close(reference_integral, integral, 1e-9)) {
+      std::cerr << "reference: " << reference_integral << "| integral: " << integral
+                << "| relative error: " << abs(reference_integral - integral) / std::abs(reference_integral)
+                << std::endl;
+    }
+
+    constexpr double expected_precision = 1e-9;
+    CHECK(integral == Catch::Approx(reference_integral).epsilon(expected_precision));
+  }
+
   SECTION("Random polynomials")
   {
     constexpr uint take_n = 2;
@@ -181,4 +200,4 @@ TEST_CASE("Test 1D host integrals", "[double][cpu][integration][quadrature]")
     }
     CHECK(is_close(reference_integral, integral, 1e-6));
   }
-}
+}*/

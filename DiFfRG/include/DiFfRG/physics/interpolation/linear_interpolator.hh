@@ -1,9 +1,9 @@
 #pragma once
 
 // DiFfRG
-#include <DiFfRG/physics/interpolation_kokkos/linear_interpolator_1D.hh>
-#include <DiFfRG/physics/interpolation_kokkos/linear_interpolator_2D.hh>
-#include <DiFfRG/physics/interpolation_kokkos/linear_interpolator_3D.hh>
+#include <DiFfRG/physics/interpolation/linear_interpolator_1D.hh>
+#include <DiFfRG/physics/interpolation/linear_interpolator_2D.hh>
+#include <DiFfRG/physics/interpolation/linear_interpolator_3D.hh>
 
 namespace DiFfRG
 {

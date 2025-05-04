@@ -6,6 +6,7 @@
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/polynomials.hh>
 #include <DiFfRG/physics/integration/integrator_3D.hh>
+#include <DiFfRG/physics/interpolation.hh>
 
 using namespace DiFfRG;
 
@@ -67,6 +68,19 @@ TEST_CASE("Test 3D host integrals", "[double][cpu][integration][quadrature]")
     constexpr double expected_precision = 1e-9;
     CHECK(integral == Catch::Approx(reference_integral).epsilon(expected_precision));
   }
+
+  SECTION("Volume map")
+  {
+    const uint rsize = GENERATE(16, 32);
+    std::vector<double> integral_view(rsize);
+    LinearCoordinates1D<double> coordinates(rsize, 0., 0.);
+
+    integrator.map(integral_view.data(), coordinates, 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0.).fence();
+
+    for (uint i = 0; i < rsize; ++i)
+      CHECK(is_close(integral_view[i], coordinates.forward(i) + (x_max - x_min) * (y_max - y_min) * (z_max - z_min),
+                     1e-6));
+  };
 
   SECTION("Random polynomials")
   {
@@ -143,6 +157,19 @@ TEST_CASE("Test 3D device integrals", "[double][cpu][integration][quadrature]")
     constexpr double expected_precision = 1e-9;
     CHECK(integral == Catch::Approx(reference_integral).epsilon(expected_precision));
   }
+
+  SECTION("Volume map")
+  {
+    const uint rsize = GENERATE(16, 32);
+    std::vector<double> integral_view(rsize);
+    LinearCoordinates1D<double> coordinates(rsize, 0., 0.);
+
+    integrator.map(integral_view.data(), coordinates, 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0.).fence();
+
+    for (uint i = 0; i < rsize; ++i)
+      CHECK(is_close(integral_view[i], coordinates.forward(i) + (x_max - x_min) * (y_max - y_min) * (z_max - z_min),
+                     1e-6));
+  };
 
   SECTION("Random polynomials")
   {
