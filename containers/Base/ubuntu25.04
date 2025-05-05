@@ -1,5 +1,5 @@
 FROM "ubuntu:25.04" as base
-LABEL stage=diffrg-image
+LABEL type=diffrg-image
 
 # set a directory for the app
 WORKDIR /

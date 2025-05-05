@@ -123,6 +123,32 @@ ExternalProject_Add(
 # Kokkos
 # ##############################################################################
 
+if(NOT DEFINED Kokkos_ARCH)
+  set(Kokkos_ARCH_NATIVE
+      ON
+      CACHE BOOL "Enable Kokkos native architecture")
+else()
+  set(Kokkos_ARCH_NATIVE
+      OFF
+      CACHE BOOL "Enable Kokkos native architecture")
+endif()
+
+if(NOT DEFINED Kokkos_ARCH_LIST)
+  message(
+    WARNING
+      "Kokkos_ARCH_LIST not set. GPU architecture must be detectable when building Kokkos."
+  )
+  set(Kokkos_ARCH_LIST "")
+else()
+  # prepend every element with a -D and postpend with a :BOOL=ON
+  string(REPLACE ";" ";-D" Kokkos_ARCH_LIST ";${Kokkos_ARCH_LIST}")
+  # remove the first element
+  string(SUBSTRING "${Kokkos_ARCH_LIST}" 1 -1 Kokkos_ARCH_LIST)
+  string(REPLACE ";" ":BOOL=ON " Kokkos_ARCH_LIST "${Kokkos_ARCH_LIST};")
+  # remove the last element
+  string(SUBSTRING "${Kokkos_ARCH_LIST}" 0 -1 Kokkos_ARCH_LIST)
+endif()
+
 # add the Kokkos dependency to the build
 ExternalProject_Add(
   kokkos_dep
@@ -135,7 +161,8 @@ ExternalProject_Add(
     -DCMAKE_BUILD_TYPE:STRING=Release
     -DCMAKE_CXX_STANDARD:STRING=20
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-    -DKokkos_ARCH_NATIVE:BOOL=ON
+    -DKokkos_ARCH_NATIVE:BOOL=${Kokkos_ARCH_NATIVE}
+    ${Kokkos_ARCH_LIST}
     -DKokkos_ENABLE_CUDA:BOOL=${HAVE_CUDA}
     -DKokkos_ENABLE_CUDA_CONSTEXPR:BOOL=${HAVE_CUDA}
     -DKokkos_ENABLE_HIP:BOOL=${HAVE_HIP}
