@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.26.5)
+cmake_minimum_required(VERSION 3.20)
 
 project(DiFfRG)
 

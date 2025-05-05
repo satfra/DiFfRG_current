@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.27.0)
 
 project(ONfiniteT LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CUDA_STANDARD 20)
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 # ##############################################################################
 # Setup Application
@@ -15,9 +20,8 @@ find_package(DiFfRG REQUIRED HINTS /opt/DiFfRG/)
 add_subdirectory(flows)
 
 add_executable(LDG LDG.cc ${flow_sources})
-
-target_link_libraries(LDG PUBLIC DiFfRG::DiFfRG)
-# setup_application(LDG)
+target_link_libraries(LDG PRIVATE DiFfRG::DiFfRG)
+# setup_target(LDG)
 
 # add_executable(CG CG.cc ${flow_sources}) setup_application(CG)
 # target_link_libraries(CG DiFfRG::DiFfRG)

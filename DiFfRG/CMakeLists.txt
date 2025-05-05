@@ -2,7 +2,7 @@
 # CMakeLists.txt for the DiFfRG library
 # ##############################################################################
 
-cmake_minimum_required(VERSION 3.26.4)
+cmake_minimum_required(VERSION 3.20)
 
 project(DiFfRG)
 
