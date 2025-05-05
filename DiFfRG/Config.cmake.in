@@ -8,6 +8,7 @@ set(BUNDLED_DIR @CMAKE_INSTALL_PREFIX@/bundled/)
 
 # Propagate the usage of CUDA from the package to an application
 set(DiFfRG_USE_CUDA @USE_CUDA@)
+set(DiFfRG_MPI @ENABLE_MPI@)
 
 # Propagate build flags
 set(DiFfRG_CXX_FLAGS "@CMAKE_CXX_FLAGS@")

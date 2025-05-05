@@ -5,9 +5,23 @@
 # We need to find the bundle directory, which contains several external
 # dependencies
 if(${CMAKE_PROJECT_NAME} STREQUAL "DiFfRG")
+  if(NOT DEFINED ENABLE_MPI)
+    find_package(MPI QUIET)
+    if(MPI_FOUND)
+      set(ENABLE_MPI
+          ON
+          CACHE BOOL "Enable MPI support")
+    else()
+      set(ENABLE_MPI
+          OFF
+          CACHE BOOL "Enable MPI support")
+    endif()
+  endif()
+
   # If we are building DiFfRG as a standalone project, we need to set the base
   # directory
   set(BASE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+  set(DiFfRG_MPI ${ENABLE_MPI})
 else()
   # If we are building a DiFfRG-based project, we need to set the bundle
   # directory relative to the DiFfRG base directory
@@ -19,6 +33,7 @@ include_directories(SYSTEM ${BUNDLED_DIR}/include)
 
 message(STATUS "DiFfRG include directory: ${BASE_DIR}/include")
 message(STATUS "DiFfRG bundle directory: ${BUNDLED_DIR}")
+message(STATUS "MPI support has been set to ${DiFfRG_MPI}")
 
 # ##############################################################################
 # Set standard and language
@@ -79,6 +94,10 @@ find_package(GSL REQUIRED)
 find_package(autodiff 1.1.0 REQUIRED HINTS ${BUNDLED_DIR})
 find_package(spdlog 1.14.1 REQUIRED HINTS ${BUNDLED_DIR})
 
+if(${DiFfRG_MPI})
+  find_package(MPI REQUIRED)
+endif()
+
 # ##############################################################################
 # Convenience functions
 # ##############################################################################
@@ -129,4 +148,9 @@ function(setup_target TARGET)
   target_link_libraries(${TARGET} PUBLIC ${Boost_LIBRARIES})
   target_link_libraries(${TARGET} PUBLIC TBB::tbb)
   target_link_libraries(${TARGET} PUBLIC Kokkos::kokkos)
+  target_link_libraries(${TARGET} PUBLIC petsc)
+
+  if(${DiFfRG_MPI})
+    target_link_libraries(${TARGET} PUBLIC MPI::MPI_CXX)
+  endif()
 endfunction()

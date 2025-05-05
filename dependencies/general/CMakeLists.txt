@@ -5,9 +5,9 @@ project(general_dep)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 set(CMAKE_BUILD_TYPE Release)
 
-# if DiFfRG_MPI is not set, set it to OFF
-if(NOT DEFINED DiFfRG_MPI)
-  set(DiFfRG_MPI
+# if ENABLE_MPI is not set, set it to OFF
+if(NOT DEFINED ENABLE_MPI)
+  set(ENABLE_MPI
       OFF
       CACHE BOOL "Enable MPI support")
 endif()
@@ -47,7 +47,7 @@ cpmaddpackage(
   VERSION
   6.7.0
   OPTIONS
-  "ENABLE_MPI ${DiFfRG_MPI}"
+  "ENABLE_MPI ${ENABLE_MPI}"
   "CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE}"
   "EXAMPLES_ENABLE_C OFF"
   "EXAMPLES_ENABLE_CXX OFF"

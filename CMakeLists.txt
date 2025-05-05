@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.27)
+cmake_minimum_required(VERSION 3.26.5)
 
 project(DiFfRG)
 
@@ -63,21 +63,21 @@ else()
   set(HAVE_OPENMP OFF)
   set(HAVE_THREADS ON)
 endif()
-# if DiFfRG_MPI is not set, set it to OFF
-if(NOT DEFINED DiFfRG_MPI)
+# if ENABLE_MPI is not set, set it to OFF
+if(NOT DEFINED ENABLE_MPI)
   find_package(MPI)
   if(MPI_FOUND)
-    set(DiFfRG_MPI
+    set(ENABLE_MPI
         ON
         CACHE BOOL "Enable MPI support")
   else()
-    set(DiFfRG_MPI
+    set(ENABLE_MPI
         OFF
         CACHE BOOL "Enable MPI support")
   endif()
 endif()
 
-message(STATUS "MPI: ${DiFfRG_MPI}")
+message(STATUS "MPI: ${ENABLE_MPI}")
 message(STATUS "OpenMP: ${HAVE_OPENMP}")
 message(STATUS "CUDA: ${HAVE_CUDA}")
 message(STATUS "HIP: ${HAVE_HIP}")
@@ -99,7 +99,7 @@ ExternalProject_Add(
   INSTALL_COMMAND make install
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
   CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-                   -DDiFfRG_MPI:BOOL=${DiFfRG_MPI})
+                   -DENABLE_MPI:BOOL=${ENABLE_MPI})
 
 # build autodiff
 ExternalProject_Add(
@@ -133,7 +133,8 @@ ExternalProject_Add(
 ExternalProject_Add(
   kokkos_dep
   GIT_REPOSITORY https://github.com/kokkos/kokkos.git
-  GIT_TAG 4.6.01
+  GIT_TAG develop
+  # GIT_TAG 4.6.01
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/kokkos
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
   BUILD_COMMAND make
@@ -163,10 +164,11 @@ ExternalProject_Add(
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/petsc
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
   CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
-  BUILD_COMMAND make
-  INSTALL_COMMAND make install
+  BUILD_COMMAND cmake -E echo "Skipping build step for PETSc."
+  INSTALL_COMMAND cmake -E echo "Skipping install step for PETSc."
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
-  CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
+  CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+                   -DHAVE_OPENMP:BOOL=${HAVE_OPENMP})
 
 # ##############################################################################
 # deal.II
@@ -189,10 +191,11 @@ ExternalProject_Add(
     -DCMAKE_WARN_DEPRECATED:BOOL=OFF
     -DDEAL_II_COMPONENT_EXAMPLES:BOOL=OFF
     -DDEAL_II_COMPONENT_DOCUMENTATION:BOOL=OFF
-    -DDEAL_II_WITH_MPI:BOOL=${DiFfRG_MPI}
+    -DDEAL_II_WITH_MPI:BOOL=${ENABLE_MPI}
     -DDEAL_II_WITH_KOKKOS:BOOL=OFF
     -DDEAL_II_WITH_UMFPACK:BOOL=ON
     -DDEAL_II_WITH_TASKFLOW:BOOL=OFF
+    -DDEAL_II_WITH_LAPACK:BOOL=ON
     -DPETSC_DIR:PATH=${DEPEND_INSTALL_PREFIX}
     -DPETSC_ARCH:STRING=arch-linux-c-opt
     -DCMAKE_CXX_STANDARD:STRING=17
@@ -221,7 +224,7 @@ ExternalProject_Add(
   BUILD_COMMAND make
   INSTALL_COMMAND make install
   CMAKE_CACHE_ARGS
-    -DENABLE_MPI:BOOL=OFF
+    -DENABLE_MPI:BOOL=${ENABLE_MPI}
     -DBUNDLED_DIR:PATH=${DEPEND_INSTALL_PREFIX}
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
     -DDiFfRG_TEST:BOOL=${DiFfRG_TEST}
