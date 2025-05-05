@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# The Base/ directory contains setups with neither MPI, OpenMP, nor CUDA.
+# This script tries to build the DiFfRG docker images for all setups in the Base/ directory.
+
 # get all files in Base/
 images=$(ls Base/)
 
