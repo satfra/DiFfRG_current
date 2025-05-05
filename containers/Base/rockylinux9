@@ -9,7 +9,7 @@ COPY ../deploy.sh /deploy.sh
 # enable the devel repo
 RUN sed 's/#baseurl/baseurl/g' -i /etc/yum.repos.d/rocky-devel.repo
 # install dependencies
-RUN dnf --enablerepo=devel install -y gcc-toolset-12 cmake patch git openblas-devel doxygen doxygen-latex python3 python3-pip gsl-devel
+RUN dnf --enablerepo=devel install -y gcc-toolset-12 cmake patch git openblas-devel doxygen doxygen-latex python3 python3-pip gsl-devel which
 # install DiFfRG
 RUN echo "source /opt/rh/gcc-toolset-12/enable" > /.bashenv
 ENV BASH_ENV=/.bashenv
