@@ -93,19 +93,19 @@ namespace DiFfRG
   template <size_t N, typename T> struct is_complex<cxreal<N, T>> : public std::true_type {
   };
 
-  template <size_t N, typename T> KOKKOS_FORCEINLINE_FUNC auto real(const autodiff::Real<N, T> &a) { return a; }
-  template <size_t N, typename T> constexpr KOKKOS_FORCEINLINE_FUNC auto imag(const autodiff::Real<N, T> &)
+  template <size_t N, typename T> KOKKOS_FORCEINLINE_FUNCTION auto real(const autodiff::Real<N, T> &a) { return a; }
+  template <size_t N, typename T> constexpr KOKKOS_FORCEINLINE_FUNCTION auto imag(const autodiff::Real<N, T> &)
   {
     return 0.;
   }
 
-  template <size_t N, typename T> KOKKOS_FORCEINLINE_FUNC auto real(const cxreal<N, T> &x)
+  template <size_t N, typename T> KOKKOS_FORCEINLINE_FUNCTION auto real(const cxreal<N, T> &x)
   {
     autodiff::Real<N, T> res;
     autodiff::detail::For<0, N + 1>([&](auto i) constexpr { res[i] = real(x[i]); });
     return res;
   }
-  template <size_t N, typename T> KOKKOS_FORCEINLINE_FUNC auto imag(const cxreal<N, T> &x)
+  template <size_t N, typename T> KOKKOS_FORCEINLINE_FUNCTION auto imag(const cxreal<N, T> &x)
   {
     autodiff::Real<N, T> res;
     autodiff::detail::For<0, N + 1>([&](auto i) constexpr { res[i] = imag(x[i]); });
@@ -114,14 +114,14 @@ namespace DiFfRG
 
   // operators for multiplication of real and complex
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator*(const autodiff::Real<N, T> &x, const complex<double> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator*(const autodiff::Real<N, T> &x, const complex<double> &y)
   {
     cxreal<N, T> res;
     autodiff::detail::For<0, N + 1>([&](auto i) constexpr { res[i] = x[i] * y; });
     return res;
   }
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator*(const complex<double> x, const autodiff::Real<N, T> y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator*(const complex<double> x, const autodiff::Real<N, T> y)
   {
     cxreal<N, T> res;
     autodiff::detail::For<0, N + 1>([&](auto i) constexpr { res[i] = x * y[i]; });
@@ -129,7 +129,7 @@ namespace DiFfRG
   }
   // operators for addition of real and complex
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator+(const autodiff::Real<N, T> &x, const complex<double> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator+(const autodiff::Real<N, T> &x, const complex<double> &y)
   {
     cxreal<N, T> res;
     res[0] = x[0] + y;
@@ -137,7 +137,7 @@ namespace DiFfRG
     return res;
   }
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator+(const complex<double> x, const autodiff::Real<N, T> y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator+(const complex<double> x, const autodiff::Real<N, T> y)
   {
     cxreal<N, T> res;
     res[0] = x + y[0];
@@ -146,7 +146,7 @@ namespace DiFfRG
   }
   // operators for subtraction of real and complex
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator-(const autodiff::Real<N, T> &x, const complex<double> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator-(const autodiff::Real<N, T> &x, const complex<double> &y)
   {
     cxreal<N, T> res;
     res[0] = x[0] - y;
@@ -154,7 +154,7 @@ namespace DiFfRG
     return res;
   }
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator-(const complex<double> x, const autodiff::Real<N, T> y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator-(const complex<double> x, const autodiff::Real<N, T> y)
   {
     cxreal<N, T> res;
     res[0] = x - y[0];
@@ -163,14 +163,14 @@ namespace DiFfRG
   }
   // operators for division of real and complex
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator/(const autodiff::Real<N, T> &x, const complex<double> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator/(const autodiff::Real<N, T> &x, const complex<double> &y)
   {
     cxreal<N, T> res;
     autodiff::detail::For<0, N + 1>([&](auto i) constexpr { res[i] = x[i] / y; });
     return res;
   }
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator/(const complex<double> x, const autodiff::Real<N, T> y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator/(const complex<double> x, const autodiff::Real<N, T> y)
   {
     cxreal<N, T> ux(x);
     cxreal<N, T> uy(y);
@@ -179,39 +179,39 @@ namespace DiFfRG
 
   // operators for multiplication of real and cxreal
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator*(const autodiff::Real<N, T> &x, const cxreal<N, T> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator*(const autodiff::Real<N, T> &x, const cxreal<N, T> &y)
   {
     cxreal<N, T> res(x);
     return res *= y;
   }
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator*(const cxreal<N, T> &x, const autodiff::Real<N, T> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator*(const cxreal<N, T> &x, const autodiff::Real<N, T> &y)
   {
     cxreal<N, T> res(y);
     return res *= x;
   }
   // operators for addition of real and cxreal
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator+(const autodiff::Real<N, T> &x, const cxreal<N, T> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator+(const autodiff::Real<N, T> &x, const cxreal<N, T> &y)
   {
     cxreal<N, T> res(x);
     return res += y;
   }
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator+(const cxreal<N, T> &x, const autodiff::Real<N, T> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator+(const cxreal<N, T> &x, const autodiff::Real<N, T> &y)
   {
     cxreal<N, T> res(y);
     return res += x;
   }
   // operators for subtraction of real and cxreal
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator-(const autodiff::Real<N, T> &x, const cxreal<N, T> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator-(const autodiff::Real<N, T> &x, const cxreal<N, T> &y)
   {
     cxreal<N, T> res(x);
     return res -= y;
   }
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator-(const cxreal<N, T> &x, const autodiff::Real<N, T> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator-(const cxreal<N, T> &x, const autodiff::Real<N, T> &y)
   {
     cxreal<N, T> ux(x);
     cxreal<N, T> uy(y);
@@ -219,13 +219,13 @@ namespace DiFfRG
   }
   // operators for division of real and cxreal
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator/(const autodiff::Real<N, T> &x, const cxreal<N, T> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator/(const autodiff::Real<N, T> &x, const cxreal<N, T> &y)
   {
     cxreal<N, T> ux(x);
     return ux /= y;
   }
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator/(const cxreal<N, T> &x, const autodiff::Real<N, T> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator/(const cxreal<N, T> &x, const autodiff::Real<N, T> &y)
   {
     cxreal<N, T> uy(y);
     return x / uy;
@@ -233,14 +233,14 @@ namespace DiFfRG
 
   // operators for multiplication of complex and cxreal
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator*(const complex<double> &x, const cxreal<N, T> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator*(const complex<double> &x, const cxreal<N, T> &y)
   {
     cxreal<N, T> res;
     autodiff::detail::For<0, N + 1>([&](auto i) constexpr { res[i] = y[i] * x; });
     return res;
   }
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator*(const cxreal<N, T> &x, const complex<double> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator*(const cxreal<N, T> &x, const complex<double> &y)
   {
     cxreal<N, T> res;
     autodiff::detail::For<0, N + 1>([&](auto i) constexpr { res[i] = x[i] * y; });
@@ -248,14 +248,14 @@ namespace DiFfRG
   }
   // operators for addition of complex and cxreal
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator+(const complex<double> &x, const cxreal<N, T> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator+(const complex<double> &x, const cxreal<N, T> &y)
   {
     cxreal<N, T> res(y);
     res[0] += x;
     return res;
   }
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator+(const cxreal<N, T> &x, const complex<double> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator+(const cxreal<N, T> &x, const complex<double> &y)
   {
     cxreal<N, T> res(x);
     res[0] += y;
@@ -263,13 +263,13 @@ namespace DiFfRG
   }
   // operators for subtraction of complex and cxreal
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator-(const complex<double> &x, const cxreal<N, T> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator-(const complex<double> &x, const cxreal<N, T> &y)
   {
     cxreal<N, T> ux(x);
     return ux -= y;
   }
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator-(const cxreal<N, T> &x, const complex<double> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator-(const cxreal<N, T> &x, const complex<double> &y)
   {
     cxreal<N, T> res(x);
     res[0] -= y;
@@ -277,14 +277,14 @@ namespace DiFfRG
   }
   // operators for division of complex and cxreal
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator/(const cxreal<N, T> &x, const complex<double> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator/(const cxreal<N, T> &x, const complex<double> &y)
   {
     cxreal<N, T> res;
     autodiff::detail::For<0, N + 1>([&](auto i) constexpr { res[i] = x[i] / y; });
     return res;
   }
   template <size_t N, typename T>
-  KOKKOS_FORCEINLINE_FUNC auto operator/(const complex<double> &x, const cxreal<N, T> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator/(const complex<double> &x, const cxreal<N, T> &y)
   {
     cxreal<N, T> ux(x);
     cxreal<N, T> uy(y);
@@ -292,7 +292,7 @@ namespace DiFfRG
   }
 
   // operators for division of double and cxreal
-  template <size_t N, typename T> KOKKOS_FORCEINLINE_FUNC auto operator/(const double x, const cxreal<N, T> &y)
+  template <size_t N, typename T> KOKKOS_FORCEINLINE_FUNCTION auto operator/(const double x, const cxreal<N, T> &y)
   {
     cxreal<N, T> res;
     res[0] = x;
@@ -313,52 +313,52 @@ namespace DiFfRG
   // operators for multiplication of float and complex
   template <typename T1, typename T2>
     requires(!std::is_same_v<T1, T2>) && std::is_arithmetic_v<T1> && std::is_arithmetic_v<T2>
-  KOKKOS_FORCEINLINE_FUNC auto operator*(const T1 x, const complex<T2> y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator*(const T1 x, const complex<T2> y)
   {
     return complex<decltype(T1(1.) * T2(1.))>(x * y.real(), x * y.imag());
   }
   template <typename T1, typename T2>
     requires(!std::is_same_v<T1, T2>) && std::is_arithmetic_v<T1> && std::is_arithmetic_v<T2>
-  KOKKOS_FORCEINLINE_FUNC auto operator*(const complex<T1> &x, const T2 &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator*(const complex<T1> &x, const T2 &y)
   {
     return complex<decltype(T1(1.) * T2(1.))>(y * x.real(), y * x.imag());
   }
   // operators for addition of real and complex
   template <typename T1, typename T2>
     requires(!std::is_same_v<T1, T2>) && std::is_arithmetic_v<T1> && std::is_arithmetic_v<T2>
-  KOKKOS_FORCEINLINE_FUNC auto operator+(const T1 &x, const complex<T2> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator+(const T1 &x, const complex<T2> &y)
   {
     return complex<decltype(T1(1.) + T2(1.))>(x + y.real(), y.imag());
   }
   template <typename T1, typename T2>
     requires(!std::is_same_v<T1, T2>) && std::is_arithmetic_v<T1> && std::is_arithmetic_v<T2>
-  KOKKOS_FORCEINLINE_FUNC auto operator+(const complex<T1> &x, const T2 &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator+(const complex<T1> &x, const T2 &y)
   {
     return complex<decltype(T1(1.) + T2(1.))>(x.real() + y, x.imag());
   }
   // operators for subtraction of real and complex
   template <typename T1, typename T2>
     requires(!std::is_same_v<T1, T2>) && std::is_arithmetic_v<T1> && std::is_arithmetic_v<T2>
-  KOKKOS_FORCEINLINE_FUNC auto operator-(const T1 &x, const complex<T2> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator-(const T1 &x, const complex<T2> &y)
   {
     return complex<decltype(T1(1.) + T2(1.))>(x - y.real(), -y.imag());
   }
   template <typename T1, typename T2>
     requires(!std::is_same_v<T1, T2>) && std::is_arithmetic_v<T1> && std::is_arithmetic_v<T2>
-  KOKKOS_FORCEINLINE_FUNC auto operator-(const complex<T1> &x, const T2 &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator-(const complex<T1> &x, const T2 &y)
   {
     return complex<decltype(T1(1.) + T2(1.))>(x.real() - y, x.imag());
   }
   // operators for division of real and complex
   template <typename T1, typename T2>
     requires(!std::is_same_v<T1, T2>) && std::is_arithmetic_v<T1> && std::is_arithmetic_v<T2>
-  KOKKOS_FORCEINLINE_FUNC auto operator/(const T1 &x, const complex<T2> &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator/(const T1 &x, const complex<T2> &y)
   {
     return complex<decltype(T1(1.) + T2(1.))>(x * y.real(), -x * y.imag()) / (powr<2>(y.real()) + powr<2>(y.imag()));
   }
   template <typename T1, typename T2>
     requires(!std::is_same_v<T1, T2>) && std::is_arithmetic_v<T1> && std::is_arithmetic_v<T2>
-  KOKKOS_FORCEINLINE_FUNC auto operator/(const complex<T1> x, const T2 &y)
+  KOKKOS_FORCEINLINE_FUNCTION auto operator/(const complex<T1> x, const T2 &y)
   {
     return complex<decltype(T1(1.) + T2(1.))>(x.real() / y, x.imag() / y);
   }
