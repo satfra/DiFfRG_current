@@ -140,26 +140,22 @@ Although a native install should be unproblematic in most cases, the setup with 
 
 Besides the manual setup described below, we recommend using [development containers](https://code.visualstudio.com/docs/devcontainers/containers) if you are using VSCode. An appropriate `.devcontainers` configuration can be adapted from the one found in the DiFfRG top level directory.
 
-The specific choice of container runtime environment is up to the user, however we provide a small build script to create a docker container in which DiFfRG will be built.
+The specific choice of container runtime environment is up to the user, however we provide a small build script to create a docker container for DiFfRG.
 To do this, you will need `docker`, `docker-buildx` and the [NVIDIA container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#) in case you wish to create a CUDA-compatible image.
 
-For a CUDA-enabled build, run
-```build
-$ bash setup_docker.sh -c 12.5.1 -j8
-```
-in the above, you may want to replace the version `12.5.1` with another version you can find on [docker hub at nvidia/cuda ](https://hub.docker.com/r/nvidia/cuda/tags).
-Alternatively, for a CUDA-less build, run simply
-```build
-$ bash setup_docker.sh -j8
-```
-
-If using other environments, e.g. [ENROOT](https://github.com/NVIDIA/enroot), the preferred approach is simply to build an image on top of the [CUDA images by NVIDIA](https://hub.docker.com/r/nvidia/cuda/tags). Optimal compatibility is given using `nvidia/cuda:12.5.1-devel-rockylinux`. Proceed with the installation setup for  Rocky Linux above.
-
-For example, with ENROOT a DiFfRG image can be built by following these steps:
+To build a docker image, you can run the script `build-container.sh` in the `containers/` folder, which will guide you through the process, i.e.
 ```bash
-$ enroot import docker://nvidia/cuda:12.5.1-devel-rockylinux9
+$ cd containers
+$ bash build-container.sh
+```
+
+If using other environments, e.g. [ENROOT](https://github.com/NVIDIA/enroot), the preferred approach is simply to build an image on top of one of the [CUDA images by NVIDIA](https://hub.docker.com/r/nvidia/cuda/tags).
+
+For example, with ENROOT a DiFfRG image can be built on top of rockylinux9 by following these steps:
+```bash
+$ enroot import docker://nvidia/cuda:12.8.1-devel-rockylinux9
 $ enroot create --name DiFfRG nvidia+cuda+12.5.1-devel-rockylinux9.sqsh
-$ enroot start --root --rw -m ./:/DiFfRG_source DiFfRG bash
+$ enroot start --root --rw -m ./:/DiFfRG DiFfRG bash
 ```
 Afterwards, one proceeds with the above Rocky Linux setup.
 
