@@ -31,7 +31,7 @@ endif()
 if(HAVE_MPI)
   message(STATUS "Building PETSc with MPI support")
   set(PETSC_OPTIONS
-      "–download-mumps –download-scalapack –download-parmetis –download-metis –download-ptscotch –download-hwloc -with-mpi=1"
+      "–download-mumps –download-scalapack –download-parmetis –download-metis –download-ptscotch –download-hwloc -download-bison -with-mpi=1"
   )
 else()
   message(STATUS "Building PETSc without MPI support")
