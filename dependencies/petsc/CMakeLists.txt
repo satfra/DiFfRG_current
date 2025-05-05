@@ -15,17 +15,32 @@ execute_process(
   OUTPUT_QUIET)
 
 message(STATUS "Configuring PETSc...")
+# config OpenMP
 if(NOT DEFINED HAVE_OPENMP)
   set(HAVE_OPENMP
       OFF
       CACHE BOOL "Enable OpenMP support")
 endif()
+# config MPI
+if(NOT DEFINED HAVE_MPI)
+  set(HAVE_MPI
+      OFF
+      CACHE BOOL "Enable MPI support")
+endif()
+
 set(PETSC_OPTIONS
     "–download-mumps –download-scalapack –download-parmetis –download-metis –download-ptscotch –download-hwloc"
 )
 if(HAVE_OPENMP)
   message(STATUS "Building PETSc with OpenMP support")
   set(PETSC_OPTIONS "${PETSC_OPTIONS} -with-openmp")
+endif()
+if(HAVE_MPI)
+  message(STATUS "Building PETSc with MPI support")
+  set(PETSC_OPTIONS "${PETSC_OPTIONS} -with-mpi=1")
+else()
+  message(STATUS "Building PETSc without MPI support")
+  set(PETSC_OPTIONS "${PETSC_OPTIONS} -with-mpi=0")
 endif()
 
 execute_process(

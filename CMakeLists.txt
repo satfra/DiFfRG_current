@@ -167,8 +167,9 @@ ExternalProject_Add(
   BUILD_COMMAND cmake -E echo "Skipping build step for PETSc."
   INSTALL_COMMAND cmake -E echo "Skipping install step for PETSc."
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
-  CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-                   -DHAVE_OPENMP:BOOL=${HAVE_OPENMP})
+  CMAKE_CACHE_ARGS
+    -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+    -DHAVE_OPENMP:BOOL=${HAVE_OPENMP} -DHAVE_MPI:BOOL=${ENABLE_MPI})
 
 # ##############################################################################
 # deal.II
