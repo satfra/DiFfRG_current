@@ -2,17 +2,8 @@
 # Tests for basic integrators
 # ##############################################################################
 
-add_executable(test_integrator_fT_1D integrator_fT_1D.cc)
-setup_test(test_integrator_fT_1D)
-
-add_executable(test_integrator_fT_2D integrator_fT_2D.cc)
-setup_test(test_integrator_fT_2D)
-
-add_executable(test_integrator_fT_3D integrator_fT_3D.cc)
-setup_test(test_integrator_fT_3D)
-
-add_executable(test_integrator_fT_4D integrator_fT_4D.cc)
-setup_test(test_integrator_fT_4D)
+add_executable(test_quadrature_integrator_fT quadrature_integrator_fT.cc)
+setup_test(test_quadrature_integrator_fT)
 
 # ##############################################################################
 # Tests for derived integrators

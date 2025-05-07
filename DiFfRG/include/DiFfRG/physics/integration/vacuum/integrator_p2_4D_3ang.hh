@@ -2,7 +2,7 @@
 
 // DiFfRG
 #include <DiFfRG/common/math.hh>
-#include <DiFfRG/physics/integration/integrator_4D.hh>
+#include <DiFfRG/physics/integration/quadrature_integrator.hh>
 
 // standard libraries
 #include <array>
@@ -44,9 +44,10 @@ namespace DiFfRG
   } // namespace internal
 
   template <typename NT, typename KERNEL, typename ExecutionSpace>
-  class Integrator_p2_4D_3ang : public Integrator4D<NT, internal::Transform_p2_4D_3ang<NT, KERNEL>, ExecutionSpace>
+  class Integrator_p2_4D_3ang
+      : public QuadratureIntegrator<4, NT, internal::Transform_p2_4D_3ang<NT, KERNEL>, ExecutionSpace>
   {
-    using Base = Integrator4D<NT, internal::Transform_p2_4D_3ang<NT, KERNEL>, ExecutionSpace>;
+    using Base = QuadratureIntegrator<4, NT, internal::Transform_p2_4D_3ang<NT, KERNEL>, ExecutionSpace>;
 
   public:
     /**

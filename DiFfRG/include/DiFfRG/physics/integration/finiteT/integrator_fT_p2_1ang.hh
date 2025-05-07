@@ -2,7 +2,7 @@
 
 // DiFfRG
 #include <DiFfRG/common/math.hh>
-#include <DiFfRG/physics/integration/integrator_2D.hh>
+#include <DiFfRG/physics/integration/finiteT/quadrature_integrator_fT.hh>
 
 // standard libraries
 #include <array>
@@ -11,7 +11,7 @@ namespace DiFfRG
 {
   namespace internal
   {
-    template <int dim, typename NT, typename KERNEL> class Transform_p2_1ang
+    template <int dim, typename NT, typename KERNEL> class Transform_fT_p2_1ang
     {
     public:
       using ctype = typename get_type::ctype<NT>;
@@ -21,13 +21,13 @@ namespace DiFfRG
                                              * (1 / (ctype)2);            // divide the cos integral out
 
       template <typename... T>
-      static KOKKOS_FORCEINLINE_FUNCTION NT kernel(const ctype q2, const ctype cos, const T &...t)
+      static KOKKOS_FORCEINLINE_FUNCTION NT kernel(const ctype q2, const ctype cos, const ctype q0, const T &...t)
       {
         using namespace DiFfRG::compute;
 
         const ctype q = sqrt(q2);
         const ctype int_element = powr<dim - 2>(q) / (ctype)2; // from p^2 integral
-        const NT result = KERNEL::kernel(q, cos, t...);
+        const NT result = KERNEL::kernel(q, cos, q0, t...);
 
         return int_prefactor * int_element * result;
       }
@@ -41,9 +41,10 @@ namespace DiFfRG
   } // namespace internal
 
   template <int dim, typename NT, typename KERNEL, typename ExecutionSpace>
-  class Integrator_p2_1ang : public Integrator2D<NT, internal::Transform_p2_1ang<dim, NT, KERNEL>, ExecutionSpace>
+  class Integrator_fT_p2_1ang
+      : public QuadratureIntegrator_fT<2, NT, internal::Transform_fT_p2_1ang<dim, NT, KERNEL>, ExecutionSpace>
   {
-    using Base = Integrator2D<NT, internal::Transform_p2_1ang<dim, NT, KERNEL>, ExecutionSpace>;
+    using Base = QuadratureIntegrator_fT<2, NT, internal::Transform_fT_p2_1ang<dim, NT, KERNEL>, ExecutionSpace>;
 
   public:
     /**
@@ -52,9 +53,11 @@ namespace DiFfRG
     using ctype = typename get_type::ctype<NT>;
     using execution_space = ExecutionSpace;
 
-    Integrator_p2_1ang(QuadratureProvider &quadrature_provider, const std::array<uint, 2> grid_size,
-                       ctype x_extent = 2.)
-        : Base(quadrature_provider, grid_size, {0, -1.}, {x_extent, 1.}), x_extent(x_extent), k(1.)
+    Integrator_fT_p2_1ang(QuadratureProvider &quadrature_provider, const std::array<uint, 2> grid_size,
+                          ctype x_extent = 2., ctype T = 1, ctype typical_E = 1)
+        : Base(quadrature_provider, grid_size, {0, -1.}, {x_extent, 1.},
+               {QuadratureType::legendre, QuadratureType::legendre}, T, typical_E),
+          x_extent(x_extent), k(1.)
     {
     }
 
