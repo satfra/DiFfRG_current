@@ -15,7 +15,7 @@ if(NOT DEFINED DiFfRG_DIR)
   set(DiFfRG_DIR /opt/DiFfRG)
 endif()
 # find_package(DiFfRG REQUIRED HINTS ${DiFfRG_DIR})
-find_package(DiFfRG REQUIRED HINTS /opt/DiFfRG/)
+find_package(DiFfRG REQUIRED HINTS $ENV{HOME}/.local/share/DiFfRG/)
 
 add_subdirectory(flows)
 
