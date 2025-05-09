@@ -28,7 +28,7 @@ namespace DiFfRG
     LinearInterpolator1D(const Coordinates &coordinates) : coordinates(coordinates), size(coordinates.size())
     {
       // Allocate Kokkos View
-      device_data = Kokkos::View<NT *, MemorySpace>("LinearInterpolator1D_data", size);
+      device_data = ViewType("LinearInterpolator1D_data", size);
       // Create host mirror
       host_data = Kokkos::create_mirror_view(device_data);
     }
@@ -43,7 +43,7 @@ namespace DiFfRG
         : coordinates(coordinates), size(coordinates.size())
     {
       // Allocate Kokkos View
-      device_data = Kokkos::View<NT *, MemorySpace>("LinearInterpolator1D_data", size);
+      device_data = ViewType("LinearInterpolator1D_data", size);
       // Create host mirror
       host_data = Kokkos::create_mirror_view(device_data);
       // Update device data
@@ -92,7 +92,10 @@ namespace DiFfRG
     const Coordinates coordinates;
     const uint size;
 
-    Kokkos::View<NT *, MemorySpace> device_data;
-    Kokkos::View<NT *, MemorySpace>::HostMirror host_data;
+    using ViewType = Kokkos::View<NT *, MemorySpace, Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
+    using HostViewType = typename ViewType::HostMirror;
+
+    ViewType device_data;
+    HostViewType host_data;
   };
 } // namespace DiFfRG

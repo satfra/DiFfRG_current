@@ -33,8 +33,8 @@ TEST_CASE("Benchmark cpu momentum integrals", "[integration][quadrature integrat
       constexpr uint rsize = powr<j>(2);
       constexpr uint isize = powr<i>(2);
       {
-        QuadratureIntegrator<1, double, PolyIntegrand<1>, CPU_exec> integrator(quadrature_provider, {isize}, {x_min},
-                                                                               {x_max}, {QuadratureType::legendre});
+        QuadratureIntegrator<1, double, PolyIntegrand<1, double>, CPU_exec> integrator(
+            quadrature_provider, {isize}, {x_min}, {x_max}, {QuadratureType::legendre});
         Kokkos::View<double *, CPU_memory> integral_view("cpu_integral_results", rsize);
 
         BENCHMARK_ADVANCED("host isize=" + std::to_string(isize) +
@@ -51,8 +51,8 @@ TEST_CASE("Benchmark cpu momentum integrals", "[integration][quadrature integrat
         };
       }
       {
-        QuadratureIntegrator<1, double, PolyIntegrand<1>, GPU_exec> integrator(quadrature_provider, {isize}, {x_min},
-                                                                               {x_max}, {QuadratureType::legendre});
+        QuadratureIntegrator<1, double, PolyIntegrand<1, double>, GPU_exec> integrator(
+            quadrature_provider, {isize}, {x_min}, {x_max}, {QuadratureType::legendre});
         Kokkos::View<double *, GPU_memory> integral_view("cpu_integral_results", rsize);
 
         BENCHMARK_ADVANCED("device isize=" + std::to_string(isize) +
@@ -69,8 +69,8 @@ TEST_CASE("Benchmark cpu momentum integrals", "[integration][quadrature integrat
         };
       }
       {
-        QuadratureIntegrator<1, double, PolyIntegrand<1>, CPU_exec> integrator(quadrature_provider, {isize}, {x_min},
-                                                                               {x_max}, {QuadratureType::legendre});
+        QuadratureIntegrator<1, double, PolyIntegrand<1, double>, CPU_exec> integrator(
+            quadrature_provider, {isize}, {x_min}, {x_max}, {QuadratureType::legendre});
         std::vector<double> integral_view(rsize);
         LinearCoordinates1D<double> coordinates(rsize, 0., 1.);
 
@@ -94,8 +94,8 @@ TEST_CASE("Benchmark cpu momentum integrals", "[integration][quadrature integrat
         }
       }
       {
-        QuadratureIntegrator<1, double, PolyIntegrand<1>, GPU_exec> integrator(quadrature_provider, {isize}, {x_min},
-                                                                               {x_max}, {QuadratureType::legendre});
+        QuadratureIntegrator<1, double, PolyIntegrand<1, double>, GPU_exec> integrator(
+            quadrature_provider, {isize}, {x_min}, {x_max}, {QuadratureType::legendre});
         std::vector<double> integral_view(rsize);
         LinearCoordinates1D<double> coordinates(rsize, 0., 1.);
 

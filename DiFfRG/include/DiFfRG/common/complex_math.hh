@@ -311,6 +311,7 @@ namespace DiFfRG
   // ------------------------------------------------------------------
 
   // operators for multiplication of float and complex
+  /*
   template <typename T1, typename T2>
     requires(!std::is_same_v<T1, T2>) && std::is_arithmetic_v<T1> && std::is_arithmetic_v<T2>
   KOKKOS_FORCEINLINE_FUNCTION auto operator*(const T1 x, const complex<T2> y)
@@ -362,4 +363,5 @@ namespace DiFfRG
   {
     return complex<decltype(T1(1.) + T2(1.))>(x.real() / y, x.imag() / y);
   }
+*/
 } // namespace DiFfRG

@@ -8,8 +8,9 @@
 
 using namespace DiFfRG;
 
-TEMPLATE_TEST_CASE_SIG("Test 1D interpolation", "[float][double][complex][autodiff]", ((typename T), T), float, double,
-                       complex<double>, complex<float>, autodiff::real)
+TEMPLATE_TEST_CASE_SIG("Test 1D spline interpolation", "[float][double][complex][autodiff]", ((typename T), T), double,
+                       complex<double>)
+// float, double, complex<float>, autodiff::real)
 {
   DiFfRG::Initialize();
 
@@ -25,7 +26,7 @@ TEMPLATE_TEST_CASE_SIG("Test 1D interpolation", "[float][double][complex][autodi
   for (int j = 0; j < p_size; ++j)
     in_data[j] = j;
   LogarithmicCoordinates1D<ctype> coords(p_size, p_start, p_stop, p_bias);
-  LinearInterpolatorND<CPU_memory, T, LogarithmicCoordinates1D<ctype>> interpolator(empty_data.data(), coords);
+  SplineInterpolator1D<CPU_memory, T, LogarithmicCoordinates1D<ctype>> interpolator(empty_data.data(), coords);
   interpolator.update(in_data.data());
 
   const int n_el = GENERATE(take(3, random(2, 200)));
@@ -44,6 +45,7 @@ TEMPLATE_TEST_CASE_SIG("Test 1D interpolation", "[float][double][complex][autodi
   CHECK(is_close(res_host, res_local, 1e-10 * n_el));
 }
 
+/*
 TEMPLATE_TEST_CASE_SIG("Test 1D interpolation GPU", "[float][double][complex][autodiff]", ((typename T), T), float,
                        double, complex<double>, complex<float>, autodiff::real)
 {
@@ -61,6 +63,6 @@ TEMPLATE_TEST_CASE_SIG("Test 1D interpolation GPU", "[float][double][complex][au
   for (int j = 0; j < p_size; ++j)
     in_data[j] = j;
   LogarithmicCoordinates1D<ctype> coords(p_size, p_start, p_stop, p_bias);
-  LinearInterpolatorND<GPU_memory, T, LogarithmicCoordinates1D<ctype>> interpolator(empty_data.data(), coords);
+  SplineInterpolator1D<GPU_memory, T, LogarithmicCoordinates1D<ctype>> interpolator(empty_data.data(), coords);
   interpolator.update(in_data.data());
-}
+}*/

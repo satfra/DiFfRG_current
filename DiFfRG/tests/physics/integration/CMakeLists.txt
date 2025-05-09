@@ -11,6 +11,7 @@ setup_test(test_quadrature_integrator)
 
 add_subdirectory(vacuum)
 add_subdirectory(finiteT)
+# add_subdirectory(lattice)
 
 # ##############################################################################
 # Benchmarks

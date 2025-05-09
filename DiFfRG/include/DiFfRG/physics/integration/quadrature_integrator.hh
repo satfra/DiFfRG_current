@@ -2,18 +2,19 @@
 
 // DiFfRG
 #include <DiFfRG/common/kokkos.hh>
+#include <DiFfRG/common/mpi.hh>
 #include <DiFfRG/common/quadrature/quadrature_provider.hh>
 #include <DiFfRG/common/tuples.hh>
 #include <DiFfRG/common/utils.hh>
-
-#include <cstdarg>
+#include <DiFfRG/physics/integration/abstract_integrator.hh>
 
 // standard libraries
 #include <array>
 
 namespace DiFfRG
 {
-  template <int dim, typename NT, typename KERNEL, typename ExecutionSpace> class QuadratureIntegrator
+  template <int dim, typename NT, typename KERNEL, typename ExecutionSpace>
+  class QuadratureIntegrator : public AbstractIntegrator
   {
   public:
     /**
@@ -279,6 +280,37 @@ namespace DiFfRG
     template <typename Coordinates, typename... Args>
     auto map(NT *dest, const Coordinates &coordinates, const Args &...args)
     {
+      // Take care of MPI distribution
+      const auto &node_distribution = AbstractIntegrator::node_distribution;
+      if (node_distribution.mpi_comm != MPI_COMM_NULL && node_distribution.total_size > 0) {
+        const auto &mpi_comm = node_distribution.mpi_comm;
+        const auto &nodes = node_distribution.nodes;
+        const auto &sizes = node_distribution.sizes;
+
+        // Check if the rank is contained in nodes
+        const uint m_rank = DiFfRG::MPI::rank(mpi_comm);
+        // If not, return an empty execution space
+        if (std::find(nodes.begin(), nodes.end(), m_rank) == nodes.end()) return ExecutionSpace();
+
+        // Get the size of the current rank
+        const uint rank_size = sizes[m_rank];
+        // Offset is the sum of all previous ranks
+        const uint offset = std::accumulate(nodes.begin(), nodes.begin() + m_rank, 0);
+
+        // Create a SubCoordinates object
+        const auto sub_coordinates = SubCoordinates(coordinates, offset, rank_size);
+        // Offset the destination pointer
+        NT *dest_offset = dest + offset;
+
+        return map_dist(dest_offset, sub_coordinates, args...);
+      }
+
+      return map_dist(dest, coordinates, args...);
+    }
+
+    template <typename Coordinates, typename... Args>
+    auto map_dist(NT *dest, const Coordinates &coordinates, const Args &...args)
+    {
       // create an execution space
       ExecutionSpace space;
 
@@ -299,7 +331,7 @@ namespace DiFfRG
       // copy the result from the mirror to the requested destination
       Kokkos::deep_copy(space, dest_view, dest_host_view);
 
-      return std::move(space);
+      return space;
     }
 
     const std::array<uint, dim> grid_size;

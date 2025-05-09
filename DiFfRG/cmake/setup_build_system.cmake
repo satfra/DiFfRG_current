@@ -152,5 +152,6 @@ function(setup_target TARGET)
 
   if(${DiFfRG_MPI})
     target_link_libraries(${TARGET} PUBLIC MPI::MPI_CXX)
+    target_compile_definitions(${TARGET} PUBLIC HAVE_MPI)
   endif()
 endfunction()

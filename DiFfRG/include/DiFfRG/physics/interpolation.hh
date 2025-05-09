@@ -5,3 +5,5 @@
 #include <DiFfRG/discretization/grid/stack_coordinates.hh>
 
 #include <DiFfRG/physics/interpolation/linear_interpolator.hh>
+
+#include <DiFfRG/physics/interpolation/spline_interpolator_1D.hh>
