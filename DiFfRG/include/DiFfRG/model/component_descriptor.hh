@@ -44,6 +44,9 @@ namespace DiFfRG
   };
 
   template <typename... _descriptors> struct SubDescriptor {
+    // tuple of all FixedString names
+    static constexpr auto names_tuple = std::tie(_descriptors::name...);
+
     static constexpr std::array<const char *, sizeof...(_descriptors)> names{{_descriptors::name...}};
     static constexpr std::array<size_t, sizeof...(_descriptors)> sizes{{_descriptors::size...}};
     using descriptor_tuple = std::tuple<_descriptors...>;
@@ -61,32 +64,39 @@ namespace DiFfRG
         }(std::make_index_sequence<sizeof...(_descriptors)>{}),
         "Names of a SubDescriptor must be unique!");
 
-    consteval size_t get(const char *name) const
+    template <unsigned N> consteval size_t get(FixedString<N> name) const
     {
       size_t running_sum = 0;
       for (size_t i = 0; i < names.size(); ++i) {
-        if (0 == std::strcmp(names[i], name)) return running_sum;
+        // if (0 == std::strcmp(names[i], name)) return running_sum;
+        if(strings_equal(names[i], name)) return running_sum;
         running_sum += sizes[i];
       }
       // produce a compile-time error if the name is not found in the list
-      return running_sum != total_size ? 0
-                                       : throw std::invalid_argument("SubDescriptor::get: Name \"" + std::string(name) +
-                                                                     "\" not found. Available names are: " +
-                                                                     ((std::string(_descriptors::name) + "; ") + ...));
+      throw std::invalid_argument(
+          "SubDescriptor::get: Name \"" + std::string(name) +
+          "\" not found. Available names are: " + ((std::string(_descriptors::name) + "; ") + ...));
     }
 
-    consteval size_t operator[](const char *name) const { return get(name); }
-    consteval size_t operator()(const char *name) const { return get(name); }
+    template <unsigned N> consteval size_t operator[](FixedString<N> name) const { return get(name); }
+    template <unsigned N> consteval size_t operator()(FixedString<N> name) const { return get(name); }
+
+    template <unsigned N> consteval size_t operator[](char const(&arr)[N]) const { return get( FixedString<N-1>(arr) ); }
+    template <unsigned N> consteval size_t operator()(char const(&arr)[N]) const { return get( FixedString<N-1>(arr) ); }
 
     consteval char const *name(size_t index) const { return names[index]; }
 
     consteval std::array<const char *, sizeof...(_descriptors)> get_names() const { return names; }
     static std::vector<std::string> get_names_vector() { return {names.begin(), names.end()}; }
 
-    constexpr size_t size(const char *name) const
+    template<unsigned N>
+    consteval size_t size(char const(&arr)[N]) const
     {
       for (size_t i = 0; i < names.size(); ++i)
-        if (0 == std::strcmp(names[i], name)) return sizes[i];
+        if(strings_equal(names[i], arr)) return sizes[i];
+      throw std::invalid_argument(
+          "SubDescriptor::size: Name \"" + std::string(arr) +
+          "\" not found. Available names are: " + ((std::string(_descriptors::name) + "; ") + ...));
     }
   };
 
