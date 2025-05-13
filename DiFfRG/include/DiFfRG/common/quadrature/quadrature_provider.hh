@@ -148,7 +148,7 @@ namespace DiFfRG
      * @return const std::vector<double>&
      */
     template <typename NT = double, typename MemorySpace = CPU_memory>
-    const auto nodes(const size_t order, const QuadratureType type = QuadratureType::legendre)
+    auto nodes(const size_t order, const QuadratureType type = QuadratureType::legendre)
     {
       return quadrature_storage.get_quadrature<NT>(order, type).template nodes<MemorySpace>();
     }
@@ -160,7 +160,7 @@ namespace DiFfRG
      * @return const std::vector<double>&
      */
     template <typename NT = double, typename MemorySpace = CPU_memory>
-    const auto weights(const size_t order, const QuadratureType type = QuadratureType::legendre)
+    auto weights(const size_t order, const QuadratureType type = QuadratureType::legendre)
     {
       return quadrature_storage.get_quadrature<NT>(order, type).template weights<MemorySpace>();
     }
@@ -172,7 +172,7 @@ namespace DiFfRG
      * @return const std::vector<double>&
      */
     template <typename NT = double, typename MemorySpace = CPU_memory>
-    const auto matsubara_nodes(const NT T, const NT typical_E)
+    auto matsubara_nodes(const NT T, const NT typical_E)
     {
       return matsubara_storage.get_matsubara_quadrature<NT>(T, typical_E).template nodes<MemorySpace>();
     }
@@ -184,7 +184,7 @@ namespace DiFfRG
      * @return const std::vector<double>&
      */
     template <typename NT = double, typename MemorySpace = CPU_memory>
-    const auto matsubara_weights(const NT T, const NT typical_E)
+    auto matsubara_weights(const NT T, const NT typical_E)
     {
       return matsubara_storage.get_matsubara_quadrature<NT>(T, typical_E).template weights<MemorySpace>();
     }

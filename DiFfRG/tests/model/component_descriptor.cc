@@ -7,9 +7,23 @@
 // Test logic
 //--------------------------------------------
 
-TEST_CASE("Test", "[model]") {
-  constexpr auto FEFunctions = DiFfRG::FEFunctionDescriptor<Scalar<"u">, Scalar<"v">>;
+TEST_CASE("Test", "[model]")
+{
+  using namespace DiFfRG;
+
+  using FEFunctions = FEFunctionDescriptor<Scalar<"u">, Scalar<"v">>;
 
   constexpr FEFunctions idxf{};
 
+  std::vector<int> data{GENERATE(take(10, random(0, 100))), GENERATE(take(10, random(0, 100))),
+                        GENERATE(take(10, random(0, 100))), GENERATE(take(10, random(0, 100)))};
+
+  constexpr auto idxu = idxf["u"];
+  constexpr auto idxv = idxf["v"];
+
+  const auto data_u = data[idxf["u"]];
+  const auto data_v = data[idxf["v"]];
+
+  REQUIRE(data_u == data[0]);
+  REQUIRE(data_v == data[1]);
 }
