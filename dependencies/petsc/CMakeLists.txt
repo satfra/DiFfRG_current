@@ -37,6 +37,10 @@ else()
   message(STATUS "Building PETSc without MPI support")
   set(PETSC_OPTIONS "-with-mpi=0")
 endif()
+# if you're on MacOS, we need to turn off OpenMP support
+if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+    set(HAVE_OPENMP FALSE)
+endif()
 if(HAVE_OPENMP)
   message(STATUS "Building PETSc with OpenMP support")
   set(PETSC_OPTIONS "${PETSC_OPTIONS} -with-openmp")
@@ -52,6 +56,6 @@ message(STATUS "Building PETSc...")
 execute_process(
   COMMAND
     bash -c
-    "$(MAKE) -j ${PARALLEL_JOBS} 2>&1 | tee -a ${CMAKE_CURRENT_BINARY_DIR}/petsc.log; \
-    $(MAKE) install -j ${PARALLEL_JOBS} 2>&1 | tee -a ${CMAKE_CURRENT_BINARY_DIR}/petsc.log"
+    "make -j ${PARALLEL_JOBS} 2>&1 | tee -a ${CMAKE_CURRENT_BINARY_DIR}/petsc.log; \
+    make install -j ${PARALLEL_JOBS} 2>&1 | tee -a ${CMAKE_CURRENT_BINARY_DIR}/petsc.log"
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/petsc)

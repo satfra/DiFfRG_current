@@ -6,6 +6,21 @@ cmake_minimum_required(VERSION 3.20)
 
 project(DiFfRG)
 
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+  message(
+    WARNING
+      "CMAKE_INSTALL_PREFIX not set. Defaulting to $ENV{HOME}/.local/share/DiFfRG"
+  )
+  set(CMAKE_INSTALL_PREFIX
+      $ENV{HOME}/.local/share/DiFfRG
+      CACHE PATH "Install prefix" FORCE)
+endif()
+
+if(NOT DEFINED BUNDLED_DIR)
+  set(BUNDLED_DIR ${CMAKE_INSTALL_PREFIX}/bundled)
+  message(STATUS "BUNDLED_DIR not set, defaulting to ${BUNDLED_DIR}")
+endif()
+
 # ##############################################################################
 # Documentation
 # ##############################################################################

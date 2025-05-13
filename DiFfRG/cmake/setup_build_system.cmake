@@ -154,4 +154,6 @@ function(setup_target TARGET)
     target_link_libraries(${TARGET} PUBLIC MPI::MPI_CXX)
     target_compile_definitions(${TARGET} PUBLIC HAVE_MPI)
   endif()
+
+  target_compile_definitions(${TARGET} PUBLIC _HAS_AUTO_PTR_ETC=0)
 endfunction()
