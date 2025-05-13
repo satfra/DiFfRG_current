@@ -61,7 +61,7 @@ namespace DiFfRG
         }(std::make_index_sequence<sizeof...(_descriptors)>{}),
         "Names of a SubDescriptor must be unique!");
 
-    constexpr size_t get(const char *name) const
+    consteval size_t get(const char *name) const
     {
       size_t running_sum = 0;
       for (size_t i = 0; i < names.size(); ++i) {
@@ -75,12 +75,12 @@ namespace DiFfRG
                                                                      ((std::string(_descriptors::name) + "; ") + ...));
     }
 
-    constexpr size_t operator[](const char *name) const { return get(name); }
-    constexpr size_t operator()(const char *name) const { return get(name); }
+    consteval size_t operator[](const char *name) const { return get(name); }
+    consteval size_t operator()(const char *name) const { return get(name); }
 
-    constexpr char const *name(size_t index) const { return names[index]; }
+    consteval char const *name(size_t index) const { return names[index]; }
 
-    constexpr std::array<const char *, sizeof...(_descriptors)> get_names() const { return names; }
+    consteval std::array<const char *, sizeof...(_descriptors)> get_names() const { return names; }
     static std::vector<std::string> get_names_vector() { return {names.begin(), names.end()}; }
 
     constexpr size_t size(const char *name) const

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <DiFfRG/common/utils.hh>
+
 #ifdef HAVE_MPI
 #include <mpi.h>
 #else

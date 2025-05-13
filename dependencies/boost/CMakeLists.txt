@@ -9,20 +9,23 @@ set(CMAKE_BUILD_TYPE Release)
 set(TRY_BOOST_VERSION "1.81.0")
 set(PARALLEL_JOBS 8)
 
+# we need python
+find_package(python REQUIRED)
+
 message(STATUS "Downloading Boost version ${TRY_BOOST_VERSION}...")
 execute_process(
   COMMAND
     bash -c
     "git clone --depth 1 --branch boost-${TRY_BOOST_VERSION} https://github.com/boostorg/boost.git &> ${CMAKE_CURRENT_BINARY_DIR}/clone_boost.log"
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-  OUTPUT_QUIET)
+  )
+
 message(STATUS "Downloading Boost libraries... (this may take a while)")
 execute_process(
   COMMAND
-    bash -c
-    "git submodule update --init --depth 1 --recursive --jobs ${PARALLEL_JOBS} &> ${CMAKE_CURRENT_BINARY_DIR}/boost.log"
+    bash ${CMAKE_CURRENT_SOURCE_DIR}/download_modules.sh ${Python_EXECUTABLE}
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/boost/
-  OUTPUT_QUIET)
+  )
 
 message(STATUS "Patching boost...")
 execute_process(
@@ -51,7 +54,7 @@ add_custom_target(
         --with-thread \
         -j ${PARALLEL_JOBS} \
         cxxflags=\"-fPIC -O3 -ffat-lto-objects -std=c++20\" \
-        install &>> ${CMAKE_CURRENT_BINARY_DIR}/boost.log"
+        install 2>&1 >> ${CMAKE_CURRENT_BINARY_DIR}/boost.log"
   VERBATIM
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/boost/
   DEPENDS build_boost_boostrap)

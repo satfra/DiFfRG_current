@@ -98,25 +98,25 @@ namespace DiFfRG
 
 #else
 
-    int rank(MPI_Comm &comm) { return 0; }
-    int size(MPI_Comm &comm) { return 1; }
-    void barrier(MPI_Comm &comm) {}
+    uint rank(MPI_Comm &) { return 0; }
+    uint size(MPI_Comm &) { return 1; }
+    void barrier(MPI_Comm &) {}
 
-    int sum_reduce(MPI_Comm &comm, int *data, int size)
+    int sum_reduce(MPI_Comm &, int *data, int size)
     {
       int result = 0;
       for (int i = 0; i < size; ++i)
         result += data[i];
       return result;
     }
-    int max_reduce(MPI_Comm &comm, int *data, int size)
+    int max_reduce(MPI_Comm &, int *data, int size)
     {
       int result = data[0];
       for (int i = 1; i < size; ++i)
         result = std::max(result, data[i]);
       return result;
     }
-    int min_reduce(MPI_Comm &comm, int *data, int size)
+    int min_reduce(MPI_Comm &, int *data, int size)
     {
       int result = data[0];
       for (int i = 1; i < size; ++i)
@@ -124,25 +124,25 @@ namespace DiFfRG
       return result;
     }
 
-    int sum_reduce(MPI_Comm &comm, int value) { return value; }
-    int max_reduce(MPI_Comm &comm, int value) { return value; }
-    int min_reduce(MPI_Comm &comm, int value) { return value; }
+    int sum_reduce(MPI_Comm &, int value) { return value; }
+    int max_reduce(MPI_Comm &, int value) { return value; }
+    int min_reduce(MPI_Comm &, int value) { return value; }
 
-    double sum_reduce(MPI_Comm &comm, double *data, int size)
+    double sum_reduce(MPI_Comm &, double *data, int size)
     {
       double result = 0;
       for (int i = 0; i < size; ++i)
         result += data[i];
       return result;
     }
-    double max_reduce(MPI_Comm &comm, double *data, int size)
+    double max_reduce(MPI_Comm &, double *data, int size)
     {
       double result = data[0];
       for (int i = 1; i < size; ++i)
         result = std::max(result, data[i]);
       return result;
     }
-    double min_reduce(MPI_Comm &comm, double *data, int size)
+    double min_reduce(MPI_Comm &, double *data, int size)
     {
       double result = data[0];
       for (int i = 1; i < size; ++i)
@@ -150,9 +150,9 @@ namespace DiFfRG
       return result;
     }
 
-    double sum_reduce(MPI_Comm &comm, double value) { return value; }
-    double max_reduce(MPI_Comm &comm, double value) { return value; }
-    double min_reduce(MPI_Comm &comm, double value) { return value; }
+    double sum_reduce(MPI_Comm &, double value) { return value; }
+    double max_reduce(MPI_Comm &, double value) { return value; }
+    double min_reduce(MPI_Comm &, double value) { return value; }
 #endif
   } // namespace MPI
 } // namespace DiFfRG

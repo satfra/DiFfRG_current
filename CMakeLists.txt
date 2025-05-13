@@ -51,9 +51,6 @@ else()
   endif()
 endif()
 
-if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-  set(OpenMP_ROOT "/opt/homebrew/opt/libomp")
-endif()
 check_language(OpenMP)
 find_package(OpenMP)
 if(OpenMP_CXX_FOUND)
@@ -157,6 +154,7 @@ ExternalProject_Add(
   # GIT_TAG 4.6.01
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/kokkos
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+  CMAKE_ARGS -DCMAKE_CXX_FLAGS=-fPIC
   CMAKE_CACHE_ARGS
     -DCMAKE_BUILD_TYPE:STRING=Release
     -DCMAKE_CXX_STANDARD:STRING=20
@@ -170,7 +168,7 @@ ExternalProject_Add(
     -DKokkos_ENABLE_THREADS:BOOL=${HAVE_THREADS}
     -DKokkos_ENABLE_SERIAL:BOOL=ON
     -DKokkos_ENABLE_TESTS:BOOL=OFF
-    -DCMAKE_CXX_FLAGS:STRING=-fPIC)
+    )
 
 # ##############################################################################
 # PETSc

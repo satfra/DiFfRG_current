@@ -24,9 +24,9 @@ namespace DiFfRG
   private:
     static bool initialized;
 
-    std::string parameter_file;
     int argc;
     char **argv;
+    std::string parameter_file;
     static dealii::Utilities::MPI::MPI_InitFinalize *mpi_initialization;
   };
 } // namespace DiFfRG
