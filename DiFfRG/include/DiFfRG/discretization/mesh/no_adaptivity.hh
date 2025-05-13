@@ -22,6 +22,7 @@ namespace DiFfRG
   {
   public:
     NoAdaptivity() {}
+    virtual ~NoAdaptivity() = default;
 
     /**
      * @brief Check if an adaptation step should be done and tranfer the given solution to the new mesh.

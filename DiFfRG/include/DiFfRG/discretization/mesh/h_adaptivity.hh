@@ -40,6 +40,8 @@ namespace DiFfRG
       adapt_lower = json.get_double("/discretization/adaptivity/coarsen_percent");
     }
 
+    virtual ~HAdaptivity() = default;
+
     /**
      * @brief Check if an adaptation step should be done and tranfer the given solution to the new mesh.
      *
