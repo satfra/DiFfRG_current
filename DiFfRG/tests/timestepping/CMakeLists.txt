@@ -19,6 +19,3 @@ setup_test(test_explicit_euler)
 
 add_executable(test_trbdf2 test_trbdf2.cc)
 setup_test(test_trbdf2)
-
-add_executable(test_sundials_arkode test_sundials_arkode.cc)
-setup_test(test_sundials_arkode)

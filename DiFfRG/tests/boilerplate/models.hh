@@ -124,7 +124,7 @@ namespace DiFfRG
       template <typename NT, typename Solution>
       void source(std::array<NT, 1> &s_i, const Point<dim> & /*p*/, const Solution &sol) const
       {
-        const auto &fe_functions = std::get<0>(sol);
+        const auto &fe_functions = get<0>(sol);
         s_i[0] = -fe_functions[0];
       }
     };
@@ -156,7 +156,7 @@ namespace DiFfRG
       template <typename NT, typename Solution>
       void flux(std::array<Tensor<1, dim, NT>, 1> &F_i, const Point<dim> & /*pos*/, const Solution &sol) const
       {
-        const auto &fe_functions = std::get<0>(sol);
+        const auto &fe_functions = get<0>(sol);
         F_i[0][0] = 0.5 * powr<2>(fe_functions[0]);
       }
     };
