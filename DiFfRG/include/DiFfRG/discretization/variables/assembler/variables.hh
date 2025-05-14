@@ -103,7 +103,7 @@ namespace DiFfRG
           (void)EoMfun;
           outputter(data_out, Point<0>(), fe_tie(variables));
         };
-        model.template readouts_multiple(helper, data_out);
+        model.readouts_multiple(helper, data_out);
       }
 
       virtual void mass(VectorType &, const VectorType &, const VectorType &, NumberType) override {}

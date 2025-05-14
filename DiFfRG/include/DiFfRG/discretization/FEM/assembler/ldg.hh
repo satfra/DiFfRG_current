@@ -1802,7 +1802,7 @@ namespace DiFfRG
 
           outputter(data_out, EoM, fe_more_conv(solution_tuple));
         };
-        model.template readouts_multiple(helper, data_out);
+        model.readouts_multiple(helper, data_out);
       }
 
       void extract(std::array<NumberType, Components::count_extractors()> &data, const VectorType &solution_global,
@@ -1859,7 +1859,7 @@ namespace DiFfRG
         auto solution_tuple = std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(solutions_vector),
                                              std::tie(solution_grad[0], solution_hess[0], this->nothing, variables));
 
-        model.template extract(data, EoM, fe_more_conv(solution_tuple));
+        model.extract(data, EoM, fe_more_conv(solution_tuple));
       }
 
       bool jacobian_extractors(FullMatrix<NumberType> &extractor_jacobian, const VectorType &solution_global,
