@@ -18,12 +18,13 @@ namespace DiFfRG
 
       if (it != quadratures_d.end()) {
         bool it_found_T = (is_close(it->first, T, 1e-6 * T));
-        bool itp_found_T = (std::prev(it) != quadratures_d.end()) && (is_close(std::prev(it)->first, T, 1e-6 * T));
 
-        if (it_found_T)
-          return it;
-        else if (itp_found_T)
-          return std::prev(it);
+        if (it_found_T) return it;
+
+        if (it != quadratures_d.begin()) {
+          bool itp_found_T = (std::prev(it) != quadratures_d.end()) && (is_close(std::prev(it)->first, T, 1e-6 * T));
+          if (itp_found_T) return std::prev(it);
+        }
       }
 
       // create new entry in quadratures_d
@@ -40,12 +41,13 @@ namespace DiFfRG
 
       if (it != map.end()) {
         bool it_found_T = (is_close(it->first, E, 1e-6 * E));
-        bool itp_found_T = (std::prev(it) != map.end()) && (is_close(std::prev(it)->first, E, 1e-6 * E));
 
-        if (it_found_T)
-          return it;
-        else if (itp_found_T)
-          return std::prev(it);
+        if (it_found_T) return it;
+
+        if (it != map.begin()) {
+          bool itp_found_T = (std::prev(it) != map.end()) && (is_close(std::prev(it)->first, E, 1e-6 * E));
+          if (itp_found_T) return std::prev(it);
+        }
       }
 
       // create new entry in quadratures_d
@@ -68,12 +70,13 @@ namespace DiFfRG
 
       if (it != quadratures_f.end()) {
         bool it_found_T = (is_close(it->first, T, 1e-6 * T));
-        bool itp_found_T = (std::prev(it) != quadratures_f.end()) && (is_close(std::prev(it)->first, T, 1e-6 * T));
 
-        if (it_found_T)
-          return it;
-        else if (itp_found_T)
-          return std::prev(it);
+        if (it_found_T) return it;
+
+        if (it != quadratures_f.begin()) {
+          bool itp_found_T = (std::prev(it) != quadratures_f.end()) && (is_close(std::prev(it)->first, T, 1e-6 * T));
+          if (itp_found_T) return std::prev(it);
+        }
       }
 
       // create new entry in quadratures_f
@@ -89,12 +92,13 @@ namespace DiFfRG
 
       if (it != map.end()) {
         bool it_found_T = (is_close(it->first, E, 1e-6 * E));
-        bool itp_found_T = (std::prev(it) != map.end()) && (is_close(std::prev(it)->first, E, 1e-6 * E));
 
-        if (it_found_T)
-          return it;
-        else if (itp_found_T)
-          return std::prev(it);
+        if (it_found_T) return it;
+
+        if (it != map.begin()) {
+          bool itp_found_T = (std::prev(it) != map.end()) && (is_close(std::prev(it)->first, E, 1e-6 * E));
+          if (itp_found_T) return std::prev(it);
+        }
       }
 
       // create new entry in quadratures_f

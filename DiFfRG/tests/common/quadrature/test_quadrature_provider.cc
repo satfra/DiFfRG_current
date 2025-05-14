@@ -56,6 +56,4 @@ TEST_CASE("Test quadrature provider", "[double][quadrature]")
     REQUIRE(point != Catch::Approx(0.));
     REQUIRE(weight != Catch::Approx(0.));
   }
-
-  SECTION("Test with integration") {}
 }
