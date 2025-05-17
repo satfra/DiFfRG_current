@@ -5,6 +5,9 @@
 add_executable(test_quadrature_integrator quadrature_integrator.cc)
 setup_test(test_quadrature_integrator)
 
+add_executable(test_distributed_quadrature_integrator distributed_quadrature_integrator.cc)
+setup_test(test_distributed_quadrature_integrator)
+
 # ##############################################################################
 # # Add subdirectories
 # ##############################################################################

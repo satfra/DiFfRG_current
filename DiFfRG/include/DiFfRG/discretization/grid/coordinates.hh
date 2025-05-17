@@ -105,6 +105,77 @@ namespace DiFfRG
     const std::tuple<Coordinates...> coordinates;
   };
 
+  template<typename Base>
+  class SubCoordinates : public Base
+  {
+  public:
+    using ctype = typename Base::ctype;
+    static constexpr uint dim = Base::dim;
+
+    SubCoordinates(const Base &base, uint offset, uint size)
+        : Base(base), m_size(size)
+    {
+      if(size == 0) throw std::runtime_error("SubCoordinates: size must be > 0");
+      if(offset + size > base.size()) throw std::runtime_error("SubCoordinates: offset + size must be <= base.size()");
+      // calculate the offsets and sizes from the continuous index
+      offsets = base.from_continuous_index(offset);
+      m_sizes = base.from_continuous_index(offset + size);
+      for (uint i = 0; i < dim; ++i)
+        m_sizes[i] -= offsets[i];
+    }
+
+    std::array<uint, dim> KOKKOS_FORCEINLINE_FUNCTION sizes() const { return m_sizes; }
+
+    uint KOKKOS_FORCEINLINE_FUNCTION size() const
+    {
+      return m_size;
+    }
+    
+    std::array<uint, dim> KOKKOS_FORCEINLINE_FUNCTION from_continuous_index(size_t s) const
+    {
+      std::array<uint, dim> result{};
+      // we do it for m_sizes
+      for (uint i = 0; i < dim; ++i) {
+        result[dim - 1 - i] = s % m_sizes[dim - 1 - i];
+        s = s / m_sizes[dim - 1 - i];
+      }
+      return result;
+    }
+
+    template <typename... I> KOKKOS_FORCEINLINE_FUNCTION std::array<ctype, dim> forward(I &&...i) const
+    {
+      static_assert(sizeof...(I) == dim);
+      return forward({{i...}});
+    }
+
+    KOKKOS_FORCEINLINE_FUNCTION std::array<ctype, dim> forward(std::array<uint, dim> i) const
+    {
+      for (uint j = 0; j < dim; ++j) {
+        i[j] += offsets[j];
+      }
+      return Base::forward(i);
+    }
+
+    template<typename... I>
+    KOKKOS_FORCEINLINE_FUNCTION std::array<ctype, dim> backward(I &&...i) const
+    {
+      static_assert(sizeof...(I) == dim);
+      return backward({{i...}});
+    }
+    KOKKOS_FORCEINLINE_FUNCTION std::array<ctype, dim> backward(std::array<uint, dim> i) const
+    {
+      auto result =  Base::backward(i);
+      for (uint j = 0; j < dim; ++j) {
+        result[j] -= offsets[j];
+      }
+      return result;
+    }
+    
+    private:
+    std::array<uint, dim> offsets, m_sizes;
+    const uint m_size;
+  };
+
   template <typename NT>
     requires std::is_floating_point_v<NT>
   class LinearCoordinates1D
@@ -153,6 +224,8 @@ namespace DiFfRG
     NT KOKKOS_FORCEINLINE_FUNCTION backward(const NT &y) const { return (y - start) / a; }
 
     uint KOKKOS_FORCEINLINE_FUNCTION size() const { return grid_extent; }
+
+    std::array<uint, 1> KOKKOS_FORCEINLINE_FUNCTION sizes() const { return {grid_extent}; }
 
     const NT start, stop;
 
@@ -223,6 +296,8 @@ namespace DiFfRG
     NT KOKKOS_FORCEINLINE_FUNCTION backward_derivative(const NT &y) const { return 1. / (y - c) * gem1 / a; }
 
     uint KOKKOS_FORCEINLINE_FUNCTION size() const { return grid_extent; }
+
+    std::array<uint, 1> KOKKOS_FORCEINLINE_FUNCTION sizes() const { return {grid_extent}; }
 
     const NT start, stop, bias;
 

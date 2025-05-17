@@ -27,7 +27,7 @@ namespace DiFfRG
                             std::array<ctype, dim> grid_min, std::array<ctype, dim> grid_max,
                             const std::array<QuadratureType, dim> quadrature_type, const ctype T = 1,
                             const ctype typical_E = 1)
-        : quadrature_provider(quadrature_provider), grid_size(grid_size), T(T), typical_E(typical_E)
+        : grid_size(grid_size), quadrature_provider(quadrature_provider), T(T), typical_E(typical_E)
     {
       matsubara_nodes =
           quadrature_provider.template matsubara_nodes<ctype, typename ExecutionSpace::memory_space>(T, typical_E);
@@ -242,7 +242,6 @@ namespace DiFfRG
       const auto &m_w = matsubara_weights;
       const auto &start = grid_start;
       const auto &scale = grid_scale;
-      const auto &size = grid_size;
 
       const auto &m_T = T;
 

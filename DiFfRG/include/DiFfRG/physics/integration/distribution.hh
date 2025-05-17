@@ -11,13 +11,13 @@ namespace DiFfRG
     std::vector<uint> nodes;
 
     NodeDistribution() = default;
-    NodeDistribution(MPI_Comm &mpi_comm, const std::vector<uint> &sizes, const std::vector<uint> &nodes);
+    NodeDistribution(MPI_Comm mpi_comm, const std::vector<uint> &sizes, const std::vector<uint> &nodes);
   };
 
   class IntegrationLoadBalancer
   {
   public:
-    IntegrationLoadBalancer(MPI_Comm &mpi_comm);
+    IntegrationLoadBalancer(MPI_Comm mpi_comm);
 
     void balance();
 

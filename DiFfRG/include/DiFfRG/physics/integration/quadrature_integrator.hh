@@ -8,6 +8,8 @@
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/physics/integration/abstract_integrator.hh>
 
+#include <DiFfRG/discretization/grid/coordinates.hh>
+
 // standard libraries
 #include <array>
 
@@ -26,7 +28,7 @@ namespace DiFfRG
     QuadratureIntegrator(QuadratureProvider &quadrature_provider, const std::array<uint, dim> grid_size,
                          std::array<ctype, dim> grid_min, std::array<ctype, dim> grid_max,
                          const std::array<QuadratureType, dim> quadrature_type)
-        : quadrature_provider(quadrature_provider), grid_size(grid_size)
+        : grid_size(grid_size), quadrature_provider(quadrature_provider)
     {
       for (uint i = 0; i < dim; ++i) {
         nodes[i] = quadrature_provider.template nodes<ctype, typename ExecutionSpace::memory_space>(grid_size[i],
@@ -174,7 +176,6 @@ namespace DiFfRG
       const auto &w = weights;
       const auto &start = grid_start;
       const auto &scale = grid_scale;
-      const auto &size = grid_size;
 
       Kokkos::parallel_for(
           Kokkos::TeamPolicy(space, integral_view.size(), Kokkos::AUTO), KOKKOS_LAMBDA(const TeamType &team) {
@@ -283,7 +284,7 @@ namespace DiFfRG
       // Take care of MPI distribution
       const auto &node_distribution = AbstractIntegrator::node_distribution;
       if (node_distribution.mpi_comm != MPI_COMM_NULL && node_distribution.total_size > 0) {
-        const auto &mpi_comm = node_distribution.mpi_comm;
+        auto mpi_comm = node_distribution.mpi_comm;
         const auto &nodes = node_distribution.nodes;
         const auto &sizes = node_distribution.sizes;
 
@@ -295,7 +296,7 @@ namespace DiFfRG
         // Get the size of the current rank
         const uint rank_size = sizes[m_rank];
         // Offset is the sum of all previous ranks
-        const uint offset = std::accumulate(nodes.begin(), nodes.begin() + m_rank, 0);
+        const uint offset = std::accumulate(sizes.begin(), sizes.begin() + m_rank, 0);
 
         // Create a SubCoordinates object
         const auto sub_coordinates = SubCoordinates(coordinates, offset, rank_size);
