@@ -58,7 +58,7 @@ namespace DiFfRG
    */
   template <int n, typename NumberType>
     requires requires(NumberType x) {
-      x *x;
+      x * x;
       NumberType(1.) / x;
     }
   constexpr KOKKOS_INLINE_FUNCTION NumberType powr(const NumberType x)
@@ -67,10 +67,12 @@ namespace DiFfRG
       return NumberType(1.);
     else if constexpr (n < 0)
       return NumberType(1.) / powr<-n, NumberType>(x);
-    else if constexpr (n > 1)
-      return x * powr<n - 1, NumberType>(x);
-    else
+    else if constexpr (n == 1)
       return x;
+    else if constexpr (n % 2 == 0)
+      return powr<n / 2> (x) * powr<n / 2> (x);
+    else
+      return powr<n / 2> (x) * powr<n / 2> (x) * x;
   }
 
   /**
