@@ -252,9 +252,9 @@ public:
 Here, we have only written the constructor, communicated \f$\Lambda\f$ to the `def::fRG` base class and created a `Parameters` object.
 
 ```Cpp
-  template <typename Vector> void initial_condition(const Point<dim> &x, Vector &values) const
+  template <typename Vector> void initial_condition(const Point<dim> &pos, Vector &values) const
   {
-    const auto x = x[0];
+    const auto x = pos[0];
     values[idxf("u")] = prm.a + prm.b * powr<1>(x) + prm.c * powr<2>(x) + prm.d * powr<3>(x);
   }
 ```
@@ -275,7 +275,7 @@ The `flux` method implements the actual equation. If we don't specify anything e
 \f[
   \partial_t u + \partial_x (F_i(u)) = 0
 \f]
-so that our choice of \f$F_i(u) = - \frac12 u^2\f$ exactly implements Burgers' equation.
+so that our choice of \f$F_i(u) = \frac12 u^2\f$ exactly implements Burgers' equation.
 
 ## parameters.json
 
