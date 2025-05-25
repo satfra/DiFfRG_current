@@ -80,7 +80,7 @@ add_subdirectory(src)
 # Testing
 # ##############################################################################
 
-option(DiFfRG_TEST "Build tests" ON)
+option(DiFfRG_TEST "Build tests" OFF)
 if(DiFfRG_TEST)
   enable_testing()
   add_subdirectory(tests)
