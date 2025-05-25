@@ -8,9 +8,11 @@
 
 using namespace DiFfRG;
 
-TEMPLATE_TEST_CASE_SIG("Test 2D interpolation", "[float][double][complex][autodiff][interpolation][2D]",
-                       ((typename T), T), float, double, complex<double>, complex<float>, autodiff::real)
+TEMPLATE_TEST_CASE("Test 2D interpolation", "[float][double][complex][autodiff][interpolation][2D]", float, double,
+                   complex<double>, complex<float>, autodiff::real)
 {
+  using T = TestType;
+
   DiFfRG::Initialize();
 
   using ctype = typename get_type::ctype<T>;

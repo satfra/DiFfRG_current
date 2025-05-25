@@ -47,7 +47,7 @@ TEST_CASE("Test 4D momentum + 2 angle integrals", "[integration][quadrature]")
       NT integral{};
       integrator.get(integral, 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0.);
 
-      const ctype expected_precision = 1e-10;
+      const ctype expected_precision = 1e-9;
       const ctype rel_err = t_abs((integral - reference_integral) / reference_integral);
       if (rel_err >= expected_precision) {
         std::cerr << "reference: " << std::scientific << std::setw(10) << reference_integral

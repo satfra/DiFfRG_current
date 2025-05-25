@@ -14,7 +14,7 @@ setup_test(test_distributed_quadrature_integrator)
 
 add_subdirectory(vacuum)
 add_subdirectory(finiteT)
-# add_subdirectory(lattice)
+add_subdirectory(lattice)
 
 # ##############################################################################
 # Benchmarks

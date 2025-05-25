@@ -69,13 +69,14 @@ namespace DiFfRG
      */
     NT KOKKOS_INLINE_FUNCTION operator()(const typename Coordinates::ctype x, const typename Coordinates::ctype y) const
     {
+      using Kokkos::min, Kokkos::max;
       auto [idx_x, idx_y] = coordinates.backward(x, y);
       idx_x = max(static_cast<decltype(idx_x)>(0), min(idx_x, static_cast<decltype(idx_x)>(sizes[0] - 1)));
       idx_y = max(static_cast<decltype(idx_y)>(0), min(idx_y, static_cast<decltype(idx_y)>(sizes[1] - 1)));
 
       // Clamp the (upper) index to the range [1, sizes - 1]
-      uint x1 = min(ceil(idx_x + static_cast<decltype(idx_x)>(1e-16)), static_cast<decltype(idx_x)>(sizes[0] - 1));
-      uint y1 = min(ceil(idx_y + static_cast<decltype(idx_y)>(1e-16)), static_cast<decltype(idx_y)>(sizes[1] - 1));
+      uint x1 = static_cast<uint>(min(ceil(idx_x + static_cast<decltype(idx_x)>(1e-16)), static_cast<decltype(idx_x)>(sizes[0] - 1)));
+      uint y1 = static_cast<uint>(min(ceil(idx_y + static_cast<decltype(idx_y)>(1e-16)), static_cast<decltype(idx_y)>(sizes[1] - 1)));
 
       const auto corner00 = device_data(x1 - 1, y1 - 1);
       const auto corner01 = device_data(x1 - 1, y1);

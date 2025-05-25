@@ -8,9 +8,10 @@
 
 using namespace DiFfRG;
 
-TEMPLATE_TEST_CASE_SIG("Test 1D interpolation", "[float][double][complex][autodiff]", ((typename T), T), float, double,
-                       complex<double>, complex<float>, autodiff::real)
+TEMPLATE_TEST_CASE("Test 1D interpolation", "[float][double][complex][autodiff]", float, double, complex<double>,
+                   complex<float>, autodiff::real)
 {
+  using T = TestType;
   DiFfRG::Initialize();
 
   using ctype = typename get_type::ctype<T>;
@@ -44,9 +45,11 @@ TEMPLATE_TEST_CASE_SIG("Test 1D interpolation", "[float][double][complex][autodi
   CHECK(is_close(res_host, res_local, 1e-10 * n_el));
 }
 
-TEMPLATE_TEST_CASE_SIG("Test 1D interpolation GPU", "[float][double][complex][autodiff]", ((typename T), T), float,
-                       double, complex<double>, complex<float>, autodiff::real)
+TEMPLATE_TEST_CASE("Test 1D interpolation GPU", "[float][double][complex][autodiff]", float, double, complex<double>,
+                   complex<float>, autodiff::real)
 {
+  using T = TestType;
+
   DiFfRG::Initialize();
 
   using ctype = typename get_type::ctype<T>;

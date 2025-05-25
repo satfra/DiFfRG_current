@@ -72,15 +72,16 @@ namespace DiFfRG
      */
     NT KOKKOS_INLINE_FUNCTION operator()(const ctype &x, const ctype &y, const ctype &z) const
     {
+      using Kokkos::min, Kokkos::max;
       auto [idx_x, idx_y, idx_z] = coordinates.backward(x, y, z);
       idx_x = max(static_cast<decltype(idx_x)>(0), min(idx_x, static_cast<decltype(idx_x)>(sizes[0] - 1)));
       idx_y = max(static_cast<decltype(idx_y)>(0), min(idx_y, static_cast<decltype(idx_y)>(sizes[1] - 1)));
       idx_z = max(static_cast<decltype(idx_z)>(0), min(idx_z, static_cast<decltype(idx_z)>(sizes[2] - 1)));
 
       // Clamp the (upper) index to the range [1, sizes - 1]
-      uint x1 = min(ceil(idx_x + static_cast<decltype(idx_x)>(1e-16)), static_cast<decltype(idx_x)>(sizes[0] - 1));
-      uint y1 = min(ceil(idx_y + static_cast<decltype(idx_y)>(1e-16)), static_cast<decltype(idx_y)>(sizes[1] - 1));
-      uint z1 = min(ceil(idx_z + static_cast<decltype(idx_z)>(1e-16)), static_cast<decltype(idx_z)>(sizes[2] - 1));
+      uint x1 = static_cast<uint>(min(ceil(idx_x + static_cast<decltype(idx_x)>(1e-16)), static_cast<decltype(idx_x)>(sizes[0] - 1)));
+      uint y1 = static_cast<uint>(min(ceil(idx_y + static_cast<decltype(idx_y)>(1e-16)), static_cast<decltype(idx_y)>(sizes[1] - 1)));
+      uint z1 = static_cast<uint>(min(ceil(idx_z + static_cast<decltype(idx_z)>(1e-16)), static_cast<decltype(idx_z)>(sizes[2] - 1)));
 
       const auto corner000 = device_data(x1 - 1, y1 - 1, z1 - 1);
       const auto corner010 = device_data(x1 - 1, y1, z1 - 1);

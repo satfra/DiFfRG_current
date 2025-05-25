@@ -2,6 +2,9 @@
 
 // DiFfRG
 #include <DiFfRG/common/kokkos.hh>
+#include <DiFfRG/common/tuples.hh>
+#include <DiFfRG/common/types.hh>
+#include <DiFfRG/common/utils.hh>
 
 // standard libraries
 #include <array>

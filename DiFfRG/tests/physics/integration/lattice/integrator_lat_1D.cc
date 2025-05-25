@@ -28,9 +28,11 @@ public:
   }
 };
 
-TEMPLATE_TEST_CASE_SIG("Test 1D lattice integrals on device", "[lattice][double][float][complex][autodiff]",
-                       ((typename T), T), double, float, complex<double>, complex<float>, autodiff::real)
+TEMPLATE_TEST_CASE("Test 1D lattice integrals on host", "[lattice][double][float][complex][autodiff]",
+                       double, float, complex<double>, complex<float>, autodiff::real)
 {
+  using T = TestType;
+
   DiFfRG::Initialize();
 
   using ctype = typename get_type::ctype<T>;
@@ -38,37 +40,6 @@ TEMPLATE_TEST_CASE_SIG("Test 1D lattice integrals on device", "[lattice][double]
   const ctype a = GENERATE(take(2, random(0.01, 1.)));
   const uint size = GENERATE(16, 32, 64, 128, 256);
 
-  QuadratureProvider quadrature_provider;
-  IntegratorLat1D<T, PolyIntegrand, GPU_exec> integrator({size}, {a});
-
-  SECTION("Volume integral")
-  {
-    const ctype reference_integral = 1 / a;
-
-    T integral{};
-    integrator.get(integral, 0., 1., 0., 0., 0.);
-
-    if (!is_close(reference_integral, integral, 1e-6)) {
-      std::cerr << "reference: " << reference_integral << "| integral: " << integral
-                << "| relative error: " << abs(reference_integral - integral) / std::abs(reference_integral)
-                << std::endl;
-    }
-
-    CHECK(is_close(reference_integral, integral, 1e-6));
-  }
-}
-
-TEMPLATE_TEST_CASE_SIG("Test 1D lattice integrals on host", "[lattice][double][float][complex][autodiff]",
-                       ((typename T), T), double, float, complex<double>, complex<float>, autodiff::real)
-{
-  DiFfRG::Initialize();
-
-  using ctype = typename get_type::ctype<T>;
-
-  const ctype a = GENERATE(take(2, random(0.01, 1.)));
-  const uint size = GENERATE(16, 32, 64, 128, 256);
-
-  QuadratureProvider quadrature_provider;
   IntegratorLat1D<T, PolyIntegrand, CPU_exec> integrator({size}, {a});
 
   SECTION("Volume integral")

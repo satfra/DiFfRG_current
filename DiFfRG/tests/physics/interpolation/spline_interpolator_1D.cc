@@ -8,10 +8,10 @@
 
 using namespace DiFfRG;
 
-TEMPLATE_TEST_CASE_SIG("Test 1D spline interpolation", "[float][double][complex][autodiff]", ((typename T), T), double,
-                       complex<double>)
-// float, double, complex<float>, autodiff::real)
+TEMPLATE_TEST_CASE("Test 1D spline interpolation", "[float][double][complex][autodiff]", double, complex<double>,
+                   autodiff::real)
 {
+  using T = TestType;
   DiFfRG::Initialize();
 
   using ctype = typename get_type::ctype<T>;
@@ -39,10 +39,10 @@ TEMPLATE_TEST_CASE_SIG("Test 1D spline interpolation", "[float][double][complex]
   const auto res_local = (in_data[std::floor(p_idx)] +
                           (p_idx - std::floor(p_idx)) * (in_data[std::ceil(p_idx)] - in_data[std::floor(p_idx)])) *
                          ctype(n_el);
-
-  if (!is_close(res_host, res_local, 1e-10 * n_el))
+  constexpr ctype expected_precision = std::numeric_limits<ctype>::epsilon() * 1e2;
+  if (!is_close(res_host, res_local, expected_precision))
     std::cout << "host: " << res_host << " local: " << res_local << std::endl;
-  CHECK(is_close(res_host, res_local, 1e-10 * n_el));
+  CHECK(is_close(res_host, res_local, expected_precision));
 }
 
 /*
