@@ -58,7 +58,7 @@ namespace DiFfRG
    */
   template <int n, typename NumberType>
     requires requires(NumberType x) {
-      x * x;
+      x *x;
       NumberType(1.) / x;
     }
   constexpr KOKKOS_INLINE_FUNCTION NumberType powr(const NumberType x)
@@ -70,9 +70,19 @@ namespace DiFfRG
     else if constexpr (n == 1)
       return x;
     else if constexpr (n % 2 == 0)
-      return powr<n / 2> (x) * powr<n / 2> (x);
+      return powr<n / 2>(x) * powr<n / 2>(x);
     else
-      return powr<n / 2> (x) * powr<n / 2> (x) * x;
+      return powr<n / 2>(x) * powr<n / 2>(x) * x;
+  }
+
+  template <typename NumberType>
+    requires std::is_integral_v<NumberType>
+  constexpr KOKKOS_INLINE_FUNCTION NumberType factorial(const NumberType &x)
+  {
+    NumberType res = 1;
+    for (NumberType i = 2; i <= x; ++i)
+      res *= i;
+    return res;
   }
 
   /**

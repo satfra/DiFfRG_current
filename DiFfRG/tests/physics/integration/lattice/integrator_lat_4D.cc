@@ -23,8 +23,9 @@ TEMPLATE_TEST_CASE("Test 4D lattice integrals on host", "[lattice][double][float
   const ctype a1 = GENERATE(take(2, random(0.01, 1.)));
   const uint size0 = GENERATE(16, 32, 64, 128);
   const uint size1 = GENERATE(16, 32, 64, 128);
+  const bool q0_symmetric = GENERATE(false, true);
 
-  IntegratorLat4D<T, PolyIntegrand<4, T>, CPU_exec> integrator({{size0, size1}}, {{a0, a1}});
+  IntegratorLat4D<T, PolyIntegrand<4, T>, CPU_exec> integrator({{size0, size1}}, {{a0, a1}}, q0_symmetric);
 
   SECTION("Volume integral")
   {
@@ -37,6 +38,7 @@ TEMPLATE_TEST_CASE("Test 4D lattice integrals on host", "[lattice][double][float
     if (!is_close(reference_integral, integral, expected_precision)) {
       std::cerr << "reference: " << reference_integral << "| integral: " << integral
                 << "| relative error: " << abs(reference_integral - integral) / std::abs(reference_integral)
+                << "| symm: " << q0_symmetric
                 << std::endl;
     }
     CHECK(is_close(reference_integral, integral, expected_precision));

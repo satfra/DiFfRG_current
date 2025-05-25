@@ -15,8 +15,8 @@ add_executable(test_integrator_lat_4D integrator_lat_4D.cc)
 setup_test(test_integrator_lat_4D)
 
 # ##############################################################################
-# Tests for derived integrators
+# Benchmarks
 # ##############################################################################
 
-# add_executable(test_integrator_fT_p2 integrator_fT_p2.cc)
-# setup_test(test_integrator_fT_p2)
+add_executable(benchmark_integrator_lat_4D benchmark_integrator_lat_4D.cc)
+setup_benchmark(benchmark_integrator_lat_4D)

@@ -23,8 +23,9 @@ TEMPLATE_TEST_CASE("Test 2D lattice integrals on host", "[lattice][double][float
   const ctype a1 = GENERATE(take(2, random(0.01, 1.)));
   const uint size0 = GENERATE(16, 32, 64, 128);
   const uint size1 = GENERATE(16, 32, 64, 128);
+  const bool q0_symmetric = GENERATE(false, true);
 
-  IntegratorLat2D<T, PolyIntegrand<2, T>, CPU_exec> integrator({{size0, size1}}, {{a0, a1}});
+  IntegratorLat2D<T, PolyIntegrand<2, T>, CPU_exec> integrator({{size0, size1}}, {{a0, a1}}, q0_symmetric);
 
   SECTION("Volume integral")
   {
@@ -33,7 +34,7 @@ TEMPLATE_TEST_CASE("Test 2D lattice integrals on host", "[lattice][double][float
     T integral{};
     integrator.get(integral, 0., 1., 0., 0., 0., 1., 0., 0., 0.);
 
-    constexpr ctype expected_precision = std::numeric_limits<ctype>::epsilon() * 1e2;
+    const ctype expected_precision = std::numeric_limits<ctype>::epsilon() * size0 * size1;
     if (!is_close(reference_integral, integral, expected_precision)) {
       std::cerr << "reference: " << reference_integral << "| integral: " << integral
                 << "| relative error: " << abs(reference_integral - integral) / std::abs(reference_integral)

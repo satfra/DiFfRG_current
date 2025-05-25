@@ -21,8 +21,9 @@ TEMPLATE_TEST_CASE("Test 1D lattice integrals on host", "[lattice][double][float
 
   const ctype a = GENERATE(take(2, random(0.01, 1.)));
   const uint size = GENERATE(16, 32, 64, 128, 256);
+  const bool q0_symmetric = GENERATE(false, true);
 
-  IntegratorLat1D<T, PolyIntegrand<1, T>, CPU_exec> integrator({{size}}, {{a}});
+  IntegratorLat1D<T, PolyIntegrand<1, T>, CPU_exec> integrator({{size}}, {{a}}, q0_symmetric);
 
   SECTION("Volume integral")
   {

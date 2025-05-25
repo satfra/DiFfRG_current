@@ -17,13 +17,15 @@ namespace DiFfRG
     using ctype = typename get_type::ctype<NT>;
     using execution_space = ExecutionSpace;
 
-    IntegratorLat3D(const std::array<uint, 2> grid_size, const std::array<ctype, 2> a) : grid_size(grid_size), a(a)
+    IntegratorLat3D(const std::array<uint, 2> grid_size, const std::array<ctype, 2> a, bool q0_symmetric = false)
+        : grid_size(grid_size), a(a), q0_symmetric(q0_symmetric)
     {
       if (grid_size[0] % 2 != 0) throw std::runtime_error("IntegratorLat3D: Grid size must be even");
       if (grid_size[1] % 2 != 0) throw std::runtime_error("IntegratorLat3D: Grid size must be even");
     }
 
     void set_a(const std::array<ctype, 2> a) { this->a = a; }
+    void set_q0_symmetric(bool symmetric) { this->q0_symmetric = symmetric; }
 
     template <typename... T> void get(NT &dest, const T &...t) const
     {
@@ -56,20 +58,23 @@ namespace DiFfRG
 
       const ctype fac = powr<-1>(a[0] * (ctype)grid_size[0]) * powr<-2>(a[1] * (ctype)grid_size[1]);
 
+      const uint q0_mult = (q0_symmetric ? 2 : 1);
+
       const ctype x0fac = 2 * M_PI / (ctype)grid_size[0] / a[0];
       const ctype x1fac = 2 * M_PI / (ctype)grid_size[1] / a[1];
-      const auto &x0size = grid_size[0];
+      const auto x0size = grid_size[0] / q0_mult;
       const auto &x1size = grid_size[1];
 
       Kokkos::parallel_reduce(
           "integral_lat_3D", // name of the kernel
-          Kokkos::MDRangePolicy<ExecutionSpace, Kokkos::Rank<3>>(space, {0, 0, 0}, {x0size / 2, x1size / 2, x1size / 2}),
+          Kokkos::MDRangePolicy<ExecutionSpace, Kokkos::Rank<3>>(space, {0, 0, 0}, {x0size, x1size / 2, x1size / 2}),
           KOKKOS_LAMBDA(const uint idx_x0, const uint idx_x1, const uint idx_x2, NT &update) {
             const ctype q0 = x0fac * idx_x0;
             const ctype q1 = x1fac * idx_x1;
             const ctype q2 = x1fac * idx_x2;
-            const NT result = std::apply([&](const auto &...args) { return KERNEL::kernel(q0, q1, q2, args...); }, args);
-            update += 8 * fac * result;
+            const NT result =
+                std::apply([&](const auto &...args) { return KERNEL::kernel(q0, q1, q2, args...); }, args);
+            update += q0_mult * 4 * fac * result;
           },
           SumPlus<NT, NT, ExecutionSpace>(dest, KERNEL::constant(t...)));
     }
@@ -84,9 +89,11 @@ namespace DiFfRG
 
       const ctype fac = powr<-1>(a[0] * (ctype)grid_size[0]) * powr<-2>(a[1] * (ctype)grid_size[1]);
 
+      const uint q0_mult = (q0_symmetric ? 2 : 1);
+
       const ctype x0fac = 2 * M_PI / (ctype)grid_size[0] / a[0];
       const ctype x1fac = 2 * M_PI / (ctype)grid_size[1] / a[1];
-      const auto &x0size = grid_size[0];
+      const auto x0size = grid_size[0] / q0_mult;
       const auto &x1size = grid_size[1];
 
       Kokkos::parallel_for(
@@ -103,14 +110,14 @@ namespace DiFfRG
 
             NT res = 0;
             Kokkos::parallel_reduce(
-                Kokkos::TeamThreadMDRange(team, x0size / 2, x1size / 2, x1size / 2), // range of the kernel
+                Kokkos::TeamThreadMDRange(team, x0size, x1size / 2, x1size / 2), // range of the kernel
                 [&](const uint idx_x0, const uint idx_x1, const uint idx_x2, NT &update) {
                   const ctype q0 = x0fac * idx_x0;
                   const ctype q1 = x1fac * idx_x1;
                   const ctype q2 = x1fac * idx_x2;
                   const NT result =
                       std::apply([&](const auto &...iargs) { return KERNEL::kernel(q0, q1, q2, iargs...); }, full_args);
-                  update += 8 * fac * result;
+                  update += q0_mult * 4 * fac * result;
                 },
                 res);
 
@@ -152,5 +159,6 @@ namespace DiFfRG
 
   private:
     std::array<ctype, 2> a;
+    bool q0_symmetric;
   };
 } // namespace DiFfRG
