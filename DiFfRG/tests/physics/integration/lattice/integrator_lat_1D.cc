@@ -2,6 +2,7 @@
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 
+#include "../boilerplate/poly_integrand.hh"
 #include <DiFfRG/common/initialize.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/polynomials.hh>
@@ -9,27 +10,8 @@
 
 using namespace DiFfRG;
 
-//--------------------------------------------
-// Quadrature integration
-
-class PolyIntegrand
-{
-public:
-  static KOKKOS_INLINE_FUNCTION auto kernel(const double q, const double /*c*/, const double x0, const double x1,
-                                            const double x2, const double x3)
-  {
-    return (x0 + x1 * powr<1>(q) + x2 * powr<2>(q) + x3 * powr<3>(q));
-  }
-
-  static KOKKOS_INLINE_FUNCTION auto constant(const double c, const double /*x0*/, const double /*x1*/,
-                                              const double /*x2*/, const double /*x3*/)
-  {
-    return c;
-  }
-};
-
-TEMPLATE_TEST_CASE("Test 1D lattice integrals on host", "[lattice][double][float][complex][autodiff]",
-                       double, float, complex<double>, complex<float>, autodiff::real)
+TEMPLATE_TEST_CASE("Test 1D lattice integrals on host", "[lattice][double][float][complex][autodiff]", double, float,
+                   complex<double>, complex<float>, autodiff::real)
 {
   using T = TestType;
 
@@ -40,7 +22,7 @@ TEMPLATE_TEST_CASE("Test 1D lattice integrals on host", "[lattice][double][float
   const ctype a = GENERATE(take(2, random(0.01, 1.)));
   const uint size = GENERATE(16, 32, 64, 128, 256);
 
-  IntegratorLat1D<T, PolyIntegrand, CPU_exec> integrator({size}, {a});
+  IntegratorLat1D<T, PolyIntegrand<1, T>, CPU_exec> integrator({{size}}, {{a}});
 
   SECTION("Volume integral")
   {

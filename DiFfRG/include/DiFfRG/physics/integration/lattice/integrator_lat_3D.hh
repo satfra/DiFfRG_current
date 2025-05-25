@@ -8,7 +8,7 @@
 
 namespace DiFfRG
 {
-  template <typename NT, typename KERNEL, typename ExecutionSpace> class IntegratorLat2D
+  template <typename NT, typename KERNEL, typename ExecutionSpace> class IntegratorLat3D
   {
   public:
     /**
@@ -17,10 +17,10 @@ namespace DiFfRG
     using ctype = typename get_type::ctype<NT>;
     using execution_space = ExecutionSpace;
 
-    IntegratorLat2D(const std::array<uint, 2> grid_size, const std::array<ctype, 2> a) : grid_size(grid_size), a(a)
+    IntegratorLat3D(const std::array<uint, 2> grid_size, const std::array<ctype, 2> a) : grid_size(grid_size), a(a)
     {
-      if (grid_size[0] % 2 != 0) throw std::runtime_error("IntegratorLat2D: Grid size must be even");
-      if (grid_size[1] % 2 != 0) throw std::runtime_error("IntegratorLat2D: Grid size must be even");
+      if (grid_size[0] % 2 != 0) throw std::runtime_error("IntegratorLat3D: Grid size must be even");
+      if (grid_size[1] % 2 != 0) throw std::runtime_error("IntegratorLat3D: Grid size must be even");
     }
 
     void set_a(const std::array<ctype, 2> a) { this->a = a; }
@@ -54,7 +54,7 @@ namespace DiFfRG
     {
       const auto args = std::make_tuple(t...);
 
-      const ctype fac = powr<-1>(a[0] * (ctype)grid_size[0]) * powr<-1>(a[1] * (ctype)grid_size[1]);
+      const ctype fac = powr<-1>(a[0] * (ctype)grid_size[0]) * powr<-2>(a[1] * (ctype)grid_size[1]);
 
       const ctype x0fac = 2 * M_PI / (ctype)grid_size[0] / a[0];
       const ctype x1fac = 2 * M_PI / (ctype)grid_size[1] / a[1];
@@ -62,13 +62,14 @@ namespace DiFfRG
       const auto &x1size = grid_size[1];
 
       Kokkos::parallel_reduce(
-          "integral_lat_2D", // name of the kernel
-          Kokkos::MDRangePolicy<ExecutionSpace, Kokkos::Rank<2>>(space, {0, 0}, {x0size / 2, x1size / 2}),
-          KOKKOS_LAMBDA(const uint idx_x0, const uint idx_x1, NT &update) {
+          "integral_lat_3D", // name of the kernel
+          Kokkos::MDRangePolicy<ExecutionSpace, Kokkos::Rank<3>>(space, {0, 0, 0}, {x0size / 2, x1size / 2, x1size / 2}),
+          KOKKOS_LAMBDA(const uint idx_x0, const uint idx_x1, const uint idx_x2, NT &update) {
             const ctype q0 = x0fac * idx_x0;
             const ctype q1 = x1fac * idx_x1;
-            const NT result = std::apply([&](const auto &...args) { return KERNEL::kernel(q0, q1, args...); }, args);
-            update += 4 * fac * result;
+            const ctype q2 = x1fac * idx_x2;
+            const NT result = std::apply([&](const auto &...args) { return KERNEL::kernel(q0, q1, q2, args...); }, args);
+            update += 8 * fac * result;
           },
           SumPlus<NT, NT, ExecutionSpace>(dest, KERNEL::constant(t...)));
     }
@@ -81,7 +82,7 @@ namespace DiFfRG
       using TeamPolicy = Kokkos::TeamPolicy<ExecutionSpace>;
       using TeamType = Kokkos::TeamPolicy<ExecutionSpace>::member_type;
 
-      const ctype fac = powr<-1>(a[0] * (ctype)grid_size[0]) * powr<-1>(a[1] * (ctype)grid_size[1]);
+      const ctype fac = powr<-1>(a[0] * (ctype)grid_size[0]) * powr<-2>(a[1] * (ctype)grid_size[1]);
 
       const ctype x0fac = 2 * M_PI / (ctype)grid_size[0] / a[0];
       const ctype x1fac = 2 * M_PI / (ctype)grid_size[1] / a[1];
@@ -102,13 +103,14 @@ namespace DiFfRG
 
             NT res = 0;
             Kokkos::parallel_reduce(
-                Kokkos::TeamThreadMDRange(team, x0size / 2, x1size / 2), // range of the kernel
-                [&](const uint idx_x0, const uint idx_x1, NT &update) {
+                Kokkos::TeamThreadMDRange(team, x0size / 2, x1size / 2, x1size / 2), // range of the kernel
+                [&](const uint idx_x0, const uint idx_x1, const uint idx_x2, NT &update) {
                   const ctype q0 = x0fac * idx_x0;
                   const ctype q1 = x1fac * idx_x1;
+                  const ctype q2 = x1fac * idx_x2;
                   const NT result =
-                      std::apply([&](const auto &...iargs) { return KERNEL::kernel(q0, q1, iargs...); }, full_args);
-                  update += 4 * fac * result;
+                      std::apply([&](const auto &...iargs) { return KERNEL::kernel(q0, q1, q2, iargs...); }, full_args);
+                  update += 8 * fac * result;
                 },
                 res);
 
