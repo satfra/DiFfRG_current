@@ -10,7 +10,7 @@ set(TRY_BOOST_VERSION "1.81.0")
 set(PARALLEL_JOBS 8)
 
 # we need python
-find_package(python REQUIRED)
+find_package(Python REQUIRED)
 
 message(STATUS "Downloading Boost version ${TRY_BOOST_VERSION}...")
 execute_process(

@@ -48,7 +48,9 @@ namespace DiFfRG
       }
     }
 
-    template <typename... T> void get(NT &dest, const T &...t) const
+    template <typename... T>
+      requires is_valid_kernel<NT, KERNEL, ctype, dim, T...>
+    void get(NT &dest, const T &...t) const
     {
       // create an execution space
       ExecutionSpace space;
@@ -64,7 +66,7 @@ namespace DiFfRG
     }
 
     template <typename OT, typename... T>
-      requires(!std::is_same_v<OT, NT>)
+      requires(!std::is_same_v<OT, NT> && is_valid_kernel<NT, KERNEL, ctype, dim, T...>)
     void get(OT &dest, const T &...t) const
     {
       ExecutionSpace space;
@@ -72,7 +74,7 @@ namespace DiFfRG
     }
 
     template <typename OT, typename... T>
-      requires(!std::is_same_v<OT, NT>)
+      requires(!std::is_same_v<OT, NT> && is_valid_kernel<NT, KERNEL, ctype, dim, T...>)
     void get(ExecutionSpace &space, OT &dest, const T &...t) const
     {
       const auto args = std::make_tuple(t...);
@@ -164,6 +166,7 @@ namespace DiFfRG
     }
 
     template <typename view_type, typename Coordinates, typename... Args>
+      requires is_valid_kernel<NT, KERNEL, ctype, dim, Args...>
     void map(ExecutionSpace &space, const view_type integral_view, const Coordinates &coordinates, const Args &...args)
     {
       const auto m_args = std::make_tuple(args...);

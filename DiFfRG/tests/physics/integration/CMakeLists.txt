@@ -2,10 +2,14 @@
 # Tests for basic integrators
 # ##############################################################################
 
+add_executable(test_optimize optimize.cc)
+setup_test(test_optimize)
+
 add_executable(test_quadrature_integrator quadrature_integrator.cc)
 setup_test(test_quadrature_integrator)
 
-add_executable(test_distributed_quadrature_integrator distributed_quadrature_integrator.cc)
+add_executable(test_distributed_quadrature_integrator
+               distributed_quadrature_integrator.cc)
 setup_test(test_distributed_quadrature_integrator)
 
 # ##############################################################################

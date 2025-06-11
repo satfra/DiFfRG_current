@@ -4,27 +4,13 @@
 
 include_directories(./)
 
-# download CPM.cmake
-file(
-  DOWNLOAD
-  https://github.com/cpm-cmake/CPM.cmake/releases/download/v0.40.8/CPM.cmake
-  ${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake
-  EXPECTED_HASH
-    SHA256=78ba32abdf798bc616bab7c73aac32a17bbd7b06ad9e26a6add69de8f3ae4791)
-include(${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake)
-
-# Find Catch2 Testing Framework
-cpmaddpackage(
-  NAME
-  Catch2
-  GITHUB_REPOSITORY
-  catchorg/Catch2
-  VERSION
-  3.8.1
-  OPTIONS
-  "CATCH_INSTALL_DOCS OFF"
-  "CATCH_INSTALL_HELPERS OFF")
-list(APPEND CMAKE_MODULE_PATH ${Catch2_SOURCE_DIR}/extras)
+Include(FetchContent)
+FetchContent_Declare(
+        Catch2
+        GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+        GIT_TAG        v3.8.1)
+FetchContent_MakeAvailable(Catch2)
+list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/contrib)
 
 function(setup_test TARGET)
   setup_target(${TARGET})

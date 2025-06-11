@@ -14,6 +14,7 @@
 // DiFfRG
 #include <DiFfRG/common/fixed_string.hh>
 #include <DiFfRG/common/json.hh>
+#include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/tuples.hh>
 

@@ -22,6 +22,7 @@ namespace DiFfRG
 
       template <typename... T>
       static KOKKOS_FORCEINLINE_FUNCTION NT kernel(const ctype q2, const ctype cos, const T &...t)
+        requires provides_kernel<NT, KERNEL, ctype, 2, T...>
       {
         using namespace DiFfRG::compute;
 
@@ -32,7 +33,9 @@ namespace DiFfRG
         return int_prefactor * int_element * result;
       }
 
-      template <typename... T> static KOKKOS_FORCEINLINE_FUNCTION NT constant(const T &...t)
+      template <typename... T>
+      static KOKKOS_FORCEINLINE_FUNCTION NT constant(const T &...t)
+        requires provides_constant<NT, KERNEL, T...>
       {
         return KERNEL::constant(t...);
       }

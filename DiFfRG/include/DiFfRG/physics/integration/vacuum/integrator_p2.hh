@@ -2,6 +2,7 @@
 
 // DiFfRG
 #include <DiFfRG/common/math.hh>
+#include <DiFfRG/physics/integration/optimize.hh>
 #include <DiFfRG/physics/integration/quadrature_integrator.hh>
 
 // standard libraries
@@ -19,7 +20,9 @@ namespace DiFfRG
       static constexpr ctype int_prefactor = S_d_prec<ctype>(dim)          // solid nd angle
                                              / powr<dim>(2 * (ctype)M_PI); // fourier factor
 
-      template <typename... T> static KOKKOS_FORCEINLINE_FUNCTION NT kernel(const ctype q2, const T &...t)
+      template <typename... T>
+      static KOKKOS_FORCEINLINE_FUNCTION NT kernel(const ctype q2, const T &...t)
+        requires provides_kernel<NT, KERNEL, ctype, 1, T...>
       {
         using namespace DiFfRG::compute;
 
@@ -30,7 +33,9 @@ namespace DiFfRG
         return int_prefactor * int_element * result;
       }
 
-      template <typename... T> static KOKKOS_FORCEINLINE_FUNCTION NT constant(const T &...t)
+      template <typename... T>
+      static KOKKOS_FORCEINLINE_FUNCTION NT constant(const T &...t)
+        requires provides_constant<NT, KERNEL, T...>
       {
         return KERNEL::constant(t...);
       }
@@ -49,6 +54,13 @@ namespace DiFfRG
      */
     using ctype = typename get_type::ctype<NT>;
     using execution_space = ExecutionSpace;
+
+    Integrator_p2(QuadratureProvider &quadrature_provider, const JSONValue &json)
+      requires provides_regulator<KERNEL>
+        : Integrator_p2(quadrature_provider, internal::make_int_grid<1>(json, {"x_order"}),
+                        optimize_x_extent<typename KERNEL::Regulator>(json))
+    {
+    }
 
     Integrator_p2(QuadratureProvider &quadrature_provider, const std::array<uint, 1> grid_size, ctype x_extent = 2.)
         : Base(quadrature_provider, grid_size, {0}, {x_extent}, {QuadratureType::legendre}), x_extent(x_extent), k(1.)

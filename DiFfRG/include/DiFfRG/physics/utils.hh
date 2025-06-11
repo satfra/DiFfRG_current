@@ -8,6 +8,7 @@
 #include <vector>
 
 // DiFfRG
+#include <DiFfRG/common/types.hh>
 #include <DiFfRG/discretization/grid/coordinates.hh>
 
 namespace DiFfRG

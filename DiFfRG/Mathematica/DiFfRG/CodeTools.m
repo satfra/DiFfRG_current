@@ -149,124 +149,11 @@ SetCodeParser::usage="";
 Begin["`Private`"];
 
 
-Needs["SymbolicC`"]
-CodeFormatted[expr_,computeType_String:"double"] :=Module[{Powergen,Powery,Sqrty,RemoveFormat,res},
-	Format[Powergen[a_,b_],CForm]:="pow("~~ToString[a,CForm]~~", "~~ToString[b,CForm]~~")";
-	Format[Powery[a_,b_],CForm]:="powr<"~~ToString[b,CForm]~~">("~~ToString[a,CForm]~~")";
-	Format[Sqrty[a_],CForm]:="sqrt("~~ToString[a,CForm]~~")";
-
-	RemoveFormat[exp_]:=Module[{ret},
-		ret=exp;
-		ret=StringReplace[ret,{"Max(":>"max("}];
-		ret=StringReplace[ret,{"Min(":>"min("}];
-		ret=StringReplace[ret,{"Re(":>"real("}];
-		ret=StringReplace[ret,{"Im(":>"imag("}];
-		ret=StringReplace[ret,{"Sqrt(":>"sqrt("}];
-		ret=StringReplace[ret,{"Log(":>"log("}];
-		ret=StringReplace[ret,{"Abs(":>"abs("}];
-		ret=StringReplace[ret,{"Complex(":>"complex<"<>computeType<>">("}];
-		ret=StringReplace[ret,{"powr<1>(":>"("}];
-		ret=StringReplace[ret,{"HeavisideTheta(":>"heaviside_theta("}];
-		While[StringCount[ret,{"\\","\""," "}]>0,
-			ret=StringReplace[ret,{"\\"->"","\""->""," "->""}]
-		];
-		ret
-	];
-
-	res=ToCCodeString[
-		CExpression[
-			expr//.{Power[a_,b_Integer]->Powery[a,b], Power[a_,b_/;Element[b+1/2,Integers]]->Powery[Sqrty[a],2b],Power[a_,b_]->Powergen[a,b]}//.ArcTan[a_,b_]:>Global`atan2[a,b]
-		]
-	]//RemoveFormat;
-	
-	If[computeType=="float",
-	res=StringReplace[res,a:DigitCharacter..~~"."~~b:DigitCharacter..~~"e-"~~c:DigitCharacter..:>a~~"."~~b~~"*"~~ToString[DecimalForm[10^-ToExpression[c]//N]]];
-	res=StringReplace[res,a:DigitCharacter..~~"."~~"e-"~~c:DigitCharacter..:>a~~"."~~"*"~~ToString[DecimalForm[10^-ToExpression[c]//N]]];
-	res=StringReplace[res,a:DigitCharacter..~~"."~~b:DigitCharacter..:>a~~"."~~b~~"f"];
-	res=StringReplace[res,a:DigitCharacter..~~"."~~b:Except[DigitCharacter]:>a~~".f"~~b];
-	res=StringReplace[res,a:DigitCharacter..~~"."~~EndOfString:>a~~".f"];
-	];
-	res=StringReplace[res,{"Complex(":>"complex<"<>computeType<>">("}];
-	Return[res//RemoveFormat];
-];
-
-CppNames={};
-SetCppNames[rules___]:=Module[{baseList,ruleList},
-	baseList={
-		"Sin("->"sin(",
-		"Cos("->"cos(",
-		"Tan("->"tan(",
-		"Cot("->"cot(",
-		"q0f"->"(q0 + M_PI * T)"
-	};
-	ruleList={rules};
-	CppNames=Join[ruleList,baseList];
-];
-
-SetCppNames[]
-
-CodeForm[expr_,computeType_String:"double"]:=StringDelete[StringReplace[CodeFormatted[N[expr],computeType],CppNames],"\n"|"\r"];
-   
 SafeFiniteTFunctions[expr_,T_]:=Module[{a},
 expr//.{
-Tanh[a_/(2 T)]:>Symbol["TanhFiniteT"][a,T],Tanh[a_/T]:>Symbol["TanhFiniteT"][a,2T],Tanh[a_/(2 T)]^n_:>Symbol["TanhFiniteT"][a,T]^n,Tanh[a_/T]^n_:>Symbol["TanhFiniteT"][a,2T]^n,
-Coth[a_/(2 T)]:>Symbol["CothFiniteT"][a,T],Coth[a_/T]:>Symbol["CothFiniteT"][a,2T],Coth[a_/(2 T)]^n_:>Symbol["CothFiniteT"][a,T]^n,Coth[a_/T]^n_:>Symbol["CothFiniteT"][a,2T]^n,
-Csch[a_/(2 T)]:>Symbol["CschFiniteT"][a,T],Csch[a_/T]:>Symbol["CschFiniteT"][a,2T],Csch[a_/(2 T)]^n_:>Symbol["CschFiniteT"][a,T]^n,Csch[a_/T]^n_:>Symbol["CschFiniteT"][a,2T]^n,
-Sech[a_/(2 T)]:>Symbol["SechFiniteT"][a,T],Sech[a_/T]:>Symbol["SechFiniteT"][a,2T],Sech[a_/(2 T)]^n_:>Symbol["SechFiniteT"][a,T]^n,Sech[a_/T]^n_:>Symbol["SechFiniteT"][a,2T]^n
+Tanh[a_/(2 T)]:>Symbol["TanhFiniteT"][a,T],Tanh[a_/T]:>Symbol["TanhFiniteT"][a,2T],Tanh[a_/(2 T)]^n_:>Symbol["TanhFiniteT"][a,T]^n,Tanh[a_/T]^n_:>Symbol["TanhFiniteT"][a,2T]^n,Coth[a_/(2 T)]:>Symbol["CothFiniteT"][a,T],Coth[a_/T]:>Symbol["CothFiniteT"][a,2T],Coth[a_/(2 T)]^n_:>Symbol["CothFiniteT"][a,T]^n,Coth[a_/T]^n_:>Symbol["CothFiniteT"][a,2T]^n,Csch[a_/(2 T)]:>Symbol["CschFiniteT"][a,T],Csch[a_/T]:>Symbol["CschFiniteT"][a,2T],Csch[a_/(2 T)]^n_:>Symbol["CschFiniteT"][a,T]^n,Csch[a_/T]^n_:>Symbol["CschFiniteT"][a,2T]^n,Sech[a_/(2 T)]:>Symbol["SechFiniteT"][a,T],Sech[a_/T]:>Symbol["SechFiniteT"][a,2T],Sech[a_/(2 T)]^n_:>Symbol["SechFiniteT"][a,T]^n,Sech[a_/T]^n_:>Symbol["SechFiniteT"][a,2T]^n
 }
-]
-
-clangFormatExists=Quiet[RunProcess[{"clang-format","--help"}]]=!=$Failed;
-CreateClangFormat[]:=If[Not@FileExistsQ[".clang-format"],
-Export[".clang-format",
-"BasedOnStyle: LLVM
-UseTab: Never
-IndentWidth: 2
-TabWidth: 2
-BreakBeforeBraces: Linux
-AllowShortIfStatementsOnASingleLine: true
-IndentCaseLabels: false
-ColumnLimit: 120
-AccessModifierOffset: -2
-NamespaceIndentation: All
-AllowShortEnumsOnASingleLine: true
-",
-"Text"]
 ];
-
-ExportCode[fileName_String,expression_String]:=Module[{tmpfileName},
-	tmpfileName=fileName<>".tmpcode";
-	Export[tmpfileName,expression,"Text"];
-	If[clangFormatExists,
-		CreateClangFormat[];
-		RunProcess[$SystemShell, All, "clang-format "<>tmpfileName<>" > "<>tmpfileName<>"_formatted && mv "<>tmpfileName<>"_formatted "<>tmpfileName];
-	];
-	If[FileExistsQ[fileName],
-		If[Import[fileName,"Text"]==Import[tmpfileName,"Text"],
-			Print[fileName<>" unchanged"];
-			RunProcess[$SystemShell, All, "rm "<>tmpfileName],
-			Print["Exported to "<>fileName];
-			RunProcess[$SystemShell, All, "mv "<>tmpfileName<>" "<>fileName]
-		],
-		Print["Exported to "<>fileName];
-		RunProcess[$SystemShell, All, "mv "<>tmpfileName<>" "<>fileName]
-	]
-]
-
-
-FlowKernel[expr_,name_String,NT_String:"auto",addprefix_String:""]:=Module[{head,prefix,integrand},
-	head="auto "~~name~~"_kernel = [=, this](const double q2) -> "~~NT~~" {\n";
-	If[MemberQ[expr,Symbol["q0"],-1]||MemberQ[expr,Symbol["q0f"],-1],head="auto "~~name~~"_kernel = [=, this](const double q2, const double q0) -> "~~NT~~" {\n";];If[MemberQ[expr,Symbol["cos"],-1],head="auto "~~name~~"_kernel = [=, this](const double q2, const double cos) -> "~~NT~~" {\n";];If[MemberQ[expr,Symbol["cos"],-1]&&(MemberQ[expr,Symbol["q0"],-1]||MemberQ[expr,Symbol["q0f"],-1]),head="auto "~~name~~"_kernel = [=, this](const double q2, const double cos, const double q0) -> "~~NT~~" {\n";];
-
-	prefix="";
-	If[MemberQ[expr,Symbol["q"],-1],prefix=prefix~~"  const double q = sqrt(q2);\n"];If[MemberQ[expr,Symbol["q0f"],-1],prefix=prefix~~"  const double q0f = q0 + M_PI * prm.T;\n"];If[MemberQ[expr,Symbol["RB"][Symbol["k"]^2,Symbol["q"]^2],-1],prefix=prefix~~"  const double RB = RB(powr<2>(k), q2);\n"];If[MemberQ[expr,Symbol["RBdot"][Symbol["k"]^2,Symbol["q"]^2],-1],prefix=prefix~~"  const double RBdot = RBdot(powr<2>(k), q2);\n"];If[MemberQ[expr,Symbol["RF"][Symbol["k"]^2,Symbol["q"]^2],-1],prefix=prefix~~"  const double RF = RF(powr<2>(k), q2);\n"];If[MemberQ[expr,Symbol["RFdot"][Symbol["k"]^2,Symbol["q"]^2],-1],prefix=prefix~~"  const double RFdot = RFdot(powr<2>(k), q2);\n"];
-prefix=prefix~~addprefix;
-If[prefix!="",prefix=prefix~~"\n"];
-
-integrand="  return real("~~CodeForm[expr]~~");\n";
-
-head~~prefix~~integrand~~"};"
-]
 
 
 (* ::Input::Initialization:: *)
@@ -728,7 +615,7 @@ definitions<>parts<>returnStatement
 IndentCode[code_String,level_Integer]:=StringJoin[Table["  ",{i,1,level}]]<>StringReplace[code,"\n"->"\n"<>StringJoin[Table["  ",{i,1,level}]]]
 
 
-$StandardKernelDefinitions="
+$StandardKernelDefinitions={"
 static __forceinline__ __device__ __host__ auto RB(const auto k2, const auto p2) { return REG::RB(k2, p2); }
 static __forceinline__ __device__ __host__ auto RF(const auto k2, const auto p2) { return REG::RF(k2, p2); }
 
@@ -737,7 +624,9 @@ static __forceinline__ __device__ __host__ auto RFdot(const auto k2, const auto 
 
 static __forceinline__ __device__ __host__ auto dq2RB(const auto k2, const auto p2) { return REG::dq2RB(k2, p2); }
 static __forceinline__ __device__ __host__ auto dq2RF(const auto k2, const auto p2) { return REG::dq2RF(k2, p2); }
-";
+"}
+
+;
 $KernelDefinitions=$StandardKernelDefinitions;
 SetKernelDefinitions[definitionCode_String]:=Module[{},
 Set[$KernelDefinitions,definitionCode];
@@ -934,8 +823,376 @@ MakeCMakeFile[kernels];
 ];
 
 
-$codeParser="Cpp";
-SetCodeParser[str_String]:=Set[$codeParser,str]
+Block[{Print},Get["FunKit`"]]
+
+
+$PredefRegFunc={"RB","RF","RBdot","RFdot","dq2RB","dq2RF"};
+$StandardKernelDefinitions=Map[
+MakeCppFunction["Name"->#,"Body"->"return Regulator::"<>#<>"(k2, p2);","Prefix"->"static KOKKOS_FORCEINLINE_FUNCTION","Suffix"->"","Parameters"->{"k2","p2"}]&,
+$PredefRegFunc]
+
+
+DiFfRG::MissingKey="The key \"`1`\" is missing.";
+
+CheckKey[kernel_Association,name_String,test_]:=Module[{valid},
+If[Not@KeyExistsQ[kernel,name],Message[DiFfRG::MissingKey,name];Return[False]];
+If[Not@test[kernel[name]],Return[False]];
+Return[True];
+];
+
+KernelSpecQ[spec_Association]:=Module[{validKeys,validKeyTypes},
+validKeys=CheckKey[spec,"Name",StringQ]&&
+CheckKey[spec,"Integrator",StringQ]&&
+CheckKey[spec,"d",IntegerQ]&&
+CheckKey[spec,"AD",BooleanQ]&&
+CheckKey[spec,"Device",StringQ];
+Return[validKeys];
+];
+
+
+(* ::Input::Initialization:: *)
+flowName="Flows";
+flowDir:=If[$Notebooks,NotebookDirectory[],Directory[]]<>flowName<>"/";
+SetFlowName[name_String]:=Module[{},flowName=name]
+ShowFlowDirectory[]:=Print[flowDir]
+
+Print["Flow output directory: "<>flowDir]
+
+
+getRegulator[name_,{optName_,optDef_}]:=Module[{ret},
+ret="";
+If[optName=!="",
+ret=ret<>optDef<>"\n";
+];
+ret=ret<>"using Regulator = "<>name<>"<";
+If[optName=!="",
+ret=ret<>optName;
+];
+ret=ret<>">;";
+Return[FormatCode[ret]];
+];
+
+
+updateCMake[varName_:"Flows"]:=Module[
+{folders,sources,cmake,fileName=flowDir<>"CMakeLists.txt",flowFolderName},
+
+flowFolderName=StringSplit[flowDir,"/"][[-1]];
+folders=Select[FileNames["*",flowDir,1],DirectoryQ];
+sources=Flatten@Join[Map[Get[#<>"/sources.m"]&,folders]];
+sources="    "<>StringRiffle[sources,"\n    "];
+
+cmake="set("<>varName<>"_SOURCES 
+"<>sources<>"
+    ${CMAKE_CURRENT_SOURCE_DIR}/flows.cc)
+
+add_library("<>varName<>" STATIC ${"<>varName<>"_SOURCES})
+target_link_libraries("<>varName<>" DiFfRG::DiFfRG)
+";
+
+If[FileExistsQ[fileName],
+If[Import[fileName,"Text"]===cmake,
+Print[fileName<>" unchanged"];
+Return[]
+];
+	];
+Export[fileName,cmake,"Text"];
+Print["Exported to \""<>fileName<>"\""];
+];
+
+updateFlowClass[varName_:"Flows"]:=Module[
+{folders,flowFolderName,integrators,
+flowHeader,flowCpp,integratorInitializations},
+
+flowFolderName=StringSplit[flowDir,"/"][[-1]];
+folders=Select[FileNames["*",flowDir,1],DirectoryQ];
+integrators=Map[
+{StringSplit[#,"/"][[-1]],StringSplit[#,"/"][[-1]]<>"_integrator","./"<>StringSplit[#,"/"][[-1]]<>"/"<>StringSplit[#,"/"][[-1]]<>".hh"}&
+,folders];
+
+flowHeader=MakeCppHeader[
+"Includes"->Join[{"DiFfRG/common/utils.hh","DiFfRG/physics/integration.hh"},integrators[[All,3]]],
+"Body"->{
+MakeCppClass[
+"Name"->varName,
+"MembersPublic"->Join[{
+MakeCppFunction[
+"Name"->varName,
+"Parameters"->{<|"Type"->"DiFfRG::JSONValue","Reference"->True,"Const"->True,"Name"->"json"|>},
+"Body"->None,
+"Return"->""
+],
+"DiFfRG::QuadratureProvider quadrature_provider;"
+},
+Map[#[[2]]<>" "<>#[[1]]<>";"&,integrators]
+]
+]}
+];
+
+integratorInitializations=If[Length[integrators]>0,": "<>StringRiffle[integrators[[All,1]],"(quadrature_provider, json), "]<>"(quadrature_provider, json)",""];
+
+flowCpp=MakeCppBlock[
+"Includes"->{"./flows.hh"},
+"Body"->{
+MakeCppFunction[
+"Name"->varName,
+"Class"->varName,
+"Suffix"->integratorInitializations,
+"Body"->"",
+"Parameters"->{<|"Type"->"DiFfRG::JSONValue","Reference"->True,"Const"->True,"Name"->"json"|>},
+"Return"->""
+]
+}
+];
+
+Export[flowDir<>"flows.hh",flowHeader,"Text"];
+Export[flowDir<>"flows.cc",flowCpp,"Text"];
+];
+
+UpdateFlows[varName_:flowName]:=Module[{},
+updateCMake[varName];
+updateFlowClass[varName];
+];
+
+UpdateFlows[];
+
+
+ClearAll[MakeKernel]
+
+MakeKernel::Invalid="The given arguments are invalid. See MakeKernel::usage";
+MakeKernel::InvalidSpec="The given kernel specification is invalid.";
+
+Options[MakeKernel]={
+"Coordinates"->{},
+"IntegrationVariables"->{},
+"KernelDefinitions"->$StandardKernelDefinitions,
+"Regulator"->"DiFfRG::PolynomialExpRegulator",
+"RegulatorOpts"->{"",""}
+};
+
+$ADReplacements={};
+
+MakeKernel[__]:=(Message[MakeKernel::Invalid];Abort[]);
+MakeKernel[kernelExpr_,constExpr_,spec_Association,parameters_List,OptionsPattern[]]:=Module[
+{
+kernel,constant,kernelClass,kernelHeader,
+integratorHeader,integratorCpp,integratorTemplateParams,
+tparams=<|"Name"->"...t","Type"->"auto&&","Reference"->False,"Const"->False|>,
+kernelDefs=OptionValue["KernelDefinitions"],
+coordinates=OptionValue["Coordinates"],
+regulator,
+params,paramsAD,explParamAD,
+i,arguments,
+outputPath,sources
+},
+
+If[Not@KernelSpecQ[spec],Message[MakeKernel::InvalidSpec];Abort[]];
+
+kernel=MakeCppFunction[
+kernelExpr,
+"Name"->"kernel",
+"Suffix"->"",
+"Prefix"->"static KOKKOS_FORCEINLINE_FUNCTION",
+"Parameters"->Join[OptionValue["IntegrationVariables"],parameters],
+"Body"->"using namespace DiFfRG::compute;"
+];
+constant=MakeCppFunction[
+constExpr,
+"Name"->"constant",
+"Suffix"->"",
+"Prefix"->"static KOKKOS_FORCEINLINE_FUNCTION",
+"Parameters"->parameters,
+"Body"->"using namespace DiFfRG::compute;"
+];
+kernelClass=MakeCppClass[
+"TemplateTypes"->{"_Regulator"},
+"Name"->spec["Name"]<>"_kernel",
+"MembersPublic"->{"using Regulator = _Regulator;",kernel,constant},
+"MembersPrivate"->kernelDefs
+];
+kernelHeader=MakeCppHeader[
+"Includes"->{"DiFfRG/physics/utils.hh"},
+"Body"->{kernelClass}];
+(*Print[kernelHeader];*)
+
+params=FunKit`Private`prepParam/@parameters;
+paramsAD=params;
+For[i=1,i<=Length[params],i++,
+If[KeyFreeQ[params[[i]],"Type"],
+params[[i]]=Association[(Normal@(params[[i]]))\[Union]{"Type"->"double"}],
+If[params[[i]]["Type"]==="auto",
+params[[i]]=KeyDrop[params[[i]],{"Type"}];params[[i]]=Association[Normal@(params[[i]])\[Union]{"Type"->"double"}]
+];
+];
+If[KeyFreeQ[paramsAD[[i]],"Type"],
+paramsAD[[i]]=Association[(Normal@(paramsAD[[i]]))\[Union]{"Type"->"double"}],
+If[paramsAD[[i]]["Type"]==="auto",
+paramsAD[[i]]=KeyDrop[paramsAD[[i]],{"Type"}];paramsAD[[i]]=Association[Normal@(paramsAD[[i]])\[Union]{"Type"->"autodiff::real"}],
+explParamAD=StringReplace[paramsAD[[i]]["Type"],$ADReplacements];
+paramsAD[[i]]=KeyDrop[paramsAD[[i]],{"Type"}];paramsAD[[i]]=Association[Normal@(paramsAD[[i]])\[Union]{"Type"->explParamAD}];
+];
+];
+];
+arguments=StringRiffle[Map[#["Name"]&,params],", "];
+
+integratorTemplateParams={};
+If[KeyExistsQ[spec,"d"]&&spec["d"]=!=None,AppendTo[integratorTemplateParams,ToString[spec["d"]]]];
+If[KeyExistsQ[spec,"Type"],AppendTo[integratorTemplateParams,ToString[spec["Type"]]],AppendTo[integratorTemplateParams,"double"]];
+AppendTo[integratorTemplateParams,spec["Name"]<>"_kernel<Regulator>"];
+AppendTo[integratorTemplateParams,If[KeyFreeQ[spec,"Device"]||spec["Device"]=!="GPU","DiFfRG::CPU_exec","DiFfRG::GPU_exec"]];
+integratorTemplateParams=StringRiffle[integratorTemplateParams,", "];
+
+integratorHeader=MakeCppHeader[
+"Includes"->{"DiFfRG/physics/interpolation.hh","DiFfRG/physics/integration.hh","DiFfRG/physics/physics.hh","./kernel.hh"},
+"Body"->{
+MakeCppClass[
+"Name"->spec["Name"]<>"_integrator",
+"MembersPublic"->{
+MakeCppFunction[
+"Name"->spec["Name"]<>"_integrator",
+"Parameters"->{<|"Type"->"DiFfRG::QuadratureProvider","Reference"->True,"Const"->False,"Name"->"quadrature_provider"|>,<|"Type"->"DiFfRG::JSONValue","Reference"->True,"Const"->True,"Name"->"json"|>},
+"Body"->None,
+"Return"->""
+],
+MakeCppFunction[
+"Name"->"get",
+"Templates"->{"NT=double"},
+"Parameters"->{<|"Name"->"dest","Type"->"NT","Reference"->True,"Const"->False|>,<|"Name"->"...t","Type"->"auto&&","Reference"->False,"Const"->False|>},
+"Body"->"static_assert(std::is_same_v<NT, double> || std::is_same_v<NT, autodiff::real>, \"Unknown type requested of "<>spec["Name"]<>"_integrator::get\");
+if constexpr (std::is_same_v<NT, double>)
+  get_CT(dest, std::forward<decltype(t)>(t)...);
+else if constexpr (std::is_same_v<NT, autodiff::real>)
+  get_AD(dest, std::forward<decltype(t)>(t)...);",
+"Return"->"void"
+],
+If[Length[coordinates]>0,
+MakeCppFunction[
+"Name"->"map",
+"Templates"->{"NT=double"},
+"Parameters"->{tparams},
+"Body"->"static_assert(std::is_same_v<NT, double> || std::is_same_v<NT, autodiff::real>, \"Unknown type requested of "<>spec["Name"]<>"_integrator::get\");
+if constexpr (std::is_same_v<NT, double>)
+  map_CT(std::forward<decltype(t)>(t)...);
+else if constexpr (std::is_same_v<NT, autodiff::real>)
+  map_AD(std::forward<decltype(t)>(t)...);",
+"Return"->"void"
+],""],
+getRegulator[OptionValue["Regulator"],OptionValue["RegulatorOpts"]],
+spec["Integrator"]<>"<"<>integratorTemplateParams<>"> integrator;"
+},
+"MembersPrivate"->Join[
+Map[
+MakeCppFunction["Name"->"map_CT","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"double*","Const"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},params]]&,
+coordinates],
+Map[
+MakeCppFunction["Name"->"map_AD","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real*","Const"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},paramsAD]]&,
+coordinates],
+{MakeCppFunction["Name"->"get_CT","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"double","Reference"->True,"Const"->False|>},params]],
+MakeCppFunction["Name"->"get_AD","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real","Reference"->True,"Const"->False|>},paramsAD]],
+"DiFfRG::QuadratureProvider& quadrature_provider;"}
+]
+]}
+];
+(*Print[integratorHeader];*)
+
+integratorCpp["Constructor"]=MakeCppBlock[
+"Includes"->{"../"<>spec["Name"]<>".hh"},
+"Body"->{
+MakeCppFunction[
+"Name"->spec["Name"]<>"_integrator",
+"Class"->spec["Name"]<>"_integrator",
+"Suffix"->": integrator(quadrature_provider, json), quadrature_provider(quadrature_provider)",
+"Body"->"",
+"Parameters"->{<|"Type"->"DiFfRG::QuadratureProvider","Reference"->True,"Const"->False,"Name"->"quadrature_provider"|>,<|"Type"->"DiFfRG::JSONValue","Reference"->True,"Const"->True,"Name"->"json"|>},
+"Return"->""
+]
+}];
+integratorCpp["CT","get"]=MakeCppBlock[
+"Includes"->{"../"<>spec["Name"]<>".hh"},
+"Body"->{
+MakeCppFunction[
+"Name"->"get_CT",
+"Class"->spec["Name"]<>"_integrator",
+"Body"->"integrator.get(dest, "<>arguments<>");",
+"Parameters"->Join[{<|"Name"->"dest","Type"->"double","Reference"->True,"Const"->False|>},params],
+"Return"->"void"
+]
+}];
+integratorCpp["AD","get"]=MakeCppBlock[
+"Includes"->{"../"<>spec["Name"]<>".hh"},
+"Body"->{
+MakeCppFunction[
+"Name"->"get_AD",
+"Class"->spec["Name"]<>"_integrator",
+"Body"->"integrator.get(dest, "<>arguments<>");",
+"Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real","Reference"->True,"Const"->False|>},params],
+"Return"->"void"
+]
+}];
+integratorCpp["CT","map"]=Map[MakeCppBlock[
+"Includes"->{"../"<>spec["Name"]<>".hh"},
+"Body"->{
+MakeCppFunction[
+"Name"->"map_CT",
+"Return"->"void",
+"Class"->spec["Name"]<>"_integrator",
+"Body"->"integrator.map(dest, coordinates, "<>arguments<>");",
+"Parameters"->Join[{<|"Name"->"dest","Type"->"double*","Const"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},params]
+]
+}]&,coordinates];
+integratorCpp["AD","map"]=Map[MakeCppBlock[
+"Includes"->{"../"<>spec["Name"]<>".hh"},
+"Body"->{
+MakeCppFunction[
+"Name"->"map_AD",
+"Return"->"void",
+"Class"->spec["Name"]<>"_integrator",
+"Body"->"integrator.map(dest, coordinates, "<>arguments<>");",
+"Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real*","Const"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},paramsAD]
+]
+}]&,coordinates];
+(*Print["\n-----------------------------\n"];
+Print[integratorCpp["CT","get"]];
+Print["\n-----------------------------\n"];
+Print[integratorCpp["AD","get"]];
+Print["\n-----------------------------\n"];
+Print[integratorCpp["CT","map"]];
+Print["\n-----------------------------\n"];
+Print[integratorCpp["AD","map"]];*)
+
+outputPath=flowDir<>spec["Name"]<>"/";
+Export[outputPath<>spec["Name"]<>".hh",integratorHeader,"Text"];
+Export[outputPath<>"kernel.hh",kernelHeader,"Text"];
+
+sources={outputPath<>"src/constructor.cc"};
+Export[sources[[-1]],integratorCpp["Constructor"],"Text"];
+
+AppendTo[sources,outputPath<>"src/CT_get.cc"];
+Export[sources[[-1]],integratorCpp["CT","get"],"Text"];
+
+Do[
+AppendTo[sources,outputPath<>"src/CT_map_"<>ToString[i]<>".cc"];
+Export[sources[[-1]],integratorCpp["CT","map"][[i]],"Text"],
+{i,1,Length[coordinates]}];
+
+If[spec["AD"],
+AppendTo[sources,outputPath<>"src/AD_get.cc"];
+Export[sources[[-1]],integratorCpp["AD","get"],"Text"];
+
+Do[
+AppendTo[sources,outputPath<>"src/AD_map_"<>ToString[i]<>".cc"];
+Export[sources[[-1]],integratorCpp["AD","map"][[i]],"Text"],
+{i,1,Length[coordinates]}];
+];
+
+sources=Map[StringReplace[#,outputPath->"${CMAKE_CURRENT_SOURCE_DIR}/"<>spec["Name"]<>"/"]&,sources];
+Export[outputPath<>"sources.m",sources];
+];
+
+MakeKernel[1,1,
+<|"Name"->"AA","Integrator"->"DiFfRG::Integrator_p2","d"->4,"AD"->False,"Device"->"GPU","Type"->"double"|>,
+{"a"},
+"IntegrationVariables"->{"l1"}]
+UpdateFlows[]
 
 
 (* ::Input::Initialization:: *)
@@ -968,7 +1225,7 @@ If[kernel["Angles"]>3,Print["DiFfRG::CodeTools::MakeKernelClass: T = 0 kernel ca
 ];
 ];
 
-ExportCode[flowDir<>""<>kernel["Path"]<>"/"<>kernel["Name"]<>".kernel",Global`CreateKernelClass[ToString[kernel["Name"]]<>"_kernel",integrandFlow,constantFlow,"integrandBody"->integrandDefinitions,"constantBody"->constantDefinitions,"integrationVariables"->integrationVariables,"parameters"->Join[{<|"Name"->"k"|>},parameterList],"CodeParser"->$codeParser]
+ExportCode[flowDir<>""<>kernel["Path"]<>"/"<>kernel["Name"]<>".kernel",FunKit`CreateKernelClass[ToString[kernel["Name"]]<>"_kernel",integrandFlow,constantFlow,"integrandBody"->integrandDefinitions,"constantBody"->constantDefinitions,"integrationVariables"->integrationVariables,"parameters"->Join[{<|"Name"->"k"|>},parameterList],"CodeParser"->$codeParser]
 ];
 ];
 
