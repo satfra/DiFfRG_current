@@ -4,7 +4,8 @@ project(petsc_dep)
 
 # petsc
 set(TRY_PETSC_VERSION "3.23.1")
-set(PARALLEL_JOBS 8)
+include(ProcessorCount)
+ProcessorCount(PARALLEL_JOBS)
 
 message(STATUS "Downloading PETSc version ${TRY_PETSC_VERSION}...")
 execute_process(
@@ -38,8 +39,8 @@ else()
   set(PETSC_OPTIONS "-with-mpi=0")
 endif()
 # if you're on MacOS, we need to turn off OpenMP support
-if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-    set(HAVE_OPENMP FALSE)
+if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+  set(HAVE_OPENMP FALSE)
 endif()
 if(HAVE_OPENMP)
   message(STATUS "Building PETSc with OpenMP support")
@@ -49,8 +50,20 @@ endif()
 execute_process(
   COMMAND
     bash -c
-    "./configure --with-debugging=0 ${PETSC_OPTIONS} --prefix=${CMAKE_INSTALL_PREFIX} --with-clean 2>&1 | tee -a ${CMAKE_CURRENT_BINARY_DIR}/petsc.log"
-  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/petsc)
+    "
+    ./configure --COPTFLAGS=\"-O3 -march=native -ffp-contract=fast\" \
+    --CXXOPTFLAGS=\"-O3 -march=native -ffp-contract=fast\"  \
+    --FOPTFLAGS=\"-O3 -march=native -ffp-contract=fast\" \
+    --with-openblas-dir=${CMAKE_INSTALL_PREFIX} --prefix=${CMAKE_INSTALL_PREFIX} --with-clean --with-debugging=0 2>&1 | tee -a ${CMAKE_CURRENT_BINARY_DIR}/petsc.log"
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/petsc
+  RESULT_VARIABLE ret)
+
+if(ret AND NOT ret EQUAL 0)
+  message(
+    FATAL_ERROR
+      "Failed to configure PETSc. Check ${CMAKE_CURRENT_BINARY_DIR}/petsc.log for details."
+  )
+endif()
 
 message(STATUS "Building PETSc...")
 execute_process(
@@ -58,4 +71,12 @@ execute_process(
     bash -c
     "make -j ${PARALLEL_JOBS} 2>&1 | tee -a ${CMAKE_CURRENT_BINARY_DIR}/petsc.log; \
     make install -j ${PARALLEL_JOBS} 2>&1 | tee -a ${CMAKE_CURRENT_BINARY_DIR}/petsc.log"
-  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/petsc)
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/petsc
+  RESULT_VARIABLE ret)
+
+if(ret AND NOT ret EQUAL 0)
+  message(
+    FATAL_ERROR
+      "Failed to build PETSc. Check ${CMAKE_CURRENT_BINARY_DIR}/petsc.log for details."
+  )
+endif()

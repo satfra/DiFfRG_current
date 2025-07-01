@@ -37,7 +37,12 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
 include(CheckLanguage)
 
+check_language(Fortran)
+check_language(CXX)
+check_language(C)
+
 check_language(CUDA)
+# if the compiler id is NVHPC, then we have CUDA
 if(CMAKE_CUDA_COMPILER)
   set(HAVE_CUDA ON)
   set(HAVE_HIP OFF)
@@ -93,8 +98,26 @@ ExternalProject_Add(
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/general
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
-  CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-                   -DENABLE_MPI:BOOL=${ENABLE_MPI})
+  CMAKE_CACHE_ARGS
+    -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
+    -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
+    -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+    -DENABLE_MPI:BOOL=${ENABLE_MPI}
+    -DHAVE_OPENMP:BOOL=${HAVE_OPENMP})
+
+# build sundials
+ExternalProject_Add(
+  sundials_dep
+  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/sundials
+  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/sundials
+  INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+  DEPENDS general_dep
+  # Propagate DEPEND_INSTALL_PREFIX to the dependencies
+  CMAKE_CACHE_ARGS
+    -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
+    -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
+    -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+    -DENABLE_MPI:BOOL=${ENABLE_MPI})
 
 # build autodiff
 ExternalProject_Add(
@@ -102,9 +125,10 @@ ExternalProject_Add(
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/autodiff
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/autodiff
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  DEPENDS general_dep
+  DEPENDS general_dep sundials_dep
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
-  CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
+  CMAKE_CACHE_ARGS -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
+                   -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
 
 # build boost
 ExternalProject_Add(
@@ -112,7 +136,10 @@ ExternalProject_Add(
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/boost
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/boost
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+  DEPENDS general_dep sundials_dep autodiff_dep
   CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
+             -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
+             -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
   CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
 
@@ -146,6 +173,8 @@ else()
   string(SUBSTRING "${Kokkos_ARCH_LIST}" 0 -1 Kokkos_ARCH_LIST)
 endif()
 
+message(STATUS "CUDA compiler: ${CMAKE_CUDA_COMPILER}")
+
 # add the Kokkos dependency to the build
 ExternalProject_Add(
   kokkos_dep
@@ -154,6 +183,7 @@ ExternalProject_Add(
   # GIT_TAG 4.6.01
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/kokkos
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+  DEPENDS general_dep sundials_dep autodiff_dep boost_dep
   CMAKE_ARGS -DCMAKE_CXX_FLAGS=-fPIC
   CMAKE_CACHE_ARGS
     -DCMAKE_BUILD_TYPE:STRING=Release
@@ -162,14 +192,14 @@ ExternalProject_Add(
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
     -DKokkos_ARCH_NATIVE:BOOL=${Kokkos_ARCH_NATIVE}
     ${Kokkos_ARCH_LIST}
+    -DCMAKE_CUDA_COMPILER:STRING=${CMAKE_CUDA_COMPILER}
     -DKokkos_ENABLE_CUDA:BOOL=${HAVE_CUDA}
     -DKokkos_ENABLE_CUDA_CONSTEXPR:BOOL=${HAVE_CUDA}
     -DKokkos_ENABLE_HIP:BOOL=${HAVE_HIP}
     -DKokkos_ENABLE_OPENMP:BOOL=${HAVE_OPENMP}
     -DKokkos_ENABLE_THREADS:BOOL=${HAVE_THREADS}
     -DKokkos_ENABLE_SERIAL:BOOL=ON
-    -DKokkos_ENABLE_TESTS:BOOL=OFF
-    )
+    -DKokkos_ENABLE_TESTS:BOOL=OFF)
 
 # ##############################################################################
 # PETSc
@@ -178,6 +208,7 @@ ExternalProject_Add(
 # build PETSc
 ExternalProject_Add(
   petsc_dep
+  DEPENDS general_dep sundials_dep autodiff_dep boost_dep kokkos_dep
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/petsc
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/petsc
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
@@ -200,12 +231,16 @@ ExternalProject_Add(
   GIT_TAG v9.4.2
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/deal.II
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  DEPENDS general_dep boost_dep petsc_dep
+  DEPENDS general_dep boost_dep petsc_dep sundials_dep
   CMAKE_CACHE_ARGS
+    -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
+    -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
+    -DCMAKE_Fortran_COMPILER:STRING=${CMAKE_Fortran_COMPILER}
     -DCMAKE_BUILD_TYPE:STRING=DebugRelease
-    -DCMAKE_POLICY_VERSION_MINIMUM:STRING=3.31
+    -DCMAKE_POLICY_VERSION_MINIMUM:STRING=3.5
     -DCMAKE_POLICY_DEFAULT_CMP0167:STRING=NEW
     -DCMAKE_WARN_DEPRECATED:BOOL=OFF
+    -DLAPACK_LIBRARIES:STRING=${DEPEND_INSTALL_PREFIX}/lib/libopenblas.so
     -DDEAL_II_COMPONENT_EXAMPLES:BOOL=OFF
     -DDEAL_II_COMPONENT_DOCUMENTATION:BOOL=OFF
     -DDEAL_II_WITH_MPI:BOOL=${ENABLE_MPI}

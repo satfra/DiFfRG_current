@@ -7,7 +7,8 @@ set(CMAKE_BUILD_TYPE Release)
 
 # boost
 set(TRY_BOOST_VERSION "1.81.0")
-set(PARALLEL_JOBS 8)
+include(ProcessorCount)
+ProcessorCount(PARALLEL_JOBS)
 
 # we need python
 find_package(Python REQUIRED)
@@ -17,15 +18,13 @@ execute_process(
   COMMAND
     bash -c
     "git clone --depth 1 --branch boost-${TRY_BOOST_VERSION} https://github.com/boostorg/boost.git &> ${CMAKE_CURRENT_BINARY_DIR}/clone_boost.log"
-  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-  )
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
 message(STATUS "Downloading Boost libraries... (this may take a while)")
 execute_process(
-  COMMAND
-    bash ${CMAKE_CURRENT_SOURCE_DIR}/download_modules.sh ${Python_EXECUTABLE}
-  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/boost/
-  )
+  COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/download_modules.sh
+          ${Python_EXECUTABLE}
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/boost/)
 
 message(STATUS "Patching boost...")
 execute_process(
@@ -34,16 +33,22 @@ execute_process(
     "patch ${CMAKE_CURRENT_BINARY_DIR}/boost/libs/math/include/boost/math/cstdfloat/cstdfloat_limits.hpp < ${CMAKE_CURRENT_SOURCE_DIR}/cstdfloat_limits.hpp.diff"
 )
 
+set(BOOST_COMPILER_ARGS
+    "CC=${CMAKE_C_COMPILER} CXX=${CMAKE_CXX_COMPILER} FC=${CMAKE_Fortran_COMPILER}"
+)
+
 add_custom_target(
   build_boost_boostrap
-  COMMAND bash -c "./bootstrap.sh --prefix=${CMAKE_INSTALL_PREFIX} &> /dev/null"
+  COMMAND
+    bash -c
+    "${BOOST_COMPILER_ARGS} ./bootstrap.sh --prefix=${CMAKE_INSTALL_PREFIX} &> /dev/null"
   VERBATIM
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/boost/)
 add_custom_target(
   build_boost_b2
   COMMAND
     bash -c
-    "echo 'Building Boost...'; ./b2 --build-dir=${CMAKE_CURRENT_BINARY_DIR}/boost-build \
+    "echo 'Building Boost...'; ${BOOST_COMPILER_ARGS} ./b2 --build-dir=${CMAKE_CURRENT_BINARY_DIR}/boost-build \
         --prefix=${CMAKE_INSTALL_PREFIX} \
         --with-headers \
         --with-iostreams \

@@ -11,6 +11,11 @@ if(NOT DEFINED ENABLE_MPI)
       OFF
       CACHE BOOL "Enable MPI support")
 endif()
+if(NOT DEFINED HAVE_OPENMP)
+  set(HAVE_OPENMP
+      OFF
+      CACHE BOOL "Enable OpenMP support")
+endif()
 
 # Set up external dependencies
 
@@ -34,27 +39,42 @@ cpmaddpackage(
   "CMAKE_CXX_STANDARD 20"
   "CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE}"
   "TBB_TEST OFF"
+  "TBBMALLOC_PROXY_BUILD OFF"
   GITHUB_REPOSITORY
   uxlfoundation/oneTBB
   GIT_TAG
   v2022.1.0)
 
-# sundials
-message(STATUS "Adding SUNDIALS...")
+# OpenBlas
+include(ProcessorCount)
+ProcessorCount(N_PROCESSORS)
+if(HAVE_OPENMP)
+  set(OPENBLAS_OPENMP_OPT
+      "USE_OPENMP ON"
+      CACHE BOOL "Enable OpenMP support in OpenBLAS")
+  message(STATUS "Building OpenBLAS with OpenMP support")
+else()
+  set(OPENBLAS_OPENMP_OPT
+      "USE_OPENMP OFF"
+      CACHE BOOL "Disable OpenMP support in OpenBLAS")
+endif()
+
 cpmaddpackage(
   NAME
-  sundials
-  VERSION
-  6.7.0
-  OPTIONS
-  "ENABLE_MPI ${ENABLE_MPI}"
-  "CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE}"
-  "EXAMPLES_ENABLE_C OFF"
-  "EXAMPLES_ENABLE_CXX OFF"
+  OpenBLAS
   GITHUB_REPOSITORY
-  LLNL/sundials
-  GIT_TAG
-  v6.7.0)
+  OpenMathLib/OpenBLAS
+  VERSION
+  0.3.30
+  OPTIONS
+  "CMAKE_BUILD_TYPE Release"
+  "BUILD_SHARED_LIBS OFF"
+  ${OPENBLAS_OPENMP_OPT}
+  "NUM_PARALLEL ${N_PROCESSORS}"
+  "BUILD_SHARED_LIBS ON"
+  "BUILD_TESTING OFF"
+  "DYNAMIC_ARCH OFF"
+  "NUM_THREADS=64")
 
 # Get Eigen3
 message(STATUS "Adding Eigen3...")
