@@ -179,8 +179,7 @@ message(STATUS "CUDA compiler: ${CMAKE_CUDA_COMPILER}")
 ExternalProject_Add(
   kokkos_dep
   GIT_REPOSITORY https://github.com/kokkos/kokkos.git
-  GIT_TAG develop
-  # GIT_TAG 4.6.01
+  GIT_TAG 4.6.01
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/kokkos
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
   DEPENDS general_dep sundials_dep autodiff_dep boost_dep
@@ -199,6 +198,7 @@ ExternalProject_Add(
     -DKokkos_ENABLE_OPENMP:BOOL=${HAVE_OPENMP}
     -DKokkos_ENABLE_THREADS:BOOL=${HAVE_THREADS}
     -DKokkos_ENABLE_SERIAL:BOOL=ON
+    -DKokkos_ENABLE_TESTS:BOOL=ON
     -DKokkos_ENABLE_TESTS:BOOL=OFF)
 
 # ##############################################################################
