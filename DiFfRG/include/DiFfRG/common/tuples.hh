@@ -200,6 +200,7 @@ namespace DiFfRG
   private:
     std::array<NT, N * M> data;
   };
+
   template <uint n, typename NT, typename Vector> std::array<NT, n> vector_to_array(const Vector &v)
   {
     std::array<NT, n> x;

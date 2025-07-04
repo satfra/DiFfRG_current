@@ -53,6 +53,13 @@ namespace DiFfRG
     using ctype = typename get_type::ctype<NT>;
     using execution_space = ExecutionSpace;
 
+    Integrator_fT_p2_1ang(QuadratureProvider &quadrature_provider, const JSONValue &json)
+      requires provides_regulator<KERNEL>
+        : Integrator_p2_1ang(quadrature_provider, internal::make_int_grid<2>(json, {"x_order", "cos1_order"}),
+                             optimize_x_extent<typename KERNEL::Regulator>(json), json.get_double("T", 1.0))
+    {
+    }
+
     Integrator_fT_p2_1ang(QuadratureProvider &quadrature_provider, const std::array<uint, 2> grid_size,
                           ctype x_extent = 2., ctype T = 1, ctype typical_E = 1)
         : Base(quadrature_provider, grid_size, {0, -1.}, {x_extent, 1.},
@@ -71,7 +78,10 @@ namespace DiFfRG
     {
       this->k = k;
       Base::set_grid_extents({0, -1.}, {x_extent * powr<2>(k), 1.});
+      Base::set_typical_E(k); // update typical energy
     }
+
+    void set_typical_E(ctype typical_E) { Base::set_typical_E(typical_E); }
 
   private:
     ctype x_extent;
