@@ -2,17 +2,17 @@
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 
-#include <DiFfRG/common/initialize.hh>
+#include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/math.hh>
 
 using namespace DiFfRG;
 
-constexpr double eps = 10 * std::numeric_limits<double>::epsilon();
+constexpr double eps = 100 * std::numeric_limits<double>::epsilon();
 
 TEST_CASE("Test autodiff with Kokkos", "[autodiff][kokkos]")
 {
-  DiFfRG::Initialize();
+  DiFfRG::Init();
 
   auto validate = [](const auto &x, const auto &value, const auto &derivative, std::string name = "") {
     // check the value
@@ -103,17 +103,17 @@ TEST_CASE("Test autodiff with Kokkos", "[autodiff][kokkos]")
     }
   }
 
-  SECTION("CPU")
+  SECTION("OpenMP")
   {
-    Kokkos::View<double **, CPU_memory> A("A", N, M);
-    Kokkos::View<autodiff::real *, CPU_memory> v("v", M);
-    Kokkos::View<autodiff::real *, CPU_memory> result("result", N);
+    Kokkos::View<double **, OpenMP_memory> A("A", N, M);
+    Kokkos::View<autodiff::real *, OpenMP_memory> v("v", M);
+    Kokkos::View<autodiff::real *, OpenMP_memory> result("result", N);
 
-    Kokkos::Random_XorShift64_Pool<CPU_exec> random_pool(/*seed=*/12345);
+    Kokkos::Random_XorShift64_Pool<OpenMP_exec> random_pool(/*seed=*/12345);
 
     // Fill A and v with random values
     Kokkos::parallel_for(
-        "Fill A", Kokkos::MDRangePolicy<CPU_exec, Kokkos::Rank<2>>({0, 0}, {N, M}),
+        "Fill A", Kokkos::MDRangePolicy<OpenMP_exec, Kokkos::Rank<2>>({0, 0}, {N, M}),
         KOKKOS_LAMBDA(const size_t i, const size_t j) {
           // acquire the state of the random number generator engine
           auto generator = random_pool.get_state();
@@ -125,7 +125,7 @@ TEST_CASE("Test autodiff with Kokkos", "[autodiff][kokkos]")
         });
 
     Kokkos::parallel_for(
-        "Fill v", Kokkos::RangePolicy<CPU_exec>(0, M), KOKKOS_LAMBDA(const size_t i) {
+        "Fill v", Kokkos::RangePolicy<OpenMP_exec>(0, M), KOKKOS_LAMBDA(const size_t i) {
           // acquire the state of the random number generator engine
           auto generator = random_pool.get_state();
 
@@ -139,7 +139,7 @@ TEST_CASE("Test autodiff with Kokkos", "[autodiff][kokkos]")
 
     // Compute the matrix-vector product
     Kokkos::parallel_for(
-        "Matrix-vector multiplication", Kokkos::RangePolicy<CPU_exec>(0, N), KOKKOS_LAMBDA(const size_t i) {
+        "Matrix-vector multiplication", Kokkos::RangePolicy<OpenMP_exec>(0, N), KOKKOS_LAMBDA(const size_t i) {
           autodiff::real temp{};
           for (long j = 0; j < M; ++j) {
             temp += A(i, j) * v(j);

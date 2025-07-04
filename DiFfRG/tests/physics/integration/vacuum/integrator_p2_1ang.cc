@@ -1,7 +1,7 @@
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 
-#include <DiFfRG/common/initialize.hh>
+#include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/polynomials.hh>
 #include <DiFfRG/physics/integration/vacuum/integrator_p2_1ang.hh>
@@ -16,7 +16,7 @@ using namespace DiFfRG;
 TEMPLATE_TEST_CASE_SIG("Test momentum + angle integrals", "[integration][quadrature]", ((int dim), dim), (2), (3), (4),
                        (5))
 {
-  DiFfRG::Initialize();
+  DiFfRG::Init();
 
   auto check = [](auto execution_space, auto type) {
     using NT = std::decay_t<decltype(type)>;
@@ -39,7 +39,8 @@ TEMPLATE_TEST_CASE_SIG("Test momentum + angle integrals", "[integration][quadrat
     const uint size = GENERATE(32, 64, 128);
 
     QuadratureProvider quadrature_provider;
-    Integrator_p2_1ang<dim, NT, PolyIntegrand<2, NT>, CPU_exec> integrator(quadrature_provider, {size, 8}, x_extent);
+    Integrator_p2_1ang<dim, NT, PolyIntegrand<2, NT>, ExecutionSpace> integrator(quadrature_provider, {size, 8},
+                                                                                 x_extent);
 
     SECTION("Volume integral")
     {
@@ -54,9 +55,9 @@ TEMPLATE_TEST_CASE_SIG("Test momentum + angle integrals", "[integration][quadrat
 
       const ctype expected_precision =
           Kokkos::max(1e-14,                                                         // machine precision
-              1e-6                                                           // precision for worst quadrature
-                  / pow((ctype)size, 1.5)                                    // adjust for quadrature size
-                  * (dim % 2 == 1 ? pow(1e7, 1. / sqrt((ctype)dim)) : 1e-14) // adjust for odd dimensions
+                      1e-6                                                           // precision for worst quadrature
+                          / pow((ctype)size, 1.5)                                    // adjust for quadrature size
+                          * (dim % 2 == 1 ? pow(1e7, 1. / sqrt((ctype)dim)) : 1e-14) // adjust for odd dimensions
           );
       const ctype rel_err = t_abs((integral - reference_integral) / reference_integral);
       if (rel_err >= expected_precision) {
@@ -111,8 +112,10 @@ TEMPLATE_TEST_CASE_SIG("Test momentum + angle integrals", "[integration][quadrat
     }
   };
 
-  // Check on CPU
-  SECTION("CPU") { check(CPU_exec(), (double)0); }
+  // Check on TBB
+  SECTION("TBB") { check(TBB_exec(), (double)0); }
+  // Check on OpenMP
+  SECTION("OpenMP") { check(OpenMP_exec(), (double)0); }
   // Check on GPU
   SECTION("GPU") { check(GPU_exec(), (double)0); }
 }

@@ -2,12 +2,12 @@
   "physical": {
     "Lambda": 0.65,
     "N": 2.0,
-    "m2": -0.2,
+    "m2": -0.1,
     "lambda": 71.6,
     "T": 5e-2
   },
   "integration": {
-    "x_quadrature_order": 32,
+    "x_order": 32,
     "angle_quadrature_order": 8,
     "x0_quadrature_order": 16,
     "x0_summands": 8,
@@ -21,10 +21,9 @@
   "discretization": {
     "fe_order": 4,
     "threads": 8,
-    "batch_size": 16,
+    "batch_size": 8,
     "overintegration": 0,
     "output_subdivisions": 2,
-
     "EoM_abs_tol": 1e-14,
     "EoM_max_iter": 200,
     "grid": {
@@ -60,7 +59,7 @@
     }
   },
   "output": {
-    "verbosity": 1,
+    "verbosity": 10000,
     "folder": "./",
     "name": "output"
   }

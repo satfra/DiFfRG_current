@@ -11,11 +11,11 @@
 
 namespace DiFfRG
 {
-  class Initialize
+  class Init
   {
   public:
-    Initialize(int argc, char *argv[], const std::string parameter_file = "parameter.json");
-    Initialize(const std::string parameter_file = "parameter.json");
+    Init(int argc, char *argv[], const std::string parameter_file = "parameter.json");
+    Init(const std::string parameter_file = "parameter.json");
 
     const ConfigurationHelper get_configuration_helper() const;
 

@@ -1,7 +1,7 @@
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 
-#include <DiFfRG/common/initialize.hh>
+#include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/physics/interpolation.hh>
@@ -12,7 +12,7 @@ TEMPLATE_TEST_CASE("Test 1D spline interpolation", "[float][double][complex][aut
                    autodiff::real)
 {
   using T = TestType;
-  DiFfRG::Initialize();
+  DiFfRG::Init();
 
   using ctype = typename get_type::ctype<T>;
 
@@ -49,7 +49,7 @@ TEMPLATE_TEST_CASE("Test 1D spline interpolation", "[float][double][complex][aut
 TEMPLATE_TEST_CASE_SIG("Test 1D interpolation GPU", "[float][double][complex][autodiff]", ((typename T), T), float,
                        double, complex<double>, complex<float>, autodiff::real)
 {
-  DiFfRG::Initialize();
+  DiFfRG::Init();
 
   using ctype = typename get_type::ctype<T>;
 

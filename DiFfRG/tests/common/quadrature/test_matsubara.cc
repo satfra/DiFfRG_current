@@ -2,14 +2,14 @@
 #include <catch2/catch_all.hpp>
 #include <catch2/catch_approx.hpp>
 
-#include <DiFfRG/common/initialize.hh>
+#include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/quadrature/matsubara.hh>
 
 using namespace DiFfRG;
 
 TEST_CASE("Test matsubara quadrature rule", "[double][quadrature][matsubara]")
 {
-  DiFfRG::Initialize();
+  DiFfRG::Init();
 
   SECTION("Simple test")
   {

@@ -1,7 +1,7 @@
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 
-#include <DiFfRG/common/initialize.hh>
+#include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/polynomials.hh>
 #include <DiFfRG/physics/integration/finiteT/quadrature_integrator_fT.hh>
@@ -17,7 +17,7 @@ using namespace DiFfRG;
 TEMPLATE_TEST_CASE_SIG("Test finite temperature quadrature integrals", "[integration][quadrature]", ((int dim), dim),
                        (0), (1), (2), (3), (4))
 {
-  DiFfRG::Initialize();
+  DiFfRG::Init();
 
   auto check = [](auto execution_space, auto type) {
     using NT = std::decay_t<decltype(type)>;
@@ -41,7 +41,7 @@ TEMPLATE_TEST_CASE_SIG("Test finite temperature quadrature integrals", "[integra
     std::array<uint, dim> grid_size;
     std::array<QuadratureType, dim> quad_type;
 
-    for (uint d = 0; d < dim; ++d) {
+    for (int d = 0; d < dim; ++d) {
       ext_min[d] = GENERATE(take(1, random(-2., -1.)));
       ext_max[d] = GENERATE(take(1, random(1., 2.)));
       grid_size[d] = d == 0 ? 32 : 16;
@@ -61,12 +61,12 @@ TEMPLATE_TEST_CASE_SIG("Test finite temperature quadrature integrals", "[integra
       integrator.set_typical_E(val);
 
       NT reference_integral = 1;
-      for (uint d = 0; d < dim; ++d)
+      for (int d = 0; d < dim; ++d)
         reference_integral *= (ext_max[d] - ext_min[d]);
       reference_integral /= std::tanh(val / (2. * T)) * 2. * val; // sum
 
       std::array<NT, 4 * (dim + 1)> coeffs{};
-      for (uint d = 0; d < dim; ++d)
+      for (int d = 0; d < dim; ++d)
         coeffs[4 * d] = 1;
       coeffs[4 * dim] = powr<2>(val);
       coeffs[4 * dim + 2] = powr<2>(1);
@@ -88,12 +88,12 @@ TEMPLATE_TEST_CASE_SIG("Test finite temperature quadrature integrals", "[integra
       integrator.set_typical_E(val);
 
       NT reference_integral = 1;
-      for (uint d = 0; d < dim; ++d)
+      for (int d = 0; d < dim; ++d)
         reference_integral *= (ext_max[d] - ext_min[d]);
       reference_integral /= std::tanh(val / (2. * T)) * 2. * val; // sum
 
       std::array<NT, 4 * (dim + 1)> coeffs{};
-      for (uint d = 0; d < dim; ++d)
+      for (int d = 0; d < dim; ++d)
         coeffs[4 * d] = 1;
       coeffs[4 * dim] = powr<2>(val);
       coeffs[4 * dim + 2] = powr<2>(1);
@@ -119,8 +119,10 @@ TEMPLATE_TEST_CASE_SIG("Test finite temperature quadrature integrals", "[integra
     };
   };
 
-  // Check on CPU
-  SECTION("CPU") { check(CPU_exec(), (double)0); }
+  // Check on TBB
+  SECTION("TBB") { check(TBB_exec(), (double)0); }
+  // Check on OpenMP
+  SECTION("OpenMP") { check(OpenMP_exec(), (double)0); }
   // Check on GPU
   SECTION("GPU") { check(GPU_exec(), (double)0); }
 }

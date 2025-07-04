@@ -4,7 +4,7 @@ set(DiFfRG_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/configuration_helper.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/csv_reader.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/external_data_interpolator.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/initialize.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/init.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/interpolation.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/json.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/math.cc

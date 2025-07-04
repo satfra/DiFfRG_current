@@ -28,6 +28,8 @@ else()
   set(BASE_DIR ${DiFfRG_BASE_DIR})
 endif()
 
+set(CMAKE_PREFIX_PATH "${BUNDLED_DIR};${BUNDLED_DIR}/lib;${CMAKE_PREFIX_PATH}")
+
 link_directories(${BUNDLED_DIR}/lib/)
 include_directories(SYSTEM ${BUNDLED_DIR}/include)
 
@@ -153,6 +155,14 @@ function(setup_target TARGET)
   if(${DiFfRG_MPI})
     target_link_libraries(${TARGET} PUBLIC MPI::MPI_CXX)
     target_compile_definitions(${TARGET} PUBLIC HAVE_MPI)
+  endif()
+
+  if(NOT ${CMAKE_BUILD_TYPE} STREQUAL Debug)
+    target_compile_options(
+      ${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-march=native -ffast-math
+                       -ffp-contract=fast -fno-finite-math-only >)
+    target_compile_options(${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:
+                                            --use_fast_math>)
   endif()
 
   target_compile_definitions(${TARGET} PUBLIC _HAS_AUTO_PTR_ETC=0)

@@ -2,7 +2,7 @@
 #include "DiFfRG/common/json.hh"
 #include <DiFfRG/common/quadrature/quadrature_provider.hh>
 
-#include <DiFfRG/common/initialize.hh>
+#include <DiFfRG/common/init.hh>
 
 // external
 #include <spdlog/spdlog.h>
@@ -204,8 +204,7 @@ namespace DiFfRG
 
   QuadratureProvider::QuadratureProvider()
   {
-    if (!DiFfRG::Initialize::is_initialized())
-      throw std::runtime_error("QuadratureProvider: DiFfRG is not initialized.");
+    if (!DiFfRG::Init::is_initialized()) throw std::runtime_error("QuadratureProvider: DiFfRG is not initialized.");
 
     verbosity = -1;
     matsubara_storage.set_verbosity(verbosity);
@@ -214,8 +213,7 @@ namespace DiFfRG
 
   QuadratureProvider::QuadratureProvider(const JSONValue &json)
   {
-    if (!DiFfRG::Initialize::is_initialized())
-      throw std::runtime_error("QuadratureProvider: DiFfRG is not initialized.");
+    if (!DiFfRG::Init::is_initialized()) throw std::runtime_error("QuadratureProvider: DiFfRG is not initialized.");
 
     verbosity = json.get_int("/output/verbosity", 0);
     std::string folder = json.get_string("/output/folder", "./");

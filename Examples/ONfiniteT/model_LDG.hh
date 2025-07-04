@@ -51,7 +51,7 @@ public:
 
 protected:
   const Parameters prm;
-  mutable ON_finiteTFlowEquations flow_equations;
+  mutable ONFiniteTFlows flow_equations;
 
   // ----------------------------------------------------------------------------------------------------
   // initialization
@@ -60,7 +60,6 @@ public:
   ON_finiteT(const JSONValue &json) : def::fRG(json.get_double("/physical/Lambda")), prm(json), flow_equations(json)
   {
     flow_equations.set_k(Lambda);
-    flow_equations.print_parameters("log");
 
     // We notify the assembler, that the (1,0) LDG function depends on the (0,0) LDG function.
     this->components().add_dependency(1, 0, 0, 0);
@@ -97,7 +96,7 @@ public:
     const auto m2Pi = fe_functions[idxf("u")];
     const auto m2Sigma = fe_functions[idxf("u")] + 2. * rho * fe_derivatives[idxl("du")];
 
-    flux[idxf("u")][0] = flow_equations.V_integrator.get<NT>(k, prm.N, prm.T, rho, m2Pi, m2Sigma);
+    flow_equations.V.get<NT>(flux[idxf("u")][0], k, prm.N, prm.T, m2Pi, m2Sigma);
   }
 
   template <uint submodel, typename NT, typename Variables>

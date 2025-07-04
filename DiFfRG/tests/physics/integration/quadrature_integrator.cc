@@ -2,7 +2,7 @@
 #include <catch2/catch_all.hpp>
 
 #include "boilerplate/poly_integrand.hh"
-#include <DiFfRG/common/initialize.hh>
+#include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/polynomials.hh>
 #include <DiFfRG/physics/integration/quadrature_integrator.hh>
@@ -13,7 +13,7 @@ using namespace DiFfRG;
 TEMPLATE_TEST_CASE_SIG("Test ND quadrature integrals", "[integration][quadrature]", ((int dim), dim), (1), (2), (3),
                        (4), (5))
 {
-  DiFfRG::Initialize();
+  DiFfRG::Init();
 
   auto check = [](auto execution_space, auto type) {
     using NT = std::decay_t<decltype(type)>;
@@ -133,18 +133,25 @@ TEMPLATE_TEST_CASE_SIG("Test ND quadrature integrals", "[integration][quadrature
       CHECK(rel_err < expected_precision<ctype>::value);
     }
   };
-  SECTION("CPU integrals")
+  SECTION("OpenMP integrals")
   {
-    check(CPU_exec(), (double)0);
-    check(CPU_exec(), (complex<double>)0);
-    check(CPU_exec(), (float)0);
-    check(CPU_exec(), (autodiff::real)0);
+    check(OpenMP_exec(), (double)0);
+    check(OpenMP_exec(), (complex<double>)0);
+    check(OpenMP_exec(), (float)0);
+    check(OpenMP_exec(), (autodiff::real)0);
+  };
+  SECTION("TBB integrals")
+  {
+    check(TBB_exec(), (double)0);
+    check(TBB_exec(), (complex<double>)0);
+    check(TBB_exec(), (float)0);
+    check(TBB_exec(), (autodiff::real)0);
   };
   SECTION("GPU integrals")
   {
     check(GPU_exec(), (double)0);
     check(GPU_exec(), (complex<double>)0);
     check(GPU_exec(), (float)0);
-    check(CPU_exec(), (autodiff::real)0);
+    check(GPU_exec(), (autodiff::real)0);
   };
 }

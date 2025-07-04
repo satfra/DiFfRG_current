@@ -1,55 +1,38 @@
 #pragma once
 
-template <typename REG> class V_kernel;
-#include "../def.hh"
+#include "DiFfRG/physics/integration.hh"
+#include "DiFfRG/physics/interpolation.hh"
+#include "DiFfRG/physics/physics.hh"
 
-#include <future>
-#include <memory>
+#include "./kernel.hh"
 
-namespace DiFfRG
+class V_integrator
 {
-  namespace Flows
+public:
+  V_integrator(DiFfRG::QuadratureProvider &quadrature_provider, const DiFfRG::JSONValue &json);
+
+  template <typename NT = double> void get(NT &dest, auto &&...t)
   {
-    class V_integrator
-    {
-    public:
-      V_integrator(QuadratureProvider &quadrature_provider, std::array<uint, 1> grid_sizes, const double x_extent, const JSONValue &json);
-      V_integrator(const V_integrator &other);
-      ~V_integrator();
+    static_assert(std::is_same_v<NT, double> || std::is_same_v<NT, autodiff::real>,
+                  "Unknown type requested of V_integrator::get");
+    if constexpr (std::is_same_v<NT, double>)
+      get_CT(dest, std::forward<decltype(t)>(t)...);
+    else if constexpr (std::is_same_v<NT, autodiff::real>)
+      get_AD(dest, std::forward<decltype(t)>(t)...);
+  }
 
-      template <typename NT, typename... T> std::future<NT> request(T &&...t)
-      {
-        static_assert(std::is_same_v<NT, double> || std::is_same_v<NT, autodiff::real>, "Unknown type requested of V_integrator::request");
-        if constexpr (std::is_same_v<NT, double>)
-          return request_CT(std::forward<T>(t)...);
-        else if constexpr (std::is_same_v<NT, autodiff::real>)
-          return request_AD(std::forward<T>(t)...);
-      }
+  using Regulator = DiFfRG::PolynomialExpRegulator<>;
 
-      template <typename NT, typename... T> NT get(T &&...t)
-      {
-        static_assert(std::is_same_v<NT, double> || std::is_same_v<NT, autodiff::real>, "Unknown type requested of V_integrator::request");
-        if constexpr (std::is_same_v<NT, double>)
-          return get_CT(std::forward<T>(t)...);
-        else if constexpr (std::is_same_v<NT, autodiff::real>)
-          return get_AD(std::forward<T>(t)...);
-      }
+  DiFfRG::Integrator_p2<3, double, V_kernel<Regulator>, DiFfRG::TBB_exec> integrator;
 
-    private:
-      std::future<double> request_CT(const double k, const double N, const double T, const double rhoPhi, const double m2Pi, const double m2Sigma);
-      double get_CT(const double k, const double N, const double T, const double rhoPhi, const double m2Pi, const double m2Sigma);
-      std::future<autodiff::real> request_AD(const double k, const double N, const double T, const double rhoPhi, const autodiff::real m2Pi, const autodiff::real m2Sigma);
-      autodiff::real get_AD(const double k, const double N, const double T, const double rhoPhi, const autodiff::real m2Pi, const autodiff::real m2Sigma);
+  DiFfRG::Integrator_p2<3, autodiff::real, V_kernel<Regulator>, DiFfRG::TBB_exec> integrator_AD;
 
-      QuadratureProvider &quadrature_provider;
-      const std::array<uint, 1> grid_sizes;
-      std::array<uint, 1> jac_grid_sizes;
-      const double x_extent;
-      const double jacobian_quadrature_factor;
-      const JSONValue json;
+private:
+  void get_CT(double &dest, const double &k, const double &N, const double &T, const double &m2Pi,
+              const double &m2Sigma);
 
-      std::unique_ptr<DiFfRG::IntegratorTBB<3, double, V_kernel<__REGULATOR__>>> integrator;
-      std::unique_ptr<DiFfRG::IntegratorTBB<3, autodiff::real, V_kernel<__REGULATOR__>>> integrator_AD;
-    };
-  } // namespace Flows
-} // namespace DiFfRG
+  void get_AD(autodiff::real &dest, const double &k, const double &N, const double &T, const autodiff::real &m2Pi,
+              const autodiff::real &m2Sigma);
+
+  DiFfRG::QuadratureProvider &quadrature_provider;
+};

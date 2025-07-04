@@ -655,20 +655,20 @@ namespace DiFfRG
 
     template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RF(const NT1 k2, const NT2 q2)
     {
-      using std::sqrt;
+      using Kokkos::sqrt;
       return sqrt(RB(k2, q2) + q2) - sqrt(q2);
     }
 
     template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RFdot(const NT1 k2, const NT2 q2)
     {
-      using std::sqrt;
+      using Kokkos::sqrt;
       using T = decltype(k2 * q2);
       return T(0.5) * RBdot(k2, q2) / sqrt(RB(k2, q2) + q2);
     }
 
     template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto dq2RF(const NT1 k2, const NT2 q2)
     {
-      using std::sqrt;
+      using Kokkos::sqrt;
       const auto q = sqrt(q2);
       return (-1 + q * (1 + dq2RB(k2, q2)) / (q + RF(k2, q2))) / (2 * q);
     }

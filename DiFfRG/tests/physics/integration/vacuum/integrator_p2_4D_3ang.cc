@@ -1,7 +1,7 @@
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 
-#include <DiFfRG/common/initialize.hh>
+#include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/polynomials.hh>
 #include <DiFfRG/physics/integration/vacuum/integrator_p2_4D_3ang.hh>
 
@@ -11,7 +11,7 @@ using namespace DiFfRG;
 
 TEST_CASE("Test 4D momentum + 2 angle integrals", "[integration][quadrature]")
 {
-  DiFfRG::Initialize();
+  DiFfRG::Init();
 
   auto check = [](auto execution_space, auto type) {
     using NT = std::decay_t<decltype(type)>;
@@ -34,8 +34,8 @@ TEST_CASE("Test 4D momentum + 2 angle integrals", "[integration][quadrature]")
 
     const ctype x_extent = GENERATE(take(1, random(1., 2.)));
     QuadratureProvider quadrature_provider;
-    Integrator_p2_4D_3ang<NT, PolyIntegrand<4, NT>, CPU_exec> integrator(quadrature_provider, {64, 24, 24, 24},
-                                                                         x_extent);
+    Integrator_p2_4D_3ang<NT, PolyIntegrand<4, NT>, ExecutionSpace> integrator(quadrature_provider, {64, 24, 24, 24},
+                                                                               x_extent);
 
     SECTION("Volume integral")
     {
@@ -116,6 +116,10 @@ TEST_CASE("Test 4D momentum + 2 angle integrals", "[integration][quadrature]")
     }
   };
 
-  SECTION("CPU") { check(CPU_exec{}, double{}); }
-  SECTION("GPU") { check(GPU_exec{}, double{}); }
+  // Check on TBB
+  SECTION("TBB") { check(TBB_exec(), (double)0); }
+  // Check on OpenMP
+  SECTION("OpenMP") { check(OpenMP_exec(), (double)0); }
+  // Check on GPU
+  SECTION("GPU") { check(GPU_exec(), (double)0); }
 }

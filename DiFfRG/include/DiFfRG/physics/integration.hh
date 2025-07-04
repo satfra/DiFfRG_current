@@ -19,3 +19,12 @@
 #include <DiFfRG/physics/integration/lattice/integrator_lat_2D.hh>
 #include <DiFfRG/physics/integration/lattice/integrator_lat_3D.hh>
 #include <DiFfRG/physics/integration/lattice/integrator_lat_4D.hh>
+
+namespace DiFfRG
+{
+  template <typename T>
+  concept has_set_k = requires(T t, double k) { t.set_k(k); };
+
+  template <typename T>
+  concept has_integrator_AD = requires(T t) { t.integrator_AD; };
+} // namespace DiFfRG

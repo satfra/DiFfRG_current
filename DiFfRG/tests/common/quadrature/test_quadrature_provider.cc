@@ -1,16 +1,15 @@
-#include "DiFfRG/common/initialize.hh"
 #include "catch2/catch_test_macros.hpp"
 #include <catch2/catch_all.hpp>
 #include <catch2/catch_approx.hpp>
 
-#include <DiFfRG/common/initialize.hh>
+#include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/quadrature/quadrature_provider.hh>
 
 using namespace DiFfRG;
 
 TEST_CASE("Test quadrature provider", "[double][quadrature]")
 {
-  DiFfRG::Initialize();
+  DiFfRG::Init();
 
   const double T = GENERATE(take(1, random(0.1, 1.0)));
   const double start_k = GENERATE(take(1, random(1.0, 100.0)));

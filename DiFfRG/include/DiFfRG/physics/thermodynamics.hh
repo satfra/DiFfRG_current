@@ -9,17 +9,22 @@
 
 namespace DiFfRG
 {
-  using Kokkos::cosh, Kokkos::sinh, Kokkos::tanh, Kokkos::exp, Kokkos::expm1;
 
   // ----------------------------------------------------------------------------------------------------
   // For convenience, all hyperbolic functions
   // ----------------------------------------------------------------------------------------------------
-  template <typename T> auto KOKKOS_FORCEINLINE_FUNCTION Cosh(const T x) { return cosh(x); }
-  template <typename T> auto KOKKOS_FORCEINLINE_FUNCTION Sinh(const T x) { return sinh(x); }
-  template <typename T> auto KOKKOS_FORCEINLINE_FUNCTION Tanh(const T x) { return tanh(x); }
-  template <typename T> auto KOKKOS_FORCEINLINE_FUNCTION Coth(const T x) { return 1. / tanh(x); }
-  template <typename T> auto KOKKOS_FORCEINLINE_FUNCTION Sech(const T x) { return 1. / cosh(x); }
-  template <typename T> auto KOKKOS_FORCEINLINE_FUNCTION Csch(const T x) { return 1. / sinh(x); }
+  namespace internal
+  {
+    using Kokkos::cosh, Kokkos::sinh, Kokkos::tanh, Kokkos::exp, Kokkos::expm1;
+    template <typename T> auto KOKKOS_FORCEINLINE_FUNCTION Cosh(const T x) { return cosh(x); }
+    template <typename T> auto KOKKOS_FORCEINLINE_FUNCTION Sinh(const T x) { return sinh(x); }
+    template <typename T> auto KOKKOS_FORCEINLINE_FUNCTION Tanh(const T x) { return tanh(x); }
+    template <typename T> auto KOKKOS_FORCEINLINE_FUNCTION Coth(const T x) { return 1. / tanh(x); }
+    template <typename T> auto KOKKOS_FORCEINLINE_FUNCTION Sech(const T x) { return 1. / cosh(x); }
+    template <typename T> auto KOKKOS_FORCEINLINE_FUNCTION Csch(const T x) { return 1. / sinh(x); }
+  } // namespace internal
+
+  using internal::Cosh, internal::Sinh, internal::Tanh, internal::Coth, internal::Sech, internal::Csch;
 
   // ----------------------------------------------------------------------------------------------------
   // Finite temperature hyperbolic functions
@@ -62,12 +67,12 @@ namespace DiFfRG
   // coth(e/2T)
   template <typename T1, typename T2> auto KOKKOS_FORCEINLINE_FUNCTION cothS(const T1 e, const T2 T)
   {
-    return 1. / tanh(e / (T * 2.));
+    return Coth(e / (T * 2.));
   }
   // d/de cothS
   template <typename T1, typename T2> auto KOKKOS_FORCEINLINE_FUNCTION dcothS(const T1 e, const T2 T)
   {
-    return -1. / powr<2>(sinh(e / (T * 2.))) / (2. * T);
+    return -1. / powr<2>(Sinh(e / (T * 2.))) / (2. * T);
   }
   // d^2/de^2 cothS
   template <typename T1, typename T2> auto KOKKOS_FORCEINLINE_FUNCTION ddcothS(const T1 e, const T2 T)
@@ -82,12 +87,12 @@ namespace DiFfRG
   // tanh(e/2T)
   template <typename T1, typename T2> auto KOKKOS_FORCEINLINE_FUNCTION tanhS(const T1 e, const T2 T)
   {
-    return tanh(e / (T * 2.));
+    return Tanh(e / (T * 2.));
   }
   // d/de tanhS
   template <typename T1, typename T2> auto KOKKOS_FORCEINLINE_FUNCTION dtanhS(const T1 e, const T2 T)
   {
-    return 1. / powr<2>(cosh(e / (T * 2.))) / (2. * T);
+    return 1. / powr<2>(Cosh(e / (T * 2.))) / (2. * T);
   }
   // d^2/de^2 tanhS
   template <typename T1, typename T2> auto KOKKOS_FORCEINLINE_FUNCTION ddtanhS(const T1 e, const T2 T)
@@ -97,12 +102,12 @@ namespace DiFfRG
   // sech(e/2T)
   template <typename T1, typename T2> auto KOKKOS_FORCEINLINE_FUNCTION sechS(const T1 e, const T2 T)
   {
-    return 1. / cosh(e / (T * 2.));
+    return 1. / Cosh(e / (T * 2.));
   }
   // csch(e/2T)
   template <typename T1, typename T2> auto KOKKOS_FORCEINLINE_FUNCTION cschS(const T1 e, const T2 T)
   {
-    return 1. / sinh(e / (T * 2.));
+    return 1. / Sinh(e / (T * 2.));
   }
 
   // ----------------------------------------------------------------------------------------------------
@@ -111,26 +116,31 @@ namespace DiFfRG
   // Bosonic distribution
   template <typename T1, typename T2> auto KOKKOS_FORCEINLINE_FUNCTION nB(const T1 e, const T2 T)
   {
+    using Kokkos::cosh, Kokkos::sinh, Kokkos::tanh, Kokkos::exp, Kokkos::expm1;
     return 1. / expm1(e / T);
   }
   // Derivative d/de of the bosonic distribution
   template <typename T1, typename T2> auto KOKKOS_FORCEINLINE_FUNCTION dnB(const T1 e, const T2 T)
   {
+    using Kokkos::cosh, Kokkos::sinh, Kokkos::tanh, Kokkos::exp, Kokkos::expm1;
     return -exp(e / T) / powr<2>(expm1(e / T)) / T;
   }
   // Derivative d²/de² of the bosonic distribution
   template <typename T1, typename T2> auto KOKKOS_FORCEINLINE_FUNCTION ddnB(const T1 e, const T2 T)
   {
+    using Kokkos::cosh, Kokkos::sinh, Kokkos::tanh, Kokkos::exp, Kokkos::expm1;
     return exp(e / T) * (1. + exp(e / T)) / powr<3>(expm1(e / T)) / powr<2>(T);
   }
   // Fermionic distribution
   template <typename T1, typename T2> auto KOKKOS_FORCEINLINE_FUNCTION nF(const T1 e, const T2 T)
   {
+    using Kokkos::cosh, Kokkos::sinh, Kokkos::tanh, Kokkos::exp, Kokkos::expm1;
     return 1. / (exp(e / T) + 1.);
   }
   // Derivative d/de of the fermionic distribution
   template <typename T1, typename T2> auto KOKKOS_FORCEINLINE_FUNCTION dnF(const T1 e, const T2 T)
   {
+    using Kokkos::cosh, Kokkos::sinh, Kokkos::tanh, Kokkos::exp, Kokkos::expm1;
     return -exp(e / T) / powr<2>(exp(e / T) + 1.) / T;
   }
 } // namespace DiFfRG

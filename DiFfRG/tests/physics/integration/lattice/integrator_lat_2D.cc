@@ -3,7 +3,7 @@
 #include <catch2/catch_all.hpp>
 
 #include "../boilerplate/poly_integrand.hh"
-#include <DiFfRG/common/initialize.hh>
+#include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/polynomials.hh>
 #include <DiFfRG/physics/integration/lattice/integrator_lat_2D.hh>
@@ -15,7 +15,7 @@ TEMPLATE_TEST_CASE("Test 2D lattice integrals on host", "[lattice][double][float
 {
   using T = TestType;
 
-  DiFfRG::Initialize();
+  DiFfRG::Init();
 
   using ctype = typename get_type::ctype<T>;
 
@@ -25,7 +25,7 @@ TEMPLATE_TEST_CASE("Test 2D lattice integrals on host", "[lattice][double][float
   const uint size1 = GENERATE(16, 32, 64, 128);
   const bool q0_symmetric = GENERATE(false, true);
 
-  IntegratorLat2D<T, PolyIntegrand<2, T>, CPU_exec> integrator({{size0, size1}}, {{a0, a1}}, q0_symmetric);
+  IntegratorLat2D<T, PolyIntegrand<2, T>, OpenMP_exec> integrator({{size0, size1}}, {{a0, a1}}, q0_symmetric);
 
   SECTION("Volume integral")
   {

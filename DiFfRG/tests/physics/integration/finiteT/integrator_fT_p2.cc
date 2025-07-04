@@ -1,7 +1,7 @@
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 
-#include <DiFfRG/common/initialize.hh>
+#include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/polynomials.hh>
 #include <DiFfRG/physics/integration/finiteT/integrator_fT_p2.hh>
@@ -17,7 +17,7 @@ using namespace DiFfRG;
 TEMPLATE_TEST_CASE_SIG("Test finite temperature momentum integrals", "[integration][quadrature]", ((int dim), dim), (2),
                        (3), (4))
 {
-  DiFfRG::Initialize();
+  DiFfRG::Init();
 
   auto check = [](auto execution_space, auto type) {
     using NT = std::decay_t<decltype(type)>;
@@ -99,8 +99,10 @@ TEMPLATE_TEST_CASE_SIG("Test finite temperature momentum integrals", "[integrati
     };
   };
 
-  // Check on CPU
-  SECTION("CPU") { check(CPU_exec(), (double)0); }
+  // Check on TBB
+  SECTION("TBB") { check(TBB_exec(), (double)0); }
+  // Check on OpenMP
+  SECTION("OpenMP") { check(OpenMP_exec(), (double)0); }
   // Check on GPU
   SECTION("GPU") { check(GPU_exec(), (double)0); }
 }

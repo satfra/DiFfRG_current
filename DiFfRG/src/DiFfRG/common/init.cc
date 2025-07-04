@@ -1,4 +1,4 @@
-#include <DiFfRG/common/initialize.hh>
+#include <DiFfRG/common/init.hh>
 
 // DiFfRG
 #include <DiFfRG/common/configuration_helper.hh>
@@ -10,11 +10,11 @@
 
 namespace DiFfRG
 {
-  bool Initialize::initialized = false;
+  bool Init::initialized = false;
 
-  dealii::Utilities::MPI::MPI_InitFinalize *Initialize::mpi_initialization = nullptr;
+  dealii::Utilities::MPI::MPI_InitFinalize *Init::mpi_initialization = nullptr;
 
-  Initialize::Initialize(int argc, char *argv[], const std::string parameter_file)
+  Init::Init(int argc, char *argv[], const std::string parameter_file)
       : argc(argc), argv(argv), parameter_file(parameter_file)
   {
     if (!initialized) {
@@ -25,14 +25,14 @@ namespace DiFfRG
       std::atexit([]() {
         if (initialized) {
           Kokkos::finalize();
-          delete Initialize::mpi_initialization;
+          delete Init::mpi_initialization;
           initialized = false;
         }
       });
     }
   }
 
-  Initialize::Initialize(const std::string parameter_file) : argc(0), argv(nullptr), parameter_file(parameter_file)
+  Init::Init(const std::string parameter_file) : argc(0), argv(nullptr), parameter_file(parameter_file)
   {
     if (!initialized) {
       mpi_initialization = new dealii::Utilities::MPI::MPI_InitFinalize(argc, argv, 1);
@@ -49,11 +49,11 @@ namespace DiFfRG
     }
   }
 
-  const ConfigurationHelper Initialize::get_configuration_helper() const
+  const ConfigurationHelper Init::get_configuration_helper() const
   {
     ConfigurationHelper configuration_helper(argc, argv, parameter_file);
     return configuration_helper;
   }
 
-  bool Initialize::is_initialized() { return initialized; }
+  bool Init::is_initialized() { return initialized; }
 } // namespace DiFfRG

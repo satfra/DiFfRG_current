@@ -3,7 +3,7 @@
 #include <catch2/catch_all.hpp>
 #include <catch2/catch_approx.hpp>
 
-#include <DiFfRG/common/initialize.hh>
+#include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/quadrature/gauss_legendre.hh>
 #include <DiFfRG/common/quadrature/quadrature.hh>
 
@@ -37,7 +37,7 @@ TEMPLATE_TEST_CASE_SIG("Test correct creation of quadrature rules at example of 
 TEMPLATE_TEST_CASE_SIG("Test the quadrature class at the example of Gauss-Legendre", "[double][quadrature]",
                        ((size_t order), order), (4), (8), (16), (32), (64), (128))
 {
-  DiFfRG::Initialize();
+  DiFfRG::Init();
 
   const Quadrature<double> q(order, QuadratureType::legendre);
 

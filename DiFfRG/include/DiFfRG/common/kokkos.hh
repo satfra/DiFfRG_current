@@ -5,20 +5,37 @@
 
 namespace DiFfRG
 {
+  /**
+   * @brief This execution space is optimal when used in conjunction with the FE discretizations.
+   *
+   */
+  struct TBB_ExecutionSpace {
+    using memory_space = Kokkos::DefaultHostExecutionSpace::memory_space;
+    void fence() const {}
+  };
+
   class ExecutionSpaces
   {
   public:
     using GPU_exec_space = Kokkos::DefaultExecutionSpace;
     using GPU_memory_space = GPU_exec_space::memory_space;
 
-    using CPU_exec_space = Kokkos::DefaultHostExecutionSpace;
-    using CPU_memory_space = CPU_exec_space::memory_space;
+    using OpenMP_exec_space = Kokkos::DefaultHostExecutionSpace;
+    using OpenMP_memory_space = OpenMP_exec_space::memory_space;
+
+    using TBB_exec_space = TBB_ExecutionSpace;
+    using TBB_memory_space = TBB_exec_space::memory_space;
   };
 
   using GPU_memory = ExecutionSpaces::GPU_memory_space;
-  using CPU_memory = ExecutionSpaces::CPU_memory_space;
+  using OpenMP_memory = ExecutionSpaces::OpenMP_memory_space;
+  using TBB_memory = ExecutionSpaces::TBB_memory_space;
+
+  using CPU_memory = Kokkos::DefaultHostExecutionSpace::memory_space;
+
   using GPU_exec = ExecutionSpaces::GPU_exec_space;
-  using CPU_exec = ExecutionSpaces::CPU_exec_space;
+  using OpenMP_exec = ExecutionSpaces::OpenMP_exec_space;
+  using TBB_exec = ExecutionSpaces::TBB_exec_space;
 
   /**
    * @brief An extension of the Kokkos::Sum reducer that adds a constant value to the result.

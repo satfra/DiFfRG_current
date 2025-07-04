@@ -3,7 +3,7 @@
 #include <catch2/catch_all.hpp>
 
 #include "../boilerplate/poly_integrand.hh"
-#include <DiFfRG/common/initialize.hh>
+#include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/polynomials.hh>
 #include <DiFfRG/physics/integration/lattice/integrator_lat_1D.hh>
@@ -15,7 +15,7 @@ TEMPLATE_TEST_CASE("Test 1D lattice integrals on host", "[lattice][double][float
 {
   using T = TestType;
 
-  DiFfRG::Initialize();
+  DiFfRG::Init();
 
   using ctype = typename get_type::ctype<T>;
 
@@ -23,7 +23,7 @@ TEMPLATE_TEST_CASE("Test 1D lattice integrals on host", "[lattice][double][float
   const uint size = GENERATE(16, 32, 64, 128, 256);
   const bool q0_symmetric = GENERATE(false, true);
 
-  IntegratorLat1D<T, PolyIntegrand<1, T>, CPU_exec> integrator({{size}}, {{a}}, q0_symmetric);
+  IntegratorLat1D<T, PolyIntegrand<1, T>, OpenMP_exec> integrator({{size}}, {{a}}, q0_symmetric);
 
   SECTION("Volume integral")
   {
@@ -44,7 +44,7 @@ TEMPLATE_TEST_CASE("Test 1D lattice integrals on host", "[lattice][double][float
 /*
 TEST_CASE("Test 1D device integrals", "[double][gpu][integration][quadrature]")
 {
-  DiFfRG::Initialize();
+  DiFfRG::Init();
 
   const double x_min = GENERATE(take(2, random(-2., -1.)));
   const double x_max = GENERATE(take(2, random(1., 2.)));
@@ -102,14 +102,14 @@ TEST_CASE("Test 1D device integrals", "[double][gpu][integration][quadrature]")
 
 TEST_CASE("Test 1D host integrals", "[double][cpu][integration][quadrature]")
 {
-  DiFfRG::Initialize();
+  DiFfRG::Init();
 
   const double x_min = GENERATE(take(2, random(-2., -1.)));
   const double x_max = GENERATE(take(2, random(1., 2.)));
   const uint size = GENERATE(16, 32, 64, 128, 256);
 
   QuadratureProvider quadrature_provider;
-  Integrator1D<double, PolyIntegrand, CPU_exec> integrator(quadrature_provider, {size}, {x_min}, {x_max});
+  Integrator1D<double, PolyIntegrand, OpenMP_exec> integrator(quadrature_provider, {size}, {x_min}, {x_max});
 
   SECTION("Volume integral")
   {

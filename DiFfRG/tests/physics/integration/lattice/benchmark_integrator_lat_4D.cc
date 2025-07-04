@@ -3,17 +3,17 @@
 #include <catch2/catch_all.hpp>
 
 #include "../boilerplate/poly_integrand.hh"
-#include <DiFfRG/common/initialize.hh>
+#include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/polynomials.hh>
-#include <DiFfRG/physics/integration/lattice/integrator_lat_4D.hh>
 #include <DiFfRG/physics/integration/lattice/integrator_lat_3D.hh>
+#include <DiFfRG/physics/integration/lattice/integrator_lat_4D.hh>
 
 using namespace DiFfRG;
 
 TEST_CASE("Benchmark 4D lattice cpu momentum integrals", "[integration][lattice integration]")
 {
-  DiFfRG::Initialize();
+  DiFfRG::Init();
 
   using ctype = double;
   using T = double;
@@ -35,7 +35,7 @@ TEST_CASE("Benchmark 4D lattice cpu momentum integrals", "[integration][lattice 
       constexpr uint isize = powr<i>(2);
 
       {
-        IntegratorLat4D<T, PolyIntegrand<4, T>, CPU_exec> integrator({{isize, isize}}, {{a0, a1}}, true);
+        IntegratorLat4D<T, PolyIntegrand<4, T>, OpenMP_exec> integrator({{isize, isize}}, {{a0, a1}}, true);
         Kokkos::View<double *, CPU_memory> integral_view("cpu_integral_results", rsize);
 
         BENCHMARK_ADVANCED("OPT host isize=" + std::to_string(isize) +
@@ -58,7 +58,7 @@ TEST_CASE("Benchmark 4D lattice cpu momentum integrals", "[integration][lattice 
 
 TEST_CASE("Benchmark 3D lattice cpu momentum integrals", "[integration][lattice integration][3D]")
 {
-  DiFfRG::Initialize();
+  DiFfRG::Init();
 
   using ctype = double;
   using T = double;
@@ -80,7 +80,7 @@ TEST_CASE("Benchmark 3D lattice cpu momentum integrals", "[integration][lattice 
       constexpr uint isize = powr<i>(2);
 
       {
-        IntegratorLat3D<T, PolyIntegrand<3, T>, CPU_exec> integrator({{isize, isize}}, {{a0, a1}}, true);
+        IntegratorLat3D<T, PolyIntegrand<3, T>, OpenMP_exec> integrator({{isize, isize}}, {{a0, a1}}, true);
         Kokkos::View<double *, CPU_memory> integral_view("cpu_integral_results", rsize);
 
         BENCHMARK_ADVANCED("OPT host isize=" + std::to_string(isize) +

@@ -2,7 +2,7 @@
 #include <catch2/catch_all.hpp>
 
 #include "boilerplate/poly_integrand.hh"
-#include <DiFfRG/common/initialize.hh>
+#include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/polynomials.hh>
 #include <DiFfRG/physics/integration/quadrature_integrator.hh>
@@ -12,7 +12,7 @@ using namespace DiFfRG;
 
 TEST_CASE("Test distributed integration", "[integration][quadrature]")
 {
-  DiFfRG::Initialize();
+  DiFfRG::Init();
 
   constexpr int dim = 2;
 
@@ -70,6 +70,8 @@ TEST_CASE("Test distributed integration", "[integration][quadrature]")
 
       if (DiFfRG::MPI::size(MPI_COMM_WORLD) > 1) {
         DiFfRG::NodeDistribution node_distribution(MPI_COMM_WORLD, {rsize / 2, rsize - rsize / 2}, {0, 1});
+        DiFfRG::IntegrationLoadBalancer integrator_load_balancer(MPI_COMM_WORLD);
+
         integrator.set_node_distribution(node_distribution);
         std::apply([&](auto... coeffs) { integrator.map(integral_view.data(), coordinates, coeffs...).fence(); },
                    coeffs);
@@ -103,15 +105,20 @@ TEST_CASE("Test distributed integration", "[integration][quadrature]")
                              abs(coordinates.forward(i) + reference_integral)
                       << "| type: " << typeid(type).name() << "| i: " << i << std::endl;
           }
-          // CHECK(rel_err < 10 * expected_precision<ctype>::value);
+          CHECK(rel_err < 10 * expected_precision<ctype>::value);
         }
       }
     };
   };
-  SECTION("CPU integrals")
+  SECTION("TBB integrals")
   {
-    check(CPU_exec(), (double)0);
-    check(CPU_exec(), (float)0);
+    check(TBB_exec(), (double)0);
+    check(TBB_exec(), (float)0);
+  };
+  SECTION("OpenMP integrals")
+  {
+    check(OpenMP_exec(), (double)0);
+    check(OpenMP_exec(), (float)0);
   };
   SECTION("GPU integrals")
   {
