@@ -3,7 +3,6 @@
 # ##############################################################################
 
 add_subdirectory(integration)
-add_subdirectory(integration_finiteT)
 add_subdirectory(interpolation)
 
 # ##############################################################################

@@ -5,22 +5,55 @@
 # We need to find the bundle directory, which contains several external
 # dependencies
 if(${CMAKE_PROJECT_NAME} STREQUAL "DiFfRG")
+  if(NOT DEFINED ENABLE_MPI)
+    find_package(MPI QUIET)
+    if(MPI_FOUND)
+      set(ENABLE_MPI
+          ON
+          CACHE BOOL "Enable MPI support")
+    else()
+      set(ENABLE_MPI
+          OFF
+          CACHE BOOL "Enable MPI support")
+    endif()
+  endif()
+
   # If we are building DiFfRG as a standalone project, we need to set the base
   # directory
   set(BASE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-  if(NOT DEFINED BUNDLED_DIR)
-    set(BUNDLED_DIR ${BASE_DIR}/../external)
-  endif()
+  set(DiFfRG_MPI ${ENABLE_MPI})
 else()
   # If we are building a DiFfRG-based project, we need to set the bundle
   # directory relative to the DiFfRG base directory
   set(BASE_DIR ${DiFfRG_BASE_DIR})
-  set(BUNDLED_DIR ${BASE_DIR}/bundled)
 endif()
-message(STATUS "DiFfRG include directory: ${BASE_DIR}/include")
 
-# No matter what we are building, we need to set the include directory
-# include_directories(${BASE_DIR}/include)
+set(CMAKE_PREFIX_PATH "${BUNDLED_DIR};${BUNDLED_DIR}/lib;${CMAKE_PREFIX_PATH}")
+
+link_directories(${BUNDLED_DIR}/lib/)
+include_directories(SYSTEM ${BUNDLED_DIR}/include)
+
+message(STATUS "DiFfRG include directory: ${BASE_DIR}/include")
+message(STATUS "DiFfRG bundle directory: ${BUNDLED_DIR}")
+message(STATUS "MPI support has been set to ${DiFfRG_MPI}")
+
+# ##############################################################################
+# Set standard and language
+# ##############################################################################
+
+set(CMAKE_CXX_STANDARD_REQUIRED On)
+if(NOT DEFINED CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 20)
+else()
+  if(CMAKE_CXX_STANDARD LESS 20)
+    message(FATAL_ERROR "C++ standard must be at least 20")
+  endif()
+endif()
+
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+set(CMAKE_CXX_EXTENSIONS OFF)
+enable_language(CXX)
 
 # By default, we build in Release mode, i.e. if the user does not make any other
 # choice. After all, even if the user is unaware of cmake build types, we want
@@ -30,343 +63,107 @@ if(NOT DEFINED CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "")
   message(STATUS "Build type not set, defaulting to Release")
 endif()
 
-# Set some C++ compiler flags if they are not specified by the user. We simply
-# propagate the base library flags to the user's project in that case.
-if(NOT DEFINED CMAKE_CXX_FLAGS OR CMAKE_CXX_FLAGS STREQUAL "")
-  set(CMAKE_CXX_FLAGS "${DiFfRG_CXX_FLAGS}")
-  message(STATUS "CXX flags not set, defaulting to ${CMAKE_CXX_FLAGS}")
-else()
-  message(STATUS "CXX flags have been set to ${CMAKE_CXX_FLAGS}")
-endif()
-
-# CUDA flags are slightly more problematic, as we need them to be compatible
-# with the ones used in the base library. Here, we always fix some flags that
-# could lead to incompatibilities, and then add the user's flags. Also, by
-# default, we use the highest instruction set available on the current machine.
-if(NOT DEFINED CMAKE_CUDA_FLAGS OR CMAKE_CUDA_FLAGS STREQUAL "")
-  set(CMAKE_CUDA_FLAGS
-      "-arch=native --use_fast_math --split-compile=0 --threads=0 --gen-opt-lto"
-  )
-
-  message(STATUS "CUDA flags not set, defaulting to ${CMAKE_CUDA_FLAGS}")
-else()
-  set(CMAKE_CUDA_FLAGS
-      "--split-compile=0 --threads=0 --gen-opt-lto --use_fast_math")
-
-  # check if CMAKE_CUDA_FLAGS contains the arch keyword (i.e. the user has set
-  # what architecture to use). If it does not, set it to the native.
-  if(NOT CMAKE_CUDA_FLAGS MATCHES "-arch")
-    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -arch=native")
-  endif()
-
-  message(STATUS "CUDA flags have been set to ${CMAKE_CUDA_FLAGS}")
-endif()
-
-if(${CMAKE_PROJECT_NAME} STREQUAL "DiFfRG")
-  # By default, enable interprocedural optimization if it is supported.
-  if(NOT DEFINED CMAKE_INTERPROCEDURAL_OPTIMIZATION)
-    include(CheckIPOSupported)
-    check_ipo_supported(RESULT ipo_supported OUTPUT error)
-
-    if(ipo_supported)
-      set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
-      message(
-        STATUS
-          "Interprocedural optimization enabled. To disable, set CMAKE_INTERPROCEDURAL_OPTIMIZATION to FALSE."
-      )
-    else()
-      set(CMAKE_INTERPROCEDURAL_OPTIMIZATION FALSE)
-    endif()
-  endif()
-endif()
-
-message(STATUS "Bundle directory: ${BUNDLED_DIR}")
-
-# If CPM_SOURCE_CACHE is set to OFF, we set it to the default cache directory
-if("${CPM_SOURCE_CACHE}" STREQUAL "OFF" OR NOT DEFINED CPM_SOURCE_CACHE)
-  set(CPM_SOURCE_CACHE $ENV{HOME}/.cache/CPM)
-endif()
-message(STATUS "CPM source cache directory: ${CPM_SOURCE_CACHE}")
-
-# Get CPM for package management
-list(APPEND CMAKE_MODULE_PATH "${BASE_DIR}/cmake")
-include(${BASE_DIR}/cmake/CPM.cmake)
-
 # ##############################################################################
-# Set standard and language
+# Direct external dependencies
 # ##############################################################################
-
-if(NOT DEFINED CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 20)
-else()
-  if(CMAKE_CXX_STANDARD LESS 20)
-    message(FATAL_ERROR "C++ standard must be at least 20")
-  endif()
-endif()
-
-set(CMAKE_CXX_STANDARD_REQUIRED On)
-enable_language(CXX)
-
-# ##############################################################################
-# Find packages
-# ##############################################################################
-
-# Use CCACHE if not set
-if(NOT DEFINED USE_CCACHE)
-  set(USE_CCACHE ON)
-endif()
-# Add CCache.cmake for faster builds
-cpmaddpackage(NAME Ccache.cmake GITHUB_REPOSITORY TheLartians/Ccache.cmake
-              VERSION 1.2)
 
 # Find deal.II
-find_package(deal.II 9.5.0 REQUIRED HINTS ${DEAL_II_DIR}
-             ${BUNDLED_DIR}/dealii_install)
+find_package(deal.II 9.4.2 QUIET REQUIRED HINTS ${BUNDLED_DIR})
 deal_ii_initialize_cached_variables()
+message(STATUS "Found deal.II in  ${deal.II_DIR}")
+# deal.II link dir
 
 # Find TBB
-find_package(TBB 2022.0.0 REQUIRED HINTS ${BUNDLED_DIR}/oneTBB_install)
-message(STATUS "TBB dir: ${TBB_DIR}")
+find_package(TBB 2022.0.0 REQUIRED HINTS ${BUNDLED_DIR})
+message(STATUS "Found TBB in ${TBB_DIR}")
+
+# Find Kokkos
+find_package(Kokkos REQUIRED HINTS ${BUNDLED_DIR})
+message(STATUS "Found Kokkos in ${Kokkos_DIR}")
 
 # Find Boost
-find_package(Boost 1.80 REQUIRED HINTS ${BUNDLED_DIR}/boost_install
-             COMPONENTS thread random iostreams math serialization system)
+find_package(
+  Boost 1.81 REQUIRED HINTS ${BUNDLED_DIR}/ ${BUNDLED_DIR}/boost_install/lib/
+  COMPONENTS thread iostreams serialization system)
 message(STATUS "Boost version: ${Boost_VERSION}")
 message(STATUS "Boost include dir: ${Boost_INCLUDE_DIRS}")
 message(STATUS "Boost libraries: ${Boost_LIBRARIES}")
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 
-# Find Eigen3
-cpmaddpackage(
-  NAME
-  Eigen3
-  VERSION
-  3.4.0
-  URL
-  https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz
-  # Eigen's CMakelists are not intended for library use
-  DOWNLOAD_ONLY
-  YES)
-if(Eigen3_ADDED)
-  add_library(Eigen3 INTERFACE IMPORTED)
-  target_include_directories(Eigen3 INTERFACE ${Eigen3_SOURCE_DIR})
-  add_library(Eigen3::Eigen ALIAS Eigen3)
+# Other dependencies
+find_package(Eigen3 3.4.0 REQUIRED HINTS ${BUNDLED_DIR})
+find_package(GSL REQUIRED)
+find_package(autodiff 1.1.0 REQUIRED HINTS ${BUNDLED_DIR})
+find_package(spdlog 1.14.1 REQUIRED HINTS ${BUNDLED_DIR})
+
+if(${DiFfRG_MPI})
+  find_package(MPI REQUIRED)
 endif()
 
-# Find GSL
-find_package(GSL)
-if(NOT GSL_FOUND)
-  cpmfindpackage(
-    NAME
-    gsl
-    GITHUB_REPOSITORY
-    ampl/gsl
-    VERSION
-    2.5.0
-    OPTIONS
-    "GSL_DISABLE_TESTS 1"
-    "DOCUMENTATION OFF")
-  add_library(GSL::gsl ALIAS gsl)
-else()
-  message(STATUS "GSL found: ${GSL_INCLUDE_DIR}")
-endif()
+# ##############################################################################
+# Convenience functions
+# ##############################################################################
 
-# Find rapidcsv
-cpmaddpackage(
-  NAME
-  rapidcsv
-  GITHUB_REPOSITORY
-  d99kris/rapidcsv
-  VERSION
-  8.84
-  DOWNLOAD_ONLY
-  YES)
-include_directories(SYSTEM ${rapidcsv_SOURCE_DIR}/src)
+# We redefine the deal_ii_setup_target function here such that we can choose
+# precisely how to propagate flags and other details
+function(setup_dealii TARGET)
+  target_link_libraries(${TARGET} PUBLIC deal_II)
+  target_link_libraries(${TARGET} INTERFACE deal_II)
+  target_include_directories(${TARGET} SYSTEM PUBLIC ${DEAL_II_INCLUDE_DIRS})
 
-# Find thread-pool
-cpmaddpackage(
-  NAME
-  thread-pool
-  GITHUB_REPOSITORY
-  bshoshany/thread-pool
-  VERSION
-  5.0.0
-  DOWNLOAD_ONLY
-  YES)
-include_directories(SYSTEM ${thread-pool_SOURCE_DIR}/include)
-
-# Check if CUDA is available
-if(NOT DEFINED USE_CUDA)
-  set(USE_CUDA ON)
-endif()
-
-if(DEFINED DiFfRG_USE_CUDA)
-  if(DiFfRG_USE_CUDA)
-    if(NOT USE_CUDA)
-      message(
-        WARNING "Trying to force CUDA on, as DiFfRG has been built with CUDA")
-    endif()
-    set(USE_CUDA ON)
-  else()
-    if(USE_CUDA)
-      message(WARNING "Forcing CUDA off, as DiFfRG has been built without CUDA")
-    endif()
-    set(USE_CUDA OFF)
+  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(_build "DEBUG")
+  elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(_build "RELEASE")
   endif()
-endif()
 
-include(CheckLanguage)
-check_language(CUDA)
-if(USE_CUDA AND CMAKE_CUDA_COMPILER)
-  enable_language(CUDA)
+  set(_cflags "${DEAL_II_CXX_FLAGS} ${DEAL_II_CXX_FLAGS_${_build}}")
+  # remove c++20 flag and O2 flag - CMake adds them automatically and we thus
+  # avoid the nvcc_wrapper warnings
+  string(REPLACE "-std=c++20" "" _cflags ${_cflags})
+  string(REPLACE "-O2" "" _cflags ${_cflags})
+  separate_arguments(_cflags)
+  target_compile_options(${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:${_cflags}>)
 
-  set(CUDA_NVCC_FLAGS
-      -Xcudafe
-      "--diag_suppress=20208 --diag_suppress=20012"
-      -lineinfo
-      --default-stream
-      per-thread
-      --expt-relaxed-constexpr
-      --generate-line-info
-      -O3
-      -rdc=true
-      ${CUDA_NVCC_FLAGS}
-      $ENV{CUDA_NVCC_FLAGS})
-  message(STATUS "flags for CUDA: ${CUDA_NVCC_FLAGS}")
-
-  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-  set(CMAKE_CUDA_SEPARABLE_COMPILATION ON)
-  set(CMAKE_CUDA_RESOLVE_DEVICE_SYMBOLS ON)
-
-  function(setup_target TARGET)
-    deal_ii_setup_target(${TARGET})
-
-    target_compile_definitions(${TARGET} PUBLIC USE_CUDA)
-
-    set_target_properties(${TARGET} PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
-    set_target_properties(${TARGET} PROPERTIES POSITION_INDEPENDENT_CODE ON)
-    set_target_properties(${TARGET} PROPERTIES CUDA_RESOLVE_DEVICE_SYMBOLS ON)
-
-    target_compile_options(
-      ${TARGET} PRIVATE "$<$<COMPILE_LANGUAGE:CUDA>:${CUDA_NVCC_FLAGS}>")
-    target_compile_options(${TARGET} PRIVATE -Wno-misleading-indentation)
-
-    # Check if the target is DiFfRG
-    if(${TARGET} STREQUAL "DiFfRG")
-      target_include_directories(${TARGET} PUBLIC ${autodiff_SOURCE_DIR})
-    else()
-      target_link_libraries(${TARGET} autodiff::autodiff)
-    endif()
-
-    target_link_libraries(${TARGET} GSL::gsl)
-    target_link_libraries(${TARGET} Eigen3)
-    target_link_libraries(${TARGET} spdlog::spdlog)
-    target_link_libraries(${TARGET} rmm::rmm)
-    target_link_libraries(${TARGET} ${Boost_LIBRARIES})
-    target_link_libraries(${TARGET} TBB::tbb)
-  endfunction()
-
-  message(STATUS "CUDA support enabled.")
-else()
-  set(USE_CUDA OFF)
-  function(setup_target TARGET)
-    deal_ii_setup_target(${TARGET})
-
-    set_target_properties(${TARGET} PROPERTIES LINKER_LANGUAGE CXX)
-    set_target_properties(${TARGET} PROPERTIES POSITION_INDEPENDENT_CODE ON)
-
-    target_compile_options(${TARGET} PRIVATE -Wno-misleading-indentation)
-
-    # Check if the target is DiFfRG
-    if(${TARGET} STREQUAL "DiFfRG")
-      target_include_directories(${TARGET} PUBLIC ${autodiff_SOURCE_DIR})
-    else()
-      target_link_libraries(${TARGET} autodiff::autodiff)
-    endif()
-
-    target_link_libraries(${TARGET} GSL::gsl)
-    target_link_libraries(${TARGET} Eigen3)
-    target_link_libraries(${TARGET} TBB::tbb)
-    target_link_libraries(${TARGET} spdlog::spdlog)
-    target_link_libraries(${TARGET} ${Boost_LIBRARIES})
-  endfunction()
-
-  message(STATUS "CUDA support disabled.")
-endif()
-
-# Find autodiff
-cpmaddpackage(
-  NAME
-  autodiff
-  GITHUB_REPOSITORY
-  autodiff/autodiff
-  GIT_TAG
-  v1.1.0
-  PATCHES
-  "autodiff.patch"
-  OPTIONS
-  "AUTODIFF_BUILD_TESTS OFF"
-  "AUTODIFF_BUILD_EXAMPLES OFF"
-  "AUTODIFF_BUILD_DOCS OFF"
-  "AUTODIFF_BUILD_PYTHON OFF"
-  "Eigen3_DIR ${Eigen3_BINARY_DIR}")
-
-# This is for spdlog usage. We need to hide the local spdlog installation,
-# otherwise we will have problems with the linking process.
-set(CMAKE_DISABLE_FIND_PACKAGE_spdlog TRUE)
-
-if(USE_CUDA)
-  cpmaddpackage(NAME CCCL GITHUB_REPOSITORY "nvidia/cccl" GIT_TAG "v2.7.0")
-
-  cpmaddpackage(
-    NAME
-    rmm
-    VERSION
-    25.02.00a
-    GITHUB_REPOSITORY
-    rapidsai/rmm
-    SYSTEM
-    Off
-    OPTIONS
-    "BUILD_TESTS OFF")
-endif()
-
-cpmaddpackage(
-  NAME
-  spdlog
-  GITHUB_REPOSITORY
-  gabime/spdlog
-  VERSION
-  1.14.1
-  OPTIONS
-  "CMAKE_BUILD_TYPE Release"
-  "SPDLOG_INSTALL ON")
-
-# ##############################################################################
-# Helper functions
-# ##############################################################################
-
-function(setup_application TARGET)
-  setup_target(${TARGET})
-  target_link_libraries(${TARGET} DiFfRG::DiFfRG)
-  target_compile_options(${TARGET} PRIVATE -Wno-unused-parameter)
+  set(_lflags "${DEAL_II_LINKER_FLAGS} ${DEAL_II_LINKER_FLAGS_${_build}}")
+  separate_arguments(_lflags)
+  target_link_options(${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:${_lflags}>)
 endfunction()
 
-# Keep track of the flow folders to avoid adding the same folder multiple times
-set(FLOW_FOLDERS "")
+function(setup_target TARGET)
+  setup_dealii(${TARGET})
 
-function(add_flows TARGET DIRECTORY)
-  # If the folder is not already in the list, add it
-  if(NOT "${FLOW_FOLDERS}" IN_LIST "${DIRECTORY}")
-    list(APPEND FLOW_FOLDERS ${DIRECTORY})
-    add_subdirectory(${DIRECTORY})
+  # Check if the target is DiFfRG
+  if(${TARGET} STREQUAL "DiFfRG")
+    target_include_directories(${TARGET} PRIVATE ${autodiff_SOURCE_DIR})
+  else()
+    target_link_libraries(${TARGET} PUBLIC autodiff::autodiff)
   endif()
 
-  # Add the flow sources to the target
-  target_sources(${TARGET} PUBLIC ${flow_sources})
+  # Do not warn about missing braces
+  target_compile_options(${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:
+                                          -Wno-missing-braces>)
 
-  # Make the list of flow folders available to the parent scope
-  set(${FLOW_FOLDERS}
-      "${${FLOW_FOLDERS}}"
-      PARENT_SCOPE)
+  target_link_libraries(${TARGET} PUBLIC GSL::gsl)
+  target_link_libraries(${TARGET} PUBLIC Eigen3)
+  target_link_libraries(${TARGET} PUBLIC spdlog::spdlog)
+  target_link_libraries(${TARGET} PUBLIC ${Boost_LIBRARIES})
+  target_link_libraries(${TARGET} PUBLIC TBB::tbb)
+  target_link_libraries(${TARGET} PUBLIC Kokkos::kokkos)
+  target_link_libraries(${TARGET} PUBLIC petsc)
+
+  if(${DiFfRG_MPI})
+    target_link_libraries(${TARGET} PUBLIC MPI::MPI_CXX)
+    target_compile_definitions(${TARGET} PUBLIC HAVE_MPI)
+  endif()
+
+  if(NOT ${CMAKE_BUILD_TYPE} STREQUAL Debug)
+    target_compile_options(
+      ${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-march=native -ffast-math
+                       -ffp-contract=fast -fno-finite-math-only >)
+    target_compile_options(${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:
+                                            --use_fast_math>)
+  endif()
+
+  target_compile_definitions(${TARGET} PUBLIC _HAS_AUTO_PTR_ETC=0)
 endfunction()

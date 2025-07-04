@@ -134,6 +134,8 @@ namespace DiFfRG
       output_step(y_eigen, step_time);
     }
 
+    spdlog::get("log")->info("TimeStepperBoostABM::run: finished after {} steps", step);
+
     eigen_to_dealii(y_eigen, initial_data);
   }
 
@@ -238,6 +240,8 @@ namespace DiFfRG
       step_time += cur_dt;
       output_step(y_eigen, step_time);
     }
+
+    spdlog::get("log")->info("TimeStepperBoostABM::run: finished after {} steps", step);
 
     eigen_to_dealii(y_eigen, initial_data);
   }

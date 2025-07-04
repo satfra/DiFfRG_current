@@ -16,7 +16,7 @@ namespace DiFfRG
     {
       static constexpr auto Pi = M_PI;
       static constexpr auto Pi2 = Pi * Pi;
-      using std::sqrt, std::pow;
+      using Kokkos::sqrt, Kokkos::pow;
 
       template <int nb, typename NT> NT B(const NT &mb2, const double &k, const double &T)
       {

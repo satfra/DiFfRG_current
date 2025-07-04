@@ -1,6 +1,9 @@
+bin/
+build/
 DiFfRG_install/
 DiFfRG_build/
 DiFfRG_debug/
+.idea/
 profile/
 .ipynb_checkpoints
 *.pvd

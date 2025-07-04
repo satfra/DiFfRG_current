@@ -1,11 +1,7 @@
 #pragma once
 
-// standard library
-#include <cmath>
-#include <stdexcept>
-
 // DiFfRG
-#include <DiFfRG/common/cuda_prefix.hh>
+#include <DiFfRG/common/kokkos.hh>
 
 namespace DiFfRG
 {
@@ -30,7 +26,7 @@ namespace DiFfRG
      * @param x grid coordinate
      * @return NumberType physical coordinate
      */
-    Idx __forceinline__ __device__ __host__ forward(const Idx x) const { return x + start; }
+    Idx KOKKOS_FORCEINLINE_FUNCTION forward(const Idx x) const { return x + start; }
 
     /**
      * @brief Transform from the physical space to the grid
@@ -38,7 +34,7 @@ namespace DiFfRG
      * @param y physical coordinate
      * @return double grid coordinate
      */
-    Idx __forceinline__ __device__ __host__ backward(const Idx y) const { return y - start; }
+    Idx KOKKOS_FORCEINLINE_FUNCTION backward(const Idx y) const { return y - start; }
 
     uint size() const { return m_size; }
 
@@ -73,7 +69,7 @@ namespace DiFfRG
      * @param x grid coordinate
      * @return NumberType physical coordinate
      */
-    NT __forceinline__ __device__ __host__ forward(const Idx &x) const { return NT(x + start) * 2. * M_PI * T; }
+    NT KOKKOS_FORCEINLINE_FUNCTION forward(const Idx &x) const { return NT(x + start) * 2. * M_PI * T; }
 
     /**
      * @brief Transform from the physical space to the grid
@@ -81,10 +77,7 @@ namespace DiFfRG
      * @param y physical coordinate
      * @return double grid coordinate
      */
-    Idx __forceinline__ __device__ __host__ backward(const NT &y) const
-    {
-      return Idx(std::round(y / (2. * M_PI * T))) - start;
-    }
+    Idx KOKKOS_FORCEINLINE_FUNCTION backward(const NT &y) const { return Idx(std::round(y / (2. * M_PI * T))) - start; }
 
     uint size() const { return m_size; }
 
@@ -120,7 +113,7 @@ namespace DiFfRG
      * @param x grid coordinate
      * @return NumberType physical coordinate
      */
-    NT __forceinline__ __device__ __host__ forward(const Idx &x) const { return (NT(x + start) + 0.5) * 2. * M_PI * T; }
+    NT KOKKOS_FORCEINLINE_FUNCTION forward(const Idx &x) const { return (NT(x + start) + 0.5) * 2. * M_PI * T; }
 
     /**
      * @brief Transform from the physical space to the grid
@@ -128,7 +121,7 @@ namespace DiFfRG
      * @param y physical coordinate
      * @return double grid coordinate
      */
-    Idx __forceinline__ __device__ __host__ backward(const NT &y) const
+    Idx KOKKOS_FORCEINLINE_FUNCTION backward(const NT &y) const
     {
       return Idx(std::round((y - M_PI * T) / (2. * M_PI * T))) - start;
     }

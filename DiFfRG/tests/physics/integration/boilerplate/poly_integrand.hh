@@ -1,0 +1,132 @@
+#pragma once
+
+#include <DiFfRG/common/kokkos.hh>
+#include <DiFfRG/common/math.hh>
+#include <DiFfRG/common/types.hh>
+
+template <typename T> struct expected_precision {
+  static constexpr T value = 1e-9;
+};
+template <> struct expected_precision<float> {
+  static constexpr float value = 2e-3;
+};
+template <> struct expected_precision<double> {
+  static constexpr double value = 1e-10;
+};
+
+template <int dim, typename T, int inv = 1> class PolyIntegrand
+{
+};
+
+template <typename T, int inv> class PolyIntegrand<1, T, inv>
+{
+public:
+  using ctype = typename DiFfRG::get_type::ctype<T>;
+  static KOKKOS_INLINE_FUNCTION auto kernel(const ctype q, const T /*c*/, const T x0, const T x1, const T x2,
+                                            const T x3)
+  {
+    using DiFfRG::powr;
+    return powr<inv>(x0 + x1 * powr<1>(q) + x2 * powr<2>(q) + x3 * powr<3>(q));
+  }
+
+  static KOKKOS_INLINE_FUNCTION auto constant(const T c, const T /*x0*/, const T /*x1*/, const T /*x2*/, const T /*x3*/)
+  {
+    return c;
+  }
+};
+
+template <typename T, int inv> class PolyIntegrand<2, T, inv>
+{
+public:
+  using ctype = typename DiFfRG::get_type::ctype<T>;
+  static KOKKOS_INLINE_FUNCTION auto kernel(const ctype qx, const ctype qy, const T /*c*/, const T x0, const T x1,
+                                            const T x2, const T x3, const T y0, const T y1, const T y2, const T y3)
+  {
+    using DiFfRG::powr;
+    return (x0 + x1 * powr<1>(qx) + x2 * powr<2>(qx) + x3 * powr<3>(qx)) *
+           powr<inv>(y0 + y1 * powr<1>(qy) + y2 * powr<2>(qy) + y3 * powr<3>(qy));
+  }
+
+  static KOKKOS_INLINE_FUNCTION auto constant(const T c, const T /*x0*/, const T /*x1*/, const T /*x2*/, const T /*x3*/,
+                                              const T /*y0*/, const T /*y1*/, const T /*y2*/, const T /*y3*/)
+  {
+    return c;
+  }
+};
+
+template <typename T, int inv> class PolyIntegrand<3, T, inv>
+{
+public:
+  using ctype = typename DiFfRG::get_type::ctype<T>;
+  static KOKKOS_FORCEINLINE_FUNCTION auto kernel(const ctype qx, const ctype qy, const ctype qz, const T /*c*/,
+                                                 const T x0, const T x1, const T x2, const T x3, const T y0, const T y1,
+                                                 const T y2, const T y3, const T z0, const T z1, const T z2, const T z3)
+  {
+    using DiFfRG::powr;
+    return (x0 + x1 * powr<1>(qx) + x2 * powr<2>(qx) + x3 * powr<3>(qx)) *
+           (y0 + y1 * powr<1>(qy) + y2 * powr<2>(qy) + y3 * powr<3>(qy)) *
+           powr<inv>(z0 + z1 * powr<1>(qz) + z2 * powr<2>(qz) + z3 * powr<3>(qz));
+  }
+
+  static KOKKOS_FORCEINLINE_FUNCTION auto constant(const T c, const T /*x0*/, const T /*x1*/, const T /*x2*/,
+                                                   const T /*x3*/, const T /*y0*/, const T /*y1*/, const T /*y2*/,
+                                                   const T /*y3*/, const T /*z0*/, const T /*z1*/, const T /*z2*/,
+                                                   const T /*z3*/)
+  {
+    return c;
+  }
+};
+
+template <typename T, int inv> class PolyIntegrand<4, T, inv>
+{
+public:
+  using ctype = typename DiFfRG::get_type::ctype<T>;
+  static KOKKOS_FORCEINLINE_FUNCTION auto kernel(const ctype qx, const ctype qy, const ctype qz, const ctype qw,
+                                                 const T /*c*/, const T x0, const T x1, const T x2, const T x3,
+                                                 const T y0, const T y1, const T y2, const T y3, const T z0, const T z1,
+                                                 const T z2, const T z3, const T w0, const T w1, const T w2, const T w3)
+  {
+    using DiFfRG::powr;
+    return (x0 + x1 * powr<1>(qx) + x2 * powr<2>(qx) + x3 * powr<3>(qx)) *
+           (y0 + y1 * powr<1>(qy) + y2 * powr<2>(qy) + y3 * powr<3>(qy)) *
+           (z0 + z1 * powr<1>(qz) + z2 * powr<2>(qz) + z3 * powr<3>(qz)) *
+           powr<inv>(w0 + w1 * powr<1>(qw) + w2 * powr<2>(qw) + w3 * powr<3>(qw));
+  }
+
+  static KOKKOS_FORCEINLINE_FUNCTION auto constant(const T c, const T /*x0*/, const T /*x1*/, const T /*x2*/,
+                                                   const T /*x3*/, const T /*y0*/, const T /*y1*/, const T /*y2*/,
+                                                   const T /*y3*/, const T /*z0*/, const T /*z1*/, const T /*z2*/,
+                                                   const T /*z3*/, const T /*w0*/, const T /*w1*/, const T /*w2*/,
+                                                   const T /*w3*/)
+  {
+    return c;
+  }
+};
+
+template <typename T, int inv> class PolyIntegrand<5, T, inv>
+{
+public:
+  using ctype = typename DiFfRG::get_type::ctype<T>;
+  static KOKKOS_FORCEINLINE_FUNCTION auto kernel(const ctype qx, const ctype qy, const ctype qz, const ctype qw,
+                                                 const ctype qv, const T /*c*/, const T x0, const T x1, const T x2,
+                                                 const T x3, const T y0, const T y1, const T y2, const T y3, const T z0,
+                                                 const T z1, const T z2, const T z3, const T w0, const T w1, const T w2,
+                                                 const T w3, const T v0, const T v1, const T v2, const T v3)
+  {
+    using DiFfRG::powr;
+    return (x0 + x1 * powr<1>(qx) + x2 * powr<2>(qx) + x3 * powr<3>(qx)) *
+           (y0 + y1 * powr<1>(qy) + y2 * powr<2>(qy) + y3 * powr<3>(qy)) *
+           (z0 + z1 * powr<1>(qz) + z2 * powr<2>(qz) + z3 * powr<3>(qz)) *
+           (w0 + w1 * powr<1>(qw) + w2 * powr<2>(qw) + w3 * powr<3>(qw)) *
+           powr<inv>(v0 + v1 * powr<1>(qv) + v2 * powr<2>(qv) + v3 * powr<3>(qv));
+  }
+  static KOKKOS_FORCEINLINE_FUNCTION auto constant(const T c, const T /*x0*/, const T /*x1*/, const T /*x2*/,
+                                                   const T /*x3*/, const T /*y0*/, const T /*y1*/, const T /*y2*/,
+                                                   const T /*y3*/, const T /*z0*/, const T /*z1*/, const T /*z2*/,
+                                                   const T /*z3*/, const T /*w0*/, const T /*w1*/, const T /*w2*/,
+                                                   const T /*w3*/, const T /*v0*/, const T /*v1*/, const T /*v2*/,
+                                                   const T /*v3*/)
+  {
+    return c;
+  }
+};

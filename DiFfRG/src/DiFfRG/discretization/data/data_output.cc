@@ -118,8 +118,6 @@ namespace DiFfRG
   {
   }
 
-  FEOutput<0, Vector<double>> &DataOutput<0, Vector<double>>::fe_output() { return fe_out; }
-
   CsvOutput &DataOutput<0, Vector<double>>::csv_file(const std::string &name)
   {
     const auto obj = this->csv_files.find(name);
@@ -139,7 +137,6 @@ namespace DiFfRG
     time_values.push_back(time);
     k_values.push_back(std::exp(-time) * Lambda);
 
-    fe_out.flush(time);
     for (auto &csv : csv_files)
       csv.second.flush(time);
   }

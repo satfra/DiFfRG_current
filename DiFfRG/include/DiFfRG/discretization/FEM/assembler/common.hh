@@ -42,13 +42,14 @@ namespace DiFfRG
 
     template <typename... T> static constexpr auto v_tie(T &&...t)
     {
-      return named_tuple<std::tuple<T &...>, "variables", "extractors">(std::tie(t...));
+      return named_tuple<std::tuple<T &...>, StringSet<"variables", "extractors">>(std::tie(t...));
     }
 
     template <typename... T> static constexpr auto e_tie(T &&...t)
     {
-      return named_tuple<std::tuple<T &...>, "fe_functions", "fe_derivatives", "fe_hessians", "extractors",
-                         "variables">(std::tie(t...));
+      return named_tuple<std::tuple<T &...>,
+                         StringSet<"fe_functions", "fe_derivatives", "fe_hessians", "extractors", "variables">>(
+          std::tie(t...));
     }
 
   public:
@@ -189,7 +190,7 @@ namespace DiFfRG
 
         outputter(data_out, EoM, e_tie(solution[0], solution_grad[0], solution_hess[0], extracted_data, variables));
       };
-      model.template readouts_multiple(helper, data_out);
+      model.readouts_multiple(helper, data_out);
     }
 
     void extract(std::array<NumberType, Components::count_extractors()> &data, const VectorType &solution_global,
@@ -226,7 +227,7 @@ namespace DiFfRG
       fe_v.get_function_gradients(solution_global, solution_grad);
       fe_v.get_function_hessians(solution_global, solution_hess);
 
-      model.template extract(data, EoM, e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables));
+      model.extract(data, EoM, e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables));
     }
 
     bool jacobian_extractors(FullMatrix<NumberType> &extractor_jacobian, const VectorType &solution_global,

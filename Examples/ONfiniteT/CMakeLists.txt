@@ -1,27 +1,23 @@
 cmake_minimum_required(VERSION 3.27.0)
 
-project(ONfiniteT LANGUAGES CXX)
+project(ONfiniteT)
 
 # ##############################################################################
 # Setup Application
 # ##############################################################################
 
-if(NOT DEFINED DiFfRG_DIR)
-  set(DiFfRG_DIR /opt/DiFfRG)
-endif()
-# find_package(DiFfRG REQUIRED HINTS ${DiFfRG_DIR})
-find_package(DiFfRG REQUIRED HINTS ../../DiFfRG_install)
+find_package(DiFfRG REQUIRED HINTS $ENV{HOME}/.local/share/DiFfRG/)
 
 add_subdirectory(flows)
 
-add_executable(LDG LDG.cc ${flow_sources})
-setup_application(LDG)
+add_executable(LDG LDG.cc)
+target_link_libraries(LDG PRIVATE DiFfRG::DiFfRG ONFiniteTFlows)
 
-add_executable(CG CG.cc ${flow_sources})
-setup_application(CG)
+add_executable(CG CG.cc)
+target_link_libraries(CG PRIVATE DiFfRG::DiFfRG ONFiniteTFlows)
 
-add_executable(dDG dDG.cc ${flow_sources})
-setup_application(dDG)
+add_executable(dDG dDG.cc)
+target_link_libraries(dDG PRIVATE DiFfRG::DiFfRG ONFiniteTFlows)
 
 execute_process(
   COMMAND

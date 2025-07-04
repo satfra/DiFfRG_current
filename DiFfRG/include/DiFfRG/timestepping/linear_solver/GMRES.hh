@@ -25,14 +25,23 @@ namespace DiFfRG
       dealii::SolverControl solver_control(std::max<std::size_t>(1000, src.size() / 10), tol);
       dealii::SolverGMRES<VectorType> solver(solver_control);
 
-      preconditioner.initialize(*matrix, 1.0);
+      //preconditioner.initialize(*matrix, 1.0);
+      preconditioner.initialize(*matrix);
+      try {
       solver.solve(*matrix, dst, src, preconditioner);
+      } catch (std::exception &e)
+      {
+        std::cerr << "GMRES linear solver failed: " << e.what();
+        throw;
+      }
 
-      return solver_control.last_step();
+      int steps = solver_control.last_step();
+      return steps;
     }
 
   private:
     const SparseMatrixType *matrix;
-    dealii::PreconditionJacobi<SparseMatrixType> preconditioner;
+    //dealii::PreconditionJacobi<SparseMatrixType> preconditioner;
+    dealii::PreconditionIdentity preconditioner;
   };
 } // namespace DiFfRG

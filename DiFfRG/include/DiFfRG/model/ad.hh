@@ -18,6 +18,7 @@ namespace DiFfRG
   namespace def
   {
     using namespace dealii;
+    using std::get;
 
     namespace internal
     {
@@ -70,14 +71,15 @@ namespace DiFfRG
           static_assert(r >= 1 && r <= 2, "Only rank 1 and 2 tensors are supported.");
           std::array<dealii::Tensor<r, dim, autodiff::real>, n> x;
           for (uint i = 0; i < n; ++i) {
-            if constexpr (r == 1)
+            if constexpr (r == 1) {
               for (uint d = 0; d < dim; ++d)
                 x[i][d] = v[i][d];
-            else if constexpr (r == 2)
+            } else if constexpr (r == 2) {
               for (uint d1 = 0; d1 < dim; ++d1)
                 for (uint d2 = 0; d2 < dim; ++d2) {
                   x[i][d1][d2] = v[i][d1][d2];
                 }
+            }
           }
           return x;
         }
@@ -99,29 +101,28 @@ namespace DiFfRG
         static_assert(n_to == Components::count_fe_functions());
         static_assert(n_from == Components::count_fe_functions());
 
-        const auto &u = std::get<tup_idx>(sol);
+        const auto &u = get<tup_idx>(sol);
         const auto _du = AD_tools::template ten_to_AD<n_from>(u);
-        tbb::parallel_for(
-            tbb::blocked_range2d<uint>(0, Components::count_fe_functions(), 0, dim),
-            [&](const tbb::blocked_range2d<uint> &r) {
-              auto du = _du;
-              for (uint j = r.rows().begin(); j < r.rows().end(); ++j) {
-                for (uint d = r.cols().begin(); d < r.cols().end(); ++d) {
-                  std::array<Tensor<1, dim, AD_type>, Components::count_fe_functions()> res{{}};
-                  // take derivative with respect to jth variable
-                  seed(du[j][d]);
-                  asImp().flux(res, p,
-                               Vector::as(std::tuple_cat(tuple_first<tup_idx>(sol), std::tie(du),
-                                                         tuple_last<std::tuple_size_v<Vector> - tup_idx - 1>(sol))));
-                  for (uint i = 0; i < Components::count_fe_functions(); ++i) {
-                    for (uint dd = 0; dd < dim; ++dd) {
-                      jF(i, j)[dd][d] = grad(res[i][dd]);
-                    }
-                  }
-                  unseed(du[j][d]);
-                }
-              }
-            });
+        tbb::parallel_for(tbb::blocked_range2d<uint>(0, Components::count_fe_functions(), 0, dim),
+                          [&](const tbb::blocked_range2d<uint> &r) {
+                            auto du = _du;
+                            for (uint j = r.rows().begin(); j < r.rows().end(); ++j) {
+                              for (uint d = r.cols().begin(); d < r.cols().end(); ++d) {
+                                std::array<Tensor<1, dim, AD_type>, Components::count_fe_functions()> res{{}};
+                                // take derivative with respect to jth variable
+                                seed(du[j][d]);
+                                asImp().flux(res, p,
+                                             Vector::as(std::tuple_cat(tuple_first<tup_idx>(sol), std::tie(du),
+                                                                       tuple_last<Vector::size - tup_idx - 1>(sol))));
+                                for (uint i = 0; i < Components::count_fe_functions(); ++i) {
+                                  for (uint dd = 0; dd < dim; ++dd) {
+                                    jF(i, j)[dd][d] = grad(res[i][dd]);
+                                  }
+                                }
+                                unseed(du[j][d]);
+                              }
+                            }
+                          });
       }
 
       template <uint tup_idx, uint n_from, uint n_to, int dim, typename NT, typename Vector>
@@ -132,30 +133,29 @@ namespace DiFfRG
         static_assert(n_to == Components::count_fe_functions());
         static_assert(n_from == Components::count_fe_functions());
 
-        const auto &u = std::get<tup_idx>(sol);
+        const auto &u = get<tup_idx>(sol);
         const auto _du = AD_tools::template ten_to_AD<n_from>(u);
-        tbb::parallel_for(
-            tbb::blocked_range3d<uint>(0, Components::count_fe_functions(), 0, dim, 0, dim),
-            [&](const tbb::blocked_range3d<uint> &r) {
-              auto du = _du;
-              for (uint j = r.pages().begin(); j < r.pages().end(); ++j) {
-                for (uint d1 = r.rows().begin(); d1 < r.rows().end(); ++d1)
-                  for (uint d2 = r.cols().begin(); d2 < r.cols().end(); ++d2) {
-                    std::array<Tensor<1, dim, AD_type>, Components::count_fe_functions()> res{{}};
-                    // take derivative with respect to jth variable
-                    seed(du[j][d1][d2]);
-                    asImp().flux(res, p,
-                                 Vector::as(std::tuple_cat(tuple_first<tup_idx>(sol), std::tie(du),
-                                                           tuple_last<std::tuple_size_v<Vector> - tup_idx - 1>(sol))));
-                    for (uint i = 0; i < Components::count_fe_functions(); ++i) {
-                      for (uint d = 0; d < dim; ++d) {
-                        jF(i, j)[d][d1][d2] = grad(res[i][d]);
-                      }
-                    }
-                    unseed(du[j][d1][d2]);
-                  }
-              }
-            });
+        tbb::parallel_for(tbb::blocked_range3d<uint>(0, Components::count_fe_functions(), 0, dim, 0, dim),
+                          [&](const tbb::blocked_range3d<uint> &r) {
+                            auto du = _du;
+                            for (uint j = r.pages().begin(); j < r.pages().end(); ++j) {
+                              for (uint d1 = r.rows().begin(); d1 < r.rows().end(); ++d1)
+                                for (uint d2 = r.cols().begin(); d2 < r.cols().end(); ++d2) {
+                                  std::array<Tensor<1, dim, AD_type>, Components::count_fe_functions()> res{{}};
+                                  // take derivative with respect to jth variable
+                                  seed(du[j][d1][d2]);
+                                  asImp().flux(res, p,
+                                               Vector::as(std::tuple_cat(tuple_first<tup_idx>(sol), std::tie(du),
+                                                                         tuple_last<Vector::size - tup_idx - 1>(sol))));
+                                  for (uint i = 0; i < Components::count_fe_functions(); ++i) {
+                                    for (uint d = 0; d < dim; ++d) {
+                                      jF(i, j)[d][d1][d2] = grad(res[i][d]);
+                                    }
+                                  }
+                                  unseed(du[j][d1][d2]);
+                                }
+                            }
+                          });
       }
 
       template <uint tup_idx, uint n_from, uint n_to, int dim, typename NT, typename Vector>
@@ -166,7 +166,7 @@ namespace DiFfRG
         static_assert(n_to == Components::count_fe_functions());
         static_assert(n_from == Components::count_extractors());
 
-        const auto &e = std::get<tup_idx>(sol);
+        const auto &e = get<tup_idx>(sol);
         auto de = AD_tools::template vector_to_AD<n_from>(e);
         for (uint j = 0; j < Components::count_extractors(); ++j) {
           std::array<Tensor<1, dim, AD_type>, Components::count_fe_functions()> res{{}};
@@ -174,7 +174,7 @@ namespace DiFfRG
           seed(de[j]);
           asImp().flux(res, p,
                        Vector::as(std::tuple_cat(tuple_first<tup_idx>(sol), std::tie(de),
-                                                 tuple_last<std::tuple_size_v<Vector> - tup_idx - 1>(sol))));
+                                                 tuple_last<Vector::size - tup_idx - 1>(sol))));
           for (uint i = 0; i < Components::count_fe_functions(); ++i) {
             for (uint d = 0; d < dim; ++d) {
               jF(i, j)[d] = grad(res[i][d]);
@@ -193,7 +193,7 @@ namespace DiFfRG
         static_assert(n_from == Components::count_fe_functions(from));
 
         if constexpr (to == 0) {
-          const auto &u = std::get<from>(sol);
+          const auto &u = get<from>(sol);
           const auto _du = AD_tools::template vector_to_AD<Components::count_fe_functions(from)>(u);
           tbb::parallel_for(tbb::blocked_range<uint>(0, Components::count_fe_functions(from)),
                             [&](const tbb::blocked_range<uint> &r) {
@@ -202,10 +202,9 @@ namespace DiFfRG
                                 std::array<Tensor<1, dim, AD_type>, Components::count_fe_functions(to)> res{{}};
                                 // take derivative with respect to jth variable
                                 seed(du[j]);
-                                asImp().flux(
-                                    res, p,
-                                    Vector::as(std::tuple_cat(tuple_first<from>(sol), std::tie(du),
-                                                              tuple_last<std::tuple_size_v<Vector> - from - 1>(sol))));
+                                asImp().flux(res, p,
+                                             Vector::as(std::tuple_cat(tuple_first<from>(sol), std::tie(du),
+                                                                       tuple_last<Vector::size - from - 1>(sol))));
                                 for (uint i = 0; i < Components::count_fe_functions(to); ++i) {
                                   for (uint d = 0; d < dim; ++d) {
                                     jF(i, j)[d] = grad(res[i][d]);
@@ -247,27 +246,26 @@ namespace DiFfRG
         static_assert(n_to == Components::count_fe_functions());
         static_assert(n_from == Components::count_fe_functions());
 
-        const auto &u = std::get<tup_idx>(sol);
+        const auto &u = get<tup_idx>(sol);
         const auto _du = AD_tools::template ten_to_AD<n_from>(u);
-        tbb::parallel_for(
-            tbb::blocked_range2d<uint>(0, Components::count_fe_functions(), 0, dim),
-            [&](const tbb::blocked_range2d<uint> &r) {
-              auto du = _du;
-              for (uint j = r.rows().begin(); j < r.rows().end(); ++j) {
-                for (uint d = r.cols().begin(); d < r.cols().end(); ++d) {
-                  std::array<AD_type, Components::count_fe_functions()> res{{}};
-                  // take derivative with respect to jth variable
-                  seed(du[j][d]);
-                  asImp().source(res, p,
-                                 Vector::as(std::tuple_cat(tuple_first<tup_idx>(sol), std::tie(du),
-                                                           tuple_last<std::tuple_size_v<Vector> - tup_idx - 1>(sol))));
-                  for (uint i = 0; i < Components::count_fe_functions(); ++i) {
-                    jS(i, j)[d] = grad(res[i]);
-                  }
-                  unseed(du[j][d]);
-                }
-              }
-            });
+        tbb::parallel_for(tbb::blocked_range2d<uint>(0, Components::count_fe_functions(), 0, dim),
+                          [&](const tbb::blocked_range2d<uint> &r) {
+                            auto du = _du;
+                            for (uint j = r.rows().begin(); j < r.rows().end(); ++j) {
+                              for (uint d = r.cols().begin(); d < r.cols().end(); ++d) {
+                                std::array<AD_type, Components::count_fe_functions()> res{{}};
+                                // take derivative with respect to jth variable
+                                seed(du[j][d]);
+                                asImp().source(res, p,
+                                               Vector::as(std::tuple_cat(tuple_first<tup_idx>(sol), std::tie(du),
+                                                                         tuple_last<Vector::size - tup_idx - 1>(sol))));
+                                for (uint i = 0; i < Components::count_fe_functions(); ++i) {
+                                  jS(i, j)[d] = grad(res[i]);
+                                }
+                                unseed(du[j][d]);
+                              }
+                            }
+                          });
       }
 
       template <uint tup_idx, uint n_from, uint n_to, int dim, typename NT, typename Vector>
@@ -278,7 +276,7 @@ namespace DiFfRG
         static_assert(n_to == Components::count_fe_functions());
         static_assert(n_from == Components::count_fe_functions());
 
-        const auto &u = std::get<tup_idx>(sol);
+        const auto &u = get<tup_idx>(sol);
         const auto _du = AD_tools::template ten_to_AD<n_from>(u);
         tbb::parallel_for(tbb::blocked_range3d<uint>(0, Components::count_fe_functions(), 0, dim, 0, dim),
                           [&](const tbb::blocked_range3d<uint> &r) {
@@ -289,10 +287,10 @@ namespace DiFfRG
                                   std::array<AD_type, Components::count_fe_functions()> res{{}};
                                   // take derivative with respect to jth variable
                                   seed(du[j][d1][d2]);
-                                  asImp().source(res, p,
-                                                 Vector::as(std::tuple_cat(
-                                                     tuple_first<tup_idx>(sol), std::tie(du),
-                                                     tuple_last<std::tuple_size_v<Vector> - tup_idx - 1>(sol))));
+                                  asImp().source(
+                                      res, p,
+                                      Vector::as(std::tuple_cat(tuple_first<tup_idx>(sol), std::tie(du),
+                                                                tuple_last<Vector::size - tup_idx - 1>(sol))));
                                   for (uint i = 0; i < Components::count_fe_functions(); ++i) {
                                     jS(i, j)[d1][d2] = grad(res[i]);
                                   }
@@ -310,7 +308,7 @@ namespace DiFfRG
         static_assert(n_to == Components::count_fe_functions());
         static_assert(n_from == Components::count_extractors());
 
-        const auto &e = std::get<tup_idx>(sol);
+        const auto &e = get<tup_idx>(sol);
         auto de = AD_tools::template vector_to_AD<n_from>(e);
         for (uint j = 0; j < n_from; ++j) {
           std::array<AD_type, Components::count_fe_functions()> res{{}};
@@ -318,7 +316,7 @@ namespace DiFfRG
           seed(de[j]);
           asImp().source(res, p,
                          Vector::as(std::tuple_cat(tuple_first<tup_idx>(sol), std::tie(de),
-                                                   tuple_last<std::tuple_size_v<Vector> - tup_idx - 1>(sol))));
+                                                   tuple_last<Vector::size - tup_idx - 1>(sol))));
           for (uint i = 0; i < Components::count_fe_functions(); ++i) {
             jS(i, j) = grad(res[i]);
           }
@@ -334,7 +332,7 @@ namespace DiFfRG
         static_assert(n_from == Components::count_fe_functions(from));
 
         if constexpr (to == 0) {
-          const auto &u = std::get<from>(sol);
+          const auto &u = get<from>(sol);
           const auto _du = AD_tools::template vector_to_AD<Components::count_fe_functions(from)>(u);
           tbb::parallel_for(tbb::blocked_range<uint>(0, Components::count_fe_functions(from)),
                             [&](const tbb::blocked_range<uint> &r) {
@@ -343,10 +341,9 @@ namespace DiFfRG
                                 std::array<AD_type, Components::count_fe_functions(to)> res{{}};
                                 // take derivative with respect to jth variable
                                 seed(du[j]);
-                                asImp().source(
-                                    res, p,
-                                    Vector::as(std::tuple_cat(tuple_first<from>(sol), std::tie(du),
-                                                              tuple_last<std::tuple_size_v<Vector> - from - 1>(sol))));
+                                asImp().source(res, p,
+                                               Vector::as(std::tuple_cat(tuple_first<from>(sol), std::tie(du),
+                                                                         tuple_last<Vector::size - from - 1>(sol))));
                                 for (uint i = 0; i < Components::count_fe_functions(to); ++i) {
                                   jS(i, j) = grad(res[i]);
                                 }
@@ -385,8 +382,8 @@ namespace DiFfRG
         static_assert(n_to == Components::count_fe_functions());
         static_assert(n_from == Components::count_fe_functions());
 
-        const auto &u_s = std::get<tup_idx>(sol_s);
-        const auto &u_n = std::get<tup_idx>(sol_n);
+        const auto &u_s = get<tup_idx>(sol_s);
+        const auto &u_n = get<tup_idx>(sol_n);
 
         auto du_s = AD_tools::template ten_to_AD<n_from>(u_s);
         for (uint j = 0; j < Components::count_fe_functions(); ++j) {
@@ -396,7 +393,7 @@ namespace DiFfRG
             seed(du_s[j][d]);
             asImp().numflux(res, normal, p,
                             Vector_s::as(std::tuple_cat(tuple_first<tup_idx>(sol_s), std::tie(du_s),
-                                                        tuple_last<std::tuple_size_v<Vector_s> - tup_idx - 1>(sol_s))),
+                                                        tuple_last<Vector_s::size - tup_idx - 1>(sol_s))),
                             sol_n);
             for (uint i = 0; i < Components::count_fe_functions(); ++i) {
               for (uint dd = 0; dd < dim; ++dd) {
@@ -414,7 +411,7 @@ namespace DiFfRG
             seed(du_n[j][d]);
             asImp().numflux(res, normal, p, sol_s,
                             Vector_n::as(std::tuple_cat(tuple_first<tup_idx>(sol_n), std::tie(du_n),
-                                                        tuple_last<std::tuple_size_v<Vector_n> - tup_idx - 1>(sol_n))));
+                                                        tuple_last<Vector_n::size - tup_idx - 1>(sol_n))));
             for (uint i = 0; i < Components::count_fe_functions(); ++i) {
               for (uint dd = 0; dd < dim; ++dd) {
                 jNF[1](i, j)[dd][d] = grad(res[i][dd]);
@@ -434,8 +431,8 @@ namespace DiFfRG
         static_assert(n_to == Components::count_fe_functions());
         static_assert(n_from == Components::count_fe_functions());
 
-        const auto &u_s = std::get<tup_idx>(sol_s);
-        const auto &u_n = std::get<tup_idx>(sol_n);
+        const auto &u_s = get<tup_idx>(sol_s);
+        const auto &u_n = get<tup_idx>(sol_n);
 
         auto du_s = AD_tools::template ten_to_AD<n_from>(u_s);
         for (uint j = 0; j < Components::count_fe_functions(); ++j) {
@@ -444,11 +441,10 @@ namespace DiFfRG
               std::array<Tensor<1, dim, AD_type>, Components::count_fe_functions()> res{{}};
               // take derivative with respect to jth variable
               seed(du_s[j][d1][d2]);
-              asImp().numflux(
-                  res, normal, p,
-                  Vector_s::as(std::tuple_cat(tuple_first<tup_idx>(sol_s), std::tie(du_s),
-                                              tuple_last<std::tuple_size_v<Vector_s> - tup_idx - 1>(sol_s))),
-                  sol_n);
+              asImp().numflux(res, normal, p,
+                              Vector_s::as(std::tuple_cat(tuple_first<tup_idx>(sol_s), std::tie(du_s),
+                                                          tuple_last<Vector_s::size - tup_idx - 1>(sol_s))),
+                              sol_n);
               for (uint i = 0; i < Components::count_fe_functions(); ++i) {
                 for (uint d = 0; d < dim; ++d) {
                   jNF[0](i, j)[d][d1][d2] = grad(res[i][d]);
@@ -464,10 +460,9 @@ namespace DiFfRG
               std::array<Tensor<1, dim, AD_type>, Components::count_fe_functions()> res{{}};
               // take derivative with respect to jth variable
               seed(du_n[j][d1][d2]);
-              asImp().numflux(
-                  res, normal, p, sol_s,
-                  Vector_n::as(std::tuple_cat(tuple_first<tup_idx>(sol_n), std::tie(du_n),
-                                              tuple_last<std::tuple_size_v<Vector_n> - tup_idx - 1>(sol_n))));
+              asImp().numflux(res, normal, p, sol_s,
+                              Vector_n::as(std::tuple_cat(tuple_first<tup_idx>(sol_n), std::tie(du_n),
+                                                          tuple_last<Vector_n::size - tup_idx - 1>(sol_n))));
               for (uint i = 0; i < Components::count_fe_functions(); ++i) {
                 for (uint d = 0; d < dim; ++d) {
                   jNF[1](i, j)[d][d1][d2] = grad(res[i][d]);
@@ -487,7 +482,7 @@ namespace DiFfRG
         static_assert(n_to == Components::count_fe_functions());
         static_assert(n_from == Components::count_extractors());
 
-        const auto &e = std::get<tup_idx>(sol_s);
+        const auto &e = get<tup_idx>(sol_s);
         auto de = AD_tools::template vector_to_AD<n_from>(e);
         for (uint j = 0; j < n_from; ++j) {
           std::array<Tensor<1, dim, AD_type>, Components::count_fe_functions()> res_s{{}};
@@ -496,11 +491,11 @@ namespace DiFfRG
           seed(de[j]);
           asImp().numflux(res_s, normal, p,
                           Vector_s::as(std::tuple_cat(tuple_first<tup_idx>(sol_s), std::tie(de),
-                                                      tuple_last<std::tuple_size_v<Vector_s> - tup_idx - 1>(sol_s))),
+                                                      tuple_last<Vector_s::size - tup_idx - 1>(sol_s))),
                           sol_n);
           asImp().numflux(res_n, normal, p, sol_s,
                           Vector_n::as(std::tuple_cat(tuple_first<tup_idx>(sol_n), std::tie(de),
-                                                      tuple_last<std::tuple_size_v<Vector_n> - tup_idx - 1>(sol_n))));
+                                                      tuple_last<Vector_n::size - tup_idx - 1>(sol_n))));
           for (uint i = 0; i < Components::count_fe_functions(); ++i) {
             for (uint d = 0; d < dim; ++d) {
               jNF[0](i, j)[d] = grad(res_s[i][d]);
@@ -521,8 +516,8 @@ namespace DiFfRG
         static_assert(n_from == Components::count_fe_functions(from));
 
         if constexpr (to == 0) {
-          const auto &u_s = std::get<from>(sol_s);
-          const auto &u_n = std::get<from>(sol_n);
+          const auto &u_s = get<from>(sol_s);
+          const auto &u_n = get<from>(sol_n);
 
           auto du_s = AD_tools::template vector_to_AD<Components::count_fe_functions(from)>(u_s);
           for (uint j = 0; j < Components::count_fe_functions(from); ++j) {
@@ -531,7 +526,7 @@ namespace DiFfRG
             seed(du_s[j]);
             asImp().numflux(res, normal, p,
                             Vector_s::as(std::tuple_cat(tuple_first<from>(sol_s), std::tie(du_s),
-                                                        tuple_last<std::tuple_size_v<Vector_s> - from - 1>(sol_s))),
+                                                        tuple_last<Vector_s::size - from - 1>(sol_s))),
                             sol_n);
             for (uint i = 0; i < Components::count_fe_functions(to); ++i) {
               for (uint d = 0; d < dim; ++d) {
@@ -547,7 +542,7 @@ namespace DiFfRG
             seed(du_n[j]);
             asImp().numflux(res, normal, p, sol_s,
                             Vector_n::as(std::tuple_cat(tuple_first<from>(sol_n), std::tie(du_n),
-                                                        tuple_last<std::tuple_size_v<Vector_n> - from - 1>(sol_n))));
+                                                        tuple_last<Vector_n::size - from - 1>(sol_n))));
             for (uint i = 0; i < Components::count_fe_functions(to); ++i) {
               for (uint d = 0; d < dim; ++d) {
                 jNF[1](i, j)[d] = grad(res[i][d]);
@@ -601,17 +596,16 @@ namespace DiFfRG
         static_assert(n_to == Components::count_fe_functions());
         static_assert(n_from == Components::count_fe_functions());
 
-        const auto &u = std::get<tup_idx>(sol);
+        const auto &u = get<tup_idx>(sol);
         auto du = AD_tools::template ten_to_AD<n_from>(u);
         for (uint j = 0; j < Components::count_fe_functions(); ++j) {
           for (uint d = 0; d < dim; ++d) {
             std::array<Tensor<1, dim, AD_type>, Components::count_fe_functions()> res{{}};
             // take derivative with respect to jth variable
             seed(du[j][d]);
-            asImp().boundary_numflux(
-                res, normal, p,
-                Vector::as(std::tuple_cat(tuple_first<tup_idx>(sol), std::tie(du),
-                                          tuple_last<std::tuple_size_v<Vector> - tup_idx - 1>(sol))));
+            asImp().boundary_numflux(res, normal, p,
+                                     Vector::as(std::tuple_cat(tuple_first<tup_idx>(sol), std::tie(du),
+                                                               tuple_last<Vector::size - tup_idx - 1>(sol))));
             for (uint i = 0; i < Components::count_fe_functions(); ++i) {
               for (uint dd = 0; dd < dim; ++dd) {
                 jBNF(i, j)[dd][d] = grad(res[i][dd]);
@@ -630,7 +624,7 @@ namespace DiFfRG
         static_assert(n_to == Components::count_fe_functions());
         static_assert(n_from == Components::count_fe_functions());
 
-        const auto &u = std::get<tup_idx>(sol);
+        const auto &u = get<tup_idx>(sol);
         auto du = AD_tools::template ten_to_AD<n_from>(u);
         for (uint j = 0; j < Components::count_fe_functions(); ++j) {
           for (uint d1 = 0; d1 < dim; ++d1)
@@ -638,10 +632,9 @@ namespace DiFfRG
               std::array<Tensor<1, dim, AD_type>, Components::count_fe_functions()> res{{}};
               // take derivative with respect to jth variable
               seed(du[j][d1][d2]);
-              asImp().boundary_numflux(
-                  res, normal, p,
-                  Vector::as(std::tuple_cat(tuple_first<tup_idx>(sol), std::tie(du),
-                                            tuple_last<std::tuple_size_v<Vector> - tup_idx - 1>(sol))));
+              asImp().boundary_numflux(res, normal, p,
+                                       Vector::as(std::tuple_cat(tuple_first<tup_idx>(sol), std::tie(du),
+                                                                 tuple_last<Vector::size - tup_idx - 1>(sol))));
               for (uint i = 0; i < Components::count_fe_functions(); ++i) {
                 for (uint d = 0; d < dim; ++d) {
                   jBNF(i, j)[d][d1][d2] = grad(res[i][d]);
@@ -660,16 +653,15 @@ namespace DiFfRG
         static_assert(n_to == Components::count_fe_functions());
         static_assert(n_from == Components::count_extractors());
 
-        const auto &e = std::get<tup_idx>(sol);
+        const auto &e = get<tup_idx>(sol);
         auto de = AD_tools::template vector_to_AD<n_from>(e);
         for (uint j = 0; j < n_from; ++j) {
           std::array<Tensor<1, dim, AD_type>, Components::count_fe_functions()> res{{}};
           // take derivative with respect to jth variable
           seed(de[j]);
-          asImp().boundary_numflux(
-              res, normal, p,
-              Vector::as(std::tuple_cat(tuple_first<tup_idx>(sol), std::tie(de),
-                                        tuple_last<std::tuple_size_v<Vector> - tup_idx - 1>(sol))));
+          asImp().boundary_numflux(res, normal, p,
+                                   Vector::as(std::tuple_cat(tuple_first<tup_idx>(sol), std::tie(de),
+                                                             tuple_last<Vector::size - tup_idx - 1>(sol))));
           for (uint i = 0; i < Components::count_fe_functions(); ++i) {
             for (uint d = 0; d < dim; ++d) {
               jBNF(i, j)[d] = grad(res[i][d]);
@@ -688,7 +680,7 @@ namespace DiFfRG
         static_assert(n_from == Components::count_fe_functions(from));
 
         if constexpr (to == 0) {
-          const auto &u = std::get<from>(sol);
+          const auto &u = get<from>(sol);
           auto du = AD_tools::template vector_to_AD<Components::count_fe_functions(from)>(u);
           for (uint j = 0; j < Components::count_fe_functions(from); ++j) {
             std::array<Tensor<1, dim, AD_type>, Components::count_fe_functions(to)> res{{}};
@@ -696,7 +688,7 @@ namespace DiFfRG
             seed(du[j]);
             asImp().boundary_numflux(res, normal, p,
                                      Vector::as(std::tuple_cat(tuple_first<from>(sol), std::tie(du),
-                                                               tuple_last<std::tuple_size_v<Vector> - from - 1>(sol))));
+                                                               tuple_last<Vector::size - from - 1>(sol))));
             for (uint i = 0; i < Components::count_fe_functions(to); ++i) {
               for (uint d = 0; d < dim; ++d) {
                 jBNF(i, j)[d] = grad(res[i][d]);
@@ -774,8 +766,8 @@ namespace DiFfRG
       template <uint to, typename NT, typename Solution>
       void jacobian_variables(FullMatrix<NT> &jac, const Solution &sol) const
       {
-        const auto &variables = std::get<0>(sol);
-        const auto &extractors = std::get<1>(sol);
+        const auto &variables = get<0>(sol);
+        const auto &extractors = get<1>(sol);
         if constexpr (to == 0) {
           AssertThrow(jac.m() == variables.size() && jac.n() == variables.size(),
                       ExcMessage("Assure that the jacobian has the right dimension!"));
@@ -790,9 +782,8 @@ namespace DiFfRG
             std::array<AD_type, Model::Components::count_variables()> res{{}};
             // take derivative with respect to jth variable
             seed(du[j]);
-            asImp().dt_variables(res,
-                                 Solution::as(std::tuple_cat(tuple_first<to>(sol), std::tie(du),
-                                                             tuple_last<std::tuple_size_v<Solution> - to - 1>(sol))));
+            asImp().dt_variables(res, Solution::as(std::tuple_cat(tuple_first<to>(sol), std::tie(du),
+                                                                  tuple_last<Solution::size - to - 1>(sol))));
             for (uint i = 0; i < Model::Components::count_variables(); ++i) {
               jac(i, j) = grad(res[i]);
             }
@@ -804,9 +795,8 @@ namespace DiFfRG
             std::array<AD_type, Model::Components::count_variables()> res{{}};
             // take derivative with respect to jth variable
             seed(du[j]);
-            asImp().dt_variables(res,
-                                 Solution::as(std::tuple_cat(tuple_first<to>(sol), std::tie(du),
-                                                             tuple_last<std::tuple_size_v<Solution> - to - 1>(sol))));
+            asImp().dt_variables(res, Solution::as(std::tuple_cat(tuple_first<to>(sol), std::tie(du),
+                                                                  tuple_last<Solution::size - to - 1>(sol))));
             for (uint i = 0; i < Model::Components::count_extractors(); ++i) {
               jac(i, j) = grad(res[i]);
             }
@@ -827,9 +817,9 @@ namespace DiFfRG
       void jacobian_extractors(FullMatrix<NT> &jac, const Point<dim> &x, const Solution &sol) const
       {
         static_assert(std::is_same_v<NT, double>, "Only double is supported for now!");
-        const auto &fe_functions = std::get<0>(sol);
-        const auto &fe_derivatives = std::get<1>(sol);
-        const auto &fe_hessians = std::get<2>(sol);
+        const auto &fe_functions = get<0>(sol);
+        const auto &fe_derivatives = get<1>(sol);
+        const auto &fe_hessians = get<2>(sol);
 
         if constexpr (to == 0) {
           AssertThrow(jac.m() == Model::Components::count_extractors() && jac.n() == fe_functions.size(),
@@ -850,7 +840,7 @@ namespace DiFfRG
             seed(du[j]);
             asImp().extract(res, x,
                             Solution::as(std::tuple_cat(tuple_first<to>(sol), std::tie(du),
-                                                        tuple_last<std::tuple_size_v<Solution> - to - 1>(sol))));
+                                                        tuple_last<Solution::size - to - 1>(sol))));
             for (uint i = 0; i < Model::Components::count_extractors(); ++i) {
               jac(i, j) = grad(res[i]);
             }
@@ -865,7 +855,7 @@ namespace DiFfRG
               seed(du[j][d1]);
               asImp().extract(res, x,
                               Solution::as(std::tuple_cat(tuple_first<to>(sol), std::tie(du),
-                                                          tuple_last<std::tuple_size_v<Solution> - to - 1>(sol))));
+                                                          tuple_last<Solution::size - to - 1>(sol))));
               for (uint i = 0; i < Model::Components::count_extractors(); ++i) {
                 jac(i, j * dim + d1) = grad(res[i]);
               }
@@ -882,7 +872,7 @@ namespace DiFfRG
                 seed(du[j][d1][d2]);
                 asImp().extract(res, x,
                                 Solution::as(std::tuple_cat(tuple_first<to>(sol), std::tie(du),
-                                                            tuple_last<std::tuple_size_v<Solution> - to - 1>(sol))));
+                                                            tuple_last<Solution::size - to - 1>(sol))));
                 for (uint i = 0; i < Model::Components::count_extractors(); ++i) {
                   jac(i, j * dim * dim + d1 * dim + d2) = grad(res[i]);
                 }

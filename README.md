@@ -17,7 +17,7 @@ For spatial discretizations, i.e. discretizations of field space mostly used for
 The FEM methods included in DiFfRG are built upon the [deal.ii](https://www.dealii.org/) finite element library, which is highly parallelized and allows for great performance and flexibility.
 PDEs consisting of RG-time dependent equations, as well as stationary equations can be solved together during the flow, allowing for techniques like flowing fields in a very accessible way.
 
-Both explicit and implicit timestepping methods are available and allow thus for efficient RG-time integration in the symmetric and symmetry-broken regime.
+Both explicit and implicit time-stepping methods are available and allow thus for efficient RG-time integration in the symmetric and symmetry-broken regime.
 
 We also include a set of tools for the evaluation of integrals and discretization of momentum dependencies.
 
@@ -81,7 +81,7 @@ The second line is necessary to switch into a shell where `g++-12` is available
 #### Ubuntu
 ```bash
 $ apt-get update
-$ apt-get install git cmake libopenblas-dev paraview build-essential python3 doxygen libeigen3-dev graphviz libgsl-dev
+$ apt-get install git cmake libopenblas-dev paraview build-essential python3 doxygen graphviz libgsl-dev
 ```
 For a CUDA-enabled build, additionally 
 ```bash
@@ -91,74 +91,92 @@ $ apt-get install cuda
 #### MacOS
 First, install xcode and homebrew, then run
 ```bash
-$ brew install cmake doxygen paraview eigen graphviz gsl
+$ brew install cmake doxygen paraview graphviz gsl
+```
+
+For better performance, it is recommended to install OpenMP. 
+```bash
+$ brew install libomp
+```
+
+To let the build system know about it, you need to set the environment variable `OpenMP_ROOT` to the OpenMP installation directory, e.g.
+```bash
+$ export OpenMP_ROOT=$(brew --prefix)/opt/libomp
+```
+This can be automatically done by adding the above line to your `~/.zshrc` file,
+```bash
+echo 'export OpenMP_ROOT=$(brew --prefix)/opt/libomp' >> ~/.zshrc
+```
+After adding this line, you can either restart your terminal or run
+```bash
+$ source ~/.zshrc
 ```
 
 #### Windows
 
 If using Windows, instead of running the project directly, it is recommended to use [WSL](https://learn.microsoft.com/en-us/windows/wsl/setup/environment) and then go through the installation as if on Linux (e.g. Arch or Ubuntu).
 
-#### Docker and other container runtime environments
+## Installation
 
-Although a native install should be unproblematic in most cases, the setup with CUDA functionality may be daunting. Especially on high-performance clusters, and also depending on the packages available for  chosen distribution, it may be much easier to work with the framework inside a container.
+### CMake
 
-The specific choice of runtime environment is up to the user, however we provide a small build script to create docker container in which DiFfRG will be built.
-To do this, you will need `docker`, `docker-buildx` and the [NVIDIA container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#) in case you wish to create a CUDA-compatible image.
-
-For a CUDA-enabled build, run
-```build
-$ bash setup_docker.sh -c 12.5.1 -j8
+You can download a script to install DiFfRG locally directly from a CMake file by putting into your `CMakeLists.txt` the lines
+```CMake
+file(DOWNLOAD
+  https://raw.githubusercontent.com/satfra/DiFfRG/refs/heads/Implement-Kokkos/DiFfRG/cmake/InstallDiFfRG.cmake
+  ${CURRENT_BINARY_DIR}/cmake/InstallDiFfRG.cmake)
+include(${CURRENT_BINARY_DIR}/cmake/InstallDiFfRG.cmake)
 ```
-in the above, you may want to replace the version `12.5.1` with another version you can find on [docker hub at nvidia/cuda ](https://hub.docker.com/r/nvidia/cuda/tags).
-Alternatively, for a CUDA-less build, run simply
-```build
-$ bash setup_docker.sh -j8
+This will fetch a script, which will automatically download and install DiFfRG and all of its dependencies to `$HOME/.local/share/DiFfRG`.
+If you wish to change this directory, or some other default values, you can set the following optional variables:
+```CMake
+set(DiFfRG_INSTALL_DIR $ENV{HOME}/.local/share/DiFfRG/)
+set(DiFfRG_BUILD_DIR $ENV{HOME}/.local/share/DiFfRG/build/)
+set(DiFfRG_SOURCE_DIR $ENV{HOME}/.local/share/DiFfRG/src/)
+set(TRY_DiFfRG_VERSION Implement-Kokkos)
+set(PARALLEL_JOBS 8)
 ```
 
-If using other environments, e.g. [ENROOT](https://github.com/NVIDIA/enroot), the preferred approach is simply to build an image on top of the [CUDA images by NVIDIA](https://hub.docker.com/r/nvidia/cuda/tags). Optimal compatibility is given using `nvidia/cuda:12.5.1-devel-rockylinux`. Proceed with the installation setup for  Rocky Linux above.
+### Manual installation
 
-For example, with ENROOT a DiFfRG image can be built by following these steps:
-```bash
-$ enroot import docker://nvidia/cuda:12.5.1-devel-rockylinux9
-$ enroot create --name DiFfRG nvidia+cuda+12.5.1-devel-rockylinux9.sqsh
-$ enroot start --root --rw -m ./:/DiFfRG_source DiFfRG bash
-```
-Afterwards, one proceeds with the above Rocky Linux setup.
-
-## Setup
-
-If all requirements are met, you can clone the git to a directory of your choice,
+You can also manually clone DiFfRG to a directory of your choice
 ```bash
 $ git clone https://github.com/satfra/DiFfRG.git
 ```
-and start the build after switching to the git directory.
+Then, create a build directory and run cmake
 ```bash
 $ cd DiFfRG
-$ bash -i  build.sh -j8 -cf -i /opt/DiFfRG
+$ mkdir build
+$ cd build
+$ cmake ../ -DCMAKE_INSTALL_PREFIX=~/.local/share/DiFfRG/ -DCMAKE_BUILD_TYPE=Release
+$ cmake --build ./ -- -j8"
 ```
-The `build_DiFfRG.sh` bash script will build and setup the DiFfRG project and all its requirements. This can take up to half an hour as the deal.ii library is quite large.
-This script has the following options:
--  `-f`              Perform a full build and install of everything without confirmations.
--  `-c`              Use CUDA when building the DiFfRG library.
--  `-i <directory>`  Set the installation directory for the library.
--  `-j <threads>`    Set the number of threads passed to make and git fetch.
--  `--help`          Display this information.
+By default, the library will install itself to `$HOME/.local/shared/DiFfRG`, but you can control the destination by pointing `CMAKE_INSTALL_PREFIX` to a directory of your choice.
 
-Depending on your amount of CPU cores, you should adjust the `-j` parameter which indicates the number of threads used in the build process. Note that choosing this too large may lead to extreme RAM usage, so tread carefully.
+### Docker and other container runtime environments
 
-As soon as the build has finished, you can find a full install of the library in the `DiFfRG_install` subdirectory.
+Although a native install should be unproblematic in most cases, the setup with CUDA functionality may be daunting. Especially on high-performance clusters, and also depending on the packages available for  chosen distribution, it may be much easier to work with the framework inside a container to avoid conflicting dependencies.
 
-If you have changes to the library code, you can update the library by running
+Besides the manual setup described below, we recommend using [development containers](https://code.visualstudio.com/docs/devcontainers/containers) if you are using VSCode. An appropriate `.devcontainers` configuration can be adapted from the one found in the DiFfRG top level directory.
+
+The specific choice of container runtime environment is up to the user, however we provide a small build script to create a docker container for DiFfRG.
+To do this, you will need `docker`, `docker-buildx` and the [NVIDIA container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#) in case you wish to create a CUDA-compatible image.
+
+To build a docker image, you can run the script `build-container.sh` in the `containers/` folder, which will guide you through the process, i.e.
 ```bash
-$ bash -i update_DiFfRG.sh -cm -j8 -i /opt/DiFfRG
+$ cd containers
+$ bash build-container.sh
 ```
-where once again the `-j` parameter should be adjusted to your amount of CPU cores.
-The `update_DiFfRG.sh` script takes the following optional arguments:
-- `-c`               Use CUDA when building the DiFfRG library.
-- `-i <directory>`   Set the installation directory for the library.
-- `-j <threads>`     Set the number of threads passed to make and git fetch.
-- `-m`               Install the Mathematica package locally.
-- `--help`           Display this information.
+
+If using other environments, e.g. [ENROOT](https://github.com/NVIDIA/enroot), the preferred approach is simply to build an image on top of one of the [CUDA images by NVIDIA](https://hub.docker.com/r/nvidia/cuda/tags).
+
+For example, with ENROOT a DiFfRG image can be built on top of rockylinux9 by following these steps:
+```bash
+$ enroot import docker://nvidia/cuda:12.8.1-devel-rockylinux9
+$ enroot create --name DiFfRG nvidia+cuda+12.5.1-devel-rockylinux9.sqsh
+$ enroot start --root --rw -m ./:/DiFfRG DiFfRG bash
+```
+Afterwards, one proceeds with the above Rocky Linux setup.
 
 ## Getting started with simulating fRG flows
 
@@ -176,9 +194,13 @@ Several simulations are defined in the Applications directory, which can be used
 
 ## Logfiles and install issues
 
-During building and installing DiFfRG, logs are created at every step. You may find the logs for the setup of external dependencies in `external/logs` and the logs for the build of DiFfRG itself in `logs/`.
+If DiFfRG fails to build on your machine, first check the appropriate logs. You find the main log at `~/.local/share/DiFfRG/build/DiFfRG.log` if you are using the CMake install. Otherwise, you can redirect the output of the build, e.g.
+```bash
+cmake --build ./ -- -j8 | tee DiFfRG.log
+```
+and analyze the result.
 
-If DiFfRG fails to build on your machine, first check the appropriate logfile. If DiFfRG proves to be incompatible with your machine, please open an Issue on GitHub [here](https://github.com/satfra/DiFfRG/issues), or alternatively send an email to the author (see the [publication](https://arxiv.org/abs/2412.13043)).
+If DiFfRG proves to be incompatible with your machine, please open an Issue on GitHub [here](https://github.com/satfra/DiFfRG/issues), or, alternatively, send an email to the author (see the [publication](https://arxiv.org/abs/2412.13043)).
 
 
 ## Contributing
@@ -248,11 +270,11 @@ The following third-party libraries are utilised by DiFfRG. They are automatical
 
 - The main backend for field-space discretization is [deal.II](https://www.dealii.org/), which provides the entire FEM-machinery as well as many other utility components.
 - For performant and convenient calculation of Jacobian matrices we use the [autodiff](https://github.com/autodiff/autodiff) library, which implements automatic forward and backwards differentiation in C++ and also in CUDA.
+- [Kokkos](https://github.com/kokkos/kokkos), a performance portability framework for shared-memory parallelization on GPU and CPU. We use it for the integration routines for flow equations.
 - Time integration relies heavily on the [SUNDIALS](https://computing.llnl.gov/projects/sundials) suite, specifically on the IDAs solver.
+- [Boost](https://www.boost.org/) provides explicit time-stepping and various math algorithms.
 - [Rapidcsv](https://github.com/d99kris/rapidcsv) for quick processing of .csv files.
 - [Catch2](https://github.com/catchorg/Catch2) for unit testing.
-- [RMM](https://github.com/rapidsai/rmm), a memory manager for CUDA, which is used for GPU-accelerated loop integrations.
-- [QMC](https://github.com/mppmu/qmc) for adaptive Quasi-Monte-Carlo integration.
 - [spdlog](https://github.com/gabime/spdlog) for logging.
 - [Doxygen Awesome](https://github.com/jothepro/doxygen-awesome-css) for a modern doxygen theme.
 - [Boost](https://www.boost.org/) provides explicit time-stepping and various math algorithms.

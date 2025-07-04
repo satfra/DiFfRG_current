@@ -4,9 +4,11 @@ set(DiFfRG_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/configuration_helper.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/csv_reader.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/external_data_interpolator.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/init.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/interpolation.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/json.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/math.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/mpi.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/polynomials.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/utils.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/csv_output.cc
@@ -21,45 +23,18 @@ set(DiFfRG_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/explicit_euler.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/implicit_euler.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/rk.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/sundials_arkode.cc
+    # ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/sundials_arkode.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/sundials_ida.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/sundials_ida_boost_rk.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/sundials_ida_boost_abm.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/sundials_ida_arkode.cc
+    # ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/sundials_ida_arkode.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/trbdf2.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/flow_equations.cc)
-if(USE_CUDA)
-  list(
-    APPEND
-    DiFfRG_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/cuda_prefix.cu
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/quadrature/matsubara.cu
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/quadrature/quadrature_provider.cu
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/quadrature/quadrature.cu
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/linear_interpolation_1D.cu
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/linear_interpolation_2D.cu
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/linear_interpolation_3D.cu
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_1D.cu
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_2D.cu
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_3D.cu
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_1D_stack.cu
-  )
-else()
-  list(
-    APPEND
-    DiFfRG_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/integration/abstract_integrator.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/integration/distribution.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/flow_equations.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/quadrature/matsubara.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/quadrature/quadrature_provider.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/quadrature/quadrature.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/linear_interpolation_1D.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/linear_interpolation_2D.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/linear_interpolation_3D.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_1D.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_2D.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_3D.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/interpolation/tex_linear_interpolation_1D_stack.cc
-  )
-endif()
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/quadrature/quadrature.cc)
 
 add_library(DiFfRG STATIC ${DiFfRG_SOURCES})
 

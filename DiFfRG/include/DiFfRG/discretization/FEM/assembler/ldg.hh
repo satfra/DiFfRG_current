@@ -399,11 +399,13 @@ namespace DiFfRG
       template <typename... T> auto fe_conv(std::tuple<T &...> &t) const
       {
         if constexpr (stencil == 2)
-          return named_tuple<std::tuple<T &...>, "fe_functions", "LDG1", "extractors", "variables">(t);
+          return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "LDG1", "extractors", "variables">>(t);
         else if constexpr (stencil == 3)
-          return named_tuple<std::tuple<T &...>, "fe_functions", "LDG1", "LDG2", "extractors", "variables">(t);
+          return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "LDG1", "LDG2", "extractors", "variables">>(
+              t);
         else if constexpr (stencil == 4)
-          return named_tuple<std::tuple<T &...>, "fe_functions", "LDG1", "LDG2", "LDG3", "extractors", "variables">(t);
+          return named_tuple<std::tuple<T &...>,
+                             StringSet<"fe_functions", "LDG1", "LDG2", "LDG3", "extractors", "variables">>(t);
         else
           throw std::runtime_error("Only <= 3 LDG subsystems are supported.");
       }
@@ -411,14 +413,14 @@ namespace DiFfRG
       template <typename... T> auto fe_more_conv(std::tuple<T &...> &t) const
       {
         if constexpr (stencil == 2)
-          return named_tuple<std::tuple<T &...>, "fe_functions", "LDG1", "fe_derivatives", "fe_hessians", "extractors",
-                             "variables">(t);
+          return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "LDG1", "fe_derivatives", "fe_hessians",
+                                                           "extractors", "variables">>(t);
         else if constexpr (stencil == 3)
-          return named_tuple<std::tuple<T &...>, "fe_functions", "LDG1", "LDG2", "fe_derivatives", "fe_hessians",
-                             "extractors", "variables">(t);
+          return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "LDG1", "LDG2", "fe_derivatives",
+                                                           "fe_hessians", "extractors", "variables">>(t);
         else if constexpr (stencil == 4)
-          return named_tuple<std::tuple<T &...>, "fe_functions", "LDG1", "LDG2", "LDG3", "fe_derivatives",
-                             "fe_hessians", "extractors", "variables">(t);
+          return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "LDG1", "LDG2", "LDG3", "fe_derivatives",
+                                                           "fe_hessians", "extractors", "variables">>(t);
         else
           throw std::runtime_error("Only <= 3 LDG subsystems are supported.");
       }
@@ -426,11 +428,11 @@ namespace DiFfRG
       template <typename... T> auto ref_conv(std::tuple<T &...> &t) const
       {
         if constexpr (stencil == 2)
-          return named_tuple<std::tuple<T &...>, "fe_functions", "LDG1">(t);
+          return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "LDG1">>(t);
         else if constexpr (stencil == 3)
-          return named_tuple<std::tuple<T &...>, "fe_functions", "LDG1", "LDG2">(t);
+          return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "LDG1", "LDG2">>(t);
         else if constexpr (stencil == 4)
-          return named_tuple<std::tuple<T &...>, "fe_functions", "LDG1", "LDG2", "LDG3">(t);
+          return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "LDG1", "LDG2", "LDG3">>(t);
         else
           throw std::runtime_error("Only <= 3 LDG subsystems are supported.");
       }
@@ -504,8 +506,7 @@ namespace DiFfRG
             mass_matrix.reinit(sparsity_pattern_mass);
 
             MatrixCreator::create_mass_matrix(*(dof_handler_list[0]), quadrature, mass_matrix,
-                                              (const Function<dim, NumberType> *const)nullptr,
-                                              discretization.get_constraints(0));
+                                              (Function<dim, NumberType> *)nullptr, discretization.get_constraints(0));
             build_inverse(mass_matrix.block(0, 0), component_mass_matrix_inverse);
           } else {
             sol_vector[i].reinit(dofs_per_component);
@@ -1666,8 +1667,10 @@ namespace DiFfRG
         for (const auto &t_cell : triangulation.active_cell_iterators()) {
           std::vector<types::global_dof_index> to_dofs(to_dofs_per_cell);
           std::vector<types::global_dof_index> from_dofs(from_dofs_per_cell);
-          const auto to_cell = t_cell->as_dof_handler_iterator(to_dofh);
-          const auto from_cell = t_cell->as_dof_handler_iterator(from_dofh);
+          const auto to_cell = typename DoFHandler<dim>::active_cell_iterator(
+              &to_dofh.get_triangulation(), t_cell->level(), t_cell->index(), &to_dofh);
+          const auto from_cell = typename DoFHandler<dim>::active_cell_iterator(
+              &from_dofh.get_triangulation(), t_cell->level(), t_cell->index(), &from_dofh);
           to_cell->get_dof_indices(to_dofs);
           from_cell->get_dof_indices(from_dofs);
 
@@ -1708,7 +1711,8 @@ namespace DiFfRG
 
         if (add_extractor_dofs)
           for (uint row = 0; row < dsp.n_rows(); ++row)
-            dsp.add_row_entries(row, extractor_dof_indices);
+            for (const auto &col : extractor_dof_indices)
+              dsp.add(row, col);
 
         sparsity_pattern.copy_from(dsp);
       }
@@ -1798,7 +1802,7 @@ namespace DiFfRG
 
           outputter(data_out, EoM, fe_more_conv(solution_tuple));
         };
-        model.template readouts_multiple(helper, data_out);
+        model.readouts_multiple(helper, data_out);
       }
 
       void extract(std::array<NumberType, Components::count_extractors()> &data, const VectorType &solution_global,
@@ -1855,7 +1859,7 @@ namespace DiFfRG
         auto solution_tuple = std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(solutions_vector),
                                              std::tie(solution_grad[0], solution_hess[0], this->nothing, variables));
 
-        model.template extract(data, EoM, fe_more_conv(solution_tuple));
+        model.extract(data, EoM, fe_more_conv(solution_tuple));
       }
 
       bool jacobian_extractors(FullMatrix<NumberType> &extractor_jacobian, const VectorType &solution_global,
@@ -1938,13 +1942,14 @@ namespace DiFfRG
       using Base::timings_variable_residual;
       template <typename... T> static constexpr auto v_tie(T &&...t)
       {
-        return named_tuple<std::tuple<T &...>, "variables", "extractors">(std::tie(t...));
+        return named_tuple<std::tuple<T &...>, StringSet<"variables", "extractors">>(std::tie(t...));
       }
 
       template <typename... T> static constexpr auto e_tie(T &&...t)
       {
-        return named_tuple<std::tuple<T &...>, "fe_functions", "fe_derivatives", "fe_hessians", "extractors",
-                           "variables">(std::tie(t...));
+        return named_tuple<std::tuple<T &...>,
+                           StringSet<"fe_functions", "fe_derivatives", "fe_hessians", "extractors", "variables">>(
+            std::tie(t...));
       }
 
       virtual void residual_variables(VectorType &residual, const VectorType &variables,

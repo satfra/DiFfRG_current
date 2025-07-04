@@ -4,7 +4,7 @@
 #include <cmath>
 
 // DiFfRG
-#include <DiFfRG/common/cuda_prefix.hh>
+#include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/utils.hh>
 
 namespace DiFfRG
@@ -22,27 +22,25 @@ namespace DiFfRG
    * - RFdot(k2, q2) = \f$ p \partial_ t R_F(k^2,p^2) \f$
    */
   template <class Dummy = void> struct LitimRegulator {
-    template <typename NT1, typename NT2> static __forceinline__ __device__ __host__ auto RB(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RB(const NT1 k2, const NT2 q2)
     {
       return (k2 - q2) * (k2 > q2);
     }
 
-    template <typename NT1, typename NT2>
-    static __forceinline__ __device__ __host__ auto RBdot(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RBdot(const NT1 k2, const NT2 q2)
     {
       return 2. * k2 * (k2 > q2);
     }
 
-    template <typename NT1, typename NT2> static __forceinline__ __device__ __host__ auto RF(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RF(const NT1 k2, const NT2 q2)
     {
-      using std::sqrt;
+      using Kokkos::sqrt;
       return sqrt(RB(k2, q2) + q2) - sqrt(q2);
     }
 
-    template <typename NT1, typename NT2>
-    static __forceinline__ __device__ __host__ auto RFdot(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RFdot(const NT1 k2, const NT2 q2)
     {
-      using std::sqrt;
+      using Kokkos::sqrt;
       return 0.5 * RBdot(k2, q2) / sqrt(RB(k2, q2) + q2);
     }
 
@@ -72,52 +70,48 @@ namespace DiFfRG
   template <class OPTS = BosonicRegulatorOpts> struct BosonicRegulator {
     static constexpr double b = OPTS::b;
 
-    template <typename NT1, typename NT2> static __forceinline__ __device__ __host__ auto RB(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RB(const NT1 k2, const NT2 q2)
     {
-      using std::expm1;
+      using Kokkos::expm1;
       return q2 * powr<b - 1>(q2 / k2) / expm1(powr<b>(q2 / k2));
     }
 
-    template <typename NT1, typename NT2>
-    static __forceinline__ __device__ __host__ auto dq2RB(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto dq2RB(const NT1 k2, const NT2 q2)
     {
-      using std::exp;
-      using std::expm1;
+      using Kokkos::exp;
+      using Kokkos::expm1;
       const auto xb = powr<b>(q2 / k2);
       const auto mexp = exp(xb);
       const auto mexpm1 = expm1(xb);
       return b * mexp * powr<b - 1>(q2 / k2) * (xb - mexpm1) / powr<2>(mexpm1);
     }
 
-    template <typename NT1, typename NT2>
-    static __forceinline__ __device__ __host__ auto RBdot(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RBdot(const NT1 k2, const NT2 q2)
     {
-      using std::exp;
-      using std::expm1;
+      using Kokkos::exp;
+      using Kokkos::expm1;
       const auto xb = powr<b>(q2 / k2);
       const auto mexp = exp(xb);
       const auto mexpm1 = expm1(xb);
       return 2. * k2 * xb * (mexpm1 * (1. - b) + b * mexp * xb) / powr<2>(mexpm1);
     }
 
-    template <typename NT1, typename NT2> static __forceinline__ __device__ __host__ auto RF(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RF(const NT1 k2, const NT2 q2)
     {
-      using std::sqrt;
+      using Kokkos::sqrt;
       return sqrt(RB(k2, q2) + q2) - sqrt(q2);
     }
 
-    template <typename NT1, typename NT2>
-    static __forceinline__ __device__ __host__ auto dq2RF(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto dq2RF(const NT1 k2, const NT2 q2)
     {
-      using std::sqrt;
+      using Kokkos::sqrt;
       const auto q = sqrt(q2);
       return (-1. + q * (1. + dq2RB(k2, q2)) / (q + RF(k2, q2))) / (2. * q);
     }
 
-    template <typename NT1, typename NT2>
-    static __forceinline__ __device__ __host__ auto RFdot(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RFdot(const NT1 k2, const NT2 q2)
     {
-      using std::sqrt;
+      using Kokkos::sqrt;
       return 0.5 * RBdot(k2, q2) / sqrt(RB(k2, q2) + q2);
     }
   };
@@ -144,48 +138,44 @@ namespace DiFfRG
   template <class OPTS = ExponentialRegulatorOpts> struct ExponentialRegulator {
     static constexpr double b = OPTS::b;
 
-    template <typename NT1, typename NT2> static __forceinline__ __device__ __host__ auto RB(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RB(const NT1 k2, const NT2 q2)
     {
-      using std::exp;
+      using Kokkos::exp;
       const auto xb = powr<b>(q2 / k2);
       return k2 * exp(-xb);
     }
 
-    template <typename NT1, typename NT2>
-    static __forceinline__ __device__ __host__ auto dq2RB(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto dq2RB(const NT1 k2, const NT2 q2)
     {
-      using std::exp;
+      using Kokkos::exp;
       const auto xbm1 = powr<b - 1>(q2 / k2);
       const auto xb = xbm1 * (q2 / k2);
       return -b * xbm1 * exp(-xb);
     }
 
-    template <typename NT1, typename NT2>
-    static __forceinline__ __device__ __host__ auto RBdot(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RBdot(const NT1 k2, const NT2 q2)
     {
-      using std::exp;
+      using Kokkos::exp;
       const auto xb = powr<b>(q2 / k2);
       return 2. * exp(-xb) * k2 * (1. + b * xb);
     }
 
-    template <typename NT1, typename NT2> static __forceinline__ __device__ __host__ auto RF(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RF(const NT1 k2, const NT2 q2)
     {
-      using std::sqrt;
+      using Kokkos::sqrt;
       return sqrt(RB(k2, q2) + q2) - sqrt(q2);
     }
 
-    template <typename NT1, typename NT2>
-    static __forceinline__ __device__ __host__ auto dq2RF(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto dq2RF(const NT1 k2, const NT2 q2)
     {
-      using std::sqrt;
+      using Kokkos::sqrt;
       const auto q = sqrt(q2);
       return (-1. + q * (1. + dq2RB(k2, q2)) / (q + RF(k2, q2))) / (2. * q);
     }
 
-    template <typename NT1, typename NT2>
-    static __forceinline__ __device__ __host__ auto RFdot(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RFdot(const NT1 k2, const NT2 q2)
     {
-      using std::sqrt;
+      using Kokkos::sqrt;
       return 0.5 * RBdot(k2, q2) / sqrt(RB(k2, q2) + q2);
     }
   };
@@ -212,31 +202,29 @@ namespace DiFfRG
   template <class OPTS = SmoothedLitimRegulatorOpts> struct SmoothedLitimRegulator {
     static constexpr double alpha = OPTS::alpha;
 
-    template <typename NT1, typename NT2> static __forceinline__ __device__ __host__ auto RB(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RB(const NT1 k2, const NT2 q2)
     {
-      using std::exp;
+      using Kokkos::exp;
       return (k2 - q2) / (1. + exp((q2 / k2 - 1.) / alpha));
     }
 
-    template <typename NT1, typename NT2>
-    static __forceinline__ __device__ __host__ auto RBdot(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RBdot(const NT1 k2, const NT2 q2)
     {
-      using std::exp;
+      using Kokkos::exp;
       const auto x = q2 / k2;
       const auto mexp = exp((x - 1.) / alpha);
       return mexp > 1e50 ? 0. : 2. * k2 * (1. + mexp * (x - powr<2>(x) + alpha) / alpha) / powr<2>(1. + mexp);
     }
 
-    template <typename NT1, typename NT2> static __forceinline__ __device__ __host__ auto RF(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RF(const NT1 k2, const NT2 q2)
     {
-      using std::sqrt;
+      using Kokkos::sqrt;
       return sqrt(RB(k2, q2) + q2) - sqrt(q2);
     }
 
-    template <typename NT1, typename NT2>
-    static __forceinline__ __device__ __host__ auto RFdot(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RFdot(const NT1 k2, const NT2 q2)
     {
-      using std::sqrt;
+      using Kokkos::sqrt;
       return 0.5 * RBdot(k2, q2) / sqrt(RB(k2, q2) + q2);
     }
   };
@@ -269,7 +257,7 @@ namespace DiFfRG
     constexpr static double c = OPTS::c;
     constexpr static double b0 = OPTS::b0;
 
-    static __forceinline__ __device__ __host__ auto get_f(const auto x)
+    static KOKKOS_FORCEINLINE_FUNCTION auto get_f(const auto x)
     {
       constexpr double b0 = OPTS::b0;
       if constexpr (order == 1) return x;
@@ -374,7 +362,7 @@ namespace DiFfRG
                powr<-1>(1. + b0 * powr<8>(x) + 0.0625 * (1. + 2. * b0) * powr<-1>(-1. + c) * powr<15>(x));
       static_assert(order <= 16, "Rational regulator of order > 16 not implemented");
     }
-    static __forceinline__ __device__ __host__ auto get_df(const auto x)
+    static KOKKOS_FORCEINLINE_FUNCTION auto get_df(const auto x)
     {
       constexpr double b0 = OPTS::b0;
       if constexpr (order == 1) return 1.;
@@ -555,51 +543,47 @@ namespace DiFfRG
       static_assert(order <= 16, "Rational regulator of order > 16 not implemented");
     }
 
-    template <typename NT1, typename NT2> static __forceinline__ __device__ __host__ auto RB(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RB(const NT1 k2, const NT2 q2)
     {
-      using std::exp;
+      using Kokkos::exp;
       const auto x = q2 / k2;
       const auto f = get_f(x);
       return k2 * exp(-f);
     }
 
-    template <typename NT1, typename NT2>
-    static __forceinline__ __device__ __host__ auto RBdot(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RBdot(const NT1 k2, const NT2 q2)
     {
-      using std::exp;
+      using Kokkos::exp;
       const auto x = q2 / k2;
       const auto f = get_f(x);
       const auto df = get_df(x);
       return 2. * k2 * exp(-f) * (1. + df * x);
     }
 
-    template <typename NT1, typename NT2>
-    static __forceinline__ __device__ __host__ auto dq2RB(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto dq2RB(const NT1 k2, const NT2 q2)
     {
-      using std::exp;
+      using Kokkos::exp;
       const auto x = q2 / k2;
       const auto f = get_f(x);
       const auto df = get_df(x);
       return -exp(-f) * df;
     }
 
-    template <typename NT1, typename NT2> static __forceinline__ __device__ __host__ auto RF(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RF(const NT1 k2, const NT2 q2)
     {
-      using std::sqrt;
+      using Kokkos::sqrt;
       return sqrt(RB(k2, q2) + q2) - sqrt(q2);
     }
 
-    template <typename NT1, typename NT2>
-    static __forceinline__ __device__ __host__ auto RFdot(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RFdot(const NT1 k2, const NT2 q2)
     {
-      using std::sqrt;
+      using Kokkos::sqrt;
       return 0.5 * RBdot(k2, q2) / sqrt(RB(k2, q2) + q2);
     }
 
-    template <typename NT1, typename NT2>
-    static __forceinline__ __device__ __host__ auto dq2RF(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto dq2RF(const NT1 k2, const NT2 q2)
     {
-      using std::sqrt;
+      using Kokkos::sqrt;
       const auto q = sqrt(q2);
       return (-1. + q * (1. + dq2RB(k2, q2)) / (q + RF(k2, q2))) / (2. * q);
     }
@@ -627,7 +611,7 @@ namespace DiFfRG
     static_assert(order > 0, "PolynomialExpRegulator: order must be > 0 !");
 
     template <int c0, int... c>
-    static __forceinline__ __device__ __host__ auto get_f(std::integer_sequence<int, c0, c...>, const auto x)
+    static KOKKOS_FORCEINLINE_FUNCTION auto get_f(std::integer_sequence<int, c0, c...>, const auto x)
     {
       using T = decltype(x);
       if constexpr (sizeof...(c) == 0)
@@ -636,14 +620,14 @@ namespace DiFfRG
         return powr<c0 + 1>(x) / T(c0 + 1) + get_f(std::integer_sequence<int, c...>{}, x);
     }
     template <int c0, int... c>
-    static __forceinline__ __device__ __host__ auto get_df(std::integer_sequence<int, c0, c...>, const auto x)
+    static KOKKOS_FORCEINLINE_FUNCTION auto get_df(std::integer_sequence<int, c0, c...>, const auto x)
     {
       if constexpr (sizeof...(c) == 0)
         return powr<c0>(x);
       else
         return powr<c0>(x) + get_df(std::integer_sequence<int, c...>{}, x);
     }
-    template <typename NT1, typename NT2> static __forceinline__ __device__ __host__ auto RB(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RB(const NT1 k2, const NT2 q2)
     {
       using std::exp;
       const auto x = q2 / k2;
@@ -651,8 +635,7 @@ namespace DiFfRG
       return k2 * exp(-f);
     }
 
-    template <typename NT1, typename NT2>
-    static __forceinline__ __device__ __host__ auto RBdot(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RBdot(const NT1 k2, const NT2 q2)
     {
       using std::exp;
       const auto x = q2 / k2;
@@ -661,8 +644,7 @@ namespace DiFfRG
       return 2 * k2 * exp(-f) * (1 + df * x);
     }
 
-    template <typename NT1, typename NT2>
-    static __forceinline__ __device__ __host__ auto dq2RB(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto dq2RB(const NT1 k2, const NT2 q2)
     {
       using std::exp;
       const auto x = q2 / k2;
@@ -671,24 +653,22 @@ namespace DiFfRG
       return -exp(-f) * df;
     }
 
-    template <typename NT1, typename NT2> static __forceinline__ __device__ __host__ auto RF(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RF(const NT1 k2, const NT2 q2)
     {
-      using std::sqrt;
+      using Kokkos::sqrt;
       return sqrt(RB(k2, q2) + q2) - sqrt(q2);
     }
 
-    template <typename NT1, typename NT2>
-    static __forceinline__ __device__ __host__ auto RFdot(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto RFdot(const NT1 k2, const NT2 q2)
     {
-      using std::sqrt;
+      using Kokkos::sqrt;
       using T = decltype(k2 * q2);
       return T(0.5) * RBdot(k2, q2) / sqrt(RB(k2, q2) + q2);
     }
 
-    template <typename NT1, typename NT2>
-    static __forceinline__ __device__ __host__ auto dq2RF(const NT1 k2, const NT2 q2)
+    template <typename NT1, typename NT2> static KOKKOS_FORCEINLINE_FUNCTION auto dq2RF(const NT1 k2, const NT2 q2)
     {
-      using std::sqrt;
+      using Kokkos::sqrt;
       const auto q = sqrt(q2);
       return (-1 + q * (1 + dq2RB(k2, q2)) / (q + RF(k2, q2))) / (2 * q);
     }

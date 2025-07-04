@@ -15,12 +15,13 @@ namespace DiFfRG
 
     template <typename... T> auto fe_tie(T &&...t)
     {
-      return named_tuple<std::tuple<T &...>, "fe_functions", "extractors", "variables">(std::tie(t...));
+      return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "extractors", "variables">>(std::tie(t...));
     }
 
     template <typename... T> auto i_tie(T &&...t)
     {
-      return named_tuple<std::tuple<T &...>, "fe_functions", "fe_derivatives", "fe_hessians">(std::tie(t...));
+      return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "fe_derivatives", "fe_hessians">>(
+          std::tie(t...));
     }
 
     namespace internal
@@ -190,8 +191,7 @@ namespace DiFfRG
                                           /*keep_constrained_dofs = */ true);
           sparsity_pattern_mass.copy_from(dsp);
           mass_matrix.reinit(sparsity_pattern_mass);
-          MatrixCreator::create_mass_matrix(dof_handler, quadrature, mass_matrix,
-                                            (const Function<dim, NumberType> *const)nullptr,
+          MatrixCreator::create_mass_matrix(dof_handler, quadrature, mass_matrix, (Function<dim, NumberType> *)nullptr,
                                             discretization.get_constraints());
         }
         // Jacobian sparsity pattern
@@ -212,7 +212,8 @@ namespace DiFfRG
         DoFTools::make_flux_sparsity_pattern(dof_handler, dsp, discretization.get_constraints(),
                                              /*keep_constrained_dofs = */ true);
         for (uint row = 0; row < dsp.n_rows(); ++row)
-          dsp.add_row_entries(row, extractor_dof_indices);
+          for (const auto &col : extractor_dof_indices)
+            dsp.add(row, col);
         sparsity_pattern_jacobian.copy_from(dsp);
       }
 

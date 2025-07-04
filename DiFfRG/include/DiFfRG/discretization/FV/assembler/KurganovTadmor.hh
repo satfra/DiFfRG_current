@@ -148,18 +148,19 @@ namespace DiFfRG
       protected:
         template <typename... T> auto fv_tie(T &&...t)
         {
-          return named_tuple<std::tuple<T &...>, "fe_functions">(std::tie(t...));
+          return named_tuple<std::tuple<T &...>, StringSet<"fe_functions">>(std::tie(t...));
         }
 
         template <typename... T> static constexpr auto v_tie(T &&...t)
         {
-          return named_tuple<std::tuple<T &...>, "variables", "extractors">(std::tie(t...));
+          return named_tuple<std::tuple<T &...>, StringSet<"variables", "extractors">>(std::tie(t...));
         }
 
         template <typename... T> static constexpr auto e_tie(T &&...t)
         {
-          return named_tuple<std::tuple<T &...>, "fe_functions", "fe_derivatives", "fe_hessians", "extractors",
-                             "variables">(std::tie(t...));
+          return named_tuple<std::tuple<T &...>,
+                             StringSet<"fe_functions", "fe_derivatives", "fe_hessians", "extractors", "variables">>(
+              std::tie(t...));
         }
 
       public:
@@ -463,7 +464,7 @@ namespace DiFfRG
                   copy_data.cell_jacobian(i, j) +=
                       weight * JxW[q_index] * fe_v.shape_value_component(j, q_index, component_j) * // dx * phi_j * (
                       (fe_v.shape_value_component(i, q_index, component_i) *
-                             j_source(component_i, component_j)); // -phi_i * jsource)
+                       j_source(component_i, component_j)); // -phi_i * jsource)
                   copy_data.cell_mass_jacobian(i, j) +=
                       JxW[q_index] * fe_v.shape_value_component(j, q_index, component_j) *
                       fe_v.shape_value_component(i, q_index, component_i) *

@@ -12,6 +12,7 @@ namespace DiFfRG
 
     void init(const SparseMatrixType &matrix)
     {
+      (void)matrix;
       throw std::runtime_error("AbstractLinearSolver::init: not implemented");
     };
 
@@ -23,6 +24,9 @@ namespace DiFfRG
 
     int solve(const VectorType &src, const VectorType &dst, const double tol)
     {
+      (void)src;
+      (void)dst;
+      (void)tol;
       throw std::runtime_error("AbstractLinearSolver::solve: not implemented");
       return -1;
     };

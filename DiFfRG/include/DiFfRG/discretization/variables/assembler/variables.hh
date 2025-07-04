@@ -29,11 +29,10 @@ namespace DiFfRG
   namespace Variables
   {
     using namespace dealii;
-    using std::array;
 
     template <typename... T> auto fe_tie(T &&...t)
     {
-      return named_tuple<std::tuple<T &...>, "variables">(std::tie(t...));
+      return named_tuple<std::tuple<T &...>, StringSet<"variables">>(std::tie(t...));
     }
 
     /**
@@ -104,7 +103,7 @@ namespace DiFfRG
           (void)EoMfun;
           outputter(data_out, Point<0>(), fe_tie(variables));
         };
-        model.template readouts_multiple(helper, data_out);
+        model.readouts_multiple(helper, data_out);
       }
 
       virtual void mass(VectorType &, const VectorType &, const VectorType &, NumberType) override {}

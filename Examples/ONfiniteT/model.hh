@@ -46,7 +46,7 @@ public:
 
 protected:
   const Parameters prm;
-  mutable ON_finiteTFlowEquations flow_equations;
+  mutable ONFiniteTFlows flow_equations;
 
   // ----------------------------------------------------------------------------------------------------
   // initialization
@@ -55,7 +55,7 @@ public:
   ON_finiteT(const JSONValue &json) : def::fRG(json.get_double("/physical/Lambda")), prm(json), flow_equations(json)
   {
     flow_equations.set_k(Lambda);
-    flow_equations.print_parameters("log");
+    flow_equations.set_T(prm.T);
   }
 
   template <typename Vector> void initial_condition(const Point<dim> &pos, Vector &values) const
@@ -87,17 +87,15 @@ public:
     const auto m2Pi = fe_functions[idxf("m2")];
     const auto m2Sigma = fe_functions[idxf("m2")] + 2. * rho * fe_derivatives[idxf("m2")][0];
 
-    flux[idxf("m2")][0] = flow_equations.V_integrator.get<NT>(k, prm.N, prm.T, rho, m2Pi, m2Sigma);
+    flow_equations.V.get(flux[idxf("m2")][0], k, prm.N, prm.T, m2Pi, m2Sigma);
   }
 
-  template <int dim, typename NumberType, typename Solution>
-  void cell_indicator(NumberType & indicator, const Point<dim> & /*p*/, const Solution & sol) const
+  template <int dim, typename NumberType, typename Solution> void cell_indicator(NumberType &indicator, const Point<dim> & /*p*/, const Solution &sol) const
   {
     const auto &fe_hessians = get<"fe_hessians">(sol);
 
     indicator = fe_hessians[idxf("m2")][0][0];
   }
-
 
   template <int dim, typename DataOut, typename Solutions> void readouts(DataOut &output, const Point<dim> &x, const Solutions &sol) const
   {

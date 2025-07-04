@@ -5,10 +5,6 @@
 #include <list>
 #include <string>
 
-// external libraries
-#include <deal.II/base/logstream.h>
-#include <deal.II/base/parameter_handler.h>
-
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
 

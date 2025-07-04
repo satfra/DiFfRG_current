@@ -1,11 +1,7 @@
 #pragma once
 
-// standard library
-#include <cmath>
-#include <tuple>
-
 // DiFfRG
-#include <DiFfRG/common/cuda_prefix.hh>
+#include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/discretization/grid/coordinates.hh>
 #include <DiFfRG/discretization/grid/stack_coordinates.hh>
@@ -48,7 +44,7 @@ namespace DiFfRG
      * @param x grid coordinate
      * @return NumberType physical coordinate
      */
-    std::array<NT, 2> __forceinline__ __device__ __host__ forward(const uint m, const uint p) const
+    std::array<NT, 2> KOKKOS_FORCEINLINE_FUNCTION forward(const uint m, const uint p) const
     {
       return {matsubara_values.forward(m), logarithmic_coordinates.forward(p)};
     }
@@ -59,7 +55,7 @@ namespace DiFfRG
      * @param y physical coordinate
      * @return double grid coordinate
      */
-    std::tuple<Idx, NT> __forceinline__ __device__ __host__ backward(const NT m, const NT p) const
+    std::tuple<Idx, NT> KOKKOS_FORCEINLINE_FUNCTION backward(const NT m, const NT p) const
     {
       Idx m_idx = matsubara_values.backward(m);
       NT p_idx = 0;
@@ -124,7 +120,7 @@ namespace DiFfRG
      * @param x grid coordinate
      * @return NumberType physical coordinate
      */
-    std::array<NT, 2> __forceinline__ __device__ __host__ forward(const uint m, const uint p) const
+    std::array<NT, 2> KOKKOS_FORCEINLINE_FUNCTION forward(const uint m, const uint p) const
     {
       return {matsubara_values.forward(m), logarithmic_coordinates.forward(p)};
     }
@@ -135,7 +131,7 @@ namespace DiFfRG
      * @param y physical coordinate
      * @return double grid coordinate
      */
-    std::tuple<Idx, NT> __forceinline__ __device__ __host__ backward(const NT m, const NT p) const
+    std::tuple<Idx, NT> KOKKOS_FORCEINLINE_FUNCTION backward(const NT m, const NT p) const
     {
       Idx m_idx = matsubara_values.backward(m);
       NT p_idx = 0;

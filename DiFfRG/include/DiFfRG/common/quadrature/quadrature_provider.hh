@@ -1,8 +1,8 @@
 #pragma once
 
 // DiFfRG
-#include "DiFfRG/common/json.hh"
-#include <DiFfRG/common/cuda_prefix.hh>
+#include <DiFfRG/common/json.hh>
+#include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/quadrature/matsubara.hh>
 #include <DiFfRG/common/quadrature/quadrature.hh>
 #include <DiFfRG/common/types.hh>
@@ -147,10 +147,10 @@ namespace DiFfRG
      * @param quadrature_size Size of the quadrature.
      * @return const std::vector<double>&
      */
-    template <typename NT = double>
-    const std::vector<NT> &get_points(const size_t order, const QuadratureType type = QuadratureType::legendre)
+    template <typename NT = double, typename MemorySpace = CPU_memory>
+    auto nodes(const size_t order, const QuadratureType type = QuadratureType::legendre)
     {
-      return quadrature_storage.get_quadrature<NT>(order, type).nodes();
+      return quadrature_storage.get_quadrature<NT>(order, type).template nodes<MemorySpace>();
     }
 
     /**
@@ -159,10 +159,10 @@ namespace DiFfRG
      * @param quadrature_size Size of the quadrature.
      * @return const std::vector<double>&
      */
-    template <typename NT = double>
-    const std::vector<NT> &get_weights(const size_t order, const QuadratureType type = QuadratureType::legendre)
+    template <typename NT = double, typename MemorySpace = CPU_memory>
+    auto weights(const size_t order, const QuadratureType type = QuadratureType::legendre)
     {
-      return quadrature_storage.get_quadrature<NT>(order, type).weights();
+      return quadrature_storage.get_quadrature<NT>(order, type).template weights<MemorySpace>();
     }
 
     /**
@@ -171,9 +171,10 @@ namespace DiFfRG
      * @param quadrature_size Size of the quadrature.
      * @return const std::vector<double>&
      */
-    template <typename NT = double> const std::vector<NT> &get_matsubara_points(const NT T, const NT typical_E)
+    template <typename NT = double, typename MemorySpace = CPU_memory>
+    auto matsubara_nodes(const NT T, const NT typical_E)
     {
-      return matsubara_storage.get_matsubara_quadrature<NT>(T, typical_E).nodes();
+      return matsubara_storage.get_matsubara_quadrature<NT>(T, typical_E).template nodes<MemorySpace>();
     }
 
     /**
@@ -182,63 +183,11 @@ namespace DiFfRG
      * @param quadrature_size Size of the quadrature.
      * @return const std::vector<double>&
      */
-    template <typename NT = double> const std::vector<NT> &get_matsubara_weights(const NT T, const NT typical_E)
+    template <typename NT = double, typename MemorySpace = CPU_memory>
+    auto matsubara_weights(const NT T, const NT typical_E)
     {
-      return matsubara_storage.get_matsubara_quadrature<NT>(T, typical_E).weights();
+      return matsubara_storage.get_matsubara_quadrature<NT>(T, typical_E).template weights<MemorySpace>();
     }
-
-#ifdef USE_CUDA
-    /**
-     * @brief Get the device-side quadrature points for a quadrature of size quadrature_size.
-     *
-     * @param quadrature_size Size of the quadrature.
-     * @return const double*
-     */
-    template <typename NT = double>
-    const NT *get_device_points(const size_t order, const int device = 0,
-                                const QuadratureType type = QuadratureType::legendre)
-    {
-      return quadrature_storage.get_quadrature<NT>(order, type).device_nodes();
-    }
-
-    /**
-     * @brief Get the device-side quadrature weights for a quadrature of size quadrature_size.
-     *
-     * @param quadrature_size Size of the quadrature.
-     * @return const double*
-     */
-    template <typename NT = double>
-    const NT *get_device_weights(const size_t order, const int device = 0,
-                                 const QuadratureType type = QuadratureType::legendre)
-
-    {
-      return quadrature_storage.get_quadrature<NT>(order, type).device_weights();
-    }
-
-    /**
-     * @brief Get the device-side quadrature points for a quadrature of size quadrature_size.
-     *
-     * @param quadrature_size Size of the quadrature.
-     * @return const double*
-     */
-    template <typename NT = double>
-    const NT *get_device_matsubara_points(const NT T, const NT typical_E, const int device = 0)
-    {
-      return matsubara_storage.get_matsubara_quadrature<NT>(T, typical_E).device_nodes();
-    }
-
-    /**
-     * @brief Get the device-side quadrature weights for a quadrature of size quadrature_size.
-     *
-     * @param quadrature_size Size of the quadrature.
-     * @return const double*
-     */
-    template <typename NT = double>
-    const NT *get_device_matsubara_weights(const NT T, const NT typical_E, const int device = 0)
-    {
-      return matsubara_storage.get_matsubara_quadrature<NT>(T, typical_E).device_weights();
-    }
-#endif
 
   private:
     internal::MatsubaraStorage matsubara_storage;

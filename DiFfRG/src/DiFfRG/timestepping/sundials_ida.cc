@@ -369,6 +369,7 @@ namespace DiFfRG
 
     // Solve the linear system J dst = src
     time_stepper.solve_with_jacobian = [&](const BlockVectorType &src, BlockVectorType &dst, const double tol) -> int {
+
       try {
         const auto now = std::chrono::high_resolution_clock::now();
 

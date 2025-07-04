@@ -4,9 +4,9 @@ project(QuarkMesonLPAprime)
 
 find_package(DiFfRG REQUIRED HINTS /opt/DiFfRG)
 
-add_executable(QuarkMeson QM.cc)
-setup_application(QuarkMeson)
-add_flows(QuarkMeson flows)
+add_subdirectory(flows)
+add_executable(QuarkMeson QM.cc ${flow_sources})
+target_link_libraries(QuarkMeson DiFfRG::DiFfRG)
 
 execute_process(
   COMMAND

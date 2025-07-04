@@ -40,6 +40,8 @@ namespace DiFfRG
       adapt_lower = json.get_double("/discretization/adaptivity/coarsen_percent");
     }
 
+    virtual ~HAdaptivity() = default;
+
     /**
      * @brief Check if an adaptation step should be done and tranfer the given solution to the new mesh.
      *
@@ -99,7 +101,7 @@ namespace DiFfRG
       assembler.reinit();
       assembler.reinit_vector(solution);
 
-      solution_trans.interpolate(solution);
+      solution_trans.interpolate(previous_solution, solution);
       constraints.distribute(solution);
 
       return true;

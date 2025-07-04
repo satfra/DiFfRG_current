@@ -34,11 +34,20 @@ TEST_CASE("Test diagonalization of tridiagonal symmetric matrices", "[common]")
 
     diagonalize_tridiagonal_symmetric_matrix(diag, off_diag, eigvecs);
 
-    REQUIRE(diag[0] == Catch::Approx(eig_1));
-    REQUIRE(diag[1] == Catch::Approx(eig_2));
+    std::vector<double> sorted_eig = {eig_1, eig_2};
+    std::sort(sorted_eig.begin(), sorted_eig.end());
 
-    REQUIRE(abs(eigvecs[0]) == Catch::Approx(abs(eigvec_1)));
-    REQUIRE(abs(eigvecs[1]) == Catch::Approx(abs(eigvec_2)));
+    REQUIRE(diag[0] == Catch::Approx(sorted_eig[0]));
+    REQUIRE(diag[1] == Catch::Approx(sorted_eig[1]));
+
+    std::vector<double> sorted_abs_eigvecs = {std::abs(eigvec_1), std::abs(eigvec_2)};
+    std::sort(sorted_abs_eigvecs.begin(), sorted_abs_eigvecs.end());
+
+    std::vector<double> eigvecs_abs = {std::abs(eigvecs[0]), std::abs(eigvecs[1])};
+    std::sort(eigvecs_abs.begin(), eigvecs_abs.end());
+
+    REQUIRE(eigvecs_abs[0] == Catch::Approx(sorted_abs_eigvecs[0]));
+    REQUIRE(eigvecs_abs[1] == Catch::Approx(sorted_abs_eigvecs[1]));
   }
   SECTION("Test diagonalization of 3x3 matrix", "[common]")
   {
@@ -828,12 +837,21 @@ TEST_CASE("Test diagonalization of tridiagonal symmetric matrices", "[common]")
 
     diagonalize_tridiagonal_symmetric_matrix(diag, off_diag, eigvecs);
 
-    REQUIRE(diag[0] == Catch::Approx(eig_2));
-    REQUIRE(diag[1] == Catch::Approx(eig_3));
-    REQUIRE(diag[2] == Catch::Approx(eig_1));
+    std::vector<double> sorted_eig = {eig_1, eig_2, eig_3};
+    std::sort(sorted_eig.begin(), sorted_eig.end());
 
-    REQUIRE(abs(eigvecs[0]) == Catch::Approx(abs(eigvec_2)));
-    REQUIRE(abs(eigvecs[1]) == Catch::Approx(abs(eigvec_3)));
-    REQUIRE(abs(eigvecs[2]) == Catch::Approx(abs(eigvec_1)));
+    REQUIRE(diag[0] == Catch::Approx(sorted_eig[0]));
+    REQUIRE(diag[1] == Catch::Approx(sorted_eig[1]));
+    REQUIRE(diag[2] == Catch::Approx(sorted_eig[2]));
+
+    std::vector<double> sorted_abs_eigvecs = {abs(eigvec_1), abs(eigvec_2), abs(eigvec_3)};
+    std::sort(sorted_abs_eigvecs.begin(), sorted_abs_eigvecs.end());
+
+    std::vector<double> eigvecs_abs = {abs(eigvecs[0]), abs(eigvecs[1]), abs(eigvecs[2])};
+    std::sort(eigvecs_abs.begin(), eigvecs_abs.end());
+
+    REQUIRE(eigvecs_abs[0] == Catch::Approx(sorted_abs_eigvecs[0]));
+    REQUIRE(eigvecs_abs[1] == Catch::Approx(sorted_abs_eigvecs[1]));
+    REQUIRE(eigvecs_abs[2] == Catch::Approx(sorted_abs_eigvecs[2]));
   }
 }

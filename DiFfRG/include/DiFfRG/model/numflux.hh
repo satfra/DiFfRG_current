@@ -38,8 +38,8 @@ namespace DiFfRG
         asImp().flux(F_s, p, sol_s);
         asImp().flux(F_n, p, sol_n);
 
-        const auto &u_s = std::get<0>(sol_s);
-        const auto &u_n = std::get<0>(sol_n);
+        const auto &u_s = get<0>(sol_s);
+        const auto &u_n = get<0>(sol_n);
 
         // A lengthy calculation for the diffusion
         // we use FD here, as nested AD calculations would be quite the hassle
