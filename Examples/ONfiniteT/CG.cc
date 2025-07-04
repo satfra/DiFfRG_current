@@ -1,4 +1,5 @@
 #include <DiFfRG/common/configuration_helper.hh>
+#include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/discretization.hh>
 #include <DiFfRG/timestepping/timestepping.hh>
@@ -19,8 +20,9 @@ using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, U
 
 int main(int argc, char *argv[])
 {
+  // Initialize DiFfRG and thus the MPI and Kokkos environments
+  const auto config_helper = DiFfRG::Init(argc, argv).get_configuration_helper();
   // get all needed parameters and parse from the CLI
-  ConfigurationHelper config_helper(argc, argv);
   const auto json = config_helper.get_json();
 
   // Define the objects needed to run the simulation

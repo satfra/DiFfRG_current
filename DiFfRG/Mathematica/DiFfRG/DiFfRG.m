@@ -151,7 +151,18 @@ poles = Assuming[T>0&&_Symbol\[Element]Reals,poles//FullSimplify];
 residues={};For[n=1,n<=Length[poles],n++,
 r=Simplify[Residue[expr Coth[(I p0)/(2T)],{p0,poles[[n]]}]];
 AppendTo[residues,r];];
-SumB=1/(2I) TrigReduce[residues];
+SumB=1/(2I) residues;
+Total[SumB]
+];
+FermionMatsubaraSum[expr_,p0_Symbol,T_]:=Module[{denom,poles,residues,n,r,SumB},
+If[Head[expr]==Plus,Return[Total[Flatten[Map[MatsubaraSum[#,p0,T]&,List@@expr],1]]]];denom = Denominator[expr]//Collect[#,p0]&;
+poles = p0/.{ToRules[Reduce[Reduce[denom==0,p0]//FullSimplify,p0]]};
+poles = Assuming[T>0&&_Symbol\[Element]Reals,poles//FullSimplify];
+
+residues={};For[n=1,n<=Length[poles],n++,
+r=Simplify[Residue[expr Tanh[(I p0)/(2T)],{p0,poles[[n]]}]];
+AppendTo[residues,r];];
+SumB=1/(2I) residues;
 Total[SumB]
 ];
 

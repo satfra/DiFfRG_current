@@ -43,6 +43,18 @@ namespace DiFfRG
 
   } // namespace internal
 
+  /**
+   * @brief Integrator_p2 integrates a kernel \f$K(p,\ldots)\f$ depending on the radial momentum \f$p\f$ as
+   * $$
+   * \frac{S_d}{(2\pi)^{d}}\,\int_0^\infty dp^2 p^{d-2} K(p, \ldots)
+   * $$
+   * where \f$S_d\f$ is the solid angle in $d$ dimensions.
+   *
+   * @tparam dim dimension of the momentum space, i.e. $d$ in the above equation
+   * @tparam NT numerical type of the result
+   * @tparam KERNEL kernel to be integrated, which must provide the static methods `kernel` and `constant`
+   * @tparam ExecutionSpace can be any execution space, e.g. GPU_exec, TBB_exec, or OpenMP_exec.
+   */
   template <int dim, typename NT, typename KERNEL, typename ExecutionSpace>
   class Integrator_p2 : public QuadratureIntegrator<1, NT, internal::Transform_p2<dim, NT, KERNEL>, ExecutionSpace>
   {

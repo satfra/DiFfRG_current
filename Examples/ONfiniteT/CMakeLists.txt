@@ -12,13 +12,12 @@ add_subdirectory(flows)
 
 add_executable(LDG LDG.cc)
 target_link_libraries(LDG PRIVATE DiFfRG::DiFfRG ONFiniteTFlows)
-# setup_target(LDG)
 
-# add_executable(CG CG.cc ${flow_sources}) setup_application(CG)
-# target_link_libraries(CG DiFfRG::DiFfRG)
+add_executable(CG CG.cc)
+target_link_libraries(CG PRIVATE DiFfRG::DiFfRG ONFiniteTFlows)
 
-# add_executable(dDG dDG.cc ${flow_sources}) setup_application(dDG)
-# target_link_libraries(dDG DiFfRG::DiFfRG)
+add_executable(dDG dDG.cc)
+target_link_libraries(dDG PRIVATE DiFfRG::DiFfRG ONFiniteTFlows)
 
 execute_process(
   COMMAND

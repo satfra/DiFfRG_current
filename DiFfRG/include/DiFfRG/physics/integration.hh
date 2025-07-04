@@ -26,5 +26,8 @@ namespace DiFfRG
   concept has_set_k = requires(T t, double k) { t.set_k(k); };
 
   template <typename T>
+  concept has_set_T = requires(T t, double mT) { t.set_T(mT); };
+
+  template <typename T>
   concept has_integrator_AD = requires(T t) { t.integrator_AD; };
 } // namespace DiFfRG

@@ -468,9 +468,13 @@ FunKit`MakeCppFunction[
 "Parameters"->{<|"Type"->"double","Const"->True,"Name"->"k","Reference"->False|>},
 "Body"->StringJoin[
 Map[
-"if constexpr(DiFfRG::has_set_k<decltype("<>#[[1]]<>".integrator)>) "<>#[[1]]<>".integrator.set_k(k);
+"
+if constexpr(DiFfRG::has_set_k<decltype("<>#[[1]]<>".integrator)>) "<>#[[1]]<>".integrator.set_k(k);
 if constexpr(DiFfRG::has_integrator_AD<decltype("<>#[[1]]<>")>)
-if constexpr(DiFfRG::has_set_k<decltype("<>#[[1]]<>".integrator_AD)>)"<>#[[1]]<>".integrator_AD.set_k(k);"
+if constexpr(DiFfRG::has_set_k<decltype("<>#[[1]]<>".integrator_AD)>)"<>#[[1]]<>".integrator_AD.set_k(k);"<>"
+if constexpr(DiFfRG::has_set_T<decltype("<>#[[1]]<>".integrator)>) "<>#[[1]]<>".integrator.set_T(k);
+if constexpr(DiFfRG::has_integrator_AD<decltype("<>#[[1]]<>")>)
+if constexpr(DiFfRG::has_set_T<decltype("<>#[[1]]<>".integrator_AD)>)"<>#[[1]]<>".integrator_AD.set_T(k);"
 &,
 integrators]
 ],
@@ -506,6 +510,7 @@ $ADReplacements={};
 $ADReplacementsDirect={"double"->"autodiff::real"};
 
 MakeKernel[__]:=(Message[MakeKernel::Invalid];Abort[]);
+MakeKernel[kernelExpr_,spec_Association,parameters_List,OptionsPattern[]]:=MakeKernel@@(Join[{kernelExpr,0,spec,parameters},Thread[Rule@@{#,OptionValue[MakeKernel,#]}]&@Keys[Options[MakeKernel]]]);
 MakeKernel[kernelExpr_,constExpr_,spec_Association,parameters_List,OptionsPattern[]]:=Module[
 {expr,const,
 kernel,constant,kernelClass,kernelHeader,
@@ -608,23 +613,14 @@ integratorHeader=FunKit`MakeCppHeader[
 "Body"->{"#include \"./kernel.hh\"\n",
 FunKit`MakeCppClass[
 "Name"->spec["Name"]<>"_integrator",
-"MembersPublic"->{
+"MembersPublic"->
+Join[
+{
 FunKit`MakeCppFunction[
 "Name"->spec["Name"]<>"_integrator",
 "Parameters"->{<|"Type"->"DiFfRG::QuadratureProvider","Reference"->True,"Const"->False,"Name"->"quadrature_provider"|>,<|"Type"->"DiFfRG::JSONValue","Reference"->True,"Const"->True,"Name"->"json"|>},
 "Body"->None,
 "Return"->""
-],
-FunKit`MakeCppFunction[
-"Name"->"get",
-"Templates"->{"NT=double"},
-"Parameters"->{<|"Name"->"dest","Type"->"NT","Reference"->True,"Const"->False|>,<|"Name"->"...t","Type"->"auto&&","Reference"->False,"Const"->False|>},
-"Body"->"static_assert(std::is_same_v<NT, double> || std::is_same_v<NT, autodiff::real>, \"Unknown type requested of "<>spec["Name"]<>"_integrator::get\");
-if constexpr (std::is_same_v<NT, double>)
-  get_CT(dest, std::forward<decltype(t)>(t)...);
-else if constexpr (std::is_same_v<NT, autodiff::real>)
-  get_AD(dest, std::forward<decltype(t)>(t)...);",
-"Return"->"void"
 ],
 If[Length[coordinates]>0,
 FunKit`MakeCppFunction[
@@ -642,17 +638,17 @@ getRegulator[OptionValue["Regulator"],OptionValue["RegulatorOpts"]],
 spec["Integrator"]<>"<"<>integratorTemplateParams<>"> integrator;",
 If[spec["AD"],spec["Integrator"]<>"<"<>integratorADTemplateParams<>"> integrator_AD;",""]
 },
-"MembersPrivate"->Join[
 Map[
-FunKit`MakeCppFunction["Name"->"map_CT","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"double*","Const"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},params]]&,
+FunKit`MakeCppFunction["Name"->"map","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"double*","Const"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},params]]&,
 coordinates],
-Map[
-FunKit`MakeCppFunction["Name"->"map_AD","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real*","Const"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},paramsAD]]&,
+If[spec["AD"],#,{}]&@Map[
+FunKit`MakeCppFunction["Name"->"map","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real*","Const"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},paramsAD]]&,
 coordinates],
-{FunKit`MakeCppFunction["Name"->"get_CT","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"double","Reference"->True,"Const"->False|>},params]],
-FunKit`MakeCppFunction["Name"->"get_AD","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real","Reference"->True,"Const"->False|>},paramsAD]],
-"DiFfRG::QuadratureProvider& quadrature_provider;"}
-]
+{FunKit`MakeCppFunction["Name"->"get","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"double","Reference"->True,"Const"->False|>},params]],
+If[spec["AD"],#,""]&@FunKit`MakeCppFunction["Name"->"get","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real","Reference"->True,"Const"->False|>},paramsAD]]}]
+,
+"MembersPrivate"->{"DiFfRG::QuadratureProvider& quadrature_provider;"}
+
 ]}
 ];
 (*Print[integratorHeader];*)
@@ -674,7 +670,7 @@ integratorCpp["CT","get"]=FunKit`MakeCppBlock[
 "Includes"->{"../"<>spec["Name"]<>".hh"},
 "Body"->{
 FunKit`MakeCppFunction[
-"Name"->"get_CT",
+"Name"->"get",
 "Class"->spec["Name"]<>"_integrator",
 "Body"->"integrator.get(dest, "<>arguments<>");",
 "Parameters"->Join[{<|"Name"->"dest","Type"->"double","Reference"->True,"Const"->False|>},params],
@@ -685,7 +681,7 @@ integratorCpp["AD","get"]=FunKit`MakeCppBlock[
 "Includes"->{"../"<>spec["Name"]<>".hh"},
 "Body"->{
 FunKit`MakeCppFunction[
-"Name"->"get_AD",
+"Name"->"get",
 "Class"->spec["Name"]<>"_integrator",
 "Body"->"integrator_AD.get(dest, "<>arguments<>");",
 "Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real","Reference"->True,"Const"->False|>},paramsAD],
@@ -696,7 +692,7 @@ integratorCpp["CT","map"]=Map[FunKit`MakeCppBlock[
 "Includes"->{"../"<>spec["Name"]<>".hh"},
 "Body"->{
 FunKit`MakeCppFunction[
-"Name"->"map_CT",
+"Name"->"map",
 "Return"->"void",
 "Class"->spec["Name"]<>"_integrator",
 "Body"->"integrator.map(dest, coordinates, "<>arguments<>");",
@@ -707,7 +703,7 @@ integratorCpp["AD","map"]=Map[FunKit`MakeCppBlock[
 "Includes"->{"../"<>spec["Name"]<>".hh"},
 "Body"->{
 FunKit`MakeCppFunction[
-"Name"->"map_AD",
+"Name"->"map",
 "Return"->"void",
 "Class"->spec["Name"]<>"_integrator",
 "Body"->"integrator_AD.map(dest, coordinates, "<>arguments<>");",
