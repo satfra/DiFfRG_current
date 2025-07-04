@@ -1,8 +1,5 @@
 bin/
 build/
-DiFfRG_install/
-DiFfRG_build/
-DiFfRG_debug/
 .idea/
 profile/
 .ipynb_checkpoints
@@ -11,11 +8,6 @@ profile/
 *.log
 .cache/
 .venv/
-
-## remove builds from Applications
-Applications/*/build
-## remove tutorials
-Applications/tut1
 
 ## Core latex/pdflatex auxiliary files:
 *.aux

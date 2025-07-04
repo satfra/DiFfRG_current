@@ -46,6 +46,19 @@ namespace DiFfRG
 
   } // namespace internal
 
+  /**
+   * @brief Integrator_p2_4D_3ang integrates a kernel \f$K(p,\cos_1,\cos_2,\ldots)\f$ depending on the radial momentum
+   * \f$p\f$ and two angles on \f$[0,\pi]\f$ and one angle on \f$[0,2\pi]\f$ as
+   * $$
+   * \frac{1}{(2\pi)^{d}} \,\int_0^\pi d\cos_1\,\int_0^\pi d\cos_2\,\int_0^{2\pi}d\phi\,\int_0^\infty dp^2 p^{d-2}
+   * K(p,\cos_1,\cos_2,\pi,\ldots)
+   * $$
+   * in \f$d=4\f$ dimensions.
+   *
+   * @tparam NT numerical type of the result
+   * @tparam KERNEL kernel to be integrated, which must provide the static methods `kernel` and `constant`
+   * @tparam ExecutionSpace can be any execution space, e.g. GPU_exec, TBB_exec, or OpenMP_exec.
+   */
   template <typename NT, typename KERNEL, typename ExecutionSpace>
   class Integrator_p2_4D_3ang
       : public QuadratureIntegrator<4, NT, internal::Transform_p2_4D_3ang<NT, KERNEL>, ExecutionSpace>
