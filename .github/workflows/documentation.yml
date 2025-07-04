@@ -20,15 +20,10 @@ jobs:
           cd ..
       - name: Create temporary working-directory
         run: mkdir build
-      - name: Pull doxygen-awesome
-        run: |
-          cd external
-          git submodule update --init doxygen-awesome-css
-          cd ..
       - name: Build doxygen documentation
         run: |
           cd build
-          cmake -DDiFfRG_ONLY_DOCUMENTATION=ON -DCMAKE_INSTALL_PREFIX=../install/ ../DiFfRG 
+          cmake -DDiFfRG_ONLY_DOCUMENTATION=ON -DCMAKE_INSTALL_PREFIX=../install/ ../DiFfRG
           make documentation
           make install
           cd ..
@@ -36,16 +31,16 @@ jobs:
         run: |
           python -m venv .venv
           source .venv/bin/activate
-          pip install pdoc python/dist/DiFfRG-1.0.0-py3-none-any.whl
-          cd python
+          pip install pdoc ./DiFfRG/python/dist/DiFfRG-1.0.0-py3-none-any.whl
+          cd ./DiFfRG/python
           pdoc -o python ./DiFfRG
           cd ..
       - name: Assemble
         run: |
           mkdir documentation
           mv install/documentation/html documentation/cpp
-          mv python/python documentation/python
-          mv Mathematica/DiFfRG/doc_built documentation/wolfram
+          mv ./DiFfRG/python/python documentation/python
+          mv ./DiFfRG/Mathematica/DiFfRG/doc_built documentation/wolfram
       - name: Upload static files as artifact
         if: github.ref == 'refs/heads/main'
         id: deployment
