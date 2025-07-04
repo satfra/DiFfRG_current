@@ -1,6 +1,6 @@
 #pragma once
 
-// #include <DiFfRG/discretization/FV/discretization.hh>
+#include <DiFfRG/discretization/FV/discretization.hh>
 
 #include <DiFfRG/discretization/FEM/cg.hh>
 #include <DiFfRG/discretization/FEM/dg.hh>

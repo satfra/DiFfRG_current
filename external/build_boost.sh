@@ -40,4 +40,4 @@ $SuperUser ./b2 --build-dir=${BUILD_PATH} \
   --with-thread \
   -j ${THREADS} \
   cxxflags="${CXX_FLAGS} -std=c++20" \
-  install &> $MAKE_LOG_FILE
+  install &>$MAKE_LOG_FILE
