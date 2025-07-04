@@ -48,12 +48,11 @@ To compile and run this project, there are very few requirements which you can e
 - [CMake](https://www.cmake.org/) for the build systems of DiFfRG, deal.ii and other libraries.
 - [GNU Make](https://www.gnu.org/software/make/) or another generator of your choice.
 - A compiler supporting at least the C++20 standard. This project is only tested using the [GCC](https://gcc.gnu.org/) compiler suite, as well as with `AppleClang`, but in principle, ICC or standard Clang should also work.
-- LAPACK and BLAS in some form, e.g. [OpenBlas](https://www.openblas.net/).
 - The GNU Scientific Library [GSL](https://www.gnu.org/software/gsl/). If not found by DiFfRG, it will try to install it by itself.
 - [Doxygen](https://www.doxygen.org/) and [graphviz](https://www.graphviz.org/download/) to build the documentation.
+- [Python](https://www.python.org/) is used in the library both for visualization purposes and within the build system of DiFfRG. 
 
 The following requirements are optional:
-- [Python](https://www.python.org/) is used in the library for visualization purposes. Furthermore, adaptive phase diagram calculation is implemented as a python routine.
 - [ParaView](https://www.paraview.org/), a program to visualize and post-process the vtk data saved by DiFfRG when treating FEM discretizations.
 - [CUDA](https://developer.nvidia.com/cuda-toolkit) for integration routines on the GPU, which gives a huge speedup for the calculation of fully momentum dependent flow equations (10 - 100x). In case you wish to use CUDA, make sure you have a compiler available on your system compatible with your version of `nvcc`, e.g. `g++`<=13.2 for CUDA 12.5
 
@@ -62,7 +61,7 @@ The framework has been tested with the following systems:
 
 #### Arch Linux
 ```bash
-$ pacman -S git cmake gcc blas-openblas blas64-openblas paraview python doxygen graphviz gsl
+$ pacman -S git cmake gcc paraview python doxygen graphviz gsl
 ```
 For a CUDA-enabled build, additionally 
 ```bash
@@ -72,7 +71,7 @@ $ pacman -S cuda
 
 #### Rocky Linux
 ```bash
-$ dnf --enablerepo=devel install -y gcc-toolset-12 cmake git openblas-devel doxygen doxygen-latex python3 python3-pip gsl-devel patch
+$ dnf --enablerepo=devel install -y gcc-toolset-12 cmake git doxygen doxygen-latex python3 python3-pip gsl-devel patch
 $ scl enable gcc-toolset-12 bash
 ```
 
@@ -81,7 +80,7 @@ The second line is necessary to switch into a shell where `g++-12` is available
 #### Ubuntu
 ```bash
 $ apt-get update
-$ apt-get install git cmake libopenblas-dev paraview build-essential python3 doxygen graphviz libgsl-dev
+$ apt-get install git cmake paraview build-essential python3 doxygen graphviz libgsl-dev
 ```
 For a CUDA-enabled build, additionally 
 ```bash
