@@ -65,6 +65,9 @@ namespace DiFfRG
      * @brief Numerical type to be used for integration tasks e.g. the argument or possible jacobians.
      */
     using ctype = typename get_type::ctype<NT>;
+    /**
+     * @brief Execution space to be used for the integration, e.g. GPU_exec, TBB_exec, or OpenMP_exec.
+     */
     using execution_space = ExecutionSpace;
 
     Integrator_p2(QuadratureProvider &quadrature_provider, const JSONValue &json)

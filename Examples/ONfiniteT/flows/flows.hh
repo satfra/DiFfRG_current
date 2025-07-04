@@ -11,6 +11,8 @@ public:
 
   void set_k(const double k);
 
+  void set_T(const double T);
+
   DiFfRG::QuadratureProvider quadrature_provider;
 
   V_integrator V;

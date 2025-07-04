@@ -23,7 +23,7 @@
     "threads": 8,
     "batch_size": 8,
     "overintegration": 0,
-    "output_subdivisions": 2,
+    "output_subdivisions": 0,
     "EoM_abs_tol": 1e-14,
     "EoM_max_iter": 200,
     "grid": {

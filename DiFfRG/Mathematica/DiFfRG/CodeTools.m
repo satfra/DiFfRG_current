@@ -442,6 +442,12 @@ FunKit`MakeCppFunction[
 "Body"->None,
 "Return"->"void"
 ],
+FunKit`MakeCppFunction[
+"Name"->"set_T",
+"Parameters"->{<|"Type"->"double","Const"->True,"Name"->"T","Reference"->False|>},
+"Body"->None,
+"Return"->"void"
+],
 "DiFfRG::QuadratureProvider quadrature_provider;"
 },
 Map[#[[2]]<>" "<>#[[1]]<>";"&,integrators]
@@ -467,16 +473,16 @@ FunKit`MakeCppFunction[
 "Class"->varName,
 "Parameters"->{<|"Type"->"double","Const"->True,"Name"->"k","Reference"->False|>},
 "Body"->StringJoin[
-Map[
-"
-if constexpr(DiFfRG::has_set_k<decltype("<>#[[1]]<>".integrator)>) "<>#[[1]]<>".integrator.set_k(k);
-if constexpr(DiFfRG::has_integrator_AD<decltype("<>#[[1]]<>")>)
-if constexpr(DiFfRG::has_set_k<decltype("<>#[[1]]<>".integrator_AD)>)"<>#[[1]]<>".integrator_AD.set_k(k);"<>"
-if constexpr(DiFfRG::has_set_T<decltype("<>#[[1]]<>".integrator)>) "<>#[[1]]<>".integrator.set_T(k);
-if constexpr(DiFfRG::has_integrator_AD<decltype("<>#[[1]]<>")>)
-if constexpr(DiFfRG::has_set_T<decltype("<>#[[1]]<>".integrator_AD)>)"<>#[[1]]<>".integrator_AD.set_T(k);"
-&,
-integrators]
+Map["DiFfRG::all_set_k("<>#[[1]]<>", k);"&,integrators]
+],
+"Return"->"void"
+],
+FunKit`MakeCppFunction[
+"Name"->"set_T",
+"Class"->varName,
+"Parameters"->{<|"Type"->"double","Const"->True,"Name"->"T","Reference"->False|>},
+"Body"->StringJoin[
+Map["DiFfRG::all_set_T("<>#[[1]]<>", T);"&,integrators]
 ],
 "Return"->"void"
 ]

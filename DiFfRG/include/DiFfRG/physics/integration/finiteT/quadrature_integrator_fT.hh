@@ -673,7 +673,7 @@ namespace DiFfRG
     }
 
     template <typename Coordinates, typename... Args>
-    void map_impl(NT *dest, const Coordinates &coordinates, const Args &...args)
+    void map(execution_space &space, NT *dest, const Coordinates &coordinates, const Args &...args)
     {
       const auto m_args = std::tie(args...);
 
@@ -691,6 +691,8 @@ namespace DiFfRG
     template <typename Coordinates, typename... Args>
     auto map(NT *dest, const Coordinates &coordinates, const Args &...args)
     {
+      const auto space = execution_space();
+
       // Take care of MPI distribution
       const auto &node_distribution = AbstractIntegrator::node_distribution;
       if (node_distribution.mpi_comm != MPI_COMM_NULL && node_distribution.total_size > 0) {
@@ -713,10 +715,10 @@ namespace DiFfRG
         // Offset the destination pointer
         NT *dest_offset = dest + offset;
 
-        map_impl(dest_offset, sub_coordinates, args...);
+        map_impl(space, dest_offset, sub_coordinates, args...);
       } else
-        map_impl(dest, coordinates, args...);
-      return execution_space();
+        map_impl(space, dest, coordinates, args...);
+      return space;
     }
 
     const std::array<uint, dim> grid_size;

@@ -70,7 +70,18 @@ namespace DiFfRG
      * @brief Numerical type to be used for integration tasks e.g. the argument or possible jacobians.
      */
     using ctype = typename get_type::ctype<NT>;
+    /**
+     * @brief Execution space to be used for the integration, e.g. GPU_exec, TBB_exec, or OpenMP_exec.
+     */
     using execution_space = ExecutionSpace;
+
+    Integrator_p2_4D_3ang(QuadratureProvider &quadrature_provider, const JSONValue &json)
+      requires provides_regulator<KERNEL>
+        : Integrator_p2_4D_3ang(quadrature_provider,
+                                internal::make_int_grid<4>(json, {"x_order", "cos1_order", "cos2_order", "phi_order"}),
+                                optimize_x_extent<typename KERNEL::Regulator>(json))
+    {
+    }
 
     Integrator_p2_4D_3ang(QuadratureProvider &quadrature_provider, const std::array<uint, 4> grid_size,
                           ctype x_extent = 2.)

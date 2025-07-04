@@ -17,6 +17,14 @@
 
 namespace DiFfRG
 {
+  /**
+   * @brief This class performs numerical integration over a d-dimensional hypercube using quadrature rules.
+   *
+   * @tparam dim The dimension of the hypercube, which can be between 1 and 5.
+   * @tparam NT numerical type of the result
+   * @tparam KERNEL kernel to be integrated, which must provide the static methods `kernel` and `constant`
+   * @tparam ExecutionSpace can be any execution space, e.g. GPU_exec, TBB_exec, or OpenMP_exec.
+   */
   template <int dim, typename NT, typename KERNEL, typename ExecutionSpace>
   class QuadratureIntegrator : public AbstractIntegrator
   {
@@ -25,6 +33,9 @@ namespace DiFfRG
      * @brief Numerical type to be used for integration tasks e.g. the argument or possible jacobians.
      */
     using ctype = typename get_type::ctype<NT>;
+    /**
+     * @brief Execution space to be used for the integration, e.g. GPU_exec, TBB_exec, or OpenMP_exec.
+     */
     using execution_space = ExecutionSpace;
 
     QuadratureIntegrator(QuadratureProvider &quadrature_provider, const std::array<uint, dim> grid_size,
@@ -527,7 +538,7 @@ namespace DiFfRG
     }
 
     template <typename Coordinates, typename... Args>
-    void map_impl(NT *dest, const Coordinates &coordinates, const Args &...args)
+    void map(execution_space &, NT *dest, const Coordinates &coordinates, const Args &...args)
     {
       const auto m_args = std::tie(args...);
 
@@ -550,6 +561,8 @@ namespace DiFfRG
     template <typename Coordinates, typename... Args>
     auto map(NT *dest, const Coordinates &coordinates, const Args &...args)
     {
+      const auto space = execution_space();
+
       // Take care of MPI distribution
       const auto &node_distribution = AbstractIntegrator::node_distribution;
       if (node_distribution.mpi_comm != MPI_COMM_NULL && node_distribution.total_size > 0) {
@@ -572,10 +585,10 @@ namespace DiFfRG
         // Offset the destination pointer
         NT *dest_offset = dest + offset;
 
-        map_impl(dest_offset, sub_coordinates, args...);
+        map(space, dest_offset, sub_coordinates, args...);
       } else
-        map_impl(dest, coordinates, args...);
-      return execution_space();
+        map(space, dest, coordinates, args...);
+      return space;
     }
 
     const std::array<uint, dim> grid_size;
