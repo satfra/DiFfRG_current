@@ -448,6 +448,12 @@ FunKit`MakeCppFunction[
 "Body"->None,
 "Return"->"void"
 ],
+FunKit`MakeCppFunction[
+"Name"->"set_x_extent",
+"Parameters"->{<|"Type"->"double","Const"->True,"Name"->"x_extent","Reference"->False|>},
+"Body"->None,
+"Return"->"void"
+],
 "DiFfRG::QuadratureProvider quadrature_provider;"
 },
 Map[#[[2]]<>" "<>#[[1]]<>";"&,integrators]
@@ -483,6 +489,15 @@ FunKit`MakeCppFunction[
 "Parameters"->{<|"Type"->"double","Const"->True,"Name"->"T","Reference"->False|>},
 "Body"->StringJoin[
 Map["DiFfRG::all_set_T("<>#[[1]]<>", T);"&,integrators]
+],
+"Return"->"void"
+],
+FunKit`MakeCppFunction[
+"Name"->"set_x_extent",
+"Class"->varName,
+"Parameters"->{<|"Type"->"double","Const"->True,"Name"->"x_extent","Reference"->False|>},
+"Body"->StringJoin[
+Map["DiFfRG::all_set_x_extent("<>#[[1]]<>", x_extent);"&,integrators]
 ],
 "Return"->"void"
 ]

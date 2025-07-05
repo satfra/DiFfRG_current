@@ -39,12 +39,9 @@ namespace DiFfRG
 
     void set_k(ctype k)
     {
-      this->k = k;
-      Base::set_grid_extents({0}, {x_extent * powr<2>(k)});
       Base::set_typical_E(k); // update typical energy
     }
 
     void set_typical_E(ctype typical_E) { Base::set_typical_E(typical_E); }
-  }
-
+  };
 } // namespace DiFfRG
