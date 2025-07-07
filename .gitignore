@@ -3,6 +3,7 @@ build/
 DiFfRG_install/
 DiFfRG_build/
 DiFfRG_debug/
+build_test/
 .idea/
 profile/
 .ipynb_checkpoints
@@ -11,6 +12,7 @@ profile/
 *.log
 .cache/
 .venv/
+.vscode/
 
 ## remove builds from Applications
 Applications/*/build
