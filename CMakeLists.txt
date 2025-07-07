@@ -31,6 +31,13 @@ message(STATUS "Dependencies will be installed to ${DEPEND_INSTALL_PREFIX}")
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
+
+if(APPLE) 
+  set(BLAS_LIBRARY_PATH "${DEPEND_INSTALL_PREFIX}/lib/libopenblasDiFfRG.dylib")
+else()
+  set(BLAS_LIBRARY_PATH "${DEPEND_INSTALL_PREFIX}/lib/libopenblasDiFfRG.so")
+endif()
+
 # ##############################################################################
 # Find out which backends are available
 # ##############################################################################
@@ -221,7 +228,7 @@ ExternalProject_Add(
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
   CMAKE_CACHE_ARGS
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-    -DOpenBLAS_LIBRARY:STRING=${DEPEND_INSTALL_PREFIX}/lib/libopenblasDiFfRG.so
+    -DOpenBLAS_LIBRARY:STRING=${BLAS_LIBRARY_PATH}
     -DHAVE_OPENMP:BOOL=${HAVE_OPENMP} -DHAVE_MPI:BOOL=${ENABLE_MPI})
 
 # ##############################################################################
@@ -245,7 +252,7 @@ ExternalProject_Add(
     -DCMAKE_POLICY_DEFAULT_CMP0167:STRING=NEW
     -DCMAKE_WARN_DEPRECATED:BOOL=OFF
     -DDEAL_II_CXX_FLAGS:STRING=-march=native
-    -DLAPACK_LIBRARIES:STRING=${DEPEND_INSTALL_PREFIX}/lib/libopenblasDiFfRG.so
+    -DLAPACK_LIBRARIES:STRING=${BLAS_LIBRARY_PATH}
     -DDEAL_II_COMPONENT_EXAMPLES:BOOL=OFF
     -DDEAL_II_COMPONENT_DOCUMENTATION:BOOL=OFF
     -DDEAL_II_WITH_MPI:BOOL=${ENABLE_MPI}
