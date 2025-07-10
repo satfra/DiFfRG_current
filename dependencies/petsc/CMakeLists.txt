@@ -56,7 +56,7 @@ execute_process(
     --FOPTFLAGS=\"-O3 -march=native -ffp-contract=fast\" \
     --with-blas-lib=${OpenBLAS_LIBRARY} \
     --with-lapack-lib=${OpenBLAS_LIBRARY} \
-    --prefix=${CMAKE_INSTALL_PREFIX} --with-clean --with-debugging=0 2>&1 | tee -a ${CMAKE_CURRENT_BINARY_DIR}/petsc.log"
+    --prefix=${CMAKE_INSTALL_PREFIX} ${PETSC_OPTIONS} --with-clean --with-debugging=0 2>&1 | tee -a ${CMAKE_CURRENT_BINARY_DIR}/petsc.log"
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/petsc
   RESULT_VARIABLE ret)
 
