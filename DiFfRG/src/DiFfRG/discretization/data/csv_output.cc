@@ -9,8 +9,8 @@ namespace DiFfRG
   CsvOutput::CsvOutput(const std::string top_folder, const std::string output_name, const JSONValue &json)
       : json(json), top_folder(make_folder(top_folder)), output_name(output_name), Lambda(-1.)
   {
-    create_folder(top_folder);
-    std::filesystem::path path = top_folder + output_name;
+    create_folder(this->top_folder);
+    std::filesystem::path path = this->top_folder + this->output_name;
     create_folder(path.parent_path().string());
 
     output_stream = std::ofstream(top_folder + output_name, std::ofstream::trunc);

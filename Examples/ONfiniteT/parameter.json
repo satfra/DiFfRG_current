@@ -25,7 +25,8 @@
     "overintegration": 0,
     "output_subdivisions": 0,
     "EoM_abs_tol": 1e-14,
-    "EoM_max_iter": 200,
+    "EoM_max_iter": 100,
+    "output_buffer_size": 100,
     "grid": {
       "x_grid": "0:1e-4:5e-3, 5e-3:5e-4:6e-3, 6e-3:1e-3:1.5e-2",
       "y_grid": "0:0.1:1",

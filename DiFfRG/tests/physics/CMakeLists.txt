@@ -9,5 +9,4 @@ add_subdirectory(interpolation)
 # Test loop integrals
 # ##############################################################################
 
-add_executable(test_loop_integrals test_loop_integrals.cc)
-setup_test(test_loop_integrals)
+setup_test(loop_integrals.cc)

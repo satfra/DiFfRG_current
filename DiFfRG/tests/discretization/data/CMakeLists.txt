@@ -2,6 +2,4 @@
 # Tests
 # ##############################################################################
 
-setup_test(dg.cc)
-setup_test(ddg.cc)
-setup_test(ldg.cc)
+setup_test(fe_output.cc)
