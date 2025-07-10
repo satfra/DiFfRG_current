@@ -6,6 +6,8 @@ cmake_minimum_required(VERSION 3.20)
 
 project(DiFfRG)
 
+set(CMAKE_INSTALL_MESSAGE LAZY)
+
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
   message(
     WARNING
@@ -46,8 +48,10 @@ if(DiFfRG_DOCUMENTATION AND DOXYGEN_FOUND)
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     COMMENT "Generating API documentation with Doxygen"
     VERBATIM)
-  install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/documentation
-          DESTINATION ${CMAKE_INSTALL_PREFIX}) # target directory
+  install(
+    DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/documentation
+    DESTINATION ${CMAKE_INSTALL_PREFIX}
+    MESSAGE_NEVER) # target directory
   install(
     CODE "file(CREATE_LINK ${CMAKE_INSTALL_PREFIX}/documentation/html/index.html ${CMAKE_INSTALL_PREFIX}/Documentation.html SYMBOLIC)"
   )

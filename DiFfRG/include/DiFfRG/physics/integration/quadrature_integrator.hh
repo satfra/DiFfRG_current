@@ -561,7 +561,7 @@ namespace DiFfRG
     template <typename Coordinates, typename... Args>
     auto map(NT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      const auto space = execution_space();
+      auto space = execution_space();
 
       // Take care of MPI distribution
       const auto &node_distribution = AbstractIntegrator::node_distribution;
