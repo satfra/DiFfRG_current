@@ -6,9 +6,6 @@
 // external libraries
 #include <deal.II/base/mpi.h>
 
-// standard libraries
-#include <memory>
-
 namespace DiFfRG
 {
   class Init

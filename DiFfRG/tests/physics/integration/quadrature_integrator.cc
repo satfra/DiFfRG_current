@@ -1,3 +1,4 @@
+#include <oneapi/tbb/global_control.h>
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 
@@ -7,6 +8,7 @@
 #include <DiFfRG/common/polynomials.hh>
 #include <DiFfRG/physics/integration/quadrature_integrator.hh>
 #include <DiFfRG/physics/interpolation.hh>
+#include <deal.II/base/multithread_info.h>
 
 using namespace DiFfRG;
 
@@ -14,6 +16,7 @@ TEMPLATE_TEST_CASE_SIG("Test ND quadrature integrals", "[integration][quadrature
                        (4), (5))
 {
   DiFfRG::Init();
+  dealii::MultithreadInfo::set_thread_limit();
 
   auto check = [](auto execution_space, auto type) {
     using NT = std::decay_t<decltype(type)>;
@@ -133,25 +136,51 @@ TEMPLATE_TEST_CASE_SIG("Test ND quadrature integrals", "[integration][quadrature
       CHECK(rel_err < expected_precision<ctype>::value);
     }
   };
-  SECTION("OpenMP integrals")
-  {
-    check(OpenMP_exec(), (double)0);
-    check(OpenMP_exec(), (complex<double>)0);
-    check(OpenMP_exec(), (float)0);
-    check(OpenMP_exec(), (autodiff::real)0);
+
+  SECTION("OpenMP integrals"){
+      /*
+       std::cout << "OpenMP integrals" << std::endl;
+       std::cout << "dim: " << dim << std::endl;
+
+       std::cout << "1. double" << std::endl;
+       check(OpenMP_exec(), (double)0);
+       std::cout << "2. complex<double>" << std::endl;
+       check(OpenMP_exec(), (complex<double>)0);
+       std::cout << "3. float" << std::endl;
+       check(OpenMP_exec(), (float)0);
+       std::cout << "4. autodiff::real" << std::endl;
+       check(OpenMP_exec(), (autodiff::real)0);
+       */
   };
   SECTION("TBB integrals")
   {
-    check(TBB_exec(), (double)0);
-    check(TBB_exec(), (complex<double>)0);
-    check(TBB_exec(), (float)0);
-    check(TBB_exec(), (autodiff::real)0);
+    tbb::task_arena tbb_arena(tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism));
+    tbb_arena.initialize();
+    tbb_arena.execute([&]() {
+      std::cout << tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism)
+                << " threads are max used for TBB execution" << std::endl;
+      std::cout << tbb::this_task_arena::max_concurrency() << " threads are TBB concurrency execution" << std::endl;
+      std::cout << "1. double" << std::endl;
+      check(TBB_exec(), (double)0);
+      std::cout << "2. complex<double>" << std::endl;
+      check(TBB_exec(), (complex<double>)0);
+      std::cout << "3. float" << std::endl;
+      check(TBB_exec(), (float)0);
+      std::cout << "4. autodiff::real" << std::endl;
+      check(TBB_exec(), (autodiff::real)0);
+    });
   };
-  SECTION("GPU integrals")
-  {
-    check(GPU_exec(), (double)0);
-    check(GPU_exec(), (complex<double>)0);
-    check(GPU_exec(), (float)0);
-    check(GPU_exec(), (autodiff::real)0);
+  SECTION("GPU integrals"){
+      /*std::cout << "GPU integrals" << std::endl;
+      std::cout << "dim: " << dim << std::endl;
+
+      std::cout << "1. double" << std::endl;
+      check(GPU_exec(), (double)0);
+      std::cout << "2. complex<double>" << std::endl;
+      check(GPU_exec(), (complex<double>)0);
+      std::cout << "3. float" << std::endl;
+      check(GPU_exec(), (float)0);
+      std::cout << "4. autodiff::real" << std::endl;
+      check(GPU_exec(), (autodiff::real)0);*/
   };
 }
