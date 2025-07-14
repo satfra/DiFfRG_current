@@ -57,7 +57,7 @@ namespace DiFfRG
    *
    * @tparam NT numerical type of the result
    * @tparam KERNEL kernel to be integrated, which must provide the static methods `kernel` and `constant`
-   * @tparam ExecutionSpace can be any execution space, e.g. GPU_exec, TBB_exec, or OpenMP_exec.
+   * @tparam ExecutionSpace can be any execution space, e.g. GPU_exec, TBB_exec, or Threads_exec.
    */
   template <typename NT, typename KERNEL, typename ExecutionSpace>
   class Integrator_p2_4D_2ang

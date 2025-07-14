@@ -118,8 +118,8 @@ TEST_CASE("Test 4D momentum + 2 angle integrals", "[integration][quadrature]")
 
   // Check on TBB
   SECTION("TBB") { check(TBB_exec(), (double)0); }
-  // Check on OpenMP
-  SECTION("OpenMP") { check(OpenMP_exec(), (double)0); }
+  // Check on Threads
+  SECTION("Threads") { check(Threads_exec(), (double)0); }
   // Check on GPU
   SECTION("GPU") { check(GPU_exec(), (double)0); }
 }

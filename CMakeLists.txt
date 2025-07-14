@@ -66,11 +66,10 @@ check_language(OpenMP)
 find_package(OpenMP)
 if(OpenMP_CXX_FOUND)
   set(HAVE_OPENMP ON)
-  set(HAVE_THREADS OFF)
 else()
   set(HAVE_OPENMP OFF)
-  set(HAVE_THREADS ON)
 endif()
+set(HAVE_THREADS ON)
 # if ENABLE_MPI is not set, set it to OFF
 if(NOT DEFINED ENABLE_MPI)
   find_package(MPI)
@@ -87,9 +86,9 @@ endif()
 
 message(STATUS "MPI: ${ENABLE_MPI}")
 message(STATUS "OpenMP: ${HAVE_OPENMP}")
+message(STATUS "Threads: ${HAVE_THREADS}")
 message(STATUS "CUDA: ${HAVE_CUDA}")
 message(STATUS "HIP: ${HAVE_HIP}")
-message(STATUS "Threads: ${HAVE_THREADS}")
 
 # ##############################################################################
 # Dependencies
@@ -223,7 +222,8 @@ ExternalProject_Add(
     -DKokkos_ENABLE_CUDA:BOOL=${HAVE_CUDA}
     -DKokkos_ENABLE_CUDA_CONSTEXPR:BOOL=${HAVE_CUDA}
     -DKokkos_ENABLE_HIP:BOOL=${HAVE_HIP}
-    -DKokkos_ENABLE_OPENMP:BOOL=${HAVE_OPENMP}
+    # OpenMP is not supported by DiFfRG, as it conflicts with TBB.
+    -DKokkos_ENABLE_OPENMP:BOOL=OFF
     -DKokkos_ENABLE_THREADS:BOOL=${HAVE_THREADS}
     -DKokkos_ENABLE_SERIAL:BOOL=ON
     -DKokkos_ENABLE_TESTS:BOOL=ON

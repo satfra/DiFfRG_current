@@ -23,7 +23,7 @@ TEMPLATE_TEST_CASE("Test 1D lattice integrals on host", "[lattice][double][float
   const uint size = GENERATE(16, 32, 64, 128, 256);
   const bool q0_symmetric = GENERATE(false, true);
 
-  IntegratorLat1D<T, PolyIntegrand<1, T>, OpenMP_exec> integrator({{size}}, {{a}}, q0_symmetric);
+  IntegratorLat1D<T, PolyIntegrand<1, T>, Threads_exec> integrator({{size}}, {{a}}, q0_symmetric);
 
   SECTION("Volume integral")
   {
@@ -109,7 +109,7 @@ TEST_CASE("Test 1D host integrals", "[double][cpu][integration][quadrature]")
   const uint size = GENERATE(16, 32, 64, 128, 256);
 
   QuadratureProvider quadrature_provider;
-  Integrator1D<double, PolyIntegrand, OpenMP_exec> integrator(quadrature_provider, {size}, {x_min}, {x_max});
+  Integrator1D<double, PolyIntegrand, Threads_exec> integrator(quadrature_provider, {size}, {x_min}, {x_max});
 
   SECTION("Volume integral")
   {

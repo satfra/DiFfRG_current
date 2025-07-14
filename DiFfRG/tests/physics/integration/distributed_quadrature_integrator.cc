@@ -115,10 +115,10 @@ TEST_CASE("Test distributed integration", "[integration][quadrature]")
     check(TBB_exec(), (double)0);
     check(TBB_exec(), (float)0);
   };
-  SECTION("OpenMP integrals")
+  SECTION("Threads integrals")
   {
-    check(OpenMP_exec(), (double)0);
-    check(OpenMP_exec(), (float)0);
+    check(Threads_exec(), (double)0);
+    check(Threads_exec(), (float)0);
   };
   SECTION("GPU integrals")
   {

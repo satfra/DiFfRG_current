@@ -35,7 +35,7 @@ TEST_CASE("Benchmark 4D lattice cpu momentum integrals", "[integration][lattice 
       constexpr uint isize = powr<i>(2);
 
       {
-        IntegratorLat4D<T, PolyIntegrand<4, T>, OpenMP_exec> integrator({{isize, isize}}, {{a0, a1}}, true);
+        IntegratorLat4D<T, PolyIntegrand<4, T>, Threads_exec> integrator({{isize, isize}}, {{a0, a1}}, true);
         Kokkos::View<double *, CPU_memory> integral_view("cpu_integral_results", rsize);
 
         BENCHMARK_ADVANCED("OPT host isize=" + std::to_string(isize) +
@@ -80,7 +80,7 @@ TEST_CASE("Benchmark 3D lattice cpu momentum integrals", "[integration][lattice 
       constexpr uint isize = powr<i>(2);
 
       {
-        IntegratorLat3D<T, PolyIntegrand<3, T>, OpenMP_exec> integrator({{isize, isize}}, {{a0, a1}}, true);
+        IntegratorLat3D<T, PolyIntegrand<3, T>, Threads_exec> integrator({{isize, isize}}, {{a0, a1}}, true);
         Kokkos::View<double *, CPU_memory> integral_view("cpu_integral_results", rsize);
 
         BENCHMARK_ADVANCED("OPT host isize=" + std::to_string(isize) +

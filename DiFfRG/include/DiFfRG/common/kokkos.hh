@@ -20,21 +20,21 @@ namespace DiFfRG
     using GPU_exec_space = Kokkos::DefaultExecutionSpace;
     using GPU_memory_space = GPU_exec_space::memory_space;
 
-    using OpenMP_exec_space = Kokkos::DefaultHostExecutionSpace;
-    using OpenMP_memory_space = OpenMP_exec_space::memory_space;
+    using Threads_exec_space = Kokkos::DefaultHostExecutionSpace;
+    using Threads_memory_space = Threads_exec_space::memory_space;
 
     using TBB_exec_space = TBB_ExecutionSpace;
     using TBB_memory_space = TBB_exec_space::memory_space;
   };
 
   using GPU_memory = ExecutionSpaces::GPU_memory_space;
-  using OpenMP_memory = ExecutionSpaces::OpenMP_memory_space;
+  using Threads_memory = ExecutionSpaces::Threads_memory_space;
   using TBB_memory = ExecutionSpaces::TBB_memory_space;
 
   using CPU_memory = Kokkos::DefaultHostExecutionSpace::memory_space;
 
   using GPU_exec = ExecutionSpaces::GPU_exec_space;
-  using OpenMP_exec = ExecutionSpaces::OpenMP_exec_space;
+  using Threads_exec = ExecutionSpaces::Threads_exec_space;
   using TBB_exec = ExecutionSpaces::TBB_exec_space;
 
   /**
