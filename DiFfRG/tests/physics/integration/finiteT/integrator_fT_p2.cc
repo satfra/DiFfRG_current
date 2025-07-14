@@ -101,8 +101,8 @@ TEMPLATE_TEST_CASE_SIG("Test finite temperature momentum integrals", "[integrati
 
   // Check on TBB
   SECTION("TBB") { check(TBB_exec(), (double)0); }
-  // Check on OpenMP
-  SECTION("OpenMP") { check(OpenMP_exec(), (double)0); }
+  // Check on Threads
+  SECTION("Threads") { check(Threads_exec(), (double)0); }
   // Check on GPU
   SECTION("GPU") { check(GPU_exec(), (double)0); }
 }
