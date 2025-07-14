@@ -673,7 +673,7 @@ namespace DiFfRG
     }
 
     template <typename Coordinates, typename... Args>
-    void map(execution_space &space, NT *dest, const Coordinates &coordinates, const Args &...args)
+    void map(execution_space &, NT *dest, const Coordinates &coordinates, const Args &...args)
     {
       const auto m_args = std::tie(args...);
 
@@ -715,9 +715,9 @@ namespace DiFfRG
         // Offset the destination pointer
         NT *dest_offset = dest + offset;
 
-        map_impl(space, dest_offset, sub_coordinates, args...);
+        map(space, dest_offset, sub_coordinates, args...);
       } else
-        map_impl(space, dest, coordinates, args...);
+        map(space, dest, coordinates, args...);
       return space;
     }
 
