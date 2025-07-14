@@ -25,7 +25,7 @@ TEMPLATE_TEST_CASE("Test 3D lattice integrals on host", "[lattice][double][float
   const uint size1 = GENERATE(16, 32, 64, 128);
   const bool q0_symmetric = GENERATE(false, true);
 
-  IntegratorLat3D<T, PolyIntegrand<3, T>, OpenMP_exec> integrator({{size0, size1}}, {{a0, a1}}, q0_symmetric);
+  IntegratorLat3D<T, PolyIntegrand<3, T>, Threads_exec> integrator({{size0, size1}}, {{a0, a1}}, q0_symmetric);
 
   SECTION("Volume integral")
   {

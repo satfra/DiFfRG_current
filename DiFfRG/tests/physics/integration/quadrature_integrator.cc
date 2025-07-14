@@ -137,19 +137,19 @@ TEMPLATE_TEST_CASE_SIG("Test ND quadrature integrals", "[integration][quadrature
     }
   };
 
-  SECTION("OpenMP integrals"){
+  SECTION("Threads integrals"){
       /*
-       std::cout << "OpenMP integrals" << std::endl;
+       std::cout << "Threads integrals" << std::endl;
        std::cout << "dim: " << dim << std::endl;
 
        std::cout << "1. double" << std::endl;
-       check(OpenMP_exec(), (double)0);
+       check(Threads_exec(), (double)0);
        std::cout << "2. complex<double>" << std::endl;
-       check(OpenMP_exec(), (complex<double>)0);
+       check(Threads_exec(), (complex<double>)0);
        std::cout << "3. float" << std::endl;
-       check(OpenMP_exec(), (float)0);
+       check(Threads_exec(), (float)0);
        std::cout << "4. autodiff::real" << std::endl;
-       check(OpenMP_exec(), (autodiff::real)0);
+       check(Threads_exec(), (autodiff::real)0);
        */
   };
   SECTION("TBB integrals")

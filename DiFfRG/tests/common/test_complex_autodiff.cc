@@ -294,17 +294,17 @@ TEST_CASE("Test autodiff with Kokkos", "[autodiff][kokkos]")
     }
   }
 
-  SECTION("OpenMP")
+  SECTION("Threads")
   {
-    Kokkos::View<complex<double> **, OpenMP_memory> A("A", N, M);
-    Kokkos::View<cxReal *, OpenMP_memory> v("v", M);
-    Kokkos::View<cxReal *, OpenMP_memory> result("result", N);
+    Kokkos::View<complex<double> **, Threads_memory> A("A", N, M);
+    Kokkos::View<cxReal *, Threads_memory> v("v", M);
+    Kokkos::View<cxReal *, Threads_memory> result("result", N);
 
-    Kokkos::Random_XorShift64_Pool<OpenMP_exec> random_pool(/*seed=*/12345);
+    Kokkos::Random_XorShift64_Pool<Threads_exec> random_pool(/*seed=*/12345);
 
     // Fill A and v with random values
     Kokkos::parallel_for(
-        "Fill A", Kokkos::MDRangePolicy<OpenMP_exec, Kokkos::Rank<2>>({0, 0}, {N, M}),
+        "Fill A", Kokkos::MDRangePolicy<Threads_exec, Kokkos::Rank<2>>({0, 0}, {N, M}),
         KOKKOS_LAMBDA(const size_t i, const size_t j) {
           // acquire the state of the random number generator engine
           auto generator = random_pool.get_state();
@@ -316,7 +316,7 @@ TEST_CASE("Test autodiff with Kokkos", "[autodiff][kokkos]")
         });
 
     Kokkos::parallel_for(
-        "Fill v", Kokkos::RangePolicy<OpenMP_exec>(0, M), KOKKOS_LAMBDA(const size_t i) {
+        "Fill v", Kokkos::RangePolicy<Threads_exec>(0, M), KOKKOS_LAMBDA(const size_t i) {
           // acquire the state of the random number generator engine
           auto generator = random_pool.get_state();
 
@@ -330,7 +330,7 @@ TEST_CASE("Test autodiff with Kokkos", "[autodiff][kokkos]")
 
     // Compute the matrix-vector product
     Kokkos::parallel_for(
-        "Matrix-vector multiplication", Kokkos::RangePolicy<OpenMP_exec>(0, N), KOKKOS_LAMBDA(const size_t i) {
+        "Matrix-vector multiplication", Kokkos::RangePolicy<Threads_exec>(0, N), KOKKOS_LAMBDA(const size_t i) {
           cxReal temp{};
           for (long j = 0; j < M; ++j) {
             temp += A(i, j) * v(j);

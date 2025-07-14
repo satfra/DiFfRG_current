@@ -55,7 +55,7 @@ public:
   ON_finiteT(const JSONValue &json) : def::fRG(json.get_double("/physical/Lambda")), prm(json), flow_equations(json)
   {
     flow_equations.set_k(Lambda);
-    flow_equations.set_T(prm.T);
+    // flow_equations.set_T(prm.T);
   }
 
   template <typename Vector> void initial_condition(const Point<dim> &pos, Vector &values) const
