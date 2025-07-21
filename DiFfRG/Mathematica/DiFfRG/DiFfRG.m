@@ -129,19 +129,25 @@ ret
 SetAttributes[AutoSaveRestore,HoldRest];
 
 
-MatsubaraSumHelper[expr_,p0_Symbol,T_,fun_]:=Module[{denom,poles,residues,n,r,SumB},
+ClearAll[MatsubaraSumHelper,FermionMatsubaraSum,MatsubaraSum]
+Options[FermionMatsubaraSum]={Debug->False};
+Options[MatsubaraSum]={Debug->True};
+MatsubaraSumHelper[expr_,p0_Symbol,T_,fun_,debug_]:=Module[{denom,poles,residues,n,r,SumB},
 If[Head[expr]==Plus,Return[Total[Flatten[Map[MatsubaraSum[#,p0,T]&,List@@expr],1]]]];denom = Denominator[expr]//Collect[#,p0]&;
-poles = p0/.{ToRules[Reduce[Reduce[denom==0,p0]//FullSimplify,p0]]};
+poles=p0/.Solve[denom==0,p0]//FullSimplify;
 poles = Assuming[T>0&&_Symbol\[Element]Reals,poles//FullSimplify];
-
+If[debug,
+Print["Poles found at:"];
+Print/@poles;
+];
 residues={};For[n=1,n<=Length[poles],n++,
 r=Simplify[Residue[expr*fun[I*p0/(2T)],{p0,poles[[n]]}]];
 AppendTo[residues,r];];
 SumB=1/(2I) residues;
 Total[SumB]
 ];
-MatsubaraSum[expr_,p0_Symbol,T_]:=MatsubaraSumHelper[expr,p0,T,Coth]
-FermionMatsubaraSum[expr_,p0_Symbol,T_]:=MatsubaraSumHelper[expr,p0,T,Tanh]
+MatsubaraSum[expr_,p0_Symbol,T_,OptionsPattern[]]:=MatsubaraSumHelper[expr,p0,T,Coth,OptionValue[Debug]]
+FermionMatsubaraSum[expr_,p0_Symbol,T_,OptionsPattern[]]:=MatsubaraSumHelper[expr,p0,T,Tanh,OptionValue[Debug]]
 
 
 InsertOutputNaming[expr_]:=Module[
