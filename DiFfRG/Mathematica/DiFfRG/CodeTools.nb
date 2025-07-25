@@ -3,17 +3,17 @@
 (*** Wolfram Notebook File ***)
 (* http://www.wolfram.com/nb *)
 
-(* CreatedBy='Mathematica 13.3' *)
+(* CreatedBy='Wolfram 14.2' *)
 
 (*CacheID: 234*)
 (* Internal cache information:
 NotebookFileLineBreakTest
 NotebookFileLineBreakTest
-NotebookDataPosition[       158,          7]
-NotebookDataLength[    171374,       3801]
-NotebookOptionsPosition[    165540,       3695]
-NotebookOutlinePosition[    166328,       3721]
-CellTagsIndexPosition[    166285,       3718]
+NotebookDataPosition[       154,          7]
+NotebookDataLength[    171360,       3791]
+NotebookOptionsPosition[    165545,       3686]
+NotebookOutlinePosition[    166314,       3711]
+CellTagsIndexPosition[    166271,       3708]
 WindowFrame->Normal*)
 
 (* Beginning of Notebook Content *)
@@ -41,8 +41,7 @@ Cell["Setup and exports", "Section",
 
 Cell[BoxData[{
  RowBox[{
-  RowBox[{"BeginPackage", "[", "\"\<DiFfRG`CodeTools`\>\"", "]"}], 
-  ";"}], "\n", 
+  RowBox[{"BeginPackage", "[", "\"\<DiFfRG`CodeTools`\>\"", "]"}], ";"}], "\n", 
  RowBox[{
   RowBox[{"Unprotect", "[", "\"\<DiFfRG`CodeTools`*\>\"", "]"}], 
   ";"}], "\n", 
@@ -69,49 +68,49 @@ Cell[BoxData[{
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"FlowKernel", "::", "usage"}], " ", "=", " ", 
-    "\"\<FlowKernel[expr_,name_String,NT_String:\\\"auto\\\",addprefix_String:\
-\\\"\\\"]\nMakes an equation into a lambda expression - of limited \
+    RowBox[{"FlowKernel", "::", "usage"}], " ", "=", 
+    " ", "\"\<FlowKernel[expr_,name_String,NT_String:\\\"auto\\\",addprefix_\
+String:\\\"\\\"]\nMakes an equation into a lambda expression - of limited \
 usefulness, but can be used together with LoopIntegrals::integrate and \
 similar functions.\>\""}], ";"}], "\n"}], "\n", 
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"ExportCode", "::", "usage"}], " ", "=", " ", 
-    "\"\<ExportCode[fileName_String,expression_String]\nWrites the given \
+    RowBox[{"ExportCode", "::", "usage"}], " ", "=", 
+    " ", "\"\<ExportCode[fileName_String,expression_String]\nWrites the given \
 expression to disk and runs clang-format on it.\n\>\""}], ";"}], "\n"}], "\n", 
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"CodeForm", "::", "usage"}], " ", "=", " ", 
-    "\"\<CodeForm[expr_]\nObtain properly formatted and processed C++ code \
-from an expression.\>\""}], ";"}], "\n"}], "\n", 
+    RowBox[{"CodeForm", "::", "usage"}], " ", "=", 
+    " ", "\"\<CodeForm[expr_]\nObtain properly formatted and processed C++ \
+code from an expression.\>\""}], ";"}], "\n"}], "\n", 
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"SetCppNames", "::", "usage"}], " ", "=", " ", 
-    "\"\<SetCppNames[rules___]\nSet additional replacement rules used when \
-invoking CodeForm[expr].\n\nExample Call: \
+    RowBox[{"SetCppNames", "::", "usage"}], " ", "=", 
+    " ", "\"\<SetCppNames[rules___]\nSet additional replacement rules used \
+when invoking CodeForm[expr].\n\nExample Call: \
 SetCppNames[\\\"k\\\"->\\\"k_bosonic\\\", \\\"Arccos(\\\"->\\\"std::arccos(\\\
 \"]\>\""}], ";"}], "\n"}], "\n", 
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"JuliaForm", "::", "usage"}], " ", "=", " ", 
-    "\"\<CodeForm[expr_]\nObtain properly formatted and processed Julia code \
-from an expression.\>\""}], ";"}], "\n"}], "\n", 
+    RowBox[{"JuliaForm", "::", "usage"}], " ", "=", 
+    " ", "\"\<CodeForm[expr_]\nObtain properly formatted and processed Julia \
+code from an expression.\>\""}], ";"}], "\n"}], "\n", 
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"UnicodeClip", "::", "usage"}], " ", "=", " ", 
-    "\"\<UnicodeClip[expr_String]\nCopy a string as unicode into the \
+    RowBox[{"UnicodeClip", "::", "usage"}], " ", "=", 
+    " ", "\"\<UnicodeClip[expr_String]\nCopy a string as unicode into the \
 clipboard. Useful when exporting to Julia.\>\""}], ";"}], "\n"}], "\n", 
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"MakeCMakeFile", "::", "usage"}], " ", "=", " ", 
-    "\"\<MakeCMakeFile[kernels_List]\nCreates a CMakeLists.txt inside the \
-'flowDir' which you can set using SetFlowDir[dir_String]. This CMake file \
+    RowBox[{"MakeCMakeFile", "::", "usage"}], " ", "=", 
+    " ", "\"\<MakeCMakeFile[kernels_List]\nCreates a CMakeLists.txt inside \
+the 'flowDir' which you can set using SetFlowDir[dir_String]. This CMake file \
 contains references to all kernels specified in the List 'kernels'. Make sure \
 you have created all kernels before compiling!\nIf so, simply add the flow \
 directory in the parent directory of the flow directory: \\n \
@@ -121,20 +120,22 @@ add them as source files:\n    add_executable(QCD QCD.cc \
 ${flow_sources})\>\""}], ";"}], "\n", "\n"}], "\n", 
  RowBox[{
   RowBox[{
-   RowBox[{"SetFlowDirectory", "::", "usage"}], "=", 
-   "\"\<SetFlowDirectory[dir]\nSet the current flow directory, i.e. where all \
-generated files are saved. Default is ./flows/\>\""}], ";"}], "\n", 
+   RowBox[{"SetFlowDirectory", "::", "usage"}], 
+   "=", "\"\<SetFlowDirectory[dir]\nSet the current flow directory, i.e. \
+where all generated files are saved. Default is ./flows/\>\""}], ";"}], "\n", 
+
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"ShowFlowDirectory", "::", "usage"}], "=", 
-    "\"\<ShowFlowDirectory[]\nShow the current flow directory, i.e. where all \
-generated files are saved. Default is ./flows/\>\""}], ";"}], "\n"}], "\n", 
+    RowBox[{"ShowFlowDirectory", "::", "usage"}], 
+    "=", "\"\<ShowFlowDirectory[]\nShow the current flow directory, i.e. \
+where all generated files are saved. Default is ./flows/\>\""}], ";"}], 
+  "\n"}], "\n", 
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"MakeFlowClass", "::", "usage"}], " ", "=", " ", 
-    "\"\<MakeFlowClass[name_String,kernels_List]\nThis creates a file \
+    RowBox[{"MakeFlowClass", "::", "usage"}], " ", "=", 
+    " ", "\"\<MakeFlowClass[name_String,kernels_List]\nThis creates a file \
 flows.hh inside the flow directory, containing a class with the specified \
 name, as well as several other files. All defined kernels have a \
 corresponding integrator object in this class.\nAutomatically calls \
@@ -142,17 +143,17 @@ MakeCMakeFile with the passed list of kernels.\>\""}], ";"}], "\n"}], "\n",
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"MakeFlowClassFiniteT", "::", "usage"}], " ", "=", " ", 
-    "\"\<MakeFlowClassFiniteT[name_String,kernels_List]\nThis creates a file \
-flows.hh inside the flow directory, containing a class with the specified \
-name, as well as several other files. All defined kernels have a \
+    RowBox[{"MakeFlowClassFiniteT", "::", "usage"}], " ", "=", 
+    " ", "\"\<MakeFlowClassFiniteT[name_String,kernels_List]\nThis creates a \
+file flows.hh inside the flow directory, containing a class with the \
+specified name, as well as several other files. All defined kernels have a \
 corresponding integrator object in this class.\nAutomatically calls \
 MakeCMakeFile wiht the passed list of kernels.\>\""}], ";"}], "\n"}], "\n", 
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"MakeKernel", "::", "usage"}], " ", "=", " ", 
-    "\"\<MakeKernel[kernel_Association, \
+    RowBox[{"MakeKernel", "::", "usage"}], " ", "=", 
+    " ", "\"\<MakeKernel[kernel_Association, \
 parameterList_List,integrandFlow_,constantFlow_:0., \
 integrandDefinitions_String:\\\"\\\", constantDefinitions_String:\\\"\\\"]\n\
 Make a kernel from a given flow equation, parmeter list and kernel. The \
@@ -166,65 +167,65 @@ the flow code.\>\""}], ";"}], "\n"}], "\n",
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"DeclareSymmetricPoints4DP4", "::", "usage"}], "=", 
-    "\"\<DeclareSymmetricPoints4DP4[]\nObtain C++ code declaring angles for a \
-four-point symmetric configuration in 4D.\nThe angles will have the names \
-cosp1q, cosp2q, cosp3q and cosp4q.\nDeclareSymmetricPoints4DP4[computeType]\n\
+    RowBox[{"DeclareSymmetricPoints4DP4", "::", "usage"}], 
+    "=", "\"\<DeclareSymmetricPoints4DP4[]\nObtain C++ code declaring angles \
+for a four-point symmetric configuration in 4D.\nThe angles will have the \
+names cosp1q, cosp2q, cosp3q and cosp4q.\n\
+DeclareSymmetricPoints4DP4[computeType]\nSet the type of the declared C++ \
+variables (should be double or float).\>\""}], ";"}], "\n"}], "\n", 
+ RowBox[{
+  RowBox[{
+   RowBox[{
+    RowBox[{"DeclareSymmetricPoints4DP3", "::", "usage"}], 
+    "=", "\"\<DeclareSymmetricPoints4DP3[]\nObtain C++ code declaring angles \
+for a four-point symmetric configuration in 4D.\nThe angles will have the \
+names cosp1q, cosp2q, cosp3q and cosp4q.\n\
+DeclareSymmetricPoints4DP3[computeType]\nSet the type of the declared C++ \
+variables (should be double or float).\>\""}], ";"}], "\n"}], "\n", 
+ RowBox[{
+  RowBox[{
+   RowBox[{
+    RowBox[{"DeclareSymmetricPoints3DP4", "::", "usage"}], 
+    "=", "\"\<DeclareSymmetricPoints3DP4[]\nObtain C++ code declaring angles \
+for a four-point symmetric configuration in 3D.\nThe angles will have the \
+names cosp1q, cosp2q, cosp3q and cosp4q.\n\
+DeclareSymmetricPoints3DP4[computeType]\nSet the type of the declared C++ \
+variables (should be double or float).\>\""}], ";"}], "\n"}], "\n", 
+ RowBox[{
+  RowBox[{
+   RowBox[{
+    RowBox[{"DeclareSymmetricPoints3DP3", "::", "usage"}], 
+    "=", "\"\<DeclareSymmetricPoints3DP3[]\nObtain C++ code declaring angles \
+for a three-point symmetric configuration in 3D.\nThe angles will have the \
+names cosp1q, cosp2q and cosp3q.\nDeclareSymmetricPoints3DP3[computeType]\n\
 Set the type of the declared C++ variables (should be double or \
 float).\>\""}], ";"}], "\n"}], "\n", 
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"DeclareSymmetricPoints4DP3", "::", "usage"}], "=", 
-    "\"\<DeclareSymmetricPoints4DP3[]\nObtain C++ code declaring angles for a \
-four-point symmetric configuration in 4D.\nThe angles will have the names \
-cosp1q, cosp2q, cosp3q and cosp4q.\nDeclareSymmetricPoints4DP3[computeType]\n\
+    RowBox[{"DeclareSymmetricPoints2DP4", "::", "usage"}], 
+    "=", "\"\<DeclareSymmetricPoints2DP4[]\nObtain C++ code declaring angles \
+for a four-point symmetric configuration in 2D.\nThe angles will have the \
+names cosp1q, cosp2q, cosp3q and cosp4q.\n\
+DeclareSymmetricPoints2DP4[computeType]\nSet the type of the declared C++ \
+variables (should be double or float).\>\""}], ";"}], "\n"}], "\n", 
+ RowBox[{
+  RowBox[{
+   RowBox[{
+    RowBox[{"DeclareSymmetricPoints2DP3", "::", "usage"}], 
+    "=", "\"\<DeclareSymmetricPoints2DP3[]\nObtain C++ code declaring angles \
+for a three-point symmetric configuration in 2D.\nThe angles will have the \
+names cosp1q, cosp2q and cosp3q.\nDeclareSymmetricPoints2DP3[computeType]\n\
 Set the type of the declared C++ variables (should be double or \
 float).\>\""}], ";"}], "\n"}], "\n", 
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"DeclareSymmetricPoints3DP4", "::", "usage"}], "=", 
-    "\"\<DeclareSymmetricPoints3DP4[]\nObtain C++ code declaring angles for a \
-four-point symmetric configuration in 3D.\nThe angles will have the names \
-cosp1q, cosp2q, cosp3q and cosp4q.\nDeclareSymmetricPoints3DP4[computeType]\n\
-Set the type of the declared C++ variables (should be double or \
-float).\>\""}], ";"}], "\n"}], "\n", 
- RowBox[{
-  RowBox[{
-   RowBox[{
-    RowBox[{"DeclareSymmetricPoints3DP3", "::", "usage"}], "=", 
-    "\"\<DeclareSymmetricPoints3DP3[]\nObtain C++ code declaring angles for a \
-three-point symmetric configuration in 3D.\nThe angles will have the names \
-cosp1q, cosp2q and cosp3q.\nDeclareSymmetricPoints3DP3[computeType]\nSet the \
-type of the declared C++ variables (should be double or float).\>\""}], ";"}],
-   "\n"}], "\n", 
- RowBox[{
-  RowBox[{
-   RowBox[{
-    RowBox[{"DeclareSymmetricPoints2DP4", "::", "usage"}], "=", 
-    "\"\<DeclareSymmetricPoints2DP4[]\nObtain C++ code declaring angles for a \
-four-point symmetric configuration in 2D.\nThe angles will have the names \
-cosp1q, cosp2q, cosp3q and cosp4q.\nDeclareSymmetricPoints2DP4[computeType]\n\
-Set the type of the declared C++ variables (should be double or \
-float).\>\""}], ";"}], "\n"}], "\n", 
- RowBox[{
-  RowBox[{
-   RowBox[{
-    RowBox[{"DeclareSymmetricPoints2DP3", "::", "usage"}], "=", 
-    "\"\<DeclareSymmetricPoints2DP3[]\nObtain C++ code declaring angles for a \
-three-point symmetric configuration in 2D.\nThe angles will have the names \
-cosp1q, cosp2q and cosp3q.\nDeclareSymmetricPoints2DP3[computeType]\nSet the \
-type of the declared C++ variables (should be double or float).\>\""}], ";"}],
-   "\n"}], "\n", 
- RowBox[{
-  RowBox[{
-   RowBox[{
-    RowBox[{"DeclareAnglesP34Dpqr", "::", "usage"}], "=", 
-    "\"\<DeclareAnglesP34Dpqr[q,p,r]\nObtain C++ code declaring angles for \
-the angles in a full three-point function in 4D.\nThe angles will have the \
-names cospq and cosqr, where q,p,r are replaced by the given Symbol names and \
-ordered alphabetically.\nDeclareAnglesP34Dpqr[q,p,r,computeType]\nSet the \
+    RowBox[{"DeclareAnglesP34Dpqr", "::", "usage"}], 
+    "=", "\"\<DeclareAnglesP34Dpqr[q,p,r]\nObtain C++ code declaring angles \
+for the angles in a full three-point function in 4D.\nThe angles will have \
+the names cospq and cosqr, where q,p,r are replaced by the given Symbol names \
+and ordered alphabetically.\nDeclareAnglesP34Dpqr[q,p,r,computeType]\nSet the \
 type of the declared C++ variables (should be double or float).\>\""}], ";"}],
    "\n"}], "\n", 
  RowBox[{
@@ -235,57 +236,56 @@ type of the declared C++ variables (should be double or float).\>\""}], ";"}],
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"ShowTypes", "::", "usage"}], "=", 
-    "\"\<ShowTypes[]\nShow a list of all types available for use in a \
+    RowBox[{"ShowTypes", "::", "usage"}], 
+    "=", "\"\<ShowTypes[]\nShow a list of all types available for use in a \
 parameter list to make a kernel.\>\""}], ";"}], "\n"}], "\n", 
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"AddCodeOptimizeFunctions", "::", "usage"}], "=", 
-    "\"\<AddCodeOptimizeFunctions[func1[__], func2[__],...]\nAdd the \
+    RowBox[{"AddCodeOptimizeFunctions", "::", "usage"}], 
+    "=", "\"\<AddCodeOptimizeFunctions[func1[__], func2[__],...]\nAdd the \
 functions func1, func2, ... to the functions to be optimized out, i.e. \
-calculated only once in auto-generated kernel code.\>\""}], ";"}], 
-  "\n"}], "\n", 
+calculated only once in auto-generated kernel code.\>\""}], ";"}], "\n"}], "\n", 
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"ShowCodeOptimizeFunctions", "::", "usage"}], "=", 
-    "\"\<ShowCodeOptimizeFunctions[]\nShow a list of all functions which \
+    RowBox[{"ShowCodeOptimizeFunctions", "::", "usage"}], 
+    "=", "\"\<ShowCodeOptimizeFunctions[]\nShow a list of all functions which \
 DiFfRG will try to optimize out when generating C++ code.\>\""}], ";"}], 
   "\n"}], "\n", 
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"ClearCodeOptimizeFunctions", "::", "usage"}], "=", 
-    "\"\<ClearCodeOptimizeFunctions[]\nRemove all optimization functions from \
-the internal list\>\""}], ";"}], "\n"}], "\n", 
+    RowBox[{"ClearCodeOptimizeFunctions", "::", "usage"}], 
+    "=", "\"\<ClearCodeOptimizeFunctions[]\nRemove all optimization functions \
+from the internal list\>\""}], ";"}], "\n"}], "\n", 
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"UseKernelOptimizations", "::", "usage"}], "=", 
-    "\"\<UseKernelOptimizations[True]\nTurn on code optimizations in \
+    RowBox[{"UseKernelOptimizations", "::", "usage"}], 
+    "=", "\"\<UseKernelOptimizations[True]\nTurn on code optimizations in \
 auto-generation of C++ code.\nUseKernelOptimizations[False]\nTurn off code \
 optimizations in auto-generation of C++ code.\n\>\""}], ";"}], "\n"}], "\n", 
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"SetKernelDefinitions", "::", "usage"}], "=", 
-    "\"\<SetKernelDefinitions[definitionCode_String] sets the kernel \
+    RowBox[{"SetKernelDefinitions", "::", "usage"}], 
+    "=", "\"\<SetKernelDefinitions[definitionCode_String] sets the kernel \
 definitions to definitionCode.\nSetKernelDefinitions[] resets the kernel \
 definitions to the standard.\>\""}], ";"}], "\n"}], "\n", 
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"ShowKernelDefinitions", "::", "usage"}], "=", 
-    "\"\<ShowKernelDefinitions[]\nShow the currently specified kernel \
+    RowBox[{"ShowKernelDefinitions", "::", "usage"}], 
+    "=", "\"\<ShowKernelDefinitions[]\nShow the currently specified kernel \
 definitions code.\>\""}], ";"}], "\n"}], "\n", 
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"AddParameterType", "::", "usage"}], "=", 
-    "\"\<AddParameterType[name,cppType,cppTypeAD,Reference,computeTypeName]\n\
-Add a recognized parameter to the list of useable kernel parameter types.\n\>\
-\""}], ";"}], "\n"}], "\n", 
+    RowBox[{"AddParameterType", "::", "usage"}], 
+    "=", "\"\<AddParameterType[name,cppType,cppTypeAD,Reference,\
+computeTypeName]\nAdd a recognized parameter to the list of useable kernel \
+parameter types.\n\>\""}], ";"}], "\n"}], "\n", 
  RowBox[{
   RowBox[{
    RowBox[{"SetCodeParser", "::", "usage"}], "=", "\"\<\>\""}], 
@@ -549,8 +549,8 @@ Cell[BoxData[{
     RowBox[{"If", "[", 
      RowBox[{"$Notebooks", ",", 
       RowBox[{"NotebookDirectory", "[", "]"}], ",", 
-      RowBox[{"Directory", "[", "]"}]}], "]"}], "<>", "flowName", "<>", 
-    "\"\</\>\""}]}], ";"}], "\[IndentingNewLine]", 
+      RowBox[{"Directory", "[", "]"}]}], "]"}], "<>", "flowName", 
+    "<>", "\"\</\>\""}]}], ";"}], "\[IndentingNewLine]", 
  RowBox[{
   RowBox[{"SetFlowName", "[", "name_String", "]"}], ":=", 
   RowBox[{"Module", "[", 
@@ -561,14 +561,13 @@ Cell[BoxData[{
   RowBox[{
    RowBox[{"ShowFlowDirectory", "[", "]"}], ":=", 
    RowBox[{"Print", "[", 
-    RowBox[{
-    "\"\<\!\(\*StyleBox[\"DiFfRG\",FontWeight->\"Bold\"]\)\!\(\*StyleBox[\" \
+    RowBox[{"\"\<\!\(\*StyleBox[\"DiFfRG\",FontWeight->\"Bold\"]\)\!\(\*\
+StyleBox[\" \
 \",FontWeight->\"Bold\"]\)\!\(\*StyleBox[\"CodeTools\",FontWeight->\"Bold\"]\)\
 \!\(\*StyleBox[\":\",FontWeight->\"Bold\"]\) Flow output directory is set to \
-\\n        \>\"", "<>", "flowDir", "<>", 
-     "\"\<\\nThis can be modified by using \
-\!\(\*StyleBox[\"SetFlowName\",FontColor->RGBColor[1, 0.5, \
-0]]\)[\\\"YourNewName\\\"]\>\""}], "]"}]}], 
+\\n        \>\"", "<>", "flowDir", 
+     "<>", "\"\<\\nThis can be modified by using \!\(\*StyleBox[\"SetFlowName\
+\",FontColor->RGBColor[1, 0.5, 0]]\)[\\\"YourNewName\\\"]\>\""}], "]"}]}], 
   "\[IndentingNewLine]"}], "\[IndentingNewLine]", 
  RowBox[{"ShowFlowDirectory", "[", "]"}]}], "Input",
  InitializationCell->True,
@@ -732,13 +731,13 @@ Cell[BoxData[
        RowBox[{"\"\<const \>\"", "<>", "computeType", "<>", "\"\< \>\"", "<>", 
         RowBox[{"ToString", "[", "namecospq", "]"}], "<>", "\"\< = \>\"", "<>", 
         RowBox[{"CodeForm", "[", 
-         RowBox[{"Resultcospq", ",", "computeType"}], "]"}], "<>", 
-        "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>", 
-        "computeType", "<>", "\"\< \>\"", "<>", 
+         RowBox[{"Resultcospq", ",", "computeType"}], "]"}], 
+        "<>", "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>",
+         "computeType", "<>", "\"\< \>\"", "<>", 
         RowBox[{"ToString", "[", "namecosqr", "]"}], "<>", "\"\< = \>\"", "<>", 
         RowBox[{"CodeForm", "[", 
-         RowBox[{"Resultcosqr", ",", "computeType"}], "]"}], "<>", 
-        "\"\<;\>\""}]}], ";", "\[IndentingNewLine]", 
+         RowBox[{"Resultcosqr", ",", "computeType"}], "]"}], 
+        "<>", "\"\<;\>\""}]}], ";", "\[IndentingNewLine]", 
       RowBox[{"Return", "[", "code", "]"}], ";"}]}], "\[IndentingNewLine]", 
     "]"}]}], ";"}]], "Input",
  CellChangeTimes->{{3.9274241274268436`*^9, 3.927424154027457*^9}, {
@@ -912,8 +911,8 @@ Cell[BoxData[
           RowBox[{"[", "4", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", "\[IndentingNewLine]", 
       RowBox[{"SymmetricPoint4DP4Code", "=", 
-       RowBox[{
-       "\"\<const \>\"", "<>", "computeType", "<>", "\"\< cosp1q = \>\"", "<>", 
+       RowBox[{"\"\<const \>\"", "<>", "computeType", 
+        "<>", "\"\< cosp1q = \>\"", "<>", 
         RowBox[{"CodeForm", "[", 
          RowBox[{"SymmetricPoint4DP4cosp1", ",", "computeType"}], "]"}], 
         "<>", "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>",
@@ -1072,8 +1071,8 @@ Cell[BoxData[
           RowBox[{"[", "3", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", "\[IndentingNewLine]", 
       RowBox[{"SymmetricPoint4DP3Code", "=", 
-       RowBox[{
-       "\"\<const \>\"", "<>", "computeType", "<>", "\"\< cosp1q = \>\"", "<>", 
+       RowBox[{"\"\<const \>\"", "<>", "computeType", 
+        "<>", "\"\< cosp1q = \>\"", "<>", 
         RowBox[{"CodeForm", "[", 
          RowBox[{"SymmetricPoint4DP3cosp1", ",", "computeType"}], "]"}], 
         "<>", "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>",
@@ -1221,8 +1220,8 @@ Cell[BoxData[
           RowBox[{"[", "3", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", "\[IndentingNewLine]", 
       RowBox[{"SymmetricPoint3DP3Code", "=", 
-       RowBox[{
-       "\"\<const \>\"", "<>", "computeType", "<>", "\"\< cosp1q = \>\"", "<>", 
+       RowBox[{"\"\<const \>\"", "<>", "computeType", 
+        "<>", "\"\< cosp1q = \>\"", "<>", 
         RowBox[{"CodeForm", "[", 
          RowBox[{"SymmetricPoint3DP3cosp1", ",", "computeType"}], "]"}], 
         "<>", "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>",
@@ -1396,8 +1395,8 @@ Cell[BoxData[
           RowBox[{"[", "4", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", "\[IndentingNewLine]", 
       RowBox[{"SymmetricPoint3DP4Code", "=", 
-       RowBox[{
-       "\"\<const \>\"", "<>", "computeType", "<>", "\"\< cosp1q = \>\"", "<>", 
+       RowBox[{"\"\<const \>\"", "<>", "computeType", 
+        "<>", "\"\< cosp1q = \>\"", "<>", 
         RowBox[{"CodeForm", "[", 
          RowBox[{"SymmetricPoint3DP4cosp1", ",", "computeType"}], "]"}], 
         "<>", "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>",
@@ -1534,8 +1533,8 @@ Cell[BoxData[
           RowBox[{"[", "3", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", "\[IndentingNewLine]", 
       RowBox[{"SymmetricPoint3DP3Code", "=", 
-       RowBox[{
-       "\"\<const \>\"", "<>", "computeType", "<>", "\"\< cosp1q = \>\"", "<>", 
+       RowBox[{"\"\<const \>\"", "<>", "computeType", 
+        "<>", "\"\< cosp1q = \>\"", "<>", 
         RowBox[{"CodeForm", "[", 
          RowBox[{"SymmetricPoint3DP3cosp1", ",", "computeType"}], "]"}], 
         "<>", "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>",
@@ -1666,8 +1665,8 @@ Cell[BoxData[
           RowBox[{"[", "4", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", "\[IndentingNewLine]", 
       RowBox[{"SymmetricPoint3DP4Code", "=", 
-       RowBox[{
-       "\"\<const \>\"", "<>", "computeType", "<>", "\"\< cosp1q = \>\"", "<>", 
+       RowBox[{"\"\<const \>\"", "<>", "computeType", 
+        "<>", "\"\< cosp1q = \>\"", "<>", 
         RowBox[{"CodeForm", "[", 
          RowBox[{"SymmetricPoint3DP4cosp1", ",", "computeType"}], "]"}], 
         "<>", "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>",
@@ -1724,10 +1723,9 @@ Cell[BoxData[{
  RowBox[{
   RowBox[{"$PredefRegFunc", "=", 
    RowBox[{"{", 
-    RowBox[{
-    "\"\<RB\>\"", ",", "\"\<RF\>\"", ",", "\"\<RBdot\>\"", ",", 
-     "\"\<RFdot\>\"", ",", "\"\<dq2RB\>\"", ",", "\"\<dq2RF\>\""}], "}"}]}], 
-  ";"}], "\[IndentingNewLine]", 
+    RowBox[{"\"\<RB\>\"", ",", "\"\<RF\>\"", ",", "\"\<RBdot\>\"", 
+     ",", "\"\<RFdot\>\"", ",", "\"\<dq2RB\>\"", ",", "\"\<dq2RF\>\""}], 
+    "}"}]}], ";"}], "\[IndentingNewLine]", 
  RowBox[{
   RowBox[{"$StandardKernelDefinitions", "=", 
    RowBox[{"Map", "[", "\[IndentingNewLine]", 
@@ -1737,12 +1735,10 @@ Cell[BoxData[{
        RowBox[{
         RowBox[{"\"\<Name\>\"", "->", "#"}], ",", 
         RowBox[{"\"\<Body\>\"", "->", 
-         RowBox[{
-         "\"\<return Regulator::\>\"", "<>", "#", "<>", 
-          "\"\<(k2, p2);\>\""}]}], ",", 
-        RowBox[{
-        "\"\<Prefix\>\"", "->", 
-         "\"\<static KOKKOS_FORCEINLINE_FUNCTION\>\""}], ",", 
+         RowBox[{"\"\<return Regulator::\>\"", "<>", "#", 
+          "<>", "\"\<(k2, p2);\>\""}]}], ",", 
+        RowBox[{"\"\<Prefix\>\"", 
+         "->", "\"\<static KOKKOS_FORCEINLINE_FUNCTION\>\""}], ",", 
         RowBox[{"\"\<Suffix\>\"", "->", "\"\<\>\""}], ",", 
         RowBox[{"\"\<Parameters\>\"", "->", 
          RowBox[{"{", 
@@ -1758,8 +1754,8 @@ Cell[BoxData[{
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"DiFfRG", "::", "MissingKey"}], "=", 
-    "\"\<The key \\\"`1`\\\" is missing.\>\""}], ";"}], 
+    RowBox[{"DiFfRG", "::", "MissingKey"}], 
+    "=", "\"\<The key \\\"`1`\\\" is missing.\>\""}], ";"}], 
   "\[IndentingNewLine]"}], "\[IndentingNewLine]", 
  RowBox[{
   RowBox[{
@@ -1815,8 +1811,8 @@ Cell[BoxData[{
          RowBox[{"spec", ",", "\"\<AD\>\"", ",", "BooleanQ"}], "]"}], "&&", 
         "\[IndentingNewLine]", 
         RowBox[{"CheckKey", "[", 
-         RowBox[{"spec", ",", "\"\<Device\>\"", ",", "StringQ"}], "]"}]}]}], 
-      ";", "\[IndentingNewLine]", 
+         RowBox[{"spec", ",", "\"\<Device\>\"", ",", "StringQ"}], "]"}]}]}], ";",
+       "\[IndentingNewLine]", 
       RowBox[{"Return", "[", "validKeys", "]"}], ";"}]}], 
     "\[IndentingNewLine]", "]"}]}], ";"}]}], "Input",
  CellChangeTimes->{{3.957516092356193*^9, 3.957516161457782*^9}, {
@@ -1845,8 +1841,8 @@ Cell[BoxData[
        "\[IndentingNewLine]", "]"}], ";", "\[IndentingNewLine]", 
       RowBox[{"ret", "=", 
        RowBox[{
-       "ret", "<>", "\"\<using Regulator = \>\"", "<>", "name", "<>", 
-        "\"\<<\>\""}]}], ";", "\[IndentingNewLine]", 
+       "ret", "<>", "\"\<using Regulator = \>\"", "<>", "name", 
+        "<>", "\"\<<\>\""}]}], ";", "\[IndentingNewLine]", 
       RowBox[{"If", "[", 
        RowBox[{
         RowBox[{"optName", "=!=", "\"\<\>\""}], ",", "\[IndentingNewLine]", 
@@ -1870,8 +1866,8 @@ Cell[BoxData[{
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"ExportCode", "::", "WrongSyntax"}], "=", 
-    "\"\<Incorrect arguments for ExportCode: `1`\>\""}], ";"}], 
+    RowBox[{"ExportCode", "::", "WrongSyntax"}], 
+    "=", "\"\<Incorrect arguments for ExportCode: `1`\>\""}], ";"}], 
   "\[IndentingNewLine]"}], "\[IndentingNewLine]", 
  RowBox[{
   RowBox[{"ExportCode", "[", "b___", "]"}], ":=", 
@@ -1911,9 +1907,9 @@ Cell[BoxData[{
        RowBox[{"fileName", ",", "content", ",", "\"\<Text\>\""}], "]"}], ";", 
       "\[IndentingNewLine]", 
       RowBox[{"Print", "[", 
-       RowBox[{
-       "\"\<Exported to \\\"\>\"", "<>", "fileName", "<>", "\"\<\\\"\>\""}], 
-       "]"}], ";"}]}], "\[IndentingNewLine]", "]"}]}], ";"}]}], "Input",
+       RowBox[{"\"\<Exported to \\\"\>\"", "<>", "fileName", 
+        "<>", "\"\<\\\"\>\""}], "]"}], ";"}]}], "\[IndentingNewLine]", 
+    "]"}]}], ";"}]}], "Input",
  CellChangeTimes->{{3.960521201849889*^9, 3.960521245020825*^9}, {
   3.960522016117321*^9, 3.960522140177272*^9}},
  CellLabel->
@@ -1961,22 +1957,20 @@ Cell[BoxData[{
           RowBox[{"sources", ",", "\"\<\\n    \>\""}], "]"}]}]}], ";", 
        "\[IndentingNewLine]", "\[IndentingNewLine]", 
        RowBox[{"cmake", "=", 
-        RowBox[{
-        "\"\<set(\>\"", "<>", "varName", "<>", "\"\<_SOURCES \n\>\"", "<>", 
-         "sources", "<>", 
-         "\"\<\n    ${CMAKE_CURRENT_SOURCE_DIR}/flows.cc)\n\n\
+        RowBox[{"\"\<set(\>\"", "<>", "varName", "<>", "\"\<_SOURCES \n\>\"", 
+         "<>", "sources", 
+         "<>", "\"\<\n    ${CMAKE_CURRENT_SOURCE_DIR}/flows.cc)\n\n\
 add_library(\>\"", "<>", "varName", "<>", "\"\< STATIC ${\>\"", "<>", 
          "varName", "<>", "\"\<_SOURCES})\ntarget_link_libraries(\>\"", "<>", 
-         "varName", "<>", 
-         "\"\< DiFfRG::DiFfRG)\ntarget_compile_options(\n  \>\"", "<>", 
-         "varName", "<>", 
-         "\"\< PRIVATE $<$<COMPILE_LANGUAGE:CXX>: -Wno-unused-parameter\n     \
-                    -Wno-unused-variable >)\n\>\""}]}], ";", 
+         "varName", 
+         "<>", "\"\< DiFfRG::DiFfRG)\ntarget_compile_options(\n  \>\"", "<>", 
+         "varName", 
+         "<>", "\"\< PRIVATE $<$<COMPILE_LANGUAGE:CXX>: -Wno-unused-parameter\
+\n                         -Wno-unused-variable >)\n\>\""}]}], ";", 
        "\[IndentingNewLine]", 
        RowBox[{"ExportCode", "[", 
         RowBox[{"fileName", ",", "cmake"}], "]"}], ";"}]}], 
-     "\[IndentingNewLine]", "]"}]}], ";"}], 
-  "\[IndentingNewLine]"}], "\[IndentingNewLine]", 
+     "\[IndentingNewLine]", "]"}]}], ";"}], "\[IndentingNewLine]"}], "\[IndentingNewLine]", 
  RowBox[{
   RowBox[{
    RowBox[{
@@ -2019,8 +2013,8 @@ add_library(\>\"", "<>", "varName", "<>", "\"\< STATIC ${\>\"", "<>",
                RowBox[{"StringSplit", "[", 
                 RowBox[{"#", ",", "\"\</\>\""}], "]"}], "[", 
                RowBox[{"[", 
-                RowBox[{"-", "1"}], "]"}], "]"}], "<>", 
-              "\"\<_integrator\>\""}], ",", 
+                RowBox[{"-", "1"}], "]"}], "]"}], 
+              "<>", "\"\<_integrator\>\""}], ",", 
              RowBox[{"\"\<./\>\"", "<>", 
               RowBox[{
                RowBox[{"StringSplit", "[", 
@@ -2032,8 +2026,8 @@ add_library(\>\"", "<>", "varName", "<>", "\"\< STATIC ${\>\"", "<>",
                 RowBox[{"#", ",", "\"\</\>\""}], "]"}], "[", 
                RowBox[{"[", 
                 RowBox[{"-", "1"}], "]"}], "]"}], "<>", "\"\<.hh\>\""}]}], 
-            "}"}], "&"}], "\[IndentingNewLine]", ",", "folders"}], "]"}]}], 
-       ";", "\[IndentingNewLine]", "\[IndentingNewLine]", 
+            "}"}], "&"}], "\[IndentingNewLine]", ",", "folders"}], "]"}]}], ";",
+        "\[IndentingNewLine]", "\[IndentingNewLine]", 
        RowBox[{"flowHeader", "=", 
         RowBox[{"FunKit`MakeCppHeader", "[", "\[IndentingNewLine]", 
          RowBox[{
@@ -2041,9 +2035,9 @@ add_library(\>\"", "<>", "varName", "<>", "\"\< STATIC ${\>\"", "<>",
            RowBox[{"Join", "[", 
             RowBox[{
              RowBox[{"{", 
-              RowBox[{
-              "\"\<DiFfRG/common/utils.hh\>\"", ",", 
-               "\"\<DiFfRG/physics/integration.hh\>\""}], "}"}], ",", 
+              
+              RowBox[{"\"\<DiFfRG/common/utils.hh\>\"", 
+               ",", "\"\<DiFfRG/physics/integration.hh\>\""}], "}"}], ",", 
              RowBox[{"integrators", "[", 
               RowBox[{"[", 
                RowBox[{"All", ",", "3"}], "]"}], "]"}]}], "]"}]}], ",", 
@@ -2068,9 +2062,9 @@ add_library(\>\"", "<>", "varName", "<>", "\"\< STATIC ${\>\"", "<>",
                     RowBox[{"{", 
                     RowBox[{"<|", 
                     RowBox[{
-                    RowBox[{
-                    "\"\<Type\>\"", "->", "\"\<DiFfRG::JSONValue\>\""}], ",", 
                     
+                    RowBox[{"\"\<Type\>\"", 
+                    "->", "\"\<DiFfRG::JSONValue\>\""}], ",", 
                     RowBox[{"\"\<Reference\>\"", "->", "True"}], ",", 
                     RowBox[{"\"\<Const\>\"", "->", "True"}], ",", 
                     RowBox[{"\"\<Name\>\"", "->", "\"\<json\>\""}]}], "|>"}], 
@@ -2097,8 +2091,8 @@ add_library(\>\"", "<>", "varName", "<>", "\"\< STATIC ${\>\"", "<>",
                     RowBox[{"\"\<Body\>\"", "->", "None"}], ",", 
                     "\[IndentingNewLine]", 
                     RowBox[{"\"\<Return\>\"", "->", "\"\<void\>\""}]}], 
-                    "\[IndentingNewLine]", "]"}], ",", "\[IndentingNewLine]", 
-                   "\"\<DiFfRG::QuadratureProvider \
+                    "\[IndentingNewLine]", "]"}], ",", 
+                   "\[IndentingNewLine]", "\"\<DiFfRG::QuadratureProvider \
 quadrature_provider;\>\""}], "\[IndentingNewLine]", "}"}], ",", 
                  "\[IndentingNewLine]", 
                  RowBox[{"Map", "[", 
@@ -2123,9 +2117,9 @@ quadrature_provider;\>\""}], "\[IndentingNewLine]", "}"}], ",",
             RowBox[{
              RowBox[{"integrators", "[", 
               RowBox[{"[", 
-               RowBox[{"All", ",", "1"}], "]"}], "]"}], ",", 
-             "\"\<(quadrature_provider, json), \>\""}], "]"}], "<>", 
-           "\"\<(quadrature_provider, json)\>\""}], ",", "\"\<\>\""}], 
+               RowBox[{"All", ",", "1"}], "]"}], "]"}], 
+             ",", "\"\<(quadrature_provider, json), \>\""}], "]"}], 
+           "<>", "\"\<(quadrature_provider, json)\>\""}], ",", "\"\<\>\""}], 
          "]"}]}], ";", "\[IndentingNewLine]", "\[IndentingNewLine]", 
        RowBox[{"flowCpp", "=", 
         RowBox[{"FunKit`MakeCppBlock", "[", "\[IndentingNewLine]", 
@@ -2150,8 +2144,9 @@ quadrature_provider;\>\""}], "\[IndentingNewLine]", "}"}], ",",
                 RowBox[{"{", 
                  RowBox[{"<|", 
                   RowBox[{
-                   RowBox[{
-                   "\"\<Type\>\"", "->", "\"\<DiFfRG::JSONValue\>\""}], ",", 
+                   
+                   RowBox[{"\"\<Type\>\"", 
+                    "->", "\"\<DiFfRG::JSONValue\>\""}], ",", 
                    RowBox[{"\"\<Reference\>\"", "->", "True"}], ",", 
                    RowBox[{"\"\<Const\>\"", "->", "True"}], ",", 
                    RowBox[{"\"\<Name\>\"", "->", "\"\<json\>\""}]}], "|>"}], 
@@ -2178,44 +2173,48 @@ quadrature_provider;\>\""}], "\[IndentingNewLine]", "}"}], ",",
                  RowBox[{"Map", "[", "\[IndentingNewLine]", 
                   RowBox[{
                    RowBox[{
-                    RowBox[{
-                    "\"\<\nif constexpr(DiFfRG::has_set_k<decltype(\>\"", "<>", 
+                    
+                    RowBox[{"\"\<\nif constexpr(DiFfRG::has_set_k<decltype(\>\
+\"", "<>", 
                     RowBox[{"#", "[", 
-                    RowBox[{"[", "1", "]"}], "]"}], "<>", 
-                    "\"\<.integrator)>) \>\"", "<>", 
+                    RowBox[{"[", "1", "]"}], "]"}], 
+                    "<>", "\"\<.integrator)>) \>\"", "<>", 
                     RowBox[{"#", "[", 
-                    RowBox[{"[", "1", "]"}], "]"}], "<>", 
-                    "\"\<.integrator.set_k(k);\nif \
+                    RowBox[{"[", "1", "]"}], "]"}], 
+                    "<>", "\"\<.integrator.set_k(k);\nif \
 constexpr(DiFfRG::has_integrator_AD<decltype(\>\"", "<>", 
                     RowBox[{"#", "[", 
-                    RowBox[{"[", "1", "]"}], "]"}], "<>", 
-                    "\"\<)>)\nif constexpr(DiFfRG::has_set_k<decltype(\>\"", "<>", 
+                    RowBox[{"[", "1", "]"}], "]"}], 
+                    "<>", "\"\<)>)\nif \
+constexpr(DiFfRG::has_set_k<decltype(\>\"", "<>", 
                     RowBox[{"#", "[", 
-                    RowBox[{"[", "1", "]"}], "]"}], "<>", 
-                    "\"\<.integrator_AD)>)\>\"", "<>", 
+                    RowBox[{"[", "1", "]"}], "]"}], 
+                    "<>", "\"\<.integrator_AD)>)\>\"", "<>", 
                     RowBox[{"#", "[", 
-                    RowBox[{"[", "1", "]"}], "]"}], "<>", 
-                    "\"\<.integrator_AD.set_k(k);\>\"", "<>", 
-                    "\"\<\nif constexpr(DiFfRG::has_set_T<decltype(\>\"", "<>", 
+                    RowBox[{"[", "1", "]"}], "]"}], 
+                    "<>", "\"\<.integrator_AD.set_k(k);\>\"", 
+                    "<>", "\"\<\nif constexpr(DiFfRG::has_set_T<decltype(\>\"",
+                     "<>", 
                     RowBox[{"#", "[", 
-                    RowBox[{"[", "1", "]"}], "]"}], "<>", 
-                    "\"\<.integrator)>) \>\"", "<>", 
+                    RowBox[{"[", "1", "]"}], "]"}], 
+                    "<>", "\"\<.integrator)>) \>\"", "<>", 
                     RowBox[{"#", "[", 
-                    RowBox[{"[", "1", "]"}], "]"}], "<>", 
-                    "\"\<.integrator.set_T(k);\nif \
+                    RowBox[{"[", "1", "]"}], "]"}], 
+                    "<>", "\"\<.integrator.set_T(k);\nif \
 constexpr(DiFfRG::has_integrator_AD<decltype(\>\"", "<>", 
                     RowBox[{"#", "[", 
-                    RowBox[{"[", "1", "]"}], "]"}], "<>", 
-                    "\"\<)>)\nif constexpr(DiFfRG::has_set_T<decltype(\>\"", "<>", 
+                    RowBox[{"[", "1", "]"}], "]"}], 
+                    "<>", "\"\<)>)\nif \
+constexpr(DiFfRG::has_set_T<decltype(\>\"", "<>", 
                     RowBox[{"#", "[", 
-                    RowBox[{"[", "1", "]"}], "]"}], "<>", 
-                    "\"\<.integrator_AD)>)\>\"", "<>", 
+                    RowBox[{"[", "1", "]"}], "]"}], 
+                    "<>", "\"\<.integrator_AD)>)\>\"", "<>", 
                     RowBox[{"#", "[", 
-                    RowBox[{"[", "1", "]"}], "]"}], "<>", 
-                    "\"\<.integrator_AD.set_T(k);\>\""}], 
+                    RowBox[{"[", "1", "]"}], "]"}], 
+                    "<>", "\"\<.integrator_AD.set_T(k);\>\""}], 
                     "\[IndentingNewLine]", "&"}], ",", "\[IndentingNewLine]", 
-                   "integrators"}], "]"}], "\[IndentingNewLine]", "]"}]}], 
-               ",", "\[IndentingNewLine]", 
+                   "integrators"}], "]"}], "\[IndentingNewLine]", "]"}]}], ",",
+                "\[IndentingNewLine]", 
                RowBox[{"\"\<Return\>\"", "->", "\"\<void\>\""}]}], 
               "\[IndentingNewLine]", "]"}]}], "\[IndentingNewLine]", 
             "}"}]}]}], "\[IndentingNewLine]", "]"}]}], ";", 
@@ -2269,18 +2268,17 @@ constexpr(DiFfRG::has_integrator_AD<decltype(\>\"", "<>",
 
 Cell[BoxData[{
  RowBox[{
-  RowBox[{"ClearAll", "[", "MakeKernel", "]"}], 
-  "\[IndentingNewLine]"}], "\[IndentingNewLine]", 
+  RowBox[{"ClearAll", "[", "MakeKernel", "]"}], "\[IndentingNewLine]"}], "\[IndentingNewLine]", 
  RowBox[{
   RowBox[{
-   RowBox[{"MakeKernel", "::", "Invalid"}], "=", 
-   "\"\<The given arguments are invalid. See MakeKernel::usage\>\""}], 
+   RowBox[{"MakeKernel", "::", "Invalid"}], 
+   "=", "\"\<The given arguments are invalid. See MakeKernel::usage\>\""}], 
   ";"}], "\[IndentingNewLine]", 
  RowBox[{
   RowBox[{
    RowBox[{
-    RowBox[{"MakeKernel", "::", "InvalidSpec"}], "=", 
-    "\"\<The given kernel specification is invalid.\>\""}], ";"}], 
+    RowBox[{"MakeKernel", "::", "InvalidSpec"}], 
+    "=", "\"\<The given kernel specification is invalid.\>\""}], ";"}], 
   "\[IndentingNewLine]"}], "\[IndentingNewLine]", 
  RowBox[{
   RowBox[{
@@ -2292,17 +2290,15 @@ Cell[BoxData[{
        RowBox[{"{", "}"}]}], ",", "\[IndentingNewLine]", 
       RowBox[{"\"\<IntegrationVariables\>\"", "->", 
        RowBox[{"{", "}"}]}], ",", "\[IndentingNewLine]", 
-      RowBox[{
-      "\"\<KernelDefinitions\>\"", "->", "$StandardKernelDefinitions"}], ",", 
+      RowBox[{"\"\<KernelDefinitions\>\"", "->", 
+       "$StandardKernelDefinitions"}], ",", "\[IndentingNewLine]", 
+      RowBox[{"\"\<Regulator\>\"", 
+       "->", "\"\<DiFfRG::PolynomialExpRegulator\>\""}], ",", 
       "\[IndentingNewLine]", 
-      RowBox[{
-      "\"\<Regulator\>\"", "->", "\"\<DiFfRG::PolynomialExpRegulator\>\""}], 
-      ",", "\[IndentingNewLine]", 
       RowBox[{"\"\<RegulatorOpts\>\"", "->", 
        RowBox[{"{", 
         RowBox[{"\"\<\>\"", ",", "\"\<\>\""}], "}"}]}]}], 
-     "\[IndentingNewLine]", "}"}]}], ";"}], 
-  "\[IndentingNewLine]"}], "\[IndentingNewLine]", 
+     "\[IndentingNewLine]", "}"}]}], ";"}], "\[IndentingNewLine]"}], "\[IndentingNewLine]", 
  RowBox[{
   RowBox[{"$ADReplacements", "=", 
    RowBox[{"{", "}"}]}], ";"}], "\[IndentingNewLine]", 
@@ -2323,8 +2319,7 @@ Cell[BoxData[{
  RowBox[{
   RowBox[{
    RowBox[{"MakeKernel", "[", 
-    RowBox[{
-    "kernelExpr_", ",", "spec_Association", ",", "parameters_List", ",", 
+    RowBox[{"kernelExpr_", ",", "spec_Association", ",", "parameters_List", ",", 
      RowBox[{"OptionsPattern", "[", "]"}]}], "]"}], ":=", 
    RowBox[{"MakeKernel", "@@", 
     RowBox[{"(", 
@@ -2411,18 +2406,16 @@ Cell[BoxData[{
          "\[IndentingNewLine]", 
          RowBox[{"\"\<Suffix\>\"", "->", "\"\<\>\""}], ",", 
          "\[IndentingNewLine]", 
-         RowBox[{
-         "\"\<Prefix\>\"", "->", 
-          "\"\<static KOKKOS_FORCEINLINE_FUNCTION\>\""}], ",", 
+         RowBox[{"\"\<Prefix\>\"", 
+          "->", "\"\<static KOKKOS_FORCEINLINE_FUNCTION\>\""}], ",", 
          "\[IndentingNewLine]", 
          RowBox[{"\"\<Parameters\>\"", "->", 
           RowBox[{"Join", "[", 
            RowBox[{
             RowBox[{"OptionValue", "[", "\"\<IntegrationVariables\>\"", "]"}],
              ",", "parameters"}], "]"}]}], ",", "\[IndentingNewLine]", 
-         RowBox[{
-         "\"\<Body\>\"", "->", 
-          "\"\<using namespace DiFfRG;using namespace \
+         RowBox[{"\"\<Body\>\"", 
+          "->", "\"\<using namespace DiFfRG;using namespace \
 DiFfRG::compute;\>\""}]}], "\[IndentingNewLine]", "]"}]}], ";", 
       "\[IndentingNewLine]", 
       RowBox[{"constant", "=", 
@@ -2432,15 +2425,13 @@ DiFfRG::compute;\>\""}]}], "\[IndentingNewLine]", "]"}]}], ";",
          "\[IndentingNewLine]", 
          RowBox[{"\"\<Suffix\>\"", "->", "\"\<\>\""}], ",", 
          "\[IndentingNewLine]", 
-         RowBox[{
-         "\"\<Prefix\>\"", "->", 
-          "\"\<static KOKKOS_FORCEINLINE_FUNCTION\>\""}], ",", 
+         RowBox[{"\"\<Prefix\>\"", 
+          "->", "\"\<static KOKKOS_FORCEINLINE_FUNCTION\>\""}], ",", 
          "\[IndentingNewLine]", 
          RowBox[{"\"\<Parameters\>\"", "->", "parameters"}], ",", 
          "\[IndentingNewLine]", 
-         RowBox[{
-         "\"\<Body\>\"", "->", 
-          "\"\<using namespace DiFfRG;using namespace \
+         RowBox[{"\"\<Body\>\"", 
+          "->", "\"\<using namespace DiFfRG;using namespace \
 DiFfRG::compute;\>\""}]}], "\[IndentingNewLine]", "]"}]}], ";", 
       "\[IndentingNewLine]", 
       RowBox[{"kernelClass", "=", 
@@ -2451,13 +2442,13 @@ DiFfRG::compute;\>\""}]}], "\[IndentingNewLine]", "]"}]}], ";",
          "\[IndentingNewLine]", 
          RowBox[{"\"\<Name\>\"", "->", 
           RowBox[{
-           RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], "<>", 
-           "\"\<_kernel\>\""}]}], ",", "\[IndentingNewLine]", 
+           RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], 
+           "<>", "\"\<_kernel\>\""}]}], ",", "\[IndentingNewLine]", 
          RowBox[{"\"\<MembersPublic\>\"", "->", 
           RowBox[{"{", 
-           RowBox[{
-           "\"\<using Regulator = _Regulator;\>\"", ",", "kernel", ",", 
-            "constant"}], "}"}]}], ",", "\[IndentingNewLine]", 
+           
+           RowBox[{"\"\<using Regulator = _Regulator;\>\"", ",", "kernel", ",",
+             "constant"}], "}"}]}], ",", "\[IndentingNewLine]", 
          RowBox[{"\"\<MembersPrivate\>\"", "->", "kernelDefs"}]}], 
         "\[IndentingNewLine]", "]"}]}], ";", "\[IndentingNewLine]", 
       RowBox[{"kernelHeader", "=", 
@@ -2470,8 +2461,8 @@ DiFfRG::compute;\>\""}]}], "\[IndentingNewLine]", "]"}]}], ";",
           RowBox[{"{", 
            RowBox[{"\"\<namespace DiFfRG {\>\"", ",", "kernelClass", ",", 
             RowBox[{"\"\<} using DiFfRG::\>\"", "<>", 
-             RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], "<>", 
-             "\"\<_kernel;\>\""}]}], "}"}]}]}], "]"}]}], ";", 
+             RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], 
+             "<>", "\"\<_kernel;\>\""}]}], "}"}]}]}], "]"}]}], ";", 
       "\[IndentingNewLine]", 
       RowBox[{"(*", 
        RowBox[{
@@ -2493,8 +2484,8 @@ DiFfRG::compute;\>\""}]}], "\[IndentingNewLine]", "]"}]}], ";",
            RowBox[{"KeyFreeQ", "[", 
             RowBox[{
              RowBox[{"params", "[", 
-              RowBox[{"[", "i", "]"}], "]"}], ",", "\"\<Type\>\""}], "]"}], 
-           ",", "\[IndentingNewLine]", 
+              RowBox[{"[", "i", "]"}], "]"}], ",", "\"\<Type\>\""}], "]"}], ",",
+            "\[IndentingNewLine]", 
            RowBox[{
             RowBox[{"params", "[", 
              RowBox[{"[", "i", "]"}], "]"}], "=", 
@@ -2584,8 +2575,8 @@ DiFfRG::compute;\>\""}]}], "\[IndentingNewLine]", "]"}]}], ";",
            RowBox[{"KeyFreeQ", "[", 
             RowBox[{
              RowBox[{"paramsAD", "[", 
-              RowBox[{"[", "i", "]"}], "]"}], ",", "\"\<Type\>\""}], "]"}], 
-           ",", "\[IndentingNewLine]", 
+              RowBox[{"[", "i", "]"}], "]"}], ",", "\"\<Type\>\""}], "]"}], ",",
+            "\[IndentingNewLine]", 
            RowBox[{
             RowBox[{"paramsAD", "[", 
              RowBox[{"[", "i", "]"}], "]"}], "=", 
@@ -2721,8 +2712,8 @@ DiFfRG::compute;\>\""}]}], "\[IndentingNewLine]", "]"}]}], ";",
         RowBox[{"AppendTo", "[", 
          RowBox[{"integratorTemplateParams", ",", 
           RowBox[{"ToString", "[", 
-           RowBox[{"spec", "[", "\"\<d\>\"", "]"}], "]"}]}], "]"}]}], "]"}], 
-      ";", "\[IndentingNewLine]", 
+           RowBox[{"spec", "[", "\"\<d\>\"", "]"}], "]"}]}], "]"}]}], "]"}], ";",
+       "\[IndentingNewLine]", 
       RowBox[{"If", "[", 
        RowBox[{
         RowBox[{"KeyExistsQ", "[", 
@@ -2737,9 +2728,9 @@ DiFfRG::compute;\>\""}]}], "\[IndentingNewLine]", "]"}]}], ";",
       RowBox[{"AppendTo", "[", 
        RowBox[{"integratorTemplateParams", ",", 
         RowBox[{
-         RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], "<>", 
-         "\"\<_kernel<Regulator>\>\""}]}], "]"}], ";", "\[IndentingNewLine]", 
-      
+         RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], 
+         "<>", "\"\<_kernel<Regulator>\>\""}]}], "]"}], ";", 
+      "\[IndentingNewLine]", 
       RowBox[{"AppendTo", "[", 
        RowBox[{"integratorTemplateParams", ",", 
         RowBox[{"If", "[", 
@@ -2751,11 +2742,12 @@ DiFfRG::compute;\>\""}]}], "\[IndentingNewLine]", "]"}]}], ";",
             RowBox[{
              RowBox[{"{", 
               RowBox[{"\"\<GPU\>\"", ",", "\"\<Threads\>\""}], "}"}], ",", 
-             RowBox[{"spec", "[", "\"\<Device\>\"", "]"}]}], "]"}]}], ",", 
-          "\"\<DiFfRG::TBB_exec\>\"", ",", 
+             RowBox[{"spec", "[", "\"\<Device\>\"", "]"}]}], "]"}]}], 
+          ",", "\"\<DiFfRG::TBB_exec\>\"", ",", 
           RowBox[{"\"\<DiFfRG::\>\"", "<>", 
-           RowBox[{"spec", "[", "\"\<Device\>\"", "]"}], "<>", 
-           "\"\<_exec\>\""}]}], "]"}]}], "]"}], ";", "\[IndentingNewLine]", 
+           RowBox[{"spec", "[", "\"\<Device\>\"", "]"}], 
+           "<>", "\"\<_exec\>\""}]}], "]"}]}], "]"}], ";", 
+      "\[IndentingNewLine]", 
       RowBox[{"integratorTemplateParams", "=", 
        RowBox[{"StringRiffle", "[", 
         RowBox[{"integratorTemplateParams", ",", "\"\<, \>\""}], "]"}]}], ";",
@@ -2772,8 +2764,8 @@ DiFfRG::compute;\>\""}]}], "\[IndentingNewLine]", "]"}]}], ";",
         RowBox[{"AppendTo", "[", 
          RowBox[{"integratorADTemplateParams", ",", 
           RowBox[{"ToString", "[", 
-           RowBox[{"spec", "[", "\"\<d\>\"", "]"}], "]"}]}], "]"}]}], "]"}], 
-      ";", "\[IndentingNewLine]", 
+           RowBox[{"spec", "[", "\"\<d\>\"", "]"}], "]"}]}], "]"}]}], "]"}], ";",
+       "\[IndentingNewLine]", 
       RowBox[{"If", "[", 
        RowBox[{
         RowBox[{"KeyExistsQ", "[", 
@@ -2792,9 +2784,9 @@ DiFfRG::compute;\>\""}]}], "\[IndentingNewLine]", "]"}]}], ";",
       RowBox[{"AppendTo", "[", 
        RowBox[{"integratorADTemplateParams", ",", 
         RowBox[{
-         RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], "<>", 
-         "\"\<_kernel<Regulator>\>\""}]}], "]"}], ";", "\[IndentingNewLine]", 
-      
+         RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], 
+         "<>", "\"\<_kernel<Regulator>\>\""}]}], "]"}], ";", 
+      "\[IndentingNewLine]", 
       RowBox[{"AppendTo", "[", 
        RowBox[{"integratorADTemplateParams", ",", 
         RowBox[{"If", "[", 
@@ -2806,36 +2798,37 @@ DiFfRG::compute;\>\""}]}], "\[IndentingNewLine]", "]"}]}], ";",
             RowBox[{
              RowBox[{"{", 
               RowBox[{"\"\<GPU\>\"", ",", "\"\<Threads\>\""}], "}"}], ",", 
-             RowBox[{"spec", "[", "\"\<Device\>\"", "]"}]}], "]"}]}], ",", 
-          "\"\<DiFfRG::TBB_exec\>\"", ",", 
+             RowBox[{"spec", "[", "\"\<Device\>\"", "]"}]}], "]"}]}], 
+          ",", "\"\<DiFfRG::TBB_exec\>\"", ",", 
           RowBox[{"\"\<DiFfRG::\>\"", "<>", 
-           RowBox[{"spec", "[", "\"\<Device\>\"", "]"}], "<>", 
-           "\"\<_exec\>\""}]}], "]"}]}], "]"}], ";", "\[IndentingNewLine]", 
+           RowBox[{"spec", "[", "\"\<Device\>\"", "]"}], 
+           "<>", "\"\<_exec\>\""}]}], "]"}]}], "]"}], ";", 
+      "\[IndentingNewLine]", 
       RowBox[{"integratorADTemplateParams", "=", 
        RowBox[{"StringRiffle", "[", 
-        RowBox[{"integratorADTemplateParams", ",", "\"\<, \>\""}], "]"}]}], 
-      ";", "\[IndentingNewLine]", "\[IndentingNewLine]", 
+        RowBox[{"integratorADTemplateParams", ",", "\"\<, \>\""}], "]"}]}], ";",
+       "\[IndentingNewLine]", "\[IndentingNewLine]", 
       RowBox[{"integratorHeader", "=", 
        RowBox[{"FunKit`MakeCppHeader", "[", "\[IndentingNewLine]", 
         RowBox[{
          RowBox[{"\"\<Includes\>\"", "->", 
           RowBox[{"{", 
-           RowBox[{
-           "\"\<DiFfRG/physics/interpolation.hh\>\"", ",", 
-            "\"\<DiFfRG/physics/integration.hh\>\"", ",", 
-            "\"\<DiFfRG/physics/physics.hh\>\""}], "}"}]}], ",", 
+           
+           RowBox[{"\"\<DiFfRG/physics/interpolation.hh\>\"", 
+            ",", "\"\<DiFfRG/physics/integration.hh\>\"", 
+            ",", "\"\<DiFfRG/physics/physics.hh\>\""}], "}"}]}], ",", 
          "\[IndentingNewLine]", 
          RowBox[{"\"\<Body\>\"", "->", 
           RowBox[{"{", 
-           RowBox[{
-           "\"\<#include \\\"./kernel.hh\\\"\\n\>\"", ",", 
+           
+           RowBox[{"\"\<#include \\\"./kernel.hh\\\"\\n\>\"", ",", 
             "\[IndentingNewLine]", 
             RowBox[{"FunKit`MakeCppClass", "[", "\[IndentingNewLine]", 
              RowBox[{
               RowBox[{"\"\<Name\>\"", "->", 
                RowBox[{
-                RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], "<>", 
-                "\"\<_integrator\>\""}]}], ",", "\[IndentingNewLine]", 
+                RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], 
+                "<>", "\"\<_integrator\>\""}]}], ",", "\[IndentingNewLine]", 
               RowBox[{"\"\<MembersPublic\>\"", "->", "\[IndentingNewLine]", 
                RowBox[{"Join", "[", "\[IndentingNewLine]", 
                 RowBox[{
@@ -2846,26 +2839,27 @@ DiFfRG::compute;\>\""}]}], "\[IndentingNewLine]", "]"}]}], ";",
                     RowBox[{
                     RowBox[{"\"\<Name\>\"", "->", 
                     RowBox[{
-                    RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], "<>", 
-                    "\"\<_integrator\>\""}]}], ",", "\[IndentingNewLine]", 
+                    RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], 
+                    "<>", "\"\<_integrator\>\""}]}], ",", 
+                    "\[IndentingNewLine]", 
                     RowBox[{"\"\<Parameters\>\"", "->", 
                     RowBox[{"{", 
                     RowBox[{
                     RowBox[{"<|", 
                     RowBox[{
-                    RowBox[{
-                    "\"\<Type\>\"", "->", 
-                    "\"\<DiFfRG::QuadratureProvider\>\""}], ",", 
+                    
+                    RowBox[{"\"\<Type\>\"", 
+                    "->", "\"\<DiFfRG::QuadratureProvider\>\""}], ",", 
                     RowBox[{"\"\<Reference\>\"", "->", "True"}], ",", 
                     RowBox[{"\"\<Const\>\"", "->", "False"}], ",", 
-                    RowBox[{
-                    "\"\<Name\>\"", "->", "\"\<quadrature_provider\>\""}]}], 
-                    "|>"}], ",", 
+                    
+                    RowBox[{"\"\<Name\>\"", 
+                    "->", "\"\<quadrature_provider\>\""}]}], "|>"}], ",", 
                     RowBox[{"<|", 
                     RowBox[{
-                    RowBox[{
-                    "\"\<Type\>\"", "->", "\"\<DiFfRG::JSONValue\>\""}], ",", 
                     
+                    RowBox[{"\"\<Type\>\"", 
+                    "->", "\"\<DiFfRG::JSONValue\>\""}], ",", 
                     RowBox[{"\"\<Reference\>\"", "->", "True"}], ",", 
                     RowBox[{"\"\<Const\>\"", "->", "True"}], ",", 
                     RowBox[{"\"\<Name\>\"", "->", "\"\<json\>\""}]}], 
@@ -2878,8 +2872,8 @@ DiFfRG::compute;\>\""}]}], "\[IndentingNewLine]", "]"}]}], ";",
                    RowBox[{"If", "[", 
                     RowBox[{
                     RowBox[{
-                    RowBox[{"Length", "[", "coordinates", "]"}], ">", "0"}], 
-                    ",", "\[IndentingNewLine]", 
+                    RowBox[{"Length", "[", "coordinates", "]"}], ">", "0"}], ",",
+                     "\[IndentingNewLine]", 
                     RowBox[{
                     "FunKit`MakeCppFunction", "[", "\[IndentingNewLine]", 
                     RowBox[{
@@ -2892,36 +2886,37 @@ DiFfRG::compute;\>\""}]}], "\[IndentingNewLine]", "]"}]}], ";",
                     RowBox[{"{", "tparams", "}"}]}], ",", 
                     "\[IndentingNewLine]", 
                     RowBox[{"\"\<Body\>\"", "->", 
-                    RowBox[{
-                    "\"\<static_assert(std::is_same_v<NT, double> || \
+                    
+                    RowBox[{"\"\<static_assert(std::is_same_v<NT, double> || \
 std::is_same_v<NT, autodiff::real>, \\\"Unknown type requested of \>\"", "<>", 
-                    RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], "<>", 
-                    "\"\<_integrator::get\\\");\nif constexpr \
+                    RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], 
+                    "<>", "\"\<_integrator::get\\\");\nif constexpr \
 (std::is_same_v<NT, double>)\n  map_CT(std::forward<decltype(t)>(t)...);\n\
 else if constexpr (std::is_same_v<NT, autodiff::real>)\n  \
 map_AD(std::forward<decltype(t)>(t)...);\>\""}]}], ",", "\[IndentingNewLine]", 
                     RowBox[{"\"\<Return\>\"", "->", "\"\<void\>\""}]}], 
-                    "\[IndentingNewLine]", "]"}], ",", "\"\<\>\""}], "]"}], 
-                   ",", "\[IndentingNewLine]", 
+                    "\[IndentingNewLine]", "]"}], ",", "\"\<\>\""}], "]"}], ",",
+                    "\[IndentingNewLine]", 
                    RowBox[{"getRegulator", "[", 
                     RowBox[{
-                    RowBox[{"OptionValue", "[", "\"\<Regulator\>\"", "]"}], 
-                    ",", 
+                    RowBox[{"OptionValue", "[", "\"\<Regulator\>\"", "]"}], ",", 
                     RowBox[{
                     "OptionValue", "[", "\"\<RegulatorOpts\>\"", "]"}]}], 
                     "]"}], ",", "\[IndentingNewLine]", 
                    RowBox[{
-                    RowBox[{"spec", "[", "\"\<Integrator\>\"", "]"}], "<>", 
-                    "\"\<<\>\"", "<>", "integratorTemplateParams", "<>", 
-                    "\"\<> integrator;\>\""}], ",", "\[IndentingNewLine]", 
+                    RowBox[{"spec", "[", "\"\<Integrator\>\"", "]"}], 
+                    "<>", "\"\<<\>\"", "<>", "integratorTemplateParams", 
+                    "<>", "\"\<> integrator;\>\""}], ",", 
+                   "\[IndentingNewLine]", 
                    RowBox[{"If", "[", 
                     RowBox[{
                     RowBox[{"spec", "[", "\"\<AD\>\"", "]"}], ",", 
                     RowBox[{
-                    RowBox[{"spec", "[", "\"\<Integrator\>\"", "]"}], "<>", 
-                    "\"\<<\>\"", "<>", "integratorADTemplateParams", "<>", 
-                    "\"\<> integrator_AD;\>\""}], ",", "\"\<\>\""}], "]"}]}], 
-                  "\[IndentingNewLine]", "}"}], ",", "\[IndentingNewLine]", 
+                    RowBox[{"spec", "[", "\"\<Integrator\>\"", "]"}], 
+                    "<>", "\"\<<\>\"", "<>", "integratorADTemplateParams", 
+                    "<>", "\"\<> integrator_AD;\>\""}], ",", "\"\<\>\""}], 
+                    "]"}]}], "\[IndentingNewLine]", "}"}], ",", 
+                 "\[IndentingNewLine]", 
                  RowBox[{"Map", "[", "\[IndentingNewLine]", 
                   RowBox[{
                    RowBox[{
@@ -2942,8 +2937,7 @@ map_AD(std::forward<decltype(t)>(t)...);\>\""}]}], ",", "\[IndentingNewLine]",
                     RowBox[{"\"\<Const\>\"", "->", "False"}]}], "|>"}], ",", 
                     RowBox[{"<|", 
                     RowBox[{
-                    RowBox[{"\"\<Name\>\"", "->", "\"\<coordinates\>\""}], 
-                    ",", 
+                    RowBox[{"\"\<Name\>\"", "->", "\"\<coordinates\>\""}], ",", 
                     RowBox[{"\"\<Reference\>\"", "->", "True"}], ",", 
                     RowBox[{"\"\<Type\>\"", "->", "#"}], ",", 
                     RowBox[{"\"\<Const\>\"", "->", "True"}]}], "|>"}]}], 
@@ -2977,8 +2971,7 @@ map_AD(std::forward<decltype(t)>(t)...);\>\""}]}], ",", "\[IndentingNewLine]",
                     RowBox[{"\"\<Const\>\"", "->", "False"}]}], "|>"}], ",", 
                     RowBox[{"<|", 
                     RowBox[{
-                    RowBox[{"\"\<Name\>\"", "->", "\"\<coordinates\>\""}], 
-                    ",", 
+                    RowBox[{"\"\<Name\>\"", "->", "\"\<coordinates\>\""}], ",", 
                     RowBox[{"\"\<Reference\>\"", "->", "True"}], ",", 
                     RowBox[{"\"\<Type\>\"", "->", "#"}], ",", 
                     RowBox[{"\"\<Const\>\"", "->", "True"}]}], "|>"}]}], 
@@ -3008,8 +3001,8 @@ map_AD(std::forward<decltype(t)>(t)...);\>\""}]}], ",", "\[IndentingNewLine]",
                     RowBox[{
                     RowBox[{"If", "[", 
                     RowBox[{
-                    RowBox[{"spec", "[", "\"\<AD\>\"", "]"}], ",", "#", ",", 
-                    "\"\<\>\""}], "]"}], "&"}], "@", 
+                    RowBox[{"spec", "[", "\"\<AD\>\"", "]"}], ",", "#", 
+                    ",", "\"\<\>\""}], "]"}], "&"}], "@", 
                     RowBox[{"FunKit`MakeCppFunction", "[", 
                     RowBox[{
                     RowBox[{"\"\<Name\>\"", "->", "\"\<get\>\""}], ",", 
@@ -3030,10 +3023,10 @@ map_AD(std::forward<decltype(t)>(t)...);\>\""}]}], ",", "\[IndentingNewLine]",
                 "]"}]}], "\[IndentingNewLine]", ",", "\[IndentingNewLine]", 
               RowBox[{"\"\<MembersPrivate\>\"", "->", 
                RowBox[{
-               "{", "\"\<DiFfRG::QuadratureProvider& \
-quadrature_provider;\>\"", "}"}]}]}], "\[IndentingNewLine]", 
-             "\[IndentingNewLine]", "]"}]}], "}"}]}]}], "\[IndentingNewLine]",
-         "]"}]}], ";", "\[IndentingNewLine]", 
+               "{", "\"\<DiFfRG::QuadratureProvider& quadrature_provider;\>\"",
+                 "}"}]}]}], "\[IndentingNewLine]", "\[IndentingNewLine]", 
+             "]"}]}], "}"}]}]}], "\[IndentingNewLine]", "]"}]}], ";", 
+      "\[IndentingNewLine]", 
       RowBox[{"(*", 
        RowBox[{
         RowBox[{"Print", "[", "integratorHeader", "]"}], ";"}], "*)"}], 
@@ -3053,23 +3046,23 @@ quadrature_provider;\>\"", "}"}]}]}], "\[IndentingNewLine]",
             RowBox[{
              RowBox[{"\"\<Name\>\"", "->", 
               RowBox[{
-               RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], "<>", 
-               "\"\<_integrator\>\""}]}], ",", "\[IndentingNewLine]", 
+               RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], 
+               "<>", "\"\<_integrator\>\""}]}], ",", "\[IndentingNewLine]", 
              RowBox[{"\"\<Class\>\"", "->", 
               RowBox[{
-               RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], "<>", 
-               "\"\<_integrator\>\""}]}], ",", "\[IndentingNewLine]", 
+               RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], 
+               "<>", "\"\<_integrator\>\""}]}], ",", "\[IndentingNewLine]", 
              RowBox[{"\"\<Suffix\>\"", "->", 
-              RowBox[{
-              "\"\<: integrator(quadrature_provider, json), \>\"", "<>", 
-               "\[IndentingNewLine]", 
+              
+              RowBox[{"\"\<: integrator(quadrature_provider, json), \>\"", "<>",
+                "\[IndentingNewLine]", 
                RowBox[{"If", "[", 
                 RowBox[{
-                 RowBox[{"spec", "[", "\"\<AD\>\"", "]"}], ",", 
-                 "\"\<integrator_AD(quadrature_provider, json), \>\""}], 
-                "]"}], "<>", 
-               "\"\<quadrature_provider(quadrature_provider)\>\""}]}], ",", 
-             "\[IndentingNewLine]", 
+                 RowBox[{"spec", "[", "\"\<AD\>\"", "]"}], 
+                 ",", "\"\<integrator_AD(quadrature_provider, json), \>\"", 
+                 ",", "\"\<\>\""}], "]"}], 
+               "<>", "\"\<quadrature_provider(quadrature_provider)\>\""}]}], ",",
+              "\[IndentingNewLine]", 
              RowBox[{"\"\<Body\>\"", "->", "\"\<\>\""}], ",", 
              "\[IndentingNewLine]", 
              RowBox[{"\"\<Parameters\>\"", "->", 
@@ -3077,14 +3070,14 @@ quadrature_provider;\>\"", "}"}]}]}], "\[IndentingNewLine]",
                RowBox[{
                 RowBox[{"<|", 
                  RowBox[{
-                  RowBox[{
-                  "\"\<Type\>\"", "->", 
-                   "\"\<DiFfRG::QuadratureProvider\>\""}], ",", 
+                  
+                  RowBox[{"\"\<Type\>\"", 
+                   "->", "\"\<DiFfRG::QuadratureProvider\>\""}], ",", 
                   RowBox[{"\"\<Reference\>\"", "->", "True"}], ",", 
                   RowBox[{"\"\<Const\>\"", "->", "False"}], ",", 
-                  RowBox[{
-                  "\"\<Name\>\"", "->", "\"\<quadrature_provider\>\""}]}], 
-                 "|>"}], ",", 
+                  
+                  RowBox[{"\"\<Name\>\"", 
+                   "->", "\"\<quadrature_provider\>\""}]}], "|>"}], ",", 
                 RowBox[{"<|", 
                  RowBox[{
                   RowBox[{"\"\<Type\>\"", "->", "\"\<DiFfRG::JSONValue\>\""}],
@@ -3114,12 +3107,12 @@ quadrature_provider;\>\"", "}"}]}]}], "\[IndentingNewLine]",
              "\[IndentingNewLine]", 
              RowBox[{"\"\<Class\>\"", "->", 
               RowBox[{
-               RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], "<>", 
-               "\"\<_integrator\>\""}]}], ",", "\[IndentingNewLine]", 
+               RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], 
+               "<>", "\"\<_integrator\>\""}]}], ",", "\[IndentingNewLine]", 
              RowBox[{"\"\<Body\>\"", "->", 
-              RowBox[{
-              "\"\<integrator.get(dest, \>\"", "<>", "arguments", "<>", 
-               "\"\<);\>\""}]}], ",", "\[IndentingNewLine]", 
+              
+              RowBox[{"\"\<integrator.get(dest, \>\"", "<>", "arguments", 
+               "<>", "\"\<);\>\""}]}], ",", "\[IndentingNewLine]", 
              RowBox[{"\"\<Parameters\>\"", "->", 
               RowBox[{"Join", "[", 
                RowBox[{
@@ -3152,12 +3145,12 @@ quadrature_provider;\>\"", "}"}]}]}], "\[IndentingNewLine]",
              "\[IndentingNewLine]", 
              RowBox[{"\"\<Class\>\"", "->", 
               RowBox[{
-               RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], "<>", 
-               "\"\<_integrator\>\""}]}], ",", "\[IndentingNewLine]", 
+               RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], 
+               "<>", "\"\<_integrator\>\""}]}], ",", "\[IndentingNewLine]", 
              RowBox[{"\"\<Body\>\"", "->", 
-              RowBox[{
-              "\"\<integrator_AD.get(dest, \>\"", "<>", "arguments", "<>", 
-               "\"\<);\>\""}]}], ",", "\[IndentingNewLine]", 
+              
+              RowBox[{"\"\<integrator_AD.get(dest, \>\"", "<>", "arguments", 
+               "<>", "\"\<);\>\""}]}], ",", "\[IndentingNewLine]", 
              RowBox[{"\"\<Parameters\>\"", "->", 
               RowBox[{"Join", "[", 
                RowBox[{
@@ -3165,8 +3158,7 @@ quadrature_provider;\>\"", "}"}]}]}], "\[IndentingNewLine]",
                  RowBox[{"<|", 
                   RowBox[{
                    RowBox[{"\"\<Name\>\"", "->", "\"\<dest\>\""}], ",", 
-                   RowBox[{"\"\<Type\>\"", "->", "\"\<autodiff::real\>\""}], 
-                   ",", 
+                   RowBox[{"\"\<Type\>\"", "->", "\"\<autodiff::real\>\""}], ",", 
                    RowBox[{"\"\<Reference\>\"", "->", "True"}], ",", 
                    RowBox[{"\"\<Const\>\"", "->", "False"}]}], "|>"}], "}"}], 
                 ",", "paramsAD"}], "]"}]}], ",", "\[IndentingNewLine]", 
@@ -3184,8 +3176,8 @@ quadrature_provider;\>\"", "}"}]}]}], "\[IndentingNewLine]",
             RowBox[{"\"\<Includes\>\"", "->", 
              RowBox[{"{", 
               RowBox[{"\"\<../\>\"", "<>", 
-               RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], "<>", 
-               "\"\<.hh\>\""}], "}"}]}], ",", "\[IndentingNewLine]", 
+               RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], 
+               "<>", "\"\<.hh\>\""}], "}"}]}], ",", "\[IndentingNewLine]", 
             RowBox[{"\"\<Body\>\"", "->", 
              RowBox[{"{", "\[IndentingNewLine]", 
               RowBox[{"FunKit`MakeCppFunction", "[", "\[IndentingNewLine]", 
@@ -3196,11 +3188,11 @@ quadrature_provider;\>\"", "}"}]}]}], "\[IndentingNewLine]",
                 "\[IndentingNewLine]", 
                 RowBox[{"\"\<Class\>\"", "->", 
                  RowBox[{
-                  RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], "<>", 
-                  "\"\<_integrator\>\""}]}], ",", "\[IndentingNewLine]", 
+                  RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], 
+                  "<>", "\"\<_integrator\>\""}]}], ",", "\[IndentingNewLine]", 
                 RowBox[{"\"\<Body\>\"", "->", 
-                 RowBox[{
-                 "\"\<integrator.map(dest, coordinates, \>\"", "<>", 
+                 
+                 RowBox[{"\"\<integrator.map(dest, coordinates, \>\"", "<>", 
                   "arguments", "<>", "\"\<);\>\""}]}], ",", 
                 "\[IndentingNewLine]", 
                 RowBox[{"\"\<Parameters\>\"", "->", 
@@ -3215,8 +3207,7 @@ quadrature_provider;\>\"", "}"}]}]}], "\[IndentingNewLine]",
                     RowBox[{"\"\<Const\>\"", "->", "False"}]}], "|>"}], ",", 
                     RowBox[{"<|", 
                     RowBox[{
-                    RowBox[{"\"\<Name\>\"", "->", "\"\<coordinates\>\""}], 
-                    ",", 
+                    RowBox[{"\"\<Name\>\"", "->", "\"\<coordinates\>\""}], ",", 
                     RowBox[{"\"\<Reference\>\"", "->", "True"}], ",", 
                     RowBox[{"\"\<Type\>\"", "->", "#"}], ",", 
                     RowBox[{"\"\<Const\>\"", "->", "True"}]}], "|>"}]}], 
@@ -3234,8 +3225,8 @@ quadrature_provider;\>\"", "}"}]}]}], "\[IndentingNewLine]",
             RowBox[{"\"\<Includes\>\"", "->", 
              RowBox[{"{", 
               RowBox[{"\"\<../\>\"", "<>", 
-               RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], "<>", 
-               "\"\<.hh\>\""}], "}"}]}], ",", "\[IndentingNewLine]", 
+               RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], 
+               "<>", "\"\<.hh\>\""}], "}"}]}], ",", "\[IndentingNewLine]", 
             RowBox[{"\"\<Body\>\"", "->", 
              RowBox[{"{", "\[IndentingNewLine]", 
               RowBox[{"FunKit`MakeCppFunction", "[", "\[IndentingNewLine]", 
@@ -3246,12 +3237,12 @@ quadrature_provider;\>\"", "}"}]}]}], "\[IndentingNewLine]",
                 "\[IndentingNewLine]", 
                 RowBox[{"\"\<Class\>\"", "->", 
                  RowBox[{
-                  RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], "<>", 
-                  "\"\<_integrator\>\""}]}], ",", "\[IndentingNewLine]", 
+                  RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], 
+                  "<>", "\"\<_integrator\>\""}]}], ",", "\[IndentingNewLine]", 
                 RowBox[{"\"\<Body\>\"", "->", 
-                 RowBox[{
-                 "\"\<integrator_AD.map(dest, coordinates, \>\"", "<>", 
-                  "arguments", "<>", "\"\<);\>\""}]}], ",", 
+                 
+                 RowBox[{"\"\<integrator_AD.map(dest, coordinates, \>\"", "<>",
+                   "arguments", "<>", "\"\<);\>\""}]}], ",", 
                 "\[IndentingNewLine]", 
                 RowBox[{"\"\<Parameters\>\"", "->", 
                  RowBox[{"Join", "[", 
@@ -3266,8 +3257,7 @@ quadrature_provider;\>\"", "}"}]}]}], "\[IndentingNewLine]",
                     RowBox[{"\"\<Const\>\"", "->", "False"}]}], "|>"}], ",", 
                     RowBox[{"<|", 
                     RowBox[{
-                    RowBox[{"\"\<Name\>\"", "->", "\"\<coordinates\>\""}], 
-                    ",", 
+                    RowBox[{"\"\<Name\>\"", "->", "\"\<coordinates\>\""}], ",", 
                     RowBox[{"\"\<Reference\>\"", "->", "True"}], ",", 
                     RowBox[{"\"\<Type\>\"", "->", "#"}], ",", 
                     RowBox[{"\"\<Const\>\"", "->", "True"}]}], "|>"}]}], 
@@ -3278,42 +3268,42 @@ quadrature_provider;\>\"", "}"}]}]}], "\[IndentingNewLine]",
       RowBox[{"(*", 
        RowBox[{
         RowBox[{
-        "Print", "[", "\"\<\\n-----------------------------\\n\>\"", "]"}], 
-        ";", "\[IndentingNewLine]", 
+        "Print", "[", "\"\<\\n-----------------------------\\n\>\"", "]"}], ";",
+         "\[IndentingNewLine]", 
         RowBox[{"Print", "[", 
          RowBox[{"integratorCpp", "[", 
           RowBox[{"\"\<CT\>\"", ",", "\"\<get\>\""}], "]"}], "]"}], ";", 
         "\[IndentingNewLine]", 
         RowBox[{
-        "Print", "[", "\"\<\\n-----------------------------\\n\>\"", "]"}], 
-        ";", "\[IndentingNewLine]", 
+        "Print", "[", "\"\<\\n-----------------------------\\n\>\"", "]"}], ";",
+         "\[IndentingNewLine]", 
         RowBox[{"Print", "[", 
          RowBox[{"integratorCpp", "[", 
           RowBox[{"\"\<AD\>\"", ",", "\"\<get\>\""}], "]"}], "]"}], ";", 
         "\[IndentingNewLine]", 
         RowBox[{
-        "Print", "[", "\"\<\\n-----------------------------\\n\>\"", "]"}], 
-        ";", "\[IndentingNewLine]", 
+        "Print", "[", "\"\<\\n-----------------------------\\n\>\"", "]"}], ";",
+         "\[IndentingNewLine]", 
         RowBox[{"Print", "[", 
          RowBox[{"integratorCpp", "[", 
           RowBox[{"\"\<CT\>\"", ",", "\"\<map\>\""}], "]"}], "]"}], ";", 
         "\[IndentingNewLine]", 
         RowBox[{
-        "Print", "[", "\"\<\\n-----------------------------\\n\>\"", "]"}], 
-        ";", "\[IndentingNewLine]", 
+        "Print", "[", "\"\<\\n-----------------------------\\n\>\"", "]"}], ";",
+         "\[IndentingNewLine]", 
         RowBox[{"Print", "[", 
          RowBox[{"integratorCpp", "[", 
           RowBox[{"\"\<AD\>\"", ",", "\"\<map\>\""}], "]"}], "]"}], ";"}], 
        "*)"}], "\[IndentingNewLine]", "\[IndentingNewLine]", 
       RowBox[{"outputPath", "=", 
        RowBox[{"flowDir", "<>", 
-        RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], "<>", "\"\</\>\""}]}], 
-      ";", "\[IndentingNewLine]", 
+        RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], "<>", "\"\</\>\""}]}], ";",
+       "\[IndentingNewLine]", 
       RowBox[{"ExportCode", "[", 
        RowBox[{
         RowBox[{"outputPath", "<>", 
-         RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], "<>", "\"\<.hh\>\""}], 
-        ",", "integratorHeader"}], "]"}], ";", "\[IndentingNewLine]", 
+         RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], "<>", "\"\<.hh\>\""}], ",",
+         "integratorHeader"}], "]"}], ";", "\[IndentingNewLine]", 
       RowBox[{"ExportCode", "[", 
        RowBox[{
         RowBox[{"outputPath", "<>", "\"\<kernel.hh\>\""}], ",", 
@@ -3321,15 +3311,15 @@ quadrature_provider;\>\"", "}"}]}]}], "\[IndentingNewLine]",
       "\[IndentingNewLine]", 
       RowBox[{"sources", "=", 
        RowBox[{"{", 
-        RowBox[{"outputPath", "<>", "\"\<src/constructor.cc\>\""}], "}"}]}], 
-      ";", "\[IndentingNewLine]", 
+        RowBox[{"outputPath", "<>", "\"\<src/constructor.cc\>\""}], "}"}]}], ";",
+       "\[IndentingNewLine]", 
       RowBox[{"ExportCode", "[", 
        RowBox[{
         RowBox[{"sources", "[", 
          RowBox[{"[", 
           RowBox[{"-", "1"}], "]"}], "]"}], ",", 
-        RowBox[{"integratorCpp", "[", "\"\<Constructor\>\"", "]"}]}], "]"}], 
-      ";", "\[IndentingNewLine]", "\[IndentingNewLine]", 
+        RowBox[{"integratorCpp", "[", "\"\<Constructor\>\"", "]"}]}], "]"}], ";",
+       "\[IndentingNewLine]", "\[IndentingNewLine]", 
       RowBox[{"AppendTo", "[", 
        RowBox[{"sources", ",", 
         RowBox[{"outputPath", "<>", "\"\<src/CT_get.cc\>\""}]}], "]"}], ";", 
@@ -3371,8 +3361,8 @@ quadrature_provider;\>\"", "}"}]}]}], "\[IndentingNewLine]",
         RowBox[{
          RowBox[{"AppendTo", "[", 
           RowBox[{"sources", ",", 
-           RowBox[{"outputPath", "<>", "\"\<src/AD_get.cc\>\""}]}], "]"}], 
-         ";", "\[IndentingNewLine]", 
+           RowBox[{"outputPath", "<>", "\"\<src/AD_get.cc\>\""}]}], "]"}], ";",
+          "\[IndentingNewLine]", 
          RowBox[{"ExportCode", "[", 
           RowBox[{
            RowBox[{"sources", "[", 
@@ -3412,17 +3402,17 @@ quadrature_provider;\>\"", "}"}]}]}], "\[IndentingNewLine]",
            RowBox[{"#", ",", 
             RowBox[{"outputPath", "->", 
              RowBox[{"\"\<${CMAKE_CURRENT_SOURCE_DIR}/\>\"", "<>", 
-              RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], "<>", 
-              "\"\</\>\""}]}]}], "]"}], "&"}], ",", "sources"}], "]"}]}], ";",
-       "\[IndentingNewLine]", 
+              RowBox[{"spec", "[", "\"\<Name\>\"", "]"}], 
+              "<>", "\"\</\>\""}]}]}], "]"}], "&"}], ",", "sources"}], 
+        "]"}]}], ";", "\[IndentingNewLine]", 
       RowBox[{"Export", "[", 
        RowBox[{
         RowBox[{"outputPath", "<>", "\"\<sources.m\>\""}], ",", "sources"}], 
        "]"}], ";", "\[IndentingNewLine]", 
       RowBox[{
-      "Print", "[", 
-       "\"\<Please run UpdateFlows[] to export an up-to-date CMakeLists.txt\>\
-\"", "]"}], ";"}]}], "\[IndentingNewLine]", "]"}]}], ";"}]}], "Input",
+      "Print", "[", "\"\<Please run UpdateFlows[] to export an up-to-date \
+CMakeLists.txt\>\"", "]"}], ";"}]}], "\[IndentingNewLine]", "]"}]}], 
+  ";"}]}], "Input",
  CellChangeTimes->{{3.957456139477901*^9, 3.95745620392071*^9}, {
    3.957506009884807*^9, 3.957506036495763*^9}, {3.957507261040175*^9, 
    3.957507286881324*^9}, {3.9575073705486717`*^9, 3.957507376141335*^9}, {
@@ -3519,8 +3509,9 @@ quadrature_provider;\>\"", "}"}]}]}], "\[IndentingNewLine]",
    3.960615867425474*^9, 3.9606158987884274`*^9}, {3.960616485682745*^9, 
    3.960616568363907*^9}, {3.9606166134217176`*^9, 3.960616619097678*^9}, {
    3.9606166563093243`*^9, 3.9606166847677383`*^9}, {3.960616721880742*^9, 
-   3.960616752993911*^9}, {3.960616816094933*^9, 
-   3.960616826051383*^9}},ExpressionUUID->"bbb4c34a-71cf-44cc-a5d3-\
+   3.960616752993911*^9}, {3.960616816094933*^9, 3.960616826051383*^9}, {
+   3.962451781239715*^9, 
+   3.962451781995118*^9}},ExpressionUUID->"bbb4c34a-71cf-44cc-a5d3-\
 2d21634b59cd"],
 
 Cell[CellGroupData[{
@@ -3546,8 +3537,8 @@ Cell[BoxData[
    RowBox[{"UpdateFlows", "[", "\"\<ONFiniteTFlows\>\"", "]"}]}], 
   "*)"}]], "Input",
  CellChangeTimes->{{3.9605209175486813`*^9, 3.9605209177207623`*^9}, {
-  3.960521564821569*^9, 3.960521605364971*^9}, {3.960522238589951*^9, 
-  3.960522242008769*^9}},
+   3.960521564821569*^9, 3.960521605364971*^9}, {3.960522238589951*^9, 
+   3.960522242008769*^9}, 3.962442563273622*^9},
  CellLabel->
   "In[205]:=",ExpressionUUID->"21618124-c4e5-415b-a543-939f21650ade"],
 
@@ -3697,15 +3688,14 @@ AutoGeneratedPackage->Automatic,
 InitializationCellEvaluation->False,
 InitializationCellWarning->False,
 WindowSize->{1200, 750},
-WindowMargins->{{0, Automatic}, {Automatic, 0}},
-Magnification:>0.6 Inherited,
-FrontEndVersion->"14.1 for Linux x86 (64-bit) (July 16, 2024)",
+WindowMargins->{{0, Automatic}, {-292, Automatic}},
+FrontEndVersion->"14.2 for Mac OS X ARM (64-bit) (March 16, 2025)",
 StyleDefinitions->Notebook[{
    Cell[
     StyleData[StyleDefinitions -> "Default.nb"]], 
    Cell[
     StyleData["Input"], InitializationCell -> True]}, Visible -> False, 
-  FrontEndVersion -> "14.1 for Linux x86 (64-bit) (July 16, 2024)", 
+  FrontEndVersion -> "14.2 for Mac OS X ARM (64-bit) (March 16, 2025)", 
   StyleDefinitions -> "PrivateStylesheetFormatting.nb"],
 ExpressionUUID->"3149dff9-433b-4831-b0e6-7a8267329937"
 ]
@@ -3721,89 +3711,91 @@ CellTagsIndex->{}
 (*NotebookFileOutline
 Notebook[{
 Cell[CellGroupData[{
-Cell[580, 22, 169, 3, 57, "Title",ExpressionUUID->"255990ba-0600-4517-a841-3b30ef1076f1"],
+Cell[576, 22, 169, 3, 96, "Title",ExpressionUUID->"255990ba-0600-4517-a841-3b30ef1076f1"],
 Cell[CellGroupData[{
-Cell[774, 29, 158, 3, 40, "Chapter",ExpressionUUID->"2d5f9f27-5490-4bea-8ecf-1b321b723da0"],
+Cell[770, 29, 158, 3, 67, "Chapter",ExpressionUUID->"2d5f9f27-5490-4bea-8ecf-1b321b723da0"],
 Cell[CellGroupData[{
-Cell[957, 36, 161, 3, 39, "Section",ExpressionUUID->"61eae6f8-8864-4150-9158-1ce7d9f393be"],
-Cell[1121, 41, 611, 15, 71, "Code",ExpressionUUID->"61eeed29-b199-412c-9a91-f659c54d031c"],
-Cell[1735, 58, 241, 7, 29, "Input",ExpressionUUID->"65d902ca-dcf6-4823-97a2-46319b05d715"],
-Cell[1979, 67, 12644, 261, 1443, "Code",ExpressionUUID->"e967b969-bd44-41d7-8598-8812e1394d8a"],
-Cell[14626, 330, 245, 6, 33, "Code",ExpressionUUID->"334e210a-0008-4f8a-aa82-905e18a840c0"]
+Cell[953, 36, 161, 3, 66, "Section",ExpressionUUID->"61eae6f8-8864-4150-9158-1ce7d9f393be"],
+Cell[1117, 41, 608, 14, 107, "Code",ExpressionUUID->"61eeed29-b199-412c-9a91-f659c54d031c"],
+Cell[1728, 57, 241, 7, 49, "Input",ExpressionUUID->"65d902ca-dcf6-4823-97a2-46319b05d715"],
+Cell[1972, 66, 12643, 262, 2276, "Code",ExpressionUUID->"e967b969-bd44-41d7-8598-8812e1394d8a"],
+Cell[14618, 330, 245, 6, 51, "Code",ExpressionUUID->"334e210a-0008-4f8a-aa82-905e18a840c0"]
 }, Open  ]]
 }, Open  ]],
 Cell[CellGroupData[{
-Cell[14920, 342, 321, 5, 40, "Chapter",ExpressionUUID->"337028bb-22a5-4c7a-abf1-dfc7beb47d0a"],
-Cell[15244, 349, 7657, 174, 368, "Input",ExpressionUUID->"f7ee6a73-23f9-402d-9c49-abbbd26f22a2"]
+Cell[14912, 342, 321, 5, 67, "Chapter",ExpressionUUID->"337028bb-22a5-4c7a-abf1-dfc7beb47d0a"],
+Cell[15236, 349, 7657, 174, 344, "Input",ExpressionUUID->"f7ee6a73-23f9-402d-9c49-abbbd26f22a2"]
 }, Open  ]],
 Cell[CellGroupData[{
-Cell[22938, 528, 187, 3, 40, "Chapter",ExpressionUUID->"e84729ed-8582-435d-b0b5-b57d953a283a"],
+Cell[22930, 528, 187, 3, 67, "Chapter",ExpressionUUID->"e84729ed-8582-435d-b0b5-b57d953a283a"],
 Cell[CellGroupData[{
-Cell[23150, 535, 157, 3, 39, "Section",ExpressionUUID->"e3370f84-23df-49af-8ad2-b13a8cd01695"],
+Cell[23142, 535, 157, 3, 66, "Section",ExpressionUUID->"e3370f84-23df-49af-8ad2-b13a8cd01695"],
 Cell[CellGroupData[{
-Cell[23332, 542, 1887, 41, 114, "Input",ExpressionUUID->"8c3ad375-b15e-4205-b5d3-d9996ccd7abf",
+Cell[23324, 542, 1882, 40, 188, "Input",ExpressionUUID->"8c3ad375-b15e-4205-b5d3-d9996ccd7abf",
  InitializationCell->True],
-Cell[25222, 585, 866, 14, 37, "Print",ExpressionUUID->"513a5fde-57bd-4577-aefc-468c243da577"]
+Cell[25209, 584, 866, 14, 60, "Print",ExpressionUUID->"513a5fde-57bd-4577-aefc-468c243da577"]
 }, Open  ]]
 }, Open  ]],
-Cell[26115, 603, 159, 3, 39, "Section",ExpressionUUID->"a0be1f2b-f273-4a1e-8a34-31c5569270ec"],
+Cell[26102, 602, 159, 3, 66, "Section",ExpressionUUID->"a0be1f2b-f273-4a1e-8a34-31c5569270ec"],
 Cell[CellGroupData[{
-Cell[26299, 610, 241, 4, 32, "Section",ExpressionUUID->"c33c8252-d769-4f2c-a755-55e259430a36"],
+Cell[26286, 609, 241, 4, 52, "Section",ExpressionUUID->"c33c8252-d769-4f2c-a755-55e259430a36"],
 Cell[CellGroupData[{
-Cell[26565, 618, 247, 4, 31, "Subsection",ExpressionUUID->"3055f86e-1202-4f7c-82d7-f4a1322b935a"],
-Cell[26815, 624, 5965, 132, 303, "Input",ExpressionUUID->"c4e780f8-15b6-40cb-8a1d-2bd5bf49ac16"],
-Cell[32783, 758, 8188, 188, 356, "Input",ExpressionUUID->"a0d59af2-759a-487a-b63e-d2d14b73cd1d",
+Cell[26552, 617, 247, 4, 70, "Subsection",ExpressionUUID->"3055f86e-1202-4f7c-82d7-f4a1322b935a"],
+Cell[26802, 623, 5965, 132, 70, "Input",ExpressionUUID->"c4e780f8-15b6-40cb-8a1d-2bd5bf49ac16"],
+Cell[32770, 757, 8189, 188, 70, "Input",ExpressionUUID->"a0d59af2-759a-487a-b63e-d2d14b73cd1d",
  InitializationCell->True],
-Cell[40974, 948, 6255, 146, 329, "Input",ExpressionUUID->"7f2c99fd-a79f-46c2-854f-98e61ebec777"]
+Cell[40962, 947, 6256, 146, 70, "Input",ExpressionUUID->"7f2c99fd-a79f-46c2-854f-98e61ebec777"]
 }, Open  ]],
 Cell[CellGroupData[{
-Cell[47266, 1099, 249, 4, 31, "Subsection",ExpressionUUID->"b9fc50c2-dc66-4696-839b-23e9ccbcf6cb"],
-Cell[47518, 1105, 6830, 154, 331, "Input",ExpressionUUID->"02076b1d-a114-4058-b10c-0074b1c0bf44",
+Cell[47255, 1098, 249, 4, 70, "Subsection",ExpressionUUID->"b9fc50c2-dc66-4696-839b-23e9ccbcf6cb"],
+Cell[47507, 1104, 6831, 154, 70, "Input",ExpressionUUID->"02076b1d-a114-4058-b10c-0074b1c0bf44",
  InitializationCell->True],
-Cell[54351, 1261, 6863, 163, 359, "Input",ExpressionUUID->"3f57e62b-c21b-46a5-aac5-5e869eaa87ee"]
+Cell[54341, 1260, 6864, 163, 70, "Input",ExpressionUUID->"3f57e62b-c21b-46a5-aac5-5e869eaa87ee"]
 }, Closed]],
 Cell[CellGroupData[{
-Cell[61251, 1429, 275, 5, 23, "Subsection",ExpressionUUID->"81cfd11a-63a8-4205-8e64-8f4881ece817"],
-Cell[61529, 1436, 6065, 135, 331, "Input",ExpressionUUID->"a7b5ee41-8585-4441-b62c-89d022f47a1c",
+Cell[61242, 1428, 275, 5, 70, "Subsection",ExpressionUUID->"81cfd11a-63a8-4205-8e64-8f4881ece817"],
+Cell[61520, 1435, 6066, 135, 70, "Input",ExpressionUUID->"a7b5ee41-8585-4441-b62c-89d022f47a1c",
  InitializationCell->True],
-Cell[67597, 1573, 5248, 120, 323, "Input",ExpressionUUID->"3329a8ad-9322-4b94-9584-392b163bb430"]
+Cell[67589, 1572, 5249, 120, 70, "Input",ExpressionUUID->"3329a8ad-9322-4b94-9584-392b163bb430"]
 }, Closed]]
 }, Closed]]
 }, Open  ]],
 Cell[CellGroupData[{
-Cell[72906, 1700, 163, 3, 40, "Chapter",ExpressionUUID->"b45359a4-435a-48f5-938f-6624251f7dc8"],
+Cell[72899, 1699, 163, 3, 67, "Chapter",ExpressionUUID->"b45359a4-435a-48f5-938f-6624251f7dc8"],
 Cell[CellGroupData[{
-Cell[73094, 1707, 232, 4, 39, "Section",ExpressionUUID->"e1a8482c-beb3-4c41-b9f2-3acff2f366ec"],
-Cell[73329, 1713, 328, 7, 29, "Input",ExpressionUUID->"c34c2e5d-fc0f-418f-b9c3-1a00606907ef"],
-Cell[73660, 1722, 1285, 32, 67, "Input",ExpressionUUID->"98e4158d-9c35-4453-b846-9266ccd560a6"],
-Cell[74948, 1756, 2720, 68, 221, "Input",ExpressionUUID->"9c70148c-55a4-4f21-a7c7-4a6c939615b7"],
-Cell[77671, 1826, 1716, 40, 166, "Input",ExpressionUUID->"0055a277-a39a-4b5c-9683-a43ce79e216b"],
-Cell[79390, 1868, 1963, 51, 181, "Input",ExpressionUUID->"b90739d0-bd4c-4baa-bbdf-b9da1653e5fc"],
-Cell[81356, 1921, 16870, 346, 1255, "Input",ExpressionUUID->"000d09ba-085d-4cc6-a3bd-8ab73047b879"],
-Cell[98229, 2269, 59977, 1254, 3279, "Input",ExpressionUUID->"bbb4c34a-71cf-44cc-a5d3-2d21634b59cd"],
+Cell[73087, 1706, 232, 4, 66, "Section",ExpressionUUID->"e1a8482c-beb3-4c41-b9f2-3acff2f366ec"],
+Cell[73322, 1712, 328, 7, 45, "Input",ExpressionUUID->"c34c2e5d-fc0f-418f-b9c3-1a00606907ef"],
+Cell[73653, 1721, 1263, 29, 127, "Input",ExpressionUUID->"98e4158d-9c35-4453-b846-9266ccd560a6"],
+Cell[74919, 1752, 2720, 68, 351, "Input",ExpressionUUID->"9c70148c-55a4-4f21-a7c7-4a6c939615b7"],
+Cell[77642, 1822, 1716, 40, 270, "Input",ExpressionUUID->"0055a277-a39a-4b5c-9683-a43ce79e216b"],
+Cell[79361, 1864, 1961, 51, 290, "Input",ExpressionUUID->"b90739d0-bd4c-4baa-bbdf-b9da1653e5fc"],
+Cell[81325, 1917, 16906, 349, 2128, "Input",ExpressionUUID->"000d09ba-085d-4cc6-a3bd-8ab73047b879"],
+Cell[98234, 2268, 59953, 1246, 5580, "Input",ExpressionUUID->"bbb4c34a-71cf-44cc-a5d3-2d21634b59cd"],
 Cell[CellGroupData[{
-Cell[158231, 3527, 1108, 24, 78, "Input",ExpressionUUID->"21618124-c4e5-415b-a543-939f21650ade"],
+Cell[158212, 3518, 1132, 24, 127, "Input",ExpressionUUID->"21618124-c4e5-415b-a543-939f21650ade"],
 Cell[CellGroupData[{
-Cell[159364, 3555, 664, 11, 16, "Print",ExpressionUUID->"83f930e9-3d81-415f-a957-fb7da573d597"],
-Cell[160031, 3568, 668, 11, 16, "Print",ExpressionUUID->"4b5ae8a7-21e5-43af-bb07-de8cb0202034"],
-Cell[160702, 3581, 675, 11, 16, "Print",ExpressionUUID->"8eb6b023-ffef-414f-8d99-5cf1a573322f"],
-Cell[161380, 3594, 672, 11, 16, "Print",ExpressionUUID->"d74d1917-b826-4153-941a-30695faecbf5"],
-Cell[162055, 3607, 637, 11, 16, "Print",ExpressionUUID->"956e77a7-2d91-4e01-baf5-d817ee9f9efb"],
-Cell[162695, 3620, 679, 12, 16, "Print",ExpressionUUID->"7bc54f67-4cea-41c3-ad6e-c325bdbba699"],
-Cell[163377, 3634, 674, 12, 16, "Print",ExpressionUUID->"65426ea0-9023-481a-862f-afeffbf67a77"],
-Cell[164054, 3648, 674, 12, 16, "Print",ExpressionUUID->"cc4c9cd8-ec00-4333-aca1-9e6bd0e595e9"]
+Cell[159369, 3546, 664, 11, 23, "Print",ExpressionUUID->"83f930e9-3d81-415f-a957-fb7da573d597"],
+Cell[160036, 3559, 668, 11, 23, "Print",ExpressionUUID->"4b5ae8a7-21e5-43af-bb07-de8cb0202034"],
+Cell[160707, 3572, 675, 11, 23, "Print",ExpressionUUID->"8eb6b023-ffef-414f-8d99-5cf1a573322f"],
+Cell[161385, 3585, 672, 11, 23, "Print",ExpressionUUID->"d74d1917-b826-4153-941a-30695faecbf5"],
+Cell[162060, 3598, 637, 11, 23, "Print",ExpressionUUID->"956e77a7-2d91-4e01-baf5-d817ee9f9efb"],
+Cell[162700, 3611, 679, 12, 23, "Print",ExpressionUUID->"7bc54f67-4cea-41c3-ad6e-c325bdbba699"],
+Cell[163382, 3625, 674, 12, 23, "Print",ExpressionUUID->"65426ea0-9023-481a-862f-afeffbf67a77"],
+Cell[164059, 3639, 674, 12, 23, "Print",ExpressionUUID->"cc4c9cd8-ec00-4333-aca1-9e6bd0e595e9"]
 }, Open  ]]
 }, Open  ]]
 }, Open  ]]
 }, Open  ]],
 Cell[CellGroupData[{
-Cell[164801, 3668, 162, 3, 40, "Chapter",ExpressionUUID->"e8c3cc19-732d-4100-ba41-4f741977ed46"],
-Cell[164966, 3673, 231, 6, 27, "Input",ExpressionUUID->"9b9ea4fc-21b7-44a7-a56c-9624eb86aa03"],
-Cell[165200, 3681, 151, 4, 30, "Code",ExpressionUUID->"404ab529-fa01-4a17-8d30-d78a744d6275"],
-Cell[165354, 3687, 158, 4, 30, "Code",ExpressionUUID->"71cbb145-c03b-495b-a560-6fe322da1f14"]
+Cell[164806, 3659, 162, 3, 67, "Chapter",ExpressionUUID->"e8c3cc19-732d-4100-ba41-4f741977ed46"],
+Cell[164971, 3664, 231, 6, 70, "Input",ExpressionUUID->"9b9ea4fc-21b7-44a7-a56c-9624eb86aa03"],
+Cell[165205, 3672, 151, 4, 70, "Code",ExpressionUUID->"404ab529-fa01-4a17-8d30-d78a744d6275"],
+Cell[165359, 3678, 158, 4, 70, "Code",ExpressionUUID->"71cbb145-c03b-495b-a560-6fe322da1f14"]
 }, Closed]]
 }, Open  ]]
 }
 ]
 *)
+
+(* End of internal cache information *)
 
