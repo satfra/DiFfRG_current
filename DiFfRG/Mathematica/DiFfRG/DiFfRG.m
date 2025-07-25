@@ -131,7 +131,7 @@ SetAttributes[AutoSaveRestore,HoldRest];
 
 ClearAll[MatsubaraSumHelper,FermionMatsubaraSum,MatsubaraSum]
 Options[FermionMatsubaraSum]={Debug->False};
-Options[MatsubaraSum]={Debug->True};
+Options[MatsubaraSum]={Debug->False};
 MatsubaraSumHelper[expr_,p0_Symbol,T_,fun_,debug_]:=Module[{denom,poles,residues,n,r,SumB},
 If[Head[expr]==Plus,Return[Total[Flatten[Map[MatsubaraSum[#,p0,T]&,List@@expr],1]]]];denom = Denominator[expr]//Collect[#,p0]&;
 poles=p0/.Solve[denom==0,p0]//FullSimplify;
