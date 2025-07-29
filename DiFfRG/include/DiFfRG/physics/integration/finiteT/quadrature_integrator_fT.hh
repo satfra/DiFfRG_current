@@ -4,12 +4,10 @@
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/quadrature/quadrature_provider.hh>
 #include <DiFfRG/common/tuples.hh>
+#include <DiFfRG/common/types.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/grid/coordinates.hh>
 #include <DiFfRG/physics/integration/abstract_integrator.hh>
-
-// standard libraries
-#include <array>
 
 // external libraries
 #include <tbb/tbb.h>

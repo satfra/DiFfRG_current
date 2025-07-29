@@ -7,6 +7,7 @@
 #include <deal.II/sundials/ida.h>
 
 // DiFfRG
+#include <DiFfRG/common/eigen.hh>
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>

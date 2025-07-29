@@ -26,7 +26,7 @@ TEMPLATE_TEST_CASE("Test 1D spline interpolation", "[float][double][complex][aut
   for (int j = 0; j < p_size; ++j)
     in_data[j] = j;
   LogarithmicCoordinates1D<ctype> coords(p_size, p_start, p_stop, p_bias);
-  SplineInterpolator1D<CPU_memory, T, LogarithmicCoordinates1D<ctype>> interpolator(empty_data.data(), coords);
+  SplineInterpolator1D<T, LogarithmicCoordinates1D<ctype>, CPU_memory> interpolator(empty_data.data(), coords);
   interpolator.update(in_data.data());
 
   const int n_el = GENERATE(take(3, random(2, 200)));
@@ -45,10 +45,10 @@ TEMPLATE_TEST_CASE("Test 1D spline interpolation", "[float][double][complex][aut
   CHECK(is_close(res_host, res_local, expected_precision));
 }
 
-/*
-TEMPLATE_TEST_CASE_SIG("Test 1D interpolation GPU", "[float][double][complex][autodiff]", ((typename T), T), float,
-                       double, complex<double>, complex<float>, autodiff::real)
+TEMPLATE_TEST_CASE("Test GPU 1D spline interpolation", "[float][double][complex][autodiff]", double, complex<double>,
+                   autodiff::real)
 {
+  using T = TestType;
   DiFfRG::Init();
 
   using ctype = typename get_type::ctype<T>;
@@ -63,6 +63,21 @@ TEMPLATE_TEST_CASE_SIG("Test 1D interpolation GPU", "[float][double][complex][au
   for (int j = 0; j < p_size; ++j)
     in_data[j] = j;
   LogarithmicCoordinates1D<ctype> coords(p_size, p_start, p_stop, p_bias);
-  SplineInterpolator1D<GPU_memory, T, LogarithmicCoordinates1D<ctype>> interpolator(empty_data.data(), coords);
+  SplineInterpolator1D<T, LogarithmicCoordinates1D<ctype>, GPU_memory> interpolator(empty_data.data(), coords);
   interpolator.update(in_data.data());
-}*/
+
+  const int n_el = GENERATE(take(3, random(2, 200)));
+  const ctype p_pt = (p_start + GENERATE(take(10, random(0., 1.))) * (p_stop - p_start));
+
+  const auto res_host = interpolator(p_pt) * ctype(n_el);
+
+  auto p_idx = coords.backward(p_pt);
+  p_idx = std::max((ctype)0, std::min(p_idx, ctype(p_size)));
+  const auto res_local = (in_data[std::floor(p_idx)] +
+                          (p_idx - std::floor(p_idx)) * (in_data[std::ceil(p_idx)] - in_data[std::floor(p_idx)])) *
+                         ctype(n_el);
+  constexpr ctype expected_precision = std::numeric_limits<ctype>::epsilon() * 1e2;
+  if (!is_close(res_host, res_local, expected_precision))
+    std::cout << "host: " << res_host << " local: " << res_local << std::endl;
+  CHECK(is_close(res_host, res_local, expected_precision));
+}

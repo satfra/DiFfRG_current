@@ -41,7 +41,7 @@ TEMPLATE_TEST_CASE("Test 3D interpolation", "[float][double][complex][autodiff][
 
   Coordinates3D coords(Coordinates1D(p1_size, p1_start, p1_stop), Coordinates1D(p2_size, p2_start, p2_stop),
                        Coordinates1D(p3_size, p3_start, p3_stop));
-  LinearInterpolatorND<CPU_memory, T, Coordinates3D> interpolator(empty_data.data(), coords);
+  LinearInterpolatorND<T, Coordinates3D, CPU_memory> interpolator(empty_data.data(), coords);
   interpolator.update(in_data.data());
 
   const int n_el = GENERATE(take(2, random(2, 200)));

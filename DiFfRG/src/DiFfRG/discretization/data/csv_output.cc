@@ -2,6 +2,7 @@
 #include <filesystem>
 
 // DiFfRG
+#include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/data/csv_output.hh>
 
 namespace DiFfRG

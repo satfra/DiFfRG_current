@@ -2,8 +2,7 @@
 # Add subdirectories
 # ##############################################################################
 
-add_subdirectory(DG)
-add_subdirectory(CG)
+add_subdirectory(FEM)
 add_subdirectory(grid)
 add_subdirectory(data)
 

@@ -2,6 +2,7 @@
 #include <deal.II/lac/block_vector.h>
 
 // DiFfRG
+#include <DiFfRG/common/eigen.hh>
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/discretization/data/data_output.hh>
 #include <DiFfRG/timestepping/explicit_euler.hh>

@@ -59,7 +59,8 @@ namespace DiFfRG
    * @tparam KERNEL kernel to be integrated, which must provide the static methods `kernel` and `constant`
    * @tparam ExecutionSpace can be any execution space, e.g. GPU_exec, TBB_exec, or Threads_exec.
    */
-  template <typename NT, typename KERNEL, typename ExecutionSpace>
+  template <int dim, typename NT, typename KERNEL, typename ExecutionSpace>
+    requires(dim == 4)
   class Integrator_p2_4D_2ang
       : public QuadratureIntegrator<3, NT, internal::Transform_p2_4D_2ang<NT, KERNEL>, ExecutionSpace>
   {

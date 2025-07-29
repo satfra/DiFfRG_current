@@ -12,7 +12,7 @@ namespace DiFfRG
    * @tparam NT input data type
    * @tparam Coordinates coordinate system of the input data
    */
-  template <typename MemorySpace, typename NT, typename Coordinates> class LinearInterpolator1D
+  template <typename NT, typename Coordinates, typename MemorySpace> class LinearInterpolator1D
   {
     static_assert(Coordinates::dim == 1, "LinearInterpolator1D requires 1D coordinates");
 
@@ -57,6 +57,11 @@ namespace DiFfRG
         host_data[i] = static_cast<NT>(in_data[i]);
       // Copy data to device
       Kokkos::deep_copy(device_data, host_data);
+    }
+
+    NT operator[](size_t i) const
+    {
+      return host_data.data()[i]; // Access the host data directly
     }
 
     /**

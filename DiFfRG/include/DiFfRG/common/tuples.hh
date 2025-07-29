@@ -10,7 +10,7 @@
 #include <vector>
 
 // DiFfRG
-// #include <DiFfRG/common/fixed_string.hh>
+#include <DiFfRG/common/fixed_string.hh>
 
 namespace DiFfRG
 {

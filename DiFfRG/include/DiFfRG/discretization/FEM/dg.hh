@@ -3,7 +3,7 @@
 // external libraries
 #include <deal.II/base/point.h>
 #include <deal.II/dofs/dof_handler.h>
-#include <deal.II/dofs/dof_renumbering.h>
+// #include <deal.II/dofs/dof_renumbering.h>
 #include <deal.II/dofs/dof_tools.h>
 #include <deal.II/fe/fe_dgq.h>
 #include <deal.II/fe/fe_system.h>
@@ -14,6 +14,7 @@
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/FEM/assembler/ddg.hh>
 #include <DiFfRG/discretization/FEM/assembler/dg.hh>
+#include <DiFfRG/discretization/discretization.hh>
 
 namespace DiFfRG
 {

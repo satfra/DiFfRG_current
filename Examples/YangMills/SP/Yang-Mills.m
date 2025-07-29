@@ -22,200 +22,116 @@
 (* ::Input::Initialization:: *)
 Get["DiFfRG`"]
 SetDirectory[GetDirectory[]];
-$Assumptions=q>0&&k>0&&p>0&&r>0&&Sqrt[p^2]>0&&Nc>0&&p1>0&&p2>0&&-1<cos1<1&&-1<cos2<1;
-DefineFormExecutable["/usr/bin/form"]
-
-DefineFormAutoDeclareFunctions[gA,ZA,eta,m2];
-AddExtraVars[
-k,cos,ArcTan,cosp1p2,
-(*regulators*)
-RA,RAdot,Rc,Rcdot,RF,RFdot,RB,RBdot,
-GAInv,GA,GcInv,Gc,m2A,dtm2A,
-(*Angles for symmetric points*)
-cosp1q,cosp2q,cosp3q,cosp4q,
-(*wavefunction renormalizations*)
-Zc,ZA,dtZA];
+DefineFormExecutable["/usr/bin/tform -w16"]
 
 
-TBUnregister["AAA"]//Quiet
-TBUnregister["AAA2"]//Quiet
-TBUnregister["AAAA"]//Quiet
-TBUnregister["AAAA2"]//Quiet
-TBUnregister["Acbc"]//Quiet
-TBUnregister["AA"]//Quiet
+fields= <|
+"Commuting"-> {A[p,{v, c}]},
+"Grassmann"->{{cb[p,{c}],c[p,{c}]}}
+|>;
 
 
-TBImportBasis["../../bases/AAA.m"]
-TBImportBasis["../../bases/AAA2.m"]
-TBImportBasis["../../bases/AAAA.m"]
-TBImportBasis["../../bases/AAAA2.m"]
-TBImportBasis["../../bases/Acbc.m"]
-TBImportBasis["../../bases/AA.m"]
+truncation=<|
+GammaN->{{A,A},{A,A,A},{A,A,A,A},{A,cb,c},{cb,c}},
+Propagator->{{A,A},{cb,c}},Rdot->{{A,A},{cb,c}},
+S->{{A,A},{A,A,A},{A,A,A,A},{cb,c},{cb,c,A}},
+Field->{{}}
+|>;
+
+
+bases=<|
+GammaN->{{A,A}->{"AA",1},{A,A,A}->"AAAClass",{A,A,A,A}->"AAAAClass",{A,cb,c}->{"Acbc",1},{cb,c}->"cbc"},
+S->{{A,A}->{"AA",1},{A,A,A}->"AAAClass",{A,A,A,A}->"AAAAClass",{A,cb,c}->{"Acbc",1},{cb,c}->"cbc"},
+Propagator->{{A,A}->{"AA",1},{cb,c}->"cbc"},
+Rdot->{{A,A}->{"AA",1},{cb,c}->"cbc"}
+|>;
+
+
+diagramStyling=<|
+"Styles"->{A->{Orange},c->{Black,Dashed}}
+|>;
+SetTexStyles[cb->"\\bar{c}"];
+
+
+Setup=<|
+"FieldSpace"->fields,
+"Truncation"->truncation,
+"FeynmanRules"->bases,
+"DiagramStyling"->diagramStyling
+|>;
+SetGlobalSetup[Setup];
 
 
 SP3Patt[p1e_,p2e_,p3e_]:={Sqrt[(sp[p1,p1]+sp[p2,p2]+sp[p3,p3])/3]}/.{p1:>p1e,p2:>p2e,p3:>p3e}//UseLorentzLinearity//FullSimplify;
 SP4Patt[p1e_,p2e_,p3e_,p4e_]:={Sqrt[(sp[p1,p1]+sp[p2,p2]+sp[p3,p3]+sp[p4,p4])/4]}/.{p1:>p1e,p2:>p2e,p3:>p3e,p4:>p4e}//UseLorentzLinearity//FullSimplify;
 
 
-PostTraceRulesGluons={
+dressingRules=ReplaceRepeated[#,{
+dressing[GammaN,{c,cb},1,{p1_,p2_}]:>Zc[Sqrt[sp[p2,p2]]]sp[p2,p2],
+dressing[GammaN,{A,A},1,{p1_,p2_}]:>ZA[Sqrt[sp[p2,p2]]]sp[p2,p2],
+dressing[GammaN,{c,cb,A},1,{p1_,p2_,p3_}]:>ZccbA[p1,p2], 
+dressing[GammaN,{A,A,A},1,{p1_,p2_,p3_}]:>ZA3[p1,p2], 
+dressing[GammaN,{A,A,A,A},1,{p1_,p2_,p3_,p4_}]:>ZA4[p1,p2,p3] ,
+
+ZccbA[p1_,p2_]:>ZccbA@@SP3Patt[p1,p2,-p1-p2],
+ZA3[p1_,p2_]:>ZA3@@SP3Patt[p1,p2,-p1-p2],
+ZA4[p1_,p2_,p3_]:>ZA4@@SP4Patt[p1,p2,p3,-p1-p2-p3],
+
+nZA->6,
 evP:>(k^nZA+1)^(1/nZA),
 devP:>k^(-1+nZA) (1+k^nZA)^(-1+1/nZA),
-RAdot[p_]:>ZA[evP]RBdot[k^2,sp[p,p]]+RB[k^2,sp[p,p]](dtZA[evP]+k*devP*(ZA[1.02evP]-ZA[evP])/(0.02*evP)),
-RA[p_]:>ZA[evP]RB[k^2,sp[p,p]],
-GA[p_]:>1/(ZA[Sqrt[sp[p,p]]] sp[p,p]+RA[p]),
-GAInv[p_]:>ZA[Sqrt[sp[p,p]]]sp[p,p],
-nZA:>6,
+dressing[Rdot,{A,A},1,{p1_,p2_}]:>ZA[evP]RBdot[k^2,sp[p2,p2]]+RB[k^2,sp[p2,p2]](dtZA[evP]+k*devP*(ZA[1.02evP]-ZA[evP])/(0.02*evP)),
+dressing[Rdot,{c,cb},1,{p1_,p2_}]:>Zc[k]RBdot[k^2,sp[p2,p2]]+RB[k^2,sp[p2,p2]](dtZc[k]+k (Zc[1.02*k]-Zc[k])/(0.02*k))
+}]&;
 
-ZA3p[p1_,p2_]:>ZA3@@SP3Patt[p1,p2,-p1-p2],
-ZAcbcp[p1_,p2_]:>ZAcbc@@SP3Patt[p1,p2,-p1-p2],
-ZA4p[p1_,p2_,p3_]:>ZA4@@SP4Patt[p1,p2,p3,-p1-p2-p3]
-};
+SetSymmetricDressing[GammaN,{A,A}]
 
 
-(* ::Input::Initialization:: *)
-PreTraceRulesGluons={
-(*Regulators*)
-RAA[{p1_,v1_,a1_,p2_,v2_,a2_}]:>RA[p2]TBGetVertex["AA",1,{p1,v1,a1},{p2,v2,a2}],
+PropParam[expr_]:=UseLorentzLinearity[expr]//.{
+sp[p1,p1]->p^2,sp[l2,l2]->l2^2,sp[l1,l1]->l1^2,sp[l1,p1]->l1 p cos[p,l1],sp[l2,p1]->l2 p cos[p,l2],sp[l1,l2]->l1 l2 cos[l1,l2],Sqrt[a_^2]:>a,(a_^2)^(n_/2):>a^n,
+cos[l1,p]:>cos1
+}//FORMSimplify;
 
-(*Regulator Derivatives*)
-RdotAA[{p1_,v1_,a1_,p2_,v2_,a2_}]:>RAdot[p2]TBGetVertex["AA",1,{p1,v1,a1},{p2,v2,a2}],
+SP3FormRule=MakeSPFormRule[{l1},p,{p1,p2,p3}];
+SP4FormRule=MakeSPFormRule[{l1},p,{p1,p2,p3,p4}];
+SPParam[expr_]:=UseLorentzLinearity[expr]//.{sp[p,p]->p^2,sp[l1,l1]->l1^2,Sqrt[a_^2]:>a,(a_^2)^(n_/2):>a^n,(a_^2)^(n_/2):>a^n,Power[Power[l1_,2],Rational[n_,2]]:>l1^n,
+cos[l1,p1]:>cosp1q,
+cos[l1,p2]:>cosp2q,
+cos[l1,p3]:>cosp3q,
+cos[l1,p4]:>cosp4q
+}//FORMSimplify;
 
-(*Propagators*)
-\[CapitalGamma]AA[{p1_,v1_,a1_,p2_,v2_,a2_}] :> GAInv[p2]TBGetVertex["AA",1,{p1,v1,a1},{p2,v2,a2}],
-GAA[{p1_,v1_,a1_,p2_,v2_,a2_}] :>GA[p1]TBGetVertex["AA",1,{p1,v1,a1},{p2,v2,a2}],
-
-(*Pure gauge Vertices*)
-\[CapitalGamma]AAA[{p1_,v1_,a1_,p2_,v2_,a2_,p3_,v3_,a3_}] :>ZA3p[p1,p2] TBGetVertex["AAA2",1,{p1,v1,a1},{p2,v2,a2},{p3,v3,a3}],
-\[CapitalGamma]Acbc[{p1_,v1_,a1_,p2_,a2_,p3_,a3_}] :>ZAcbcp[p1,p2]  TBGetVertex["Acbc",1,{p1,v1,a1},{p2,a2},{p3,a3}],
-\[CapitalGamma]AAAA[{p1_,v1_,a1_,p2_,v2_,a2_,p3_,v3_,a3_,p4_,v4_,a4_}] :>ZA4p[p1,p2,p3]TBGetVertex["AAAA2",1,{p1,v1,a1},{p2,v2,a2},{p3,v3,a3},{p4,v4,a4}]
-};
-
-(*Must be 3(Nc^2-1)*)
-sanity=FormTrace[(\[CapitalGamma]AA[{p,v1,a1,-p,v2,a2}]+RAA[{p,v1,a1,-p,v2,a2}]) GAA[{-p,v2,a2,p,v1,a1}]//.PreTraceRulesGluons]//.PostTraceRulesGluons//Simplify;
-Print["Trace is ", sanity, " should be ", 3(-1+Nc^2)];
+SetNc[3]
+$Assumptions=k>0&&p>0&&l1>0&&-1<cos1<1-1<cos2<1&&-1<cos3<1;
 
 
-PostTraceRulesGhosts:={
-Rcdot[p_]:>Zc[k]RBdot[k^2,sp[p,p]]+RB[k^2,sp[p,p]](dtZc[k]+k (Zc[1.02*k]-Zc[k])/(0.02*k)),
-Rc[p_]:>Zc[k]RB[k^2,sp[p,p]],
-GcInv[p_]:>Zc[Sqrt[sp[p,p]]]sp[p,p],
-Gc[p_]:>1/(Zc[Sqrt[sp[p,p]]]sp[p,p]+Rc[p])
-}
+symmetryP2={Map[Join[#/.Cycles->Sequence,{1}]&,PermutationCycles/@Permutations[{1,2}]],{i1,i2}};
+symmetryP3={Map[Join[#/.Cycles->Sequence,{1}]&,PermutationCycles/@Permutations[{1,2,3}]],{i1,i2,i3}};
+symmetryP4={Map[Join[#/.Cycles->Sequence,{1}]&,PermutationCycles/@Permutations[{1,2,3,4}]],{i1,i2,i3,i4}};
 
 
 (* ::Input::Initialization:: *)
-PreTraceRulesGhosts:={
-(*Regulators*)
-Rcbc[{p1_,a1_,p2_,a2_}]:>deltaAdjCol[a1,a2] Rc[p2],
+kernelZA=<|"Name"->"ZA","Integrator"->"Integrator_p2_1ang","d"->4,"AD"->False,"Type"->"double","Device"->"GPU"|>;
+kernelZc=<|"Name"->"Zc","Integrator"->"Integrator_p2_1ang","d"->4,"AD"->False,"Type"->"double","Device"->"GPU"|>;
+kernelZA3=<|"Name"->"ZA3","Integrator"->"Integrator_p2_4D_2ang","d"->4,"AD"->False,"Type"->"double","Device"->"GPU"|>;
+kernelZAcbc=<|"Name"->"ZAcbc","Integrator"->"Integrator_p2_4D_2ang","d"->4,"AD"->False,"Type"->"double","Device"->"GPU"|>;
+kernelZA4=<|"Name"->"ZA4","Integrator"->"Integrator_p2_4D_3ang","d"->4,"AD"->False,"Type"->"double","Device"->"GPU"|>;
 
-(*Regulator Derivatives*)
-Rdotcbc[{p1_,a1_,p2_,a2_}]:>deltaAdjCol[a1,a2] Rcdot[p2],
+interpolatorType="SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory>";
 
-(*Propagators*)
-\[CapitalGamma]cbc[{p1_,a1_,p2_,a2_}]:>-deltaAdjCol[a1,a2]   GcInv[p2],
-Gccb[{p1_,a1_,p2_,a2_}]:>deltaAdjCol[a1,a2]Gc[p1]
-}
-
-(*Must be 1-Nc^2*)
-sanity=FormTrace[(\[CapitalGamma]cbc[{-q,a1,q,a2}]-Rcbc[{-q,a1,q,a2}])Gccb[{q,a2,-q,a1}]//.PreTraceRulesGhosts,{{PreambleFormRule,"Vector q;"}}]//.PostTraceRulesGhosts//Simplify;
-Print["Trace is ", sanity, " should be ",- Nc^2+1];
-
-
-(* ::Input::Initialization:: *)
-PreTraceRules:=PreTraceRulesGluons\[Union]PreTraceRulesGhosts
-PostTraceRules:=PostTraceRulesGhosts\[Union]PostTraceRulesGluons
-
-
-(* ::Input::Initialization:: *)
-fRGEq = {
-"Prefactor"->{1/2},
-<|"type"->"Regulatordot", "indices"->{i,j}|>,
-<|"type"->"Propagator", "indices"->{i,j}|>
-};
-fields = <|
-"bosonic"-> { 
-A[p,{v, c}]
-},
-"fermionic"->{
-{cb[p,{c}],c[p,{c}]}
-}
-|>;
-Truncation = {
-{A,A},{cb,c},(* propagators *)
-{cb,c,A},{A,A,A},{A,A,A,A} (* glue sector scatterings *)
-};
-SetupfRG = <|
-"MasterEquation"->fRGEq,
-"FieldSpace"->fields,
-"Truncation"->Truncation
-|>;
-DiagramStyle={
-A->Orange,c->{Dotted,Black}
-};
-
-
-AddCodeOptimizeFunctions[RBdot[__],RFdot[__],RB[__],RF[__]]
-ShowCodeOptimizeFunctions[]
-
-
-(* ::Input::Initialization:: *)
-kernelZA=<|"Path"->"AA","Name"->"ZA","Type"->"Quadrature","Angles"->1,"d"->4,"AD"->False,"ctype"->"double","Device"->"GPU"|>;
-kernelm2A=<|"Path"->"AA","Name"->"m2A","Type"->"Quadrature","Angles"->1,"d"->4,"AD"->False,"ctype"->"double","Device"->"CPU"|>;
-kernelZc=<|"Path"->"cbc","Name"->"Zc","Type"->"Quadrature","Angles"->1,"d"->4,"AD"->False,"ctype"->"double","Device"->"GPU"|>;
-kernelZA3=<|"Path"->"AAA","Name"->"ZA3","Type"->"Quadrature","Angles"->2,"d"->4,"AD"->False,"ctype"->"double","Device"->"GPU"|>;
-kernelZAcbc=<|"Path"->"Acbc","Name"->"ZAcbc","Type"->"Quadrature","Angles"->2,"d"->4,"AD"->False,"ctype"->"double","Device"->"GPU"|>;
-kernelZA4=<|"Path"->"AAAA","Name"->"ZA4","Type"->"Quadrature","Angles"->3,"d"->4,"AD"->False,"ctype"->"double","Device"->"GPU"|>;
-
-kernels={
-kernelZA,kernelm2A,kernelZc,
-kernelZA3,kernelZAcbc,kernelZA4
-};
-
-kernelParameterListBase={
+kernelParameterList={
+<|"Name"->"k","Type"->"double"|>,
 (*strong couplings*)
-<|"Name"->"ZA3","Type"->"FunctionTex1D","AD"->False,"Reference"->True|>,
-<|"Name"->"ZAcbc","Type"->"FunctionTex1D","AD"->False,"Reference"->True|>,
-<|"Name"->"ZA4","Type"->"FunctionTex1D","AD"->False,"Reference"->True|>,
+<|"Name"->"ZA3","Type"->interpolatorType,"Const"->True,"Reference"->True|>,
+<|"Name"->"ZccbA","Type"->interpolatorType,"Const"->True,"Reference"->True|>,
+<|"Name"->"ZA4","Type"->interpolatorType,"Const"->True,"Reference"->True|>,
 (*ghost propagator*)
-<|"Name"->"dtZc","Type"->"FunctionTex1D","AD"->False,"Reference"->True|>,
-<|"Name"->"Zc","Type"->"FunctionTex1D","AD"->False,"Reference"->True|>,
+<|"Name"->"dtZc","Type"->interpolatorType,"Const"->True,"Reference"->True|>,
+<|"Name"->"Zc","Type"->interpolatorType,"Const"->True,"Reference"->True|>,
 (*glue propagator*)
-<|"Name"->"dtZA","Type"->"FunctionTex1D","AD"->False,"Reference"->True|>,
-<|"Name"->"ZA","Type"->"FunctionTex1D","AD"->False,"Reference"->True|>,
-<|"Name"->"m2A","Type"->"Variable","AD"->False|>
+<|"Name"->"dtZA","Type"->interpolatorType,"Const"->True,"Reference"->True|>,
+<|"Name"->"ZA","Type"->interpolatorType,"Const"->True,"Reference"->True|>
 };
-
-kernelParameterList=Join[{
-<|"Name"->"p","Type"->"Constant","AD"->False|>
-},kernelParameterListBase];
-
-
-couplingsList={
-ZA3[__], ZA4[__], ZAcbc[__],
-ZA3p[__],ZA4p[__],ZAcbcp[__]
-};
-otherList={
-dtZA[__],ZA[__],etac[__],RA[__],Rc[__],RAdot[__],Rcdot[__]
-};
-QCDSimp[expr_]:=Module[{ret},
-ret=expr//.Nc->3//.qf->q//UseLorentzLinearity//ExpandScalarProducts//SimplifyAllMomenta[q,#]&;
-ret=ret/.Map[(Head[#][a___]:>FullSimplify[Head[#][a]])&,couplingsList\[Union]otherList];
-ret=Collect[ret,couplingsList,QuickSimplify];
-ret=Collect[ret,couplingsList,Simplify];
-Return[ret]
-];
-QCDQuickSimp[expr_]:=Module[{ret},
-ret=expr//.Nc->3//.qf->q//UseLorentzLinearity//ExpandScalarProducts//SimplifyAllMomenta[q,#]&;
-ret=ret/.Map[(Head[#][a___]:>FullSimplify[Head[#][a]])&,couplingsList\[Union]otherList];
-ret=Collect[ret,couplingsList,QuickSimplify];
-Return[ret]
-];
-SetStandardSimplify[QCDSimp];
-SetStandardQuickSimplify[QCDQuickSimp];
-
-
-(* ::Input::Initialization:: *)
-MakeFlowClass["YangMills",kernels]
 
 
 (* ::Input::Initialization:: *)
@@ -223,142 +139,79 @@ SP4Defs=DeclareSymmetricPoints4DP4[];
 SP3Defs=DeclareSymmetricPoints4DP3[];
 
 
-(*Diagrams*)
-DerivativeListAA= {A[-p,{v1,a1}],A[p,{v2,a2}]};
-DiagramsAAsidx =DeriveFunctionalEquation[SetupfRG,DerivativeListAA,"OutputLevel"->"SuperindexDiagrams"];
-DiagramsAAsidx=ReduceIdenticalFlowDiagrams[DiagramsAAsidx,DerivativeListAA];
-DiagramsAA=SuperindexToFullDiagrams[DiagramsAAsidx,SetupfRG,DerivativeListAA];
-Print["DiagramsAA got "<>ToString[Length[DiagramsAA]]<>" diagrams."]
-PlotSuperindexDiagram[DiagramsAAsidx,SetupfRG,"EdgeStyle"->DiagramStyle]
+fRGAA=TakeDerivatives[WetterichEquation,{A[i1],A[i2]}]//FTruncate//FSimplify[#,"Symmetries"->symmetryP2]&//FPlot//FRoute//FPrint;
+
+traceExprAA=F[TBGetProjector["AA",1,{i1,i2}/.fRGAA["1-Loop"]["ExternalIndices"]],(fRGAA["1-Loop"]["Expression"]/.MakeDiagrammaticRules[])];
+FlowAA=FormTrace[traceExprAA]//dressingRules//FORMSimplify//PropParam;
+
+MakeKernel[FlowAA/p^2,kernelZA,kernelParameterList,
+"IntegrationVariables"->{"l1","cos1"},
+"Coordinates"->{"LogarithmicCoordinates1D<double>"},
+"CoordinateArguments"->{"p"}]
+UpdateFlows["YangMillsFlows"]
 
 
-(*Projection*)
-ProjectorZA=TBGetProjector["AA",1,{-p,v1,a1},{p,v2,a2}];
-
-(*Sanity Check*)
-sanity=(FormTrace[ProjectorZA ((\[CapitalGamma]AA[{-p,v2,a2,p,v1,a1}]-\[CapitalGamma]AA[{-q,v2,a2,q,v1,a1}])/sp[p,p])//.PreTraceRules]//.PostTraceRules//ExpandScalarProducts)//.{cos[p,q]->1,q->0}//Simplify;
-Print["Projection check is ", sanity, ", should be ZA[p]"]
-
-(*Sanity Check*)
-sanity=SimplifyAllMomenta[q,FormTrace[ProjectorZA \[CapitalGamma]AA[{-p,v2,a2,p,v1,a1}]//.PreTraceRules]//.PostTraceRules//ExpandScalarProducts//Simplify]//.p->0;
-Print["Projection check is ", sanity, ", should be m2A"]
+TBGetProjector["AA",1,{i1,i2}/.fRGAA["1-Loop"]["ExternalIndices"]]
 
 
-ProjectionZA=(ProjectorZA DiagramsAA)//.PreTraceRules;
-TraceDiagrams[4,"ZA",ProjectionZA]
-
-ZA0Loop=SumDiagrams[4,"ZA",0,QCDSimp[QCDSimp[#//.PostTraceRules]//.cospq->cos1//.p->0]&,"sum0"];
-ZALoop=SumDiagrams[4,"ZA",0,QCDSimp[#//.PostTraceRules]//.cospq->cos1&,"sum"];
-MakeKernel[kernelZA,kernelParameterList,ZALoop/p^2]
-MakeKernel[kernelm2A,kernelParameterList,ZA0Loop]
+TBGetProjector["cbc",1,{i1,i2}/.fRGcbc["1-Loop"]["ExternalIndices"]]
 
 
-(*Diagrams*)
-DerivativeListcbc= {cb[-p,{a1}],c[p,{a2}]};
-Diagramscbcsidx =DeriveFunctionalEquation[SetupfRG,DerivativeListcbc,"OutputLevel"->"SuperindexDiagrams"];
-Diagramscbcsidx=ReduceIdenticalFlowDiagrams[Diagramscbcsidx];
-Diagramscbc=SuperindexToFullDiagrams[Diagramscbcsidx,SetupfRG,DerivativeListcbc];
-Print["Diagramscbc got "<>ToString[Length[Diagramscbc]]<>" diagrams."]
-PlotSuperindexDiagram[Diagramscbcsidx,SetupfRG,"EdgeStyle"->DiagramStyle]
+fRGcbc=TakeDerivatives[WetterichEquation,{cb[i1],c[i2]}]//FTruncate//FSimplify//FPlot//FRoute//FPrint;
+
+traceExprcbc=F[TBGetProjector["cbc",1,{i1,i2}/.fRGcbc["1-Loop"]["ExternalIndices"]],(fRGcbc["1-Loop"]["Expression"]/.MakeDiagrammaticRules[])];
+Flowcbc=FormTrace[traceExprcbc]//dressingRules//FORMSimplify//PropParam;
+
+MakeKernel[-(Flowcbc/p^2)//Expand//Simplify,kernelZc,kernelParameterList,
+"IntegrationVariables"->{"l1","cos1"},
+"Coordinates"->{"LogarithmicCoordinates1D<double>"},
+"CoordinateArguments"->{"p"}]
+UpdateFlows["YangMillsFlows"]
 
 
-(*Projection*)
-NormZc=deltaAdjCol[a2,a1]  deltaAdjCol[a1,a2]  //.PreTraceRules//FormTrace;
-ProjectorZc=-deltaAdjCol[a2,a1]/ NormZc ;
-(*Sanity Check*)
-sanity=(ProjectorZc \[CapitalGamma]cbc[{-p,a1,p,a2}]/sp[p,p]//.PreTraceRules//FormTrace)//.PostTraceRules//QCDQuickSimp;
-Print["Projection check is ", sanity, ", should be Zc[p]"]
+fRGAcbc=TakeDerivatives[WetterichEquation,{A[i1],cb[i2],c[i3]}]//FTruncate//FSimplify//FPlot//FRoute//FPrint;
+
+projectorAcbc=TBGetProjector["Acbc",1,{i1,i2,i3}/.fRGAcbc["1-Loop"]["ExternalIndices"]];
+traceExprAcbc=F[projectorAcbc,(fRGAcbc["1-Loop"]["Expression"]/.MakeDiagrammaticRules[])];FlowAcbc=FormTrace[traceExprAcbc,SP3FormRule,SP3FormRule]//dressingRules//FORMSimplify[#,SP3FormRule,SP3FormRule]&//SPParam;
+
+MakeKernel[FlowAcbc,kernelZAcbc,kernelParameterList,
+"KernelBody"->SP3Defs,
+"IntegrationVariables"->{"l1","cos1","cos2"},
+"Coordinates"->{"LogarithmicCoordinates1D<double>"},
+"CoordinateArguments"->{"p"}]
+UpdateFlows["YangMillsFlows"]
 
 
-ProjectionZc=(ProjectorZc Diagramscbc/sp[p,p])//.PreTraceRules;
-TraceDiagrams[2,"Zc",ProjectionZc]
+fRGA3=TakeDerivatives[WetterichEquation,{A[i1],A[i2],A[i3]}]//FTruncate//FSimplify[#,"Symmetries"->symmetryP3]&//FPlot//FRoute//FPrint;
 
-ZcLoop=SumDiagrams[2,"Zc",0,QCDSimp[#//.PostTraceRules]&,"sum"]//.cospq->cos1;
-MakeKernel[kernelZc,kernelParameterList,ZcLoop]
+projectorA3=TBGetProjector["AAAClassTrans",1,{i1,i2,i3}/.fRGA3["1-Loop"]["ExternalIndices"]]//TBProjectToSymmetricPoint[#,l1,p,p1,p2,p3]&//Simplify;
+traceExprA3=F[projectorA3,(fRGA3["1-Loop"]["Expression"]/.MakeDiagrammaticRules[])];
+FlowA3=FormTrace[traceExprA3,{},SP3FormRule]//dressingRules//FORMSimplify[#,{},SP3FormRule]&//SPParam;
 
-
-(*Diagrams*)
-DerivativeListA3= {A[p1,{v1,a1}],A[p2,{v2,a2}],A[-p2-p1,{v3,a3}]};
-DiagramsA3sidx =DeriveFunctionalEquation[SetupfRG,DerivativeListA3,"OutputLevel"->"SuperindexDiagrams"];
-DiagramsA3sidx=ReduceIdenticalFlowDiagrams[DiagramsA3sidx];
-DiagramsA3=SuperindexToFullDiagrams[DiagramsA3sidx,SetupfRG,DerivativeListA3];
-Print["DiagramsA3 got "<>ToString[Length[DiagramsA3]]<>" diagrams."]
-PlotSuperindexDiagram[DiagramsA3sidx,SetupfRG,"EdgeStyle"->DiagramStyle]
+MakeKernel[FlowA3,kernelZA3,kernelParameterList,
+"KernelBody"->SP3Defs,
+"IntegrationVariables"->{"l1","cos1","cos2"},
+"Coordinates"->{"LogarithmicCoordinates1D<double>"},
+"CoordinateArguments"->{"p"}]
+UpdateFlows["YangMillsFlows"]
 
 
-(*Projection*)
-ProjectorZA3=TBGetProjector["AAA",1,{p1,v1,a1},{p2,v2,a2},{-p2-p1,v3,a3}]//ProjectToSymmetricPoint[#,q,p,p1,p2,p3]&//QCDSimp;
-(*Sanity check*)
-sanity=Simplify[TBGetProjector["AAA",1,{p1,v1,a1},{p2,v2,a2},{-p2-p1,v3,a3}] \[CapitalGamma]AAA[{p1,v1,a1,p2,v2,a2,p3,v3,a3}]//.PreTraceRules//FormTrace]//.PostTraceRules//ProjectToSymmetricPoint[#,q,p,p1,p2,p3]&//FullSimplify;
-Print["Projection check is ", sanity, ", should be ZA3[S0,S1,SPhi]"]
+MakeKernel[FlowA3,kernelZA4,kernelParameterList,
+"KernelBody"->SP3Defs,
+"IntegrationVariables"->{"l1","cos1","cos2","phi"},
+"Coordinates"->{"LogarithmicCoordinates1D<double>"},
+"CoordinateArguments"->{"p"}]
+UpdateFlows["YangMillsFlows"]
 
 
-preRepRule={{PreambleFormRule,"Vector q,p,p1,p2,p3;"}};
-postRepRule=Join[MakeSPFormRule[q,p,p1,p2,p3],{"id Nc=3;"}];
-SetDisentangle[True];
+fRGA4=TakeDerivatives[WetterichEquation,{A[i1],A[i2],A[i3],A[i4]}]//FTruncate//FSimplify[#,"Symmetries"->symmetryP4]&//FPlot//FRoute//FPrint;
 
-ProjectionZA3=(ProjectorZA3 DiagramsA3)//.PreTraceRules;
-TraceDiagrams[8,"ZA3",ProjectionZA3,preRepRule,postRepRule];
+projectorA4=TBGetProjector["AAAAClassTrans",1,{i1,i2,i3,i4}/.fRGA4["1-Loop"]["ExternalIndices"]]//TBProjectToSymmetricPoint[#,l1,p,p1,p2,p3,p4]&//Simplify;
+traceExprA4=F[projectorA4,(fRGA4["1-Loop"]["Expression"]/.MakeDiagrammaticRules[])];
+FlowA4=FormTrace[traceExprA4,SP4FormRule,SP4FormRule]//.dressingRules//FORMSimplify[#,SP4FormRule,SP4FormRule]&//SPParam
 
-ZA3Loop=SumDiagrams[8,"ZA3",0,QCDSimp[#//.PostTraceRules//ProjectToSymmetricPoint[#,q,p,p1,p2,p3]&]&,"sum"];
-MakeKernel[kernelZA3,kernelParameterList, ZA3Loop,0,SP3Defs]
-
-
-(*Diagrams*)
-DerivativeListAcbc={ A[p1,{v1,a1}],cb[p2,{a2}],c[-p2-p1,{a3}]};
-DiagramsAcbcsidx =DeriveFunctionalEquation[SetupfRG,DerivativeListAcbc,"OutputLevel"->"SuperindexDiagrams"];
-DiagramsAcbcsidx=ReduceIdenticalFlowDiagrams[DiagramsAcbcsidx];
-DiagramsAcbc=SuperindexToFullDiagrams[DiagramsAcbcsidx,SetupfRG,DerivativeListAcbc];
-Print["DiagramsAcbc got "<>ToString[Length[DiagramsAcbc]]<>" diagrams."]
-PlotSuperindexDiagram[DiagramsAcbcsidx,SetupfRG,"EdgeStyle"->DiagramStyle]
-
-
-(*Projection*)
-ProjectorZAcbc=TBGetProjector["Acbc",1,{p1,v1,a1},{-p2-p1,a3},{p2,a2}]//ProjectToSymmetricPoint[#,q,p,p1,p2,p3]&//Simplify;
-(*Sanity check*)
-sanity=Simplify[ProjectorZAcbc \[CapitalGamma]Acbc[{p1,v1,a1,p2,a2,-p1-p2,a3}]//.PreTraceRules//FormTrace]//.PostTraceRules//ProjectToSymmetricPoint[#,q,p,p1,p2,p3]&//ExpandScalarProducts//FullSimplify;
-Print["Projection check is ", sanity, ", should be ZAcbc[S0,S1,SPhi]"]
-
-
-preRepRule={{PreambleFormRule,"Vector q,p,p1,p2,p3;"}};
-postRepRule=Join[MakeSPFormRule[q,p,p1,p2,p3],{"id Nc=3;"}];
-SetDisentangle[True];
-
-ProjectionAcbc=(ProjectorZAcbc DiagramsAcbc)//.PreTraceRules;
-TraceDiagrams[8,"ZAcbc",ProjectionAcbc,preRepRule,postRepRule];
-
-ZAcbcLoop=SumDiagrams[8,"ZAcbc",0,QCDSimp[#//.PostTraceRules//ProjectToSymmetricPoint[#,q,p,p1,p2,p3]&]&,"sum"];
-MakeKernel[kernelZAcbc,kernelParameterList, ZAcbcLoop,0,SP3Defs]
-
-
-(*Diagrams*)
-DerivativeListA4= {A[p1,{v1,a1}],A[p2,{v2,a2}],A[p3,{v3,a3}],A[-p1-p2-p3,{v4,a4}]};
-DiagramsA4sidx =DeriveFunctionalEquation[SetupfRG,DerivativeListA4,"OutputLevel"->"SuperindexDiagrams"];
-
-symmetries=Map[Join[Flatten[List@@#,1],{Plus}]&,Map[PermutationCycles,Permutations[{1,2,3,4},{4}]]][[2;;]];
-
-DiagramsA4sidx=ReduceIdenticalFlowDiagrams[DiagramsA4sidx,DerivativeListA4,symmetries];
-DiagramsA4=SuperindexToFullDiagrams[DiagramsA4sidx,SetupfRG,DerivativeListA4];
-Print["DiagramsA4 got "<>ToString[Length[DiagramsA4]]<>" diagrams."]
-PlotSuperindexDiagram[DiagramsA4sidx,SetupfRG,"EdgeStyle"->DiagramStyle]
-
-
-(*Projection*)
-ProjectorZA4=(TBGetProjector["AAAA",1,{p1,v1,a1},{p2,v2,a2},{p3,v3,a3},{-p1-p2-p3,v4,a4}]//ProjectToSymmetricPoint[#,q,p,p1,p2,p3,p4]&);
-(*Sanity check*)
-sanity=(Simplify[ProjectorZA4  \[CapitalGamma]AAAA[{p1,v1,a1,p2,v2,a2,p3,v3,a3,-p1-p2-p3,v4,a4}]//.PreTraceRules//FormTrace])//.PostTraceRules//ProjectToSymmetricPoint[#,q,p,p1,p2,p3,p4]&//QCDSimp;
-Print["Projection check is ", sanity, ", should be \[InvisibleSpace]ZA4[p]"]
-
-
-postRepRule=Join[MakeSPFormRule[q,p,p1,p2,p3,p4],{"id Nc=3;"}];
-SetDisentangle[True];
-DefineFormExecutable["tform"]
-
-ProjectionZA4=(ProjectorZA4 DiagramsA4)//.PreTraceRules;
-TraceDiagrams[5,"ZA4",ProjectionZA4,{},postRepRule]//AbsoluteTiming
-
-ZA4Loop=SumDiagrams[5,"ZA4",0,QCDSimp[#//.PostTraceRules//ProjectToSymmetricPoint[#,q,p,p1,p2,p3,p4]&]&,"sum"];
-MakeKernel[kernelZA4,kernelParameterList,ZA4Loop,0,SP4Defs]
+MakeKernel[FlowA4,kernelZA4,kernelParameterList,"IntegrationVariables"->{"l1","cos1","cos2","phi"},"KernelBody"->SP4Defs,"Coordinates"->{"LogarithmicCoordinates1D<double>"}]
+UpdateFlows["YangMillsFlows"]
 
 
 

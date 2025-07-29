@@ -39,7 +39,8 @@ namespace DiFfRG
     };
   } // namespace internal
 
-  template <typename NT, typename KERNEL, typename ExecutionSpace>
+  template <int dim, typename NT, typename KERNEL, typename ExecutionSpace>
+    requires(dim == 4)
   class Integrator_fT_p2_4D_2ang
       : public QuadratureIntegrator_fT<3, NT, internal::Transform_fT_p2_4D_2ang<NT, KERNEL>, ExecutionSpace>
   {

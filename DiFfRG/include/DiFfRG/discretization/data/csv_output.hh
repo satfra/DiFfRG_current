@@ -5,9 +5,6 @@
 #include <map>
 #include <vector>
 
-// DiFfRG
-#include <DiFfRG/common/utils.hh>
-
 namespace DiFfRG
 {
   /**

@@ -7,7 +7,7 @@ set(DiFfRG_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/init.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/interpolation.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/json.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/math.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/eigen.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/mpi.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/polynomials.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/utils.cc

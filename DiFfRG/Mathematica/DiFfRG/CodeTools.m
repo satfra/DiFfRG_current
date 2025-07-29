@@ -35,26 +35,6 @@ ExportCode::usage = "ExportCode[fileName_String,expression_String]
 Writes the given expression to disk and runs clang-format on it.
 ";
 
-CodeForm::usage = "CodeForm[expr_]
-Obtain properly formatted and processed C++ code from an expression.";
-
-SetCppNames::usage = "SetCppNames[rules___]
-Set additional replacement rules used when invoking CodeForm[expr].
-
-Example Call: SetCppNames[\"k\"->\"k_bosonic\", \"Arccos(\"->\"std::arccos(\"]";
-
-JuliaForm::usage = "CodeForm[expr_]
-Obtain properly formatted and processed Julia code from an expression.";
-
-UnicodeClip::usage = "UnicodeClip[expr_String]
-Copy a string as unicode into the clipboard. Useful when exporting to Julia.";
-
-MakeCMakeFile::usage = "MakeCMakeFile[kernels_List]
-Creates a CMakeLists.txt inside the 'flowDir' which you can set using SetFlowDir[dir_String]. This CMake file contains references to all kernels specified in the List 'kernels'. Make sure you have created all kernels before compiling!
-If so, simply add the flow directory in the parent directory of the flow directory: \n add_subdirectory(flows) \n Note that this CMakeLists.txt exports its source files into parent scope as $flow_sources
-Thus, to compile the flows, simply add them as source files:
-    add_executable(QCD QCD.cc ${flow_sources})";
-
 
 SetFlowDirectory::usage="SetFlowDirectory[dir]
 Set the current flow directory, i.e. where all generated files are saved. Default is ./flows/";
@@ -191,8 +171,8 @@ Resultcosqr=Vectorq . Vectorr//.cos[a_,b_]:>Symbol["cos"<>ToString[a]<>ToString[
 namecospq=cos[p,q]//.cos[a_,b_]:>Symbol["cos"<>ToString[a]<>ToString[b]];
 namecosqr=cos[q,r]//.cos[a_,b_]:>Symbol["cos"<>ToString[a]<>ToString[b]];
 
-code="const "<>computeType<>" "<>ToString[namecospq]<>" = "<>CodeForm[Resultcospq,computeType]<>";\n"<>
-"const "<>computeType<>" "<>ToString[namecosqr]<>" = "<>CodeForm[Resultcosqr,computeType]<>";";
+code="const "<>computeType<>" "<>ToString[namecospq]<>" = "<>FunKit`CppForm[Resultcospq]<>";\n"<>
+"const "<>computeType<>" "<>ToString[namecosqr]<>" = "<>FunKit`CppForm[Resultcosqr]<>";";
 Return[code];
 ];
 
@@ -214,10 +194,10 @@ SymmetricPoint4DP4cosp2=vec4[ArcCos[Symbol["cos1"]],ArcCos[Symbol["cos2"]],Symbo
 SymmetricPoint4DP4cosp3=vec4[ArcCos[Symbol["cos1"]],ArcCos[Symbol["cos2"]],Symbol["phi"]] . Vectors4DSP4[[3]]//FullSimplify;
 SymmetricPoint4DP4cosp4=vec4[ArcCos[Symbol["cos1"]],ArcCos[Symbol["cos2"]],Symbol["phi"]] . Vectors4DSP4[[4]]//FullSimplify;
 
-SymmetricPoint4DP4Code="const "<>computeType<>" cosp1q = "<>CodeForm[SymmetricPoint4DP4cosp1,computeType]<>";\n"<>
-"const "<>computeType<>" cosp2q = "<>CodeForm[SymmetricPoint4DP4cosp2,computeType]<>";\n"<>
-"const "<>computeType<>" cosp3q = "<>CodeForm[SymmetricPoint4DP4cosp3,computeType]<>";\n"<>
-"const "<>computeType<>" cosp4q = "<>CodeForm[SymmetricPoint4DP4cosp4,computeType]<>";";
+SymmetricPoint4DP4Code="const "<>computeType<>" cosp1q = "<>FunKit`CppForm[SymmetricPoint4DP4cosp1]<>";\n"<>
+"const "<>computeType<>" cosp2q = "<>FunKit`CppForm[SymmetricPoint4DP4cosp2]<>";\n"<>
+"const "<>computeType<>" cosp3q = "<>FunKit`CppForm[SymmetricPoint4DP4cosp3]<>";\n"<>
+"const "<>computeType<>" cosp4q = "<>FunKit`CppForm[SymmetricPoint4DP4cosp4]<>";";
 Return[SymmetricPoint4DP4Code];
 ];
 
@@ -237,9 +217,9 @@ SymmetricPoint4DP3cosp1=vec4[ArcCos[Symbol["cos1"]],ArcCos[Symbol["cos2"]],Symbo
 SymmetricPoint4DP3cosp2=vec4[ArcCos[Symbol["cos1"]],ArcCos[Symbol["cos2"]],Symbol["phi"]] . Vectors4DSP3[[2]]//FullSimplify;
 SymmetricPoint4DP3cosp3=vec4[ArcCos[Symbol["cos1"]],ArcCos[Symbol["cos2"]],Symbol["phi"]] . Vectors4DSP3[[3]]//FullSimplify;
 
-SymmetricPoint4DP3Code="const "<>computeType<>" cosp1q = "<>CodeForm[SymmetricPoint4DP3cosp1,computeType]<>";\n"<>
-"const "<>computeType<>" cosp2q = "<>CodeForm[SymmetricPoint4DP3cosp2,computeType]<>";\n"<>
-"const "<>computeType<>" cosp3q = "<>CodeForm[SymmetricPoint4DP3cosp3,computeType]<>";";
+SymmetricPoint4DP3Code="const "<>computeType<>" cosp1q = "<>FunKit`CppForm[SymmetricPoint4DP3cosp1]<>";\n"<>
+"const "<>computeType<>" cosp2q = "<>FunKit`CppForm[SymmetricPoint4DP3cosp2]<>";\n"<>
+"const "<>computeType<>" cosp3q = "<>FunKit`CppForm[SymmetricPoint4DP3cosp3]<>";";
 Return[SymmetricPoint4DP3Code];
 ];
 
@@ -260,9 +240,9 @@ SymmetricPoint3DP3cosp1=vec3[ArcCos[Symbol["cos1"]],Symbol["phi"]] . Vectors3DSP
 SymmetricPoint3DP3cosp2=vec3[ArcCos[Symbol["cos1"]],Symbol["phi"]] . Vectors3DSP3[[2]]//FullSimplify;
 SymmetricPoint3DP3cosp3=vec3[ArcCos[Symbol["cos1"]],Symbol["phi"]] . Vectors3DSP3[[3]]//FullSimplify;
 
-SymmetricPoint3DP3Code="const "<>computeType<>" cosp1q = "<>CodeForm[SymmetricPoint3DP3cosp1,computeType]<>";\n"<>
-"const "<>computeType<>" cosp2q = "<>CodeForm[SymmetricPoint3DP3cosp2,computeType]<>";\n"<>
-"const "<>computeType<>" cosp3q = "<>CodeForm[SymmetricPoint3DP3cosp3,computeType]<>";";
+SymmetricPoint3DP3Code="const "<>computeType<>" cosp1q = "<>FunKit`CppForm[SymmetricPoint3DP3cosp1]<>";\n"<>
+"const "<>computeType<>" cosp2q = "<>FunKit`CppForm[SymmetricPoint3DP3cosp2]<>";\n"<>
+"const "<>computeType<>" cosp3q = "<>FunKit`CppForm[SymmetricPoint3DP3cosp3]<>";";
 Return[SymmetricPoint3DP3Code];
 ];
 
@@ -283,10 +263,10 @@ SymmetricPoint3DP4cosp2=vec3[ArcCos[Symbol["cos1"]],Symbol["phi"]] . Vectors3DSP
 SymmetricPoint3DP4cosp3=vec3[ArcCos[Symbol["cos1"]],Symbol["phi"]] . Vectors3DSP4[[3]]//FullSimplify;
 SymmetricPoint3DP4cosp4=vec3[ArcCos[Symbol["cos1"]],Symbol["phi"]] . Vectors3DSP4[[4]]//FullSimplify;
 
-SymmetricPoint3DP4Code="const "<>computeType<>" cosp1q = "<>CodeForm[SymmetricPoint3DP4cosp1,computeType]<>";\n"<>
-"const "<>computeType<>" cosp2q = "<>CodeForm[SymmetricPoint3DP4cosp2,computeType]<>";\n"<>
-"const "<>computeType<>" cosp3q = "<>CodeForm[SymmetricPoint3DP4cosp3,computeType]<>";\n"<>
-"const "<>computeType<>" cosp4q = "<>CodeForm[SymmetricPoint3DP4cosp4,computeType]<>";";
+SymmetricPoint3DP4Code="const "<>computeType<>" cosp1q = "<>FunKit`CppForm[SymmetricPoint3DP4cosp1]<>";\n"<>
+"const "<>computeType<>" cosp2q = "<>FunKit`CppForm[SymmetricPoint3DP4cosp2]<>";\n"<>
+"const "<>computeType<>" cosp3q = "<>FunKit`CppForm[SymmetricPoint3DP4cosp3]<>";\n"<>
+"const "<>computeType<>" cosp4q = "<>FunKit`CppForm[SymmetricPoint3DP4cosp4]<>";";
 Return[SymmetricPoint3DP4Code];
 ];
 
@@ -307,9 +287,9 @@ SymmetricPoint3DP3cosp1=vec2[ArcCos[Symbol["cos1"]]] . Vectors3DSP3[[1]]//FullSi
 SymmetricPoint3DP3cosp2=vec2[ArcCos[Symbol["cos1"]]] . Vectors3DSP3[[2]]//FullSimplify;
 SymmetricPoint3DP3cosp3=vec2[ArcCos[Symbol["cos1"]]] . Vectors3DSP3[[3]]//FullSimplify;
 
-SymmetricPoint3DP3Code="const "<>computeType<>" cosp1q = "<>CodeForm[SymmetricPoint3DP3cosp1,computeType]<>";\n"<>
-"const "<>computeType<>" cosp2q = "<>CodeForm[SymmetricPoint3DP3cosp2,computeType]<>";\n"<>
-"const "<>computeType<>" cosp3q = "<>CodeForm[SymmetricPoint3DP3cosp3,computeType]<>";";
+SymmetricPoint3DP3Code="const "<>computeType<>" cosp1q = "<>FunKit`CppForm[SymmetricPoint3DP3cosp1]<>";\n"<>
+"const "<>computeType<>" cosp2q = "<>FunKit`CppForm[SymmetricPoint3DP3cosp2]<>";\n"<>
+"const "<>computeType<>" cosp3q = "<>FunKit`CppForm[SymmetricPoint3DP3cosp3]<>";";
 Return[SymmetricPoint3DP3Code];
 ];
 
@@ -329,10 +309,10 @@ SymmetricPoint3DP4cosp2=vec2[ArcCos[Symbol["cos1"]]] . Vectors3DSP4[[2]]//FullSi
 SymmetricPoint3DP4cosp3=vec2[ArcCos[Symbol["cos1"]]] . Vectors3DSP4[[3]]//FullSimplify;
 SymmetricPoint3DP4cosp4=vec2[ArcCos[Symbol["cos1"]]] . Vectors3DSP4[[4]]//FullSimplify;
 
-SymmetricPoint3DP4Code="const "<>computeType<>" cosp1q = "<>CodeForm[SymmetricPoint3DP4cosp1,computeType]<>";\n"<>
-"const "<>computeType<>" cosp2q = "<>CodeForm[SymmetricPoint3DP4cosp2,computeType]<>";\n"<>
-"const "<>computeType<>" cosp3q = "<>CodeForm[SymmetricPoint3DP4cosp3,computeType]<>";\n"<>
-"const "<>computeType<>" cosp4q = "<>CodeForm[SymmetricPoint3DP4cosp4,computeType]<>";";
+SymmetricPoint3DP4Code="const "<>computeType<>" cosp1q = "<>FunKit`CppForm[SymmetricPoint3DP4cosp1]<>";\n"<>
+"const "<>computeType<>" cosp2q = "<>FunKit`CppForm[SymmetricPoint3DP4cosp2]<>";\n"<>
+"const "<>computeType<>" cosp3q = "<>FunKit`CppForm[SymmetricPoint3DP4cosp3]<>";\n"<>
+"const "<>computeType<>" cosp4q = "<>FunKit`CppForm[SymmetricPoint3DP4cosp4]<>";";
 Return[SymmetricPoint3DP4Code];
 ];
 
@@ -521,10 +501,13 @@ MakeKernel::InvalidSpec="The given kernel specification is invalid.";
 
 Options[MakeKernel]={
 "Coordinates"->{},
+"CoordinateArguments"->{},
 "IntegrationVariables"->{},
 "KernelDefinitions"->$StandardKernelDefinitions,
 "Regulator"->"DiFfRG::PolynomialExpRegulator",
-"RegulatorOpts"->{"",""}
+"RegulatorOpts"->{"",""},
+"KernelBody"->"",
+"ConstantBody"->""
 };
 
 $ADReplacements={};
@@ -539,6 +522,8 @@ integratorHeader,integratorCpp,integratorTemplateParams,integratorADTemplatePara
 tparams=<|"Name"->"...t","Type"->"auto&&","Reference"->False,"Const"->False|>,
 kernelDefs=OptionValue["KernelDefinitions"],
 coordinates=OptionValue["Coordinates"],
+getArgs=OptionValue["CoordinateArguments"],
+preArguments,
 regulator,
 params,paramsAD,explParamAD,
 i,arguments,
@@ -557,27 +542,31 @@ expr,
 "Name"->"kernel",
 "Suffix"->"",
 "Prefix"->"static KOKKOS_FORCEINLINE_FUNCTION",
-"Parameters"->Join[OptionValue["IntegrationVariables"],parameters],
-"Body"->"using namespace DiFfRG;using namespace DiFfRG::compute;"
+"Parameters"->Join[OptionValue["IntegrationVariables"],getArgs,parameters],
+"Body"->"using namespace DiFfRG;using namespace DiFfRG::compute;"<>OptionValue["KernelBody"]
 ];
+
 constant=FunKit`MakeCppFunction[
 constExpr,
 "Name"->"constant",
 "Suffix"->"",
 "Prefix"->"static KOKKOS_FORCEINLINE_FUNCTION",
-"Parameters"->parameters,
-"Body"->"using namespace DiFfRG;using namespace DiFfRG::compute;"
+"Parameters"->Join[getArgs,parameters],
+"Body"->"using namespace DiFfRG;using namespace DiFfRG::compute;"<>OptionValue["ConstantBody"]
 ];
+
 kernelClass=FunKit`MakeCppClass[
 "TemplateTypes"->{"_Regulator"},
 "Name"->spec["Name"]<>"_kernel",
 "MembersPublic"->{"using Regulator = _Regulator;",kernel,constant},
 "MembersPrivate"->kernelDefs
 ];
+
 kernelHeader=FunKit`MakeCppHeader[
-"Includes"->{"DiFfRG/physics/utils.hh"},
+"Includes"->{"DiFfRG/physics/utils.hh","DiFfRG/physics/interpolation.hh","DiFfRG/physics/physics.hh"},
 "Body"->{"namespace DiFfRG {",kernelClass,"} using DiFfRG::"<>spec["Name"]<>"_kernel;"}];
 (*Print[kernelHeader];*)
+
 
 params=FunKit`Private`prepParam/@parameters;
 paramsAD=params;
@@ -615,23 +604,44 @@ paramsAD[[i]]=Association[Normal@(paramsAD[[i]])\[Union]{"Reference"->True}]
 ];
 arguments=StringRiffle[Map[#["Name"]&,params],", "];
 
+getArgs=FunKit`Private`prepParam/@getArgs;
+For[i=1,i<=Length[getArgs],i++,
+If[KeyFreeQ[getArgs[[i]],"Type"],
+getArgs[[i]]=Association[(Normal@(getArgs[[i]]))\[Union]{"Type"->"double"}]
+,
+If[getArgs[[i]]["Type"]==="auto",
+getArgs[[i]]=KeyDrop[getArgs[[i]],{"Type"}];
+getArgs[[i]]=Association[Normal@(getArgs[[i]])\[Union]{"Type"->"double"}]
+];
+If[KeyFreeQ[getArgs[[i]],"Const"],
+getArgs[[i]]=Association[Normal@(getArgs[[i]])\[Union]{"Const"->True}]
+];
+If[KeyFreeQ[getArgs[[i]],"Reference"],
+getArgs[[i]]=Association[Normal@(getArgs[[i]])\[Union]{"Reference"->True}]
+];
+];
+];
+preArguments=StringRiffle[Map[#["Name"]&,getArgs]];
+If[preArguments=!="",preArguments=preArguments<>", "];
+
 integratorTemplateParams={};
 If[KeyExistsQ[spec,"d"]&&spec["d"]=!=None,AppendTo[integratorTemplateParams,ToString[spec["d"]]]];
 If[KeyExistsQ[spec,"Type"],AppendTo[integratorTemplateParams,ToString[spec["Type"]]],AppendTo[integratorTemplateParams,"double"]];
 AppendTo[integratorTemplateParams,spec["Name"]<>"_kernel<Regulator>"];
-AppendTo[integratorTemplateParams,If[KeyFreeQ[spec,"Device"]||FreeQ[{"GPU","OpenMP"},spec["Device"]],"DiFfRG::TBB_exec","DiFfRG::"<>spec["Device"]<>"_exec"]];
+AppendTo[integratorTemplateParams,If[KeyFreeQ[spec,"Device"]||FreeQ[{"GPU","Threads"},spec["Device"]],"DiFfRG::TBB_exec","DiFfRG::"<>spec["Device"]<>"_exec"]];
 integratorTemplateParams=StringRiffle[integratorTemplateParams,", "];
 
 integratorADTemplateParams={};
 If[KeyExistsQ[spec,"d"]&&spec["d"]=!=None,AppendTo[integratorADTemplateParams,ToString[spec["d"]]]];
 If[KeyExistsQ[spec,"Type"],AppendTo[integratorADTemplateParams,StringReplace[ToString[spec["Type"]],$ADReplacementsDirect]],AppendTo[integratorADTemplateParams,"autodiff::real"]];
 AppendTo[integratorADTemplateParams,spec["Name"]<>"_kernel<Regulator>"];
-AppendTo[integratorADTemplateParams,If[KeyFreeQ[spec,"Device"]||FreeQ[{"GPU","OpenMP"},spec["Device"]],"DiFfRG::TBB_exec","DiFfRG::"<>spec["Device"]<>"_exec"]];
+AppendTo[integratorADTemplateParams,If[KeyFreeQ[spec,"Device"]||FreeQ[{"GPU","Threads"},spec["Device"]],"DiFfRG::TBB_exec","DiFfRG::"<>spec["Device"]<>"_exec"]];
 integratorADTemplateParams=StringRiffle[integratorADTemplateParams,", "];
 
 integratorHeader=FunKit`MakeCppHeader[
-"Includes"->{"DiFfRG/physics/interpolation.hh","DiFfRG/physics/integration.hh","DiFfRG/physics/physics.hh"},
-"Body"->{"#include \"./kernel.hh\"\n",
+"Includes"->{"DiFfRG/physics/integration.hh","DiFfRG/physics/physics.hh","DiFfRG/physics/interpolation.hh"},
+"Body"->{"namespace DiFfRG {
+  template<typename> class "<>spec["Name"]<>"_kernel;\n",
 FunKit`MakeCppClass[
 "Name"->spec["Name"]<>"_integrator",
 "MembersPublic"->
@@ -643,102 +653,100 @@ FunKit`MakeCppFunction[
 "Body"->None,
 "Return"->""
 ],
-If[Length[coordinates]>0,
-FunKit`MakeCppFunction[
-"Name"->"map",
-"Templates"->{"NT=double"},
-"Parameters"->{tparams},
-"Body"->"static_assert(std::is_same_v<NT, double> || std::is_same_v<NT, autodiff::real>, \"Unknown type requested of "<>spec["Name"]<>"_integrator::get\");
-if constexpr (std::is_same_v<NT, double>)
-  map_CT(std::forward<decltype(t)>(t)...);
-else if constexpr (std::is_same_v<NT, autodiff::real>)
-  map_AD(std::forward<decltype(t)>(t)...);",
-"Return"->"void"
-],""],
 getRegulator[OptionValue["Regulator"],OptionValue["RegulatorOpts"]],
 spec["Integrator"]<>"<"<>integratorTemplateParams<>"> integrator;",
 If[spec["AD"],spec["Integrator"]<>"<"<>integratorADTemplateParams<>"> integrator_AD;",""]
 },
 Map[
-FunKit`MakeCppFunction["Name"->"map","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"double*","Const"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},params]]&,
+FunKit`MakeCppFunction["Name"->"map","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"double*","Const"->False,"Reference"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},params]]&,
 coordinates],
+If[Length[coordinates]>0,#,{}]&@{
+FunKit`MakeCppFunction["Name"->"map","Return"->"void","Body"->"device::apply([&](const auto...t){map(dest, coordinates, t...);}, args);","Parameters"->Join[
+{<|"Name"->"dest","Type"->"double*","Reference"->False,"Const"->False|>,
+<|"Name"->"coordinates","Reference"->True,"Type"->"C","Const"->True|>,
+<|"Name"->"args","Type"->"device::tuple<T...>","Reference"->True,"Const"->True|>}],
+"Templates"->{"C",  "...T"}]
+},
 If[spec["AD"],#,{}]&@Map[
-FunKit`MakeCppFunction["Name"->"map","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real*","Const"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},paramsAD]]&,
+FunKit`MakeCppFunction["Name"->"map","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real*","Const"->False,"Reference"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},paramsAD]]&,
 coordinates],
-{FunKit`MakeCppFunction["Name"->"get","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"double","Reference"->True,"Const"->False|>},params]],
-If[spec["AD"],#,""]&@FunKit`MakeCppFunction["Name"->"get","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real","Reference"->True,"Const"->False|>},paramsAD]]}]
+{
+FunKit`MakeCppFunction["Name"->"get","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"double","Reference"->True,"Const"->False|>},getArgs,params]],
+FunKit`MakeCppFunction["Name"->"get","Return"->"void","Body"->"device::apply([&](const auto...t){get(dest, "<>preArguments<>"t...);}, args);","Parameters"->Join[
+{<|"Name"->"dest","Type"->"double","Reference"->True,"Const"->False|>},
+getArgs,
+{<|"Name"->"args","Type"->"device::tuple<T...>","Reference"->True,"Const"->True|>}],
+"Templates"->{ "...T"}],
+If[spec["AD"],#,""]&@FunKit`MakeCppFunction["Name"->"get","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real","Reference"->True,"Const"->False|>},getArgs,paramsAD]]
+}]
 ,
 "MembersPrivate"->{"DiFfRG::QuadratureProvider& quadrature_provider;"}
 
-]}
+],"}\nusing DiFfRG::"<>spec["Name"]<>"_integrator;"}
 ];
-(*Print[integratorHeader];*)
 
 integratorCpp["Constructor"]=FunKit`MakeCppBlock[
-"Includes"->{"../"<>spec["Name"]<>".hh"},
+"Includes"->{"../kernel.hh"},
 "Body"->{
+"#include \"../"<>spec["Name"]<>".hh\"\n",
 FunKit`MakeCppFunction[
 "Name"->spec["Name"]<>"_integrator",
 "Class"->spec["Name"]<>"_integrator",
 "Suffix"->": integrator(quadrature_provider, json), "<>
-If[spec["AD"],"integrator_AD(quadrature_provider, json), "]<>"quadrature_provider(quadrature_provider)",
+If[spec["AD"],"integrator_AD(quadrature_provider, json), ",""]<>"quadrature_provider(quadrature_provider)",
 "Body"->"",
 "Parameters"->{<|"Type"->"DiFfRG::QuadratureProvider","Reference"->True,"Const"->False,"Name"->"quadrature_provider"|>,<|"Type"->"DiFfRG::JSONValue","Reference"->True,"Const"->True,"Name"->"json"|>},
 "Return"->""
 ]
 }];
 integratorCpp["CT","get"]=FunKit`MakeCppBlock[
-"Includes"->{"../"<>spec["Name"]<>".hh"},
+"Includes"->{"../kernel.hh"},
 "Body"->{
+"#include \"../"<>spec["Name"]<>".hh\"\n",
 FunKit`MakeCppFunction[
 "Name"->"get",
 "Class"->spec["Name"]<>"_integrator",
-"Body"->"integrator.get(dest, "<>arguments<>");",
-"Parameters"->Join[{<|"Name"->"dest","Type"->"double","Reference"->True,"Const"->False|>},params],
+"Body"->"integrator.get(dest, "<>preArguments<>arguments<>");",
+"Parameters"->Join[{<|"Name"->"dest","Type"->"double","Reference"->True,"Const"->False|>},getArgs,params],
 "Return"->"void"
 ]
 }];
 integratorCpp["AD","get"]=FunKit`MakeCppBlock[
-"Includes"->{"../"<>spec["Name"]<>".hh"},
+"Includes"->{"../kernel.hh"},
 "Body"->{
+"#include \"../"<>spec["Name"]<>".hh\"\n",
 FunKit`MakeCppFunction[
 "Name"->"get",
 "Class"->spec["Name"]<>"_integrator",
-"Body"->"integrator_AD.get(dest, "<>arguments<>");",
-"Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real","Reference"->True,"Const"->False|>},paramsAD],
+"Body"->"integrator_AD.get(dest, "<>preArguments<>arguments<>");",
+"Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real","Reference"->True,"Const"->False|>},getArgs,paramsAD],
 "Return"->"void"
 ]
 }];
 integratorCpp["CT","map"]=Map[FunKit`MakeCppBlock[
-"Includes"->{"../"<>spec["Name"]<>".hh"},
+"Includes"->{"../kernel.hh"},
 "Body"->{
+"#include \"../"<>spec["Name"]<>".hh\"\n",
 FunKit`MakeCppFunction[
 "Name"->"map",
 "Return"->"void",
 "Class"->spec["Name"]<>"_integrator",
 "Body"->"integrator.map(dest, coordinates, "<>arguments<>");",
-"Parameters"->Join[{<|"Name"->"dest","Type"->"double*","Const"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},params]
+"Parameters"->Join[{<|"Name"->"dest","Type"->"double*","Const"->False,"Reference"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},params]
 ]
 }]&,coordinates];
 integratorCpp["AD","map"]=Map[FunKit`MakeCppBlock[
-"Includes"->{"../"<>spec["Name"]<>".hh"},
+"Includes"->{"../kernel.hh"},
 "Body"->{
+"#include \"../"<>spec["Name"]<>".hh\"\n",
 FunKit`MakeCppFunction[
 "Name"->"map",
 "Return"->"void",
 "Class"->spec["Name"]<>"_integrator",
 "Body"->"integrator_AD.map(dest, coordinates, "<>arguments<>");",
-"Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real*","Const"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},paramsAD]
+"Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real*","Const"->False,"Reference"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},paramsAD]
 ]
 }]&,coordinates];
-(*Print["\n-----------------------------\n"];
-Print[integratorCpp["CT","get"]];
-Print["\n-----------------------------\n"];
-Print[integratorCpp["AD","get"]];
-Print["\n-----------------------------\n"];
-Print[integratorCpp["CT","map"]];
-Print["\n-----------------------------\n"];
-Print[integratorCpp["AD","map"]];*)
 
 outputPath=flowDir<>spec["Name"]<>"/";
 ExportCode[outputPath<>spec["Name"]<>".hh",integratorHeader];

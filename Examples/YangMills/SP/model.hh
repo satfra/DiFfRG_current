@@ -1,8 +1,11 @@
 #pragma once
 
 #include "flows/flows.hh"
+#include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/model/model.hh>
+#include <DiFfRG/physics/interpolation/spline_interpolator_1D.hh>
 #include <DiFfRG/physics/utils.hh>
+#include <Kokkos_Core_fwd.hpp>
 #include <cmath>
 
 using namespace dealii;
@@ -44,9 +47,7 @@ struct Parameters {
 static constexpr uint p_grid_size = 96;
 // As for components, we have one FE function (u) and several extractors.
 using VariableDesc =
-    VariableDescriptor<Scalar<"m2A">,
-
-                       FunctionND<"ZA3", p_grid_size>, FunctionND<"ZAcbc", p_grid_size>, FunctionND<"ZA4", p_grid_size>,
+    VariableDescriptor<FunctionND<"ZA3", p_grid_size>, FunctionND<"ZAcbc", p_grid_size>, FunctionND<"ZA4", p_grid_size>,
 
                        FunctionND<"ZA", p_grid_size>, FunctionND<"Zc", p_grid_size>>;
 using Components = ComponentDescriptor<FEFunctionDescriptor<>, VariableDesc, ExtractorDescriptor<>>;
@@ -63,15 +64,15 @@ class YangMills : public def::AbstractModel<YangMills, Components>,
 {
   const Parameters prm;
 
-  using Coordinates1D = LogarithmicCoordinates1D<float>;
+  using Coordinates1D = LogarithmicCoordinates1D<double>;
   const Coordinates1D coordinates1D;
 
-  const std::vector<float> grid1D;
+  const std::vector<double> grid1D;
 
-  mutable YangMillsFlowEquations flow_equations;
+  mutable YangMillsFlows flow_equations;
 
-  mutable TexLinearInterpolator1D<double, Coordinates1D> dtZc, dtZA, ZA, Zc;
-  mutable TexLinearInterpolator1D<double, Coordinates1D> ZA4, ZAcbc, ZA3;
+  mutable SplineInterpolator1D<double, Coordinates1D, GPU_memory> dtZc, dtZA, ZA, Zc;
+  mutable SplineInterpolator1D<double, Coordinates1D, GPU_memory> ZA4, ZAcbc, ZA3;
 
 public:
   YangMills(const JSONValue &json)
@@ -82,7 +83,7 @@ public:
         ZA4(coordinates1D), ZAcbc(coordinates1D), ZA3(coordinates1D) // couplings
   {
     flow_equations.set_k(prm.Lambda);
-    flow_equations.print_parameters("log");
+    k = std::exp(-t) * Lambda;
   }
 
   template <typename Vector> void initial_condition_variables(Vector &values) const
@@ -96,8 +97,6 @@ public:
       values[idxv("ZA") + i] = (powr<2>(grid1D[i]) + prm.m2A) / powr<2>(grid1D[i]);
       values[idxv("Zc") + i] = 1.;
     }
-    // glue mass
-    values[idxv("m2A")] = prm.m2A;
   }
 
   void set_time(double t_)
@@ -111,8 +110,6 @@ public:
   {
     const auto &variables = get<"variables">(data);
 
-    const auto m2A = variables[idxv("m2A")];
-
     ZA3.update(&variables.data()[idxv("ZA3")]);
     ZAcbc.update(&variables.data()[idxv("ZAcbc")]);
     ZA4.update(&variables.data()[idxv("ZA4")]);
@@ -121,11 +118,15 @@ public:
     Zc.update(&variables.data()[idxv("Zc")]);
 
     // set up arguments for the integrators
-    const auto arguments = std::tie(ZA3, ZAcbc, ZA4, dtZc, Zc, dtZA, ZA, m2A);
+    const auto arguments = device::tie(k, ZA3, ZAcbc, ZA4, dtZc, Zc, dtZA, ZA);
 
     // copy the propagators for comparison
     std::vector<double> old_dtZA(p_grid_size);
     std::vector<double> old_dtZc(p_grid_size);
+
+    double res;
+    flow_equations.ZA.get(res, 0.01, arguments);
+    std::cout << "dtZA(0.01) = " << res << std::endl;
 
     // start by solving the equations for propagators
     bool eta_converged = false;
@@ -137,17 +138,12 @@ public:
         old_dtZc[i] = dtZc[i];
       }
 
-      auto futures_dtZA = request_data<double>(flow_equations.ZA_integrator, grid1D, k, arguments);
-      auto futures_dtZc = request_data<double>(flow_equations.Zc_integrator, grid1D, k, arguments);
+      flow_equations.ZA.map(&residual[idxv("ZA")], coordinates1D, arguments);
+      flow_equations.Zc.map(&residual[idxv("Zc")], coordinates1D, arguments);
+      Kokkos::fence();
 
-      for (uint i = 0; i < p_grid_size; ++i) {
-        residual[idxv("ZA") + i] = (*futures_dtZA)[i].get();
-        residual[idxv("Zc") + i] = (*futures_dtZc)[i].get();
-        dtZA[i] = residual[idxv("ZA") + i];
-        dtZc[i] = residual[idxv("Zc") + i];
-      }
-      dtZA.update();
-      dtZc.update();
+      dtZA.update(&residual[idxv("ZA")]);
+      dtZc.update(&residual[idxv("Zc")]);
 
       // check distance
       double dist = 0.;
@@ -160,6 +156,12 @@ public:
     }
     std::cout << "Converged after " << n_iter << " iterations." << std::endl;
 
+    // flow_equations.ZA4.map(&residual[idxv("ZA4")], coordinates1D, arguments);
+    // flow_equations.ZAcbc.map(&residual[idxv("ZAcbc")], coordinates1D, arguments);
+    // flow_equations.ZA3.map(&residual[idxv("ZA3")], coordinates1D, arguments);
+    // Kokkos::fence();
+
+    /*
     // call all other integrators
     auto futures_ZA3 = request_data<double>(flow_equations.ZA3_integrator, grid1D, k, arguments);
     auto futures_ZAcbc = request_data<double>(flow_equations.ZAcbc_integrator, grid1D, k, arguments);
@@ -174,33 +176,29 @@ public:
       residual[idxv("ZA") + i] = dtZA.data()[i];
       residual[idxv("Zc") + i] = dtZc.data()[i];
     }
-
-    std::apply(
-        [&](const auto &...args) { residual[idxv("m2A")] = flow_equations.m2A_integrator.get<double>(k, 0., args...); },
-        arguments);
+    */
   }
 
   template <int dim, typename DataOut, typename Solutions>
   void readouts(DataOut &output, const Point<dim> &, const Solutions &sol) const
   {
     const auto &variables = get<"variables">(sol);
-    const auto m2A = variables[idxv("m2A")];
 
     this->Zc.update(&variables.data()[idxv("Zc")]);
 
     auto &out_file = output.csv_file("data.csv");
     out_file.set_Lambda(Lambda);
-    out_file.value("m2A", m2A);
 
     const auto *ZA = &variables.data()[idxv("ZA")];
     const auto *Zc = &variables.data()[idxv("Zc")];
-    std::vector<std::vector<double>> Zs_data(grid1D.size(), std::vector<double>(5, 0.));
+    std::vector<std::vector<double>> Zs_data(grid1D.size(), std::vector<double>(6, 0.));
     for (uint i = 0; i < p_grid_size; ++i) {
       Zs_data[i][0] = k;
       Zs_data[i][1] = grid1D[i];
-      Zs_data[i][2] = ZA[i];
-      Zs_data[i][3] = (ZA[i]); // * powr<2>(grid1D[i]) + m2A) / powr<2>(grid1D[i]);
-      Zs_data[i][4] = Zc[i];
+      Zs_data[i][2] = dtZA[i];
+      Zs_data[i][3] = dtZc[i];
+      Zs_data[i][4] = ZA[i];
+      Zs_data[i][5] = Zc[i];
     }
 
     const auto *ZA3 = &variables.data()[idxv("ZA3")];
@@ -223,7 +221,8 @@ public:
     if (is_close(t, 0.)) {
       const std::vector<std::string> strong_couplings_header =
           std::vector<std::string>{"k [GeV]", "p [GeV]", "alphaAcbc", "alphaA3", "alphaA4", "ZAcbc", "ZA3", "ZA4"};
-      const std::vector<std::string> Zs_header = std::vector<std::string>{"k [GeV]", "p [GeV]", "ZAbar", "ZA", "Zc"};
+      const std::vector<std::string> Zs_header =
+          std::vector<std::string>{"k [GeV]", "p [GeV]", "dtZA", "dtZc", "ZA", "Zc"};
 
       output.dump_to_csv("strong_couplings.csv", strong_couplings_data, false, strong_couplings_header);
       output.dump_to_csv("Zs.csv", Zs_data, false, Zs_header);

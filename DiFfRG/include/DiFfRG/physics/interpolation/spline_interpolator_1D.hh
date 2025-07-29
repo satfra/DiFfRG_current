@@ -13,7 +13,7 @@ namespace DiFfRG
    * @tparam NT input data type
    * @tparam Coordinates coordinate system of the input data
    */
-  template <typename MemorySpace, typename NT, typename Coordinates> class SplineInterpolator1D
+  template <typename NT, typename Coordinates, typename MemorySpace> class SplineInterpolator1D
   {
     static_assert(Coordinates::dim == 1, "SplineInterpolator1D requires 1D coordinates");
 
@@ -65,6 +65,11 @@ namespace DiFfRG
       build_y2(lower_y1, upper_y1);
       // Copy data to device
       Kokkos::deep_copy(device_data, host_data);
+    }
+
+    NT operator[](size_t i) const
+    {
+      return host_data.data()[i]; // Access the host data directly
     }
 
     /**
