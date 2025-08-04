@@ -71,9 +71,14 @@ MakeKernel[kernelExpr_, constExpr_, spec_Association, parameters_List,
             }, "Body" -> {"namespace DiFfRG {", kernelClass, "} using DiFfRG::" <>
              spec["Name"] <> "_kernel;"}];
         params = FunKit`Private`prepParam /@ parameters;
-        appendDefaultAssociation[params];
-        paramsAD = params;
-        paramsAD["Type"] = paramsAD["Type"] /. $ADReplacements;
+        For[i = 1, i <= Length[params], i++,
+            params[[i]] = appendDefaultAssociation[params[[i]]];
+            paramsAD[[i]] =
+                Module[{typeAD},
+                    typeAD = params[[i]]["Type"] /. $ADReplacements;
+                    Append[paramsAD[[i]], "Type" -> typeAD];
+                ];
+        ];
         arguments = StringRiffle[Map[#["Name"]&, params], ", "];
         integratorTemplateParams = {};
         If[KeyExistsQ[spec, "d"] && spec["d"] =!= None,
