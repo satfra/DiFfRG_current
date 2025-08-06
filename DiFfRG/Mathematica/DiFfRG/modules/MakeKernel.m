@@ -1,5 +1,7 @@
 (* Exported symbols added here with SymbolName::usage *)
 
+BeginPackage["MakeKernel`"]
+
 MakeKernel::usage = "MakeKernel[args] computes the kernel with given arguments.";
 
 MakeKernel::Invalid = "The given arguments are invalid. See MakeKernel::usage";
@@ -8,17 +10,13 @@ MakeKernel::InvalidSpec = "The given kernel specification is invalid.";
 
 Begin["`Private`"]
 
-ClearAll[MakeKernel]
-
 ClearAll[appendDefaultAssociation]
 
 appendDefaultAssociation[config_] :=
     Merge[{config, <|"Type" -> "double", "Reference" -> True, "Const"
          -> True|>}, First];
 
-appendDefaultAssociationAD[config_] :=
-    Merge[{config, <|"Type" -> "double", "Reference" -> True, "Const"
-         -> True|>}, First];
+ClearAll[MakeKernel]
 
 Options[MakeKernel] = {"Coordinates" -> {}, "IntegrationVariables" ->
      {}, "KernelDefinitions" -> $StandardKernelDefinitions, "Regulator" ->
@@ -71,12 +69,18 @@ MakeKernel[kernelExpr_, constExpr_, spec_Association, parameters_List,
             }, "Body" -> {"namespace DiFfRG {", kernelClass, "} using DiFfRG::" <>
              spec["Name"] <> "_kernel;"}];
         params = FunKit`Private`prepParam /@ parameters;
+        paramsAD = {};
         For[i = 1, i <= Length[params], i++,
             params[[i]] = appendDefaultAssociation[params[[i]]];
-            paramsAD[[i]] =
-                Module[{typeAD},
-                    typeAD = params[[i]]["Type"] /. $ADReplacements;
-                    Append[paramsAD[[i]], "Type" -> typeAD];
+            paramsAD =
+                Append[
+                    paramsAD
+                    ,
+                    Module[{typeAD},
+                        typeAD = params[[i]]["Type"] /. $ADReplacements
+                            ;
+                        Append[params[[i]], "Type" -> typeAD];
+                    ]
                 ];
         ];
         arguments = StringRiffle[Map[#["Name"]&, params], ", "];
@@ -312,3 +316,7 @@ else if constexpr (std::is_same_v<NT, autodiff::real>)
     ];
 
 End[]
+
+EndPackage[]
+
+(* Internal functions added here with Internal`*::usage *)
