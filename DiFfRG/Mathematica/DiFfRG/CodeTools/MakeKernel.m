@@ -1,6 +1,6 @@
 (* Exported symbols added here with SymbolName::usage *)
 
-BeginPackage["MakeKernel`"]
+BeginPackage["DiFfRG`CodeTools`MakeKernel`"]
 
 MakeKernel::usage = "MakeKernel[args] computes the kernel with given arguments.";
 
@@ -10,11 +10,11 @@ MakeKernel::InvalidSpec = "The given kernel specification is invalid.";
 
 Begin["`Private`"]
 
-ClearAll[appendDefaultAssociation]
+Needs["DiFfRG`CodeTools`Utils`"]
 
-appendDefaultAssociation[config_] :=
-    Merge[{config, <|"Type" -> "double", "Reference" -> True, "Const"
-         -> True|>}, First];
+Needs["DiFfRG`CodeTools`Directory`"]
+
+Needs["DiFfRG`CodeTools`Export`"]
 
 ClearAll[MakeKernel]
 
@@ -45,7 +45,7 @@ MakeKernel[kernelExpr_, constExpr_, spec_Association, parameters_List,
          tparams = <|"Name" -> "...t", "Type" -> "auto&&", "Reference" -> False,
          "Const" -> False|>, kernelDefs = OptionValue["KernelDefinitions"], coordinates
          = OptionValue["Coordinates"], regulator, params, paramsAD, i, arguments,
-         outputPath, sources, appendDefaultAssociation},
+         outputPath, sources},
         If[Not @ KernelSpecQ[spec],
             Message[MakeKernel::InvalidSpec];
             Abort[]
@@ -69,20 +69,8 @@ MakeKernel[kernelExpr_, constExpr_, spec_Association, parameters_List,
             }, "Body" -> {"namespace DiFfRG {", kernelClass, "} using DiFfRG::" <>
              spec["Name"] <> "_kernel;"}];
         params = FunKit`Private`prepParam /@ parameters;
-        paramsAD = {};
-        For[i = 1, i <= Length[params], i++,
-            params[[i]] = appendDefaultAssociation[params[[i]]];
-            paramsAD =
-                Append[
-                    paramsAD
-                    ,
-                    Module[{typeAD},
-                        typeAD = params[[i]]["Type"] /. $ADReplacements
-                            ;
-                        Append[params[[i]], "Type" -> typeAD];
-                    ]
-                ];
-        ];
+        {params, paramsAD} = processParameters[params, $ADReplacements
+            ];
         arguments = StringRiffle[Map[#["Name"]&, params], ", "];
         integratorTemplateParams = {};
         If[KeyExistsQ[spec, "d"] && spec["d"] =!= None,

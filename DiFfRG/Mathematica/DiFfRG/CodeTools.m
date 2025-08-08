@@ -12,7 +12,8 @@
 
 (*Setup and exports*)
 
-BeginPackage["DiFfRG`CodeTools`"];
+BeginPackage["DiFfRG`CodeTools`", {"DiFfRG`CodeTools`MakeKernel`", "DiFfRG`CodeTools`Directory`",
+   "DiFfRG`CodeTools`Export`"}]; (* TODO: Remove the export function from here later on *)
 
 Unprotect["DiFfRG`CodeTools`*"];
 
@@ -20,14 +21,8 @@ ClearAll["DiFfRG`CodeTools`*"];
 
 ClearAll["DiFfRG`CodeTools`Private`*"];
 
-UpdateFlows::usage = "";
-
 FlowKernel::usage = "FlowKernel[expr_,name_String,NT_String:\"auto\",addprefix_String:\"\"]
 Makes an equation into a lambda expression - of limited usefulness, but can be used together with LoopIntegrals::integrate and similar functions.";
-
-ExportCode::usage = "ExportCode[fileName_String,expression_String]
-Writes the given expression to disk and runs clang-format on it.
-";
 
 CodeForm::usage = "CodeForm[expr_]
 Obtain properly formatted and processed C++ code from an expression.";
@@ -49,12 +44,6 @@ If so, simply add the flow directory in the parent directory of the flow directo
 Thus, to compile the flows, simply add them as source files:
     add_executable(QCD QCD.cc ${flow_sources})";
 
-SetFlowDirectory::usage = "SetFlowDirectory[dir]
-Set the current flow directory, i.e. where all generated files are saved. Default is ./flows/";
-
-ShowFlowDirectory::usage = "ShowFlowDirectory[]
-Show the current flow directory, i.e. where all generated files are saved. Default is ./flows/";
-
 MakeFlowClass::usage = "MakeFlowClass[name_String,kernels_List]
 This creates a file flows.hh inside the flow directory, containing a class with the specified name, as well as several other files. All defined kernels have a corresponding integrator object in this class.
 Automatically calls MakeCMakeFile with the passed list of kernels.";
@@ -62,11 +51,6 @@ Automatically calls MakeCMakeFile with the passed list of kernels.";
 MakeFlowClassFiniteT::usage = "MakeFlowClassFiniteT[name_String,kernels_List]
 This creates a file flows.hh inside the flow directory, containing a class with the specified name, as well as several other files. All defined kernels have a corresponding integrator object in this class.
 Automatically calls MakeCMakeFile wiht the passed list of kernels.";
-
-(* MakeKernel::usage = "MakeKernel[kernel_Association, parameterList_List,integrandFlow_,constantFlow_:0., integrandDefinitions_String:\"\", constantDefinitions_String:\"\"]
-Make a kernel from a given flow equation, parmeter list and kernel. The kernel must be a valid specification of an integration kernel.
-This Function creates an integrator that evaluates (constantFlow + \[Integral]integrandFlow). One can prepend additional c++ definitions to the flow equation by using the integrandDefinitions and constantDefinitions parameters. 
-These are prepended to the respective methods of the integration kernel, allowing one to e.g. define specific angles one needs for the flow code."; *)
 
 DeclareSymmetricPoints4DP4::usage = "DeclareSymmetricPoints4DP4[]
 Obtain C++ code declaring angles for a four-point symmetric configuration in 4D.
@@ -142,17 +126,15 @@ Add a recognized parameter to the list of useable kernel parameter types.
 
 SetCodeParser::usage = "";
 
-$DiFfRGDirectory = SelectFirst[Join[{FileNameJoin[{$UserBaseDirectory,
-   "Applications", "DiFfRG"}], FileNameJoin[{$BaseDirectory, "Applications",
-   "DiFfRG"}], FileNameJoin[{$InstallationDirectory, "AddOns", "Applications",
-   "DiFfRG"}], FileNameJoin[{$InstallationDirectory, "AddOns", "Packages",
-   "DiFfRG"}], FileNameJoin[{$InstallationDirectory, "AddOns", "ExtraPackages",
-   "DiFfRG"}]}, Select[$Path, StringContainsQ[#, "DiFfRG"]&]], DirectoryQ[
-  #]&] <> "/";
-
-Get[FileNameJoin[{$DiFfRGDirectory, "modules", "MakeKernel.m"}]]
+$CodeToolsDirectory = DirectoryName[$InputFileName];
 
 Begin["`Private`"];
+
+Needs["DiFfRG`CodeTools`MakeKernel`"];
+
+(* ::Section::Closed:: *)
+
+(* Set the default flow directory *)
 
 (* ::Chapter::Closed:: *)
 
@@ -178,38 +160,6 @@ SafeFiniteTFunctions[expr_, T_] :=
 (* ::Chapter::Closed:: *)
 
 (*General Definitions and structural methods*)
-
-(* ::Section::Closed:: *)
-
-(*Folder setup*)
-
-(* ::Input::Initialization:: *)
-
-flowName = "flows";
-
-flowDir :=
-  If[$Notebooks,
-      NotebookDirectory[]
-      ,
-      Directory[]
-    ] <> flowName <> "/";
-
-SetFlowName[name_String] :=
-  Module[{},
-    flowName = name
-  ]
-
-ShowFlowDirectory[] :=
-  Print[                   "\!\(\*
-StyleBox[\"DiFfRG\",\nFontWeight->\"Bold\"]\)\!\(\*
-StyleBox[\" \",\nFontWeight->\"Bold\"]\)\!\(\*
-StyleBox[\"CodeTools\",\nFontWeight->\"Bold\"]\)\!\(\*
-StyleBox[\":\",\nFontWeight->\"Bold\"]\) Flow output directory is set to \n        "
-     <> flowDir <> "\nThis can be modified by using \!\(\*
-StyleBox[\"SetFlowName\",\nFontColor->RGBColor[1, 0.5, 0]]\)[\"YourNewName\"]"
-    ]
-
-ShowFlowDirectory[]
 
 (* ::Section:: *)
 
@@ -494,26 +444,6 @@ getRegulator[name_, {optName_, optDef_}] :=
     Return[FunKit`FormatCode[ret]];
   ];
 
-ExportCode::WrongSyntax = "Incorrect arguments for ExportCode: `1`";
-
-ExportCode[b___] :=
-  (
-    Message[ExportCode::WrongSyntax, {b}];
-    Abort[]
-  )
-
-ExportCode[fileName_, content_] :=
-  Module[{},
-    If[FileExistsQ[fileName],
-      If[Import[fileName, "Text"] === content,
-        Print[fileName <> " unchanged"];
-        Return[]
-      ];
-    ];
-    Export[fileName, content, "Text"];
-    Print["Exported to \"" <> fileName <> "\""];
-  ];
-
 updateCMake[varName_:"Flows"] :=
   Module[{folders, sources, cmake, fileName = flowDir <> "CMakeLists.txt",
      flowFolderName},
@@ -609,4 +539,4 @@ Protect["DiFfRG`CodeTools`*"];
 
 End[];
 
-EndPackage[];
+EndPackage[]

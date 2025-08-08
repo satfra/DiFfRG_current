@@ -45,7 +45,9 @@ If[Length @ PacletFind["FunKit"] === 0,
 
 Get["FunKit`"]
 
-Get["DiFfRG`CodeTools`"];
+Needs["DiFfRG`CodeTools`"];
+
+ShowFlowDirectory[] // Print;
 
 (* ::Section:: *)
 
@@ -588,7 +590,22 @@ ProjectToSymmetricPoint[expr_, q_Symbol, p_Symbol, momenta___Symbol] :=
 			Map[conv @ TBsp[#, qf] -> Symbol["cos" ~~ ToString[#] ~~ "q"] p qf&, 
 			momentaList]
 		(*\[Union]{momentaList[[nMomenta]]->-Total[momentaList[[1;;nMomenta-1]]]}
-			*);
+			
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    *);
 		(UseLorentzLinearity[expr] //. rules // UseLorentzLinearity) //. rules
 			
 	]
@@ -607,7 +624,22 @@ ProjectToSymmetricPointFiniteT[expr_, q_Symbol, p_Symbol, momenta___Symbol
 			 Map[conv @ TBsps[#, qf] -> Symbol["cos" ~~ ToString[#] ~~ "q"] p qf&,
 			 momentaList]
 		(*\[Union]{momentaList[[nMomenta]]->-Total[momentaList[[1;;nMomenta-1]]]}
-			*);
+			
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    *);
 		(SeparateScalarProductsFiniteT[UseLorentzLinearity[expr]] //. rules
 			 // UseLorentzLinearity) //. rules
 	]
