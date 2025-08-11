@@ -24,7 +24,6 @@ namespace DiFfRG
     /**
      * @brief Construct a SplineInterpolator1D with internal, zeroed data and a coordinate system.
      *
-     * @param size size of the internal data
      * @param coordinates coordinate system of the data
      */
     SplineInterpolator1D(const Coordinates &coordinates) : coordinates(coordinates), size(coordinates.size())

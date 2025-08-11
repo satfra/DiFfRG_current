@@ -26,6 +26,7 @@ ClearAll["DiFfRG`CodeTools`Private`*"];
 
 
 UpdateFlows::usage="";
+GetStandardKernelDefinitions::usage=""
 
 
 FlowKernel::usage = "FlowKernel[expr_,name_String,NT_String:\"auto\",addprefix_String:\"\"]
@@ -153,7 +154,7 @@ StyleBox[\"SetFlowName\",\nFontColor->RGBColor[1, 0.5, 0]]\)[\"YourNewName\"]"]
 ShowFlowDirectory[]
 
 
-DeclareAnglesP34Dpqr[q_,p_,r_,computeType_String:"double"]:=Module[
+DeclareAnglesP34Dpqr[q_,p_,r_,cos1_:Symbol@"cos1",cos2_:Symbol@"cos2",phi_:Symbol@"phi",computeType_String:"double"]:=Module[
 {vec4,Vectorp,Vectorr,Vectorq,cos,
 Resultcospq,Resultcosqr,namecospq,namecosqr,
 code,file},
@@ -163,7 +164,7 @@ SetAttributes[cos,Orderless];
 
 Vectorp=vec4[0,0,0];
 Vectorr=vec4[ArcCos[cos[p,r]],0,0];
-Vectorq=vec4[ArcCos[Symbol["cos1"]],ArcCos[Symbol["cos2"]],Symbol["phi"]];
+Vectorq=vec4[ArcCos[Symbol@SymbolName@cos1],ArcCos[Symbol@SymbolName@cos2],Symbol@SymbolName@phi];
 
 Resultcospq=Vectorq . Vectorp//.cos[a_,b_]:>Symbol["cos"<>ToString[a]<>ToString[b]]//FullSimplify;
 Resultcosqr=Vectorq . Vectorr//.cos[a_,b_]:>Symbol["cos"<>ToString[a]<>ToString[b]]//FullSimplify;
@@ -178,7 +179,7 @@ Return[code];
 
 
 (* ::Input::Initialization:: *)
-DeclareSymmetricPoints4DP4[computeType_String:"double"]:=Module[
+DeclareSymmetricPoints4DP4[q_,p_,{p1_,p2_,p3_,p4_},cos1_:Symbol@"cos1",cos2_:Symbol@"cos2",phi_:Symbol@"phi",computeType_String:"double"]:=Module[
 {vec4,sanity,Vectors4DSP4,
 SymmetricPoint4DP4cosp1,SymmetricPoint4DP4cosp2,SymmetricPoint4DP4cosp3,SymmetricPoint4DP4cosp4,SymmetricPoint4DP4Code
 },
@@ -189,20 +190,21 @@ Vectors4DSP4={vec4[\[Pi]/2,0,0],vec4[\[Pi]/2,ArcCos[-(1/3)],0],vec4[\[Pi]/2,ArcC
 sanity=Map[Vectors4DSP4[[#[[1]]]] . Vectors4DSP4[[#[[2]]]]&,Subsets[{1,2,3,4},{2}]];
 If[Not@AllTrue[(sanity//N),#==(-(1/3)//N)&],Print["Sanity check failed!"];Abort[];];
 
-SymmetricPoint4DP4cosp1=vec4[ArcCos[Symbol["cos1"]],ArcCos[Symbol["cos2"]],Symbol["phi"]] . Vectors4DSP4[[1]]//FullSimplify;
-SymmetricPoint4DP4cosp2=vec4[ArcCos[Symbol["cos1"]],ArcCos[Symbol["cos2"]],Symbol["phi"]] . Vectors4DSP4[[2]]//FullSimplify;
-SymmetricPoint4DP4cosp3=vec4[ArcCos[Symbol["cos1"]],ArcCos[Symbol["cos2"]],Symbol["phi"]] . Vectors4DSP4[[3]]//FullSimplify;
-SymmetricPoint4DP4cosp4=vec4[ArcCos[Symbol["cos1"]],ArcCos[Symbol["cos2"]],Symbol["phi"]] . Vectors4DSP4[[4]]//FullSimplify;
+SymmetricPoint4DP4cosp1=vec4[ArcCos[Symbol@SymbolName@cos1],ArcCos[Symbol@SymbolName@cos2],Symbol@SymbolName@phi] . Vectors4DSP4[[1]]//FullSimplify;
+SymmetricPoint4DP4cosp2=vec4[ArcCos[Symbol@SymbolName@cos1],ArcCos[Symbol@SymbolName@cos2],Symbol@SymbolName@phi] . Vectors4DSP4[[2]]//FullSimplify;
+SymmetricPoint4DP4cosp3=vec4[ArcCos[Symbol@SymbolName@cos1],ArcCos[Symbol@SymbolName@cos2],Symbol@SymbolName@phi] . Vectors4DSP4[[3]]//FullSimplify;
+SymmetricPoint4DP4cosp4=vec4[ArcCos[Symbol@SymbolName@cos1],ArcCos[Symbol@SymbolName@cos2],Symbol@SymbolName@phi] . Vectors4DSP4[[4]]//FullSimplify;
 
-SymmetricPoint4DP4Code="const "<>computeType<>" cosp1q = "<>FunKit`CppForm[SymmetricPoint4DP4cosp1]<>";\n"<>
-"const "<>computeType<>" cosp2q = "<>FunKit`CppForm[SymmetricPoint4DP4cosp2]<>";\n"<>
-"const "<>computeType<>" cosp3q = "<>FunKit`CppForm[SymmetricPoint4DP4cosp3]<>";\n"<>
-"const "<>computeType<>" cosp4q = "<>FunKit`CppForm[SymmetricPoint4DP4cosp4]<>";";
+SymmetricPoint4DP4Code=
+   "const "<>computeType<>" cos"<>StringJoin@(ToString/@Sort[{q,p1}])<>" = "<>FunKit`CppForm[SymmetricPoint4DP4cosp1]<>";\n"<>
+"const "<>computeType<>" cos"<>StringJoin@(ToString/@Sort[{q,p2}])<>" = "<>FunKit`CppForm[SymmetricPoint4DP4cosp2]<>";\n"<>
+"const "<>computeType<>" cos"<>StringJoin@(ToString/@Sort[{q,p3}])<>" = "<>FunKit`CppForm[SymmetricPoint4DP4cosp3]<>";\n"<>
+"const "<>computeType<>" cos"<>StringJoin@(ToString/@Sort[{q,p4}])<>" = "<>FunKit`CppForm[SymmetricPoint4DP4cosp4]<>";";
 Return[SymmetricPoint4DP4Code];
 ];
 
 
-DeclareSymmetricPoints4DP3[computeType_String:"double"]:=Module[
+DeclareSymmetricPoints4DP3[q_,p_,{p1_,p2_,p3_},cos1_:Symbol@"cos1",cos2_:Symbol@"cos2",phi_:Symbol@"phi",computeType_String:"double"]:=Module[
 {vec4,Vectors4DSP3,sanity,
 SymmetricPoint4DP3cosp1,SymmetricPoint4DP3cosp2,SymmetricPoint4DP3cosp3,SymmetricPoint4DP3Code
 },
@@ -213,19 +215,20 @@ Vectors4DSP3={vec4[0,0,0],vec4[(2\[Pi])/3,0,0],vec4[(2\[Pi])/3,\[Pi],0]};
 sanity=Map[Vectors4DSP3[[#[[1]]]] . Vectors4DSP3[[#[[2]]]]&,Subsets[{1,2,3},{2}]];
 If[Not@AllTrue[(sanity//N),#==(-(1/2)//N)&],Print["Sanity check failed!"];Abort[];];
 
-SymmetricPoint4DP3cosp1=vec4[ArcCos[Symbol["cos1"]],ArcCos[Symbol["cos2"]],Symbol["phi"]] . Vectors4DSP3[[1]]//FullSimplify;
-SymmetricPoint4DP3cosp2=vec4[ArcCos[Symbol["cos1"]],ArcCos[Symbol["cos2"]],Symbol["phi"]] . Vectors4DSP3[[2]]//FullSimplify;
-SymmetricPoint4DP3cosp3=vec4[ArcCos[Symbol["cos1"]],ArcCos[Symbol["cos2"]],Symbol["phi"]] . Vectors4DSP3[[3]]//FullSimplify;
+SymmetricPoint4DP3cosp1=vec4[ArcCos[Symbol@SymbolName@cos1],ArcCos[Symbol@SymbolName@cos2],Symbol@SymbolName@phi] . Vectors4DSP3[[1]]//FullSimplify;
+SymmetricPoint4DP3cosp2=vec4[ArcCos[Symbol@SymbolName@cos1],ArcCos[Symbol@SymbolName@cos2],Symbol@SymbolName@phi] . Vectors4DSP3[[2]]//FullSimplify;
+SymmetricPoint4DP3cosp3=vec4[ArcCos[Symbol@SymbolName@cos1],ArcCos[Symbol@SymbolName@cos2],Symbol@SymbolName@phi] . Vectors4DSP3[[3]]//FullSimplify;
 
-SymmetricPoint4DP3Code="const "<>computeType<>" cosp1q = "<>FunKit`CppForm[SymmetricPoint4DP3cosp1]<>";\n"<>
-"const "<>computeType<>" cosp2q = "<>FunKit`CppForm[SymmetricPoint4DP3cosp2]<>";\n"<>
-"const "<>computeType<>" cosp3q = "<>FunKit`CppForm[SymmetricPoint4DP3cosp3]<>";";
+SymmetricPoint4DP3Code=
+   "const "<>computeType<>" cos"<>StringJoin@(ToString/@Sort[{q,p1}])<>" = "<>FunKit`CppForm[SymmetricPoint4DP3cosp1]<>";\n"<>
+"const "<>computeType<>" cos"<>StringJoin@(ToString/@Sort[{q,p2}])<>" = "<>FunKit`CppForm[SymmetricPoint4DP3cosp2]<>";\n"<>
+"const "<>computeType<>" cos"<>StringJoin@(ToString/@Sort[{q,p3}])<>" = "<>FunKit`CppForm[SymmetricPoint4DP3cosp3]<>";";
 Return[SymmetricPoint4DP3Code];
 ];
 
 
 (* ::Input::Initialization:: *)
-DeclareSymmetricPoints3DP3[computeType_String:"double"]:=Module[
+DeclareSymmetricPoints3DP3[q_,p_,{p1_,p2_,p3_},cos1_:Symbol@"cos1",phi_:Symbol@"phi",computeType_String:"double"]:=Module[
 {vec3,Vectors3DSP3,sanity,
 SymmetricPoint3DP3cosp1,SymmetricPoint3DP3cosp2,SymmetricPoint3DP3cosp3,SymmetricPoint3DP3Code
 },
@@ -236,18 +239,19 @@ Vectors3DSP3={vec3[\[Pi]/2,0],vec3[\[Pi]/2,1 (2\[Pi])/3],vec3[\[Pi]/2,2 (2\[Pi])
 sanity=Map[Vectors3DSP3[[#[[1]]]] . Vectors3DSP3[[#[[2]]]]&,Subsets[{1,2,3},{2}]];
 If[Not@AllTrue[(sanity//N),#==(-(1/2)//N)&],Print["Sanity check failed!"];Abort[];];
 
-SymmetricPoint3DP3cosp1=vec3[ArcCos[Symbol["cos1"]],Symbol["phi"]] . Vectors3DSP3[[1]]//FullSimplify;
-SymmetricPoint3DP3cosp2=vec3[ArcCos[Symbol["cos1"]],Symbol["phi"]] . Vectors3DSP3[[2]]//FullSimplify;
-SymmetricPoint3DP3cosp3=vec3[ArcCos[Symbol["cos1"]],Symbol["phi"]] . Vectors3DSP3[[3]]//FullSimplify;
+SymmetricPoint3DP3cosp1=vec3[ArcCos[Symbol@SymbolName@cos1],Symbol@SymbolName@phi] . Vectors3DSP3[[1]]//FullSimplify;
+SymmetricPoint3DP3cosp2=vec3[ArcCos[Symbol@SymbolName@cos1],Symbol@SymbolName@phi] . Vectors3DSP3[[2]]//FullSimplify;
+SymmetricPoint3DP3cosp3=vec3[ArcCos[Symbol@SymbolName@cos1],Symbol@SymbolName@phi] . Vectors3DSP3[[3]]//FullSimplify;
 
-SymmetricPoint3DP3Code="const "<>computeType<>" cosp1q = "<>FunKit`CppForm[SymmetricPoint3DP3cosp1]<>";\n"<>
-"const "<>computeType<>" cosp2q = "<>FunKit`CppForm[SymmetricPoint3DP3cosp2]<>";\n"<>
-"const "<>computeType<>" cosp3q = "<>FunKit`CppForm[SymmetricPoint3DP3cosp3]<>";";
+SymmetricPoint3DP3Code=
+   "const "<>computeType<>" cos"<>StringJoin@(ToString/@Sort[{q,p1}])<>" = "<>FunKit`CppForm[SymmetricPoint3DP3cosp1]<>";\n"<>
+"const "<>computeType<>" cos"<>StringJoin@(ToString/@Sort[{q,p2}])<>" = "<>FunKit`CppForm[SymmetricPoint3DP3cosp2]<>";\n"<>
+"const "<>computeType<>" cos"<>StringJoin@(ToString/@Sort[{q,p3}])<>" = "<>FunKit`CppForm[SymmetricPoint3DP3cosp3]<>";";
 Return[SymmetricPoint3DP3Code];
 ];
 
 
-DeclareSymmetricPoints3DP4[computeType_String:"double"]:=Module[
+DeclareSymmetricPoints3DP4[q_,p_,{p1_,p2_,p3_,p4_},cos1_:Symbol@"cos1",phi_:Symbol@"phi",computeType_String:"double"]:=Module[
 {vec3,sanity,Vectors3DSP4,
 SymmetricPoint3DP4cosp1,SymmetricPoint3DP4cosp2,SymmetricPoint3DP4cosp3,SymmetricPoint3DP4cosp4,SymmetricPoint3DP4Code
 },
@@ -258,21 +262,22 @@ Vectors3DSP4={vec3[0,0],vec3[ArcCos[-(1/3)],0],vec3[ArcCos[-(1/3)],1 (2\[Pi])/3]
 sanity=Map[Vectors3DSP4[[#[[1]]]] . Vectors3DSP4[[#[[2]]]]&,Subsets[{1,2,3,4},{2}]];
 If[Not@AllTrue[(sanity//N),#==(-(1/3)//N)&],Print["Sanity check failed!"];Abort[];];
 
-SymmetricPoint3DP4cosp1=vec3[ArcCos[Symbol["cos1"]],Symbol["phi"]] . Vectors3DSP4[[1]]//FullSimplify;
-SymmetricPoint3DP4cosp2=vec3[ArcCos[Symbol["cos1"]],Symbol["phi"]] . Vectors3DSP4[[2]]//FullSimplify;
-SymmetricPoint3DP4cosp3=vec3[ArcCos[Symbol["cos1"]],Symbol["phi"]] . Vectors3DSP4[[3]]//FullSimplify;
-SymmetricPoint3DP4cosp4=vec3[ArcCos[Symbol["cos1"]],Symbol["phi"]] . Vectors3DSP4[[4]]//FullSimplify;
+SymmetricPoint3DP4cosp1=vec3[ArcCos[Symbol@SymbolName@cos1],Symbol@SymbolName@phi] . Vectors3DSP4[[1]]//FullSimplify;
+SymmetricPoint3DP4cosp2=vec3[ArcCos[Symbol@SymbolName@cos1],Symbol@SymbolName@phi] . Vectors3DSP4[[2]]//FullSimplify;
+SymmetricPoint3DP4cosp3=vec3[ArcCos[Symbol@SymbolName@cos1],Symbol@SymbolName@phi] . Vectors3DSP4[[3]]//FullSimplify;
+SymmetricPoint3DP4cosp4=vec3[ArcCos[Symbol@SymbolName@cos1],Symbol@SymbolName@phi] . Vectors3DSP4[[4]]//FullSimplify;
 
-SymmetricPoint3DP4Code="const "<>computeType<>" cosp1q = "<>FunKit`CppForm[SymmetricPoint3DP4cosp1]<>";\n"<>
-"const "<>computeType<>" cosp2q = "<>FunKit`CppForm[SymmetricPoint3DP4cosp2]<>";\n"<>
-"const "<>computeType<>" cosp3q = "<>FunKit`CppForm[SymmetricPoint3DP4cosp3]<>";\n"<>
-"const "<>computeType<>" cosp4q = "<>FunKit`CppForm[SymmetricPoint3DP4cosp4]<>";";
+SymmetricPoint3DP4Code=
+   "const "<>computeType<>" cos"<>StringJoin@(ToString/@Sort[{q,p1}])<>" = "<>FunKit`CppForm[SymmetricPoint3DP4cosp1]<>";\n"<>
+"const "<>computeType<>" cos"<>StringJoin@(ToString/@Sort[{q,p2}])<>" = "<>FunKit`CppForm[SymmetricPoint3DP4cosp2]<>";\n"<>
+"const "<>computeType<>" cos"<>StringJoin@(ToString/@Sort[{q,p3}])<>" = "<>FunKit`CppForm[SymmetricPoint3DP4cosp3]<>";\n"<>
+"const "<>computeType<>" cos"<>StringJoin@(ToString/@Sort[{q,p4}])<>" = "<>FunKit`CppForm[SymmetricPoint3DP4cosp4]<>";";
 Return[SymmetricPoint3DP4Code];
 ];
 
 
 (* ::Input::Initialization:: *)
-DeclareSymmetricPoints2DP3[computeType_String:"double"]:=Module[
+DeclareSymmetricPoints2DP3[q_,p_,{p1_,p2_,p3_},cos1_:Symbol@"cos1",computeType_String:"double"]:=Module[
 {vec2,Vectors3DSP3,sanity,
 SymmetricPoint3DP3cosp1,SymmetricPoint3DP3cosp2,SymmetricPoint3DP3cosp3,SymmetricPoint3DP3Code
 },
@@ -283,18 +288,19 @@ Vectors3DSP3={vec2[0],vec2[1 (2\[Pi])/3],vec2[2 (2\[Pi])/3]};
 sanity=Map[Vectors3DSP3[[#[[1]]]] . Vectors3DSP3[[#[[2]]]]&,Subsets[{1,2,3},{2}]];
 If[Not@AllTrue[(sanity//N),#==(-(1/2)//N)&],Print["Sanity check failed!"];Abort[];];
 
-SymmetricPoint3DP3cosp1=vec2[ArcCos[Symbol["cos1"]]] . Vectors3DSP3[[1]]//FullSimplify;
-SymmetricPoint3DP3cosp2=vec2[ArcCos[Symbol["cos1"]]] . Vectors3DSP3[[2]]//FullSimplify;
-SymmetricPoint3DP3cosp3=vec2[ArcCos[Symbol["cos1"]]] . Vectors3DSP3[[3]]//FullSimplify;
+SymmetricPoint3DP3cosp1=vec2[ArcCos[Symbol@SymbolName@cos1]] . Vectors3DSP3[[1]]//FullSimplify;
+SymmetricPoint3DP3cosp2=vec2[ArcCos[Symbol@SymbolName@cos1]] . Vectors3DSP3[[2]]//FullSimplify;
+SymmetricPoint3DP3cosp3=vec2[ArcCos[Symbol@SymbolName@cos1]] . Vectors3DSP3[[3]]//FullSimplify;
 
-SymmetricPoint3DP3Code="const "<>computeType<>" cosp1q = "<>FunKit`CppForm[SymmetricPoint3DP3cosp1]<>";\n"<>
-"const "<>computeType<>" cosp2q = "<>FunKit`CppForm[SymmetricPoint3DP3cosp2]<>";\n"<>
-"const "<>computeType<>" cosp3q = "<>FunKit`CppForm[SymmetricPoint3DP3cosp3]<>";";
+SymmetricPoint3DP3Code=
+   "const "<>computeType<>" cos"<>StringJoin@(ToString/@Sort[{q,p1}])<>" = "<>FunKit`CppForm[SymmetricPoint3DP3cosp1]<>";\n"<>
+"const "<>computeType<>" cos"<>StringJoin@(ToString/@Sort[{q,p2}])<>" = "<>FunKit`CppForm[SymmetricPoint3DP3cosp2]<>";\n"<>
+"const "<>computeType<>" cos"<>StringJoin@(ToString/@Sort[{q,p3}])<>" = "<>FunKit`CppForm[SymmetricPoint3DP3cosp3]<>";";
 Return[SymmetricPoint3DP3Code];
 ];
 
 
-DeclareSymmetricPoints2DP4[computeType_String:"double"]:=Module[
+DeclareSymmetricPoints2DP4[q_,p_,{p1_,p2_,p3_,p4_},cos1_:Symbol@"cos1",computeType_String:"double"]:=Module[
 {vec2,sanity,Vectors3DSP4,
 SymmetricPoint3DP4cosp1,SymmetricPoint3DP4cosp2,SymmetricPoint3DP4cosp3,SymmetricPoint3DP4cosp4,SymmetricPoint3DP4Code
 },
@@ -304,26 +310,26 @@ vec2[\[CapitalTheta]_]:={Cos[\[CapitalTheta]],Sin[\[CapitalTheta]]};
 Vectors3DSP4={vec2[0],vec2[1 (2\[Pi])/4],vec2[2 (2\[Pi])/4],vec2[3 (2\[Pi])/4]};
 sanity=Map[Vectors3DSP4[[#[[1]]]] . Vectors3DSP4[[#[[2]]]]&,Subsets[{1,2,3,4},{2}]];
 
-SymmetricPoint3DP4cosp1=vec2[ArcCos[Symbol["cos1"]]] . Vectors3DSP4[[1]]//FullSimplify;
-SymmetricPoint3DP4cosp2=vec2[ArcCos[Symbol["cos1"]]] . Vectors3DSP4[[2]]//FullSimplify;
-SymmetricPoint3DP4cosp3=vec2[ArcCos[Symbol["cos1"]]] . Vectors3DSP4[[3]]//FullSimplify;
-SymmetricPoint3DP4cosp4=vec2[ArcCos[Symbol["cos1"]]] . Vectors3DSP4[[4]]//FullSimplify;
+SymmetricPoint3DP4cosp1=vec2[ArcCos[Symbol@SymbolName@cos1]] . Vectors3DSP4[[1]]//FullSimplify;
+SymmetricPoint3DP4cosp2=vec2[ArcCos[Symbol@SymbolName@cos1]] . Vectors3DSP4[[2]]//FullSimplify;
+SymmetricPoint3DP4cosp3=vec2[ArcCos[Symbol@SymbolName@cos1]] . Vectors3DSP4[[3]]//FullSimplify;
+SymmetricPoint3DP4cosp4=vec2[ArcCos[Symbol@SymbolName@cos1]] . Vectors3DSP4[[4]]//FullSimplify;
 
-SymmetricPoint3DP4Code="const "<>computeType<>" cosp1q = "<>FunKit`CppForm[SymmetricPoint3DP4cosp1]<>";\n"<>
-"const "<>computeType<>" cosp2q = "<>FunKit`CppForm[SymmetricPoint3DP4cosp2]<>";\n"<>
-"const "<>computeType<>" cosp3q = "<>FunKit`CppForm[SymmetricPoint3DP4cosp3]<>";\n"<>
-"const "<>computeType<>" cosp4q = "<>FunKit`CppForm[SymmetricPoint3DP4cosp4]<>";";
+SymmetricPoint3DP4Code=
+   "const "<>computeType<>" cos"<>StringJoin@(ToString/@Sort[{q,p1}])<>" = "<>FunKit`CppForm[SymmetricPoint3DP4cosp1]<>";\n"<>
+"const "<>computeType<>" cos"<>StringJoin@(ToString/@Sort[{q,p2}])<>" = "<>FunKit`CppForm[SymmetricPoint3DP4cosp2]<>";\n"<>
+"const "<>computeType<>" cos"<>StringJoin@(ToString/@Sort[{q,p3}])<>" = "<>FunKit`CppForm[SymmetricPoint3DP4cosp3]<>";\n"<>
+"const "<>computeType<>" cos"<>StringJoin@(ToString/@Sort[{q,p4}])<>" = "<>FunKit`CppForm[SymmetricPoint3DP4cosp4]<>";";
 Return[SymmetricPoint3DP4Code];
 ];
-
-
-(*Block[{Print},Get["FunKit`"]]*)
 
 
 $PredefRegFunc={"RB","RF","RBdot","RFdot","dq2RB","dq2RF"};
 $StandardKernelDefinitions=Map[
 FunKit`MakeCppFunction["Name"->#,"Body"->"return Regulator::"<>#<>"(k2, p2);","Prefix"->"static KOKKOS_FORCEINLINE_FUNCTION","Suffix"->"","Parameters"->{"k2","p2"}]&,
 $PredefRegFunc];
+
+GetStandardKernelDefinitions[]:=$StandardKernelDefinitions
 
 
 DiFfRG::MissingKey="The key \"`1`\" is missing.";
@@ -516,7 +522,7 @@ $ADReplacementsDirect={"double"->"autodiff::real"};
 MakeKernel[__]:=(Message[MakeKernel::Invalid];Abort[]);
 MakeKernel[kernelExpr_,spec_Association,parameters_List,OptionsPattern[]]:=MakeKernel@@(Join[{kernelExpr,0,spec,parameters},Thread[Rule@@{#,OptionValue[MakeKernel,#]}]&@Keys[Options[MakeKernel]]]);
 MakeKernel[kernelExpr_,constExpr_,spec_Association,parameters_List,OptionsPattern[]]:=Module[
-{expr,const,
+{expr,const,exec,
 kernel,constant,kernelClass,kernelHeader,
 integratorHeader,integratorCpp,integratorTemplateParams,integratorADTemplateParams,
 tparams=<|"Name"->"...t","Type"->"auto&&","Reference"->False,"Const"->False|>,
@@ -624,12 +630,16 @@ getArgs[[i]]=Association[Normal@(getArgs[[i]])\[Union]{"Reference"->True}]
 preArguments=StringRiffle[Map[#["Name"]&,getArgs]];
 If[preArguments=!="",preArguments=preArguments<>", "];
 
+
+exec=If[KeyFreeQ[spec,"Device"]||FreeQ[{"GPU","Threads"},spec["Device"]],"DiFfRG::TBB_exec","DiFfRG::"<>spec["Device"]<>"_exec"];
+
 integratorTemplateParams={};
 If[KeyExistsQ[spec,"d"]&&spec["d"]=!=None,AppendTo[integratorTemplateParams,ToString[spec["d"]]]];
 If[KeyExistsQ[spec,"Type"],AppendTo[integratorTemplateParams,ToString[spec["Type"]]],AppendTo[integratorTemplateParams,"double"]];
 AppendTo[integratorTemplateParams,spec["Name"]<>"_kernel<Regulator>"];
-AppendTo[integratorTemplateParams,If[KeyFreeQ[spec,"Device"]||FreeQ[{"GPU","Threads"},spec["Device"]],"DiFfRG::TBB_exec","DiFfRG::"<>spec["Device"]<>"_exec"]];
+AppendTo[integratorTemplateParams,exec];
 integratorTemplateParams=StringRiffle[integratorTemplateParams,", "];
+
 
 integratorADTemplateParams={};
 If[KeyExistsQ[spec,"d"]&&spec["d"]=!=None,AppendTo[integratorADTemplateParams,ToString[spec["d"]]]];
@@ -658,10 +668,10 @@ spec["Integrator"]<>"<"<>integratorTemplateParams<>"> integrator;",
 If[spec["AD"],spec["Integrator"]<>"<"<>integratorADTemplateParams<>"> integrator_AD;",""]
 },
 Map[
-FunKit`MakeCppFunction["Name"->"map","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"double*","Const"->False,"Reference"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},params]]&,
+FunKit`MakeCppFunction["Name"->"map","Return"->exec,"Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"double*","Const"->False,"Reference"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},params]]&,
 coordinates],
 If[Length[coordinates]>0,#,{}]&@{
-FunKit`MakeCppFunction["Name"->"map","Return"->"void","Body"->"device::apply([&](const auto...t){map(dest, coordinates, t...);}, args);","Parameters"->Join[
+FunKit`MakeCppFunction["Name"->"map","Return"->exec,"Body"->"return device::apply([&](const auto...t){return map(dest, coordinates, t...);}, args);","Parameters"->Join[
 {<|"Name"->"dest","Type"->"double*","Reference"->False,"Const"->False|>,
 <|"Name"->"coordinates","Reference"->True,"Type"->"C","Const"->True|>,
 <|"Name"->"args","Type"->"device::tuple<T...>","Reference"->True,"Const"->True|>}],
@@ -729,9 +739,9 @@ integratorCpp["CT","map"]=Map[FunKit`MakeCppBlock[
 "#include \"../"<>spec["Name"]<>".hh\"\n",
 FunKit`MakeCppFunction[
 "Name"->"map",
-"Return"->"void",
+"Return"->exec,
 "Class"->spec["Name"]<>"_integrator",
-"Body"->"integrator.map(dest, coordinates, "<>arguments<>");",
+"Body"->"return integrator.map(dest, coordinates, "<>arguments<>");",
 "Parameters"->Join[{<|"Name"->"dest","Type"->"double*","Const"->False,"Reference"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},params]
 ]
 }]&,coordinates];
@@ -741,9 +751,9 @@ integratorCpp["AD","map"]=Map[FunKit`MakeCppBlock[
 "#include \"../"<>spec["Name"]<>".hh\"\n",
 FunKit`MakeCppFunction[
 "Name"->"map",
-"Return"->"void",
+"Return"->exec,
 "Class"->spec["Name"]<>"_integrator",
-"Body"->"integrator_AD.map(dest, coordinates, "<>arguments<>");",
+"Body"->"return integrator_AD.map(dest, coordinates, "<>arguments<>");",
 "Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real*","Const"->False,"Reference"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},paramsAD]
 ]
 }]&,coordinates];
@@ -777,13 +787,6 @@ sources=Map[StringReplace[#,outputPath->"${CMAKE_CURRENT_SOURCE_DIR}/"<>spec["Na
 Export[outputPath<>"sources.m",sources];
 Print["Please run UpdateFlows[] to export an up-to-date CMakeLists.txt"];
 ];
-
-
-(*MakeKernel[1,1,
-<|"Name"->"AA","Integrator"->"DiFfRG::Integrator_p2","d"->4,"AD"->False,"Device"->"GPU","Type"->"double"|>,
-{"a"},
-"IntegrationVariables"->{"l1"}]
-UpdateFlows["ONFiniteTFlows"]*)
 
 
 Protect["DiFfRG`CodeTools`*"];

@@ -10,10 +10,10 @@
 NotebookFileLineBreakTest
 NotebookFileLineBreakTest
 NotebookDataPosition[       154,          7]
-NotebookDataLength[    183235,       4011]
-NotebookOptionsPosition[    177399,       3905]
-NotebookOutlinePosition[    178187,       3931]
-CellTagsIndexPosition[    178144,       3928]
+NotebookDataLength[    186611,       4122]
+NotebookOptionsPosition[    181807,       4030]
+NotebookOutlinePosition[    182595,       4056]
+CellTagsIndexPosition[    182552,       4053]
 WindowFrame->Normal*)
 
 (* Beginning of Notebook Content *)
@@ -56,13 +56,17 @@ Cell[BoxData[{
   3.932041593365497*^9}},ExpressionUUID->"61eeed29-b199-412c-9a91-\
 f659c54d031c"],
 
-Cell[BoxData[
+Cell[BoxData[{
  RowBox[{
   RowBox[{
-   RowBox[{"UpdateFlows", "::", "usage"}], "=", "\"\<\>\""}], ";"}]], "Input",\
-
- CellChangeTimes->{{3.960527781393551*^9, 
-  3.960527785977436*^9}},ExpressionUUID->"65d902ca-dcf6-4823-97a2-\
+   RowBox[{"UpdateFlows", "::", "usage"}], "=", "\"\<\>\""}], 
+  ";"}], "\[IndentingNewLine]", 
+ RowBox[{
+  RowBox[{"GetStandardKernelDefinitions", "::", "usage"}], "=", 
+  "\"\<\>\""}]}], "Input",
+ CellChangeTimes->{{3.960527781393551*^9, 3.960527785977436*^9}, {
+  3.9639140859361153`*^9, 
+  3.9639140909435368`*^9}},ExpressionUUID->"65d902ca-dcf6-4823-97a2-\
 46319b05d715"],
 
 Cell[BoxData[{
@@ -590,6 +594,12 @@ Cell[BoxData[
   RowBox[{
    RowBox[{"DeclareAnglesP34Dpqr", "[", 
     RowBox[{"q_", ",", "p_", ",", "r_", ",", 
+     RowBox[{"cos1_", ":", 
+      RowBox[{"Symbol", "@", "\"\<cos1\>\""}]}], ",", 
+     RowBox[{"cos2_", ":", 
+      RowBox[{"Symbol", "@", "\"\<cos2\>\""}]}], ",", 
+     RowBox[{"phi_", ":", 
+      RowBox[{"Symbol", "@", "\"\<phi\>\""}]}], ",", 
      RowBox[{"computeType_String", ":", "\"\<double\>\""}]}], "]"}], ":=", 
    RowBox[{"Module", "[", "\[IndentingNewLine]", 
     RowBox[{
@@ -638,10 +648,13 @@ Cell[BoxData[
        RowBox[{"vec4", "[", 
         RowBox[{
          RowBox[{"ArcCos", "[", 
-          RowBox[{"Symbol", "[", "\"\<cos1\>\"", "]"}], "]"}], ",", 
+          RowBox[{"Symbol", "@", 
+           RowBox[{"SymbolName", "@", "cos1"}]}], "]"}], ",", 
          RowBox[{"ArcCos", "[", 
-          RowBox[{"Symbol", "[", "\"\<cos2\>\"", "]"}], "]"}], ",", 
-         RowBox[{"Symbol", "[", "\"\<phi\>\"", "]"}]}], "]"}]}], ";", 
+          RowBox[{"Symbol", "@", 
+           RowBox[{"SymbolName", "@", "cos2"}]}], "]"}], ",", 
+         RowBox[{"Symbol", "@", 
+          RowBox[{"SymbolName", "@", "phi"}]}]}], "]"}]}], ";", 
       "\[IndentingNewLine]", "\[IndentingNewLine]", 
       RowBox[{"Resultcospq", "=", 
        RowBox[{
@@ -703,19 +716,29 @@ Cell[BoxData[
       RowBox[{"Return", "[", "code", "]"}], ";"}]}], "\[IndentingNewLine]", 
     "]"}]}], ";"}]], "Input",
  CellChangeTimes->CompressedData["
-1:eJxTTMoPSmViYGAQBmIQvWXF2/7vTm8d3z1wmAyiG1bZzADR9ZNMloFoq/Ka
+1:eJxTTMoPSmViYGAQAWIQvWXF2/7vTm8d3z1wmAyiG1bZzADR9ZNMloFoq/Ka
 VSD6OPOGdSD6RM2jrSD6uyzDMxAdXy/9GkRvfOv/BkTffxDA9ANIh/SuA9Ne
 sfc4QbTPwQNcIDpP/b4AiJ4dLicMor++9JAG0asPpMqB6DvXz2iAaDaG/2Ba
 wNNt0j8g3WRzHExX/LLbzOH81jGhIRFMqzk/8NkU8tYxzDvdF0Qf+50cBqL3
 PJsNphsev/RxD33rOO+Kjy+IFnFk+b4oAkjv3/ETRLPxPLNZDKQfTf0BptkS
-6w59bn7rOOli2WEQ7flU8hyIlgh6dh5EAwBy26ZC
+6w59bn7rOOli2WEQ7flU8hyIlgh6dh5E79KVPdrdBgwPwRmnQTQAHqKuxQ==
+
   "],ExpressionUUID->"c4e780f8-15b6-40cb-8a1d-2bd5bf49ac16"],
 
 Cell[BoxData[
  RowBox[{
   RowBox[{
    RowBox[{"DeclareSymmetricPoints4DP4", "[", 
-    RowBox[{"computeType_String", ":", "\"\<double\>\""}], "]"}], ":=", 
+    RowBox[{"q_", ",", "p_", ",", 
+     RowBox[{"{", 
+      RowBox[{"p1_", ",", "p2_", ",", "p3_", ",", "p4_"}], "}"}], ",", 
+     RowBox[{"cos1_", ":", 
+      RowBox[{"Symbol", "@", "\"\<cos1\>\""}]}], ",", 
+     RowBox[{"cos2_", ":", 
+      RowBox[{"Symbol", "@", "\"\<cos2\>\""}]}], ",", 
+     RowBox[{"phi_", ":", 
+      RowBox[{"Symbol", "@", "\"\<phi\>\""}]}], ",", 
+     RowBox[{"computeType_String", ":", "\"\<double\>\""}]}], "]"}], ":=", 
    RowBox[{"Module", "[", "\[IndentingNewLine]", 
     RowBox[{
      RowBox[{"{", 
@@ -820,10 +843,13 @@ Cell[BoxData[
          RowBox[{"vec4", "[", 
           RowBox[{
            RowBox[{"ArcCos", "[", 
-            RowBox[{"Symbol", "[", "\"\<cos1\>\"", "]"}], "]"}], ",", 
+            RowBox[{"Symbol", "@", 
+             RowBox[{"SymbolName", "@", "cos1"}]}], "]"}], ",", 
            RowBox[{"ArcCos", "[", 
-            RowBox[{"Symbol", "[", "\"\<cos2\>\"", "]"}], "]"}], ",", 
-           RowBox[{"Symbol", "[", "\"\<phi\>\"", "]"}]}], "]"}], ".", 
+            RowBox[{"Symbol", "@", 
+             RowBox[{"SymbolName", "@", "cos2"}]}], "]"}], ",", 
+           RowBox[{"Symbol", "@", 
+            RowBox[{"SymbolName", "@", "phi"}]}]}], "]"}], ".", 
          RowBox[{"Vectors4DSP4", "[", 
           RowBox[{"[", "1", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", 
@@ -833,10 +859,13 @@ Cell[BoxData[
          RowBox[{"vec4", "[", 
           RowBox[{
            RowBox[{"ArcCos", "[", 
-            RowBox[{"Symbol", "[", "\"\<cos1\>\"", "]"}], "]"}], ",", 
+            RowBox[{"Symbol", "@", 
+             RowBox[{"SymbolName", "@", "cos1"}]}], "]"}], ",", 
            RowBox[{"ArcCos", "[", 
-            RowBox[{"Symbol", "[", "\"\<cos2\>\"", "]"}], "]"}], ",", 
-           RowBox[{"Symbol", "[", "\"\<phi\>\"", "]"}]}], "]"}], ".", 
+            RowBox[{"Symbol", "@", 
+             RowBox[{"SymbolName", "@", "cos2"}]}], "]"}], ",", 
+           RowBox[{"Symbol", "@", 
+            RowBox[{"SymbolName", "@", "phi"}]}]}], "]"}], ".", 
          RowBox[{"Vectors4DSP4", "[", 
           RowBox[{"[", "2", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", 
@@ -846,10 +875,13 @@ Cell[BoxData[
          RowBox[{"vec4", "[", 
           RowBox[{
            RowBox[{"ArcCos", "[", 
-            RowBox[{"Symbol", "[", "\"\<cos1\>\"", "]"}], "]"}], ",", 
+            RowBox[{"Symbol", "@", 
+             RowBox[{"SymbolName", "@", "cos1"}]}], "]"}], ",", 
            RowBox[{"ArcCos", "[", 
-            RowBox[{"Symbol", "[", "\"\<cos2\>\"", "]"}], "]"}], ",", 
-           RowBox[{"Symbol", "[", "\"\<phi\>\"", "]"}]}], "]"}], ".", 
+            RowBox[{"Symbol", "@", 
+             RowBox[{"SymbolName", "@", "cos2"}]}], "]"}], ",", 
+           RowBox[{"Symbol", "@", 
+            RowBox[{"SymbolName", "@", "phi"}]}]}], "]"}], ".", 
          RowBox[{"Vectors4DSP4", "[", 
           RowBox[{"[", "3", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", 
@@ -859,25 +891,55 @@ Cell[BoxData[
          RowBox[{"vec4", "[", 
           RowBox[{
            RowBox[{"ArcCos", "[", 
-            RowBox[{"Symbol", "[", "\"\<cos1\>\"", "]"}], "]"}], ",", 
+            RowBox[{"Symbol", "@", 
+             RowBox[{"SymbolName", "@", "cos1"}]}], "]"}], ",", 
            RowBox[{"ArcCos", "[", 
-            RowBox[{"Symbol", "[", "\"\<cos2\>\"", "]"}], "]"}], ",", 
-           RowBox[{"Symbol", "[", "\"\<phi\>\"", "]"}]}], "]"}], ".", 
+            RowBox[{"Symbol", "@", 
+             RowBox[{"SymbolName", "@", "cos2"}]}], "]"}], ",", 
+           RowBox[{"Symbol", "@", 
+            RowBox[{"SymbolName", "@", "phi"}]}]}], "]"}], ".", 
          RowBox[{"Vectors4DSP4", "[", 
           RowBox[{"[", "4", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", "\[IndentingNewLine]", 
-      RowBox[{"SymmetricPoint4DP4Code", "=", 
-       RowBox[{
-       "\"\<const \>\"", "<>", "computeType", "<>", "\"\< cosp1q = \>\"", "<>", 
+      RowBox[{"SymmetricPoint4DP4Code", "=", "\[IndentingNewLine]", "   ", 
+       RowBox[{"\"\<const \>\"", "<>", "computeType", "<>", "\"\< cos\>\"", "<>", 
+        RowBox[{"StringJoin", "@", 
+         RowBox[{"(", 
+          RowBox[{"ToString", "/@", 
+           RowBox[{"Sort", "[", 
+            RowBox[{"{", 
+             RowBox[{"q", ",", "p1"}], "}"}], "]"}]}], ")"}]}], "<>", 
+        "\"\< = \>\"", "<>", 
         RowBox[{"FunKit`CppForm", "[", "SymmetricPoint4DP4cosp1", "]"}], 
         "<>", "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>",
-         "computeType", "<>", "\"\< cosp2q = \>\"", "<>", 
+         "computeType", "<>", "\"\< cos\>\"", "<>", 
+        RowBox[{"StringJoin", "@", 
+         RowBox[{"(", 
+          RowBox[{"ToString", "/@", 
+           RowBox[{"Sort", "[", 
+            RowBox[{"{", 
+             RowBox[{"q", ",", "p2"}], "}"}], "]"}]}], ")"}]}], "<>", 
+        "\"\< = \>\"", "<>", 
         RowBox[{"FunKit`CppForm", "[", "SymmetricPoint4DP4cosp2", "]"}], 
         "<>", "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>",
-         "computeType", "<>", "\"\< cosp3q = \>\"", "<>", 
+         "computeType", "<>", "\"\< cos\>\"", "<>", 
+        RowBox[{"StringJoin", "@", 
+         RowBox[{"(", 
+          RowBox[{"ToString", "/@", 
+           RowBox[{"Sort", "[", 
+            RowBox[{"{", 
+             RowBox[{"q", ",", "p3"}], "}"}], "]"}]}], ")"}]}], "<>", 
+        "\"\< = \>\"", "<>", 
         RowBox[{"FunKit`CppForm", "[", "SymmetricPoint4DP4cosp3", "]"}], 
         "<>", "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>",
-         "computeType", "<>", "\"\< cosp4q = \>\"", "<>", 
+         "computeType", "<>", "\"\< cos\>\"", "<>", 
+        RowBox[{"StringJoin", "@", 
+         RowBox[{"(", 
+          RowBox[{"ToString", "/@", 
+           RowBox[{"Sort", "[", 
+            RowBox[{"{", 
+             RowBox[{"q", ",", "p4"}], "}"}], "]"}]}], ")"}]}], "<>", 
+        "\"\< = \>\"", "<>", 
         RowBox[{"FunKit`CppForm", "[", "SymmetricPoint4DP4cosp4", "]"}], 
         "<>", "\"\<;\>\""}]}], ";", "\[IndentingNewLine]", 
       RowBox[{"Return", "[", "SymmetricPoint4DP4Code", "]"}], ";"}]}], 
@@ -894,15 +956,28 @@ Cell[BoxData[
    3.936719130671103*^9, 3.9367191326145782`*^9}, {3.9374762033025723`*^9, 
    3.937476205734511*^9}, {3.9387852352169*^9, 3.9387852429193277`*^9}, {
    3.938785756048355*^9, 3.938785761548143*^9}, {3.961495072572316*^9, 
-   3.96149509290728*^9}, {3.9614951676278152`*^9, 
-   3.961495168147394*^9}},ExpressionUUID->"a0d59af2-759a-487a-b63e-\
+   3.96149509290728*^9}, {3.9614951676278152`*^9, 3.961495168147394*^9}, {
+   3.9628467536880217`*^9, 3.9628468305400677`*^9}, {3.962853617047749*^9, 
+   3.962853639828336*^9}, {3.962853822996429*^9, 3.962853839752942*^9}, 
+   3.962854397264462*^9, {3.9628544709005823`*^9, 3.962854482096121*^9}, {
+   3.962854750259952*^9, 3.9628548065195093`*^9}, {3.962854852036543*^9, 
+   3.962854878236437*^9}},ExpressionUUID->"a0d59af2-759a-487a-b63e-\
 d2d14b73cd1d"],
 
 Cell[BoxData[
  RowBox[{
   RowBox[{
    RowBox[{"DeclareSymmetricPoints4DP3", "[", 
-    RowBox[{"computeType_String", ":", "\"\<double\>\""}], "]"}], ":=", 
+    RowBox[{"q_", ",", "p_", ",", 
+     RowBox[{"{", 
+      RowBox[{"p1_", ",", "p2_", ",", "p3_"}], "}"}], ",", 
+     RowBox[{"cos1_", ":", 
+      RowBox[{"Symbol", "@", "\"\<cos1\>\""}]}], ",", 
+     RowBox[{"cos2_", ":", 
+      RowBox[{"Symbol", "@", "\"\<cos2\>\""}]}], ",", 
+     RowBox[{"phi_", ":", 
+      RowBox[{"Symbol", "@", "\"\<phi\>\""}]}], ",", 
+     RowBox[{"computeType_String", ":", "\"\<double\>\""}]}], "]"}], ":=", 
    RowBox[{"Module", "[", "\[IndentingNewLine]", 
     RowBox[{
      RowBox[{"{", 
@@ -990,10 +1065,13 @@ Cell[BoxData[
          RowBox[{"vec4", "[", 
           RowBox[{
            RowBox[{"ArcCos", "[", 
-            RowBox[{"Symbol", "[", "\"\<cos1\>\"", "]"}], "]"}], ",", 
+            RowBox[{"Symbol", "@", 
+             RowBox[{"SymbolName", "@", "cos1"}]}], "]"}], ",", 
            RowBox[{"ArcCos", "[", 
-            RowBox[{"Symbol", "[", "\"\<cos2\>\"", "]"}], "]"}], ",", 
-           RowBox[{"Symbol", "[", "\"\<phi\>\"", "]"}]}], "]"}], ".", 
+            RowBox[{"Symbol", "@", 
+             RowBox[{"SymbolName", "@", "cos2"}]}], "]"}], ",", 
+           RowBox[{"Symbol", "@", 
+            RowBox[{"SymbolName", "@", "phi"}]}]}], "]"}], ".", 
          RowBox[{"Vectors4DSP3", "[", 
           RowBox[{"[", "1", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", 
@@ -1003,10 +1081,13 @@ Cell[BoxData[
          RowBox[{"vec4", "[", 
           RowBox[{
            RowBox[{"ArcCos", "[", 
-            RowBox[{"Symbol", "[", "\"\<cos1\>\"", "]"}], "]"}], ",", 
+            RowBox[{"Symbol", "@", 
+             RowBox[{"SymbolName", "@", "cos1"}]}], "]"}], ",", 
            RowBox[{"ArcCos", "[", 
-            RowBox[{"Symbol", "[", "\"\<cos2\>\"", "]"}], "]"}], ",", 
-           RowBox[{"Symbol", "[", "\"\<phi\>\"", "]"}]}], "]"}], ".", 
+            RowBox[{"Symbol", "@", 
+             RowBox[{"SymbolName", "@", "cos2"}]}], "]"}], ",", 
+           RowBox[{"Symbol", "@", 
+            RowBox[{"SymbolName", "@", "phi"}]}]}], "]"}], ".", 
          RowBox[{"Vectors4DSP3", "[", 
           RowBox[{"[", "2", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", 
@@ -1016,22 +1097,45 @@ Cell[BoxData[
          RowBox[{"vec4", "[", 
           RowBox[{
            RowBox[{"ArcCos", "[", 
-            RowBox[{"Symbol", "[", "\"\<cos1\>\"", "]"}], "]"}], ",", 
+            RowBox[{"Symbol", "@", 
+             RowBox[{"SymbolName", "@", "cos1"}]}], "]"}], ",", 
            RowBox[{"ArcCos", "[", 
-            RowBox[{"Symbol", "[", "\"\<cos2\>\"", "]"}], "]"}], ",", 
-           RowBox[{"Symbol", "[", "\"\<phi\>\"", "]"}]}], "]"}], ".", 
+            RowBox[{"Symbol", "@", 
+             RowBox[{"SymbolName", "@", "cos2"}]}], "]"}], ",", 
+           RowBox[{"Symbol", "@", 
+            RowBox[{"SymbolName", "@", "phi"}]}]}], "]"}], ".", 
          RowBox[{"Vectors4DSP3", "[", 
           RowBox[{"[", "3", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", "\[IndentingNewLine]", 
-      RowBox[{"SymmetricPoint4DP3Code", "=", 
-       RowBox[{
-       "\"\<const \>\"", "<>", "computeType", "<>", "\"\< cosp1q = \>\"", "<>", 
+      RowBox[{"SymmetricPoint4DP3Code", "=", "\[IndentingNewLine]", "   ", 
+       RowBox[{"\"\<const \>\"", "<>", "computeType", "<>", "\"\< cos\>\"", "<>", 
+        RowBox[{"StringJoin", "@", 
+         RowBox[{"(", 
+          RowBox[{"ToString", "/@", 
+           RowBox[{"Sort", "[", 
+            RowBox[{"{", 
+             RowBox[{"q", ",", "p1"}], "}"}], "]"}]}], ")"}]}], "<>", 
+        "\"\< = \>\"", "<>", 
         RowBox[{"FunKit`CppForm", "[", "SymmetricPoint4DP3cosp1", "]"}], 
         "<>", "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>",
-         "computeType", "<>", "\"\< cosp2q = \>\"", "<>", 
+         "computeType", "<>", "\"\< cos\>\"", "<>", 
+        RowBox[{"StringJoin", "@", 
+         RowBox[{"(", 
+          RowBox[{"ToString", "/@", 
+           RowBox[{"Sort", "[", 
+            RowBox[{"{", 
+             RowBox[{"q", ",", "p2"}], "}"}], "]"}]}], ")"}]}], "<>", 
+        "\"\< = \>\"", "<>", 
         RowBox[{"FunKit`CppForm", "[", "SymmetricPoint4DP3cosp2", "]"}], 
         "<>", "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>",
-         "computeType", "<>", "\"\< cosp3q = \>\"", "<>", 
+         "computeType", "<>", "\"\< cos\>\"", "<>", 
+        RowBox[{"StringJoin", "@", 
+         RowBox[{"(", 
+          RowBox[{"ToString", "/@", 
+           RowBox[{"Sort", "[", 
+            RowBox[{"{", 
+             RowBox[{"q", ",", "p3"}], "}"}], "]"}]}], ")"}]}], "<>", 
+        "\"\< = \>\"", "<>", 
         RowBox[{"FunKit`CppForm", "[", "SymmetricPoint4DP3cosp3", "]"}], 
         "<>", "\"\<;\>\""}]}], ";", "\[IndentingNewLine]", 
       RowBox[{"Return", "[", "SymmetricPoint4DP3Code", "]"}], ";"}]}], 
@@ -1041,8 +1145,14 @@ Cell[BoxData[
   3.936792819897534*^9}, {3.937476212938995*^9, 3.9374762145334806`*^9}, {
   3.938785249337809*^9, 3.938785266783763*^9}, {3.938785774004787*^9, 
   3.938785776681572*^9}, {3.96149507549995*^9, 3.9614950977615147`*^9}, {
-  3.961495168299439*^9, 
-  3.961495168595201*^9}},ExpressionUUID->"7f2c99fd-a79f-46c2-854f-\
+  3.961495168299439*^9, 3.961495168595201*^9}, {3.962846392354656*^9, 
+  3.962846415329*^9}, {3.9628464704216013`*^9, 3.9628465383019876`*^9}, {
+  3.962846592752123*^9, 3.9628467429844513`*^9}, {3.962853621808055*^9, 
+  3.9628536229757547`*^9}, {3.9628538144122467`*^9, 3.962853814984003*^9}, {
+  3.962854369589389*^9, 3.962854386856556*^9}, {3.9628544881201897`*^9, 
+  3.9628544907244596`*^9}, {3.962854740956922*^9, 3.9628547478801413`*^9}, {
+  3.9628547782651854`*^9, 3.962854807406495*^9}, {3.962854883784307*^9, 
+  3.962854896612055*^9}},ExpressionUUID->"7f2c99fd-a79f-46c2-854f-\
 98e61ebec777"]
 }, Closed]],
 
@@ -1058,7 +1168,14 @@ Cell[BoxData[
  RowBox[{
   RowBox[{
    RowBox[{"DeclareSymmetricPoints3DP3", "[", 
-    RowBox[{"computeType_String", ":", "\"\<double\>\""}], "]"}], ":=", 
+    RowBox[{"q_", ",", "p_", ",", 
+     RowBox[{"{", 
+      RowBox[{"p1_", ",", "p2_", ",", "p3_"}], "}"}], ",", 
+     RowBox[{"cos1_", ":", 
+      RowBox[{"Symbol", "@", "\"\<cos1\>\""}]}], ",", 
+     RowBox[{"phi_", ":", 
+      RowBox[{"Symbol", "@", "\"\<phi\>\""}]}], ",", 
+     RowBox[{"computeType_String", ":", "\"\<double\>\""}]}], "]"}], ":=", 
    RowBox[{"Module", "[", "\[IndentingNewLine]", 
     RowBox[{
      RowBox[{"{", 
@@ -1144,8 +1261,10 @@ Cell[BoxData[
          RowBox[{"vec3", "[", 
           RowBox[{
            RowBox[{"ArcCos", "[", 
-            RowBox[{"Symbol", "[", "\"\<cos1\>\"", "]"}], "]"}], ",", 
-           RowBox[{"Symbol", "[", "\"\<phi\>\"", "]"}]}], "]"}], ".", 
+            RowBox[{"Symbol", "@", 
+             RowBox[{"SymbolName", "@", "cos1"}]}], "]"}], ",", 
+           RowBox[{"Symbol", "@", 
+            RowBox[{"SymbolName", "@", "phi"}]}]}], "]"}], ".", 
          RowBox[{"Vectors3DSP3", "[", 
           RowBox[{"[", "1", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", 
@@ -1155,8 +1274,10 @@ Cell[BoxData[
          RowBox[{"vec3", "[", 
           RowBox[{
            RowBox[{"ArcCos", "[", 
-            RowBox[{"Symbol", "[", "\"\<cos1\>\"", "]"}], "]"}], ",", 
-           RowBox[{"Symbol", "[", "\"\<phi\>\"", "]"}]}], "]"}], ".", 
+            RowBox[{"Symbol", "@", 
+             RowBox[{"SymbolName", "@", "cos1"}]}], "]"}], ",", 
+           RowBox[{"Symbol", "@", 
+            RowBox[{"SymbolName", "@", "phi"}]}]}], "]"}], ".", 
          RowBox[{"Vectors3DSP3", "[", 
           RowBox[{"[", "2", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", 
@@ -1166,20 +1287,42 @@ Cell[BoxData[
          RowBox[{"vec3", "[", 
           RowBox[{
            RowBox[{"ArcCos", "[", 
-            RowBox[{"Symbol", "[", "\"\<cos1\>\"", "]"}], "]"}], ",", 
-           RowBox[{"Symbol", "[", "\"\<phi\>\"", "]"}]}], "]"}], ".", 
+            RowBox[{"Symbol", "@", 
+             RowBox[{"SymbolName", "@", "cos1"}]}], "]"}], ",", 
+           RowBox[{"Symbol", "@", 
+            RowBox[{"SymbolName", "@", "phi"}]}]}], "]"}], ".", 
          RowBox[{"Vectors3DSP3", "[", 
           RowBox[{"[", "3", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", "\[IndentingNewLine]", 
-      RowBox[{"SymmetricPoint3DP3Code", "=", 
-       RowBox[{
-       "\"\<const \>\"", "<>", "computeType", "<>", "\"\< cosp1q = \>\"", "<>", 
+      RowBox[{"SymmetricPoint3DP3Code", "=", "\[IndentingNewLine]", "   ", 
+       RowBox[{"\"\<const \>\"", "<>", "computeType", "<>", "\"\< cos\>\"", "<>", 
+        RowBox[{"StringJoin", "@", 
+         RowBox[{"(", 
+          RowBox[{"ToString", "/@", 
+           RowBox[{"Sort", "[", 
+            RowBox[{"{", 
+             RowBox[{"q", ",", "p1"}], "}"}], "]"}]}], ")"}]}], "<>", 
+        "\"\< = \>\"", "<>", 
         RowBox[{"FunKit`CppForm", "[", "SymmetricPoint3DP3cosp1", "]"}], 
         "<>", "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>",
-         "computeType", "<>", "\"\< cosp2q = \>\"", "<>", 
+         "computeType", "<>", "\"\< cos\>\"", "<>", 
+        RowBox[{"StringJoin", "@", 
+         RowBox[{"(", 
+          RowBox[{"ToString", "/@", 
+           RowBox[{"Sort", "[", 
+            RowBox[{"{", 
+             RowBox[{"q", ",", "p2"}], "}"}], "]"}]}], ")"}]}], "<>", 
+        "\"\< = \>\"", "<>", 
         RowBox[{"FunKit`CppForm", "[", "SymmetricPoint3DP3cosp2", "]"}], 
         "<>", "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>",
-         "computeType", "<>", "\"\< cosp3q = \>\"", "<>", 
+         "computeType", "<>", "\"\< cos\>\"", "<>", 
+        RowBox[{"StringJoin", "@", 
+         RowBox[{"(", 
+          RowBox[{"ToString", "/@", 
+           RowBox[{"Sort", "[", 
+            RowBox[{"{", 
+             RowBox[{"q", ",", "p3"}], "}"}], "]"}]}], ")"}]}], "<>", 
+        "\"\< = \>\"", "<>", 
         RowBox[{"FunKit`CppForm", "[", "SymmetricPoint3DP3cosp3", "]"}], 
         "<>", "\"\<;\>\""}]}], ";", "\[IndentingNewLine]", 
       RowBox[{"Return", "[", "SymmetricPoint3DP3Code", "]"}], ";"}]}], 
@@ -1204,15 +1347,25 @@ Cell[BoxData[
    3.938670004542005*^9, 3.9386701548023567`*^9}, {3.938670353563264*^9, 
    3.938670368151267*^9}, {3.938785254158613*^9, 3.938785269501292*^9}, {
    3.938785779812705*^9, 3.938785781347447*^9}, {3.961495076109161*^9, 
-   3.961495102665649*^9}, {3.961495168779508*^9, 
-   3.961495169051236*^9}},ExpressionUUID->"02076b1d-a114-4058-b10c-\
+   3.961495102665649*^9}, {3.961495168779508*^9, 3.961495169051236*^9}, {
+   3.962853676495797*^9, 3.962853766883356*^9}, {3.962854406505072*^9, 
+   3.962854409656375*^9}, {3.9628544946884317`*^9, 3.9628545021841707`*^9}, {
+   3.96285469904465*^9, 3.962854730027688*^9}, {3.962854912088661*^9, 
+   3.962854918696208*^9}},ExpressionUUID->"02076b1d-a114-4058-b10c-\
 0074b1c0bf44"],
 
 Cell[BoxData[
  RowBox[{
   RowBox[{
    RowBox[{"DeclareSymmetricPoints3DP4", "[", 
-    RowBox[{"computeType_String", ":", "\"\<double\>\""}], "]"}], ":=", 
+    RowBox[{"q_", ",", "p_", ",", 
+     RowBox[{"{", 
+      RowBox[{"p1_", ",", "p2_", ",", "p3_", ",", "p4_"}], "}"}], ",", 
+     RowBox[{"cos1_", ":", 
+      RowBox[{"Symbol", "@", "\"\<cos1\>\""}]}], ",", 
+     RowBox[{"phi_", ":", 
+      RowBox[{"Symbol", "@", "\"\<phi\>\""}]}], ",", 
+     RowBox[{"computeType_String", ":", "\"\<double\>\""}]}], "]"}], ":=", 
    RowBox[{"Module", "[", "\[IndentingNewLine]", 
     RowBox[{
      RowBox[{"{", 
@@ -1306,8 +1459,10 @@ Cell[BoxData[
          RowBox[{"vec3", "[", 
           RowBox[{
            RowBox[{"ArcCos", "[", 
-            RowBox[{"Symbol", "[", "\"\<cos1\>\"", "]"}], "]"}], ",", 
-           RowBox[{"Symbol", "[", "\"\<phi\>\"", "]"}]}], "]"}], ".", 
+            RowBox[{"Symbol", "@", 
+             RowBox[{"SymbolName", "@", "cos1"}]}], "]"}], ",", 
+           RowBox[{"Symbol", "@", 
+            RowBox[{"SymbolName", "@", "phi"}]}]}], "]"}], ".", 
          RowBox[{"Vectors3DSP4", "[", 
           RowBox[{"[", "1", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", 
@@ -1317,8 +1472,10 @@ Cell[BoxData[
          RowBox[{"vec3", "[", 
           RowBox[{
            RowBox[{"ArcCos", "[", 
-            RowBox[{"Symbol", "[", "\"\<cos1\>\"", "]"}], "]"}], ",", 
-           RowBox[{"Symbol", "[", "\"\<phi\>\"", "]"}]}], "]"}], ".", 
+            RowBox[{"Symbol", "@", 
+             RowBox[{"SymbolName", "@", "cos1"}]}], "]"}], ",", 
+           RowBox[{"Symbol", "@", 
+            RowBox[{"SymbolName", "@", "phi"}]}]}], "]"}], ".", 
          RowBox[{"Vectors3DSP4", "[", 
           RowBox[{"[", "2", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", 
@@ -1328,8 +1485,10 @@ Cell[BoxData[
          RowBox[{"vec3", "[", 
           RowBox[{
            RowBox[{"ArcCos", "[", 
-            RowBox[{"Symbol", "[", "\"\<cos1\>\"", "]"}], "]"}], ",", 
-           RowBox[{"Symbol", "[", "\"\<phi\>\"", "]"}]}], "]"}], ".", 
+            RowBox[{"Symbol", "@", 
+             RowBox[{"SymbolName", "@", "cos1"}]}], "]"}], ",", 
+           RowBox[{"Symbol", "@", 
+            RowBox[{"SymbolName", "@", "phi"}]}]}], "]"}], ".", 
          RowBox[{"Vectors3DSP4", "[", 
           RowBox[{"[", "3", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", 
@@ -1339,23 +1498,52 @@ Cell[BoxData[
          RowBox[{"vec3", "[", 
           RowBox[{
            RowBox[{"ArcCos", "[", 
-            RowBox[{"Symbol", "[", "\"\<cos1\>\"", "]"}], "]"}], ",", 
-           RowBox[{"Symbol", "[", "\"\<phi\>\"", "]"}]}], "]"}], ".", 
+            RowBox[{"Symbol", "@", 
+             RowBox[{"SymbolName", "@", "cos1"}]}], "]"}], ",", 
+           RowBox[{"Symbol", "@", 
+            RowBox[{"SymbolName", "@", "phi"}]}]}], "]"}], ".", 
          RowBox[{"Vectors3DSP4", "[", 
           RowBox[{"[", "4", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", "\[IndentingNewLine]", 
-      RowBox[{"SymmetricPoint3DP4Code", "=", 
-       RowBox[{
-       "\"\<const \>\"", "<>", "computeType", "<>", "\"\< cosp1q = \>\"", "<>", 
+      RowBox[{"SymmetricPoint3DP4Code", "=", "\[IndentingNewLine]", "   ", 
+       RowBox[{"\"\<const \>\"", "<>", "computeType", "<>", "\"\< cos\>\"", "<>", 
+        RowBox[{"StringJoin", "@", 
+         RowBox[{"(", 
+          RowBox[{"ToString", "/@", 
+           RowBox[{"Sort", "[", 
+            RowBox[{"{", 
+             RowBox[{"q", ",", "p1"}], "}"}], "]"}]}], ")"}]}], "<>", 
+        "\"\< = \>\"", "<>", 
         RowBox[{"FunKit`CppForm", "[", "SymmetricPoint3DP4cosp1", "]"}], 
         "<>", "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>",
-         "computeType", "<>", "\"\< cosp2q = \>\"", "<>", 
+         "computeType", "<>", "\"\< cos\>\"", "<>", 
+        RowBox[{"StringJoin", "@", 
+         RowBox[{"(", 
+          RowBox[{"ToString", "/@", 
+           RowBox[{"Sort", "[", 
+            RowBox[{"{", 
+             RowBox[{"q", ",", "p2"}], "}"}], "]"}]}], ")"}]}], "<>", 
+        "\"\< = \>\"", "<>", 
         RowBox[{"FunKit`CppForm", "[", "SymmetricPoint3DP4cosp2", "]"}], 
         "<>", "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>",
-         "computeType", "<>", "\"\< cosp3q = \>\"", "<>", 
+         "computeType", "<>", "\"\< cos\>\"", "<>", 
+        RowBox[{"StringJoin", "@", 
+         RowBox[{"(", 
+          RowBox[{"ToString", "/@", 
+           RowBox[{"Sort", "[", 
+            RowBox[{"{", 
+             RowBox[{"q", ",", "p3"}], "}"}], "]"}]}], ")"}]}], "<>", 
+        "\"\< = \>\"", "<>", 
         RowBox[{"FunKit`CppForm", "[", "SymmetricPoint3DP4cosp3", "]"}], 
         "<>", "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>",
-         "computeType", "<>", "\"\< cosp4q = \>\"", "<>", 
+         "computeType", "<>", "\"\< cos\>\"", "<>", 
+        RowBox[{"StringJoin", "@", 
+         RowBox[{"(", 
+          RowBox[{"ToString", "/@", 
+           RowBox[{"Sort", "[", 
+            RowBox[{"{", 
+             RowBox[{"q", ",", "p4"}], "}"}], "]"}]}], ")"}]}], "<>", 
+        "\"\< = \>\"", "<>", 
         RowBox[{"FunKit`CppForm", "[", "SymmetricPoint3DP4cosp4", "]"}], 
         "<>", "\"\<;\>\""}]}], ";", "\[IndentingNewLine]", 
       RowBox[{"Return", "[", "SymmetricPoint3DP4Code", "]"}], ";"}]}], 
@@ -1367,7 +1555,11 @@ Cell[BoxData[
    3.938670394360215*^9, 3.938670395919155*^9}, {3.938785254649372*^9, 
    3.938785272064581*^9}, {3.9387857845047293`*^9, 3.938785786556594*^9}, {
    3.961495076806576*^9, 3.961495108105777*^9}, {3.9614951693316307`*^9, 
-   3.9614951697073593`*^9}},ExpressionUUID->"3f57e62b-c21b-46a5-aac5-\
+   3.9614951697073593`*^9}, {3.962853873276081*^9, 3.9628539302597017`*^9}, {
+   3.9628541082040977`*^9, 3.9628541149610043`*^9}, 3.962854417010672*^9, {
+   3.962854511885292*^9, 3.9628545153716917`*^9}, {3.96285456071692*^9, 
+   3.962854639316494*^9}, {3.9628549211246567`*^9, 
+   3.962854927376193*^9}},ExpressionUUID->"3f57e62b-c21b-46a5-aac5-\
 5e869eaa87ee"]
 }, Closed]],
 
@@ -1384,7 +1576,12 @@ Cell[BoxData[
  RowBox[{
   RowBox[{
    RowBox[{"DeclareSymmetricPoints2DP3", "[", 
-    RowBox[{"computeType_String", ":", "\"\<double\>\""}], "]"}], ":=", 
+    RowBox[{"q_", ",", "p_", ",", 
+     RowBox[{"{", 
+      RowBox[{"p1_", ",", "p2_", ",", "p3_"}], "}"}], ",", 
+     RowBox[{"cos1_", ":", 
+      RowBox[{"Symbol", "@", "\"\<cos1\>\""}]}], ",", 
+     RowBox[{"computeType_String", ":", "\"\<double\>\""}]}], "]"}], ":=", 
    RowBox[{"Module", "[", "\[IndentingNewLine]", 
     RowBox[{
      RowBox[{"{", 
@@ -1457,7 +1654,8 @@ Cell[BoxData[
         RowBox[{
          RowBox[{"vec2", "[", 
           RowBox[{"ArcCos", "[", 
-           RowBox[{"Symbol", "[", "\"\<cos1\>\"", "]"}], "]"}], "]"}], ".", 
+           RowBox[{"Symbol", "@", 
+            RowBox[{"SymbolName", "@", "cos1"}]}], "]"}], "]"}], ".", 
          RowBox[{"Vectors3DSP3", "[", 
           RowBox[{"[", "1", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", 
@@ -1466,7 +1664,8 @@ Cell[BoxData[
         RowBox[{
          RowBox[{"vec2", "[", 
           RowBox[{"ArcCos", "[", 
-           RowBox[{"Symbol", "[", "\"\<cos1\>\"", "]"}], "]"}], "]"}], ".", 
+           RowBox[{"Symbol", "@", 
+            RowBox[{"SymbolName", "@", "cos1"}]}], "]"}], "]"}], ".", 
          RowBox[{"Vectors3DSP3", "[", 
           RowBox[{"[", "2", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", 
@@ -1475,19 +1674,40 @@ Cell[BoxData[
         RowBox[{
          RowBox[{"vec2", "[", 
           RowBox[{"ArcCos", "[", 
-           RowBox[{"Symbol", "[", "\"\<cos1\>\"", "]"}], "]"}], "]"}], ".", 
+           RowBox[{"Symbol", "@", 
+            RowBox[{"SymbolName", "@", "cos1"}]}], "]"}], "]"}], ".", 
          RowBox[{"Vectors3DSP3", "[", 
           RowBox[{"[", "3", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", "\[IndentingNewLine]", 
-      RowBox[{"SymmetricPoint3DP3Code", "=", 
-       RowBox[{
-       "\"\<const \>\"", "<>", "computeType", "<>", "\"\< cosp1q = \>\"", "<>", 
+      RowBox[{"SymmetricPoint3DP3Code", "=", "\[IndentingNewLine]", "   ", 
+       RowBox[{"\"\<const \>\"", "<>", "computeType", "<>", "\"\< cos\>\"", "<>", 
+        RowBox[{"StringJoin", "@", 
+         RowBox[{"(", 
+          RowBox[{"ToString", "/@", 
+           RowBox[{"Sort", "[", 
+            RowBox[{"{", 
+             RowBox[{"q", ",", "p1"}], "}"}], "]"}]}], ")"}]}], "<>", 
+        "\"\< = \>\"", "<>", 
         RowBox[{"FunKit`CppForm", "[", "SymmetricPoint3DP3cosp1", "]"}], 
         "<>", "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>",
-         "computeType", "<>", "\"\< cosp2q = \>\"", "<>", 
+         "computeType", "<>", "\"\< cos\>\"", "<>", 
+        RowBox[{"StringJoin", "@", 
+         RowBox[{"(", 
+          RowBox[{"ToString", "/@", 
+           RowBox[{"Sort", "[", 
+            RowBox[{"{", 
+             RowBox[{"q", ",", "p2"}], "}"}], "]"}]}], ")"}]}], "<>", 
+        "\"\< = \>\"", "<>", 
         RowBox[{"FunKit`CppForm", "[", "SymmetricPoint3DP3cosp2", "]"}], 
         "<>", "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>",
-         "computeType", "<>", "\"\< cosp3q = \>\"", "<>", 
+         "computeType", "<>", "\"\< cos\>\"", "<>", 
+        RowBox[{"StringJoin", "@", 
+         RowBox[{"(", 
+          RowBox[{"ToString", "/@", 
+           RowBox[{"Sort", "[", 
+            RowBox[{"{", 
+             RowBox[{"q", ",", "p3"}], "}"}], "]"}]}], ")"}]}], "<>", 
+        "\"\< = \>\"", "<>", 
         RowBox[{"FunKit`CppForm", "[", "SymmetricPoint3DP3cosp3", "]"}], 
         "<>", "\"\<;\>\""}]}], ";", "\[IndentingNewLine]", 
       RowBox[{"Return", "[", "SymmetricPoint3DP3Code", "]"}], ";"}]}], 
@@ -1512,15 +1732,24 @@ Cell[BoxData[
    3.93867027306639*^9, {3.938785256306374*^9, 3.938785273985268*^9}, {
    3.9387857895164957`*^9, 3.938785791044825*^9}, {3.9614950774272957`*^9, 
    3.961495077819703*^9}, {3.961495110777734*^9, 3.961495113169552*^9}, {
-   3.961495169907461*^9, 
-   3.961495171211227*^9}},ExpressionUUID->"a7b5ee41-8585-4441-b62c-\
+   3.961495169907461*^9, 3.961495171211227*^9}, {3.9628539391359*^9, 
+   3.96285395305162*^9}, {3.962854126328578*^9, 3.9628541494996862`*^9}, {
+   3.962854204319991*^9, 3.962854220016326*^9}, {3.962854423128071*^9, 
+   3.9628544270124617`*^9}, {3.962854525168888*^9, 3.962854532619605*^9}, {
+   3.962854647128536*^9, 3.962854658624064*^9}, {3.962854929188212*^9, 
+   3.9628549305119953`*^9}},ExpressionUUID->"a7b5ee41-8585-4441-b62c-\
 89d022f47a1c"],
 
 Cell[BoxData[
  RowBox[{
   RowBox[{
    RowBox[{"DeclareSymmetricPoints2DP4", "[", 
-    RowBox[{"computeType_String", ":", "\"\<double\>\""}], "]"}], ":=", 
+    RowBox[{"q_", ",", "p_", ",", 
+     RowBox[{"{", 
+      RowBox[{"p1_", ",", "p2_", ",", "p3_", ",", "p4_"}], "}"}], ",", 
+     RowBox[{"cos1_", ":", 
+      RowBox[{"Symbol", "@", "\"\<cos1\>\""}]}], ",", 
+     RowBox[{"computeType_String", ":", "\"\<double\>\""}]}], "]"}], ":=", 
    RowBox[{"Module", "[", "\[IndentingNewLine]", 
     RowBox[{
      RowBox[{"{", 
@@ -1579,7 +1808,8 @@ Cell[BoxData[
         RowBox[{
          RowBox[{"vec2", "[", 
           RowBox[{"ArcCos", "[", 
-           RowBox[{"Symbol", "[", "\"\<cos1\>\"", "]"}], "]"}], "]"}], ".", 
+           RowBox[{"Symbol", "@", 
+            RowBox[{"SymbolName", "@", "cos1"}]}], "]"}], "]"}], ".", 
          RowBox[{"Vectors3DSP4", "[", 
           RowBox[{"[", "1", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", 
@@ -1588,7 +1818,8 @@ Cell[BoxData[
         RowBox[{
          RowBox[{"vec2", "[", 
           RowBox[{"ArcCos", "[", 
-           RowBox[{"Symbol", "[", "\"\<cos1\>\"", "]"}], "]"}], "]"}], ".", 
+           RowBox[{"Symbol", "@", 
+            RowBox[{"SymbolName", "@", "cos1"}]}], "]"}], "]"}], ".", 
          RowBox[{"Vectors3DSP4", "[", 
           RowBox[{"[", "2", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", 
@@ -1597,7 +1828,8 @@ Cell[BoxData[
         RowBox[{
          RowBox[{"vec2", "[", 
           RowBox[{"ArcCos", "[", 
-           RowBox[{"Symbol", "[", "\"\<cos1\>\"", "]"}], "]"}], "]"}], ".", 
+           RowBox[{"Symbol", "@", 
+            RowBox[{"SymbolName", "@", "cos1"}]}], "]"}], "]"}], ".", 
          RowBox[{"Vectors3DSP4", "[", 
           RowBox[{"[", "3", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", 
@@ -1606,22 +1838,50 @@ Cell[BoxData[
         RowBox[{
          RowBox[{"vec2", "[", 
           RowBox[{"ArcCos", "[", 
-           RowBox[{"Symbol", "[", "\"\<cos1\>\"", "]"}], "]"}], "]"}], ".", 
+           RowBox[{"Symbol", "@", 
+            RowBox[{"SymbolName", "@", "cos1"}]}], "]"}], "]"}], ".", 
          RowBox[{"Vectors3DSP4", "[", 
           RowBox[{"[", "4", "]"}], "]"}]}], "//", "FullSimplify"}]}], ";", 
       "\[IndentingNewLine]", "\[IndentingNewLine]", 
-      RowBox[{"SymmetricPoint3DP4Code", "=", 
-       RowBox[{
-       "\"\<const \>\"", "<>", "computeType", "<>", "\"\< cosp1q = \>\"", "<>", 
+      RowBox[{"SymmetricPoint3DP4Code", "=", "\[IndentingNewLine]", "   ", 
+       RowBox[{"\"\<const \>\"", "<>", "computeType", "<>", "\"\< cos\>\"", "<>", 
+        RowBox[{"StringJoin", "@", 
+         RowBox[{"(", 
+          RowBox[{"ToString", "/@", 
+           RowBox[{"Sort", "[", 
+            RowBox[{"{", 
+             RowBox[{"q", ",", "p1"}], "}"}], "]"}]}], ")"}]}], "<>", 
+        "\"\< = \>\"", "<>", 
         RowBox[{"FunKit`CppForm", "[", "SymmetricPoint3DP4cosp1", "]"}], 
         "<>", "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>",
-         "computeType", "<>", "\"\< cosp2q = \>\"", "<>", 
+         "computeType", "<>", "\"\< cos\>\"", "<>", 
+        RowBox[{"StringJoin", "@", 
+         RowBox[{"(", 
+          RowBox[{"ToString", "/@", 
+           RowBox[{"Sort", "[", 
+            RowBox[{"{", 
+             RowBox[{"q", ",", "p2"}], "}"}], "]"}]}], ")"}]}], "<>", 
+        "\"\< = \>\"", "<>", 
         RowBox[{"FunKit`CppForm", "[", "SymmetricPoint3DP4cosp2", "]"}], 
         "<>", "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>",
-         "computeType", "<>", "\"\< cosp3q = \>\"", "<>", 
+         "computeType", "<>", "\"\< cos\>\"", "<>", 
+        RowBox[{"StringJoin", "@", 
+         RowBox[{"(", 
+          RowBox[{"ToString", "/@", 
+           RowBox[{"Sort", "[", 
+            RowBox[{"{", 
+             RowBox[{"q", ",", "p3"}], "}"}], "]"}]}], ")"}]}], "<>", 
+        "\"\< = \>\"", "<>", 
         RowBox[{"FunKit`CppForm", "[", "SymmetricPoint3DP4cosp3", "]"}], 
         "<>", "\"\<;\\n\>\"", "<>", "\[IndentingNewLine]", "\"\<const \>\"", "<>",
-         "computeType", "<>", "\"\< cosp4q = \>\"", "<>", 
+         "computeType", "<>", "\"\< cos\>\"", "<>", 
+        RowBox[{"StringJoin", "@", 
+         RowBox[{"(", 
+          RowBox[{"ToString", "/@", 
+           RowBox[{"Sort", "[", 
+            RowBox[{"{", 
+             RowBox[{"q", ",", "p4"}], "}"}], "]"}]}], ")"}]}], "<>", 
+        "\"\< = \>\"", "<>", 
         RowBox[{"FunKit`CppForm", "[", "SymmetricPoint3DP4cosp4", "]"}], 
         "<>", "\"\<;\>\""}]}], ";", "\[IndentingNewLine]", 
       RowBox[{"Return", "[", "SymmetricPoint3DP4Code", "]"}], ";"}]}], 
@@ -1632,8 +1892,11 @@ Cell[BoxData[
    3.938670493611395*^9, 3.938670518551881*^9}, {3.938785257240024*^9, 
    3.938785276217057*^9}, {3.938785794020824*^9, 3.938785795816415*^9}, {
    3.961495078003463*^9, 3.9614950785238247`*^9}, {3.961495115998014*^9, 
-   3.961495118869567*^9}, {3.96149517188334*^9, 
-   3.9614951723398952`*^9}},ExpressionUUID->"3329a8ad-9322-4b94-9584-\
+   3.961495118869567*^9}, {3.96149517188334*^9, 3.9614951723398952`*^9}, {
+   3.962854152563966*^9, 3.96285423866355*^9}, {3.9628544328846703`*^9, 
+   3.962854433643963*^9}, {3.96285466126441*^9, 3.962854689663768*^9}, {
+   3.9628549330521383`*^9, 
+   3.96285493890057*^9}},ExpressionUUID->"3329a8ad-9322-4b94-9584-\
 392b163bb430"]
 }, Closed]]
 }, Open  ]]
@@ -1654,15 +1917,6 @@ Cell["Kernel methods and classes for T = 0", "Section",
   3.917169848729768*^9}},ExpressionUUID->"e1a8482c-beb3-4c41-b9f2-\
 3acff2f366ec"],
 
-Cell[BoxData[
- RowBox[{"(*", 
-  RowBox[{"Block", "[", 
-   RowBox[{
-    RowBox[{"{", "Print", "}"}], ",", 
-    RowBox[{"Get", "[", "\"\<FunKit`\>\"", "]"}]}], "]"}], "*)"}]], "Input",
- CellChangeTimes->{{3.9575171854254913`*^9, 3.957517196199812*^9}},
- CellLabel->"In[3]:=",ExpressionUUID->"c34c2e5d-fc0f-418f-b9c3-1a00606907ef"],
-
 Cell[BoxData[{
  RowBox[{
   RowBox[{"$PredefRegFunc", "=", 
@@ -1672,29 +1926,34 @@ Cell[BoxData[{
      "\"\<RFdot\>\"", ",", "\"\<dq2RB\>\"", ",", "\"\<dq2RF\>\""}], "}"}]}], 
   ";"}], "\[IndentingNewLine]", 
  RowBox[{
-  RowBox[{"$StandardKernelDefinitions", "=", 
-   RowBox[{"Map", "[", "\[IndentingNewLine]", 
-    RowBox[{
+  RowBox[{
+   RowBox[{"$StandardKernelDefinitions", "=", 
+    RowBox[{"Map", "[", "\[IndentingNewLine]", 
      RowBox[{
-      RowBox[{"FunKit`MakeCppFunction", "[", 
-       RowBox[{
-        RowBox[{"\"\<Name\>\"", "->", "#"}], ",", 
-        RowBox[{"\"\<Body\>\"", "->", 
-         RowBox[{
-         "\"\<return Regulator::\>\"", "<>", "#", "<>", 
-          "\"\<(k2, p2);\>\""}]}], ",", 
+      RowBox[{
+       RowBox[{"FunKit`MakeCppFunction", "[", 
         RowBox[{
-        "\"\<Prefix\>\"", "->", 
-         "\"\<static KOKKOS_FORCEINLINE_FUNCTION\>\""}], ",", 
-        RowBox[{"\"\<Suffix\>\"", "->", "\"\<\>\""}], ",", 
-        RowBox[{"\"\<Parameters\>\"", "->", 
-         RowBox[{"{", 
-          RowBox[{"\"\<k2\>\"", ",", "\"\<p2\>\""}], "}"}]}]}], "]"}], "&"}], 
-     ",", "\[IndentingNewLine]", "$PredefRegFunc"}], "]"}]}], ";"}]}], "Input",\
-
+         RowBox[{"\"\<Name\>\"", "->", "#"}], ",", 
+         RowBox[{"\"\<Body\>\"", "->", 
+          RowBox[{
+          "\"\<return Regulator::\>\"", "<>", "#", "<>", 
+           "\"\<(k2, p2);\>\""}]}], ",", 
+         RowBox[{
+         "\"\<Prefix\>\"", "->", 
+          "\"\<static KOKKOS_FORCEINLINE_FUNCTION\>\""}], ",", 
+         RowBox[{"\"\<Suffix\>\"", "->", "\"\<\>\""}], ",", 
+         RowBox[{"\"\<Parameters\>\"", "->", 
+          RowBox[{"{", 
+           RowBox[{"\"\<k2\>\"", ",", "\"\<p2\>\""}], "}"}]}]}], "]"}], "&"}],
+       ",", "\[IndentingNewLine]", "$PredefRegFunc"}], "]"}]}], ";"}], 
+  "\[IndentingNewLine]"}], "\[IndentingNewLine]", 
+ RowBox[{
+  RowBox[{"GetStandardKernelDefinitions", "[", "]"}], ":=", 
+  "$StandardKernelDefinitions"}]}], "Input",
  CellChangeTimes->{{3.957507810567843*^9, 3.957507979160213*^9}, {
    3.957887082864911*^9, 3.957887096344493*^9}, 3.960522293357527*^9, 
-   3.960528043816486*^9},ExpressionUUID->"98e4158d-9c35-4453-b846-\
+   3.960528043816486*^9, {3.963914068872307*^9, 
+   3.963914077408702*^9}},ExpressionUUID->"98e4158d-9c35-4453-b846-\
 9266ccd560a6"],
 
 Cell[BoxData[{
@@ -2367,8 +2626,8 @@ Cell[BoxData[{
     RowBox[{
      RowBox[{"{", 
       RowBox[{
-      "expr", ",", "const", ",", "\[IndentingNewLine]", "kernel", ",", 
-       "constant", ",", "kernelClass", ",", "kernelHeader", ",", 
+      "expr", ",", "const", ",", "exec", ",", "\[IndentingNewLine]", "kernel",
+        ",", "constant", ",", "kernelClass", ",", "kernelHeader", ",", 
        "\[IndentingNewLine]", "integratorHeader", ",", "integratorCpp", ",", 
        "integratorTemplateParams", ",", "integratorADTemplateParams", ",", 
        "\[IndentingNewLine]", 
@@ -2847,7 +3106,23 @@ Cell[BoxData[{
         RowBox[{"preArguments", "=!=", "\"\<\>\""}], ",", 
         RowBox[{"preArguments", "=", 
          RowBox[{"preArguments", "<>", "\"\<, \>\""}]}]}], "]"}], ";", 
-      "\[IndentingNewLine]", "\[IndentingNewLine]", 
+      "\[IndentingNewLine]", "\[IndentingNewLine]", "\[IndentingNewLine]", 
+      RowBox[{"exec", "=", 
+       RowBox[{"If", "[", 
+        RowBox[{
+         RowBox[{
+          RowBox[{"KeyFreeQ", "[", 
+           RowBox[{"spec", ",", "\"\<Device\>\""}], "]"}], "||", 
+          RowBox[{"FreeQ", "[", 
+           RowBox[{
+            RowBox[{"{", 
+             RowBox[{"\"\<GPU\>\"", ",", "\"\<Threads\>\""}], "}"}], ",", 
+            RowBox[{"spec", "[", "\"\<Device\>\"", "]"}]}], "]"}]}], ",", 
+         "\"\<DiFfRG::TBB_exec\>\"", ",", 
+         RowBox[{"\"\<DiFfRG::\>\"", "<>", 
+          RowBox[{"spec", "[", "\"\<Device\>\"", "]"}], "<>", 
+          "\"\<_exec\>\""}]}], "]"}]}], ";", "\[IndentingNewLine]", 
+      "\[IndentingNewLine]", 
       RowBox[{"integratorTemplateParams", "=", 
        RowBox[{"{", "}"}]}], ";", "\[IndentingNewLine]", 
       RowBox[{"If", "[", 
@@ -2880,25 +3155,12 @@ Cell[BoxData[{
          "\"\<_kernel<Regulator>\>\""}]}], "]"}], ";", "\[IndentingNewLine]", 
       
       RowBox[{"AppendTo", "[", 
-       RowBox[{"integratorTemplateParams", ",", 
-        RowBox[{"If", "[", 
-         RowBox[{
-          RowBox[{
-           RowBox[{"KeyFreeQ", "[", 
-            RowBox[{"spec", ",", "\"\<Device\>\""}], "]"}], "||", 
-           RowBox[{"FreeQ", "[", 
-            RowBox[{
-             RowBox[{"{", 
-              RowBox[{"\"\<GPU\>\"", ",", "\"\<Threads\>\""}], "}"}], ",", 
-             RowBox[{"spec", "[", "\"\<Device\>\"", "]"}]}], "]"}]}], ",", 
-          "\"\<DiFfRG::TBB_exec\>\"", ",", 
-          RowBox[{"\"\<DiFfRG::\>\"", "<>", 
-           RowBox[{"spec", "[", "\"\<Device\>\"", "]"}], "<>", 
-           "\"\<_exec\>\""}]}], "]"}]}], "]"}], ";", "\[IndentingNewLine]", 
+       RowBox[{"integratorTemplateParams", ",", "exec"}], "]"}], ";", 
+      "\[IndentingNewLine]", 
       RowBox[{"integratorTemplateParams", "=", 
        RowBox[{"StringRiffle", "[", 
         RowBox[{"integratorTemplateParams", ",", "\"\<, \>\""}], "]"}]}], ";",
-       "\[IndentingNewLine]", "\[IndentingNewLine]", 
+       "\[IndentingNewLine]", "\[IndentingNewLine]", "\[IndentingNewLine]", 
       RowBox[{"integratorADTemplateParams", "=", 
        RowBox[{"{", "}"}]}], ";", "\[IndentingNewLine]", 
       RowBox[{"If", "[", 
@@ -3041,7 +3303,7 @@ Cell[BoxData[{
                     RowBox[{"FunKit`MakeCppFunction", "[", 
                     RowBox[{
                     RowBox[{"\"\<Name\>\"", "->", "\"\<map\>\""}], ",", 
-                    RowBox[{"\"\<Return\>\"", "->", "\"\<void\>\""}], ",", 
+                    RowBox[{"\"\<Return\>\"", "->", "exec"}], ",", 
                     RowBox[{"\"\<Body\>\"", "->", "None"}], ",", 
                     RowBox[{"\"\<Parameters\>\"", "->", 
                     RowBox[{"Join", "[", 
@@ -3077,11 +3339,11 @@ Cell[BoxData[{
                    RowBox[{"FunKit`MakeCppFunction", "[", 
                     RowBox[{
                     RowBox[{"\"\<Name\>\"", "->", "\"\<map\>\""}], ",", 
-                    RowBox[{"\"\<Return\>\"", "->", "\"\<void\>\""}], ",", 
+                    RowBox[{"\"\<Return\>\"", "->", "exec"}], ",", 
                     RowBox[{
                     "\"\<Body\>\"", "->", 
-                    "\"\<device::apply([&](const auto...t){map(dest, \
-coordinates, t...);}, args);\>\""}], ",", 
+                    "\"\<return device::apply([&](const auto...t){return \
+map(dest, coordinates, t...);}, args);\>\""}], ",", 
                     RowBox[{"\"\<Parameters\>\"", "->", 
                     RowBox[{"Join", "[", "\[IndentingNewLine]", 
                     RowBox[{"{", 
@@ -3104,8 +3366,9 @@ coordinates, t...);}, args);\>\""}], ",",
                     RowBox[{"<|", 
                     RowBox[{
                     RowBox[{"\"\<Name\>\"", "->", "\"\<args\>\""}], ",", 
-                    RowBox[{"\"\<Type\>\"", "->", 
-                    "\"\<device::tuple<T...>\>\""}], ",", 
+                    RowBox[{
+                    "\"\<Type\>\"", "->", "\"\<device::tuple<T...>\>\""}], 
+                    ",", 
                     RowBox[{"\"\<Reference\>\"", "->", "True"}], ",", 
                     RowBox[{"\"\<Const\>\"", "->", "True"}]}], "|>"}]}], 
                     "}"}], "]"}]}], ",", "\[IndentingNewLine]", 
@@ -3403,7 +3666,7 @@ quadrature_provider;\>\"", "}"}]}]}], "\[IndentingNewLine]",
                 RowBox[{
                  RowBox[{"\"\<Name\>\"", "->", "\"\<map\>\""}], ",", 
                  "\[IndentingNewLine]", 
-                 RowBox[{"\"\<Return\>\"", "->", "\"\<void\>\""}], ",", 
+                 RowBox[{"\"\<Return\>\"", "->", "exec"}], ",", 
                  "\[IndentingNewLine]", 
                  RowBox[{"\"\<Class\>\"", "->", 
                   RowBox[{
@@ -3411,7 +3674,7 @@ quadrature_provider;\>\"", "}"}]}]}], "\[IndentingNewLine]",
                    "\"\<_integrator\>\""}]}], ",", "\[IndentingNewLine]", 
                  RowBox[{"\"\<Body\>\"", "->", 
                   RowBox[{
-                  "\"\<integrator.map(dest, coordinates, \>\"", "<>", 
+                  "\"\<return integrator.map(dest, coordinates, \>\"", "<>", 
                    "arguments", "<>", "\"\<);\>\""}]}], ",", 
                  "\[IndentingNewLine]", 
                  RowBox[{"\"\<Parameters\>\"", "->", 
@@ -3457,7 +3720,7 @@ quadrature_provider;\>\"", "}"}]}]}], "\[IndentingNewLine]",
                 RowBox[{
                  RowBox[{"\"\<Name\>\"", "->", "\"\<map\>\""}], ",", 
                  "\[IndentingNewLine]", 
-                 RowBox[{"\"\<Return\>\"", "->", "\"\<void\>\""}], ",", 
+                 RowBox[{"\"\<Return\>\"", "->", "exec"}], ",", 
                  "\[IndentingNewLine]", 
                  RowBox[{"\"\<Class\>\"", "->", 
                   RowBox[{
@@ -3465,8 +3728,8 @@ quadrature_provider;\>\"", "}"}]}]}], "\[IndentingNewLine]",
                    "\"\<_integrator\>\""}]}], ",", "\[IndentingNewLine]", 
                  RowBox[{"\"\<Body\>\"", "->", 
                   RowBox[{
-                  "\"\<integrator_AD.map(dest, coordinates, \>\"", "<>", 
-                   "arguments", "<>", "\"\<);\>\""}]}], ",", 
+                  "\"\<return integrator_AD.map(dest, coordinates, \>\"", "<>",
+                    "arguments", "<>", "\"\<);\>\""}]}], ",", 
                  "\[IndentingNewLine]", 
                  RowBox[{"\"\<Parameters\>\"", "->", 
                   RowBox[{"Join", "[", 
@@ -3730,147 +3993,9 @@ quadrature_provider;\>\"", "}"}]}]}], "\[IndentingNewLine]",
    3.962783418070243*^9, 3.962783427966619*^9}, {3.9627841506256933`*^9, 
    3.962784155561878*^9}, {3.962784300764825*^9, 3.962784304108597*^9}, {
    3.962787901504978*^9, 3.962787904795246*^9}, {3.962788032862644*^9, 
-   3.9627880418452177`*^9}},ExpressionUUID->"bbb4c34a-71cf-44cc-a5d3-\
-2d21634b59cd"],
-
-Cell[CellGroupData[{
-
-Cell[BoxData[
- RowBox[{"(*", 
-  RowBox[{
-   RowBox[{"MakeKernel", "[", 
-    RowBox[{"1", ",", "1", ",", "\[IndentingNewLine]", 
-     RowBox[{"<|", 
-      RowBox[{
-       RowBox[{"\"\<Name\>\"", "->", "\"\<AA\>\""}], ",", 
-       RowBox[{"\"\<Integrator\>\"", "->", "\"\<DiFfRG::Integrator_p2\>\""}], 
-       ",", 
-       RowBox[{"\"\<d\>\"", "->", "4"}], ",", 
-       RowBox[{"\"\<AD\>\"", "->", "False"}], ",", 
-       RowBox[{"\"\<Device\>\"", "->", "\"\<GPU\>\""}], ",", 
-       RowBox[{"\"\<Type\>\"", "->", "\"\<double\>\""}]}], "|>"}], ",", 
-     "\[IndentingNewLine]", 
-     RowBox[{"{", "\"\<a\>\"", "}"}], ",", "\[IndentingNewLine]", 
-     RowBox[{"\"\<IntegrationVariables\>\"", "->", 
-      RowBox[{"{", "\"\<l1\>\"", "}"}]}]}], "]"}], "\[IndentingNewLine]", 
-   RowBox[{"UpdateFlows", "[", "\"\<ONFiniteTFlows\>\"", "]"}]}], 
-  "*)"}]], "Input",
- CellChangeTimes->{{3.9605209175486813`*^9, 3.9605209177207623`*^9}, {
-  3.960521564821569*^9, 3.960521605364971*^9}, {3.960522238589951*^9, 
-  3.960522242008769*^9}},
- CellLabel->
-  "In[205]:=",ExpressionUUID->"21618124-c4e5-415b-a543-939f21650ade"],
-
-Cell[CellGroupData[{
-
-Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/DiFfRG/Mathematica/\
-DiFfRG/Flows/AA/AA.hh unchanged\"\>"], "Print",
- CellChangeTimes->{
-  3.9605209189903383`*^9, {3.960521064208685*^9, 3.9605210960338287`*^9}, 
-   3.960521296282436*^9, {3.960521330140387*^9, 3.960521335450263*^9}, 
-   3.960521485309887*^9, 3.960521546053385*^9, 3.96052160799863*^9, 
-   3.960521881230981*^9, {3.960521922806232*^9, 3.960521984227453*^9}, {
-   3.9605221452252197`*^9, 3.960522149536992*^9}, {3.960522192840962*^9, 
-   3.960522207488976*^9}, 3.9605222433388157`*^9},
- CellLabel->
-  "During evaluation of \
-In[205]:=",ExpressionUUID->"83f930e9-3d81-415f-a957-fb7da573d597"],
-
-Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/DiFfRG/Mathematica/\
-DiFfRG/Flows/AA/kernel.hh unchanged\"\>"], "Print",
- CellChangeTimes->{
-  3.9605209189903383`*^9, {3.960521064208685*^9, 3.9605210960338287`*^9}, 
-   3.960521296282436*^9, {3.960521330140387*^9, 3.960521335450263*^9}, 
-   3.960521485309887*^9, 3.960521546053385*^9, 3.96052160799863*^9, 
-   3.960521881230981*^9, {3.960521922806232*^9, 3.960521984227453*^9}, {
-   3.9605221452252197`*^9, 3.960522149536992*^9}, {3.960522192840962*^9, 
-   3.960522207488976*^9}, 3.9605222433421803`*^9},
- CellLabel->
-  "During evaluation of \
-In[205]:=",ExpressionUUID->"4b5ae8a7-21e5-43af-bb07-de8cb0202034"],
-
-Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/DiFfRG/Mathematica/\
-DiFfRG/Flows/AA/src/constructor.cc unchanged\"\>"], "Print",
- CellChangeTimes->{
-  3.9605209189903383`*^9, {3.960521064208685*^9, 3.9605210960338287`*^9}, 
-   3.960521296282436*^9, {3.960521330140387*^9, 3.960521335450263*^9}, 
-   3.960521485309887*^9, 3.960521546053385*^9, 3.96052160799863*^9, 
-   3.960521881230981*^9, {3.960521922806232*^9, 3.960521984227453*^9}, {
-   3.9605221452252197`*^9, 3.960522149536992*^9}, {3.960522192840962*^9, 
-   3.960522207488976*^9}, 3.960522243507053*^9},
- CellLabel->
-  "During evaluation of \
-In[205]:=",ExpressionUUID->"8eb6b023-ffef-414f-8d99-5cf1a573322f"],
-
-Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/DiFfRG/Mathematica/\
-DiFfRG/Flows/AA/src/CT_get.cc unchanged\"\>"], "Print",
- CellChangeTimes->{
-  3.9605209189903383`*^9, {3.960521064208685*^9, 3.9605210960338287`*^9}, 
-   3.960521296282436*^9, {3.960521330140387*^9, 3.960521335450263*^9}, 
-   3.960521485309887*^9, 3.960521546053385*^9, 3.96052160799863*^9, 
-   3.960521881230981*^9, {3.960521922806232*^9, 3.960521984227453*^9}, {
-   3.9605221452252197`*^9, 3.960522149536992*^9}, {3.960522192840962*^9, 
-   3.960522207488976*^9}, 3.9605222435077667`*^9},
- CellLabel->
-  "During evaluation of \
-In[205]:=",ExpressionUUID->"d74d1917-b826-4153-941a-30695faecbf5"],
-
-Cell[BoxData["\<\"Please run UpdateFlows[] to export an up-to-date \
-CMakeLists.txt\"\>"], "Print",
- CellChangeTimes->{
-  3.9605209189903383`*^9, {3.960521064208685*^9, 3.9605210960338287`*^9}, 
-   3.960521296282436*^9, {3.960521330140387*^9, 3.960521335450263*^9}, 
-   3.960521485309887*^9, 3.960521546053385*^9, 3.96052160799863*^9, 
-   3.960521881230981*^9, {3.960521922806232*^9, 3.960521984227453*^9}, {
-   3.9605221452252197`*^9, 3.960522149536992*^9}, {3.960522192840962*^9, 
-   3.960522207488976*^9}, 3.960522243508341*^9},
- CellLabel->
-  "During evaluation of \
-In[205]:=",ExpressionUUID->"956e77a7-2d91-4e01-baf5-d817ee9f9efb"],
-
-Cell[BoxData["\<\"Exported to \
-\\\"/home/franz/Documents/Uni/Code/DiFfRG/DiFfRG/Mathematica/DiFfRG/Flows/\
-CMakeLists.txt\\\"\"\>"], "Print",
- CellChangeTimes->{
-  3.9605209189903383`*^9, {3.960521064208685*^9, 3.9605210960338287`*^9}, 
-   3.960521296282436*^9, {3.960521330140387*^9, 3.960521335450263*^9}, 
-   3.960521485309887*^9, 3.960521546053385*^9, 3.96052160799863*^9, 
-   3.960521881230981*^9, {3.960521922806232*^9, 3.960521984227453*^9}, {
-   3.9605221452252197`*^9, 3.960522149536992*^9}, {3.960522192840962*^9, 
-   3.960522207488976*^9}, 3.96052224353723*^9},
- CellLabel->
-  "During evaluation of \
-In[205]:=",ExpressionUUID->"7bc54f67-4cea-41c3-ad6e-c325bdbba699"],
-
-Cell[BoxData["\<\"Exported to \
-\\\"/home/franz/Documents/Uni/Code/DiFfRG/DiFfRG/Mathematica/DiFfRG/Flows/\
-flows.hh\\\"\"\>"], "Print",
- CellChangeTimes->{
-  3.9605209189903383`*^9, {3.960521064208685*^9, 3.9605210960338287`*^9}, 
-   3.960521296282436*^9, {3.960521330140387*^9, 3.960521335450263*^9}, 
-   3.960521485309887*^9, 3.960521546053385*^9, 3.96052160799863*^9, 
-   3.960521881230981*^9, {3.960521922806232*^9, 3.960521984227453*^9}, {
-   3.9605221452252197`*^9, 3.960522149536992*^9}, {3.960522192840962*^9, 
-   3.960522207488976*^9}, 3.960522243755961*^9},
- CellLabel->
-  "During evaluation of \
-In[205]:=",ExpressionUUID->"65426ea0-9023-481a-862f-afeffbf67a77"],
-
-Cell[BoxData["\<\"Exported to \
-\\\"/home/franz/Documents/Uni/Code/DiFfRG/DiFfRG/Mathematica/DiFfRG/Flows/\
-flows.cc\\\"\"\>"], "Print",
- CellChangeTimes->{
-  3.9605209189903383`*^9, {3.960521064208685*^9, 3.9605210960338287`*^9}, 
-   3.960521296282436*^9, {3.960521330140387*^9, 3.960521335450263*^9}, 
-   3.960521485309887*^9, 3.960521546053385*^9, 3.96052160799863*^9, 
-   3.960521881230981*^9, {3.960521922806232*^9, 3.960521984227453*^9}, {
-   3.9605221452252197`*^9, 3.960522149536992*^9}, {3.960522192840962*^9, 
-   3.960522207488976*^9}, 3.960522243777368*^9},
- CellLabel->
-  "During evaluation of \
-In[205]:=",ExpressionUUID->"cc4c9cd8-ec00-4333-aca1-9e6bd0e595e9"]
-}, Open  ]]
-}, Open  ]]
+   3.9627880418452177`*^9}, {3.96293877530875*^9, 3.9629388638371572`*^9}, {
+   3.962939238896337*^9, 3.962939243600072*^9}, {3.96293967560163*^9, 
+   3.962939675783*^9}},ExpressionUUID->"bbb4c34a-71cf-44cc-a5d3-2d21634b59cd"]
 }, Open  ]]
 }, Open  ]],
 
@@ -3906,7 +4031,7 @@ Cell[BoxData[
 AutoGeneratedPackage->Automatic,
 InitializationCellEvaluation->False,
 InitializationCellWarning->False,
-WindowSize->{1185, 711},
+WindowSize->{1200, 750},
 WindowMargins->{{0, Automatic}, {Automatic, 0}},
 Magnification:>0.5 Inherited,
 FrontEndVersion->"14.1 for Linux x86 (64-bit) (July 16, 2024)",
@@ -3937,80 +4062,66 @@ Cell[770, 29, 158, 3, 34, "Chapter",ExpressionUUID->"2d5f9f27-5490-4bea-8ecf-1b3
 Cell[CellGroupData[{
 Cell[953, 36, 161, 3, 33, "Section",ExpressionUUID->"61eae6f8-8864-4150-9158-1ce7d9f393be"],
 Cell[1117, 41, 611, 15, 58, "Code",ExpressionUUID->"61eeed29-b199-412c-9a91-f659c54d031c"],
-Cell[1731, 58, 241, 7, 26, "Input",ExpressionUUID->"65d902ca-dcf6-4823-97a2-46319b05d715"],
-Cell[1975, 67, 11015, 224, 950, "Code",ExpressionUUID->"e967b969-bd44-41d7-8598-8812e1394d8a"],
-Cell[12993, 293, 245, 6, 30, "Code",ExpressionUUID->"334e210a-0008-4f8a-aa82-905e18a840c0"]
+Cell[1731, 58, 412, 11, 33, "Input",ExpressionUUID->"65d902ca-dcf6-4823-97a2-46319b05d715"],
+Cell[2146, 71, 11015, 224, 950, "Code",ExpressionUUID->"e967b969-bd44-41d7-8598-8812e1394d8a"],
+Cell[13164, 297, 245, 6, 30, "Code",ExpressionUUID->"334e210a-0008-4f8a-aa82-905e18a840c0"]
 }, Open  ]]
 }, Open  ]],
 Cell[CellGroupData[{
-Cell[13287, 305, 321, 5, 34, "Chapter",ExpressionUUID->"337028bb-22a5-4c7a-abf1-dfc7beb47d0a"],
-Cell[13611, 312, 7657, 174, 168, "Input",ExpressionUUID->"f7ee6a73-23f9-402d-9c49-abbbd26f22a2"]
+Cell[13458, 309, 321, 5, 34, "Chapter",ExpressionUUID->"337028bb-22a5-4c7a-abf1-dfc7beb47d0a"],
+Cell[13782, 316, 7657, 174, 168, "Input",ExpressionUUID->"f7ee6a73-23f9-402d-9c49-abbbd26f22a2"]
 }, Open  ]],
 Cell[CellGroupData[{
-Cell[21305, 491, 187, 3, 34, "Chapter",ExpressionUUID->"e84729ed-8582-435d-b0b5-b57d953a283a"],
+Cell[21476, 495, 187, 3, 34, "Chapter",ExpressionUUID->"e84729ed-8582-435d-b0b5-b57d953a283a"],
 Cell[CellGroupData[{
-Cell[21517, 498, 157, 3, 33, "Section",ExpressionUUID->"e3370f84-23df-49af-8ad2-b13a8cd01695"],
+Cell[21688, 502, 157, 3, 33, "Section",ExpressionUUID->"e3370f84-23df-49af-8ad2-b13a8cd01695"],
 Cell[CellGroupData[{
-Cell[21699, 505, 1887, 41, 79, "Input",ExpressionUUID->"8c3ad375-b15e-4205-b5d3-d9996ccd7abf",
+Cell[21870, 509, 1887, 41, 79, "Input",ExpressionUUID->"8c3ad375-b15e-4205-b5d3-d9996ccd7abf",
  InitializationCell->True],
-Cell[23589, 548, 866, 14, 30, "Print",ExpressionUUID->"513a5fde-57bd-4577-aefc-468c243da577"]
+Cell[23760, 552, 866, 14, 30, "Print",ExpressionUUID->"513a5fde-57bd-4577-aefc-468c243da577"]
 }, Open  ]]
 }, Open  ]],
-Cell[24482, 566, 159, 3, 33, "Section",ExpressionUUID->"a0be1f2b-f273-4a1e-8a34-31c5569270ec"],
+Cell[24653, 570, 159, 3, 33, "Section",ExpressionUUID->"a0be1f2b-f273-4a1e-8a34-31c5569270ec"],
 Cell[CellGroupData[{
-Cell[24666, 573, 241, 4, 28, "Section",ExpressionUUID->"c33c8252-d769-4f2c-a755-55e259430a36"],
+Cell[24837, 577, 241, 4, 28, "Section",ExpressionUUID->"c33c8252-d769-4f2c-a755-55e259430a36"],
 Cell[CellGroupData[{
-Cell[24932, 581, 247, 4, 26, "Subsection",ExpressionUUID->"3055f86e-1202-4f7c-82d7-f4a1322b935a"],
-Cell[25182, 587, 5438, 124, 246, "Input",ExpressionUUID->"c4e780f8-15b6-40cb-8a1d-2bd5bf49ac16"],
-Cell[30623, 713, 8149, 185, 291, "Input",ExpressionUUID->"a0d59af2-759a-487a-b63e-d2d14b73cd1d",
+Cell[25103, 585, 247, 4, 26, "Subsection",ExpressionUUID->"3055f86e-1202-4f7c-82d7-f4a1322b935a"],
+Cell[25353, 591, 5789, 134, 264, "Input",ExpressionUUID->"c4e780f8-15b6-40cb-8a1d-2bd5bf49ac16"],
+Cell[31145, 727, 10225, 237, 324, "Input",ExpressionUUID->"a0d59af2-759a-487a-b63e-d2d14b73cd1d",
  InitializationCell->True],
-Cell[38775, 900, 6252, 145, 269, "Input",ExpressionUUID->"7f2c99fd-a79f-46c2-854f-98e61ebec777"]
+Cell[41373, 966, 8148, 189, 301, "Input",ExpressionUUID->"7f2c99fd-a79f-46c2-854f-98e61ebec777"]
 }, Closed]],
 Cell[CellGroupData[{
-Cell[45064, 1050, 249, 4, 20, "Subsection",ExpressionUUID->"b9fc50c2-dc66-4696-839b-23e9ccbcf6cb"],
-Cell[45316, 1056, 6824, 152, 269, "Input",ExpressionUUID->"02076b1d-a114-4058-b10c-0074b1c0bf44",
+Cell[49558, 1160, 249, 4, 20, "Subsection",ExpressionUUID->"b9fc50c2-dc66-4696-839b-23e9ccbcf6cb"],
+Cell[49810, 1166, 8299, 188, 301, "Input",ExpressionUUID->"02076b1d-a114-4058-b10c-0074b1c0bf44",
  InitializationCell->True],
-Cell[52143, 1210, 6827, 160, 291, "Input",ExpressionUUID->"3f57e62b-c21b-46a5-aac5-5e869eaa87ee"]
+Cell[58112, 1356, 8655, 206, 324, "Input",ExpressionUUID->"3f57e62b-c21b-46a5-aac5-5e869eaa87ee"]
 }, Closed]],
 Cell[CellGroupData[{
-Cell[59007, 1375, 275, 5, 20, "Subsection",ExpressionUUID->"81cfd11a-63a8-4205-8e64-8f4881ece817"],
-Cell[59285, 1382, 6111, 134, 290, "Input",ExpressionUUID->"a7b5ee41-8585-4441-b62c-89d022f47a1c",
+Cell[66804, 1567, 275, 5, 20, "Subsection",ExpressionUUID->"81cfd11a-63a8-4205-8e64-8f4881ece817"],
+Cell[67082, 1574, 7511, 166, 301, "Input",ExpressionUUID->"a7b5ee41-8585-4441-b62c-89d022f47a1c",
  InitializationCell->True],
-Cell[65399, 1518, 5261, 118, 271, "Input",ExpressionUUID->"3329a8ad-9322-4b94-9584-392b163bb430"]
+Cell[74596, 1742, 6808, 157, 290, "Input",ExpressionUUID->"3329a8ad-9322-4b94-9584-392b163bb430"]
 }, Closed]]
 }, Open  ]]
 }, Open  ]],
 Cell[CellGroupData[{
-Cell[70721, 1643, 163, 3, 34, "Chapter",ExpressionUUID->"b45359a4-435a-48f5-938f-6624251f7dc8"],
+Cell[81465, 1906, 163, 3, 34, "Chapter",ExpressionUUID->"b45359a4-435a-48f5-938f-6624251f7dc8"],
 Cell[CellGroupData[{
-Cell[70909, 1650, 232, 4, 33, "Section",ExpressionUUID->"e1a8482c-beb3-4c41-b9f2-3acff2f366ec"],
-Cell[71144, 1656, 328, 7, 26, "Input",ExpressionUUID->"c34c2e5d-fc0f-418f-b9c3-1a00606907ef"],
-Cell[71475, 1665, 1285, 32, 59, "Input",ExpressionUUID->"98e4158d-9c35-4453-b846-9266ccd560a6"],
-Cell[72763, 1699, 2744, 68, 197, "Input",ExpressionUUID->"9c70148c-55a4-4f21-a7c7-4a6c939615b7"],
-Cell[75510, 1769, 1716, 40, 147, "Input",ExpressionUUID->"0055a277-a39a-4b5c-9683-a43ce79e216b"],
-Cell[77229, 1811, 1963, 51, 162, "Input",ExpressionUUID->"b90739d0-bd4c-4baa-bbdf-b9da1653e5fc"],
-Cell[79195, 1864, 20257, 408, 1361, "Input",ExpressionUUID->"000d09ba-085d-4cc6-a3bd-8ab73047b879"],
-Cell[99455, 2274, 70610, 1459, 3268, "Input",ExpressionUUID->"bbb4c34a-71cf-44cc-a5d3-2d21634b59cd"],
-Cell[CellGroupData[{
-Cell[170090, 3737, 1108, 24, 69, "Input",ExpressionUUID->"21618124-c4e5-415b-a543-939f21650ade"],
-Cell[CellGroupData[{
-Cell[171223, 3765, 664, 11, 16, "Print",ExpressionUUID->"83f930e9-3d81-415f-a957-fb7da573d597"],
-Cell[171890, 3778, 668, 11, 16, "Print",ExpressionUUID->"4b5ae8a7-21e5-43af-bb07-de8cb0202034"],
-Cell[172561, 3791, 675, 11, 16, "Print",ExpressionUUID->"8eb6b023-ffef-414f-8d99-5cf1a573322f"],
-Cell[173239, 3804, 672, 11, 16, "Print",ExpressionUUID->"d74d1917-b826-4153-941a-30695faecbf5"],
-Cell[173914, 3817, 637, 11, 16, "Print",ExpressionUUID->"956e77a7-2d91-4e01-baf5-d817ee9f9efb"],
-Cell[174554, 3830, 679, 12, 16, "Print",ExpressionUUID->"7bc54f67-4cea-41c3-ad6e-c325bdbba699"],
-Cell[175236, 3844, 674, 12, 16, "Print",ExpressionUUID->"65426ea0-9023-481a-862f-afeffbf67a77"],
-Cell[175913, 3858, 674, 12, 16, "Print",ExpressionUUID->"cc4c9cd8-ec00-4333-aca1-9e6bd0e595e9"]
-}, Open  ]]
-}, Open  ]]
+Cell[81653, 1913, 232, 4, 33, "Section",ExpressionUUID->"e1a8482c-beb3-4c41-b9f2-3acff2f366ec"],
+Cell[81888, 1919, 1520, 37, 80, "Input",ExpressionUUID->"98e4158d-9c35-4453-b846-9266ccd560a6"],
+Cell[83411, 1958, 2744, 68, 197, "Input",ExpressionUUID->"9c70148c-55a4-4f21-a7c7-4a6c939615b7"],
+Cell[86158, 2028, 1716, 40, 147, "Input",ExpressionUUID->"0055a277-a39a-4b5c-9683-a43ce79e216b"],
+Cell[87877, 2070, 1963, 51, 162, "Input",ExpressionUUID->"b90739d0-bd4c-4baa-bbdf-b9da1653e5fc"],
+Cell[89843, 2123, 20257, 408, 1361, "Input",ExpressionUUID->"000d09ba-085d-4cc6-a3bd-8ab73047b879"],
+Cell[110103, 2533, 70916, 1464, 3311, "Input",ExpressionUUID->"bbb4c34a-71cf-44cc-a5d3-2d21634b59cd"]
 }, Open  ]]
 }, Open  ]],
 Cell[CellGroupData[{
-Cell[176660, 3878, 162, 3, 34, "Chapter",ExpressionUUID->"e8c3cc19-732d-4100-ba41-4f741977ed46"],
-Cell[176825, 3883, 231, 6, 35, "Input",ExpressionUUID->"9b9ea4fc-21b7-44a7-a56c-9624eb86aa03"],
-Cell[177059, 3891, 151, 4, 35, "Code",ExpressionUUID->"404ab529-fa01-4a17-8d30-d78a744d6275"],
-Cell[177213, 3897, 158, 4, 35, "Code",ExpressionUUID->"71cbb145-c03b-495b-a560-6fe322da1f14"]
+Cell[181068, 4003, 162, 3, 34, "Chapter",ExpressionUUID->"e8c3cc19-732d-4100-ba41-4f741977ed46"],
+Cell[181233, 4008, 231, 6, 35, "Input",ExpressionUUID->"9b9ea4fc-21b7-44a7-a56c-9624eb86aa03"],
+Cell[181467, 4016, 151, 4, 35, "Code",ExpressionUUID->"404ab529-fa01-4a17-8d30-d78a744d6275"],
+Cell[181621, 4022, 158, 4, 35, "Code",ExpressionUUID->"71cbb145-c03b-495b-a560-6fe322da1f14"]
 }, Closed]]
 }, Open  ]]
 }

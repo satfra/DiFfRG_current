@@ -252,35 +252,49 @@ namespace DiFfRG
                   res);
             } else if constexpr (dim == 4) {
               Kokkos::parallel_reduce(
-                  Kokkos::TeamThreadMDRange(team, n[0].size(), n[1].size(), n[2].size(),
-                                            n[3].size()), // range of the kernel
-                  [&](const uint idx0, const uint idx1, const uint idx2, const uint idx3, NT &update) {
+                  Kokkos::TeamThreadRange(team, n[0].size()), // range of the kernel
+                  [&](const uint idx0, NT &o_update) {
                     const ctype x0 = Kokkos::fma(scale[0], n[0][idx0], start[0]);
-                    const ctype x1 = Kokkos::fma(scale[1], n[1][idx1], start[1]);
-                    const ctype x2 = Kokkos::fma(scale[2], n[2][idx2], start[2]);
-                    const ctype x3 = Kokkos::fma(scale[3], n[3][idx3], start[3]);
-                    const ctype weight =
-                        w[0][idx0] * scale[0] * w[1][idx1] * scale[1] * w[2][idx2] * scale[2] * w[3][idx3] * scale[3];
-                    const NT result = device::apply(
-                        [&](const auto &...iargs) { return KERNEL::kernel(x0, x1, x2, x3, iargs...); }, full_args);
-                    update += weight * result;
+                    const ctype o_weight = w[0][idx0] * scale[0];
+                    Kokkos::parallel_reduce(
+                        Kokkos::ThreadVectorMDRange(team, n[1].size(), n[2].size(),
+                                                    n[3].size()), // range of the kernel
+                        [&](const uint idx1, const uint idx2, const uint idx3, NT &update) {
+                          const ctype x1 = Kokkos::fma(scale[1], n[1][idx1], start[1]);
+                          const ctype x2 = Kokkos::fma(scale[2], n[2][idx2], start[2]);
+                          const ctype x3 = Kokkos::fma(scale[3], n[3][idx3], start[3]);
+                          const ctype weight =
+                              o_weight * w[1][idx1] * scale[1] * w[2][idx2] * scale[2] * w[3][idx3] * scale[3];
+                          const NT result = device::apply(
+                              [&](const auto &...iargs) { return KERNEL::kernel(x0, x1, x2, x3, iargs...); },
+                              full_args);
+                          update += weight * result;
+                        },
+                        o_update);
                   },
                   res);
             } else if constexpr (dim == 5) {
               Kokkos::parallel_reduce(
-                  Kokkos::TeamThreadMDRange(team, n[0].size(), n[1].size(), n[2].size(), n[3].size(),
-                                            n[4].size()), // range of the kernel
-                  [&](const uint idx0, const uint idx1, const uint idx2, const uint idx3, const uint idx4, NT &update) {
+                  Kokkos::TeamThreadRange(team, n[0].size()), // range of the kernel
+                  [&](const uint idx0, NT &o_update) {
                     const ctype x0 = Kokkos::fma(scale[0], n[0][idx0], start[0]);
-                    const ctype x1 = Kokkos::fma(scale[1], n[1][idx1], start[1]);
-                    const ctype x2 = Kokkos::fma(scale[2], n[2][idx2], start[2]);
-                    const ctype x3 = Kokkos::fma(scale[3], n[3][idx3], start[3]);
-                    const ctype x4 = Kokkos::fma(scale[4], n[4][idx4], start[4]);
-                    const ctype weight = w[0][idx0] * scale[0] * w[1][idx1] * scale[1] * w[2][idx2] * scale[2] *
-                                         w[3][idx3] * scale[3] * w[4][idx4] * scale[4];
-                    const NT result = device::apply(
-                        [&](const auto &...iargs) { return KERNEL::kernel(x0, x1, x2, x3, x4, iargs...); }, full_args);
-                    update += weight * result;
+                    const ctype o_weight = w[0][idx0] * scale[0];
+                    Kokkos::parallel_reduce(
+                        Kokkos::ThreadVectorMDRange(team, n[1].size(), n[2].size(), n[3].size(),
+                                                    n[4].size()), // range of the kernel
+                        [&](const uint idx1, const uint idx2, const uint idx3, const uint idx4, NT &update) {
+                          const ctype x1 = Kokkos::fma(scale[1], n[1][idx1], start[1]);
+                          const ctype x2 = Kokkos::fma(scale[2], n[2][idx2], start[2]);
+                          const ctype x3 = Kokkos::fma(scale[3], n[3][idx3], start[3]);
+                          const ctype x4 = Kokkos::fma(scale[4], n[4][idx4], start[4]);
+                          const ctype weight = o_update * w[1][idx1] * scale[1] * w[2][idx2] * scale[2] * w[3][idx3] *
+                                               scale[3] * w[4][idx4] * scale[4];
+                          const NT result = device::apply(
+                              [&](const auto &...iargs) { return KERNEL::kernel(x0, x1, x2, x3, x4, iargs...); },
+                              full_args);
+                          update += weight * result;
+                        },
+                        o_update);
                   },
                   res);
             } else if constexpr (dim > 5) {
