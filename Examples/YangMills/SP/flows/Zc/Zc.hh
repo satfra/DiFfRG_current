@@ -17,23 +17,24 @@ namespace DiFfRG
 
     Integrator_p2_1ang<4, double, Zc_kernel<Regulator>, DiFfRG::GPU_exec> integrator;
 
-    void map(double *dest, const LogarithmicCoordinates1D<double> &coordinates, const double &k,
-             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZA3,
-             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZccbA,
-             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZA4,
-             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &dtZc,
-             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &Zc,
-             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &dtZA,
-             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZA);
+    DiFfRG::GPU_exec map(double *dest, const LogarithmicCoordinates1D<double> &coordinates, const double &k,
+                         const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZA3,
+                         const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZAcbc,
+                         const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZA4,
+                         const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &dtZc,
+                         const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &Zc,
+                         const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &dtZA,
+                         const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZA);
 
-    template <typename C, typename... T> void map(double *dest, const C &coordinates, const device::tuple<T...> &args)
+    template <typename C, typename... T>
+    DiFfRG::GPU_exec map(double *dest, const C &coordinates, const device::tuple<T...> &args)
     {
-      device::apply([&](const auto... t) { map(dest, coordinates, t...); }, args);
+      return device::apply([&](const auto... t) { return map(dest, coordinates, t...); }, args);
     }
 
     void get(double &dest, const double &p, const double &k,
              const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZA3,
-             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZccbA,
+             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZAcbc,
              const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZA4,
              const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &dtZc,
              const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &Zc,

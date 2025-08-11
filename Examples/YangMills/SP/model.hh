@@ -124,10 +124,6 @@ public:
     std::vector<double> old_dtZA(p_grid_size);
     std::vector<double> old_dtZc(p_grid_size);
 
-    double res;
-    flow_equations.ZA.get(res, 0.01, arguments);
-    std::cout << "dtZA(0.01) = " << res << std::endl;
-
     // start by solving the equations for propagators
     bool eta_converged = false;
     uint n_iter = 0;
@@ -138,8 +134,12 @@ public:
         old_dtZc[i] = dtZc[i];
       }
 
-      flow_equations.ZA.map(&residual[idxv("ZA")], coordinates1D, arguments);
-      flow_equations.Zc.map(&residual[idxv("Zc")], coordinates1D, arguments);
+      double res;
+      flow_equations.ZA.get(res, 0.01, arguments);
+      std::cout << "dtZA(0.01) = " << res << std::endl;
+
+      const auto ZA_exec = flow_equations.ZA.map(&residual[idxv("ZA")], coordinates1D, arguments);
+      const auto Zc_exec = flow_equations.Zc.map(&residual[idxv("Zc")], coordinates1D, arguments);
       Kokkos::fence();
 
       dtZA.update(&residual[idxv("ZA")]);
@@ -156,27 +156,10 @@ public:
     }
     std::cout << "Converged after " << n_iter << " iterations." << std::endl;
 
-    // flow_equations.ZA4.map(&residual[idxv("ZA4")], coordinates1D, arguments);
-    // flow_equations.ZAcbc.map(&residual[idxv("ZAcbc")], coordinates1D, arguments);
-    // flow_equations.ZA3.map(&residual[idxv("ZA3")], coordinates1D, arguments);
-    // Kokkos::fence();
-
-    /*
-    // call all other integrators
-    auto futures_ZA3 = request_data<double>(flow_equations.ZA3_integrator, grid1D, k, arguments);
-    auto futures_ZAcbc = request_data<double>(flow_equations.ZAcbc_integrator, grid1D, k, arguments);
-    auto futures_ZA4 = request_data<double>(flow_equations.ZA4_integrator, grid1D, k, arguments);
-
-    // get all results and write them to residual
-    update_data(futures_ZA3, &residual[idxv("ZA3")]);
-    update_data(futures_ZAcbc, &residual[idxv("ZAcbc")]);
-    update_data(futures_ZA4, &residual[idxv("ZA4")]);
-
-    for (uint i = 0; i < p_grid_size; ++i) {
-      residual[idxv("ZA") + i] = dtZA.data()[i];
-      residual[idxv("Zc") + i] = dtZc.data()[i];
-    }
-    */
+    const auto exec_ZA4 = flow_equations.ZA4.map(&residual[idxv("ZA4")], coordinates1D, arguments);
+    const auto exec_ZAcbc = flow_equations.ZAcbc.map(&residual[idxv("ZAcbc")], coordinates1D, arguments);
+    const auto exec_ZA3 = flow_equations.ZA3.map(&residual[idxv("ZA3")], coordinates1D, arguments);
+    Kokkos::fence();
   }
 
   template <int dim, typename DataOut, typename Solutions>
