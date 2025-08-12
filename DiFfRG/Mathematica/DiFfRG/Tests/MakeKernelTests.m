@@ -1,10 +1,3 @@
-(* Off[Assert::"AssertFalse"];
-
-AppendTo[$Path, FileNameJoin[{DirectoryName[$InputFileName], "..", "modules"
-     }]]
-
-Get["MakeKernel.m"] *)
-
 Needs["DiFfRG`CodeTools`Utils`"]
 
 sortKeys[assoc_] :=

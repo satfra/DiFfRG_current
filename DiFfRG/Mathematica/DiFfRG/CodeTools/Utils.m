@@ -11,23 +11,17 @@ Begin["`Private`"]
 ClearAll[appendDefaultAssociation, processParameters]
 
 appendDefaultAssociation[config_] :=
-    Merge[{config, <|"Type" -> "double", "Reference" -> True, "Const"
-         -> True|>}, First];
+    Merge[{config, <|"Type" -> "double", "Reference" -> True, "Const" -> True|>}, First];
 
 processParameters[params_List, adReplacements_List] :=
     Module[{processedParams = params, paramsAD = {}},
         For[i = 1, i <= Length[processedParams], i++,
-            processedParams[[i]] = appendDefaultAssociation[processedParams
-                [[i]]];
-            paramsAD =
-                Append[
-                    paramsAD
-                    ,
+            processedParams[[i]] = appendDefaultAssociation[processedParams[[i]]];
+            paramsAD = Append[
+                    paramsAD,
                     Module[{typeAD},
-                        typeAD = processedParams[[i]]["Type"] /. adReplacements
-                            ;
-                        Merge[{processedParams[[i]], <|"Type" -> typeAD
-                            |>}, Last]
+                        typeAD = processedParams[[i]]["Type"] /. adReplacements;
+                        Merge[{processedParams[[i]], <|"Type" -> typeAD|>}, Last]
                     ]
                 ];
         ];
