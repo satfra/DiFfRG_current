@@ -83,7 +83,7 @@ TEMPLATE_TEST_CASE_SIG("Test ND quadrature integrals", "[integration][quadrature
 
       const uint rsize = GENERATE(32, 64);
       std::vector<NT> integral_view(rsize);
-      LinearCoordinates1D<ctype> coordinates(rsize, 0., 0.);
+      LinearCoordinates1D<ctype> coordinates(rsize, 0., 1.);
 
       std::apply([&](auto... coeffs) { integrator.map(integral_view.data(), coordinates, coeffs...).fence(); }, coeffs);
 
@@ -137,50 +137,25 @@ TEMPLATE_TEST_CASE_SIG("Test ND quadrature integrals", "[integration][quadrature
     }
   };
 
-  SECTION("Threads integrals"){
-      /*
-       std::cout << "Threads integrals" << std::endl;
-       std::cout << "dim: " << dim << std::endl;
-
-       std::cout << "1. double" << std::endl;
-       check(Threads_exec(), (double)0);
-       std::cout << "2. complex<double>" << std::endl;
-       check(Threads_exec(), (complex<double>)0);
-       std::cout << "3. float" << std::endl;
-       check(Threads_exec(), (float)0);
-       std::cout << "4. autodiff::real" << std::endl;
-       check(Threads_exec(), (autodiff::real)0);
-       */
+  SECTION("Threads integrals")
+  {
+    check(Threads_exec(), (double)0);
+    check(Threads_exec(), (complex<double>)0);
+    check(Threads_exec(), (float)0);
+    check(Threads_exec(), (autodiff::real)0);
   };
   SECTION("TBB integrals")
   {
-    tbb::task_arena tbb_arena(tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism));
-    tbb_arena.initialize();
-    tbb_arena.execute([&]() {
-      std::cout << tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism)
-                << " threads are max used for TBB execution" << std::endl;
-      std::cout << tbb::this_task_arena::max_concurrency() << " threads are TBB concurrency execution" << std::endl;
-      std::cout << "1. double" << std::endl;
-      check(TBB_exec(), (double)0);
-      std::cout << "2. complex<double>" << std::endl;
-      check(TBB_exec(), (complex<double>)0);
-      std::cout << "3. float" << std::endl;
-      check(TBB_exec(), (float)0);
-      std::cout << "4. autodiff::real" << std::endl;
-      check(TBB_exec(), (autodiff::real)0);
-    });
+    check(TBB_exec(), (double)0);
+    check(TBB_exec(), (complex<double>)0);
+    check(TBB_exec(), (float)0);
+    check(TBB_exec(), (autodiff::real)0);
   };
-  SECTION("GPU integrals"){
-      /*std::cout << "GPU integrals" << std::endl;
-      std::cout << "dim: " << dim << std::endl;
-
-      std::cout << "1. double" << std::endl;
-      check(GPU_exec(), (double)0);
-      std::cout << "2. complex<double>" << std::endl;
-      check(GPU_exec(), (complex<double>)0);
-      std::cout << "3. float" << std::endl;
-      check(GPU_exec(), (float)0);
-      std::cout << "4. autodiff::real" << std::endl;
-      check(GPU_exec(), (autodiff::real)0);*/
+  SECTION("GPU integrals")
+  {
+    check(GPU_exec(), (double)0);
+    check(GPU_exec(), (complex<double>)0);
+    check(GPU_exec(), (float)0);
+    check(GPU_exec(), (autodiff::real)0);
   };
 }

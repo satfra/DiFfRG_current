@@ -44,7 +44,7 @@ namespace DiFfRG
     const uint m_size;
   };
 
-  template <typename Idx, typename NT> class BosonicMatsubaraValues
+  template <typename Idx = int, typename NT = double> class BosonicMatsubaraValues
   {
   public:
     using ctype = NT;
@@ -88,7 +88,7 @@ namespace DiFfRG
     const uint m_size;
   };
 
-  template <typename Idx, typename NT> class FermionicMatsubaraValues
+  template <typename Idx = int, typename NT = double> class FermionicMatsubaraValues
   {
   public:
     using ctype = NT;

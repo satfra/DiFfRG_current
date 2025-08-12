@@ -1,6 +1,7 @@
 #pragma once
 
 #include <initializer_list>
+
 namespace DiFfRG
 {
   /**
@@ -32,10 +33,11 @@ namespace DiFfRG
       }
     }
 
-  constexpr FixedString( char const(&arr)[N] ) {
-    for (unsigned i = 0; i < N; ++i)
-      buf[i] = arr[i];
-  }
+    constexpr FixedString(char const (&arr)[N])
+    {
+      for (unsigned i = 0; i < N; ++i)
+        buf[i] = arr[i];
+    }
 
     constexpr operator char const *() const { return buf; }
 
@@ -44,8 +46,7 @@ namespace DiFfRG
 
   template <unsigned N> FixedString(char const (&)[N]) -> FixedString<N - 1>;
 
-  template <unsigned N1, unsigned N2>
-  consteval bool strings_equal(FixedString<N1> s1, FixedString<N2> s2)
+  template <unsigned N1, unsigned N2> consteval bool strings_equal(FixedString<N1> s1, FixedString<N2> s2)
   {
     if (N1 != N2) return false;
     for (unsigned i = 0; i < N1; ++i)

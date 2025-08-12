@@ -21,7 +21,11 @@ namespace DiFfRG
 
     void balance();
 
-    template <typename INT> void register_integrator(INT &integrator) { integrators.push_back(&integrator); }
+    template <typename INT> void register_integrator(INT &integrator)
+    {
+      // Other logic ....
+      integrators.push_back(&integrator);
+    }
 
   private:
     MPI_Comm mpi_comm;

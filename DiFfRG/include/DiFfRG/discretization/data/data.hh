@@ -4,11 +4,11 @@
 #include <deal.II/base/function.h>
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/lac/vector.h>
-#include <deal.II/numerics/vector_tools.h>
 
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/common/abstract_data.hh>
+#include <deal.II/numerics/vector_tools.h>
 
 namespace DiFfRG
 {
@@ -16,7 +16,7 @@ namespace DiFfRG
 
   namespace internal
   {
-    template <uint dim, typename NumberType> class FunctionFromLambda : public Function<dim, NumberType>
+    template <uint dim, typename NumberType> class FunctionFromLambda : public dealii::Function<dim, NumberType>
     {
       using FUN = std::function<void(const Point<dim> &, Vector<NumberType> &)>;
 
@@ -168,8 +168,7 @@ namespace DiFfRG
 
   namespace FV
   {
-    template <typename Discretization>
-    using FlowingVariables = DiFfRG::FE::FlowingVariables<Discretization>;
+    template <typename Discretization> using FlowingVariables = DiFfRG::FE::FlowingVariables<Discretization>;
   } // namespace FV
 
 } // namespace DiFfRG

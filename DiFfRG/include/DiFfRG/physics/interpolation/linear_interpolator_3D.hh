@@ -13,7 +13,7 @@ namespace DiFfRG
    * @tparam NT input data type
    * @tparam Coordinates coordinate system of the input data
    */
-  template <typename MemorySpace, typename NT, typename Coordinates> class LinearInterpolator3D
+  template <typename NT, typename Coordinates, typename MemorySpace> class LinearInterpolator3D
   {
     static_assert(Coordinates::dim == 3, "LinearInterpolator3D requires 3D coordinates");
 
@@ -64,6 +64,11 @@ namespace DiFfRG
       Kokkos::deep_copy(device_data, host_data);
     }
 
+    NT operator[](size_t i) const
+    {
+      return host_data.data()[i]; // Access the host data directly
+    }
+
     /**
      * @brief Interpolate the data at a given point.
      *
@@ -79,9 +84,12 @@ namespace DiFfRG
       idx_z = max(static_cast<decltype(idx_z)>(0), min(idx_z, static_cast<decltype(idx_z)>(sizes[2] - 1)));
 
       // Clamp the (upper) index to the range [1, sizes - 1]
-      uint x1 = static_cast<uint>(min(ceil(idx_x + static_cast<decltype(idx_x)>(1e-16)), static_cast<decltype(idx_x)>(sizes[0] - 1)));
-      uint y1 = static_cast<uint>(min(ceil(idx_y + static_cast<decltype(idx_y)>(1e-16)), static_cast<decltype(idx_y)>(sizes[1] - 1)));
-      uint z1 = static_cast<uint>(min(ceil(idx_z + static_cast<decltype(idx_z)>(1e-16)), static_cast<decltype(idx_z)>(sizes[2] - 1)));
+      uint x1 = static_cast<uint>(
+          min(ceil(idx_x + static_cast<decltype(idx_x)>(1e-16)), static_cast<decltype(idx_x)>(sizes[0] - 1)));
+      uint y1 = static_cast<uint>(
+          min(ceil(idx_y + static_cast<decltype(idx_y)>(1e-16)), static_cast<decltype(idx_y)>(sizes[1] - 1)));
+      uint z1 = static_cast<uint>(
+          min(ceil(idx_z + static_cast<decltype(idx_z)>(1e-16)), static_cast<decltype(idx_z)>(sizes[2] - 1)));
 
       const auto corner000 = device_data(x1 - 1, y1 - 1, z1 - 1);
       const auto corner010 = device_data(x1 - 1, y1, z1 - 1);

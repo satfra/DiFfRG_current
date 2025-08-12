@@ -12,7 +12,7 @@ namespace DiFfRG
    * @tparam NT input data type
    * @tparam Coordinates coordinate system of the input data
    */
-  template <typename MemorySpace, typename NT, typename Coordinates> class LinearInterpolator2D
+  template <typename NT, typename Coordinates, typename MemorySpace> class LinearInterpolator2D
   {
     static_assert(Coordinates::dim == 2, "LinearInterpolator2D requires 2D coordinates");
 
@@ -61,6 +61,11 @@ namespace DiFfRG
       Kokkos::deep_copy(device_data, host_data);
     }
 
+    NT operator[](size_t i) const
+    {
+      return host_data.data()[i]; // Access the host data directly
+    }
+
     /**
      * @brief Interpolate the data at a given point.
      *
@@ -75,8 +80,10 @@ namespace DiFfRG
       idx_y = max(static_cast<decltype(idx_y)>(0), min(idx_y, static_cast<decltype(idx_y)>(sizes[1] - 1)));
 
       // Clamp the (upper) index to the range [1, sizes - 1]
-      uint x1 = static_cast<uint>(min(ceil(idx_x + static_cast<decltype(idx_x)>(1e-16)), static_cast<decltype(idx_x)>(sizes[0] - 1)));
-      uint y1 = static_cast<uint>(min(ceil(idx_y + static_cast<decltype(idx_y)>(1e-16)), static_cast<decltype(idx_y)>(sizes[1] - 1)));
+      uint x1 = static_cast<uint>(
+          min(ceil(idx_x + static_cast<decltype(idx_x)>(1e-16)), static_cast<decltype(idx_x)>(sizes[0] - 1)));
+      uint y1 = static_cast<uint>(
+          min(ceil(idx_y + static_cast<decltype(idx_y)>(1e-16)), static_cast<decltype(idx_y)>(sizes[1] - 1)));
 
       const auto corner00 = device_data(x1 - 1, y1 - 1);
       const auto corner01 = device_data(x1 - 1, y1);

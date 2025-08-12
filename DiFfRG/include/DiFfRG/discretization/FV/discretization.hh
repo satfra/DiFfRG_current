@@ -13,6 +13,7 @@
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/FV/assembler/KurganovTadmor.hh>
+#include <DiFfRG/discretization/discretization.hh>
 
 namespace DiFfRG
 {

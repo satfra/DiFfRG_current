@@ -104,11 +104,11 @@ Begin["`Private`"];
 flowName="flows";
 SetFlowName[name_String]:=Module[{},flowName=name]
 
-flowDir:=If[$Notebooks&&Not[Quiet[NotebookDirectory[]]===$Failed],NotebookDirectory[],Directory[]]<>"/"<>flowName<>"/";
+flowDir:=If[$Notebooks&&Not[Quiet[NotebookDirectory[]]===$Failed],NotebookDirectory[],Directory[]<>"/"]<>flowName<>"/";
 SetFlowDirectory[name_String]:=Module[{dir},
-dir=CreateDirectory[name<>"/"<>flowName<>"/";];
+dir=CreateDirectory[name<>flowName<>"/";];
 If[dir=!=$Failed,
-flowDir:=name<>"/"<>flowName<>"/";,Abort[]
+flowDir:=name<>flowName<>"/";,Abort[]
 ];
 ];
 ShowFlowDirectory[]:=Print["\!\(\*

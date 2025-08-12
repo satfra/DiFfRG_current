@@ -2,6 +2,7 @@
 #include <deal.II/lac/block_vector.h>
 
 // DiFfRG
+#include <DiFfRG/common/eigen.hh>
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
@@ -43,11 +44,10 @@ namespace DiFfRG
   {
     std::shared_ptr<DataOutput<dim, VectorType>> data_out_expl;
     DataOutput<dim, VectorType> *data_out = nullptr;
-    if(this->data_out == nullptr) {
+    if (this->data_out == nullptr) {
       data_out_expl = std::make_shared<DataOutput<dim, VectorType>>(json);
       data_out = data_out_expl.get();
-    }
-    else
+    } else
       data_out = this->data_out;
 
     const double gamma = 2. - std::sqrt(2.);

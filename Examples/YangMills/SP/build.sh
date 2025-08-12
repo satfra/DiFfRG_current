@@ -15,10 +15,6 @@ scriptpath="$(
   pwd -P
 )"
 
-if [[ "$OSTYPE" =~ ^darwin ]]; then
-  export OpenMP_ROOT=$(brew --prefix)/opt/libomp
-fi
-
 # ##############################################################################
 # Build application
 # ##############################################################################
@@ -26,4 +22,4 @@ fi
 mkdir -p build
 cd build
 cmake ..
-make -j"$threads"
+make -j${threads}

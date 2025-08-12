@@ -1,19 +1,5 @@
 # ##############################################################################
-# Tests for basic integrators
-# ##############################################################################
-
-add_executable(test_optimize optimize.cc)
-setup_test(test_optimize)
-
-add_executable(test_quadrature_integrator quadrature_integrator.cc)
-setup_test(test_quadrature_integrator)
-
-add_executable(test_distributed_quadrature_integrator
-               distributed_quadrature_integrator.cc)
-setup_test(test_distributed_quadrature_integrator)
-
-# ##############################################################################
-# # Add subdirectories
+# Add subdirectories
 # ##############################################################################
 
 add_subdirectory(vacuum)
@@ -21,8 +7,15 @@ add_subdirectory(finiteT)
 add_subdirectory(lattice)
 
 # ##############################################################################
+# Tests for basic integrators
+# ##############################################################################
+
+setup_test(optimize.cc)
+setup_test(quadrature_integrator.cc)
+setup_test(distributed_quadrature_integrator.cc)
+
+# ##############################################################################
 # Benchmarks
 # ##############################################################################
 
-add_executable(benchmark_integrator_1D benchmark_integrator_1D.cc)
-setup_benchmark(benchmark_integrator_1D)
+setup_benchmark(benchmark_integrator_1D.cc)

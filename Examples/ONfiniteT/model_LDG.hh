@@ -60,7 +60,7 @@ public:
   ON_finiteT(const JSONValue &json) : def::fRG(json.get_double("/physical/Lambda")), prm(json), flow_equations(json)
   {
     flow_equations.set_k(Lambda);
-    // flow_equations.set_T(prm.T);
+    flow_equations.set_T(prm.T);
 
     // We notify the assembler, that the (1,0) LDG function depends on the (0,0) LDG function.
     this->components().add_dependency(1, 0, 0, 0);
