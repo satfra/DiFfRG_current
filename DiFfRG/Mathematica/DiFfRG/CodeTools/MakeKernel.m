@@ -16,15 +16,16 @@ Needs["DiFfRG`CodeTools`Directory`"]
 
 Needs["DiFfRG`CodeTools`Export`"]
 
+Needs["DiFfRG`CodeTools`TemplateParameterGeneration`"]
+
 ClearAll[MakeKernel]
 
 Options[MakeKernel] = {"Coordinates" -> {}, "IntegrationVariables" ->
      {}, "KernelDefinitions" -> $StandardKernelDefinitions, "Regulator" ->
      "DiFfRG::PolynomialExpRegulator", "RegulatorOpts" -> {"", ""}};
 
-$ADReplacements = {};
 
-$ADReplacementsDirect = {"double" -> "autodiff::real", "complex" -> "complex<autodiff::real>"
+$ADReplacements = {"double" -> "autodiff::real", "complex" -> "complex<autodiff::real>"
     };
 
 MakeKernel[__] :=
@@ -54,94 +55,68 @@ MakeKernel[kernelExpr_, constExpr_, spec_Association, parameters_List,
         While[ListQ[expr], expr = Plus @@ expr];
         const = constExpr;
         While[ListQ[const], const = Plus @@ const];
-        kernel = FunKit`MakeCppFunction[expr, "Name" -> "kernel", "Suffix"
-             -> "", "Prefix" -> "static KOKKOS_FORCEINLINE_FUNCTION", "Parameters"
-             -> Join[OptionValue["IntegrationVariables"], parameters], "Body" -> 
-            "using namespace DiFfRG;using namespace DiFfRG::compute;"];
-        constant = FunKit`MakeCppFunction[constExpr, "Name" -> "constant",
-             "Suffix" -> "", "Prefix" -> "static KOKKOS_FORCEINLINE_FUNCTION", "Parameters"
-             -> parameters, "Body" -> "using namespace DiFfRG;using namespace DiFfRG::compute;"
-            ];
-        kernelClass = FunKit`MakeCppClass["TemplateTypes" -> {"_Regulator"
-            }, "Name" -> spec["Name"] <> "_kernel", "MembersPublic" -> {"using Regulator = _Regulator;",
-             kernel, constant}, "MembersPrivate" -> kernelDefs];
-        kernelHeader = FunKit`MakeCppHeader["Includes" -> {"DiFfRG/physics/utils.hh"
-            }, "Body" -> {"namespace DiFfRG {", kernelClass, "} using DiFfRG::" <>
-             spec["Name"] <> "_kernel;"}];
+        kernel = FunKit`MakeCppFunction[expr, 
+            "Name" -> "kernel", 
+            "Suffix" -> "", 
+            "Prefix" -> "static KOKKOS_FORCEINLINE_FUNCTION", 
+            "Parameters" -> Join[OptionValue["IntegrationVariables"], parameters], 
+            "Body" -> "using namespace DiFfRG;using namespace DiFfRG::compute;"
+        ];
+        constant = FunKit`MakeCppFunction[constExpr, 
+            "Name" -> "constant",
+            "Suffix" -> "", 
+            "Prefix" -> "static KOKKOS_FORCEINLINE_FUNCTION", 
+            "Parameters" -> parameters, 
+            "Body" -> "using namespace DiFfRG;using namespace DiFfRG::compute;"
+        ];
+        kernelClass = FunKit`MakeCppClass[
+            "TemplateTypes" -> {"_Regulator"}, 
+            "Name" -> spec["Name"] <> "_kernel", 
+            "MembersPublic" -> {"using Regulator = _Regulator;", kernel, constant}, 
+            "MembersPrivate" -> kernelDefs
+        ];
+        kernelHeader = FunKit`MakeCppHeader[
+            "Includes" -> {"DiFfRG/physics/utils.hh"}, 
+            "Body" -> {"namespace DiFfRG {", kernelClass, "} using DiFfRG::" <> spec["Name"] <> "_kernel;"}
+        ];
+
+
         params = FunKit`Private`prepParam /@ parameters;
-        {params, paramsAD} = processParameters[params, $ADReplacements
-            ];
+        {params, paramsAD} = processParameters[params, $ADReplacements];
         arguments = StringRiffle[Map[#["Name"]&, params], ", "];
-        integratorTemplateParams = {};
-        If[KeyExistsQ[spec, "d"] && spec["d"] =!= None,
-            AppendTo[integratorTemplateParams, ToString[spec["d"]]]
-        ];
-        If[KeyExistsQ[spec, "Type"],
-            AppendTo[integratorTemplateParams, ToString[spec["Type"]]
-                ]
-            ,
-            AppendTo[integratorTemplateParams, "double"]
-        ];
-        AppendTo[integratorTemplateParams, spec["Name"] <> "_kernel<Regulator>"
-            ];
-        AppendTo[
-            integratorTemplateParams
-            ,
-            If[KeyFreeQ[spec, "Device"] || FreeQ[{"GPU", "Threads"}, 
-                spec["Device"]],
-                "DiFfRG::TBB_exec"
-                ,
-                "DiFfRG::" <> spec["Device"] <> "_exec"
-            ]
-        ];
-        integratorTemplateParams = StringRiffle[integratorTemplateParams,
-             ", "];
-        integratorADTemplateParams = {};
-        If[KeyExistsQ[spec, "d"] && spec["d"] =!= None,
-            AppendTo[integratorADTemplateParams, ToString[spec["d"]]]
-                
-        ];
-        If[KeyExistsQ[spec, "Type"],
-            AppendTo[integratorADTemplateParams, StringReplace[ToString[
-                spec["Type"]], $ADReplacementsDirect]]
-            ,
-            AppendTo[integratorADTemplateParams, "autodiff::real"]
-        ];
-        AppendTo[integratorADTemplateParams, spec["Name"] <> "_kernel<Regulator>"
-            ];
-        AppendTo[
-            integratorADTemplateParams
-            ,
-            If[KeyFreeQ[spec, "Device"] || FreeQ[{"GPU", "Threads"}, 
-                spec["Device"]],
-                "DiFfRG::TBB_exec"
-                ,
-                "DiFfRG::" <> spec["Device"] <> "_exec"
-            ]
-        ];
-        integratorADTemplateParams = StringRiffle[integratorADTemplateParams,
-             ", "];
+
+        integratorTemplateParams = TemplateParameterGeneration[spec];
+        integratorTemplateParams = StringRiffle[integratorTemplateParams, ", "];
+        integratorADTemplateParams = TemplateParameterGeneration[spec, $ADReplacements];
+        integratorADTemplateParams = StringRiffle[integratorADTemplateParams, ", "];
+
         integratorHeader =
             FunKit`MakeCppHeader[
                 "Includes" -> {"DiFfRG/physics/interpolation.hh", "DiFfRG/physics/integration.hh",
-                     "DiFfRG/physics/physics.hh"}
-                ,
-                "Body" ->
-                    {
-                        "#include \"./kernel.hh\"\n"
-                        ,
-                        FunKit`MakeCppClass[
-                            "Name" -> spec["Name"] <> "_integrator"
-                            ,
-                            "MembersPublic" ->
-                                Join[
-                                    {
-                                        FunKit`MakeCppFunction["Name"
-                                             -> spec["Name"] <> "_integrator", "Parameters" -> {<|"Type" -> "DiFfRG::QuadratureProvider",
-                                             "Reference" -> True, "Const" -> False, "Name" -> "quadrature_provider"
-                                            |>, <|"Type" -> "DiFfRG::JSONValue", "Reference" -> True, "Const" -> 
-                                            True, "Name" -> "json"|>}, "Body" -> None, "Return" -> ""]
-                                        ,
+                    "DiFfRG/physics/physics.hh"},
+                "Body" -> {
+                    "#include \"./kernel.hh\"\n",
+                    FunKit`MakeCppClass[
+                        "Name" -> spec["Name"] <> "_integrator",
+                        "MembersPublic" ->
+                        Join[{
+                            FunKit`MakeCppFunction["Name" -> spec["Name"] <> "_integrator",
+                                "Parameters" -> {
+                                    <|
+                                        "Type" -> "DiFfRG::QuadratureProvider",
+                                        "Reference" -> True, "Const" -> False, 
+                                        "Name" -> "quadrature_provider"
+                                    |>, 
+                                    <|
+                                        "Type" -> "DiFfRG::JSONValue", 
+                                        "Reference" -> True, 
+                                        "Const" -> True, 
+                                        "Name" -> "json"
+                                    |>
+                                }, 
+                                "Body" -> None, 
+                                "Return" -> ""
+                            ],
                                         If[Length[coordinates] > 0,
                                             FunKit`MakeCppFunction["Name"
                                                  -> "map", "Templates" -> {"NT=double"}, "Parameters" -> {tparams}, "Body"
@@ -299,8 +274,7 @@ else if constexpr (std::is_same_v<NT, autodiff::real>)
         sources = Map[StringReplace[#, outputPath -> "${CMAKE_CURRENT_SOURCE_DIR}/"
              <> spec["Name"] <> "/"]&, sources];
         Export[outputPath <> "sources.m", sources];
-        Message[MakeKernel::info, "Please run UpdateFlows[] to export an up-to-date CMakeLists.txt"
-            ];
+        Print["Please run UpdateFlows[] to export an up-to-date CMakeLists.txt"];
     ];
 
 End[]
