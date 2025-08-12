@@ -17,9 +17,9 @@ namespace DiFfRG
       const auto _repl1 = RB(powr<2>(k), powr<2>(l1));
       const auto _repl2 = RBdot(powr<2>(k), powr<2>(l1));
       return 0.25 * (-1. + N) * _repl2 * sqrt(powr<-1>(_repl1 + powr<2>(l1) + m2Pi)) *
-                 CothFiniteT(sqrt(_repl1 + powr<2>(l1) + m2Pi), T) +
+                 powr<-1>(tanh(0.5 * sqrt(_repl1 + powr<2>(l1) + m2Pi) * powr<-1>(T))) +
              0.25 * _repl2 * sqrt(powr<-1>(_repl1 + powr<2>(l1) + m2Sigma)) *
-                 CothFiniteT(sqrt(_repl1 + powr<2>(l1) + m2Sigma), T);
+                 powr<-1>(tanh(0.5 * sqrt(_repl1 + powr<2>(l1) + m2Sigma) * powr<-1>(T)));
     }
 
     static KOKKOS_FORCEINLINE_FUNCTION auto constant(const double &k, const double &N, const double &T,

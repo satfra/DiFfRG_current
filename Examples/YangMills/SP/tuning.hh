@@ -4,7 +4,10 @@
 #include <DiFfRG/common/root_finding.hh>
 #include <DiFfRG/common/utils.hh>
 
-template <typename FUN> void tune_m2A(JSONValue &json, const std::string top_folder, const std::string output_name, const FUN &run)
+#include <filesystem>
+
+template <typename FUN>
+void tune_m2A(JSONValue &json, const std::string top_folder, const std::string output_name, const FUN &run)
 {
   const uint precision = (uint)std::max(-std::log10(json.get_double("/tuning/m2A_tol")), 11.) + 1;
 
@@ -85,13 +88,16 @@ template <typename FUN> void tune_m2A(JSONValue &json, const std::string top_fol
   const int tuning_steps = search.get_iter();
 
   const std::string last_sim_folder = json.get_string("/output/folder");
-  std::filesystem::copy(last_sim_folder, top_folder, std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing);
+  std::filesystem::copy(last_sim_folder, top_folder,
+                        std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing);
 
-  spdlog::get("m2Alog")->info("m2A Tuning finished after {} steps, m2A = {:.12e}({:.12e})", tuning_steps, m2A, json.get_double("/tuning/m2A_tol"));
+  spdlog::get("m2Alog")->info("m2A Tuning finished after {} steps, m2A = {:.12e}({:.12e})", tuning_steps, m2A,
+                              json.get_double("/tuning/m2A_tol"));
   spdlog::drop("m2Alog");
 }
 
-template <typename FUN> void tune_STI(JSONValue &json, const std::string top_folder, const std::string output_name, const FUN &run)
+template <typename FUN>
+void tune_STI(JSONValue &json, const std::string top_folder, const std::string output_name, const FUN &run)
 {
   auto logger = build_logger("STIlog", top_folder + output_name + "_STI_tuning/tuning.log");
 
@@ -108,8 +114,9 @@ template <typename FUN> void tune_STI(JSONValue &json, const std::string top_fol
 
         x_values.push_back(x);
 
-        spdlog::get("STIlog")->info("STI tuning step {}:\n    alphaAcbc = {:.8e},\n    alphaA3 = {:.8e},\n    alphaA4 = {:.8e}", counter, json.get_double("/physical/alphaAcbc"),
-                                    x[0], x[1]);
+        spdlog::get("STIlog")->info(
+            "STI tuning step {}:\n    alphaAcbc = {:.8e},\n    alphaA3 = {:.8e},\n    alphaA4 = {:.8e}", counter,
+            json.get_double("/physical/alphaAcbc"), x[0], x[1]);
         tune_m2A(json, ss.str(), output_name, run);
         counter++;
 
@@ -143,8 +150,11 @@ template <typename FUN> void tune_STI(JSONValue &json, const std::string top_fol
         const double alphaA4_high = reader.value("alphaA4", idx_high);
 
         // return the sum of squared differences
-        const double diff_low = std::max({std::abs(alphaA3_low - alphaAcbc_low), std::abs(alphaA3_low - alphaA4_low), std::abs(alphaA4_low - alphaAcbc_low)});
-        const double diff_high = std::max({std::abs(alphaA3_high - alphaAcbc_high), std::abs(alphaA3_high - alphaA4_high), std::abs(alphaA4_high - alphaAcbc_high)});
+        const double diff_low = std::max({std::abs(alphaA3_low - alphaAcbc_low), std::abs(alphaA3_low - alphaA4_low),
+                                          std::abs(alphaA4_low - alphaAcbc_low)});
+        const double diff_high =
+            std::max({std::abs(alphaA3_high - alphaAcbc_high), std::abs(alphaA3_high - alphaA4_high),
+                      std::abs(alphaA4_high - alphaAcbc_high)});
         const double diff = 0.7 * powr<2>(diff_low) + 0.3 * powr<2>(diff_high);
 
         spdlog::get("STIlog")->info("distance = {:.8e}", diff);
@@ -169,10 +179,11 @@ template <typename FUN> void tune_STI(JSONValue &json, const std::string top_fol
   }
   // Copy the folder of the minimum to the top folder
   std::string last_sim_folder = top_folder + output_name + "_STI_tuning/step_" + std::to_string(min_idx) + "/";
-  std::filesystem::copy(last_sim_folder, top_folder, std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing);
+  std::filesystem::copy(last_sim_folder, top_folder,
+                        std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing);
 
-  spdlog::get("STIlog")->info("Optimal STI couplings:\n    alphaA3 = {:.8e},\n    alphaA4 = {:.8e}",
-                              minimum[0], minimum[1]);
+  spdlog::get("STIlog")->info("Optimal STI couplings:\n    alphaA3 = {:.8e},\n    alphaA4 = {:.8e}", minimum[0],
+                              minimum[1]);
   spdlog::get("STIlog")->info("STI Tuning finished after {} steps", counter);
   spdlog::drop("STIlog");
 }

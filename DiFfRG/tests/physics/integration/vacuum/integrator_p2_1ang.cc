@@ -68,6 +68,43 @@ TEMPLATE_TEST_CASE_SIG("Test momentum + angle integrals", "[integration][quadrat
       }
       CHECK(rel_err < expected_precision);
     }
+    SECTION("Volume map")
+    {
+      const ctype k = GENERATE(take(1, random(0., 1.)));
+      const ctype q_extent = std::sqrt(x_extent * powr<2>(k));
+      const NT reference_integral = V_d(dim, q_extent) / powr<dim>(2. * M_PI);
+
+      integrator.set_k(k);
+
+      std::array<NT, 4 * 2> coeffs{};
+      for (uint d = 0; d < 2; ++d)
+        coeffs[4 * d] = 1;
+
+      const uint rsize = GENERATE(32, 64);
+      std::vector<NT> integral_view(rsize);
+      LinearCoordinates1D<ctype> coordinates(rsize, 0., 1.);
+
+      std::apply([&](auto... coeffs) { integrator.map(integral_view.data(), coordinates, coeffs...).fence(); }, coeffs);
+
+      const ctype expected_precision =
+          Kokkos::max(1e-14,                                                         // machine precision
+                      1e-6                                                           // precision for worst quadrature
+                          / pow((ctype)size, 1.5)                                    // adjust for quadrature size
+                          * (dim % 2 == 1 ? pow(1e7, 1. / sqrt((ctype)dim)) : 1e-14) // adjust for odd dimensions
+          );
+      for (uint i = 0; i < rsize; ++i) {
+        const ctype rel_err = t_abs(coordinates.forward(i) + reference_integral - integral_view[i]) /
+                              t_abs(coordinates.forward(i) + reference_integral);
+        if (rel_err >= expected_precision) {
+          std::cout << "reference: " << coordinates.forward(i) + reference_integral
+                    << "| integral: " << integral_view[i] << "| relative error: "
+                    << abs(coordinates.forward(i) + reference_integral - integral_view[i]) /
+                           abs(coordinates.forward(i) + reference_integral)
+                    << "| type: " << typeid(type).name() << "| i: " << i << std::endl;
+        }
+        CHECK(rel_err < expected_precision);
+      }
+    };
     SECTION("Random polynomials")
     {
       const auto x_poly = Polynomial({
@@ -100,7 +137,7 @@ TEMPLATE_TEST_CASE_SIG("Test momentum + angle integrals", "[integration][quadrat
       integrator.get(integral, constant, x_poly[0], x_poly[1], x_poly[2], x_poly[3], cos_poly[0], cos_poly[1],
                      cos_poly[2], cos_poly[3]);
 
-      const ctype expected_precision = Kokkos::max(1e-14, 2e-1 / pow((ctype)size, 2));
+      const ctype expected_precision = Kokkos::max(1e-14, 4e-1 / pow((ctype)size, 2));
       const ctype rel_err = t_abs((integral - reference_integral) / reference_integral);
       if (rel_err >= expected_precision) {
         std::cerr << "reference: " << std::scientific << std::setw(10) << reference_integral

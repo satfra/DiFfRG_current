@@ -1,9 +1,9 @@
-#include <filesystem>
-
 #include <DiFfRG/common/configuration_helper.hh>
 #include <DiFfRG/common/csv_reader.hh>
+#include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/discretization.hh>
+#include <DiFfRG/discretization/variables/variables.hh>
 #include <DiFfRG/timestepping/timestepping.hh>
 
 #include "model.hh"
@@ -88,7 +88,7 @@ int main(int argc, char *argv[])
   Timer timer;
 
   // get all needed parameters and parse from the CLI
-  ConfigurationHelper config_helper(argc, argv);
+  const auto config_helper = DiFfRG::Init(argc, argv).get_configuration_helper();
   auto json = config_helper.get_json();
 
   if (json.get_bool("/tuning/tune_STI")) {

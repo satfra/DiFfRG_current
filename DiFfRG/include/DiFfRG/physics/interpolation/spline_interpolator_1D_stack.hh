@@ -1,0 +1,138 @@
+#pragma once
+
+// DiFfRG
+#include <DiFfRG/common/kokkos.hh>
+#include <DiFfRG/common/math.hh>
+#include <limits>
+
+namespace DiFfRG
+{
+  /**
+   * @brief A linear interpolator for 1D data, using texture memory on the GPU and floating point arithmetic on the CPU.
+   *
+   * @tparam NT input data type
+   * @tparam Coordinates coordinate system of the input data
+   */
+  template <typename NT, typename Coordinates, typename MemorySpace> class SplineInterpolator1DStack
+  {
+    static_assert(Coordinates::dim == 2, "SplineInterpolator1DStack requires 2D coordinates");
+
+  public:
+    using memory_space = MemorySpace;
+    using ctype = typename Coordinates::ctype;
+
+    /**
+     * @brief Construct a SplineInterpolator1DStack with zeroed data and a coordinate system.
+     *
+     * @param coordinates coordinate system of the data
+     */
+    SplineInterpolator1DStack(const Coordinates &coordinates) : coordinates(coordinates), sizes(coordinates.sizes())
+    {
+      // Allocate Kokkos View
+      device_data = ViewType("SplineInterpolator1DStack_data", sizes[0], sizes[1]);
+      // Create host mirror
+      host_data = Kokkos::create_mirror_view(device_data);
+    }
+
+    template <typename NT2>
+    void update(const NT2 *in_data, const ctype lower_y1 = std::numeric_limits<ctype>::max(),
+                const ctype upper_y1 = std::numeric_limits<ctype>::max())
+    {
+      // Populate host mirror
+      for (uint i = 0; i < sizes[0]; ++i)
+        for (uint j = 0; j < sizes[1]; ++j)
+          host_data(i, j, 0) = static_cast<NT>(in_data[i * sizes[1] + j]);
+      // Build the spline coefficients
+      for (uint i = 0; i < sizes[0]; ++i)
+        build_y2(i, lower_y1, upper_y1);
+      // Copy data to device
+      Kokkos::deep_copy(device_data, host_data);
+    }
+
+    /**
+     * @brief Interpolate the data at a given point.
+     *
+     * @param x the point at which to interpolate
+     * @return NT the interpolated value
+     */
+    NT KOKKOS_INLINE_FUNCTION operator()(const typename Coordinates::ctype s, const typename Coordinates::ctype x) const
+    {
+      auto [_sidx, xidx] = coordinates.backward(s, x);
+      // Clamp indices to the range [0, sizes[i] - 1]
+      xidx = Kokkos::max(static_cast<decltype(xidx)>(0), Kokkos::min(xidx, static_cast<decltype(xidx)>(sizes[1] - 1)));
+      _sidx =
+          Kokkos::max(static_cast<decltype(_sidx)>(0), Kokkos::min(_sidx, static_cast<decltype(_sidx)>(sizes[0] - 1)));
+      // for the x part
+      const uint lidx = uint(Kokkos::floor(xidx));
+      const uint uidx = lidx + 1;
+      // t is the fractional part of the index
+      const ctype t = xidx - lidx;
+
+      // the s part is rounded to the nearest integer
+      const uint sidx = uint(Kokkos::round(_sidx));
+
+      // Do the spline interpolation for the x part
+      const NT lower = device_data(sidx, lidx, 0);
+      const NT upper = device_data(sidx, uidx, 0);
+
+      if constexpr (std::is_arithmetic_v<NT>)
+        return Kokkos::fma(t, upper, Kokkos::fma(-t, lower, lower)) // linear part
+               + t * (powr<2>(t) - 1) * device_data(sidx, lidx, 1) / (ctype)(6) -
+               (t - 2) * (t - 1) * t * device_data(sidx, uidx, 1) / (ctype)(6); // cubic part
+      else
+        return t * upper + (1 - t) * lower // linear part
+               + t * (powr<2>(t) - 1) * device_data(sidx, lidx, 1) / (ctype)(6) -
+               (t - 2) * (t - 1) * t * device_data(sidx, uidx, 1) / (ctype)(6); // cubic part
+    }
+
+    /**
+     * @brief Get the coordinate system of the data.
+     *
+     * @return const Coordinates& the coordinate system
+     */
+    const Coordinates &get_coordinates() const { return coordinates; }
+
+  private:
+    const Coordinates coordinates;
+    const device::array<uint, 2> sizes;
+
+    using ViewType = Kokkos::View<NT **[2], MemorySpace, Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
+    using HostViewType = typename ViewType::HostMirror;
+
+    ViewType device_data;
+    HostViewType host_data;
+
+    void build_y2(const size_t sidx, const ctype lower_y1, const ctype upper_y1)
+    {
+      const auto &yv = host_data;
+      auto &y2 = host_data;
+      const auto &size = sizes[1];
+
+      NT p, qn, sig, un;
+      std::vector<NT> u(size - 1);
+
+      if (lower_y1 > 0.99e99)
+        y2(sidx, 0, 1) = u[0] = 0.0;
+      else {
+        y2(sidx, 0, 1) = -0.5;
+        u[0] = 3.0 * ((yv(sidx, 1, 0) - yv(sidx, 0, 0)) - lower_y1);
+      }
+      for (uint i = 1; i < size - 1; i++) {
+        sig = 0.5;
+        p = sig * y2(sidx, i - 1, 1) + 2.0;
+        y2(sidx, i, 1) = (sig - 1.0) / p;
+        u[i] = (yv(sidx, i + 1, 0) - yv(sidx, i, 0)) - (yv(sidx, i, 0) - yv(sidx, i - 1, 0));
+        u[i] = (6.0 * u[i] / 2. - sig * u[i - 1]) / p;
+      }
+      if (upper_y1 > 0.99e99)
+        qn = un = 0.0;
+      else {
+        qn = 0.5;
+        un = 3.0 * (upper_y1 - (yv(sidx, size - 1, 0) - yv(sidx, size - 2, 0)));
+      }
+      y2(sidx, size - 1, 1) = (un - qn * u[size - 2]) / (qn * y2(sidx, size - 2, 1) + 1);
+      for (int k = size - 2; k >= 0; k--)
+        y2(sidx, k, 1) = y2(sidx, k, 1) * y2(sidx, k + 1, 1) + u[k];
+    }
+  };
+} // namespace DiFfRG

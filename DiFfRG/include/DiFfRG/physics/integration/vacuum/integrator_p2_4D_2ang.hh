@@ -47,20 +47,20 @@ namespace DiFfRG
   } // namespace internal
 
   /**
-   * @brief Integrator_p2_1ang integrates a kernel \f$K(p,\cos_1,\cos_2,\ldots)\f$ depending on the radial momentum
+   * @brief Integrator_p2_4D_2ang integrates a kernel \f$K(p,\cos_1,\cos_2,\ldots)\f$ depending on the radial momentum
    * \f$p\f$ and two angles on \f$[0,\pi]\f$ as
    * $$
    * \frac{2\pi}{(2\pi)^{d}} \,\int_0^\pi d\cos_1\,\int_0^\pi d\cos_2\,\int_0^\infty dp^2 p^{d-2}
    * K(p,\cos_1,\cos_2,\ldots)
    * $$
-   * where \f$S_d\f$ is the solid angle in \f$d\f$ dimensions.
+   * in \f$d=4\f$ dimensions.
    *
-   * @tparam dim dimension of the momentum space, i.e. $d$ in the above equation
    * @tparam NT numerical type of the result
    * @tparam KERNEL kernel to be integrated, which must provide the static methods `kernel` and `constant`
    * @tparam ExecutionSpace can be any execution space, e.g. GPU_exec, TBB_exec, or Threads_exec.
    */
-  template <typename NT, typename KERNEL, typename ExecutionSpace>
+  template <int dim, typename NT, typename KERNEL, typename ExecutionSpace>
+    requires(dim == 4)
   class Integrator_p2_4D_2ang
       : public QuadratureIntegrator<3, NT, internal::Transform_p2_4D_2ang<NT, KERNEL>, ExecutionSpace>
   {
@@ -71,7 +71,18 @@ namespace DiFfRG
      * @brief Numerical type to be used for integration tasks e.g. the argument or possible jacobians.
      */
     using ctype = typename get_type::ctype<NT>;
+    /**
+     * @brief Execution space to be used for the integration, e.g. GPU_exec, TBB_exec, or OpenMP_exec.
+     */
     using execution_space = ExecutionSpace;
+
+    Integrator_p2_4D_2ang(QuadratureProvider &quadrature_provider, const JSONValue &json)
+      requires provides_regulator<KERNEL>
+        : Integrator_p2_4D_2ang(quadrature_provider,
+                                internal::make_int_grid<3>(json, {"x_order", "cos1_order", "cos2_order"}),
+                                optimize_x_extent<typename KERNEL::Regulator>(json))
+    {
+    }
 
     Integrator_p2_4D_2ang(QuadratureProvider &quadrature_provider, const std::array<uint, 3> grid_size,
                           ctype x_extent = 2.)

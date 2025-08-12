@@ -1,7 +1,6 @@
 #pragma once
 
 // DiFfRG
-#include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/data/csv_output.hh>
 #include <DiFfRG/discretization/data/fe_output.hh>
 

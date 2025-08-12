@@ -1,5 +1,7 @@
 #include <DiFfRG/physics/integration/distribution.hh>
 
+#include <numeric>
+
 namespace DiFfRG
 {
   NodeDistribution::NodeDistribution(MPI_Comm mpi_comm, const std::vector<uint> &sizes, const std::vector<uint> &nodes)

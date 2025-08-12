@@ -14,11 +14,12 @@ namespace DiFfRG
     template <int dim, typename NT, typename KERNEL> class Transform_fT_p2_1ang
     {
     public:
+      static constexpr int sdim = dim - 1; // spatial dimension
       using ctype = typename get_type::ctype<NT>;
 
-      static constexpr ctype int_prefactor = S_d_prec<ctype>(dim)         // solid nd angle
-                                             / powr<dim>(2 * (ctype)M_PI) // fourier factor
-                                             * (1 / (ctype)2);            // divide the cos integral out
+      static constexpr ctype int_prefactor = S_d_prec<ctype>(sdim)         // solid nd angle
+                                             / powr<sdim>(2 * (ctype)M_PI) // fourier factor
+                                             * (1 / (ctype)2);             // divide the cos integral out
 
       template <typename... T>
       static KOKKOS_FORCEINLINE_FUNCTION NT kernel(const ctype q2, const ctype cos, const ctype q0, const T &...t)
@@ -26,7 +27,7 @@ namespace DiFfRG
         using namespace DiFfRG::compute;
 
         const ctype q = sqrt(q2);
-        const ctype int_element = powr<dim - 2>(q) / (ctype)2; // from p^2 integral
+        const ctype int_element = powr<sdim - 2>(q) / (ctype)2; // from p^2 integral
         const NT result = KERNEL::kernel(q, cos, q0, t...);
 
         return int_prefactor * int_element * result;
@@ -41,6 +42,7 @@ namespace DiFfRG
   } // namespace internal
 
   template <int dim, typename NT, typename KERNEL, typename ExecutionSpace>
+    requires(dim >= 3)
   class Integrator_fT_p2_1ang
       : public QuadratureIntegrator_fT<2, NT, internal::Transform_fT_p2_1ang<dim, NT, KERNEL>, ExecutionSpace>
   {
@@ -52,6 +54,13 @@ namespace DiFfRG
      */
     using ctype = typename get_type::ctype<NT>;
     using execution_space = ExecutionSpace;
+
+    Integrator_fT_p2_1ang(QuadratureProvider &quadrature_provider, const JSONValue &json)
+      requires provides_regulator<KERNEL>
+        : Integrator_fT_p2_1ang(quadrature_provider, internal::make_int_grid<2>(json, {"x_order", "cos1_order"}),
+                                optimize_x_extent<typename KERNEL::Regulator>(json), json.get_double("T", 1.0))
+    {
+    }
 
     Integrator_fT_p2_1ang(QuadratureProvider &quadrature_provider, const std::array<uint, 2> grid_size,
                           ctype x_extent = 2., ctype T = 1, ctype typical_E = 1)
@@ -71,7 +80,10 @@ namespace DiFfRG
     {
       this->k = k;
       Base::set_grid_extents({0, -1.}, {x_extent * powr<2>(k), 1.});
+      Base::set_typical_E(k); // update typical energy
     }
+
+    void set_typical_E(ctype typical_E) { Base::set_typical_E(typical_E); }
 
   private:
     ctype x_extent;

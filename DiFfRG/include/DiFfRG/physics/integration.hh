@@ -23,11 +23,104 @@
 namespace DiFfRG
 {
   template <typename T>
+  concept has_integrator_AD = requires(T t) { t.integrator_AD; };
+
+  // ----------------------------------------------------
+  // Setting scale k
+  // ----------------------------------------------------
+
+  template <typename T>
   concept has_set_k = requires(T t, double k) { t.set_k(k); };
+
+  template <typename Int>
+    requires DiFfRG::has_set_k<Int>
+  void invoke_set_k(Int &integrator, const double k)
+  {
+    integrator.set_k(k);
+  }
+  template <typename Int>
+    requires(!DiFfRG::has_set_k<Int>)
+  void invoke_set_k(Int &, const double)
+  {
+    // do nothing
+  }
+  template <typename Int>
+    requires DiFfRG::has_integrator_AD<Int>
+  void all_set_k(Int &integrator, const double k)
+  {
+    invoke_set_k(integrator.integrator, k);
+    invoke_set_k(integrator.integrator_AD, k);
+  }
+  template <typename Int>
+    requires(!DiFfRG::has_integrator_AD<Int>)
+  void all_set_k(Int &integrator, const double k)
+  {
+    invoke_set_k(integrator.integrator, k);
+  }
+
+  // ----------------------------------------------------
+  // Setting temperature T
+  // ----------------------------------------------------
 
   template <typename T>
   concept has_set_T = requires(T t, double mT) { t.set_T(mT); };
 
+  template <typename Int>
+    requires DiFfRG::has_set_T<Int>
+  void invoke_set_T(Int &integrator, const double T)
+  {
+    integrator.set_T(T);
+  }
+  template <typename Int>
+    requires(!DiFfRG::has_set_T<Int>)
+  void invoke_set_T(Int &, const double)
+  {
+    // do nothing
+  }
+  template <typename Int>
+    requires DiFfRG::has_integrator_AD<Int>
+  void all_set_T(Int &integrator, const double T)
+  {
+    invoke_set_T(integrator.integrator, T);
+    invoke_set_T(integrator.integrator_AD, T);
+  }
+  template <typename Int>
+    requires(!DiFfRG::has_integrator_AD<Int>)
+  void all_set_T(Int &integrator, const double T)
+  {
+    invoke_set_T(integrator.integrator, T);
+  }
+
+  // ----------------------------------------------------
+  // Setting the x-extent
+  // ----------------------------------------------------
+
   template <typename T>
-  concept has_integrator_AD = requires(T t) { t.integrator_AD; };
+  concept has_set_x_extent = requires(T t, double x_extent) { t.set_x_extent(x_extent); };
+
+  template <typename Int>
+    requires DiFfRG::has_set_x_extent<Int>
+  void invoke_set_x_extent(Int &integrator, const double x_extent)
+  {
+    integrator.set_x_extent(x_extent);
+  }
+  template <typename Int>
+    requires(!DiFfRG::has_set_x_extent<Int>)
+  void invoke_set_x_extent(Int &, const double)
+  {
+    // do nothing
+  }
+  template <typename Int>
+    requires DiFfRG::has_integrator_AD<Int>
+  void all_set_x_extent(Int &integrator, const double x_extent)
+  {
+    invoke_set_x_extent(integrator.integrator, x_extent);
+    invoke_set_x_extent(integrator.integrator_AD, x_extent);
+  }
+  template <typename Int>
+    requires(!DiFfRG::has_integrator_AD<Int>)
+  void all_set_x_extent(Int &integrator, const double x_extent)
+  {
+    invoke_set_x_extent(integrator.integrator, x_extent);
+  }
 } // namespace DiFfRG

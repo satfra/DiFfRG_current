@@ -1,15 +1,16 @@
 #pragma once
 
-// standard library
-#include <thread>
+// DiFfRG
+#include <DiFfRG/common/utils.hh>
 
 // external libraries
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/lac/vector_memory.h>
 #include <deal.II/numerics/data_out.h>
 
-// DiFfRG
-#include <DiFfRG/common/utils.hh>
+// standard library
+#include <list>
+#include <thread>
 
 namespace DiFfRG
 {
@@ -67,15 +68,19 @@ namespace DiFfRG
     const std::string top_folder;
     const std::string output_name;
     const std::string output_folder;
-    constexpr static uint safe_dim = dim == 0 ? 1 : dim;
-    DataOut<safe_dim> data_out;
+    const std::string filename_pvd;
+    const uint buffer_size;
 
     uint series_number, subdivisions;
     std::vector<std::pair<double, std::string>> time_series;
 
-    std::thread output_thread;
-    std::vector<typename VectorMemory<VectorType>::Pointer> attached_solutions;
+    constexpr static uint safe_dim = dim == 0 ? 1 : dim;
+    std::vector<DataOut<safe_dim>> data_outs;
+    std::list<std::thread> output_threads;
+    std::list<std::list<typename VectorMemory<VectorType>::Pointer>> attached_solutions;
 
     GrowingVectorMemory<VectorType> mem;
+
+    void update_buffers();
   };
 } // namespace DiFfRG

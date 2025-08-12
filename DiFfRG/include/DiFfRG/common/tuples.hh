@@ -10,7 +10,7 @@
 #include <vector>
 
 // DiFfRG
-// #include <DiFfRG/common/fixed_string.hh>
+#include <DiFfRG/common/fixed_string.hh>
 
 namespace DiFfRG
 {
@@ -200,6 +200,7 @@ namespace DiFfRG
   private:
     std::array<NT, N * M> data;
   };
+
   template <uint n, typename NT, typename Vector> std::array<NT, n> vector_to_array(const Vector &v)
   {
     std::array<NT, n> x;

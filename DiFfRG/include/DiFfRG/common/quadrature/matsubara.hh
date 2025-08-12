@@ -5,7 +5,6 @@
 #include <DiFfRG/common/math.hh>
 
 // C++ standard library
-#include <cmath>
 #include <vector>
 
 namespace DiFfRG

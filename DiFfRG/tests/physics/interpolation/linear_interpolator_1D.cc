@@ -26,7 +26,7 @@ TEMPLATE_TEST_CASE("Test 1D interpolation", "[float][double][complex][autodiff]"
   for (int j = 0; j < p_size; ++j)
     in_data[j] = j;
   LogarithmicCoordinates1D<ctype> coords(p_size, p_start, p_stop, p_bias);
-  LinearInterpolatorND<CPU_memory, T, LogarithmicCoordinates1D<ctype>> interpolator(empty_data.data(), coords);
+  LinearInterpolatorND<T, LogarithmicCoordinates1D<ctype>, CPU_memory> interpolator(empty_data.data(), coords);
   interpolator.update(in_data.data());
 
   const int n_el = GENERATE(take(3, random(2, 200)));
@@ -64,6 +64,6 @@ TEMPLATE_TEST_CASE("Test 1D interpolation GPU", "[float][double][complex][autodi
   for (int j = 0; j < p_size; ++j)
     in_data[j] = j;
   LogarithmicCoordinates1D<ctype> coords(p_size, p_start, p_stop, p_bias);
-  LinearInterpolatorND<GPU_memory, T, LogarithmicCoordinates1D<ctype>> interpolator(empty_data.data(), coords);
+  LinearInterpolatorND<T, LogarithmicCoordinates1D<ctype>, GPU_memory> interpolator(empty_data.data(), coords);
   interpolator.update(in_data.data());
 }

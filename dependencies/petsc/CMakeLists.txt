@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(petsc_dep)
+project(petsc_dep NONE)
 
 # petsc
 set(TRY_PETSC_VERSION "3.23.1")
@@ -11,7 +11,7 @@ message(STATUS "Downloading PETSc version ${TRY_PETSC_VERSION}...")
 execute_process(
   COMMAND
     bash -c
-    "git clone https://gitlab.com/petsc/petsc.git --depth 1 --branch v${TRY_PETSC_VERSION}  2>&1 | tee ${CMAKE_CURRENT_BINARY_DIR}/petsc.log"
+    "git clone https://gitlab.com/petsc/petsc.git --depth 1 --branch v${TRY_PETSC_VERSION} &> ${CMAKE_CURRENT_BINARY_DIR}/00_clone.log"
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   OUTPUT_QUIET)
 
@@ -56,14 +56,14 @@ execute_process(
     --FOPTFLAGS=\"-O3 -march=native -ffp-contract=fast\" \
     --with-blas-lib=${OpenBLAS_LIBRARY} \
     --with-lapack-lib=${OpenBLAS_LIBRARY} \
-    --prefix=${CMAKE_INSTALL_PREFIX} ${PETSC_OPTIONS} --with-clean --with-debugging=0 2>&1 | tee -a ${CMAKE_CURRENT_BINARY_DIR}/petsc.log"
+    --prefix=${CMAKE_INSTALL_PREFIX} ${PETSC_OPTIONS} --with-clean --with-debugging=0 &> ${CMAKE_CURRENT_BINARY_DIR}/01_configure.log"
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/petsc
   RESULT_VARIABLE ret)
 
 if(ret AND NOT ret EQUAL 0)
   message(
     FATAL_ERROR
-      "Failed to configure PETSc. Check ${CMAKE_CURRENT_BINARY_DIR}/petsc.log for details."
+      "Failed to configure PETSc. Check ${CMAKE_CURRENT_BINARY_DIR}/01_configure.log for details."
   )
 endif()
 
@@ -71,14 +71,14 @@ message(STATUS "Building PETSc...")
 execute_process(
   COMMAND
     bash -c
-    "make -j ${PARALLEL_JOBS} 2>&1 | tee -a ${CMAKE_CURRENT_BINARY_DIR}/petsc.log; \
-    make install -j ${PARALLEL_JOBS} 2>&1 | tee -a ${CMAKE_CURRENT_BINARY_DIR}/petsc.log"
+    "make -j ${PARALLEL_JOBS} &> ${CMAKE_CURRENT_BINARY_DIR}/02_build.log; \
+    make install -j ${PARALLEL_JOBS} &>> ${CMAKE_CURRENT_BINARY_DIR}/02_build.log"
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/petsc
   RESULT_VARIABLE ret)
 
 if(ret AND NOT ret EQUAL 0)
   message(
     FATAL_ERROR
-      "Failed to build PETSc. Check ${CMAKE_CURRENT_BINARY_DIR}/petsc.log for details."
+      "Failed to build PETSc. Check ${CMAKE_CURRENT_BINARY_DIR}/02_build.log for details."
   )
 endif()

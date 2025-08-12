@@ -1,8 +1,8 @@
 // DiFfRG
-#include "DiFfRG/common/json.hh"
-#include <DiFfRG/common/quadrature/quadrature_provider.hh>
-
 #include <DiFfRG/common/init.hh>
+#include <DiFfRG/common/quadrature/quadrature_provider.hh>
+#include <DiFfRG/common/types.hh>
+#include <DiFfRG/common/utils.hh>
 
 // external
 #include <spdlog/spdlog.h>
