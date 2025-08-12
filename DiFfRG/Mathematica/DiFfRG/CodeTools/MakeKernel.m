@@ -25,8 +25,7 @@ Options[MakeKernel] = {"Coordinates" -> {}, "IntegrationVariables" ->
      "DiFfRG::PolynomialExpRegulator", "RegulatorOpts" -> {"", ""}};
 
 
-$ADReplacements = {"double" -> "autodiff::real", "complex" -> "complex<autodiff::real>"
-    };
+$ADReplacements = {"double" -> "autodiff::real", "complex" -> "complex<autodiff::real>"};
 
 MakeKernel[__] :=
     (
