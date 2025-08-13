@@ -18,6 +18,21 @@ Needs["DiFfRG`CodeTools`Export`"]
 
 Needs["DiFfRG`CodeTools`TemplateParameterGeneration`"]
 
+ClearAll[makeMapParams]
+makeFuncParams[type_String, otherParams_List] := Join[
+    {
+        <|"Name" -> "dest", "Type" -> type, "Reference" -> True, "Const" -> False|>
+    },
+    otherParams
+];
+makeMapParams[type_String, coord_String, otherParams_List] := Join[
+    {
+        <|"Name" -> "dest", "Type" -> type, "Const" -> False (*, Reference -> False *)|>,
+        <|"Name" -> "coordinates", "Reference" -> True, "Type" -> coord, "Const" -> True|>
+    },
+    otherParams
+];
+
 ClearAll[MakeKernel]
 
 Options[MakeKernel] = {"Coordinates" -> {}, "IntegrationVariables" ->
@@ -36,7 +51,7 @@ MakeKernel[__] :=
 MakeKernel[kernelExpr_, spec_Association, parameters_List, OptionsPattern[
     ]] :=
     MakeKernel @@ (Join[{kernelExpr, 0, spec, parameters}, Thread[Rule
-         @@ {#, OptionValue[MakeKernel, #]}]& @ Keys[Options[MakeKernel]]]);
+        @@ {#, OptionValue[MakeKernel, #]}]& @ Keys[Options[MakeKernel]]]);
 
 MakeKernel[kernelExpr_, constExpr_, spec_Association, parameters_List,
      OptionsPattern[]] :=
@@ -70,13 +85,13 @@ MakeKernel[kernelExpr_, constExpr_, spec_Association, parameters_List,
         ];
         kernelClass = FunKit`MakeCppClass[
             "TemplateTypes" -> {"_Regulator"}, 
-            "Name" -> spec["Name"] <> "_kernel", 
+            "Name" -> StringTemplate["`1`_kernel"][spec["Name"]],
             "MembersPublic" -> {"using Regulator = _Regulator;", kernel, constant}, 
             "MembersPrivate" -> kernelDefs
         ];
         kernelHeader = FunKit`MakeCppHeader[
             "Includes" -> {"DiFfRG/physics/utils.hh"}, 
-            "Body" -> {"namespace DiFfRG {", kernelClass, "} using DiFfRG::" <> spec["Name"] <> "_kernel;"}
+            "Body" -> {"namespace DiFfRG {", kernelClass, StringTemplate["} using DiFfRG::`1`_kernel;"][spec["Name"]]}
         ];
 
 
@@ -96,10 +111,10 @@ MakeKernel[kernelExpr_, constExpr_, spec_Association, parameters_List,
                 "Body" -> {
                     "#include \"./kernel.hh\"\n",
                     FunKit`MakeCppClass[
-                        "Name" -> spec["Name"] <> "_integrator",
+                        "Name" -> StringTemplate["`1`_integrator"][spec["Name"]],
                         "MembersPublic" ->
                         Join[{
-                            FunKit`MakeCppFunction["Name" -> spec["Name"] <> "_integrator",
+                            FunKit`MakeCppFunction["Name" -> StringTemplate["`1`_integrator"][spec["Name"]],
                                 "Parameters" -> {
                                     <|
                                         "Type" -> "DiFfRG::QuadratureProvider",
@@ -128,52 +143,38 @@ else if constexpr (std::is_same_v<NT, autodiff::real>)
                                                  "Return" -> "void"]
                                             ,
                                             ""
-                                        ]
-                                        ,
-                                        getRegulator[OptionValue["Regulator"
-                                            ], OptionValue["RegulatorOpts"]]
-                                        ,
-                                        spec["Integrator"] <> "<" <> 
-                                            integratorTemplateParams <> "> integrator;"
-                                        ,
+                                        ],
+                                        getRegulator[OptionValue["Regulator"], OptionValue["RegulatorOpts"]],
+                                        StringTemplate["`1`<`2`> integrator;"][spec["Integrator"], integratorTemplateParams],
                                         If[spec["AD"],
-                                            spec["Integrator"] <> "<"
-                                                 <> integratorADTemplateParams <> "> integrator_AD;"
-                                            ,
+                                            StringTemplate["`1`<`2`> integrator_AD;"][spec["Integrator"], integratorADTemplateParams],
                                             ""
                                         ]
-                                    }
-                                    ,
-                                    Map[FunKit`MakeCppFunction["Name"
-                                         -> "map", "Return" -> "void", "Body" -> None, "Parameters" -> Join[{
-                                        <|"Name" -> "dest", "Type" -> "double*", "Const" -> False|>, <|"Name"
-                                         -> "coordinates", "Reference" -> True, "Type" -> #, "Const" -> True|>
-                                        }, params]]&, coordinates]
-                                    ,
-                                    If[spec["AD"],
-                                            #
-                                            ,
-                                            {}
-                                        ]& @ Map[FunKit`MakeCppFunction[
-                                            "Name" -> "map", "Return" -> "void", "Body" -> None, "Parameters" -> 
-                                            Join[{<|"Name" -> "dest", "Type" -> "autodiff::real*", "Const" -> False
-                                            |>, <|"Name" -> "coordinates", "Reference" -> True, "Type" -> #, "Const"
-                                             -> True|>}, paramsAD]]&, coordinates]
-                                    ,
+                                    },
+                                    Map[FunKit`MakeCppFunction[
+                                        "Name" -> "map", "Return" -> "void", "Body" -> None, 
+                                         "Parameters" -> makeMapParams["double*", #, params]]&,
+                                    coordinates],
+                                    If[spec["AD"], 
+                                        Map[FunKit`MakeCppFunction[
+                                            "Name" -> "map", "Return" -> "void", "Body" -> None, 
+                                            "Parameters" -> makeMapParams["autodiff::real*", #, paramsAD]]&, 
+                                        coordinates], 
+                                        {}
+                                    ],
                                     {
                                         FunKit`MakeCppFunction["Name"
-                                             -> "get", "Return" -> "void", "Body" -> None, "Parameters" -> Join[{
-                                            <|"Name" -> "dest", "Type" -> "double", "Reference" -> True, "Const" 
-                                            -> False|>}, params]]
-                                        ,
+                                             -> "get", "Return" -> "void", "Body" -> None, "Parameters" -> 
+                                            makeFuncParams["double", params]
+                                        ],
                                         If[spec["AD"],
-                                                #
-                                                ,
-                                                ""
-                                            ]& @ FunKit`MakeCppFunction[
-                                                "Name" -> "get", "Return" -> "void", "Body" -> None, "Parameters" -> 
-                                                Join[{<|"Name" -> "dest", "Type" -> "autodiff::real", "Reference" -> 
-                                                True, "Const" -> False|>}, paramsAD]]
+                                            FunKit`MakeCppFunction[
+                                                "Name" -> "get", "Return" -> "void", "Body" -> None, 
+                                                "Parameters" -> 
+                                                makeFuncParams["autodiff::real", paramsAD]
+                                            ],
+                                            ""
+                                        ]
                                     }
                                 ]
                             ,
@@ -185,95 +186,117 @@ else if constexpr (std::is_same_v<NT, autodiff::real>)
         (*Print[integratorHeader];*)
         integratorCpp["Constructor"] =
             FunKit`MakeCppBlock[
-                "Includes" -> {"../" <> spec["Name"] <> ".hh"}
-                ,
+                "Includes" -> {StringTemplate["../`Name`.hh"][spec]},
                 "Body" ->
                     {
                         FunKit`MakeCppFunction[
-                            "Name" -> spec["Name"] <> "_integrator"
-                            ,
-                            "Class" -> spec["Name"] <> "_integrator"
-                            ,
+                            "Name" -> StringTemplate["`Name`_integrator"][spec],
+                            "Class" -> StringTemplate["`Name`_integrator"][spec],
                             "Suffix" ->
-                                ": integrator(quadrature_provider, json), "
-                                     <>
-                                    If[spec["AD"],
-                                        "integrator_AD(quadrature_provider, json), "
-                                            
-                                        ,
-                                        ""
-                                    ] <> "quadrature_provider(quadrature_provider)"
-                                        
-                            ,
-                            "Body" -> ""
-                            ,
-                            "Parameters" -> {<|"Type" -> "DiFfRG::QuadratureProvider",
-                                 "Reference" -> True, "Const" -> False, "Name" -> "quadrature_provider"
-                                |>, <|"Type" -> "DiFfRG::JSONValue", "Reference" -> True, "Const" -> 
-                                True, "Name" -> "json"|>}
-                            ,
+                                If[spec["AD"],
+                                    ": integrator(quadrature_provider, json), integrator_AD(quadrature_provider, json), quadrature_provider(quadrature_provider)",
+                                    ": integrator(quadrature_provider, json), quadrature_provider(quadrature_provider)"
+                                ],
+                            "Body" -> "",
+                            "Parameters" -> {
+                                <|
+                                    "Type" -> "DiFfRG::QuadratureProvider",
+                                    "Reference" -> True, 
+                                    "Const" -> False, 
+                                    "Name" -> "quadrature_provider"
+                                |>, 
+                                <|
+                                    "Type" -> "DiFfRG::JSONValue", 
+                                    "Reference" -> True, 
+                                    "Const" -> True, 
+                                    "Name" -> "json"
+                                |>
+                            },
                             "Return" -> ""
                         ]
                     }
             ];
-        integratorCpp["CT", "get"] = FunKit`MakeCppBlock["Includes" ->
-             {"../" <> spec["Name"] <> ".hh"}, "Body" -> {FunKit`MakeCppFunction[
-            "Name" -> "get", "Class" -> spec["Name"] <> "_integrator", "Body" -> 
-            "integrator.get(dest, " <> arguments <> ");", "Parameters" -> Join[{<|
-            "Name" -> "dest", "Type" -> "double", "Reference" -> True, "Const" ->
-             False|>}, params], "Return" -> "void"]}];
-        integratorCpp["AD", "get"] = FunKit`MakeCppBlock["Includes" ->
-             {"../" <> spec["Name"] <> ".hh"}, "Body" -> {FunKit`MakeCppFunction[
-            "Name" -> "get", "Class" -> spec["Name"] <> "_integrator", "Body" -> 
-            "integrator_AD.get(dest, " <> arguments <> ");", "Parameters" -> Join[
-            {<|"Name" -> "dest", "Type" -> "autodiff::real", "Reference" -> True,
-             "Const" -> False|>}, paramsAD], "Return" -> "void"]}];
-        integratorCpp["CT", "map"] = Map[FunKit`MakeCppBlock["Includes"
-             -> {"../" <> spec["Name"] <> ".hh"}, "Body" -> {FunKit`MakeCppFunction[
-            "Name" -> "map", "Return" -> "void", "Class" -> spec["Name"] <> "_integrator",
-             "Body" -> "integrator.map(dest, coordinates, " <> arguments <> ");",
-             "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> "double*", "Const"
-             -> False|>, <|"Name" -> "coordinates", "Reference" -> True, "Type" ->
-             #, "Const" -> True|>}, params]]}]&, coordinates];
-        integratorCpp["AD", "map"] = Map[FunKit`MakeCppBlock["Includes"
-             -> {"../" <> spec["Name"] <> ".hh"}, "Body" -> {FunKit`MakeCppFunction[
-            "Name" -> "map", "Return" -> "void", "Class" -> spec["Name"] <> "_integrator",
-             "Body" -> "integrator_AD.map(dest, coordinates, " <> arguments <> ");",
-             "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> "autodiff::real*",
-             "Const" -> False|>, <|"Name" -> "coordinates", "Reference" -> True, 
-            "Type" -> #, "Const" -> True|>}, paramsAD]]}]&, coordinates];
-        outputPath = flowDir <> spec["Name"] <> "/";
-        ExportCode[outputPath <> spec["Name"] <> ".hh", integratorHeader
+        integratorCpp["CT", "get"] = 
+            FunKit`MakeCppBlock[
+                "Includes" ->{StringTemplate["../`Name`.hh"][spec]}, 
+                "Body" -> 
+                    {
+                        FunKit`MakeCppFunction[
+                            "Name" -> "get", 
+                            "Class" -> StringTemplate["`Name`_integrator"][spec],
+                            "Body" -> StringTemplate["integrator.get(dest, `1`);"][arguments], 
+                            "Parameters" -> makeFuncParams["double", params], 
+                            "Return" -> "void"
+                        ]
+                    }
             ];
-        ExportCode[outputPath <> "kernel.hh", kernelHeader];
-        sources = {outputPath <> "src/constructor.cc"};
+        integratorCpp["AD", "get"] = FunKit`MakeCppBlock[
+            "Includes" -> {StringTemplate["../`Name`.hh"][spec]}, 
+            "Body" -> {FunKit`MakeCppFunction[
+                "Name" -> "get", 
+                "Class" -> StringTemplate["`Name`_integrator"][spec], 
+                "Body" -> StringTemplate["integrator_AD.get(dest, `1`);"][arguments], 
+                "Parameters" -> makeFuncParams["autodiff::real", paramsAD], 
+                "Return" -> "void"]
+                }
+            ];
+        integratorCpp["CT", "map"] = Map[
+            FunKit`MakeCppBlock[
+                "Includes" -> {StringTemplate["../`Name`.hh"][spec]}, 
+                "Body" -> {FunKit`MakeCppFunction[
+                    "Name" -> "map", 
+                    "Return" -> "void", 
+                    "Class" -> StringTemplate["`Name`_integrator"][spec],
+                    "Body" -> StringTemplate["integrator.map(dest, coordinates, `1`);"][arguments],
+                    "Parameters" -> makeFuncParams["double*", #, params]
+                        ]
+                    }]&, 
+                coordinates
+            ];
+        integratorCpp["AD", "map"] = Map[FunKit`MakeCppBlock[
+            "Includes" -> {StringTemplate["../`Name`.hh"][spec]}, 
+            "Body" -> {FunKit`MakeCppFunction[
+                "Name" -> "map", 
+                "Return" -> "void", 
+                "Class" -> StringTemplate["`Name`_integrator"][spec],
+                "Body" -> StringTemplate["integrator_AD.map(dest, coordinates, `1`);"][arguments],
+                "Parameters" -> makeFuncParams["autodiff::reals*", #, paramsAD]
+                        ]
+                    }]&, 
+                coordinates
+            ];
+
+
+        outputPath = FileNameJoin[flowDir, spec["Name"]];
+        ExportCode[FileNameJoin[outputPath, spec["Name"] <> ".hh"], integratorHeader];
+        ExportCode[FileNameJoin[outputPath, "kernel.hh"], kernelHeader];
+        sources = {FileNameJoin[outputPath, "src", "constructor.cc"]};
         ExportCode[sources[[-1]], integratorCpp["Constructor"]];
-        AppendTo[sources, outputPath <> "src/CT_get.cc"];
+        AppendTo[sources, FileNameJoin[outputPath, "src", "CT_get.cc"]];
         ExportCode[sources[[-1]], integratorCpp["CT", "get"]];
         Do[
-            AppendTo[sources, outputPath <> "src/CT_map_" <> ToString[
-                i] <> ".cc"];
-            ExportCode[sources[[-1]], integratorCpp["CT", "map"][[i]]
-                ]
-            ,
+            AppendTo[sources, FileNameJoin[outputPath, "src", StringTemplate["CT_map_`1`.cc"][i]] ];
+            ExportCode[sources[[-1]], integratorCpp["CT", "map"][[i]]],
             {i, 1, Length[coordinates]}
         ];
         If[spec["AD"],
-            AppendTo[sources, outputPath <> "src/AD_get.cc"];
+            AppendTo[sources, FileNameJoin[outputPath, "src", "AD_get.cc"]];
             ExportCode[sources[[-1]], integratorCpp["AD", "get"]];
             Do[
-                AppendTo[sources, outputPath <> "src/AD_map_" <> ToString[
-                    i] <> ".cc"];
-                ExportCode[sources[[-1]], integratorCpp["AD", "map"][[
-                    i]]]
-                ,
+                AppendTo[sources, FileNameJoin[outputPath, "src", StringTemplate["AD_map_`1`.cc"][i]]];
+                ExportCode[sources[[-1]], integratorCpp["AD", "map"][[i]]],
                 {i, 1, Length[coordinates]}
             ];
         ];
-        sources = Map[StringReplace[#, outputPath -> "${CMAKE_CURRENT_SOURCE_DIR}/"
-             <> spec["Name"] <> "/"]&, sources];
-        Export[outputPath <> "sources.m", sources];
+        sources = Map[StringReplace[#, 
+                        outputPath -> StringTemplate["${CMAKE_CURRENT_SOURCE_DIR}/`Name`"][spec]
+                        ]&, 
+                    sources];
+        Export[FileNameJoin[outputPath, "sources.m"], sources];
+        (* :!CodeAnalysis::BeginBlock:: *)
+        (* :!CodeAnalysis::Disable::SuspiciousSessionSymbol:: *)
         Print["Please run UpdateFlows[] to export an up-to-date CMakeLists.txt"];
+        (* :!CodeAnalysis::EndBlock:: *)
     ];
 
 End[]
