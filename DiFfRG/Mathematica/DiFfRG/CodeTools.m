@@ -430,20 +430,6 @@ KernelSpecQ[spec_Association] :=
     Return[validKeys];
   ];
 
-getRegulator[name_, {optName_, optDef_}] :=
-  Module[{ret},
-    ret = "";
-    If[optName =!= "",
-      ret = ret <> optDef <> "\n";
-    ];
-    ret = ret <> "using Regulator = " <> name <> "<";
-    If[optName =!= "",
-      ret = ret <> optName;
-    ];
-    ret = ret <> ">;";
-    Return[FunKit`FormatCode[ret]];
-  ];
-
 updateCMake[varName_:"Flows"] :=
   Module[{folders, sources, cmake, fileName = flowDir <> "CMakeLists.txt",
      flowFolderName},

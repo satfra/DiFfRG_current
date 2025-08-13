@@ -18,6 +18,8 @@ Needs["DiFfRG`CodeTools`Export`"]
 
 Needs["DiFfRG`CodeTools`TemplateParameterGeneration`"]
 
+Needs["DiFfRG`CodeTools`Regulator`"]
+
 ClearAll[makeMapParams]
 makeFuncParams[type_String, otherParams_List] := Join[
     {
@@ -144,7 +146,7 @@ else if constexpr (std::is_same_v<NT, autodiff::real>)
                                             ,
                                             ""
                                         ],
-                                        getRegulator[OptionValue["Regulator"], OptionValue["RegulatorOpts"]],
+                                        FunKit`FormatCode[getRegulator[OptionValue["Regulator"], OptionValue["RegulatorOpts"]]],
                                         StringTemplate["`1`<`2`> integrator;"][spec["Integrator"], integratorTemplateParams],
                                         If[spec["AD"],
                                             StringTemplate["`1`<`2`> integrator_AD;"][spec["Integrator"], integratorADTemplateParams],
