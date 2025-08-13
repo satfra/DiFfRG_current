@@ -18,12 +18,7 @@ Begin["`Private`"];
 
 flowName = "flows";
 
-flowDir :=
-    If[$Notebooks,
-            NotebookDirectory[]
-            ,
-            Directory[]
-        ] <> flowName <> "/";
+flowDir := FileNameJoin[If[$Notebooks, NotebookDirectory[], Directory[]], flowName]
 
 SetFlowName[name_String] :=
     flowName = name;
