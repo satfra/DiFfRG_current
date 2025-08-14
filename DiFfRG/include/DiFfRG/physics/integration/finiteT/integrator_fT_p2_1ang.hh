@@ -4,9 +4,6 @@
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/physics/integration/finiteT/quadrature_integrator_fT.hh>
 
-// standard libraries
-#include <array>
-
 namespace DiFfRG
 {
   namespace internal

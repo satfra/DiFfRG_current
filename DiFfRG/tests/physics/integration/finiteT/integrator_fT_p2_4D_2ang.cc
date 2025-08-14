@@ -40,8 +40,8 @@ TEST_CASE("Test finite temperature 4D momentum + 2 angle integrals", "[integrati
     const uint size = GENERATE(64, 128, 256);
 
     QuadratureProvider quadrature_provider;
-    Integrator_fT_p2_4D_2ang<NT, PolyIntegrand<4, NT, -1>, ExecutionSpace> integrator(quadrature_provider, {size, 8, 8},
-                                                                                      x_extent);
+    Integrator_fT_p2_4D_2ang<4, NT, PolyIntegrand<4, NT, -1>, ExecutionSpace> integrator(quadrature_provider,
+                                                                                         {size, 8, 8}, x_extent);
     integrator.set_T(T);
 
     const ctype k = GENERATE(take(1, random(0., 1.)));

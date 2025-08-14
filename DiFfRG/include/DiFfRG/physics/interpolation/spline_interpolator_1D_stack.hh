@@ -85,6 +85,11 @@ namespace DiFfRG
                (t - 2) * (t - 1) * t * device_data(sidx, uidx, 1) / (ctype)(6); // cubic part
     }
 
+    NT operator[](size_t i) const
+    {
+      return host_data.data()[i]; // Access the host data directly
+    }
+
     /**
      * @brief Get the coordinate system of the data.
      *
