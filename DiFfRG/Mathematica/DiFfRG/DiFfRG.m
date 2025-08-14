@@ -213,6 +213,8 @@ MatsubaraSumHelper[expr_, p0_Symbol, T_, fun_, debug_] :=
 		poles = Assuming[T > 0 && _Symbol \[Element] Reals, poles // FullSimplify
 			];
 		If[debug,
+			Print["Denominator found:"];
+			Print[denom];
 			Print["Poles found at:"];
 			Print /@ poles;
 		];
