@@ -633,7 +633,7 @@ paramsAD[[i]]=KeyDrop[paramsAD[[i]],{"Type"}];
 paramsAD[[i]]=Association[Normal@(paramsAD[[i]])\[Union]{"Type"->"autodiff::real"}],
 explParamAD=StringReplace[paramsAD[[i]]["Type"],$ADReplacements];
 paramsAD[[i]]=KeyDrop[paramsAD[[i]],{"Type"}];
-aramsAD[[i]]=Association[Normal@(paramsAD[[i]])\[Union]{"Type"->explParamAD}];
+paramsAD[[i]]=Association[Normal@(paramsAD[[i]])\[Union]{"Type"->explParamAD}];
 ];
 If[KeyFreeQ[paramsAD[[i]],"Const"],
 paramsAD[[i]]=Association[Normal@(paramsAD[[i]])\[Union]{"Const"->True}]
@@ -662,7 +662,7 @@ getArgs[[i]]=Association[Normal@(getArgs[[i]])\[Union]{"Reference"->True}]
 ];
 ];
 ];
-preArguments=StringRiffle[Map[#["Name"]&,getArgs]];
+preArguments=StringRiffle[Map[#["Name"]&,getArgs],", "];
 If[preArguments=!="",preArguments=preArguments<>", "];
 
 (* Choose the execution space. Default is TBB, as only TBB is compatible with the FEM assemblers. *)
