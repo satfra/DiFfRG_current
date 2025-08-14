@@ -21,6 +21,8 @@ ClearAll["DiFfRG`CodeTools`*"];
 
 ClearAll["DiFfRG`CodeTools`Private`*"];
 
+UpdateFlows::usage = "UpdateFlows[\"Name\"] updates the Flow Class with Name \"Name\" and the CMakeLists.txt file.";
+
 FlowKernel::usage = "FlowKernel[expr_,name_String,NT_String:\"auto\",addprefix_String:\"\"]
 Makes an equation into a lambda expression - of limited usefulness, but can be used together with LoopIntegrals::integrate and similar functions.";
 
@@ -431,7 +433,7 @@ KernelSpecQ[spec_Association] :=
   ];
 
 updateCMake[varName_:"Flows"] :=
-  Module[{folders, sources, cmake, fileName = flowDir <> "CMakeLists.txt",
+  Module[{folders, sources, cmake, fileName = FileNameJoin[flowDir, "CMakeLists.txt"],
      flowFolderName},
     flowFolderName = StringSplit[flowDir, "/"][[-1]];
     folders = Select[FileNames["*", flowDir, 1], DirectoryQ];
@@ -499,8 +501,8 @@ if constexpr(DiFfRG::has_integrator_AD<decltype("
 if constexpr(DiFfRG::has_set_T<decltype(" <> #[[1]]
        <> ".integrator_AD)>)" <> #[[1]] <> ".integrator_AD.set_T(k);"&, integrators
       ]], "Return" -> "void"]}];
-    ExportCode[flowDir <> "flows.hh", flowHeader];
-    ExportCode[flowDir <> "flows.cc", flowCpp];
+    ExportCode[FileNameJoin[flowDir, "flows.hh"], flowHeader];
+    ExportCode[FileNameJoin[flowDir, "flows.cc"], flowCpp];
   ];
 
 UpdateFlows[varName_:flowName] :=
