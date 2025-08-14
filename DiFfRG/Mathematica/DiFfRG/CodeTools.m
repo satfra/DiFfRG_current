@@ -474,7 +474,7 @@ Map[#[[2]]<>" "<>#[[1]]<>";"&,integrators]
 ]}
 ];
 
-integratorInitializations=If[Length[integrators]>0,": "<>StringRiffle[integrators[[All,1]],"(quadrature_provider, json), "]<>"(quadrature_provider, json)",""];
+integratorInitializations=": quadrature_provider(json)"<>If[Length[integrators]>0,", "<>StringRiffle[integrators[[All,1]],"(quadrature_provider, json), "]<>"(quadrature_provider, json)",""];
 
 flowCpp=FunKit`MakeCppBlock[
 "Includes"->{"./flows.hh"},
@@ -707,10 +707,10 @@ FunKit`MakeCppFunction["Name"->"map","Return"->exec,"Body"->None,"Parameters"->J
 coordinates],
 If[Length[coordinates]>0,#,{}]&@{
 FunKit`MakeCppFunction["Name"->"map","Return"->exec,"Body"->"return device::apply([&](const auto...t){return map(dest, coordinates, t...);}, args);","Parameters"->Join[
-{<|"Name"->"dest","Type"->"double*","Reference"->False,"Const"->False|>,
+{<|"Name"->"dest","Type"->"D*","Reference"->False,"Const"->False|>,
 <|"Name"->"coordinates","Reference"->True,"Type"->"C","Const"->True|>,
 <|"Name"->"args","Type"->"device::tuple<T...>","Reference"->True,"Const"->True|>}],
-"Templates"->{"C",  "...T"}]
+"Templates"->{"D","C",  "...T"}]
 },
 If[spec["AD"],#,{}]&@Map[
 FunKit`MakeCppFunction["Name"->"map","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real*","Const"->False,"Reference"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},paramsAD]]&,
@@ -718,10 +718,10 @@ coordinates],
 {
 FunKit`MakeCppFunction["Name"->"get","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"double","Reference"->True,"Const"->False|>},getArgs,params]],
 FunKit`MakeCppFunction["Name"->"get","Return"->"void","Body"->"device::apply([&](const auto...t){get(dest, "<>preArguments<>"t...);}, args);","Parameters"->Join[
-{<|"Name"->"dest","Type"->"double","Reference"->True,"Const"->False|>},
+{<|"Name"->"dest","Type"->"D","Reference"->True,"Const"->False|>},
 getArgs,
 {<|"Name"->"args","Type"->"device::tuple<T...>","Reference"->True,"Const"->True|>}],
-"Templates"->{ "...T"}],
+"Templates"->{"D", "...T"}],
 If[spec["AD"],#,""]&@FunKit`MakeCppFunction["Name"->"get","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real","Reference"->True,"Const"->False|>},getArgs,paramsAD]]
 }]
 ,
