@@ -52,17 +52,15 @@ MakeKernel[__] :=
 
 MakeKernel[kernelExpr_, spec_Association, parameters_List, OptionsPattern[
     ]] :=
-    MakeKernel @@ (Join[{kernelExpr, 0, spec, parameters}, Thread[Rule
-        @@ {#, OptionValue[MakeKernel, #]}]& @ Keys[Options[MakeKernel]]]);
+    MakeKernel @@ (Join[{kernelExpr, 0, spec, parameters}, Thread[Rule @@ {#, OptionValue[MakeKernel, #]}]& @ Keys[Options[MakeKernel]]]);
 
 MakeKernel[kernelExpr_, constExpr_, spec_Association, parameters_List,
      OptionsPattern[]] :=
     Module[{expr, const, kernel, constant, kernelClass, kernelHeader,
-         integratorHeader, integratorCpp, integratorTemplateParams, integratorADTemplateParams,
-         tparams = <|"Name" -> "...t", "Type" -> "auto&&", "Reference" -> False,
-         "Const" -> False|>, kernelDefs = OptionValue["KernelDefinitions"], coordinates
-         = OptionValue["Coordinates"], regulator, params, paramsAD, i, arguments,
-         outputPath, sources},
+        integratorHeader, integratorCpp, integratorTemplateParams, integratorADTemplateParams,
+        tparams = <|"Name" -> "...t", "Type" -> "auto&&", "Reference" -> False, "Const" -> False|>, 
+        kernelDefs = OptionValue["KernelDefinitions"], coordinates = OptionValue["Coordinates"], 
+        params, paramsAD, arguments, outputPath, sources, returnType, returnTypeAD, returnTypePointer, returnTypePointerAD},
         If[Not @ KernelSpecQ[spec],
             Message[MakeKernel::InvalidSpec];
             Abort[]
@@ -105,6 +103,10 @@ MakeKernel[kernelExpr_, constExpr_, spec_Association, parameters_List,
         integratorTemplateParams = StringRiffle[integratorTemplateParams, ", "];
         integratorADTemplateParams = TemplateParameterGeneration[spec, $ADReplacements];
         integratorADTemplateParams = StringRiffle[integratorADTemplateParams, ", "];
+        returnType = spec["Type"];
+        returnTypePointer = StringTemplate["`1`*"][returnType];
+        returnTypeAD = spec["Type"] /. $ADReplacements;
+        returnTypePointerAD = StringTemplate["`1`*"][returnTypeAD];
 
         integratorHeader =
             FunKit`MakeCppHeader[
@@ -134,14 +136,17 @@ MakeKernel[kernelExpr_, constExpr_, spec_Association, parameters_List,
                                 "Return" -> ""
                             ],
                                         If[Length[coordinates] > 0,
-                                            FunKit`MakeCppFunction["Name"
-                                                 -> "map", "Templates" -> {"NT=double"}, "Parameters" -> {tparams}, "Body"
-                                                 -> "static_assert(std::is_same_v<NT, double> || std::is_same_v<NT, autodiff::real>, \"Unknown type requested of "
-                                                 <> spec["Name"] <> "_integrator::get\");
-if constexpr (std::is_same_v<NT, double>)
+                                            FunKit`MakeCppFunction[
+                                                "Name" -> "map", 
+                                                "Templates" -> {StringTemplate["NT=`1`"][returnType]}, 
+                                                "Parameters" -> {tparams}, 
+                                                "Body" -> StringTemplate[
+(* If this formatting looks weird to you, you might not be so wrong. But to have the correct indentation in the C++ code, this needs to be this way, sorry :( )*)
+"static_assert(std::is_same_v<NT, `1`> || std::is_same_v<NT, `2`>, \"Unknown type requested of `3`_integrator::get\");
+if constexpr (std::is_same_v<NT, `1`>)
   map_CT(std::forward<decltype(t)>(t)...);
-else if constexpr (std::is_same_v<NT, autodiff::real>)
-  map_AD(std::forward<decltype(t)>(t)...);",
+else if constexpr (std::is_same_v<NT, `2`>)
+  map_AD(std::forward<decltype(t)>(t)...);"][returnType, returnTypeAD, spec["Name"]],
                                                  "Return" -> "void"]
                                             ,
                                             ""
@@ -155,25 +160,25 @@ else if constexpr (std::is_same_v<NT, autodiff::real>)
                                     },
                                     Map[FunKit`MakeCppFunction[
                                         "Name" -> "map", "Return" -> "void", "Body" -> None, 
-                                         "Parameters" -> makeMapParams["double*", #, params]]&,
+                                         "Parameters" -> makeMapParams[returnTypePointer, #, params]]&,
                                     coordinates],
                                     If[spec["AD"], 
                                         Map[FunKit`MakeCppFunction[
                                             "Name" -> "map", "Return" -> "void", "Body" -> None, 
-                                            "Parameters" -> makeMapParams["autodiff::real*", #, paramsAD]]&, 
+                                            "Parameters" -> makeMapParams[returnTypePointerAD, #, paramsAD]]&, 
                                         coordinates], 
                                         {}
                                     ],
                                     {
                                         FunKit`MakeCppFunction["Name"
                                              -> "get", "Return" -> "void", "Body" -> None, "Parameters" -> 
-                                            makeFuncParams["double", params]
+                                            makeFuncParams[returnType, params]
                                         ],
                                         If[spec["AD"],
                                             FunKit`MakeCppFunction[
                                                 "Name" -> "get", "Return" -> "void", "Body" -> None, 
                                                 "Parameters" -> 
-                                                makeFuncParams["autodiff::real", paramsAD]
+                                                makeFuncParams[returnTypeAD, paramsAD]
                                             ],
                                             ""
                                         ]
@@ -227,7 +232,7 @@ else if constexpr (std::is_same_v<NT, autodiff::real>)
                             "Name" -> "get", 
                             "Class" -> StringTemplate["`Name`_integrator"][spec],
                             "Body" -> StringTemplate["integrator.get(dest, `1`);"][arguments], 
-                            "Parameters" -> makeFuncParams["double", params], 
+                            "Parameters" -> makeFuncParams[returnType, params], 
                             "Return" -> "void"
                         ]
                     }
@@ -238,7 +243,7 @@ else if constexpr (std::is_same_v<NT, autodiff::real>)
                 "Name" -> "get", 
                 "Class" -> StringTemplate["`Name`_integrator"][spec], 
                 "Body" -> StringTemplate["integrator_AD.get(dest, `1`);"][arguments], 
-                "Parameters" -> makeFuncParams["autodiff::real", paramsAD], 
+                "Parameters" -> makeFuncParams[returnTypeAD, paramsAD], 
                 "Return" -> "void"]
                 }
             ];
@@ -250,7 +255,7 @@ else if constexpr (std::is_same_v<NT, autodiff::real>)
                     "Return" -> "void", 
                     "Class" -> StringTemplate["`Name`_integrator"][spec],
                     "Body" -> StringTemplate["integrator.map(dest, coordinates, `1`);"][arguments],
-                    "Parameters" -> makeFuncParams["double*", #, params]
+                    "Parameters" -> makeFuncParams[returnTypePointer, #, params]
                         ]
                     }]&, 
                 coordinates
@@ -262,7 +267,7 @@ else if constexpr (std::is_same_v<NT, autodiff::real>)
                 "Return" -> "void", 
                 "Class" -> StringTemplate["`Name`_integrator"][spec],
                 "Body" -> StringTemplate["integrator_AD.map(dest, coordinates, `1`);"][arguments],
-                "Parameters" -> makeFuncParams["autodiff::reals*", #, paramsAD]
+                "Parameters" -> makeFuncParams[returnTypePointerAD, #, paramsAD]
                         ]
                     }]&, 
                 coordinates
