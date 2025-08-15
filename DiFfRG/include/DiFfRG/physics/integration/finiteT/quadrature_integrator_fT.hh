@@ -24,12 +24,14 @@ namespace DiFfRG
     using ctype = typename get_type::ctype<NT>;
     using execution_space = ExecutionSpace;
 
-    QuadratureIntegrator_fT(QuadratureProvider &quadrature_provider, const std::array<uint, dim> grid_size,
+    QuadratureIntegrator_fT(QuadratureProvider &quadrature_provider, const std::array<uint, dim> _grid_size,
                             std::array<ctype, dim> grid_min, std::array<ctype, dim> grid_max,
                             const std::array<QuadratureType, dim> quadrature_type, const ctype T = 1,
                             const ctype typical_E = 1)
-        : grid_size(grid_size), quadrature_provider(quadrature_provider), T(T), typical_E(typical_E)
+        : quadrature_provider(quadrature_provider), T(T), typical_E(typical_E)
     {
+      for (int d = 0; d < dim; ++d)
+        grid_size[d] = _grid_size[d];
       matsubara_nodes =
           quadrature_provider.template matsubara_nodes<ctype, typename ExecutionSpace::memory_space>(T, typical_E);
       matsubara_weights =
@@ -45,7 +47,10 @@ namespace DiFfRG
 
     void set_grid_extents(const std::array<ctype, dim> grid_min, const std::array<ctype, dim> grid_max)
     {
-      grid_extents = {grid_min, grid_max};
+      for (int d = 0; d < dim; ++d) {
+        grid_extents[0][d] = grid_min[d];
+        grid_extents[1][d] = grid_max[d];
+      }
       for (int i = 0; i < dim; ++i) {
         grid_start[i] = grid_extents[0][i];
         grid_scale[i] = (grid_extents[1][i] - grid_extents[0][i]);
@@ -99,7 +104,7 @@ namespace DiFfRG
       requires(!std::is_same_v<OT, NT>)
     void get(ExecutionSpace &space, OT &dest, const Args &...t) const
     {
-      const auto args = std::make_tuple(t...);
+      const auto args = device::make_tuple(t...);
 
       const auto &n = nodes;
       const auto &w = weights;
@@ -111,13 +116,12 @@ namespace DiFfRG
       const auto &m_T = T;
 
       if constexpr (dim == 0) {
-        std::cout << "QuadratureIntegral_0D_fT" << std::endl;
         Kokkos::parallel_reduce(
             "QuadratureIntegral_0D_fT", // name of the kernel
             Kokkos::RangePolicy<ExecutionSpace>(space, 0, m_n.size()),
             KOKKOS_LAMBDA(const uint idxt, NT &update) {
               const ctype xt = m_n[idxt];
-              const NT result = std::apply(
+              const NT result = device::apply(
                   [&](const auto &...iargs) {
                     return
                         // positive and negative Matsubara frequencies
@@ -137,7 +141,7 @@ namespace DiFfRG
               const ctype x0 = Kokkos::fma(scale[0], n[0][idx0], start[0]);
               const ctype xt = m_n[idxt];
               const ctype weight = w[0][idx0] * scale[0];
-              const NT result = std::apply(
+              const NT result = device::apply(
                   [&](const auto &...iargs) {
                     return
                         // positive and negative Matsubara frequencies
@@ -159,7 +163,7 @@ namespace DiFfRG
               const ctype x1 = Kokkos::fma(scale[1], n[1][idx1], start[1]);
               const ctype xt = m_n[idxt];
               const ctype weight = w[0][idx0] * scale[0] * w[1][idx1] * scale[1];
-              const NT result = std::apply(
+              const NT result = device::apply(
                   [&](const auto &...iargs) {
                     return
                         // positive and negative Matsubara frequencies
@@ -182,7 +186,7 @@ namespace DiFfRG
               const ctype x2 = Kokkos::fma(scale[2], n[2][idx2], start[2]);
               const ctype xt = m_n[idxt];
               const ctype weight = w[0][idx0] * scale[0] * w[1][idx1] * scale[1] * w[2][idx2] * scale[2];
-              const NT result = std::apply(
+              const NT result = device::apply(
                   [&](const auto &...iargs) {
                     return
                         // positive and negative Matsubara frequencies
@@ -209,7 +213,7 @@ namespace DiFfRG
               const ctype xt = m_n[idxt];
               const ctype weight =
                   w[0][idx0] * scale[0] * w[1][idx1] * scale[1] * w[2][idx2] * scale[2] * w[3][idx3] * scale[3];
-              const NT result = std::apply(
+              const NT result = device::apply(
                   [&](const auto &...iargs) {
                     return
                         // positive and negative Matsubara frequencies
@@ -231,7 +235,7 @@ namespace DiFfRG
     template <typename view_type, typename Coordinates, typename... Args>
     void map(ExecutionSpace &space, const view_type integral_view, const Coordinates &coordinates, const Args &...args)
     {
-      const auto m_args = std::make_tuple(args...);
+      const auto m_args = device::make_tuple(args...);
 
       using TeamPolicy = Kokkos::TeamPolicy<ExecutionSpace>;
       using TeamType = Kokkos::TeamPolicy<ExecutionSpace>::member_type;
@@ -256,7 +260,7 @@ namespace DiFfRG
             const auto idx = coordinates.from_continuous_index(k);
             const auto pos = coordinates.forward(idx);
             // make a tuple of all arguments
-            const auto full_args = std::tuple_cat(pos, m_args);
+            const auto full_args = device::tuple_cat(pos, m_args);
 
             // no-ops to capture
             (void)start;
@@ -273,7 +277,7 @@ namespace DiFfRG
                   Kokkos::TeamThreadRange(team, m_n.size()), // range of the kernel
                   [&](const uint idxt, NT &update) {
                     const ctype xt = m_n[idxt];
-                    const NT result = std::apply(
+                    const NT result = device::apply(
                         [&](const auto &...iargs) {
                           return
                               // positive and negative Matsubara frequencies
@@ -292,7 +296,7 @@ namespace DiFfRG
                     const ctype x0 = Kokkos::fma(scale[0], n[0][idx0], start[0]);
                     const ctype xt = m_n[idxt];
                     const ctype weight = w[0][idx0] * scale[0];
-                    const NT result = std::apply(
+                    const NT result = device::apply(
                         [&](const auto &...iargs) {
                           return
                               // positive and negative Matsubara frequencies
@@ -312,7 +316,7 @@ namespace DiFfRG
                     const ctype x1 = Kokkos::fma(scale[1], n[1][idx1], start[1]);
                     const ctype xt = m_n[idxt];
                     const ctype weight = w[0][idx0] * scale[0] * w[1][idx1] * scale[1];
-                    const NT result = std::apply(
+                    const NT result = device::apply(
                         [&](const auto &...iargs) {
                           return
                               // positive and negative Matsubara frequencies
@@ -334,7 +338,7 @@ namespace DiFfRG
                     const ctype x2 = Kokkos::fma(scale[2], n[2][idx2], start[2]);
                     const ctype xt = m_n[idxt];
                     const ctype weight = w[0][idx0] * scale[0] * w[1][idx1] * scale[1] * w[2][idx2] * scale[2];
-                    const NT result = std::apply(
+                    const NT result = device::apply(
                         [&](const auto &...iargs) {
                           return
                               // positive and negative Matsubara frequencies
@@ -359,7 +363,7 @@ namespace DiFfRG
                     const ctype xt = m_n[idxt];
                     const ctype weight =
                         w[0][idx0] * scale[0] * w[1][idx1] * scale[1] * w[2][idx2] * scale[2] * w[3][idx3] * scale[3];
-                    const NT result = std::apply(
+                    const NT result = device::apply(
                         [&](const auto &...iargs) {
                           return
                               // positive and negative Matsubara frequencies
@@ -381,7 +385,8 @@ namespace DiFfRG
             // add the constant value
             team.team_barrier();
             Kokkos::single(Kokkos::PerTeam(team), [=]() {
-              subview() = res + std::apply([&](const auto &...iargs) { return KERNEL::constant(iargs...); }, full_args);
+              subview() =
+                  res + device::apply([&](const auto &...iargs) { return KERNEL::constant(iargs...); }, full_args);
             });
           });
     }
@@ -443,16 +448,16 @@ namespace DiFfRG
       return space;
     }
 
-    const std::array<uint, dim> grid_size;
-
   private:
     QuadratureProvider &quadrature_provider;
-    std::array<std::array<ctype, dim>, 2> grid_extents;
-    std::array<ctype, dim> grid_start;
-    std::array<ctype, dim> grid_scale;
+    device::array<device::array<ctype, dim>, 2> grid_extents;
+    device::array<ctype, dim> grid_start;
+    device::array<ctype, dim> grid_scale;
 
-    std::array<Kokkos::View<const ctype *, typename ExecutionSpace::memory_space>, dim> nodes;
-    std::array<Kokkos::View<const ctype *, typename ExecutionSpace::memory_space>, dim> weights;
+    device::array<uint, dim> grid_size;
+
+    device::array<Kokkos::View<const ctype *, typename ExecutionSpace::memory_space>, dim> nodes;
+    device::array<Kokkos::View<const ctype *, typename ExecutionSpace::memory_space>, dim> weights;
 
     ctype T, typical_E;
 
@@ -470,12 +475,15 @@ namespace DiFfRG
     using ctype = typename get_type::ctype<NT>;
     using execution_space = TBB_exec;
 
-    QuadratureIntegrator_fT(QuadratureProvider &quadrature_provider, const std::array<uint, dim> grid_size,
+    QuadratureIntegrator_fT(QuadratureProvider &quadrature_provider, const std::array<uint, dim> _grid_size,
                             std::array<ctype, dim> grid_min, std::array<ctype, dim> grid_max,
                             const std::array<QuadratureType, dim> quadrature_type, const ctype T = 1,
                             const ctype typical_E = 1)
-        : grid_size(grid_size), quadrature_provider(quadrature_provider), T(T), typical_E(typical_E)
+        : quadrature_provider(quadrature_provider), T(T), typical_E(typical_E)
     {
+      for (int d = 0; d < dim; ++d)
+        grid_size[d] = _grid_size[d];
+
       matsubara_nodes =
           quadrature_provider.template matsubara_nodes<ctype, typename execution_space::memory_space>(T, typical_E);
       matsubara_weights =
@@ -491,7 +499,10 @@ namespace DiFfRG
 
     void set_grid_extents(const std::array<ctype, dim> grid_min, const std::array<ctype, dim> grid_max)
     {
-      grid_extents = {grid_min, grid_max};
+      for (int d = 0; d < dim; ++d) {
+        grid_extents[0][d] = grid_min[d];
+        grid_extents[1][d] = grid_max[d];
+      }
       for (int i = 0; i < dim; ++i) {
         grid_start[i] = grid_extents[0][i];
         grid_scale[i] = (grid_extents[1][i] - grid_extents[0][i]);
@@ -673,15 +684,15 @@ namespace DiFfRG
     template <typename Coordinates, typename... Args>
     void map(execution_space &, NT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      const auto m_args = std::tie(args...);
+      const auto m_args = device::tie(args...);
 
       tbb::parallel_for(tbb::blocked_range<uint>(0, coordinates.size()), [&](const tbb::blocked_range<uint> &r) {
         for (uint idx = r.begin(); idx != r.end(); ++idx) {
           const auto dis_idx = coordinates.from_continuous_index(idx);
           const auto pos = coordinates.forward(dis_idx);
           // make a tuple of all arguments
-          const auto full_args = std::tuple_cat(pos, m_args);
-          std::apply([&](const auto &...iargs) { get(dest[idx], iargs...); }, full_args);
+          const auto full_args = device::tuple_cat(pos, m_args);
+          device::apply([&](const auto &...iargs) { get(dest[idx], iargs...); }, full_args);
         }
       });
     }
@@ -719,16 +730,16 @@ namespace DiFfRG
       return space;
     }
 
-    const std::array<uint, dim> grid_size;
-
   private:
     QuadratureProvider &quadrature_provider;
-    std::array<std::array<ctype, dim>, 2> grid_extents;
-    std::array<ctype, dim> grid_start;
-    std::array<ctype, dim> grid_scale;
+    device::array<device::array<ctype, dim>, 2> grid_extents;
+    device::array<ctype, dim> grid_start;
+    device::array<ctype, dim> grid_scale;
 
-    std::array<Kokkos::View<const ctype *, typename execution_space::memory_space>, dim> nodes;
-    std::array<Kokkos::View<const ctype *, typename execution_space::memory_space>, dim> weights;
+    device::array<uint, dim> grid_size;
+
+    device::array<Kokkos::View<const ctype *, typename execution_space::memory_space>, dim> nodes;
+    device::array<Kokkos::View<const ctype *, typename execution_space::memory_space>, dim> weights;
 
     ctype T, typical_E;
 

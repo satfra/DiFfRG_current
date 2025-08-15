@@ -46,7 +46,7 @@ MakeKernel[kernelExpr_,constExpr_,spec_Association,parameters_List,OptionsPatter
     integratorCpp, integratorTemplateParams, integratorADTemplateParams,
     tparams=<|"Name"->"...t","Type"->"auto&&","Reference"->False,"Const"->False|>,
     kernelDefs=OptionValue["KernelDefinitions"], coordinates=OptionValue["Coordinates"],
-    getArgs=OptionValue["CoordinateArguments"], preArguments, regulator, params, paramsAD, explParamAD,
+    getArgs=OptionValue["CoordinateArguments"], intVariables=OptionValue["IntegrationVariables"], preArguments, regulator, params, paramsAD, explParamAD,
     arguments, outputPath, sources, returnType, returnTypeAD, returnTypePointer, returnTypePointerAD
 },
 
@@ -101,9 +101,13 @@ params=FunKit`Private`prepParam/@parameters;
 arguments=StringRiffle[Map[#["Name"]&,params],", "];
 
 getArgs=FunKit`Private`prepParam/@getArgs;
+getArgs=Map[Append[#,"Type"->"double"]&,getArgs];
 getArgs = First @ processParameters[getArgs, $ADReplacements];
 preArguments=StringRiffle[Map[#["Name"]&,getArgs],", "];
 If[preArguments=!="",preArguments=preArguments<>", "];
+
+intVariables=FunKit`Private`prepParam/@intVariables;
+intVariables=Map[Append[#,"Type"->"double"]&,intVariables];
 
 (* Choose the execution space. Default is TBB, as only TBB is compatible with the FEM assemblers. *)
 exec=If[KeyFreeQ[spec,"Device"]||FreeQ[{"GPU","Threads"},spec["Device"]],"DiFfRG::TBB_exec","DiFfRG::"<>spec["Device"]<>"_exec"];

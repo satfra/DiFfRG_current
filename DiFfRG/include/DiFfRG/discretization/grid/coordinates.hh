@@ -311,18 +311,27 @@ namespace DiFfRG
         grid[i] = coordinates.forward(i);
       return grid;
     } else if constexpr (Coordinates::dim == 2) {
-      std::vector<device::array<ctype, 2>> grid(coordinates.size());
+      std::vector<std::array<ctype, 2>> grid(coordinates.size());
       for (uint i = 0; i < coordinates.sizes()[0]; ++i)
-        for (uint j = 0; j < coordinates.sizes()[1]; ++j)
-          grid[i * coordinates.sizes()[1] + j] = coordinates.forward(i, j);
+        for (uint j = 0; j < coordinates.sizes()[1]; ++j) {
+          const auto forwarded = coordinates.forward(i, j);
+          grid[i * coordinates.sizes()[1] + j][0] = forwarded[0];
+          grid[i * coordinates.sizes()[1] + j][1] = forwarded[1];
+        }
       return grid;
     } else if constexpr (Coordinates::dim == 3) {
-      std::vector<device::array<ctype, 3>> grid(coordinates.size());
+      std::vector<std::array<ctype, 3>> grid(coordinates.size());
       for (uint i = 0; i < coordinates.sizes()[0]; ++i)
         for (uint j = 0; j < coordinates.sizes()[1]; ++j)
-          for (uint k = 0; k < coordinates.sizes()[2]; ++k)
-            grid[i * coordinates.sizes()[1] * coordinates.sizes()[2] + j * coordinates.sizes()[2] + k] =
-                coordinates.forward(i, j, k);
+          for (uint k = 0; k < coordinates.sizes()[2]; ++k) {
+            const auto forwarded = coordinates.forward(i, j, k);
+            grid[i * coordinates.sizes()[1] * coordinates.sizes()[2] + j * coordinates.sizes()[2] + k][0] =
+                forwarded[0];
+            grid[i * coordinates.sizes()[1] * coordinates.sizes()[2] + j * coordinates.sizes()[2] + k][1] =
+                forwarded[1];
+            grid[i * coordinates.sizes()[1] * coordinates.sizes()[2] + j * coordinates.sizes()[2] + k][2] =
+                forwarded[2];
+          }
       return grid;
     } else {
       throw std::runtime_error("make_grid only works for 1D, 2D, and 3D coordinates");

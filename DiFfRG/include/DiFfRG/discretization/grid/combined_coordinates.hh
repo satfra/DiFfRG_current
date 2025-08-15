@@ -48,6 +48,10 @@ namespace DiFfRG
     {
       return {matsubara_values.forward(m), logarithmic_coordinates.forward(p)};
     }
+    device::array<NT, 2> KOKKOS_FORCEINLINE_FUNCTION forward(const device::array<uint, 2> mp) const
+    {
+      return forward(mp[0], mp[1]);
+    }
 
     /**
      * @brief Transform from the physical space to the grid
@@ -70,6 +74,16 @@ namespace DiFfRG
       } else
         p_idx = logarithmic_coordinates.backward(p);
       return {m_idx, p_idx};
+    }
+
+    device::array<uint, 2> KOKKOS_FORCEINLINE_FUNCTION from_continuous_index(auto i) const
+    {
+      device::array<uint, 2> idx;
+      // calculate the index for each coordinate system
+      idx[0] = i / grid_extent; // Matsubara index
+      idx[1] = i % grid_extent; // Logarithmic index
+
+      return idx;
     }
 
     uint size() const { return m_size * grid_extent; }
@@ -124,6 +138,10 @@ namespace DiFfRG
     {
       return {matsubara_values.forward(m), logarithmic_coordinates.forward(p)};
     }
+    device::array<NT, 2> KOKKOS_FORCEINLINE_FUNCTION forward(const device::array<uint, 2> mp) const
+    {
+      return forward(mp[0], mp[1]);
+    }
 
     /**
      * @brief Transform from the physical space to the grid
@@ -146,6 +164,16 @@ namespace DiFfRG
       } else
         p_idx = logarithmic_coordinates.backward(p);
       return {m_idx, p_idx};
+    }
+
+    device::array<uint, 2> KOKKOS_FORCEINLINE_FUNCTION from_continuous_index(auto i) const
+    {
+      device::array<uint, 2> idx;
+      // calculate the index for each coordinate system
+      idx[0] = i / grid_extent; // Matsubara index
+      idx[1] = i % grid_extent; // Logarithmic index
+
+      return idx;
     }
 
     uint size() const { return m_size * grid_extent; }
