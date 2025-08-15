@@ -8,7 +8,7 @@
 
 namespace DiFfRG
 {
-  template <typename Idx, typename NT> class BosonicCoordinates1DFiniteT
+  template <typename Idx = int, typename NT = double> class BosonicCoordinates1DFiniteT
   {
   public:
     using ctype = NT;
@@ -44,7 +44,7 @@ namespace DiFfRG
      * @param x grid coordinate
      * @return NumberType physical coordinate
      */
-    std::array<NT, 2> KOKKOS_FORCEINLINE_FUNCTION forward(const uint m, const uint p) const
+    device::array<NT, 2> KOKKOS_FORCEINLINE_FUNCTION forward(const uint m, const uint p) const
     {
       return {matsubara_values.forward(m), logarithmic_coordinates.forward(p)};
     }
@@ -73,7 +73,7 @@ namespace DiFfRG
     }
 
     uint size() const { return m_size * grid_extent; }
-    std::array<uint, 2> sizes() const { return {{m_size, grid_extent}}; }
+    device::array<uint, 2> sizes() const { return {{m_size, grid_extent}}; }
 
     const NT m_start, m_stop, m_T, p_start, p_stop, p_bias;
 
@@ -84,7 +84,7 @@ namespace DiFfRG
     LogarithmicCoordinates1D<NT> logarithmic_coordinates;
   };
 
-  template <typename Idx, typename NT> class FermionicCoordinates1DFiniteT
+  template <typename Idx = int, typename NT = double> class FermionicCoordinates1DFiniteT
   {
   public:
     using ctype = NT;
@@ -120,7 +120,7 @@ namespace DiFfRG
      * @param x grid coordinate
      * @return NumberType physical coordinate
      */
-    std::array<NT, 2> KOKKOS_FORCEINLINE_FUNCTION forward(const uint m, const uint p) const
+    device::array<NT, 2> KOKKOS_FORCEINLINE_FUNCTION forward(const uint m, const uint p) const
     {
       return {matsubara_values.forward(m), logarithmic_coordinates.forward(p)};
     }
@@ -149,7 +149,7 @@ namespace DiFfRG
     }
 
     uint size() const { return m_size * grid_extent; }
-    std::array<uint, 2> sizes() const { return {{m_size, grid_extent}}; }
+    device::array<uint, 2> sizes() const { return {{m_size, grid_extent}}; }
 
     const NT m_start, m_stop, m_T, p_start, p_stop, p_bias;
 

@@ -64,8 +64,8 @@ TemplateParameterGeneration[params_Association, ADReplacements_] :=
         {integratorTemplateParams = {}}
         ,
         integratorTemplateParams = appendKeyDimension[integratorTemplateParams, params];
-        integratorTemplateParams = appendKeyName[integratorTemplateParams, params];
         integratorTemplateParams = appendKeyType[integratorTemplateParams, params, ADReplacements];
+        integratorTemplateParams = appendKeyName[integratorTemplateParams, params];
         integratorTemplateParams = appendKeyDevice[integratorTemplateParams, params];
 
         integratorTemplateParams

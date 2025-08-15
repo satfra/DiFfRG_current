@@ -1,12 +1,6 @@
 #include "./flows.hh"
 
 ONFiniteTFlows::ONFiniteTFlows(const DiFfRG::JSONValue &json) : V(quadrature_provider, json) {}
-void ONFiniteTFlows::set_k(const double k)
-{
-  if constexpr (DiFfRG::has_set_k<decltype(V.integrator)>) V.integrator.set_k(k);
-  if constexpr (DiFfRG::has_integrator_AD<decltype(V)>)
-    if constexpr (DiFfRG::has_set_k<decltype(V.integrator_AD)>) V.integrator_AD.set_k(k);
-  // if constexpr (DiFfRG::has_set_T<decltype(V.integrator)>) V.integrator.set_T(k);
-  // if constexpr (DiFfRG::has_integrator_AD<decltype(V)>)
-  //   if constexpr (DiFfRG::has_set_T<decltype(V.integrator_AD)>) V.integrator_AD.set_T(k);
-}
+void ONFiniteTFlows::set_k(const double k) { DiFfRG::all_set_k(V, k); }
+void ONFiniteTFlows::set_T(const double T) { DiFfRG::all_set_T(V, T); }
+void ONFiniteTFlows::set_x_extent(const double x_extent) { DiFfRG::all_set_x_extent(V, x_extent); }

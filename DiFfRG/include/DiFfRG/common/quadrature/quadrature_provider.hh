@@ -2,11 +2,8 @@
 
 // DiFfRG
 #include <DiFfRG/common/json.hh>
-#include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/quadrature/matsubara.hh>
 #include <DiFfRG/common/quadrature/quadrature.hh>
-#include <DiFfRG/common/types.hh>
-#include <DiFfRG/common/utils.hh>
 
 // standard library
 #include <mutex>

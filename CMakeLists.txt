@@ -99,11 +99,16 @@ include(ExternalProject)
 # build general deps
 ExternalProject_Add(
   general_dep
+  LOG_CONFIGURE ON
+  LOG_INSTALL ON
+  LOG_BUILD ON
+  LOG_OUTPUT_ON_FAILURE ON
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/general
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/general
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
   CMAKE_CACHE_ARGS
+    -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
     -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
     -DCMAKE_CXX_FLAGS:STRING=-march=native
     -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
@@ -114,12 +119,17 @@ ExternalProject_Add(
 # build sundials
 ExternalProject_Add(
   sundials_dep
+  LOG_CONFIGURE ON
+  LOG_INSTALL ON
+  LOG_BUILD ON
+  LOG_OUTPUT_ON_FAILURE ON
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/sundials
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/sundials
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
   DEPENDS general_dep
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
   CMAKE_CACHE_ARGS
+    -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
     -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
     -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
     -DCMAKE_CXX_FLAGS:STRING=-march=native
@@ -130,6 +140,10 @@ ExternalProject_Add(
 # build autodiff
 ExternalProject_Add(
   autodiff_dep
+  LOG_CONFIGURE ON
+  LOG_INSTALL ON
+  LOG_BUILD ON
+  LOG_OUTPUT_ON_FAILURE ON
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/autodiff
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/autodiff
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
@@ -141,10 +155,13 @@ ExternalProject_Add(
 # build boost
 ExternalProject_Add(
   boost_dep
+  LOG_CONFIGURE ON
+  LOG_INSTALL ON
+  LOG_BUILD ON
+  LOG_OUTPUT_ON_FAILURE ON
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/boost
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/boost
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  DEPENDS general_dep sundials_dep autodiff_dep
   CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
              -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
              -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
@@ -186,28 +203,33 @@ message(STATUS "CUDA compiler: ${CMAKE_CUDA_COMPILER}")
 # add the Kokkos dependency to the build
 ExternalProject_Add(
   kokkos_dep
+  LOG_CONFIGURE ON
+  LOG_INSTALL ON
+  LOG_BUILD ON
+  LOG_OUTPUT_ON_FAILURE ON
   GIT_REPOSITORY https://github.com/kokkos/kokkos.git
   GIT_TAG 4.6.01
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/kokkos
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  DEPENDS general_dep sundials_dep autodiff_dep boost_dep
+  DEPENDS general_dep sundials_dep autodiff_dep
   CMAKE_ARGS -DCMAKE_CXX_FLAGS=-fPIC
   CMAKE_CACHE_ARGS
-    -DCMAKE_BUILD_TYPE:STRING=Release
+    -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
     -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
     -DCMAKE_CXX_STANDARD:STRING=20
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+    -DBUILD_SHARED_LIBS:BOOL=OFF
     -DKokkos_ARCH_NATIVE:BOOL=${Kokkos_ARCH_NATIVE}
     ${Kokkos_ARCH_LIST}
     -DCMAKE_CUDA_COMPILER:STRING=${CMAKE_CUDA_COMPILER}
     -DKokkos_ENABLE_CUDA:BOOL=${HAVE_CUDA}
     -DKokkos_ENABLE_CUDA_CONSTEXPR:BOOL=${HAVE_CUDA}
+    -DKokkos_ENABLE_CUDA_RELOCATABLE_DEVICE_CODE:BOOL=${HAVE_CUDA}
     -DKokkos_ENABLE_HIP:BOOL=${HAVE_HIP}
     # OpenMP is not supported by DiFfRG, as it conflicts with TBB.
     -DKokkos_ENABLE_OPENMP:BOOL=OFF
     -DKokkos_ENABLE_THREADS:BOOL=${HAVE_THREADS}
     -DKokkos_ENABLE_SERIAL:BOOL=ON
-    -DKokkos_ENABLE_TESTS:BOOL=ON
     -DKokkos_ENABLE_TESTS:BOOL=OFF)
 
 # ##############################################################################
@@ -217,7 +239,11 @@ ExternalProject_Add(
 # build PETSc
 ExternalProject_Add(
   petsc_dep
-  DEPENDS general_dep sundials_dep autodiff_dep boost_dep kokkos_dep
+  LOG_CONFIGURE ON
+  LOG_INSTALL ON
+  LOG_BUILD ON
+  LOG_OUTPUT_ON_FAILURE ON
+  DEPENDS general_dep sundials_dep autodiff_dep kokkos_dep
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/petsc
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/petsc
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
@@ -237,6 +263,10 @@ ExternalProject_Add(
 # build deal.II
 ExternalProject_Add(
   deal.II_dep
+  LOG_CONFIGURE ON
+  LOG_INSTALL ON
+  LOG_BUILD ON
+  LOG_OUTPUT_ON_FAILURE ON
   GIT_REPOSITORY https://github.com/dealii/dealii.git
   GIT_TAG v9.4.2
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/deal.II

@@ -27,6 +27,9 @@ file(
   EXPECTED_HASH
     SHA256=78ba32abdf798bc616bab7c73aac32a17bbd7b06ad9e26a6add69de8f3ae4791)
 include(${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake)
+if("${CPM_SOURCE_CACHE}" STREQUAL "OFF" OR NOT DEFINED CPM_SOURCE_CACHE)
+  set(CPM_SOURCE_CACHE $ENV{HOME}/.cache/CPM)
+endif()
 
 # oneTBB
 message(STATUS "Adding oneTBB...")
@@ -39,7 +42,6 @@ cpmaddpackage(
   "CMAKE_CXX_STANDARD 20"
   "CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE}"
   "TBB_TEST OFF"
-  "TBBMALLOC_PROXY_BUILD OFF"
   GITHUB_REPOSITORY
   uxlfoundation/oneTBB
   GIT_TAG

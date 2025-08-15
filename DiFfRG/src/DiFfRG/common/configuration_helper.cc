@@ -7,6 +7,9 @@
 #include <DiFfRG/common/configuration_helper.hh>
 #include <DiFfRG/common/utils.hh>
 
+// standard library
+#include <fstream>
+
 namespace DiFfRG
 {
   bool ConfigurationHelper::logger_initialized = false;

@@ -4,7 +4,6 @@
     "STI_tol": 1e-4,
     "STI_step_size": 1e-2,
     "STI_scale": 10.0,
-
     "tune_m2A": false,
     "lower_m2A": -150.0,
     "upper_m2A": -80.0,
@@ -13,34 +12,26 @@
   "physical": {
     "Lambda": 100.0,
     "Nc": 3.0,
-    "m2A": -1.070279647037e+02,
-
-    "alphaA4": 0.1085,
-    "alphaA3": 0.105,
-    "alphaAcbc": 0.11,
-
-    "tilt_A4": 0.000,
-    "tilt_A3": -0.01,
+    "m2A": -96.46362231,
+    "alphaA4": 0.10,
+    "alphaA3": 0.10,
+    "alphaAcbc": 0.10,
+    "tilt_A4": 0.0,
+    "tilt_A3": 0.0,
     "tilt_Acbc": 0.0
   },
   "integration": {
-    "x_quadrature_order": 32,
-    "angle_quadrature_order": 8,
-    "x0_quadrature_order": 16,
-    "x0_summands": 8,
-    "q0_quadrature_order": 16,
-    "q0_summands": 8,
-    "x_extent_tolerance": 1E-3,
-    "x0_extent_tolerance": 1E-3,
-    "q0_extent_tolerance": 1E-3,
+    "x_order": 32,
+    "cos1_order": 8,
+    "cos2_order": 8,
+    "phi_order": 8,
+    "x_extent_tolerance": 1e-4,
     "jacobian_quadrature_factor": 5E-1,
-
     "rel_tol": 1e-3,
     "abs_tol": 1e-12,
     "max_eval": 10000,
     "minn": 512,
     "minm": 16,
-
     "cudablocks": 128,
     "cudathreadsperblock": 64
   },
@@ -48,7 +39,6 @@
     "p_grid_min": 1e-4,
     "p_grid_max": 100.0,
     "p_grid_bias": 12.0,
-
     "fe_order": 3,
     "threads": 8,
     "batch_size": 64,
@@ -69,7 +59,7 @@
     }
   },
   "timestepping": {
-    "final_time": 13.0,
+    "final_time": 1.4e+1,
     "output_dt": 2e-1,
     "explicit": {
       "dt": 2e-1,
@@ -87,7 +77,6 @@
     }
   },
   "output": {
-    "live_plot": false,
     "verbosity": 1,
     "folder": "./",
     "name": "output"

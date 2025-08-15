@@ -5,22 +5,14 @@
 
 // external libraries
 #include <deal.II/base/multithread_info.h>
-#include <deal.II/base/quadrature_lib.h>
 #include <deal.II/base/timer.h>
 #include <deal.II/dofs/dof_handler.h>
-#include <deal.II/fe/fe_interface_values.h>
-#include <deal.II/fe/fe_values.h>
 #include <deal.II/lac/full_matrix.h>
 #include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/vector.h>
-#include <deal.II/meshworker/mesh_loop.h>
-#include <deal.II/numerics/fe_field_function.h>
-#include <deal.II/numerics/matrix_tools.h>
-#include <deal.II/numerics/vector_tools.h>
 
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
-#include <DiFfRG/discretization/common/EoM.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/data/data_output.hh>
 

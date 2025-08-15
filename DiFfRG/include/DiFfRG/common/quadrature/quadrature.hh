@@ -3,7 +3,6 @@
 // DiFfRG
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/quadrature/diagonalization.hh>
-#include <DiFfRG/common/types.hh>
 #include <DiFfRG/common/utils.hh>
 
 // standard library

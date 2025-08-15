@@ -7,7 +7,6 @@
 
 // standard libraries
 #include <cstdlib>
-#include <oneapi/tbb/task_arena.h>
 
 // external libraries
 #include <tbb/tbb.h>

@@ -8,14 +8,11 @@
 #include <gsl/gsl_multiroots.h>
 #include <gsl/gsl_vector.h>
 #include <gsl/gsl_vector_double.h>
-#include <iostream>
-#include <sys/types.h>
-#include <tbb/parallel_for.h>
 
 // standard library
 #include <algorithm>
+#include <iostream>
 #include <iterator>
-#include <mutex>
 
 namespace DiFfRG
 {
