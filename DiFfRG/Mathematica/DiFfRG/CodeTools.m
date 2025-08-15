@@ -88,6 +88,12 @@ The angles will have the names cospq and cosqr, where q,p,r are replaced by the 
 DeclareAnglesP34Dpqr[q,p,r,computeType]
 Set the type of the declared C++ variables (should be double or float).";
 
+DeclareAnglesP33Dpqr::usage="DeclareAnglesP33Dpqr[q,p,r]
+Obtain C++ code declaring angles for the angles in a full three-point function in 3D.
+The angles will have the names cospq and cosqr, where q,p,r are replaced by the given Symbol names and ordered alphabetically.
+DeclareAnglesP34Dpqr[q,p,r,computeType]
+Set the type of the declared C++ variables (should be double or float).";
+
 
 Begin["`Private`"];
 
@@ -203,8 +209,32 @@ Return[SymmetricPoint4DP3Code]
 ];
 
 
-(* ::Subsection::Closed:: *)
+(* ::Subsection:: *)
 (*3D*)
+
+
+(* ::Input::Initialization:: *)
+DeclareAnglesP33Dpqr[q_,p_,r_,cos1_:Symbol@"cos1",phi_:Symbol@"phi",computeType_String:"double"]:=Module[
+{vec3,Vectorp,Vectorr,Vectorq,cos,
+Resultcospq,Resultcosqr,namecospq,namecosqr,
+code,file},
+
+vec3[\[CapitalTheta]_,\[Phi]_]:={Sin[\[CapitalTheta]]Cos[\[Phi]],Sin[\[CapitalTheta]]Sin[\[Phi]],Cos[\[CapitalTheta]]};
+SetAttributes[cos,Orderless];
+
+Vectorp=vec3[0,0];
+Vectorr=vec3[ArcCos[cos[p,r]],0];
+Vectorq=vec3[ArcCos[Symbol@SymbolName@cos1],Symbol@SymbolName@phi];
+
+Resultcospq=Vectorq . Vectorp//.cos[a_,b_]:>Symbol["cos"<>ToString[a]<>ToString[b]]//FullSimplify;
+Resultcosqr=Vectorq . Vectorr//.cos[a_,b_]:>Symbol["cos"<>ToString[a]<>ToString[b]]//FullSimplify;
+
+namecospq=cos[p,q]//.cos[a_,b_]:>Symbol["cos"<>ToString[a]<>ToString[b]];
+namecosqr=cos[q,r]//.cos[a_,b_]:>Symbol["cos"<>ToString[a]<>ToString[b]];
+
+code="const "<>computeType<>" "<>ToString[namecospq]<>" = "<>FunKit`CppForm[Resultcospq]<>";\n"<>"const "<>computeType<>" "<>ToString[namecosqr]<>" = "<>FunKit`CppForm[Resultcosqr]<>";";
+Return[code];
+];
 
 
 (* ::Input::Initialization:: *)
@@ -526,7 +556,7 @@ ExportCode[flowDir<>"flows.cc",flowCpp];
 (*Code for Kernels*)
 
 
-(* ::Input::Initialization:: *)
+(* ::Code::Initialization:: *)
 ClearAll[MakeKernel]
 
 MakeKernel::Invalid="The given arguments are invalid. See MakeKernel::usage";
@@ -556,6 +586,7 @@ tparams=<|"Name"->"...t","Type"->"auto&&","Reference"->False,"Const"->False|>,
 kernelDefs=OptionValue["KernelDefinitions"],
 coordinates=OptionValue["Coordinates"],
 getArgs=OptionValue["CoordinateArguments"],
+intVariables=OptionValue["IntegrationVariables"],
 preArguments,
 regulator,
 params,paramsAD,explParamAD,
@@ -570,6 +601,12 @@ While[ListQ[expr],expr=Plus@@expr];
 const=constExpr;
 While[ListQ[const],const=Plus@@const];
 
+
+intVariables=FunKit`Private`prepParam/@intVariables;
+intVariables=Map[Append[#,"Type"->"double"]&,intVariables];
+getArgs=FunKit`Private`prepParam/@getArgs;
+getArgs=Map[Append[#,"Type"->"double"]&,getArgs];
+
 (********************************************************************)
 (* First, the kernel itself *)
 (********************************************************************)
@@ -579,7 +616,7 @@ expr,
 "Name"->"kernel",
 "Suffix"->"",
 "Prefix"->"static KOKKOS_FORCEINLINE_FUNCTION",
-"Parameters"->Join[OptionValue["IntegrationVariables"],getArgs,parameters],
+"Parameters"->Join[intVariables,getArgs,parameters],
 "Body"->"using namespace DiFfRG;using namespace DiFfRG::compute;"<>OptionValue["KernelBody"]
 ];
 
