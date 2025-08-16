@@ -207,7 +207,7 @@ integratorCpp["AD","get"]=FunKit`MakeCppBlock[
     FunKit`MakeCppFunction[
         "Name"->"get",
         "Class" -> StringTemplate["`Name`_integrator"][spec],
-        "Body" -> StringTemplate["integrator.get(dest, `1` `2`);"][preArguments, arguments], 
+        "Body" -> StringTemplate["integrator_AD.get(dest, `1` `2`);"][preArguments, arguments], 
         "Parameters"->Join[{<|"Name"->"dest","Type"->returnTypeAD,"Reference"->True,"Const"->False|>},getArgs,paramsAD],
         "Return"->"void"
     ]
