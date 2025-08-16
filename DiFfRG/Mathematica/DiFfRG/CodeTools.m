@@ -471,7 +471,7 @@ Map[#[[2]]<>" "<>#[[1]]<>";"&,integrators]
 ]}
 ];
 
-integratorInitializations=": quadrature_provider(json)"<>If[Length[integrators]>0,": "<>StringRiffle[integrators[[All,1]],"(quadrature_provider, json), "]<>"(quadrature_provider, json)",""];
+integratorInitializations=": quadrature_provider(json)"<>If[Length[integrators]>0,", "<>StringRiffle[integrators[[All,1]],"(quadrature_provider, json), "]<>"(quadrature_provider, json)",""];
 
 flowCpp=FunKit`MakeCppBlock[
 "Includes"->{"./flows.hh"},
