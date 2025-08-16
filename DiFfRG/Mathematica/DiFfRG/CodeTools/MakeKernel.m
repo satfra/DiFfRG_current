@@ -25,7 +25,7 @@ Needs["DiFfRG`CodeTools`Regulator`"]
 
 ClearAll[MakeKernel]
 
-$ADReplacements = {"double" -> "autodiff::real", "DiFfRG::complex<double>" -> "DiFfRG::complex<autodiff::real>"};
+$ADReplacements = {"double" -> "autodiff::real", "DiFfRG::complex<double>" -> "cxreal"};
 
 (* Internal functions added here with Internal`*::usage *)
 Options[MakeKernel]={
