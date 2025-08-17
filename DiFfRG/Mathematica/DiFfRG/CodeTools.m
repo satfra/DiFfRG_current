@@ -19,7 +19,6 @@ ClearAll["DiFfRG`CodeTools`*"];
 ClearAll["DiFfRG`CodeTools`Private`*"];
 
 UpdateFlows::usage = "UpdateFlows[\"Name\"] updates the Flow Class with Name \"Name\" and the CMakeLists.txt file.";
-GetStandardKernelDefinitions::usage=""
 
 FlowKernel::usage = "FlowKernel[expr_,name_String,NT_String:\"auto\",addprefix_String:\"\"]
 Makes an equation into a lambda expression - of limited usefulness, but can be used together with LoopIntegrals::integrate and similar functions.";
@@ -342,15 +341,6 @@ Tanh[a_/(2 T)]:>Symbol["TanhFiniteT"][a,T],Tanh[a_/T]:>Symbol["TanhFiniteT"][a,2
 
 (* ::Section::Closed:: *)
 (*Kernel predefines*)
-
-
-(* ::Input::Initialization:: *)
-$PredefRegFunc={"RB","RF","RBdot","RFdot","dq2RB","dq2RF"};
-$StandardKernelDefinitions=Map[
-FunKit`MakeCppFunction["Name"->#,"Body"->"return Regulator::"<>#<>"(k2, p2);","Prefix"->"static KOKKOS_FORCEINLINE_FUNCTION","Suffix"->"","Parameters"->{"k2","p2"}]&,
-$PredefRegFunc];
-
-GetStandardKernelDefinitions[]:=$StandardKernelDefinitions
 
 
 (* ::Input::Initialization:: *)

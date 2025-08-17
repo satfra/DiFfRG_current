@@ -2,6 +2,8 @@
 
 BeginPackage["DiFfRG`CodeTools`MakeKernel`"]
 
+GetStandardKernelDefinitions::usage="GetStandardKernelDefinitions[] returns a list of standard kernel definitions used in DiFfRG."
+
 MakeKernel::usage = "MakeKernel[kernel_Association, parameterList_List,integrandFlow_,constantFlow_:0., integrandDefinitions_String:\"\", constantDefinitions_String:\"\"]
 Make a kernel from a given flow equation, parmeter list and kernel. The kernel must be a valid specification of an integration kernel.
 This Function creates an integrator that evaluates (constantFlow + \[Integral]integrandFlow). One can prepend additional c++ definitions to the flow equation by using the integrandDefinitions and constantDefinitions parameters. 
@@ -26,6 +28,13 @@ Needs["DiFfRG`CodeTools`Regulator`"]
 ClearAll[MakeKernel]
 
 $ADReplacements = {"double" -> "autodiff::real", "DiFfRG::complex<double>" -> "cxreal"};
+
+$PredefRegFunc={"RB","RF","RBdot","RFdot","dq2RB","dq2RF"};
+$StandardKernelDefinitions=Map[
+FunKit`MakeCppFunction["Name"->#,"Body"->"return Regulator::"<>#<>"(k2, p2);","Prefix"->"static KOKKOS_FORCEINLINE_FUNCTION","Suffix"->"","Parameters"->{"k2","p2"}]&,
+$PredefRegFunc];
+
+GetStandardKernelDefinitions[]:=$StandardKernelDefinitions
 
 (* Internal functions added here with Internal`*::usage *)
 Options[MakeKernel]={
