@@ -79,7 +79,7 @@ namespace DiFfRG
     {
     }
 
-    Integrator_p2_1ang(QuadratureProvider &quadrature_provider, const std::array<uint, 2> grid_size,
+    Integrator_p2_1ang(QuadratureProvider &quadrature_provider, const std::array<size_t, 2> grid_size,
                        ctype x_extent = 2.)
         : Base(quadrature_provider, grid_size, {0, -1.}, {x_extent, 1.},
                {QuadratureType::legendre, QuadratureType::legendre}),

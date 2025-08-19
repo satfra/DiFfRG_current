@@ -38,7 +38,7 @@ namespace DiFfRG
 
   public:
     using ctype = typename device::tuple_element<0, device::tuple<Coordinates...>>::type::ctype;
-    static constexpr uint dim = sizeof...(Coordinates);
+    static constexpr size_t dim = sizeof...(Coordinates);
 
     /**
      * @brief Construct a new CoordinatePackND object
@@ -80,26 +80,26 @@ namespace DiFfRG
       return {{device::get<Is>(coordinates).backward(device::get<Is>(device::tie(i...)))...}};
     }
 
-    template <uint i> const auto &get_coordinates() const { return device::get<i>(coordinates); }
+    template <size_t i> const auto &get_coordinates() const { return device::get<i>(coordinates); }
 
-    uint KOKKOS_FORCEINLINE_FUNCTION size() const
+    size_t KOKKOS_FORCEINLINE_FUNCTION size() const
     {
       // multiply all sizes
-      uint size = 1;
+      size_t size = 1;
       constexpr_for<0, sizeof...(Coordinates), 1>([&](auto i) { size *= device::get<i>(coordinates).size(); });
       return size;
     }
 
-    device::array<uint, sizeof...(Coordinates)> KOKKOS_FORCEINLINE_FUNCTION sizes() const
+    device::array<size_t, sizeof...(Coordinates)> KOKKOS_FORCEINLINE_FUNCTION sizes() const
     {
-      device::array<uint, sizeof...(Coordinates)> sizes;
+      device::array<size_t, sizeof...(Coordinates)> sizes;
       constexpr_for<0, sizeof...(Coordinates), 1>([&](auto i) { sizes[i] = device::get<i>(coordinates).size(); });
       return sizes;
     }
 
-    device::array<uint, sizeof...(Coordinates)> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(size_t s) const
+    device::array<size_t, sizeof...(Coordinates)> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(size_t s) const
     {
-      device::array<uint, sizeof...(Coordinates)> idx;
+      device::array<size_t, sizeof...(Coordinates)> idx;
       // calculate the index for each coordinate system
       constexpr_for<0, sizeof...(Coordinates), 1>([&](auto i) {
         idx[sizeof...(Coordinates) - 1 - i] = s % device::get<sizeof...(Coordinates) - 1 - i>(coordinates).size();
@@ -117,28 +117,28 @@ namespace DiFfRG
   {
   public:
     using ctype = typename Base::ctype;
-    static constexpr uint dim = Base::dim;
+    static constexpr size_t dim = Base::dim;
 
-    SubCoordinates(const Base &base, uint offset, uint size) : Base(base), m_size(size)
+    SubCoordinates(const Base &base, size_t offset, size_t size) : Base(base), m_size(size)
     {
       if (size == 0) throw std::runtime_error("SubCoordinates: size must be > 0");
       if (offset + size > base.size()) throw std::runtime_error("SubCoordinates: offset + size must be <= base.size()");
       // calculate the offsets and sizes from the continuous index
       offsets = base.from_linear_index(offset);
       m_sizes = base.from_linear_index(offset + size);
-      for (uint i = 0; i < dim; ++i)
+      for (size_t i = 0; i < dim; ++i)
         m_sizes[i] -= offsets[i];
     }
 
-    device::array<uint, dim> KOKKOS_FORCEINLINE_FUNCTION sizes() const { return m_sizes; }
+    device::array<size_t, dim> KOKKOS_FORCEINLINE_FUNCTION sizes() const { return m_sizes; }
 
-    uint KOKKOS_FORCEINLINE_FUNCTION size() const { return m_size; }
+    size_t KOKKOS_FORCEINLINE_FUNCTION size() const { return m_size; }
 
-    device::array<uint, dim> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(size_t s) const
+    device::array<size_t, dim> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(size_t s) const
     {
-      device::array<uint, dim> result{};
+      device::array<size_t, dim> result{};
       // we do it for m_sizes
-      for (uint i = 0; i < dim; ++i) {
+      for (size_t i = 0; i < dim; ++i) {
         result[dim - 1 - i] = s % m_sizes[dim - 1 - i];
         s = s / m_sizes[dim - 1 - i];
       }
@@ -155,7 +155,7 @@ namespace DiFfRG
 
     template <typename IT> KOKKOS_FORCEINLINE_FUNCTION device::array<ctype, dim> forward(device::array<IT, dim> i) const
     {
-      for (uint j = 0; j < dim; ++j) {
+      for (size_t j = 0; j < dim; ++j) {
         i[j] += offsets[j];
       }
       return Base::forward(i);
@@ -166,18 +166,18 @@ namespace DiFfRG
       static_assert(sizeof...(I) == dim);
       return backward({{i...}});
     }
-    KOKKOS_FORCEINLINE_FUNCTION device::array<ctype, dim> backward(device::array<uint, dim> i) const
+    KOKKOS_FORCEINLINE_FUNCTION device::array<ctype, dim> backward(device::array<size_t, dim> i) const
     {
       auto result = Base::backward(i);
-      for (uint j = 0; j < dim; ++j) {
+      for (size_t j = 0; j < dim; ++j) {
         result[j] -= offsets[j];
       }
       return result;
     }
 
   private:
-    device::array<uint, dim> offsets, m_sizes;
-    const uint m_size;
+    device::array<size_t, dim> offsets, m_sizes;
+    const size_t m_size;
   };
 
   template <typename NT = double>
@@ -186,9 +186,9 @@ namespace DiFfRG
   {
   public:
     using ctype = NT;
-    static constexpr uint dim = 1;
+    static constexpr size_t dim = 1;
 
-    LinearCoordinates1D(uint grid_extent, double start, double stop)
+    LinearCoordinates1D(size_t grid_extent, double start, double stop)
         : start(start), stop(stop), grid_extent(grid_extent)
     {
       if (grid_extent == 0) throw std::runtime_error("LinearCoordinates1D: grid_extent must be > 0");
@@ -201,9 +201,9 @@ namespace DiFfRG
     {
     }
 
-    device::array<uint, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(auto i) const
+    device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(auto i) const
     {
-      return device::array<uint, 1>{i};
+      return device::array<size_t, 1>{i};
     }
 
     /**
@@ -227,14 +227,14 @@ namespace DiFfRG
      */
     NT KOKKOS_FORCEINLINE_FUNCTION backward(const NT &y) const { return (y - start) / a; }
 
-    uint KOKKOS_FORCEINLINE_FUNCTION size() const { return grid_extent; }
+    size_t KOKKOS_FORCEINLINE_FUNCTION size() const { return grid_extent; }
 
-    device::array<uint, 1> KOKKOS_FORCEINLINE_FUNCTION sizes() const { return {grid_extent}; }
+    device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION sizes() const { return {grid_extent}; }
 
     const NT start, stop;
 
   private:
-    const uint grid_extent;
+    const size_t grid_extent;
     NT a;
   };
 
@@ -244,9 +244,9 @@ namespace DiFfRG
   {
   public:
     using ctype = NT;
-    static constexpr uint dim = 1;
+    static constexpr size_t dim = 1;
 
-    LogarithmicCoordinates1D(uint grid_extent, NT start, NT stop, NT bias)
+    LogarithmicCoordinates1D(size_t grid_extent, NT start, NT stop, NT bias)
         : start(start), stop(stop), bias(bias), grid_extent(grid_extent), gem1(grid_extent - 1.),
           gem1inv(1. / (grid_extent - 1.))
     {
@@ -263,9 +263,9 @@ namespace DiFfRG
     {
     }
 
-    device::array<uint, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(auto i) const
+    device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(auto i) const
     {
-      return device::array<uint, 1>{i};
+      return device::array<size_t, 1>{i};
     }
 
     /**
@@ -299,14 +299,14 @@ namespace DiFfRG
 
     NT KOKKOS_FORCEINLINE_FUNCTION backward_derivative(const NT &y) const { return 1. / (y - c) * gem1 / a; }
 
-    uint KOKKOS_FORCEINLINE_FUNCTION size() const { return grid_extent; }
+    size_t KOKKOS_FORCEINLINE_FUNCTION size() const { return grid_extent; }
 
-    device::array<uint, 1> KOKKOS_FORCEINLINE_FUNCTION sizes() const { return {grid_extent}; }
+    device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION sizes() const { return {grid_extent}; }
 
     const NT start, stop, bias;
 
   private:
-    const uint grid_extent;
+    const size_t grid_extent;
     const NT gem1, gem1inv;
     NT a, b, c;
   };
@@ -316,13 +316,13 @@ namespace DiFfRG
     using ctype = typename Coordinates::ctype;
     if constexpr (Coordinates::dim == 1) {
       std::vector<ctype> grid(coordinates.size());
-      for (uint i = 0; i < coordinates.size(); ++i)
+      for (size_t i = 0; i < coordinates.size(); ++i)
         grid[i] = coordinates.forward(i);
       return grid;
     } else if constexpr (Coordinates::dim == 2) {
       std::vector<std::array<ctype, 2>> grid(coordinates.size());
-      for (uint i = 0; i < coordinates.sizes()[0]; ++i)
-        for (uint j = 0; j < coordinates.sizes()[1]; ++j) {
+      for (size_t i = 0; i < coordinates.sizes()[0]; ++i)
+        for (size_t j = 0; j < coordinates.sizes()[1]; ++j) {
           const auto forwarded = coordinates.forward(i, j);
           grid[i * coordinates.sizes()[1] + j][0] = forwarded[0];
           grid[i * coordinates.sizes()[1] + j][1] = forwarded[1];
@@ -330,9 +330,9 @@ namespace DiFfRG
       return grid;
     } else if constexpr (Coordinates::dim == 3) {
       std::vector<std::array<ctype, 3>> grid(coordinates.size());
-      for (uint i = 0; i < coordinates.sizes()[0]; ++i)
-        for (uint j = 0; j < coordinates.sizes()[1]; ++j)
-          for (uint k = 0; k < coordinates.sizes()[2]; ++k) {
+      for (size_t i = 0; i < coordinates.sizes()[0]; ++i)
+        for (size_t j = 0; j < coordinates.sizes()[1]; ++j)
+          for (size_t k = 0; k < coordinates.sizes()[2]; ++k) {
             const auto forwarded = coordinates.forward(i, j, k);
             grid[i * coordinates.sizes()[1] * coordinates.sizes()[2] + j * coordinates.sizes()[2] + k][0] =
                 forwarded[0];
@@ -351,20 +351,20 @@ namespace DiFfRG
   {
     if constexpr (Coordinates::dim == 1) {
       std::vector<double> grid(coordinates.size());
-      for (uint i = 0; i < coordinates.size(); ++i)
+      for (size_t i = 0; i < coordinates.size(); ++i)
         grid[i] = i;
       return grid;
     } else if constexpr (Coordinates::dim == 2) {
       std::vector<double> grid(coordinates.size());
-      for (uint i = 0; i < coordinates.sizes()[0]; ++i)
-        for (uint j = 0; j < coordinates.sizes()[1]; ++j)
+      for (size_t i = 0; i < coordinates.sizes()[0]; ++i)
+        for (size_t j = 0; j < coordinates.sizes()[1]; ++j)
           grid[i * coordinates.sizes()[1] + j] = i * coordinates.sizes()[1] + j;
       return grid;
     } else if constexpr (Coordinates::dim == 3) {
       std::vector<double> grid(coordinates.size());
-      for (uint i = 0; i < coordinates.sizes()[0]; ++i)
-        for (uint j = 0; j < coordinates.sizes()[1]; ++j)
-          for (uint k = 0; k < coordinates.sizes()[2]; ++k)
+      for (size_t i = 0; i < coordinates.sizes()[0]; ++i)
+        for (size_t j = 0; j < coordinates.sizes()[1]; ++j)
+          for (size_t k = 0; k < coordinates.sizes()[2]; ++k)
             grid[i * coordinates.sizes()[1] * coordinates.sizes()[2] + j * coordinates.sizes()[2] + k] =
                 i * coordinates.sizes()[1] * coordinates.sizes()[2] + j * coordinates.sizes()[2] + k;
       return grid;

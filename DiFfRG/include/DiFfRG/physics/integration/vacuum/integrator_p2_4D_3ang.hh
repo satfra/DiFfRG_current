@@ -84,7 +84,7 @@ namespace DiFfRG
     {
     }
 
-    Integrator_p2_4D_3ang(QuadratureProvider &quadrature_provider, const std::array<uint, 4> grid_size,
+    Integrator_p2_4D_3ang(QuadratureProvider &quadrature_provider, const std::array<size_t, 4> grid_size,
                           ctype x_extent = 2.)
         : Base(quadrature_provider, grid_size, {0, 0, -1, 0}, {x_extent, 1, 1, 2 * M_PI},
                {QuadratureType::legendre, QuadratureType::chebyshev2, QuadratureType::legendre,

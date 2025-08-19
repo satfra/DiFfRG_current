@@ -1,4 +1,3 @@
-#include <oneapi/tbb/global_control.h>
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 
@@ -8,7 +7,6 @@
 #include <DiFfRG/common/polynomials.hh>
 #include <DiFfRG/physics/integration/quadrature_integrator.hh>
 #include <DiFfRG/physics/interpolation.hh>
-#include <deal.II/base/multithread_info.h>
 
 using namespace DiFfRG;
 
@@ -16,7 +14,6 @@ TEMPLATE_TEST_CASE_SIG("Test ND quadrature integrals", "[integration][quadrature
                        (4), (5))
 {
   DiFfRG::Init();
-  dealii::MultithreadInfo::set_thread_limit();
 
   auto check = [](auto execution_space, auto type) {
     using NT = std::decay_t<decltype(type)>;
@@ -29,7 +26,7 @@ TEMPLATE_TEST_CASE_SIG("Test ND quadrature integrals", "[integration][quadrature
       using Kokkos::abs;
       if constexpr (std::is_same_v<type, autodiff::real>)
         return abs(autodiff::val(val)) + abs(autodiff::grad(val));
-      else if constexpr (std::is_same_v<type, cxReal>)
+      else if constexpr (std::is_same_v<type, cxreal>)
         return abs(autodiff::val(val)) + abs(autodiff::grad(val));
       else
         return abs(val);
@@ -37,10 +34,10 @@ TEMPLATE_TEST_CASE_SIG("Test ND quadrature integrals", "[integration][quadrature
 
     std::array<ctype, dim> ext_min;
     std::array<ctype, dim> ext_max;
-    std::array<uint, dim> grid_size;
+    std::array<size_t, dim> grid_size;
     std::array<QuadratureType, dim> quad_type;
 
-    for (uint d = 0; d < dim; ++d) {
+    for (size_t d = 0; d < dim; ++d) {
       ext_min[d] = GENERATE(take(1, random(-2., -1.)));
       ext_max[d] = GENERATE(take(1, random(1., 2.)));
       grid_size[d] = d == 0 ? 32 : 16;
@@ -130,8 +127,8 @@ TEMPLATE_TEST_CASE_SIG("Test ND quadrature integrals", "[integration][quadrature
 
       const ctype rel_err = t_abs(reference_integral - integral) / t_abs(reference_integral);
       if (rel_err >= expected_precision<ctype>::value) {
-        std::cerr << "reference: " << reference_integral << "| integral: " << integral
-                  << "| relative error: " << abs(reference_integral - integral) / abs(reference_integral) << std::endl;
+        std::cerr << "reference: " << reference_integral << "| integral: " << integral << " | constant: " << constant
+                  << " | relative error: " << abs(reference_integral - integral) / abs(reference_integral) << std::endl;
       }
       CHECK(rel_err < expected_precision<ctype>::value);
     }

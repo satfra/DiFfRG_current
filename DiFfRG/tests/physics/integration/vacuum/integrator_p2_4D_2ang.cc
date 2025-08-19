@@ -24,7 +24,7 @@ TEST_CASE("Test 4D momentum + 2 angle integrals", "[integration][quadrature]")
       using Kokkos::abs;
       if constexpr (std::is_same_v<type, autodiff::real>)
         return abs(autodiff::val(val)) + abs(autodiff::grad(val));
-      else if constexpr (std::is_same_v<type, cxReal>)
+      else if constexpr (std::is_same_v<type, cxreal>)
         return abs(autodiff::val(val)) + abs(autodiff::grad(val));
       else
         return abs(val);
@@ -34,8 +34,8 @@ TEST_CASE("Test 4D momentum + 2 angle integrals", "[integration][quadrature]")
 
     const ctype x_extent = GENERATE(take(1, random(1., 2.)));
     QuadratureProvider quadrature_provider;
-    Integrator_p2_4D_2ang<NT, PolyIntegrand<3, NT>, ExecutionSpace> integrator(quadrature_provider, {64, 24, 24},
-                                                                               x_extent);
+    Integrator_p2_4D_2ang<4, NT, PolyIntegrand<3, NT>, ExecutionSpace> integrator(quadrature_provider, {64, 24, 24},
+                                                                                  x_extent);
 
     SECTION("Volume integral")
     {

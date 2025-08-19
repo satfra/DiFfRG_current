@@ -12,9 +12,9 @@ namespace DiFfRG
   {
   public:
     using ctype = NT;
-    static constexpr uint dim = 2;
+    static constexpr size_t dim = 2;
 
-    BosonicCoordinates1DFiniteT(Idx m_start, Idx m_stop, NT m_T, uint grid_extent, NT p_start, NT p_stop, NT p_bias)
+    BosonicCoordinates1DFiniteT(Idx m_start, Idx m_stop, NT m_T, size_t grid_extent, NT p_start, NT p_stop, NT p_bias)
         : m_start(m_start), m_stop(m_stop), m_T(m_T), p_start(p_start), p_stop(p_stop), p_bias(p_bias),
           grid_extent(grid_extent), m_size(m_stop - m_start), matsubara_values(m_start, m_stop, m_T),
           logarithmic_coordinates(grid_extent, p_start, p_stop, p_bias)
@@ -44,7 +44,7 @@ namespace DiFfRG
      * @param x grid coordinate
      * @return NumberType physical coordinate
      */
-    device::array<NT, 2> KOKKOS_FORCEINLINE_FUNCTION forward(const uint m, const uint p) const
+    device::array<NT, 2> KOKKOS_FORCEINLINE_FUNCTION forward(const size_t m, const size_t p) const
     {
       return {matsubara_values.forward(m), logarithmic_coordinates.forward(p)};
     }
@@ -76,9 +76,9 @@ namespace DiFfRG
       return {m_idx, p_idx};
     }
 
-    device::array<uint, 2> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(auto i) const
+    device::array<size_t, 2> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(auto i) const
     {
-      device::array<uint, 2> idx;
+      device::array<size_t, 2> idx;
       // calculate the index for each coordinate system
       idx[0] = i / grid_extent; // Matsubara index
       idx[1] = i % grid_extent; // Logarithmic index
@@ -86,13 +86,13 @@ namespace DiFfRG
       return idx;
     }
 
-    uint size() const { return m_size * grid_extent; }
-    device::array<uint, 2> sizes() const { return {{m_size, grid_extent}}; }
+    size_t size() const { return m_size * grid_extent; }
+    device::array<size_t, 2> sizes() const { return {{m_size, grid_extent}}; }
 
     const NT m_start, m_stop, m_T, p_start, p_stop, p_bias;
 
   private:
-    const uint grid_extent, m_size;
+    const size_t grid_extent, m_size;
 
     BosonicMatsubaraValues<Idx, NT> matsubara_values;
     LogarithmicCoordinates1D<NT> logarithmic_coordinates;
@@ -102,9 +102,9 @@ namespace DiFfRG
   {
   public:
     using ctype = NT;
-    static constexpr uint dim = 2;
+    static constexpr size_t dim = 2;
 
-    FermionicCoordinates1DFiniteT(Idx m_start, Idx m_stop, NT m_T, uint grid_extent, NT p_start, NT p_stop, NT p_bias)
+    FermionicCoordinates1DFiniteT(Idx m_start, Idx m_stop, NT m_T, size_t grid_extent, NT p_start, NT p_stop, NT p_bias)
         : m_start(m_start), m_stop(m_stop), m_T(m_T), p_start(p_start), p_stop(p_stop), p_bias(p_bias),
           grid_extent(grid_extent), m_size(m_stop - m_start), matsubara_values(m_start, m_stop, m_T),
           logarithmic_coordinates(grid_extent, p_start, p_stop, p_bias)
@@ -134,7 +134,7 @@ namespace DiFfRG
      * @param x grid coordinate
      * @return NumberType physical coordinate
      */
-    device::array<NT, 2> KOKKOS_FORCEINLINE_FUNCTION forward(const uint m, const uint p) const
+    device::array<NT, 2> KOKKOS_FORCEINLINE_FUNCTION forward(const size_t m, const size_t p) const
     {
       return {matsubara_values.forward(m), logarithmic_coordinates.forward(p)};
     }
@@ -166,9 +166,9 @@ namespace DiFfRG
       return {m_idx, p_idx};
     }
 
-    device::array<uint, 2> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(auto i) const
+    device::array<size_t, 2> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(auto i) const
     {
-      device::array<uint, 2> idx;
+      device::array<size_t, 2> idx;
       // calculate the index for each coordinate system
       idx[0] = i / grid_extent; // Matsubara index
       idx[1] = i % grid_extent; // Logarithmic index
@@ -176,13 +176,13 @@ namespace DiFfRG
       return idx;
     }
 
-    uint size() const { return m_size * grid_extent; }
-    device::array<uint, 2> sizes() const { return {{m_size, grid_extent}}; }
+    size_t size() const { return m_size * grid_extent; }
+    device::array<size_t, 2> sizes() const { return {{m_size, grid_extent}}; }
 
     const NT m_start, m_stop, m_T, p_start, p_stop, p_bias;
 
   private:
-    const uint grid_extent, m_size;
+    const size_t grid_extent, m_size;
 
     FermionicMatsubaraValues<Idx, NT> matsubara_values;
     LogarithmicCoordinates1D<NT> logarithmic_coordinates;

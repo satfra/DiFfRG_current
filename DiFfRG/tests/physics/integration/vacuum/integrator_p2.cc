@@ -25,7 +25,7 @@ TEMPLATE_TEST_CASE_SIG("Test 1D momentum integrals", "[integration][quadrature]"
       using Kokkos::abs;
       if constexpr (std::is_same_v<type, autodiff::real>)
         return abs(autodiff::val(val)) + abs(autodiff::grad(val));
-      else if constexpr (std::is_same_v<type, cxReal>)
+      else if constexpr (std::is_same_v<type, cxreal>)
         return abs(autodiff::val(val)) + abs(autodiff::grad(val));
       else
         return abs(val);

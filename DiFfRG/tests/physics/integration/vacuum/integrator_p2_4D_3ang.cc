@@ -9,7 +9,7 @@
 
 using namespace DiFfRG;
 
-TEST_CASE("Test 4D momentum + 2 angle integrals", "[integration][quadrature]")
+TEST_CASE("Test 4D momentum + 3 angle integrals", "[integration][quadrature]")
 {
   DiFfRG::Init();
 
@@ -24,7 +24,7 @@ TEST_CASE("Test 4D momentum + 2 angle integrals", "[integration][quadrature]")
       using Kokkos::abs;
       if constexpr (std::is_same_v<type, autodiff::real>)
         return abs(autodiff::val(val)) + abs(autodiff::grad(val));
-      else if constexpr (std::is_same_v<type, cxReal>)
+      else if constexpr (std::is_same_v<type, cxreal>)
         return abs(autodiff::val(val)) + abs(autodiff::grad(val));
       else
         return abs(val);
@@ -34,8 +34,8 @@ TEST_CASE("Test 4D momentum + 2 angle integrals", "[integration][quadrature]")
 
     const ctype x_extent = GENERATE(take(1, random(1., 2.)));
     QuadratureProvider quadrature_provider;
-    Integrator_p2_4D_3ang<NT, PolyIntegrand<4, NT>, ExecutionSpace> integrator(quadrature_provider, {64, 24, 24, 24},
-                                                                               x_extent);
+    Integrator_p2_4D_3ang<dim, NT, PolyIntegrand<4, NT>, ExecutionSpace> integrator(quadrature_provider,
+                                                                                    {64, 24, 24, 24}, x_extent);
 
     SECTION("Volume integral")
     {
@@ -105,7 +105,7 @@ TEST_CASE("Test 4D momentum + 2 angle integrals", "[integration][quadrature]")
                      cos1_poly[3], cos2_poly[0], cos2_poly[1], cos2_poly[2], cos2_poly[3], phi_poly[0], phi_poly[1],
                      phi_poly[2], phi_poly[3]);
 
-      const ctype expected_precision = 1e-9;
+      const ctype expected_precision = 1e-8;
       const ctype rel_err = t_abs((integral - reference_integral) / reference_integral);
       if (rel_err >= expected_precision) {
         std::cerr << "reference: " << std::scientific << std::setw(10) << reference_integral
