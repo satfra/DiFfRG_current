@@ -11,42 +11,49 @@
 (* ::Section:: *)
 (*Setup and exports*)
 
+BeginPackage["DiFfRG`CodeTools`", {"DiFfRG`CodeTools`MakeKernel`", "DiFfRG`CodeTools`Directory`",
+   "DiFfRG`CodeTools`Export`"}]; (* TODO: Remove the export function from here later on *)
 
-BeginPackage["DiFfRG`CodeTools`"];
 Unprotect["DiFfRG`CodeTools`*"];
 ClearAll["DiFfRG`CodeTools`*"];
 ClearAll["DiFfRG`CodeTools`Private`*"];
 
-
-UpdateFlows::usage="";
-GetStandardKernelDefinitions::usage=""
-
+UpdateFlows::usage = "UpdateFlows[\"Name\"] updates the Flow Class with Name \"Name\" and the CMakeLists.txt file.";
 
 FlowKernel::usage = "FlowKernel[expr_,name_String,NT_String:\"auto\",addprefix_String:\"\"]
 Makes an equation into a lambda expression - of limited usefulness, but can be used together with LoopIntegrals::integrate and similar functions.";
 
-ExportCode::usage = "ExportCode[fileName_String,expression_String]
-Writes the given expression to disk and runs clang-format on it.";
+CodeForm::usage = "CodeForm[expr_]
+Obtain properly formatted and processed C++ code from an expression.";
 
+SetCppNames::usage = "SetCppNames[rules___]
+Set additional replacement rules used when invoking CodeForm[expr].
 
-SetFlowDirectory::usage="SetFlowDirectory[dir]
-Set the current flow directory, i.e. where all generated files are saved. Default is ./flows/";
-ShowFlowDirectory::usage="ShowFlowDirectory[]
-Show the current flow directory, i.e. where all generated files are saved. Default is ./flows/";
-SetFlowName::usage="";
+Example Call: SetCppNames[\"k\"->\"k_bosonic\", \"Arccos(\"->\"std::arccos(\"]";
 
-GetStandardKernelDefinitions::usage="";
+JuliaForm::usage = "CodeForm[expr_]
+Obtain properly formatted and processed Julia code from an expression.";
 
-MakeKernel::usage = "MakeKernel[kernel_Association, parameterList_List,integrandFlow_,constantFlow_:0., integrandDefinitions_String:\"\", constantDefinitions_String:\"\"]
-Make a kernel from a given flow equation, parmeter list and kernel. The kernel must be a valid specification of an integration kernel.
-This Function creates an integrator that evaluates (constantFlow + \[Integral]integrandFlow). One can prepend additional c++ definitions to the flow equation by using the integrandDefinitions and constantDefinitions parameters. 
-These are prepended to the respective methods of the integration kernel, allowing one to e.g. define specific angles one needs for the flow code.";
+UnicodeClip::usage = "UnicodeClip[expr_String]
+Copy a string as unicode into the clipboard. Useful when exporting to Julia.";
 
+MakeCMakeFile::usage = "MakeCMakeFile[kernels_List]
+Creates a CMakeLists.txt inside the 'flowDir' which you can set using SetFlowDir[dir_String]. This CMake file contains references to all kernels specified in the List 'kernels'. Make sure you have created all kernels before compiling!
+If so, simply add the flow directory in the parent directory of the flow directory: \n add_subdirectory(flows) \n Note that this CMakeLists.txt exports its source files into parent scope as $flow_sources
+Thus, to compile the flows, simply add them as source files:
+    add_executable(QCD QCD.cc ${flow_sources})";
+
+MakeFlowClass::usage = "MakeFlowClass[name_String,kernels_List]
+This creates a file flows.hh inside the flow directory, containing a class with the specified name, as well as several other files. All defined kernels have a corresponding integrator object in this class.
+Automatically calls MakeCMakeFile with the passed list of kernels.";
+
+MakeFlowClassFiniteT::usage = "MakeFlowClassFiniteT[name_String,kernels_List]
+This creates a file flows.hh inside the flow directory, containing a class with the specified name, as well as several other files. All defined kernels have a corresponding integrator object in this class.
+Automatically calls MakeCMakeFile wiht the passed list of kernels.";
 
 SafeFiniteTFunctions::usage="";
 
-
-DeclareSymmetricPoints4DP4::usage="DeclareSymmetricPoints4DP4[]
+DeclareSymmetricPoints4DP4::usage = "DeclareSymmetricPoints4DP4[]
 Obtain C++ code declaring angles for a four-point symmetric configuration in 4D.
 The angles will have the names cosp1q, cosp2q, cosp3q and cosp4q.
 DeclareSymmetricPoints4DP4[computeType]
@@ -95,37 +102,14 @@ DeclareAnglesP34Dpqr[q,p,r,computeType]
 Set the type of the declared C++ variables (should be double or float).";
 
 
+$CodeToolsDirectory = DirectoryName[$InputFileName];
+
 Begin["`Private`"];
 
+Needs["DiFfRG`CodeTools`MakeKernel`"];
 
 (* ::Chapter:: *)
 (*General Definitions and structural methods*)
-
-
-(* ::Section:: *)
-(*Folder setup*)
-
-
-(* ::Input::Initialization:: *)
-flowName="flows";
-SetFlowName[name_String]:=Module[{},flowName=name]
-
-flowDir:=If[$Notebooks&&Not[Quiet[NotebookDirectory[]]===$Failed],NotebookDirectory[],Directory[]<>"/"]<>flowName<>"/";
-SetFlowDirectory[name_String]:=Module[{dir},
-dir=CreateDirectory[name<>flowName<>"/";];
-If[dir=!=$Failed,
-flowDir:=name<>flowName<>"/";,Abort[]
-];
-];
-ShowFlowDirectory[]:=Print["\!\(\*
-StyleBox[\"DiFfRG\",\nFontWeight->\"Bold\"]\)\!\(\*
-StyleBox[\" \",\nFontWeight->\"Bold\"]\)\!\(\*
-StyleBox[\"CodeTools\",\nFontWeight->\"Bold\"]\)\!\(\*
-StyleBox[\":\",\nFontWeight->\"Bold\"]\) Flow output directory is set to \n        "<>flowDir<>"\nThis can be modified by using \!\(\*
-StyleBox[\"SetFlowName\",\nFontColor->RGBColor[1, 0.5, 0]]\)[\"YourNewName\"]"]
-
-ShowFlowDirectory[]
-
 
 (* ::Section:: *)
 (*Momentum Configurations*)
@@ -360,15 +344,6 @@ Tanh[a_/(2 T)]:>Symbol["TanhFiniteT"][a,T],Tanh[a_/T]:>Symbol["TanhFiniteT"][a,2
 
 
 (* ::Input::Initialization:: *)
-$PredefRegFunc={"RB","RF","RBdot","RFdot","dq2RB","dq2RF"};
-$StandardKernelDefinitions=Map[
-FunKit`MakeCppFunction["Name"->#,"Body"->"return Regulator::"<>#<>"(k2, p2);","Prefix"->"static KOKKOS_FORCEINLINE_FUNCTION","Suffix"->"","Parameters"->{"k2","p2"}]&,
-$PredefRegFunc];
-
-GetStandardKernelDefinitions[]:=$StandardKernelDefinitions
-
-
-(* ::Input::Initialization:: *)
 getRegulator[name_,{optName_,optDef_}]:=Module[{ret},
 ret="";
 If[optName=!="",
@@ -410,40 +385,22 @@ Return[validKeys];
 (*Code for CMake and flow class*)
 
 
-(* ::Input::Initialization:: *)
-ExportCode::WrongSyntax="Incorrect arguments for ExportCode: `1`";
 
-ExportCode[b___]:=(Message[ExportCode::WrongSyntax,{b}];Abort[])
-ExportCode[fileName_,content_]:=Module[{},
-If[FileExistsQ[fileName],
-If[Import[fileName,"Text"]===content,
-Print[fileName<>" unchanged"];
-Return[]
-];
-];
-Export[fileName,content,"Text"];
-Print["Exported to \""<>fileName<>"\""];
-];
-
-
-(* ::Input::Initialization:: *)
 UpdateFlows[varName_:flowName]:=Module[{},
 updateCMake[varName];
 updateFlowClass[varName];
 ];
 
+updateCMake[varName_:"Flows"] :=
+  Module[{folders, sources, cmake, fileName = FileNameJoin[flowDir, "CMakeLists.txt"], flowFolderName},
 
-(* ::Input::Initialization:: *)
-updateCMake[varName_:"Flows"]:=Module[
-{folders,sources,cmake,fileName=flowDir<>"CMakeLists.txt",flowFolderName},
+    flowFolderName = StringSplit[flowDir, "/"][[-1]];
+    folders = Select[FileNames["*", flowDir, 1], DirectoryQ];
+    sources = Flatten @ Join[Map[Get[# <> "/sources.m"]&, folders]];
+    sources = "    " <> StringRiffle[sources, "\n    "];
 
-flowFolderName=StringSplit[flowDir,"/"][[-1]];
-folders=Select[FileNames["*",flowDir,1],DirectoryQ];
-sources=Flatten@Join[Map[Get[#<>"/sources.m"]&,folders]];
-sources="    "<>StringRiffle[sources,"\n    "];
-
-cmake="set("<>varName<>"_SOURCES 
-"<>sources<>"
+    cmake = "set(" <> varName <> "_SOURCES 
+" <> sources <> "
     ${CMAKE_CURRENT_SOURCE_DIR}/flows.cc)
 
 add_library("<>varName<>" STATIC ${"<>varName<>"_SOURCES})
@@ -547,319 +504,8 @@ Map["DiFfRG::all_set_x_extent("<>#[[1]]<>", x_extent);"&,integrators]
 }
 ];
 
-ExportCode[flowDir<>"flows.hh",flowHeader];
-ExportCode[flowDir<>"flows.cc",flowCpp];
-];
-
-
-(* ::Section:: *)
-(*Code for Kernels*)
-
-
-(* ::Code::Initialization:: *)
-ClearAll[MakeKernel]
-
-MakeKernel::Invalid="The given arguments are invalid. See MakeKernel::usage";
-MakeKernel::InvalidSpec="The given kernel specification is invalid.";
-
-Options[MakeKernel]={
-"Coordinates"->{},
-"CoordinateArguments"->{},
-"IntegrationVariables"->{},
-"KernelDefinitions"->$StandardKernelDefinitions,
-"Regulator"->"DiFfRG::PolynomialExpRegulator",
-"RegulatorOpts"->{"",""},
-"KernelBody"->"",
-"ConstantBody"->""
-};
-
-$ADReplacements={};
-$ADReplacementsDirect={"double"->"autodiff::real"};
-
-MakeKernel[__]:=(Message[MakeKernel::Invalid];Abort[]);
-MakeKernel[kernelExpr_,spec_Association,parameters_List,OptionsPattern[]]:=MakeKernel@@(Join[{kernelExpr,0,spec,parameters},Thread[Rule@@{#,OptionValue[MakeKernel,#]}]&@Keys[Options[MakeKernel]]]);
-MakeKernel[kernelExpr_,constExpr_,spec_Association,parameters_List,OptionsPattern[]]:=Module[
-{expr,const,exec,
-kernel,constant,kernelClass,kernelHeader,
-integratorHeader,integratorCpp,integratorTemplateParams,integratorADTemplateParams,
-tparams=<|"Name"->"...t","Type"->"auto&&","Reference"->False,"Const"->False|>,
-kernelDefs=OptionValue["KernelDefinitions"],
-coordinates=OptionValue["Coordinates"],
-getArgs=OptionValue["CoordinateArguments"],
-intVariables=OptionValue["IntegrationVariables"],
-preArguments,
-regulator,
-params,paramsAD,explParamAD,
-i,arguments,
-outputPath,sources
-},
-
-If[Not@KernelSpecQ[spec],Message[MakeKernel::InvalidSpec];Abort[]];
-
-expr=kernelExpr;
-While[ListQ[expr],expr=Plus@@expr];
-const=constExpr;
-While[ListQ[const],const=Plus@@const];
-
-
-intVariables=FunKit`Private`prepParam/@intVariables;
-intVariables=Map[Append[#,"Type"->"double"]&,intVariables];
-getArgs=FunKit`Private`prepParam/@getArgs;
-getArgs=Map[Append[#,"Type"->"double"]&,getArgs];
-
-(********************************************************************)
-(* First, the kernel itself *)
-(********************************************************************)
-
-kernel=FunKit`MakeCppFunction[
-expr,
-"Name"->"kernel",
-"Suffix"->"",
-"Prefix"->"static KOKKOS_FORCEINLINE_FUNCTION",
-"Parameters"->Join[intVariables,getArgs,parameters],
-"Body"->"using namespace DiFfRG;using namespace DiFfRG::compute;"<>OptionValue["KernelBody"]
-];
-
-constant=FunKit`MakeCppFunction[
-constExpr,
-"Name"->"constant",
-"Suffix"->"",
-"Prefix"->"static KOKKOS_FORCEINLINE_FUNCTION",
-"Parameters"->Join[getArgs,parameters],
-"Body"->"using namespace DiFfRG;using namespace DiFfRG::compute;"<>OptionValue["ConstantBody"]
-];
-
-kernelClass=FunKit`MakeCppClass[
-"TemplateTypes"->{"_Regulator"},
-"Name"->spec["Name"]<>"_kernel",
-"MembersPublic"->{"using Regulator = _Regulator;",kernel,constant},
-"MembersPrivate"->kernelDefs
-];
-
-kernelHeader=FunKit`MakeCppHeader[
-"Includes"->{"DiFfRG/physics/utils.hh","DiFfRG/physics/interpolation.hh","DiFfRG/physics/physics.hh"},
-"Body"->{"namespace DiFfRG {",kernelClass,"} using DiFfRG::"<>spec["Name"]<>"_kernel;"}];
-
-(********************************************************************)
-(* Next, the corresponding class holding the map and get functions *)
-(********************************************************************)
-
-(*We set up lists of parameters for the map/get functions, depending on their AD setting*)
-params=FunKit`Private`prepParam/@parameters;
-paramsAD=params;
-For[i=1,i<=Length[params],i++,
-If[KeyFreeQ[params[[i]],"Type"],
-params[[i]]=Association[(Normal@(params[[i]]))\[Union]{"Type"->"double"}]
-,
-If[params[[i]]["Type"]==="auto",
-params[[i]]=KeyDrop[params[[i]],{"Type"}];
-params[[i]]=Association[Normal@(params[[i]])\[Union]{"Type"->"double"}]
-];
-If[KeyFreeQ[params[[i]],"Const"],
-params[[i]]=Association[Normal@(params[[i]])\[Union]{"Const"->True}]
-];
-If[KeyFreeQ[params[[i]],"Reference"],
-params[[i]]=Association[Normal@(params[[i]])\[Union]{"Reference"->True}]
-];
-];
-If[KeyFreeQ[paramsAD[[i]],"Type"],
-paramsAD[[i]]=Association[(Normal@(paramsAD[[i]]))\[Union]{"Type"->"double"}]
-,
-If[paramsAD[[i]]["Type"]==="auto",
-paramsAD[[i]]=KeyDrop[paramsAD[[i]],{"Type"}];
-paramsAD[[i]]=Association[Normal@(paramsAD[[i]])\[Union]{"Type"->"autodiff::real"}],
-explParamAD=StringReplace[paramsAD[[i]]["Type"],$ADReplacements];
-paramsAD[[i]]=KeyDrop[paramsAD[[i]],{"Type"}];
-paramsAD[[i]]=Association[Normal@(paramsAD[[i]])\[Union]{"Type"->explParamAD}];
-];
-If[KeyFreeQ[paramsAD[[i]],"Const"],
-paramsAD[[i]]=Association[Normal@(paramsAD[[i]])\[Union]{"Const"->True}]
-];
-If[KeyFreeQ[paramsAD[[i]],"Reference"],
-paramsAD[[i]]=Association[Normal@(paramsAD[[i]])\[Union]{"Reference"->True}]
-];
-];
-];
-arguments=StringRiffle[Map[#["Name"]&,params],", "];
-
-getArgs=FunKit`Private`prepParam/@getArgs;
-For[i=1,i<=Length[getArgs],i++,
-If[KeyFreeQ[getArgs[[i]],"Type"],
-getArgs[[i]]=Association[(Normal@(getArgs[[i]]))\[Union]{"Type"->"double"}]
-,
-If[getArgs[[i]]["Type"]==="auto",
-getArgs[[i]]=KeyDrop[getArgs[[i]],{"Type"}];
-getArgs[[i]]=Association[Normal@(getArgs[[i]])\[Union]{"Type"->"double"}]
-];
-If[KeyFreeQ[getArgs[[i]],"Const"],
-getArgs[[i]]=Association[Normal@(getArgs[[i]])\[Union]{"Const"->True}]
-];
-If[KeyFreeQ[getArgs[[i]],"Reference"],
-getArgs[[i]]=Association[Normal@(getArgs[[i]])\[Union]{"Reference"->True}]
-];
-];
-];
-preArguments=StringRiffle[Map[#["Name"]&,getArgs],", "];
-If[preArguments=!="",preArguments=preArguments<>", "];
-
-(* Choose the execution space. Default is TBB, as only TBB is compatible with the FEM assemblers. *)
-exec=If[KeyFreeQ[spec,"Device"]||FreeQ[{"GPU","Threads"},spec["Device"]],"DiFfRG::TBB_exec","DiFfRG::"<>spec["Device"]<>"_exec"];
-
-integratorTemplateParams={};
-If[KeyExistsQ[spec,"d"]&&spec["d"]=!=None,AppendTo[integratorTemplateParams,ToString[spec["d"]]]];
-If[KeyExistsQ[spec,"Type"],AppendTo[integratorTemplateParams,ToString[spec["Type"]]],AppendTo[integratorTemplateParams,"double"]];
-AppendTo[integratorTemplateParams,spec["Name"]<>"_kernel<Regulator>"];
-AppendTo[integratorTemplateParams,exec];
-integratorTemplateParams=StringRiffle[integratorTemplateParams,", "];
-
-integratorADTemplateParams={};
-If[KeyExistsQ[spec,"d"]&&spec["d"]=!=None,AppendTo[integratorADTemplateParams,ToString[spec["d"]]]];
-If[KeyExistsQ[spec,"Type"],AppendTo[integratorADTemplateParams,StringReplace[ToString[spec["Type"]],$ADReplacementsDirect]],AppendTo[integratorADTemplateParams,"autodiff::real"]];
-AppendTo[integratorADTemplateParams,spec["Name"]<>"_kernel<Regulator>"];
-AppendTo[integratorADTemplateParams,If[KeyFreeQ[spec,"Device"]||FreeQ[{"GPU","Threads"},spec["Device"]],"DiFfRG::TBB_exec","DiFfRG::"<>spec["Device"]<>"_exec"]];
-integratorADTemplateParams=StringRiffle[integratorADTemplateParams,", "];
-
-(* Now, we create the header which holds the class with the integrators and the map/get methods *)
-integratorHeader=FunKit`MakeCppHeader[
-"Includes"->{"DiFfRG/physics/integration.hh","DiFfRG/physics/physics.hh","DiFfRG/physics/interpolation.hh"},
-"Body"->{"namespace DiFfRG {
-  template<typename> class "<>spec["Name"]<>"_kernel;\n",
-FunKit`MakeCppClass[
-"Name"->spec["Name"]<>"_integrator",
-"MembersPublic"->
-Join[
-{
-FunKit`MakeCppFunction[
-"Name"->spec["Name"]<>"_integrator",
-"Parameters"->{<|"Type"->"DiFfRG::QuadratureProvider","Reference"->True,"Const"->False,"Name"->"quadrature_provider"|>,<|"Type"->"DiFfRG::JSONValue","Reference"->True,"Const"->True,"Name"->"json"|>},
-"Body"->None,
-"Return"->""
-],
-getRegulator[OptionValue["Regulator"],OptionValue["RegulatorOpts"]],
-spec["Integrator"]<>"<"<>integratorTemplateParams<>"> integrator;",
-If[spec["AD"],spec["Integrator"]<>"<"<>integratorADTemplateParams<>"> integrator_AD;",""]
-},
-Map[
-FunKit`MakeCppFunction["Name"->"map","Return"->exec,"Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"double*","Const"->False,"Reference"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},params]]&,
-coordinates],
-If[Length[coordinates]>0,#,{}]&@{
-FunKit`MakeCppFunction["Name"->"map","Return"->exec,"Body"->"return device::apply([&](const auto...t){return map(dest, coordinates, t...);}, args);","Parameters"->Join[
-{<|"Name"->"dest","Type"->"D*","Reference"->False,"Const"->False|>,
-<|"Name"->"coordinates","Reference"->True,"Type"->"C","Const"->True|>,
-<|"Name"->"args","Type"->"device::tuple<T...>","Reference"->True,"Const"->True|>}],
-"Templates"->{"D","C",  "...T"}]
-},
-If[spec["AD"],#,{}]&@Map[
-FunKit`MakeCppFunction["Name"->"map","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real*","Const"->False,"Reference"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},paramsAD]]&,
-coordinates],
-{
-FunKit`MakeCppFunction["Name"->"get","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"double","Reference"->True,"Const"->False|>},getArgs,params]],
-FunKit`MakeCppFunction["Name"->"get","Return"->"void","Body"->"device::apply([&](const auto...t){get(dest, "<>preArguments<>"t...);}, args);","Parameters"->Join[
-{<|"Name"->"dest","Type"->"D","Reference"->True,"Const"->False|>},
-getArgs,
-{<|"Name"->"args","Type"->"device::tuple<T...>","Reference"->True,"Const"->True|>}],
-"Templates"->{"D", "...T"}],
-If[spec["AD"],#,""]&@FunKit`MakeCppFunction["Name"->"get","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real","Reference"->True,"Const"->False|>},getArgs,paramsAD]]
-}]
-,
-"MembersPrivate"->{"DiFfRG::QuadratureProvider& quadrature_provider;"}
-
-],"}\nusing DiFfRG::"<>spec["Name"]<>"_integrator;"}
-];
-
-(* Finally, the code fo rall methods of the class. we will save them to different files, so they can all be compiled in separate units.*)
-
-integratorCpp["Constructor"]=FunKit`MakeCppBlock[
-"Includes"->{"../kernel.hh"},
-"Body"->{
-"#include \"../"<>spec["Name"]<>".hh\"\n",
-FunKit`MakeCppFunction[
-"Name"->spec["Name"]<>"_integrator",
-"Class"->spec["Name"]<>"_integrator",
-"Suffix"->": integrator(quadrature_provider, json), "<>
-If[spec["AD"],"integrator_AD(quadrature_provider, json), ",""]<>"quadrature_provider(quadrature_provider)",
-"Body"->"",
-"Parameters"->{<|"Type"->"DiFfRG::QuadratureProvider","Reference"->True,"Const"->False,"Name"->"quadrature_provider"|>,<|"Type"->"DiFfRG::JSONValue","Reference"->True,"Const"->True,"Name"->"json"|>},
-"Return"->""
-]
-}];
-integratorCpp["CT","get"]=FunKit`MakeCppBlock[
-"Includes"->{"../kernel.hh"},
-"Body"->{
-"#include \"../"<>spec["Name"]<>".hh\"\n",
-FunKit`MakeCppFunction[
-"Name"->"get",
-"Class"->spec["Name"]<>"_integrator",
-"Body"->"integrator.get(dest, "<>preArguments<>arguments<>");",
-"Parameters"->Join[{<|"Name"->"dest","Type"->"double","Reference"->True,"Const"->False|>},getArgs,params],
-"Return"->"void"
-]
-}];
-integratorCpp["AD","get"]=FunKit`MakeCppBlock[
-"Includes"->{"../kernel.hh"},
-"Body"->{
-"#include \"../"<>spec["Name"]<>".hh\"\n",
-FunKit`MakeCppFunction[
-"Name"->"get",
-"Class"->spec["Name"]<>"_integrator",
-"Body"->"integrator_AD.get(dest, "<>preArguments<>arguments<>");",
-"Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real","Reference"->True,"Const"->False|>},getArgs,paramsAD],
-"Return"->"void"
-]
-}];
-integratorCpp["CT","map"]=Map[FunKit`MakeCppBlock[
-"Includes"->{"../kernel.hh"},
-"Body"->{
-"#include \"../"<>spec["Name"]<>".hh\"\n",
-FunKit`MakeCppFunction[
-"Name"->"map",
-"Return"->exec,
-"Class"->spec["Name"]<>"_integrator",
-"Body"->"return integrator.map(dest, coordinates, "<>arguments<>");",
-"Parameters"->Join[{<|"Name"->"dest","Type"->"double*","Const"->False,"Reference"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},params]
-]
-}]&,coordinates];
-integratorCpp["AD","map"]=Map[FunKit`MakeCppBlock[
-"Includes"->{"../kernel.hh"},
-"Body"->{
-"#include \"../"<>spec["Name"]<>".hh\"\n",
-FunKit`MakeCppFunction[
-"Name"->"map",
-"Return"->exec,
-"Class"->spec["Name"]<>"_integrator",
-"Body"->"return integrator_AD.map(dest, coordinates, "<>arguments<>");",
-"Parameters"->Join[{<|"Name"->"dest","Type"->"autodiff::real*","Const"->False,"Reference"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},paramsAD]
-]
-}]&,coordinates];
-
-outputPath=flowDir<>spec["Name"]<>"/";
-ExportCode[outputPath<>spec["Name"]<>".hh",integratorHeader];
-ExportCode[outputPath<>"kernel.hh",kernelHeader];
-
-sources={outputPath<>"src/constructor.cc"};
-ExportCode[sources[[-1]],integratorCpp["Constructor"]];
-
-AppendTo[sources,outputPath<>"src/CT_get.cc"];
-ExportCode[sources[[-1]],integratorCpp["CT","get"]];
-
-Do[
-AppendTo[sources,outputPath<>"src/CT_map_"<>ToString[i]<>".cc"];
-ExportCode[sources[[-1]],integratorCpp["CT","map"][[i]]],
-{i,1,Length[coordinates]}];
-
-If[spec["AD"],
-AppendTo[sources,outputPath<>"src/AD_get.cc"];
-ExportCode[sources[[-1]],integratorCpp["AD","get"]];
-
-Do[
-AppendTo[sources,outputPath<>"src/AD_map_"<>ToString[i]<>".cc"];
-ExportCode[sources[[-1]],integratorCpp["AD","map"][[i]]],
-{i,1,Length[coordinates]}];
-];
-
-sources=Map[StringReplace[#,outputPath->"${CMAKE_CURRENT_SOURCE_DIR}/"<>spec["Name"]<>"/"]&,sources];
-Export[outputPath<>"sources.m",sources];
-Print["Please run UpdateFlows[] to export an up-to-date CMakeLists.txt"];
+ExportCode[FileNameJoin[flowDir, "flows.hh"], flowHeader];
+ExportCode[FileNameJoin[flowDir, "flows.cc"], flowCpp];
 ];
 
 

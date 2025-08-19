@@ -90,8 +90,10 @@ $ apt-get install cuda
 #### MacOS
 First, install xcode and homebrew, then run
 ```bash
-$ brew install cmake doxygen paraview graphviz gsl
+$ brew install cmake doxygen paraview graphviz gsl bash
 ```
+
+*Note: you have to install a newer GNU version of bash, since by default, only version 3.2 is installed, and for installation, PETSc requires a newer version*
 
 For better performance, it is recommended to install OpenMP. 
 ```bash

@@ -101,7 +101,6 @@ ExternalProject_Add(
   general_dep
   LOG_CONFIGURE ON
   LOG_INSTALL ON
-  LOG_BUILD ON
   LOG_OUTPUT_ON_FAILURE ON
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/general
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/general
@@ -121,7 +120,6 @@ ExternalProject_Add(
   sundials_dep
   LOG_CONFIGURE ON
   LOG_INSTALL ON
-  LOG_BUILD ON
   LOG_OUTPUT_ON_FAILURE ON
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/sundials
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/sundials
@@ -142,7 +140,6 @@ ExternalProject_Add(
   autodiff_dep
   LOG_CONFIGURE ON
   LOG_INSTALL ON
-  LOG_BUILD ON
   LOG_OUTPUT_ON_FAILURE ON
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/autodiff
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/autodiff
@@ -157,7 +154,6 @@ ExternalProject_Add(
   boost_dep
   LOG_CONFIGURE ON
   LOG_INSTALL ON
-  LOG_BUILD ON
   LOG_OUTPUT_ON_FAILURE ON
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/boost
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/boost
@@ -205,7 +201,6 @@ ExternalProject_Add(
   kokkos_dep
   LOG_CONFIGURE ON
   LOG_INSTALL ON
-  LOG_BUILD ON
   LOG_OUTPUT_ON_FAILURE ON
   GIT_REPOSITORY https://github.com/kokkos/kokkos.git
   GIT_TAG 4.6.01
@@ -241,7 +236,6 @@ ExternalProject_Add(
   petsc_dep
   LOG_CONFIGURE ON
   LOG_INSTALL ON
-  LOG_BUILD ON
   LOG_OUTPUT_ON_FAILURE ON
   DEPENDS general_dep sundials_dep autodiff_dep kokkos_dep
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/petsc
@@ -265,7 +259,6 @@ ExternalProject_Add(
   deal.II_dep
   LOG_CONFIGURE ON
   LOG_INSTALL ON
-  LOG_BUILD ON
   LOG_OUTPUT_ON_FAILURE ON
   GIT_REPOSITORY https://github.com/dealii/dealii.git
   GIT_TAG v9.4.2

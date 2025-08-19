@@ -38,8 +38,8 @@ namespace DiFfRG
         static constexpr uint dim = Discretization::dim;
         using NumberType = typename Discretization::NumberType;
 
-        ScratchData(const Mapping<dim> &mapping, const FiniteElement<dim> &fe, const Quadrature<dim> &quadrature,
-                    const Quadrature<dim - 1> &quadrature_face,
+        ScratchData(const Mapping<dim> &mapping, const FiniteElement<dim> &fe,
+                    const dealii::Quadrature<dim> &quadrature, const dealii::Quadrature<dim - 1> &quadrature_face,
                     const UpdateFlags update_flags = update_values | update_gradients | update_quadrature_points |
                                                      update_JxW_values | update_hessians,
                     const UpdateFlags interface_update_flags = update_values | update_gradients |
