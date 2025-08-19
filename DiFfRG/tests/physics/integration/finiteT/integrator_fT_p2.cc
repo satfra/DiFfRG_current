@@ -14,8 +14,7 @@ using namespace DiFfRG;
 //--------------------------------------------
 // Quadrature integration
 
-TEMPLATE_TEST_CASE_SIG("Test finite temperature momentum integrals", "[integration][quadrature]", ((int dim), dim), (2),
-                       (3), (4))
+TEMPLATE_TEST_CASE_SIG("Test finite T momentum integrals", "[integration][quadrature]", ((int dim), dim), (2), (3), (4))
 {
   DiFfRG::Init();
 
@@ -30,7 +29,7 @@ TEMPLATE_TEST_CASE_SIG("Test finite temperature momentum integrals", "[integrati
       using Kokkos::abs;
       if constexpr (std::is_same_v<type, autodiff::real>)
         return abs(autodiff::val(val)) + abs(autodiff::grad(val));
-      else if constexpr (std::is_same_v<type, cxReal>)
+      else if constexpr (std::is_same_v<type, cxreal>)
         return abs(autodiff::val(val)) + abs(autodiff::grad(val));
       else
         return abs(val);

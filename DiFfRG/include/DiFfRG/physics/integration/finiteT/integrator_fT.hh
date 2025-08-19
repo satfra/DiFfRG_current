@@ -7,10 +7,11 @@
 
 namespace DiFfRG
 {
-  template <typename NT, typename KERNEL, typename ExecutionSpace>
-  class Integrator_fT : public QuadratureIntegrator_fT<0, NT, KERNEL, ExecutionSpace>
+  template <int dim, typename NT, typename KERNEL, typename ExecutionSpace>
+    requires(dim == 1)
+  class Integrator_fT : public QuadratureIntegrator_fT<1, NT, KERNEL, ExecutionSpace>
   {
-    using Base = QuadratureIntegrator_fT<0, NT, KERNEL, ExecutionSpace>;
+    using Base = QuadratureIntegrator_fT<1, NT, KERNEL, ExecutionSpace>;
 
   public:
     /**

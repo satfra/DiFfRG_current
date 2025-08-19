@@ -14,8 +14,8 @@ using namespace DiFfRG;
 //--------------------------------------------
 // Quadrature integration
 
-TEMPLATE_TEST_CASE_SIG("Test finite temperature momentum integrals", "[integration][quadrature]", ((int dim), dim), (3),
-                       (4))
+TEMPLATE_TEST_CASE_SIG("Test finite T momentum integrals with 1 angle", "[integration][quadrature]", ((int dim), dim),
+                       (3), (4))
 {
   DiFfRG::Init();
 
@@ -30,7 +30,7 @@ TEMPLATE_TEST_CASE_SIG("Test finite temperature momentum integrals", "[integrati
       using Kokkos::abs;
       if constexpr (std::is_same_v<type, autodiff::real>)
         return abs(autodiff::val(val)) + abs(autodiff::grad(val));
-      else if constexpr (std::is_same_v<type, cxReal>)
+      else if constexpr (std::is_same_v<type, cxreal>)
         return abs(autodiff::val(val)) + abs(autodiff::grad(val));
       else
         return abs(val);
@@ -55,8 +55,8 @@ TEMPLATE_TEST_CASE_SIG("Test finite temperature momentum integrals", "[integrati
       const ctype val = GENERATE(take(1, random(0., 1.)));
       integrator.set_typical_E(val);
 
-      const NT reference_integral = V_d(dim, q_extent) / powr<dim>(2. * M_PI) // spatial part
-                                    / (std::tanh(val / (2. * T)) * 2. * val); // sum
+      const NT reference_integral = V_d(dim - 1, q_extent) / powr<dim - 1>(2. * M_PI) // spatial part
+                                    / (std::tanh(val / (2. * T)) * 2. * val);         // sum
 
       NT integral{};
       integrator.get(integral, 0., 1., 0., 0., 0., 1., 0., 0., 0., powr<2>(val), 0., 1., 0.);
@@ -74,8 +74,8 @@ TEMPLATE_TEST_CASE_SIG("Test finite temperature momentum integrals", "[integrati
       const ctype val = GENERATE(take(1, random(0., 1.)));
       integrator.set_typical_E(val);
 
-      const NT reference_integral = V_d(dim, q_extent) / powr<dim>(2. * M_PI) // spatial part
-                                    / (std::tanh(val / (2. * T)) * 2. * val); // sum
+      const NT reference_integral = V_d(dim - 1, q_extent) / powr<dim - 1>(2. * M_PI) // spatial part
+                                    / (std::tanh(val / (2. * T)) * 2. * val);         // sum
 
       const uint rsize = GENERATE(32, 64);
       std::vector<NT> integral_view(rsize);

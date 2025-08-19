@@ -4,7 +4,7 @@
 #include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/polynomials.hh>
-#include <DiFfRG/physics/integration/finiteT/integrator_fT_p2_4D_2ang.hh>
+#include <DiFfRG/physics/integration/finiteT/integrator_fT.hh>
 #include <DiFfRG/physics/interpolation.hh>
 
 using namespace DiFfRG;
@@ -14,7 +14,7 @@ using namespace DiFfRG;
 //--------------------------------------------
 // Quadrature integration
 
-TEST_CASE("Test finite T 4D momentum + 2 angle integrals", "[integration][quadrature]")
+TEST_CASE("Test finite T sums", "[integration][quadrature]")
 {
   DiFfRG::Init();
 
@@ -36,17 +36,12 @@ TEST_CASE("Test finite T 4D momentum + 2 angle integrals", "[integration][quadra
     };
 
     const ctype T = GENERATE(take(1, random(0.01, 1.)));
-    const ctype x_extent = GENERATE(take(1, random(1., 2.)));
-    const uint size = GENERATE(64, 128, 256);
 
     QuadratureProvider quadrature_provider;
-    Integrator_fT_p2_4D_2ang<4, NT, PolyIntegrand<4, NT, -1>, ExecutionSpace> integrator(quadrature_provider,
-                                                                                         {size, 8, 8}, x_extent);
+    Integrator_fT<1, NT, PolyIntegrand<1, NT, -1>, ExecutionSpace> integrator(quadrature_provider, {}, {});
     integrator.set_T(T);
 
     const ctype k = GENERATE(take(1, random(0., 1.)));
-    const ctype q_extent = std::sqrt(x_extent * powr<2>(k));
-
     integrator.set_k(k);
 
     SECTION("Volume integral")
@@ -54,11 +49,10 @@ TEST_CASE("Test finite T 4D momentum + 2 angle integrals", "[integration][quadra
       const ctype val = GENERATE(take(1, random(0., 1.)));
       integrator.set_typical_E(val);
 
-      const NT reference_integral = V_d(3, q_extent) / powr<3>(2. * M_PI)     // spatial part
-                                    / (std::tanh(val / (2. * T)) * 2. * val); // sum
+      const NT reference_integral = 1. / (std::tanh(val / (2. * T)) * 2. * val); // sum
 
       NT integral{};
-      integrator.get(integral, 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., powr<2>(val), 0., 1., 0.);
+      integrator.get(integral, 0., powr<2>(val), 0., 1., 0.);
 
       constexpr ctype expected_precision = 1e-6;
       const ctype rel_err = t_abs(reference_integral - integral) / t_abs(reference_integral);
@@ -73,23 +67,16 @@ TEST_CASE("Test finite T 4D momentum + 2 angle integrals", "[integration][quadra
       const ctype val = GENERATE(take(1, random(0., 1.)));
       integrator.set_typical_E(val);
 
-      const NT reference_integral = V_d(3, q_extent) / powr<3>(2. * M_PI)     // spatial part
-                                    / (std::tanh(val / (2. * T)) * 2. * val); // sum
+      const NT reference_integral = 1. / (std::tanh(val / (2. * T)) * 2. * val); // sum
 
       const uint rsize = GENERATE(32, 64);
       std::vector<NT> integral_view(rsize);
       LinearCoordinates1D<ctype> coordinates(rsize, 0., 1.);
 
-      integrator
-          .map(integral_view.data(), coordinates, 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., powr<2>(val), 0., 1.,
-               0.)
-          .fence();
+      integrator.map(integral_view.data(), coordinates, powr<2>(val), 0., 1., 0.).fence();
 
       constexpr ctype expected_precision = 1e-6;
       for (uint i = 0; i < rsize; ++i) {
-        std::cout << "i: " << i << "| coordinates: " << coordinates.forward(i)
-                  << "| reference: " << coordinates.forward(i) + reference_integral
-                  << "| integral: " << integral_view[i] << std::endl;
         const ctype rel_err = t_abs(coordinates.forward(i) + reference_integral - integral_view[i]) /
                               t_abs(coordinates.forward(i) + reference_integral);
         if (rel_err >= expected_precision) {

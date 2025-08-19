@@ -38,9 +38,9 @@ namespace DiFfRG
 
   template <int dim, typename NT, typename KERNEL, typename ExecutionSpace>
   class Integrator_fT_p2
-      : public QuadratureIntegrator_fT<1, NT, internal::Transform_fT_p2<dim, NT, KERNEL>, ExecutionSpace>
+      : public QuadratureIntegrator_fT<2, NT, internal::Transform_fT_p2<dim, NT, KERNEL>, ExecutionSpace>
   {
-    using Base = QuadratureIntegrator_fT<1, NT, internal::Transform_fT_p2<dim, NT, KERNEL>, ExecutionSpace>;
+    using Base = QuadratureIntegrator_fT<2, NT, internal::Transform_fT_p2<dim, NT, KERNEL>, ExecutionSpace>;
 
   public:
     /**
@@ -59,8 +59,8 @@ namespace DiFfRG
     {
     }
 
-    Integrator_fT_p2(QuadratureProvider &quadrature_provider, const std::array<uint, 1> grid_size, ctype x_extent = 2.,
-                     ctype T = 1, ctype typical_E = 1)
+    Integrator_fT_p2(QuadratureProvider &quadrature_provider, const std::array<size_t, 1> grid_size,
+                     ctype x_extent = 2., ctype T = 1, ctype typical_E = 1)
         : Base(quadrature_provider, grid_size, {0}, {x_extent}, {QuadratureType::legendre}, T, typical_E),
           x_extent(x_extent), k(1.)
     {
