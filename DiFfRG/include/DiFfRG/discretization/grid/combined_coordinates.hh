@@ -48,7 +48,7 @@ namespace DiFfRG
     {
       return {matsubara_values.forward(m), logarithmic_coordinates.forward(p)};
     }
-    device::array<NT, 2> KOKKOS_FORCEINLINE_FUNCTION forward(const device::array<uint, 2> mp) const
+    template <typename IT> device::array<NT, 2> KOKKOS_FORCEINLINE_FUNCTION forward(const device::array<IT, 2> mp) const
     {
       return forward(mp[0], mp[1]);
     }
@@ -76,7 +76,7 @@ namespace DiFfRG
       return {m_idx, p_idx};
     }
 
-    device::array<uint, 2> KOKKOS_FORCEINLINE_FUNCTION from_continuous_index(auto i) const
+    device::array<uint, 2> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(auto i) const
     {
       device::array<uint, 2> idx;
       // calculate the index for each coordinate system
@@ -138,7 +138,7 @@ namespace DiFfRG
     {
       return {matsubara_values.forward(m), logarithmic_coordinates.forward(p)};
     }
-    device::array<NT, 2> KOKKOS_FORCEINLINE_FUNCTION forward(const device::array<uint, 2> mp) const
+    template <typename IT> device::array<NT, 2> KOKKOS_FORCEINLINE_FUNCTION forward(const device::array<IT, 2> mp) const
     {
       return forward(mp[0], mp[1]);
     }
@@ -166,7 +166,7 @@ namespace DiFfRG
       return {m_idx, p_idx};
     }
 
-    device::array<uint, 2> KOKKOS_FORCEINLINE_FUNCTION from_continuous_index(auto i) const
+    device::array<uint, 2> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(auto i) const
     {
       device::array<uint, 2> idx;
       // calculate the index for each coordinate system

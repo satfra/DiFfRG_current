@@ -13,12 +13,13 @@ namespace DiFfRG
    * @tparam NT input data type
    * @tparam Coordinates coordinate system of the input data
    */
-  template <typename NT, typename Coordinates, typename MemorySpace> class SplineInterpolator1D
+  template <typename NT, typename Coordinates, typename DefaultMemorySpace = CPU_memory> class SplineInterpolator1D
   {
     static_assert(Coordinates::dim == 1, "SplineInterpolator1D requires 1D coordinates");
 
   public:
-    using memory_space = MemorySpace;
+    using memory_space = DefaultMemorySpace;
+    using other_memory_space = other_memory_space_t<DefaultMemorySpace>;
     using ctype = typename Coordinates::ctype;
 
     /**
@@ -26,7 +27,8 @@ namespace DiFfRG
      *
      * @param coordinates coordinate system of the data
      */
-    SplineInterpolator1D(const Coordinates &coordinates) : coordinates(coordinates), size(coordinates.size())
+    SplineInterpolator1D(const Coordinates &coordinates)
+        : coordinates(coordinates), size(coordinates.size()), other_instance(nullptr)
     {
       // Allocate Kokkos View
       device_data = ViewType("SplineInterpolator1D_data", size);
@@ -43,7 +45,7 @@ namespace DiFfRG
     SplineInterpolator1D(const NT *in_data, const Coordinates &coordinates,
                          const ctype lower_y1 = std::numeric_limits<ctype>::max(),
                          const ctype upper_y1 = std::numeric_limits<ctype>::max())
-        : coordinates(coordinates), size(coordinates.size())
+        : coordinates(coordinates), size(coordinates.size()), other_instance(nullptr)
     {
       // Allocate Kokkos View
       device_data = ViewType("SplineInterpolator1D_data", size);
@@ -53,10 +55,28 @@ namespace DiFfRG
       update(in_data, lower_y1, upper_y1);
     }
 
+    /**
+     * @brief Copy constructor for SplineInterpolator1D. This is ONLY for usage inside Kokkos parallel loops.
+     *
+     */
+    KOKKOS_FUNCTION
+    SplineInterpolator1D(const SplineInterpolator1D &other)
+        : coordinates(other.coordinates), size(other.size), other_instance(nullptr)
+    {
+      // Use the same data
+      device_data = other.device_data;
+    }
+
     template <typename NT2>
     void update(const NT2 *in_data, const ctype lower_y1 = std::numeric_limits<ctype>::max(),
                 const ctype upper_y1 = std::numeric_limits<ctype>::max())
     {
+      // Check if the host data is already allocated
+      if (!host_data.is_allocated())
+        throw std::runtime_error(
+            "SplineInterpolator1D: You probably called update() on a copied instance. This is not allowed. "
+            "You need to call update() on the original instance.");
+
       // Populate host mirror
       for (uint i = 0; i < size; ++i)
         host_data(i, 0) = static_cast<NT>(in_data[i]);
@@ -68,6 +88,12 @@ namespace DiFfRG
 
     NT operator[](size_t i) const
     {
+      // Check if the host data is already allocated
+      if (!host_data.is_allocated())
+        throw std::runtime_error(
+            "SplineInterpolator1D: You probably called operator[]() on a copied instance. This is not allowed. "
+            "You need to call operator[]() on the original instance.");
+
       return host_data.data()[i]; // Access the host data directly
     }
 
@@ -101,6 +127,27 @@ namespace DiFfRG
                (t - 2) * (t - 1) * t * device_data(uidx, 1) / (ctype)(6); // cubic part
     }
 
+    template <typename MemorySpace> auto &get_on()
+    {
+      // Check if the host data is already allocated
+      if (!host_data.is_allocated())
+        throw std::runtime_error(
+            "SplineInterpolator1D: You probably called get_on() on a copied instance. This is not allowed. "
+            "You need to call get_on() on the original instance.");
+
+      if constexpr (std::is_same_v<MemorySpace, DefaultMemorySpace>) {
+        return *this; // Return the current instance if the memory space matches
+      } else {
+        // Create a new instance with the same data but in the requested memory space
+        if (other_instance == nullptr)
+          other_instance = std::make_shared<SplineInterpolator1D<NT, Coordinates, MemorySpace>>(coordinates);
+        // Copy the data from the current instance to the new one
+        other_instance->update(host_data.data());
+        // Return the new instance
+        return *other_instance;
+      }
+    }
+
     /**
      * @brief Get the coordinate system of the data.
      *
@@ -112,11 +159,13 @@ namespace DiFfRG
     const Coordinates coordinates;
     const uint size;
 
-    using ViewType = Kokkos::View<NT *[2], MemorySpace, Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
+    using ViewType = Kokkos::View<NT *[2], DefaultMemorySpace, Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
     using HostViewType = typename ViewType::HostMirror;
 
     ViewType device_data;
     HostViewType host_data;
+
+    std::shared_ptr<SplineInterpolator1D<NT, Coordinates, other_memory_space>> other_instance;
 
     void build_y2(const ctype lower_y1, const ctype upper_y1)
     {

@@ -1,5 +1,8 @@
 #pragma once
 
+// DiFfRG
+#include <DiFfRG/common/json.hh>
+
 // standard library
 #include <fstream>
 #include <map>

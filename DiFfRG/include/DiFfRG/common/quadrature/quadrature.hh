@@ -3,7 +3,6 @@
 // DiFfRG
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/quadrature/diagonalization.hh>
-#include <DiFfRG/common/utils.hh>
 
 // standard library
 #include <vector>
@@ -89,7 +88,7 @@ namespace DiFfRG
 
   private:
     QuadratureType _t;
-    uint order;
+    unsigned order;
 
     Kokkos::View<NT *, GPU_memory> device_nodes;
     Kokkos::View<NT *, GPU_memory> device_weights;

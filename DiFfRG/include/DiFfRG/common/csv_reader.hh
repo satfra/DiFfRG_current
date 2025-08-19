@@ -4,8 +4,10 @@
 #include <memory>
 #include <string>
 
-// external libraries
-#include <rapidcsv.h>
+namespace rapidcsv
+{
+  class Document;
+}
 
 namespace DiFfRG
 {

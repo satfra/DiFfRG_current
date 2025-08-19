@@ -96,7 +96,7 @@ namespace DiFfRG
             // make subview
             auto subview = Kokkos::subview(integral_view, k);
             // get the position for the current index
-            const auto idx = coordinates.from_continuous_index(k);
+            const auto idx = coordinates.from_linear_index(k);
             const auto pos = coordinates.forward(idx);
 
             const auto full_args = std::tuple_cat(pos, m_args);

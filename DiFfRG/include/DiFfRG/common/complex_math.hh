@@ -2,6 +2,7 @@
 
 // DiFfRG
 #include <DiFfRG/common/kokkos.hh>
+#include <DiFfRG/common/math.hh>
 
 // external libraries
 #include <autodiff/common/numbertraits.hpp>

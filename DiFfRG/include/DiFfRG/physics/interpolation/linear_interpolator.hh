@@ -21,36 +21,39 @@ namespace DiFfRG
    * @tparam NT input data type
    * @tparam Coordinates coordinate system of the input data
    */
-  template <typename NT, typename Coordinates, typename MemorySpace> class LinearInterpolatorND;
+  template <typename NT, typename Coordinates, typename DefaultMemorySpace = CPU_memory> class LinearInterpolatorND;
 
   // spacializations for 1D, 2D and 3D
-  template <typename NT, typename Coordinates, typename MemorySpace>
+  template <typename NT, typename Coordinates, typename DefaultMemorySpace>
     requires internal::has_dim<Coordinates, 1>
-  class LinearInterpolatorND<NT, Coordinates, MemorySpace> : public LinearInterpolator1D<NT, Coordinates, MemorySpace>
+  class LinearInterpolatorND<NT, Coordinates, DefaultMemorySpace>
+      : public LinearInterpolator1D<NT, Coordinates, DefaultMemorySpace>
   {
   public:
-    using LinearInterpolator1D<NT, Coordinates, MemorySpace>::LinearInterpolator1D;
-    using LinearInterpolator1D<NT, Coordinates, MemorySpace>::operator();
-    using LinearInterpolator1D<NT, Coordinates, MemorySpace>::update;
+    using LinearInterpolator1D<NT, Coordinates, DefaultMemorySpace>::LinearInterpolator1D;
+    using LinearInterpolator1D<NT, Coordinates, DefaultMemorySpace>::operator();
+    using LinearInterpolator1D<NT, Coordinates, DefaultMemorySpace>::update;
   };
 
-  template <typename NT, typename Coordinates, typename MemorySpace>
+  template <typename NT, typename Coordinates, typename DefaultMemorySpace>
     requires internal::has_dim<Coordinates, 2>
-  class LinearInterpolatorND<NT, Coordinates, MemorySpace> : public LinearInterpolator2D<NT, Coordinates, MemorySpace>
+  class LinearInterpolatorND<NT, Coordinates, DefaultMemorySpace>
+      : public LinearInterpolator2D<NT, Coordinates, DefaultMemorySpace>
   {
   public:
-    using LinearInterpolator2D<NT, Coordinates, MemorySpace>::LinearInterpolator2D;
-    using LinearInterpolator2D<NT, Coordinates, MemorySpace>::operator();
-    using LinearInterpolator2D<NT, Coordinates, MemorySpace>::update;
+    using LinearInterpolator2D<NT, Coordinates, DefaultMemorySpace>::LinearInterpolator2D;
+    using LinearInterpolator2D<NT, Coordinates, DefaultMemorySpace>::operator();
+    using LinearInterpolator2D<NT, Coordinates, DefaultMemorySpace>::update;
   };
 
-  template <typename NT, typename Coordinates, typename MemorySpace>
+  template <typename NT, typename Coordinates, typename DefaultMemorySpace>
     requires internal::has_dim<Coordinates, 3>
-  class LinearInterpolatorND<NT, Coordinates, MemorySpace> : public LinearInterpolator3D<NT, Coordinates, MemorySpace>
+  class LinearInterpolatorND<NT, Coordinates, DefaultMemorySpace>
+      : public LinearInterpolator3D<NT, Coordinates, DefaultMemorySpace>
   {
   public:
-    using LinearInterpolator3D<NT, Coordinates, MemorySpace>::LinearInterpolator3D;
-    using LinearInterpolator3D<NT, Coordinates, MemorySpace>::operator();
-    using LinearInterpolator3D<NT, Coordinates, MemorySpace>::update;
+    using LinearInterpolator3D<NT, Coordinates, DefaultMemorySpace>::LinearInterpolator3D;
+    using LinearInterpolator3D<NT, Coordinates, DefaultMemorySpace>::operator();
+    using LinearInterpolator3D<NT, Coordinates, DefaultMemorySpace>::update;
   };
 } // namespace DiFfRG

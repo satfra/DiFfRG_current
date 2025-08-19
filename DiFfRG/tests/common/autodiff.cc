@@ -1,4 +1,3 @@
-#include <Kokkos_Core_fwd.hpp>
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 

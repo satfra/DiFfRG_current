@@ -5,7 +5,7 @@
 #include <string>
 
 // DiFfRG
-#include <DiFfRG/common/utils.hh>
+#include <DiFfRG/common/json.hh>
 
 namespace DiFfRG
 {
@@ -65,9 +65,6 @@ namespace DiFfRG
 
     std::list<std::string> args;
     std::list<std::pair<std::string, std::string>> cli_parameters;
-
-    uint depth_console = 0;
-    uint depth_file = 3;
 
     JSONValue json;
 

@@ -30,14 +30,14 @@ namespace DiFfRG
   {
     // Assert that all coordinates have the same ctype
     static_assert((std::is_same<typename Coordinates::ctype,
-                                typename std::tuple_element<0, std::tuple<Coordinates...>>::type::ctype>::value &&
+                                typename device::tuple_element<0, device::tuple<Coordinates...>>::type::ctype>::value &&
                    ...));
     static_assert(sizeof...(Coordinates) > 0, "CoordinatePackND requires at least one coordinate system");
     // Assert that all coordinates have the dim 1
     static_assert(((Coordinates::dim == 1) && ...), "CoordinatePackND requires all coordinates to have dim 1");
 
   public:
-    using ctype = typename std::tuple_element<0, std::tuple<Coordinates...>>::type::ctype;
+    using ctype = typename device::tuple_element<0, device::tuple<Coordinates...>>::type::ctype;
     static constexpr uint dim = sizeof...(Coordinates);
 
     /**
@@ -47,63 +47,70 @@ namespace DiFfRG
      */
     CoordinatePackND(Coordinates... coordinates) : coordinates(coordinates...) {}
 
-    template <typename... I> KOKKOS_FORCEINLINE_FUNCTION device::array<ctype, dim> forward(I &&...i) const
+    template <typename... I>
+      requires(std::is_convertible_v<std::decay_t<I>, size_t> && ...)
+    KOKKOS_FORCEINLINE_FUNCTION device::array<ctype, dim> forward(I &&...i) const
     {
       static_assert(sizeof...(I) == sizeof...(Coordinates));
-      return forward_impl(std::make_integer_sequence<int, sizeof...(I)>(), std::forward<I>(i)...);
+      return forward_impl(device::make_integer_sequence<int, sizeof...(I)>(), device::forward<I>(i)...);
+    }
+    template <typename IT>
+    KOKKOS_FORCEINLINE_FUNCTION device::array<ctype, dim> forward(const device::array<IT, dim> &coords) const
+    {
+      return device::apply([&](const auto &...iargs) { return forward(iargs...); }, coords);
     }
 
     template <typename... I, int... Is>
-    device::array<ctype, dim> KOKKOS_FORCEINLINE_FUNCTION forward_impl(std::integer_sequence<int, Is...>,
+    device::array<ctype, dim> KOKKOS_FORCEINLINE_FUNCTION forward_impl(device::integer_sequence<int, Is...>,
                                                                        I &&...i) const
     {
-      return {{std::get<Is>(coordinates).forward(std::get<Is>(std::tie(i...)))...}};
+      return {{device::get<Is>(coordinates).forward(device::get<Is>(device::tie(i...)))...}};
     }
 
     template <typename... I> KOKKOS_FORCEINLINE_FUNCTION device::array<ctype, sizeof...(I)> backward(I &&...i) const
     {
       static_assert(sizeof...(I) == sizeof...(Coordinates));
-      return backward_impl(std::make_integer_sequence<int, sizeof...(I)>(), std::forward<I>(i)...);
+      return backward_impl(device::make_integer_sequence<int, sizeof...(I)>(), device::forward<I>(i)...);
     }
 
     template <typename... I, int... Is>
-    device::array<ctype, sizeof...(I)> KOKKOS_FORCEINLINE_FUNCTION backward_impl(std::integer_sequence<int, Is...>,
+    device::array<ctype, sizeof...(I)> KOKKOS_FORCEINLINE_FUNCTION backward_impl(device::integer_sequence<int, Is...>,
                                                                                  I &&...i) const
     {
-      return {{std::get<Is>(coordinates).backward(std::get<Is>(std::tie(i...)))...}};
+      return {{device::get<Is>(coordinates).backward(device::get<Is>(device::tie(i...)))...}};
     }
 
-    template <uint i> const auto &get_coordinates() const { return std::get<i>(coordinates); }
+    template <uint i> const auto &get_coordinates() const { return device::get<i>(coordinates); }
 
     uint KOKKOS_FORCEINLINE_FUNCTION size() const
     {
       // multiply all sizes
       uint size = 1;
-      constexpr_for<0, sizeof...(Coordinates), 1>([&](auto i) { size *= std::get<i>(coordinates).size(); });
+      constexpr_for<0, sizeof...(Coordinates), 1>([&](auto i) { size *= device::get<i>(coordinates).size(); });
       return size;
     }
 
     device::array<uint, sizeof...(Coordinates)> KOKKOS_FORCEINLINE_FUNCTION sizes() const
     {
       device::array<uint, sizeof...(Coordinates)> sizes;
-      constexpr_for<0, sizeof...(Coordinates), 1>([&](auto i) { sizes[i] = std::get<i>(coordinates).size(); });
+      constexpr_for<0, sizeof...(Coordinates), 1>([&](auto i) { sizes[i] = device::get<i>(coordinates).size(); });
       return sizes;
     }
 
-    device::array<uint, sizeof...(Coordinates)> KOKKOS_FORCEINLINE_FUNCTION from_continuous_index(size_t s) const
+    device::array<uint, sizeof...(Coordinates)> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(size_t s) const
     {
       device::array<uint, sizeof...(Coordinates)> idx;
       // calculate the index for each coordinate system
       constexpr_for<0, sizeof...(Coordinates), 1>([&](auto i) {
-        idx[sizeof...(Coordinates) - 1 - i] = s % std::get<sizeof...(Coordinates) - 1 - i>(coordinates).size();
-        s = s / std::get<sizeof...(Coordinates) - 1 - i>(coordinates).size();
+        idx[sizeof...(Coordinates) - 1 - i] = s % device::get<sizeof...(Coordinates) - 1 - i>(coordinates).size();
+        s = s / device::get<sizeof...(Coordinates) - 1 - i>(coordinates).size();
       });
 
       return idx;
     }
 
   protected:
-    const std::tuple<Coordinates...> coordinates;
+    const device::tuple<Coordinates...> coordinates;
   };
 
   template <typename Base> class SubCoordinates : public Base
@@ -117,8 +124,8 @@ namespace DiFfRG
       if (size == 0) throw std::runtime_error("SubCoordinates: size must be > 0");
       if (offset + size > base.size()) throw std::runtime_error("SubCoordinates: offset + size must be <= base.size()");
       // calculate the offsets and sizes from the continuous index
-      offsets = base.from_continuous_index(offset);
-      m_sizes = base.from_continuous_index(offset + size);
+      offsets = base.from_linear_index(offset);
+      m_sizes = base.from_linear_index(offset + size);
       for (uint i = 0; i < dim; ++i)
         m_sizes[i] -= offsets[i];
     }
@@ -127,7 +134,7 @@ namespace DiFfRG
 
     uint KOKKOS_FORCEINLINE_FUNCTION size() const { return m_size; }
 
-    device::array<uint, dim> KOKKOS_FORCEINLINE_FUNCTION from_continuous_index(size_t s) const
+    device::array<uint, dim> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(size_t s) const
     {
       device::array<uint, dim> result{};
       // we do it for m_sizes
@@ -138,13 +145,15 @@ namespace DiFfRG
       return result;
     }
 
-    template <typename... I> KOKKOS_FORCEINLINE_FUNCTION device::array<ctype, dim> forward(I &&...i) const
+    template <typename... I>
+      requires(std::is_convertible_v<std::decay_t<I>, size_t> && ...)
+    KOKKOS_FORCEINLINE_FUNCTION device::array<ctype, dim> forward(I &&...i) const
     {
       static_assert(sizeof...(I) == dim);
       return forward({{i...}});
     }
 
-    KOKKOS_FORCEINLINE_FUNCTION device::array<ctype, dim> forward(device::array<uint, dim> i) const
+    template <typename IT> KOKKOS_FORCEINLINE_FUNCTION device::array<ctype, dim> forward(device::array<IT, dim> i) const
     {
       for (uint j = 0; j < dim; ++j) {
         i[j] += offsets[j];
@@ -192,7 +201,7 @@ namespace DiFfRG
     {
     }
 
-    device::array<uint, 1> KOKKOS_FORCEINLINE_FUNCTION from_continuous_index(auto i) const
+    device::array<uint, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(auto i) const
     {
       return device::array<uint, 1>{i};
     }
@@ -254,7 +263,7 @@ namespace DiFfRG
     {
     }
 
-    device::array<uint, 1> KOKKOS_FORCEINLINE_FUNCTION from_continuous_index(auto i) const
+    device::array<uint, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(auto i) const
     {
       return device::array<uint, 1>{i};
     }
@@ -363,4 +372,16 @@ namespace DiFfRG
       throw std::runtime_error("make_idx_grid only works for 1D, 2D, and 3D coordinates");
     }
   }
+
+  // Definitions of useful combined coordinates
+  using LogCoordinates = LogarithmicCoordinates1D<double>;
+  using LinearCoordinates = LinearCoordinates1D<double>;
+  using LogLogCoordinates = CoordinatePackND<LogarithmicCoordinates1D<double>, LogarithmicCoordinates1D<double>>;
+  using LogLinCoordinates = CoordinatePackND<LogarithmicCoordinates1D<double>, LinearCoordinates1D<double>>;
+  using LinLogCoordinates = CoordinatePackND<LinearCoordinates1D<double>, LogarithmicCoordinates1D<double>>;
+  using LinLinCoordinates = CoordinatePackND<LinearCoordinates1D<double>, LinearCoordinates1D<double>>;
+  using LogLogLinCoordinates =
+      CoordinatePackND<LogarithmicCoordinates1D<double>, LogarithmicCoordinates1D<double>, LinearCoordinates1D<double>>;
+  using LogLinLinCoordinates =
+      CoordinatePackND<LogarithmicCoordinates1D<double>, LinearCoordinates1D<double>, LinearCoordinates1D<double>>;
 } // namespace DiFfRG

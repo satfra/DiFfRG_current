@@ -7,7 +7,6 @@
 
 // standard library
 #include <mutex>
-#include <vector>
 
 namespace DiFfRG
 {

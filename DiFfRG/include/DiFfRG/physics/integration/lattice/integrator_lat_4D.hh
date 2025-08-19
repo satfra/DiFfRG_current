@@ -67,7 +67,8 @@ namespace DiFfRG
 
       Kokkos::parallel_reduce(
           "integral_lat_4D", // name of the kernel
-          Kokkos::MDRangePolicy<ExecutionSpace, Kokkos::Rank<4>>(space, {0, 0, 0, 0}, {x0size, x1size / 2, x1size / 2, x1size / 2}),
+          Kokkos::MDRangePolicy<ExecutionSpace, Kokkos::Rank<4>>(space, {0, 0, 0, 0},
+                                                                 {x0size, x1size / 2, x1size / 2, x1size / 2}),
           KOKKOS_LAMBDA(const uint idx_x0, const uint idx_x1, const uint idx_x2, const uint idx_x3, NT &update) {
             const ctype q0 = x0fac * idx_x0;
             const ctype q1 = x1fac * idx_x1;
@@ -104,7 +105,7 @@ namespace DiFfRG
             // make subview
             auto subview = Kokkos::subview(integral_view, k);
             // get the position for the current index
-            const auto idx = coordinates.from_continuous_index(k);
+            const auto idx = coordinates.from_linear_index(k);
             const auto pos = coordinates.forward(idx);
 
             const auto full_args = std::tuple_cat(pos, m_args);
@@ -117,8 +118,8 @@ namespace DiFfRG
                   const ctype q1 = x1fac * idx_x1;
                   const ctype q2 = x1fac * idx_x2;
                   const ctype q3 = x1fac * idx_x3;
-                  const NT result =
-                      std::apply([&](const auto &...iargs) { return KERNEL::kernel(q0, q1, q2, q3, iargs...); }, full_args);
+                  const NT result = std::apply(
+                      [&](const auto &...iargs) { return KERNEL::kernel(q0, q1, q2, q3, iargs...); }, full_args);
                   update += q0_mult * 8 * fac * result;
                 },
                 res);

@@ -2,7 +2,7 @@
 
 // DiFfRG
 #include <DiFfRG/common/complex_math.hh>
-#include <DiFfRG/common/utils.hh>
+#include <DiFfRG/common/kokkos.hh>
 
 // standard library
 #include <cmath>

@@ -203,7 +203,7 @@ traceExprA4=F[projectorA4,(fRGA4["1-Loop"]["Expression"]/.MakeDiagrammaticRules[
 FlowA4=FormTrace[traceExprA4,SP4FormRule,SP4FormRule]//dressingRules//TBProjectToSymmetricPoint[#,l1,p,p1,p2,p3,p4]&//SPParam;
 
 MakeKernel[Collect[FlowA4,{ZA3[__],ZA4[__],ZAcbc[__]},Simplify],kernelZA4,kernelParameterList,
-"KernelBody"->SP3Defs,
+"KernelBody"->SP4Defs,
 "IntegrationVariables"->{"l1","cos1","cos2","phi"},
 "Coordinates"->{"LogarithmicCoordinates1D<double>"},
 "CoordinateArguments"->{"p"}]

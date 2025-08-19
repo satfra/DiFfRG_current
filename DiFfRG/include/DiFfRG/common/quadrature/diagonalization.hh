@@ -5,10 +5,6 @@
 
 // C++ standard library
 #include <cmath>
-#include <cstdlib>
-#include <cstring>
-#include <ctime>
-#include <iostream>
 #include <limits>
 
 namespace DiFfRG

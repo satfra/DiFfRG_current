@@ -72,9 +72,6 @@ namespace DiFfRG
 
     args = other.args;
     cli_parameters = other.cli_parameters;
-
-    depth_console = other.depth_console;
-    depth_file = other.depth_file;
   }
 
   JSONValue &ConfigurationHelper::get_json() { return json; }

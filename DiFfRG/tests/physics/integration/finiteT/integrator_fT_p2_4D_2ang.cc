@@ -87,6 +87,9 @@ TEST_CASE("Test finite temperature 4D momentum + 2 angle integrals", "[integrati
 
       constexpr ctype expected_precision = 1e-6;
       for (uint i = 0; i < rsize; ++i) {
+        std::cout << "i: " << i << "| coordinates: " << coordinates.forward(i)
+                  << "| reference: " << coordinates.forward(i) + reference_integral
+                  << "| integral: " << integral_view[i] << std::endl;
         const ctype rel_err = t_abs(coordinates.forward(i) + reference_integral - integral_view[i]) /
                               t_abs(coordinates.forward(i) + reference_integral);
         if (rel_err >= expected_precision) {

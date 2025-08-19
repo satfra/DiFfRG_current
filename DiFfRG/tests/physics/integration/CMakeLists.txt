@@ -6,6 +6,8 @@ add_subdirectory(vacuum)
 add_subdirectory(finiteT)
 add_subdirectory(lattice)
 
+add_subdirectory(algorithm_benchmarking)
+
 # ##############################################################################
 # Tests for basic integrators
 # ##############################################################################

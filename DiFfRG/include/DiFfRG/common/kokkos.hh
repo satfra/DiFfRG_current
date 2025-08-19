@@ -1,14 +1,15 @@
 #pragma once
 
 #include <Kokkos_Core.hpp>
-#include <Kokkos_Random.hpp>
 
 #ifdef KOKKOS_ENABLE_CUDA
 #include <cuda/std/array>
 #include <cuda/std/tuple>
+#include <cuda/std/utility>
 #else
 #include <array>
 #include <tuple>
+#include <utility>
 #endif
 
 namespace DiFfRG
@@ -44,6 +45,30 @@ namespace DiFfRG
   using GPU_exec = ExecutionSpaces::GPU_exec_space;
   using Threads_exec = ExecutionSpaces::Threads_exec_space;
   using TBB_exec = ExecutionSpaces::TBB_exec_space;
+
+  // Ensure that CPU memory space is the same as Threads memory space and TBB memory space
+  // We assume that this is true, and when switching to a different memory space, it is always unique.
+  static_assert(std::is_same_v<CPU_memory, Threads_memory>,
+                "CPU memory space must be the same as Threads memory space");
+  static_assert(std::is_same_v<CPU_memory, TBB_memory>, "CPU memory space must be the same as TBB memory space");
+
+  template <typename MemorySpace> class GetOtherMemorySpaceHelper;
+  template <> struct GetOtherMemorySpaceHelper<GPU_memory> {
+    using type = CPU_memory;
+  };
+  template <> struct GetOtherMemorySpaceHelper<CPU_memory> {
+    using type = GPU_memory;
+  };
+  template <> struct GetOtherMemorySpaceHelper<GPU_exec> {
+    using type = CPU_memory;
+  };
+  template <> struct GetOtherMemorySpaceHelper<Threads_exec> {
+    using type = GPU_memory;
+  };
+  template <> struct GetOtherMemorySpaceHelper<TBB_exec> {
+    using type = GPU_memory;
+  };
+  template <typename MemorySpace> using other_memory_space_t = typename GetOtherMemorySpaceHelper<MemorySpace>::type;
 
   /**
    * @brief An extension of the Kokkos::Sum reducer that adds a constant value to the result.
@@ -106,22 +131,30 @@ namespace DiFfRG
     template <typename... T> using tuple = cuda::std::tuple<T...>;
     template <typename T, std::size_t N> using array = cuda::std::array<T, N>;
     using cuda::std::apply;
+    using cuda::std::forward;
     using cuda::std::forward_as_tuple;
     using cuda::std::get;
     using cuda::std::index_sequence;
+    using cuda::std::integer_sequence;
+    using cuda::std::make_integer_sequence;
     using cuda::std::make_tuple;
     using cuda::std::tie;
     using cuda::std::tuple_cat;
+    using cuda::std::tuple_element;
 #else
     template <typename... T> using tuple = std::tuple<T...>;
     template <typename T, std::size_t N> using array = std::array<T, N>;
     using std::apply;
+    using std::forward;
     using std::forward_as_tuple;
     using std::get;
     using std::index_sequence;
+    using std::integer_sequence;
+    using std::make_integer_sequence;
     using std::make_tuple;
     using std::tie;
     using std::tuple_cat;
+    using std::tuple_element;
 #endif
   } // namespace device
 } // namespace DiFfRG
