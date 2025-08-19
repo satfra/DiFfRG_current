@@ -12,6 +12,28 @@ endif()
 # get the user's home directory
 set(HOME_DIR $ENV{HOME})
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/cmake/common.cmake)
+
+message(
+  "${BoldWhite}
+  __| |________________________________________________| |__
+  __   ________________________________________________   __
+    | |                                                | |
+    | |  ██████╗ ██╗███████╗███████╗██████╗  ██████╗   | |
+    | |  ██╔══██╗██║██╔════╝██╔════╝██╔══██╗██╔════╝   | |
+    | |  ██║  ██║██║█████╗  █████╗  ██████╔╝██║  ███╗  | |
+    | |  ██║  ██║██║██╔══╝  ██╔══╝  ██╔══██╗██║   ██║  | |
+    | |  ██████╔╝██║██║     ██║     ██║  ██║╚██████╔╝  | |
+    | |  ╚═════╝ ╚═╝╚═╝     ╚═╝     ╚═╝  ╚═╝ ╚═════╝   | |
+  __| |________________________________________________| |__
+  __   ________________________________________________   __
+    | |                                                | |
+${ColourReset}
+
+This is the main CMake file for DiFfRG.
+It will download and build all dependencies, including DiFfRG itself.
+")
+
 # if the install prefix is not set, set DEPEND_INSTALL_PREFIX to the build
 # directory
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
@@ -27,7 +49,9 @@ set(DEPEND_INSTALL_PREFIX
     ${CMAKE_INSTALL_PREFIX}/bundled/
     CACHE PATH "Install prefix for dependencies")
 
-message(STATUS "Dependencies will be installed to ${DEPEND_INSTALL_PREFIX}")
+message(
+  "${BoldWhite}Dependencies will be installed to ${DEPEND_INSTALL_PREFIX}${ColourReset}
+  ")
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
@@ -83,12 +107,36 @@ if(NOT DEFINED ENABLE_MPI)
         CACHE BOOL "Enable MPI support")
   endif()
 endif()
+message("")
 
-message(STATUS "MPI: ${ENABLE_MPI}")
-message(STATUS "OpenMP: ${HAVE_OPENMP}")
-message(STATUS "Threads: ${HAVE_THREADS}")
-message(STATUS "CUDA: ${HAVE_CUDA}")
-message(STATUS "HIP: ${HAVE_HIP}")
+message("Available parallel backends:")
+# make the on and off values green/yellow
+if(ENABLE_MPI)
+  message("  ${BoldGreen}MPI: ${ENABLE_MPI}${ColourReset}")
+else()
+  message("  ${BoldYellow}MPI: ${ENABLE_MPI}${ColourReset}")
+endif()
+if(HAVE_CUDA)
+  message("  ${BoldGreen}CUDA: ${HAVE_CUDA}${ColourReset}")
+else()
+  message("  ${BoldYellow}CUDA: ${HAVE_CUDA}${ColourReset}")
+endif()
+if(HAVE_HIP)
+  message("  ${BoldGreen}HIP: ${HAVE_HIP}${ColourReset}")
+else()
+  message("  ${BoldYellow}HIP: ${HAVE_HIP}${ColourReset}")
+endif()
+if(HAVE_OPENMP)
+  message("  ${BoldGreen}OpenMP: ${HAVE_OPENMP}${ColourReset}")
+else()
+  message("  ${BoldYellow}OpenMP: ${HAVE_OPENMP}${ColourReset}")
+endif()
+if(HAVE_THREADS)
+  message("  ${BoldGreen}Threads: ${HAVE_THREADS}${ColourReset}")
+else()
+  message("  ${BoldYellow}Threads: ${HAVE_THREADS}${ColourReset}")
+endif()
+message("")
 
 # ##############################################################################
 # Dependencies
@@ -164,6 +212,25 @@ ExternalProject_Add(
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
   CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
 
+# check if HDF5 is available
+find_package(HDF5 QUIET)
+if(HDF5_FOUND)
+  message("${BoldGreen}HDF5 found:${ColourReset} ${HDF5_LIBRARIES}")
+else()
+  message(
+    "${BoldYellow}HDF5 not found.${ColourReset} DiFfRG will not be able to use HDF5 for I/O."
+  )
+endif()
+if(HDF5_IS_PARALLEL)
+  message("${Green}HDF5 has parallel support${ColourReset}")
+else()
+  message(
+    STATUS
+      "${Yellow}The provided HDF5 installation does not support parallel I/O.${ColourReset}"
+  )
+endif()
+message("")
+
 # ##############################################################################
 # Kokkos
 # ##############################################################################
@@ -193,8 +260,6 @@ else()
   # remove the last element
   string(SUBSTRING "${Kokkos_ARCH_LIST}" 0 -1 Kokkos_ARCH_LIST)
 endif()
-
-message(STATUS "CUDA compiler: ${CMAKE_CUDA_COMPILER}")
 
 # add the Kokkos dependency to the build
 ExternalProject_Add(
@@ -282,6 +347,8 @@ ExternalProject_Add(
     -DDEAL_II_WITH_UMFPACK:BOOL=ON
     -DDEAL_II_WITH_TASKFLOW:BOOL=OFF
     -DDEAL_II_WITH_LAPACK:BOOL=ON
+    -DDEAL_II_WITH_HDF5:BOOL=${HDF5_FOUND}
+    -DHDF5_INCLUDE_DIRS:PATH=${HDF5_INCLUDE_DIRS}
     -DPETSC_DIR:PATH=${DEPEND_INSTALL_PREFIX}
     -DPETSC_ARCH:STRING=arch-linux-c-opt
     -DCMAKE_CXX_STANDARD:STRING=17
@@ -309,6 +376,7 @@ ExternalProject_Add(
   DEPENDS general_dep boost_dep deal.II_dep kokkos_dep autodiff_dep
   CMAKE_CACHE_ARGS
     -DENABLE_MPI:BOOL=${ENABLE_MPI}
+    -DENABLE_HDF5:BOOL=${HDF5_FOUND}
     -DBUNDLED_DIR:PATH=${DEPEND_INSTALL_PREFIX}
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
     -DDiFfRG_TEST:BOOL=${DiFfRG_TEST}
