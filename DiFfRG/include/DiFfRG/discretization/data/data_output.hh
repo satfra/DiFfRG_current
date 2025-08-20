@@ -4,6 +4,8 @@
 #include <DiFfRG/discretization/data/csv_output.hh>
 #include <DiFfRG/discretization/data/fe_output.hh>
 
+#include <deal.II/base/hdf5.h>
+
 namespace DiFfRG
 {
   using namespace dealii;
@@ -87,6 +89,10 @@ namespace DiFfRG
 
     FEOutput<dim, VectorType> fe_out;
     std::map<std::string, CsvOutput> csv_files;
+
+    bool use_hdf5;
+    const std::string filename_h5;
+    std::vector<std::shared_ptr<HDF5::File>> h5_files;
   };
 
   template <> class DataOutput<0, Vector<double>>

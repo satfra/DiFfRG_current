@@ -2,12 +2,15 @@
 #include <fstream>
 
 // external libraries
+#include <deal.II/base/hdf5.h>
 #include <deal.II/lac/block_vector.h>
 #include <deal.II/lac/vector.h>
 
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/data/fe_output.hh>
+
+#include <span>
 #include <stdexcept>
 
 namespace DiFfRG
@@ -24,13 +27,19 @@ namespace DiFfRG
           // Ensure that the buffer size is at least 1.
           return read_size == 0 ? 1 : read_size;
         }()),
-        data_outs(buffer_size)
+        data_outs(buffer_size), save_vtk(json.get_bool("/output/vtk", true))
   {
     create_folder(this->top_folder);
-    create_folder(this->top_folder + this->output_folder);
+    if (save_vtk) create_folder(this->top_folder + this->output_folder);
 
     // Initialize the attached_solutions list.
     attached_solutions.emplace_back();
+  }
+
+  template <uint dim, typename VectorType>
+  void FEOutput<dim, VectorType>::set_h5_group(std::shared_ptr<HDF5::Group> h5_group)
+  {
+    this->h5_group = h5_group;
   }
 
   template <uint dim, typename VectorType> void FEOutput<dim, VectorType>::update_buffers()
@@ -72,29 +81,61 @@ namespace DiFfRG
     const std::string filename_vtu =
         output_folder + output_name + "_" + Utilities::int_to_string(series_number, 6) + ".vtu";
 
-    // We add the .vtu file to the time series and write the .pvd file.
-    time_series.emplace_back(time, filename_vtu);
-    try {
-      std::ofstream output_pvd(top_folder + filename_pvd);
-      DataOutBase::write_pvd_record(output_pvd, time_series);
-    } catch (const std::exception &e) {
-      throw std::runtime_error("FEOutput::flush: Could not write pvd file.");
-    }
+    auto &m_data_out = data_outs[series_number % buffer_size];
 
-    auto output_func = [=, this](const uint m_series_number, const double m_time) {
-      auto &m_data_out = data_outs[m_series_number % buffer_size];
+    // Start by writing the FE-function to a .vtu file.
+    m_data_out.build_patches(subdivisions);
 
-      // Start by writing the FE-function to a .vtu file.
-      m_data_out.build_patches(subdivisions);
+    if (save_vtk) {
+      // We add the .vtu file to the time series and write the .pvd file.
+      time_series.emplace_back(time, filename_vtu);
+      try {
+        std::ofstream output_pvd(top_folder + filename_pvd);
+        DataOutBase::write_pvd_record(output_pvd, time_series);
+      } catch (const std::exception &e) {
+        throw std::runtime_error("FEOutput::flush: Could not write pvd file.");
+      }
 
-      auto flags = DataOutBase::VtkFlags(m_time, m_series_number);
+      auto flags = DataOutBase::VtkFlags(time, series_number);
       m_data_out.set_flags(flags);
 
       std::ofstream output_vtu(top_folder + filename_vtu);
       m_data_out.write_vtu(output_vtu);
+    }
 
-      m_data_out.clear();
-    };
+    if (h5_group != nullptr) {
+      DataOutBase::DataOutFilterFlags mflags(false, false);
+      DataOutBase::DataOutFilter data_filter(mflags);
+      // Filter the data and store it in data_filter
+      m_data_out.write_filtered_data(data_filter);
+      // Write the filtered data to HDF5
+      std::vector<double> node_data;
+      data_filter.fill_node_data(node_data);
+
+      auto cur_group = h5_group->create_group(std::to_string(series_number));
+      cur_group.set_attribute("time", time);
+      cur_group.set_attribute("series_number", series_number);
+      cur_group.set_attribute("output_name", output_name);
+
+      std::vector<hsize_t> dataset_dimensions = {data_filter.n_nodes(), dim};
+      auto nodes = cur_group.create_dataset<double>("nodes", dataset_dimensions);
+      nodes.write(node_data);
+
+      for (uint i = 0; i < data_filter.n_data_sets(); ++i) {
+        const double *data_set = data_filter.get_data_set(i);
+        std::vector<double> v_data_set(data_set, data_set + data_filter.n_nodes());
+
+        const std::string name = data_filter.get_data_set_name(i);
+
+        std::vector<hsize_t> data_dimensions = {data_filter.n_nodes()};
+        auto dataset = cur_group.create_dataset<double>(name, data_dimensions);
+        dataset.write(v_data_set);
+      }
+    }
+
+    m_data_out.clear();
+
+    auto output_func = [=, this](const uint m_series_number, const double m_time) {};
 
     // If the buffer size is 1, we save ourselves the cost of spawning a thread
     if (buffer_size == 1) {

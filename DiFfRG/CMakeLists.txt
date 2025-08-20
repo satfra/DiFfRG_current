@@ -8,6 +8,8 @@ project(DiFfRG)
 
 set(CMAKE_INSTALL_MESSAGE LAZY)
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/common.cmake)
+
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
   message(
     WARNING

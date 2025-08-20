@@ -40,6 +40,14 @@ add_library(DiFfRG STATIC ${DiFfRG_SOURCES})
 
 setup_target(DiFfRG)
 
+option(ENABLE_HDF5 "Build with HDF5 support" OFF)
+if(ENABLE_HDF5)
+  find_package(HDF5 REQUIRED)
+  target_compile_definitions(DiFfRG PUBLIC ENABLE_HDF5)
+  target_link_libraries(DiFfRG PUBLIC HDF5::HDF5)
+  message(STATUS "HDF5 support enabled")
+endif()
+
 target_include_directories(
   DiFfRG INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
                    $<INSTALL_INTERFACE:include>)

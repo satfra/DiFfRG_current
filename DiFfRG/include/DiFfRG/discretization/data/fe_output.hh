@@ -4,6 +4,7 @@
 #include <DiFfRG/common/utils.hh>
 
 // external libraries
+#include <deal.II/base/hdf5.h>
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/lac/vector_memory.h>
 #include <deal.II/numerics/data_out.h>
@@ -38,6 +39,8 @@ namespace DiFfRG
 
     FEOutput();
     ~FEOutput();
+
+    void set_h5_group(std::shared_ptr<HDF5::Group> h5_group);
 
     /**
      * @brief Attach a solution to the output.
@@ -82,5 +85,8 @@ namespace DiFfRG
     GrowingVectorMemory<VectorType> mem;
 
     void update_buffers();
+
+    std::shared_ptr<HDF5::Group> h5_group;
+    bool save_vtk;
   };
 } // namespace DiFfRG

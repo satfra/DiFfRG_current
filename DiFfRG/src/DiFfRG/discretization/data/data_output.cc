@@ -8,6 +8,7 @@
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/data/data_output.hh>
+#include <memory>
 
 namespace DiFfRG
 {
@@ -17,8 +18,15 @@ namespace DiFfRG
   DataOutput<dim, VectorType>::DataOutput(std::string top_folder, std::string output_name, std::string output_folder,
                                           const JSONValue &json)
       : json(json), top_folder(make_folder(top_folder)), output_name(output_name),
-        output_folder(make_folder(output_folder)), Lambda(-1.), fe_out(top_folder, output_name, output_folder, json)
+        output_folder(make_folder(output_folder)), Lambda(-1.), fe_out(top_folder, output_name, output_folder, json),
+        use_hdf5(json.get_bool("/output/hdf5", true)), filename_h5(output_name + ".h5")
   {
+    if (use_hdf5) {
+      h5_files.emplace_back(
+          std::make_shared<HDF5::File>(make_folder(top_folder) + filename_h5, HDF5::File::FileAccessMode::create));
+      auto h5_fe_group = std::make_shared<HDF5::Group>(h5_files[0]->create_group("FE"));
+      fe_out.set_h5_group(h5_fe_group);
+    }
     set_Lambda(json.get_double("/physical/Lambda"));
   }
 
