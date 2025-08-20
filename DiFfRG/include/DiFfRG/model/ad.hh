@@ -58,7 +58,7 @@ namespace DiFfRG
         template <uint n, typename Vector> static std::array<autodiff::real, n> vector_to_AD(const Vector &v)
         {
           std::array<autodiff::real, n> x;
-          for (uint i = 0; i < n; ++i) {
+          for (int i = 0; i < n; ++i) {
             x[i] = v[i];
           }
           return x;
@@ -70,9 +70,9 @@ namespace DiFfRG
         {
           static_assert(r >= 1 && r <= 2, "Only rank 1 and 2 tensors are supported.");
           std::array<dealii::Tensor<r, dim, autodiff::real>, n> x;
-          for (uint i = 0; i < n; ++i) {
+          for (int i = 0; i < n; ++i) {
             if constexpr (r == 1) {
-              for (uint d = 0; d < dim; ++d)
+              for (int d = 0; d < dim; ++d)
                 x[i][d] = v[i][d];
             } else if constexpr (r == 2) {
               for (uint d1 = 0; d1 < dim; ++d1)

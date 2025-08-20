@@ -40,11 +40,11 @@ add_library(DiFfRG STATIC ${DiFfRG_SOURCES})
 
 setup_target(DiFfRG)
 
-option(ENABLE_HDF5 "Build with HDF5 support" OFF)
-if(ENABLE_HDF5)
+if(h5cpp_FOUND)
   find_package(HDF5 REQUIRED)
-  target_compile_definitions(DiFfRG PUBLIC ENABLE_HDF5)
-  target_link_libraries(DiFfRG PUBLIC HDF5::HDF5)
+  find_package(h5cpp REQUIRED)
+  target_compile_definitions(DiFfRG PUBLIC H5CPP)
+  target_link_libraries(DiFfRG PUBLIC h5cpp HDF5::HDF5)
   message(STATUS "HDF5 support enabled")
 endif()
 

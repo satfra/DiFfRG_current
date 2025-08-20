@@ -4,10 +4,13 @@
 #include <DiFfRG/common/utils.hh>
 
 // external libraries
-#include <deal.II/base/hdf5.h>
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/lac/vector_memory.h>
 #include <deal.II/numerics/data_out.h>
+
+#ifdef H5CPP
+#include <h5cpp/hdf5.hpp>
+#endif
 
 // standard library
 #include <list>
@@ -40,7 +43,9 @@ namespace DiFfRG
     FEOutput();
     ~FEOutput();
 
-    void set_h5_group(std::shared_ptr<HDF5::Group> h5_group);
+#ifdef H5CPP
+    void set_h5_group(std::shared_ptr<hdf5::node::Group> h5_group);
+#endif
 
     /**
      * @brief Attach a solution to the output.
@@ -86,7 +91,25 @@ namespace DiFfRG
 
     void update_buffers();
 
-    std::shared_ptr<HDF5::Group> h5_group;
+#ifdef H5CPP
+    std::shared_ptr<hdf5::node::Group> h5_group;
+#endif
     bool save_vtk;
   };
+
+  template <typename VectorType> class FEOutput<0, VectorType>
+  {
+  public:
+    /**
+     * @brief Construct a new FEOutput object
+     *
+     * @param dof_handler DoFHandler associated with the solution
+     * @param top_folder Folder where the output will be written, i.e. the folder containing the .pvd file.
+     * @param output_name Name of the output, i.e. the name of the .pvd file.
+     * @param output_folder Folder where the .vtu files will be saved. Should be relative to top_folder.
+     * @param subdivisions Number of subdivisions of the cells in the .vtu files.
+     */
+    FEOutput(std::string top_folder, std::string output_name, std::string output_folder, const JSONValue &json);
+  };
+
 } // namespace DiFfRG

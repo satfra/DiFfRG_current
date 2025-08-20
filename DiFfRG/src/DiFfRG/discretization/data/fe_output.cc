@@ -2,7 +2,6 @@
 #include <fstream>
 
 // external libraries
-#include <deal.II/base/hdf5.h>
 #include <deal.II/lac/block_vector.h>
 #include <deal.II/lac/vector.h>
 
@@ -10,7 +9,11 @@
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/data/fe_output.hh>
 
-#include <span>
+#ifdef H5CPP
+#include <h5cpp/utilities/array_adapter.hpp>
+#endif
+
+#include <memory>
 #include <stdexcept>
 
 namespace DiFfRG
@@ -36,11 +39,13 @@ namespace DiFfRG
     attached_solutions.emplace_back();
   }
 
+#ifdef H5CPP
   template <uint dim, typename VectorType>
-  void FEOutput<dim, VectorType>::set_h5_group(std::shared_ptr<HDF5::Group> h5_group)
+  void FEOutput<dim, VectorType>::set_h5_group(std::shared_ptr<hdf5::node::Group> h5_group)
   {
     this->h5_group = h5_group;
   }
+#endif
 
   template <uint dim, typename VectorType> void FEOutput<dim, VectorType>::update_buffers()
   {
@@ -103,7 +108,13 @@ namespace DiFfRG
       m_data_out.write_vtu(output_vtu);
     }
 
+#ifdef H5CPP
     if (h5_group != nullptr) {
+      auto cur_group = h5_group->create_group(std::to_string(series_number));
+      cur_group.attributes.create_from<double>("time", time);
+      cur_group.attributes.create_from<int>("series_number", series_number);
+      cur_group.attributes.create_from<std::string>("output_name", output_name);
+
       DataOutBase::DataOutFilterFlags mflags(false, false);
       DataOutBase::DataOutFilter data_filter(mflags);
       // Filter the data and store it in data_filter
@@ -112,26 +123,22 @@ namespace DiFfRG
       std::vector<double> node_data;
       data_filter.fill_node_data(node_data);
 
-      auto cur_group = h5_group->create_group(std::to_string(series_number));
-      cur_group.set_attribute("time", time);
-      cur_group.set_attribute("series_number", series_number);
-      cur_group.set_attribute("output_name", output_name);
-
-      std::vector<hsize_t> dataset_dimensions = {data_filter.n_nodes(), dim};
-      auto nodes = cur_group.create_dataset<double>("nodes", dataset_dimensions);
+      hdf5::dataspace::Simple nodes_space({data_filter.n_nodes(), dim});
+      auto nodes = cur_group.create_dataset("nodes", hdf5::datatype::create<double>(), nodes_space);
       nodes.write(node_data);
 
       for (uint i = 0; i < data_filter.n_data_sets(); ++i) {
-        const double *data_set = data_filter.get_data_set(i);
-        std::vector<double> v_data_set(data_set, data_set + data_filter.n_nodes());
-
+        hdf5::dataspace::Simple data_space({data_filter.n_nodes()});
         const std::string name = data_filter.get_data_set_name(i);
+        auto dataset = cur_group.create_dataset(name, hdf5::datatype::create<double>(), data_space);
 
-        std::vector<hsize_t> data_dimensions = {data_filter.n_nodes()};
-        auto dataset = cur_group.create_dataset<double>(name, data_dimensions);
-        dataset.write(v_data_set);
+        // To forgo the need for a copy, we have to do some casting around the constness of the data.
+        // See also https://ess-dmsc.github.io/h5cpp/stable/advanced/c_arrays.html
+        const double *data_set_data = data_filter.get_data_set(i);
+        dataset.write(hdf5::ArrayAdapter<double>(const_cast<double *>(data_set_data), data_filter.n_nodes()));
       }
     }
+#endif
 
     m_data_out.clear();
 
@@ -176,9 +183,17 @@ namespace DiFfRG
     m_data_out.add_data_vector(dof_handler, *(attached_solutions.back().back()), names);
   }
 
+  template <typename VectorType>
+  FEOutput<0, VectorType>::FEOutput(std::string top_folder, std::string output_name, std::string output_folder,
+                                    const JSONValue &json)
+  {
+  }
+
+  template class FEOutput<0, dealii::Vector<double>>;
   template class FEOutput<1, dealii::Vector<double>>;
   template class FEOutput<2, dealii::Vector<double>>;
   template class FEOutput<3, dealii::Vector<double>>;
+  template class FEOutput<0, dealii::BlockVector<double>>;
   template class FEOutput<1, dealii::BlockVector<double>>;
   template class FEOutput<2, dealii::BlockVector<double>>;
   template class FEOutput<3, dealii::BlockVector<double>>;
