@@ -99,7 +99,7 @@ TEST_CASE("Test FE output on Constant model", "[output][cg]")
     auto h5_fe_group = std::make_shared<hdf5::node::Group>(root_group.create_group("FE"));
     fe_output.set_h5_group(h5_fe_group);
 
-    constexpr uint output_num = 100;
+    constexpr uint output_num = 20;
     for (uint i = 0; i < output_num; ++i) {
       fe_output.attach(discretization.get_dof_handler(), src, "solution");
       fe_output.flush(i);

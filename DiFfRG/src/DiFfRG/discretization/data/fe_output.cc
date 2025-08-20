@@ -91,26 +91,9 @@ namespace DiFfRG
     // Start by writing the FE-function to a .vtu file.
     m_data_out.build_patches(subdivisions);
 
-    if (save_vtk) {
-      // We add the .vtu file to the time series and write the .pvd file.
-      time_series.emplace_back(time, filename_vtu);
-      try {
-        std::ofstream output_pvd(top_folder + filename_pvd);
-        DataOutBase::write_pvd_record(output_pvd, time_series);
-      } catch (const std::exception &e) {
-        throw std::runtime_error("FEOutput::flush: Could not write pvd file.");
-      }
-
-      auto flags = DataOutBase::VtkFlags(time, series_number);
-      m_data_out.set_flags(flags);
-
-      std::ofstream output_vtu(top_folder + filename_vtu);
-      m_data_out.write_vtu(output_vtu);
-    }
-
 #ifdef H5CPP
     if (h5_group != nullptr) {
-      auto cur_group = h5_group->create_group(std::to_string(series_number));
+      auto cur_group = h5_group->create_group(Utilities::int_to_string(series_number, 6));
       cur_group.attributes.create_from<double>("time", time);
       cur_group.attributes.create_from<int>("series_number", series_number);
       cur_group.attributes.create_from<std::string>("output_name", output_name);
@@ -140,9 +123,29 @@ namespace DiFfRG
     }
 #endif
 
-    m_data_out.clear();
+    auto output_func = [=, this](const uint m_series_number, const double m_time) {
+      if (save_vtk) {
+        auto &m_data_out = data_outs[m_series_number % buffer_size];
 
-    auto output_func = [=, this](const uint m_series_number, const double m_time) {};
+        // We add the .vtu file to the time series and write the .pvd file.
+        time_series.emplace_back(m_time, filename_vtu);
+        try {
+          std::ofstream output_pvd(top_folder + filename_pvd);
+          DataOutBase::write_pvd_record(output_pvd, time_series);
+        } catch (const std::exception &e) {
+          throw std::runtime_error("FEOutput::flush: Could not write pvd file.");
+        }
+
+        auto flags = DataOutBase::VtkFlags(m_time, m_series_number);
+        m_data_out.set_flags(flags);
+
+        std::ofstream output_vtu(top_folder + filename_vtu);
+        m_data_out.write_vtu(output_vtu);
+
+        m_data_out.clear();
+      }
+    };
+    if (!save_vtk) m_data_out.clear();
 
     // If the buffer size is 1, we save ourselves the cost of spawning a thread
     if (buffer_size == 1) {
