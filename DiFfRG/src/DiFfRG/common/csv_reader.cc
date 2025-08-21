@@ -14,12 +14,15 @@ namespace DiFfRG
                                                     rapidcsv::SeparatorParams(separator));
   }
 
-  double CSVReader::value(const uint col, const uint row) const { return document->GetCell<double>(col, row); }
+  double CSVReader::value(const size_t col, const size_t row) const { return document->GetCell<double>(col, row); }
 
-  double CSVReader::value(const std::string &col, const uint row) const { return document->GetCell<double>(col, row); }
+  double CSVReader::value(const std::string &col, const size_t row) const
+  {
+    return document->GetCell<double>(col, row);
+  }
 
-  uint CSVReader::n_rows() const { return document->GetRowCount(); }
+  size_t CSVReader::n_rows() const { return document->GetRowCount(); }
 
-  uint CSVReader::n_cols() const { return document->GetColumnCount(); }
+  size_t CSVReader::n_cols() const { return document->GetColumnCount(); }
 
 } // namespace DiFfRG

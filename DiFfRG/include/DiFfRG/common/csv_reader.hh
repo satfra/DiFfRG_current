@@ -1,6 +1,7 @@
 #pragma once
 
 // standard library
+#include <cstddef>
 #include <memory>
 #include <string>
 
@@ -32,14 +33,14 @@ namespace DiFfRG
      *
      * @return uint The number of rows.
      */
-    uint n_rows() const;
+    size_t n_rows() const;
 
     /**
      * @brief Get the number of columns in the .csv file.
      *
      * @return uint The number of columns.
      */
-    uint n_cols() const;
+    size_t n_cols() const;
 
     /**
      * @brief Get the stored value at a given row and column.
@@ -48,7 +49,7 @@ namespace DiFfRG
      * @param row The row from which to get the value.
      * @return double The data.
      */
-    double value(const std::string &col, const uint row) const;
+    double value(const std::string &col, const size_t row) const;
 
     /**
      * @brief Get the stored value at a given row and column.
@@ -57,7 +58,7 @@ namespace DiFfRG
      * @param row The row from which to get the value.
      * @return double The data.
      */
-    double value(const uint col, const uint row) const;
+    double value(const size_t col, const size_t row) const;
 
   private:
     std::string input_file;
