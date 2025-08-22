@@ -3,10 +3,7 @@
 // DiFfRG
 #include <DiFfRG/discretization/data/csv_output.hh>
 #include <DiFfRG/discretization/data/fe_output.hh>
-
-#ifdef H5CPP
-#include <h5cpp/hdf5.hpp>
-#endif
+#include <DiFfRG/discretization/data/hdf5_output.hh>
 
 namespace DiFfRG
 {
@@ -44,7 +41,16 @@ namespace DiFfRG
      * @brief Returns a reference to the CsvOutput object associated with the given name, which is used to write scalar
      * values to .csv files. If the object does not exist, it is created.
      */
-    CsvOutput &csv_file(const std::string &name);
+    CsvOutput &csv(const std::string &name);
+
+#ifdef H5CPP
+    /**
+     * @brief Returns a reference to the HDF5 file associated with the given name, which is used to write data to .h5
+     * files. If the object does not exist, it is created.
+     */
+    HDF5Output &hdf5(const std::string &name);
+    HDF5Output &hdf5();
+#endif
 
     /**
      * @brief Save all attached data vectors to a .vtu and append it to the time series. Also flush any attached scalar
@@ -95,7 +101,7 @@ namespace DiFfRG
 #ifdef H5CPP
     bool use_hdf5;
     const std::string filename_h5;
-    std::map<std::string, hdf5::file::File> h5_files;
+    std::map<std::string, HDF5Output> h5_files;
 #endif
   };
 } // namespace DiFfRG

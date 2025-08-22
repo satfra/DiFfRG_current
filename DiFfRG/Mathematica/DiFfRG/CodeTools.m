@@ -11,6 +11,7 @@
 (* ::Section:: *)
 (*Setup and exports*)
 
+
 BeginPackage["DiFfRG`CodeTools`", {"DiFfRG`CodeTools`MakeKernel`", "DiFfRG`CodeTools`Directory`",
    "DiFfRG`CodeTools`Export`"}]; (* TODO: Remove the export function from here later on *)
 
@@ -30,26 +31,6 @@ SetCppNames::usage = "SetCppNames[rules___]
 Set additional replacement rules used when invoking CodeForm[expr].
 
 Example Call: SetCppNames[\"k\"->\"k_bosonic\", \"Arccos(\"->\"std::arccos(\"]";
-
-JuliaForm::usage = "CodeForm[expr_]
-Obtain properly formatted and processed Julia code from an expression.";
-
-UnicodeClip::usage = "UnicodeClip[expr_String]
-Copy a string as unicode into the clipboard. Useful when exporting to Julia.";
-
-MakeCMakeFile::usage = "MakeCMakeFile[kernels_List]
-Creates a CMakeLists.txt inside the 'flowDir' which you can set using SetFlowDir[dir_String]. This CMake file contains references to all kernels specified in the List 'kernels'. Make sure you have created all kernels before compiling!
-If so, simply add the flow directory in the parent directory of the flow directory: \n add_subdirectory(flows) \n Note that this CMakeLists.txt exports its source files into parent scope as $flow_sources
-Thus, to compile the flows, simply add them as source files:
-    add_executable(QCD QCD.cc ${flow_sources})";
-
-MakeFlowClass::usage = "MakeFlowClass[name_String,kernels_List]
-This creates a file flows.hh inside the flow directory, containing a class with the specified name, as well as several other files. All defined kernels have a corresponding integrator object in this class.
-Automatically calls MakeCMakeFile with the passed list of kernels.";
-
-MakeFlowClassFiniteT::usage = "MakeFlowClassFiniteT[name_String,kernels_List]
-This creates a file flows.hh inside the flow directory, containing a class with the specified name, as well as several other files. All defined kernels have a corresponding integrator object in this class.
-Automatically calls MakeCMakeFile wiht the passed list of kernels.";
 
 SafeFiniteTFunctions::usage="";
 
@@ -108,8 +89,11 @@ Begin["`Private`"];
 
 Needs["DiFfRG`CodeTools`MakeKernel`"];
 
+
+
 (* ::Chapter:: *)
 (*General Definitions and structural methods*)
+
 
 (* ::Section:: *)
 (*Momentum Configurations*)
@@ -193,7 +177,7 @@ Return[SymmetricPoint4DP3Code]
 ];
 
 
-(* ::Subsection:: *)
+(* ::Subsection::Closed:: *)
 (*3D*)
 
 
@@ -358,32 +342,8 @@ Return[FunKit`FormatCode[ret]];
 ];
 
 
-(* ::Section:: *)
-(*Safety checks*)
-
-
-(* ::Input::Initialization:: *)
-DiFfRG::MissingKey="The key \"`1`\" is missing.";
-
-CheckKey[kernel_Association,name_String,test_]:=Module[{valid},
-If[Not@KeyExistsQ[kernel,name],Message[DiFfRG::MissingKey,name];Return[False]];
-If[Not@test[kernel[name]],Return[False]];
-Return[True];
-];
-
-KernelSpecQ[spec_Association]:=Module[{validKeys,validKeyTypes},
-validKeys=CheckKey[spec,"Name",StringQ]&&
-CheckKey[spec,"Integrator",StringQ]&&
-CheckKey[spec,"d",IntegerQ]&&
-CheckKey[spec,"AD",BooleanQ]&&
-CheckKey[spec,"Device",StringQ];
-Return[validKeys];
-];
-
-
-(* ::Section:: *)
+(* ::Section::Closed:: *)
 (*Code for CMake and flow class*)
-
 
 
 UpdateFlows[varName_:flowName]:=Module[{},

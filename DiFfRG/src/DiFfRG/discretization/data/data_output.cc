@@ -22,10 +22,9 @@ namespace DiFfRG
 #ifdef H5CPP
     if (use_hdf5) {
       // create the file
-      h5_files[filename_h5] =
-          hdf5::file::create(make_folder(top_folder) + filename_h5, hdf5::file::AccessFlags::Truncate);
+      h5_files.emplace(filename_h5, HDF5Output(top_folder, filename_h5, json));
       if constexpr (dim > 0) {
-        hdf5::node::Group root_group = h5_files[filename_h5].root();
+        hdf5::node::Group root_group = h5_files.at(filename_h5).get_file().root();
         // create the FE group
         auto h5_fe_group = std::make_shared<hdf5::node::Group>(root_group.create_group("FE"));
         fe_out.set_h5_group(h5_fe_group);
@@ -47,7 +46,7 @@ namespace DiFfRG
     return fe_out;
   }
 
-  template <uint dim, typename VectorType> CsvOutput &DataOutput<dim, VectorType>::csv_file(const std::string &name)
+  template <uint dim, typename VectorType> CsvOutput &DataOutput<dim, VectorType>::csv(const std::string &name)
   {
     const auto obj = csv_files.find(name);
     if (obj == csv_files.end()) {
@@ -58,6 +57,25 @@ namespace DiFfRG
     }
     return obj->second;
   }
+
+#ifdef H5CPP
+  template <uint dim, typename VectorType> HDF5Output &DataOutput<dim, VectorType>::hdf5(const std::string &name)
+  {
+    const auto obj = h5_files.find(name);
+    if (obj == h5_files.end()) {
+      std::string filename = output_name + "_" + name;
+      if (name.find("/") != std::string::npos) filename = name;
+      auto ret = h5_files.emplace(name, HDF5Output(top_folder, filename, json));
+      return ret.first->second;
+    }
+    return obj->second;
+  }
+
+  template <uint dim, typename VectorType> HDF5Output &DataOutput<dim, VectorType>::hdf5()
+  {
+    return h5_files.at(filename_h5);
+  }
+#endif
 
   template <uint dim, typename VectorType> const std::string &DataOutput<dim, VectorType>::get_output_name() const
   {
@@ -72,6 +90,8 @@ namespace DiFfRG
     if constexpr (dim > 0) {
       fe_out.flush(time);
     }
+    for (auto &csv : csv_files)
+      csv.second.flush(time);
     for (auto &csv : csv_files)
       csv.second.flush(time);
   }
