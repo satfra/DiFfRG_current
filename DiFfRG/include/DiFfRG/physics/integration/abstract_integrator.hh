@@ -9,9 +9,9 @@ namespace DiFfRG
   namespace internal
   {
     template <int dim>
-    std::array<uint, dim> make_int_grid(const JSONValue &json, const std::array<std::string, dim> &names)
+    std::array<size_t, dim> make_int_grid(const JSONValue &json, const std::array<std::string, dim> &names)
     {
-      std::array<uint, dim> int_grid;
+      std::array<size_t, dim> int_grid;
       for (int i = 0; i < dim; ++i)
         int_grid[i] = json.get_uint("/integration/" + names[i]);
       return int_grid;

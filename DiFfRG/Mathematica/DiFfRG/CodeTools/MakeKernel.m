@@ -1,3 +1,5 @@
+(* ::Package:: *)
+
 (* Exported symbols added here with SymbolName::usage *)
 
 BeginPackage["DiFfRG`CodeTools`MakeKernel`"]
@@ -8,10 +10,12 @@ MakeKernel::usage = "MakeKernel[kernel_Association, parameterList_List,integrand
 Make a kernel from a given flow equation, parmeter list and kernel. The kernel must be a valid specification of an integration kernel.
 This Function creates an integrator that evaluates (constantFlow + \[Integral]integrandFlow). One can prepend additional c++ definitions to the flow equation by using the integrandDefinitions and constantDefinitions parameters. 
 These are prepended to the respective methods of the integration kernel, allowing one to e.g. define specific angles one needs for the flow code.";
-
 MakeKernel::Invalid = "The given arguments are invalid. See MakeKernel::usage";
-
 MakeKernel::InvalidSpec = "The given kernel specification is invalid.";
+MakeKernel::InvalidSpec="The parameters given to MakeKernel are not valid.";
+MakeKernel::MissingKey="The key \"`1`\" is missing.";
+MakeKernel::InvalidKey="The key \"`1`\" is invalid: `2`";
+
 
 Begin["`Private`"]
 
@@ -25,14 +29,29 @@ Needs["DiFfRG`CodeTools`TemplateParameterGeneration`"]
 
 Needs["DiFfRG`CodeTools`Regulator`"]
 
-ClearAll[MakeKernel]
-
 $ADReplacements = {"double" -> "autodiff::real", "DiFfRG::complex<double>" -> "cxreal"};
 
 $PredefRegFunc={"RB","RF","RBdot","RFdot","dq2RB","dq2RF"};
 $StandardKernelDefinitions=Map[
 FunKit`MakeCppFunction["Name"->#,"Body"->"return Regulator::"<>#<>"(k2, p2);","Prefix"->"static KOKKOS_FORCEINLINE_FUNCTION","Suffix"->"","Parameters"->{"k2","p2"}]&,
 $PredefRegFunc];
+
+
+CheckKey[kernel_Association,name_String,test_,msg_String]:=Module[{valid},
+    If[Not@KeyExistsQ[kernel,name],Message[MakeKernel::MissingKey,name];Return[False]];
+    If[Not@test[kernel[name]],Message[MakeKernel::InvalidKey,name,msg];Return[False]];
+    Return[True];
+];
+
+KernelSpecQ[spec_Association]:=Module[{validKeys,validKeyTypes},
+    validKeys=CheckKey[spec,"Name",StringQ[#]&&StringLength[#]>0&,"Cannot be empty"]&&
+        CheckKey[spec,"Integrator",StringQ[#]&&StringLength[#]>0&,"Cannot be empty"]&&
+        CheckKey[spec,"d",IntegerQ[#]&&#>=0&,"Must be an Integer >= 0"]&&
+        CheckKey[spec,"AD",BooleanQ,"Must be a Boolean"]&&
+        CheckKey[spec,"Device",MemberQ[{"Threads","TBB","GPU"},#]&,"Must be Threads, TBB or GPU."]&&
+        CheckKey[spec,"Type",StringQ[#]&&StringLength[#]>0&,"Cannot be empty"];
+    Return[validKeys];
+];
 
 GetStandardKernelDefinitions[]:=$StandardKernelDefinitions
 
@@ -45,19 +64,30 @@ Options[MakeKernel]={
 "Regulator"->"DiFfRG::PolynomialExpRegulator",
 "RegulatorOpts"->{"",""},
 "KernelBody"->"",
-"ConstantBody"->""
+"ConstantBody"->"",
+"Parameters"->{},
+"Name"->"",
+"d"->-1,
+"Integrator"->"",
+"AD"->False,
+"ctype"->"double",
+"Device"->"TBB",
+"Type"->"double"
 };
 
 MakeKernel[__]:=(Message[MakeKernel::Invalid];Abort[]);
-MakeKernel[kernelExpr_,spec_Association,parameters_List,OptionsPattern[]]:=MakeKernel@@(Join[{kernelExpr,0,spec,parameters},Thread[Rule@@{#,OptionValue[MakeKernel,#]}]&@Keys[Options[MakeKernel]]]);
-MakeKernel[kernelExpr_,constExpr_,spec_Association,parameters_List,OptionsPattern[]]:=Module[{
+MakeKernel[kernelExpr_,OptionsPattern[]]:=MakeKernel@@(Join[{kernelExpr,0},Thread[Rule@@{#,OptionValue[MakeKernel,#]}]&@Keys[Options[MakeKernel]]]);
+MakeKernel[kernelExpr_,constExpr_,OptionsPattern[]]:=Module[{
     expr, const, exec, kernel, constant, kernelClass, kernelHeader, integratorHeader, 
     integratorCpp, integratorTemplateParams, integratorADTemplateParams,
     tparams=<|"Name"->"...t","Type"->"auto&&","Reference"->False,"Const"->False|>,
     kernelDefs=OptionValue["KernelDefinitions"], coordinates=OptionValue["Coordinates"],
     getArgs=OptionValue["CoordinateArguments"], intVariables=OptionValue["IntegrationVariables"], preArguments, regulator, params, paramsAD, explParamAD,
-    arguments, outputPath, sources, returnType, returnTypeAD, returnTypePointer, returnTypePointerAD
+    arguments, outputPath, sources, returnType, returnTypeAD, returnTypePointer, returnTypePointerAD,
+    spec,parameters
 },
+spec=Association@@Thread[Rule@@{#,OptionValue[MakeKernel,#]}]&@Keys[Options[MakeKernel]];
+parameters=spec["Parameters"];
 
 If[Not@KernelSpecQ[spec],Message[MakeKernel::InvalidSpec];Abort[]];
 
@@ -65,6 +95,12 @@ expr=kernelExpr;
 While[ListQ[expr],expr=Plus@@expr];
 const=constExpr;
 While[ListQ[const],const=Plus@@const];
+
+intVariables=FunKit`Private`prepParam/@intVariables;
+intVariables=Map[Append[#,"Type"->"double"]&,intVariables];
+
+getArgs=FunKit`Private`prepParam/@getArgs;
+getArgs=Map[Append[#,"Type"->"double"]&,getArgs];
 
 (********************************************************************)
 (* First, the kernel itself *)
@@ -75,7 +111,7 @@ kernel=FunKit`MakeCppFunction[
     "Name"->"kernel",
     "Suffix"->"",
     "Prefix"->"static KOKKOS_FORCEINLINE_FUNCTION",
-    "Parameters"->Join[OptionValue["IntegrationVariables"],getArgs,parameters],
+    "Parameters"->Join[intVariables,getArgs,parameters],
     "Body"->StringTemplate["using namespace DiFfRG;using namespace DiFfRG::compute;\n`1`"][OptionValue["KernelBody"]]
 ];
 
@@ -90,7 +126,7 @@ constant=FunKit`MakeCppFunction[
 
 kernelClass=FunKit`MakeCppClass[
     "TemplateTypes"->{"_Regulator"},
-    "Name"->spec["Name"]<>"_kernel",
+    "Name"->OptionValue["Name"]<>"_kernel",
     "MembersPublic"->{"using Regulator = _Regulator;",kernel,constant},
     "MembersPrivate"->kernelDefs
 ];
@@ -114,9 +150,6 @@ getArgs=Map[Append[#,"Type"->"double"]&,getArgs];
 getArgs = First @ processParameters[getArgs, $ADReplacements];
 preArguments=StringRiffle[Map[#["Name"]&,getArgs],", "];
 If[preArguments=!="",preArguments=preArguments<>", "];
-
-intVariables=FunKit`Private`prepParam/@intVariables;
-intVariables=Map[Append[#,"Type"->"double"]&,intVariables];
 
 (* Choose the execution space. Default is TBB, as only TBB is compatible with the FEM assemblers. *)
 exec=If[KeyFreeQ[spec,"Device"]||FreeQ[{"GPU","Threads"},spec["Device"]],"DiFfRG::TBB_exec","DiFfRG::"<>spec["Device"]<>"_exec"];

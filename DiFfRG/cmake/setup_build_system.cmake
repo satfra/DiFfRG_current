@@ -95,6 +95,11 @@ find_package(Eigen3 3.4.0 REQUIRED HINTS ${BUNDLED_DIR})
 find_package(GSL REQUIRED)
 find_package(autodiff 1.1.0 REQUIRED HINTS ${BUNDLED_DIR})
 find_package(spdlog 1.14.1 REQUIRED HINTS ${BUNDLED_DIR})
+find_package(h5cpp 0.7.1 QUIET HINTS ${BUNDLED_DIR})
+if(h5cpp_FOUND)
+  message(STATUS "Found h5cpp in ${h5cpp_DIR}")
+  add_compile_definitions(H5CPP)
+endif()
 
 if(${DiFfRG_MPI})
   find_package(MPI REQUIRED)
@@ -107,15 +112,17 @@ endif()
 # We redefine the deal_ii_setup_target function here such that we can choose
 # precisely how to propagate flags and other details
 function(setup_dealii TARGET)
-  target_link_libraries(${TARGET} PUBLIC deal_II)
-  target_link_libraries(${TARGET} INTERFACE deal_II)
-  target_include_directories(${TARGET} SYSTEM PUBLIC ${DEAL_II_INCLUDE_DIRS})
 
   if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_link_libraries(${TARGET} PUBLIC deal_II.g)
+    target_link_libraries(${TARGET} INTERFACE deal_II.g)
     set(_build "DEBUG")
   elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+    target_link_libraries(${TARGET} PUBLIC deal_II)
+    target_link_libraries(${TARGET} INTERFACE deal_II)
     set(_build "RELEASE")
   endif()
+  target_include_directories(${TARGET} SYSTEM PUBLIC ${DEAL_II_INCLUDE_DIRS})
 
   set(_cflags "${DEAL_II_CXX_FLAGS} ${DEAL_II_CXX_FLAGS_${_build}}")
   # remove c++20 flag and O2 flag - CMake adds them automatically and we thus

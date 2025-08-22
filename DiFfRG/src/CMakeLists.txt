@@ -14,6 +14,7 @@ set(DiFfRG_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/csv_output.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/data_output.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/fe_output.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/hdf5_output.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/mesh/rectangular_mesh.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/model/model.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/solver/kinsol.cc
@@ -39,6 +40,14 @@ set(DiFfRG_SOURCES
 add_library(DiFfRG STATIC ${DiFfRG_SOURCES})
 
 setup_target(DiFfRG)
+
+if(h5cpp_FOUND)
+  find_package(HDF5 REQUIRED)
+  find_package(h5cpp REQUIRED)
+  target_compile_definitions(DiFfRG PUBLIC H5CPP)
+  target_link_libraries(DiFfRG PUBLIC h5cpp HDF5::HDF5)
+  message(STATUS "HDF5 support enabled")
+endif()
 
 target_include_directories(
   DiFfRG INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>

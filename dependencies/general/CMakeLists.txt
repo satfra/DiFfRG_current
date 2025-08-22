@@ -175,3 +175,19 @@ cpmaddpackage(
   "CMAKE_BUILD_TYPE Release"
   "SPDLOG_INSTALL ON"
   "DSPDLOG_BUILD_SHARED=OFF")
+
+message(STATUS "Adding h5cpp...")
+cpmaddpackage(
+  NAME
+  h5cpp
+  VERSION
+  0.7.1
+  OPTIONS
+  "CMAKE_CXX_STANDARD 20"
+  "CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE}"
+  "H5CPP_DISABLE_TESTS ON"
+  "H5CPP_CONAN DISABLE"
+  GITHUB_REPOSITORY
+  ess-dmsc/h5cpp
+  GIT_TAG
+  v0.7.1)

@@ -3,8 +3,10 @@
 
 #include <boilerplate/models.hh>
 
+#include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/discretization/FEM/cg.hh>
 #include <DiFfRG/discretization/discretization.hh>
 #include <DiFfRG/model/model.hh>
 #include <DiFfRG/physics/physics.hh>
@@ -15,6 +17,8 @@
 
 TEST_CASE("Test FE output on Constant model", "[output][cg]")
 {
+  DiFfRG::Init();
+
   using namespace dealii;
   using namespace DiFfRG;
 
@@ -89,7 +93,13 @@ TEST_CASE("Test FE output on Constant model", "[output][cg]")
   Timer timer;
   {
     FEOutput<dim, VectorType> fe_output("./testing", "output_name", "other_folder", json);
-    constexpr uint output_num = 100;
+
+    auto h5_file = hdf5::file::create("./testing/output_name.h5", hdf5::file::AccessFlags::Truncate);
+    hdf5::node::Group root_group = h5_file.root();
+    auto h5_fe_group = std::make_shared<hdf5::node::Group>(root_group.create_group("FE"));
+    fe_output.set_h5_group(h5_fe_group);
+
+    constexpr uint output_num = 20;
     for (uint i = 0; i < output_num; ++i) {
       fe_output.attach(discretization.get_dof_handler(), src, "solution");
       fe_output.flush(i);

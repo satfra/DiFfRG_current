@@ -60,6 +60,8 @@
     }
   },
   "output": {
+    "vtk": false,
+    "hdf5": true,
     "verbosity": 10000,
     "folder": "./",
     "name": "output"
