@@ -140,7 +140,7 @@ namespace DiFfRG
                corner111 * (1 - tx) * (1 - ty) * (1 - tz);
     }
 
-    template <typename MemorySpace> auto &get_on()
+    template <typename MemorySpace> auto &get_on() const
     {
       // Check if the host data is already allocated
       if (!host_data.is_allocated())
@@ -152,8 +152,10 @@ namespace DiFfRG
         return *this; // Return the current instance if the memory space matches
       } else {
         // Create a new instance with the same data but in the requested memory space
-        if (other_instance == nullptr)
+        if (other_instance == nullptr) {
           other_instance = std::make_shared<LinearInterpolator3D<NT, Coordinates, MemorySpace>>(coordinates);
+          other_instance->other_instance = std::shared_ptr<decltype(*this)>(this, [](decltype(*this) *) {});
+        }
         // Copy the data from the current instance to the new one
         other_instance->update(host_data.data());
         // Return the new instance
@@ -168,6 +170,15 @@ namespace DiFfRG
      */
     const Coordinates &get_coordinates() const { return coordinates; }
 
+    NT *data()
+    {
+      if (!host_data.is_allocated())
+        throw std::runtime_error(
+            "LinearInterpolator1D: You probably called data() on a copied instance. This is not allowed. "
+            "You need to call data() on the original instance.");
+      return host_data.data();
+    }
+
   private:
     const Coordinates coordinates;
     const device::array<uint, 3> sizes;
@@ -179,6 +190,6 @@ namespace DiFfRG
     ViewType device_data;
     HostViewType host_data;
 
-    std::shared_ptr<LinearInterpolator3D<NT, Coordinates, other_memory_space>> other_instance;
+    mutable std::shared_ptr<LinearInterpolator3D<NT, Coordinates, other_memory_space>> other_instance;
   };
 } // namespace DiFfRG

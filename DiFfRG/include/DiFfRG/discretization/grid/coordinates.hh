@@ -2,6 +2,7 @@
 
 // standard library
 #include <cmath>
+#include <cstddef>
 #include <stdexcept>
 #include <tuple>
 #include <type_traits>
@@ -107,6 +108,23 @@ namespace DiFfRG
       });
 
       return idx;
+    }
+
+    template <typename... Coordinates2>
+    friend bool operator==(const CoordinatePackND<Coordinates...> &r, const CoordinatePackND<Coordinates2...> &l)
+    {
+      if constexpr (sizeof...(Coordinates) != sizeof...(Coordinates2)) return false; // Different number of coordinates
+      if constexpr ((!std::is_same_v<Coordinates, Coordinates2> && ...))
+        return false; // Different types of coordinates
+      else if constexpr (sizeof...(Coordinates) == 0)
+        return true; // Empty coordinate pack, always equal
+      else {
+        // Check if all coordinates are equal
+        bool equal = true;
+        constexpr_for<0, sizeof...(Coordinates), 1>(
+            [&](auto i) { equal &= (device::get<i>(r.coordinates) == device::get<i>(l.coordinates)); });
+        return equal;
+      }
     }
 
   protected:
@@ -233,6 +251,13 @@ namespace DiFfRG
 
     const NT start, stop;
 
+    template <typename NT2>
+    friend bool operator==(const LinearCoordinates1D<NT> &lhs, const LinearCoordinates1D<NT2> &rhs)
+    {
+      if constexpr (!std::is_same_v<NT, NT2>) return false; // Different types, cannot be equal
+      return lhs.start == rhs.start && lhs.stop == rhs.stop && lhs.grid_extent == rhs.grid_extent;
+    }
+
   private:
     const size_t grid_extent;
     NT a;
@@ -305,6 +330,14 @@ namespace DiFfRG
 
     const NT start, stop, bias;
 
+    template <typename NT2>
+    friend bool operator==(const LogarithmicCoordinates1D<NT> &lhs, const LogarithmicCoordinates1D<NT2> &rhs)
+    {
+      if constexpr (!std::is_same_v<NT, NT2>) return false; // Different types, cannot be equal
+      return lhs.start == rhs.start && lhs.stop == rhs.stop && lhs.bias == rhs.bias &&
+             lhs.grid_extent == rhs.grid_extent;
+    }
+
   private:
     const size_t grid_extent;
     const NT gem1, gem1inv;
@@ -314,63 +347,42 @@ namespace DiFfRG
   template <typename Coordinates> auto make_grid(const Coordinates &coordinates)
   {
     using ctype = typename Coordinates::ctype;
-    if constexpr (Coordinates::dim == 1) {
-      std::vector<ctype> grid(coordinates.size());
-      for (size_t i = 0; i < coordinates.size(); ++i)
-        grid[i] = coordinates.forward(i);
-      return grid;
-    } else if constexpr (Coordinates::dim == 2) {
-      std::vector<std::array<ctype, 2>> grid(coordinates.size());
-      for (size_t i = 0; i < coordinates.sizes()[0]; ++i)
-        for (size_t j = 0; j < coordinates.sizes()[1]; ++j) {
-          const auto forwarded = coordinates.forward(i, j);
-          grid[i * coordinates.sizes()[1] + j][0] = forwarded[0];
-          grid[i * coordinates.sizes()[1] + j][1] = forwarded[1];
-        }
-      return grid;
-    } else if constexpr (Coordinates::dim == 3) {
-      std::vector<std::array<ctype, 3>> grid(coordinates.size());
-      for (size_t i = 0; i < coordinates.sizes()[0]; ++i)
-        for (size_t j = 0; j < coordinates.sizes()[1]; ++j)
-          for (size_t k = 0; k < coordinates.sizes()[2]; ++k) {
-            const auto forwarded = coordinates.forward(i, j, k);
-            grid[i * coordinates.sizes()[1] * coordinates.sizes()[2] + j * coordinates.sizes()[2] + k][0] =
-                forwarded[0];
-            grid[i * coordinates.sizes()[1] * coordinates.sizes()[2] + j * coordinates.sizes()[2] + k][1] =
-                forwarded[1];
-            grid[i * coordinates.sizes()[1] * coordinates.sizes()[2] + j * coordinates.sizes()[2] + k][2] =
-                forwarded[2];
-          }
-      return grid;
-    } else {
-      throw std::runtime_error("make_grid only works for 1D, 2D, and 3D coordinates");
+    using cortype = device::array<ctype, Coordinates::dim>;
+    std::vector<cortype> grid(coordinates.size());
+    for (size_t i = 0; i < coordinates.size(); ++i) {
+      const auto forwarded = coordinates.forward(coordinates.from_linear_index(i));
+      for (size_t j = 0; j < Coordinates::dim; ++j) {
+        grid[i][j] = forwarded[j];
+      }
     }
+    return grid;
   }
 
   template <typename Coordinates> auto make_idx_grid(const Coordinates &coordinates) -> std::vector<double>
   {
-    if constexpr (Coordinates::dim == 1) {
-      std::vector<double> grid(coordinates.size());
-      for (size_t i = 0; i < coordinates.size(); ++i)
-        grid[i] = i;
-      return grid;
-    } else if constexpr (Coordinates::dim == 2) {
-      std::vector<double> grid(coordinates.size());
-      for (size_t i = 0; i < coordinates.sizes()[0]; ++i)
-        for (size_t j = 0; j < coordinates.sizes()[1]; ++j)
-          grid[i * coordinates.sizes()[1] + j] = i * coordinates.sizes()[1] + j;
-      return grid;
-    } else if constexpr (Coordinates::dim == 3) {
-      std::vector<double> grid(coordinates.size());
-      for (size_t i = 0; i < coordinates.sizes()[0]; ++i)
-        for (size_t j = 0; j < coordinates.sizes()[1]; ++j)
-          for (size_t k = 0; k < coordinates.sizes()[2]; ++k)
-            grid[i * coordinates.sizes()[1] * coordinates.sizes()[2] + j * coordinates.sizes()[2] + k] =
-                i * coordinates.sizes()[1] * coordinates.sizes()[2] + j * coordinates.sizes()[2] + k;
-      return grid;
-    } else {
-      throw std::runtime_error("make_idx_grid only works for 1D, 2D, and 3D coordinates");
+    using ctype = typename Coordinates::ctype;
+    using cortype = device::array<ctype, Coordinates::dim>;
+    std::vector<cortype> grid(coordinates.size());
+    for (size_t i = 0; i < coordinates.size(); ++i) {
+      const auto forwarded = coordinates.from_linear_index(i);
+      for (size_t j = 0; j < Coordinates::dim; ++j) {
+        grid[i][j] = forwarded[j];
+      }
     }
+    return grid;
+  }
+
+  template <typename Coordinates> std::vector<typename Coordinates::ctype> dump_grid(const Coordinates &coordinates)
+  {
+    using ctype = typename Coordinates::ctype;
+    std::vector<typename Coordinates::ctype> grid(coordinates.size() * Coordinates::dim);
+    for (size_t i = 0; i < coordinates.size(); ++i) {
+      for (size_t j = 0; j < Coordinates::dim; ++j) {
+        const auto forwarded = coordinates.forward(coordinates.from_linear_index(i));
+        grid[i * coordinates.dim + j] = forwarded[j];
+      }
+    }
+    return grid;
   }
 
   // Definitions of useful combined coordinates

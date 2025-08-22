@@ -1,5 +1,6 @@
 // standard library
 #include <fstream>
+#include <memory>
 
 // external libraries
 #include <deal.II/lac/block_vector.h>
@@ -7,8 +8,10 @@
 
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/discretization/data/csv_output.hh>
+#include <DiFfRG/discretization/data/data.hh>
 #include <DiFfRG/discretization/data/data_output.hh>
-#include <memory>
+#include <DiFfRG/discretization/data/hdf5_output.hh>
 
 namespace DiFfRG
 {
