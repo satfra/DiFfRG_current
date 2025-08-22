@@ -92,8 +92,8 @@ namespace DiFfRG
     }
     for (auto &csv : csv_files)
       csv.second.flush(time);
-    for (auto &csv : csv_files)
-      csv.second.flush(time);
+    for (auto &hdf : h5_files)
+      hdf.second.flush(time);
   }
 
   template <uint dim, typename VectorType>

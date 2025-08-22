@@ -77,6 +77,7 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
     hdf5_output.scalar("i", 1);
     hdf5_output.scalar("s", "test_string");
     hdf5_output.scalar("c", complex<double>(1.0, 2.0));
+    hdf5_output.scalar("ad", autodiff::real({{1.0, 2.0}}));
     hdf5_output.flush(0.0); // Flush to ensure the data is written
     hdf5_output.scalar("d", 12.0);
     // this should throw, as the datatype does not match
@@ -84,6 +85,7 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
     hdf5_output.scalar("i", 6);
     hdf5_output.scalar("s", "another_string");
     hdf5_output.scalar("c", complex<double>(3.0, 4.0));
+    hdf5_output.scalar("ad", autodiff::real({{2.0, 1.0}}));
     // this should throw, as "d" has already been written
     REQUIRE_THROWS_AS(hdf5_output.scalar("d", 24.0), std::runtime_error);
     // this should throw, as "fff" has not been written in the previous flush
@@ -143,6 +145,18 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
   REQUIRE(c_data.size() == 2);
   REQUIRE(c_data[0] == complex<double>(1.0, 2.0));
   REQUIRE(c_data[1] == complex<double>(3.0, 4.0));
+
+  spdlog::get("log")->info("checking ad...");
+  REQUIRE(scalars_group.has_dataset("ad"));
+  auto ad_dataset = scalars_group.get_dataset("ad");
+  REQUIRE(ad_dataset.datatype() == hdf5::datatype::create<autodiff::real>());
+  std::vector<autodiff::real> ad_data(2);
+  ad_dataset.read(ad_data);
+  REQUIRE(ad_data.size() == 2);
+  REQUIRE(ad_data[0][0] == 1.0);
+  REQUIRE(ad_data[0][1] == 2.0);
+  REQUIRE(ad_data[1][0] == 2.0);
+  REQUIRE(ad_data[1][1] == 1.0);
 
   // Remove the file after the test
   std::filesystem::remove(hdf5_file);

@@ -90,12 +90,32 @@ namespace DiFfRG
   template void HDF5Output::scalar<unsigned long>(const std::string &name, const unsigned long value);
   template void HDF5Output::scalar<int>(const std::string &name, const int value);
   template void HDF5Output::scalar<long>(const std::string &name, const long value);
+  template void HDF5Output::scalar<autodiff::Real<1, double>>(const std::string &name,
+                                                              const autodiff::Real<1, double> value);
+  template void HDF5Output::scalar<autodiff::Real<1, float>>(const std::string &name,
+                                                             const autodiff::Real<1, float> value);
+  template void HDF5Output::scalar<autodiff::Real<2, double>>(const std::string &name,
+                                                              const autodiff::Real<2, double> value);
+  template void HDF5Output::scalar<autodiff::Real<2, float>>(const std::string &name,
+                                                             const autodiff::Real<2, float> value);
+  template void HDF5Output::scalar<autodiff::Real<3, double>>(const std::string &name,
+                                                              const autodiff::Real<3, double> value);
+  template void HDF5Output::scalar<autodiff::Real<3, float>>(const std::string &name,
+                                                             const autodiff::Real<3, float> value);
 
   void HDF5Output::flush(const double time)
   {
 #ifdef H5CPP
     if (written_scalars.size() > 0) scalar<double>("t", time);
     if (initial_scalars.size() == 0) initial_scalars = written_scalars;
+
+    // ensure that initial_scalars have the same content as written_scalars
+    for (const auto &name : initial_scalars) {
+      if (std::find(written_scalars.begin(), written_scalars.end(), name) == written_scalars.end())
+        throw std::runtime_error("HDF5Output::flush: The scalar '" + name +
+                                 "' has not been written before the flush at t = " + std::to_string(time) + ".");
+    }
+
     written_scalars.clear();
     written_maps.clear();
 #endif
