@@ -39,6 +39,15 @@ namespace DiFfRG
                                  "' has not been written before the flush at t = " + std::to_string(time) + ".");
     }
 
+    for (const auto &name : written_maps) {
+      // the series number got incremented in the call, thus the -1
+      const size_t series_number = map_series_numbers[name] - 1;
+      auto n_group = maps.get_group(name);
+      auto group = n_group.get_group(int_to_string(series_number, 6));
+      group.attributes.create_from<double>("time", time);
+      group.attributes.create_from<int>("series_number", series_number);
+    }
+
     written_scalars.clear();
     written_maps.clear();
 #endif

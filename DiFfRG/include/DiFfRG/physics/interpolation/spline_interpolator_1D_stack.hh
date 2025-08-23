@@ -60,11 +60,11 @@ namespace DiFfRG
             "You need to call update() on the original instance.");
 
       // Populate host mirror
-      for (uint i = 0; i < sizes[0]; ++i)
-        for (uint j = 0; j < sizes[1]; ++j)
+      for (size_t i = 0; i < sizes[0]; ++i)
+        for (size_t j = 0; j < sizes[1]; ++j)
           host_data(i, j, 0) = static_cast<NT>(in_data[i * sizes[1] + j]);
       // Build the spline coefficients
-      for (uint i = 0; i < sizes[0]; ++i)
+      for (size_t i = 0; i < sizes[0]; ++i)
         build_y2(i, lower_y1, upper_y1);
       // Copy data to device
       Kokkos::deep_copy(device_data, host_data);
@@ -84,13 +84,13 @@ namespace DiFfRG
       _sidx =
           Kokkos::max(static_cast<decltype(_sidx)>(0), Kokkos::min(_sidx, static_cast<decltype(_sidx)>(sizes[0] - 1)));
       // for the x part
-      const uint lidx = uint(Kokkos::floor(xidx));
-      const uint uidx = lidx + 1;
+      const size_t lidx = size_t(Kokkos::floor(xidx));
+      const size_t uidx = lidx + 1;
       // t is the fractional part of the index
       const ctype t = xidx - lidx;
 
       // the s part is rounded to the nearest integer
-      const uint sidx = uint(Kokkos::round(_sidx));
+      const size_t sidx = size_t(Kokkos::round(_sidx));
 
       // Do the spline interpolation for the x part
       const NT lower = device_data(sidx, lidx, 0);
@@ -158,7 +158,7 @@ namespace DiFfRG
 
   private:
     const Coordinates coordinates;
-    const device::array<uint, 2> sizes;
+    const device::array<size_t, 2> sizes;
 
     using ViewType = Kokkos::View<NT **[2], DefaultMemorySpace, Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
     using HostViewType = typename ViewType::HostMirror;
@@ -183,7 +183,7 @@ namespace DiFfRG
         y2(sidx, 0, 1) = -0.5;
         u[0] = 3.0 * ((yv(sidx, 1, 0) - yv(sidx, 0, 0)) - lower_y1);
       }
-      for (uint i = 1; i < size - 1; i++) {
+      for (size_t i = 1; i < size - 1; i++) {
         sig = 0.5;
         p = sig * y2(sidx, i - 1, 1) + 2.0;
         y2(sidx, i, 1) = (sig - 1.0) / p;

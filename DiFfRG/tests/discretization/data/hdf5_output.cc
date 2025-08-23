@@ -189,32 +189,58 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
     REQUIRE(arr_data[1][2] == 7.0);
 
     // Remove the file after the test
+    spdlog::get("log")->info("Cleanup.");
     std::filesystem::remove(hdf5_file);
   }
 
   SECTION("maps")
   {
+    // Let's set up some coordinates and interpolators to test on
+    const size_t coord_size = GENERATE(take(3, random(8, 64)));
+    LogCoordinates log_coords(coord_size, 0.1, 10.0, 5.);
+    LogCoordinates log_coords_wrong(coord_size, 0.1, 12.0, 5.);
+    LogLogCoordinates loglog_coords(log_coords, log_coords);
+    LogLogCoordinates loglog_coords_wrong(log_coords_wrong, log_coords);
+
+    SplineInterpolator1D<double, LogCoordinates> spline(log_coords);
+    std::vector<double> spline_data(coord_size);
+    for (size_t i = 0; i < coord_size; ++i)
+      spline_data[i] = powr<2>(i);
+    spline.update(spline_data.data());
+
+    LinearInterpolatorND<double, LogLogCoordinates> lin2d(loglog_coords);
+    std::vector<double> lin2d_data(coord_size * coord_size);
+    for (size_t i = 0; i < coord_size; ++i)
+      for (size_t j = 0; j < coord_size; ++j)
+        lin2d_data[i * coord_size + j] = powr<2>(i) + powr<2>(j);
+    lin2d.update(lin2d_data.data());
+
     {
-      HDF5Output hdf5_output(tmp.string(), hdf5FileName, json);
+      // Write the coordinates and interpolators very manually to files
+      {
+        HDF5Output hdf5_output(tmp.string(), hdf5FileName, json);
 
-      LogCoordinates log_coords(8, 0.1, 10.0, 5.);
-      LogLogCoordinates loglog_coords(log_coords, log_coords);
+        hdf5_output.map_coords("log", log_coords);
+        hdf5_output.map_coords("log_w", log_coords_wrong);
+        hdf5_output.map_coords("loglog", loglog_coords);
+        hdf5_output.map_coords("loglog_w", log_coords_wrong);
 
-      SplineInterpolator1D<double, LogCoordinates> spline(log_coords);
-      std::vector<double> spline_data(log_coords.size());
-      for (size_t i = 0; i < log_coords.size(); ++i)
-        spline_data[i] = powr<2>(i);
-      spline.update(spline_data.data());
+        // this should throw, as "log" has already been written
+        REQUIRE_THROWS_AS(hdf5_output.map_coords("log", log_coords), std::runtime_error);
+        // These should throw as the coordinates are inconsistent
+        REQUIRE_THROWS_AS(hdf5_output.map_interp("spline", "log_w", spline), std::runtime_error);
+        REQUIRE_THROWS_AS(hdf5_output.map_interp("lin2d", "loglog_w", lin2d), std::runtime_error);
 
-      hdf5_output.map_coords("log", log_coords);
-      // test 2d coordinates
-      hdf5_output.map_coords("loglog", loglog_coords);
+        hdf5_output.map_interp("spline", "log", spline);
+        hdf5_output.map_interp("lin2d", "loglog", lin2d);
 
-      // this should throw, as "log" has already been written
-      REQUIRE_THROWS_AS(hdf5_output.map_coords("log", log_coords), std::runtime_error);
+        hdf5_output.flush(0.0);                          // Flush to ensure the data is written
+        hdf5_output.map_interp("spline", "log", spline); // This should not throw, as the map is updated
+        hdf5_output.map_interp("lin2d", "loglog", lin2d);
+        hdf5_output.flush(1.0); // Flush again to ensure the data is written
+      }
 
-      hdf5_output.map_interp("spline", "log", spline);
-
+      // Do checks!
       std::filesystem::path hdf5_file(tmp / hdf5FileName);
       REQUIRE(std::filesystem::exists(hdf5_file));
       REQUIRE(std::filesystem::is_regular_file(hdf5_file));
@@ -228,16 +254,16 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
       spdlog::get("log")->info("checking log coordinates...");
       REQUIRE(coords_group.has_dataset("log"));
       auto log_dataset = coords_group.get_dataset("log");
-      std::vector<device::array<double, 1>> log_data(log_coords.size());
+      std::vector<device::array<double, 1>> log_data(coord_size);
       log_dataset.read(log_data);
-      for (size_t i = 0; i < log_coords.size(); ++i) {
+      for (size_t i = 0; i < coord_size; ++i) {
         REQUIRE(log_data[i][0] == log_coords.forward(i));
       }
 
       spdlog::get("log")->info("checking loglog coordinates...");
       REQUIRE(coords_group.has_dataset("loglog"));
       auto loglog_dataset = coords_group.get_dataset("loglog");
-      std::vector<device::array<double, 2>> loglog_data(loglog_coords.size());
+      std::vector<device::array<double, 2>> loglog_data(coord_size * coord_size);
       loglog_dataset.read(loglog_data);
       for (size_t i = 0; i < loglog_coords.size(); ++i) {
         REQUIRE(loglog_data[i] == loglog_coords.forward(loglog_coords.from_linear_index(i)));
@@ -248,37 +274,74 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
       auto maps_group = root.get_group("maps");
       REQUIRE(maps_group.has_group("spline"));
       auto spline_group = maps_group.get_group("spline");
-      REQUIRE(spline_group.has_dataset("data"));
-      auto spline_dataset = spline_group.get_dataset("data");
-      std::vector<double> spline_map_data(log_coords.size());
+      REQUIRE(spline_group.has_group(int_to_string(0, 6)));
+      auto sub_group = spline_group.get_group(int_to_string(0, 6));
+      REQUIRE(sub_group.has_dataset("data"));
+      auto spline_dataset = sub_group.get_dataset("data");
+      std::vector<double> spline_map_data(coord_size);
       spline_dataset.read(spline_map_data);
-      for (size_t i = 0; i < log_coords.size(); ++i) {
+      for (size_t i = 0; i < coord_size; ++i) {
         const auto lcoord = log_coords.forward(log_coords.from_linear_index(i));
         // There will be a small numerical error in the interpolation (~1e-15 - 1e-14), so we use a tolerance
         REQUIRE(
             is_close(spline_map_data[i], device::apply([&](const auto &...x) { return spline(x...); }, lcoord), 1e-14));
       }
 
+      spdlog::get("log")->info("checking lin2d map...");
+      REQUIRE(maps_group.has_group("lin2d"));
+      auto lin2d_group = maps_group.get_group("lin2d");
+      REQUIRE(lin2d_group.has_group(int_to_string(0, 6)));
+      auto lin2d_sub_group = lin2d_group.get_group(int_to_string(0, 6));
+      REQUIRE(lin2d_sub_group.has_dataset("data"));
+      auto lin2d_dataset = lin2d_sub_group.get_dataset("data");
+      std::vector<double> lin2d_map_data(coord_size * coord_size);
+      lin2d_dataset.read(lin2d_map_data);
+      for (size_t i = 0; i < coord_size * coord_size; ++i) {
+        const auto llcoord = loglog_coords.forward(loglog_coords.from_linear_index(i));
+        // There will be a small numerical error in the interpolation (~1e-15 - 1e-14), so we use a tolerance
+        REQUIRE(
+            is_close(lin2d_map_data[i], device::apply([&](const auto &...x) { return lin2d(x...); }, llcoord), 1e-14));
+      }
+
       // Remove the file after the test
+      spdlog::get("log")->info("Cleanup.");
       std::filesystem::remove(hdf5_file);
     }
     {
+      spdlog::get("log")->info("checking convenience writing.");
       HDF5Output hdf5_output(tmp.string(), hdf5FileName, json);
 
-      LogCoordinates log_coords(8, 0.1, 10.0, 5.);
-
-      SplineInterpolator1D<double, LogCoordinates> spline(log_coords);
-      std::vector<double> spline_data(log_coords.size());
-      for (size_t i = 0; i < log_coords.size(); ++i)
-        spline_data[i] = powr<2>(i);
-      spline.update(spline_data.data());
-
-      REQUIRE_NOTHROW(hdf5_output.map_interp("spline", "log", spline));
+      REQUIRE_NOTHROW(hdf5_output.map_interp("spline", spline));
+      REQUIRE_NOTHROW(hdf5_output.map_interp("lin2d", lin2d));
 
       std::filesystem::path hdf5_file(tmp / hdf5FileName);
       REQUIRE(std::filesystem::exists(hdf5_file));
       REQUIRE(std::filesystem::is_regular_file(hdf5_file));
+
+      // Check if the file contains the expected dataset
+      auto file = hdf5::file::open(hdf5_file, hdf5::file::AccessFlags::ReadOnly);
+      auto root = file.root();
+
+      spdlog::get("log")->info("checking spline map...");
+      REQUIRE(root.has_group("maps"));
+      auto maps_group = root.get_group("maps");
+      REQUIRE(maps_group.has_group("spline"));
+      auto spline_group = maps_group.get_group("spline");
+      REQUIRE(spline_group.has_group(int_to_string(0, 6)));
+      auto sub_group = spline_group.get_group(int_to_string(0, 6));
+      REQUIRE(sub_group.has_dataset("data"));
+
+      spdlog::get("log")->info("checking lin2d map...");
+      REQUIRE(maps_group.has_group("lin2d"));
+      auto lin2d_group = maps_group.get_group("lin2d");
+      REQUIRE(lin2d_group.has_group(int_to_string(0, 6)));
+      auto lin2d_sub_group = lin2d_group.get_group(int_to_string(0, 6));
+      REQUIRE(lin2d_sub_group.has_dataset("data"));
+
+      // Skip the explicit data verification here, we just wanted to know that the convenience method worked.
+
       // Remove the file after the test
+      spdlog::get("log")->info("Cleanup.");
       std::filesystem::remove(hdf5_file);
     }
   }

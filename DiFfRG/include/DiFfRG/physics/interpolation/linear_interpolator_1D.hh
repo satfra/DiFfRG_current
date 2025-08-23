@@ -74,7 +74,7 @@ namespace DiFfRG
             "LinearInterpolator1D: You probably called update() on a copied instance. This is not allowed. "
             "You need to call update() on the original instance.");
       // Populate host mirror
-      for (uint i = 0; i < size; ++i)
+      for (size_t i = 0; i < size; ++i)
         host_data[i] = static_cast<NT>(in_data[i]);
       // Copy data to device
       Kokkos::deep_copy(device_data, host_data);
@@ -103,8 +103,8 @@ namespace DiFfRG
       // t is the fractional part of the index
       const auto t = idx - Kokkos::floor(idx);
       // Do the linear interpolation
-      const auto lower = device_data[uint(Kokkos::floor(idx))];
-      const auto upper = device_data[uint(Kokkos::ceil(idx))];
+      const auto lower = device_data[size_t(Kokkos::floor(idx))];
+      const auto upper = device_data[size_t(Kokkos::ceil(idx))];
       if constexpr (std::is_arithmetic_v<NT>)
         return Kokkos::fma(t, upper, Kokkos::fma(-t, lower, lower));
       else
@@ -151,7 +151,7 @@ namespace DiFfRG
 
   private:
     const Coordinates coordinates;
-    const uint size;
+    const size_t size;
 
     using ViewType = Kokkos::View<NT *, DefaultMemorySpace, Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
     using HostViewType = typename ViewType::HostMirror;

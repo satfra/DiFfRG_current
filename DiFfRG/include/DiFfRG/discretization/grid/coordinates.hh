@@ -127,6 +127,17 @@ namespace DiFfRG
       }
     }
 
+    std::string to_string() const
+    {
+      std::string ret = "CoordinatePackND(";
+      constexpr_for<0, dim, 1>([&](auto i) {
+        ret += device::get<i>(coordinates).to_string();
+        if (i + 1 < dim) ret += ", ";
+      });
+      ret += ")";
+      return ret;
+    }
+
   protected:
     const device::tuple<Coordinates...> coordinates;
   };
@@ -193,6 +204,21 @@ namespace DiFfRG
       return result;
     }
 
+    std::string to_string() const
+    {
+      std::string ret = "SubCoordinates(" + Base::to_string() + ", {";
+      for (uint i = 0; i < dim; ++i) {
+        ret += std::to_string(offsets[i]);
+        if (i + 1 < dim) ret += ", ";
+      }
+      ret += "}, {";
+      for (uint i = 0; i < dim; ++i) {
+        ret += std::to_string(m_sizes[i]);
+        if (i + 1 < dim) ret += ", ";
+      }
+      return ret + "})";
+    }
+
   private:
     device::array<size_t, dim> offsets, m_sizes;
     const size_t m_size;
@@ -256,6 +282,12 @@ namespace DiFfRG
     {
       if constexpr (!std::is_same_v<NT, NT2>) return false; // Different types, cannot be equal
       return lhs.start == rhs.start && lhs.stop == rhs.stop && lhs.grid_extent == rhs.grid_extent;
+    }
+
+    std::string to_string() const
+    {
+      return "LinearCoordinates1D(" + std::to_string(grid_extent) + ", " + std::to_string(start) + ", " +
+             std::to_string(stop) + ")";
     }
 
   private:
@@ -336,6 +368,12 @@ namespace DiFfRG
       if constexpr (!std::is_same_v<NT, NT2>) return false; // Different types, cannot be equal
       return lhs.start == rhs.start && lhs.stop == rhs.stop && lhs.bias == rhs.bias &&
              lhs.grid_extent == rhs.grid_extent;
+    }
+
+    std::string to_string() const
+    {
+      return "LogarithmicCoordinates1D(" + std::to_string(start) + ", " + std::to_string(stop) + ", " +
+             std::to_string(bias) + ", " + std::to_string(grid_extent) + ")";
     }
 
   private:
