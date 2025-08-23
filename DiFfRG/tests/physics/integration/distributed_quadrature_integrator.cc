@@ -27,7 +27,7 @@ TEST_CASE("Test distributed integration", "[integration][quadrature]")
       using Kokkos::abs;
       if constexpr (std::is_same_v<type, autodiff::real>)
         return abs(autodiff::val(val)) + abs(autodiff::grad(val));
-      else if constexpr (std::is_same_v<type, cxReal>)
+      else if constexpr (std::is_same_v<type, cxreal>)
         return abs(autodiff::val(val)) + abs(autodiff::grad(val));
       else
         return abs(val);
@@ -37,7 +37,7 @@ TEST_CASE("Test distributed integration", "[integration][quadrature]")
 
     std::array<ctype, dim> ext_min;
     std::array<ctype, dim> ext_max;
-    std::array<uint, dim> grid_size;
+    std::array<size_t, dim> grid_size;
     std::array<QuadratureType, dim> quad_type;
 
     for (uint d = 0; d < dim; ++d) {

@@ -35,9 +35,9 @@ namespace DiFfRG
      */
     using execution_space = ExecutionSpace;
 
-    QuadratureIntegrator(QuadratureProvider &quadrature_provider, const std::array<size_t, dim> _grid_size,
-                         std::array<ctype, dim> grid_min, std::array<ctype, dim> grid_max,
-                         const std::array<QuadratureType, dim> quadrature_type)
+    QuadratureIntegrator(QuadratureProvider &quadrature_provider, const std::array<size_t, dim> &_grid_size,
+                         const std::array<ctype, dim> &grid_min, const std::array<ctype, dim> &grid_max,
+                         const std::array<QuadratureType, dim> &quadrature_type)
         : quadrature_provider(quadrature_provider)
     {
       for (size_t i = 0; i < dim; ++i) {
@@ -51,7 +51,7 @@ namespace DiFfRG
       set_grid_extents(grid_min, grid_max);
     }
 
-    void set_grid_extents(const std::array<ctype, dim> grid_min, const std::array<ctype, dim> grid_max)
+    void set_grid_extents(const std::array<ctype, dim> &grid_min, const std::array<ctype, dim> &grid_max)
     {
       for (size_t i = 0; i < dim; ++i) {
         grid_extents[0][i] = grid_min[i];

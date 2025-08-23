@@ -18,8 +18,8 @@ TEST_CASE("Test", "[model]")
   std::vector<int> data{GENERATE(take(10, random(0, 100))), GENERATE(take(10, random(0, 100))),
                         GENERATE(take(10, random(0, 100))), GENERATE(take(10, random(0, 100)))};
 
-  constexpr auto idxu = idxf["u"];
-  constexpr auto idxv = idxf["v"];
+  [[maybe_unused]] constexpr auto idxu = idxf["u"];
+  [[maybe_unused]] constexpr auto idxv = idxf["v"];
 
   const auto data_u = data[idxf["u"]];
   const auto data_v = data[idxf["v"]];

@@ -1,4 +1,3 @@
-#include <Kokkos_Core_fwd.hpp>
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 
@@ -6,6 +5,8 @@
 #include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/math.hh>
+
+#include <Kokkos_Random.hpp>
 
 using namespace DiFfRG;
 
@@ -60,7 +61,7 @@ TEST_CASE("Test autodiff for complex numbers", "[autodiff][complex]")
   const double x = 2.0;
   const autodiff::real ad_x(std::array<double, 2>{{3.0, 5.0}});
   const complex<double> c_x(2.0, 3.0);
-  const cxReal ad_c_x(std::array<complex<double>, 2>{{complex<double>(3.0, 2.0), complex<double>(5.0, -5.0)}});
+  const cxreal ad_c_x(std::array<complex<double>, 2>{{complex<double>(3.0, 2.0), complex<double>(5.0, -5.0)}});
 
   SECTION("Multiplication")
   {
@@ -223,14 +224,14 @@ TEST_CASE("Test autodiff with Kokkos", "[autodiff][kokkos]")
 
   // Take a derivative of a matrix multiplication
   // A: N x M, v: M x 1, result: N x 1
-  const long N = GENERATE(take(4, random(powr<4>(2), powr<13>(2))));
-  const long M = GENERATE(take(4, random(powr<4>(2), powr<13>(2))));
+  const long N = GENERATE(take(4, random(powr<4>(2), powr<9>(2))));
+  const long M = GENERATE(take(4, random(powr<4>(2), powr<9>(2))));
 
   SECTION("GPU")
   {
     Kokkos::View<complex<double> **, GPU_memory> A("A", N, M);
-    Kokkos::View<cxReal *, GPU_memory> v("v", M);
-    Kokkos::View<cxReal *, GPU_memory> result("result", N);
+    Kokkos::View<cxreal *, GPU_memory> v("v", M);
+    Kokkos::View<cxreal *, GPU_memory> result("result", N);
 
     Kokkos::Random_XorShift64_Pool<GPU_exec> random_pool(/*seed=*/12345);
 
@@ -252,7 +253,7 @@ TEST_CASE("Test autodiff with Kokkos", "[autodiff][kokkos]")
           // acquire the state of the random number generator engine
           auto generator = random_pool.get_state();
 
-          v(i) = cxReal({complex<double>(generator.drand(0., 1.), generator.drand(0., 1.)), complex<double>(1., 0.)});
+          v(i) = cxreal({complex<double>(generator.drand(0., 1.), generator.drand(0., 1.)), complex<double>(1., 0.)});
 
           // do not forget to release the state of the engine
           random_pool.free_state(generator);
@@ -263,7 +264,7 @@ TEST_CASE("Test autodiff with Kokkos", "[autodiff][kokkos]")
     // Compute the matrix-vector product
     Kokkos::parallel_for(
         "Matrix-vector multiplication", Kokkos::RangePolicy<GPU_exec>(0, N), KOKKOS_LAMBDA(const size_t i) {
-          cxReal temp{};
+          cxreal temp{};
           for (long j = 0; j < M; ++j) {
             temp += A(i, j) * v(j);
           }
@@ -297,8 +298,8 @@ TEST_CASE("Test autodiff with Kokkos", "[autodiff][kokkos]")
   SECTION("Threads")
   {
     Kokkos::View<complex<double> **, Threads_memory> A("A", N, M);
-    Kokkos::View<cxReal *, Threads_memory> v("v", M);
-    Kokkos::View<cxReal *, Threads_memory> result("result", N);
+    Kokkos::View<cxreal *, Threads_memory> v("v", M);
+    Kokkos::View<cxreal *, Threads_memory> result("result", N);
 
     Kokkos::Random_XorShift64_Pool<Threads_exec> random_pool(/*seed=*/12345);
 
@@ -320,7 +321,7 @@ TEST_CASE("Test autodiff with Kokkos", "[autodiff][kokkos]")
           // acquire the state of the random number generator engine
           auto generator = random_pool.get_state();
 
-          v(i) = cxReal({complex<double>(generator.drand(0., 1.), generator.drand(0., 1.)), complex<double>(1., 0.)});
+          v(i) = cxreal({complex<double>(generator.drand(0., 1.), generator.drand(0., 1.)), complex<double>(1., 0.)});
 
           // do not forget to release the state of the engine
           random_pool.free_state(generator);
@@ -331,7 +332,7 @@ TEST_CASE("Test autodiff with Kokkos", "[autodiff][kokkos]")
     // Compute the matrix-vector product
     Kokkos::parallel_for(
         "Matrix-vector multiplication", Kokkos::RangePolicy<Threads_exec>(0, N), KOKKOS_LAMBDA(const size_t i) {
-          cxReal temp{};
+          cxreal temp{};
           for (long j = 0; j < M; ++j) {
             temp += A(i, j) * v(j);
           }

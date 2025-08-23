@@ -18,10 +18,10 @@ TEST_CASE("Test 1D Logarithmic coordinates", "[1D][coordinates]")
   LogarithmicCoordinates1D<float> coords(p_size, p_start, p_stop, p_bias);
 
   const auto grid = make_grid(coords);
-  CHECK(is_close(grid[0], p_start, 1e-8));
+  CHECK(is_close(grid[0][0], p_start, 1e-8f));
   for (uint i = 1; i < grid.size() - 1; ++i)
-    CHECK(grid[i] > grid[i - 1]);
-  CHECK(is_close(grid[grid.size() - 1], p_stop, 1e-5));
+    CHECK(grid[i][0] > grid[i - 1][0]);
+  CHECK(is_close(grid[grid.size() - 1][0], p_stop, 1e-5));
 }
 
 TEST_CASE("Test 1D Linear coordinates", "[1D][coordinates]")
@@ -33,10 +33,10 @@ TEST_CASE("Test 1D Linear coordinates", "[1D][coordinates]")
   LinearCoordinates1D<float> coords(p_size, p_start, p_stop);
 
   const auto grid = make_grid(coords);
-  CHECK(is_close(grid[0], p_start, 1e-8));
+  CHECK(is_close(grid[0][0], p_start, 1e-8f));
   for (uint i = 1; i < grid.size() - 1; ++i)
-    CHECK(grid[i] > grid[i - 1]);
-  CHECK(is_close(grid[grid.size() - 1], p_stop, 1e-5));
+    CHECK(grid[i][0] > grid[i - 1][0]);
+  CHECK(is_close(grid[grid.size() - 1][0], p_stop, 1e-5f));
 }
 
 TEST_CASE("Test 2D CoordinatePackND with two LogarithmicCoordinates1D", "[2D][coordinates]")

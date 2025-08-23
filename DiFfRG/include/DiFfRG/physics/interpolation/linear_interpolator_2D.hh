@@ -36,23 +36,6 @@ namespace DiFfRG
       // Create host mirror
       host_data = Kokkos::create_mirror_view(device_data);
     }
-    /**
-     * @brief Construct a LinearInterpolator2D object from a pointer to data and a coordinate system.
-     *
-     * @param data pointer to the data
-     * @param size size of the data
-     * @param coordinates coordinate system of the data
-     */
-    LinearInterpolator2D(const NT *in_data, const Coordinates &coordinates)
-        : coordinates(coordinates), sizes(coordinates.sizes()), total_size(sizes[0] * sizes[1]), other_instance(nullptr)
-    {
-      // Allocate Kokkos View
-      device_data = ViewType("LinearInterpolator2D_data", sizes[0], sizes[1]);
-      // Create host mirror
-      host_data = Kokkos::create_mirror_view(device_data);
-      // Update device data
-      update(in_data);
-    }
 
     /**
      * @brief Copy constructor for LinearInterpolator2D. This is ONLY for usage inside Kokkos parallel loops.
@@ -73,10 +56,23 @@ namespace DiFfRG
         throw std::runtime_error(
             "LinearInterpolator2D: You probably called update() on a copied instance. This is not allowed. "
             "You need to call update() on the original instance.");
+      // Make a View from the input data
+      Kokkos::View<const NT2 **, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> in_view(in_data, sizes[0],
+                                                                                                     sizes[1]);
+      update(in_view);
+    }
+
+    template <typename View>
+      requires Kokkos::is_view<View>::value
+    void update(const View &view)
+    {
+      // Check if the host data is already allocated
+      if (!host_data.is_allocated())
+        throw std::runtime_error(
+            "LinearInterpolator2D: You probably called update() on a copied instance. This is not allowed. "
+            "You need to call update() on the original instance.");
       // Populate host mirror
-      for (size_t i = 0; i < sizes[0]; ++i)
-        for (size_t j = 0; j < sizes[1]; ++j)
-          host_data(i, j) = static_cast<NT>(in_data[i * sizes[1] + j]);
+      Kokkos::deep_copy(host_data, view);
       // Copy data to device
       Kokkos::deep_copy(device_data, host_data);
     }
@@ -126,6 +122,9 @@ namespace DiFfRG
                corner11 * (1 - tx) * (1 - ty);
     }
 
+    auto &CPU() const { return get_on<CPU_memory>(); }
+    auto &GPU() const { return get_on<GPU_memory>(); }
+
     template <typename MemorySpace> auto &get_on() const
     {
       // Check if the host data is already allocated
@@ -140,10 +139,11 @@ namespace DiFfRG
         // Create a new instance with the same data but in the requested memory space
         if (other_instance == nullptr) {
           other_instance = std::make_shared<LinearInterpolator2D<NT, Coordinates, MemorySpace>>(coordinates);
-          other_instance->other_instance = std::shared_ptr<decltype(*this)>(this, [](decltype(*this) *) {});
+          other_instance->other_instance = std::shared_ptr<std::decay_t<decltype(*this)>>(
+              const_cast<std::decay_t<decltype(*this)> *>(this), [](std::decay_t<decltype(*this)> *) {});
         }
         // Copy the data from the current instance to the new one
-        other_instance->update(host_data.data());
+        other_instance->update(host_data);
         // Return the new instance
         return *other_instance;
       }
@@ -164,6 +164,8 @@ namespace DiFfRG
             "You need to call data() on the original instance.");
       return host_data.data();
     }
+
+    friend class LinearInterpolator2D<NT, Coordinates, other_memory_space>;
 
   private:
     const Coordinates coordinates;

@@ -3,7 +3,7 @@
 // external libraries
 #include <deal.II/base/point.h>
 #include <deal.II/dofs/dof_handler.h>
-// #include <deal.II/dofs/dof_renumbering.h>
+#include <deal.II/dofs/dof_renumbering.h>
 #include <deal.II/dofs/dof_tools.h>
 #include <deal.II/fe/fe_dgq.h>
 #include <deal.II/fe/fe_system.h>

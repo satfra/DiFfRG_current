@@ -1,5 +1,3 @@
-
-#include "catch2/generators/catch_generators.hpp"
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 
@@ -7,6 +5,7 @@
 
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/discretization/FEM/cg.hh>
 #include <DiFfRG/discretization/discretization.hh>
 #include <DiFfRG/model/model.hh>
 #include <DiFfRG/physics/physics.hh>

@@ -187,8 +187,7 @@ namespace DiFfRG
   }
 
   template <typename VectorType>
-  FEOutput<0, VectorType>::FEOutput(std::string top_folder, std::string output_name, std::string output_folder,
-                                    const JSONValue &json)
+  FEOutput<0, VectorType>::FEOutput(std::string, std::string, std::string, const JSONValue &)
   {
   }
 

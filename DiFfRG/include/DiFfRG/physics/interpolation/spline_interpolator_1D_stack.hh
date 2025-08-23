@@ -59,13 +59,34 @@ namespace DiFfRG
             "SplineInterpolator1DStack: You probably called update() on a copied instance. This is not allowed. "
             "You need to call update() on the original instance.");
 
+      Kokkos::View<const NT2 **, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> in_view(in_data, sizes[0],
+                                                                                                     sizes[1]);
+      update(in_view, lower_y1, upper_y1);
+    }
+
+    template <typename View>
+      requires(Kokkos::is_view<View>::value && (View::rank == 2 || View::rank == 3))
+    void update(const View &view, const ctype lower_y1 = std::numeric_limits<ctype>::max(),
+                const ctype upper_y1 = std::numeric_limits<ctype>::max())
+    {
+      // Check if the host data is already allocated
+      if (!host_data.is_allocated())
+        throw std::runtime_error(
+            "LinearInterpolator2D: You probably called update() on a copied instance. This is not allowed. "
+            "You need to call update() on the original instance.");
+
       // Populate host mirror
-      for (size_t i = 0; i < sizes[0]; ++i)
-        for (size_t j = 0; j < sizes[1]; ++j)
-          host_data(i, j, 0) = static_cast<NT>(in_data[i * sizes[1] + j]);
-      // Build the spline coefficients
-      for (size_t i = 0; i < sizes[0]; ++i)
-        build_y2(i, lower_y1, upper_y1);
+      if constexpr (View::rank == ViewType::rank) {
+        Kokkos::deep_copy(host_data, view);
+      } else {
+        auto host_data_subview = Kokkos::subview(host_data, Kokkos::ALL(), Kokkos::ALL(), 0);
+        Kokkos::deep_copy(host_data_subview, view);
+
+        // Build the spline coefficients
+        for (size_t i = 0; i < sizes[0]; ++i)
+          build_y2(i, lower_y1, upper_y1);
+      }
+
       // Copy data to device
       Kokkos::deep_copy(device_data, host_data);
     }
@@ -117,6 +138,9 @@ namespace DiFfRG
       return host_data.data()[i]; // Access the host data directly
     }
 
+    auto &CPU() const { return get_on<CPU_memory>(); }
+    auto &GPU() const { return get_on<GPU_memory>(); }
+
     template <typename MemorySpace> auto &get_on() const
     {
       // Check if the host data is already allocated
@@ -131,10 +155,11 @@ namespace DiFfRG
         // Create a new instance with the same data but in the requested memory space
         if (other_instance == nullptr) {
           other_instance = std::make_shared<SplineInterpolator1DStack<NT, Coordinates, MemorySpace>>(coordinates);
-          other_instance->other_instance = std::shared_ptr<decltype(*this)>(this, [](decltype(*this) *) {});
+          other_instance->other_instance = std::shared_ptr<std::decay_t<decltype(*this)>>(
+              const_cast<std::decay_t<decltype(*this)> *>(this), [](std::decay_t<decltype(*this)> *) {});
         }
         // Copy the data from the current instance to the new one
-        other_instance->update(host_data.data());
+        other_instance->update(host_data);
         // Return the new instance
         return *other_instance;
       }
@@ -155,6 +180,8 @@ namespace DiFfRG
             "You need to call data() on the original instance.");
       return host_data.data();
     }
+
+    friend class SplineInterpolator1DStack<NT, Coordinates, other_memory_space>;
 
   private:
     const Coordinates coordinates;

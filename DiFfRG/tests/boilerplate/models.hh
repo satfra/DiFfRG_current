@@ -6,6 +6,9 @@
 
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/discretization/FEM/cg.hh>
+#include <DiFfRG/discretization/FEM/dg.hh>
+#include <DiFfRG/discretization/FEM/ldg.hh>
 #include <DiFfRG/model/model.hh>
 
 namespace DiFfRG

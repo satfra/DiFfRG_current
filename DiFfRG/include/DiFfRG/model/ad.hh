@@ -58,9 +58,8 @@ namespace DiFfRG
         template <uint n, typename Vector> static std::array<autodiff::real, n> vector_to_AD(const Vector &v)
         {
           std::array<autodiff::real, n> x;
-          for (uint i = 0; i < n; ++i) {
+          for (uint i = 0; i < n; ++i)
             x[i] = v[i];
-          }
           return x;
         }
 

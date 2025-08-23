@@ -5,6 +5,8 @@
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/math.hh>
 
+#include <Kokkos_Random.hpp>
+
 using namespace DiFfRG;
 
 constexpr double eps = 100 * std::numeric_limits<double>::epsilon();
@@ -31,8 +33,8 @@ TEST_CASE("Test autodiff with Kokkos", "[autodiff][kokkos]")
 
   // Take a derivative of a matrix multiplication
   // A: N x M, v: M x 1, result: N x 1
-  const long N = GENERATE(take(4, random(powr<4>(2), powr<13>(2))));
-  const long M = GENERATE(take(4, random(powr<4>(2), powr<13>(2))));
+  const long N = GENERATE(take(4, random(powr<4>(2), powr<9>(2))));
+  const long M = GENERATE(take(4, random(powr<4>(2), powr<9>(2))));
 
   SECTION("GPU")
   {

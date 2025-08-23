@@ -15,6 +15,12 @@ namespace DiFfRG
   template <typename T>
   concept IsContainer = requires(T x) { x[0]; };
 
+  template <size_t N, typename T>
+  concept SizedContainer = requires(T x) {
+    x[0];
+    requires x.size() == N;
+  };
+
   namespace get_type
   {
     namespace internal

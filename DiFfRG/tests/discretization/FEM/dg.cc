@@ -5,6 +5,7 @@
 
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/discretization/FEM/dg.hh>
 #include <DiFfRG/discretization/discretization.hh>
 #include <DiFfRG/model/model.hh>
 #include <DiFfRG/physics/physics.hh>

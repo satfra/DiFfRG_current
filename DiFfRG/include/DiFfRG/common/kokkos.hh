@@ -53,28 +53,8 @@ namespace DiFfRG
                 "CPU memory space must be the same as Threads memory space");
   static_assert(std::is_same_v<CPU_memory, TBB_memory>, "CPU memory space must be the same as TBB memory space");
 
-  template <typename MemorySpace, typename Enable = void> class GetOtherMemorySpaceHelper;
-  template <> struct GetOtherMemorySpaceHelper<GPU_memory> {
-    using type = CPU_memory;
-  };
-  // template <>
-  template <typename T>
-  struct GetOtherMemorySpaceHelper<
-      T, std::enable_if_t<std::is_same_v<T, GPU_memory> && !std::is_same_v<CPU_memory, GPU_memory>>> {
-    using type = GPU_memory;
-  };
-  template <> struct GetOtherMemorySpaceHelper<GPU_exec> {
-    using type = CPU_memory;
-  };
-  template <typename T>
-  struct GetOtherMemorySpaceHelper<
-      T, std::enable_if_t<std::is_same_v<T, Threads_exec> && !std::is_same_v<Threads_exec, GPU_exec>>> {
-    using type = GPU_memory;
-  };
-  template <> struct GetOtherMemorySpaceHelper<TBB_exec> {
-    using type = GPU_memory;
-  };
-  template <typename MemorySpace> using other_memory_space_t = typename GetOtherMemorySpaceHelper<MemorySpace>::type;
+  template <typename MemorySpace>
+  using other_memory_space_t = std::conditional_t<std::is_same_v<MemorySpace, GPU_memory>, CPU_memory, GPU_memory>;
 
   /**
    * @brief An extension of the Kokkos::Sum reducer that adds a constant value to the result.

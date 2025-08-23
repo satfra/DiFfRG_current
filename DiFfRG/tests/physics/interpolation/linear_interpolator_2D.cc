@@ -9,7 +9,7 @@
 using namespace DiFfRG;
 
 TEMPLATE_TEST_CASE("Test 2D interpolation", "[float][double][complex][autodiff][interpolation][2D]", float, double,
-                   complex<double>, complex<float>, autodiff::real)
+                   complex<double>, complex<float>, autodiff::real, cxreal)
 {
   using T = TestType;
 
@@ -28,21 +28,20 @@ TEMPLATE_TEST_CASE("Test 2D interpolation", "[float][double][complex][autodiff][
   const ctype p2_stop = GENERATE(take(2, random(1, 100))) + p1_start;
   const int p2_size = GENERATE(take(2, random(10, 100)));
 
-  std::vector<T> empty_data(p1_size * p2_size, 0.);
-  std::vector<T> in_data(p1_size * p2_size, 0.);
+  std::vector<T> in_data(p1_size * p2_size);
   for (int i = 0; i < p1_size; ++i)
     for (int j = 0; j < p2_size; ++j)
       in_data[i * p2_size + j] = j;
 
   Coordinates2D coords(Coordinates1D(p1_size, p1_start, p1_stop), Coordinates1D(p2_size, p2_start, p2_stop));
-  LinearInterpolatorND<T, Coordinates2D, CPU_memory> interpolator(empty_data.data(), coords);
+  LinearInterpolatorND<T, Coordinates2D, CPU_memory> interpolator(coords);
   interpolator.update(in_data.data());
 
   const int n_el = GENERATE(take(2, random(2, 200)));
   const ctype p1_pt = (p1_start + GENERATE(take(3, random(0., 1.))) * (p1_stop - p1_start));
   const ctype p2_pt = (p2_start + GENERATE(take(3, random(0., 1.))) * (p2_stop - p2_start));
 
-  const auto res_host = interpolator(p1_pt, p2_pt) * ctype(n_el);
+  const auto res_host = interpolator.CPU()(p1_pt, p2_pt) * ctype(n_el);
 
   auto [p1_idx, p2_idx] = coords.backward(p1_pt, p2_pt);
   p1_idx = std::max((ctype)0, std::min(p1_idx, ctype(p1_size)));
@@ -52,4 +51,57 @@ TEMPLATE_TEST_CASE("Test 2D interpolation", "[float][double][complex][autodiff][
   if (!is_close(res_host, res_local, 1e-6 * n_el))
     std::cout << "host: " << res_host << " local: " << res_local << std::endl;
   CHECK(is_close(res_host, res_local, 1e-6 * n_el));
+}
+
+TEMPLATE_TEST_CASE("Test 2D interpolation GPU", "[float][double][complex][autodiff][interpolation][2D]", float, double,
+                   complex<double>, complex<float>, autodiff::real, cxreal)
+{
+  using T = TestType;
+
+  DiFfRG::Init();
+
+  using ctype = typename get_type::ctype<T>;
+
+  using Coordinates1D = LinearCoordinates1D<ctype>;
+  using Coordinates2D = CoordinatePackND<Coordinates1D, Coordinates1D>;
+
+  const ctype p1_start = GENERATE(take(2, random(1e-6, 1e-1)));
+  const ctype p1_stop = GENERATE(take(2, random(1, 100))) + p1_start;
+  const int p1_size = GENERATE(take(2, random(10, 100)));
+
+  const ctype p2_start = GENERATE(take(2, random(1e-6, 1e-1)));
+  const ctype p2_stop = GENERATE(take(2, random(1, 100))) + p1_start;
+  const int p2_size = GENERATE(take(2, random(10, 100)));
+
+  std::vector<T> in_data(p1_size * p2_size);
+  for (int i = 0; i < p1_size; ++i)
+    for (int j = 0; j < p2_size; ++j)
+      in_data[i * p2_size + j] = j;
+
+  Coordinates2D coords(Coordinates1D(p1_size, p1_start, p1_stop), Coordinates1D(p2_size, p2_start, p2_stop));
+  LinearInterpolatorND<T, Coordinates2D, GPU_memory> interpolator(coords);
+  interpolator.update(in_data.data());
+
+  const int n_el = GENERATE(take(2, random(2, 200)));
+  const ctype p1_pt = (p1_start + GENERATE(take(3, random(0., 1.))) * (p1_stop - p1_start));
+  const ctype p2_pt = (p2_start + GENERATE(take(3, random(0., 1.))) * (p2_stop - p2_start));
+
+  const auto res_host = interpolator.CPU().GPU().CPU()(p1_pt, p2_pt) * ctype(n_el);
+
+  auto [p1_idx, p2_idx] = coords.backward(p1_pt, p2_pt);
+  p1_idx = std::max((ctype)0, std::min(p1_idx, ctype(p1_size)));
+  p2_idx = std::max((ctype)0, std::min(p2_idx, ctype(p2_size)));
+  const auto res_local = p2_idx * ctype(n_el);
+
+  T res_gpu;
+  Kokkos::parallel_reduce(
+      "Get one point", Kokkos::RangePolicy(0, n_el),
+      KOKKOS_LAMBDA(const uint, T &update) { update += interpolator(p1_pt, p2_pt); }, res_gpu);
+
+  if (!is_close(res_host, res_local, 1e-6 * n_el))
+    std::cout << "host: " << res_host << " local: " << res_local << std::endl;
+  if (!is_close(res_gpu, res_local, 1e-6 * n_el))
+    std::cout << "gpu: " << res_gpu << " local: " << res_local << std::endl;
+  CHECK(is_close(res_host, res_local, 1e-6 * n_el));
+  CHECK(is_close(res_gpu, res_local, 1e-6 * n_el));
 }
