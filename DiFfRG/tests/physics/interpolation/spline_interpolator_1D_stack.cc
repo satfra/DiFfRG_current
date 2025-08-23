@@ -8,6 +8,25 @@
 
 using namespace DiFfRG;
 
+TEST_CASE("Test template constraints for SplineInterpolator1DStack", "[interpolator]")
+{
+  STATIC_REQUIRE(is_interpolator<SplineInterpolator1DStack<double, BosonicCoordinates1DFiniteT<>, CPU_memory>>);
+  STATIC_REQUIRE(
+      is_interpolator<SplineInterpolator1DStack<complex<double>, BosonicCoordinates1DFiniteT<>, CPU_memory>>);
+  STATIC_REQUIRE(is_interpolator<SplineInterpolator1DStack<autodiff::real, BosonicCoordinates1DFiniteT<>, CPU_memory>>);
+  STATIC_REQUIRE(is_interpolator<SplineInterpolator1DStack<cxreal, BosonicCoordinates1DFiniteT<>, CPU_memory>>);
+
+  STATIC_REQUIRE(is_interpolator<SplineInterpolator1DStack<double, FermionicCoordinates1DFiniteT<>, GPU_memory>>);
+  STATIC_REQUIRE(
+      is_interpolator<SplineInterpolator1DStack<complex<double>, FermionicCoordinates1DFiniteT<>, GPU_memory>>);
+  STATIC_REQUIRE(
+      is_interpolator<SplineInterpolator1DStack<autodiff::real, FermionicCoordinates1DFiniteT<>, GPU_memory>>);
+  STATIC_REQUIRE(is_interpolator<SplineInterpolator1DStack<cxreal, FermionicCoordinates1DFiniteT<>, GPU_memory>>);
+
+  STATIC_REQUIRE(!is_interpolator<int>);
+  STATIC_REQUIRE(!is_interpolator<std::array<double, 3>>);
+}
+
 TEMPLATE_TEST_CASE("Test 1D spline interpolation stack", "[float][double][complex][autodiff]", double, complex<double>,
                    autodiff::real, cxreal)
 {

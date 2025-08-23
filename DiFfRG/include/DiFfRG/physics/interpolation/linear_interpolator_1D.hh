@@ -21,6 +21,7 @@ namespace DiFfRG
     using other_memory_space = other_memory_space_t<DefaultMemorySpace>;
     using ctype = typename Coordinates::ctype;
     using value_type = NT;
+    static constexpr size_t dim = 1;
 
     /**
      * @brief Construct a LinearInterpolator1D with internal, zeroed data and a coordinate system.

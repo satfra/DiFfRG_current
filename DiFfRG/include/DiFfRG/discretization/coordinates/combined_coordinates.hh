@@ -3,8 +3,8 @@
 // DiFfRG
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/math.hh>
-#include <DiFfRG/discretization/grid/coordinates.hh>
-#include <DiFfRG/discretization/grid/stack_coordinates.hh>
+#include <DiFfRG/discretization/coordinates/coordinates.hh>
+#include <DiFfRG/discretization/coordinates/stack_coordinates.hh>
 
 namespace DiFfRG
 {

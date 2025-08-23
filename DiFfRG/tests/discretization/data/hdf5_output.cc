@@ -22,7 +22,7 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
 
   // Output should throw an error if H5CPP is not enabled
   REQUIRE_THROWS_AS(hdf5_output.scalar("d", 42.0), std::runtime_error);
-  REQUIRE_THROWS_AS(hdf5_output.map_coords("coords", DiFfRG::Coordinates1D<double>({0.0, 1.0})), std::runtime_error);
+  REQUIRE_THROWS_AS(hdf5_output.map("coords", DiFfRG::Coordinates1D<double>({0.0, 1.0})), std::runtime_error);
   REQUIRE_NOTHROW(hdf5_output.flush());
 
   exit(0);
@@ -220,23 +220,24 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
       {
         HDF5Output hdf5_output(tmp.string(), hdf5FileName, json);
 
-        hdf5_output.map_coords("log", log_coords);
-        hdf5_output.map_coords("log_w", log_coords_wrong);
-        hdf5_output.map_coords("loglog", loglog_coords);
-        hdf5_output.map_coords("loglog_w", log_coords_wrong);
+        hdf5_output.map("log", log_coords);
+        hdf5_output.map("log_w", log_coords_wrong);
+        hdf5_output.map("loglog", loglog_coords);
+        hdf5_output.map("loglog_w", log_coords_wrong);
 
         // this should throw, as "log" has already been written
-        REQUIRE_THROWS_AS(hdf5_output.map_coords("log", log_coords), std::runtime_error);
+        REQUIRE_THROWS_AS(hdf5_output.map("log", log_coords), std::runtime_error);
         // These should throw as the coordinates are inconsistent
-        REQUIRE_THROWS_AS(hdf5_output.map_interp("spline", "log_w", spline), std::runtime_error);
-        REQUIRE_THROWS_AS(hdf5_output.map_interp("lin2d", "loglog_w", lin2d), std::runtime_error);
+        REQUIRE_THROWS_AS(hdf5_output.map("spline", "log_w", spline), std::runtime_error);
+        REQUIRE_THROWS_AS(hdf5_output.map("lin2d", "loglog_w", lin2d), std::runtime_error);
 
-        hdf5_output.map_interp("spline", "log", spline);
-        hdf5_output.map_interp("lin2d", "loglog", lin2d);
+        hdf5_output.map("spline", "log", spline);
+        hdf5_output.map("lin2d", "loglog", lin2d);
+        hdf5_output.map("lin2d_Direct", loglog_coords, lin2d_data.data()); // try direct data input
 
-        hdf5_output.flush(0.0);                          // Flush to ensure the data is written
-        hdf5_output.map_interp("spline", "log", spline); // This should not throw, as the map is updated
-        hdf5_output.map_interp("lin2d", "loglog", lin2d);
+        hdf5_output.flush(0.0);                   // Flush to ensure the data is written
+        hdf5_output.map("spline", "log", spline); // This should not throw, as the map is updated
+        hdf5_output.map("lin2d", "loglog", lin2d);
         hdf5_output.flush(1.0); // Flush again to ensure the data is written
       }
 
@@ -303,6 +304,22 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
             is_close(lin2d_map_data[i], device::apply([&](const auto &...x) { return lin2d(x...); }, llcoord), 1e-14));
       }
 
+      spdlog::get("log")->info("checking lin2d direct map...");
+      REQUIRE(maps_group.has_group("lin2d_Direct"));
+      auto lin2d_direct_group = maps_group.get_group("lin2d_Direct");
+      REQUIRE(lin2d_direct_group.has_group(int_to_string(0, 6)));
+      auto lin2d_direct_sub_group = lin2d_direct_group.get_group(int_to_string(0, 6));
+      REQUIRE(lin2d_direct_sub_group.has_dataset("data"));
+      auto lin2d_direct_dataset = lin2d_direct_sub_group.get_dataset("data");
+      std::vector<double> lin2d_direct_map_data(coord_size * coord_size);
+      lin2d_direct_dataset.read(lin2d_direct_map_data);
+      for (size_t i = 0; i < coord_size * coord_size; ++i) {
+        const auto llcoord = loglog_coords.forward(loglog_coords.from_linear_index(i));
+        // There will be a small numerical error in the interpolation (~1e-15 - 1e-14), so we use a tolerance
+        REQUIRE(is_close(lin2d_direct_map_data[i],
+                         device::apply([&](const auto &...x) { return lin2d(x...); }, llcoord), 1e-14));
+      }
+
       // Remove the file after the test
       spdlog::get("log")->info("Cleanup.");
       std::filesystem::remove(hdf5_file);
@@ -311,8 +328,8 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
       spdlog::get("log")->info("checking convenience writing.");
       HDF5Output hdf5_output(tmp.string(), hdf5FileName, json);
 
-      REQUIRE_NOTHROW(hdf5_output.map_interp("spline", spline));
-      REQUIRE_NOTHROW(hdf5_output.map_interp("lin2d", lin2d));
+      REQUIRE_NOTHROW(hdf5_output.map("spline", spline));
+      REQUIRE_NOTHROW(hdf5_output.map("lin2d", lin2d));
 
       std::filesystem::path hdf5_file(tmp / hdf5FileName);
       REQUIRE(std::filesystem::exists(hdf5_file));

@@ -12,16 +12,18 @@
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/utils.hh>
 
-// A concept for what is a coordinate class
-template <typename T>
-concept IsCoordinate = requires(T t) {
-  T::ctype;
-  T::dim;
-  t.size();
-};
-
 namespace DiFfRG
 {
+  // A concept for what is a coordinate class
+  template <typename T>
+  concept is_coordinates = requires(T t) {
+    typename T::ctype;
+    T::dim;
+    t.size();
+    t.forward(device::array<size_t, T::dim>{});
+    { t.from_linear_index(size_t{}) } -> std::same_as<device::array<size_t, T::dim>>;
+  };
+
   /**
    * @brief Utility class for combining multiple coordinate systems into one
    *
@@ -425,7 +427,7 @@ namespace DiFfRG
 
   // Definitions of useful combined coordinates
   using LogCoordinates = LogarithmicCoordinates1D<double>;
-  using LinearCoordinates = LinearCoordinates1D<double>;
+  using LinCoordinates = LinearCoordinates1D<double>;
   using LogLogCoordinates = CoordinatePackND<LogarithmicCoordinates1D<double>, LogarithmicCoordinates1D<double>>;
   using LogLinCoordinates = CoordinatePackND<LogarithmicCoordinates1D<double>, LinearCoordinates1D<double>>;
   using LinLogCoordinates = CoordinatePackND<LinearCoordinates1D<double>, LogarithmicCoordinates1D<double>>;
@@ -434,4 +436,6 @@ namespace DiFfRG
       CoordinatePackND<LogarithmicCoordinates1D<double>, LogarithmicCoordinates1D<double>, LinearCoordinates1D<double>>;
   using LogLinLinCoordinates =
       CoordinatePackND<LogarithmicCoordinates1D<double>, LinearCoordinates1D<double>, LinearCoordinates1D<double>>;
+  using LinLinLinCoordinates =
+      CoordinatePackND<LinearCoordinates1D<double>, LinearCoordinates1D<double>, LinearCoordinates1D<double>>;
 } // namespace DiFfRG

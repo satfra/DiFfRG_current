@@ -17,6 +17,6 @@
 #include <DiFfRG/discretization/mesh/no_adaptivity.hh>
 #include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
 
-#include <DiFfRG/discretization/grid/combined_coordinates.hh>
-#include <DiFfRG/discretization/grid/coordinates.hh>
-#include <DiFfRG/discretization/grid/stack_coordinates.hh>
+#include <DiFfRG/discretization/coordinates/combined_coordinates.hh>
+#include <DiFfRG/discretization/coordinates/coordinates.hh>
+#include <DiFfRG/discretization/coordinates/stack_coordinates.hh>

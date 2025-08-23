@@ -5,6 +5,7 @@
 add_subdirectory(FEM)
 add_subdirectory(grid)
 add_subdirectory(data)
+add_subdirectory(coordinates)
 
 # ##############################################################################
 # Tests

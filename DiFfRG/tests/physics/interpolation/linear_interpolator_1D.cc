@@ -8,6 +8,22 @@
 
 using namespace DiFfRG;
 
+TEST_CASE("Test template constraints for LinearInterpolator1D", "[interpolator]")
+{
+  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<double, LinCoordinates, CPU_memory>>);
+  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<complex<double>, LinCoordinates, CPU_memory>>);
+  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<autodiff::real, LinCoordinates, CPU_memory>>);
+  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<cxreal, LinCoordinates, CPU_memory>>);
+
+  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<double, LinCoordinates, GPU_memory>>);
+  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<complex<double>, LinCoordinates, GPU_memory>>);
+  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<autodiff::real, LinCoordinates, GPU_memory>>);
+  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<cxreal, LinCoordinates, GPU_memory>>);
+
+  STATIC_REQUIRE(!is_interpolator<int>);
+  STATIC_REQUIRE(!is_interpolator<std::array<double, 3>>);
+}
+
 TEMPLATE_TEST_CASE("Test 1D interpolation", "[float][double][complex][autodiff]", float, double, complex<double>,
                    complex<float>, autodiff::real, cxreal)
 {

@@ -10,16 +10,35 @@
 #include <deal.II/lac/block_vector.h>
 #include <deal.II/lac/sparse_direct.h>
 
+#include <type_traits>
+
 namespace DiFfRG
 {
   template <typename T>
-  concept IsContainer = requires(T x) { x[0]; };
+  concept is_container = requires(T x) { x[0]; };
 
   template <size_t N, typename T>
-  concept SizedContainer = requires(T x) {
+  concept is_sized_container = requires(T x) {
     x[0];
     requires x.size() == N;
   };
+
+  // we need a concept to check if a type has an operator() with N arguments of type ValueType
+  template <typename T, typename ValueType, size_t N> struct has_n_call_operator_helper {
+    template <size_t... Is> static constexpr bool tryit(std::integer_sequence<size_t, Is...>)
+    {
+      if constexpr (requires(T t, ValueType v) { t.operator()((ValueType{} * Is)...); }) {
+        return true;
+      } else {
+        return false;
+      }
+    }
+
+    static constexpr bool value = tryit(std::make_index_sequence<N>{});
+  };
+
+  template <typename T, typename ValueType, size_t N>
+  concept has_n_call_operator = has_n_call_operator_helper<T, ValueType, N>::value;
 
   namespace get_type
   {

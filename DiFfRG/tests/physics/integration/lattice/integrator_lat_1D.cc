@@ -1,4 +1,5 @@
 #include <Kokkos_Core.hpp>
+#include <limits>
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 
@@ -32,7 +33,7 @@ TEMPLATE_TEST_CASE("Test 1D lattice integrals on host", "[lattice][double][float
     T integral{};
     integrator.get(integral, 0., 1., 0., 0., 0.);
 
-    if (!is_close(reference_integral, integral, 1e-6)) {
+    if (!is_close(reference_integral, integral, std::numeric_limits<ctype>::epsilon() * 1e2)) {
       std::cerr << "reference: " << reference_integral << "| integral: " << integral
                 << "| relative error: " << abs(reference_integral - integral) / std::abs(reference_integral)
                 << std::endl;

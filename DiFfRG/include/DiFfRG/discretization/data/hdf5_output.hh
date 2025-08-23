@@ -4,6 +4,7 @@
 #include <DiFfRG/common/json.hh>
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/physics/interpolation.hh>
 
 #include <autodiff/forward/real/real.hpp>
 
@@ -92,14 +93,15 @@ namespace DiFfRG
 
     void scalar(const std::string &name, const char *value) { scalar<std::string>(name, std::string(value)); }
 
-    template <typename COORD> void map_coords(const std::string &name, const COORD &coordinates)
+    template <typename COORD>
+      requires is_coordinates<COORD>
+    void map(const std::string &name, const COORD &coordinates)
     {
 #ifndef H5CPP
-      throw std::runtime_error(
-          "HDF5Output::map_coords: HDF5 support is not enabled. Please compile with H5CPP support.");
+      throw std::runtime_error("HDF5Output::map: HDF5 support is not enabled. Please compile with H5CPP support.");
 #else
       if (coords.has_dataset(name)) {
-        throw std::runtime_error("HDF5Output::map_coords: The coordinates '" + name +
+        throw std::runtime_error("HDF5Output::map: The coordinates '" + name +
                                  "' have already been written to the file '" + output_name + "'.");
       }
 
@@ -119,17 +121,59 @@ namespace DiFfRG
 #endif
     }
 
-    template <typename INTERP> void map_interp(const std::string &name, const INTERP &_interpolator)
+    template <typename COORD, typename T>
+      requires is_coordinates<COORD>
+    void map(const std::string &name, const COORD &coordinates, T *data)
     {
-      map_interp(name, _interpolator.get_coordinates().to_string(), _interpolator);
+#ifndef H5CPP
+      throw std::runtime_error("HDF5Output::map: HDF5 support is not enabled. Please compile with H5CPP support.");
+#else
+      const std::string coord_name = coordinates.to_string();
+      if (coord_identifiers.find(coord_name) == coord_identifiers.end()) map(coord_name, coordinates);
+
+      using value_type = std::decay_t<T>;
+
+      hdf5::node::Group n_group;
+      if (!maps.has_group(name)) {
+        n_group = maps.create_group(name);
+      } else {
+        n_group = maps.get_group(name);
+      }
+
+      auto group = n_group.create_group(int_to_string(map_series_numbers[name], 6));
+
+      // Create a dataset for the data
+      hdf5::Dimensions dims;
+      for (const auto &dim : coordinates.sizes())
+        dims.push_back(dim);
+      hdf5::dataspace::Simple space(dims);
+      auto d_type = hdf5::datatype::create<value_type>();
+      auto dataset = group.create_dataset("data", d_type, space);
+
+      // Write the data to the dataset
+      dataset.write(hdf5::ArrayAdapter<value_type>(const_cast<value_type *>(data), coordinates.size()));
+
+      // Link the coordinates to the map
+      group.create_link("coordinates", "/coordinates/" + coord_name);
+
+      written_maps.push_back(name);
+      map_series_numbers[name]++;
+#endif
     }
 
     template <typename INTERP>
-    void map_interp(const std::string &name, const std::string &coord_name, const INTERP &_interpolator)
+      requires is_interpolator<INTERP>
+    void map(const std::string &name, const INTERP &_interpolator)
+    {
+      map(name, _interpolator.get_coordinates().to_string(), _interpolator);
+    }
+
+    template <typename INTERP>
+      requires is_interpolator<INTERP>
+    void map(const std::string &name, const std::string &coord_name, const INTERP &_interpolator)
     {
 #ifndef H5CPP
-      throw std::runtime_error(
-          "HDF5Output::map_interp: HDF5 support is not enabled. Please compile with H5CPP support.");
+      throw std::runtime_error("HDF5Output::map: HDF5 support is not enabled. Please compile with H5CPP support.");
 #else
       using value_type = typename std::decay_t<INTERP>::value_type;
 
@@ -194,12 +238,12 @@ namespace DiFfRG
     {
       if (!coords.has_dataset(coord_name)) {
         // If the coordinates have not been written yet, we write them now.
-        map_coords(coord_name, coordinates);
+        map(coord_name, coordinates);
         return;
       }
 
       if (coordinates.to_string() != coord_identifiers[coord_name])
-        throw std::runtime_error("HDF5Output::map_interp: The coordinates '" + coord_name +
+        throw std::runtime_error("HDF5Output::map: The coordinates '" + coord_name +
                                  "' do not match the interpolator's coordinates.");
     }
 
