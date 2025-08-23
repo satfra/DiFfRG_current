@@ -132,7 +132,7 @@ kernelClass=FunKit`MakeCppClass[
 ];
 
 kernelHeader=FunKit`MakeCppHeader[
-    "Includes"->{"DiFfRG/physics/utils.hh","DiFfRG/physics/interpolation.hh","DiFfRG/physics/physics.hh"},
+    "Includes"->{"DiFfRG/physics/interpolation.hh","DiFfRG/physics/physics.hh"},
     "Body" -> {"namespace DiFfRG {", kernelClass, StringTemplate["} using DiFfRG::`1`_kernel;"][spec["Name"]]}
 ];
 

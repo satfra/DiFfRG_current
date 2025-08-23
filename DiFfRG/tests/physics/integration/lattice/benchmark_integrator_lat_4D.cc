@@ -1,8 +1,8 @@
-#include "DiFfRG/discretization/grid/coordinates.hh"
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 
 #include "../boilerplate/poly_integrand.hh"
+#include "DiFfRG/discretization/coordinates/coordinates.hh"
 #include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/polynomials.hh>

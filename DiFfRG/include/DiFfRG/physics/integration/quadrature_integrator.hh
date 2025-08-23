@@ -8,7 +8,7 @@
 #include <DiFfRG/common/tuples.hh>
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/common/utils.hh>
-#include <DiFfRG/discretization/grid/coordinates.hh>
+#include <DiFfRG/discretization/coordinates/coordinates.hh>
 #include <DiFfRG/physics/integration/abstract_integrator.hh>
 
 namespace DiFfRG
