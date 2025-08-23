@@ -74,8 +74,8 @@ namespace DiFfRG
             "LinearInterpolator2D: You probably called update() on a copied instance. This is not allowed. "
             "You need to call update() on the original instance.");
       // Populate host mirror
-      for (uint i = 0; i < sizes[0]; ++i)
-        for (uint j = 0; j < sizes[1]; ++j)
+      for (size_t i = 0; i < sizes[0]; ++i)
+        for (size_t j = 0; j < sizes[1]; ++j)
           host_data(i, j) = static_cast<NT>(in_data[i * sizes[1] + j]);
       // Copy data to device
       Kokkos::deep_copy(device_data, host_data);
@@ -105,9 +105,9 @@ namespace DiFfRG
       idx_y = max(static_cast<decltype(idx_y)>(0), min(idx_y, static_cast<decltype(idx_y)>(sizes[1] - 1)));
 
       // Clamp the (upper) index to the range [1, sizes - 1]
-      uint x1 = static_cast<uint>(
+      size_t x1 = static_cast<size_t>(
           min(ceil(idx_x + static_cast<decltype(idx_x)>(1e-16)), static_cast<decltype(idx_x)>(sizes[0] - 1)));
-      uint y1 = static_cast<uint>(
+      size_t y1 = static_cast<size_t>(
           min(ceil(idx_y + static_cast<decltype(idx_y)>(1e-16)), static_cast<decltype(idx_y)>(sizes[1] - 1)));
 
       const auto corner00 = device_data(x1 - 1, y1 - 1);
@@ -167,8 +167,8 @@ namespace DiFfRG
 
   private:
     const Coordinates coordinates;
-    const device::array<uint, 2> sizes;
-    const uint total_size;
+    const device::array<size_t, 2> sizes;
+    const size_t total_size;
 
     using ViewType = Kokkos::View<NT **, DefaultMemorySpace, Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
     using HostViewType = typename ViewType::HostMirror;

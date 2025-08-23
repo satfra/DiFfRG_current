@@ -3,6 +3,7 @@
 // DiFfRG
 #include <DiFfRG/common/json.hh>
 #include <DiFfRG/common/kokkos.hh>
+#include <DiFfRG/common/utils.hh>
 
 #include <autodiff/forward/real/real.hpp>
 
@@ -113,8 +114,14 @@ namespace DiFfRG
       auto dataset = coords.create_dataset(name, c_type, space);
 
       dataset.write(grid_data); // write data
-      written_coords.push_back(name);
+
+      coord_identifiers[name] = coordinates.to_string();
 #endif
+    }
+
+    template <typename INTERP> void map_interp(const std::string &name, const INTERP &_interpolator)
+    {
+      map_interp(name, _interpolator.get_coordinates().to_string(), _interpolator);
     }
 
     template <typename INTERP>
@@ -124,40 +131,44 @@ namespace DiFfRG
       throw std::runtime_error(
           "HDF5Output::map_interp: HDF5 support is not enabled. Please compile with H5CPP support.");
 #else
-      if (initial_maps.size() > 0 && std::find(initial_maps.begin(), initial_maps.end(), name) == initial_maps.end())
-        throw std::runtime_error("HDF5Output::map_interp: The map '" + name + "' has not been registered before!");
-
       using value_type = typename std::decay_t<INTERP>::value_type;
 
       const auto &interpolator = _interpolator.template get_on<CPU_memory>();
 
-      if (!coords.has_dataset(coord_name)) {
-        // If the coordinates have not been written yet, we write them now.
-        map_coords(coord_name, interpolator.get_coordinates());
-      }
+      check_coordinates(coord_name, interpolator.get_coordinates());
 
+      hdf5::node::Group n_group;
       if (!maps.has_group(name)) {
-        hdf5::node::Group group = maps.create_group(name);
-        hdf5::Dimensions dims;
-        const auto coordinates = interpolator.get_coordinates();
-        for (const auto &dim : coordinates.sizes())
-          dims.push_back(dim);
-        hdf5::dataspace::Simple space(dims);
-        auto d_type = hdf5::datatype::create<value_type>();
-        auto dataset = group.create_dataset("data", d_type, space);
-
-        std::vector<value_type> data(interpolator.get_coordinates().size());
-        for (size_t i = 0; i < data.size(); ++i) {
-          const auto lcoord = coordinates.forward(coordinates.from_linear_index(i));
-          data[i] = device::apply([&](const auto &...x) { return interpolator(x...); }, lcoord);
-        }
-        dataset.write(data);
-
-        written_maps.push_back(name);
-        // Link the coordinates to the map
-        group.create_link("coordinates", "/coordinates/" + coord_name);
+        n_group = maps.create_group(name);
       } else {
+        n_group = maps.get_group(name);
       }
+
+      auto group = n_group.create_group(int_to_string(map_series_numbers[name], 6));
+
+      // Create a dataset for the interpolator data
+      hdf5::Dimensions dims;
+      const auto coordinates = interpolator.get_coordinates();
+      for (const auto &dim : coordinates.sizes())
+        dims.push_back(dim);
+      hdf5::dataspace::Simple space(dims);
+      auto d_type = hdf5::datatype::create<value_type>();
+      auto dataset = group.create_dataset("data", d_type, space);
+
+      // Write the data to the dataset
+      std::vector<value_type> data(interpolator.get_coordinates().size());
+      for (size_t i = 0; i < data.size(); ++i) {
+        const auto lcoord = coordinates.forward(coordinates.from_linear_index(i));
+        data[i] = device::apply([&](const auto &...x) { return interpolator(x...); }, lcoord);
+      }
+      dataset.write(data);
+
+      // Link the coordinates to the map
+      group.create_link("coordinates", "/coordinates/" + coord_name);
+
+      written_maps.push_back(name);
+      map_series_numbers[name]++;
+
 #endif
     }
 
@@ -174,11 +185,23 @@ namespace DiFfRG
 
     std::list<std::string> written_scalars;
     std::list<std::string> written_maps;
-    std::list<std::string> written_coords;
+    std::map<std::string, size_t> map_series_numbers;
+    std::map<std::string, std::string> coord_identifiers;
 
     std::list<std::string> initial_scalars;
-    std::list<std::string> initial_maps;
-    std::list<std::string> initial_coords;
+
+    template <typename COORD> void check_coordinates(const std::string &coord_name, const COORD &coordinates)
+    {
+      if (!coords.has_dataset(coord_name)) {
+        // If the coordinates have not been written yet, we write them now.
+        map_coords(coord_name, coordinates);
+        return;
+      }
+
+      if (coordinates.to_string() != coord_identifiers[coord_name])
+        throw std::runtime_error("HDF5Output::map_interp: The coordinates '" + coord_name +
+                                 "' do not match the interpolator's coordinates.");
+    }
 
 #ifdef H5CPP
     hdf5::file::File h5_file;

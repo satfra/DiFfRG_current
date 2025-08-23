@@ -40,6 +40,8 @@ namespace DiFfRG
 
     const Idx start, stop;
 
+    std::string to_string() const { return "IndexStack(" + std::to_string(start) + ", " + std::to_string(stop) + ")"; }
+
   private:
     const size_t m_size;
   };
@@ -83,6 +85,12 @@ namespace DiFfRG
 
     const Idx start, stop;
     const NT T;
+
+    std::string to_string() const
+    {
+      return "BosonicMatsubaraValues(" + std::to_string(start) + ", " + std::to_string(stop) + ", " +
+             std::to_string(T) + ")";
+    }
 
   private:
     const size_t m_size;
@@ -130,6 +138,12 @@ namespace DiFfRG
 
     const Idx start, stop;
     const NT T;
+
+    std::string to_string() const
+    {
+      return "FermionicMatsubaraValues(" + std::to_string(start) + ", " + std::to_string(stop) + ", " +
+             std::to_string(T) + ")";
+    }
 
   private:
     const size_t m_size;

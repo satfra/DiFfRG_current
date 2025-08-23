@@ -91,6 +91,11 @@ namespace DiFfRG
 
     const NT m_start, m_stop, m_T, p_start, p_stop, p_bias;
 
+    std::string to_string() const
+    {
+      return "Combined(" + matsubara_values.to_string() + ", " + logarithmic_coordinates.to_string() + ")";
+    }
+
   private:
     const size_t grid_extent, m_size;
 
@@ -180,6 +185,11 @@ namespace DiFfRG
     device::array<size_t, 2> sizes() const { return {{m_size, grid_extent}}; }
 
     const NT m_start, m_stop, m_T, p_start, p_stop, p_bias;
+
+    std::string to_string() const
+    {
+      return "Combined(" + matsubara_values.to_string() + ", " + logarithmic_coordinates.to_string() + ")";
+    }
 
   private:
     const size_t grid_extent, m_size;

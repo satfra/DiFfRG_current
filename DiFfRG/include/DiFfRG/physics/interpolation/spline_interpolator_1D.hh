@@ -79,7 +79,7 @@ namespace DiFfRG
             "You need to call update() on the original instance.");
 
       // Populate host mirror
-      for (uint i = 0; i < size; ++i)
+      for (size_t i = 0; i < size; ++i)
         host_data(i, 0) = static_cast<NT>(in_data[i]);
       // Build the spline coefficients
       build_y2(lower_y1, upper_y1);
@@ -109,8 +109,8 @@ namespace DiFfRG
       ctype idx = coordinates.backward(x);
       // Clamp the index to the range [0, size - 1]
       idx = Kokkos::max(static_cast<decltype(idx)>(0), Kokkos::min(idx, static_cast<decltype(idx)>(size - 1)));
-      const uint lidx = uint(Kokkos::floor(idx));
-      const uint uidx = lidx + 1;
+      const size_t lidx = size_t(Kokkos::floor(idx));
+      const size_t uidx = lidx + 1;
       // t is the fractional part of the index
       const ctype t = idx - lidx;
 
@@ -169,7 +169,7 @@ namespace DiFfRG
 
   private:
     const Coordinates coordinates;
-    const uint size;
+    const size_t size;
 
     using ViewType = Kokkos::View<NT *[2], DefaultMemorySpace, Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
     using HostViewType = typename ViewType::HostMirror;
@@ -193,7 +193,7 @@ namespace DiFfRG
         y2(0, 1) = -0.5;
         u[0] = 3.0 * ((yv(1, 0) - yv(0, 0)) - lower_y1);
       }
-      for (uint i = 1; i < size - 1; i++) {
+      for (size_t i = 1; i < size - 1; i++) {
         sig = 0.5;
         p = sig * y2(i - 1, 1) + 2.0;
         y2(i, 1) = (sig - 1.0) / p;

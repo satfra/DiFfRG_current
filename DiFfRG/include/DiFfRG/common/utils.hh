@@ -8,6 +8,7 @@
 #include <vector>
 
 // external libraries
+#include <deal.II/base/utilities.h>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/spdlog.h>
 
@@ -21,6 +22,8 @@
 namespace DiFfRG
 {
   using uint = unsigned int;
+
+  using dealii::Utilities::int_to_string;
 
   /**
    * @brief A compile-time for loop, which calls the lambda f of signature void(integer) for each index.
