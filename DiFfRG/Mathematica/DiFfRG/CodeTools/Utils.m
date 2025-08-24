@@ -1,3 +1,5 @@
+(* ::Package:: *)
+
 (* Exported symbols added here with SymbolName::usage *)
 
 BeginPackage["DiFfRG`CodeTools`Utils`"]
@@ -14,19 +16,19 @@ appendDefaultAssociation[config_] :=
     Merge[{config, <|"Type" -> "double", "Reference" -> True, "Const" -> True|>}, First];
 
 processParameters[params_List, adReplacements_List] :=
-    Module[{processedParams = params, paramsAD = {}},
+    Module[{processedParams = params, paramsAD = {},i},
         For[i = 1, i <= Length[processedParams], i++,
             processedParams[[i]] = appendDefaultAssociation[processedParams[[i]]];
             paramsAD = Append[
                     paramsAD,
                     Module[{typeAD},
-                        typeAD = processedParams[[i]]["Type"] /. adReplacements;
+                        typeAD = If[processedParams[[i]]["AD"]===True,processedParams[[i]]["Type"] /. adReplacements,processedParams[[i]]["Type"]];
                         Merge[{processedParams[[i]], <|"Type" -> typeAD|>}, Last]
                     ]
                 ];
         ];
         {processedParams, paramsAD}
-    ]
+    ];
 
 End[]
 

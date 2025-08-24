@@ -84,10 +84,9 @@ MakeKernel[kernelExpr_,constExpr_,OptionsPattern[]]:=Module[{
     kernelDefs=OptionValue["KernelDefinitions"], coordinates=OptionValue["Coordinates"],
     getArgs=OptionValue["CoordinateArguments"], intVariables=OptionValue["IntegrationVariables"], preArguments, regulator, params, paramsAD, explParamAD,
     arguments, outputPath, sources, returnType, returnTypeAD, returnTypePointer, returnTypePointerAD,
-    spec,parameters
+    spec,parameters,parametersKernel
 },
 spec=Association@@Thread[Rule@@{#,OptionValue[MakeKernel,#]}]&@Keys[Options[MakeKernel]];
-parameters=spec["Parameters"];
 
 If[Not@KernelSpecQ[spec],Message[MakeKernel::InvalidSpec];Abort[]];
 
@@ -106,12 +105,17 @@ getArgs=Map[Append[#,"Type"->"double"]&,getArgs];
 (* First, the kernel itself *)
 (********************************************************************)
 
+parametersKernel=Map[
+        If[#["AD"]===True, Merge[{#, <|"Type" -> "auto"|>}, Last],#]&,
+        spec["Parameters"]
+        ];
+
 kernel=FunKit`MakeCppFunction[
     expr,
     "Name"->"kernel",
     "Suffix"->"",
     "Prefix"->"static KOKKOS_FORCEINLINE_FUNCTION",
-    "Parameters"->Join[intVariables,getArgs,parameters],
+    "Parameters"->Join[intVariables,getArgs,parametersKernel],
     "Body"->StringTemplate["using namespace DiFfRG;using namespace DiFfRG::compute;\n`1`"][OptionValue["KernelBody"]]
 ];
 
@@ -120,7 +124,7 @@ constant=FunKit`MakeCppFunction[
     "Name"->"constant",
     "Suffix"->"",
     "Prefix"->"static KOKKOS_FORCEINLINE_FUNCTION",
-    "Parameters"->Join[getArgs,parameters],
+    "Parameters"->Join[getArgs,parametersKernel],
     "Body"->StringTemplate["using namespace DiFfRG;using namespace DiFfRG::compute;\n`1`"][OptionValue["ConstantBody"]]
 ];
 
@@ -141,6 +145,7 @@ kernelHeader=FunKit`MakeCppHeader[
 (********************************************************************)
 
 (*We set up lists of parameters for the map/get functions, depending on their AD setting*)
+parameters=spec["Parameters"];
 params=FunKit`Private`prepParam/@parameters;
 {params, paramsAD} = processParameters[params, $ADReplacements];
 arguments=StringRiffle[Map[#["Name"]&,params],", "];
@@ -187,10 +192,10 @@ integratorHeader=FunKit`MakeCppHeader[
             coordinates],
             If[Length[coordinates]>0,#,{}]&@{
                 FunKit`MakeCppFunction["Name"->"map","Return"->exec,"Body"->"return device::apply([&](const auto...t){return map(dest, coordinates, t...);}, args);","Parameters"->Join[
-                {<|"Name"->"dest","Type"->returnTypePointer,"Reference"->False,"Const"->False|>,
+                {<|"Name"->"dest","Type"->"IT*","Reference"->False,"Const"->False|>,
                 <|"Name"->"coordinates","Reference"->True,"Type"->"C","Const"->True|>,
                 <|"Name"->"args","Type"->"device::tuple<T...>","Reference"->True,"Const"->True|>}],
-                "Templates"->{"C",  "...T"}]
+                "Templates"->{"IT","C","...T"}]
             },
             If[spec["AD"],#,{}]&@Map[
                 FunKit`MakeCppFunction["Name"->"map","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->returnTypePointerAD,"Const"->False,"Reference"->False|>,<|"Name"->"coordinates","Reference"->True,"Type"->#,"Const"->True|>},paramsAD]]&,
@@ -198,10 +203,10 @@ integratorHeader=FunKit`MakeCppHeader[
             {
                 FunKit`MakeCppFunction["Name"->"get","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->returnType,"Reference"->True,"Const"->False|>},getArgs,params]],
                 FunKit`MakeCppFunction["Name"->"get","Return"->"void","Body"->"device::apply([&](const auto...t){get(dest, "<>preArguments<>"t...);}, args);","Parameters"->Join[
-                {<|"Name"->"dest","Type"->returnType,"Reference"->True,"Const"->False|>},
+                {<|"Name"->"dest","Type"->"IT","Reference"->True,"Const"->False|>},
                 getArgs,
                 {<|"Name"->"args","Type"->"device::tuple<T...>","Reference"->True,"Const"->True|>}],
-                "Templates"->{ "...T"}],
+                "Templates"->{ "IT","...T"}],
                 If[spec["AD"],#,""]&@FunKit`MakeCppFunction["Name"->"get","Return"->"void","Body"->None,"Parameters"->Join[{<|"Name"->"dest","Type"->returnTypeAD,"Reference"->True,"Const"->False|>},getArgs,paramsAD]]
             }
         ]
