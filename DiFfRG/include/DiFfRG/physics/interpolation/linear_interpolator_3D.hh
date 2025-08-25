@@ -56,8 +56,8 @@ namespace DiFfRG
             "LinearInterpolator3D: You probably called update() on a copied instance. This is not allowed. "
             "You need to call update() on the original instance.");
       // Populate host mirror
-      Kokkos::View<const NT2 ***, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> in_view(
-          in_data, sizes[0], sizes[1], sizes[2]);
+      Kokkos::View<const NT2 ***, Kokkos::LayoutRight, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>>
+          in_view(in_data, sizes[0], sizes[1], sizes[2]);
       update(in_view);
     }
 

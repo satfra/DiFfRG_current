@@ -60,8 +60,8 @@ namespace DiFfRG
             "SplineInterpolator1DStack: You probably called update() on a copied instance. This is not allowed. "
             "You need to call update() on the original instance.");
 
-      Kokkos::View<const NT2 **, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> in_view(in_data, sizes[0],
-                                                                                                     sizes[1]);
+      Kokkos::View<const NT2 **, Kokkos::LayoutRight, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>>
+          in_view(in_data, sizes[0], sizes[1]);
       update(in_view, lower_y1, upper_y1);
     }
 

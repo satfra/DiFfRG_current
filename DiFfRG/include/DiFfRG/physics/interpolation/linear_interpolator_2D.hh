@@ -58,8 +58,8 @@ namespace DiFfRG
             "LinearInterpolator2D: You probably called update() on a copied instance. This is not allowed. "
             "You need to call update() on the original instance.");
       // Make a View from the input data
-      Kokkos::View<const NT2 **, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>> in_view(in_data, sizes[0],
-                                                                                                     sizes[1]);
+      Kokkos::View<const NT2 **, Kokkos::LayoutRight, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>>
+          in_view(in_data, sizes[0], sizes[1]);
       update(in_view);
     }
 
