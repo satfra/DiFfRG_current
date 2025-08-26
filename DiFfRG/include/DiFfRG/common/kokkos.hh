@@ -2,6 +2,7 @@
 
 #include <DiFfRG/common/tuples.hh>
 #include <Kokkos_Core.hpp>
+#include <type_traits>
 
 #ifdef KOKKOS_ENABLE_CUDA
 #include <cuda/std/array>
@@ -225,6 +226,7 @@ namespace DiFfRG
     FUN fun;
   };
 
+#ifdef KOKKOS_ENABLE_CUDA
   template <int i, typename Head, typename... Tail> constexpr auto tuple_first(const device::tuple<Head, Tail...> &t)
   {
     if constexpr (i == 0)
@@ -238,6 +240,7 @@ namespace DiFfRG
           },
           t);
   }
+#endif
 
   /**
    * @brief This is a functor which wraps a lambda for reduction.
