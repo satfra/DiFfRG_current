@@ -94,9 +94,9 @@ namespace DiFfRG
 #ifdef H5CPP
     if (h5_group != nullptr) {
       auto cur_group = h5_group->create_group(Utilities::int_to_string(series_number, 6));
-      cur_group.attributes.create_from<double>("time", time);
-      cur_group.attributes.create_from<int>("series_number", series_number);
-      cur_group.attributes.create_from<std::string>("output_name", output_name);
+      cur_group.attributes.template create_from<double>("time", time);
+      cur_group.attributes.template create_from<int>("series_number", series_number);
+      cur_group.attributes.template create_from<std::string>("output_name", output_name);
 
       DataOutBase::DataOutFilterFlags mflags(false, false);
       DataOutBase::DataOutFilter data_filter(mflags);
