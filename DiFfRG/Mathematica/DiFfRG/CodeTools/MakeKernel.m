@@ -163,9 +163,9 @@ integratorTemplateParams=TemplateParameterGeneration[spec];
 integratorTemplateParams=StringRiffle[integratorTemplateParams,", "];
 integratorADTemplateParams=TemplateParameterGeneration[spec, $ADReplacements];
 integratorADTemplateParams=StringRiffle[integratorADTemplateParams,", "];
-returnType = spec["Type"];
+returnType = spec["ctype"];
 returnTypePointer = StringTemplate["`1`*"][returnType];
-returnTypeAD = spec["Type"] /. $ADReplacements;
+returnTypeAD = spec["ctype"] /. $ADReplacements;
 returnTypePointerAD = StringTemplate["`1`*"][returnTypeAD];
 
 (* Now, we create the header which holds the class with the integrators and the map/get methods *)

@@ -31,16 +31,16 @@ appendKeyType::missingKey = "The key `1` is missing in the template parameters."
 
 appendKeyType[templateParameter_List, params_Association, {}] :=
     Module[{},
-        If[KeyExistsQ[params, "Type"],
-            Append[templateParameter, ToString[params["Type"]]],
+        If[KeyExistsQ[params, "ctype"],
+            Append[templateParameter, ToString[params["ctype"]]],
             Append[templateParameter, "double"]
         ]
     ]
 
 appendKeyType[templateParameter_List, params_Association, ADReplacements_] :=
     Module[{},
-        If[KeyExistsQ[params, "Type"],
-            Append[templateParameter, ToString[params["Type"]] /. ADReplacements],
+        If[KeyExistsQ[params, "ctype"],
+            Append[templateParameter, ToString[params["ctype"]] /. ADReplacements],
             Append[templateParameter, "autodiff::real"]
         ]
     ]
