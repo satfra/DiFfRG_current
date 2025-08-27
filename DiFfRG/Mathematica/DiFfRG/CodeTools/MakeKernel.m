@@ -64,7 +64,9 @@ Options[MakeKernel]={
 "Regulator"->"DiFfRG::PolynomialExpRegulator",
 "RegulatorOpts"->{"",""},
 "KernelBody"->"",
+"KernelReturnType"->"auto",
 "ConstantBody"->"",
+"ConstantReturnType"->"auto",
 "Parameters"->{},
 "Name"->"",
 "d"->-1,
@@ -113,6 +115,7 @@ parametersKernel=Map[
 kernel=FunKit`MakeCppFunction[
     expr,
     "Name"->"kernel",
+    "Return"->OptionValue["KernelReturnType"],
     "Suffix"->"",
     "Prefix"->"static KOKKOS_FORCEINLINE_FUNCTION",
     "Parameters"->Join[intVariables,getArgs,parametersKernel],
@@ -122,6 +125,7 @@ kernel=FunKit`MakeCppFunction[
 constant=FunKit`MakeCppFunction[
     constExpr,
     "Name"->"constant",
+    "Return"->OptionValue["ConstantReturnType"],
     "Suffix"->"",
     "Prefix"->"static KOKKOS_FORCEINLINE_FUNCTION",
     "Parameters"->Join[getArgs,parametersKernel],
