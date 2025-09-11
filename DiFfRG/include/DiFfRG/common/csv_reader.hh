@@ -1,14 +1,10 @@
 #pragma once
 
 // standard library
+#include "rapidcsv.h"
 #include <cstddef>
 #include <memory>
 #include <string>
-
-namespace rapidcsv
-{
-  class Document;
-}
 
 namespace DiFfRG
 {
