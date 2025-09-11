@@ -150,7 +150,7 @@ namespace DiFfRG
                             // positive and negative Matsubara frequencies
                             wt * (KERNEL::kernel(posargs..., xt, iargs...) + KERNEL::kernel(posargs..., -xt, iargs...))
                             // The zero mode (once per matsubara sum)
-                            + (idx[dim - 1] != 0 ? (ctype)0 : m_T * KERNEL::kernel(posargs..., (ctype)0, iargs...)));
+                            + (idx[dim - 1] != 0 ? NT{} : m_T * KERNEL::kernel(posargs..., (ctype)0, iargs...)));
                   },
                   x);
             },
