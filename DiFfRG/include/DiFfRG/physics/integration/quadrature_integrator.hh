@@ -19,7 +19,7 @@ namespace DiFfRG
    * @tparam dim The dimension of the hypercube, which can be between 1 and 5.
    * @tparam NT numerical type of the result
    * @tparam KERNEL kernel to be integrated, which must provide the static methods `kernel` and `constant`
-   * @tparam ExecutionSpace can be any execution space, e.g. GPU_exec, TBB_exec, or OpenMP_exec.
+   * @tparam ExecutionSpace can be any execution space, e.g. GPU_exec, TBB_exec.
    */
   template <int dim, typename NT, typename KERNEL, typename ExecutionSpace>
     requires(dim > 0)
@@ -31,7 +31,7 @@ namespace DiFfRG
      */
     using ctype = typename get_type::ctype<NT>;
     /**
-     * @brief Execution space to be used for the integration, e.g. GPU_exec, TBB_exec, or OpenMP_exec.
+     * @brief Execution space to be used for the integration, e.g. GPU_exec, TBB_exec.
      */
     using execution_space = ExecutionSpace;
 

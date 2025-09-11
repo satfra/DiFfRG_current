@@ -11,11 +11,6 @@ if(NOT DEFINED ENABLE_MPI)
       OFF
       CACHE BOOL "Enable MPI support")
 endif()
-if(NOT DEFINED HAVE_OPENMP)
-  set(HAVE_OPENMP
-      OFF
-      CACHE BOOL "Enable OpenMP support")
-endif()
 
 # Set up external dependencies
 
@@ -50,16 +45,6 @@ cpmaddpackage(
 # OpenBlas
 include(ProcessorCount)
 ProcessorCount(N_PROCESSORS)
-if(HAVE_OPENMP)
-  set(OPENBLAS_OPENMP_OPT
-      "USE_OPENMP ON"
-      CACHE BOOL "Enable OpenMP support in OpenBLAS")
-  message(STATUS "Building OpenBLAS with OpenMP support")
-else()
-  set(OPENBLAS_OPENMP_OPT
-      "USE_OPENMP OFF"
-      CACHE BOOL "Disable OpenMP support in OpenBLAS")
-endif()
 
 cpmaddpackage(
   NAME
@@ -72,7 +57,7 @@ cpmaddpackage(
   "CMAKE_BUILD_TYPE Release"
   "BUILD_SHARED_LIBS ON"
   "LIBNAMESUFFIX DiFfRG"
-  ${OPENBLAS_OPENMP_OPT}
+  "USE_OPENMP OFF"
   "NUM_PARALLEL ${N_PROCESSORS}"
   "BUILD_TESTING OFF"
   "DYNAMIC_ARCH OFF"

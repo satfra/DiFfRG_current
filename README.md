@@ -95,24 +95,6 @@ $ brew install cmake doxygen paraview graphviz gsl bash
 
 *Note: you have to install a newer GNU version of bash, since by default, only version 3.2 is installed, and for installation, PETSc requires a newer version*
 
-For better performance, it is recommended to install OpenMP. 
-```bash
-$ brew install libomp
-```
-
-To let the build system know about it, you need to set the environment variable `OpenMP_ROOT` to the OpenMP installation directory, e.g.
-```bash
-$ export OpenMP_ROOT=$(brew --prefix)/opt/libomp
-```
-This can be automatically done by adding the above line to your `~/.zshrc` file,
-```bash
-echo 'export OpenMP_ROOT=$(brew --prefix)/opt/libomp' >> ~/.zshrc
-```
-After adding this line, you can either restart your terminal or run
-```bash
-$ source ~/.zshrc
-```
-
 #### Windows
 
 If using Windows, instead of running the project directly, it is recommended to use [WSL](https://learn.microsoft.com/en-us/windows/wsl/setup/environment) and then go through the installation as if on Linux (e.g. Arch or Ubuntu).

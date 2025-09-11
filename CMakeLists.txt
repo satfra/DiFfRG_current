@@ -86,13 +86,6 @@ else()
   endif()
 endif()
 
-check_language(OpenMP)
-find_package(OpenMP)
-if(OpenMP_CXX_FOUND)
-  set(HAVE_OPENMP ON)
-else()
-  set(HAVE_OPENMP OFF)
-endif()
 set(HAVE_THREADS ON)
 # if ENABLE_MPI is not set, set it to OFF
 if(NOT DEFINED ENABLE_MPI)
@@ -126,11 +119,6 @@ if(HAVE_HIP)
 else()
   message("  ${BoldYellow}HIP: ${HAVE_HIP}${ColourReset}")
 endif()
-if(HAVE_OPENMP)
-  message("  ${BoldGreen}OpenMP: ${HAVE_OPENMP}${ColourReset}")
-else()
-  message("  ${BoldYellow}OpenMP: ${HAVE_OPENMP}${ColourReset}")
-endif()
 if(HAVE_THREADS)
   message("  ${BoldGreen}Threads: ${HAVE_THREADS}${ColourReset}")
 else()
@@ -160,8 +148,7 @@ ExternalProject_Add(
     -DCMAKE_CXX_FLAGS:STRING=-march=native
     -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-    -DENABLE_MPI:BOOL=${ENABLE_MPI}
-    -DHAVE_OPENMP:BOOL=${HAVE_OPENMP})
+    -DENABLE_MPI:BOOL=${ENABLE_MPI})
 
 # build sundials
 ExternalProject_Add(
@@ -286,7 +273,6 @@ ExternalProject_Add(
     -DKokkos_ENABLE_CUDA_CONSTEXPR:BOOL=${HAVE_CUDA}
     -DKokkos_ENABLE_CUDA_RELOCATABLE_DEVICE_CODE:BOOL=${HAVE_CUDA}
     -DKokkos_ENABLE_HIP:BOOL=${HAVE_HIP}
-    # OpenMP is not supported by DiFfRG, as it conflicts with TBB.
     -DKokkos_ENABLE_OPENMP:BOOL=OFF
     -DKokkos_ENABLE_THREADS:BOOL=${HAVE_THREADS}
     -DKokkos_ENABLE_SERIAL:BOOL=ON
@@ -313,7 +299,7 @@ ExternalProject_Add(
   CMAKE_CACHE_ARGS
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
     -DOpenBLAS_LIBRARY:STRING=${BLAS_LIBRARY_PATH}
-    -DHAVE_OPENMP:BOOL=${HAVE_OPENMP} -DHAVE_MPI:BOOL=${ENABLE_MPI})
+    -DHAVE_MPI:BOOL=${ENABLE_MPI})
 
 # ##############################################################################
 # deal.II

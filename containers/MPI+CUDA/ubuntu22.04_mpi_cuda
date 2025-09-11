@@ -9,7 +9,7 @@ COPY ../deploy.sh /deploy.sh
 
 # install dependencies
 RUN apt-get -y update
-RUN apt-get -y install git cmake libopenblas-dev build-essential python3 doxygen graphviz libgsl-dev libomp-dev libopenmpi-dev flex
+RUN apt-get -y install git cmake libopenblas-dev build-essential python3 doxygen graphviz libgsl-dev libopenmpi-dev flex
 # install DiFfRG
 RUN bash deploy.sh
 
