@@ -373,15 +373,11 @@ ExternalProject_Add(
 # Forwarding DiFfRG tests for CTest to discover them
 # ##############################################################################
 
-set(DiFfRG_TEST_DIR "${CMAKE_CURRENT_BINARY_DIR}/DiFfRG/src/DiFfRG-build")
-if(EXISTS "${DiFfRG_TEST_DIR}/CTestTestfile.cmake")
-  message(STATUS "CTestCustom: Found and including tests from ${DiFfRG_TEST_DIR}")
-  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/CTestTestfile.cmake" "subdirs(\"DiFfRG/src/DiFfRG-build\")")
-  # subdirs(${DiFfRG_TEST_DIR})
-else()
-  message(WARNING "CTestCustom: Could not find CTest file in ${DiFfRG_TEST_DIR}. This is normal if the external project hasn't been built yet. Run a build first.")
+option(DiFfRG_TEST "Build tests" OFF)
+if(DiFfRG_TEST)
+  enable_testing()
+  add_subdirectory(DiFfRG/tests)
 endif()
-
 
 # ##############################################################################
 # Finish
