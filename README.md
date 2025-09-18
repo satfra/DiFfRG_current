@@ -106,7 +106,7 @@ If using Windows, instead of running the project directly, it is recommended to 
 You can download a script to install DiFfRG locally directly from a CMake file by putting into your `CMakeLists.txt` the lines
 ```CMake
 file(DOWNLOAD
-  https://raw.githubusercontent.com/satfra/DiFfRG/refs/heads/Implement-Kokkos/DiFfRG/cmake/InstallDiFfRG.cmake
+  https://github.com/satfra/DiFfRG_current/raw/refs/heads/main/DiFfRG/cmake/InstallDiFfRG.cmake
   ${CURRENT_BINARY_DIR}/cmake/InstallDiFfRG.cmake)
 include(${CURRENT_BINARY_DIR}/cmake/InstallDiFfRG.cmake)
 ```
@@ -124,7 +124,7 @@ set(PARALLEL_JOBS 8)
 
 You can also manually clone DiFfRG to a directory of your choice
 ```bash
-$ git clone https://github.com/satfra/DiFfRG.git
+$ git clone https://github.com/satfra/DiFfRG_current.git
 ```
 Then, create a build directory and run cmake
 ```bash
