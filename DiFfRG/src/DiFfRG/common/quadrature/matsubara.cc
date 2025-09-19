@@ -11,8 +11,10 @@ namespace DiFfRG
 {
   template <typename NT> int MatsubaraQuadrature<NT>::predict_size(const NT T, const NT typical_E, const int step)
   {
-    const NT relative_distance = abs(typical_E) / abs(T + 1e-16);
-    if (is_close(T, NT(0)) || relative_distance > 1e+2) return -vacuum_quad_size;
+    const NT relative_distance = abs(typical_E) / abs(2 * M_PI * T + 1e-16);
+    // From some testing, switching here to the vacuum quadrature will generate relative errors of order 5e-6 when using
+    // the default arguments
+    if (is_close(T, NT{}) || relative_distance > 1e+4) return -vacuum_quad_size;
 
     const NT E_max = 1e4 * precision_factor * std::abs(typical_E);
     int size = 5 + int(std::sqrt(4 * E_max / (M_PI * M_PI * std::abs(T))));
@@ -28,7 +30,7 @@ namespace DiFfRG
     reinit(T, typical_E, step, min_size, max_size, vacuum_quad_size, precision_factor);
   }
 
-  template <typename NT> MatsubaraQuadrature<NT>::MatsubaraQuadrature() : m_size(0), vacuum_quad_size(48) {}
+  template <typename NT> MatsubaraQuadrature<NT>::MatsubaraQuadrature() : m_size(0), vacuum_quad_size(64) {}
 
   template <typename NT>
   void MatsubaraQuadrature<NT>::reinit(const NT T, const NT typical_E, const int step, const int min_size,
@@ -39,16 +41,20 @@ namespace DiFfRG
     else
       this->precision_factor = precision_factor;
 
-    if (vacuum_quad_size <= 6)
-      this->vacuum_quad_size = 6;
+    // This is ludicrously low, but let's cut somewhere
+    if (vacuum_quad_size <= 16)
+      this->vacuum_quad_size = 16;
     else
       this->vacuum_quad_size = vacuum_quad_size;
+
+    if (max_size < min_size) throw std::invalid_argument("MatsubaraQuadrature: max_size must be larger than min_size.");
 
     this->T = T;
     this->typical_E = typical_E;
 
     // Determine the number of nodes in the quadrature rule.
     m_size = predict_size(T, typical_E, step);
+    // If m_size is negative, we use the vacuum quadrature
     if (m_size < 0) {
       m_size = abs(m_size);
       reinit_0();
@@ -89,11 +95,14 @@ namespace DiFfRG
   {
     this->T = 0;
     m_size = abs(m_size);
-    if (m_size % 2 != 0) m_size++;
+    // ensure that m_size is divisible by 3, so that we can divide it into 2/3 and 1/3 parts
+    while (m_size % 3 != 0)
+      m_size++;
     if (is_close(typical_E, NT(0))) this->typical_E = 1.;
 
     // obtain a gauss-legendre quadrature rule for the interval [0, 1]
-    Quadrature<NT> quad(m_size / 2, QuadratureType::legendre);
+    Quadrature<NT> quad_up(m_size / 3, QuadratureType::legendre);
+    Quadrature<NT> quad_down(m_size / 3 * 2, QuadratureType::legendre);
 
     // resize the nodes and weights
     std::vector<NT> x(m_size, 0.);
@@ -101,12 +110,12 @@ namespace DiFfRG
 
     // strategy: divide into two parts, one with linear and one with logarithmic scaling
     // the dividing point is somewhat above the typical energy scale
-    const long double div = 2 * abs(typical_E);
+    const long double div = 3 * abs(typical_E);
 
     // the nodes with a linear scale
-    for (int i = 0; i < m_size / 2; ++i) {
-      x[i] = quad.template nodes<CPU_memory>()[i] * div;
-      w[i] = quad.template weights<CPU_memory>()[i] * div / NT(2 * M_PI);
+    for (int i = 0; i < m_size / 3 * 2; ++i) {
+      x[i] = quad_down.template nodes<CPU_memory>()[i] * div;
+      w[i] = quad_down.template weights<CPU_memory>()[i] * div / NT(2 * M_PI);
     }
 
     // the nodes with a logarithmic scale
@@ -114,9 +123,10 @@ namespace DiFfRG
     const long double extent = 1e6 * abs(typical_E);
     const long double log_start = log(div);
     const long double log_ext = log(extent / div);
-    for (int i = 0; i < m_size / 2; ++i) {
-      x[i + m_size / 2] = exp(log_start + log_ext * quad.template nodes<CPU_memory>()[i]);
-      w[i + m_size / 2] = (quad.template weights<CPU_memory>()[i] * log_ext * x[i + m_size / 2]) / NT(2 * M_PI);
+    for (int i = 0; i < m_size / 3; ++i) {
+      x[i + m_size / 3 * 2] = exp(log_start + log_ext * quad_up.template nodes<CPU_memory>()[i]);
+      w[i + m_size / 3 * 2] =
+          (quad_up.template weights<CPU_memory>()[i] * log_ext * x[i + m_size / 3 * 2]) / NT(2 * M_PI);
     }
 
     write_data(x, w);
