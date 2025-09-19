@@ -91,7 +91,7 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
       hdf5_output.scalar("i", 1);
       hdf5_output.scalar("s", "test_string");
       hdf5_output.scalar("c", complex<double>(1.0, 2.0));
-      hdf5_output.scalar("ad", autodiff::real({{1.0, 2.0}}));
+      hdf5_output.scalar("ad", autodiff::real({1.0, 2.0}));
       hdf5_output.scalar("arr", std::array<double, 3>{{1.0, 2.0, 3.0}});
       hdf5_output.flush(4.0); // Flush to ensure the data is written
 
@@ -120,7 +120,7 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
       hdf5_output.scalar("i", 6);
       hdf5_output.scalar("s", "another_string");
       hdf5_output.scalar("c", complex<double>(3.0, 4.0));
-      hdf5_output.scalar("ad", autodiff::real({{2.0, 1.0}}));
+      hdf5_output.scalar("ad", autodiff::real({2.0, 1.0}));
       hdf5_output.scalar("arr", std::array<double, 3>{{9.0, 8.0, 7.0}});
       // this should throw, as "d" has already been written
       REQUIRE_THROWS_AS(hdf5_output.scalar("d", 24.0), std::runtime_error);

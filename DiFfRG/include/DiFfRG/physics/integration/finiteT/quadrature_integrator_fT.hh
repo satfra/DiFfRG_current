@@ -23,7 +23,7 @@ namespace DiFfRG
      */
     using ctype = typename get_type::ctype<NT>;
     /**
-     * @brief Execution space to be used for the integration, e.g. GPU_exec, TBB_exec, or OpenMP_exec.
+     * @brief Execution space to be used for the integration, e.g. GPU_exec, TBB_exec.
      */
     using execution_space = ExecutionSpace;
 
@@ -150,7 +150,7 @@ namespace DiFfRG
                             // positive and negative Matsubara frequencies
                             wt * (KERNEL::kernel(posargs..., xt, iargs...) + KERNEL::kernel(posargs..., -xt, iargs...))
                             // The zero mode (once per matsubara sum)
-                            + (idx[dim - 1] != 0 ? (ctype)0 : m_T * KERNEL::kernel(posargs..., (ctype)0, iargs...)));
+                            + (idx[dim - 1] != 0 ? NT{} : m_T * KERNEL::kernel(posargs..., (ctype)0, iargs...)));
                   },
                   x);
             },

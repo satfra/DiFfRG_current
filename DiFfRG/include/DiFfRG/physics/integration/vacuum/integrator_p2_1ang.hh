@@ -68,7 +68,7 @@ namespace DiFfRG
      */
     using ctype = typename get_type::ctype<NT>;
     /**
-     * @brief Execution space to be used for the integration, e.g. GPU_exec, TBB_exec, or OpenMP_exec.
+     * @brief Execution space to be used for the integration, e.g. GPU_exec, TBB_exec.
      */
     using execution_space = ExecutionSpace;
 

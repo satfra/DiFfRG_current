@@ -6,8 +6,8 @@ echo "###############################################################"
 echo
 echo "Choose a setup to build:"
 echo "1) Base"
-echo "2) MPI+OpenMP"
-echo "3) MPI+OpenMP+CUDA"
+echo "2) MPI"
+echo "3) MPI+CUDA"
 echo
 echo "Enter your choice (1-3):"
 read choice
@@ -22,11 +22,11 @@ if [[ "$choice" -eq 1 ]]; then
     images=$(ls Base/)
     folder="Base"
 elif [[ "$choice" -eq 2 ]]; then
-    images=$(ls MPI+OpenMP/)
-    folder="MPI+OpenMP"
+    images=$(ls MPI/)
+    folder="MPI"
 else
-    images=$(ls MPI+OpenMP+CUDA/)
-    folder="MPI+OpenMP+CUDA"
+    images=$(ls MPI+CUDA/)
+    folder="MPI+CUDA"
 fi
 echo "The following images are available:"
 # enumerate the images

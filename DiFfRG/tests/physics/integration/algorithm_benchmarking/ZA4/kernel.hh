@@ -2,7 +2,6 @@
 
 #include "DiFfRG/physics/interpolation.hh"
 #include "DiFfRG/physics/physics.hh"
-#include "DiFfRG/physics/utils.hh"
 
 namespace DiFfRG
 {

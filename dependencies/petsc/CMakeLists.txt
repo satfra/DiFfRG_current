@@ -16,12 +16,6 @@ execute_process(
   OUTPUT_QUIET)
 
 message(STATUS "Configuring PETSc...")
-# config OpenMP
-if(NOT DEFINED HAVE_OPENMP)
-  set(HAVE_OPENMP
-      OFF
-      CACHE BOOL "Enable OpenMP support")
-endif()
 # config MPI
 if(NOT DEFINED HAVE_MPI)
   set(HAVE_MPI
@@ -37,14 +31,6 @@ if(HAVE_MPI)
 else()
   message(STATUS "Building PETSc without MPI support")
   set(PETSC_OPTIONS "-with-mpi=0")
-endif()
-# if you're on MacOS, we need to turn off OpenMP support
-if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-  set(HAVE_OPENMP FALSE)
-endif()
-if(HAVE_OPENMP)
-  message(STATUS "Building PETSc with OpenMP support")
-  set(PETSC_OPTIONS "${PETSC_OPTIONS} -with-openmp")
 endif()
 
 execute_process(

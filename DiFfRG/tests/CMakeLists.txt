@@ -3,6 +3,7 @@
 # ##############################################################################
 
 include_directories(./)
+# include(../cmake/setup_build_system.cmake)
 
 include(FetchContent)
 FetchContent_Declare(
@@ -12,11 +13,12 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(Catch2)
 list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/contrib)
 
+find_package(DiFfRG HINTS ${CMAKE_PREFIX_PATH})
+
 function(setup_test SOURCE)
   # Create a test executable from the source file, removing the extension
   get_filename_component(TARGET ${SOURCE} NAME_WE)
   add_executable(${TARGET} ${SOURCE})
-  setup_target(${TARGET})
   target_link_libraries(${TARGET} PRIVATE DiFfRG::DiFfRG Catch2::Catch2WithMain)
   catch_discover_tests(${TARGET})
 endfunction()
@@ -25,7 +27,6 @@ function(setup_benchmark SOURCE)
   # Create a test executable from the source file, removing the extension
   get_filename_component(TARGET ${SOURCE} NAME_WE)
   add_executable(${TARGET} ${SOURCE})
-  setup_target(${TARGET})
   target_link_libraries(${TARGET} PRIVATE DiFfRG::DiFfRG Catch2::Catch2WithMain)
 endfunction()
 
