@@ -5,7 +5,9 @@
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/polynomials.hh>
 #include <DiFfRG/physics/integration/finiteT/integrator_fT_p2.hh>
+#include <DiFfRG/physics/integration/vacuum/integrator_p2.hh>
 #include <DiFfRG/physics/interpolation.hh>
+#include <DiFfRG/physics/regulators.hh>
 
 using namespace DiFfRG;
 
@@ -51,7 +53,7 @@ TEMPLATE_TEST_CASE_SIG("Test finite T momentum integrals", "[integration][quadra
 
     SECTION("Volume integral")
     {
-      const ctype val = GENERATE(take(1, random(0., 1.)));
+      const ctype val = GENERATE(take(5, random(0., 1.)));
       integrator.set_typical_E(val);
 
       const NT reference_integral = V_d(dim, q_extent) / powr<dim>(2. * M_PI) // spatial part
@@ -104,4 +106,51 @@ TEMPLATE_TEST_CASE_SIG("Test finite T momentum integrals", "[integration][quadra
   SECTION("Threads") { check(Threads_exec(), (double)0); }
   // Check on GPU
   SECTION("GPU") { check(GPU_exec(), (double)0); }
+}
+
+TEST_CASE("Test integrator_fT_p2 bug", "[integration][quadrature]")
+{
+  using NT = double;
+  using ctype = typename get_type::ctype<NT>;
+  using ExecutionSpace = ExecutionSpaces::TBB_exec_space;
+  using Regulator = DiFfRG::PolynomialExpRegulator<>;
+  const int dim_fT = 4;
+  const int dim = 3;
+
+  DiFfRG::Init();
+  const NT T = 1e-2;
+  const NT k = 0.65;
+  // const double x_extent = GENERATE(take(1, random(1., 2.)));
+  const NT x_extent = 2.0;
+  // const uint size = GENERATE(64, 128, 256);
+  const size_t size = 256;
+
+  QuadratureProvider quadrature_provider;
+  Integrator_fT_p2<dim_fT, NT, quark_kernel<Regulator>, ExecutionSpace> integrator_fT(quadrature_provider, {size},
+                                                                                      x_extent);
+  Integrator_p2<dim, NT, quarkIntegrated_kernel<Regulator>, ExecutionSpace> integrator(quadrature_provider, {size},
+                                                                                       x_extent);
+  integrator_fT.set_T(T);
+
+  // const double q_extent = std::sqrt(x_extent * powr<2>(k));
+  // const double mq2 = GENERATE(0.0, 0.5, 1.0);
+  const NT h = 6.2;
+  const NT sigma = 0;
+  const double mq2 = powr<2>(h * sigma);
+  integrator_fT.set_typical_E(k);
+
+  NT integral_fT{};
+  integrator_fT.get(integral_fT, k, T, mq2);
+  NT integralIntegrated{};
+  integrator.get(integralIntegrated, k, T, mq2);
+
+  constexpr ctype expected_precision = 1e-6;
+  const ctype rel_err = abs(integral_fT - integralIntegrated) / abs(integralIntegrated);
+  if (rel_err >= expected_precision) {
+    std::cerr << "integral analytic matsubara sum: " << integralIntegrated
+              << "| integral numeric matsubara sum: " << integral_fT << "| relative error: " << rel_err << std::endl;
+  }
+  CHECK(rel_err < expected_precision);
+
+  integrator_fT.set_k(k);
 }
