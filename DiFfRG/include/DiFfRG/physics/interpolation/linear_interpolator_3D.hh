@@ -92,7 +92,7 @@ namespace DiFfRG
      * @param x the point at which to interpolate
      * @return NT the interpolated value
      */
-    NT KOKKOS_INLINE_FUNCTION operator()(const ctype &x, const ctype &y, const ctype &z) const
+    NT KOKKOS_FUNCTION operator()(const ctype &x, const ctype &y, const ctype &z) const
     {
       using Kokkos::min, Kokkos::max;
       auto [idx_x, idx_y, idx_z] = coordinates.backward(x, y, z);

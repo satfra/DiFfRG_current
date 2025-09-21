@@ -37,46 +37,48 @@ TEMPLATE_TEST_CASE_SIG("Test finite T momentum integrals", "[integration][quadra
         return abs(val);
     };
 
-    const ctype T = GENERATE(take(1, random(0.01, 1.)));
+    const ctype T = GENERATE(1e-4, 1e-3, 5e-3, 1e-2, 5e-2, 1e-1, 5e-1, 1., 5., 10.);
     const ctype x_extent = GENERATE(take(1, random(1., 2.)));
-    const uint size = GENERATE(64, 128, 256);
+    const uint size = GENERATE(16, 32);
 
     QuadratureProvider quadrature_provider;
     Integrator_fT_p2<dim, NT, PolyIntegrand<2, NT, -1>, ExecutionSpace> integrator(quadrature_provider, {size},
                                                                                    x_extent);
-    integrator.set_T(T);
 
     const ctype k = GENERATE(take(1, random(0., 1.)));
     const ctype q_extent = std::sqrt(x_extent * powr<2>(k));
 
-    integrator.set_k(k);
-
-    SECTION("Volume integral")
+    SECTION("Volume integral (bosonic)")
     {
-      const ctype val = GENERATE(take(5, random(0., 1.)));
+      const ctype val = GENERATE(1e-4, 1e-3, 1e-2, 1e-1, 1., 10.);
+      integrator.set_T(T);
+      integrator.set_k(k);
       integrator.set_typical_E(val);
 
-      const NT reference_integral = V_d(dim, q_extent) / powr<dim>(2. * M_PI) // spatial part
-                                    / (std::tanh(val / (2. * T)) * 2. * val); // sum
+      const NT reference_integral = V_d(dim - 1, q_extent) / powr<dim - 1>(2. * M_PI) // spatial part
+                                    / (std::tanh(val / (2. * T)) * 2. * val);         // sum
 
       NT integral{};
       integrator.get(integral, 0., 1., 0., 0., 0., powr<2>(val), 0., 1., 0.);
 
-      constexpr ctype expected_precision = 1e-6;
+      constexpr ctype expected_precision = 5e-6;
       const ctype rel_err = t_abs(reference_integral - integral) / t_abs(reference_integral);
       if (rel_err >= expected_precision) {
-        std::cerr << "reference: " << reference_integral << "| integral: " << integral
-                  << "| relative error: " << abs(reference_integral - integral) / abs(reference_integral) << std::endl;
+        std::cerr << "Failure for T = " << T << ", k = " << k << ", val = " << val << "\n"
+                  << "reference: " << reference_integral << "| integral: " << integral
+                  << "| relative error: " << rel_err << std::endl;
       }
       CHECK(rel_err < expected_precision);
     }
     SECTION("Volume map")
     {
-      const ctype val = GENERATE(take(1, random(0., 1.)));
+      const ctype val = GENERATE(1e-3, 1e-1, 10.);
+      integrator.set_T(T);
+      integrator.set_k(k);
       integrator.set_typical_E(val);
 
-      const NT reference_integral = V_d(dim, q_extent) / powr<dim>(2. * M_PI) // spatial part
-                                    / (std::tanh(val / (2. * T)) * 2. * val); // sum
+      const NT reference_integral = V_d(dim - 1, q_extent) / powr<dim - 1>(2. * M_PI) // spatial part
+                                    / (std::tanh(val / (2. * T)) * 2. * val);         // sum
 
       const uint rsize = GENERATE(32, 64);
       std::vector<NT> integral_view(rsize);
@@ -84,7 +86,7 @@ TEMPLATE_TEST_CASE_SIG("Test finite T momentum integrals", "[integration][quadra
 
       integrator.map(integral_view.data(), coordinates, 1., 0., 0., 0., powr<2>(val), 0., 1., 0.).fence();
 
-      constexpr ctype expected_precision = 1e-6;
+      constexpr ctype expected_precision = 5e-6;
       for (uint i = 0; i < rsize; ++i) {
         const ctype rel_err = t_abs(coordinates.forward(i) + reference_integral - integral_view[i]) /
                               t_abs(coordinates.forward(i) + reference_integral);

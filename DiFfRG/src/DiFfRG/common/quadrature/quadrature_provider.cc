@@ -53,7 +53,7 @@ namespace DiFfRG
       // create new entry in quadratures_d
       auto new_it = map.insert(std::make_pair(E, MatsubaraQuadrature<double>())).first;
       // Initialize the quadrature
-      new_it->second.reinit(T_it->first, E, 2, min_matsubara_size, 128, vacuum_quad_size, add_matsubara_size);
+      new_it->second.reinit(T_it->first, E, 2, min_matsubara_size, 128, vacuum_quad_size, matsubara_precision_factor);
 
       if (verbosity >= 0)
         spdlog::get("QuadratureProvider")
@@ -104,7 +104,7 @@ namespace DiFfRG
       // create new entry in quadratures_f
       auto new_it = map.insert(std::make_pair(E, MatsubaraQuadrature<float>())).first;
       // Initialize the quadrature
-      new_it->second.reinit(T_it->first, E, 2, min_matsubara_size, 128, vacuum_quad_size, add_matsubara_size);
+      new_it->second.reinit(T_it->first, E, 2, min_matsubara_size, 128, vacuum_quad_size, matsubara_precision_factor);
 
       if (verbosity >= 0)
         spdlog::get("QuadratureProvider")
@@ -120,10 +120,10 @@ namespace DiFfRG
       if (size <= 0) throw std::invalid_argument("MatsubaraStorage: Vacuum quadrature size must be positive.");
       vacuum_quad_size = size;
     }
-    void MatsubaraStorage::set_add_matsubara_size(const int value)
+    void MatsubaraStorage::set_matsubara_precision_factor(const int value)
     {
-      if (value < 0) throw std::invalid_argument("MatsubaraStorage: add_matsubara_size must be positive.");
-      add_matsubara_size = value;
+      if (value < 0) throw std::invalid_argument("MatsubaraStorage: matsubara_precision_factor must be positive.");
+      matsubara_precision_factor = value;
     }
     void MatsubaraStorage::set_min_matsubara_size(const int value)
     {
@@ -230,8 +230,8 @@ namespace DiFfRG
     const int vacuum_quad_size = json.get_uint("/integration/vacuum_quad_size", 48);
     matsubara_storage.set_vacuum_quad_size(vacuum_quad_size);
 
-    const int add_matsubara_size = json.get_uint("/integration/add_matsubara_size", 0);
-    matsubara_storage.set_add_matsubara_size(add_matsubara_size);
+    const int matsubara_precision_factor = json.get_uint("/integration/matsubara_precision_factor", 0);
+    matsubara_storage.set_matsubara_precision_factor(matsubara_precision_factor);
 
     const int min_matsubara_size = json.get_uint("/integration/min_matsubara_size", 16);
     matsubara_storage.set_min_matsubara_size(min_matsubara_size);

@@ -2,6 +2,7 @@
 
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/discretization/data/hdf5_output.hh>
 
 // external libraries
 #include <deal.II/dofs/dof_handler.h>
@@ -43,9 +44,7 @@ namespace DiFfRG
     FEOutput();
     ~FEOutput();
 
-#ifdef H5CPP
-    void set_h5_group(std::shared_ptr<hdf5::node::Group> h5_group);
-#endif
+    void set_hdf5_output(HDF5Output *output);
 
     /**
      * @brief Attach a solution to the output.
@@ -91,9 +90,8 @@ namespace DiFfRG
 
     void update_buffers();
 
-#ifdef H5CPP
-    std::shared_ptr<hdf5::node::Group> h5_group;
-#endif
+    HDF5Output *hdf5_output = nullptr;
+
     bool save_vtk;
   };
 

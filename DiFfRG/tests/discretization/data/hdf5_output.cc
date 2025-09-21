@@ -93,7 +93,27 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
       hdf5_output.scalar("c", complex<double>(1.0, 2.0));
       hdf5_output.scalar("ad", autodiff::real({1.0, 2.0}));
       hdf5_output.scalar("arr", std::array<double, 3>{{1.0, 2.0, 3.0}});
-      hdf5_output.flush(0.0); // Flush to ensure the data is written
+      hdf5_output.flush(4.0); // Flush to ensure the data is written
+
+      {
+        // We do an in-between test to ensure that the data is correctly written
+        std::filesystem::path hdf5_file(tmp / hdf5FileName);
+        REQUIRE(std::filesystem::exists(hdf5_file));
+        REQUIRE(std::filesystem::is_regular_file(hdf5_file));
+        auto file = hdf5::file::open(hdf5_file, hdf5::file::AccessFlags::ReadOnly);
+
+        // Check if the file contains the time dataset
+        auto root = file.root();
+        REQUIRE(root.has_group("scalars"));
+        auto scalars_group = root.get_group("scalars");
+        REQUIRE(scalars_group.has_dataset("time"));
+        auto time_dataset = scalars_group.get_dataset("time");
+        REQUIRE(time_dataset.datatype() == hdf5::datatype::create<double>());
+        std::vector<double> time_data(1);
+        time_dataset.read(time_data);
+        REQUIRE(time_data[0] == 4.0);
+      }
+
       hdf5_output.scalar("d", 12.0);
       // this should throw, as the datatype does not match
       REQUIRE_THROWS_AS(hdf5_output.scalar("i", 3.14), std::runtime_error);
@@ -106,7 +126,7 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
       REQUIRE_THROWS_AS(hdf5_output.scalar("d", 24.0), std::runtime_error);
       // this should throw, as "fff" has not been written in the previous flush
       REQUIRE_THROWS_AS(hdf5_output.scalar("fff", 24.0), std::runtime_error);
-      hdf5_output.flush(1.0); // Flush again to ensure the data is written
+      hdf5_output.flush(8.0); // Flush again to ensure the data is written
     }
     spdlog::get("log")->info("HDF5 file written.");
 
@@ -121,6 +141,16 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
     auto root = file.root();
     REQUIRE(root.has_group("scalars"));
     auto scalars_group = root.get_group("scalars");
+
+    spdlog::get("log")->info("checking time...");
+    REQUIRE(scalars_group.has_dataset("time"));
+    auto time_dataset = scalars_group.get_dataset("time");
+    REQUIRE(time_dataset.datatype() == hdf5::datatype::create<double>());
+    std::vector<double> time_data(2);
+    time_dataset.read(time_data);
+    REQUIRE(time_data.size() == 2);
+    REQUIRE(time_data[0] == 4.0);
+    REQUIRE(time_data[1] == 8.0);
 
     spdlog::get("log")->info("checking d...");
     REQUIRE(scalars_group.has_dataset("d"));
