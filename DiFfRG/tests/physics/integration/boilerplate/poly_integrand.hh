@@ -182,6 +182,7 @@ public:
     using namespace DiFfRG::compute;
     const auto _repl1 = RF(powr<2>(k), powr<2>(lf1));
     const auto _repl2 = RFdot(powr<2>(k), powr<2>(lf1));
+
     return (12.4) *
            ((-1.) * (_repl1 + lf1) *
                 ((_repl2) *
@@ -218,5 +219,5 @@ private:
 
   static KOKKOS_FORCEINLINE_FUNCTION auto dq2RF(const auto &k2, const auto &p2) { return Regulator::dq2RF(k2, p2); }
 
-  static double sech(double x) { return 1 / std::cosh(x); }
+  static KOKKOS_FORCEINLINE_FUNCTION double sech(double x) { return 1. / Kokkos::cosh(x); }
 };
