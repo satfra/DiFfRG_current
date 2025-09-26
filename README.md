@@ -3,6 +3,8 @@
 [![Wolfram](https://img.shields.io/badge/wolfram_doc-cf1c10?style=for-the-badge&logo=wolfram)](https://satfra.github.io/DiFfRG/wolfram/html/guide/DiFfRG.html)
 [![Python](https://img.shields.io/badge/python_doc-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://satfra.github.io/DiFfRG/python/index.html)
 
+<h3>[This is the development repository for DiFfRG. For the current stable version, please visit [the main repository](https://github.com/satfra/DiFfRG)</h3>
+
 # DiFfRG - A Discretization Framework for functional Renormalization Group flows
 
 DiFfRG is a set of tools for the discretization of flow equations arising in the functional Renormalization Group (fRG).
