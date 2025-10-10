@@ -1,6 +1,6 @@
 [project]
 name = "DiFfRG"
-version = "1.0.0"
+version = "1.0.1"
 authors = [
   { name = "Franz Richard Sattler", email = "sattler@thphys.uni-heidelberg.de" },
 ]
