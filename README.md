@@ -134,7 +134,7 @@ $ cd DiFfRG
 $ mkdir build
 $ cd build
 $ cmake ../ -DCMAKE_INSTALL_PREFIX=~/.local/share/DiFfRG/ -DCMAKE_BUILD_TYPE=Release
-$ cmake --build ./ -- -j8"
+$ cmake --build ./ -- -j8
 ```
 By default, the library will install itself to `$HOME/.local/shared/DiFfRG`, but you can control the destination by pointing `CMAKE_INSTALL_PREFIX` to a directory of your choice.
 
