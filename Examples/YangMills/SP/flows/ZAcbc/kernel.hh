@@ -2,7 +2,6 @@
 
 #include "DiFfRG/physics/interpolation.hh"
 #include "DiFfRG/physics/physics.hh"
-#include "DiFfRG/physics/utils.hh"
 
 namespace DiFfRG
 {
@@ -12,7 +11,7 @@ namespace DiFfRG
     using Regulator = _Regulator;
 
     static KOKKOS_FORCEINLINE_FUNCTION auto
-    kernel(const auto &l1, const auto &cos1, const auto &cos2, const auto &p, const double &k,
+    kernel(const double &l1, const double &cos1, const double &cos2, const double &p, const double &k,
            const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZA3,
            const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZAcbc,
            const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZA4,
@@ -26,1451 +25,227 @@ namespace DiFfRG
       const double cosl1p1 = cos1;
       const double cosl1p2 = ((-1.) * (cos1) + (sqrt(3. + (-3.) * (powr<2>(cos1)))) * (cos2)) * (0.5);
       const double cosl1p3 = ((-1.) * (cos1) + (-1.) * ((sqrt(3. + (-3.) * (powr<2>(cos1)))) * (cos2))) * (0.5);
-      const auto _repl1 = RB(powr<2>(k), powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p));
-      const auto _repl2 = ZA(pow(1. + powr<6>(k), 0.16666666666666666667));
-      const auto _repl3 = ZA(sqrt(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)));
+      const auto _repl1 = ZA(pow(1. + powr<6>(k), 0.16666666666666666667));
+      const auto _repl2 = Zc(k);
+      const auto _repl3 = RB(powr<2>(k), powr<2>(l1));
       const auto _repl4 = RB(powr<2>(k), powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p));
-      const auto _repl5 = ZA(sqrt(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)));
-      const auto _repl6 = ZA3((0.816496580927726) *
-                              (sqrt(powr<2>(l1) + (l1) * (cosl1p1 + (2.) * (cosl1p2)) * (p) + (1.5) * (powr<2>(p)))));
-      const auto _repl7 = ZAcbc((0.816496580927726) * (sqrt(powr<2>(l1) + (cosl1p2) * ((l1) * (p)) + powr<2>(p))));
-      const auto _repl8 =
-          ZAcbc((0.816496580927726) * (sqrt(powr<2>(l1) + (l1) * (cosl1p1 + cosl1p2) * (p) + powr<2>(p))));
+      const auto _repl5 = ZA(l1);
+      const auto _repl6 = RBdot(powr<2>(k), powr<2>(l1));
+      const auto _repl7 = dtZA(pow(1. + powr<6>(k), 0.16666666666666666667));
+      const auto _repl8 = Zc((1.02) * (k));
       const auto _repl9 = dtZc(k);
-      const auto _repl10 = RB(powr<2>(k), powr<2>(l1));
-      const auto _repl11 = RBdot(powr<2>(k), powr<2>(l1));
-      const auto _repl12 = Zc(k);
-      const auto _repl13 = Zc((1.02) * (k));
-      const auto _repl14 = Zc(l1);
-      const auto _repl15 = dtZA(pow(1. + powr<6>(k), 0.16666666666666666667));
-      const auto _repl16 = ZA((1.02) * (pow(1. + powr<6>(k), 0.16666666666666666667)));
-      const auto _repl17 = ZA(l1);
-      const auto _repl18 =
-          ZAcbc((0.816496580927726) * (sqrt(powr<2>(l1) + (-1.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))));
-      const auto _repl19 =
+      const auto _repl10 = ZA((1.02) * (pow(1. + powr<6>(k), 0.16666666666666666667)));
+      const auto _repl11 = Zc(sqrt(powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)));
+      const auto _repl12 =
           ZAcbc((0.816496580927726) * (sqrt(powr<2>(l1) + (-1.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))));
-      const auto _repl20 = ZAcbc(
-          (0.5773502691896258) *
-          (sqrt((2.) * (powr<2>(l1)) + (-2.) * (cosl1p1 + (2.) * (cosl1p2)) * ((l1) * (p)) + (3.) * (powr<2>(p)))));
-      const auto _repl21 = RB(powr<2>(k), powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p));
-      const auto _repl22 = Zc(sqrt(powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)));
-      const auto _repl23 = RB(powr<2>(k), powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p));
-      const auto _repl24 = Zc(sqrt(powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)));
-      const auto _repl25 = RB(powr<2>(k), powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p));
-      const auto _repl26 = ZA(sqrt(powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)));
-      const auto _repl27 = ZA3((0.816496580927726) * (sqrt(powr<2>(l1) + (cosl1p1) * ((l1) * (p)) + powr<2>(p))));
-      const auto _repl28 =
-          ZAcbc((0.816496580927726) *
-                (sqrt(powr<2>(l1) + (l1) * (cosl1p1 + (-1.) * (cosl1p2)) * (p) + (1.5) * (powr<2>(p)))));
-      const auto _repl29 = RB(powr<2>(k), powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p));
-      const auto _repl30 = ZA(sqrt(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)));
-      const auto _repl31 =
-          ZA3((0.816496580927726) * (sqrt(powr<2>(l1) + (-1.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))));
-      const auto _repl32 = ZAcbc(
-          (0.5773502691896258) *
-          (sqrt((2.) * (powr<2>(l1)) + (-2.) * ((2.) * (cosl1p1) + cosl1p2) * ((l1) * (p)) + (3.) * (powr<2>(p)))));
-      const auto _repl33 =
-          ZAcbc((0.816496580927726) * (sqrt(powr<2>(l1) + (-1.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))));
-      const auto _repl34 =
-          ZAcbc((0.816496580927726) *
-                (sqrt(powr<2>(l1) + (l1) * ((-1.) * (cosl1p1) + cosl1p2) * (p) + (1.5) * (powr<2>(p)))));
-      const auto _repl35 = Zc(sqrt(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)));
-      const auto _repl36 = ZAcbc((0.816496580927726) * (sqrt(powr<2>(l1) + (cosl1p1) * ((l1) * (p)) + powr<2>(p))));
-      const auto _repl37 = ZAcbc(
-          (0.816496580927726) * (sqrt(powr<2>(l1) + (l1) * ((2.) * (cosl1p1) + cosl1p2) * (p) + (1.5) * (powr<2>(p)))));
-      const auto _repl38 = Zc(sqrt(powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)));
-      return (3.) *
-                 ((-0.25) *
-                      ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                       (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                      ((_repl18) *
-                       ((_repl19) *
-                        ((_repl20) *
-                         ((powr<-1>(1. + powr<6>(k))) *
-                          ((powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))) *
-                           ((powr<-1>((_repl12) * (_repl21) +
-                                      (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl22))) *
-                            (powr<-1>((_repl12) * (_repl23) +
-                                      (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                          (_repl24))))))))) +
-                  (-1.5) *
-                      ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                       (_repl10) * (_repl9)) *
-                      ((_repl6) *
-                       ((_repl7) *
-                        ((_repl8) *
-                         ((powr<4>(l1)) *
-                          ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                           ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                            ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                             ((powr<-1>((_repl1) * (_repl2) +
-                                        (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl3))) *
-                              (powr<-1>((_repl2) * (_repl4) +
-                                        (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                            (_repl5))))))))))) +
-                  (-1.) *
-                      ((_repl18) *
-                           ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                            (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                           ((_repl27) *
-                            ((_repl28) *
-                             ((powr<-1>(1. + powr<6>(k))) *
-                              ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                               ((powr<-1>((_repl2) * (_repl25) +
-                                          (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl26))) *
-                                (powr<-1>((_repl12) * (_repl21) +
-                                          (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                              (_repl22)))))))) +
-                       (_repl19) * ((_repl10) * (_repl15) + (_repl11) * (_repl2)) *
-                           ((_repl31) *
-                            ((_repl32) *
-                             ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                              ((powr<-1>((_repl2) * (_repl29) +
-                                         (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl30))) *
-                               (powr<-1>((_repl12) * (_repl23) +
-                                         (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                             (_repl24))))))) +
-                       (-50.) * ((-1.) * (_repl16) + _repl2) *
-                           ((_repl10) *
-                            ((_repl19) *
-                             ((_repl31) *
-                              ((_repl32) *
-                               ((powr<6>(k)) *
-                                ((powr<-1>(1. + powr<6>(k))) *
-                                 ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                  ((powr<-1>((_repl2) * (_repl29) +
-                                             (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                 (_repl30))) *
-                                   (powr<-1>((_repl12) * (_repl23) +
-                                             (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                                 (_repl24)))))))))))) *
-                      ((powr<2>(l1)) * (powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1))))) +
-                  ((-0.5) *
-                       ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                        (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                       ((_repl18) *
-                        ((_repl27) *
-                         ((_repl28) *
-                          ((powr<-1>(1. + powr<6>(k))) *
-                           ((powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))) *
-                            ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                             ((powr<-1>((_repl2) * (_repl25) +
-                                        (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl26))) *
-                              (powr<-1>((_repl12) * (_repl21) +
-                                        (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                            (_repl22)))))))))) +
-                   (-0.5) * ((_repl10) * (_repl15) + (_repl11) * (_repl2)) *
-                       ((_repl19) *
-                        ((_repl31) *
-                         ((_repl32) *
-                          ((powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))) *
-                           ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                            ((powr<-1>((_repl2) * (_repl29) +
-                                       (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl30))) *
-                             (powr<-1>((_repl12) * (_repl23) +
-                                       (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                           (_repl24))))))))) +
-                   (25.) * ((-1.) * (_repl16) + _repl2) *
-                       ((_repl10) *
-                        ((_repl19) *
-                         ((_repl31) *
-                          ((_repl32) *
-                           ((powr<6>(k)) *
-                            ((powr<-1>(1. + powr<6>(k))) *
-                             ((powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))) *
-                              ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                               ((powr<-1>((_repl2) * (_repl29) +
-                                          (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                              (_repl30))) *
-                                (powr<-1>((_repl12) * (_repl23) +
-                                          (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                              (_repl24)))))))))))) +
-                   (-1.) *
-                       ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                        (_repl10) * (_repl9)) *
-                       ((_repl6) *
-                        ((_repl7) *
-                         ((_repl8) *
-                          ((powr<2>(l1)) *
-                           ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                            ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                             ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                              ((powr<-1>((_repl1) * (_repl2) +
-                                         (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl3))) *
-                               (powr<-1>((_repl2) * (_repl4) +
-                                         (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                             (_repl5)))))))))))) *
-                      (powr<2>(p))) *
-                 (powr<2>(p)) +
-             (((0.5) *
-                   ((-50.) * (_repl12 + (-1.) * (_repl13)) *
-                        ((_repl10) *
-                         ((_repl33) *
-                          ((_repl34) *
-                           (powr<-1>((_repl12) * (_repl29) +
-                                     (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl35)))))) +
-                    (_repl33) * ((_repl11) * (_repl12) + (_repl10) * (_repl9)) *
-                        ((_repl34) *
-                         (powr<-1>((_repl12) * (_repl29) +
-                                   (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl35)))) +
-                    (-2.) *
-                        ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                         (_repl10) * (_repl9)) *
-                        ((_repl6) *
-                         ((_repl8) *
-                          ((powr<2>(l1)) *
-                           ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                            (powr<-1>((_repl2) * (_repl4) +
-                                      (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                          (_repl5)))))))) *
-                   ((_repl7) *
-                    ((powr<3>(l1)) *
-                     ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                      ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                       (powr<-1>((_repl1) * (_repl2) +
-                                 (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl3))))))) +
-               ((-4.5) *
-                    ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                     (_repl10) * (_repl9)) *
-                    ((_repl6) *
-                     ((_repl7) *
-                      ((_repl8) *
-                       ((powr<3>(l1)) *
-                        ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                         ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                          ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                           ((powr<-1>((_repl1) * (_repl2) +
-                                      (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl3))) *
-                            (powr<-1>((_repl2) * (_repl4) +
-                                      (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                          (_repl5))))))))))) +
-                (0.5) *
-                    ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                     (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                    ((powr<-1>(1. + powr<6>(k))) *
-                     ((-5.) *
-                          ((_repl18) *
-                           ((_repl27) *
-                            ((_repl28) *
-                             ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                              ((powr<-1>((_repl2) * (_repl25) +
-                                         (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl26))) *
-                               (powr<-1>((_repl12) * (_repl21) +
-                                         (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                             (_repl22)))))))) +
-                      (7.) *
-                          ((_repl19) *
-                           ((_repl31) *
-                            ((_repl32) *
-                             ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                              ((powr<-1>((_repl2) * (_repl29) +
-                                         (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl30))) *
-                               (powr<-1>((_repl12) * (_repl23) +
-                                         (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                             (_repl24))))))))) *
-                     ((l1) * (powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1))))))) *
-                   (powr<2>(p)) +
-               ((0.5) *
-                    ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                     (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                    ((_repl18) *
-                     ((_repl19) *
-                      ((_repl20) *
-                       ((powr<-1>(1. + powr<6>(k))) *
-                        ((powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))) *
-                         ((powr<-1>((_repl12) * (_repl21) +
-                                    (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl22))) *
-                          (powr<-1>((_repl12) * (_repl23) +
-                                    (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                        (_repl24))))))))) +
-                ((-1.) *
-                     ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                      (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                     ((_repl18) *
-                      ((_repl27) *
-                       ((_repl28) *
-                        ((powr<-1>(1. + powr<6>(k))) *
-                         ((powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))) *
-                          ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                           ((powr<-1>((_repl2) * (_repl25) +
-                                      (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl26))) *
-                            (powr<-1>((_repl12) * (_repl21) +
-                                      (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                          (_repl22)))))))))) +
-                 (-1.) * ((_repl10) * (_repl15) + (_repl11) * (_repl2)) *
-                     ((_repl19) *
-                      ((_repl31) *
-                       ((_repl32) *
-                        ((powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))) *
-                         ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                          ((powr<-1>((_repl2) * (_repl29) +
-                                     (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl30))) *
-                           (powr<-1>((_repl12) * (_repl23) +
-                                     (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                         (_repl24))))))))) +
-                 (50.) * ((-1.) * (_repl16) + _repl2) *
-                     ((_repl10) *
-                      ((_repl19) *
-                       ((_repl31) *
-                        ((_repl32) *
-                         ((powr<6>(k)) *
-                          ((powr<-1>(1. + powr<6>(k))) *
-                           ((powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))) *
-                            ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                             ((powr<-1>((_repl2) * (_repl29) +
-                                        (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl30))) *
-                              (powr<-1>((_repl12) * (_repl23) +
-                                        (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                            (_repl24)))))))))))) +
-                 (0.5) *
-                     ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                      (_repl10) * (_repl9)) *
-                     ((_repl36) *
-                      ((_repl37) *
-                       ((_repl8) *
-                        ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                         ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                          ((powr<-1>((_repl12) * (_repl25) +
-                                     (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl38))) *
-                           (powr<-1>((_repl2) * (_repl4) +
-                                     (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                         (_repl5)))))))))) *
-                    (powr<2>(l1))) *
-                   (l1)) *
-                  (p) +
-              ((cosl1p1) *
-                   ((-7.) *
-                        ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                         (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                        ((_repl19) *
-                         ((_repl31) *
-                          ((_repl32) *
-                           ((powr<-1>(1. + powr<6>(k))) *
-                            ((l1) *
-                             ((powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))) *
-                              ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                               ((powr<-1>((_repl2) * (_repl29) +
-                                          (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                              (_repl30))) *
-                                (powr<-1>((_repl12) * (_repl23) +
-                                          (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                              (_repl24))))))))))) +
-                    (2.) *
-                        ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                         (_repl10) * (_repl9)) *
-                        ((_repl6) *
-                         ((_repl7) *
-                          ((_repl8) *
-                           ((powr<3>(l1)) *
-                            ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                             ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                              ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                               ((powr<-1>((_repl1) * (_repl2) +
-                                          (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl3))) *
-                                (powr<-1>((_repl2) * (_repl4) +
-                                          (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                              (_repl5)))))))))))) *
-                   (powr<3>(p)) +
-               (((3.) *
-                     ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                      (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                     ((_repl19) *
-                      ((_repl31) *
-                       ((_repl32) *
-                        ((powr<-1>(1. + powr<6>(k))) *
-                         ((powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))) *
-                          ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                           ((powr<-1>((_repl2) * (_repl29) +
-                                      (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl30))) *
-                            (powr<-1>((_repl12) * (_repl23) +
-                                      (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                          (_repl24)))))))))) +
-                 (_repl6) *
-                     ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                      (_repl10) * (_repl9)) *
-                     ((_repl7) *
-                      ((_repl8) *
-                       ((powr<2>(l1)) *
-                        ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                         ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                          ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                           ((powr<-1>((_repl1) * (_repl2) +
-                                      (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl3))) *
-                            (powr<-1>((_repl2) * (_repl4) +
-                                      (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                          (_repl5))))))))))) *
-                    (powr<2>(p)) +
-                ((_repl18) *
-                     ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                      (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                     ((_repl27) *
-                      ((_repl28) *
-                       ((powr<-1>(1. + powr<6>(k))) *
-                        ((powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))) *
-                         ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                          ((powr<-1>((_repl2) * (_repl25) +
-                                     (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl26))) *
-                           (powr<-1>((_repl12) * (_repl21) +
-                                     (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                         (_repl22))))))))) +
-                 (6.) *
-                     ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                      (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                     ((_repl19) *
-                      ((_repl31) *
-                       ((_repl32) *
-                        ((powr<-1>(1. + powr<6>(k))) *
-                         ((powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))) *
-                          ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                           ((powr<-1>((_repl2) * (_repl29) +
-                                      (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl30))) *
-                            (powr<-1>((_repl12) * (_repl23) +
-                                      (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                          (_repl24)))))))))) +
-                 (0.5) *
-                     ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                      (_repl10) * (_repl9)) *
-                     ((_repl36) *
-                      ((_repl37) *
-                       ((_repl8) *
-                        ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                         ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                          ((powr<-1>((_repl12) * (_repl25) +
-                                     (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl38))) *
-                           (powr<-1>((_repl2) * (_repl4) +
-                                     (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                         (_repl5))))))))) +
-                 (_repl7) *
-                     ((50.) * (_repl12 + (-1.) * (_repl13)) *
-                          ((_repl10) *
-                           ((_repl33) *
-                            ((_repl34) * (powr<-1>((_repl12) * (_repl29) +
-                                                   (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                       (_repl35)))))) +
-                      (-1.) * ((_repl11) * (_repl12) + (_repl10) * (_repl9)) *
-                          ((_repl33) *
-                           ((_repl34) *
-                            (powr<-1>((_repl12) * (_repl29) +
-                                      (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl35))))) +
-                      (3.) *
-                          ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                           (_repl10) * (_repl9)) *
-                          ((_repl6) *
-                           ((_repl8) *
-                            ((powr<2>(l1)) *
-                             ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                              (powr<-1>((_repl2) * (_repl4) +
-                                        (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                            (_repl5)))))))) *
-                     ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                      ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                       (powr<-1>((_repl1) * (_repl2) +
-                                 (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl3)))))) *
-                    (powr<2>(l1))) *
-                   (powr<2>(p))) *
-                  (cosl1p1)) *
-                 (cosl1p1) +
-             (((-1.) *
-                   ((50.) * (_repl12 + (-1.) * (_repl13)) *
-                        ((_repl10) *
-                         ((_repl33) *
-                          ((_repl34) *
-                           (powr<-1>((_repl12) * (_repl29) +
-                                     (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl35)))))) +
-                    (-1.) * ((_repl11) * (_repl12) + (_repl10) * (_repl9)) *
-                        ((_repl33) *
-                         ((_repl34) *
-                          (powr<-1>((_repl12) * (_repl29) +
-                                    (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl35))))) +
-                    (2.) *
-                        ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                         (_repl10) * (_repl9)) *
-                        ((_repl6) *
-                         ((_repl8) *
-                          ((powr<2>(l1)) *
-                           ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                            (powr<-1>((_repl2) * (_repl4) +
-                                      (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                          (_repl5)))))))) *
-                   ((_repl7) *
-                    ((powr<3>(l1)) *
-                     ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                      ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                       (powr<-1>((_repl1) * (_repl2) +
-                                 (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl3))))))) +
-               ((-9.) *
-                    ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                     (_repl10) * (_repl9)) *
-                    ((_repl6) *
-                     ((_repl7) *
-                      ((_repl8) *
-                       ((powr<3>(l1)) *
-                        ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                         ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                          ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                           ((powr<-1>((_repl1) * (_repl2) +
-                                      (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl3))) *
-                            (powr<-1>((_repl2) * (_repl4) +
-                                      (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                          (_repl5))))))))))) +
-                (l1) *
-                    ((_repl18) *
-                         ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                          (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                         ((_repl27) *
-                          ((_repl28) *
-                           ((powr<-1>(1. + powr<6>(k))) *
-                            ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                             ((powr<-1>((_repl2) * (_repl25) +
-                                        (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl26))) *
-                              (powr<-1>((_repl12) * (_repl21) +
-                                        (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                            (_repl22)))))))) +
-                     (_repl19) * ((_repl10) * (_repl15) + (_repl11) * (_repl2)) *
-                         ((_repl31) *
-                          ((_repl32) *
-                           ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                            ((powr<-1>((_repl2) * (_repl29) +
-                                       (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl30))) *
-                             (powr<-1>((_repl12) * (_repl23) +
-                                       (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                           (_repl24))))))) +
-                     (-50.) * ((-1.) * (_repl16) + _repl2) *
-                         ((_repl10) *
-                          ((_repl19) *
-                           ((_repl31) *
-                            ((_repl32) *
-                             ((powr<6>(k)) *
-                              ((powr<-1>(1. + powr<6>(k))) *
-                               ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                ((powr<-1>((_repl2) * (_repl29) +
-                                           (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                               (_repl30))) *
-                                 (powr<-1>((_repl12) * (_repl23) +
-                                           (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                               (_repl24)))))))))))) *
-                    (powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1))))) *
-                   (powr<2>(p)) +
-               (-1.) *
-                   ((-1.) *
-                        ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                         (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                        ((_repl18) *
-                         ((_repl19) *
-                          ((_repl20) *
-                           ((powr<-1>(1. + powr<6>(k))) *
-                            ((powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))) *
-                             ((powr<-1>((_repl12) * (_repl21) +
-                                        (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl22))) *
-                              (powr<-1>((_repl12) * (_repl23) +
-                                        (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                            (_repl24))))))))) +
-                    ((-1.) *
-                         ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                          (_repl10) * (_repl9)) *
-                         ((_repl36) *
-                          ((_repl37) *
-                           ((_repl8) *
-                            ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                             ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                              ((powr<-1>((_repl12) * (_repl25) +
-                                         (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl38))) *
-                               (powr<-1>((_repl2) * (_repl4) +
-                                         (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                             (_repl5))))))))) +
-                     (2.) *
-                         ((_repl18) *
-                              ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                               (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                              ((_repl27) *
-                               ((_repl28) *
-                                ((powr<-1>(1. + powr<6>(k))) *
-                                 ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                  ((powr<-1>((_repl2) * (_repl25) +
-                                             (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                 (_repl26))) *
-                                   (powr<-1>((_repl12) * (_repl21) +
-                                             (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                                 (_repl22)))))))) +
-                          (_repl19) * ((_repl10) * (_repl15) + (_repl11) * (_repl2)) *
-                              ((_repl31) *
-                               ((_repl32) *
-                                ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                 ((powr<-1>((_repl2) * (_repl29) +
-                                            (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                (_repl30))) *
-                                  (powr<-1>((_repl12) * (_repl23) +
-                                            (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                                (_repl24))))))) +
-                          (-50.) * ((-1.) * (_repl16) + _repl2) *
-                              ((_repl10) *
-                               ((_repl19) *
-                                ((_repl31) *
-                                 ((_repl32) *
-                                  ((powr<6>(k)) *
-                                   ((powr<-1>(1. + powr<6>(k))) *
-                                    ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                     ((powr<-1>((_repl2) * (_repl29) +
-                                                (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                    (_repl30))) *
-                                      (powr<-1>(
-                                          (_repl12) * (_repl23) +
-                                          (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                              (_repl24)))))))))))) *
-                         (powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1))))) *
-                        (powr<2>(l1))) *
-                   (l1)) *
-                  (p) +
-              (((1.5) *
-                    ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                     (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                    ((_repl18) *
-                     ((_repl19) *
-                      ((_repl20) *
-                       ((powr<-1>(1. + powr<6>(k))) *
-                        ((powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))) *
-                         ((powr<-1>((_repl12) * (_repl21) +
-                                    (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl22))) *
-                          (powr<-1>((_repl12) * (_repl23) +
-                                    (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                        (_repl24))))))))) +
-                ((-3.) *
-                     ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                      (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                     ((_repl18) *
-                      ((_repl27) *
-                       ((_repl28) *
-                        ((powr<-1>(1. + powr<6>(k))) *
-                         ((powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))) *
-                          ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                           ((powr<-1>((_repl2) * (_repl25) +
-                                      (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl26))) *
-                            (powr<-1>((_repl12) * (_repl21) +
-                                      (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                          (_repl22)))))))))) +
-                 (7.) *
-                     ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                      (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                     ((_repl19) *
-                      ((_repl31) *
-                       ((_repl32) *
-                        ((powr<-1>(1. + powr<6>(k))) *
-                         ((powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))) *
-                          ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                           ((powr<-1>((_repl2) * (_repl29) +
-                                      (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl30))) *
-                            (powr<-1>((_repl12) * (_repl23) +
-                                      (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                          (_repl24)))))))))) +
-                 (0.5) *
-                     ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                      (_repl10) * (_repl9)) *
-                     ((_repl36) *
-                      ((_repl37) *
-                       ((_repl8) *
-                        ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                         ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                          ((powr<-1>((_repl12) * (_repl25) +
-                                     (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl38))) *
-                           (powr<-1>((_repl2) * (_repl4) +
-                                     (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                         (_repl5))))))))) +
-                 (0.5) *
-                     ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                      (_repl10) * (_repl9)) *
-                     ((_repl7) *
-                      ((-5.) * (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                           ((_repl2) * ((_repl33) * ((_repl34) * (_repl4)))) +
-                       (-5.) *
-                           ((_repl33) *
-                            ((_repl34) * ((_repl5) * (powr<2>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) +
-                                                              powr<2>(p)))))) +
-                       (6.) *
-                           ((_repl12) * (_repl29) +
-                            (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl35)) *
-                           ((_repl6) * ((_repl8) * (powr<2>(l1))))) *
-                      ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                       ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                        ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                         ((powr<-1>((_repl12) * (_repl29) +
-                                    (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl35))) *
-                          ((powr<-1>((_repl1) * (_repl2) +
-                                     (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl3))) *
-                           (powr<-1>((_repl2) * (_repl4) +
-                                     (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                         (_repl5)))))))))) *
-                    (powr<2>(l1)) +
-                ((5.5) *
-                     ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                      (_repl10) * (_repl9)) *
-                     ((_repl6) *
-                      ((_repl7) *
-                       ((_repl8) *
-                        ((powr<2>(l1)) *
-                         ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                          ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                           ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                            ((powr<-1>((_repl1) * (_repl2) +
-                                       (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl3))) *
-                             (powr<-1>((_repl2) * (_repl4) +
-                                       (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                           (_repl5))))))))))) +
-                 (3.) *
-                     ((-1.) *
-                          ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                           (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                          ((_repl18) *
-                           ((_repl27) *
-                            ((_repl28) *
-                             ((powr<-1>(1. + powr<6>(k))) *
-                              ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                               ((powr<-1>((_repl2) * (_repl25) +
-                                          (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl26))) *
-                                (powr<-1>((_repl12) * (_repl21) +
-                                          (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                              (_repl22))))))))) +
-                      (_repl19) * ((_repl10) * (_repl15) + (_repl11) * (_repl2)) *
-                          ((_repl31) *
-                           ((_repl32) *
-                            ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                             ((powr<-1>((_repl2) * (_repl29) +
-                                        (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl30))) *
-                              (powr<-1>((_repl12) * (_repl23) +
-                                        (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                            (_repl24))))))) +
-                      (-50.) * ((-1.) * (_repl16) + _repl2) *
-                          ((_repl10) *
-                           ((_repl19) *
-                            ((_repl31) *
-                             ((_repl32) *
-                              ((powr<6>(k)) *
-                               ((powr<-1>(1. + powr<6>(k))) *
-                                ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                 ((powr<-1>((_repl2) * (_repl29) +
-                                            (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                (_repl30))) *
-                                  (powr<-1>((_repl12) * (_repl23) +
-                                            (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                                (_repl24)))))))))))) *
-                     (powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1))))) *
-                    (powr<2>(p))) *
-                   (powr<2>(p)) +
-               ((2.) *
-                    ((_repl6) *
-                         ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                          (_repl10) * (_repl9)) *
-                         ((_repl7) *
-                          ((_repl8) *
-                           ((powr<4>(l1)) *
-                            ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                             ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                              ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                               ((powr<-1>((_repl1) * (_repl2) +
-                                          (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl3))) *
-                                (powr<-1>((_repl2) * (_repl4) +
-                                          (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                              (_repl5)))))))))) +
-                     (-1.) *
-                         ((-1.) *
-                              ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                               (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                              ((_repl18) *
-                               ((_repl27) *
-                                ((_repl28) *
-                                 ((powr<-1>(1. + powr<6>(k))) *
-                                  ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                   ((powr<-1>((_repl2) * (_repl25) +
-                                              (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                  (_repl26))) *
-                                    (powr<-1>((_repl12) * (_repl21) +
-                                              (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                                  (_repl22))))))))) +
-                          (_repl19) * ((_repl10) * (_repl15) + (_repl11) * (_repl2)) *
-                              ((_repl31) *
-                               ((_repl32) *
-                                ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                 ((powr<-1>((_repl2) * (_repl29) +
-                                            (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                (_repl30))) *
-                                  (powr<-1>((_repl12) * (_repl23) +
-                                            (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                                (_repl24))))))) +
-                          (-50.) * ((-1.) * (_repl16) + _repl2) *
-                              ((_repl10) *
-                               ((_repl19) *
-                                ((_repl31) *
-                                 ((_repl32) *
-                                  ((powr<6>(k)) *
-                                   ((powr<-1>(1. + powr<6>(k))) *
-                                    ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                     ((powr<-1>((_repl2) * (_repl29) +
-                                                (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                    (_repl30))) *
-                                      (powr<-1>(
-                                          (_repl12) * (_repl23) +
-                                          (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                              (_repl24)))))))))))) *
-                         ((powr<2>(l1)) * (powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))))) *
-                    ((cosl1p1) * (powr<2>(p))) +
-                ((_repl7) *
-                     ((50.) * (_repl12 + (-1.) * (_repl13)) *
-                          ((_repl10) *
-                           ((_repl33) *
-                            ((_repl34) * (powr<-1>((_repl12) * (_repl29) +
-                                                   (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                       (_repl35)))))) +
-                      (-1.) * ((_repl11) * (_repl12) + (_repl10) * (_repl9)) *
-                          ((_repl33) *
-                           ((_repl34) *
-                            (powr<-1>((_repl12) * (_repl29) +
-                                      (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl35))))) +
-                      (2.) *
-                          ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                           (_repl10) * (_repl9)) *
-                          ((_repl6) *
-                           ((_repl8) *
-                            ((powr<2>(l1)) *
-                             ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                              (powr<-1>((_repl2) * (_repl4) +
-                                        (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                            (_repl5)))))))) *
-                     ((powr<3>(l1)) *
-                      ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                       ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                        (powr<-1>((_repl1) * (_repl2) +
-                                  (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl3)))))) +
-                 ((12.) *
-                      ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                       (_repl10) * (_repl9)) *
-                      ((_repl6) *
-                       ((_repl7) *
-                        ((_repl8) *
-                         ((powr<3>(l1)) *
-                          ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                           ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                            ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                             ((powr<-1>((_repl1) * (_repl2) +
-                                        (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl3))) *
-                              (powr<-1>((_repl2) * (_repl4) +
-                                        (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                            (_repl5))))))))))) +
-                  (powr<-1>(1. + powr<6>(k))) *
-                      ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                       (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                      ((l1) *
-                       ((-5.) *
-                            ((_repl18) *
-                             ((_repl27) *
-                              ((_repl28) * ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                            ((powr<-1>((_repl2) * (_repl25) +
-                                                       (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                           (_repl26))) *
-                                             (powr<-1>((_repl12) * (_repl21) +
-                                                       (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                                           (_repl22)))))))) +
-                        (-9.) * ((_repl19) *
-                                 ((_repl31) *
-                                  ((_repl32) *
-                                   ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                    ((powr<-1>((_repl2) * (_repl29) +
-                                               (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                   (_repl30))) *
-                                     (powr<-1>((_repl12) * (_repl23) +
-                                               (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                                   (_repl24))))))))) *
-                       (powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))))) *
-                     (powr<2>(p)) +
-                 ((-1.) *
-                      ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                       (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                      ((_repl18) *
-                       ((_repl19) *
-                        ((_repl20) *
-                         ((powr<-1>(1. + powr<6>(k))) *
-                          ((powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))) *
-                           ((powr<-1>((_repl12) * (_repl21) +
-                                      (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl22))) *
-                            (powr<-1>((_repl12) * (_repl23) +
-                                      (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                          (_repl24))))))))) +
-                  ((-1.) *
-                       ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                        (_repl10) * (_repl9)) *
-                       ((_repl36) *
-                        ((_repl37) *
-                         ((_repl8) *
-                          ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                           ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                            ((powr<-1>((_repl12) * (_repl25) +
-                                       (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl38))) *
-                             (powr<-1>((_repl2) * (_repl4) +
-                                       (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                           (_repl5))))))))) +
-                   (2.) *
-                       ((_repl18) *
-                            ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                             (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                            ((_repl27) *
-                             ((_repl28) * ((powr<-1>(1. + powr<6>(k))) *
-                                           ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                            ((powr<-1>((_repl2) * (_repl25) +
-                                                       (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                           (_repl26))) *
-                                             (powr<-1>((_repl12) * (_repl21) +
-                                                       (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                                           (_repl22)))))))) +
-                        (_repl19) * ((_repl10) * (_repl15) + (_repl11) * (_repl2)) *
-                            ((_repl31) *
-                             ((_repl32) *
-                              ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                               ((powr<-1>((_repl2) * (_repl29) +
-                                          (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                              (_repl30))) *
-                                (powr<-1>((_repl12) * (_repl23) +
-                                          (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                              (_repl24))))))) +
-                        (-50.) * ((-1.) * (_repl16) + _repl2) *
-                            ((_repl10) *
-                             ((_repl19) *
-                              ((_repl31) *
-                               ((_repl32) *
-                                ((powr<6>(k)) *
-                                 ((powr<-1>(1. + powr<6>(k))) *
-                                  ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                   ((powr<-1>((_repl2) * (_repl29) +
-                                              (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                  (_repl30))) *
-                                    (powr<-1>((_repl12) * (_repl23) +
-                                              (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                                  (_repl24)))))))))))) *
-                       (powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1))))) *
-                      (powr<2>(l1))) *
-                     (l1)) *
-                    (p)) *
-                   (cosl1p1)) *
-                  (cosl1p1) +
-              (((1.5) *
-                    ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                     (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                    ((_repl18) *
-                     ((_repl19) *
-                      ((_repl20) *
-                       ((powr<-1>(1. + powr<6>(k))) *
-                        ((powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))) *
-                         ((powr<-1>((_repl12) * (_repl21) +
-                                    (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl22))) *
-                          (powr<-1>((_repl12) * (_repl23) +
-                                    (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                        (_repl24))))))))) +
-                ((-1.) *
-                     ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                      (_repl10) * (_repl9)) *
-                     ((_repl36) *
-                      ((_repl37) *
-                       ((_repl8) *
-                        ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                         ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                          ((powr<-1>((_repl12) * (_repl25) +
-                                     (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl38))) *
-                           (powr<-1>((_repl2) * (_repl4) +
-                                     (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                         (_repl5))))))))) +
-                 (5.5) *
-                     ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                      (_repl10) * (_repl9)) *
-                     ((_repl6) *
-                      ((_repl7) *
-                       ((_repl8) *
-                        ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                         ((powr<2>(p)) *
-                          ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                           ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                            ((powr<-1>((_repl1) * (_repl2) +
-                                       (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl3))) *
-                             (powr<-1>((_repl2) * (_repl4) +
-                                       (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                           (_repl5))))))))))) +
-                 (2.) *
-                     ((_repl18) *
-                          ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                           (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                          ((_repl27) *
-                           ((_repl28) *
-                            ((powr<-1>(1. + powr<6>(k))) *
-                             ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                              ((powr<-1>((_repl2) * (_repl25) +
-                                         (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl26))) *
-                               (powr<-1>((_repl12) * (_repl21) +
-                                         (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                             (_repl22)))))))) +
-                      (_repl19) * ((_repl10) * (_repl15) + (_repl11) * (_repl2)) *
-                          ((_repl31) *
-                           ((_repl32) *
-                            ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                             ((powr<-1>((_repl2) * (_repl29) +
-                                        (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl30))) *
-                              (powr<-1>((_repl12) * (_repl23) +
-                                        (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                            (_repl24))))))) +
-                      (-50.) * ((-1.) * (_repl16) + _repl2) *
-                          ((_repl10) *
-                           ((_repl19) *
-                            ((_repl31) *
-                             ((_repl32) *
-                              ((powr<6>(k)) *
-                               ((powr<-1>(1. + powr<6>(k))) *
-                                ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                 ((powr<-1>((_repl2) * (_repl29) +
-                                            (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                (_repl30))) *
-                                  (powr<-1>((_repl12) * (_repl23) +
-                                            (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                                (_repl24)))))))))))) *
-                     (powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))) +
-                 (_repl7) *
-                     ((50.) * (_repl12 + (-1.) * (_repl13)) *
-                          ((_repl10) *
-                           ((_repl33) *
-                            ((_repl34) * (powr<-1>((_repl12) * (_repl29) +
-                                                   (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                       (_repl35)))))) +
-                      (-1.) * ((_repl11) * (_repl12) + (_repl10) * (_repl9)) *
-                          ((_repl33) *
-                           ((_repl34) *
-                            (powr<-1>((_repl12) * (_repl29) +
-                                      (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl35))))) +
-                      (3.) *
-                          ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                           (_repl10) * (_repl9)) *
-                          ((_repl6) *
-                           ((_repl8) *
-                            ((powr<2>(l1)) *
-                             ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                              (powr<-1>((_repl2) * (_repl4) +
-                                        (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                            (_repl5)))))))) *
-                     ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                      ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                       (powr<-1>((_repl1) * (_repl2) +
-                                 (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl3)))))) *
-                    (powr<2>(l1))) *
-                   (powr<2>(p)) +
-               (2.) *
-                   ((4.) *
-                        ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                         (_repl10) * (_repl9)) *
-                        ((_repl6) *
-                         ((_repl7) *
-                          ((_repl8) *
-                           ((cosl1p2) *
-                            ((powr<4>(l1)) *
-                             ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                              ((powr<2>(p)) *
-                               ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                                ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                                 ((powr<-1>((_repl1) * (_repl2) +
-                                            (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                                (_repl3))) *
-                                  (powr<-1>((_repl2) * (_repl4) +
-                                            (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                                (_repl5))))))))))))) +
-                    (2.) *
-                        ((4.) *
-                             ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                              (_repl10) * (_repl9)) *
-                             ((_repl6) *
-                              ((_repl7) *
-                               ((_repl8) *
-                                ((powr<4>(l1)) *
-                                 ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                                  ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                                   ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                                    ((powr<-1>((_repl1) * (_repl2) +
-                                               (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                                   (_repl3))) *
-                                     (powr<-1>((_repl2) * (_repl4) +
-                                               (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                                   (_repl5))))))))))) +
-                         (-1.) *
-                             ((-1.) *
-                                  ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                                   (_repl10) * (1. + powr<6>(k)) * (_repl15) +
-                                   (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                                  ((_repl18) *
-                                   ((_repl27) *
-                                    ((_repl28) *
-                                     ((powr<-1>(1. + powr<6>(k))) *
-                                      ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                       ((powr<-1>((_repl2) * (_repl25) +
-                                                  (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                      (_repl26))) *
-                                        (powr<-1>((_repl12) * (_repl21) +
-                                                  (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                                      (_repl22))))))))) +
-                              (_repl19) * ((_repl10) * (_repl15) + (_repl11) * (_repl2)) *
-                                  ((_repl31) *
-                                   ((_repl32) *
-                                    ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                     ((powr<-1>((_repl2) * (_repl29) +
-                                                (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                    (_repl30))) *
-                                      (powr<-1>(
-                                          (_repl12) * (_repl23) +
-                                          (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                              (_repl24))))))) +
-                              (-50.) * ((-1.) * (_repl16) + _repl2) *
-                                  ((_repl10) *
-                                   ((_repl19) *
-                                    ((_repl31) *
-                                     ((_repl32) *
-                                      ((powr<6>(k)) *
-                                       ((powr<-1>(1. + powr<6>(k))) *
-                                        ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                         ((powr<-1>((_repl2) * (_repl29) +
-                                                    (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                        (_repl30))) *
-                                          (powr<-1>(
-                                              (_repl12) * (_repl23) +
-                                              (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                                  (_repl24)))))))))))) *
-                             ((powr<2>(l1)) * (powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))))) *
-                        ((cosl1p1) * (powr<2>(p))) +
-                    ((8.) *
-                         ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                          (_repl10) * (_repl9)) *
-                         ((_repl6) *
-                          ((_repl7) *
-                           ((_repl8) *
-                            ((powr<3>(l1)) *
-                             ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                              ((powr<2>(p)) *
-                               ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                                ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                                 ((powr<-1>((_repl1) * (_repl2) +
-                                            (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                                (_repl3))) *
-                                  (powr<-1>((_repl2) * (_repl4) +
-                                            (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                                (_repl5)))))))))))) +
-                     (_repl7) *
-                         ((50.) * (_repl12 + (-1.) * (_repl13)) *
-                              ((_repl10) *
-                               ((_repl33) *
-                                ((_repl34) * (powr<-1>((_repl12) * (_repl29) +
-                                                       (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                           (_repl35)))))) +
-                          (-1.) * ((_repl11) * (_repl12) + (_repl10) * (_repl9)) *
-                              ((_repl33) *
-                               ((_repl34) * (powr<-1>((_repl12) * (_repl29) +
-                                                      (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                          (_repl35))))) +
-                          (2.) *
-                              ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                               (_repl10) * (_repl9)) *
-                              ((_repl6) *
-                               ((_repl8) *
-                                ((powr<2>(l1)) *
-                                 ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                                  (powr<-1>((_repl2) * (_repl4) +
-                                            (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                                (_repl5)))))))) *
-                         ((powr<3>(l1)) *
-                          ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                           ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                            (powr<-1>((_repl1) * (_repl2) +
-                                      (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl3)))))) +
-                     ((-1.) *
-                          ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                           (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                          ((_repl18) *
-                           ((_repl19) *
-                            ((_repl20) *
-                             ((powr<-1>(1. + powr<6>(k))) *
-                              ((powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))) *
-                               ((powr<-1>((_repl12) * (_repl21) +
-                                          (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                              (_repl22))) *
-                                (powr<-1>((_repl12) * (_repl23) +
-                                          (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                              (_repl24))))))))) +
-                      ((-1.) *
-                           ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                            (_repl10) * (_repl9)) *
-                           ((_repl36) *
-                            ((_repl37) *
-                             ((_repl8) *
-                              ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                               ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                                ((powr<-1>((_repl12) * (_repl25) +
-                                           (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                               (_repl38))) *
-                                 (powr<-1>((_repl2) * (_repl4) +
-                                           (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                               (_repl5))))))))) +
-                       (2.) *
-                           ((_repl18) *
-                                ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                                 (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                                ((_repl27) *
-                                 ((_repl28) *
-                                  ((powr<-1>(1. + powr<6>(k))) *
-                                   ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                    ((powr<-1>((_repl2) * (_repl25) +
-                                               (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                   (_repl26))) *
-                                     (powr<-1>((_repl12) * (_repl21) +
-                                               (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                                   (_repl22)))))))) +
-                            (_repl19) * ((_repl10) * (_repl15) + (_repl11) * (_repl2)) *
-                                ((_repl31) *
-                                 ((_repl32) *
-                                  ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                   ((powr<-1>((_repl2) * (_repl29) +
-                                              (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                  (_repl30))) *
-                                    (powr<-1>((_repl12) * (_repl23) +
-                                              (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                                  (_repl24))))))) +
-                            (-50.) * ((-1.) * (_repl16) + _repl2) *
-                                ((_repl10) *
-                                 ((_repl19) *
-                                  ((_repl31) *
-                                   ((_repl32) *
-                                    ((powr<6>(k)) *
-                                     ((powr<-1>(1. + powr<6>(k))) *
-                                      ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                       ((powr<-1>((_repl2) * (_repl29) +
-                                                  (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                      (_repl30))) *
-                                        (powr<-1>(
-                                            (_repl12) * (_repl23) +
-                                            (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                                (_repl24)))))))))))) *
-                           (powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1))))) *
-                          (powr<2>(l1))) *
-                         (l1)) *
-                        (p)) *
-                   (cosl1p2) +
-               ((2.) *
-                    ((5.) *
-                         ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                          (_repl10) * (_repl9)) *
-                         ((_repl6) *
-                          ((_repl7) *
-                           ((_repl8) *
-                            ((powr<4>(l1)) *
-                             ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                              ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                               ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                                ((powr<-1>((_repl1) * (_repl2) +
-                                           (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl3))) *
-                                 (powr<-1>((_repl2) * (_repl4) +
-                                           (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                               (_repl5))))))))))) +
-                     (-3.) *
-                         ((-1.) *
-                              ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                               (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                              ((_repl18) *
-                               ((_repl27) *
-                                ((_repl28) *
-                                 ((powr<-1>(1. + powr<6>(k))) *
-                                  ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                   ((powr<-1>((_repl2) * (_repl25) +
-                                              (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                  (_repl26))) *
-                                    (powr<-1>((_repl12) * (_repl21) +
-                                              (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                                  (_repl22))))))))) +
-                          (_repl19) * ((_repl10) * (_repl15) + (_repl11) * (_repl2)) *
-                              ((_repl31) *
-                               ((_repl32) *
-                                ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                 ((powr<-1>((_repl2) * (_repl29) +
-                                            (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                (_repl30))) *
-                                  (powr<-1>((_repl12) * (_repl23) +
-                                            (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                                (_repl24))))))) +
-                          (-50.) * ((-1.) * (_repl16) + _repl2) *
-                              ((_repl10) *
-                               ((_repl19) *
-                                ((_repl31) *
-                                 ((_repl32) *
-                                  ((powr<6>(k)) *
-                                   ((powr<-1>(1. + powr<6>(k))) *
-                                    ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                     ((powr<-1>((_repl2) * (_repl29) +
-                                                (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                    (_repl30))) *
-                                      (powr<-1>(
-                                          (_repl12) * (_repl23) +
-                                          (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                              (_repl24)))))))))))) *
-                         ((powr<2>(l1)) * (powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))))) *
-                    ((cosl1p1) * (powr<2>(p))) +
-                ((2.) *
-                     ((12.) *
-                          ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                           (_repl10) * (_repl9)) *
-                          ((_repl6) *
-                           ((_repl7) *
-                            ((_repl8) *
-                             ((powr<3>(l1)) *
-                              ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                               ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                                ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                                 ((powr<-1>((_repl1) * (_repl2) +
-                                            (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                                (_repl3))) *
-                                  (powr<-1>((_repl2) * (_repl4) +
-                                            (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                                (_repl5))))))))))) +
-                      (l1) *
-                          ((_repl18) *
-                               ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                                (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                               ((_repl27) *
-                                ((_repl28) *
-                                 ((powr<-1>(1. + powr<6>(k))) *
-                                  ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                   ((powr<-1>((_repl2) * (_repl25) +
-                                              (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                  (_repl26))) *
-                                    (powr<-1>((_repl12) * (_repl21) +
-                                              (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                                  (_repl22)))))))) +
-                           (-1.) * ((_repl10) * (_repl15) + (_repl11) * (_repl2)) *
-                               ((_repl19) *
-                                ((_repl31) *
-                                 ((_repl32) *
-                                  ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                   ((powr<-1>((_repl2) * (_repl29) +
-                                              (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                  (_repl30))) *
-                                    (powr<-1>((_repl12) * (_repl23) +
-                                              (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                                  (_repl24)))))))) +
-                           (50.) * ((-1.) * (_repl16) + _repl2) *
-                               ((_repl10) *
-                                ((_repl19) *
-                                 ((_repl31) *
-                                  ((_repl32) *
-                                   ((powr<6>(k)) *
-                                    ((powr<-1>(1. + powr<6>(k))) *
-                                     ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                      ((powr<-1>((_repl2) * (_repl29) +
-                                                 (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                     (_repl30))) *
-                                       (powr<-1>(
-                                           (_repl12) * (_repl23) +
-                                           (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                               (_repl24)))))))))))) *
-                          (powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1))))) *
-                     (powr<2>(p)) +
-                 ((_repl7) *
-                      ((50.) * (_repl12 + (-1.) * (_repl13)) *
-                           ((_repl10) *
-                            ((_repl33) *
-                             ((_repl34) * (powr<-1>((_repl12) * (_repl29) +
-                                                    (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                        (_repl35)))))) +
-                       (-1.) * ((_repl11) * (_repl12) + (_repl10) * (_repl9)) *
-                           ((_repl33) *
-                            ((_repl34) *
-                             (powr<-1>((_repl12) * (_repl29) +
-                                       (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl35))))) +
-                       (2.) *
-                           ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                            (_repl10) * (_repl9)) *
-                           ((_repl6) *
-                            ((_repl8) *
-                             ((powr<2>(l1)) *
-                              ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                               (powr<-1>((_repl2) * (_repl4) +
-                                         (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                             (_repl5)))))))) *
-                      ((powr<3>(l1)) *
-                       ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                        ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                         (powr<-1>((_repl1) * (_repl2) +
-                                   (powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl3)))))) +
-                  ((-1.) *
-                       ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                        (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                       ((_repl18) *
-                        ((_repl19) *
-                         ((_repl20) *
-                          ((powr<-1>(1. + powr<6>(k))) *
-                           ((powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1)))) *
-                            ((powr<-1>((_repl12) * (_repl21) +
-                                       (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) * (_repl22))) *
-                             (powr<-1>((_repl12) * (_repl23) +
-                                       (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                           (_repl24))))))))) +
-                   ((-1.) *
-                        ((_repl11) * (_repl12) + (-50.) * (_repl12 + (-1.) * (_repl13)) * (_repl10) +
-                         (_repl10) * (_repl9)) *
-                        ((_repl36) *
-                         ((_repl37) *
-                          ((_repl8) *
-                           ((powr<-2>((_repl10) * (_repl12) + (_repl14) * (powr<2>(l1)))) *
-                            ((powr<-1>(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p))) *
-                             ((powr<-1>((_repl12) * (_repl25) +
-                                        (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) * (_repl38))) *
-                              (powr<-1>((_repl2) * (_repl4) +
-                                        (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                            (_repl5))))))))) +
-                    (2.) *
-                        ((_repl18) *
-                             ((-50.) * ((-1.) * (_repl16) + _repl2) * ((_repl10) * (powr<6>(k))) +
-                              (_repl10) * (1. + powr<6>(k)) * (_repl15) + (_repl11) * (1. + powr<6>(k)) * (_repl2)) *
-                             ((_repl27) *
-                              ((_repl28) *
-                               ((powr<-1>(1. + powr<6>(k))) *
-                                ((powr<-1>(powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                 ((powr<-1>((_repl2) * (_repl25) +
-                                            (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                (_repl26))) *
-                                  (powr<-1>((_repl12) * (_repl21) +
-                                            (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                                (_repl22)))))))) +
-                         (_repl19) * ((_repl10) * (_repl15) + (_repl11) * (_repl2)) *
-                             ((_repl31) *
-                              ((_repl32) *
-                               ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                ((powr<-1>((_repl2) * (_repl29) +
-                                           (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                               (_repl30))) *
-                                 (powr<-1>((_repl12) * (_repl23) +
-                                           (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                               (_repl24))))))) +
-                         (-50.) * ((-1.) * (_repl16) + _repl2) *
-                             ((_repl10) *
-                              ((_repl19) *
-                               ((_repl31) *
-                                ((_repl32) *
-                                 ((powr<6>(k)) *
-                                  ((powr<-1>(1. + powr<6>(k))) *
-                                   ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                                    ((powr<-1>((_repl2) * (_repl29) +
-                                               (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                                   (_repl30))) *
-                                     (powr<-1>((_repl12) * (_repl23) +
-                                               (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)) *
-                                                   (_repl24)))))))))))) *
-                        (powr<-2>((_repl10) * (_repl2) + (_repl17) * (powr<2>(l1))))) *
-                       (powr<2>(l1))) *
-                      (l1)) *
-                     (3.)) *
-                    (p)) *
-                   (cosl1p1)) *
-                  (cosl1p2)) *
-                 (cosl1p2);
+      const auto _repl13 = Zc(sqrt(powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)));
+      const auto _repl14 = RB(powr<2>(k), powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p));
+      const auto _repl15 = RB(powr<2>(k), powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p));
+      const auto _repl16 = ZA3((0.816496580927726) * (sqrt(powr<2>(l1) + (cosl1p1) * ((l1) * (p)) + powr<2>(p))));
+      const auto _repl17 = ZA(sqrt(powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)));
+      const auto _repl18 = RB(powr<2>(k), powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p));
+      const auto _repl19 = Zc(sqrt(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p)));
+      const auto _repl20 = RB(powr<2>(k), powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p));
+      const auto _repl21 =
+          ZAcbc((0.816496580927726) * (sqrt(powr<2>(l1) + (-1.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))));
+      const auto _repl22 = ZAcbc((0.816496580927726) * (sqrt(powr<2>(l1) + (cosl1p2) * ((l1) * (p)) + powr<2>(p))));
+      const auto _repl23 = RBdot(powr<2>(k), powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + powr<2>(p));
+      const auto _repl24 =
+          ZAcbc((0.816496580927726) * (sqrt(powr<2>(l1) + (l1) * (cosl1p1 + cosl1p2) * (p) + powr<2>(p))));
+      const auto _repl25 = RB(powr<2>(k), powr<2>(l1) + (2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p));
+      const auto _repl26 = powr<2>(l1);
+      const auto _repl27 = powr<2>(p);
+      const auto _repl28 = powr<2>(k);
+      const auto _repl29 = powr<6>(k);
+      const auto _repl30 = powr<2>(cosl1p2);
+      const auto _repl31 = powr<3>(l1);
+      const auto _repl32 = powr<3>(p);
+      const auto _repl33 = powr<4>(l1);
+      const auto _repl34 = powr<5>(l1);
+      const auto _repl35 = powr<3>(cosl1p2);
+      const auto _repl36 = powr<4>(p);
+      const auto _repl37 = powr<2>(cosl1p1);
+      const auto _repl38 = powr<5>(p);
+      const auto _repl39 = powr<-2>((_repl1) * (_repl3) + (_repl26) * (_repl5));
+      const auto _repl40 = powr<3>(cosl1p1);
+      const auto _repl41 = powr<-2>(
+          (_repl2) * (_repl4) + (_repl26 + _repl27 + (l1) * ((2.) * (cosl1p1) + (2.) * (cosl1p2)) * (p)) * (_repl19));
+      const auto _repl42 = powr<4>(cosl1p1);
+      return (-3.) *
+                 ((_repl29) * ((-50.) * (_repl1) + (50.) * (_repl10)) * (_repl3) +
+                  (_repl1) * (1. + _repl29) * (_repl6) + (_repl3) * (1. + (1.) * (_repl29)) * (_repl7)) *
+                 ((_repl16) *
+                  ((1.5) * ((_repl26) * (_repl32)) +
+                   ((-1.333333333333333) * ((_repl27) * (_repl31)) + (-1.333333333333333) * (_repl34)) * (_repl35) +
+                   (0.5) * (_repl38) + (-1.333333333333333) * ((_repl27) * ((_repl31) * ((_repl42) * (cosl1p2)))) +
+                   ((0.3333333333333333) * ((_repl27) * (_repl31)) + (0.6666666666666666) * (_repl34) +
+                    (-0.3333333333333333) * ((_repl36) * (l1))) *
+                       (cosl1p2) +
+                   (1.) * ((_repl33) * (p)) +
+                   ((-0.6666666666666666) * ((_repl26) * (_repl32)) + (-0.6666666666666666) * ((_repl33) * (p))) *
+                       (_repl30) +
+                   ((_repl27) * (3.166666666666667 + (-4.) * (_repl30)) * (_repl31) +
+                    (0.3333333333333333 + (-2.) * (_repl30)) * (_repl34) +
+                    (_repl26) * (1.333333333333333 + (-1.333333333333333) * (_repl30)) * ((_repl32) * (cosl1p2)) +
+                    (1.) * ((_repl38) * (cosl1p2)) +
+                    (_repl36) * (1.833333333333333 + (-0.6666666666666666) * (_repl30)) * (l1) +
+                    (_repl33) * (2.333333333333333 + (-4.) * (_repl30)) * ((cosl1p2) * (p))) *
+                       (cosl1p1) +
+                   (_repl26) *
+                       ((-2.) * ((_repl26) * (cosl1p2)) + (2.666666666666667) * ((_repl27) * (cosl1p2)) +
+                        (-0.6666666666666666) * ((l1) * (p)) + (-4.) * ((_repl30) * ((l1) * (p)))) *
+                       ((_repl40) * (p)) +
+                   (_repl37) *
+                       ((-2.666666666666667) * ((_repl26) * ((_repl27) * (_repl35))) +
+                        ((3.) * ((_repl26) * (_repl27)) + (-0.6666666666666666) * (_repl33) +
+                         (3.666666666666667) * (_repl36)) *
+                            (cosl1p2) +
+                        (1.333333333333333) * ((_repl32) * (l1)) + (0.3333333333333333) * ((_repl31) * (p)) +
+                        ((-3.333333333333333) * ((_repl32) * (l1)) + (-6.) * ((_repl31) * (p))) * (_repl30)) *
+                       (l1)) *
+                  ((_repl21) *
+                   ((powr<-1>(1. + _repl29)) *
+                    ((_repl39) *
+                     ((p) *
+                      ((powr<-2>(_repl26 + _repl27 + (2.) * ((cosl1p1) * ((l1) * (p))))) *
+                       ((powr<-1>((_repl1) * (_repl18) +
+                                  (_repl26 + _repl27 + (2.) * ((cosl1p1) * ((l1) * (p)))) * (_repl17))) *
+                        ((powr<-1>((_repl15) * (_repl2) +
+                                   (_repl26 + _repl27 + (-2.) * ((cosl1p2) * ((l1) * (p)))) * (_repl13))) *
+                         (ZAcbc(sqrt((0.6666666666666666) * (_repl26) + _repl27 +
+                                     (0.6666666666666666) * (cosl1p1 + (-1.) * (cosl1p2)) * ((l1) * (p))))))))))))) +
+             (3.) *
+                 ((_repl29) * ((-50.) * (_repl1) + (50.) * (_repl10)) * (_repl3) +
+                  (_repl1) * (1. + _repl29) * (_repl6) + (_repl3) * (1. + (1.) * (_repl29)) * (_repl7)) *
+                 ((_repl12) *
+                  ((-0.5) * (_repl32) + (1.333333333333333) * ((_repl31) * (_repl35)) +
+                   (-0.6666666666666666) * ((_repl31) * (cosl1p2)) +
+                   (0.3333333333333333) * ((_repl27) * ((cosl1p2) * (l1))) + (-1.) * ((_repl26) * (p)) +
+                   (0.6666666666666666) * ((_repl26) * ((_repl30) * (p))) +
+                   (_repl40) * ((-0.6666666666666666) * ((cosl1p2) * (l1)) + (-2.333333333333333) * (p)) *
+                       ((l1) * (p)) +
+                   ((1.) * (_repl32) + (0.6666666666666666) * ((_repl31) * (cosl1p2)) +
+                    (-3.) * ((_repl27) * ((cosl1p2) * (l1))) + (2.) * ((_repl26) * (p)) +
+                    (-2.) * ((_repl26) * ((_repl30) * (p)))) *
+                       (_repl37) +
+                   ((-0.3333333333333333 + (2.) * (_repl30)) * (_repl31) + (1.) * ((_repl32) * (cosl1p2)) +
+                    (_repl27) * (1.166666666666667 + (-0.6666666666666666) * (_repl30)) * (l1) +
+                    (_repl26) * (2.333333333333333 + (-1.333333333333333) * (_repl30)) * ((cosl1p2) * (p))) *
+                       (cosl1p1)) *
+                  ((powr<-1>(1. + _repl29)) *
+                   ((_repl39) *
+                    ((p) *
+                     ((powr<-1>((1.) * (_repl26) + (1.) * (_repl27) + (-2.) * ((cosl1p1) * ((l1) * (p))))) *
+                      ((powr<-1>((_repl2) * (_repl20) + (_repl26 + _repl27 + (-2.) * ((cosl1p1) * ((l1) * (p))) +
+                                                         (-2.) * ((cosl1p2) * ((l1) * (p)))) *
+                                                            (_repl11))) *
+                       ((powr<-1>((_repl1) * (_repl14) +
+                                  (_repl26 + _repl27 + (-2.) * ((cosl1p1) * ((l1) * (p)))) *
+                                      (ZA(sqrt(_repl26 + _repl27 + (-2.) * ((cosl1p1) * ((l1) * (p)))))))) *
+                        ((ZA3((0.816496580927726) * (sqrt(_repl26 + _repl27 + (-1.) * ((cosl1p1) * ((l1) * (p))))))) *
+                         (ZAcbc(sqrt((0.6666666666666666) * (_repl26) + _repl27 +
+                                     (-0.6666666666666666) * ((2.) * (cosl1p1) + cosl1p2) * ((l1) * (p))))))))))))) +
+             (3.) * ((_repl2) * (_repl23) + ((-50.) * (_repl2) + (50.) * (_repl8)) * (_repl4) + (_repl4) * (_repl9)) *
+                 ((_repl16) *
+                  ((-1.5) * ((_repl26) * (_repl32)) +
+                   ((-1.333333333333333) * ((_repl27) * (_repl31)) + (-1.333333333333333) * (_repl34)) * (_repl35) +
+                   (-0.5) * (_repl38) +
+                   ((0.3333333333333333) * ((_repl27) * (_repl31)) + (0.6666666666666666) * (_repl34) +
+                    (-0.3333333333333333) * ((_repl36) * (l1))) *
+                       (cosl1p2) +
+                   (-1.) * ((_repl33) * (p)) +
+                   (_repl26) * ((-1.333333333333333) * ((cosl1p2) * (l1)) + (4.666666666666667) * (p)) *
+                       ((_repl27) * (_repl42)) +
+                   (_repl40) *
+                       ((4.333333333333333) * (_repl32) + (-2.) * ((_repl31) * (cosl1p2)) +
+                        (5.333333333333333) * ((_repl27) * ((cosl1p2) * (l1))) +
+                        (6.333333333333333) * ((_repl26) * (p)) + (-4.) * ((_repl26) * ((_repl30) * (p)))) *
+                       ((l1) * (p)) +
+                   ((0.6666666666666666) * ((_repl26) * (_repl32)) + (0.6666666666666666) * ((_repl33) * (p))) *
+                       (_repl30) +
+                   ((-2.833333333333334) * ((_repl27) * (_repl31)) +
+                    (0.3333333333333333 + (-2.) * (_repl30)) * (_repl34) +
+                    (_repl26) * (2.666666666666667 + (-1.333333333333333) * (_repl30)) * ((_repl32) * (cosl1p2)) +
+                    (1.) * ((_repl38) * (cosl1p2)) +
+                    (_repl36) * (-2.166666666666667 + (0.6666666666666666) * (_repl30)) * (l1) +
+                    (_repl33) * (3.666666666666667 + (-4.) * (_repl30)) * ((cosl1p2) * (p))) *
+                       (cosl1p1) +
+                   ((0.6666666666666666) * ((_repl26) * (_repl32)) +
+                    (-2.666666666666667) * ((_repl27) * ((_repl31) * (_repl35))) + (1.) * (_repl38) +
+                    ((7.) * ((_repl27) * (_repl31)) + (-0.6666666666666666) * (_repl34) + (5.) * ((_repl36) * (l1))) *
+                        (cosl1p2) +
+                    (2.666666666666667) * ((_repl33) * (p)) +
+                    ((-0.6666666666666666) * ((_repl26) * (_repl32)) + (-6.) * ((_repl33) * (p))) * (_repl30)) *
+                       (_repl37)) *
+                  ((_repl24) *
+                   ((_repl41) *
+                    ((powr<-1>((_repl1) * (_repl3) + (_repl26) * (_repl5))) *
+                     ((p) * ((powr<-2>((1.) * (_repl26) + (1.) * (_repl27) + (2.) * ((cosl1p1) * ((l1) * (p))))) *
+                             ((powr<-1>((_repl1) * (_repl18) +
+                                        (_repl26 + _repl27 + (2.) * ((cosl1p1) * ((l1) * (p)))) * (_repl17))) *
+                              (ZAcbc(sqrt((0.6666666666666666) * (_repl26) + _repl27 +
+                                          (0.6666666666666666) * ((2.) * (cosl1p1) + cosl1p2) * ((l1) * (p)))))))))))) +
+             (-2.) *
+                 ((_repl29) * ((-50.) * (_repl1) + (50.) * (_repl10)) * (_repl3) +
+                  (_repl1) * (1. + _repl29) * (_repl6) + (_repl3) * (1. + (1.) * (_repl29)) * (_repl7)) *
+                 ((_repl12) *
+                  ((1.) * ((_repl35) * (l1)) + (cosl1p1) * (-0.25 + (1.5) * (_repl30)) * (l1) +
+                   (-0.5) * ((cosl1p2) * (l1)) + (0.5) * ((_repl37) * ((cosl1p2) * (l1))) + (0.375) * (p) +
+                   (-0.75) * ((_repl30) * (p)) + (-0.75) * ((cosl1p1) * ((cosl1p2) * (p)))) *
+                  ((_repl21) *
+                   ((powr<-1>(1. + _repl29)) *
+                    ((_repl39) *
+                     ((p) *
+                      ((powr<-1>((_repl15) * (_repl2) +
+                                 (_repl26 + _repl27 + (-2.) * ((cosl1p2) * ((l1) * (p)))) * (_repl13))) *
+                       ((powr<-1>((_repl2) * (_repl20) + (_repl26 + _repl27 + (-2.) * ((cosl1p1) * ((l1) * (p))) +
+                                                          (-2.) * ((cosl1p2) * ((l1) * (p)))) *
+                                                             (_repl11))) *
+                        (ZAcbc(sqrt((0.6666666666666666) * (_repl26) + _repl27 +
+                                    (-0.6666666666666666) * (cosl1p1 + (2.) * (cosl1p2)) * ((l1) * (p)))))))))))) +
+             (-1.) * ((_repl2) * (_repl6) + ((-50.) * (_repl2) + (50.) * (_repl8)) * (_repl3) + (_repl3) * (_repl9)) *
+                 ((_repl22) *
+                  (((1.) * (_repl32) + (1.) * ((_repl31) * (cosl1p2)) + (3.) * ((_repl27) * ((cosl1p2) * (l1))) +
+                    (1.) * ((_repl26) * (p)) + (2.) * ((_repl26) * ((_repl30) * (p)))) *
+                       (_repl37) +
+                   ((-1. + (2.) * (_repl30)) * (_repl31) + (1.) * ((_repl32) * (cosl1p2)) +
+                    (_repl27) * (-1. + (4.) * (_repl30)) * (l1) +
+                    (_repl26) * (-1. + (4.) * (_repl30)) * ((cosl1p2) * (p))) *
+                       (cosl1p2) +
+                   ((-0.5 + (3.) * (_repl30)) * (_repl31) + (2.5) * ((_repl32) * (cosl1p2)) +
+                    (_repl27) * (-0.5 + (8.) * (_repl30)) * (l1) +
+                    (_repl26) * (1.5 + (6.) * (_repl30)) * ((cosl1p2) * (p))) *
+                       (cosl1p1)) *
+                  ((_repl26) *
+                   ((p) *
+                    ((powr<-2>((1.) * (_repl26) + (1.) * (_repl27) + (2.) * ((cosl1p2) * ((l1) * (p))))) *
+                     ((powr<-1>((_repl1) * (_repl25) +
+                                (_repl26 + _repl27 + (2.) * ((cosl1p2) * ((l1) * (p)))) *
+                                    (ZA(sqrt(_repl26 + _repl27 + (2.) * ((cosl1p2) * ((l1) * (p)))))))) *
+                      ((ZAcbc((0.816496580927726) * (sqrt(_repl26 + _repl27 + (-1.) * ((cosl1p1) * ((l1) * (p))))))) *
+                       ((ZAcbc(sqrt((0.6666666666666666) * (_repl26) + _repl27 +
+                                    (0.6666666666666666) * ((-1.) * (cosl1p1) + cosl1p2) * ((l1) * (p))))) *
+                        ((powr<-2>((_repl2) * (_repl3) + (_repl26) * (Zc(l1)))) *
+                         (powr<-1>((_repl14) * (_repl2) +
+                                   (_repl26 + _repl27 + (-2.) * ((cosl1p1) * ((l1) * (p)))) *
+                                       (Zc(sqrt(_repl26 + _repl27 + (-2.) * ((cosl1p1) * ((l1) * (p)))))))))))))))) +
+             (1.) * ((_repl2) * (_repl23) + ((-50.) * (_repl2) + (50.) * (_repl8)) * (_repl4) + (_repl4) * (_repl9)) *
+                 ((_repl22) *
+                  ((2.) * ((_repl35) * (l1)) + (cosl1p1) * (-0.5 + (3.) * (_repl30)) * (l1) +
+                   (-1.) * ((cosl1p2) * (l1)) + (1.) * ((_repl37) * ((cosl1p2) * (l1))) + (-0.75) * (p) +
+                   (1.5) * ((_repl30) * (p)) + (1.5) * ((cosl1p1) * ((cosl1p2) * (p)))) *
+                  ((_repl24) *
+                   ((_repl41) *
+                    ((powr<-1>((_repl1) * (_repl3) + (_repl26) * (_repl5))) *
+                     ((p) * ((ZAcbc(sqrt((0.6666666666666666) * (_repl26) + _repl27 +
+                                         (0.6666666666666666) * (cosl1p1 + (2.) * (cosl1p2)) * ((l1) * (p))))) *
+                             (powr<-1>((_repl2) * (_repl25) +
+                                       (_repl26 + _repl27 + (2.) * ((cosl1p2) * ((l1) * (p)))) *
+                                           (Zc(sqrt(_repl26 + _repl27 + (2.) * ((cosl1p2) * ((l1) * (p))))))))))))));
     }
 
     static KOKKOS_FORCEINLINE_FUNCTION auto
-    constant(const auto &p, const double &k,
+    constant(const double &p, const double &k,
              const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZA3,
              const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZAcbc,
              const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZA4,

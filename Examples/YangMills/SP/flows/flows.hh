@@ -17,6 +17,8 @@ public:
 
   void set_T(const double T);
 
+  void set_typical_E(const double E);
+
   void set_x_extent(const double x_extent);
 
   DiFfRG::QuadratureProvider quadrature_provider;

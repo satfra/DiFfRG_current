@@ -409,6 +409,12 @@ FunKit`MakeCppFunction[
 "Return"->"void"
 ],
 FunKit`MakeCppFunction[
+"Name"->"set_typical_E",
+"Parameters"->{<|"Type"->"double","Const"->True,"Name"->"E","Reference"->False|>},
+"Body"->None,
+"Return"->"void"
+],
+FunKit`MakeCppFunction[
 "Name"->"set_x_extent",
 "Parameters"->{<|"Type"->"double","Const"->True,"Name"->"x_extent","Reference"->False|>},
 "Body"->None,
@@ -449,6 +455,15 @@ FunKit`MakeCppFunction[
 "Parameters"->{<|"Type"->"double","Const"->True,"Name"->"T","Reference"->False|>},
 "Body"->StringJoin[
 Map["DiFfRG::all_set_T("<>#[[1]]<>", T);"&,integrators]
+],
+"Return"->"void"
+],
+FunKit`MakeCppFunction[
+"Name"->"set_typical_E",
+"Class"->varName,
+"Parameters"->{<|"Type"->"double","Const"->True,"Name"->"E","Reference"->False|>},
+"Body"->StringJoin[
+Map["DiFfRG::all_set_typical_E("<>#[[1]]<>", E);"&,integrators]
 ],
 "Return"->"void"
 ],

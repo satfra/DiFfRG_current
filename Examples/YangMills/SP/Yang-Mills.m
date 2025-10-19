@@ -25,6 +25,22 @@ SetDirectory[GetDirectory[]];
 DefineFormExecutable["/usr/bin/tform -w16"]
 
 
+FExpandFirstFactors[expr_FTerm,fn_Integer]/;fn>=1:=Module[{first,last,n},
+n=Min[fn,Length[expr]];
+first=Times@@expr[[1;;n]]//Expand;
+If[Head[first]===Plus,
+first=List@@first,
+first={first}
+];
+last=expr[[n+1;;]];
+FEx@@
+Map[
+FTerm[#]**FTerm[last]&,
+first
+]
+];
+
+
 fields= <|
 "Commuting"-> {A[p,{v, c}]},
 "Grassmann"->{{cb[p,{c}],c[p,{c}]}}
@@ -92,18 +108,30 @@ SetSymmetricDressing[GammaN,{A,A}]
 
 
 PropParam[expr_]:=UseLorentzLinearity[expr]//.{
-sp[p1,p1]->p^2,sp[l2,l2]->l2^2,sp[l1,l1]->l1^2,sp[l1,p1]->l1 p cos[p,l1],sp[l2,p1]->l2 p cos[p,l2],sp[l1,l2]->l1 l2 cos[l1,l2],Sqrt[a_^2]:>a,(a_^2)^(n_/2):>a^n,
+lf1->l1,(*We don't care about this in vacuum*)
+sp[p1,p1]->p^2,sp[l1,l1]->l1^2,
+sp[l1,p1]->l1 p cos[p,l1],
+sp[p1,l1]->l1 p cos[p,l1],
+Sqrt[a_^2]:>a,(a_^2)^(n_/2):>a^n,
 cos[l1,p]:>cos1
-}//FORMSimplify;
+};
 
-SP3FormRule=MakeSPFormRule[{l1},p,{p1,p2,p3}];
-SP4FormRule=MakeSPFormRule[{l1},p,{p1,p2,p3,p4}];
-SPParam[expr_]:=UseLorentzLinearity[expr]//.{sp[p,p]->p^2,sp[l1,l1]->l1^2,Sqrt[a_^2]:>a,(a_^2)^(n_/2):>a^n,(a_^2)^(n_/2):>a^n,Power[Power[l1_,2],Rational[n_,2]]:>l1^n,
+SP3FormRule=MakeSPFormRule[{l1,lf1},p,{p1,p2,p3}];
+SP4FormRule=MakeSPFormRule[{l1,lf1},p,{p1,p2,p3,p4}];
+SPParam[expr_]:=UseLorentzLinearity[expr]//.{
+lf1->l1,(*We don't care about this in vacuum*)
+sp[p,p]->p^2,sp[l1,l1]->l1^2,
+sp[l1,p1]->p l1 cos[l1,p1],
+sp[l1,p2]->p l1 cos[l1,p2],
+sp[l1,p3]->p l1 cos[l1,p3],
+sp[l1,p4]->p l1 cos[l1,p4],
+
+Sqrt[a_^2]:>a,(a_^2)^(n_/2):>a^n,(a_^2)^(n_/2):>a^n,Power[Power[l1_,2],Rational[n_,2]]:>l1^n,
 cos[l1,p1]:>cosl1p1,
 cos[l1,p2]:>cosl1p2,
 cos[l1,p3]:>cosl1p3,
 cos[l1,p4]:>cosl1p4
-}//FORMSimplify;
+};
 
 SetNc[3]
 $Assumptions=k>0&&p>0&&l1>0&&-1<cos1<1&&-1<cos2<1&&-1<cos3<1;
@@ -115,12 +143,6 @@ symmetryP4={Map[Join[#/.Cycles->Sequence,{1}]&,PermutationCycles/@Permutations[{
 
 
 (* ::Input::Initialization:: *)
-kernelZA=<|"Name"->"ZA","Integrator"->"Integrator_p2_1ang","d"->4,"AD"->False,"Type"->"double","Device"->"GPU"|>;
-kernelZc=<|"Name"->"Zc","Integrator"->"Integrator_p2_1ang","d"->4,"AD"->False,"Type"->"double","Device"->"GPU"|>;
-kernelZA3=<|"Name"->"ZA3","Integrator"->"Integrator_p2_4D_2ang","d"->4,"AD"->False,"Type"->"double","Device"->"GPU"|>;
-kernelZAcbc=<|"Name"->"ZAcbc","Integrator"->"Integrator_p2_4D_2ang","d"->4,"AD"->False,"Type"->"double","Device"->"GPU"|>;
-kernelZA4=<|"Name"->"ZA4","Integrator"->"Integrator_p2_4D_3ang","d"->4,"AD"->False,"Type"->"double","Device"->"GPU"|>;
-
 interpolatorType="SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory>";
 
 kernelParameterList={
@@ -137,18 +159,32 @@ kernelParameterList={
 <|"Name"->"ZA","Type"->interpolatorType,"Const"->True,"Reference"->True|>
 };
 
-
-(* ::Input::Initialization:: *)
 SP4Defs=DeclareSymmetricPoints4DP4[l1,p,{p1,p2,p3,p4}];
 SP3Defs=DeclareSymmetricPoints4DP3[l1,p,{p1,p2,p3}];
+
+
+SetCacheDirectory[NotebookDirectory[]<>"/TraceCache/"]
+
+
+SetRegisterSize[64]
 
 
 fRGAA=TakeDerivatives[WetterichEquation,{A[i1],A[i2]}]//FTruncate//FSimplify//FPlot//FRoute//FPrint;
 
 traceExprAA=F[TBGetProjector["AA",1,{i1,i2}/.fRGAA["1-Loop"]["ExternalIndices"]],(fRGAA["1-Loop"]["Expression"]/.MakeDiagrammaticRules[])];
-FlowAA=FormTrace[traceExprAA]//dressingRules//FORMSimplify//PropParam;
+FlowAA=FormTrace[traceExprAA]//dressingRules//PropParam//Simplify;
 
-MakeKernel[FlowAA/p^2,kernelZA,kernelParameterList,
+MakeKernel[FlowAA/p^2,
+
+"Name"->"ZA",
+"Integrator"->"Integrator_p2_1ang",
+"d"->4,
+"AD"->False,
+"ctype"->"double",
+"Device"->"GPU",
+"Type"->"double",
+
+"Parameters"->kernelParameterList,
 "IntegrationVariables"->{"l1","cos1"},
 "Coordinates"->{"LogarithmicCoordinates1D<double>"},
 "CoordinateArguments"->{"p"}]
@@ -158,9 +194,19 @@ UpdateFlows["YangMillsFlows"]
 fRGcbc=TakeDerivatives[WetterichEquation,{cb[i1],c[i2]}]//FTruncate//FSimplify//FPlot//FRoute//FPrint;
 
 traceExprcbc=F[TBGetProjector["cbc",1,{i1,i2}/.fRGcbc["1-Loop"]["ExternalIndices"]],(fRGcbc["1-Loop"]["Expression"]/.MakeDiagrammaticRules[])];
-Flowcbc=FormTrace[traceExprcbc]//dressingRules//FORMSimplify//PropParam;
+Flowcbc=FormTrace[traceExprcbc]//dressingRules//PropParam//Simplify;
 
-MakeKernel[-(Flowcbc/p^2)//Expand//Simplify,kernelZc,kernelParameterList,
+MakeKernel[-(Flowcbc/p^2),
+
+"Name"->"Zc",
+"Integrator"->"Integrator_p2_1ang",
+"d"->4,
+"AD"->False,
+"ctype"->"double",
+"Device"->"GPU",
+"Type"->"double",
+
+"Parameters"->kernelParameterList,
 "IntegrationVariables"->{"l1","cos1"},
 "Coordinates"->{"LogarithmicCoordinates1D<double>"},
 "CoordinateArguments"->{"p"}]
@@ -172,9 +218,19 @@ fRGAcbc=TakeDerivatives[WetterichEquation,{A[i1],cb[i2],c[i3]}]//FTruncate//FSim
 projectorAcbc=TBGetProjector["Acbc",1,{i1,i2,i3}/.fRGAcbc["1-Loop"]["ExternalIndices"]];
 traceExprAcbc=F[projectorAcbc,(fRGAcbc["1-Loop"]["Expression"]/.MakeDiagrammaticRules[])];
 
-FlowAcbc=FormTrace[traceExprAcbc,SP3FormRule,SP3FormRule]//dressingRules//TBProjectToSymmetricPoint[#,l1,p,p1,p2,p3]&//SPParam;
+FlowAcbc=FormTrace[traceExprAcbc,{},SP3FormRule]//dressingRules//TBProjectToSymmetricPoint[#,l1,p,p1,p2,p3]&//SPParam//Simplify;
 
-MakeKernel[FlowAcbc,kernelZAcbc,kernelParameterList,
+MakeKernel[FlowAcbc,
+
+"Name"->"ZAcbc",
+"Integrator"->"Integrator_p2_4D_2ang",
+"d"->4,
+"AD"->False,
+"ctype"->"double",
+"Device"->"GPU",
+"Type"->"double",
+
+"Parameters"->kernelParameterList,
 "KernelBody"->SP3Defs,
 "IntegrationVariables"->{"l1","cos1","cos2"},
 "Coordinates"->{"LogarithmicCoordinates1D<double>"},
@@ -186,9 +242,19 @@ fRGA3=TakeDerivatives[WetterichEquation,{A[i1],A[i2],A[i3]}]//FTruncate//FSimpli
 
 projectorA3=TBGetProjector["AAAClassTrans",1,{i1,i2,i3}/.fRGA3["1-Loop"]["ExternalIndices"]]//TBProjectToSymmetricPoint[#,l1,p,p1,p2,p3]&//Simplify;
 traceExprA3=F[projectorA3,(fRGA3["1-Loop"]["Expression"]/.MakeDiagrammaticRules[])];
-FlowA3=FormTrace[traceExprA3,{},SP3FormRule]//dressingRules//TBProjectToSymmetricPoint[#,l1,p,p1,p2,p3]&//SPParam;
+FlowA3=FormTrace["ZA3",traceExprA3,{},SP3FormRule]//dressingRules//TBProjectToSymmetricPoint[#,l1,p,p1,p2,p3]&//SPParam//Simplify;
 
-MakeKernel[FlowA3,kernelZA3,kernelParameterList,
+MakeKernel[FlowA3,
+
+"Name"->"ZA3",
+"Integrator"->"Integrator_p2_4D_2ang",
+"d"->4,
+"AD"->False,
+"ctype"->"double",
+"Device"->"GPU",
+"Type"->"double",
+
+"Parameters"->kernelParameterList,
 "KernelBody"->SP3Defs,
 "IntegrationVariables"->{"l1","cos1","cos2"},
 "Coordinates"->{"LogarithmicCoordinates1D<double>"},
@@ -198,11 +264,21 @@ UpdateFlows["YangMillsFlows"]
 
 fRGA4=TakeDerivatives[WetterichEquation,{A[i1],A[i2],A[i3],A[i4]}]//FTruncate//FSimplify[#,"Symmetries"->symmetryP4]&//FPlot//FRoute//FPrint;
 
-projectorA4=TBGetProjector["AAAAClassTrans",1,{i1,i2,i3,i4}/.fRGA4["1-Loop"]["ExternalIndices"]]//Simplify;
-traceExprA4=F[projectorA4,(fRGA4["1-Loop"]["Expression"]/.MakeDiagrammaticRules[])];
-FlowA4=FormTrace[traceExprA4,SP4FormRule,SP4FormRule]//dressingRules//TBProjectToSymmetricPoint[#,l1,p,p1,p2,p3,p4]&//SPParam;
+projectorA4=TBGetProjector["AAAAClassTrans",1,{i1,i2,i3,i4}/.fRGA4["1-Loop"]["ExternalIndices"]]//TBProjectToSymmetricPoint[#,l1,p,p1,p2,p3,p4]&//Simplify;
+traceExprA4=F[projectorA4,(fRGA4["1-Loop"]["Expression"]/.MakeDiagrammaticRules[])]//TBProjectToSymmetricPoint[#,l1,p,p1,p2,p3,p4]&;
+FlowA4=FormTrace["ZA4",traceExprA4,{},SP4FormRule]//dressingRules//TBProjectToSymmetricPoint[#,l1,p,p1,p2,p3,p4]&//SPParam//Simplify;
 
-MakeKernel[Collect[FlowA4,{ZA3[__],ZA4[__],ZAcbc[__]},Simplify],kernelZA4,kernelParameterList,
+MakeKernel[FlowA4,
+
+"Name"->"ZA4",
+"Integrator"->"Integrator_p2_4D_3ang",
+"d"->4,
+"AD"->False,
+"ctype"->"double",
+"Device"->"GPU",
+"Type"->"double",
+
+"Parameters"->kernelParameterList,
 "KernelBody"->SP4Defs,
 "IntegrationVariables"->{"l1","cos1","cos2","phi"},
 "Coordinates"->{"LogarithmicCoordinates1D<double>"},

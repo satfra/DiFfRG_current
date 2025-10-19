@@ -26,8 +26,8 @@ namespace DiFfRG
                          const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &dtZA,
                          const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZA);
 
-    template <typename C, typename... T>
-    DiFfRG::GPU_exec map(double *dest, const C &coordinates, const device::tuple<T...> &args)
+    template <typename IT, typename C, typename... T>
+    DiFfRG::GPU_exec map(IT *dest, const C &coordinates, const device::tuple<T...> &args)
     {
       return device::apply([&](const auto... t) { return map(dest, coordinates, t...); }, args);
     }
@@ -41,7 +41,7 @@ namespace DiFfRG
              const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &dtZA,
              const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZA);
 
-    template <typename... T> void get(double &dest, const double &p, const device::tuple<T...> &args)
+    template <typename IT, typename... T> void get(IT &dest, const double &p, const device::tuple<T...> &args)
     {
       device::apply([&](const auto... t) { get(dest, p, t...); }, args);
     }
