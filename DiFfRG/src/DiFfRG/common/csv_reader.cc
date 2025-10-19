@@ -1,9 +1,6 @@
 // DiFfRG
 #include <DiFfRG/common/csv_reader.hh>
 
-// external libraries
-#include <rapidcsv.h>
-
 namespace DiFfRG
 {
   CSVReader::CSVReader(std::string input_file, char separator, bool has_header)

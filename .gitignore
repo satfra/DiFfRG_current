@@ -1,7 +1,5 @@
-bin/
-bin_clang/
-build/
-build_clang/
+bin*/
+build*/
 .idea/
 profile/
 .ipynb_checkpoints
