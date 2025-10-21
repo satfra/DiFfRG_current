@@ -103,6 +103,21 @@ If using Windows, instead of running the project directly, it is recommended to 
 
 ## Installation
 
+### As fast as accessible
+
+Just run 
+
+```bash
+bash <(curl -s https://github.com/satfra/DiFfRG_current/raw/refs/heads/main/install.sh)
+```
+
+or, if you want to specify either the installation folder or the number of threads used for building the library,
+```bash
+THREADS=6 FOLDER=${HOME}/.local/share/DiFfRG/ bash <(curl -s https://github.com/satfra/DiFfRG_current/raw/refs/heads/main/install.sh)
+```
+```
+```
+
 ### CMake
 
 You can download a script to install DiFfRG locally directly from a CMake file by putting into your `CMakeLists.txt` the lines
