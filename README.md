@@ -103,19 +103,15 @@ If using Windows, instead of running the project directly, it is recommended to 
 
 ## Installation
 
-### As fast as accessible
+### As fast as possible
 
-Just run 
-
+From the shell, run (this requires curl to be available on your system)
 ```bash
-bash <(curl -s https://github.com/satfra/DiFfRG_current/raw/refs/heads/main/install.sh)
+bash <(curl -s -L https://github.com/satfra/DiFfRG_current/raw/refs/heads/main/install.sh)
 ```
-
 or, if you want to specify either the installation folder or the number of threads used for building the library,
 ```bash
 THREADS=6 FOLDER=${HOME}/.local/share/DiFfRG/ bash <(curl -s https://github.com/satfra/DiFfRG_current/raw/refs/heads/main/install.sh)
-```
-```
 ```
 
 ### CMake
