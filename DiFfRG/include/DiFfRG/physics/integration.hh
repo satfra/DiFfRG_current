@@ -92,6 +92,39 @@ namespace DiFfRG
   }
 
   // ----------------------------------------------------
+  // Setting the typical energy scale
+  // ----------------------------------------------------
+
+  template <typename T>
+  concept has_set_typical_E = requires(T t, double typical_E) { t.set_typical_E(typical_E); };
+
+  template <typename Int>
+    requires DiFfRG::has_set_typical_E<Int>
+  void invoke_set_typical_E(Int &integrator, const double typical_E)
+  {
+    integrator.set_typical_E(typical_E);
+  }
+  template <typename Int>
+    requires(!DiFfRG::has_set_typical_E<Int>)
+  void invoke_set_typical_E(Int &, const double)
+  {
+    // do nothing
+  }
+  template <typename Int>
+    requires DiFfRG::has_integrator_AD<Int>
+  void all_set_typical_E(Int &integrator, const double typical_E)
+  {
+    invoke_set_typical_E(integrator.integrator, typical_E);
+    invoke_set_typical_E(integrator.integrator_AD, typical_E);
+  }
+  template <typename Int>
+    requires(!DiFfRG::has_integrator_AD<Int>)
+  void all_set_typical_E(Int &integrator, const double typical_E)
+  {
+    invoke_set_typical_E(integrator.integrator, typical_E);
+  }
+
+  // ----------------------------------------------------
   // Setting the x-extent
   // ----------------------------------------------------
 

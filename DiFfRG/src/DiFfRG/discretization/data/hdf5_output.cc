@@ -45,7 +45,7 @@ namespace DiFfRG
       // the series number got incremented in the call, thus the -1
       const size_t series_number = map_series_numbers[name] - 1;
       auto n_group = maps.get_group(name);
-      auto group = n_group.get_group(int_to_string(series_number, 6));
+      auto group = n_group.get_group(std::to_string(series_number));
       group.attributes.create_from<double>("time", time);
       group.attributes.create_from<int>("series_number", series_number);
     }

@@ -3,6 +3,8 @@
 [![Wolfram](https://img.shields.io/badge/wolfram_doc-cf1c10?style=for-the-badge&logo=wolfram)](https://satfra.github.io/DiFfRG/wolfram/html/guide/DiFfRG.html)
 [![Python](https://img.shields.io/badge/python_doc-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://satfra.github.io/DiFfRG/python/index.html)
 
+<h3>[This is the development repository for DiFfRG. For the current stable version, please visit [the main repository](https://github.com/satfra/DiFfRG)</h3>
+
 # DiFfRG - A Discretization Framework for functional Renormalization Group flows
 
 DiFfRG is a set of tools for the discretization of flow equations arising in the functional Renormalization Group (fRG).
@@ -100,6 +102,17 @@ $ brew install cmake doxygen paraview graphviz gsl bash
 If using Windows, instead of running the project directly, it is recommended to use [WSL](https://learn.microsoft.com/en-us/windows/wsl/setup/environment) and then go through the installation as if on Linux (e.g. Arch or Ubuntu).
 
 ## Installation
+
+### As fast as possible
+
+From the shell, run (this requires curl to be available on your system)
+```bash
+bash <(curl -s -L https://github.com/satfra/DiFfRG_current/raw/refs/heads/main/install.sh)
+```
+or, if you want to specify either the installation folder or the number of threads used for building the library,
+```bash
+THREADS=6 FOLDER=${HOME}/.local/share/DiFfRG/ bash <(curl -s https://github.com/satfra/DiFfRG_current/raw/refs/heads/main/install.sh)
+```
 
 ### CMake
 
