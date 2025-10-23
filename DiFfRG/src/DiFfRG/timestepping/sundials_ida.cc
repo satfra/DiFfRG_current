@@ -49,7 +49,7 @@ namespace DiFfRG
 
     // Create a SUNDIALS IDA object with the right settings
     typename SUNDIALS::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
-                                                                10, 0, impl.abs_tol, impl.rel_tol);
+                                                                1e6, 0, impl.abs_tol, impl.rel_tol);
     typename SUNDIALS::IDA<VectorType> time_stepper(ida_data);
 
     // Define some variables for monitoring
