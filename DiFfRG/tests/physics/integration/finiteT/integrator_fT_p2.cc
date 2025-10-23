@@ -37,14 +37,14 @@ TEMPLATE_TEST_CASE_SIG("Test finite T momentum integrals", "[integration][quadra
     };
 
     const ctype T = GENERATE(1e-3, 5e-3, 1e-2, 5e-2, 1e-1, 5e-1, 1., 5., 10.);
-    const ctype x_extent = GENERATE(take(1, random(1., 2.)));
+    const ctype x_extent = GENERATE(1., 1.25, 1.5, 1.75, 2.);
     const uint size = GENERATE(32, 64);
 
     QuadratureProvider quadrature_provider;
     Integrator_fT_p2<dim, NT, PolyIntegrand<2, NT, -1>, ExecutionSpace> integrator(quadrature_provider, {size},
                                                                                    x_extent);
 
-    const ctype k = GENERATE(take(1, random(0., 1.)));
+    const ctype k = GENERATE(0.01, 0.1, 0.5, 1.0);
     const ctype q_extent = std::sqrt(x_extent * powr<2>(k));
 
     SECTION("Volume integral (bosonic)")
