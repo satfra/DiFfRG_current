@@ -4,14 +4,10 @@
 #include <DiFfRG/common/json.hh>
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/discretization/data/hdf5.hh>
 #include <DiFfRG/physics/interpolation.hh>
 
-#include <autodiff/forward/real/real.hpp>
-
-#ifdef H5CPP
-#include <h5cpp/hdf5.hpp>
-#endif
-
+#include <filesystem>
 #include <list>
 
 namespace DiFfRG
@@ -34,6 +30,35 @@ namespace DiFfRG
      */
     HDF5Output(const std::string top_folder, const std::string output_name, const JSONValue &json);
 
+    void write_series_record(hdf5::node::Group &group, const int series_number)
+    {
+      const std::string value = std::to_string(series_number);
+
+      if (!group.has_dataset("series_numbers")) {
+        hdf5::property::LinkCreationList lcpl;
+        hdf5::property::DatasetCreationList dcpl;
+
+        // in order to append data we have to use a chunked layout of the dataset
+        dcpl.layout(hdf5::property::DatasetLayout::Chunked);
+        dcpl.chunk({128});
+
+        hdf5::dataspace::Simple space({1}, {hdf5::dataspace::Simple::unlimited});
+        auto type = hdf5::datatype::create<std::string>();
+
+        auto data_set = group.create_dataset("series_numbers", type, space, dcpl, lcpl);
+        data_set.write(value); // write data
+      } else {
+        auto data_set = group.get_dataset("series_numbers");
+
+        const size_t cur_size = data_set.dataspace().size();
+        const size_t sel_start = cur_size;
+        data_set.resize({cur_size + 1}); // grow dataset
+
+        hdf5::dataspace::Hyperslab selection{{sel_start}, {1}, {1}, {1}};
+        data_set.write(value, selection); // write data
+      }
+    }
+
     /**
      * @brief Add a value to the output.
      *
@@ -48,6 +73,8 @@ namespace DiFfRG
       if (initial_scalars.size() > 0 &&
           std::find(initial_scalars.begin(), initial_scalars.end(), name) == initial_scalars.end())
         throw std::runtime_error("HDF5Output::scalar: The scalar '" + name + "' has not been registered before!");
+
+      open_file();
 
       if (!scalars.has_dataset(name)) {
         hdf5::property::LinkCreationList lcpl;
@@ -90,7 +117,6 @@ namespace DiFfRG
       }
 #endif
     }
-
     void scalar(const std::string &name, const char *value) { scalar<std::string>(name, std::string(value)); }
 
     template <typename COORD>
@@ -104,6 +130,8 @@ namespace DiFfRG
         throw std::runtime_error("HDF5Output::map: The coordinates '" + name +
                                  "' have already been written to the file '" + output_name + "'.");
       }
+
+      open_file();
 
       const auto grid_data = make_grid(coordinates);
 
@@ -128,6 +156,9 @@ namespace DiFfRG
 #ifndef H5CPP
       throw std::runtime_error("HDF5Output::map: HDF5 support is not enabled. Please compile with H5CPP support.");
 #else
+
+      open_file();
+
       const std::string coord_name = coordinates.to_string();
       if (coord_identifiers.find(coord_name) == coord_identifiers.end()) map(coord_name, coordinates);
 
@@ -140,7 +171,12 @@ namespace DiFfRG
         n_group = maps.get_group(name);
       }
 
-      auto group = n_group.create_group(int_to_string(map_series_numbers[name], 6));
+      if (n_group.has_group(std::to_string(map_series_numbers[name])))
+        throw std::runtime_error("HDF5Output::map: The map '" + name + "' has already been written to the file '" +
+                                 output_name + "' for series number " + std::to_string(map_series_numbers[name]) + ".");
+
+      auto group = n_group.create_group(std::to_string(map_series_numbers[name]));
+      write_series_record(group, map_series_numbers[name]);
 
       // Create a dataset for the data
       hdf5::Dimensions dims;
@@ -175,6 +211,9 @@ namespace DiFfRG
 #ifndef H5CPP
       throw std::runtime_error("HDF5Output::map: HDF5 support is not enabled. Please compile with H5CPP support.");
 #else
+
+      open_file();
+
       using value_type = typename std::decay_t<INTERP>::value_type;
 
       const auto &interpolator = _interpolator.template get_on<CPU_memory>();
@@ -188,7 +227,12 @@ namespace DiFfRG
         n_group = maps.get_group(name);
       }
 
-      auto group = n_group.create_group(int_to_string(map_series_numbers[name], 6));
+      if (n_group.has_group(std::to_string(map_series_numbers[name])))
+        throw std::runtime_error("HDF5Output::map: The map '" + name + "' has already been written to the file '" +
+                                 output_name + "' for series number " + std::to_string(map_series_numbers[name]) + ".");
+
+      auto group = n_group.create_group(std::to_string(map_series_numbers[name]));
+      write_series_record(group, map_series_numbers[name]);
 
       // Create a dataset for the interpolator data
       hdf5::Dimensions dims;
@@ -222,10 +266,15 @@ namespace DiFfRG
 
     void flush(const double time);
 
+    void open_file();
+    void close_file();
+
   private:
     const JSONValue &json;
     const std::string top_folder;
     const std::string output_name;
+
+    bool opened;
 
     std::list<std::string> written_scalars;
     std::list<std::string> written_maps;
@@ -253,120 +302,7 @@ namespace DiFfRG
     hdf5::node::Group maps;
     hdf5::node::Group coords;
 #endif
+
+    std::filesystem::path path;
   };
 } // namespace DiFfRG
-
-#ifdef H5CPP
-namespace hdf5
-{
-  namespace datatype
-  {
-    template <typename T> class TypeTrait<DiFfRG::complex<T>>
-    {
-    private:
-      using element_type = TypeTrait<T>;
-
-    public:
-      using Type = DiFfRG::complex<T>;
-      using TypeClass = Compound;
-
-      static TypeClass create(const Type & = Type())
-      {
-        datatype::Compound type = datatype::Compound::create(2 * sizeof(T));
-
-        type.insert("real", 0, element_type::create(T()));
-        type.insert("imag", alignof(T), element_type::create(T()));
-
-        return type;
-      }
-      const static TypeClass &get(const Type & = Type())
-      {
-        const static TypeClass &cref_ = create();
-        return cref_;
-      }
-    };
-
-    template <size_t N, typename T> class TypeTrait<autodiff::Real<N, T>>
-    {
-    private:
-      using element_type = TypeTrait<T>;
-
-    public:
-      using Type = autodiff::Real<N, T>;
-      using TypeClass = Compound;
-
-      static TypeClass create(const Type & = Type())
-      {
-        datatype::Compound type = datatype::Compound::create(N * sizeof(autodiff::Real<N, T>));
-
-        type.insert("val", 0, element_type::create(T()));
-        for (size_t i = 1; i <= N; ++i) {
-          type.insert("d_" + std::to_string(i), i * sizeof(T), element_type::create(T()));
-        }
-
-        return type;
-      }
-      const static TypeClass &get(const Type & = Type())
-      {
-        const static TypeClass &cref_ = create();
-        return cref_;
-      }
-    };
-
-    template <typename T, size_t N> class TypeTrait<std::array<T, N>>
-    {
-    private:
-      using element_type = TypeTrait<T>;
-
-    public:
-      using Type = std::array<T, N>;
-      using TypeClass = Compound;
-
-      static TypeClass create(const Type & = Type())
-      {
-        datatype::Compound type = datatype::Compound::create(N * sizeof(T));
-
-        for (size_t i = 0; i < N; ++i) {
-          type.insert("component " + std::to_string(i), i * sizeof(T), element_type::create(T()));
-        }
-
-        return type;
-      }
-      const static TypeClass &get(const Type & = Type())
-      {
-        const static TypeClass &cref_ = create();
-        return cref_;
-      }
-    };
-
-    template <typename T, size_t N>
-      requires(!std::is_same_v<std::array<T, N>, DiFfRG::device::array<T, N>>)
-    class TypeTrait<DiFfRG::device::array<T, N>>
-    {
-    private:
-      using element_type = TypeTrait<T>;
-
-    public:
-      using Type = DiFfRG::device::array<T, N>;
-      using TypeClass = Compound;
-
-      static TypeClass create(const Type & = Type())
-      {
-        datatype::Compound type = datatype::Compound::create(N * sizeof(T));
-
-        for (size_t i = 0; i < N; ++i) {
-          type.insert("component " + std::to_string(i), i * sizeof(T), element_type::create(T()));
-        }
-
-        return type;
-      }
-      const static TypeClass &get(const Type & = Type())
-      {
-        const static TypeClass &cref_ = create();
-        return cref_;
-      }
-    };
-
-  } // namespace datatype
-} // namespace hdf5
-#endif

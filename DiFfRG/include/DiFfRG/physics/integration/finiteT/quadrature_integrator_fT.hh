@@ -166,17 +166,94 @@ namespace DiFfRG
     template <typename view_type, typename Coordinates, typename... Args>
     void map(ExecutionSpace &space, const view_type integral_view, const Coordinates &coordinates, const Args &...args)
     {
-      for (size_t k = 0; k < integral_view.size(); ++k) {
+      device::array<size_t, 1 + dim> extents;
+      extents[0] = integral_view.size();
+      for (int i = 0; i < dim; ++i)
+        extents[1 + i] = grid_size[i];
+      auto cache = makeKokkosNDView<1 + dim, NT, ExecutionSpace>("cache", extents);
+
+      const auto m_args = device::make_tuple(args...);
+
+      const auto &n = nodes;
+      const auto &w = weights;
+      const auto &m_n = matsubara_nodes;
+      const auto &m_w = matsubara_weights;
+      const auto &start = grid_start;
+      const auto &scale = grid_scale;
+
+      const auto &m_T = T;
+
+      auto functor = KOKKOS_LAMBDA(const device::array<size_t, 1 + dim> &idx)
+      {
         // make subview
-        auto subview = Kokkos::subview(integral_view, k);
+        auto subview = device::apply([&](const auto &...i) { return Kokkos::subview(cache, i...); }, idx);
+
         // get the position for the current index
-        const auto idx = coordinates.from_linear_index(k);
-        const auto pos = coordinates.forward(idx);
+        const auto idx_v = coordinates.from_linear_index(idx[0]);
+        const auto pos = coordinates.forward(idx_v);
         // make a tuple of all arguments
-        const auto l_args = device::tuple_cat(pos, device::tie(args...));
-        // enqueue a get operation for the current position
-        device::apply([&](const auto &...iargs) { get(space, subview, iargs...); }, l_args);
-      }
+        const auto full_args = device::tuple_cat(pos, m_args);
+
+        device::array<ctype, sdim> x;
+        ctype weight = 1;
+        for (int i = 0; i < sdim; ++i) {
+          x[i] = Kokkos::fma(scale[i], n[i][idx[1 + i]], start[i]);
+          weight *= w[i][idx[1 + i]] * scale[i];
+        }
+        const ctype xt = m_n[idx[1 + dim - 1]];
+        const ctype wt = m_w[idx[1 + dim - 1]];
+        device::apply(
+            [&](const auto &...iargs) {
+              device::apply(
+                  [&](const auto &...posargs) {
+                    subview() =
+                        weight *
+                        (
+                            // positive and negative Matsubara frequencies
+                            wt * (KERNEL::kernel(posargs..., xt, iargs...) + KERNEL::kernel(posargs..., -xt, iargs...))
+                            // The zero mode (once per matsubara sum)
+                            + (idx[1 + dim - 1] != 0 ? NT{} : m_T * KERNEL::kernel(posargs..., (ctype)0, iargs...)));
+                  },
+                  x);
+            },
+            full_args);
+      };
+
+      Kokkos::parallel_for(makeKokkosNDRange<1 + dim, ExecutionSpace>(space, {0}, extents),
+                           KokkosNDLambdaWrapper<1 + dim, decltype(functor)>(functor));
+
+      using TeamType = Kokkos::TeamPolicy<ExecutionSpace>::member_type;
+      // reduction
+      Kokkos::parallel_for(
+          Kokkos::TeamPolicy(space, integral_view.size(), Kokkos::AUTO), KOKKOS_CLASS_LAMBDA(const TeamType &team) {
+            // get the current (continuous) index
+            const uint k = team.league_rank();
+            // get the position for the current index
+            const auto idx = coordinates.from_linear_index(k);
+            const auto pos = coordinates.forward(idx);
+            // make a tuple of all arguments
+            const auto full_args = device::tuple_cat(pos, m_args);
+
+            if (k > integral_view.size()) return;
+
+            // no-ops to capture
+            (void)cache;
+            (void)grid_size;
+
+            auto red_functor = [&](const device::array<size_t, dim> ridx, NT &update) {
+              device::apply([&](const auto &...iargs) { update += cache(k, iargs...); }, ridx);
+            };
+
+            NT res{};
+            Kokkos::parallel_reduce(makeKokkosNDThreadRange<dim, TeamType>(team, grid_size),
+                                    KokkosNDLambdaWrapperReduction<dim, decltype(red_functor)>(red_functor), res);
+
+            // add the constant value
+            Kokkos::single(Kokkos::PerTeam(team), [&]() {
+              integral_view(k) =
+                  res + device::apply([&](const auto &...iargs) { return KERNEL::constant(iargs...); }, full_args);
+            });
+          });
     }
 
     template <typename Coordinates, typename... Args>

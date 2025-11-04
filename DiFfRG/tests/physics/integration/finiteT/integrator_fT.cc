@@ -35,39 +35,66 @@ TEST_CASE("Test finite T sums", "[integration][quadrature]")
         return abs(val);
     };
 
-    const ctype T = GENERATE(take(1, random(0.01, 1.)));
+    const ctype T = GENERATE(0., 1e-3, 5e-3, 1e-2, 5e-2, 1e-1, 5e-1, 1., 5., 10.);
 
     QuadratureProvider quadrature_provider;
     Integrator_fT<1, NT, PolyIntegrand<1, NT, -1>, ExecutionSpace> integrator(quadrature_provider, {}, {});
-    integrator.set_T(T);
 
     const ctype k = GENERATE(take(1, random(0., 1.)));
-    integrator.set_k(k);
 
-    SECTION("Volume integral")
+    SECTION("Volume integral (bosonic)")
     {
-      const ctype val = GENERATE(take(1, random(0., 1.)));
+      const ctype val = GENERATE(1e-4, 1e-3, 1e-2, 1e-1, 1., 10.);
+      integrator.set_T(T);
+      integrator.set_k(k);
       integrator.set_typical_E(val);
 
-      const NT reference_integral = 1. / (std::tanh(val / (2. * T)) * 2. * val); // sum
+      const NT reference_integral = T == 0. ? 1. / (2. * val) : 1. / (std::tanh(val / (2. * T)) * 2. * val); // sum
 
       NT integral{};
       integrator.get(integral, 0., powr<2>(val), 0., 1., 0.);
 
-      constexpr ctype expected_precision = 1e-6;
+      // This is actually the precision we can expect at low T
+      constexpr ctype expected_precision = 5e-6;
       const ctype rel_err = t_abs(reference_integral - integral) / t_abs(reference_integral);
       if (rel_err >= expected_precision) {
-        std::cerr << "reference: " << reference_integral << "| integral: " << integral
-                  << "| relative error: " << abs(reference_integral - integral) / abs(reference_integral) << std::endl;
+        std::cerr << "Failure for T = " << T << ", k = " << k << ", val = " << val << "\n"
+                  << "reference: " << reference_integral << "| integral: " << integral
+                  << "| relative error: " << rel_err << std::endl;
+      }
+      CHECK(rel_err < expected_precision);
+    }
+
+    SECTION("Volume integral (fermionic)")
+    {
+      const ctype val = GENERATE(1e-4, 1e-3, 1e-2, 1e-1, 1., 10.);
+      integrator.set_T(T);
+      integrator.set_k(k);
+      integrator.set_typical_E(val);
+
+      const NT reference_integral = T == 0. ? 1. / (2. * val) : std::tanh(val / (2. * T)) / (2. * val); // sum
+
+      NT integral{};
+      integrator.get(integral, 0., powr<2>(val) + powr<2>(M_PI * T), 2 * M_PI * T, 1., 0.);
+
+      // This is actually the precision we can expect at low T
+      constexpr ctype expected_precision = 5e-6;
+      const ctype rel_err = t_abs(reference_integral - integral) / t_abs(reference_integral);
+      if (rel_err >= expected_precision) {
+        std::cerr << "Failure for T = " << T << ", k = " << k << ", val = " << val << "\n"
+                  << "reference: " << reference_integral << "| integral: " << integral
+                  << "| relative error: " << rel_err << std::endl;
       }
       CHECK(rel_err < expected_precision);
     }
     SECTION("Volume map")
     {
-      const ctype val = GENERATE(take(1, random(0., 1.)));
+      const ctype val = GENERATE(1e-3, 1e-1, 10.);
+      integrator.set_T(T);
+      integrator.set_k(k);
       integrator.set_typical_E(val);
 
-      const NT reference_integral = 1. / (std::tanh(val / (2. * T)) * 2. * val); // sum
+      const NT reference_integral = T == 0. ? 1. / (2. * val) : 1. / (std::tanh(val / (2. * T)) * 2. * val); // sum
 
       const uint rsize = GENERATE(32, 64);
       std::vector<NT> integral_view(rsize);
@@ -75,12 +102,13 @@ TEST_CASE("Test finite T sums", "[integration][quadrature]")
 
       integrator.map(integral_view.data(), coordinates, powr<2>(val), 0., 1., 0.).fence();
 
-      constexpr ctype expected_precision = 1e-6;
+      constexpr ctype expected_precision = 5e-6;
       for (uint i = 0; i < rsize; ++i) {
         const ctype rel_err = t_abs(coordinates.forward(i) + reference_integral - integral_view[i]) /
                               t_abs(coordinates.forward(i) + reference_integral);
         if (rel_err >= expected_precision) {
-          std::cout << "reference: " << coordinates.forward(i) + reference_integral
+          std::cerr << "Failure for T = " << T << ", k = " << k << ", val = " << val << "\n"
+                    << "reference: " << coordinates.forward(i) + reference_integral
                     << "| integral: " << integral_view[i] << "| relative error: "
                     << abs(coordinates.forward(i) + reference_integral - integral_view[i]) /
                            abs(coordinates.forward(i) + reference_integral)

@@ -94,10 +94,10 @@ TEST_CASE("Test FE output on Constant model", "[output][cg]")
   {
     FEOutput<dim, VectorType> fe_output("./testing", "output_name", "other_folder", json);
 
-    auto h5_file = hdf5::file::create("./testing/output_name.h5", hdf5::file::AccessFlags::Truncate);
-    hdf5::node::Group root_group = h5_file.root();
+    HDF5Output hdf5_output("./testing/", "output_name.h5", json);
+    hdf5::node::Group root_group = hdf5_output.get_file().root();
     auto h5_fe_group = std::make_shared<hdf5::node::Group>(root_group.create_group("FE"));
-    fe_output.set_h5_group(h5_fe_group);
+    fe_output.set_hdf5_output(&hdf5_output);
 
     constexpr uint output_num = 20;
     for (uint i = 0; i < output_num; ++i) {

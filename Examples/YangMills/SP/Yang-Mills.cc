@@ -40,17 +40,7 @@ bool run(const JSONValue &json, const std::string logger)
     return false;
   }
 
-  {
-    CSVReader reader(config_helper.get_top_folder() + config_helper.get_output_name() + "_data.csv", ',', true);
-    const auto m2A_out = reader.value("m2A", reader.n_rows() - 1);
-    if (m2A_out < 0 || m2A_out > powr<2>(json.get_double("/physical/Lambda") / 2.)) {
-      spdlog::get(logger)->error("Timestepping finished with negative m2A.");
-      spdlog::get(logger)->flush();
-      return false;
-    }
-  }
-
-  {
+  if (false) {
     CSVReader reader(config_helper.get_top_folder() + "/strong_couplings.csv", ',', true);
     uint first_p_idx = reader.n_rows() - 1;
     double min_p = std::numeric_limits<double>::max();

@@ -2,7 +2,6 @@
 
 #include "DiFfRG/physics/interpolation.hh"
 #include "DiFfRG/physics/physics.hh"
-#include "DiFfRG/physics/utils.hh"
 
 namespace DiFfRG
 {
@@ -12,8 +11,8 @@ namespace DiFfRG
     using Regulator = _Regulator;
 
     static KOKKOS_FORCEINLINE_FUNCTION auto
-    kernel(const auto &l1, const auto &cos1, const auto &cos2, const auto &phi, const auto &p, const double &k,
-           const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZA3,
+    kernel(const double &l1, const double &cos1, const double &cos2, const double &phi, const double &p,
+           const double &k, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZA3,
            const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZAcbc,
            const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZA4,
            const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &dtZc,
@@ -23,728 +22,850 @@ namespace DiFfRG
     {
       using namespace DiFfRG;
       using namespace DiFfRG::compute;
-      const double cosl1p1 = cos1;
-      const double cosl1p2 = ((-1.) * (cos1) + (sqrt(3. + (-3.) * (powr<2>(cos1)))) * (cos2)) * (0.5);
-      const double cosl1p3 = ((-1.) * (cos1) + (-1.) * ((sqrt(3. + (-3.) * (powr<2>(cos1)))) * (cos2))) * (0.5);
-      const auto _repl1 = dtZA(pow(1. + powr<6>(k), 0.16666666666666666667));
+      const double cosl1p1 = (sqrt(1. + (-1.) * (powr<2>(cos1)))) * (cos2);
+      const double cosl1p2 = (-0.3333333333333333) *
+                             (cos2 + (-2.) * ((sqrt(2. + (-2.) * (powr<2>(cos2)))) * (cos(phi)))) *
+                             (sqrt(1. + (-1.) * (powr<2>(cos1))));
+      const double cosl1p3 =
+          (-0.3333333333333333) *
+          (cos2 + (cos(phi) + (-1.732050807568877) * (sin(phi))) * (sqrt(2. + (-2.) * (powr<2>(cos2))))) *
+          (sqrt(1. + (-1.) * (powr<2>(cos1))));
+      const double cosl1p4 =
+          (-0.3333333333333333) *
+          (cos2 + (cos(phi) + (1.732050807568877) * (sin(phi))) * (sqrt(2. + (-2.) * (powr<2>(cos2))))) *
+          (sqrt(1. + (-1.) * (powr<2>(cos1))));
+      const auto _repl1 = ZA(pow(1. + powr<6>(k), 0.16666666666666666667));
       const auto _repl2 = RB(powr<2>(k), powr<2>(l1));
-      const auto _repl3 = RBdot(powr<2>(k), powr<2>(l1));
-      const auto _repl4 = ZA(pow(1. + powr<6>(k), 0.16666666666666666667));
-      const auto _repl5 = ZA((1.02) * (pow(1. + powr<6>(k), 0.16666666666666666667)));
-      const auto _repl6 = ZA(l1);
-      const auto _repl7 =
-          RB(powr<2>(k), powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2 + cosl1p3) * ((l1) * (p)) + powr<2>(p));
-      const auto _repl8 = ZA(sqrt(powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2 + cosl1p3) * ((l1) * (p)) + powr<2>(p)));
+      const auto _repl3 = Zc(k);
+      const auto _repl4 = RBdot(powr<2>(k), powr<2>(l1));
+      const auto _repl5 = dtZA(pow(1. + powr<6>(k), 0.16666666666666666667));
+      const auto _repl6 = ZA((1.02) * (pow(1. + powr<6>(k), 0.16666666666666666667)));
+      const auto _repl7 = ZA(l1);
+      const auto _repl8 = ZA3((0.816496580927726) *
+                              (sqrt(powr<2>(l1) + (-1.) * (cosl1p1 + cosl1p2 + cosl1p3) * ((l1) * (p)) + powr<2>(p))));
       const auto _repl9 =
-          RB(powr<2>(k), powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + (1.333333333333333) * (powr<2>(p)));
-      const auto _repl10 =
+          RB(powr<2>(k), powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2 + cosl1p3) * ((l1) * (p)) + powr<2>(p));
+      const auto _repl10 = ZA(sqrt(powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2 + cosl1p3) * ((l1) * (p)) + powr<2>(p)));
+      const auto _repl11 =
           ZA(sqrt(powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + (1.333333333333333) * (powr<2>(p))));
-      const auto _repl11 = ZA3((0.816496580927726) *
-                               (sqrt(powr<2>(l1) + (-1.) * (cosl1p1 + cosl1p2 + cosl1p3) * ((l1) * (p)) + powr<2>(p))));
       const auto _repl12 =
-          ZA3((0.4714045207910317) *
-              (sqrt((3.) * (powr<2>(l1)) + (-3.) * ((cosl1p1 + cosl1p2) * (2.) + cosl1p3) * ((l1) * (p)) +
-                    (5.) * (powr<2>(p)))));
-      const auto _repl13 = Zc(k);
-      return (0.163265306122449) *
-                 ((-50.) * (_repl4 + (-1.) * (_repl5)) * ((_repl2) * (powr<6>(k))) +
-                  (_repl1) * (1. + powr<6>(k)) * (_repl2) + (_repl3) * (1. + powr<6>(k)) * (_repl4)) *
-                 ((_repl11) *
-                  ((-243.) *
-                       ((3.) * (powr<4>(cosl1p1)) + (-6.) * (powr<4>(cosl1p2)) +
-                        (-12.) * ((powr<3>(cosl1p2)) * (cosl1p3)) +
-                        (3.) * (cosl1p2 + (3.) * (cosl1p3)) * (powr<3>(cosl1p1)) +
-                        (2. + (-3.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p2)) +
-                        (-1. + (3.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p3)) +
-                        (cosl1p2) * (2. + (3.) * (powr<2>(cosl1p3))) * (cosl1p3) +
-                        (-1. + (-3.) * (powr<2>(cosl1p2)) + (5.) * ((cosl1p2) * (cosl1p3)) +
-                         (6.) * (powr<2>(cosl1p3))) *
-                            (powr<2>(cosl1p1)) +
-                        ((2.) * (cosl1p2) + (-12.) * (powr<3>(cosl1p2)) + (-4.) * (cosl1p3) +
-                         (-10.) * ((powr<2>(cosl1p2)) * (cosl1p3)) + (5.) * ((cosl1p2) * (powr<2>(cosl1p3))) +
-                         (9.) * (powr<3>(cosl1p3))) *
-                            (cosl1p1)) *
-                       (powr<10>(l1)) +
-                   (81.) *
-                       ((54.) * (powr<5>(cosl1p1)) + (-72.) * (powr<5>(cosl1p2)) +
-                        (-180.) * ((powr<4>(cosl1p2)) * (cosl1p3)) +
-                        (90.) * (cosl1p2 + (2.) * (cosl1p3)) * (powr<4>(cosl1p1)) +
-                        (6. + (-108.) * (powr<2>(cosl1p3))) * (powr<3>(cosl1p2)) +
-                        (-6.) *
-                            (1. + (3.) * (powr<2>(cosl1p2)) + (-36.) * ((cosl1p2) * (cosl1p3)) +
-                             (-27.) * (powr<2>(cosl1p3))) *
-                            (powr<3>(cosl1p1)) +
-                        (3.) * (5. + (6.) * (powr<2>(cosl1p3))) * ((powr<2>(cosl1p2)) * (cosl1p3)) +
-                        ((41.) * (cosl1p2) + (-252.) * (powr<3>(cosl1p2)) + (-59.) * (cosl1p3) +
-                         (-138.) * ((powr<2>(cosl1p2)) * (cosl1p3)) + (192.) * ((cosl1p2) * (powr<2>(cosl1p3))) +
-                         (198.) * (powr<3>(cosl1p3))) *
-                            (powr<2>(cosl1p1)) +
-                        (2.) * (-2. + (9.) * (powr<4>(cosl1p3))) * (cosl1p3) +
-                        (4. + (-3.) * (powr<2>(cosl1p3)) + (54.) * (powr<4>(cosl1p3))) * (cosl1p2) +
-                        ((-252.) * (powr<4>(cosl1p2)) + (-408.) * ((powr<3>(cosl1p2)) * (cosl1p3)) +
-                         (192.) * ((cosl1p2) * (powr<3>(cosl1p3))) +
-                         (53. + (-54.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p2)) +
-                         (-47. + (108.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p3))) *
-                            (cosl1p1)) *
-                       ((powr<9>(l1)) * (p)) +
-                   (27.) *
-                       (16. + (-39.) * (powr<2>(cosl1p1)) + (-207.) * (powr<4>(cosl1p1)) +
-                        (-333.) * (powr<6>(cosl1p1)) +
-                        (-1.) *
-                            ((1224.) * (powr<5>(cosl1p1)) + (1350.) * ((powr<4>(cosl1p1)) * (cosl1p3)) +
-                             (9.) * (15. + (164.) * (powr<2>(cosl1p3))) * (powr<3>(cosl1p1)) +
-                             (6.) * (-53. + (171.) * (powr<2>(cosl1p3))) * ((powr<2>(cosl1p1)) * (cosl1p3)) +
-                             (-28. + (135.) * (powr<2>(cosl1p3)) + (9.) * (powr<4>(cosl1p3))) * (cosl1p3) +
-                             (3.) * (-18. + (77.) * (powr<2>(cosl1p3)) + (84.) * (powr<4>(cosl1p3))) * (cosl1p1)) *
-                            (cosl1p3) +
-                        ((-3.) * (44. + (231.) * (powr<2>(cosl1p1)) + (258.) * (powr<4>(cosl1p1))) * (cosl1p1) +
-                         (-1.) *
-                             (-10. + (2220.) * (powr<4>(cosl1p1)) + (2172.) * ((powr<3>(cosl1p1)) * (cosl1p3)) +
-                              (189.) * (powr<2>(cosl1p3)) + (126.) * (powr<4>(cosl1p3)) +
-                              (3.) * (-23. + (344.) * (powr<2>(cosl1p3))) * ((cosl1p1) * (cosl1p3)) +
-                              (3.) * (89. + (760.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p1))) *
-                             (cosl1p3) +
-                         (-65. + (-225.) * (powr<4>(cosl1p1)) + (234.) * (powr<4>(cosl1p2)) +
-                          (702.) * ((powr<3>(cosl1p2)) * (cosl1p3)) + (153.) * (powr<2>(cosl1p3)) +
-                          (-225.) * (powr<4>(cosl1p3)) +
-                          (12.) * ((138.) * (cosl1p2) + (11.) * (cosl1p3)) * (powr<3>(cosl1p1)) +
-                          (3.) *
-                              (-173. + (849.) * (powr<2>(cosl1p2)) + (1208.) * ((cosl1p2) * (cosl1p3)) +
-                               (-24.) * (powr<2>(cosl1p3))) *
-                              (powr<2>(cosl1p1)) +
-                          (36.) * (17. + powr<2>(cosl1p3)) * ((cosl1p2) * (cosl1p3)) +
-                          (9.) * (38. + (67.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p2)) +
-                          (6.) *
-                              ((225.) * (powr<3>(cosl1p2)) + (73.) * (cosl1p3) +
-                               (512.) * ((powr<2>(cosl1p2)) * (cosl1p3)) + (-122.) * (powr<3>(cosl1p3)) +
-                               (74. + (262.) * (powr<2>(cosl1p3))) * (cosl1p2)) *
-                              (cosl1p1)) *
-                             (cosl1p2)) *
-                            (cosl1p2)) *
-                       ((powr<8>(l1)) * (powr<2>(p))) +
-                   (9.) *
-                       ((6.) *
-                            (-48. + (253.) * (powr<2>(cosl1p1)) + (399.) * (powr<4>(cosl1p1)) +
-                             (126.) * (powr<6>(cosl1p1))) *
-                            (cosl1p1) +
-                        (-112. + (3051.) * (powr<6>(cosl1p1)) + (3942.) * ((powr<5>(cosl1p1)) * (cosl1p3)) +
-                         (6.) * (powr<2>(cosl1p3)) + (414.) * (powr<4>(cosl1p3)) +
-                         (3.) * (467. + (1089.) * (powr<2>(cosl1p3))) * ((powr<3>(cosl1p1)) * (cosl1p3)) +
-                         (5177.999999999999 + (4077.) * (powr<2>(cosl1p3))) * (powr<4>(cosl1p1)) +
-                         (3.) * (-152. + (874.) * (powr<2>(cosl1p3)) + (27.) * (powr<4>(cosl1p3))) *
-                             ((cosl1p1) * (cosl1p3)) +
-                         (3.) * (524. + (1049.) * (powr<2>(cosl1p3)) + (342.) * (powr<4>(cosl1p3))) *
-                             (powr<2>(cosl1p1))) *
-                            (cosl1p3) +
-                        (-176. + (2982.) * (powr<2>(cosl1p1)) + (6792.) * (powr<4>(cosl1p1)) +
-                         (2241.) * (powr<6>(cosl1p1)) +
-                         (3.) *
-                             ((2436.) * (powr<5>(cosl1p1)) + (2691.) * ((powr<4>(cosl1p1)) * (cosl1p3)) +
-                              (9.) * (90. + (181.) * (powr<2>(cosl1p3))) * ((powr<2>(cosl1p1)) * (cosl1p3)) +
-                              (12.) * (237. + (232.) * (powr<2>(cosl1p3))) * (powr<3>(cosl1p1)) +
-                              (-166. + (546.) * (powr<2>(cosl1p3)) + (9.) * (powr<4>(cosl1p3))) * (cosl1p3) +
-                              (6.) * (32. + (273.) * (powr<2>(cosl1p3)) + (54.) * (powr<4>(cosl1p3))) * (cosl1p1)) *
-                             (cosl1p3) +
-                         (3.) *
-                             ((318. + (1543.) * (powr<2>(cosl1p1)) + (504.) * (powr<4>(cosl1p1))) * (cosl1p1) +
-                              (3.) *
-                                  (-106. + (268.) * (powr<4>(cosl1p1)) + (246.) * ((powr<3>(cosl1p1)) * (cosl1p3)) +
-                                   (129.) * (powr<2>(cosl1p3)) + (12.) * (powr<4>(cosl1p3)) +
-                                   (cosl1p1) * (-291. + (200.) * (powr<2>(cosl1p3))) * (cosl1p3) +
-                                   (-411. + (482.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p1))) *
-                                  (cosl1p3) +
-                              (-1.) *
-                                  (172. + (1224.) * (powr<4>(cosl1p1)) + (36.) * (powr<4>(cosl1p2)) +
-                                   (126.) * ((powr<3>(cosl1p2)) * (cosl1p3)) + (1014.) * (powr<2>(cosl1p3)) +
-                                   (-36.) * (powr<4>(cosl1p3)) +
-                                   (27.) * ((101.) * (cosl1p2) + (128.) * (cosl1p3)) * (powr<3>(cosl1p1)) +
-                                   (15.) * (125. + (3.) * (powr<2>(cosl1p3))) * ((cosl1p2) * (cosl1p3)) +
-                                   (18.) * (43. + (8.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p2)) +
-                                   (2024. + (2052.) * (powr<2>(cosl1p2)) + (4449.) * ((cosl1p2) * (cosl1p3)) +
-                                    (2040.) * (powr<2>(cosl1p3))) *
-                                       (powr<2>(cosl1p1)) +
-                                   ((594.) * (powr<3>(cosl1p2)) + (1752.) * ((powr<2>(cosl1p2)) * (cosl1p3)) +
-                                    (6.) * (759.0000000000001 + (8.) * (powr<2>(cosl1p3))) * (cosl1p3) +
-                                    (7.) * (391. + (213.) * (powr<2>(cosl1p3))) * (cosl1p2)) *
-                                       (cosl1p1)) *
-                                  (cosl1p2)) *
-                             (cosl1p2)) *
-                            (cosl1p2)) *
-                       ((powr<7>(l1)) * (powr<3>(p))) +
-                   (3.) *
-                       (1252. + (-1548.) * (powr<2>(cosl1p1)) + (-16527.) * (powr<4>(cosl1p1)) +
-                        (-7776.000000000001) * (powr<6>(cosl1p1)) + (-324.) * (powr<8>(cosl1p1)) +
-                        (-3.) *
-                            ((486.) * (powr<7>(cosl1p1)) + (756.) * ((powr<6>(cosl1p1)) * (cosl1p3)) +
-                             (117.) * (35. + (6.) * (powr<2>(cosl1p3))) * ((powr<4>(cosl1p1)) * (cosl1p3)) +
-                             (6996. + (810.) * (powr<2>(cosl1p3))) * (powr<5>(cosl1p1)) +
-                             (2.) * (98. + (225.) * (powr<2>(cosl1p3)) + (9.) * (powr<4>(cosl1p3))) * (cosl1p3) +
-                             (3.) * (402.9999999999999 + (1323.) * (powr<2>(cosl1p3)) + (18.) * (powr<4>(cosl1p3))) *
-                                 ((powr<2>(cosl1p1)) * (cosl1p3)) +
-                             (9617. + (3660.) * (powr<2>(cosl1p3)) + (324.) * (powr<4>(cosl1p3))) * (powr<3>(cosl1p1)) +
-                             (2.) * (552. + (184.) * (powr<2>(cosl1p3)) + (513.) * (powr<4>(cosl1p3))) * (cosl1p1)) *
-                            (cosl1p3) +
-                        (3.) *
-                            ((-378.) * (powr<7>(cosl1p1)) + (232.) * (cosl1p3) +
-                             (-1395.) * ((powr<6>(cosl1p1)) * (cosl1p3)) + (-456.) * (powr<3>(cosl1p3)) +
-                             (-414.) * (powr<5>(cosl1p3)) +
-                             (-15.) * (1045. + (123.) * (powr<2>(cosl1p3))) * ((powr<4>(cosl1p1)) * (cosl1p3)) +
-                             (-12.) * (713. + (150.) * (powr<2>(cosl1p3))) * (powr<5>(cosl1p1)) +
-                             (-1.) * (10039. + (8565.) * (powr<2>(cosl1p3)) + (378.) * (powr<4>(cosl1p3))) *
-                                 ((powr<2>(cosl1p1)) * (cosl1p3)) +
-                             (-1.) *
-                                 (12419. + (7281.000000000001) * (powr<2>(cosl1p3)) + (1305.) * (powr<4>(cosl1p3))) *
-                                 (powr<3>(cosl1p1)) +
-                             (-1.) *
-                                 (-72. + (-1130.) * (powr<2>(cosl1p3)) + (4725.) * (powr<4>(cosl1p3)) +
-                                  (27.) * (powr<6>(cosl1p3))) *
-                                 (cosl1p1) +
-                             (392. + (-5412.000000000001) * (powr<2>(cosl1p1)) + (-7995.) * (powr<4>(cosl1p1)) +
-                              (-378.) * (powr<6>(cosl1p1)) +
-                              (-1.) *
-                                  ((900.) * (powr<5>(cosl1p1)) + (855.) * ((powr<4>(cosl1p1)) * (cosl1p3)) +
-                                   (9.) * (-275. + (113.) * (powr<2>(cosl1p3))) * (cosl1p3) +
-                                   (3.) * (-808. + (231.) * (powr<2>(cosl1p3))) * ((powr<2>(cosl1p1)) * (cosl1p3)) +
-                                   (3.) * (613. + (396.) * (powr<2>(cosl1p3))) * (powr<3>(cosl1p1)) +
-                                   (-5225. + (4167.) * (powr<2>(cosl1p3)) + (108.) * (powr<4>(cosl1p3))) * (cosl1p1)) *
-                                  (cosl1p3) +
-                              ((432.) * (powr<5>(cosl1p1)) + (5558.999999999999) * (cosl1p3) +
-                               (1620.) * ((powr<4>(cosl1p1)) * (cosl1p3)) + (-180.) * (powr<3>(cosl1p3)) +
-                               (36.) * (583. + powr<2>(cosl1p3)) * ((powr<2>(cosl1p1)) * (cosl1p3)) +
-                               (72.) * (75. + (19.) * (powr<2>(cosl1p3))) * (powr<3>(cosl1p1)) +
-                               (4765. + (8328.) * (powr<2>(cosl1p3)) + (-108.) * (powr<4>(cosl1p3))) * (cosl1p1) +
-                               (3.) *
-                                   (939. + (486.) * (powr<4>(cosl1p1)) + (336.) * (powr<2>(cosl1p2)) +
-                                    (1008.) * ((cosl1p2) * (cosl1p3)) + (819.) * (powr<2>(cosl1p3)) +
-                                    (3.) * ((162.) * (cosl1p2) + (343.) * (cosl1p3)) * (powr<3>(cosl1p1)) +
-                                    (4507. + (216.) * (powr<2>(cosl1p2)) + (618.) * ((cosl1p2) * (cosl1p3)) +
-                                     (527.9999999999999) * (powr<2>(cosl1p3))) *
-                                        (powr<2>(cosl1p1)) +
-                                    ((36.) * (powr<3>(cosl1p2)) + (126.) * ((powr<2>(cosl1p2)) * (cosl1p3)) +
-                                     (15.) * (368. + (3.) * (powr<2>(cosl1p3))) * (cosl1p3) +
-                                     (4.) * (593. + (36.) * (powr<2>(cosl1p3))) * (cosl1p2)) *
-                                        (cosl1p1)) *
-                                   (cosl1p2)) *
-                                  (cosl1p2)) *
-                                 (cosl1p2)) *
-                            (cosl1p2)) *
-                       ((powr<6>(l1)) * (powr<4>(p))) +
-                   (3.) *
-                       ((1728.) * (powr<7>(cosl1p1)) + (4734.) * ((powr<6>(cosl1p1)) * (cosl1p3)) +
-                        (9.) * (5033. + (86.) * (powr<2>(cosl1p3))) * ((powr<4>(cosl1p1)) * (cosl1p3)) +
-                        (6.) * (3548. + (447.0000000000001) * (powr<2>(cosl1p3))) * (powr<5>(cosl1p1)) +
-                        (2.) * (-604. + (201.) * (powr<2>(cosl1p3)) + (342.) * (powr<4>(cosl1p3))) * (cosl1p3) +
-                        (2.) * (15017. + (579.) * (powr<2>(cosl1p3)) + (540.) * (powr<4>(cosl1p3))) *
-                            ((powr<2>(cosl1p1)) * (cosl1p3)) +
-                        (3.) * (5930. + (5097.) * (powr<2>(cosl1p3)) + (708.) * (powr<4>(cosl1p3))) *
-                            (powr<3>(cosl1p1)) +
-                        (-5656.000000000001 + (7803.999999999999) * (powr<2>(cosl1p3)) + (3918.) * (powr<4>(cosl1p3)) +
-                         (54.) * (powr<6>(cosl1p3))) *
-                            (cosl1p1) +
-                        (-4448. + (23336.) * (powr<2>(cosl1p1)) + (61143.00000000001) * (powr<4>(cosl1p1)) +
-                         (7362.) * (powr<6>(cosl1p1)) +
-                         (3.) *
-                             ((4998.) * (powr<5>(cosl1p1)) + (2283.) * ((powr<4>(cosl1p1)) * (cosl1p3)) +
-                              (2.) * (-85. + (444.) * (powr<2>(cosl1p3))) * (cosl1p3) +
-                              (3.) * (1067. + (475.) * (powr<2>(cosl1p3))) * ((powr<2>(cosl1p1)) * (cosl1p3)) +
-                              (2.) * (13202. + (770.9999999999999) * (powr<2>(cosl1p3))) * (powr<3>(cosl1p1)) +
-                              (2.) * (2636. + (808.) * (powr<2>(cosl1p3)) + (99.) * (powr<4>(cosl1p3))) * (cosl1p1)) *
-                             (cosl1p3) +
-                         ((1106. + (46983.00000000001) * (powr<2>(cosl1p1)) + (10566.) * (powr<4>(cosl1p1))) *
-                              (cosl1p1) +
-                          (9.) *
-                              (-656. + (1169.) * (powr<4>(cosl1p1)) + (14.) * ((powr<3>(cosl1p1)) * (cosl1p3)) +
-                               (52.) * (powr<2>(cosl1p3)) +
-                               (4.) * (59. + (111.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p1)) +
-                               (cosl1p1) * (-2231. + (195.) * (powr<2>(cosl1p3))) * (cosl1p3)) *
-                              (cosl1p3) +
-                          (-3.) *
-                              ((-702.) * (powr<4>(cosl1p1)) +
-                               (6.) * ((464.) * (cosl1p2) + (647.0000000000001) * (cosl1p3)) * (powr<3>(cosl1p1)) +
-                               (538. + (738.) * (powr<2>(cosl1p2)) + (1847.) * ((cosl1p2) * (cosl1p3)) +
-                                (1241.) * (powr<2>(cosl1p3))) *
-                                   (3.) +
-                               (4729. + (2418.) * (powr<2>(cosl1p2)) + (5679.) * ((cosl1p2) * (cosl1p3)) +
-                                (2886.) * (powr<2>(cosl1p3))) *
-                                   (powr<2>(cosl1p1)) +
-                               ((576.) * (powr<3>(cosl1p2)) + (1728.) * ((powr<2>(cosl1p2)) * (cosl1p3)) +
-                                (4.) * (4139. + (-45.) * (powr<2>(cosl1p3))) * (cosl1p3) +
-                                (9091. + (1377.) * (powr<2>(cosl1p3))) * (cosl1p2)) *
-                                   (cosl1p1)) *
-                              (cosl1p2)) *
-                             (cosl1p2)) *
-                            (cosl1p2)) *
-                       ((powr<5>(l1)) * (powr<5>(p))) +
-                   (-1.) *
-                       ((-3580. + (10980.) * (powr<6>(cosl1p1)) + (24561.) * ((powr<5>(cosl1p1)) * (cosl1p3)) +
-                         (2064.) * (powr<2>(cosl1p3)) + (774.) * (powr<4>(cosl1p3)) +
-                         (9.) * (5561. + (1108.) * (powr<2>(cosl1p3))) * (powr<4>(cosl1p1)) +
-                         ((93246.) * (cosl1p3) + (-4338.) * (powr<3>(cosl1p3))) * (powr<3>(cosl1p1)) +
-                         (-3.) * (904. + (-11640.) * (powr<2>(cosl1p3)) + (117.) * (powr<4>(cosl1p3))) *
-                             (powr<2>(cosl1p1)) +
-                         (3.) * (2741. + (466.) * (powr<2>(cosl1p3)) + (126.) * (powr<4>(cosl1p3))) *
-                             ((cosl1p1) * (cosl1p3))) *
-                            (2.) +
-                        (-3.) *
-                            ((-27546.) * (powr<5>(cosl1p1)) + (5933.999999999999) * (powr<3>(cosl1p2)) +
-                             (2018.) * (cosl1p3) + (11340.) * ((powr<2>(cosl1p2)) * (cosl1p3)) +
-                             (-576.) * (powr<3>(cosl1p3)) +
-                             (-3.) * ((11526.) * (cosl1p2) + (14695.) * (cosl1p3)) * (powr<4>(cosl1p1)) +
-                             (-23.) *
-                                 (3100. + (527.9999999999999) * (powr<2>(cosl1p2)) + (1245.) * ((cosl1p2) * (cosl1p3)) +
-                                  (459.) * (powr<2>(cosl1p3))) *
-                                 (powr<3>(cosl1p1)) +
-                             (5914. + (5004.) * (powr<2>(cosl1p3))) * (cosl1p2) +
-                             (3.) *
-                                 ((1870.) * (powr<3>(cosl1p2)) + (-25052.) * (cosl1p3) +
-                                  (2725.) * ((powr<2>(cosl1p2)) * (cosl1p3)) + (662.) * (powr<3>(cosl1p3)) +
-                                  (8.) * (-1541. + (163.) * (powr<2>(cosl1p3))) * (cosl1p2)) *
-                                 (powr<2>(cosl1p1)) +
-                             (9098. + (3402.) * (powr<4>(cosl1p2)) + (8847.) * ((powr<3>(cosl1p2)) * (cosl1p3)) +
-                              (-8372.) * (powr<2>(cosl1p3)) + (-594.) * (powr<4>(cosl1p3)) +
-                              (37.) * (200. + (189.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p2)) +
-                              (2.) * (-1004. + (602.9999999999999) * (powr<2>(cosl1p3))) * ((cosl1p2) * (cosl1p3))) *
-                                 (cosl1p1)) *
-                            (cosl1p2)) *
-                       ((powr<4>(l1)) * (powr<6>(p))) +
-                   (2.) *
-                       (((25038.) * (powr<5>(cosl1p1)) +
-                         (9.) * ((8431.) * (cosl1p2) + (5479.) * (cosl1p3)) * (powr<4>(cosl1p1)) +
-                         (3.) *
-                             (8854. + (25497.) * (powr<2>(cosl1p2)) + (33738.) * ((cosl1p2) * (cosl1p3)) +
-                              (7784.999999999999) * (powr<2>(cosl1p3))) *
-                             (powr<3>(cosl1p1)) +
-                         ((3120.) * (powr<3>(cosl1p2)) + (928.) * (cosl1p3) +
-                          (2706.) * ((powr<2>(cosl1p2)) * (cosl1p3)) + (-312.) * (powr<3>(cosl1p3)) +
-                          (4357. + (-591.) * (powr<2>(cosl1p3))) * (cosl1p2)) *
-                             (-2.) +
-                         ((25929.) * (powr<3>(cosl1p2)) + (47060.) * (cosl1p3) +
-                          (53433.00000000001) * ((powr<2>(cosl1p2)) * (cosl1p3)) + (-1350.) * (powr<3>(cosl1p3)) +
-                          (32626. + (24408.) * (powr<2>(cosl1p3))) * (cosl1p2)) *
-                             (powr<2>(cosl1p1)) +
-                         ((279.) * (powr<4>(cosl1p2)) + (1962.) * ((powr<3>(cosl1p2)) * (cosl1p3)) +
-                          (-6.) * (-4658. + (201.) * (powr<2>(cosl1p3))) * ((cosl1p2) * (cosl1p3)) +
-                          (448. + (909.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p2)) +
-                          (5285. + (-7441.) * (powr<2>(cosl1p3)) + (216.) * (powr<4>(cosl1p3))) * (-2.)) *
-                             (cosl1p1)) *
-                            (powr<3>(l1)) +
-                        (-1.) *
-                            ((-2417. + (24486.) * (powr<4>(cosl1p1)) + (-5683.999999999999) * (powr<2>(cosl1p2)) +
-                              (-1599.) * ((cosl1p2) * (cosl1p3)) + (1088.) * (powr<2>(cosl1p3)) +
-                              (42.) * ((1361.) * (cosl1p2) + (971.) * (cosl1p3)) * (powr<3>(cosl1p1)) +
-                              (-797.0000000000001 + (41226.) * (powr<2>(cosl1p2)) + (57621.) * ((cosl1p2) * (cosl1p3)) +
-                               (16656.) * (powr<2>(cosl1p3))) *
-                                  (powr<2>(cosl1p1)) +
-                              ((-7569.) * (cosl1p2) + (8550.) * (powr<3>(cosl1p2)) + (5975.) * (cosl1p3) +
-                               (17199.) * ((powr<2>(cosl1p2)) * (cosl1p3)) +
-                               (9009.) * ((cosl1p2) * (powr<2>(cosl1p3))) + (360.) * (powr<3>(cosl1p3))) *
-                                  (cosl1p1)) *
-                                 (powr<2>(l1)) +
-                             (-2.) *
-                                 ((5139.) * (powr<3>(cosl1p1)) + (-1504.) * (cosl1p2) + (-209.) * (cosl1p3) +
-                                  ((8547.) * (cosl1p2) + (6870.) * (cosl1p3)) * (powr<2>(cosl1p1)) +
-                                  (3.) *
-                                      (-571. + (1136.) * (powr<2>(cosl1p2)) + (1713.) * ((cosl1p2) * (cosl1p3)) +
-                                       (577.) * (powr<2>(cosl1p3))) *
-                                      (cosl1p1)) *
-                                 ((l1) * (p)) +
-                             (512.) * (-1. + (3.) * (powr<2>(cosl1p1)) + (3.) * (cosl1p2 + cosl1p3) * (cosl1p1)) *
-                                 (powr<2>(p))) *
-                            (p)) *
-                       (powr<7>(p))) *
-                  ((_repl12) *
-                   ((powr<-1>(1. + powr<6>(k))) *
-                    ((powr<-2>((_repl2) * (_repl4) + (_repl6) * (powr<2>(l1)))) *
-                     ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) *
-                      ((powr<-1>(powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2 + cosl1p3) * ((l1) * (p)) + powr<2>(p))) *
-                       ((powr<-1>((3.) * (powr<2>(l1)) + (-6.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) +
-                                  (4.) * (powr<2>(p)))) *
-                        ((powr<-1>((_repl4) * (_repl7) +
-                                   (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2 + cosl1p3) * ((l1) * (p)) + powr<2>(p)) *
-                                       (_repl8))) *
-                         ((powr<-1>((3.) * ((_repl4) * (_repl9)) +
-                                    ((3.) * (powr<2>(l1)) + (-6.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) +
-                                     (4.) * (powr<2>(p))) *
-                                        (_repl10))) *
-                          ((powr<-1>((_repl4) * (RB(powr<2>(k),
-                                                    powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) +
-                                     (powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                         (ZA(sqrt(powr<2>(l1) + (-2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)))))) *
-                           ((ZA3((0.816496580927726) *
-                                 (sqrt(powr<2>(l1) + (-1.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))))) *
-                            (ZA3((0.4714045207910317) *
-                                 (sqrt((3.) * (powr<2>(l1)) + (-3.) * ((2.) * (cosl1p1) + cosl1p2) * ((l1) * (p)) +
-                                       (5.) * (powr<2>(p))))))))))))))))) +
-             ((0.02040816326530612) *
-                  ((-50.) * (_repl4 + (-1.) * (_repl5)) * ((_repl2) * (powr<6>(k))) +
-                   (_repl1) * (1. + powr<6>(k)) * (_repl2) + (_repl3) * (1. + powr<6>(k)) * (_repl4)) *
-                  ((powr<-1>(1. + powr<6>(k))) *
-                   ((-3.) *
-                        (40. + (9.) * (powr<4>(cosl1p1)) + (-18.) * (powr<4>(cosl1p2)) +
-                         (-36.) * ((powr<3>(cosl1p2)) * (cosl1p3)) + (-21.) * (powr<2>(cosl1p3)) +
-                         (9.) * (powr<4>(cosl1p3)) + (9.) * (cosl1p2 + (3.) * (cosl1p3)) * (powr<3>(cosl1p1)) +
-                         (-3.) *
-                             (7. + (3.) * (powr<2>(cosl1p2)) + (-5.) * ((cosl1p2) * (cosl1p3)) +
-                              (-6.) * (powr<2>(cosl1p3))) *
-                             (powr<2>(cosl1p1)) +
-                         (cosl1p2) * (-70. + (9.) * (powr<2>(cosl1p3))) * (cosl1p3) +
-                         (-1.) * (70. + (9.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p2)) +
-                         (-1.) *
-                             ((36.) * (powr<3>(cosl1p2)) + (30.) * ((powr<2>(cosl1p2)) * (cosl1p3)) +
-                              (70. + (-15.) * (powr<2>(cosl1p3))) * (cosl1p2) +
-                              (-27.) * (-4. + powr<2>(cosl1p3)) * (cosl1p3)) *
-                             (cosl1p1)) *
-                        (powr<6>(l1)) +
-                    (3.) *
-                        ((9.) * (powr<5>(cosl1p1)) + (-36.) * (powr<5>(cosl1p2)) +
-                         (-90.) * ((powr<4>(cosl1p2)) * (cosl1p3)) +
-                         (9.) * ((3.) * (cosl1p2) + (4.) * (cosl1p3)) * (powr<4>(cosl1p1)) +
-                         (-2.) * (296. + (27.) * (powr<2>(cosl1p3))) * (powr<3>(cosl1p2)) +
-                         (-6. + (9.) * (powr<2>(cosl1p2)) + (78.) * ((cosl1p2) * (cosl1p3)) +
-                          (45.) * (powr<2>(cosl1p3))) *
-                             (powr<3>(cosl1p1)) +
-                         ((-888.) * (cosl1p3) + (9.) * (powr<3>(cosl1p3))) * (powr<2>(cosl1p2)) +
-                         (104. + (-6.) * (powr<2>(cosl1p3)) + (9.) * (powr<4>(cosl1p3))) * (cosl1p3) +
-                         (208. + (-308.) * (powr<2>(cosl1p3)) + (27.) * (powr<4>(cosl1p3))) * (cosl1p2) +
-                         (-1.) *
-                             ((54.) * (powr<3>(cosl1p2)) + (42.) * (cosl1p3) + (9.) * ((powr<2>(cosl1p2)) * (cosl1p3)) +
-                              (-45.) * (powr<3>(cosl1p3)) + (308. + (-66.) * (powr<2>(cosl1p3))) * (cosl1p2)) *
-                             (powr<2>(cosl1p1)) +
-                         (-1.) *
-                             (-104. + (90.) * (powr<4>(cosl1p2)) + (132.) * ((powr<3>(cosl1p2)) * (cosl1p3)) +
-                              (42.) * (powr<2>(cosl1p3)) + (-36.) * (powr<4>(cosl1p3)) +
-                              (888. + (9.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p2)) +
-                              ((664.0000000000001) * (cosl1p3) + (-78.) * (powr<3>(cosl1p3))) * (cosl1p2)) *
-                             (cosl1p1)) *
-                        ((powr<5>(l1)) * (p)) +
-                    (powr<4>(l1)) *
-                        (-1072. + (-27.) * ((powr<5>(cosl1p1)) * (cosl1p2)) + (54.) * (powr<6>(cosl1p2)) +
-                         (6372.000000000001) * ((powr<3>(cosl1p2)) * (cosl1p3)) +
-                         (162.) * ((powr<5>(cosl1p2)) * (cosl1p3)) + (402.) * (powr<2>(cosl1p3)) +
-                         (-99.) * (powr<4>(cosl1p3)) +
-                         (-9.) * (11. + (6.) * (powr<2>(cosl1p2)) + (12.) * ((cosl1p2) * (cosl1p3))) *
-                             (powr<4>(cosl1p1)) +
-                         (27.) * (118. + (5.) * (powr<2>(cosl1p3))) * (powr<4>(cosl1p2)) +
-                         (1576. + (3579.) * (powr<2>(cosl1p3)) + (-54.) * (powr<4>(cosl1p3))) * (powr<2>(cosl1p2)) +
-                         ((1576.) * (cosl1p3) + (393.) * (powr<3>(cosl1p3)) + (-27.) * (powr<5>(cosl1p3))) * (cosl1p2) +
-                         (-3.) *
-                             ((210.) * (cosl1p3) + (51.) * ((powr<2>(cosl1p2)) * (cosl1p3)) +
-                              (-131. + (45.) * (powr<2>(cosl1p3))) * (cosl1p2)) *
-                             (powr<3>(cosl1p1)) +
-                         (3.) *
-                             (134. + (45.) * (powr<4>(cosl1p2)) + (24.) * ((powr<3>(cosl1p2)) * (cosl1p3)) +
-                              (-354.) * (powr<2>(cosl1p3)) +
-                              (1193. + (-48.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p2)) +
-                              ((203.) * (cosl1p3) + (-45.) * (powr<3>(cosl1p3))) * (cosl1p2)) *
-                             (powr<2>(cosl1p1)) +
-                         ((162.) * (powr<5>(cosl1p2)) + (876.) * (cosl1p3) + (306.) * ((powr<4>(cosl1p2)) * (cosl1p3)) +
-                          (-630.) * (powr<3>(cosl1p3)) +
-                          (36.) * (177. + (2.) * (powr<2>(cosl1p3))) * (powr<3>(cosl1p2)) +
-                          (-9.) * (-732. + (17.) * (powr<2>(cosl1p3))) * ((powr<2>(cosl1p2)) * (cosl1p3)) +
-                          (1576. + (609.) * (powr<2>(cosl1p3)) + (-108.) * (powr<4>(cosl1p3))) * (cosl1p2)) *
-                             (cosl1p1)) *
-                        (powr<2>(p)) +
-                    (powr<3>(l1)) *
-                        ((99.) * ((powr<4>(cosl1p1)) * (cosl1p2)) + (-1164.) * (powr<5>(cosl1p2)) +
-                         (-2910.) * ((powr<4>(cosl1p2)) * (cosl1p3)) +
-                         (-3.) * (98. + (95.) * (powr<2>(cosl1p2)) + (-210.) * ((cosl1p2) * (cosl1p3))) *
-                             (powr<3>(cosl1p1)) +
-                         (6.) * (234. + (-49.) * (powr<2>(cosl1p3))) * (cosl1p3) +
-                         (-57.) * (196. + (5.) * (powr<2>(cosl1p3))) * ((powr<2>(cosl1p2)) * (cosl1p3)) +
-                         (-2.) * (3723.999999999999 + (1065.) * (powr<2>(cosl1p3))) * (powr<3>(cosl1p2)) +
-                         (2808. + (-4311.999999999999) * (powr<2>(cosl1p3)) + (99.) * (powr<4>(cosl1p3))) * (cosl1p2) +
-                         (-1.) *
-                             ((2130.) * (powr<3>(cosl1p2)) + (798.) * (cosl1p3) +
-                              (153.) * ((powr<2>(cosl1p2)) * (cosl1p3)) +
-                              (4311.999999999999 + (-1062.) * (powr<2>(cosl1p3))) * (cosl1p2)) *
-                             (powr<2>(cosl1p1)) +
-                         (-1.) *
-                             (-1404. + (2910.) * (powr<4>(cosl1p2)) + (3792.) * ((powr<3>(cosl1p2)) * (cosl1p3)) +
-                              (798.) * (powr<2>(cosl1p3)) +
-                              (3.) * (3723.999999999999 + (51.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p2)) +
-                              ((8456.) * (cosl1p3) + (-630.) * (powr<3>(cosl1p3))) * (cosl1p2)) *
-                             (cosl1p1)) *
-                        (powr<3>(p)) +
-                    (2.) *
-                        (-682. + (102.) * ((powr<3>(cosl1p1)) * (cosl1p2)) + (2514.) * (powr<4>(cosl1p2)) +
-                         (5028.) * ((powr<3>(cosl1p2)) * (cosl1p3)) + (203.) * (powr<2>(cosl1p3)) +
-                         (203. + (2616.) * (powr<2>(cosl1p2)) + (234.) * ((cosl1p2) * (cosl1p3))) * (powr<2>(cosl1p1)) +
-                         (2.) * (454. + (51.) * (powr<2>(cosl1p3))) * ((cosl1p2) * (cosl1p3)) +
-                         (4.) * (227. + (654.0000000000001) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p2)) +
-                         ((5028.) * (powr<3>(cosl1p2)) + (382.) * (cosl1p3) +
-                          (5160.) * ((powr<2>(cosl1p2)) * (cosl1p3)) +
-                          (908. + (234.) * (powr<2>(cosl1p3))) * (cosl1p2)) *
-                             (cosl1p1)) *
-                        ((powr<2>(l1)) * (powr<4>(p))) +
-                    (-772.0000000000001) *
-                        ((3.) * ((powr<2>(cosl1p1)) * (cosl1p2)) + (6.) * (powr<3>(cosl1p2)) + (-1.) * (cosl1p3) +
-                         (9.) * ((powr<2>(cosl1p2)) * (cosl1p3)) +
-                         (-1. + (9.) * (powr<2>(cosl1p2)) + (6.) * ((cosl1p2) * (cosl1p3))) * (cosl1p1) +
-                         (-2. + (3.) * (powr<2>(cosl1p3))) * (cosl1p2)) *
-                        ((l1) * (powr<5>(p))) +
-                    (392.) *
-                        (-1. + (3.) * ((cosl1p1) * (cosl1p2)) + (3.) * (powr<2>(cosl1p2)) +
-                         (3.) * ((cosl1p2) * (cosl1p3))) *
-                        (powr<6>(p))) *
-                   ((powr<-2>((_repl2) * (_repl4) + (_repl6) * (powr<2>(l1)))) *
-                    ((powr<-1>(powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) *
-                     ((powr<-1>(powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2 + cosl1p3) * ((l1) * (p)) + powr<2>(p))) *
-                      ((powr<-1>((_repl4) * (_repl7) +
-                                 (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2 + cosl1p3) * ((l1) * (p)) + powr<2>(p)) *
-                                     (_repl8))) *
-                       ((powr<-1>((_repl4) *
-                                      (RB(powr<2>(k), powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))) +
-                                  (powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)) *
-                                      (ZA(sqrt(powr<2>(l1) + (-2.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p)))))) *
-                        ((ZA3((0.816496580927726) *
-                              (sqrt(powr<2>(l1) + (-1.) * ((cosl1p2) * ((l1) * (p))) + powr<2>(p))))) *
-                         (ZA4((0.7071067811865475) *
-                              (sqrt(powr<2>(l1) + (-1.) * (cosl1p1 + (2.) * (cosl1p2) + cosl1p3) * ((l1) * (p)) +
-                                    (2.) * (powr<2>(p))))))))))))) +
-              (-0.04081632653061224) *
-                  ((-50.) * (_repl4 + (-1.) * (_repl5)) * ((_repl2) * (powr<6>(k))) +
-                   (_repl1) * (1. + powr<6>(k)) * (_repl2) + (_repl3) * (1. + powr<6>(k)) * (_repl4)) *
-                  ((_repl12) *
-                   ((27.) *
-                        (40. + (9.) * (powr<4>(cosl1p1)) + (9.) * (powr<4>(cosl1p2)) +
-                         (9.) * ((powr<3>(cosl1p2)) * (cosl1p3)) + (-70.) * (powr<2>(cosl1p3)) +
-                         (-18.) * (powr<4>(cosl1p3)) + (9.) * ((3.) * (cosl1p2) + cosl1p3) * (powr<3>(cosl1p1)) +
-                         (3.) *
-                             (-7. + (6.) * (powr<2>(cosl1p2)) + (5.) * ((cosl1p2) * (cosl1p3)) +
-                              (-3.) * (powr<2>(cosl1p3))) *
-                             (powr<2>(cosl1p1)) +
-                         (-3.) * (7. + (3.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p2)) +
-                         (-2.) * (35. + (18.) * (powr<2>(cosl1p3))) * ((cosl1p2) * (cosl1p3)) +
-                         ((27.) * (powr<3>(cosl1p2)) + (15.) * ((powr<2>(cosl1p2)) * (cosl1p3)) +
-                          (-6.) * (18. + (5.) * (powr<2>(cosl1p3))) * (cosl1p2) +
-                          (-2.) * (35. + (18.) * (powr<2>(cosl1p3))) * (cosl1p3)) *
-                             (cosl1p1)) *
-                        (powr<6>(l1)) +
-                    (-9.) *
-                        ((81.) * (powr<5>(cosl1p1)) + (81.) * (powr<5>(cosl1p2)) +
-                         (135.) * ((powr<4>(cosl1p2)) * (cosl1p3)) +
-                         (27.) * ((12.) * (cosl1p2) + (5.) * (cosl1p3)) * (powr<4>(cosl1p1)) +
-                         (9.) *
-                             (-32. + (45.) * (powr<2>(cosl1p2)) + (42.) * ((cosl1p2) * (cosl1p3)) +
-                              (-3.) * (powr<2>(cosl1p3))) *
-                             (powr<3>(cosl1p1)) +
-                         (-9.) * (32. + (3.) * (powr<2>(cosl1p3))) * (powr<3>(cosl1p2)) +
-                         (-6.) * (115. + (63.) * (powr<2>(cosl1p3))) * ((powr<2>(cosl1p2)) * (cosl1p3)) +
-                         (4.) * (14. + (93.) * (powr<2>(cosl1p3)) + (-27.) * (powr<4>(cosl1p3))) * (cosl1p3) +
-                         (-2.) * (-214. + (6.) * (powr<2>(cosl1p3)) + (189.) * (powr<4>(cosl1p3))) * (cosl1p2) +
-                         (3.) *
-                             ((135.) * (powr<3>(cosl1p2)) + (126.) * ((powr<2>(cosl1p2)) * (cosl1p3)) +
-                              (-2.) * (115. + (63.) * (powr<2>(cosl1p3))) * (cosl1p3) +
-                              (-1.) * (688. + (87.) * (powr<2>(cosl1p3))) * (cosl1p2)) *
-                             (powr<2>(cosl1p1)) +
-                         (427.9999999999999 + (324.) * (powr<4>(cosl1p2)) + (378.) * ((powr<3>(cosl1p2)) * (cosl1p3)) +
-                          (-12.) * (powr<2>(cosl1p3)) + (-378.) * (powr<4>(cosl1p3)) +
-                          (-12.) * (206. + (69.) * (powr<2>(cosl1p3))) * ((cosl1p2) * (cosl1p3)) +
-                          (-3.) * (688. + (87.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p2))) *
-                             (cosl1p1)) *
-                        ((powr<5>(l1)) * (p)) +
-                    (9.) *
-                        ((54.) * (powr<6>(cosl1p1)) + (54.) * (powr<6>(cosl1p2)) +
-                         (135.) * ((powr<5>(cosl1p2)) * (cosl1p3)) +
-                         (135.) * ((2.) * (cosl1p2) + cosl1p3) * (powr<5>(cosl1p1)) +
-                         (27.) * (-13. + (2.) * (powr<2>(cosl1p3))) * (powr<4>(cosl1p2)) +
-                         (9.) *
-                             (-39. + (54.) * (powr<2>(cosl1p2)) + (58.) * ((cosl1p2) * (cosl1p3)) +
-                              (6.) * (powr<2>(cosl1p3))) *
-                             (powr<4>(cosl1p1)) +
-                         (-9.) * (47. + (30.) * (powr<2>(cosl1p3))) * ((powr<3>(cosl1p2)) * (cosl1p3)) +
-                         (-473. + (2019.) * (powr<2>(cosl1p3)) + (-459.) * (powr<4>(cosl1p3))) * (powr<2>(cosl1p2)) +
-                         ((-2050.) * (cosl1p3) + (3012.) * (powr<3>(cosl1p3)) + (-270.) * (powr<5>(cosl1p3))) *
+          ZA3((0.3333333333333333) *
+              (sqrt((6.) * (powr<2>(l1)) + (-6.) * ((cosl1p1 + cosl1p2) * (2.) + cosl1p3) * ((l1) * (p)) +
+                    (10.) * (powr<2>(p)))));
+      const auto _repl13 =
+          RB(powr<2>(k), powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + (1.333333333333333) * (powr<2>(p)));
+      const auto _repl14 = powr<2>(cosl1p3);
+      const auto _repl15 = powr<2>(l1);
+      const auto _repl16 = powr<2>(p);
+      const auto _repl17 = powr<2>(cosl1p2);
+      const auto _repl18 = powr<3>(cosl1p3);
+      const auto _repl19 = powr<3>(cosl1p2);
+      const auto _repl20 = powr<4>(cosl1p3);
+      const auto _repl21 = powr<6>(k);
+      const auto _repl22 = powr<3>(p);
+      const auto _repl23 = powr<4>(p);
+      const auto _repl24 = powr<4>(l1);
+      const auto _repl25 = powr<6>(l1);
+      const auto _repl26 = powr<3>(l1);
+      const auto _repl27 = powr<5>(l1);
+      const auto _repl28 = powr<2>(k);
+      const auto _repl29 = powr<5>(p);
+      const auto _repl30 = powr<4>(cosl1p2);
+      const auto _repl31 = powr<6>(p);
+      const auto _repl32 = powr<7>(l1);
+      const auto _repl33 = powr<8>(l1);
+      const auto _repl34 = powr<7>(p);
+      const auto _repl35 = powr<2>(cosl1p1);
+      const auto _repl36 = powr<8>(p);
+      const auto _repl37 = powr<5>(cosl1p3);
+      const auto _repl38 = powr<9>(l1);
+      const auto _repl39 = powr<5>(cosl1p2);
+      const auto _repl40 = powr<3>(cosl1p1);
+      const auto _repl41 = powr<4>(cosl1p1);
+      const auto _repl42 = powr<9>(p);
+      const auto _repl43 = powr<10>(l1);
+      const auto _repl44 = powr<6>(cosl1p3);
+      const auto _repl45 = powr<5>(cosl1p1);
+      const auto _repl46 = powr<10>(p);
+      const auto _repl47 = powr<6>(cosl1p2);
+      const auto _repl48 = powr<-2>((_repl1) * (_repl2) + (_repl15) * (_repl7));
+      const auto _repl49 = powr<6>(cosl1p1);
+      const auto _repl50 = powr<7>(cosl1p2);
+      return (-39.6734693877551) *
+                 ((_repl1) * (1. + _repl21) * (_repl4) + (_repl2) * (1. + (1.) * (_repl21)) * (_repl5) +
+                  (_repl2) * ((-50.) * (_repl1) + (50.) * (_repl6)) * (_repl21)) *
+                 ((_repl12) *
+                  ((-5.152263374485597) * ((_repl23) * (_repl25)) +
+                   (2.419753086419753) * ((_repl14) * ((_repl23) * (_repl25))) +
+                   (5.555555555555556) * ((_repl20) * ((_repl23) * (_repl25))) +
+                   (-1.65432098765432) * ((_repl18) * ((_repl27) * (_repl29))) +
+                   (-9.82167352537723) * ((_repl24) * (_repl31)) +
+                   (5.662551440329218) * ((_repl14) * ((_repl24) * (_repl31))) +
+                   (2.123456790123457) * ((_repl20) * ((_repl24) * (_repl31))) +
+                   (-0.07407407407407338) * ((_repl18) * ((_repl22) * (_repl32))) +
+                   (-0.5925925925925927) * ((_repl16) * (_repl33)) +
+                   (-1.037037037037037) * ((_repl14) * ((_repl16) * (_repl33))) +
+                   (5.) * ((_repl16) * ((_repl20) * (_repl33))) +
+                   (-1.7119341563786) * ((_repl18) * ((_repl26) * (_repl34))) +
+                   (-6.631001371742112) * ((_repl15) * (_repl36)) +
+                   (2.984910836762688) * ((_repl14) * ((_repl15) * (_repl36))) +
+                   (4.386066270124076e-17) * ((_repl15) * ((_repl20) * (_repl36))) +
+                   (-2.814814814814815) * ((_repl27) * ((_repl29) * (_repl37))) +
+                   (-5.111111111111112) * ((_repl22) * ((_repl32) * (_repl37))) +
+                   (-0.3333333333333336) * ((_repl14) * (_repl43)) + (1.) * ((_repl20) * (_repl43)) +
+                   (0.2222222222222221) * ((_repl23) * ((_repl25) * (_repl44))) +
+                   (0.3333333333333333) * ((_repl16) * ((_repl33) * (_repl44))) + (-1.404663923182441) * (_repl46) +
+                   (1.333333333333333) * ((_repl22) * ((_repl32) * (_repl50))) +
+                   (1.333333333333333) * ((_repl23) * ((_repl25) * (powr<8>(cosl1p1)))) +
+                   (4.971193415637858) * ((_repl27) * ((_repl29) * (cosl1p3))) +
+                   (1.382716049382716) * ((_repl22) * ((_repl32) * (cosl1p3))) +
+                   (5.09190672153635) * ((_repl26) * ((_repl34) * (cosl1p3))) +
+                   (1.644774851296528e-17) * ((_repl18) * ((_repl42) * (l1))) +
+                   (1.146776406035664) * ((_repl42) * ((cosl1p3) * (l1))) +
+                   (3.50885301609926e-16) * ((_repl18) * ((_repl38) * (p))) + (-2.) * ((_repl37) * ((_repl38) * (p))) +
+                   (0.4444444444444445) * ((_repl38) * ((cosl1p3) * (p))) +
+                   (_repl26) *
+                       ((27.33333333333333) * ((_repl15) * (_repl23)) +
+                        (_repl16) * (28.66666666666667 + (5.333333333333333) * (_repl14)) * (_repl24) +
+                        (8.) * (_repl25) + (-4.11193712824132e-18) * (_repl31) +
+                        (-37.33333333333333) * ((_repl22) * ((_repl26) * (cosl1p3))) +
+                        (-26.) * ((_repl27) * ((cosl1p3) * (p)))) *
+                       ((_repl39) * (p)) +
+                   (_repl15) *
+                       ((_repl23) * (-34.77777777777779 + (-30.33333333333333) * (_repl14)) * (_repl24) +
+                        (_repl16) * (-12.66666666666667 + (-22.33333333333333) * (_repl14)) * (_repl25) +
+                        (_repl15) * (-24.41975308641975 + (-2.631639762074445e-16) * (_repl14)) * (_repl31) +
+                        (-2.) * (_repl33) + (1.315819881037223e-15) * (_repl36) +
+                        (_repl22) * (69.44444444444445 + (1.666666666666667) * (_repl14)) * ((_repl27) * (cosl1p3)) +
+                        (_repl26) * (68.4074074074074 + (-2.631639762074445e-16) * (_repl14)) *
+                            ((_repl29) * (cosl1p3)) +
+                        (1.378869583670256e-15) * ((_repl34) * ((cosl1p3) * (l1))) +
+                        (20.) * ((_repl32) * ((cosl1p3) * (p)))) *
+                       (_repl30) +
+                   ((_repl23) *
+                        (-4.839506172839503 + (-30.55555555555556) * (_repl14) + (12.55555555555556) * (_repl20)) *
+                        (_repl25) +
+                    (_repl24) *
+                        (-24.33744855967078 + (-20.59259259259259) * (_repl14) + (-9.86864910777917e-17) * (_repl20)) *
+                        (_repl31) +
+                    (_repl16) *
+                        (2.407407407407407 + (-5.666666666666667) * (_repl14) + (8.33333333333333) * (_repl20)) *
+                        (_repl33) +
+                    (_repl15) * (-15.59396433470507 + (-2.193033135062038e-15) * (_repl14)) * (_repl36) +
+                    (0.6666666666666671 + (-1.) * (_repl14)) * (_repl43) + (2.193033135062038e-17) * (_repl46) +
+                    (_repl27) * (24.2962962962963 + (-1.925925925925926) * (_repl14)) * ((_repl29) * (cosl1p3)) +
+                    (_repl22) *
+                        (11.77777777777778 + (-14.33333333333333) * (_repl14) + (-1.333333333333333) * (_repl20)) *
+                        ((_repl32) * (cosl1p3)) +
+                    (_repl26) * (14.8477366255144 + (8.22387425648264e-18) * (_repl14)) * ((_repl34) * (cosl1p3)) +
+                    (3.895609408498824e-32) * ((_repl42) * ((cosl1p3) * (l1))) +
+                    (_repl38) * (-1.666666666666667 + (-1.999999999999999) * (_repl14)) * ((cosl1p3) * (p))) *
+                       (_repl17) +
+                   ((4.213991769547325) * (_repl46) +
+                    (_repl26) *
+                        ((3.703703703703705) * (_repl18) + (-71.1358024691358) * (_repl19) +
+                         (-89.5089163237311 + (-66.96296296296294) * (_repl14)) * (cosl1p2) +
+                         (-129.1083676268861) * (cosl1p3) + (-146.5925925925926) * ((_repl17) * (cosl1p3))) *
+                        (_repl34) +
+                    (_repl27) *
+                        ((-4.765432098765432) * (_repl18) +
+                         (58.38271604938272 + (35.62962962962962) * (_repl14)) * (_repl19) +
+                         (-4.444444444444444) * (_repl37) + (29.85185185185185) * (_repl39) +
+                         (-96.0329218106996 + (-39.5185185185185) * (_repl14) + (-17.59259259259259) * (_repl20)) *
                              (cosl1p2) +
-                         (508. + (-660.9999999999999) * (powr<2>(cosl1p3)) + (537.) * (powr<4>(cosl1p3)) +
-                          (-27.) * (powr<6>(cosl1p3))) *
-                             (2.) +
-                         (9.) *
-                             ((60.) * (powr<3>(cosl1p2)) + (81.) * ((powr<2>(cosl1p2)) * (cosl1p3)) +
-                              (-392. + powr<2>(cosl1p3)) * (cosl1p2) +
-                              (-1.) * (47. + (30.) * (powr<2>(cosl1p3))) * (cosl1p3)) *
-                             (powr<3>(cosl1p1)) +
-                         (-473. + (486.) * (powr<4>(cosl1p2)) + (729.0000000000001) * ((powr<3>(cosl1p2)) * (cosl1p3)) +
-                          (2019.) * (powr<2>(cosl1p3)) + (-459.) * (powr<4>(cosl1p3)) +
-                          (-18.) * (355. + (8.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p2)) +
-                          (-9.) * (547.0000000000001 + (106.) * (powr<2>(cosl1p3))) * ((cosl1p2) * (cosl1p3))) *
-                             (powr<2>(cosl1p1)) +
-                         ((270.) * (powr<5>(cosl1p2)) + (-2050.) * (cosl1p3) +
-                          (522.0000000000001) * ((powr<4>(cosl1p2)) * (cosl1p3)) + (3012.) * (powr<3>(cosl1p3)) +
-                          (-270.) * (powr<5>(cosl1p3)) + (9.) * (-392. + powr<2>(cosl1p3)) * (powr<3>(cosl1p2)) +
-                          (-9.) * (547.0000000000001 + (106.) * (powr<2>(cosl1p3))) * ((powr<2>(cosl1p2)) * (cosl1p3)) +
-                          (-2.) * (776. + (-1344.) * (powr<2>(cosl1p3)) + (477.) * (powr<4>(cosl1p3))) * (cosl1p2)) *
-                             (cosl1p1)) *
-                        ((powr<4>(l1)) * (powr<2>(p))) +
-                    (9.) *
-                        ((72.) * (powr<5>(cosl1p1)) + (72.) * (powr<5>(cosl1p2)) +
-                         (3.) * ((458.) * (cosl1p2) + (-87.) * (cosl1p3)) * (powr<4>(cosl1p1)) +
-                         (-261.) * ((powr<4>(cosl1p2)) * (cosl1p3)) +
-                         (3.) *
-                             (887. + (1266.) * (powr<2>(cosl1p2)) + (524.) * ((cosl1p2) * (cosl1p3)) +
-                              (-687.) * (powr<2>(cosl1p3))) *
-                             (powr<3>(cosl1p1)) +
-                         (-3.) * (-887. + (687.) * (powr<2>(cosl1p3))) * (powr<3>(cosl1p2)) +
-                         ((6402.000000000001) * (cosl1p3) + (-2934.) * (powr<3>(cosl1p3))) * (powr<2>(cosl1p2)) +
-                         (-4.) * (160. + (134.) * (powr<2>(cosl1p3)) + (9.) * (powr<4>(cosl1p3))) * (cosl1p3) +
-                         (-2.) * (1400. + (-1397.) * (powr<2>(cosl1p3)) + (621.) * (powr<4>(cosl1p3))) * (cosl1p2) +
-                         ((3798.) * (powr<3>(cosl1p2)) + (6402.000000000001) * (cosl1p3) +
-                          (3702.) * ((powr<2>(cosl1p2)) * (cosl1p3)) + (-2934.) * (powr<3>(cosl1p3)) +
-                          (9865. + (-4173.) * (powr<2>(cosl1p3))) * (cosl1p2)) *
-                             (powr<2>(cosl1p1)) +
-                         (-2800. + (1374.) * (powr<4>(cosl1p2)) + (1572.) * ((powr<3>(cosl1p2)) * (cosl1p3)) +
-                          (2794.) * (powr<2>(cosl1p3)) + (-1242.) * (powr<4>(cosl1p3)) +
-                          (9865. + (-4173.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p2)) +
-                          (-28.) * (-511. + (195.) * (powr<2>(cosl1p3))) * ((cosl1p2) * (cosl1p3))) *
-                             (cosl1p1)) *
-                        ((powr<3>(l1)) * (powr<3>(p))) +
-                    (-3.) *
-                        (-4572. + (5723.999999999999) * (powr<4>(cosl1p1)) + (5723.999999999999) * (powr<4>(cosl1p2)) +
-                         (11559.) * ((powr<3>(cosl1p2)) * (cosl1p3)) + (3412.) * (powr<2>(cosl1p3)) +
-                         (-1578.) * (powr<4>(cosl1p3)) +
-                         (3.) * ((8760.) * (cosl1p2) + (3853.) * (cosl1p3)) * (powr<3>(cosl1p1)) +
-                         (-488. + (2865.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p2)) +
-                         (-488. + (41112.) * (powr<2>(cosl1p2)) + (40491.) * ((cosl1p2) * (cosl1p3)) +
-                          (2865.) * (powr<2>(cosl1p3))) *
-                             (powr<2>(cosl1p1)) +
-                         ((7532.000000000001) * (cosl1p3) + (-4548.) * (powr<3>(cosl1p3))) * (cosl1p2) +
-                         ((26280.) * (powr<3>(cosl1p2)) + (7532.000000000001) * (cosl1p3) +
-                          (40491.) * ((powr<2>(cosl1p2)) * (cosl1p3)) + (-4548.) * (powr<3>(cosl1p3)) +
-                          (44. + (8160.) * (powr<2>(cosl1p3))) * (cosl1p2)) *
-                             (cosl1p1)) *
-                        ((powr<2>(l1)) * (powr<4>(p))) +
-                    (2.) *
-                        ((10869.) * (powr<3>(cosl1p1)) + (10869.) * (powr<3>(cosl1p2)) +
-                         (18015.) * ((powr<2>(cosl1p2)) * (cosl1p3)) +
-                         (3.) * ((11319.) * (cosl1p2) + (6005.) * (cosl1p3)) * (powr<2>(cosl1p1)) +
-                         (-2.) * (777.9999999999999 + (147.) * (powr<2>(cosl1p3))) * (cosl1p3) +
-                         (-9026. + (6852.000000000001) * (powr<2>(cosl1p3))) * (cosl1p2) +
-                         (-9026. + (33957.) * (powr<2>(cosl1p2)) + (37380.) * ((cosl1p2) * (cosl1p3)) +
-                          (6852.000000000001) * (powr<2>(cosl1p3))) *
-                             (cosl1p1)) *
-                        ((l1) * (powr<5>(p))) +
-                    (-8.) *
-                        (-584. + (843.) * (powr<2>(cosl1p1)) + (1686.) * ((cosl1p1) * (cosl1p2)) +
-                         (843.) * (powr<2>(cosl1p2)) + (909.) * ((cosl1p1) * (cosl1p3)) +
-                         (909.) * ((cosl1p2) * (cosl1p3)) + (66.) * (powr<2>(cosl1p3))) *
-                        (powr<6>(p))) *
-                   ((powr<-1>(1. + powr<6>(k))) *
-                    ((powr<-2>((_repl2) * (_repl4) + (_repl6) * (powr<2>(l1)))) *
-                     ((powr<-1>(powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2 + cosl1p3) * ((l1) * (p)) + powr<2>(p))) *
-                      ((powr<-1>((3.) * (powr<2>(l1)) + (-6.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) +
-                                 (4.) * (powr<2>(p)))) *
-                       ((powr<-1>((_repl4) * (_repl7) +
-                                  (powr<2>(l1) + (-2.) * (cosl1p1 + cosl1p2 + cosl1p3) * ((l1) * (p)) + powr<2>(p)) *
-                                      (_repl8))) *
-                        ((powr<-1>(
-                             (3.) * ((_repl4) * (_repl9)) +
-                             ((3.) * (powr<2>(l1)) + (-6.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + (4.) * (powr<2>(p))) *
-                                 (_repl10))) *
-                         (ZA4((0.408248290463863) *
-                              (sqrt((3.) * (powr<2>(l1)) + (-3.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) +
-                                    (5.) * (powr<2>(p)))))))))))))) *
-                 (_repl11) +
-             (0.01530612244897959) *
-                 ((-50.) * (_repl4 + (-1.) * (_repl5)) * ((_repl2) * (powr<6>(k))) +
-                  (_repl1) * (1. + powr<6>(k)) * (_repl2) + (_repl3) * (1. + powr<6>(k)) * (_repl4)) *
-                 ((powr<-1>(1. + powr<6>(k))) *
-                  ((-3.) *
-                       (-1304. + (54.) * (powr<4>(cosl1p1)) + (-27.) * (powr<4>(cosl1p2)) +
-                        (-81.) * ((powr<3>(cosl1p2)) * (cosl1p3)) + (-399.) * (powr<2>(cosl1p3)) +
-                        (-27.) * (powr<4>(cosl1p3)) + (108.) * (cosl1p2 + cosl1p3) * (powr<3>(cosl1p1)) +
-                        (3.) *
-                            (-262. + (9.) * (powr<2>(cosl1p2)) + (30.) * ((cosl1p2) * (cosl1p3)) +
-                             (9.) * (powr<2>(cosl1p3))) *
-                            (powr<2>(cosl1p1)) +
-                        (-3.) * (133. + (18.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p2)) +
-                        (-3.) * (4. + (27.) * (powr<2>(cosl1p3))) * ((cosl1p2) * (cosl1p3)) +
-                        (-3.) *
-                            ((262.) * (cosl1p2) + (9.) * (powr<3>(cosl1p2)) + (262.) * (cosl1p3) +
-                             (15.) * ((powr<2>(cosl1p2)) * (cosl1p3)) + (15.) * ((cosl1p2) * (powr<2>(cosl1p3))) +
-                             (9.) * (powr<3>(cosl1p3))) *
+                         ((-16.44444444444444) * (_repl18) + (-8.74074074074074) * (cosl1p3)) * (_repl17) +
+                         (-123.59670781893) * (cosl1p3) + (70.11111111111111) * ((_repl30) * (cosl1p3))) *
+                        (_repl29) +
+                    (-0.3333333333333336 + (2.) * (_repl14) + (-1.) * (_repl17) +
+                     (1.666666666666667) * ((cosl1p2) * (cosl1p3))) *
+                        (_repl43) +
+                    (_repl15) *
+                        (-2.186556927297672 + (45.6954732510288) * (_repl14) + (113.1028806584362) * (_repl17) +
+                         (158.0823045267489) * ((cosl1p2) * (cosl1p3))) *
+                        (_repl36) +
+                    (_repl16) *
+                        (1.444444444444442 + (-11.77777777777779) * (_repl14) +
+                         (19.22222222222222 + (2.666666666666664) * (_repl14)) * (_repl17) + (38.) * (_repl20) +
+                         (-94.3333333333333) * (_repl30) + (-134.2222222222222) * ((_repl19) * (cosl1p3)) +
+                         ((84.4444444444445) * (_repl18) + (9.88888888888889) * (cosl1p3)) * (cosl1p2)) *
+                        (_repl33) +
+                    (_repl22) *
+                        ((-38.85185185185185) * (_repl18) +
+                         (74.96296296296296 + (75.55555555555555) * (_repl14)) * (_repl19) +
+                         (-12.66666666666666) * (_repl37) + (76.) * (_repl39) +
+                         (-36.81481481481482 + (-29.99999999999999) * (_repl14) + (-60.33333333333333) * (_repl20)) *
+                             (cosl1p2) +
+                         (-19.40740740740741) * (cosl1p3) + (164.7777777777777) * ((_repl30) * (cosl1p3)) +
+                         ((-53.55555555555556) * (_repl18) + (45.66666666666666) * (cosl1p3)) * (_repl17)) *
+                        (_repl32) +
+                    (_repl23) *
+                        (6.370370370370373 + (14.92592592592592) * (_repl14) + (49.) * (_repl20) +
+                         (66.81481481481484 + (-29.92592592592594) * (_repl14) + (8.55555555555556) * (_repl20)) *
+                             (_repl17) +
+                         (-166.9259259259259 + (-19.55555555555556) * (_repl14)) * (_repl30) +
+                         (0.6666666666666666) * (_repl44) + (-8.) * (_repl47) +
+                         ((-0.4444444444444445) * (_repl18) + (-259.1111111111111) * (cosl1p3)) * (_repl19) +
+                         (-22.88888888888889) * ((_repl39) * (cosl1p3)) +
+                         ((105.7407407407407) * (_repl18) + (4.666666666666667) * (_repl37) +
+                          (123.9382716049383) * (cosl1p3)) *
+                             (cosl1p2)) *
+                        (_repl25) +
+                    (_repl24) *
+                        (-7.440329218107006 + (95.8024691358025) * (_repl14) +
+                         (152.1975308641975 + (-16.09876543209876) * (_repl14)) * (_repl17) +
+                         (-0.962962962962965) * (_repl20) + (-23.08641975308642) * (_repl30) +
+                         (-33.64197530864197) * ((_repl19) * (cosl1p3)) +
+                         ((-8.17283950617285) * (_repl18) + (309.283950617284) * (cosl1p3)) * (cosl1p2)) *
+                        (_repl31) +
+                    (_repl42) * ((-46.89711934156378) * (cosl1p2) + (-37.69547325102881) * (cosl1p3)) * (l1) +
+                    (_repl38) *
+                        ((-22.) * (_repl18) + (28.) * (_repl19) +
+                         (-4.555555555555555 + (-21.33333333333334) * (_repl14)) * (cosl1p2) +
+                         (6.555555555555554) * (cosl1p3) + (15.33333333333333) * ((_repl17) * (cosl1p3))) *
+                        (p)) *
+                       (_repl35) +
+                   (_repl16) *
+                       ((-8.66666666666667) * (_repl15) + (-12.44444444444444) * (_repl16) +
+                        (4.666666666666667) * ((cosl1p3) * ((l1) * (p)))) *
+                       ((_repl25) * (_repl47)) +
+                   (_repl22) *
+                       ((-9.33333333333333) * (_repl15) + (-7.111111111111111) * (_repl16) +
+                        (4.666666666666667) * ((cosl1p2) * ((l1) * (p))) + (6.) * ((cosl1p3) * ((l1) * (p)))) *
+                       ((_repl27) * (powr<7>(cosl1p1))) +
+                   (_repl19) *
+                       ((6.370370370370366) * ((_repl22) * (_repl25)) +
+                        (-1.333333333333333) * ((_repl20) * ((_repl22) * (_repl25))) +
+                        (19.92592592592593) * ((_repl24) * (_repl29)) +
+                        ((2.222222222222222) * ((_repl23) * (_repl27)) +
+                         (7.017706032198521e-16) * ((_repl26) * (_repl31)) +
+                         (-1.333333333333333) * ((_repl16) * (_repl32))) *
+                            (_repl18) +
+                        (17.11934156378601) * ((_repl15) * (_repl34)) + (8.77213254024815e-17) * (_repl42) +
+                        ((-68.62962962962963) * ((_repl23) * (_repl27)) +
+                         (-46.66666666666666) * ((_repl26) * (_repl31)) +
+                         (-22.66666666666667) * ((_repl16) * (_repl32)) + (-4.) * (_repl38) +
+                         (1.447401869140945e-15) * ((_repl36) * (l1))) *
+                            (cosl1p3) +
+                        (-0.666666666666668) * ((_repl33) * (p)) +
+                        ((37.55555555555557) * ((_repl22) * (_repl25)) + (45.96296296296297) * ((_repl24) * (_repl29)) +
+                         (-1.403541206439704e-15) * ((_repl15) * (_repl34)) + (12.) * ((_repl33) * (p))) *
+                            (_repl14)) *
+                       (l1) +
+                   ((18.3045267489712) * ((_repl27) * (_repl29)) + (2.172839506172839) * ((_repl22) * (_repl32)) +
+                    (23.90672153635117) * ((_repl26) * (_repl34)) +
+                    ((5.111111111111111) * ((_repl23) * (_repl25)) + (8.77213254024815e-17) * ((_repl24) * (_repl31)) +
+                     (4.666666666666667) * ((_repl16) * (_repl33))) *
+                        (_repl37) +
+                    ((5.629629629629626) * ((_repl23) * (_repl25)) + (2.370370370370369) * ((_repl24) * (_repl31)) +
+                     (7.) * ((_repl16) * (_repl33)) + (-8.77213254024815e-17) * ((_repl15) * (_repl36)) +
+                     (1.) * (_repl43)) *
+                        (_repl18) +
+                    (-0.3333333333333333) * ((_repl22) * ((_repl32) * (_repl44))) +
+                    ((-2.864197530864197) * ((_repl23) * (_repl25)) + (-8.3045267489712) * ((_repl24) * (_repl31)) +
+                     (-0.3703703703703713) * ((_repl16) * (_repl33)) + (-4.386831275720165) * ((_repl15) * (_repl36)) +
+                     (0.6666666666666669) * (_repl43) + (4.386066270124076e-17) * (_repl46)) *
+                        (cosl1p3) +
+                    (8.25240054869684) * ((_repl42) * (l1)) + (-0.4444444444444445) * ((_repl38) * (p)) +
+                    ((-10.96296296296297) * ((_repl27) * (_repl29)) + (-20.22222222222222) * ((_repl22) * (_repl32)) +
+                     (-3.673330501228913e-16) * ((_repl26) * (_repl34)) + (-6.) * ((_repl38) * (p))) *
+                        (_repl20) +
+                    ((2.098765432098762) * ((_repl27) * (_repl29)) + (6.148148148148149) * ((_repl22) * (_repl32)) +
+                     (-3.242798353909464) * ((_repl26) * (_repl34)) + (-2.631639762074445e-16) * ((_repl42) * (l1)) +
+                     (0.3333333333333338) * ((_repl38) * (p))) *
+                        (_repl14)) *
+                       (cosl1p2) +
+                   (_repl16) *
+                       ((30.12345679012346) * (_repl23) + (12.33333333333333) * (_repl24) +
+                        (_repl15) *
+                            (32. + (9.33333333333333) * (_repl14) + (4.666666666666667) * (_repl17) +
+                             (17.22222222222222) * ((cosl1p2) * (cosl1p3))) *
+                            (_repl16) +
+                        (_repl22) * ((-30.2962962962963) * (cosl1p2) + (-19.48148148148148) * (cosl1p3)) * (l1) +
+                        ((-27.66666666666667) * ((cosl1p2) * (p)) + (-37.66666666666667) * ((cosl1p3) * (p))) *
+                            (_repl26)) *
+                       ((_repl24) * (_repl49)) +
+                   (_repl15) *
+                       ((1.) * (_repl33) + (67.17695473251027) * (_repl36) +
+                        (_repl26) *
+                            ((-3.185185185185182) * (_repl18) + (-8.66666666666666) * (_repl19) +
+                             (-251.6172839506173 + (-28.18518518518519) * (_repl14)) * (cosl1p2) +
+                             (-186.4074074074074) * (cosl1p3) + (-43.2962962962963) * ((_repl17) * (cosl1p3))) *
+                            (_repl29) +
+                        (_repl22) *
+                            ((-50.33333333333333) * (_repl18) + (45.33333333333333) * (_repl19) +
+                             (-83.8518518518518 + (-99.6666666666667) * (_repl14)) * (cosl1p2) +
+                             (-63.92592592592591) * (cosl1p3) + (-29.77777777777778) * ((_repl17) * (cosl1p3))) *
+                            (_repl27) +
+                        (_repl16) *
+                            (7.666666666666664 + (50.) * (_repl14) + (8.33333333333333) * (_repl17) +
+                             (82.2222222222223) * ((cosl1p2) * (cosl1p3))) *
+                            (_repl25) +
+                        (_repl15) *
+                            (137.3086419753086 + (27.35802469135803) * (_repl14) + (142.2962962962963) * (_repl17) +
+                             (181.4197530864197) * ((cosl1p2) * (cosl1p3))) *
+                            (_repl31) +
+                        (_repl23) *
+                            (68.01234567901234 + (50.55555555555555) * (_repl14) +
+                             (98.7037037037037 + (10.55555555555556) * (_repl14)) * (_repl17) +
+                             (8.66666666666667) * (_repl20) + (-18.) * (_repl30) + (-20.) * ((_repl19) * (cosl1p3)) +
+                             ((22.77777777777777) * (_repl18) + (193.5185185185185) * (cosl1p3)) * (cosl1p2)) *
+                            (_repl24) +
+                        (_repl34) * ((-208.1728395061728) * (cosl1p2) + (-135.283950617284) * (cosl1p3)) * (l1) +
+                        ((-10.) * ((cosl1p2) * (p)) + (-20.) * ((cosl1p3) * (p))) * (_repl32)) *
+                       (_repl41) +
+                   (_repl26) *
+                       ((-6.) * (_repl25) + (-68.69135802469134) * (_repl31) +
+                        (_repl22) *
+                            ((10.) * (_repl18) + (-5.333333333333333) * (_repl19) +
+                             (105.6296296296296 + (22.22222222222222) * (_repl14)) * (cosl1p2) +
+                             (86.3703703703704) * (cosl1p3) + (11.11111111111111) * ((_repl17) * (cosl1p3))) *
+                            (_repl26) +
+                        (_repl16) *
+                            (-29.55555555555556 + (-48.66666666666666) * (_repl14) + (-18.66666666666667) * (_repl17) +
+                             (-90.2222222222222) * ((cosl1p2) * (cosl1p3))) *
+                            (_repl24) +
+                        (_repl15) *
+                            (-87.6049382716049 + (-11.03703703703704) * (_repl14) + (-43.48148148148148) * (_repl17) +
+                             (-61.7037037037037) * ((cosl1p2) * (cosl1p3))) *
+                            (_repl23) +
+                        (_repl29) * ((113.358024691358) * (cosl1p2) + (67.38271604938271) * (cosl1p3)) * (l1) +
+                        ((28.66666666666667) * ((cosl1p2) * (p)) + (45.33333333333333) * ((cosl1p3) * (p))) *
+                            (_repl27)) *
+                       ((_repl45) * (p)) +
+                   (_repl40) *
+                       ((-18.74074074074074) * ((_repl22) * (_repl25)) +
+                        (-73.20987654320986) * ((_repl24) * (_repl29)) +
+                        ((-40.33333333333333) * ((_repl22) * (_repl25)) +
+                         (-8.74074074074074) * ((_repl24) * (_repl29))) *
+                            (_repl20) +
+                        ((45.18518518518519) * ((_repl23) * (_repl27)) +
+                         (-11.90123456790123) * ((_repl26) * (_repl31)) +
+                         (54.66666666666667) * ((_repl16) * (_repl32))) *
+                            (_repl18) +
+                        (-72.87242798353908) * ((_repl15) * (_repl34)) + (4.) * ((_repl23) * ((_repl27) * (_repl37))) +
+                        (-18.) * ((_repl23) * ((_repl27) * (_repl39))) + (-28.19753086419753) * (_repl42) +
+                        ((118.7283950617284) * ((_repl23) * (_repl27)) + (255.8189300411522) * ((_repl26) * (_repl31)) +
+                         (5.) * ((_repl16) * (_repl32)) + (3.) * (_repl38) + (111.8847736625514) * ((_repl36) * (l1))) *
+                            (cosl1p3) +
+                        (0.666666666666668) * ((_repl33) * (p)) +
+                        ((-17.29629629629628) * ((_repl22) * (_repl25)) +
+                         (-62.92592592592594) * ((_repl24) * (_repl29)) +
+                         (-64.07407407407407) * ((_repl15) * (_repl34)) + (-18.) * ((_repl33) * (p))) *
+                            (_repl14) +
+                        (_repl16) *
+                            ((_repl15) * (-66.66666666666667 + (-16.88888888888889) * (_repl14)) * (_repl16) +
+                             (49.97530864197531) * (_repl23) + (-61.33333333333334) * (_repl24) +
+                             (47.92592592592592) * ((_repl22) * ((cosl1p3) * (l1))) +
+                             (128.) * ((_repl26) * ((cosl1p3) * (p)))) *
+                            ((_repl19) * (_repl26)) +
+                        (_repl15) *
+                            ((_repl15) * (-193.3456790123457 + (-0.5185185185185172) * (_repl14)) * (_repl23) +
+                             (_repl16) * (-57.14814814814814 + (-27.33333333333332) * (_repl14)) * (_repl24) +
+                             (1.999999999999997) * (_repl25) + (-209.8518518518518) * (_repl31) +
+                             (_repl22) * (22.70370370370373 + (14.66666666666667) * (_repl14)) *
+                                 ((_repl26) * (cosl1p3)) +
+                             (117.8395061728395) * ((_repl29) * ((cosl1p3) * (l1))) +
+                             (-4.888888888888884) * ((_repl27) * ((cosl1p3) * (p)))) *
+                            ((_repl17) * (p)) +
+                        (cosl1p2) *
+                            ((_repl23) *
+                                 (153.320987654321 + (89.8888888888889) * (_repl14) + (16.11111111111111) * (_repl20)) *
+                                 (_repl24) +
+                             (_repl16) * (25.66666666666667 + (80.4444444444444) * (_repl14)) * (_repl25) +
+                             (_repl15) * (293.4156378600824 + (43.44444444444443) * (_repl14)) * (_repl31) +
+                             (1.) * (_repl33) + (156.8230452674897) * (_repl36) +
+                             (_repl22) * (-105.3333333333333 + (-103.1111111111111) * (_repl14)) *
+                                 ((_repl27) * (cosl1p3)) +
+                             (_repl26) * (-325.9753086419753 + (-19.03703703703705) * (_repl14)) *
+                                 ((_repl29) * (cosl1p3)) +
+                             (-277.679012345679) * ((_repl34) * ((cosl1p3) * (l1))) +
+                             (-24.) * ((_repl32) * ((cosl1p3) * (p)))) *
+                            (l1) +
+                        (_repl22) *
+                            ((101.) * (_repl15) + (34.37037037037038) * (_repl16) +
+                             (-38.11111111111112) * ((cosl1p3) * ((l1) * (p)))) *
+                            ((_repl24) * (_repl30))) *
+                       (l1) +
+                   ((23.27572016460906) * ((_repl27) * (_repl29)) + (3.555555555555552) * ((_repl22) * (_repl32)) +
+                    (28.99862825788751) * ((_repl26) * (_repl34)) +
+                    ((12.66666666666667) * ((_repl23) * (_repl25)) + (1.037037037037037) * ((_repl24) * (_repl31)) +
+                     (9.33333333333333) * ((_repl16) * (_repl33))) *
+                        (_repl37) +
+                    ((4.543209876543207) * ((_repl23) * (_repl25)) + (3.835390946502057) * ((_repl24) * (_repl31)) +
+                     (8.55555555555556) * ((_repl16) * (_repl33)) + (0.987654320987655) * ((_repl15) * (_repl36)) +
+                     (3.) * (_repl43)) *
+                        (_repl18) +
+                    ((-0.2222222222222221) * ((_repl27) * (_repl29)) + (-1.) * ((_repl22) * (_repl32))) * (_repl44) +
+                    (-1.333333333333333) * ((_repl23) * ((_repl25) * (_repl50))) +
+                    ((13.62962962962963) * ((_repl23) * (_repl25)) + (22.55967078189299) * ((_repl24) * (_repl31)) +
+                     (-1.999999999999998) * ((_repl16) * (_repl33)) + (16.39231824417009) * ((_repl15) * (_repl36)) +
+                     (-1.333333333333334) * (_repl43) + (4.213991769547324) * (_repl46)) *
+                        (cosl1p3) +
+                    (9.39917695473251) * ((_repl42) * (l1)) + (1.75442650804963e-16) * ((_repl38) * (p)) +
+                    ((-16.12345679012346) * ((_repl27) * (_repl29)) + (-32.37037037037038) * ((_repl22) * (_repl32)) +
+                     (1.185185185185185) * ((_repl26) * (_repl34)) + (-12.) * ((_repl38) * (p))) *
+                        (_repl20) +
+                    ((-32.11522633744856) * ((_repl27) * (_repl29)) + (5.629629629629632) * ((_repl22) * (_repl32)) +
+                     (-40.82853223593964) * ((_repl26) * (_repl34)) + (-9.49794238683127) * ((_repl42) * (l1)) +
+                     (5.222222222222223) * ((_repl38) * (p))) *
+                        (_repl14) +
+                    (_repl16) *
+                        ((_repl15) * (-87.8518518518519 + (-5.333333333333333) * (_repl14)) * (_repl16) +
+                         (-14.) * (_repl23) + (-50.) * (_repl24) +
+                         (21.33333333333333) * ((_repl22) * ((cosl1p3) * (l1))) +
+                         (64.88888888888889) * ((_repl26) * ((cosl1p3) * (p)))) *
+                        ((_repl24) * (_repl39)) +
+                    (_repl26) *
+                        ((_repl15) * (112.2345679012346 + (17.) * (_repl14)) * (_repl23) +
+                         (_repl16) * (101.3703703703704 + (55.22222222222222) * (_repl14)) * (_repl24) +
+                         (28.) * (_repl25) + (-0.7654320987654353) * (_repl31) +
+                         (_repl22) * (-204.4444444444445 + (-1.666666666666667) * (_repl14)) * ((_repl26) * (cosl1p3)) +
+                         (-36.4074074074074) * ((_repl29) * ((cosl1p3) * (l1))) +
+                         (-113.7777777777778) * ((_repl27) * ((cosl1p3) * (p)))) *
+                        ((_repl30) * (p)) +
+                    (_repl15) *
+                        ((_repl23) *
+                             (-58.82716049382715 + (-102.8148148148148) * (_repl14) + (1.333333333333333) * (_repl20)) *
+                             (_repl24) +
+                         (_repl16) * (-16.44444444444444 + (-58.22222222222222) * (_repl14)) * (_repl25) +
+                         (_repl15) * (-30.45267489711934 + (-28.77777777777778) * (_repl14)) * (_repl31) +
+                         (-4.) * (_repl33) + (23.45679012345678) * (_repl36) +
+                         (_repl22) * (168.6666666666667 + (1.777777777777778) * (_repl14)) * ((_repl27) * (cosl1p3)) +
+                         (_repl26) * (204.3950617283951 + (-2.222222222222222) * (_repl14)) * ((_repl29) * (cosl1p3)) +
+                         (-5.382716049382717) * ((_repl34) * ((cosl1p3) * (l1))) +
+                         (45.33333333333333) * ((_repl32) * ((cosl1p3) * (p)))) *
+                        (_repl19) +
+                    ((_repl24) *
+                         (-37.440329218107 + (34.45267489711936) * (_repl14) + (2.444444444444443) * (_repl20)) *
+                         (_repl31) +
+                     (_repl16) *
+                         (4.888888888888888 + (-2.555555555555558) * (_repl14) + (38.22222222222222) * (_repl20)) *
+                         (_repl33) +
+                     (_repl15) * (-20.76543209876543 + (24.71604938271605) * (_repl14)) * (_repl36) +
+                     (0.6666666666666669 + (1.666666666666667) * (_repl14)) * (_repl43) +
+                     (_repl23) *
+                         (-0.888888888888894 + (-13.95061728395062) * (_repl14) + (58.33333333333334) * (_repl20) +
+                          (0.3333333333333333) * (_repl44)) *
+                         (_repl25) +
+                     (4.213991769547325) * (_repl46) +
+                     (_repl27) *
+                         (-65.08641975308642 + (-19.95061728395062) * (_repl14) + (-2.444444444444445) * (_repl20)) *
+                         ((_repl29) * (cosl1p3)) +
+                     (_repl22) * (-7.111111111111114 + (-60.66666666666666) * (_repl14) + (-12.) * (_repl20)) *
+                         ((_repl32) * (cosl1p3)) +
+                     (_repl26) * (-76.67489711934155 + (3.308641975308643) * (_repl14)) * ((_repl34) * (cosl1p3)) +
+                     (-28.19753086419753) * ((_repl42) * ((cosl1p3) * (l1))) +
+                     (_repl38) * (-7.894919286223335e-16 + (-21.33333333333334) * (_repl14)) * ((cosl1p3) * (p))) *
+                        (cosl1p2) +
+                    (_repl22) *
+                        ((22.) * (_repl15) + (7.11111111111111) * (_repl16) +
+                         (-4.666666666666667) * ((cosl1p3) * ((l1) * (p)))) *
+                        ((_repl27) * (_repl47)) +
+                    (_repl17) *
+                        ((-11.77777777777778) * ((_repl22) * (_repl25)) +
+                         (-4.551440329218105) * ((_repl24) * (_repl29)) +
+                         ((-22.22222222222222) * ((_repl22) * (_repl25)) +
+                          (-7.222222222222222) * ((_repl24) * (_repl29))) *
+                             (_repl20) +
+                         ((51.44444444444444) * ((_repl23) * (_repl27)) +
+                          (-4.962962962962965) * ((_repl26) * (_repl31)) +
+                          (27.11111111111111) * ((_repl16) * (_repl32))) *
+                             (_repl18) +
+                         (-1.22908093278464) * ((_repl15) * (_repl34)) +
+                         (1.333333333333333) * ((_repl23) * ((_repl27) * (_repl37))) +
+                         (-18.69958847736625) * (_repl42) +
+                         ((-64.50617283950618) * ((_repl23) * (_repl27)) +
+                          (8.26337448559671) * ((_repl26) * (_repl31)) +
+                          (-16.22222222222222) * ((_repl16) * (_repl32)) + (-3.333333333333333) * (_repl38) +
+                          (47.18518518518517) * ((_repl36) * (l1))) *
+                             (cosl1p3) +
+                         (-5.888888888888892) * ((_repl33) * (p)) +
+                         ((32.33333333333333) * ((_repl22) * (_repl25)) + (82.6296296296296) * ((_repl24) * (_repl29)) +
+                          (-2.493827160493828) * ((_repl15) * (_repl34)) + (6.) * ((_repl33) * (p))) *
+                             (_repl14)) *
+                        (l1)) *
+                       (cosl1p1)) *
+                  ((powr<-1>(1. + _repl21)) *
+                   ((_repl48) *
+                    ((_repl8) *
+                     ((powr<-1>(_repl15 + _repl16 + (-2.) * ((cosl1p1) * ((l1) * (p))))) *
+                      ((powr<-1>((1.) * (_repl15) + (1.333333333333333) * (_repl16) +
+                                 (-2.) * ((cosl1p1) * ((l1) * (p))) + (-2.) * ((cosl1p2) * ((l1) * (p))))) *
+                       ((powr<-1>(_repl15 + _repl16 +
+                                  (l1) * ((-2.) * (cosl1p1) + (-2.) * (cosl1p2) + (-2.) * (cosl1p3)) * (p))) *
+                        ((powr<-1>((3.) * ((_repl1) * (_repl13)) +
+                                   ((3.) * (_repl15) + (4.) * (_repl16) + (-6.) * ((cosl1p1) * ((l1) * (p))) +
+                                    (-6.) * ((cosl1p2) * ((l1) * (p)))) *
+                                       (_repl11))) *
+                         ((powr<-1>((_repl1) * (_repl9) +
+                                    (_repl15 + _repl16 +
+                                     (l1) * ((-2.) * (cosl1p1) + (-2.) * (cosl1p2) + (-2.) * (cosl1p3)) * (p)) *
+                                        (_repl10))) *
+                          ((powr<-1>((_repl1) * (RB(_repl28, _repl15 + _repl16 + (-2.) * ((cosl1p1) * ((l1) * (p))))) +
+                                     (_repl15 + _repl16 + (-2.) * ((cosl1p1) * ((l1) * (p)))) *
+                                         (ZA(sqrt(_repl15 + _repl16 + (-2.) * ((cosl1p1) * ((l1) * (p)))))))) *
+                           ((ZA3((0.816496580927726) *
+                                 (sqrt(_repl15 + _repl16 + (-1.) * ((cosl1p1) * ((l1) * (p))))))) *
+                            (ZA3((0.3333333333333333) *
+                                 (sqrt((6.) * (_repl15) + (10.) * (_repl16) +
+                                       (-6.) * ((2.) * (cosl1p1) + cosl1p2) * ((l1) * (p))))))))))))))))) +
+             (-3.306122448979591) *
+                 ((_repl1) * (1. + _repl21) * (_repl4) + (_repl2) * (1. + (1.) * (_repl21)) * (_repl5) +
+                  (_repl2) * ((-50.) * (_repl1) + (50.) * (_repl6)) * (_repl21)) *
+                 ((_repl12) *
+                  ((19.22633744855968 + (-2.17283950617284) * (_repl14) + (-27.75308641975309) * (_repl17) +
+                    (-27.75308641975309) * (_repl35) + (-55.50617283950618) * ((cosl1p1) * (cosl1p2)) +
+                    (-29.92592592592593) * ((cosl1p1) * (cosl1p3)) + (-29.92592592592593) * ((cosl1p2) * (cosl1p3))) *
+                       (_repl31) +
+                   (_repl15) *
+                       (56.44444444444445 + (-42.12345679012343) * (_repl14) +
+                        (6.024691358024755 + (-35.37037037037038) * (_repl14)) * (_repl17) +
+                        (19.48148148148148) * (_repl20) + (-70.66666666666668) * (_repl30) +
+                        (-70.66666666666668) * (_repl41) +
+                        ((-324.4444444444444) * (cosl1p2) + (-142.7037037037037) * (cosl1p3)) * (_repl40) +
+                        ((56.14814814814814) * (_repl18) + (-92.9876543209876) * (cosl1p3)) * (cosl1p2) +
+                        (-142.7037037037037) * ((_repl19) * (cosl1p3)) +
+                        ((56.14814814814814) * (_repl18) + (-324.4444444444444) * (_repl19) +
+                         (-0.5432098765431034 + (-100.7407407407408) * (_repl14)) * (cosl1p2) +
+                         (-92.9876543209876) * (cosl1p3) + (-499.8888888888889) * ((_repl17) * (cosl1p3))) *
+                            (cosl1p1) +
+                        (6.024691358024755 + (-35.37037037037038) * (_repl14) + (-507.5555555555555) * (_repl17) +
+                         (-499.8888888888888) * ((cosl1p2) * (cosl1p3))) *
+                            (_repl35)) *
+                       (_repl23) +
+                   (4.444444444444446 + (-7.77777777777778) * (_repl14) +
+                    (-2.333333333333334 + (-1.) * (_repl14)) * (_repl17) + (-2.) * (_repl20) + (1.) * (_repl30) +
+                    (1.) * (_repl41) + ((-4.) * (_repl18) + (-7.777777777777778) * (cosl1p3)) * (cosl1p2) +
+                    (1.) * ((_repl19) * (cosl1p3)) + ((3.) * (cosl1p2) + (1.) * (cosl1p3)) * (_repl40) +
+                    ((-4.) * (_repl18) + (3.) * (_repl19) +
+                     (-12.00000000000001 + (-3.333333333333333) * (_repl14)) * (cosl1p2) +
+                     (-7.777777777777778) * (cosl1p3) + (1.666666666666667) * ((_repl17) * (cosl1p3))) *
+                        (cosl1p1) +
+                    (-2.333333333333334 + (-1.) * (_repl14) + (2.) * (_repl17) +
+                     (1.666666666666667) * ((cosl1p2) * (cosl1p3))) *
+                        (_repl35)) *
+                       (_repl25) +
+                   (_repl16) *
+                       (37.62962962962964 + (-48.96296296296298) * (_repl14) +
+                        (-17.5185185185185 + (74.77777777777779) * (_repl14) + (-17.) * (_repl20)) * (_repl17) +
+                        (39.77777777777779) * (_repl20) + (-13. + (2.) * (_repl14)) * (_repl30) + (-2.) * (_repl44) +
+                        (2.) * (_repl47) + (2.) * (_repl49) +
+                        ((111.5555555555555) * (_repl18) + (-10.) * (_repl37) + (-75.92592592592593) * (cosl1p3)) *
+                            (cosl1p2) +
+                        ((-10.) * (_repl18) + (-15.66666666666667) * (cosl1p3)) * (_repl19) +
+                        (5.000000000000001) * ((_repl39) * (cosl1p3)) +
+                        ((10.) * (cosl1p2) + (5.000000000000001) * (cosl1p3)) * (_repl45) +
+                        ((-10.) * (_repl18) + (20.) * (_repl19) +
+                         (-130.6666666666667 + (0.3333333333333346) * (_repl14)) * (cosl1p2) +
+                         (-15.66666666666667) * (cosl1p3) + (27.) * ((_repl17) * (cosl1p3))) *
+                            (_repl40) +
+                        (-17.5185185185185 + (74.77777777777779) * (_repl14) +
+                         (-236.6666666666666 + (-5.333333333333335) * (_repl14)) * (_repl17) + (-17.) * (_repl20) +
+                         (18.) * (_repl30) +
+                         ((-35.33333333333334) * (_repl18) + (-182.3333333333333) * (cosl1p3)) * (cosl1p2) +
+                         (27.) * ((_repl19) * (cosl1p3))) *
+                            (_repl35) +
+                        ((111.5555555555555) * (_repl18) +
+                         (-130.6666666666667 + (0.3333333333333341) * (_repl14)) * (_repl19) + (-10.) * (_repl37) +
+                         (10.) * (_repl39) +
+                         (-57.48148148148146 + (99.5555555555556) * (_repl14) + (-35.33333333333334) * (_repl20)) *
+                             (cosl1p2) +
+                         ((-35.33333333333334) * (_repl18) + (-182.3333333333333) * (cosl1p3)) * (_repl17) +
+                         (-75.92592592592593) * (cosl1p3) + (19.33333333333334) * ((_repl30) * (cosl1p3))) *
+                            (cosl1p1) +
+                        (-13. + (2.) * (_repl14) + (18.) * (_repl17) + (19.33333333333334) * ((cosl1p2) * (cosl1p3))) *
+                            (_repl41)) *
+                       (_repl24) +
+                   (_repl22) *
+                       ((-19.85185185185186) * (_repl18) +
+                        (98.5555555555555 + (-76.33333333333335) * (_repl14)) * (_repl19) +
+                        (-1.333333333333333) * (_repl37) + (2.666666666666671) * (_repl39) +
+                        (2.666666666666667) * (_repl45) +
+                        (-103.7037037037037 + (103.4814814814814) * (_repl14) + (-46.) * (_repl20)) * (cosl1p2) +
+                        ((50.88888888888891) * (cosl1p2) + (-9.66666666666667) * (cosl1p3)) * (_repl41) +
+                        (-23.70370370370371) * (cosl1p3) + (-9.66666666666667) * ((_repl30) * (cosl1p3)) +
+                        ((-108.6666666666667) * (_repl18) + (237.1111111111111) * (cosl1p3)) * (_repl17) +
+                        ((-108.6666666666667) * (_repl18) + (140.6666666666667) * (_repl19) +
+                         (365.3703703703702 + (-154.5555555555556) * (_repl14)) * (cosl1p2) +
+                         (237.1111111111111) * (cosl1p3) + (137.1111111111111) * ((_repl17) * (cosl1p3))) *
+                            (_repl35) +
+                        (98.5555555555555 + (-76.33333333333335) * (_repl14) + (140.6666666666667) * (_repl17) +
+                         (58.22222222222224) * ((cosl1p2) * (cosl1p3))) *
+                            (_repl40) +
+                        (-103.7037037037037 + (103.4814814814814) * (_repl14) +
+                         (365.3703703703702 + (-154.5555555555556) * (_repl14)) * (_repl17) + (-46.) * (_repl20) +
+                         (50.88888888888891) * (_repl30) + (58.22222222222224) * ((_repl19) * (cosl1p3)) +
+                         ((-202.2222222222222) * (_repl18) + (529.925925925926) * (cosl1p3)) * (cosl1p2)) *
                             (cosl1p1)) *
-                       (powr<2>(l1)) +
-                   (-9.) * (cosl1p2 + cosl1p3) *
-                       ((l1) *
-                        (872. + (282.) * (powr<2>(cosl1p1)) + (151.) * (powr<2>(cosl1p2)) +
-                         (20.) * ((cosl1p2) * (cosl1p3)) + (151.) * (powr<2>(cosl1p3)) +
-                         (282.) * (cosl1p2 + cosl1p3) * (cosl1p1)) *
-                        (p)) +
-                   (16.) *
-                       (382. + (57.) * (powr<2>(cosl1p1)) + (-9.) * (powr<2>(cosl1p2)) +
-                        (-75.) * ((cosl1p2) * (cosl1p3)) + (-9.) * (powr<2>(cosl1p3)) +
-                        (57.) * (cosl1p2 + cosl1p3) * (cosl1p1)) *
-                       (powr<2>(p))) *
-                  ((powr<-2>((_repl2) * (_repl4) + (_repl6) * (powr<2>(l1)))) *
-                   ((powr<-1>((3.) * (powr<2>(l1)) + (-6.) * (cosl1p2 + cosl1p3) * ((l1) * (p)) +
-                              (4.) * (powr<2>(p)))) *
-                    ((powr<-1>(
-                         (3.) * ((_repl4) * (RB(powr<2>(k), powr<2>(l1) + (-2.) * (cosl1p2 + cosl1p3) * ((l1) * (p)) +
-                                                                (1.333333333333333) * (powr<2>(p))))) +
-                         ((3.) * (powr<2>(l1)) + (-6.) * (cosl1p2 + cosl1p3) * ((l1) * (p)) + (4.) * (powr<2>(p))) *
-                             (ZA(sqrt(powr<2>(l1) + (-2.) * (cosl1p2 + cosl1p3) * ((l1) * (p)) +
-                                      (1.333333333333333) * (powr<2>(p))))))) *
-                     (powr<2>(ZA4((0.408248290463863) *
-                                  (sqrt((3.) * (powr<2>(l1)) + (-3.) * (cosl1p2 + cosl1p3) * ((l1) * (p)) +
-                                        (5.) * (powr<2>(p))))))))))) +
-             (0.06122448979591837) *
-                 ((9.) *
-                      ((3.) * (powr<4>(cosl1p1)) + (-6.) * (powr<4>(cosl1p2)) +
-                       (-12.) * ((powr<3>(cosl1p2)) * (cosl1p3)) +
-                       (3.) * (cosl1p2 + (3.) * (cosl1p3)) * (powr<3>(cosl1p1)) +
-                       (2. + (-3.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p2)) +
-                       (-1. + (3.) * (powr<2>(cosl1p3))) * (powr<2>(cosl1p3)) +
-                       (cosl1p2) * (2. + (3.) * (powr<2>(cosl1p3))) * (cosl1p3) +
-                       (-1. + (-3.) * (powr<2>(cosl1p2)) + (5.) * ((cosl1p2) * (cosl1p3)) + (6.) * (powr<2>(cosl1p3))) *
-                           (powr<2>(cosl1p1)) +
-                       ((2.) * (cosl1p2) + (-12.) * (powr<3>(cosl1p2)) + (-4.) * (cosl1p3) +
-                        (-10.) * ((powr<2>(cosl1p2)) * (cosl1p3)) + (5.) * ((cosl1p2) * (powr<2>(cosl1p3))) +
-                        (9.) * (powr<3>(cosl1p3))) *
-                           (cosl1p1)) *
-                      (powr<2>(l1)) +
-                  (3.) *
-                      ((12.) * (powr<3>(cosl1p1)) + (-18.) * (powr<3>(cosl1p2)) + (-4.) * (cosl1p3) +
-                       (-21.) * ((powr<2>(cosl1p2)) * (cosl1p3)) + (6.) * (powr<3>(cosl1p3)) +
-                       ((17.) * (cosl1p2) + (19.) * (cosl1p3)) * (powr<2>(cosl1p1)) +
-                       (4. + (-3.) * (powr<2>(cosl1p3))) * (cosl1p2) +
-                       (-1.) * ((7.) * (powr<2>(cosl1p2)) + (5.) * (powr<2>(cosl1p3))) * (cosl1p1)) *
-                      ((l1) * (p)) +
-                  (-16. + (43.) * (powr<2>(cosl1p1)) + (52.) * ((cosl1p1) * (cosl1p2)) + (9.) * (powr<2>(cosl1p2)) +
-                   (34.) * ((cosl1p1) * (cosl1p3)) + (6.) * ((cosl1p2) * (cosl1p3))) *
-                      (powr<2>(p))) *
-                 ((powr<2>(l1)) *
-                  ((_repl13) * (_repl3) + (_repl2) * (dtZc(k)) +
-                   (-50.) * (_repl13 + (-1.) * (Zc((1.02) * (k)))) * (_repl2)) *
-                  ((ZAcbc((0.816496580927726) * (sqrt(powr<2>(l1) + (cosl1p1) * ((l1) * (p)) + powr<2>(p))))) *
-                   ((ZAcbc((0.816496580927726) *
-                           (sqrt(powr<2>(l1) + (l1) * (cosl1p1 + cosl1p2 + cosl1p3) * (p) + powr<2>(p))))) *
-                    ((ZAcbc((0.816496580927726) * (sqrt(powr<2>(l1) + (l1) * ((2.) * (cosl1p1) + cosl1p2) * (p) +
-                                                        (1.666666666666667) * (powr<2>(p)))))) *
-                     ((ZAcbc((0.816496580927726) *
-                             (sqrt(powr<2>(l1) + (l1) * ((2.) * (cosl1p1) + (2.) * (cosl1p2) + cosl1p3) * (p) +
-                                   (1.666666666666667) * (powr<2>(p)))))) *
-                      ((powr<-2>((_repl13) * (_repl2) + (powr<2>(l1)) * (Zc(l1)))) *
-                       ((powr<-1>((_repl13) *
-                                      (RB(powr<2>(k), powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p))) +
-                                  (powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)) *
-                                      (Zc(sqrt(powr<2>(l1) + (2.) * ((cosl1p1) * ((l1) * (p))) + powr<2>(p)))))) *
-                        ((powr<-1>((_repl13) * (RB(powr<2>(k), powr<2>(l1) +
-                                                                   (2.) * (cosl1p1 + cosl1p2 + cosl1p3) * ((l1) * (p)) +
-                                                                   powr<2>(p))) +
-                                   (powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2 + cosl1p3) * ((l1) * (p)) + powr<2>(p)) *
-                                       (Zc(sqrt(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2 + cosl1p3) * ((l1) * (p)) +
-                                                powr<2>(p)))))) *
-                         (powr<-1>(
-                             (3.) *
-                                 ((_repl13) * (RB(powr<2>(k), powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) +
-                                                                  (1.333333333333333) * (powr<2>(p))))) +
-                             ((3.) * (powr<2>(l1)) + (6.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) + (4.) * (powr<2>(p))) *
-                                 (Zc(sqrt(powr<2>(l1) + (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p)) +
-                                          (1.333333333333333) * (powr<2>(p)))))))))))))));
+                       (_repl26) +
+                   (_repl29) *
+                       ((-2.419753086419746) * (_repl18) + (89.4567901234568) * (_repl19) +
+                        (89.4567901234568) * (_repl40) +
+                        (-74.28806584362141 + (56.39506172839509) * (_repl14)) * (cosl1p2) +
+                        (-12.80658436213994) * (cosl1p3) + (148.2716049382716) * ((_repl17) * (cosl1p3)) +
+                        ((279.4814814814815) * (cosl1p2) + (148.2716049382716) * (cosl1p3)) * (_repl35) +
+                        (-74.28806584362141 + (56.39506172839509) * (_repl14) + (279.4814814814815) * (_repl17) +
+                         (307.6543209876543) * ((cosl1p2) * (cosl1p3))) *
+                            (cosl1p1)) *
+                       (l1) +
+                   (_repl27) *
+                       ((-13.77777777777778) * (_repl18) + (10.66666666666667 + (1.) * (_repl14)) * (_repl19) +
+                        (4.) * (_repl37) + (-3.) * (_repl39) + (-3.) * (_repl45) +
+                        (-15.85185185185186 + (0.4444444444444572) * (_repl14) + (14.) * (_repl20)) * (cosl1p2) +
+                        ((-12.) * (cosl1p2) + (-5.000000000000001) * (cosl1p3)) * (_repl41) +
+                        (-2.074074074074077) * (cosl1p3) + (-5.000000000000001) * ((_repl30) * (cosl1p3)) +
+                        ((14.) * (_repl18) + (25.55555555555556) * (cosl1p3)) * (_repl17) +
+                        ((14.) * (_repl18) + (-15.) * (_repl19) +
+                         (76.44444444444444 + (9.66666666666667) * (_repl14)) * (cosl1p2) +
+                         (25.55555555555556) * (cosl1p3) + (-14.) * ((_repl17) * (cosl1p3))) *
+                            (_repl35) +
+                        (10.66666666666667 + (1.) * (_repl14) + (-15.) * (_repl17) + (-14.) * ((cosl1p2) * (cosl1p3))) *
+                            (_repl40) +
+                        (-15.85185185185186 + (0.4444444444444572) * (_repl14) +
+                         (76.44444444444448 + (9.66666666666667) * (_repl14)) * (_repl17) + (14.) * (_repl20) +
+                         (-12.) * (_repl30) + (-14.) * ((_repl19) * (cosl1p3)) +
+                         ((30.66666666666667) * (_repl18) + (91.5555555555556) * (cosl1p3)) * (cosl1p2)) *
+                            (cosl1p1)) *
+                       (p)) *
+                  ((powr<-1>(1. + _repl21)) *
+                   ((_repl48) *
+                    ((_repl8) *
+                     ((powr<-1>((1.) * (_repl15) + (1.333333333333333) * (_repl16) +
+                                (-2.) * ((cosl1p1) * ((l1) * (p))) + (-2.) * ((cosl1p2) * ((l1) * (p))))) *
+                      ((powr<-1>((1.) * (_repl15) + (1.) * (_repl16) +
+                                 (l1) * ((-2.) * (cosl1p1) + (-2.) * (cosl1p2) + (-2.) * (cosl1p3)) * (p))) *
+                       ((powr<-1>((3.) * ((_repl1) * (_repl13)) +
+                                  ((3.) * (_repl15) + (4.) * (_repl16) + (-6.) * ((cosl1p1) * ((l1) * (p))) +
+                                   (-6.) * ((cosl1p2) * ((l1) * (p)))) *
+                                      (_repl11))) *
+                        ((powr<-1>((_repl1) * (_repl9) +
+                                   (_repl15 + _repl16 +
+                                    (l1) * ((-2.) * (cosl1p1) + (-2.) * (cosl1p2) + (-2.) * (cosl1p3)) * (p)) *
+                                       (_repl10))) *
+                         (ZA4((0.408248290463863) * (sqrt((3.) * (_repl15) + (5.) * (_repl16) +
+                                                          (-3.) * (cosl1p1 + cosl1p2) * ((l1) * (p)))))))))))))) +
+             (0.002551020408163265) *
+                 ((_repl1) * (_repl4) +
+                  (_repl5 + (50.) * ((-1.) * (_repl1) + _repl6) * ((_repl21) * (powr<-1>(1. + _repl21)))) * (_repl2)) *
+                 ((_repl48) *
+                  ((4074.666666666667 + (-95.9999999999999) * (_repl14) + (-95.9999999999999) * (_repl17) +
+                    (608.0000000000004) * (_repl35) + (608.) * ((cosl1p1) * (cosl1p2)) +
+                    (608.) * ((cosl1p1) * (cosl1p3)) + (-800.) * ((cosl1p2) * (cosl1p3))) *
+                       (_repl16) +
+                   (2608. + (798.0000000000001) * (_repl14) + (798. + (108.) * (_repl14)) * (_repl17) +
+                    (54.) * (_repl20) + (54.) * (_repl30) + (-108.) * (_repl41) +
+                    ((-216.) * (cosl1p2) + (-216.) * (cosl1p3)) * (_repl40) + (162.) * ((_repl19) * (cosl1p3)) +
+                    ((162.) * (_repl18) + (24.) * (cosl1p3)) * (cosl1p2) +
+                    ((54.) * (_repl18) + (54.) * (_repl19) + (1572. + (90.) * (_repl14)) * (cosl1p2) +
+                     (1572.) * (cosl1p3) + (90.) * ((_repl17) * (cosl1p3))) *
+                        (cosl1p1) +
+                    (1572. + (-54.) * (_repl14) + (-54.) * (_repl17) + (-180.) * ((cosl1p2) * (cosl1p3))) * (_repl35)) *
+                       (_repl15) +
+                   (l1) *
+                       ((-906.) * (_repl19) + ((-1692.) * (cosl1p1) + (-1026.) * (cosl1p3)) * (_repl17) +
+                        (-5232.000000000001 + (-1026.) * (_repl14) + (-1692.) * (_repl35) +
+                         (-3384.) * ((cosl1p1) * (cosl1p3))) *
+                            (cosl1p2) +
+                        (-5232.000000000001 + (-906.) * (_repl14) + (-1692.) * (_repl35) +
+                         (-1692.) * ((cosl1p1) * (cosl1p3))) *
+                            (cosl1p3)) *
+                       (p)) *
+                  ((powr<-1>((1.) * (_repl15) + (1.333333333333333) * (_repl16) + (-2.) * ((cosl1p2) * ((l1) * (p))) +
+                             (-2.) * ((cosl1p3) * ((l1) * (p))))) *
+                   ((powr<-1>((_repl1) * (RB(_repl28, _repl15 + (1.333333333333333) * (_repl16) +
+                                                          (-2.) * (cosl1p2 + cosl1p3) * ((l1) * (p)))) +
+                              (0.3333333333333333) *
+                                  ((3.) * (_repl15) + (4.) * (_repl16) + (-6.) * (cosl1p2 + cosl1p3) * ((l1) * (p))) *
+                                  (ZA(sqrt(_repl15 + (1.333333333333333) * (_repl16) +
+                                           (-2.) * (cosl1p2 + cosl1p3) * ((l1) * (p))))))) *
+                    (powr<2>(ZA4((0.408248290463863) * (sqrt((3.) * (_repl15) + (5.) * (_repl16) +
+                                                             (-3.) * (cosl1p2 + cosl1p3) * ((l1) * (p)))))))))) +
+             (1.10204081632653) *
+                 ((_repl1) * (1. + _repl21) * (_repl4) + (_repl2) * (1. + (1.) * (_repl21)) * (_repl5) +
+                  (_repl2) * ((-50.) * (_repl1) + (50.) * (_repl6)) * (_repl21)) *
+                 ((powr<-1>(1. + _repl21)) *
+                  ((-7.25925925925926 + (21.77777777777778) * (_repl17) +
+                    (21.77777777777778) * ((cosl1p1) * (cosl1p2)) + (21.77777777777778) * ((cosl1p2) * (cosl1p3))) *
+                       (_repl31) +
+                   (-2.222222222222221 + (1.166666666666667) * (_repl14) +
+                    (3.88888888888889 + (0.5) * (_repl14)) * (_repl17) + (-0.5) * (_repl20) + (1.) * (_repl30) +
+                    (-0.5) * (_repl41) + ((-0.5) * (cosl1p2) + (-1.5) * (cosl1p3)) * (_repl40) +
+                    (2.) * ((_repl19) * (cosl1p3)) +
+                    ((-0.5) * (_repl18) + (3.888888888888889) * (cosl1p3)) * (cosl1p2) +
+                    ((-1.5) * (_repl18) + (2.) * (_repl19) +
+                     (3.888888888888889 + (-0.833333333333333) * (_repl14)) * (cosl1p2) + (6.) * (cosl1p3) +
+                     (1.666666666666667) * ((_repl17) * (cosl1p3))) *
+                        (cosl1p1) +
+                    (1.166666666666667 + (-1.) * (_repl14) + (0.5) * (_repl17) +
+                     (-0.833333333333333) * ((cosl1p2) * (cosl1p3))) *
+                        (_repl35)) *
+                       (_repl25) +
+                   (_repl15) *
+                       (-25.25925925925926 + (7.51851851851852) * (_repl14) +
+                        (33.62962962962963 + (96.8888888888889) * (_repl14)) * (_repl17) +
+                        (93.1111111111111) * (_repl30) + (3.777777777777778) * ((_repl40) * (cosl1p2)) +
+                        (186.2222222222222) * ((_repl19) * (cosl1p3)) +
+                        ((3.777777777777778) * (_repl18) + (33.62962962962963) * (cosl1p3)) * (cosl1p2) +
+                        ((186.2222222222222) * (_repl19) +
+                         (33.62962962962963 + (8.66666666666667) * (_repl14)) * (cosl1p2) +
+                         (14.14814814814815) * (cosl1p3) + (191.1111111111111) * ((_repl17) * (cosl1p3))) *
+                            (cosl1p1) +
+                        (7.518518518518517 + (96.8888888888889) * (_repl17) +
+                         (8.66666666666667) * ((cosl1p2) * (cosl1p3))) *
+                            (_repl35)) *
+                       (_repl23) +
+                   (_repl22) *
+                       ((-5.444444444444445) * (_repl18) +
+                        (-137.9259259259259 + (-39.44444444444444) * (_repl14)) * (_repl19) +
+                        (-21.55555555555556) * (_repl39) +
+                        (52. + (-79.85185185185185) * (_repl14) + (1.833333333333333) * (_repl20)) * (cosl1p2) +
+                        (1.833333333333333) * ((_repl41) * (cosl1p2)) +
+                        ((-5.277777777777778) * (_repl18) + (-206.8888888888889) * (cosl1p3)) * (_repl17) +
+                        (26.) * (cosl1p3) + (-53.88888888888888) * ((_repl30) * (cosl1p3)) +
+                        ((-39.44444444444444) * (_repl19) +
+                         (-79.85185185185185 + (19.66666666666667) * (_repl14)) * (cosl1p2) +
+                         (-14.77777777777778) * (cosl1p3) + (-2.833333333333333) * ((_repl17) * (cosl1p3))) *
+                            (_repl35) +
+                        (26. + (-14.77777777777778) * (_repl14) +
+                         (-206.8888888888889 + (-2.833333333333333) * (_repl14)) * (_repl17) +
+                         (-53.88888888888888) * (_repl30) +
+                         ((11.66666666666667) * (_repl18) + (-156.5925925925926) * (cosl1p3)) * (cosl1p2) +
+                         (-70.22222222222223) * ((_repl19) * (cosl1p3))) *
+                            (cosl1p1) +
+                        (-5.444444444444445 + (-5.277777777777778) * (_repl17) +
+                         (11.66666666666667) * ((cosl1p2) * (cosl1p3))) *
+                            (_repl40)) *
+                       (_repl26) +
+                   (_repl16) *
+                       (-19.85185185185185 + (7.444444444444446) * (_repl14) +
+                        (29.18518518518519 + (66.27777777777777) * (_repl14) + (-1.) * (_repl20)) * (_repl17) +
+                        (-1.833333333333333) * (_repl20) + (59. + (2.5) * (_repl14)) * (_repl30) + (1.) * (_repl47) +
+                        (-0.5) * ((_repl45) * (cosl1p2)) + (118.) * ((_repl19) * (cosl1p3)) +
+                        (3.) * ((_repl39) * (cosl1p3)) +
+                        ((7.277777777777779) * (_repl18) + (-0.5) * (_repl37) + (29.18518518518519) * (cosl1p3)) *
+                            (cosl1p2) +
+                        ((7.277777777777779 + (-2.5) * (_repl14)) * (cosl1p2) + (-11.66666666666667) * (cosl1p3) +
+                         (-2.833333333333334) * ((_repl17) * (cosl1p3))) *
+                            (_repl40) +
+                        (-1.833333333333333 + (-1.) * (_repl17) + (-2.) * ((cosl1p2) * (cosl1p3))) * (_repl41) +
+                        (7.444444444444444 + (-19.66666666666667) * (_repl14) +
+                         (66.27777777777777 + (-2.666666666666667) * (_repl14)) * (_repl17) + (2.5) * (_repl30) +
+                         (1.333333333333333) * ((_repl19) * (cosl1p3)) +
+                         ((-2.5) * (_repl18) + (11.27777777777778) * (cosl1p3)) * (cosl1p2)) *
+                            (_repl35) +
+                        ((-11.66666666666667) * (_repl18) + (118. + (1.333333333333333) * (_repl14)) * (_repl19) +
+                         (3.) * (_repl39) +
+                         (29.18518518518519 + (11.27777777777778) * (_repl14) + (-2.) * (_repl20)) * (cosl1p2) +
+                         (16.22222222222222) * (cosl1p3) + (5.666666666666667) * ((_repl30) * (cosl1p3)) +
+                         ((-2.833333333333334) * (_repl18) + (122.) * (cosl1p3)) * (_repl17)) *
+                            (cosl1p1)) *
+                       (_repl24) +
+                   (_repl29) *
+                       ((-85.7777777777778) * (_repl19) +
+                        (28.59259259259259 + (-42.88888888888889) * (_repl14)) * (cosl1p2) +
+                        (-42.88888888888889) * ((_repl35) * (cosl1p2)) + (14.2962962962963) * (cosl1p3) +
+                        (-128.6666666666667) * ((_repl17) * (cosl1p3)) +
+                        (14.2962962962963 + (-128.6666666666667) * (_repl17) +
+                         (-85.7777777777778) * ((cosl1p2) * (cosl1p3))) *
+                            (cosl1p1)) *
+                       (l1) +
+                   (_repl27) *
+                       ((-0.3333333333333344) * (_repl18) + (-32.88888888888889 + (-3.) * (_repl14)) * (_repl19) +
+                        (0.5) * (_repl37) + (-2.) * (_repl39) + (0.5) * (_repl45) +
+                        (11.55555555555555 + (-17.11111111111111) * (_repl14) + (1.5) * (_repl20)) * (cosl1p2) +
+                        ((0.5) * (_repl18) + (-49.33333333333334) * (cosl1p3)) * (_repl17) +
+                        (5.777777777777776) * (cosl1p3) + (-5.) * ((_repl30) * (cosl1p3)) +
+                        ((1.5) * (cosl1p2) + (2.) * (cosl1p3)) * (_repl41) +
+                        ((2.5) * (_repl18) + (-3.) * (_repl19) +
+                         (-17.11111111111111 + (3.666666666666667) * (_repl14)) * (cosl1p2) +
+                         (-2.333333333333333) * (cosl1p3) + (-0.5) * ((_repl17) * (cosl1p3))) *
+                            (_repl35) +
+                        (5.777777777777776 + (-2.333333333333331) * (_repl14) +
+                         (-49.33333333333334 + (-0.5) * (_repl14)) * (_repl17) + (2.) * (_repl20) + (-5.) * (_repl30) +
+                         ((4.333333333333333) * (_repl18) + (-36.88888888888888) * (cosl1p3)) * (cosl1p2) +
+                         (-7.333333333333333) * ((_repl19) * (cosl1p3))) *
+                            (cosl1p1) +
+                        (-0.3333333333333339 + (2.5) * (_repl14) + (0.5) * (_repl17) +
+                         (4.333333333333333) * ((cosl1p2) * (cosl1p3))) *
+                            (_repl40)) *
+                       (p)) *
+                  ((_repl48) *
+                   ((_repl8) *
+                    ((powr<-1>(_repl15 + _repl16 + (-2.) * ((cosl1p2) * ((l1) * (p))))) *
+                     ((powr<-1>((1.) * (_repl15) + (1.) * (_repl16) +
+                                (l1) * ((-2.) * (cosl1p1) + (-2.) * (cosl1p2) + (-2.) * (cosl1p3)) * (p))) *
+                      ((powr<-1>((_repl1) * (_repl9) +
+                                 (_repl15 + _repl16 +
+                                  (l1) * ((-2.) * (cosl1p1) + (-2.) * (cosl1p2) + (-2.) * (cosl1p3)) * (p)) *
+                                     (_repl10))) *
+                       ((powr<-1>((_repl1) * (RB(_repl28, _repl15 + _repl16 + (-2.) * ((cosl1p2) * ((l1) * (p))))) +
+                                  (_repl15 + _repl16 + (-2.) * ((cosl1p2) * ((l1) * (p)))) *
+                                      (ZA(sqrt(_repl15 + _repl16 + (-2.) * ((cosl1p2) * ((l1) * (p)))))))) *
+                        ((ZA3((0.816496580927726) * (sqrt(_repl15 + _repl16 + (-1.) * ((cosl1p2) * ((l1) * (p))))))) *
+                         (ZA4((0.7071067811865475) *
+                              (sqrt(_repl15 + (2.) * (_repl16) +
+                                    (-1.) * (cosl1p1 + (2.) * (cosl1p2) + cosl1p3) * ((l1) * (p)))))))))))))) +
+             (1.653061224489796) *
+                 ((-0.3333333333333333) * ((_repl14) * (_repl15)) + (-0.5925925925925926) * (_repl16) +
+                  (1.) * ((_repl15) * (_repl20)) + (-2.) * ((_repl15) * (_repl30)) + (1.) * ((_repl15) * (_repl41)) +
+                  (_repl19) * ((-4.) * ((cosl1p3) * (l1)) + (-2.) * (p)) * (l1) +
+                  (0.6666666666666666) * ((_repl18) * ((l1) * (p))) +
+                  (-0.4444444444444445) * ((cosl1p3) * ((l1) * (p))) +
+                  (_repl40) * ((1.) * ((cosl1p2) * (l1)) + (3.) * ((cosl1p3) * (l1)) + (1.333333333333333) * (p)) *
+                      (l1) +
+                  ((1.) * ((_repl15) * (_repl18)) + (0.6666666666666666) * ((_repl15) * (cosl1p3)) +
+                   (0.2222222222222222) * ((_repl16) * (cosl1p3)) + (0.4444444444444445) * ((l1) * (p)) +
+                   (-0.3333333333333333) * ((_repl14) * ((l1) * (p)))) *
+                      (cosl1p2) +
+                  ((0.6666666666666666 + (-1.) * (_repl14)) * (_repl15) + (0.3333333333333333) * (_repl16) +
+                   (-2.333333333333333) * ((cosl1p3) * ((l1) * (p)))) *
+                      (_repl17) +
+                  ((1.592592592592593) * (_repl16) +
+                   (-0.3333333333333333 + (2.) * (_repl14) + (-1.) * (_repl17) +
+                    (1.666666666666667) * ((cosl1p2) * (cosl1p3))) *
+                       (_repl15) +
+                   ((1.888888888888889) * ((cosl1p2) * (p)) + (2.111111111111111) * ((cosl1p3) * (p))) * (l1)) *
+                      (_repl35) +
+                  ((-4.) * ((_repl15) * (_repl19)) +
+                   ((0.6666666666666666 + (1.666666666666667) * (_repl14)) * (_repl15) +
+                    (1.925925925925926) * (_repl16)) *
+                       (cosl1p2) +
+                   (_repl17) * ((-3.333333333333333) * ((cosl1p3) * (l1)) + (-0.7777777777777778) * (p)) * (l1) +
+                   ((-1.333333333333333 + (3.) * (_repl14)) * (_repl15) + (1.259259259259259) * (_repl16) +
+                    (-0.5555555555555555) * ((cosl1p3) * ((l1) * (p)))) *
+                       (cosl1p3)) *
+                      (cosl1p1)) *
+                 ((_repl15) *
+                  ((_repl3) * (_repl4) + (_repl2) * (dtZc(k)) +
+                   ((-50.) * (_repl3) + (50.) * (Zc((1.02) * (k)))) * (_repl2)) *
+                  ((ZAcbc((0.816496580927726) * (sqrt(_repl15 + _repl16 + (cosl1p1) * ((l1) * (p)))))) *
+                   ((ZAcbc((0.3333333333333333) * (sqrt((6.) * (_repl15) + (10.) * (_repl16) +
+                                                        (6.) * ((2.) * (cosl1p1) + cosl1p2) * ((l1) * (p)))))) *
+                    ((ZAcbc((0.816496580927726) *
+                            (sqrt(_repl15 + _repl16 + (l1) * (cosl1p1 + cosl1p2 + cosl1p3) * (p))))) *
+                     ((ZAcbc((0.3333333333333333) *
+                             (sqrt((6.) * (_repl15) + (10.) * (_repl16) +
+                                   (6.) * ((2.) * (cosl1p1) + (2.) * (cosl1p2) + cosl1p3) * ((l1) * (p)))))) *
+                      ((powr<-2>((_repl2) * (_repl3) + (_repl15) * (Zc(l1)))) *
+                       ((powr<-1>((_repl3) * (RB(_repl28, _repl15 + _repl16 + (2.) * ((cosl1p1) * ((l1) * (p))))) +
+                                  (_repl15 + _repl16 + (2.) * ((cosl1p1) * ((l1) * (p)))) *
+                                      (Zc(sqrt(_repl15 + _repl16 + (2.) * ((cosl1p1) * ((l1) * (p)))))))) *
+                        ((powr<-1>((3.) * ((_repl3) * (RB(_repl28, _repl15 + (1.333333333333333) * (_repl16) +
+                                                                       (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p))))) +
+                                   ((3.) * (_repl15) + (4.) * (_repl16) + (6.) * ((cosl1p1) * ((l1) * (p))) +
+                                    (6.) * ((cosl1p2) * ((l1) * (p)))) *
+                                       (Zc(sqrt(_repl15 + (1.333333333333333) * (_repl16) +
+                                                (2.) * (cosl1p1 + cosl1p2) * ((l1) * (p))))))) *
+                         (powr<-1>((_repl3) * (RB(_repl28, _repl15 + _repl16 +
+                                                               (2.) * (cosl1p1 + cosl1p2 + cosl1p3) * ((l1) * (p)))) +
+                                   (_repl15 + _repl16 +
+                                    (l1) * ((2.) * (cosl1p1) + (2.) * (cosl1p2) + (2.) * (cosl1p3)) * (p)) *
+                                       (Zc(sqrt(_repl15 + _repl16 +
+                                                (2.) * (cosl1p1 + cosl1p2 + cosl1p3) * ((l1) * (p)))))))))))))));
     }
 
     static KOKKOS_FORCEINLINE_FUNCTION auto
-    constant(const auto &p, const double &k,
+    constant(const double &p, const double &k,
              const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZA3,
              const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZAcbc,
              const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZA4,

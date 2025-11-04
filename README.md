@@ -3,6 +3,8 @@
 [![Wolfram](https://img.shields.io/badge/wolfram_doc-cf1c10?style=for-the-badge&logo=wolfram)](https://satfra.github.io/DiFfRG/wolfram/html/guide/DiFfRG.html)
 [![Python](https://img.shields.io/badge/python_doc-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://satfra.github.io/DiFfRG/python/index.html)
 
+<h3>[This is the development repository for DiFfRG. For the current stable version, please visit [the main repository](https://github.com/satfra/DiFfRG)</h3>
+
 # DiFfRG - A Discretization Framework for functional Renormalization Group flows
 
 DiFfRG is a set of tools for the discretization of flow equations arising in the functional Renormalization Group (fRG).
@@ -101,12 +103,23 @@ If using Windows, instead of running the project directly, it is recommended to 
 
 ## Installation
 
+### As fast as possible
+
+From the shell, run (this requires curl to be available on your system)
+```bash
+bash <(curl -s -L https://github.com/satfra/DiFfRG_current/raw/refs/heads/main/install.sh)
+```
+or, if you want to specify either the installation folder or the number of threads used for building the library,
+```bash
+THREADS=6 FOLDER=${HOME}/.local/share/DiFfRG/ bash <(curl -s https://github.com/satfra/DiFfRG_current/raw/refs/heads/main/install.sh)
+```
+
 ### CMake
 
 You can download a script to install DiFfRG locally directly from a CMake file by putting into your `CMakeLists.txt` the lines
 ```CMake
 file(DOWNLOAD
-  https://raw.githubusercontent.com/satfra/DiFfRG/refs/heads/Implement-Kokkos/DiFfRG/cmake/InstallDiFfRG.cmake
+  https://github.com/satfra/DiFfRG_current/raw/refs/heads/main/DiFfRG/cmake/InstallDiFfRG.cmake
   ${CURRENT_BINARY_DIR}/cmake/InstallDiFfRG.cmake)
 include(${CURRENT_BINARY_DIR}/cmake/InstallDiFfRG.cmake)
 ```
@@ -124,7 +137,7 @@ set(PARALLEL_JOBS 8)
 
 You can also manually clone DiFfRG to a directory of your choice
 ```bash
-$ git clone https://github.com/satfra/DiFfRG.git
+$ git clone https://github.com/satfra/DiFfRG_current.git
 ```
 Then, create a build directory and run cmake
 ```bash
@@ -132,7 +145,7 @@ $ cd DiFfRG
 $ mkdir build
 $ cd build
 $ cmake ../ -DCMAKE_INSTALL_PREFIX=~/.local/share/DiFfRG/ -DCMAKE_BUILD_TYPE=Release
-$ cmake --build ./ -- -j8"
+$ cmake --build ./ -- -j8
 ```
 By default, the library will install itself to `$HOME/.local/shared/DiFfRG`, but you can control the destination by pointing `CMAKE_INSTALL_PREFIX` to a directory of your choice.
 

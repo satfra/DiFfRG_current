@@ -169,6 +169,13 @@ namespace DiFfRG
                    Kokkos::MemoryTraits<Kokkos::Unmanaged>     // No allocation: Attach to existing memory
                    >;
 
+  template <int dim, typename T, typename ExecutionSpace>
+  auto makeKokkosNDView(const std::string &label, const device::array<size_t, dim> &extents)
+  {
+    return device::apply([&](const auto &...args) { return KokkosNDView<dim, T, ExecutionSpace>(label, args...); },
+                         extents);
+  }
+
   // ------------------------------------------------
   // Getting ranges to iterate over
   // ------------------------------------------------
@@ -197,6 +204,16 @@ namespace DiFfRG
     }
   }
 
+  template <int dim, typename TeamType>
+  KOKKOS_FORCEINLINE_FUNCTION auto makeKokkosNDThreadRange(const TeamType &team, const device::array<size_t, dim> end)
+  {
+    if constexpr (dim == 1) {
+      return Kokkos::TeamThreadRange(team, end[0]);
+    } else {
+      return device::apply([&](const auto &...args) { return Kokkos::TeamThreadMDRange(team, args...); }, end);
+    }
+  }
+
   // ------------------------------------------------
   // Wrap Kokkos lambdas
   // ------------------------------------------------
@@ -214,6 +231,7 @@ namespace DiFfRG
    * @tparam FUN The lambda to which we forward the indices
    */
   template <int dim, typename FUN> struct KokkosNDLambdaWrapper {
+    KOKKOS_FUNCTION
     KokkosNDLambdaWrapper(const FUN &_fun) : fun(_fun) {};
 
     template <typename... Args>
@@ -255,6 +273,7 @@ namespace DiFfRG
    * @tparam FUN The lambda to which we forward the indices
    */
   template <int dim, typename FUN> struct KokkosNDLambdaWrapperReduction {
+    KOKKOS_FUNCTION
     KokkosNDLambdaWrapperReduction(const FUN &_fun) : fun(_fun) {};
 
     template <typename... Args>
@@ -271,10 +290,10 @@ namespace DiFfRG
       requires(sizeof...(Args) == dim)
     KOKKOS_FORCEINLINE_FUNCTION auto makeArray(device::tuple<Args...> &&tuple) const
     {
-      return device::apply([](auto &&...args) { return device::array<size_t, dim>{{args...}}; }, tuple);
+      return device::apply([](auto &&...args) { return device::array<size_t, dim>{{static_cast<size_t>(args)...}}; },
+                           tuple);
     }
   };
-
 } // namespace DiFfRG
 
 #include <autodiff/forward/real.hpp>

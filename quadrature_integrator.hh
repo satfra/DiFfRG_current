@@ -151,7 +151,7 @@ namespace DiFfRG
         }
 
         // make a tuple of all arguments
-        const auto full_args = device::tuple_cat(x, pos, m_args);
+        const auto full_args = device::tuple_cat(pos, x, m_args);
 
         device::apply([&](const auto &...iargs) { subview() = weight * KERNEL::kernel(iargs...); }, full_args);
       };

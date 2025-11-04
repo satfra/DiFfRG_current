@@ -107,7 +107,7 @@ namespace DiFfRG
      * @param x the point at which to interpolate
      * @return NT the interpolated value
      */
-    NT KOKKOS_INLINE_FUNCTION operator()(const typename Coordinates::ctype x) const
+    NT KOKKOS_FUNCTION operator()(const typename Coordinates::ctype x) const
     {
       ctype idx = coordinates.backward(x);
       // Clamp the index to the range [0, size - 1]

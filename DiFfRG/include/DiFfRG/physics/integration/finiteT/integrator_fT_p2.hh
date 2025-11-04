@@ -12,9 +12,10 @@ namespace DiFfRG
     {
     public:
       using ctype = typename get_type::ctype<NT>;
+      static constexpr int sdim = dim - 1; // spatial dimension
 
-      static constexpr ctype int_prefactor = S_d_prec<ctype>(dim)          // solid nd angle
-                                             / powr<dim>(2 * (ctype)M_PI); // fourier factor
+      static constexpr ctype int_prefactor = S_d_prec<ctype>(sdim)          // solid nd angle
+                                             / powr<sdim>(2 * (ctype)M_PI); // fourier factor
 
       template <typename... T>
       static KOKKOS_FORCEINLINE_FUNCTION NT kernel(const ctype q2, const ctype q0, const T &...t)
@@ -22,7 +23,7 @@ namespace DiFfRG
         using namespace DiFfRG::compute;
 
         const ctype q = sqrt(q2);
-        const ctype int_element = (powr<dim - 2>(q) / (ctype)2); // from p^2 integral
+        const ctype int_element = (powr<sdim - 2>(q) / (ctype)2); // from p^2 integral
         const NT result = KERNEL::kernel(q, q0, t...);
 
         return int_prefactor * int_element * result;

@@ -34,16 +34,14 @@ StyleBox[\"FunKit\",\nFontWeight->\"Bold\"]\) to run.";
 
 If[Length @ PacletFind["FunKit"] === 0,
 	If[ChoiceDialog["FunKit does not seem to be installed. Do you want to install it?",
-		 WindowTitle -> "Install TensorBases", WindowSize -> {Medium, All}],
-		Import["https://raw.githubusercontent.com/satfra/TensorBases/main/TensorBasesInstaller.m"
-			]
+		 WindowTitle -> "Install FunKit", WindowSize -> {Medium, All}],
+     Import["https://raw.githubusercontent.com/satfra/FunKit/main/FunKitInstaller.m"]
 		,
 		Message[DiFfRG::FunKitRequired];
 		Abort[];
-	];
+	],
+  Get["FunKit`"]
 ]
-
-Get["FunKit`"]
 
 Needs["DiFfRG`CodeTools`"];
 

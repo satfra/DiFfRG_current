@@ -128,11 +128,6 @@ def plot_1D(
     if ylim:
         ax.set_ylim(ylim)
 
-    # Let the user add some things to the plot
-    if modifiers != None and len(modifiers) > 0:
-        for mod in modifiers:
-            mod(ax)
-
     # Set a grid, if desired
     if grid == True:
         ax.grid(color="grey", linestyle=":", linewidth=0.5, which="both")
@@ -173,6 +168,12 @@ def plot_1D(
         # Show ticks in the left and lower axes only
         ax.xaxis.set_ticks_position('bottom')
         ax.yaxis.set_ticks_position('left')
+
+    # Let the user add some things to the plot
+    if modifiers != None and len(modifiers) > 0:
+        for mod in modifiers:
+            mod(ax)
+
 
     if file == None:
         plt.show()
@@ -338,11 +339,6 @@ def plot_2D(
     elif zlim:
         ax.set_zlim(np.log10(zlim))
 
-    # Let the user add some things to the plot
-    if modifiers != None and len(modifiers) > 0:
-        for mod in modifiers:
-            mod(ax)
-
     # Remove the margins
     ax.margins(0.0)
 
@@ -384,6 +380,11 @@ def plot_2D(
             direction="in",
             zorder=10000
         )
+
+    # Let the user add some things to the plot
+    if modifiers != None and len(modifiers) > 0:
+        for mod in modifiers:
+            mod(ax)
 
     if file == None:
         plt.show()

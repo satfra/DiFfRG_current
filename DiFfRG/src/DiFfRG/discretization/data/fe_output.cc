@@ -39,13 +39,10 @@ namespace DiFfRG
     attached_solutions.emplace_back();
   }
 
-#ifdef H5CPP
-  template <uint dim, typename VectorType>
-  void FEOutput<dim, VectorType>::set_h5_group(std::shared_ptr<hdf5::node::Group> h5_group)
+  template <uint dim, typename VectorType> void FEOutput<dim, VectorType>::set_hdf5_output(HDF5Output *output)
   {
-    this->h5_group = h5_group;
+    this->hdf5_output = output;
   }
-#endif
 
   template <uint dim, typename VectorType> void FEOutput<dim, VectorType>::update_buffers()
   {
@@ -88,12 +85,13 @@ namespace DiFfRG
 
     auto &m_data_out = data_outs[series_number % buffer_size];
 
-    // Start by writing the FE-function to a .vtu file.
     m_data_out.build_patches(subdivisions);
 
 #ifdef H5CPP
-    if (h5_group != nullptr) {
-      auto cur_group = h5_group->create_group(Utilities::int_to_string(series_number, 6));
+    auto h5_file = hdf5_output->get_file();
+    auto h5_group = h5_file.root().get_group("FE");
+    {
+      auto cur_group = h5_group.create_group(Utilities::int_to_string(series_number, 6));
       cur_group.attributes.template create_from<double>("time", time);
       cur_group.attributes.template create_from<int>("series_number", series_number);
       cur_group.attributes.template create_from<std::string>("output_name", output_name);
@@ -121,12 +119,12 @@ namespace DiFfRG
         dataset.write(hdf5::ArrayAdapter<double>(const_cast<double *>(data_set_data), data_filter.n_nodes()));
       }
     }
+    hdf5_output->close_file();
 #endif
 
     auto output_func = [=, this](const uint m_series_number, const double m_time) {
+      auto &m_data_out = data_outs[m_series_number % buffer_size];
       if (save_vtk) {
-        auto &m_data_out = data_outs[m_series_number % buffer_size];
-
         // We add the .vtu file to the time series and write the .pvd file.
         time_series.emplace_back(m_time, filename_vtu);
         try {
@@ -141,11 +139,9 @@ namespace DiFfRG
 
         std::ofstream output_vtu(top_folder + filename_vtu);
         m_data_out.write_vtu(output_vtu);
-
-        m_data_out.clear();
       }
+      m_data_out.clear();
     };
-    if (!save_vtk) m_data_out.clear();
 
     // If the buffer size is 1, we save ourselves the cost of spawning a thread
     if (buffer_size == 1) {

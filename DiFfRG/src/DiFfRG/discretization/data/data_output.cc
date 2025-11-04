@@ -11,7 +11,6 @@
 #include <DiFfRG/discretization/data/csv_output.hh>
 #include <DiFfRG/discretization/data/data.hh>
 #include <DiFfRG/discretization/data/data_output.hh>
-#include <DiFfRG/discretization/data/hdf5_output.hh>
 
 namespace DiFfRG
 {
@@ -30,7 +29,7 @@ namespace DiFfRG
         hdf5::node::Group root_group = h5_files.at(filename_h5).get_file().root();
         // create the FE group
         auto h5_fe_group = std::make_shared<hdf5::node::Group>(root_group.create_group("FE"));
-        fe_out.set_h5_group(h5_fe_group);
+        fe_out.set_hdf5_output(&h5_files.at(filename_h5));
       }
     }
 #endif
