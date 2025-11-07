@@ -130,3 +130,93 @@ public:
     return c;
   }
 };
+
+template <typename _Regulator> class quark_kernel
+{
+public:
+  using Regulator = _Regulator;
+
+  static KOKKOS_FORCEINLINE_FUNCTION double kernel(const double &lf1, const double &p0, const double &k,
+                                                   const double &T, const double &mq2)
+  {
+    using namespace DiFfRG;
+    using namespace DiFfRG::compute;
+    const auto _repl1 = RF(powr<2>(k), powr<2>(lf1));
+    return (-8.) * (_repl1 + lf1) *
+           ((powr<-1>(powr<2>(_repl1) + (2.) * ((_repl1) * (lf1)) + powr<2>(lf1) + mq2 +
+                      powr<2>(p0 + (3.141592653589793) * (T)))) *
+            (RFdot(powr<2>(k), powr<2>(lf1))));
+  }
+
+  static KOKKOS_FORCEINLINE_FUNCTION double constant(const double & /* k */, const double & /* T */,
+                                                     const double & /* mq2 */)
+  {
+    using namespace DiFfRG;
+    using namespace DiFfRG::compute;
+    return 0.;
+  }
+
+private:
+  static KOKKOS_FORCEINLINE_FUNCTION auto RB(const auto &k2, const auto &p2) { return Regulator::RB(k2, p2); }
+
+  static KOKKOS_FORCEINLINE_FUNCTION auto RF(const auto &k2, const auto &p2) { return Regulator::RF(k2, p2); }
+
+  static KOKKOS_FORCEINLINE_FUNCTION auto RBdot(const auto &k2, const auto &p2) { return Regulator::RBdot(k2, p2); }
+
+  static KOKKOS_FORCEINLINE_FUNCTION auto RFdot(const auto &k2, const auto &p2) { return Regulator::RFdot(k2, p2); }
+
+  static KOKKOS_FORCEINLINE_FUNCTION auto dq2RB(const auto &k2, const auto &p2) { return Regulator::dq2RB(k2, p2); }
+
+  static KOKKOS_FORCEINLINE_FUNCTION auto dq2RF(const auto &k2, const auto &p2) { return Regulator::dq2RF(k2, p2); }
+};
+
+template <typename _Regulator> class quarkIntegrated_kernel
+{
+public:
+  using Regulator = _Regulator;
+
+  static KOKKOS_FORCEINLINE_FUNCTION double kernel(const double &lf1, const double &k, const double &T,
+                                                   const double &mq2)
+  {
+    using namespace DiFfRG;
+    using namespace DiFfRG::compute;
+    const auto _repl1 = RF(powr<2>(k), powr<2>(lf1));
+    const auto _repl2 = RFdot(powr<2>(k), powr<2>(lf1));
+    return (12.4) *
+           ((-1.) * (_repl1 + lf1) *
+                ((_repl2) *
+                 ((powr<-1>(powr<2>(_repl1) + (2.) * ((_repl1) * (lf1)) + powr<2>(lf1) + mq2)) *
+                  ((powr<-1>(T)) * (powr<2>(sech((0.5) * ((std::sqrt(powr<2>(_repl1) + (2.) * ((_repl1) * (lf1)) +
+                                                                     powr<2>(lf1) + mq2)) *
+                                                          (powr<-1>(T))))))))) +
+            (2.) * (_repl1 + lf1) *
+                ((_repl2) *
+                 ((std::sqrt(powr<-3>(powr<2>(_repl1) + (2.) * ((_repl1) * (lf1)) + powr<2>(lf1) + mq2))) *
+                  (std::tanh((0.5) * ((std::sqrt(powr<2>(_repl1) + (2.) * ((_repl1) * (lf1)) + powr<2>(lf1) + mq2)) *
+                                      (powr<-1>(T)))))))) *
+           (std::sqrt(mq2));
+  }
+
+  static KOKKOS_FORCEINLINE_FUNCTION double constant(const double & /* k */, const double & /* T */,
+                                                     const double & /* mq2 */)
+  {
+    using namespace DiFfRG;
+    using namespace DiFfRG::compute;
+    return 0.;
+  }
+
+private:
+  static KOKKOS_FORCEINLINE_FUNCTION auto RB(const auto &k2, const auto &p2) { return Regulator::RB(k2, p2); }
+
+  static KOKKOS_FORCEINLINE_FUNCTION auto RF(const auto &k2, const auto &p2) { return Regulator::RF(k2, p2); }
+
+  static KOKKOS_FORCEINLINE_FUNCTION auto RBdot(const auto &k2, const auto &p2) { return Regulator::RBdot(k2, p2); }
+
+  static KOKKOS_FORCEINLINE_FUNCTION auto RFdot(const auto &k2, const auto &p2) { return Regulator::RFdot(k2, p2); }
+
+  static KOKKOS_FORCEINLINE_FUNCTION auto dq2RB(const auto &k2, const auto &p2) { return Regulator::dq2RB(k2, p2); }
+
+  static KOKKOS_FORCEINLINE_FUNCTION auto dq2RF(const auto &k2, const auto &p2) { return Regulator::dq2RF(k2, p2); }
+
+  static double sech(double x) { return 1 / std::cosh(x); }
+};

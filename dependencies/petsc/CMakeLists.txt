@@ -38,6 +38,7 @@ execute_process(
     bash -c
     "
     ./configure --COPTFLAGS=\"-O3 -march=native -ffp-contract=fast\" \
+    --with-mpi-dir=/opt/homebrew/opt/open-mpi \
     --CXXOPTFLAGS=\"-O3 -march=native -ffp-contract=fast\"  \
     --FOPTFLAGS=\"-O3 -march=native -ffp-contract=fast\" \
     --with-blas-lib=${OpenBLAS_LIBRARY} \
