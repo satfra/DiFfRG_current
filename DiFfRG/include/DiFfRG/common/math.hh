@@ -9,6 +9,7 @@
 
 // external libraries
 #include <autodiff/forward/real.hpp>
+#include <type_traits>
 
 namespace DiFfRG
 {
@@ -231,6 +232,36 @@ namespace DiFfRG
     using ::Kokkos::sqrt;
     using ::Kokkos::tan;
     using ::Kokkos::tanh;
+
+    template <size_t N, typename T>
+      requires std::is_arithmetic_v<T>
+    constexpr KOKKOS_FORCEINLINE_FUNCTION T conj(const autodiff::Real<N, T> x)
+    {
+      return x;
+    }
+
+    template <size_t N, typename T>
+      requires std::is_arithmetic_v<T>
+    constexpr KOKKOS_FORCEINLINE_FUNCTION T conj(const cxReal<N, T> x)
+    {
+      cxReal<N, T> res;
+      autodiff::detail::For<0, N + 1>([&](auto i) constexpr { res[i] = Kokkos::conj(x[i]); });
+      return res;
+    }
+
+    template <typename T>
+      requires std::is_arithmetic_v<T>
+    constexpr KOKKOS_FORCEINLINE_FUNCTION T conj(const T x)
+    {
+      return x;
+    }
+
+    template <typename T>
+      requires is_complex<T>::value
+    constexpr KOKKOS_FORCEINLINE_FUNCTION T conj(const T x)
+    {
+      return Kokkos::conj(x);
+    }
 
     using DiFfRG::powr;
 
