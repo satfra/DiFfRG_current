@@ -354,12 +354,20 @@ option(DiFfRG_TEST "Build DiFfRG tests" OFF)
 option(DiFfRG_DOCUMENTATION "Build DiFfRG documentation" ON)
 
 # build the actual DiFfRG library
-set(ENABLE_MPI ${ENABLE_MPI})
-set(ENABLE_HDF5 ${HDF5_FOUND})
-set(BUNDLED_DIR ${DEPEND_INSTALL_PREFIX})
-set(DiFfRG_TEST ${DiFfRG_TEST})
-set(DiFfRG_DOCUMENTATION ${DiFfRG_DOCUMENTATION})
-add_subdirectory(DiFfRG)
+ExternalProject_Add(
+  DiFfRG
+  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/
+  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/DiFfRG/
+  INSTALL_DIR ${CMAKE_INSTALL_PREFIX}
+  DEPENDS general_dep boost_dep deal.II_dep kokkos_dep autodiff_dep
+  CMAKE_CACHE_ARGS
+    -DENABLE_MPI:BOOL=${ENABLE_MPI}
+    -DENABLE_HDF5:BOOL=${HDF5_FOUND}
+    -DBUNDLED_DIR:PATH=${DEPEND_INSTALL_PREFIX}
+    -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
+    -DDiFfRG_TEST:BOOL=${DiFfRG_TEST}
+    -DDiFfRG_DOCUMENTATION:BOOL=${DiFfRG_DOCUMENTATION}
+    -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_INSTALL_PREFIX})
 
 # ##############################################################################
 # Forwarding DiFfRG tests for CTest to discover them

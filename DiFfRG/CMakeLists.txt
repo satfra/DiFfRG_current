@@ -70,8 +70,8 @@ endif()
 # Setup build system : Libraries
 # ##############################################################################
 
-add_subdirectory(${CMAKE_SOURCE_DIR}/DiFfRG/cmake)
-include(${CMAKE_SOURCE_DIR}/DiFfRG/cmake/setup_build_system.cmake)
+add_subdirectory(${CMAKE_SOURCE_DIR}/cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/setup_build_system.cmake)
 
 # ##############################################################################
 # DiFfRG library and models
@@ -86,6 +86,11 @@ add_subdirectory(src)
 # Testing
 # ##############################################################################
 
+option(DiFfRG_TEST "Build tests" OFF)
+if(DiFfRG_TEST)
+  enable_testing()
+  add_subdirectory(tests)
+endif()
 
 # ##############################################################################
 # Packaging and installation
