@@ -187,3 +187,37 @@ TEST_CASE("throws when range is invalid", "[MeshConfiguration]")
   CHECK_THROWS(GridAxis("0.1:0.01:0.0"));
   CHECK_THROWS(GridAxis("0.1:2.0:1.0"));
 }
+
+TEST_CASE("parses default JSON grid configuration", "[MeshConfiguration]")
+{
+  SECTION("get_defaults returns valid parseable JSON")
+  {
+    std::string default_json_str = ConfigurationMesh<3>::get_defaults();
+    DiFfRG::JSONValue default_json = DiFfRG::json::parse(default_json_str);
+
+    // Parse the defaults into a ConfigurationMesh
+    ConfigurationMesh<3> mesh_config(default_json);
+
+    // Verify it matches expected default configuration - all grids use the same default range
+    REQUIRE(size(mesh_config.grids[0]) == 3);
+    CHECK(mesh_config.grids[0][0].min == 0.0);
+    CHECK(mesh_config.grids[0][0].max == 7e-3);
+    CHECK(mesh_config.grids[0][1].min == 7e-3);
+    CHECK(mesh_config.grids[0][1].max == 9e-3);
+    CHECK(mesh_config.grids[0][2].min == 9e-3);
+    CHECK(mesh_config.grids[0][2].max == 1.1e-2);
+
+    REQUIRE(size(mesh_config.grids[1]) == 3);
+    CHECK(mesh_config.grids[1][0].min == 0.0);
+    CHECK(mesh_config.grids[1][0].max == 7e-3);
+
+    REQUIRE(size(mesh_config.grids[2]) == 3);
+    CHECK(mesh_config.grids[2][0].min == 0.0);
+    CHECK(mesh_config.grids[2][0].max == 7e-3);
+
+    CHECK(mesh_config.refine == 0);
+
+    CHECK(mesh_config.get_lower_left() == dealii::Point<3, double>(0.0, 0.0, 0.0));
+    CHECK(mesh_config.get_upper_right() == dealii::Point<3, double>(1.1e-2, 1.1e-2, 1.1e-2));
+  }
+}

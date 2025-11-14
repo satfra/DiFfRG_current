@@ -51,6 +51,8 @@ namespace DiFfRG
         validate();
       };
 
+      static std::string get_default_range() { return "0:1e-4:7e-3,7e-3:5e-4:9e-3,9e-3:1e-3:1.1e-2"; }
+
       double min;
       double max;
       double step;
@@ -117,6 +119,37 @@ namespace DiFfRG
         }
 
         refine = json.get_uint("/discretization/grid/refine", 0);
+      }
+
+      static std::string get_defaults()
+      {
+        std::string json_str = R"({
+  "discretization": {
+    "grid": {
+      "x_grid": ")";
+        json_str += GridAxis::get_default_range();
+        json_str += R"(")";
+
+        if constexpr (dim >= 2) {
+          json_str += R"(,
+      "y_grid": ")";
+          json_str += GridAxis::get_default_range();
+          json_str += R"(")";
+        }
+
+        if constexpr (dim >= 3) {
+          json_str += R"(,
+      "z_grid": ")";
+          json_str += GridAxis::get_default_range();
+          json_str += R"(")";
+        }
+
+        json_str += R"(,
+      "refine": 0
+    }
+  }
+})";
+        return json_str;
       }
 
       inline std::vector<std::vector<double>> get_step_withs_for_triangulation() const
