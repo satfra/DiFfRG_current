@@ -41,6 +41,8 @@ namespace DiFfRG
     {
     public:
       GridAxis() = delete;
+      GridAxis(double min_, double step_, double max_) : min(min_), max(max_), step(step_) { validate(); };
+
       GridAxis(std::string json_string)
       {
         auto subrange = internal::string_to_range(json_string);
@@ -104,6 +106,15 @@ namespace DiFfRG
     {
     public:
       ConfigurationMesh() = delete;
+
+      template <typename... Grids> ConfigurationMesh(unsigned int refinement, Grids... grids_args) : refine(refinement)
+      {
+        static_assert(sizeof...(Grids) == dim, "Number of grids must match dimension");
+        static_assert((std::is_same_v<std::vector<GridAxis>, Grids> && ...),
+                      "All grids must be of type std::vector<GridAxis>");
+        grids = {grids_args...};
+      }
+
       ConfigurationMesh(const DiFfRG::JSONValue &json)
       {
         static_assert(dim >= 1 && dim <= 3, "ConfigurationMesh only supports dim = 1, 2, 3");

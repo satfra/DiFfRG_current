@@ -3,6 +3,7 @@
 # ##############################################################################
 
 add_subdirectory(FEM)
+add_subdirectory(FV)
 add_subdirectory(grid)
 add_subdirectory(data)
 add_subdirectory(coordinates)
