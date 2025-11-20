@@ -10,6 +10,7 @@
 #include <deal.II/dofs/dof_tools.h>
 #include <deal.II/fe/fe_interface_values.h>
 #include <deal.II/fe/fe_values.h>
+#include <deal.II/grid/tria_iterator_base.h>
 #include <deal.II/lac/full_matrix.h>
 #include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/vector.h>
@@ -17,6 +18,8 @@
 #include <deal.II/numerics/fe_field_function.h>
 #include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/vector_tools.h>
+#include <iostream>
+#include <petscvec.h>
 #include <spdlog/spdlog.h>
 #include <tbb/tbb.h>
 
@@ -24,6 +27,7 @@
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 
 #include <DiFfRG/discretization/common/types.hh>
+#include <vector>
 
 namespace DiFfRG
 {
@@ -35,39 +39,74 @@ namespace DiFfRG
 
       namespace internal
       {
+
+        template <int dim, typename NumberType> struct Cache_Data {
+          dealii::Point<1> position;
+          NumberType u;
+          std::optional<std::reference_wrapper<Cache_Data<dim, NumberType>>> left_neighbor;
+          std::optional<std::reference_wrapper<Cache_Data<dim, NumberType>>> right_neighbor;
+        };
+
         /**
          * @brief Class to hold data for each assembly thread, i.e. FEValues for cells, interfaces, as well as
          * pre-allocated data structures for the solutions
          */
-        template <typename Discretization> struct ScratchData {
-          static constexpr int dim = Discretization::dim;
-          using NumberType = typename Discretization::NumberType;
+        template <int dim, typename NumberType> struct ScratchData {
           using VectorType = Vector<NumberType>;
 
           ScratchData(const Mapping<dim> &mapping, const FiniteElement<dim> &fe, const Quadrature<dim> &quadrature,
+                      const VectorType &solution_global,
                       const UpdateFlags update_flags = update_values | update_gradients | update_quadrature_points |
                                                        update_JxW_values)
-              : n_components(fe.n_components()), fe_values(mapping, fe, quadrature, update_flags)
+              : n_components(fe.n_components()), fe_values(mapping, fe, quadrature, update_flags),
+                solution_global(solution_global)
           {
-            solution.resize(quadrature.size(), VectorType(n_components));
-            solution_dot.resize(quadrature.size(), VectorType(n_components));
           }
 
-          ScratchData(const ScratchData<Discretization> &scratch_data)
+          ScratchData(const ScratchData<dim, NumberType> &scratch_data)
               : n_components(scratch_data.fe_values.get_fe().n_components()),
                 fe_values(scratch_data.fe_values.get_mapping(), scratch_data.fe_values.get_fe(),
-                          scratch_data.fe_values.get_quadrature(), scratch_data.fe_values.get_update_flags())
+                          scratch_data.fe_values.get_quadrature(), scratch_data.fe_values.get_update_flags()),
+                solution_global(scratch_data.solution_global)
           {
-            solution.resize(scratch_data.fe_values.get_quadrature().size(), VectorType(n_components));
-            solution_dot.resize(scratch_data.fe_values.get_quadrature().size(), VectorType(n_components));
           }
 
           const uint n_components;
 
           FEValues<dim> fe_values;
 
-          std::vector<VectorType> solution;
-          std::vector<VectorType> solution_dot;
+          const VectorType &solution_global;
+        };
+
+        template <int dim, typename NumberType, typename CopyDataType> class copy_from_cell_to_array
+        {
+          using Cache_Vector = std::vector<Cache_Data<dim, NumberType>>;
+
+        public:
+          copy_from_cell_to_array(Cache_Vector &cache_data) : cache_data(cache_data) {}
+          copy_from_cell_to_array() = delete;
+          void operator()(const typename DoFHandler<dim>::active_cell_iterator &cell,
+                          internal::ScratchData<dim, NumberType> &scratch_data, CopyDataType & /* copy_data */)
+          {
+            Cache_Data<dim, NumberType> &user_cell = cache_data[cell->index()];
+            user_cell.position = cell->center();
+
+            scratch_data.fe_values.reinit(cell);
+            const auto &fe_v = scratch_data.fe_values;
+            const auto n_dofs = scratch_data.fe_values.get_fe().n_dofs_per_cell();
+            std::vector<NumberType> solution(n_dofs);
+            fe_v.get_function_values(scratch_data.solution_global, solution);
+            user_cell.u = solution[0];
+            const auto &left_neighbor = cell->neighbor(0);
+            const auto &right_neighbor = cell->neighbor(1);
+            if (left_neighbor->state() == dealii::IteratorState::valid)
+              user_cell.left_neighbor = std::ref(cache_data[left_neighbor->index()]);
+            if (right_neighbor->state() == dealii::IteratorState::valid)
+              user_cell.right_neighbor = std::ref(cache_data[right_neighbor->index()]);
+          }
+
+        private:
+          Cache_Vector &cache_data;
         };
 
         // TODO fewer memory allocations
@@ -259,14 +298,14 @@ namespace DiFfRG
             (void)EoMfun;
             outputter(data_out, Point<0>(), fv_tie(variables));
           };
-          model.template readouts_multiple(helper, data_out);
+          model.template readouts_multiple<0>(helper, data_out);
         }
 
         virtual void mass(VectorType &mass, const VectorType &solution_global, const VectorType &solution_global_dot,
                           NumberType weight) override
         {
           using Iterator = typename DoFHandler<dim>::active_cell_iterator;
-          using Scratch = internal::ScratchData<Discretization>;
+          using Scratch = internal::ScratchData<dim, NumberType>;
           using CopyData = internal::CopyData_R<NumberType>;
           const auto &constraints = discretization.get_constraints();
 
@@ -280,7 +319,7 @@ namespace DiFfRG
             const auto &q_points = fe_v.get_quadrature_points();
             const auto &q_indices = fe_v.quadrature_point_indices();
 
-            auto &solution = scratch_data.solution;
+            auto &solution = scratch_data.solution_global;
             auto &solution_dot = scratch_data.solution_dot;
             fe_v.get_function_values(solution_global, solution);
             fe_v.get_function_values(solution_global_dot, solution_dot);
@@ -315,21 +354,27 @@ namespace DiFfRG
                               const VectorType &variables = VectorType()) override
         {
           using Iterator = typename DoFHandler<dim>::active_cell_iterator;
-          using Scratch = internal::ScratchData<Discretization>;
+          using Scratch = internal::ScratchData<dim, NumberType>;
           using CopyData = internal::CopyData_R<NumberType>;
           const auto &constraints = discretization.get_constraints();
+          const auto number_of_cells = discretization.get_triangulation().n_active_cells();
+          std::array<internal::Cache_Data<dim, NumberType>, n_components> cached_array{};
+          Scratch scratch_data(mapping, discretization.get_fe(), quadrature, solution_global);
 
           const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
-            scratch_data.fe_values.reinit(cell);
+            scratch_data.fe_values.reinit(cell); // this sort of reinitializes the FEValues for a given cell
             const auto &fe_v = scratch_data.fe_values;
-            const uint n_dofs = fe_v.get_fe().n_dofs_per_cell();
+            const uint n_dofs = fe_v.get_fe().n_dofs_per_cell(); // should this be one?
 
-            copy_data.reinit(cell, n_dofs);
-            const auto &JxW = fe_v.get_JxW_values();
-            const auto &q_points = fe_v.get_quadrature_points();
-            const auto &q_indices = fe_v.quadrature_point_indices();
+            copy_data.reinit(cell, n_dofs); // this prepares the local data structures, although I think this is
+                                            // also clear, since we use a zeroth order FV method
+            const auto &JxW = fe_v.get_JxW_values();             // these are the quardrature weight times the jacobian
+                                                                 // determinat, which would exist in a volume integral
+            const auto &q_points = fe_v.get_quadrature_points(); // these are the quadrateure points
+            const auto &q_indices =
+                fe_v.quadrature_point_indices(); // these are the indices, so one can loop over them later on
 
-            auto &solution = scratch_data.solution;
+            auto &solution = scratch_data.solution_global;
             auto &solution_dot = scratch_data.solution_dot;
             fe_v.get_function_values(solution_global, solution);
             fe_v.get_function_values(solution_global_dot, solution_dot);
@@ -357,7 +402,6 @@ namespace DiFfRG
             constraints.distribute_local_to_global(c.cell_mass, c.local_dof_indices, residual);
           };
 
-          Scratch scratch_data(mapping, discretization.get_fe(), quadrature);
           CopyData copy_data;
           MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
 
@@ -372,7 +416,7 @@ namespace DiFfRG
                                    NumberType beta = 1.) override
         {
           using Iterator = typename DoFHandler<dim>::active_cell_iterator;
-          using Scratch = internal::ScratchData<Discretization>;
+          using Scratch = internal::ScratchData<dim, NumberType>;
           using CopyData = internal::CopyData_J<NumberType>;
           const auto &constraints = discretization.get_constraints();
 
@@ -386,7 +430,7 @@ namespace DiFfRG
             const auto &q_points = fe_v.get_quadrature_points();
             const auto &q_indices = fe_v.quadrature_point_indices();
 
-            auto &solution = scratch_data.solution;
+            auto &solution = scratch_data.solution_global;
             auto &solution_dot = scratch_data.solution_dot;
             fe_v.get_function_values(solution_global, solution);
             fe_v.get_function_values(solution_global_dot, solution_dot);
@@ -429,7 +473,7 @@ namespace DiFfRG
                               const VectorType &variables = VectorType()) override
         {
           using Iterator = typename DoFHandler<dim>::active_cell_iterator;
-          using Scratch = internal::ScratchData<Discretization>;
+          using Scratch = internal::ScratchData<dim, NumberType>;
           using CopyData = internal::CopyData_J<NumberType>;
           const auto &constraints = discretization.get_constraints();
 
@@ -443,7 +487,7 @@ namespace DiFfRG
             const auto &q_points = fe_v.get_quadrature_points();
             const auto &q_indices = fe_v.quadrature_point_indices();
 
-            auto &solution = scratch_data.solution;
+            auto &solution = scratch_data.solution_global;
             auto &solution_dot = scratch_data.solution_dot;
             fe_v.get_function_values(solution_global, solution);
             fe_v.get_function_values(solution_global_dot, solution_dot);

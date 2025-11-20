@@ -52,7 +52,7 @@ namespace DiFfRG
     void set_Lambda(const double Lambda);
 
   private:
-    const JSONValue &json;
+    [[maybe_unused]] const JSONValue &json;
     const std::string top_folder;
     const std::string output_name;
     std::ofstream output_stream;
