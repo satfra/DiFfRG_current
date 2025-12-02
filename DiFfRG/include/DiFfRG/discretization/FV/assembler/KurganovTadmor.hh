@@ -3,6 +3,7 @@
 // external libraries
 
 // DiFfRG
+#include <cstddef>
 #include <deal.II/base/multithread_info.h>
 #include <deal.II/base/quadrature_lib.h>
 #include <deal.II/base/timer.h>
@@ -18,6 +19,7 @@
 #include <deal.II/numerics/fe_field_function.h>
 #include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/vector_tools.h>
+#include <functional>
 #include <iostream>
 #include <petscvec.h>
 #include <spdlog/spdlog.h>
@@ -27,6 +29,8 @@
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 
 #include <DiFfRG/discretization/common/types.hh>
+#include <iterator>
+#include <utility>
 #include <vector>
 
 namespace DiFfRG
@@ -43,8 +47,9 @@ namespace DiFfRG
         template <int dim, typename NumberType> struct Cache_Data {
           dealii::Point<1> position;
           NumberType u;
-          std::optional<std::reference_wrapper<Cache_Data<dim, NumberType>>> left_neighbor;
-          std::optional<std::reference_wrapper<Cache_Data<dim, NumberType>>> right_neighbor;
+          NumberType du_dx_half;
+          std::optional<std::reference_wrapper<const Cache_Data<dim, NumberType>>> left_neighbor;
+          std::optional<std::reference_wrapper<const Cache_Data<dim, NumberType>>> right_neighbor;
         };
 
         /**
@@ -78,6 +83,55 @@ namespace DiFfRG
           const VectorType &solution_global;
         };
 
+        template <int dim, typename NumberType> class GhostLayer
+        {
+          using boundary_condition_type =
+              std::function<void(std::vector<internal::Cache_Data<dim, NumberType>> &,
+                                 internal::Cache_Data<dim, NumberType> &, internal::Cache_Data<dim, NumberType> &)>;
+
+        public:
+          GhostLayer() = delete;
+          GhostLayer(std::vector<internal::Cache_Data<dim, NumberType>> &cache_data,
+                     boundary_condition_type left_boundary_condition, boundary_condition_type right_boundary_condition)
+              : _cache_data(cache_data)
+          {
+            left_boundary_condition(_cache_data, _left_left_boundary_cell, _left_boundary_cell);
+            right_boundary_condition(_cache_data, _right_boundary_cell, _right_right_boundary_cell);
+          }
+
+          size_t size() const { return _cache_data.size() + 4; }
+
+          void execute_parallel_function(std::function<void(Cache_Data<dim, NumberType> &)> func)
+          {
+            tbb::parallel_for(tbb::blocked_range<size_t>(0, this->size()),
+
+                              // 2. The Lambda function (receives a sub-range 'r')
+                              [&](const tbb::blocked_range<size_t> &r) {
+                                // 3. Iterate over the sub-range assigned to this thread
+                                for (size_t i = r.begin(); i != r.end(); ++i) {
+                                  func((*this)[i]);
+                                }
+                              });
+          }
+
+          Cache_Data<dim, NumberType> &operator[](size_t i)
+          {
+            if (i == 0) return _left_left_boundary_cell;
+            if (i == 1) return _left_boundary_cell;
+            if (i < _cache_data.size() + 2) return _cache_data[i - 2];
+            if (i == _cache_data.size() + 2) return _right_boundary_cell;
+            return _right_right_boundary_cell;
+          }
+
+        private:
+          std::vector<internal::Cache_Data<dim, NumberType>> &_cache_data;
+          Cache_Data<dim, NumberType> _left_left_boundary_cell, _left_boundary_cell, _right_boundary_cell,
+              _right_right_boundary_cell;
+        };
+
+        template <int dim, typename NumberType> void begin(GhostLayer<dim, NumberType>) {}
+        template <int dim, typename NumberType> void end(GhostLayer<dim, NumberType>) {}
+
         template <int dim, typename NumberType, typename CopyDataType> class copy_from_cell_to_array
         {
           using Cache_Vector = std::vector<Cache_Data<dim, NumberType>>;
@@ -107,6 +161,21 @@ namespace DiFfRG
 
         private:
           Cache_Vector &cache_data;
+        };
+
+        template <int dim, typename NumberType> class compute_intermediate_derivates
+        {
+        public:
+          compute_intermediate_derivates() {}
+          void operator()(Cache_Data<dim, NumberType> &cache_data) const
+          {
+            static_assert(dim == 1, "not implemented for dim > 1");
+            if (cache_data.right_neighbor.has_value()) {
+              const auto &right_neighbor = cache_data.right_neighbor->get();
+              cache_data.du_dx_half =
+                  (cache_data.u - right_neighbor.u) / (cache_data.position[0] - right_neighbor.position[0]);
+            }
+          }
         };
 
         // TODO fewer memory allocations
@@ -179,6 +248,48 @@ namespace DiFfRG
         };
       } // namespace internal
 
+      template <int dim, typename NumberType>
+      void LeftAntisymmetricBoundary(std::vector<internal::Cache_Data<dim, NumberType>> &cache_data,
+                                     internal::Cache_Data<dim, NumberType> &left_left_boundary_cell,
+                                     internal::Cache_Data<dim, NumberType> &left_boundary_cell)
+      {
+        using internal::Cache_Data;
+        left_boundary_cell.u = -cache_data[0].u;
+        left_left_boundary_cell.u = -cache_data[1].u;
+
+        double dx = cache_data[1].position[0] - cache_data[0].position[0];
+        left_boundary_cell.position = cache_data[0].position - Point<dim>(dx);
+        left_left_boundary_cell.position = cache_data[0].position - 2.0 * Point<dim>(dx);
+
+        left_boundary_cell.left_neighbor = std::ref(left_left_boundary_cell);
+        left_boundary_cell.right_neighbor = std::ref(cache_data[0]);
+        left_left_boundary_cell.right_neighbor = std::ref(left_boundary_cell);
+
+        cache_data[0].left_neighbor = std::ref(left_boundary_cell);
+      }
+
+      template <int dim, typename NumberType>
+      void RightExtrapolationBoundary(std::vector<internal::Cache_Data<dim, NumberType>> &cache_data,
+                                      internal::Cache_Data<dim, NumberType> &right_boundary_cell,
+                                      internal::Cache_Data<dim, NumberType> &right_right_boundary_cell)
+      {
+        using internal::Cache_Data;
+        static_assert(dim == 1, "not implemented for dim > 1");
+        const size_t N = cache_data.size();
+        double dx = cache_data[N - 1].position[0] - cache_data[N - 2].position[0];
+        double du = cache_data[N - 1].u - cache_data[N - 2].u;
+        right_boundary_cell.u = cache_data[N - 1].u + du;
+        right_right_boundary_cell.u = cache_data[N - 1].u + 2 * du;
+        right_boundary_cell.position = cache_data[N - 1].position + Point<dim>(dx);
+        right_right_boundary_cell.position = cache_data[N - 1].position + 2 * Point<dim>(dx);
+
+        right_boundary_cell.left_neighbor = std::ref(cache_data[N - 1]);
+        right_boundary_cell.right_neighbor = std::ref(right_right_boundary_cell);
+        right_right_boundary_cell.left_neighbor = std::ref(right_boundary_cell);
+
+        cache_data[N - 1].right_neighbor = std::ref(right_boundary_cell);
+      }
+
       template <typename Discretization_, typename Model_>
         requires MeshIsRectangular<typename Discretization_::Mesh>
       class Assembler : public AbstractAssembler<typename Discretization_::VectorType,
@@ -236,7 +347,7 @@ namespace DiFfRG
         virtual IndexSet get_differential_indices() const override { return IndexSet(); }
 
         virtual void attach_data_output(DataOutput<dim, VectorType> &data_out, const VectorType &solution,
-                                        const VectorType &variables, const VectorType &dt_solution = VectorType(),
+                                        const VectorType & /* variables*/, const VectorType &dt_solution = VectorType(),
                                         const VectorType &residual = VectorType())
         {
           const auto fe_function_names = Components::FEFunction_Descriptor::get_names_vector();
@@ -351,7 +462,7 @@ namespace DiFfRG
 
         virtual void residual(VectorType &residual, const VectorType &solution_global, NumberType weight,
                               const VectorType &solution_global_dot, NumberType weight_mass,
-                              const VectorType &variables = VectorType()) override
+                              const VectorType & /* variables */ = VectorType()) override
         {
           using Iterator = typename DoFHandler<dim>::active_cell_iterator;
           using Scratch = internal::ScratchData<dim, NumberType>;
@@ -470,7 +581,7 @@ namespace DiFfRG
 
         virtual void jacobian(SparseMatrix<NumberType> &jacobian, const VectorType &solution_global, NumberType weight,
                               const VectorType &solution_global_dot, NumberType alpha, NumberType beta,
-                              const VectorType &variables = VectorType()) override
+                              const VectorType & /* variables */ = VectorType()) override
         {
           using Iterator = typename DoFHandler<dim>::active_cell_iterator;
           using Scratch = internal::ScratchData<dim, NumberType>;
@@ -534,7 +645,7 @@ namespace DiFfRG
 
         void build_sparsity(SparsityPattern &sparsity_pattern, const DoFHandler<dim> &to_dofh,
                             const DoFHandler<dim> &from_dofh, const int stencil = 1,
-                            bool add_extractor_dofs = false) const
+                            bool /* add_extractor_dofs */ = false) const
         {
           const auto &triangulation = discretization.get_triangulation();
 
