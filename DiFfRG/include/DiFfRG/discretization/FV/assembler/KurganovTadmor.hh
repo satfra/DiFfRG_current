@@ -48,6 +48,8 @@ namespace DiFfRG
           dealii::Point<1> position;
           NumberType u;
           NumberType du_dx_half;
+          NumberType reconstructed_du;
+          NumberType u_plus, u_minus;
           std::optional<std::reference_wrapper<const Cache_Data<dim, NumberType>>> left_neighbor;
           std::optional<std::reference_wrapper<const Cache_Data<dim, NumberType>>> right_neighbor;
         };
@@ -160,6 +162,11 @@ namespace DiFfRG
           Cache_Vector &cache_data;
         };
 
+        template <typename NumberType> NumberType limiter(NumberType r)
+        {
+          return std::max(NumberType{0}, std::min(NumberType{1}, r));
+        }
+
         template <int dim, typename NumberType> class compute_intermediate_derivates
         {
         public:
@@ -167,10 +174,37 @@ namespace DiFfRG
           void operator()(Cache_Data<dim, NumberType> &cache_data) const
           {
             static_assert(dim == 1, "not implemented for dim > 1");
+            compute_half_derivative(cache_data);
+            compute_reconstruction(cache_data);
+          }
+
+        private:
+          static void compute_half_derivative(Cache_Data<dim, NumberType> &cache_data)
+          {
             if (cache_data.right_neighbor.has_value()) {
               const auto &right_neighbor = cache_data.right_neighbor->get();
               cache_data.du_dx_half =
                   (cache_data.u - right_neighbor.u) / (cache_data.position[0] - right_neighbor.position[0]);
+            }
+          }
+
+          static void compute_reconstruction(Cache_Data<dim, NumberType> &cache_data)
+          {
+            if (cache_data.left_neighbor.has_value() && cache_data.right_neighbor.has_value()) {
+              auto left_cell = cache_data.left_neighbor->get();
+              auto right_cell = cache_data.right_neighbor->get();
+              auto r_value = (cache_data.u - left_cell.u) / (right_cell.u - cache_data.u);
+              cache_data.reconstructed_du = cache_data.du_dx_half * internal::limiter(r_value);
+
+              auto upper_cell_boundary = (right_cell.position + cache_data.position) / 2.0;
+              auto lower_cell_boundary = (left_cell.position + cache_data.position) / 2.0;
+
+              auto dx = upper_cell_boundary - lower_cell_boundary;
+
+              static_assert(dim == 1, "not implemented for dim > 1");
+
+              cache_data.u_plus = cache_data.u + dx[0] / 2.0 * cache_data.reconstructed_du;
+              cache_data.u_minus = cache_data.u - dx[0] / 2.0 * cache_data.reconstructed_du;
             }
           }
         };

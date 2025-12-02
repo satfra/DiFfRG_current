@@ -165,4 +165,15 @@ TEST_CASE_METHOD(CacheDataWithNeighborsFixture, "Compute intermediate derivative
   CHECK(cache_data[1].du_dx_half == 8.0);  // (25 - 9) / (5 - 3)
   CHECK(cache_data[2].du_dx_half == 12.0); // (49 - 25) / (7 - 5)
   CHECK(cache_data[3].du_dx_half == 12.0); // linear extrapolation at the right boundary
+
+  // the limiter is \phi(r) = max(0, min(1, r))
+  CHECK(cache_data[0].reconstructed_du == Catch::Approx(cache_data[0].du_dx_half * 0.25));
+  CHECK(cache_data[2].reconstructed_du == Catch::Approx(cache_data[2].du_dx_half * 0.66666666666667));
+  CHECK(ghost_layer[6].reconstructed_du == Catch::Approx(ghost_layer[6].du_dx_half));
+
+  CHECK(cache_data[0].u_plus == Catch::Approx(2.0));
+  CHECK(cache_data[0].u_minus == Catch::Approx(0.0));
+
+  CHECK(ghost_layer[6].u_plus == Catch::Approx(85.0));
+  CHECK(ghost_layer[6].u_minus == Catch::Approx(61.0));
 }
