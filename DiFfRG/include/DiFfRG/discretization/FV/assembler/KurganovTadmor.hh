@@ -44,6 +44,11 @@ namespace DiFfRG
       namespace internal
       {
 
+        template <typename... T> auto flux_tie(T &&...t)
+        {
+          return named_tuple<std::tuple<T &...>, StringSet<"fe_functions">>(std::tie(t...));
+        }
+
         template <int dim, typename NumberType> struct Cache_Data {
           dealii::Point<1> position;
           NumberType u;

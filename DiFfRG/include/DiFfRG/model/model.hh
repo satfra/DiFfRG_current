@@ -132,10 +132,28 @@ namespace DiFfRG
       {
       }
 
-        // Just to avoid warnings
-        (void)F_i;
-        (void)x;
-        (void)sol;
+      /**
+       * @brief If the Kurganov Tadmor Scheme is used, this is the implementation of the advection flux. \f$F_i(u_j, x)$
+       *
+       * @remarks although the design of DiFfRG allows you to have a \f$\partial_x u$ dependent advection flux, the
+       * implementation is not designed to handle such cases.
+       *
+       * @note The standard implementation of this method simply sets \f$F_i = 0\f$.
+       *
+       * @param F_i the resulting flux function \f$F_i\f$, with \f$N_f\f$ components.
+       * This method should fill this argument with the desired structure of the flow equation.
+       * @param x a d-dimensional dealii::Point<dim> representing field coordinates.
+       * @param sol a `std::tuple<...>` which contains
+       * 1. the array u_j
+       * 2. the array of arrays \f$\partial_x u_j\f$
+       * 3. the array of arrays of arrays \f$\partial_x^2 u_j\f$
+       * 4. the array of extractors \f$e_b\f$
+       */
+      template <int dim, typename NumberType, typename Solutions, size_t n_fe_functions>
+      void KurganovTadmor_advection_flux([[maybe_unused]] std::array<Tensor<1, dim, NumberType>, n_fe_functions> &F_i,
+                                         [[maybe_unused]] const Point<dim> &x,
+                                         [[maybe_unused]] const Solutions &sol) const
+      {
       }
 
       /**

@@ -5,9 +5,9 @@
 #include "catch2/catch_test_macros.hpp"
 #include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
 #include <algorithm>
+#include <autodiff/forward/real.hpp>
 #include <deal.II/lac/vector.h>
 #include <deal.II/meshworker/mesh_loop.h>
-#include <iterator>
 #include <oneapi/tbb/parallel_for_each.h>
 #include <petscvec.h>
 #include <vector>
@@ -176,4 +176,21 @@ TEST_CASE_METHOD(CacheDataWithNeighborsFixture, "Compute intermediate derivative
 
   CHECK(ghost_layer[6].u_plus == Catch::Approx(85.0));
   CHECK(ghost_layer[6].u_minus == Catch::Approx(61.0));
+}
+
+TEST_CASE("Compute Advection Flux Derivaives", "[KT]")
+{
+  // using ADNumberType = autodiff::Real<1, double>;
+  // auto KurganovTadmor_advection_flux =
+  //     []([[maybe_unused]] std::array<Tensor<1, dim, ADNumberType>, 1> &F_i, [[maybe_unused]] const Point<dim> &x,
+  //        [[maybe_unused]] const dealii::Vector<ADNumberType> &sol) { return 1.0 / sqrt(1.0 + x[0]); };
+  // // autodiff::Real<1, double> bla(1.0);
+  // // seed(bla);
+  // std::array<Tensor<1, dim, ADNumberType>, 1> F_i;
+  // Point<dim> x{};
+  // // dealii::Vector<ADNumberType> sol(1);
+  // // sol[0] = 1.0;
+  // // seed(sol[0]);
+  // // KurganovTadmor_advection_flux(F_i, x, sol);
+  // CHECK(F_i.front()[1] == -0.1767766953);
 }
