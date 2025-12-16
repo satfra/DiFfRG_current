@@ -76,15 +76,29 @@ namespace DiFfRG
     named_tuple(tuple_type &&t) : tuple(t) {}
     named_tuple(tuple_type &t) : tuple(t) {}
 
+    /**
+    @brief Convert from a tuple to a named_tuple.
+
+    This is typically used, to create a named_tuple with AutoDiff types.
+     */
     template <typename... T> static constexpr auto as(std::tuple<T...> &&tup)
     {
       return named_tuple<std::tuple<T...>, tuple_names>(tup);
     }
+
+    /**
+    @brief Convert from a tuple to a named_tuple.
+
+    This is typically used, to create a named_tuple with AutoDiff types.
+     */
     template <typename... T> static constexpr auto as(std::tuple<T...> &tup)
     {
       return named_tuple<std::tuple<T...>, tuple_names>(tup);
     }
 
+    /*
+     * @brief Get the index of the element with the given name.
+     */
     static consteval size_t get_idx(const char *name)
     {
       size_t running_sum = 0;

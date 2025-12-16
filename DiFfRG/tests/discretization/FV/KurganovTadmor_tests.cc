@@ -1,6 +1,8 @@
+#include "DiFfRG/common/tuples.hh"
 #include "DiFfRG/discretization/FV/assembler/KurganovTadmor.hh"
 #include "DiFfRG/discretization/FV/discretization.hh"
 #include "DiFfRG/discretization/mesh/configuration_mesh.hh"
+#include "DiFfRG/model/model.hh"
 #include "catch2/catch_approx.hpp"
 #include "catch2/catch_test_macros.hpp"
 #include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
@@ -10,6 +12,7 @@
 #include <deal.II/meshworker/mesh_loop.h>
 #include <oneapi/tbb/parallel_for_each.h>
 #include <petscvec.h>
+#include <tuple>
 #include <vector>
 
 const int dim = 1;
@@ -168,7 +171,7 @@ TEST_CASE_METHOD(CacheDataWithNeighborsFixture, "Compute intermediate derivative
 
   // the limiter is \phi(r) = max(0, min(1, r))
   CHECK(cache_data[0].reconstructed_du == Catch::Approx(cache_data[0].du_dx_half * 0.25));
-  CHECK(cache_data[2].reconstructed_du == Catch::Approx(cache_data[2].du_dx_half * 0.66666666666667));
+  CHECK(cache_data[2].reconstructed_du == Catch::Approx(cache_data[3].du_dx_half * 0.66666666666667));
   CHECK(ghost_layer[6].reconstructed_du == Catch::Approx(ghost_layer[6].du_dx_half));
 
   CHECK(cache_data[0].u_plus == Catch::Approx(2.0));
@@ -178,19 +181,54 @@ TEST_CASE_METHOD(CacheDataWithNeighborsFixture, "Compute intermediate derivative
   CHECK(ghost_layer[6].u_minus == Catch::Approx(61.0));
 }
 
-TEST_CASE("Compute Advection Flux Derivaives", "[KT]")
+using FEFunctionDesc = DiFfRG::FEFunctionDescriptor<DiFfRG::Scalar<"u">>;
+using Components = DiFfRG::ComponentDescriptor<FEFunctionDesc>;
+constexpr auto idxf = FEFunctionDesc{};
+
+class TestModel : public DiFfRG::def::AbstractModel<TestModel, Components>
 {
-  // using ADNumberType = autodiff::Real<1, double>;
-  // auto KurganovTadmor_advection_flux =
-  //     []([[maybe_unused]] std::array<Tensor<1, dim, ADNumberType>, 1> &F_i, [[maybe_unused]] const Point<dim> &x,
-  //        [[maybe_unused]] const dealii::Vector<ADNumberType> &sol) { return 1.0 / sqrt(1.0 + x[0]); };
-  // // autodiff::Real<1, double> bla(1.0);
-  // // seed(bla);
-  // std::array<Tensor<1, dim, ADNumberType>, 1> F_i;
-  // Point<dim> x{};
-  // // dealii::Vector<ADNumberType> sol(1);
-  // // sol[0] = 1.0;
-  // // seed(sol[0]);
-  // // KurganovTadmor_advection_flux(F_i, x, sol);
-  // CHECK(F_i.front()[1] == -0.1767766953);
+public:
+  template <int dim, typename NumberType, typename Solutions, size_t n_fe_functions>
+  static void
+  KurganovTadmor_advection_flux([[maybe_unused]] std::array<Tensor<1, dim, NumberType>, n_fe_functions> &F_i,
+                                [[maybe_unused]] const Point<dim> &x, [[maybe_unused]] const Solutions &sol)
+  {
+    auto u = get<"fe_functions">(sol);
+    auto x2 = x[0] * x[0];
+    F_i[idxf("u")][0] = 1.0 / sqrt(1.0 + x2 + u);
+  }
+};
+
+TEST_CASE_METHOD(CacheDataWithNeighborsFixture, "Compute Advection Flux Derivaives", "[KT]")
+{
+  GhostLayer<dim, NumberType> ghost_layer(cache_data,
+                                          DiFfRG::FV::KurganovTadmor::LeftAntisymmetricBoundary<dim, NumberType>,
+                                          DiFfRG::FV::KurganovTadmor::RightExtrapolationBoundary<dim, NumberType>);
+
+  TestModel model;
+  auto functor_val = DiFfRG::FV::KurganovTadmor::internal::compute_flux_derivative<1, NumberType, TestModel>(model);
+
+  ghost_layer.execute_parallel_function(functor_val);
+
+  auto reference_derivative = [](double x, double u) {
+    double x2 = x * x;
+    return -0.5 / ((1.0 + x2 + u) * sqrt(1.0 + x2 + u));
+  };
+
+  for (size_t i = 0; i < ghost_layer.size() - 1; ++i) {
+    DYNAMIC_SECTION(" upper volume flux derivative i = " << i)
+    {
+      auto position = (ghost_layer[i].position[0] + ghost_layer[i + 1].position[0]) / 2.0;
+      double ref = reference_derivative(position, ghost_layer[i].u_plus);
+      CHECK(ghost_layer[i].upper_flux_derivative == Catch::Approx(ref));
+    }
+  }
+  for (size_t i = 1; i < ghost_layer.size(); ++i) {
+    DYNAMIC_SECTION(" lower volume flux derivative i = " << i)
+    {
+      auto position = (ghost_layer[i - 1].position[0] + ghost_layer[i].position[0]) / 2.0;
+      double ref = reference_derivative(position, ghost_layer[i].u_minus);
+      CHECK(ghost_layer[i].lower_flux_derivative == Catch::Approx(ref));
+    }
+  }
 }

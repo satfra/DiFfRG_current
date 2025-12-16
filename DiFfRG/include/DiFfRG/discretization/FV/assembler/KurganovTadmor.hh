@@ -57,6 +57,9 @@ namespace DiFfRG
           NumberType u_plus, u_minus;
           std::optional<std::reference_wrapper<const Cache_Data<dim, NumberType>>> left_neighbor;
           std::optional<std::reference_wrapper<const Cache_Data<dim, NumberType>>> right_neighbor;
+
+          NumberType upper_flux_derivative;
+          NumberType lower_flux_derivative;
         };
 
         /**
@@ -171,6 +174,48 @@ namespace DiFfRG
         {
           return std::max(NumberType{0}, std::min(NumberType{1}, r));
         }
+
+        template <int dim, typename NumberType, typename Model> class compute_flux_derivative
+        {
+        public:
+          compute_flux_derivative() = delete;
+          compute_flux_derivative(const Model &model) : model(model) {}
+
+          void operator()(Cache_Data<dim, NumberType> &cache_data) const
+          {
+            static_assert(dim == 1, "not implemented for dim > 1");
+            using ADNumberType = autodiff::Real<1, double>;
+
+            std::array<Tensor<1, dim, ADNumberType>, 1> F_i;
+            ADNumberType du_upper = cache_data.u_plus;
+            ADNumberType du_lower = cache_data.u_minus;
+
+            // Determine cell width and interface positions
+            Point<dim> dx;
+            if (cache_data.right_neighbor.has_value())
+              dx = cache_data.right_neighbor->get().position - cache_data.position;
+            else
+              dx = cache_data.position - cache_data.left_neighbor->get().position;
+
+            Point<dim> x_upper = cache_data.position + dx * 0.5;
+            Point<dim> x_lower =
+                cache_data.position + dx * (-0.5); // (-0.5) the minus has to go into the scalar multiplication, since
+                                                   // the operator- is not defined for Point
+
+            // Compute flux derivatives at upper interface
+            seed(du_upper);
+            model.KurganovTadmor_advection_flux(F_i, x_upper, flux_tie(du_upper));
+            cache_data.upper_flux_derivative = F_i[0][0][1];
+
+            // Compute flux derivatives at lower interface
+            seed(du_lower);
+            model.KurganovTadmor_advection_flux(F_i, x_lower, flux_tie(du_lower));
+            cache_data.lower_flux_derivative = F_i[0][0][1];
+          }
+
+        private:
+          const Model model;
+        };
 
         template <int dim, typename NumberType> class compute_intermediate_derivates
         {
