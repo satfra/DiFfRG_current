@@ -186,7 +186,7 @@ namespace DiFfRG
     const size_t total_size;
 
     using ViewType = Kokkos::View<NT ***, DefaultMemorySpace, Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
-    using HostViewType = typename ViewType::HostMirror;
+    using HostViewType = typename ViewType::host_mirror_type;
 
     ViewType device_data;
     HostViewType host_data;

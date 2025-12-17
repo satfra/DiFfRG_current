@@ -55,12 +55,6 @@ message(
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
-if(APPLE)
-  set(BLAS_LIBRARY_PATH "${DEPEND_INSTALL_PREFIX}/lib/libopenblasDiFfRG.dylib")
-else()
-  set(BLAS_LIBRARY_PATH "${DEPEND_INSTALL_PREFIX}/lib/libopenblasDiFfRG.so")
-endif()
-
 # ##############################################################################
 # Find out which backends are available
 # ##############################################################################
@@ -132,6 +126,8 @@ message("")
 
 include(ExternalProject)
 
+option(BUILD_OpenBLAS "Build OpenBLAS" OFF)
+
 # build general deps
 ExternalProject_Add(
   general_dep
@@ -148,7 +144,17 @@ ExternalProject_Add(
     -DCMAKE_CXX_FLAGS:STRING=-march=native
     -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+    -DBUILD_OpenBLAS:BOOL=${BUILD_OpenBLAS}
     -DENABLE_MPI:BOOL=${ENABLE_MPI})
+
+if(BUILD_OpenBLAS)
+  if(APPLE)
+    set(BLAS_LIBRARY_PATH
+        "${DEPEND_INSTALL_PREFIX}/lib/libopenblasDiFfRG.dylib")
+  else()
+    set(BLAS_LIBRARY_PATH "${DEPEND_INSTALL_PREFIX}/lib/libopenblasDiFfRG.so")
+  endif()
+endif()
 
 # build sundials
 ExternalProject_Add(
@@ -255,7 +261,7 @@ ExternalProject_Add(
   LOG_INSTALL ON
   LOG_OUTPUT_ON_FAILURE ON
   GIT_REPOSITORY https://github.com/kokkos/kokkos.git
-  GIT_TAG 4.6.01
+  GIT_TAG 5.0.0
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/kokkos
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
   DEPENDS general_dep sundials_dep autodiff_dep
@@ -282,28 +288,37 @@ ExternalProject_Add(
 # PETSc
 # ##############################################################################
 
-# build PETSc
-ExternalProject_Add(
-  petsc_dep
-  LOG_CONFIGURE ON
-  LOG_INSTALL ON
-  LOG_OUTPUT_ON_FAILURE ON
-  DEPENDS general_dep sundials_dep autodiff_dep kokkos_dep
-  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/petsc
-  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/petsc
-  INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
-  BUILD_COMMAND cmake -E echo "Skipping build step for PETSc."
-  INSTALL_COMMAND cmake -E echo "Skipping install step for PETSc."
-  # Propagate DEPEND_INSTALL_PREFIX to the dependencies
-  CMAKE_CACHE_ARGS
-    -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-    -DOpenBLAS_LIBRARY:STRING=${BLAS_LIBRARY_PATH}
-    -DHAVE_MPI:BOOL=${ENABLE_MPI})
+option(BUILD_PETSC "Build PETSc" OFF)
+
+if(BUILD_PETSC)
+  # build PETSc
+  ExternalProject_Add(
+    petsc_dep
+    LOG_CONFIGURE ON
+    LOG_INSTALL ON
+    LOG_OUTPUT_ON_FAILURE ON
+    DEPENDS general_dep sundials_dep autodiff_dep kokkos_dep
+    PREFIX ${CMAKE_CURRENT_BINARY_DIR}/petsc
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/petsc
+    INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
+    BUILD_COMMAND cmake -E echo "Skipping build step for PETSc."
+    INSTALL_COMMAND cmake -E echo "Skipping install step for PETSc."
+    # Propagate DEPEND_INSTALL_PREFIX to the dependencies
+    CMAKE_CACHE_ARGS
+      -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+      -DOpenBLAS_LIBRARY:STRING=${BLAS_LIBRARY_PATH}
+      -DHAVE_MPI:BOOL=${ENABLE_MPI})
+  set(is_petsc_dep petsc_dep)
+endif()
 
 # ##############################################################################
 # deal.II
 # ##############################################################################
+
+if(BUILD_OpenBLAS)
+  set(dealii_lapack "-DLAPACK_LIBRARIES:STRING=${BLAS_LIBRARY_PATH}")
+endif()
 
 # build deal.II
 ExternalProject_Add(
@@ -315,7 +330,7 @@ ExternalProject_Add(
   GIT_TAG v9.4.2
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/deal.II
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  DEPENDS general_dep boost_dep petsc_dep sundials_dep
+  DEPENDS general_dep boost_dep ${is_petsc_dep} sundials_dep
   CMAKE_CACHE_ARGS
     -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
     -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
@@ -325,13 +340,13 @@ ExternalProject_Add(
     -DCMAKE_POLICY_DEFAULT_CMP0167:STRING=NEW
     -DCMAKE_WARN_DEPRECATED:BOOL=OFF
     -DDEAL_II_CXX_FLAGS:STRING=-march=native
-    -DLAPACK_LIBRARIES:STRING=${BLAS_LIBRARY_PATH}
     -DDEAL_II_COMPONENT_EXAMPLES:BOOL=OFF
     -DDEAL_II_COMPONENT_DOCUMENTATION:BOOL=OFF
     -DDEAL_II_WITH_MPI:BOOL=${ENABLE_MPI}
     -DDEAL_II_WITH_KOKKOS:BOOL=OFF
     -DDEAL_II_WITH_UMFPACK:BOOL=ON
     -DDEAL_II_WITH_TASKFLOW:BOOL=OFF
+    ${dealii_lapack}
     -DDEAL_II_WITH_LAPACK:BOOL=ON
     -DDEAL_II_WITH_HDF5:BOOL=${HDF5_FOUND}
     -DHDF5_INCLUDE_DIRS:PATH=${HDF5_INCLUDE_DIRS}
