@@ -97,111 +97,6 @@ public:
   };
 };
 
-TEST_CASE_METHOD(CacheDataWithNeighborsFixture, "Generate boundary ghost cells", "[KT]")
-{
-  Cache_Data<1, NumberType> left_left_boundary_cell, left_boundary_cell;
-  DiFfRG::FV::KurganovTadmor::LeftAntisymmetricBoundary(cache_data, left_left_boundary_cell, left_boundary_cell);
-
-  Cache_Data<1, NumberType> right_boundary_cell, right_right_boundary_cell;
-  DiFfRG::FV::KurganovTadmor::RightExtrapolationBoundary(cache_data, right_boundary_cell, right_right_boundary_cell);
-
-  const size_t N = cache_data.size();
-
-  CHECK(left_boundary_cell.u == -1.0);
-  CHECK(left_left_boundary_cell.u == -9.0);
-  CHECK(right_boundary_cell.u == 73.0);
-  CHECK(right_right_boundary_cell.u == 97.0);
-
-  CHECK(left_boundary_cell.position[0] == -1.0);
-  CHECK(left_left_boundary_cell.position[0] == -3.0);
-  CHECK(right_boundary_cell.position[0] == 9.0);
-  CHECK(right_right_boundary_cell.position[0] == 11.0);
-
-  CHECK(cache_data[0].left_neighbor->get().position[0] == left_boundary_cell.position[0]);
-  CHECK(left_boundary_cell.right_neighbor->get().position[0] == cache_data[0].position[0]);
-  CHECK(left_boundary_cell.left_neighbor->get().position[0] == left_left_boundary_cell.position[0]);
-  CHECK(left_left_boundary_cell.right_neighbor->get().position[0] == left_boundary_cell.position[0]);
-  CHECK(!left_left_boundary_cell.left_neighbor.has_value());
-
-  CHECK(cache_data[N - 1].right_neighbor->get().position[0] == right_boundary_cell.position[0]);
-  CHECK(right_boundary_cell.left_neighbor->get().position[0] == cache_data[N - 1].position[0]);
-  CHECK(right_boundary_cell.right_neighbor->get().position[0] == right_right_boundary_cell.position[0]);
-  CHECK(right_right_boundary_cell.left_neighbor->get().position[0] == right_boundary_cell.position[0]);
-  CHECK(!right_right_boundary_cell.right_neighbor.has_value());
-};
-
-TEST_CASE_METHOD(CacheDataWithNeighborsFixture, "Access data via GhostLayer", "[KT]")
-{
-  GhostLayer<dim, NumberType> ghost_layer(cache_data,
-                                          DiFfRG::FV::KurganovTadmor::LeftAntisymmetricBoundary<dim, NumberType>,
-                                          DiFfRG::FV::KurganovTadmor::RightExtrapolationBoundary<dim, NumberType>);
-
-  CHECK(ghost_layer[0].position[0] == -3.0);
-  CHECK(ghost_layer[1].position[0] == -1.0);
-  CHECK(ghost_layer[2].position[0] == 1.0);
-  CHECK(ghost_layer[3].position[0] == 3.0);
-  CHECK(ghost_layer[4].position[0] == 5.0);
-  CHECK(ghost_layer[5].position[0] == 7.0);
-  CHECK(ghost_layer[6].position[0] == 9.0);
-  CHECK(ghost_layer[7].position[0] == 11.0);
-
-  CHECK(ghost_layer[0].u == Catch::Approx(-9.0));
-  CHECK(ghost_layer[1].u == Catch::Approx(-1.0));
-  CHECK(ghost_layer[2].u == Catch::Approx(1.0));
-  CHECK(ghost_layer[3].u == Catch::Approx(9.0));
-  CHECK(ghost_layer[4].u == Catch::Approx(25.0));
-  CHECK(ghost_layer[5].u == Catch::Approx(49.0));
-  CHECK(ghost_layer[6].u == Catch::Approx(73.0));
-  CHECK(ghost_layer[7].u == Catch::Approx(97.0));
-}
-
-TEST_CASE_METHOD(CacheDataWithNeighborsFixture, "Compute dx", "[KT]")
-{
-  GhostLayer<dim, NumberType> ghost_layer(cache_data,
-                                          DiFfRG::FV::KurganovTadmor::LeftAntisymmetricBoundary<dim, NumberType>,
-                                          DiFfRG::FV::KurganovTadmor::RightExtrapolationBoundary<dim, NumberType>);
-
-  auto compute_dx = DiFfRG::FV::KurganovTadmor::internal::compute_dx<1, NumberType>();
-
-  ghost_layer.execute_parallel_function(compute_dx);
-
-  for (size_t i = 0; i < ghost_layer.size(); ++i) {
-    DYNAMIC_SECTION(" Ghost layer operator[] access i = " << i << " testing dx")
-    {
-      CHECK(ghost_layer[i].dx[0] == Catch::Approx(2.0));
-    }
-  }
-}
-
-TEST_CASE_METHOD(CacheDataWithNeighborsFixture, "Compute intermediate derivatives", "[KT]")
-{
-  GhostLayer<dim, NumberType> ghost_layer(cache_data,
-                                          DiFfRG::FV::KurganovTadmor::LeftAntisymmetricBoundary<dim, NumberType>,
-                                          DiFfRG::FV::KurganovTadmor::RightExtrapolationBoundary<dim, NumberType>);
-
-  auto compute_dx = DiFfRG::FV::KurganovTadmor::internal::compute_dx<1, NumberType>();
-  auto functor_val = DiFfRG::FV::KurganovTadmor::internal::compute_intermediate_derivates<1, NumberType>();
-
-  ghost_layer.execute_parallel_function(compute_dx);
-  ghost_layer.execute_parallel_function(functor_val);
-
-  CHECK(cache_data[0].du_dx_half == 4.0);  // (9 - 1) / (3 - 1)
-  CHECK(cache_data[1].du_dx_half == 8.0);  // (25 - 9) / (5 - 3)
-  CHECK(cache_data[2].du_dx_half == 12.0); // (49 - 25) / (7 - 5)
-  CHECK(cache_data[3].du_dx_half == 12.0); // linear extrapolation at the right boundary
-
-  // the limiter is \phi(r) = max(0, min(1, r))
-  CHECK(cache_data[0].reconstructed_du == Catch::Approx(cache_data[0].du_dx_half * 0.25));
-  CHECK(cache_data[2].reconstructed_du == Catch::Approx(cache_data[3].du_dx_half * 0.66666666666667));
-  CHECK(ghost_layer[6].reconstructed_du == Catch::Approx(ghost_layer[6].du_dx_half));
-
-  CHECK(cache_data[0].u_plus == Catch::Approx(2.0));
-  CHECK(cache_data[0].u_minus == Catch::Approx(0.0));
-
-  CHECK(ghost_layer[6].u_plus == Catch::Approx(85.0));
-  CHECK(ghost_layer[6].u_minus == Catch::Approx(61.0));
-}
-
 using FEFunctionDesc = DiFfRG::FEFunctionDescriptor<DiFfRG::Scalar<"u">>;
 using Components = DiFfRG::ComponentDescriptor<FEFunctionDesc>;
 constexpr auto idxf = FEFunctionDesc{};
@@ -220,40 +115,132 @@ public:
   }
 };
 
-TEST_CASE_METHOD(CacheDataWithNeighborsFixture, "Compute Advection Flux Derivaives", "[KT]")
+TEST_CASE_METHOD(CacheDataWithNeighborsFixture, "Kurganov Tadmor Pipeline", "[KT]")
 {
-  GhostLayer<dim, NumberType> ghost_layer(cache_data,
-                                          DiFfRG::FV::KurganovTadmor::LeftAntisymmetricBoundary<dim, NumberType>,
-                                          DiFfRG::FV::KurganovTadmor::RightExtrapolationBoundary<dim, NumberType>);
+  SECTION("Generate boundary ghost cells")
+  {
+    Cache_Data<1, NumberType> left_left_boundary_cell, left_boundary_cell;
+    DiFfRG::FV::KurganovTadmor::LeftAntisymmetricBoundary(cache_data, left_left_boundary_cell, left_boundary_cell);
 
-  TestModel model;
-  auto compute_dx = DiFfRG::FV::KurganovTadmor::internal::compute_dx<1, NumberType>();
-  auto functor_val = DiFfRG::FV::KurganovTadmor::internal::compute_intermediate_derivates<1, NumberType>();
-  auto functor_flux = DiFfRG::FV::KurganovTadmor::internal::compute_flux_derivative<1, NumberType, TestModel>(model);
+    Cache_Data<1, NumberType> right_boundary_cell, right_right_boundary_cell;
+    DiFfRG::FV::KurganovTadmor::RightExtrapolationBoundary(cache_data, right_boundary_cell, right_right_boundary_cell);
 
-  ghost_layer.execute_parallel_function(compute_dx);
-  ghost_layer.execute_parallel_function(functor_val);
-  ghost_layer.execute_parallel_function_without_first_boundary_cell(functor_flux);
+    const size_t N = cache_data.size();
 
-  auto reference_derivative = [](double x, double u) {
-    double x2 = x * x;
-    return -0.5 / ((1.0 + x2 + u) * sqrt(1.0 + x2 + u));
-  };
+    CHECK(left_boundary_cell.u == -1.0);
+    CHECK(left_left_boundary_cell.u == -9.0);
+    CHECK(right_boundary_cell.u == 73.0);
+    CHECK(right_right_boundary_cell.u == 97.0);
 
-  for (size_t i = 1; i < ghost_layer.size() - 1; ++i) {
-    DYNAMIC_SECTION(" upper volume flux derivative i = " << i)
-    {
-      auto position = (ghost_layer[i].position[0] + ghost_layer[i + 1].position[0]) / 2.0;
-      double ref = reference_derivative(position, ghost_layer[i].u_plus);
-      CHECK(ghost_layer[i].upper_flux_derivative == Catch::Approx(ref));
-    }
+    CHECK(left_boundary_cell.position[0] == -1.0);
+    CHECK(left_left_boundary_cell.position[0] == -3.0);
+    CHECK(right_boundary_cell.position[0] == 9.0);
+    CHECK(right_right_boundary_cell.position[0] == 11.0);
+
+    CHECK(cache_data[0].left_neighbor->get().position[0] == left_boundary_cell.position[0]);
+    CHECK(left_boundary_cell.right_neighbor->get().position[0] == cache_data[0].position[0]);
+    CHECK(left_boundary_cell.left_neighbor->get().position[0] == left_left_boundary_cell.position[0]);
+    CHECK(left_left_boundary_cell.right_neighbor->get().position[0] == left_boundary_cell.position[0]);
+    CHECK(!left_left_boundary_cell.left_neighbor.has_value());
+
+    CHECK(cache_data[N - 1].right_neighbor->get().position[0] == right_boundary_cell.position[0]);
+    CHECK(right_boundary_cell.left_neighbor->get().position[0] == cache_data[N - 1].position[0]);
+    CHECK(right_boundary_cell.right_neighbor->get().position[0] == right_right_boundary_cell.position[0]);
+    CHECK(right_right_boundary_cell.left_neighbor->get().position[0] == right_boundary_cell.position[0]);
+    CHECK(!right_right_boundary_cell.right_neighbor.has_value());
   }
-  for (size_t i = 1; i < ghost_layer.size() - 1; ++i) {
-    DYNAMIC_SECTION(" lower volume flux derivative i = " << i)
+
+  SECTION("GhostLayer Pipeline")
+  {
+    GhostLayer<dim, NumberType> ghost_layer(cache_data,
+                                            DiFfRG::FV::KurganovTadmor::LeftAntisymmetricBoundary<dim, NumberType>,
+                                            DiFfRG::FV::KurganovTadmor::RightExtrapolationBoundary<dim, NumberType>);
+
+    SECTION("Access data via GhostLayer")
     {
-      auto position = (ghost_layer[i - 1].position[0] + ghost_layer[i].position[0]) / 2.0;
-      double ref = reference_derivative(position, ghost_layer[i].u_minus);
-      CHECK(ghost_layer[i].lower_flux_derivative == Catch::Approx(ref));
+      CHECK(ghost_layer[0].position[0] == -3.0);
+      CHECK(ghost_layer[1].position[0] == -1.0);
+      CHECK(ghost_layer[2].position[0] == 1.0);
+      CHECK(ghost_layer[3].position[0] == 3.0);
+      CHECK(ghost_layer[4].position[0] == 5.0);
+      CHECK(ghost_layer[5].position[0] == 7.0);
+      CHECK(ghost_layer[6].position[0] == 9.0);
+      CHECK(ghost_layer[7].position[0] == 11.0);
+
+      CHECK(ghost_layer[0].u == Catch::Approx(-9.0));
+      CHECK(ghost_layer[1].u == Catch::Approx(-1.0));
+      CHECK(ghost_layer[2].u == Catch::Approx(1.0));
+      CHECK(ghost_layer[3].u == Catch::Approx(9.0));
+      CHECK(ghost_layer[4].u == Catch::Approx(25.0));
+      CHECK(ghost_layer[5].u == Catch::Approx(49.0));
+      CHECK(ghost_layer[6].u == Catch::Approx(73.0));
+      CHECK(ghost_layer[7].u == Catch::Approx(97.0));
+    }
+
+    SECTION("Compute dx")
+    {
+      auto compute_dx = DiFfRG::FV::KurganovTadmor::internal::compute_dx<1, NumberType>();
+
+      ghost_layer.execute_parallel_function(compute_dx);
+
+      for (size_t i = 0; i < ghost_layer.size(); ++i) {
+        DYNAMIC_SECTION(" Ghost layer operator[] access i = " << i << " testing dx")
+        {
+          CHECK(ghost_layer[i].dx[0] == Catch::Approx(2.0));
+        }
+      }
+
+      SECTION("Compute intermediate derivatives")
+      {
+        auto functor_val = DiFfRG::FV::KurganovTadmor::internal::compute_intermediate_derivates<1, NumberType>();
+        ghost_layer.execute_parallel_function(functor_val);
+
+        CHECK(cache_data[0].du_dx_half == 4.0);  // (9 - 1) / (3 - 1)
+        CHECK(cache_data[1].du_dx_half == 8.0);  // (25 - 9) / (5 - 3)
+        CHECK(cache_data[2].du_dx_half == 12.0); // (49 - 25) / (7 - 5)
+        CHECK(cache_data[3].du_dx_half == 12.0); // linear extrapolation at the right boundary
+
+        // the limiter is \phi(r) = max(0, min(1, r))
+        CHECK(cache_data[0].reconstructed_du == Catch::Approx(cache_data[0].du_dx_half * 0.25));
+        CHECK(cache_data[2].reconstructed_du == Catch::Approx(cache_data[3].du_dx_half * 0.66666666666667));
+        CHECK(ghost_layer[6].reconstructed_du == Catch::Approx(ghost_layer[6].du_dx_half));
+
+        CHECK(cache_data[0].u_plus == Catch::Approx(2.0));
+        CHECK(cache_data[0].u_minus == Catch::Approx(0.0));
+
+        CHECK(ghost_layer[6].u_plus == Catch::Approx(85.0));
+        CHECK(ghost_layer[6].u_minus == Catch::Approx(61.0));
+
+        SECTION("Compute Advection Flux Derivaives")
+        {
+          TestModel model;
+          auto functor_flux =
+              DiFfRG::FV::KurganovTadmor::internal::compute_flux_derivative<1, NumberType, TestModel>(model);
+          ghost_layer.execute_parallel_function_without_first_boundary_cell(functor_flux);
+
+          auto reference_derivative = [](double x, double u) {
+            double x2 = x * x;
+            return -0.5 / ((1.0 + x2 + u) * sqrt(1.0 + x2 + u));
+          };
+
+          for (size_t i = 1; i < ghost_layer.size() - 1; ++i) {
+            DYNAMIC_SECTION(" upper volume flux derivative i = " << i)
+            {
+              auto position = (ghost_layer[i].position[0] + ghost_layer[i + 1].position[0]) / 2.0;
+              double ref = reference_derivative(position, ghost_layer[i].u_plus);
+              CHECK(ghost_layer[i].upper_flux_derivative == Catch::Approx(ref));
+            }
+          }
+          for (size_t i = 1; i < ghost_layer.size() - 1; ++i) {
+            DYNAMIC_SECTION(" lower volume flux derivative i = " << i)
+            {
+              auto position = (ghost_layer[i - 1].position[0] + ghost_layer[i].position[0]) / 2.0;
+              double ref = reference_derivative(position, ghost_layer[i].u_minus);
+              CHECK(ghost_layer[i].lower_flux_derivative == Catch::Approx(ref));
+            }
+          }
+        }
+      }
     }
   }
 }
