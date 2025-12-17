@@ -211,14 +211,19 @@ TEST_CASE_METHOD(CacheDataWithNeighborsFixture, "Kurganov Tadmor Pipeline", "[KT
         CHECK(ghost_layer[6].u_plus == Catch::Approx(85.0));
         CHECK(ghost_layer[6].u_minus == Catch::Approx(61.0));
 
-        SECTION("Compute Advection Flux Derivaives")
+        SECTION("Compute Advection Flux and Derivatives")
         {
           TestModel model;
           auto functor_flux =
-              DiFfRG::FV::KurganovTadmor::internal::compute_flux_derivative<1, NumberType, TestModel>(model);
+              DiFfRG::FV::KurganovTadmor::internal::compute_flux_and_derivative<1, NumberType, TestModel>(model);
           ghost_layer.execute_parallel_function_without_first_boundary_cell(functor_flux);
 
-          auto reference_derivative = [](double x, double u) {
+          auto reference_flux = [](double x, double u) {
+            double x2 = x * x;
+            return 1 / (sqrt(1.0 + x2 + u));
+          };
+
+          auto reference_flux_derivative = [](double x, double u) {
             double x2 = x * x;
             return -0.5 / ((1.0 + x2 + u) * sqrt(1.0 + x2 + u));
           };
@@ -227,7 +232,7 @@ TEST_CASE_METHOD(CacheDataWithNeighborsFixture, "Kurganov Tadmor Pipeline", "[KT
             DYNAMIC_SECTION(" upper volume flux derivative i = " << i)
             {
               auto position = (ghost_layer[i].position[0] + ghost_layer[i + 1].position[0]) / 2.0;
-              double ref = reference_derivative(position, ghost_layer[i].u_plus);
+              double ref = reference_flux_derivative(position, ghost_layer[i].u_plus);
               CHECK(ghost_layer[i].upper_flux_derivative == Catch::Approx(ref));
             }
           }
@@ -235,8 +240,26 @@ TEST_CASE_METHOD(CacheDataWithNeighborsFixture, "Kurganov Tadmor Pipeline", "[KT
             DYNAMIC_SECTION(" lower volume flux derivative i = " << i)
             {
               auto position = (ghost_layer[i - 1].position[0] + ghost_layer[i].position[0]) / 2.0;
-              double ref = reference_derivative(position, ghost_layer[i].u_minus);
+              double ref = reference_flux_derivative(position, ghost_layer[i].u_minus);
               CHECK(ghost_layer[i].lower_flux_derivative == Catch::Approx(ref));
+            }
+          }
+
+          for (size_t i = 1; i < ghost_layer.size() - 1; ++i) {
+            DYNAMIC_SECTION(" lower volume flux = " << i)
+            {
+              auto position = (ghost_layer[i - 1].position[0] + ghost_layer[i].position[0]) / 2.0;
+              double ref = reference_flux(position, ghost_layer[i].u_minus);
+              CHECK(ghost_layer[i].lower_flux == Catch::Approx(ref));
+            }
+          }
+
+          for (size_t i = 1; i < ghost_layer.size() - 1; ++i) {
+            DYNAMIC_SECTION(" upper volume flux = " << i)
+            {
+              auto position = (ghost_layer[i].position[0] + ghost_layer[i + 1].position[0]) / 2.0;
+              double ref = reference_flux(position, ghost_layer[i].u_plus);
+              CHECK(ghost_layer[i].upper_flux == Catch::Approx(ref));
             }
           }
         }

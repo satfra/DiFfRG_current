@@ -61,6 +61,8 @@ namespace DiFfRG
 
           NumberType a_plus_half;
 
+          NumberType upper_flux;
+          NumberType lower_flux;
           NumberType upper_flux_derivative;
           NumberType lower_flux_derivative;
         };
@@ -188,11 +190,11 @@ namespace DiFfRG
           return std::max(NumberType{0}, std::min(NumberType{1}, r));
         }
 
-        template <int dim, typename NumberType, typename Model> class compute_flux_derivative
+        template <int dim, typename NumberType, typename Model> class compute_flux_and_derivative
         {
         public:
-          compute_flux_derivative() = delete;
-          compute_flux_derivative(const Model &model) : model(model) {}
+          compute_flux_and_derivative() = delete;
+          compute_flux_and_derivative(const Model &model) : model(model) {}
 
           void operator()(Cache_Data<dim, NumberType> &cache_data) const
           {
@@ -214,11 +216,13 @@ namespace DiFfRG
             // Compute flux derivatives at upper interface
             seed(du_upper);
             model.KurganovTadmor_advection_flux(F_i, x_upper, flux_tie(du_upper));
+            cache_data.upper_flux = F_i[0][0][0];
             cache_data.upper_flux_derivative = F_i[0][0][1];
 
             // Compute flux derivatives at lower interface
             seed(du_lower);
             model.KurganovTadmor_advection_flux(F_i, x_lower, flux_tie(du_lower));
+            cache_data.lower_flux = F_i[0][0][0];
             cache_data.lower_flux_derivative = F_i[0][0][1];
 
             cache_data.a_plus_half =
