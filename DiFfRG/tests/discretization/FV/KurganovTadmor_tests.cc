@@ -8,6 +8,7 @@
 #include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
 #include <algorithm>
 #include <autodiff/forward/real.hpp>
+#include <cstddef>
 #include <deal.II/lac/vector.h>
 #include <deal.II/meshworker/mesh_loop.h>
 #include <oneapi/tbb/parallel_for_each.h>
@@ -154,14 +155,34 @@ TEST_CASE_METHOD(CacheDataWithNeighborsFixture, "Access data via GhostLayer", "[
   CHECK(ghost_layer[7].u == Catch::Approx(97.0));
 }
 
+TEST_CASE_METHOD(CacheDataWithNeighborsFixture, "Compute dx", "[KT]")
+{
+  GhostLayer<dim, NumberType> ghost_layer(cache_data,
+                                          DiFfRG::FV::KurganovTadmor::LeftAntisymmetricBoundary<dim, NumberType>,
+                                          DiFfRG::FV::KurganovTadmor::RightExtrapolationBoundary<dim, NumberType>);
+
+  auto compute_dx = DiFfRG::FV::KurganovTadmor::internal::compute_dx<1, NumberType>();
+
+  ghost_layer.execute_parallel_function(compute_dx);
+
+  for (size_t i = 0; i < ghost_layer.size(); ++i) {
+    DYNAMIC_SECTION(" Ghost layer operator[] access i = " << i << " testing dx")
+    {
+      CHECK(ghost_layer[i].dx[0] == Catch::Approx(2.0));
+    }
+  }
+}
+
 TEST_CASE_METHOD(CacheDataWithNeighborsFixture, "Compute intermediate derivatives", "[KT]")
 {
   GhostLayer<dim, NumberType> ghost_layer(cache_data,
                                           DiFfRG::FV::KurganovTadmor::LeftAntisymmetricBoundary<dim, NumberType>,
                                           DiFfRG::FV::KurganovTadmor::RightExtrapolationBoundary<dim, NumberType>);
 
+  auto compute_dx = DiFfRG::FV::KurganovTadmor::internal::compute_dx<1, NumberType>();
   auto functor_val = DiFfRG::FV::KurganovTadmor::internal::compute_intermediate_derivates<1, NumberType>();
 
+  ghost_layer.execute_parallel_function(compute_dx);
   ghost_layer.execute_parallel_function(functor_val);
 
   CHECK(cache_data[0].du_dx_half == 4.0);  // (9 - 1) / (3 - 1)
@@ -206,16 +227,20 @@ TEST_CASE_METHOD(CacheDataWithNeighborsFixture, "Compute Advection Flux Derivaiv
                                           DiFfRG::FV::KurganovTadmor::RightExtrapolationBoundary<dim, NumberType>);
 
   TestModel model;
-  auto functor_val = DiFfRG::FV::KurganovTadmor::internal::compute_flux_derivative<1, NumberType, TestModel>(model);
+  auto compute_dx = DiFfRG::FV::KurganovTadmor::internal::compute_dx<1, NumberType>();
+  auto functor_val = DiFfRG::FV::KurganovTadmor::internal::compute_intermediate_derivates<1, NumberType>();
+  auto functor_flux = DiFfRG::FV::KurganovTadmor::internal::compute_flux_derivative<1, NumberType, TestModel>(model);
 
+  ghost_layer.execute_parallel_function(compute_dx);
   ghost_layer.execute_parallel_function(functor_val);
+  ghost_layer.execute_parallel_function_without_first_boundary_cell(functor_flux);
 
   auto reference_derivative = [](double x, double u) {
     double x2 = x * x;
     return -0.5 / ((1.0 + x2 + u) * sqrt(1.0 + x2 + u));
   };
 
-  for (size_t i = 0; i < ghost_layer.size() - 1; ++i) {
+  for (size_t i = 1; i < ghost_layer.size() - 1; ++i) {
     DYNAMIC_SECTION(" upper volume flux derivative i = " << i)
     {
       auto position = (ghost_layer[i].position[0] + ghost_layer[i + 1].position[0]) / 2.0;
@@ -223,7 +248,7 @@ TEST_CASE_METHOD(CacheDataWithNeighborsFixture, "Compute Advection Flux Derivaiv
       CHECK(ghost_layer[i].upper_flux_derivative == Catch::Approx(ref));
     }
   }
-  for (size_t i = 1; i < ghost_layer.size(); ++i) {
+  for (size_t i = 1; i < ghost_layer.size() - 1; ++i) {
     DYNAMIC_SECTION(" lower volume flux derivative i = " << i)
     {
       auto position = (ghost_layer[i - 1].position[0] + ghost_layer[i].position[0]) / 2.0;

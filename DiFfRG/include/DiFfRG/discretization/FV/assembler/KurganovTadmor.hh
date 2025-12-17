@@ -51,12 +51,15 @@ namespace DiFfRG
 
         template <int dim, typename NumberType> struct Cache_Data {
           dealii::Point<1> position;
+          dealii::Point<dim> dx;
           NumberType u;
           NumberType du_dx_half;
           NumberType reconstructed_du;
           NumberType u_plus, u_minus;
           std::optional<std::reference_wrapper<const Cache_Data<dim, NumberType>>> left_neighbor;
           std::optional<std::reference_wrapper<const Cache_Data<dim, NumberType>>> right_neighbor;
+
+          NumberType a_plus_half;
 
           NumberType upper_flux_derivative;
           NumberType lower_flux_derivative;
@@ -111,17 +114,27 @@ namespace DiFfRG
 
           size_t size() const { return _cache_data.size() + 4; }
 
+        private:
+          void execute_parallel_function_impl(std::function<void(Cache_Data<dim, NumberType> &)> func, size_t from,
+                                              size_t to)
+          {
+            tbb::parallel_for(tbb::blocked_range<size_t>(from, to), [&](const tbb::blocked_range<size_t> &r) {
+              for (size_t i = r.begin(); i != r.end(); ++i) {
+                func((*this)[i]);
+              }
+            });
+          }
+
+        public:
           void execute_parallel_function(std::function<void(Cache_Data<dim, NumberType> &)> func)
           {
-            tbb::parallel_for(tbb::blocked_range<size_t>(0, this->size()),
+            execute_parallel_function_impl(func, 0, this->size());
+          }
 
-                              // 2. The Lambda function (receives a sub-range 'r')
-                              [&](const tbb::blocked_range<size_t> &r) {
-                                // 3. Iterate over the sub-range assigned to this thread
-                                for (size_t i = r.begin(); i != r.end(); ++i) {
-                                  func((*this)[i]);
-                                }
-                              });
+          void
+          execute_parallel_function_without_first_boundary_cell(std::function<void(Cache_Data<dim, NumberType> &)> func)
+          {
+            execute_parallel_function_impl(func, 1, this->size() - 1);
           }
 
           Cache_Data<dim, NumberType> &operator[](size_t i)
@@ -191,11 +204,7 @@ namespace DiFfRG
             ADNumberType du_lower = cache_data.u_minus;
 
             // Determine cell width and interface positions
-            Point<dim> dx;
-            if (cache_data.right_neighbor.has_value())
-              dx = cache_data.right_neighbor->get().position - cache_data.position;
-            else
-              dx = cache_data.position - cache_data.left_neighbor->get().position;
+            const Point<dim> &dx = cache_data.dx;
 
             Point<dim> x_upper = cache_data.position + dx * 0.5;
             Point<dim> x_lower =
@@ -211,10 +220,26 @@ namespace DiFfRG
             seed(du_lower);
             model.KurganovTadmor_advection_flux(F_i, x_lower, flux_tie(du_lower));
             cache_data.lower_flux_derivative = F_i[0][0][1];
+
+            cache_data.a_plus_half =
+                std::max(std::abs(cache_data.lower_flux_derivative), std::abs(cache_data.upper_flux_derivative));
           }
 
         private:
           const Model model;
+        };
+
+        template <int dim, typename NumberType> class compute_dx
+        {
+        public:
+          compute_dx() {}
+          void operator()(Cache_Data<dim, NumberType> &cache_data) const
+          {
+            if (cache_data.left_neighbor.has_value())
+              cache_data.dx = cache_data.position - cache_data.left_neighbor->get().position;
+            else
+              cache_data.dx = cache_data.right_neighbor->get().position - cache_data.position;
+          }
         };
 
         template <int dim, typename NumberType> class compute_intermediate_derivates
@@ -233,8 +258,7 @@ namespace DiFfRG
           {
             if (cache_data.right_neighbor.has_value()) {
               const auto &right_neighbor = cache_data.right_neighbor->get();
-              cache_data.du_dx_half =
-                  (cache_data.u - right_neighbor.u) / (cache_data.position[0] - right_neighbor.position[0]);
+              cache_data.du_dx_half = (right_neighbor.u - cache_data.u) / cache_data.dx[0];
             }
           }
 
@@ -246,10 +270,7 @@ namespace DiFfRG
               auto r_value = (cache_data.u - left_cell.u) / (right_cell.u - cache_data.u);
               cache_data.reconstructed_du = cache_data.du_dx_half * internal::limiter(r_value);
 
-              auto upper_cell_boundary = (right_cell.position + cache_data.position) / 2.0;
-              auto lower_cell_boundary = (left_cell.position + cache_data.position) / 2.0;
-
-              auto dx = upper_cell_boundary - lower_cell_boundary;
+              auto dx = cache_data.dx;
 
               static_assert(dim == 1, "not implemented for dim > 1");
 
