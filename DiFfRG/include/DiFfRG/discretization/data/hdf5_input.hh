@@ -64,6 +64,88 @@ namespace DiFfRG
     }
 
     /**
+     * @brief Load a map from the HDF5 file.
+     *
+     * @param name The name of the map.
+     * @param data The data buffer to load the map into.
+     */
+    std::vector<double> load_map(const std::string &name, int series_number = -1)
+    {
+#ifdef H5CPP
+      if (!maps.has_group(name))
+        throw std::runtime_error("HDF5Input::map: The map '" + name + "' has not been written to the file '" +
+                                 file_name + "'.");
+
+      auto super_group = maps.get_group(name);
+      if (series_number < 0) {
+        // Get the latest series number
+        size_t max_series = 0;
+        for (const auto &node : super_group.nodes) {
+          if (!is_group(node)) continue;
+          const std::string grp_name = node.link().path().name();
+          size_t grp_num = std::stoul(grp_name);
+          if (grp_num > max_series) {
+            max_series = grp_num;
+          }
+        }
+        series_number = static_cast<int>(max_series);
+      }
+      if (!super_group.has_group(std::to_string(series_number)))
+        throw std::runtime_error("HDF5Input::map: The map '" + name + "' does not have series number " +
+                                 std::to_string(series_number) + " in the file '" + file_name + "'.");
+
+      auto group = super_group.get_group(std::to_string(series_number));
+
+      auto dataset = group.get_dataset("data");
+      auto dataspace = dataset.dataspace();
+      std::vector<double> temp_data(dataspace.size());
+      dataset.read(temp_data);
+      return temp_data;
+#endif
+    }
+
+    /**
+     * @brief Load a map from the HDF5 file.
+     *
+     * @param name The name of the map.
+     * @param data The data buffer to load the map into.
+     */
+    std::vector<double> load_map_coord(const std::string &name, int series_number = -1)
+    {
+#ifdef H5CPP
+      if (!maps.has_group(name))
+        throw std::runtime_error("HDF5Input::map: The map '" + name + "' has not been written to the file '" +
+                                 file_name + "'.");
+
+      auto super_group = maps.get_group(name);
+      if (series_number < 0) {
+        // Get the latest series number
+        size_t max_series = 0;
+        for (const auto &node : super_group.nodes) {
+          if (!is_group(node)) continue;
+          const std::string grp_name = node.link().path().name();
+          size_t grp_num = std::stoul(grp_name);
+          if (grp_num > max_series) {
+            max_series = grp_num;
+          }
+        }
+        series_number = static_cast<int>(max_series);
+      }
+      if (!super_group.has_group(std::to_string(series_number)))
+        throw std::runtime_error("HDF5Input::map: The map '" + name + "' does not have series number " +
+                                 std::to_string(series_number) + " in the file '" + file_name + "'.");
+
+      auto group = super_group.get_group(std::to_string(series_number));
+
+      auto dataset = group.get_dataset("coordinates");
+      auto dataspace = dataset.dataspace();
+      std::vector<double> temp_data(dataspace.size());
+      dataset.read(temp_data);
+      return temp_data;
+#endif
+    }
+
+    /**
      * @brief Load a map from the HDF5 file, while checking that the coordinates in the file match the provided
      * coordinates.
      *
