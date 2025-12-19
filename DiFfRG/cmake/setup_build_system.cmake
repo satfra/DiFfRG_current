@@ -157,7 +157,7 @@ function(setup_target TARGET)
   target_link_libraries(${TARGET} PUBLIC ${Boost_LIBRARIES})
   target_link_libraries(${TARGET} PUBLIC TBB::tbb)
   target_link_libraries(${TARGET} PUBLIC Kokkos::kokkos)
-  target_link_libraries(${TARGET} PUBLIC petsc)
+  # target_link_libraries(${TARGET} PUBLIC petsc)
 
   if(${DiFfRG_MPI})
     target_link_libraries(${TARGET} PUBLIC MPI::MPI_CXX)
