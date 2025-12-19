@@ -14,7 +14,12 @@ namespace DiFfRG
       log->flush_on(spdlog::level::info);
       return log;
     } catch (const spdlog::spdlog_ex &e) {
-      throw std::runtime_error("Could not create logger: " + std::string(e.what()));
+      try {
+        auto log = spdlog::get(name);
+        return log;
+      } catch (...) {
+        throw std::runtime_error("Logger initialization failed: " + std::string(e.what()));
+      }
       return nullptr;
     }
   }
