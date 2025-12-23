@@ -74,13 +74,9 @@ namespace DiFfRG
        * @param dt_u_i the time derivative of the field values \f$\partial_t u_i(x)\f$ at the point `x`.
        */
       template <int dim, typename NumberType, typename Vector, typename Vector_dot, size_t n_fe_functions>
-      void mass(std::array<NumberType, n_fe_functions> &m_i, const Point<dim> &x, const Vector &u_i,
-                const Vector_dot &dt_u_i) const
+      void mass([[maybe_unused]] std::array<NumberType, n_fe_functions> &m_i, [[maybe_unused]] const Point<dim> &x,
+                [[maybe_unused]] const Vector &u_i, const Vector_dot &dt_u_i) const
       {
-        // Just to avoid warnings
-        (void)x;
-        (void)u_i;
-
         for (uint i = 0; i < n_fe_functions; ++i)
           m_i[i] = dt_u_i[i];
       }
@@ -100,11 +96,9 @@ namespace DiFfRG
        * @param x a d-dimensional dealii::Point<dim> representing field coordinates.
        */
       template <int dim, typename NumberType, size_t n_fe_functions>
-      void mass(std::array<std::array<NumberType, n_fe_functions>, n_fe_functions> &m_ij, const Point<dim> &x) const
+      void mass(std::array<std::array<NumberType, n_fe_functions>, n_fe_functions> &m_ij,
+                [[maybe_unused]] const Point<dim> &x) const
       {
-        // Just to avoid warnings
-        (void)x;
-
         for (uint i = 0; i < n_fe_functions; ++i)
           for (uint j = 0; j < n_fe_functions; ++j)
             m_ij[i][j] = 0.;
@@ -133,22 +127,42 @@ namespace DiFfRG
        * 4. the array of extractors \f$e_b\f$
        */
       template <int dim, typename NumberType, typename Solutions, size_t n_fe_functions>
-      void flux(std::array<Tensor<1, dim, NumberType>, n_fe_functions> &F_i, const Point<dim> &x,
-                const Solutions &sol) const
+      void flux([[maybe_unused]] std::array<Tensor<1, dim, NumberType>, n_fe_functions> &F_i,
+                [[maybe_unused]] const Point<dim> &x, [[maybe_unused]] const Solutions &sol) const
       {
-        // Just to avoid warnings
-        (void)F_i;
-        (void)x;
-        (void)sol;
       }
 
       /**
-       * @brief The source function \f$s_i(u_j, \partial_x u_j, \partial_x^2 u_j, e_b, v_a, x)\f$ is implemented by this
-       * method.
+       * @brief If the Kurganov Tadmor Scheme is used, this is the implementation of the advection flux. \f$F_i(u_j, x)$
        *
-       * @remarks Note, that the precise template structure is not important, the only important thing is that the types
-       * are consistent with the rest of the model. It is however necessary to leave at least the NumberType, Vector,
-       * and Vector_dot template parameters, as these can differ between calls (e.g. when doing automatic
+       * @remarks although the design of DiFfRG allows you to have a \f$\partial_x u$ dependent advection flux, the
+       * implementation is not designed to handle such cases.
+       *
+       * @note The standard implementation of this method simply sets \f$F_i = 0\f$.
+       *
+       * @param F_i the resulting flux function \f$F_i\f$, with \f$N_f\f$ components.
+       * This method should fill this argument with the desired structure of the flow equation.
+       * @param x a d-dimensional dealii::Point<dim> representing field coordinates.
+       * @param sol a `std::tuple<...>` which contains
+       * 1. the array u_j
+       * 2. the array of arrays \f$\partial_x u_j\f$
+       * 3. the array of arrays of arrays \f$\partial_x^2 u_j\f$
+       * 4. the array of extractors \f$e_b\f$
+       */
+      template <int dim, typename NumberType, typename Solutions, size_t n_fe_functions>
+      void KurganovTadmor_advection_flux([[maybe_unused]] std::array<Tensor<1, dim, NumberType>, n_fe_functions> &F_i,
+                                         [[maybe_unused]] const Point<dim> &x,
+                                         [[maybe_unused]] const Solutions &sol) const
+      {
+      }
+
+      /**
+       * @brief The source function \f$s_i(u_j, \partial_x u_j, \partial_x^2 u_j, e_b, v_a, x)\f$ is implemented by
+       * this method.
+       *
+       * @remarks Note, that the precise template structure is not important, the only important thing is that the
+       * types are consistent with the rest of the model. It is however necessary to leave at least the NumberType,
+       * Vector, and Vector_dot template parameters, as these can differ between calls (e.g. when doing automatic
        * differentiation).
        *
        * @note The standard implementation of this method simply sets \f$s_i = 0\f$.
@@ -163,12 +177,9 @@ namespace DiFfRG
        * 4. the array of extractors \f$e_b\f$
        */
       template <int dim, typename NumberType, typename Solutions, size_t n_fe_functions>
-      void source(std::array<NumberType, n_fe_functions> &s_i, const Point<dim> &x, const Solutions &sol) const
+      void source([[maybe_unused]] std::array<NumberType, n_fe_functions> &s_i, [[maybe_unused]] const Point<dim> &x,
+                  [[maybe_unused]] const Solutions &sol) const
       {
-        // Just to avoid warnings
-        (void)s_i;
-        (void)x;
-        (void)sol;
       }
 
       /**
@@ -219,17 +230,15 @@ namespace DiFfRG
        */
       //@{
 
-      template <typename Vector> void initial_condition_variables(Vector &v_a) const
+      template <typename Vector> void initial_condition_variables([[maybe_unused]] Vector &v_a) const
       {
         // Just to avoid warnings
-        (void)v_a;
       }
 
-      template <typename Vector, typename Solution> void dt_variables(Vector &r_a, const Solution &sol) const
+      template <typename Vector, typename Solution>
+      void dt_variables([[maybe_unused]] Vector &r_a, [[maybe_unused]] const Solution &sol) const
       {
         // Just to avoid warnings
-        (void)r_a;
-        (void)sol;
       }
 
       //@}
@@ -239,7 +248,8 @@ namespace DiFfRG
       //@{
 
       template <int dim, typename Vector, typename Solutions>
-      void extract(Vector &, const Point<dim> &, const Solutions &) const
+      void extract([[maybe_unused]] Vector &result, [[maybe_unused]] const Point<dim> &x,
+                   [[maybe_unused]] const Solutions &sol) const
       {
       }
 
@@ -272,12 +282,9 @@ namespace DiFfRG
        *
        */
       template <uint dependent, int dim, typename NumberType, typename Vector, size_t n_fe_functions_dep>
-      void ldg_flux(std::array<Tensor<1, dim, NumberType>, n_fe_functions_dep> &F, const Point<dim> &x,
-                    const Vector &u) const
+      void ldg_flux([[maybe_unused]] std::array<Tensor<1, dim, NumberType>, n_fe_functions_dep> &F,
+                    [[maybe_unused]] const Point<dim> &x, [[maybe_unused]] const Vector &u) const
       {
-        (void)F;
-        (void)x;
-        (void)u;
       }
 
       /**
@@ -303,39 +310,27 @@ namespace DiFfRG
        *
        */
       template <uint dependent, int dim, typename NumberType, typename Vector, size_t n_fe_functions_dep>
-      void ldg_source(std::array<NumberType, n_fe_functions_dep> &s, const Point<dim> &x, const Vector &u) const
+      void ldg_source([[maybe_unused]] std::array<NumberType, n_fe_functions_dep> &s,
+                      [[maybe_unused]] const Point<dim> &x, [[maybe_unused]] const Vector &u) const
       {
-        (void)s;
-        (void)x;
-        (void)u;
       }
 
-      //@}
-      /**
-       * @name Adaptive mesh refinement
-       */
-      //@{
-
       template <int dim, typename NumberType, typename Solutions_s, typename Solutions_n>
-      void face_indicator(std::array<NumberType, 2> & /*indicator*/, const Tensor<1, dim> & /*normal*/,
-                          const Point<dim> & /*p*/, const Solutions_s & /*sol_s*/, const Solutions_n & /*sol_n*/) const
+      void face_indicator([[maybe_unused]] std::array<NumberType, 2> &indicator,
+                          [[maybe_unused]] const Tensor<1, dim> &normal, [[maybe_unused]] const Point<dim> &p,
+                          [[maybe_unused]] const Solutions_s &sol_s, [[maybe_unused]] const Solutions_n &sol_n) const
       {
       }
 
       template <int dim, typename NumberType, typename Solution>
-      void cell_indicator(NumberType & /*indicator*/, const Point<dim> & /*p*/, const Solution & /*sol*/) const
+      void cell_indicator([[maybe_unused]] NumberType &indicator, [[maybe_unused]] const Point<dim> &p,
+                          [[maybe_unused]] const Solution &sol) const
       {
       }
-      //@}
-      /**
-       * @name Other
-       */
-      //@{
 
-      template <int dim, typename Vector> std::array<double, dim> EoM(const Point<dim> &x, const Vector &u) const
+      template <int dim, typename Vector>
+      std::array<double, dim> EoM([[maybe_unused]] const Point<dim> &x, const Vector &u) const
       {
-        // Just to avoid warnings
-        (void)x;
         return std::array<double, dim>{{u[0]}};
       }
 
@@ -351,22 +346,16 @@ namespace DiFfRG
       }
 
       template <int dim, typename DataOut, typename Solutions>
-      void readouts(DataOut &output, const Point<dim> &x, const Solutions &sol) const
+      void readouts([[maybe_unused]] DataOut &output, [[maybe_unused]] const Point<dim> &x,
+                    [[maybe_unused]] const Solutions &sol) const
       {
-        // Just to avoid warnings
-        (void)output;
-        (void)x;
-        (void)sol;
       }
 
       template <int dim, typename Constraints>
-      void affine_constraints(Constraints &constraints, const std::vector<IndexSet> &component_boundary_dofs,
-                              const std::vector<std::vector<Point<dim>>> &component_boundary_points)
+      void affine_constraints([[maybe_unused]] Constraints &constraints,
+                              [[maybe_unused]] const std::vector<IndexSet> &component_boundary_dofs,
+                              [[maybe_unused]] const std::vector<std::vector<Point<dim>>> &component_boundary_points)
       {
-        // Just to avoid warnings
-        (void)constraints;
-        (void)component_boundary_dofs;
-        (void)component_boundary_points;
       }
 
       //@}

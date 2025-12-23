@@ -3,6 +3,7 @@
 # ##############################################################################
 
 add_subdirectory(FEM)
+add_subdirectory(FV)
 add_subdirectory(grid)
 add_subdirectory(data)
 add_subdirectory(coordinates)
@@ -14,3 +15,4 @@ add_subdirectory(coordinates)
 setup_test(mesh.cc)
 setup_test(mesh_adaptor.cc)
 setup_test(EoM_finding.cc)
+setup_test(mesh_configuration_test.cpp)
