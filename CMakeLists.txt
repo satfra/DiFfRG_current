@@ -81,27 +81,23 @@ else()
 endif()
 
 set(HAVE_THREADS ON)
-# if ENABLE_MPI is not set, set it to OFF
-if(NOT DEFINED ENABLE_MPI)
+
+option(MPI "Enable MPI support" OFF)
+if(MPI)
   find_package(MPI)
   if(MPI_FOUND)
-    set(ENABLE_MPI
-        ON
-        CACHE BOOL "Enable MPI support")
   else()
-    set(ENABLE_MPI
-        OFF
-        CACHE BOOL "Enable MPI support")
+    message(FATAL_ERROR "  No MPI library found!")
   endif()
 endif()
 message("")
 
 message("Available parallel backends:")
 # make the on and off values green/yellow
-if(ENABLE_MPI)
-  message("  ${BoldGreen}MPI: ${ENABLE_MPI}${ColourReset}")
+if(MPI)
+  message("  ${BoldGreen}MPI: ${MPI}${ColourReset}")
 else()
-  message("  ${BoldYellow}MPI: ${ENABLE_MPI}${ColourReset}")
+  message("  ${BoldYellow}MPI: ${MPI}${ColourReset}")
 endif()
 if(HAVE_CUDA)
   message("  ${BoldGreen}CUDA: ${HAVE_CUDA}${ColourReset}")
@@ -145,7 +141,7 @@ ExternalProject_Add(
     -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
     -DBUILD_OpenBLAS:BOOL=${BUILD_OpenBLAS}
-    -DENABLE_MPI:BOOL=${ENABLE_MPI})
+    -DENABLE_MPI:BOOL=${MPI})
 
 if(BUILD_OpenBLAS)
   if(APPLE)
@@ -174,7 +170,7 @@ ExternalProject_Add(
     -DCMAKE_CXX_FLAGS:STRING=-march=native
     -DCMAKE_C_FLAGS:STRING=-march=native
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-    -DENABLE_MPI:BOOL=${ENABLE_MPI})
+    -DENABLE_MPI:BOOL=${MPI})
 
 # build autodiff
 ExternalProject_Add(
@@ -308,7 +304,7 @@ if(BUILD_PETSC)
     CMAKE_CACHE_ARGS
       -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
       -DOpenBLAS_LIBRARY:STRING=${BLAS_LIBRARY_PATH}
-      -DHAVE_MPI:BOOL=${ENABLE_MPI})
+      -DHAVE_MPI:BOOL=${MPI})
   set(is_petsc_dep petsc_dep)
 endif()
 
@@ -319,6 +315,14 @@ endif()
 if(BUILD_OpenBLAS)
   set(dealii_lapack "-DLAPACK_LIBRARIES:STRING=${BLAS_LIBRARY_PATH}")
 endif()
+
+option(NODEBUG "Disable the debug build in deal.ii" OFF)
+
+set(dealiiConfig "DebugRelease")
+if(NODEBUG)
+  set(dealiiConfig "Release")
+endif()
+
 
 # build deal.II
 ExternalProject_Add(
@@ -335,14 +339,14 @@ ExternalProject_Add(
     -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
     -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
     -DCMAKE_Fortran_COMPILER:STRING=${CMAKE_Fortran_COMPILER}
-    -DCMAKE_BUILD_TYPE:STRING=DebugRelease
+    -DCMAKE_BUILD_TYPE:STRING=${dealiiConfig}
     -DCMAKE_POLICY_VERSION_MINIMUM:STRING=3.5
     -DCMAKE_POLICY_DEFAULT_CMP0167:STRING=NEW
     -DCMAKE_WARN_DEPRECATED:BOOL=OFF
     -DDEAL_II_CXX_FLAGS:STRING=-march=native
     -DDEAL_II_COMPONENT_EXAMPLES:BOOL=OFF
     -DDEAL_II_COMPONENT_DOCUMENTATION:BOOL=OFF
-    -DDEAL_II_WITH_MPI:BOOL=${ENABLE_MPI}
+    -DDEAL_II_WITH_MPI:BOOL=${MPI}
     -DDEAL_II_WITH_KOKKOS:BOOL=OFF
     -DDEAL_II_WITH_UMFPACK:BOOL=ON
     -DDEAL_II_WITH_TASKFLOW:BOOL=OFF
@@ -377,7 +381,7 @@ ExternalProject_Add(
   INSTALL_DIR ${CMAKE_INSTALL_PREFIX}
   DEPENDS general_dep boost_dep deal.II_dep kokkos_dep autodiff_dep
   CMAKE_CACHE_ARGS
-    -DENABLE_MPI:BOOL=${ENABLE_MPI}
+  -DENABLE_MPI:BOOL=${MPI}
     -DENABLE_HDF5:BOOL=${HDF5_FOUND}
     -DBUNDLED_DIR:PATH=${DEPEND_INSTALL_PREFIX}
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}

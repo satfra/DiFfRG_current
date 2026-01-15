@@ -248,7 +248,7 @@ namespace DiFfRG
   template <int i, typename Head, typename... Tail> constexpr auto tuple_first(const device::tuple<Head, Tail...> &t)
   {
     if constexpr (i == 0)
-      return device::tuple();
+      return device::tuple<>();
     else if constexpr (i == 1)
       return device::apply([](auto &head, auto &.../*tail*/) { return device::tie(head); }, t);
     else
