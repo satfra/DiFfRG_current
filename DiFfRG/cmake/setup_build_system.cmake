@@ -31,6 +31,7 @@ endif()
 set(CMAKE_PREFIX_PATH "${BUNDLED_DIR};${BUNDLED_DIR}/lib;${CMAKE_PREFIX_PATH}")
 
 link_directories(${BUNDLED_DIR}/lib/)
+link_directories(${BUNDLED_DIR}/lib64/)
 include_directories(SYSTEM ${BUNDLED_DIR}/include)
 
 message(STATUS "DiFfRG include directory: ${BASE_DIR}/include")

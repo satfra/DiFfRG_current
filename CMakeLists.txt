@@ -257,7 +257,7 @@ ExternalProject_Add(
   LOG_INSTALL ON
   LOG_OUTPUT_ON_FAILURE ON
   GIT_REPOSITORY https://github.com/kokkos/kokkos.git
-  GIT_TAG 5.0.0
+  GIT_TAG 5.0.1
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/kokkos
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
   DEPENDS general_dep sundials_dep autodiff_dep
