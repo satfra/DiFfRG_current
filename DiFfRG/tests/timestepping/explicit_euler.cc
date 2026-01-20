@@ -20,7 +20,7 @@ TEST_CASE("Test explicit euler with DG constant model", "[timestepping][constant
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = DG::Assembler<Discretization, Model>;
   using TimeStepper = TimeStepperExplicitEuler<VectorType, SparseMatrixType, dim>;
-  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_explicit_euler_constant_dg", 1e-4));
+  REQUIRE(run<Model, Discretization, Assembler, TimeStepper, false, true>("test_explicit_euler_constant_dg", 1e-4));
 }
 TEST_CASE("Test explicit euler with DG exponential model", "[timestepping][exponential][explicit_euler][dg]")
 {
@@ -32,7 +32,7 @@ TEST_CASE("Test explicit euler with DG exponential model", "[timestepping][expon
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = DG::Assembler<Discretization, Model>;
   using TimeStepper = TimeStepperExplicitEuler<VectorType, SparseMatrixType, dim>;
-  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_explicit_euler_exponential_dg", 1e-4));
+  REQUIRE(run<Model, Discretization, Assembler, TimeStepper, false, true>("test_explicit_euler_exponential_dg", 1e-4));
 }
 TEST_CASE("Test explicit euler with DG Burgers model", "[timestepping][Burgers][explicit_euler][dg]")
 {
@@ -44,5 +44,5 @@ TEST_CASE("Test explicit euler with DG Burgers model", "[timestepping][Burgers][
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = DG::Assembler<Discretization, Model>;
   using TimeStepper = TimeStepperExplicitEuler<VectorType, SparseMatrixType, dim>;
-  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_explicit_euler_burgers_dg", 1e-4));
+  REQUIRE(run<Model, Discretization, Assembler, TimeStepper, false, true>("test_explicit_euler_burgers_dg", 1e-4));
 }

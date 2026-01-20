@@ -2,6 +2,8 @@
 
 // external libraries
 #include "DiFfRG/discretization/mesh/h_adaptivity.hh"
+#include "DiFfRG/discretization/mesh/no_adaptivity.hh"
+#include <memory>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
@@ -16,7 +18,8 @@
 // Helper functions
 //--------------------------------------------
 
-template <typename Model, typename Discretization, typename Assembler, typename TimeStepper, bool expl = false>
+template <typename Model, typename Discretization, typename Assembler, typename TimeStepper, bool expl = false,
+          bool adapt = false>
 bool run(std::string test_name, double expected_precision)
 {
   using namespace dealii;
@@ -85,8 +88,14 @@ bool run(std::string test_name, double expected_precision)
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
   DataOutput<dim, VectorType> data_out("./", test_name, test_name + '/', json);
-  HAdaptivity mesh_adaptor(assembler, json);
-  TimeStepper time_stepper(json, &assembler, &data_out, &mesh_adaptor);
+
+  std::unique_ptr<AbstractAdaptor<VectorType>> adaptor;
+  if constexpr (adapt)
+    adaptor = std::make_unique<HAdaptivity<Assembler>>(assembler, json);
+  else
+    adaptor = std::make_unique<NoAdaptivity<VectorType>>();
+
+  TimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 
   // Set up the initial condition
   FE::FlowingVariables initial_condition(discretization);
