@@ -14,17 +14,9 @@ namespace DiFfRG
 {
   using namespace dealii;
 
-  namespace internal
-  {
-    std::array<double, 3> string_to_range(const std::string str);
-    std::vector<std::string> string_to_substrings_array(const std::string str);
-    void check_ranges_consistency(const std::vector<std::array<double, 3>> &ranges);
-    void append_range(std::vector<std::vector<double>> &dest, const std::array<double, 3> &range, const uint d);
-  } // namespace internal
-
   template <uint dim>
   RectangularMesh<dim>::RectangularMesh(const JSONValue &json)
-      : DiFfRG::RectangularMesh<dim>(Config::ConfigurationMesh<dim>(json))
+      : RectangularMesh<dim>(Config::ConfigurationMesh<dim>(json))
   {
   }
 

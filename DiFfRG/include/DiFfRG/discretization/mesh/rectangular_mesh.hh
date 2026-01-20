@@ -38,7 +38,7 @@ namespace DiFfRG
   protected:
     virtual void make_grid();
 
-    const Config::ConfigurationMesh<dim> &mesh_config;
+    const Config::ConfigurationMesh<dim> mesh_config;
     Triangulation<dim> triangulation;
   };
 } // namespace DiFfRG
