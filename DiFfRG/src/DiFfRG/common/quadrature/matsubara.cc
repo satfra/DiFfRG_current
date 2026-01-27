@@ -11,13 +11,13 @@ namespace DiFfRG
 {
   template <typename NT> int MatsubaraQuadrature<NT>::predict_size(const NT T, const NT typical_E, const int step)
   {
-    const NT relative_distance = abs(typical_E) / abs(2 * M_PI * T + 1e-16);
+    const NT relative_distance = std::fabs(typical_E) / std::fabs(2. * M_PI * T + 1e-16);
     // From some testing, switching here to the vacuum quadrature will generate relative errors of order 5e-6 when using
     // the default arguments
     if (is_close(T, NT{}) || relative_distance > 1e+4) return -vacuum_quad_size;
 
-    const NT E_max = 1e4 * precision_factor * std::abs(typical_E);
-    int size = 5 + int(std::sqrt(4 * E_max / (M_PI * M_PI * std::abs(T))));
+    const NT E_max = 2e3 * precision_factor * std::fabs(typical_E);
+    int size = 5 + int(std::sqrt(4. * E_max / (M_PI * M_PI * std::fabs(T))));
     size = (int)std::ceil(size / (double)step) * step;
     return size;
   }
