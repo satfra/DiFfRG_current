@@ -233,6 +233,16 @@ namespace DiFfRG
     using ::Kokkos::tan;
     using ::Kokkos::tanh;
 
+    using ::Kokkos::fmax;
+    using ::Kokkos::fmin;
+    using ::Kokkos::max;
+    using ::Kokkos::min;
+
+    using ::Kokkos::abs;
+    using ::Kokkos::fabs;
+
+    using ::Kokkos::atan2;
+
     template <size_t N, typename T>
       requires std::is_arithmetic_v<T>
     constexpr KOKKOS_FORCEINLINE_FUNCTION T conj(const autodiff::Real<N, T> x)

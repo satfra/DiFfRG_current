@@ -147,7 +147,8 @@ namespace DiFfRG
             "You need to call get_on[]() on the original instance.");
 
       if constexpr (std::is_same_v<MemorySpace, DefaultMemorySpace>) {
-        return *this; // Return the current instance if the memory space matches
+        // remove constness
+        return const_cast<LinearInterpolator3D<NT, Coordinates, MemorySpace> &>(*this);
       } else {
         // Create a new instance with the same data but in the requested memory space
         if (other_instance == nullptr) {
