@@ -2,6 +2,8 @@
 
 // external libraries
 #include "DiFfRG/discretization/mesh/h_adaptivity.hh"
+#include "DiFfRG/discretization/mesh/no_adaptivity.hh"
+#include <memory>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
@@ -16,13 +18,16 @@
 // Helper functions
 //--------------------------------------------
 
-template <typename Model, typename Discretization, typename Assembler, typename TimeStepper, bool expl = false>
+template <typename Model, typename Discretization, typename Assembler, typename TimeStepper, bool expl = false,
+          bool adapt = false>
 bool run(std::string test_name, double expected_precision)
 {
   using namespace dealii;
   using namespace DiFfRG;
 
-  Testing::PhysicalParameters p_prm = {/*x0_initial = */ 0., /*x1_initial = */ 1.};
+  Testing::PhysicalParameters p_prm;
+  p_prm.initial_x0[0] = 0.;
+  p_prm.initial_x1[0] = 1.;
 
   JSONValue json = json::value(
       {{"physical", {{"Lambda", 1.}}},
@@ -83,8 +88,14 @@ bool run(std::string test_name, double expected_precision)
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
   DataOutput<dim, VectorType> data_out("./", test_name, test_name + '/', json);
-  HAdaptivity mesh_adaptor(assembler, json);
-  TimeStepper time_stepper(json, &assembler, &data_out, &mesh_adaptor);
+
+  std::unique_ptr<AbstractAdaptor<VectorType>> adaptor;
+  if constexpr (adapt)
+    adaptor = std::make_unique<HAdaptivity<Assembler>>(assembler, json);
+  else
+    adaptor = std::make_unique<NoAdaptivity<VectorType>>();
+
+  TimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 
   // Set up the initial condition
   FE::FlowingVariables initial_condition(discretization);
@@ -107,10 +118,13 @@ bool run(std::string test_name, double expected_precision)
   const auto &support_points = discretization.get_support_points();
   model.set_time(final_time);
   for (uint i = 0; i < support_points.size(); ++i) {
-    if (!is_close(model.solution(support_points[i]), initial_condition.data()[i], expected_precision))
-      std::cout << "is: " << model.solution(support_points[i]) << " should be: " << initial_condition.data()[i]
-                << std::endl;
-    valid &= is_close(model.solution(support_points[i]), initial_condition.data()[i], expected_precision);
+    const auto &error_condition =
+        is_close(initial_condition.data()[i], model.solution(support_points[i]), expected_precision);
+    if (!error_condition) {
+      std::cout << "at x = " << support_points[i] << " numerical: " << initial_condition.data()[i]
+                << " analytical: " << model.solution(support_points[i]) << std::endl;
+    }
+    valid &= error_condition;
   }
 
   if (!valid) std::cerr << "Failed " << test_name << std::endl;
