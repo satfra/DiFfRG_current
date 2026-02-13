@@ -132,6 +132,35 @@ message("")
 
 include(ExternalProject)
 
+# build hdf5
+ExternalProject_Add(
+  hdf5_dep
+  LOG_CONFIGURE ON
+  LOG_INSTALL ON
+  LOG_OUTPUT_ON_FAILURE ON
+  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/hdf5
+  GIT_REPOSITORY https://github.com/HDFGroup/hdf5.git
+  GIT_TAG hdf5_1.14.6
+  INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+  # Propagate DEPEND_INSTALL_PREFIX to the dependencies
+  CMAKE_CACHE_ARGS
+    -DCMAKE_Fortran_COMPILER:STRING=${CMAKE_Fortran_COMPILER}
+    -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
+    -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
+    -DHDF5_USE_GNU_DIRS:BOOL=ON
+    -DHDF5_INSTALL_CMAKE_DIR:STRING=lib/cmake/hdf5
+    -DHDF5_ENABLE_PARALLEL:BOOL=${ENABLE_MPI}
+    -DHDF5_TEST_PARALLEL:BOOL=OFF
+    -DHDF5_ALLOW_UNSUPPORTED:BOOL=ON
+    -DALLOW_UNSUPPORTED:BOOL=ON
+    -DHDF5_BUILD_FORTRAN:BOOL=OFF
+    -DHDF5_BUILD_CPP_LIB:BOOL=ON
+    -DHDF5_ENABLE_SZIP_SUPPORT:BOOL=OFF
+    -DHDF5_ENABLE_ZLIB_SUPPORT:BOOL=ON
+    -DCMAKE_CXX_STANDARD:STRING=20
+    -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
+    -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
+
 # build general deps
 ExternalProject_Add(
   general_dep
@@ -141,6 +170,7 @@ ExternalProject_Add(
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/general
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/general
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+  DEPENDS hdf5_dep
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
   CMAKE_CACHE_ARGS
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
@@ -199,24 +229,6 @@ ExternalProject_Add(
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
   CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
 
-# check if HDF5 is available
-find_package(HDF5 QUIET)
-if(HDF5_FOUND)
-  message("${BoldGreen}HDF5 found:${ColourReset} ${HDF5_LIBRARIES}")
-else()
-  message(
-    "${BoldYellow}HDF5 not found.${ColourReset} DiFfRG will not be able to use HDF5 for I/O."
-  )
-endif()
-if(HDF5_IS_PARALLEL)
-  message("${Green}HDF5 has parallel support${ColourReset}")
-else()
-  message(
-    STATUS
-      "${Yellow}The provided HDF5 installation does not support parallel I/O.${ColourReset}"
-  )
-endif()
-message("")
 
 # ##############################################################################
 # Kokkos
