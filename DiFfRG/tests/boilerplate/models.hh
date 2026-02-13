@@ -163,5 +163,55 @@ namespace DiFfRG
         F_i[0][0] = 0.5 * powr<2>(fe_functions[0]);
       }
     };
+
+    template <uint dim>
+    class ModelBurgersKT
+        : public def::AbstractModel<ModelBurgersKT<dim>, ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>>>,
+          public def::Time,                                // this handles time
+          public def::LLFFlux<ModelBurgersKT<dim>>,        // use LL numflux
+          public def::FlowBoundaries<ModelBurgersKT<dim>>, // use Inflow/Outflow boundaries
+          public def::AD<ModelBurgersKT<dim>>              // define all jacobians per AD
+    {
+    protected:
+      const PhysicalParameters prm;
+
+    public:
+      ModelBurgersKT(PhysicalParameters prm) : prm(prm) {}
+
+      template <typename Vector> void initial_condition(const Point<dim> &pos, Vector &values) const
+      {
+        values[0] = prm.initial_x0[0] + prm.initial_x1[0] * pos[0];
+      }
+
+      double solution(const Point<dim> &pos) const
+      {
+        return (prm.initial_x0[0] + prm.initial_x1[0] * pos[0]) / (prm.initial_x1[0] * t + 1.);
+      }
+
+      template <typename NT, typename Solution>
+      void KurganovTadmor_advection_flux(std::array<Tensor<1, dim, NT>, 1> &F_i, const Point<dim> & /*pos*/,
+                                         const Solution &sol) const
+      {
+        const auto &fe_functions = get<0>(sol);
+        F_i[0][0] = 0.5 * powr<2>(fe_functions[0]);
+      }
+
+      template <int mdim, typename NumberType, size_t n_components, size_t n_faces>
+      void apply_boundary_conditions(std::array<std::array<NumberType, n_components>, n_faces> &u_neighbors,
+                                     std::array<Point<mdim>, n_faces> &x_neighbors,
+                                     const std::array<types::boundary_id, n_faces> &boundary_ids,
+                                     const std::array<Point<mdim>, n_faces> &face_centers,
+                                     const std::array<NumberType, n_components> & /*u_cell*/,
+                                     const Point<mdim> & /*x_cell*/) const
+      {
+        for (size_t f = 0; f < n_faces; ++f)
+          if (boundary_ids[f] != numbers::internal_face_boundary_id) {
+            x_neighbors[f] = face_centers[f];
+            u_neighbors[f][0] =
+                (prm.initial_x0[0] + prm.initial_x1[0] * x_neighbors[f][0]) / (prm.initial_x1[0] * t + 1.);
+          }
+      }
+    };
+
   } // namespace Testing
 } // namespace DiFfRG
