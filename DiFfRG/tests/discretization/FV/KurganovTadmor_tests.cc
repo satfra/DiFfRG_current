@@ -1,12 +1,8 @@
-#include "DiFfRG/common/tuples.hh"
 #include "DiFfRG/discretization/FV/assembler/KurganovTadmor.hh"
-#include "DiFfRG/discretization/FV/discretization.hh"
-#include "DiFfRG/discretization/mesh/configuration_mesh.hh"
 #include "DiFfRG/model/model.hh"
 #include "catch2/catch_approx.hpp"
 #include "catch2/catch_test_macros.hpp"
 #include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
-#include <algorithm>
 #include <autodiff/forward/real.hpp>
 #include <cstddef>
 #include <deal.II/base/numbers.h>
@@ -14,8 +10,6 @@
 #include <deal.II/meshworker/mesh_loop.h>
 #include <oneapi/tbb/parallel_for_each.h>
 #include <petscvec.h>
-#include <tuple>
-#include <vector>
 
 using NumberType = double;
 using VectorType = dealii::Vector<NumberType>;
@@ -25,7 +19,6 @@ using KT::internal::compute_gradient;
 using KT::internal::compute_kt_flux_and_speeds;
 using KT::internal::compute_numerical_flux;
 using KT::internal::reconstruct_u;
-using KT::internal::ScratchData;
 struct CopyData {
 };
 
