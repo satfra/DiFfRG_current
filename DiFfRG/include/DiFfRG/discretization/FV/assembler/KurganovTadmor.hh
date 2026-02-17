@@ -58,6 +58,17 @@ namespace DiFfRG
         template <int dim, typename NumberType, size_t n_components>
         using GradientType = std::array<dealii::Tensor<1, dim, NumberType>, n_components>;
 
+        template <typename... T> auto advection_flux_tie(T &&...t) template <int dim> struct MeasureHelper {
+          template <typename Accessor> static double value(const Accessor &acc) { return acc.measure(); }
+        };
+
+        template <> struct MeasureHelper<0> { // Specialization for vertices
+          template <typename Accessor> static double value(const Accessor &) { return 1.0; }
+        };
+
+        template <int dim, typename NumberType, size_t n_components>
+        using GradientType = std::array<dealii::Tensor<1, dim, NumberType>, n_components>;
+
         template <typename... T> auto advection_flux_tie(T &&...t)
         {
           return named_tuple<std::tuple<T &...>, StringSet<"fe_functions">>(std::tie(t...));
@@ -565,6 +576,9 @@ namespace DiFfRG
           // using Scratch = internal::ScratchData<dim, NumberType>;
           // using CopyData = internal::CopyData_R<NumberType>;
           // const auto &constraints = discretization.get_constraints();
+          // using Scratch = internal::ScratchData<dim, NumberType>;
+          // using CopyData = internal::CopyData_R<NumberType>;
+          // const auto &constraints = discretization.get_constraints();
 
           // const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
           //   scratch_data.fe_values.reinit(cell);
@@ -580,7 +594,15 @@ namespace DiFfRG
           //   auto &solution_dot = scratch_data.solution_dot;
           //   fe_v.get_function_values(solution_global, solution);
           //   fe_v.get_function_values(solution_global_dot, solution_dot);
+          //   auto &solution = scratch_data.solution_global;
+          //   auto &solution_dot = scratch_data.solution_dot;
+          //   fe_v.get_function_values(solution_global, solution);
+          //   fe_v.get_function_values(solution_global_dot, solution_dot);
 
+          //   std::array<NumberType, n_components> mass{};
+          //   for (const auto &q_index : q_indices) {
+          //     const auto &x_q = q_points[q_index];
+          //     model.mass(mass, x_q, solution[q_index], solution_dot[q_index]);
           //   std::array<NumberType, n_components> mass{};
           //   for (const auto &q_index : q_indices) {
           //     const auto &x_q = q_points[q_index];
@@ -597,11 +619,71 @@ namespace DiFfRG
           // const auto copier = [&](const CopyData &c) {
           //   constraints.distribute_local_to_global(c.cell_residual, c.local_dof_indices, mass);
           // };
+          //     for (uint i = 0; i < n_dofs; ++i) {
+          //       const auto component_i = fe_v.get_fe().system_to_component_index(i).first;
+          //       copy_data.cell_residual(i) += weight * JxW[q_index] *
+          //                                     fe_v.shape_value_component(i, q_index, component_i) *
+          //                                     mass[component_i]; // +phi_i(x_q) * mass(x_q, u_q)
+          //     }
+          //   }
+          // };
+          // const auto copier = [&](const CopyData &c) {
+          //   constraints.distribute_local_to_global(c.cell_residual, c.local_dof_indices, mass);
+          // };
 
           // Scratch scratch_data(mapping, discretization.get_fe(), quadrature);
           // CopyData copy_data;
           // MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
+          // Scratch scratch_data(mapping, discretization.get_fe(), quadrature);
+          // CopyData copy_data;
+          // MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
 
+          // MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
+          //                       copy_data, flags, nullptr, nullptr, threads, batch_size);
+        }
+
+        static std::pair<Point, std::array<NumberType, n_components>> get_cell_value(const Iterator &cell,
+                                                                                     const VectorType &solution_global)
+        {
+          Point x_cell = cell->center();
+          std::array<NumberType, n_components> u_cell;
+          std::vector<types::global_dof_index> global_cell_dof_indices(n_components);
+          cell->get_dof_indices(global_cell_dof_indices);
+          for (unsigned int i = 0; i < n_components; ++i)
+            u_cell[i] = solution_global(global_cell_dof_indices[i]);
+
+          return std::make_pair(x_cell, u_cell);
+        }
+
+        static std::pair<std::array<Point, n_faces>, std::array<std::array<NumberType, n_components>, n_faces>>
+        get_neighboring_cell_data(const Iterator &cell, const VectorType &solution_global, const Model &model)
+        {
+          std::array<Point, n_faces> x_n;
+          std::array<std::array<NumberType, n_components>, n_faces> u_n;
+
+          std::array<types::boundary_id, n_faces> boundary_ids;
+          std::array<Point, n_faces> face_centers;
+
+          for (const auto face_index : cell->face_indices()) {
+            if (cell->at_boundary(face_index)) {
+              const auto face = cell->face(face_index);
+              boundary_ids[face_index] = face->boundary_id();
+              face_centers[face_index] = face->center();
+              // u_n/x_n will be computed by model
+            } else {
+              boundary_ids[face_index] = numbers::invalid_boundary_id;
+              const auto neighbor = cell->neighbor(face_index);
+              auto [x, u] = get_cell_value(neighbor, solution_global);
+              x_n[face_index] = x;
+              u_n[face_index] = u;
+            }
+          }
+
+          auto [x_cell, u_cell] = get_cell_value(cell, solution_global);
+
+          model.apply_boundary_conditions(u_n, x_n, boundary_ids, face_centers, u_cell, x_cell);
+
+          return std::make_pair(x_n, u_n);
           // MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
           //                       copy_data, flags, nullptr, nullptr, threads, batch_size);
         }
@@ -661,6 +743,9 @@ namespace DiFfRG
           Scratch scratch_data(mapping, discretization.get_fe(), quadrature, quadrature_face);
           CopyData copy_data;
 
+          Scratch scratch_data(mapping, discretization.get_fe(), quadrature, quadrature_face);
+          CopyData copy_data;
+
           const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
             scratch_data.fe_values.reinit(cell);
             const auto &fe_v = scratch_data.fe_values;
@@ -697,124 +782,6 @@ namespace DiFfRG
               }
             }
           };
-
-          const auto face_worker = [&](const Iterator &cell, const unsigned int &f, const unsigned int &sf,
-                                       const Iterator &ncell, const unsigned int &nf, const unsigned int &nsf,
-                                       Scratch &scratch_data, CopyData &copy_data) {
-            scratch_data.fe_interface_values.reinit(cell, f, sf, ncell, nf, nsf);
-            const FEInterfaceValues<dim> &fe_iv = scratch_data.fe_interface_values;
-
-            const auto &face_q_points = fe_iv.get_quadrature_points();
-            const int q_face_index = 0; // only one quadrature point per face for FV (constant FE)
-            const auto &x_q = face_q_points[q_face_index];
-
-            const uint n_face_dofs = fe_iv.n_current_interface_dofs();
-
-            copy_data.face_data.emplace_back();
-            auto &copy_data_face = copy_data.face_data.back();
-            copy_data_face.reinit(fe_iv);
-
-            auto [x_cell_n, u_cell_n] = get_neighboring_cell_data(cell, solution_global, model);
-            auto [x_ncell_n, u_ncell_n] = get_neighboring_cell_data(ncell, solution_global, model);
-            auto [x_cell, u_cell] = get_cell_value(cell, solution_global);
-            auto [x_ncell, u_ncell] = get_cell_value(ncell, solution_global);
-
-            const GradientType u_grad_cell =
-                internal::compute_gradient<NumberType, dim, n_components>(x_cell, u_cell, x_cell_n, u_cell_n);
-            const GradientType u_grad_ncell =
-                internal::compute_gradient<NumberType, dim, n_components>(x_ncell, u_ncell, x_ncell_n, u_ncell_n);
-
-            const std::vector<Tensor<1, dim>> &normals = fe_iv.get_normal_vectors();
-
-            const std::array<NumberType, n_components> u_minus =
-                internal::reconstruct_u(u_cell, cell->center(), x_q, u_grad_cell);
-            const std::array<NumberType, n_components> u_plus =
-                internal::reconstruct_u(u_ncell, ncell->center(), x_q, u_grad_ncell);
-
-            const auto [F_plus, F_minus, a_half] = internal::compute_kt_flux_and_speeds(u_plus, u_minus, x_q, model);
-            const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, u_plus, u_minus);
-
-            const auto &n_face = normals[q_face_index];
-            const auto D =
-                internal::compute_diffusion_flux(u_plus, u_minus, x_cell, x_ncell, u_cell, u_ncell, n_face, x_q, model);
-
-            const auto JxW = fe_iv.get_JxW_values();
-
-            for (uint dof = 0; dof < n_face_dofs; ++dof) {
-              const auto &cd_i = fe_iv.interface_dof_to_dof_indices(dof);
-              const auto component_i = cd_i[0] == numbers::invalid_unsigned_int
-                                           ? fe.system_to_component_index(cd_i[1]).first
-                                           : fe.system_to_component_index(cd_i[0]).first;
-              copy_data_face.cell_residual(dof) +=
-                  weight * JxW[q_face_index] *
-                  (fe_iv.jump_in_shape_values(dof, q_face_index, component_i) *
-                   (scalar_product(H[component_i], n_face) -
-                    scalar_product(D[component_i], n_face))); // [[phi_i]] * (H - D) · n
-            }
-          };
-
-          const auto boundary_worker = [&](const Iterator &cell, const unsigned int &face_no, Scratch &scratch_data,
-                                           CopyData &copy_data) {
-            scratch_data.fe_interface_values.reinit(cell, face_no);
-            const auto &fe_fv = scratch_data.fe_interface_values.get_fe_face_values(0);
-            const FEInterfaceValues<dim> &fe_iv = scratch_data.fe_interface_values;
-            const uint n_face_dofs = fe_iv.n_current_interface_dofs();
-
-            copy_data.face_data.emplace_back();
-            auto &copy_data_face = copy_data.face_data.back();
-            copy_data_face.reinit(fe_iv);
-
-            const auto &JxW = fe_fv.get_JxW_values();
-            const auto &q_points = fe_fv.get_quadrature_points();
-            const int q_face_index = 0; // only one quadrature point per face for FV
-            const auto &x_q = q_points[q_face_index];
-
-            // Get cell data and ghost neighbor data via apply_boundary_conditions
-            auto [x_cell_n, u_cell_n] = get_neighboring_cell_data(cell, solution_global, model);
-            auto [x_cell, u_cell] = get_cell_value(cell, solution_global);
-
-            const GradientType u_grad_cell =
-                internal::compute_gradient<NumberType, dim, n_components>(x_cell, u_cell, x_cell_n, u_cell_n);
-
-            const std::vector<Tensor<1, dim>> &normals = fe_fv.get_normal_vectors();
-
-            // Interior reconstructed state at face
-            const std::array<NumberType, n_components> u_minus =
-                internal::reconstruct_u(u_cell, cell->center(), x_q, u_grad_cell);
-
-            // Ghost cell value and position from apply_boundary_conditions
-            const std::array<NumberType, n_components> &u_ghost = u_cell_n[face_no];
-            const Point &x_ghost = x_cell_n[face_no];
-
-            // Ghost gradient via model interface (allows second-order reconstruction at boundaries)
-            const auto boundary_id = cell->face(face_no)->boundary_id();
-            GradientType u_grad_ghost{};
-            model.boundary_ghost_gradient(u_grad_ghost, boundary_id, normals[q_face_index], x_q, u_ghost, x_ghost,
-                                          u_cell, x_cell, u_grad_cell);
-
-            // Ghost reconstructed state at face
-            const std::array<NumberType, n_components> u_plus =
-                internal::reconstruct_u(u_ghost, x_ghost, x_q, u_grad_ghost);
-
-            const auto [F_plus, F_minus, a_half] = internal::compute_kt_flux_and_speeds(u_plus, u_minus, x_q, model);
-            const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, u_plus, u_minus);
-
-            const auto &n_bnd = normals[q_face_index];
-            const auto D_bnd =
-                internal::compute_diffusion_flux(u_plus, u_minus, x_cell, x_ghost, u_cell, u_ghost, n_bnd, x_q, model);
-
-            for (uint dof = 0; dof < n_face_dofs; ++dof) {
-              const auto &cd_i = fe_iv.interface_dof_to_dof_indices(dof);
-              const auto component_i = cd_i[0] == numbers::invalid_unsigned_int
-                                           ? fe.system_to_component_index(cd_i[1]).first
-                                           : fe.system_to_component_index(cd_i[0]).first;
-              copy_data_face.cell_residual(dof) +=
-                  weight * JxW[q_face_index] *
-                  (fe_iv.jump_in_shape_values(dof, q_face_index, component_i) *
-                   (scalar_product(H[component_i], n_bnd) - scalar_product(D_bnd[component_i], n_bnd)));
-            }
-          };
-
           const auto copier = [&](const CopyData &c) {
             constraints.distribute_local_to_global(c.cell_residual, c.local_dof_indices, residual);
             constraints.distribute_local_to_global(c.cell_mass, c.local_dof_indices, residual);
