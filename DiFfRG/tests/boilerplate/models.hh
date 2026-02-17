@@ -213,5 +213,63 @@ namespace DiFfRG
       }
     };
 
+    template <uint dim>
+    class ModelBurgersTravelingWaveKT
+        : public def::AbstractModel<ModelBurgersTravelingWaveKT<dim>,
+                                    ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>>>,
+          public def::Time,
+          public def::LLFFlux<ModelBurgersTravelingWaveKT<dim>>,
+          public def::FlowBoundaries<ModelBurgersTravelingWaveKT<dim>>,
+          public def::AD<ModelBurgersTravelingWaveKT<dim>>
+    {
+    protected:
+      static constexpr double nu = 1.0;
+      static constexpr double f_plus = 2.0;
+      static constexpr double f_minus = 0.0;
+      static constexpr double c = (f_plus + f_minus) / 2.0;
+
+    public:
+      ModelBurgersTravelingWaveKT(PhysicalParameters) {}
+
+      /// Steadily propagating traveling wave: u(x,0) = 2 / (1 + exp(x / nu))
+      template <typename Vector> void initial_condition(const Point<dim> &pos, Vector &values) const
+      {
+        values[0] = f_plus / (1.0 + std::exp(pos[0] / nu));
+      }
+
+      /// Exact solution: u(x,t) = 2 / (1 + exp((x - c*t) / nu))
+      double solution(const Point<dim> &pos) const { return f_plus / (1.0 + std::exp((pos[0] - c * t) / nu)); }
+
+      template <typename NT, typename Solution>
+      void KurganovTadmor_advection_flux(std::array<Tensor<1, dim, NT>, 1> &F_i, const Point<dim> & /*pos*/,
+                                         const Solution &sol) const
+      {
+        const auto &fe_functions = get<0>(sol);
+        F_i[0][0] = 0.5 * powr<2>(fe_functions[0]);
+      }
+
+      template <typename NT, typename Solution>
+      void flux(std::array<Tensor<1, dim, NT>, 1> &F_i, const Point<dim> & /*pos*/, const Solution &sol) const
+      {
+        const auto &fe_derivatives = get<1>(sol);
+        F_i[0] = nu * fe_derivatives[0];
+      }
+
+      template <int mdim, typename NumberType, size_t n_comp, size_t n_faces_bc>
+      void apply_boundary_conditions(std::array<std::array<NumberType, n_comp>, n_faces_bc> &u_neighbors,
+                                     std::array<Point<mdim>, n_faces_bc> &x_neighbors,
+                                     const std::array<types::boundary_id, n_faces_bc> &boundary_ids,
+                                     const std::array<Point<mdim>, n_faces_bc> &face_centers,
+                                     const std::array<NumberType, n_comp> & /*u_cell*/,
+                                     const Point<mdim> & /*x_cell*/) const
+      {
+        for (size_t f = 0; f < n_faces_bc; ++f)
+          if (boundary_ids[f] != numbers::internal_face_boundary_id) {
+            x_neighbors[f] = face_centers[f];
+            u_neighbors[f][0] = f_plus / (1.0 + std::exp((x_neighbors[f][0] - c * t) / nu));
+          }
+      }
+    };
+
   } // namespace Testing
 } // namespace DiFfRG

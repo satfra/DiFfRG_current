@@ -372,6 +372,58 @@ namespace DiFfRG
 
       } // namespace internal
 
+      namespace internal
+      {
+        /**
+         * @brief Compute the averaged diffusion flux at a face for the Kurganov-Tadmor scheme.
+         *
+         * Evaluates model.flux on both the left (u_minus) and right (u_plus) reconstructed states
+         * using a two-point gradient approximation, then returns their average:
+         * D = 0.5 * (flux(u_minus, grad) + flux(u_plus, grad))
+         *
+         * @tparam Model the model type providing the flux method
+         * @tparam NumberType the numeric type
+         * @tparam dim the spatial dimension
+         * @tparam n_components the number of solution components
+         *
+         * @param u_plus the reconstructed state on the "+" side of the interface
+         * @param u_minus the reconstructed state on the "-" side of the interface
+         * @param x_left the center of the left cell
+         * @param x_right the center of the right cell (or ghost position)
+         * @param u_left the cell-average value of the left cell
+         * @param u_right the cell-average value of the right cell (or ghost value)
+         * @param normal the outward unit normal at the face
+         * @param x_q the quadrature point position at the face
+         * @param model the model providing the flux function
+         *
+         * @return the averaged diffusion flux per component as an array of Tensor<1,dim>.
+         */
+        template <typename Model, typename NumberType, int dim, size_t n_components>
+        std::array<dealii::Tensor<1, dim, NumberType>, n_components>
+        compute_diffusion_flux(const std::array<NumberType, n_components> &u_plus,
+                               const std::array<NumberType, n_components> &u_minus, const dealii::Point<dim> &x_left,
+                               const dealii::Point<dim> &x_right, const std::array<NumberType, n_components> &u_left,
+                               const std::array<NumberType, n_components> &u_right,
+                               const dealii::Tensor<1, dim> &normal, const dealii::Point<dim> &x_q, const Model &model)
+        {
+          const dealii::Tensor<1, dim> dx_vec = x_right - x_left;
+          const NumberType dx_n = scalar_product(dx_vec, normal);
+
+          GradientType<dim, NumberType, n_components> face_gradient{};
+          for (size_t c = 0; c < n_components; ++c)
+            face_gradient[c] = normal * ((u_right[c] - u_left[c]) / dx_n);
+
+          std::array<dealii::Tensor<1, dim, NumberType>, n_components> D_minus{}, D_plus{};
+          model.flux(D_minus, x_q, flux_tie(u_minus, face_gradient));
+          model.flux(D_plus, x_q, flux_tie(u_plus, face_gradient));
+
+          std::array<dealii::Tensor<1, dim, NumberType>, n_components> D{};
+          for (size_t c = 0; c < n_components; ++c)
+            D[c] = 0.5 * (D_minus[c] + D_plus[c]);
+          return D;
+        }
+      } // namespace internal
+
       template <typename Discretization_, typename Model_>
         requires MeshIsRectangular<typename Discretization_::Mesh>
       class Assembler : public AbstractAssembler<typename Discretization_::VectorType,
@@ -682,6 +734,10 @@ namespace DiFfRG
             const auto [F_plus, F_minus, a_half] = internal::compute_kt_flux_and_speeds(u_plus, u_minus, x_q, model);
             const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, u_plus, u_minus);
 
+            const auto &n_face = normals[q_face_index];
+            const auto D =
+                internal::compute_diffusion_flux(u_plus, u_minus, x_cell, x_ncell, u_cell, u_ncell, n_face, x_q, model);
+
             const auto JxW = fe_iv.get_JxW_values();
 
             for (uint dof = 0; dof < n_face_dofs; ++dof) {
@@ -692,8 +748,8 @@ namespace DiFfRG
               copy_data_face.cell_residual(dof) +=
                   weight * JxW[q_face_index] *
                   (fe_iv.jump_in_shape_values(dof, q_face_index, component_i) *
-                   scalar_product(H[component_i],
-                                  normals[q_face_index])); // [[phi_i(x_q)]] * numflux(x_q, u_q) * n(x_q)
+                   (scalar_product(H[component_i], n_face) -
+                    scalar_product(D[component_i], n_face))); // [[phi_i]] * (H - D) · n
             }
           };
 
@@ -743,14 +799,19 @@ namespace DiFfRG
             const auto [F_plus, F_minus, a_half] = internal::compute_kt_flux_and_speeds(u_plus, u_minus, x_q, model);
             const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, u_plus, u_minus);
 
+            const auto &n_bnd = normals[q_face_index];
+            const auto D_bnd =
+                internal::compute_diffusion_flux(u_plus, u_minus, x_cell, x_ghost, u_cell, u_ghost, n_bnd, x_q, model);
+
             for (uint dof = 0; dof < n_face_dofs; ++dof) {
               const auto &cd_i = fe_iv.interface_dof_to_dof_indices(dof);
               const auto component_i = cd_i[0] == numbers::invalid_unsigned_int
                                            ? fe.system_to_component_index(cd_i[1]).first
                                            : fe.system_to_component_index(cd_i[0]).first;
-              copy_data_face.cell_residual(dof) += weight * JxW[q_face_index] *
-                                                   (fe_iv.jump_in_shape_values(dof, q_face_index, component_i) *
-                                                    scalar_product(H[component_i], normals[q_face_index]));
+              copy_data_face.cell_residual(dof) +=
+                  weight * JxW[q_face_index] *
+                  (fe_iv.jump_in_shape_values(dof, q_face_index, component_i) *
+                   (scalar_product(H[component_i], n_bnd) - scalar_product(D_bnd[component_i], n_bnd)));
             }
           };
 
