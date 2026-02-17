@@ -22,11 +22,8 @@ using VectorType = dealii::Vector<NumberType>;
 using namespace dealii;
 namespace KT = DiFfRG::FV::KurganovTadmor;
 using KT::internal::compute_gradient;
-<<<<<<< HEAD
 using KT::internal::compute_kt_flux_and_speeds;
 using KT::internal::compute_numerical_flux;
-=======
->>>>>>> 912f39fb4f2f4d0f4b7a3952db32fadb3f032cf4
 using KT::internal::reconstruct_u;
 using KT::internal::ScratchData;
 struct CopyData {
@@ -45,11 +42,7 @@ public:
                                 [[maybe_unused]] const Point<dim> &x, [[maybe_unused]] const Solutions &sol)
   {
     auto u = get<"fe_functions">(sol);
-<<<<<<< HEAD
     F_i[idxf("u")][0] = u[0] * u[0] / 2.0 + x[0];
-=======
-    F_i[idxf("u")][0] = u * u / 2.0 + x[0];
->>>>>>> 912f39fb4f2f4d0f4b7a3952db32fadb3f032cf4
   }
 };
 
