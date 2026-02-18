@@ -424,10 +424,6 @@ namespace DiFfRG
         // Default: mirror the interior cell's gradient (smooth extension)
         ghost_gradient = cell_gradient;
       }
-
-      //@}
-      // ...existing code...
-      //@}
     };
 
     class Time
