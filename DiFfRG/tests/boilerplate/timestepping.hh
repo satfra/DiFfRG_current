@@ -89,6 +89,8 @@ bool run(std::string test_name, double expected_precision)
   Assembler assembler(discretization, model, json);
   DataOutput<dim, VectorType> data_out("./", test_name, test_name + '/', json);
 
+  const int n_components = Model::Components::count_fe_functions(0);
+
   std::unique_ptr<AbstractAdaptor<VectorType>> adaptor;
   if constexpr (adapt)
     adaptor = std::make_unique<HAdaptivity<Assembler>>(assembler, json);
@@ -117,14 +119,19 @@ bool run(std::string test_name, double expected_precision)
 
   const auto &support_points = discretization.get_support_points();
   model.set_time(final_time);
-  for (uint i = 0; i < support_points.size(); ++i) {
-    const auto &error_condition =
-        is_close(initial_condition.data()[i], model.solution(support_points[i]), expected_precision);
-    if (!error_condition) {
-      std::cout << "at x = " << support_points[i] << " numerical: " << initial_condition.data()[i]
-                << " analytical: " << model.solution(support_points[i]) << std::endl;
+  const uint n_points = initial_condition.spatial_data().size() / n_components;
+  for (uint i = 0; i < n_points; ++i) {
+    std::array<double, n_components> analytical_solution = model.solution(support_points[i * n_components]);
+    for (uint component = 0; component < n_components; component++) {
+      double numeric_solution = initial_condition.spatial_data()[n_components * i + component];
+      const auto &error_condition = is_close(numeric_solution, analytical_solution[component], expected_precision);
+      if (!error_condition && 1) {
+        std::cout << "at x = " << support_points[i * n_components] << " component: " << component
+                  << " numerical: " << numeric_solution << " analytical: " << analytical_solution[component]
+                  << std::endl;
+      }
+      valid &= error_condition;
     }
-    valid &= error_condition;
   }
 
   if (!valid) std::cerr << "Failed " << test_name << std::endl;

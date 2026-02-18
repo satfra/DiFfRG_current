@@ -73,3 +73,16 @@ TEST_CASE("Test explicit euler with KT viscous Burgers traveling wave",
   using TimeStepper = TimeStepperExplicitEuler<VectorType, SparseMatrixType, dim>;
   REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_explicit_euler_traveling_wave_kt", 3e-4));
 }
+TEST_CASE("Test explicit euler with KT two-component Burgers system",
+          "[timestepping][Burgers][explicit_euler][kt][two_component]")
+{
+  constexpr uint dim = 1;
+  using Model = Testing::ModelTwoComponentBurgersKT<dim>;
+  using NumberType = double;
+  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<dim>>;
+  using VectorType = typename Discretization::VectorType;
+  using SparseMatrixType = typename Discretization::SparseMatrixType;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using TimeStepper = TimeStepperExplicitEuler<VectorType, SparseMatrixType, dim>;
+  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_explicit_euler_two_component_burgers_kt", 3e-4));
+}

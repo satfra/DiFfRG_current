@@ -3,6 +3,7 @@
 // external libraries
 
 // DiFfRG
+#include <Eigen/Dense>
 #include <array>
 #include <autodiff/forward/real/real.hpp>
 #include <cstddef>
@@ -303,7 +304,16 @@ namespace DiFfRG
               max_eig_plus = std::abs(J_plus[d][0][0]);
               max_eig_minus = std::abs(J_minus[d][0][0]);
             } else {
-              static_assert(n_components == 1, "Eigenvalue computation for systems required here.");
+              Eigen::Matrix<NumberType, n_components, n_components> J_plus_eigen, J_minus_eigen;
+              for (size_t i = 0; i < n_components; ++i)
+                for (size_t j = 0; j < n_components; ++j) {
+                  J_plus_eigen(i, j) = J_plus[d][i][j];
+                  J_minus_eigen(i, j) = J_minus[d][i][j];
+                }
+              Eigen::EigenSolver<Eigen::Matrix<NumberType, n_components, n_components>> es_plus(J_plus_eigen);
+              Eigen::EigenSolver<Eigen::Matrix<NumberType, n_components, n_components>> es_minus(J_minus_eigen);
+              max_eig_plus = es_plus.eigenvalues().cwiseAbs().maxCoeff();
+              max_eig_minus = es_minus.eigenvalues().cwiseAbs().maxCoeff();
             }
 
             NumberType a = std::max(max_eig_plus, max_eig_minus);

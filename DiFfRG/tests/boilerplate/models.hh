@@ -1,6 +1,7 @@
 #pragma once
 
 // external libraries
+#include <array>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
@@ -72,7 +73,10 @@ namespace DiFfRG
           throw std::runtime_error("Only 1, 2, and 3 dimensions are supported.");
       }
 
-      double solution(const Point<dim> &pos) const { return prm.initial_x0[0] + prm.initial_x1[0] * pos[0]; }
+      std::array<double, 1> solution(const Point<dim> &pos) const
+      {
+        return {prm.initial_x0[0] + prm.initial_x1[0] * pos[0]};
+      }
     };
 
     template <uint dim>
@@ -93,7 +97,10 @@ namespace DiFfRG
       {
         values[0] = prm.initial_x0[0] + prm.initial_x1[0] * pos[0];
       }
-      double solution(const Point<dim> &pos) const { return prm.initial_x0[0] + prm.initial_x1[0] * pos[0]; }
+      std::array<double, 1> solution(const Point<dim> &pos) const
+      {
+        return prm.initial_x0[0] + prm.initial_x1[0] * pos[0];
+      }
       template <uint dependent, int mdim, typename NumberType, typename Solutions_s, typename Solutions_n>
       void ldg_numflux(std::array<Tensor<1, mdim, NumberType>, 1> &, const Tensor<1, mdim> &, const Point<mdim> &,
                        const Solutions_s &, const Solutions_n &) const
@@ -119,9 +126,9 @@ namespace DiFfRG
         values[0] = prm.initial_x0[0] + prm.initial_x1[0] * pos[0];
       }
 
-      double solution(const Point<dim> &pos) const
+      std::array<double, 1> solution(const Point<dim> &pos) const
       {
-        return std::exp(t) * (prm.initial_x0[0] + prm.initial_x1[0] * pos[0]);
+        return {std::exp(t) * (prm.initial_x0[0] + prm.initial_x1[0] * pos[0])};
       }
 
       template <typename NT, typename Solution>
@@ -151,9 +158,9 @@ namespace DiFfRG
         values[0] = prm.initial_x0[0] + prm.initial_x1[0] * pos[0];
       }
 
-      double solution(const Point<dim> &pos) const
+      std::array<double, 1> solution(const Point<dim> &pos) const
       {
-        return (prm.initial_x0[0] + prm.initial_x1[0] * pos[0]) / (prm.initial_x1[0] * t + 1.);
+        return {(prm.initial_x0[0] + prm.initial_x1[0] * pos[0]) / (prm.initial_x1[0] * t + 1.)};
       }
 
       template <typename NT, typename Solution>
@@ -183,9 +190,9 @@ namespace DiFfRG
         values[0] = prm.initial_x0[0] + prm.initial_x1[0] * pos[0];
       }
 
-      double solution(const Point<dim> &pos) const
+      std::array<double, 1> solution(const Point<dim> &pos) const
       {
-        return (prm.initial_x0[0] + prm.initial_x1[0] * pos[0]) / (prm.initial_x1[0] * t + 1.);
+        return {(prm.initial_x0[0] + prm.initial_x1[0] * pos[0]) / (prm.initial_x1[0] * t + 1.)};
       }
 
       template <typename NT, typename Solution>
@@ -238,7 +245,10 @@ namespace DiFfRG
       }
 
       /// Exact solution: u(x,t) = 2 / (1 + exp((x - c*t) / nu))
-      double solution(const Point<dim> &pos) const { return f_plus / (1.0 + std::exp((pos[0] - c * t) / nu)); }
+      std::array<double, 1> solution(const Point<dim> &pos) const
+      {
+        return {f_plus / (1.0 + std::exp((pos[0] - c * t) / nu))};
+      }
 
       template <typename NT, typename Solution>
       void KurganovTadmor_advection_flux(std::array<Tensor<1, dim, NT>, 1> &F_i, const Point<dim> & /*pos*/,
@@ -267,6 +277,83 @@ namespace DiFfRG
           if (boundary_ids[f] != numbers::internal_face_boundary_id) {
             x_neighbors[f] = face_centers[f];
             u_neighbors[f][0] = f_plus / (1.0 + std::exp((x_neighbors[f][0] - c * t) / nu));
+          }
+      }
+    };
+
+    template <uint dim>
+    class ModelTwoComponentBurgersKT
+        : public def::AbstractModel<ModelTwoComponentBurgersKT<dim>,
+                                    ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">, Scalar<"v">>>>,
+          public def::Time,
+          public def::LLFFlux<ModelTwoComponentBurgersKT<dim>>,
+          public def::FlowBoundaries<ModelTwoComponentBurgersKT<dim>>,
+          public def::AD<ModelTwoComponentBurgersKT<dim>>
+    {
+    protected:
+      const PhysicalParameters prm;
+      static constexpr double nu = 1.0;
+      static constexpr double f_plus = 2.0;
+      static constexpr double f_minus = 0.0;
+      static constexpr double c = (f_plus + f_minus) / 2.0;
+
+    public:
+      ModelTwoComponentBurgersKT(PhysicalParameters prm) : prm(prm) {}
+
+      template <typename Vector> void initial_condition(const Point<dim> &pos, Vector &values) const
+      {
+        // Component 0 (u): BurgersTravelingWaveKT initial condition
+        values[0] = f_plus / (1.0 + std::exp(pos[0] / nu));
+        // Component 1 (v): BurgersKT initial condition
+        values[1] = prm.initial_x0[0] + prm.initial_x1[0] * pos[0];
+      }
+
+      /// Component 0 (u): exact solution for traveling wave
+      /// Component 1 (v): exact solution for Burgers
+      std::array<double, 2> solution(const Point<dim> &pos) const
+      {
+        const double u_sol = f_plus / (1.0 + std::exp((pos[0] - c * t) / nu));
+        const double v_sol = (prm.initial_x0[0] + prm.initial_x1[0] * pos[0]) / (prm.initial_x1[0] * t + 1.);
+        return {u_sol, v_sol};
+      }
+
+      template <typename NT, typename Solution>
+      void KurganovTadmor_advection_flux(std::array<Tensor<1, dim, NT>, 2> &F_i, const Point<dim> & /*pos*/,
+                                         const Solution &sol) const
+      {
+        const auto &fe_functions = get<0>(sol);
+        // Component 0 (u): traveling wave advection flux
+        F_i[0][0] = 0.5 * powr<2>(fe_functions[0]);
+        // Component 1 (v): Burgers advection flux
+        F_i[1][0] = 0.5 * powr<2>(fe_functions[1]);
+      }
+
+      template <typename NT, typename Solution>
+      void flux(std::array<Tensor<1, dim, NT>, 2> &F_i, const Point<dim> & /*pos*/, const Solution &sol) const
+      {
+        const auto &fe_derivatives = get<1>(sol);
+        // Component 0 (u): traveling wave diffusion flux
+        F_i[0] = nu * fe_derivatives[0];
+        // Component 1 (v): no diffusion for BurgersKT
+        F_i[1] = 0.0;
+      }
+
+      template <int mdim, typename NumberType, size_t n_components, size_t n_faces>
+      void apply_boundary_conditions(std::array<std::array<NumberType, n_components>, n_faces> &u_neighbors,
+                                     std::array<Point<mdim>, n_faces> &x_neighbors,
+                                     const std::array<types::boundary_id, n_faces> &boundary_ids,
+                                     const std::array<Point<mdim>, n_faces> &face_centers,
+                                     const std::array<NumberType, n_components> & /*u_cell*/,
+                                     const Point<mdim> & /*x_cell*/) const
+      {
+        for (size_t f = 0; f < n_faces; ++f)
+          if (boundary_ids[f] != numbers::internal_face_boundary_id) {
+            x_neighbors[f] = face_centers[f];
+            // Component 0 (u): traveling wave boundary condition
+            u_neighbors[f][0] = f_plus / (1.0 + std::exp((x_neighbors[f][0] - c * t) / nu));
+            // Component 1 (v): Burgers boundary condition
+            u_neighbors[f][1] =
+                (prm.initial_x0[0] + prm.initial_x1[0] * x_neighbors[f][0]) / (prm.initial_x1[0] * t + 1.);
           }
       }
     };
