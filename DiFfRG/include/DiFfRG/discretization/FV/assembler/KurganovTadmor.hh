@@ -664,8 +664,6 @@ namespace DiFfRG
           model.apply_boundary_conditions(u_n, x_n, boundary_ids, face_centers, u_cell, x_cell);
 
           return std::make_pair(x_n, u_n);
-          // MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-          //                       copy_data, flags, nullptr, nullptr, threads, batch_size);
         }
 
         virtual void residual(VectorType &residual, const VectorType &solution_global, NumberType weight,
