@@ -553,73 +553,51 @@ namespace DiFfRG
         virtual void mass(VectorType &mass, const VectorType &solution_global, const VectorType &solution_global_dot,
                           NumberType weight) override
         {
-          // using Scratch = internal::ScratchData<dim, NumberType>;
-          // using CopyData = internal::CopyData_R<NumberType>;
-          // const auto &constraints = discretization.get_constraints();
-          // using Scratch = internal::ScratchData<dim, NumberType>;
-          // using CopyData = internal::CopyData_R<NumberType>;
-          // const auto &constraints = discretization.get_constraints();
+          using Scratch = internal::ScratchData<dim, NumberType>;
+          using CopyData = internal::CopyData_R<NumberType>;
+          const auto &constraints = discretization.get_constraints();
 
-          // const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
-          //   scratch_data.fe_values.reinit(cell);
-          //   const auto &fe_v = scratch_data.fe_values;
-          //   const uint n_dofs = fe_v.get_fe().n_dofs_per_cell();
+          Scratch scratch_data(mapping, discretization.get_fe(), quadrature, quadrature_face);
+          CopyData copy_data;
 
-          //   copy_data.reinit(cell, n_dofs);
-          //   const auto &JxW = fe_v.get_JxW_values();
-          //   const auto &q_points = fe_v.get_quadrature_points();
-          //   const auto &q_indices = fe_v.quadrature_point_indices();
+          const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
+            scratch_data.fe_values.reinit(cell);
+            const auto &fe_v = scratch_data.fe_values;
+            const uint n_dofs = fe_v.get_fe().n_dofs_per_cell();
 
-          //   auto &solution = scratch_data.solution_global;
-          //   auto &solution_dot = scratch_data.solution_dot;
-          //   fe_v.get_function_values(solution_global, solution);
-          //   fe_v.get_function_values(solution_global_dot, solution_dot);
-          //   auto &solution = scratch_data.solution_global;
-          //   auto &solution_dot = scratch_data.solution_dot;
-          //   fe_v.get_function_values(solution_global, solution);
-          //   fe_v.get_function_values(solution_global_dot, solution_dot);
+            copy_data.reinit(cell, n_dofs);
 
-          //   std::array<NumberType, n_components> mass{};
-          //   for (const auto &q_index : q_indices) {
-          //     const auto &x_q = q_points[q_index];
-          //     model.mass(mass, x_q, solution[q_index], solution_dot[q_index]);
-          //   std::array<NumberType, n_components> mass{};
-          //   for (const auto &q_index : q_indices) {
-          //     const auto &x_q = q_points[q_index];
-          //     model.mass(mass, x_q, solution[q_index], solution_dot[q_index]);
+            const auto &JxW = fe_v.get_JxW_values();
+            const auto &q_points = fe_v.get_quadrature_points();
+            const auto &q_indices = fe_v.quadrature_point_indices();
 
-          //     for (uint i = 0; i < n_dofs; ++i) {
-          //       const auto component_i = fe_v.get_fe().system_to_component_index(i).first;
-          //       copy_data.cell_residual(i) += weight * JxW[q_index] *
-          //                                     fe_v.shape_value_component(i, q_index, component_i) *
-          //                                     mass[component_i]; // +phi_i(x_q) * mass(x_q, u_q)
-          //     }
-          //   }
-          // };
-          // const auto copier = [&](const CopyData &c) {
-          //   constraints.distribute_local_to_global(c.cell_residual, c.local_dof_indices, mass);
-          // };
-          //     for (uint i = 0; i < n_dofs; ++i) {
-          //       const auto component_i = fe_v.get_fe().system_to_component_index(i).first;
-          //       copy_data.cell_residual(i) += weight * JxW[q_index] *
-          //                                     fe_v.shape_value_component(i, q_index, component_i) *
-          //                                     mass[component_i]; // +phi_i(x_q) * mass(x_q, u_q)
-          //     }
-          //   }
-          // };
-          // const auto copier = [&](const CopyData &c) {
-          //   constraints.distribute_local_to_global(c.cell_residual, c.local_dof_indices, mass);
-          // };
+            std::vector<VectorType> solution(quadrature.size(), VectorType(n_components));
+            std::vector<VectorType> solution_dot(quadrature.size(), VectorType(n_components));
 
-          // Scratch scratch_data(mapping, discretization.get_fe(), quadrature);
-          // CopyData copy_data;
-          // MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
-          // Scratch scratch_data(mapping, discretization.get_fe(), quadrature);
-          // CopyData copy_data;
-          // MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
+            fe_v.get_function_values(solution_global, solution);
+            fe_v.get_function_values(solution_global_dot, solution_dot);
 
-          // MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-          //                       copy_data, flags, nullptr, nullptr, threads, batch_size);
+            std::array<NumberType, n_components> mass_values{};
+            for (const auto &q_index : q_indices) {
+              const auto &x_q = q_points[q_index];
+              model.mass(mass_values, x_q, solution[q_index], solution_dot[q_index]);
+
+              for (uint i = 0; i < n_dofs; ++i) {
+                const auto component_i = fe_v.get_fe().system_to_component_index(i).first;
+                copy_data.cell_mass(i) += weight * JxW[q_index] * fe_v.shape_value_component(i, q_index, component_i) *
+                                          mass_values[component_i]; // +phi_i(x_q) * mass(x_q, u_q)
+              }
+            }
+          };
+
+          const auto copier = [&](const CopyData &c) {
+            constraints.distribute_local_to_global(c.cell_mass, c.local_dof_indices, mass);
+          };
+
+          MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
+
+          MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
+                                copy_data, flags, nullptr, nullptr, threads, batch_size);
         }
 
         static std::pair<Point, std::array<NumberType, n_components>> get_cell_value(const Iterator &cell,
