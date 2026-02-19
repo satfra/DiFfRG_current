@@ -498,21 +498,24 @@ namespace DiFfRG
         {
           Timer timer;
 
-          // Mass sparsity pattern is diagonal
-          auto dynamic_sparsity_pattern_mass = DynamicSparsityPattern(dof_handler.n_dofs());
-          for (uint i = 0; i < dof_handler.n_dofs(); ++i)
-            dynamic_sparsity_pattern_mass.add(i, i);
-          sparsity_pattern_mass.copy_from(dynamic_sparsity_pattern_mass);
-
-          // FV mass matrix: M_ii = cell volume (not identity!)
-          mass_matrix.reinit(sparsity_pattern_mass);
-          std::vector<types::global_dof_index> dof_indices(n_components);
-          for (const auto &cell : dof_handler.active_cell_iterators()) {
-            cell->get_dof_indices(dof_indices);
-            const NumberType measure = cell->measure();
-            for (uint c = 0; c < n_components; ++c)
-              mass_matrix.set(dof_indices[c], dof_indices[c], measure);
+          // Mass sparsity pattern
+          {
+            DynamicSparsityPattern dsp(dof_handler.n_dofs());
+            DoFTools::make_sparsity_pattern(dof_handler, dsp, discretization.get_constraints(),
+                                            /*keep_constrained_dofs = */ true);
+            sparsity_pattern_mass.copy_from(dsp);
+            mass_matrix.reinit(sparsity_pattern_mass);
+            MatrixCreator::create_mass_matrix(dof_handler, quadrature, mass_matrix,
+                                              static_cast<Function<dim, NumberType> *>(nullptr),
+                                              discretization.get_constraints());
           }
+          // // Jacobian sparsity pattern
+          // {
+          //   DynamicSparsityPattern dsp(dof_handler.n_dofs());
+          //   DoFTools::make_flux_sparsity_pattern(dof_handler, dsp, discretization.get_constraints(),
+          //                                        /*keep_constrained_dofs = */ true);
+          //   sparsity_pattern_jacobian.copy_from(dsp);
+          // }
 
           constexpr uint stencil = 1;
           build_sparsity(sparsity_pattern_jacobian, dof_handler, dof_handler, stencil, true);
