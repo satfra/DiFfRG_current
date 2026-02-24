@@ -949,65 +949,58 @@ namespace DiFfRG
         virtual void refinement_indicator(Vector<double> &indicator, const VectorType &solution_global) {}
 
         void build_sparsity(SparsityPattern &sparsity_pattern, const DoFHandler<dim> &to_dofh,
-                            const DoFHandler<dim> &from_dofh, const int stencil = 1,
-                            bool /* add_extractor_dofs */ = false) const
+                            const DoFHandler<dim> &from_dofh, const int stencil = 2,
+                            bool add_extractor_dofs = false) const
         {
-          // const auto &triangulation = discretization.get_triangulation();
+          using DoFHandlerActiveIterator = TriaActiveIterator<DoFCellAccessor<dim, dim, false>>;
+          const auto &triangulation = discretization.get_triangulation();
 
-          // DynamicSparsityPattern dsp(dof_handler.n_dofs(), dof_handler.n_dofs());
+          DynamicSparsityPattern dsp(dof_handler.n_dofs(), dof_handler.n_dofs());
 
-          // const auto to_dofs_per_cell = to_dofh.get_fe().dofs_per_cell;
-          // const auto from_dofs_per_cell = from_dofh.get_fe().dofs_per_cell;
+          const auto to_dofs_per_cell = to_dofh.get_fe().dofs_per_cell;
+          const auto from_dofs_per_cell = from_dofh.get_fe().dofs_per_cell;
 
-          // for (const auto &t_cell : triangulation.active_cell_iterators()) {
-          //   std::vector<types::global_dof_index> to_dofs(to_dofs_per_cell);
-          //   std::vector<types::global_dof_index> from_dofs(from_dofs_per_cell);
-          //   const auto to_cell = t_cell->as_dof_handler_iterator(to_dofh);
-          //   const auto from_cell = t_cell->as_dof_handler_iterator(from_dofh);
-          //   to_cell->get_dof_indices(to_dofs);
-          //   from_cell->get_dof_indices(from_dofs);
+          for (const auto &t_cell : triangulation.active_cell_iterators()) {
+            std::vector<types::global_dof_index> to_dofs(to_dofs_per_cell);
+            std::vector<types::global_dof_index> from_dofs;
+            from_dofs.reserve(from_dofs_per_cell +
+                              stencil * from_dofs_per_cell); // reserve enough space for the cell itself + neighbors
+            const DoFHandlerActiveIterator to_cell = t_cell->as_dof_handler_iterator(to_dofh);
+            const DoFHandlerActiveIterator from_cell = t_cell->as_dof_handler_iterator(from_dofh);
+            to_cell->get_dof_indices(to_dofs);
+            from_cell->get_dof_indices(from_dofs);
 
-          //   std::function<void(decltype(from_cell) &, const int)> add_all_neighbor_dofs = [&](const auto
-          //   &from_cell,
-          //                                                                                     const int
-          //                                                                                     stencil_level) {
-          //     for (const auto face_no : from_cell->face_indices()) {
-          //       const auto face = from_cell->face(face_no);
-          //       if (!face->at_boundary()) {
-          //         auto neighbor_cell = from_cell->neighbor(face_no);
+            std::function<void(DoFHandlerActiveIterator &, const int)> add_all_neighbor_dofs =
+                [&](const auto &from_cell, const int stencil_level = 1) {
+                  for (const auto face_no : from_cell->face_indices()) {
+                    const auto face = from_cell->face(face_no);
+                    if (!face->at_boundary()) {
+                      auto neighbor_cell = from_cell->neighbor(face_no);
 
-          //         if (dim == 1)
-          //           while (neighbor_cell->has_children())
-          //             neighbor_cell = neighbor_cell->child(face_no == 0 ? 1 : 0);
+                      if (neighbor_cell->has_children()) {
+                        throw std::runtime_error("AMR is not yet supported in the Kurganov-Tadmor assembler.");
+                      }
 
-          //         // add all children
-          //         else if (neighbor_cell->has_children()) {
-          //           throw std::runtime_error("not yet implemented lol");
-          //         }
+                      std::vector<types::global_dof_index> tmp(from_dofs_per_cell);
+                      neighbor_cell->get_dof_indices(tmp);
 
-          //         if (!neighbor_cell->is_active()) continue;
+                      from_dofs.insert(std::end(from_dofs), std::begin(tmp), std::end(tmp)); // Let's wait for C++23 :(
 
-          //         std::vector<types::global_dof_index> tmp(from_dofs_per_cell);
-          //         neighbor_cell->get_dof_indices(tmp);
+                      if (stencil_level < stencil) add_all_neighbor_dofs(neighbor_cell, stencil_level + 1);
+                    }
+                  }
+                };
 
-          //         from_dofs.insert(std::end(from_dofs), std::begin(tmp), std::end(tmp));
+            add_all_neighbor_dofs(from_cell);
 
-          //         if (stencil_level < stencil) add_all_neighbor_dofs(neighbor_cell, stencil_level + 1);
-          //       }
-          //     }
-          //   };
+            for (const auto i : to_dofs)
+              for (const auto j : from_dofs)
+                dsp.add(i, j);
+          }
 
-          //   add_all_neighbor_dofs(from_cell, 1);
-
-          //   for (const auto i : to_dofs)
-          //     for (const auto j : from_dofs)
-          //       dsp.add(i, j);
-          // }
-
-          // // if (add_extractor_dofs)
-          // //   for (uint row = 0; row < dsp.n_rows(); ++row)
-          // //     dsp.add_row_entries(row, extractor_dof_indices);
-          // sparsity_pattern.copy_from(dsp);
+          if (add_extractor_dofs)
+            throw std::runtime_error("Extractor dofs are not yet supported in the Kurganov-Tadmor assembler.");
+          sparsity_pattern.copy_from(dsp);
         }
 
         void log(const std::string logger)
