@@ -888,65 +888,70 @@ namespace DiFfRG
                               const VectorType &solution_global_dot, NumberType alpha, NumberType beta,
                               const VectorType & /* variables */ = VectorType()) override
         {
-          // using Scratch = internal::ScratchData<dim, NumberType>;
-          // using CopyData = internal::CopyData_J<NumberType>;
-          // const auto &constraints = discretization.get_constraints();
+          using Iterator = typename DoFHandler<dim>::active_cell_iterator;
+          using Scratch = internal::ScratchData<dim, NumberType>;
+          using CopyData = internal::CopyData_J<NumberType>;
+          const auto &constraints = discretization.get_constraints();
 
-          // const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
-          //   scratch_data.fe_values.reinit(cell);
-          //   const auto &fe_v = scratch_data.fe_values;
-          //   const uint n_dofs = fe_v.get_fe().n_dofs_per_cell();
+          const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
+            scratch_data.fe_values.reinit(cell);
+            const auto &fe_v = scratch_data.fe_values;
+            const uint n_dofs = fe_v.get_fe().n_dofs_per_cell();
 
-          //   copy_data.reinit(cell, n_dofs, Components::count_extractors());
-          //   const auto &JxW = fe_v.get_JxW_values();
-          //   const auto &q_points = fe_v.get_quadrature_points();
-          //   const auto &q_indices = fe_v.quadrature_point_indices();
+            copy_data.reinit(cell, n_dofs, Components::count_extractors());
+            const auto &JxW = fe_v.get_JxW_values();
+            const auto &q_points = fe_v.get_quadrature_points();
+            const auto &q_indices = fe_v.quadrature_point_indices();
 
-          //   auto &solution = scratch_data.solution_global;
-          //   auto &solution_dot = scratch_data.solution_dot;
-          //   fe_v.get_function_values(solution_global, solution);
-          //   fe_v.get_function_values(solution_global_dot, solution_dot);
+            std::vector<VectorType> solution(quadrature.size(), VectorType(n_components));
+            std::vector<VectorType> solution_dot(quadrature.size(), VectorType(n_components));
+            fe_v.get_function_values(solution_global, solution);
+            fe_v.get_function_values(solution_global_dot, solution_dot);
 
-          //   SimpleMatrix<NumberType, n_components> j_mass;
-          //   SimpleMatrix<NumberType, n_components> j_mass_dot;
-          //   SimpleMatrix<NumberType, n_components> j_source;
-          //   for (const auto &q_index : q_indices) {
-          //     const auto &x_q = q_points[q_index];
-          //     model.template jacobian_mass<0>(j_mass, x_q, solution[q_index], solution_dot[q_index]);
-          //     model.template jacobian_mass<1>(j_mass_dot, x_q, solution[q_index], solution_dot[q_index]);
-          //     model.template jacobian_source<0, 0>(j_source, x_q, fv_tie(solution[q_index]));
+            SimpleMatrix<NumberType, n_components> j_mass;
+            SimpleMatrix<NumberType, n_components> j_mass_dot;
+            SimpleMatrix<NumberType, n_components> j_source;
+            for (const auto &q_index : q_indices) {
+              const auto &x_q = q_points[q_index];
+              model.template jacobian_mass<0>(j_mass, x_q, solution[q_index], solution_dot[q_index]);
+              model.template jacobian_mass<1>(j_mass_dot, x_q, solution[q_index], solution_dot[q_index]);
+              model.template jacobian_source<0, 0>(j_source, x_q, fv_tie(solution[q_index]));
 
-          //     for (uint i = 0; i < n_dofs; ++i) {
-          //       const auto component_i = fe_v.get_fe().system_to_component_index(i).first;
-          //       for (uint j = 0; j < n_dofs; ++j) {
-          //         const auto component_j = fe_v.get_fe().system_to_component_index(j).first;
-          //         copy_data.cell_jacobian(i, j) +=
-          //             weight * JxW[q_index] * fe_v.shape_value_component(j, q_index, component_j) * // dx * phi_j *
-          //             ( (fe_v.shape_value_component(i, q_index, component_i) *
-          //              j_source(component_i, component_j)); // -phi_i * jsource)
-          //         copy_data.cell_mass_jacobian(i, j) +=
-          //             JxW[q_index] * fe_v.shape_value_component(j, q_index, component_j) *
-          //             fe_v.shape_value_component(i, q_index, component_i) *
-          //             (alpha * j_mass_dot(component_i, component_j) + beta * j_mass(component_i, component_j));
-          //       }
-          //     }
-          //   }
-          // };
-          // const auto copier = [&](const CopyData &c) {
-          //   constraints.distribute_local_to_global(c.cell_jacobian, c.local_dof_indices, jacobian);
-          //   constraints.distribute_local_to_global(c.cell_mass_jacobian, c.local_dof_indices, jacobian);
-          // };
+              for (uint i = 0; i < n_dofs; ++i) {
+                const auto component_i = fe_v.get_fe().system_to_component_index(i).first;
+                for (uint j = 0; j < n_dofs; ++j) {
+                  const auto component_j = fe_v.get_fe().system_to_component_index(j).first;
+                  copy_data.cell_jacobian(i, j) += weight * JxW[q_index] * // dx * phi_j
+                                                   fe_v.shape_value_component(j, q_index, component_j) *
+                                                   *(fe_v.shape_value_component(i, q_index, component_i) *
+                                                     j_source(component_i, component_j)); // -phi_i * jsource
+                  copy_data.cell_mass_jacobian(i, j) +=
+                      JxW[q_index] * fe_v.shape_value_component(j, q_index, component_j) *
+                      fe_v.shape_value_component(i, q_index, component_i) *
+                      (alpha * j_mass_dot(component_i, component_j) + beta * j_mass(component_i, component_j));
+                }
+              }
+            }
+          };
+          const auto copier = [&](const CopyData &c) {
+            constraints.distribute_local_to_global(c.cell_jacobian, c.local_dof_indices, jacobian);
+            constraints.distribute_local_to_global(c.cell_mass_jacobian, c.local_dof_indices, jacobian);
+          };
 
-          // Scratch scratch_data(mapping, discretization.get_fe(), quadrature);
-          // CopyData copy_data;
-          // MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
+          Scratch scratch_data(mapping, discretization.get_fe(), quadrature);
+          CopyData copy_data;
+          MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
 
-          // Timer timer;
-          // MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-          //                       copy_data, flags, nullptr, nullptr, threads, batch_size);
-          // timings_jacobian.push_back(timer.wall_time());
+          Timer timer;
+          MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
+                                copy_data, flags, nullptr, nullptr, threads, batch_size);
+          timings_jacobian.push_back(timer.wall_time());
         }
-        virtual void refinement_indicator(Vector<double> &indicator, const VectorType &solution_global) {}
+
+        virtual void refinement_indicator([[maybe_unused]] Vector<double> &indicator,
+                                          [[maybe_unused]] const VectorType &solution_global)
+        {
+        }
 
         void build_sparsity(SparsityPattern &sparsity_pattern, const DoFHandler<dim> &to_dofh,
                             const DoFHandler<dim> &from_dofh, const int stencil = 2,
