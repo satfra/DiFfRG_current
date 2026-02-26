@@ -316,3 +316,147 @@ TEST_CASE("Test compute_kt_flux_and_speeds with Burgers flux in 1D", "[KT]")
     CHECK(H[0][0] == Catch::Approx(0.75));
   }
 }
+
+TEST_CASE("Minmod autodiff - derivative propagation", "[KT][autodiff]")
+{
+  using AD = autodiff::real;
+  using KT::internal::sgn;
+
+  // minmod(a, b) := 0.5 * [sgn(a) + sgn(b)] * min(|a|, |b|)
+  auto minmod = [](AD a, AD b) -> AD {
+    using std::abs;
+    using std::min;
+    return 0.5 * (sgn(a) + sgn(b)) * min(abs(a), abs(b));
+  };
+
+  // We work with a 3-point stencil (x_{j-1}, x_j, x_{j+1}) and corresponding
+  // cell values (u_{j-1}, u_j, u_{j+1}).  The minmod-limited slope at cell j is
+  //
+  //   slope_j = minmod( (u_j - u_{j-1}) / (x_j - x_{j-1}),
+  //                     (u_{j+1} - u_j) / (x_{j+1} - x_j) )
+
+  const double x_jm1 = 0.0;        // x_{j-1}
+  const double x_j = 1.0;          // x_j
+  const double x_jp1 = 2.0;        // x_{j+1}
+  const double dx_L = x_j - x_jm1; // = 1
+  const double dx_R = x_jp1 - x_j; // = 1
+
+  SECTION("Derivative w.r.t. u_{j+1}: right slope is smaller → d/d(u_{j+1}) = 1/dx_R")
+  {
+    // u_{j-1} = 0, u_j = 2, u_{j+1} = 2.5  (seeded)
+    // slope_L = (2 - 0) / 1 = 2
+    // slope_R = (2.5 - 2) / 1 = 0.5
+    // Both positive, min picks slope_R = 0.5 → minmod = 0.5
+    // d(slope_R)/d(u_{j+1}) = 1/dx_R = 1
+    // d(minmod)/d(u_{j+1}) = 1/dx_R = 1
+    AD u_jm1 = 0.0;
+    AD u_j_val = 2.0;
+    AD u_jp1 = 2.5;
+    autodiff::seed<1>(u_jp1, 1.0);
+
+    AD slope_L = (u_j_val - u_jm1) / dx_L;
+    AD slope_R = (u_jp1 - u_j_val) / dx_R;
+    AD result = minmod(slope_L, slope_R);
+
+    CHECK(result.val() == Catch::Approx(0.5));
+    CHECK(result[1] == Catch::Approx(1.0 / dx_R));
+  }
+
+  SECTION("Derivative w.r.t. u_{j+1}: right slope is larger → d/d(u_{j+1}) = 0")
+  {
+    // u_{j-1} = 1, u_j = 2, u_{j+1} = 5  (seeded)
+    // slope_L = (2 - 1) / 1 = 1
+    // slope_R = (5 - 2) / 1 = 3
+    // Both positive, min picks slope_L = 1 → minmod = 1
+    // slope_L doesn't depend on u_{j+1} → d(minmod)/d(u_{j+1}) = 0
+    AD u_jm1 = 1.0;
+    AD u_j_val = 2.0;
+    AD u_jp1 = 5.0;
+    autodiff::seed<1>(u_jp1, 1.0);
+
+    AD slope_L = (u_j_val - u_jm1) / dx_L;
+    AD slope_R = (u_jp1 - u_j_val) / dx_R;
+    AD result = minmod(slope_L, slope_R);
+
+    CHECK(result.val() == Catch::Approx(1.0));
+    CHECK(result[1] == Catch::Approx(0.0));
+  }
+
+  SECTION("Derivative w.r.t. u_j: both slopes depend on u_j, smaller is selected")
+  {
+    // u_{j-1} = 0, u_j seeded, u_{j+1} = 6
+    // slope_L = (u_j - 0) / 1 = u_j,  slope_R = (6 - u_j) / 1 = 6 - u_j
+    // At u_j = 2:  slope_L = 2, slope_R = 4  → minmod = 2
+    // d(slope_L)/d(u_j) = 1/dx_L = 1  → d(minmod)/d(u_j) = 1
+    AD u_jm1 = 0.0;
+    AD u_j_val = 2.0;
+    autodiff::seed<1>(u_j_val, 1.0);
+    AD u_jp1 = 6.0;
+
+    AD slope_L = (u_j_val - u_jm1) / dx_L;
+    AD slope_R = (u_jp1 - u_j_val) / dx_R;
+    AD result = minmod(slope_L, slope_R);
+
+    CHECK(result.val() == Catch::Approx(2.0));
+    CHECK(result[1] == Catch::Approx(1.0 / dx_L));
+  }
+
+  SECTION("Derivative w.r.t. u_{j-1}: left slope is smaller → d/d(u_{j-1}) = -1/dx_L")
+  {
+    // u_{j-1} seeded, u_j = 2, u_{j+1} = 5
+    // slope_L = (2 - u_{j-1}) / 1,  slope_R = (5 - 2) / 1 = 3
+    // At u_{j-1} = 1.5:  slope_L = 0.5, slope_R = 3  → minmod = 0.5
+    // d(slope_L)/d(u_{j-1}) = -1/dx_L = -1
+    // d(minmod)/d(u_{j-1}) = -1
+    AD u_jm1 = 1.5;
+    autodiff::seed<1>(u_jm1, 1.0);
+    AD u_j_val = 2.0;
+    AD u_jp1 = 5.0;
+
+    AD slope_L = (u_j_val - u_jm1) / dx_L;
+    AD slope_R = (u_jp1 - u_j_val) / dx_R;
+    AD result = minmod(slope_L, slope_R);
+
+    CHECK(result.val() == Catch::Approx(0.5));
+    CHECK(result[1] == Catch::Approx(-1.0 / dx_L));
+  }
+
+  SECTION("Opposite-sign slopes → minmod = 0, all derivatives vanish")
+  {
+    // u_{j-1} = 3, u_j = 2, u_{j+1} = 3  (seeded)
+    // slope_L = (2 - 3) / 1 = -1,  slope_R = (3 - 2) / 1 = +1
+    // Opposite signs → minmod = 0, d/d(u_{j+1}) = 0
+    AD u_jm1 = 3.0;
+    AD u_j_val = 2.0;
+    AD u_jp1 = 3.0;
+    autodiff::seed<1>(u_jp1, 1.0);
+
+    AD slope_L = (u_j_val - u_jm1) / dx_L;
+    AD slope_R = (u_jp1 - u_j_val) / dx_R;
+    AD result = minmod(slope_L, slope_R);
+
+    CHECK(result.val() == Catch::Approx(0.0));
+    CHECK(result[1] == Catch::Approx(0.0));
+  }
+
+  SECTION("Both negative slopes, seed u_{j+1}")
+  {
+    // u_{j-1} = 5, u_j = 2, u_{j+1} = 1  (seeded)
+    // slope_L = (2 - 5) / 1 = -3,  slope_R = (1 - 2) / 1 = -1
+    // Both negative, |slope_R| < |slope_L| → minmod = -1
+    // d(slope_R)/d(u_{j+1}) = 1/dx_R = 1
+    // Since abs picks slope_R and copysign gives -1:
+    //   d(minmod)/d(u_{j+1}) = 1/dx_R  (the sign from abs cancels with the -1 prefactor)
+    AD u_jm1 = 5.0;
+    AD u_j_val = 2.0;
+    AD u_jp1 = 1.0;
+    autodiff::seed<1>(u_jp1, 1.0);
+
+    AD slope_L = (u_j_val - u_jm1) / dx_L;
+    AD slope_R = (u_jp1 - u_j_val) / dx_R;
+    AD result = minmod(slope_L, slope_R);
+
+    CHECK(result.val() == Catch::Approx(-1.0));
+    CHECK(result[1] == Catch::Approx(1.0 / dx_R));
+  }
+}

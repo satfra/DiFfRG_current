@@ -874,7 +874,7 @@ namespace DiFfRG
             constraints.distribute_local_to_global(c.cell_jacobian, c.local_dof_indices, jacobian);
           };
 
-          Scratch scratch_data(mapping, discretization.get_fe(), quadrature);
+          Scratch scratch_data(mapping, discretization.get_fe(), quadrature, quadrature_face);
           CopyData copy_data;
           MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
 
@@ -923,8 +923,8 @@ namespace DiFfRG
                   const auto component_j = fe_v.get_fe().system_to_component_index(j).first;
                   copy_data.cell_jacobian(i, j) += weight * JxW[q_index] * // dx * phi_j
                                                    fe_v.shape_value_component(j, q_index, component_j) *
-                                                   *(fe_v.shape_value_component(i, q_index, component_i) *
-                                                     j_source(component_i, component_j)); // -phi_i * jsource
+                                                   (fe_v.shape_value_component(i, q_index, component_i) *
+                                                    j_source(component_i, component_j)); // -phi_i * jsource
                   copy_data.cell_mass_jacobian(i, j) +=
                       JxW[q_index] * fe_v.shape_value_component(j, q_index, component_j) *
                       fe_v.shape_value_component(i, q_index, component_i) *
@@ -933,18 +933,30 @@ namespace DiFfRG
               }
             }
           };
+          const auto face_worker = [&](const Iterator &cell, const unsigned int &f, const unsigned int &sf,
+                                       const Iterator &ncell, const unsigned int &nf, const unsigned int &nsf,
+                                       Scratch &scratch_data, CopyData &copy_data) {};
+
+          const auto boundary_worker = [&](const Iterator &cell, const unsigned int &face_no, Scratch &scratch_data,
+                                           CopyData &copy_data) {
+            // pass
+          };
+
           const auto copier = [&](const CopyData &c) {
             constraints.distribute_local_to_global(c.cell_jacobian, c.local_dof_indices, jacobian);
             constraints.distribute_local_to_global(c.cell_mass_jacobian, c.local_dof_indices, jacobian);
+            for (const auto &face_data : c.face_data)
+              constraints.distribute_local_to_global(face_data.cell_jacobian, face_data.joint_dof_indices, jacobian);
           };
 
-          Scratch scratch_data(mapping, discretization.get_fe(), quadrature);
+          Scratch scratch_data(mapping, discretization.get_fe(), quadrature, quadrature_face);
           CopyData copy_data;
-          MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
+          MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells | MeshWorker::assemble_boundary_faces |
+                                            MeshWorker::assemble_own_interior_faces_once;
 
           Timer timer;
           MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                                copy_data, flags, nullptr, nullptr, threads, batch_size);
+                                copy_data, flags, boundary_worker, face_worker, threads, batch_size);
           timings_jacobian.push_back(timer.wall_time());
         }
 
@@ -957,7 +969,6 @@ namespace DiFfRG
                             const DoFHandler<dim> &from_dofh, const int stencil = 2,
                             bool add_extractor_dofs = false) const
         {
-          using DoFHandlerActiveIterator = TriaActiveIterator<DoFCellAccessor<dim, dim, false>>;
           const auto &triangulation = discretization.get_triangulation();
 
           DynamicSparsityPattern dsp(dof_handler.n_dofs(), dof_handler.n_dofs());
@@ -970,12 +981,14 @@ namespace DiFfRG
             std::vector<types::global_dof_index> from_dofs;
             from_dofs.reserve(from_dofs_per_cell +
                               stencil * from_dofs_per_cell); // reserve enough space for the cell itself + neighbors
-            const DoFHandlerActiveIterator to_cell = t_cell->as_dof_handler_iterator(to_dofh);
-            const DoFHandlerActiveIterator from_cell = t_cell->as_dof_handler_iterator(from_dofh);
+            const auto to_cell = typename DoFHandler<dim>::active_cell_iterator(
+                &to_dofh.get_triangulation(), t_cell->level(), t_cell->index(), &to_dofh);
+            const auto from_cell = typename DoFHandler<dim>::active_cell_iterator(
+                &from_dofh.get_triangulation(), t_cell->level(), t_cell->index(), &from_dofh);
             to_cell->get_dof_indices(to_dofs);
             from_cell->get_dof_indices(from_dofs);
 
-            std::function<void(DoFHandlerActiveIterator &, const int)> add_all_neighbor_dofs =
+            std::function<void(decltype(from_cell) &, const int)> add_all_neighbor_dofs =
                 [&](const auto &from_cell, const int stencil_level = 1) {
                   for (const auto face_no : from_cell->face_indices()) {
                     const auto face = from_cell->face(face_no);
@@ -996,15 +1009,15 @@ namespace DiFfRG
                   }
                 };
 
-            add_all_neighbor_dofs(from_cell);
+            add_all_neighbor_dofs(from_cell, 1);
 
             for (const auto i : to_dofs)
               for (const auto j : from_dofs)
                 dsp.add(i, j);
           }
 
-          if (add_extractor_dofs)
-            throw std::runtime_error("Extractor dofs are not yet supported in the Kurganov-Tadmor assembler.");
+          // if (add_extractor_dofs)
+          //   throw std::runtime_error("Extractor dofs are not yet supported in the Kurganov-Tadmor assembler.");
           sparsity_pattern.copy_from(dsp);
         }
 
