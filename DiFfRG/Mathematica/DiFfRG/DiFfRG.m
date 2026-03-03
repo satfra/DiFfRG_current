@@ -576,73 +576,36 @@ SimplifyAllMomenta[q_, expr_, qffac_ : \[Pi] T] :=
 (* ::Text:: *)
 
 (*We should be also able to access symmetric points.*)
+ProjectToSymmetricPoint[expr_, q_Symbol, p_Symbol, momenta___Symbol] := Module[{momentaList, nMomenta, rules, qf, qfString, conv = InsertOutputNaming}, momentaList = {momenta};
+  nMomenta = Length[momentaList];
+  qfString = ToString[q];
+  qfString = If[StringMatchQ[qfString, ___ ~~ DigitCharacter ..], StringReplace[qfString, RegularExpression["(\\d+)$"] -> "f" <> "$1"], qfString <> "f"];
+  qf = Symbol[qfString];
+  rules = 
+   Map[conv@TBsp[#[[1]], #[[2]]] -> -(1/(nMomenta - 1))  conv@TBsps[p, p] &, Subsets[momentaList, {2}]] \[Union] 
+    Map[conv@TBsp[#, #] -> conv@TBsps[p, p] &, momentaList] \[Union] 
+    Map[conv@TBsp[#, q] -> Symbol["cos" ~~ ToString[#] ~~ "q"]  p  q &, momentaList] \[Union] 
+    Map[conv@TBsp[#, qf] -> Symbol["cos" ~~ ToString[#] ~~ "q"]  p  qf &, momentaList] \[Union] 
+    Map[conv@TBsp[q, #] -> Symbol["cos" ~~ ToString[#] ~~ "q"]  p  q &, momentaList] \[Union] 
+    Map[conv@TBsp[qf, #] -> Symbol["cos" ~~ ToString[#] ~~ "q"]  p  qf &, momentaList]
+  (*\[Union]{momentaList[[nMomenta]]->-Total[momentaList[[1;;nMomenta-1]]]}*);
+  (UseLorentzLinearity[expr] //. rules // UseLorentzLinearity) //. rules]
+  
 
-ProjectToSymmetricPoint[expr_, q_Symbol, p_Symbol, momenta___Symbol] :=
-	Module[{momentaList, nMomenta, rules, qf, conv = InsertOutputNaming},
-		
-		momentaList = {momenta};
-		nMomenta = Length[momentaList];
-		qf = Symbol[ToString[q] <> "f"];
-		rules = Map[conv @ TBsp[#[[1]], #[[2]]] -> -(1 / (nMomenta - 1)) conv
-			 @ TBsp[p, p]&, Subsets[momentaList, {2}]] \[Union] Map[conv @ TBsp[#,
-			 #] -> conv @ TBsp[p, p]&, momentaList] \[Union] Map[conv @ TBsp[#, q
-			] -> Symbol["cos" ~~ ToString[#] ~~ "q"] p q&, momentaList] \[Union] 
-			Map[conv @ TBsp[#, qf] -> Symbol["cos" ~~ ToString[#] ~~ "q"] p qf&, 
-			momentaList]
-		(*\[Union]{momentaList[[nMomenta]]->-Total[momentaList[[1;;nMomenta-1]]]}
-			
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    *);
-		(UseLorentzLinearity[expr] //. rules // UseLorentzLinearity) //. rules
-			
-	]
-
-ProjectToSymmetricPointFiniteT[expr_, q_Symbol, p_Symbol, momenta___Symbol
-	] :=
-	Module[{momentaList, nMomenta, rules, qf, conv = InsertOutputNaming},
-		
-		momentaList = {momenta};
-		nMomenta = Length[momentaList];
-		qf = Symbol[ToString[q] <> "f"];
-		rules = Map[conv @ TBsps[#[[1]], #[[2]]] -> -(1 / (nMomenta - 1)) conv
-			 @ TBsps[p, p]&, Subsets[momentaList, {2}]] \[Union] Map[conv @ TBsps[
-			#, #] -> conv @ TBsps[p, p]&, momentaList] \[Union] Map[conv @ TBsps[
-			#, q] -> Symbol["cos" ~~ ToString[#] ~~ "q"] p q&, momentaList] \[Union]
-			 Map[conv @ TBsps[#, qf] -> Symbol["cos" ~~ ToString[#] ~~ "q"] p qf&,
-			 momentaList]
-		(*\[Union]{momentaList[[nMomenta]]->-Total[momentaList[[1;;nMomenta-1]]]}
-			
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    *);
-		(SeparateScalarProductsFiniteT[UseLorentzLinearity[expr]] //. rules
-			 // UseLorentzLinearity) //. rules
-	]
+ProjectToSymmetricPointFiniteT[expr_, q_Symbol, p_Symbol, momenta___Symbol] := Module[{momentaList, nMomenta, rules, qf, qfString, conv = InsertOutputNaming}, momentaList = {momenta};
+  nMomenta = Length[momentaList];
+  qfString = ToString[q];
+  qfString = If[StringMatchQ[qfString, ___ ~~ DigitCharacter ..], StringReplace[qfString, RegularExpression["(\\d+)$"] -> "f" <> "$1"], qfString <> "f"];
+  qf = Symbol[qfString];
+  rules = 
+   Map[conv@TBsps[#[[1]], #[[2]]] -> -(1/(nMomenta - 1))  conv@TBsps[p, p] &, Subsets[momentaList, {2}]] \[Union] 
+    Map[conv@TBsps[#, #] -> conv@TBsps[p, p] &, momentaList] \[Union] 
+    Map[conv@TBsps[#, q] -> Symbol["cos" ~~ ToString[#] ~~ "q"]  p  q &, momentaList] \[Union] 
+    Map[conv@TBsps[#, qf] -> Symbol["cos" ~~ ToString[#] ~~ "q"]  p  qf &, momentaList] \[Union] 
+    Map[conv@TBsps[q, #] -> Symbol["cos" ~~ ToString[#] ~~ "q"]  p  q &, momentaList] \[Union] 
+    Map[conv@TBsps[qf, #] -> Symbol["cos" ~~ ToString[#] ~~ "q"]  p  qf &, momentaList]
+  (*\[Union]{momentaList[[nMomenta]]->-Total[momentaList[[1;;nMomenta-1]]]}*);
+  (SeparateScalarProductsFiniteT[UseLorentzLinearity[expr]] //. rules // UseLorentzLinearity) //. rules]
 
 (* ::Subsection::Closed:: *)
 
