@@ -93,6 +93,7 @@ option(MPI "Enable MPI support" OFF)
 if(MPI)
   find_package(MPI)
   if(MPI_FOUND)
+
   else()
     message(FATAL_ERROR "  No MPI library found!")
   endif()
@@ -310,8 +311,7 @@ if(BUILD_PETSC)
     # Propagate DEPEND_INSTALL_PREFIX to the dependencies
     CMAKE_CACHE_ARGS
       -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-      -DOpenBLAS_LIBRARY:STRING=${BLAS_LIBRARY_PATH}
-      -DHAVE_MPI:BOOL=${MPI})
+      -DOpenBLAS_LIBRARY:STRING=${BLAS_LIBRARY_PATH} -DHAVE_MPI:BOOL=${MPI})
   set(is_petsc_dep petsc_dep)
 endif()
 
@@ -329,7 +329,6 @@ set(dealiiConfig "DebugRelease")
 if(NODEBUG)
   set(dealiiConfig "Release")
 endif()
-
 
 # build deal.II
 ExternalProject_Add(
@@ -360,7 +359,7 @@ ExternalProject_Add(
     ${dealii_lapack}
     -DDEAL_II_WITH_LAPACK:BOOL=ON
     -DDEAL_II_WITH_HDF5:BOOL=OFF
-    #-DHDF5_INCLUDE_DIRS:PATH=${HDF5_INCLUDE_DIRS}
+    # -DHDF5_INCLUDE_DIRS:PATH=${HDF5_INCLUDE_DIRS}
     -DPETSC_DIR:PATH=${DEPEND_INSTALL_PREFIX}
     -DPETSC_ARCH:STRING=arch-linux-c-opt
     -DCMAKE_CXX_STANDARD:STRING=17
@@ -388,7 +387,7 @@ ExternalProject_Add(
   INSTALL_DIR ${CMAKE_INSTALL_PREFIX}
   DEPENDS general_dep boost_dep deal.II_dep kokkos_dep autodiff_dep
   CMAKE_CACHE_ARGS
-  -DENABLE_MPI:BOOL=${MPI}
+    -DENABLE_MPI:BOOL=${MPI}
     -DENABLE_HDF5:BOOL=${HDF5_FOUND}
     -DBUNDLED_DIR:PATH=${DEPEND_INSTALL_PREFIX}
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
