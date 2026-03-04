@@ -2,7 +2,6 @@
 
 // standard library
 #include <concepts>
-#include <functional>
 
 namespace DiFfRG
 {
@@ -35,17 +34,6 @@ namespace DiFfRG
     concept HasSlopeLimiter = requires(double a, double b) {
       { T::slope_limit(a, b) } -> std::convertible_to<double>;
     };
-
-    /**
-     * @brief Strong type alias for a slope-limiter function.
-     *
-     * A slope limiter takes two one-sided slopes and returns the limited
-     * slope value.  Using @c std::function here makes the expected
-     * signature explicit and gives clear error messages when the wrong
-     * callable is passed.
-     */
-    template <typename NumberType>
-    using SlopeLimitFunction = std::function<NumberType(const NumberType &, const NumberType &)>;
 
     namespace limiter_utils
     {

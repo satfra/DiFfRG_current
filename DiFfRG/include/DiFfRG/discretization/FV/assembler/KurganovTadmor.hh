@@ -30,7 +30,7 @@
 #include <tbb/tbb.h>
 
 #include <DiFfRG/common/utils.hh>
-#include <DiFfRG/discretization/FV/limiter/minmod_limiter.hh>
+#include <DiFfRG/discretization/FV/reconstructor/tvd_reconstructor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 
 #include <DiFfRG/discretization/common/types.hh>
@@ -181,56 +181,6 @@ namespace DiFfRG
         };
 
         template <typename T> int sgn(T val) { return (T{} < val) - (val < T{}); }
-
-        /**
-         * @brief This function computes the gradient of u using a slope limiter.
-         *
-         * The gradient computed in this function fulfills the Total Variation Diminishing Principle
-         * when a TVD limiter (e.g. MinModLimiter) is used.
-         *
-         * @tparam NumberType the numeric type used for the computation
-         * @tparam dim the spatial dimension
-         * @tparam n_components the number of components in u
-         * @tparam Limiter the limiter type, must provide slope_limit(du_1, du_2)
-         *
-         * @param center_pos the position of the cell center where the gradient is computed
-         * @param u_center the value of u at the cell center
-         * @param x_n the positions of the neighboring cell centers. It is assumed that the ordering is such that the
-         * first two entries correspond to the neighbors in the first dimension, the next two entries to the second
-         * dimension, and so on.
-         * @param u_n the values of u at the neighboring cell centers, ordered in the same way as x_n.
-         * @param slope_limit a function with signature NumberType(const NumberType&, const NumberType&) that
-         * limits the one-sided slopes. Typically Limiter::slope_limit<NumberType>, where Limiter satisfies
-         * the HasSlopeLimiter concept (e.g. MinModLimiter).
-         *
-         * @return GradientType<dim, NumberType, n_components> the computed gradient.
-         */
-        template <typename NumberType, int dim, int n_components>
-        GradientType<dim, NumberType, n_components>
-        compute_gradient(const Point<dim> &center_pos, const std::array<NumberType, n_components> &u_center,
-                         const std::array<Point<dim>, 2 * dim> &x_n,
-                         const std::array<std::array<NumberType, n_components>, 2 * dim> &u_n,
-                         const def::SlopeLimitFunction<NumberType> &slope_limit)
-        {
-          GradientType<dim, NumberType, n_components> u_grad{};
-          for (size_t c = 0; c < n_components; c++) {
-            const NumberType &u_val = u_center[c];
-            for (int d = 0, i_n_1 = 0, i_n_2 = 1; d < dim; d++, i_n_1 += 2, i_n_2 += 2) {
-
-              const auto &u_n_1 = u_n[i_n_1][c];
-              const auto &u_n_2 = u_n[i_n_2][c];
-
-              const auto dx_1 = x_n[i_n_1] - center_pos;
-              const NumberType du_1 = (u_n_1 - u_val) / dx_1[d];
-              const auto dx_2 = x_n[i_n_2] - center_pos;
-              const NumberType du_2 = (u_n_2 - u_val) / dx_2[d];
-
-              u_grad[c][d] = slope_limit(du_1, du_2);
-            }
-          }
-
-          return u_grad;
-        }
 
         /**
          * @brief Result struct for compute_kt_flux_and_speeds.
@@ -417,7 +367,8 @@ namespace DiFfRG
         }
       } // namespace internal
 
-      template <typename Discretization_, typename Model_, def::HasSlopeLimiter Limiter_ = def::MinModLimiter>
+      template <typename Discretization_, typename Model_,
+                def::HasReconstructor Reconstructor_ = def::TVDReconstructor<def::MinModLimiter>>
         requires MeshIsRectangular<typename Discretization_::Mesh>
       class Assembler : public AbstractAssembler<typename Discretization_::VectorType,
                                                  typename Discretization_::SparseMatrixType, Discretization_::dim>
@@ -443,7 +394,7 @@ namespace DiFfRG
       public:
         using Discretization = Discretization_;
         using Model = Model_;
-        using Limiter = Limiter_;
+        using Reconstructor = Reconstructor_;
         using NumberType = typename Discretization::NumberType;
         using VectorType = typename Discretization::VectorType;
 
@@ -719,10 +670,10 @@ namespace DiFfRG
             auto [x_cell, u_cell] = get_cell_value(cell, solution_global);
             auto [x_ncell, u_ncell] = get_cell_value(ncell, solution_global);
 
-            const GradientType u_grad_cell = internal::compute_gradient<NumberType, dim, n_components>(
-                x_cell, u_cell, x_cell_n, u_cell_n, Limiter::template slope_limit<NumberType>);
-            const GradientType u_grad_ncell = internal::compute_gradient<NumberType, dim, n_components>(
-                x_ncell, u_ncell, x_ncell_n, u_ncell_n, Limiter::template slope_limit<NumberType>);
+            const GradientType u_grad_cell = Reconstructor::template compute_gradient<NumberType, dim, n_components>(
+                x_cell, u_cell, x_cell_n, u_cell_n);
+            const GradientType u_grad_ncell = Reconstructor::template compute_gradient<NumberType, dim, n_components>(
+                x_ncell, u_ncell, x_ncell_n, u_ncell_n);
 
             const std::vector<Tensor<1, dim>> &normals = fe_iv.get_normal_vectors();
 
@@ -773,8 +724,8 @@ namespace DiFfRG
             auto [x_cell_n, u_cell_n] = get_neighboring_cell_data(cell, solution_global, model);
             auto [x_cell, u_cell] = get_cell_value(cell, solution_global);
 
-            const GradientType u_grad_cell = internal::compute_gradient<NumberType, dim, n_components>(
-                x_cell, u_cell, x_cell_n, u_cell_n, Limiter::template slope_limit<NumberType>);
+            const GradientType u_grad_cell = Reconstructor::template compute_gradient<NumberType, dim, n_components>(
+                x_cell, u_cell, x_cell_n, u_cell_n);
 
             const std::vector<Tensor<1, dim>> &normals = fe_fv.get_normal_vectors();
 

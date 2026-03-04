@@ -24,7 +24,8 @@ namespace DiFfRG
      * Satisfies the @c HasSlopeLimiter concept so it can be passed as the
      * @c Limiter template parameter of the KT assembler:
      * @code
-     * using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, def::MinModLimiter>;
+     * using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model,
+     *                       def::TVDReconstructor<def::MinModLimiter>>;
      * @endcode
      */
     class MinModLimiter
