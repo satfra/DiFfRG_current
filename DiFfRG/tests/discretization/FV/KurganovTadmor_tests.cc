@@ -1,4 +1,5 @@
 #include "DiFfRG/discretization/FV/assembler/KurganovTadmor.hh"
+#include "DiFfRG/discretization/FV/limiter/minmod_limiter.hh"
 #include "DiFfRG/model/model.hh"
 #include "catch2/catch_approx.hpp"
 #include "catch2/catch_test_macros.hpp"
@@ -66,12 +67,13 @@ TEST_CASE("Test Gradient computation in 1D")
   const std::array<NumberType, n_components> u_center = {2.0};
   const std::array<Point<dim>, n_faces> x_n = {Point<dim>(0.0), Point<dim>(2.0)};
   std::array<std::array<NumberType, n_components>, n_faces> u_n;
+  const auto &slope_limit = DiFfRG::def::MinModLimiter::slope_limit<NumberType>;
 
   SECTION("Check Normal Derivative Computation")
   {
     u_n = {{{1.0}, {3.0}}};
     NumberType reference = 1.0;
-    const auto u_grad = compute_gradient<NumberType, dim, n_components>(x_center, u_center, x_n, u_n);
+    const auto u_grad = compute_gradient<NumberType, dim, n_components>(x_center, u_center, x_n, u_n, slope_limit);
     CHECK(u_grad[0][0] == Catch::Approx(reference));
   }
 
@@ -79,7 +81,7 @@ TEST_CASE("Test Gradient computation in 1D")
   {
     u_n = {{{1.0}, {2.5}}};
     NumberType reference = 0.5;
-    const auto u_grad = compute_gradient<NumberType, dim, n_components>(x_center, u_center, x_n, u_n);
+    const auto u_grad = compute_gradient<NumberType, dim, n_components>(x_center, u_center, x_n, u_n, slope_limit);
     CHECK(u_grad[0][0] == Catch::Approx(reference));
   }
 
@@ -87,11 +89,11 @@ TEST_CASE("Test Gradient computation in 1D")
   {
     u_n = {{{1.0}, {1.0}}};
     NumberType reference = 0.0;
-    auto u_grad = compute_gradient<NumberType, dim, n_components>(x_center, u_center, x_n, u_n);
+    auto u_grad = compute_gradient<NumberType, dim, n_components>(x_center, u_center, x_n, u_n, slope_limit);
     CHECK(u_grad[0][0] == Catch::Approx(reference));
 
     u_n = {{{5.0}, {4.0}}};
-    u_grad = compute_gradient<NumberType, dim, n_components>(x_center, u_center, x_n, u_n);
+    u_grad = compute_gradient<NumberType, dim, n_components>(x_center, u_center, x_n, u_n, slope_limit);
     CHECK(u_grad[0][0] == Catch::Approx(reference));
   }
 }
@@ -105,12 +107,13 @@ TEST_CASE("Test Gradient computation in 1D with two components")
   const std::array<NumberType, n_components> u_center = {2.0, 3.0};
   const std::array<Point<dim>, n_faces> x_n = {Point<dim>(0.0), Point<dim>(2.0)};
   std::array<std::array<NumberType, n_components>, n_faces> u_n;
+  const auto &slope_limit = DiFfRG::def::MinModLimiter::slope_limit<NumberType>;
 
   SECTION("Check Normal Derivative Computation")
   {
     u_n = {{{1.0, 2.0}, {3.0, 4.0}}};
     NumberType reference = 1.0;
-    const auto u_grad = compute_gradient<NumberType, dim, n_components>(x_center, u_center, x_n, u_n);
+    const auto u_grad = compute_gradient<NumberType, dim, n_components>(x_center, u_center, x_n, u_n, slope_limit);
     CHECK(u_grad[0][0] == Catch::Approx(reference));
     CHECK(u_grad[1][0] == Catch::Approx(reference));
   }
@@ -119,7 +122,7 @@ TEST_CASE("Test Gradient computation in 1D with two components")
   {
     u_n = {{{1.0, 2.0}, {2.5, 3.5}}};
     NumberType reference = 0.5;
-    const auto u_grad = compute_gradient<NumberType, dim, n_components>(x_center, u_center, x_n, u_n);
+    const auto u_grad = compute_gradient<NumberType, dim, n_components>(x_center, u_center, x_n, u_n, slope_limit);
     CHECK(u_grad[0][0] == Catch::Approx(reference));
     CHECK(u_grad[1][0] == Catch::Approx(reference));
   }
@@ -128,12 +131,12 @@ TEST_CASE("Test Gradient computation in 1D with two components")
   {
     u_n = {{{1.0, 2.0}, {1.0, 2.0}}};
     NumberType reference = 0.0;
-    auto u_grad = compute_gradient<NumberType, dim, n_components>(x_center, u_center, x_n, u_n);
+    auto u_grad = compute_gradient<NumberType, dim, n_components>(x_center, u_center, x_n, u_n, slope_limit);
     CHECK(u_grad[0][0] == Catch::Approx(reference));
     CHECK(u_grad[1][0] == Catch::Approx(reference));
 
     u_n = {{{5.0, 1.0}, {4.0, 0.0}}};
-    u_grad = compute_gradient<NumberType, dim, n_components>(x_center, u_center, x_n, u_n);
+    u_grad = compute_gradient<NumberType, dim, n_components>(x_center, u_center, x_n, u_n, slope_limit);
     CHECK(u_grad[0][0] == Catch::Approx(reference));
     CHECK(u_grad[1][0] == Catch::Approx(reference));
   }
@@ -149,6 +152,7 @@ TEST_CASE("Test Gradient computation in 2D")
   const std::array<Point<dim>, n_faces> x_n = {Point<dim>(0.0, 1.0), Point<dim>(2.0, 1.0), Point<dim>(1.0, 0.0),
                                                Point<dim>(1.0, 2.0)};
   std::array<std::array<NumberType, n_components>, n_faces> u_n;
+  const auto &slope_limit = DiFfRG::def::MinModLimiter::slope_limit<NumberType>;
 
   SECTION("Check Normal Derivative Computation")
   {
@@ -156,7 +160,7 @@ TEST_CASE("Test Gradient computation in 2D")
     NumberType reference_1 = 1.0;
     NumberType reference_2 = 2.0;
 
-    const auto u_grad = compute_gradient<NumberType, dim, n_components>(x_center, u_center, x_n, u_n);
+    const auto u_grad = compute_gradient<NumberType, dim, n_components>(x_center, u_center, x_n, u_n, slope_limit);
     CHECK(u_grad[0][0] == Catch::Approx(reference_1));
     CHECK(u_grad[0][1] == Catch::Approx(reference_2));
   }
@@ -165,7 +169,7 @@ TEST_CASE("Test Gradient computation in 2D")
   {
     u_n = {{{1.0}, {2.5}, {2.5}, {-0.5}}};
     NumberType reference = 0.5;
-    const auto u_grad = compute_gradient<NumberType, dim, n_components>(x_center, u_center, x_n, u_n);
+    const auto u_grad = compute_gradient<NumberType, dim, n_components>(x_center, u_center, x_n, u_n, slope_limit);
     CHECK(u_grad[0][0] == Catch::Approx(reference));
     CHECK(u_grad[0][1] == Catch::Approx(-reference));
   }
@@ -175,7 +179,7 @@ TEST_CASE("Test Gradient computation in 2D")
     u_n = {{{1.0}, {1.0}, {0.0}, {4.0}}};
     NumberType reference_1 = 0.0;
     NumberType reference_2 = 2.0;
-    auto u_grad = compute_gradient<NumberType, dim, n_components>(x_center, u_center, x_n, u_n);
+    auto u_grad = compute_gradient<NumberType, dim, n_components>(x_center, u_center, x_n, u_n, slope_limit);
     CHECK(u_grad[0][0] == Catch::Approx(reference_1));
     CHECK(u_grad[0][1] == Catch::Approx(reference_2));
   }

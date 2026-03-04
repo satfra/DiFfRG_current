@@ -30,6 +30,7 @@
 #include <tbb/tbb.h>
 
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/discretization/FV/limiter/minmod_limiter.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 
 #include <DiFfRG/discretization/common/types.hh>
@@ -182,13 +183,15 @@ namespace DiFfRG
         template <typename T> int sgn(T val) { return (T{} < val) - (val < T{}); }
 
         /**
-         * @brief This function computes the gradient of u using a minmod limiter
+         * @brief This function computes the gradient of u using a slope limiter.
          *
-         * The gradient computed in this function fulfills the Total Variation Diminishing Principle.
+         * The gradient computed in this function fulfills the Total Variation Diminishing Principle
+         * when a TVD limiter (e.g. MinModLimiter) is used.
          *
          * @tparam NumberType the numeric type used for the computation
          * @tparam dim the spatial dimension
          * @tparam n_components the number of components in u
+         * @tparam Limiter the limiter type, must provide slope_limit(du_1, du_2)
          *
          * @param center_pos the position of the cell center where the gradient is computed
          * @param u_center the value of u at the cell center
@@ -196,6 +199,9 @@ namespace DiFfRG
          * first two entries correspond to the neighbors in the first dimension, the next two entries to the second
          * dimension, and so on.
          * @param u_n the values of u at the neighboring cell centers, ordered in the same way as x_n.
+         * @param slope_limit a function with signature NumberType(const NumberType&, const NumberType&) that
+         * limits the one-sided slopes. Typically Limiter::slope_limit<NumberType>, where Limiter satisfies
+         * the HasSlopeLimiter concept (e.g. MinModLimiter).
          *
          * @return GradientType<dim, NumberType, n_components> the computed gradient.
          */
@@ -203,7 +209,8 @@ namespace DiFfRG
         GradientType<dim, NumberType, n_components>
         compute_gradient(const Point<dim> &center_pos, const std::array<NumberType, n_components> &u_center,
                          const std::array<Point<dim>, 2 * dim> &x_n,
-                         const std::array<std::array<NumberType, n_components>, 2 * dim> &u_n)
+                         const std::array<std::array<NumberType, n_components>, 2 * dim> &u_n,
+                         const def::SlopeLimitFunction<NumberType> &slope_limit)
         {
           GradientType<dim, NumberType, n_components> u_grad{};
           for (size_t c = 0; c < n_components; c++) {
@@ -218,9 +225,7 @@ namespace DiFfRG
               const auto dx_2 = x_n[i_n_2] - center_pos;
               const NumberType du_2 = (u_n_2 - u_val) / dx_2[d];
 
-              const NumberType du_smaller = 0.5 * (sgn(du_1) + sgn(du_2)) * std::min(std::abs(du_1), std::abs(du_2));
-
-              u_grad[c][d] = du_smaller;
+              u_grad[c][d] = slope_limit(du_1, du_2);
             }
           }
 
@@ -412,7 +417,7 @@ namespace DiFfRG
         }
       } // namespace internal
 
-      template <typename Discretization_, typename Model_>
+      template <typename Discretization_, typename Model_, def::HasSlopeLimiter Limiter_ = def::MinModLimiter>
         requires MeshIsRectangular<typename Discretization_::Mesh>
       class Assembler : public AbstractAssembler<typename Discretization_::VectorType,
                                                  typename Discretization_::SparseMatrixType, Discretization_::dim>
@@ -438,6 +443,7 @@ namespace DiFfRG
       public:
         using Discretization = Discretization_;
         using Model = Model_;
+        using Limiter = Limiter_;
         using NumberType = typename Discretization::NumberType;
         using VectorType = typename Discretization::VectorType;
 
@@ -713,10 +719,10 @@ namespace DiFfRG
             auto [x_cell, u_cell] = get_cell_value(cell, solution_global);
             auto [x_ncell, u_ncell] = get_cell_value(ncell, solution_global);
 
-            const GradientType u_grad_cell =
-                internal::compute_gradient<NumberType, dim, n_components>(x_cell, u_cell, x_cell_n, u_cell_n);
-            const GradientType u_grad_ncell =
-                internal::compute_gradient<NumberType, dim, n_components>(x_ncell, u_ncell, x_ncell_n, u_ncell_n);
+            const GradientType u_grad_cell = internal::compute_gradient<NumberType, dim, n_components>(
+                x_cell, u_cell, x_cell_n, u_cell_n, Limiter::template slope_limit<NumberType>);
+            const GradientType u_grad_ncell = internal::compute_gradient<NumberType, dim, n_components>(
+                x_ncell, u_ncell, x_ncell_n, u_ncell_n, Limiter::template slope_limit<NumberType>);
 
             const std::vector<Tensor<1, dim>> &normals = fe_iv.get_normal_vectors();
 
@@ -767,8 +773,8 @@ namespace DiFfRG
             auto [x_cell_n, u_cell_n] = get_neighboring_cell_data(cell, solution_global, model);
             auto [x_cell, u_cell] = get_cell_value(cell, solution_global);
 
-            const GradientType u_grad_cell =
-                internal::compute_gradient<NumberType, dim, n_components>(x_cell, u_cell, x_cell_n, u_cell_n);
+            const GradientType u_grad_cell = internal::compute_gradient<NumberType, dim, n_components>(
+                x_cell, u_cell, x_cell_n, u_cell_n, Limiter::template slope_limit<NumberType>);
 
             const std::vector<Tensor<1, dim>> &normals = fe_fv.get_normal_vectors();
 
@@ -935,7 +941,44 @@ namespace DiFfRG
           };
           const auto face_worker = [&](const Iterator &cell, const unsigned int &f, const unsigned int &sf,
                                        const Iterator &ncell, const unsigned int &nf, const unsigned int &nsf,
-                                       Scratch &scratch_data, CopyData &copy_data) {};
+                                       Scratch &scratch_data, CopyData &copy_data) {
+            const int q_face_index = 0;
+
+            scratch_data.fe_interface_values.reinit(cell, f, sf, ncell, nf, nsf);
+            const auto &fe_iv = scratch_data.fe_interface_values;
+            const uint n_face_dofs = fe_iv.n_current_interface_dofs();
+            const auto &JxW = fe_iv.get_JxW_values();
+            const std::vector<Tensor<1, dim>> &normals = fe_iv.get_normal_vectors();
+
+            copy_data.face_data.emplace_back();
+            auto &copy_data_face = copy_data.face_data.back();
+            copy_data_face.reinit(fe_iv, Components::count_extractors());
+
+            std::array<SimpleMatrix<Tensor<1, dim>, n_components>, 2> j_numflux;
+            for (uint i = 0; i < n_face_dofs; ++i) {
+              for (uint j = 0; j < n_face_dofs; ++j) {
+                // j_numflux
+              }
+            }
+
+            for (uint i = 0; i < n_face_dofs; ++i) {
+              const auto &cd_i = fe_iv.interface_dof_to_dof_indices(i);
+              const uint face_no_i = cd_i[0] == numbers::invalid_unsigned_int ? 1 : 0;
+              const auto &component_i = fe.system_to_component_index(cd_i[face_no_i]).first;
+              for (uint j = 0; j < n_face_dofs; ++j) {
+                const auto &cd_j = fe_iv.interface_dof_to_dof_indices(j);
+                const uint face_no_j = cd_j[0] == numbers::invalid_unsigned_int ? 1 : 0;
+                const auto &component_j = fe.system_to_component_index(cd_j[face_no_j]).first;
+                copy_data_face.cell_jacobian(i, j) +=
+                    weight * JxW[q_face_index] *
+                    fe_iv.get_fe_face_values(face_no_j).shape_value_component(cd_j[face_no_j], q_face_index,
+                                                                              component_j) * // dx * phi_j(x_q)
+                    (fe_iv.jump_in_shape_values(i, q_face_index, component_i) *
+                     scalar_product(j_numflux[face_no_j](component_i, component_j),
+                                    normals[q_face_index])); // [[phi_i(x_q)]] * j_numflux(x_q, u_q)
+              }
+            }
+          };
 
           const auto boundary_worker = [&](const Iterator &cell, const unsigned int &face_no, Scratch &scratch_data,
                                            CopyData &copy_data) {
