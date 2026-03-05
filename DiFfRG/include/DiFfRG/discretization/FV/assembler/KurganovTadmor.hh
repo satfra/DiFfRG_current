@@ -3,6 +3,7 @@
 // external libraries
 
 // DiFfRG
+#include "DiFfRG/common/math.hh"
 #include <Eigen/Dense>
 #include <array>
 #include <autodiff/forward/real/real.hpp>
@@ -50,7 +51,7 @@ namespace DiFfRG
       namespace internal
       {
         template <int dim, typename NumberType, size_t n_components>
-        using GradientType = std::array<dealii::Tensor<1, dim, NumberType>, n_components>;
+        using GradientType = def::GradientType<dim, NumberType, n_components>;
 
         template <typename... T> auto advection_flux_tie(T &&...t)
         {
@@ -106,6 +107,23 @@ namespace DiFfRG
           for (size_t c = 0; c < n_components; ++c) {
             result[c] = u_center[c];
             result[c] += scalar_product(u_grad[c], x - center);
+          }
+          return result;
+        }
+
+        template <typename Reconstructor, int dim, typename NumberType, size_t n_components>
+        std::array<NumberType, n_components>
+        reconstruct_u_derivative(const std::array<std::pair<NumberType, bool>, n_components> &u_center,
+                                 const Point<dim> &center, const Point<dim> &x,
+                                 const std::array<Point<dim>, 2 * dim> &x_n,
+                                 const std::array<std::array<std::pair<NumberType, bool>, n_components>, 2 * dim> &u_n)
+        {
+          const auto u_grad_deriv =
+              Reconstructor::template compute_gradient_derivative<dim, n_components>(center, u_center, x_n, u_n);
+          std::array<NumberType, n_components> result;
+          for (size_t c = 0; c < n_components; ++c) {
+            result[c] = u_center[c].second ? NumberType(1) : NumberType(0);
+            result[c] += scalar_product(u_grad_deriv[c], x - center);
           }
           return result;
         }
@@ -191,22 +209,6 @@ namespace DiFfRG
           std::array<dealii::Tensor<1, dim, NumberType>, n_components> a_half;
         };
 
-        /**
-         * @brief Compute the advection fluxes and local wave speeds for the Kurganov-Tadmor scheme using
-         * automatic differentiation.
-         *
-         * @tparam Model the model type providing KurganovTadmor_advection_flux
-         * @tparam NumberType the numeric type
-         * @tparam dim the spatial dimension
-         * @tparam n_components the number of solution components
-         *
-         * @param u_plus the reconstructed state on the "+" side of the interface
-         * @param u_minus the reconstructed state on the "-" side of the interface
-         * @param x_q the quadrature point position at the face
-         * @param model the model providing the advection flux function
-         *
-         * @return KTFluxData containing F_plus, F_minus, and the local wave speeds a_half.
-         */
         template <typename Model, typename NumberType, int dim, size_t n_components>
         KTFluxData<dim, NumberType, n_components>
         compute_kt_flux_and_speeds(const std::array<NumberType, n_components> &u_plus,
@@ -368,7 +370,7 @@ namespace DiFfRG
       } // namespace internal
 
       template <typename Discretization_, typename Model_,
-                def::HasReconstructor Reconstructor_ = def::TVDReconstructor<def::MinModLimiter>>
+                def::HasReconstructor Reconstructor_ = def::TVDReconstructor<def::MinModLimiter, double>>
         requires MeshIsRectangular<typename Discretization_::Mesh>
       class Assembler : public AbstractAssembler<typename Discretization_::VectorType,
                                                  typename Discretization_::SparseMatrixType, Discretization_::dim>
@@ -670,10 +672,10 @@ namespace DiFfRG
             auto [x_cell, u_cell] = get_cell_value(cell, solution_global);
             auto [x_ncell, u_ncell] = get_cell_value(ncell, solution_global);
 
-            const GradientType u_grad_cell = Reconstructor::template compute_gradient<NumberType, dim, n_components>(
-                x_cell, u_cell, x_cell_n, u_cell_n);
-            const GradientType u_grad_ncell = Reconstructor::template compute_gradient<NumberType, dim, n_components>(
-                x_ncell, u_ncell, x_ncell_n, u_ncell_n);
+            const GradientType u_grad_cell =
+                Reconstructor::template compute_gradient<dim, n_components>(x_cell, u_cell, x_cell_n, u_cell_n);
+            const GradientType u_grad_ncell =
+                Reconstructor::template compute_gradient<dim, n_components>(x_ncell, u_ncell, x_ncell_n, u_ncell_n);
 
             const std::vector<Tensor<1, dim>> &normals = fe_iv.get_normal_vectors();
 
@@ -724,8 +726,8 @@ namespace DiFfRG
             auto [x_cell_n, u_cell_n] = get_neighboring_cell_data(cell, solution_global, model);
             auto [x_cell, u_cell] = get_cell_value(cell, solution_global);
 
-            const GradientType u_grad_cell = Reconstructor::template compute_gradient<NumberType, dim, n_components>(
-                x_cell, u_cell, x_cell_n, u_cell_n);
+            const GradientType u_grad_cell =
+                Reconstructor::template compute_gradient<dim, n_components>(x_cell, u_cell, x_cell_n, u_cell_n);
 
             const std::vector<Tensor<1, dim>> &normals = fe_fv.get_normal_vectors();
 
@@ -908,7 +910,11 @@ namespace DiFfRG
             std::array<SimpleMatrix<Tensor<1, dim>, n_components>, 2> j_numflux;
             for (uint i = 0; i < n_face_dofs; ++i) {
               for (uint j = 0; j < n_face_dofs; ++j) {
-                // j_numflux
+                // j_numflux[0](i, j) = du_minus_du_i[0][i][j];
+                // j_numflux[0](i, j) = 0.5 * (f_prime_minus + a_half - (u_plus - u_minus) * da_half_du_plus) *
+                //                      du_minus_du_i; // self contribution
+                // j_numflux[1](i, j) = 0.5 * (f_prime_plus - a_half - (u_plus - u_minus) * da_half_du_minus) *
+                //                      du_plus_du_i; // neighbor contribution
               }
             }
 

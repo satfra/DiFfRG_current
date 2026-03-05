@@ -22,10 +22,10 @@ namespace DiFfRG
      * a local extremum), it returns zero.
      *
      * Satisfies the @c HasSlopeLimiter concept so it can be passed as the
-     * @c Limiter template parameter of the KT assembler:
+     * @c Limiter template parameter of the TVDReconstructor:
      * @code
      * using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model,
-     *                       def::TVDReconstructor<def::MinModLimiter>>;
+     *                       def::TVDReconstructor<def::MinModLimiter, double>>;
      * @endcode
      */
     class MinModLimiter
