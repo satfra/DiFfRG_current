@@ -132,6 +132,25 @@ include(ExternalProject)
 
 option(BUILD_OpenBLAS "Build OpenBLAS" OFF)
 
+# build hdf5 dep
+ExternalProject_Add(
+  hdf5_dep
+  LOG_CONFIGURE ON
+  LOG_OUTPUT_ON_FAILURE ON
+  BUILD_COMMAND cmake -E echo "Skipping build step for hdf5."
+  INSTALL_COMMAND cmake -E echo "Skipping install step for hdf5."
+  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/hdf5
+  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/hdf5
+  INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+  # Propagate DEPEND_INSTALL_PREFIX to the dependencies
+  CMAKE_CACHE_ARGS
+    -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
+    -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
+    -DCMAKE_CXX_FLAGS:STRING=-march=native
+    -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
+    -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+    -DENABLE_MPI:BOOL=${MPI})
+
 # build general deps
 ExternalProject_Add(
   general_dep
@@ -141,6 +160,7 @@ ExternalProject_Add(
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/general
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/general
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+  DEPENDS hdf5_dep
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
   CMAKE_CACHE_ARGS
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
@@ -149,6 +169,7 @@ ExternalProject_Add(
     -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
     -DBUILD_OpenBLAS:BOOL=${BUILD_OpenBLAS}
+    -DCMAKE_PREFIX_PATH:PATH=${DEPEND_INSTALL_PREFIX}
     -DENABLE_MPI:BOOL=${MPI})
 
 if(BUILD_OpenBLAS)
@@ -209,25 +230,6 @@ ExternalProject_Add(
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
   CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
 
-# check if HDF5 is available
-find_package(HDF5 QUIET)
-if(HDF5_FOUND)
-  message("${BoldGreen}HDF5 found:${ColourReset} ${HDF5_LIBRARIES}")
-else()
-  message(
-    "${BoldYellow}HDF5 not found.${ColourReset} DiFfRG will not be able to use HDF5 for I/O."
-  )
-endif()
-if(HDF5_IS_PARALLEL)
-  message("${Green}HDF5 has parallel support${ColourReset}")
-else()
-  message(
-    STATUS
-      "${Yellow}The provided HDF5 installation does not support parallel I/O.${ColourReset}"
-  )
-endif()
-message("")
-
 # ##############################################################################
 # Kokkos
 # ##############################################################################
@@ -268,7 +270,7 @@ ExternalProject_Add(
   GIT_TAG 5.0.1
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/kokkos
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  DEPENDS general_dep sundials_dep autodiff_dep
+  # DEPENDS general_dep sundials_dep autodiff_dep
   CMAKE_ARGS -DCMAKE_CXX_FLAGS=-fPIC
   CMAKE_CACHE_ARGS
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
@@ -301,7 +303,7 @@ if(BUILD_PETSC)
     LOG_CONFIGURE ON
     LOG_INSTALL ON
     LOG_OUTPUT_ON_FAILURE ON
-    DEPENDS general_dep sundials_dep autodiff_dep kokkos_dep
+    DEPENDS general_dep # sundials_dep autodiff_dep kokkos_dep
     PREFIX ${CMAKE_CURRENT_BINARY_DIR}/petsc
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/petsc
     INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
@@ -359,7 +361,6 @@ ExternalProject_Add(
     ${dealii_lapack}
     -DDEAL_II_WITH_LAPACK:BOOL=ON
     -DDEAL_II_WITH_HDF5:BOOL=OFF
-    # -DHDF5_INCLUDE_DIRS:PATH=${HDF5_INCLUDE_DIRS}
     -DPETSC_DIR:PATH=${DEPEND_INSTALL_PREFIX}
     -DPETSC_ARCH:STRING=arch-linux-c-opt
     -DCMAKE_CXX_STANDARD:STRING=17
@@ -388,7 +389,7 @@ ExternalProject_Add(
   DEPENDS general_dep boost_dep deal.II_dep kokkos_dep autodiff_dep
   CMAKE_CACHE_ARGS
     -DENABLE_MPI:BOOL=${MPI}
-    -DENABLE_HDF5:BOOL=${HDF5_FOUND}
+    -DENABLE_HDF5:BOOL=ON
     -DBUNDLED_DIR:PATH=${DEPEND_INSTALL_PREFIX}
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
     -DDiFfRG_TEST:BOOL=${DiFfRG_TEST}

@@ -25,6 +25,8 @@ if(NOT DEFINED BUNDLED_DIR)
   message(STATUS "BUNDLED_DIR not set, defaulting to ${BUNDLED_DIR}")
 endif()
 
+set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} ${BUNDLED_DIR})
+
 # ##############################################################################
 # Documentation
 # ##############################################################################

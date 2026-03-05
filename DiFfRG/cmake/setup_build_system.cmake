@@ -96,9 +96,12 @@ find_package(Eigen3 3.4.0 REQUIRED HINTS ${BUNDLED_DIR})
 find_package(GSL REQUIRED)
 find_package(autodiff 1.1.0 REQUIRED HINTS ${BUNDLED_DIR})
 find_package(spdlog 1.14.1 REQUIRED HINTS ${BUNDLED_DIR})
+find_package(HDF5 2.0.0 REQUIRED HINTS ${BUNDLED_DIR})
 find_package(h5cpp 0.7.1 QUIET HINTS ${BUNDLED_DIR})
+
 if(h5cpp_FOUND)
   message(STATUS "Found h5cpp in ${h5cpp_DIR}")
+  message(STATUS "HDF5 include dir: ${HDF5_INCLUDE_DIRS}")
   add_compile_definitions(H5CPP)
 endif()
 
