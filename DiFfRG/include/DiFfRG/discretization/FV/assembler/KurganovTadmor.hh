@@ -566,24 +566,36 @@ namespace DiFfRG
                                 copy_data, flags, nullptr, nullptr, threads, batch_size);
         }
 
-        static std::pair<Point, std::array<NumberType, n_components>> get_cell_value(const Iterator &cell,
-                                                                                     const VectorType &solution_global)
+        struct CellData {
+          Point x;
+          std::array<NumberType, n_components> u;
+          std::array<types::global_dof_index, n_components> dof_indices;
+        };
+
+        struct NeighborData {
+          std::array<Point, n_faces> x;
+          std::array<std::array<NumberType, n_components>, n_faces> u;
+          std::array<std::array<types::global_dof_index, n_components>, n_faces> dof_indices;
+        };
+
+        static CellData get_cell_value(const Iterator &cell, const VectorType &solution_global)
         {
-          Point x_cell = cell->center();
-          std::array<NumberType, n_components> u_cell;
+          CellData data;
+          data.x = cell->center();
           std::vector<types::global_dof_index> global_cell_dof_indices(n_components);
           cell->get_dof_indices(global_cell_dof_indices);
-          for (unsigned int i = 0; i < n_components; ++i)
-            u_cell[i] = solution_global(global_cell_dof_indices[i]);
+          for (unsigned int i = 0; i < n_components; ++i) {
+            data.dof_indices[i] = global_cell_dof_indices[i];
+            data.u[i] = solution_global(global_cell_dof_indices[i]);
+          }
 
-          return std::make_pair(x_cell, u_cell);
+          return data;
         }
 
-        static std::pair<std::array<Point, n_faces>, std::array<std::array<NumberType, n_components>, n_faces>>
-        get_neighboring_cell_data(const Iterator &cell, const VectorType &solution_global, const Model &model)
+        static NeighborData get_neighboring_cell_data(const Iterator &cell, const VectorType &solution_global,
+                                                      const Model &model)
         {
-          std::array<Point, n_faces> x_n;
-          std::array<std::array<NumberType, n_components>, n_faces> u_n;
+          NeighborData data;
 
           std::array<types::boundary_id, n_faces> boundary_ids;
           std::array<Point, n_faces> face_centers;
@@ -593,21 +605,22 @@ namespace DiFfRG
               const auto face = cell->face(face_index);
               boundary_ids[face_index] = face->boundary_id();
               face_centers[face_index] = face->center();
-              // u_n/x_n will be computed by model
+              // u_n/x_n will be computed by model, dof_indices left zero-initialized
             } else {
               boundary_ids[face_index] = numbers::invalid_boundary_id;
               const auto neighbor = cell->neighbor(face_index);
-              auto [x, u] = get_cell_value(neighbor, solution_global);
-              x_n[face_index] = x;
-              u_n[face_index] = u;
+              auto neighbor_data = get_cell_value(neighbor, solution_global);
+              data.x[face_index] = neighbor_data.x;
+              data.u[face_index] = neighbor_data.u;
+              data.dof_indices[face_index] = neighbor_data.dof_indices;
             }
           }
 
-          auto [x_cell, u_cell] = get_cell_value(cell, solution_global);
+          auto cell_data = get_cell_value(cell, solution_global);
 
-          model.apply_boundary_conditions(u_n, x_n, boundary_ids, face_centers, u_cell, x_cell);
+          model.apply_boundary_conditions(data.u, data.x, boundary_ids, face_centers, cell_data.u, cell_data.x);
 
-          return std::make_pair(x_n, u_n);
+          return data;
         }
 
         virtual void residual(VectorType &residual, const VectorType &solution_global, NumberType weight,
@@ -674,29 +687,29 @@ namespace DiFfRG
             auto &copy_data_face = copy_data.face_data.back();
             copy_data_face.reinit(fe_iv);
 
-            auto [x_cell_n, u_cell_n] = get_neighboring_cell_data(cell, solution_global, model);
-            auto [x_ncell_n, u_ncell_n] = get_neighboring_cell_data(ncell, solution_global, model);
-            auto [x_cell, u_cell] = get_cell_value(cell, solution_global);
-            auto [x_ncell, u_ncell] = get_cell_value(ncell, solution_global);
+            const auto cell_neighbors = get_neighboring_cell_data(cell, solution_global, model);
+            const auto ncell_neighbors = get_neighboring_cell_data(ncell, solution_global, model);
+            const auto cell_data = get_cell_value(cell, solution_global);
+            const auto ncell_data = get_cell_value(ncell, solution_global);
 
-            const GradientType u_grad_cell =
-                Reconstructor::template compute_gradient<dim, n_components>(x_cell, u_cell, x_cell_n, u_cell_n);
-            const GradientType u_grad_ncell =
-                Reconstructor::template compute_gradient<dim, n_components>(x_ncell, u_ncell, x_ncell_n, u_ncell_n);
+            const GradientType u_grad_cell = Reconstructor::template compute_gradient<dim, n_components>(
+                cell_data.x, cell_data.u, cell_neighbors.x, cell_neighbors.u);
+            const GradientType u_grad_ncell = Reconstructor::template compute_gradient<dim, n_components>(
+                ncell_data.x, ncell_data.u, ncell_neighbors.x, ncell_neighbors.u);
 
             const std::vector<Tensor<1, dim>> &normals = fe_iv.get_normal_vectors();
 
             const std::array<NumberType, n_components> u_minus =
-                internal::reconstruct_u(u_cell, cell->center(), x_q, u_grad_cell);
+                internal::reconstruct_u(cell_data.u, cell->center(), x_q, u_grad_cell);
             const std::array<NumberType, n_components> u_plus =
-                internal::reconstruct_u(u_ncell, ncell->center(), x_q, u_grad_ncell);
+                internal::reconstruct_u(ncell_data.u, ncell->center(), x_q, u_grad_ncell);
 
             const auto [F_plus, F_minus, a_half] = internal::compute_kt_flux_and_speeds(u_plus, u_minus, x_q, model);
             const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, u_plus, u_minus);
 
             const auto &n_face = normals[q_face_index];
-            const auto D =
-                internal::compute_diffusion_flux(u_plus, u_minus, x_cell, x_ncell, u_cell, u_ncell, n_face, x_q, model);
+            const auto D = internal::compute_diffusion_flux(u_plus, u_minus, cell_data.x, ncell_data.x, cell_data.u,
+                                                            ncell_data.u, n_face, x_q, model);
 
             const auto JxW = fe_iv.get_JxW_values();
 
@@ -730,27 +743,27 @@ namespace DiFfRG
             const auto &x_q = q_points[q_face_index];
 
             // Get cell data and ghost neighbor data via apply_boundary_conditions
-            auto [x_cell_n, u_cell_n] = get_neighboring_cell_data(cell, solution_global, model);
-            auto [x_cell, u_cell] = get_cell_value(cell, solution_global);
+            const auto cell_neighbors = get_neighboring_cell_data(cell, solution_global, model);
+            const auto cell_data = get_cell_value(cell, solution_global);
 
-            const GradientType u_grad_cell =
-                Reconstructor::template compute_gradient<dim, n_components>(x_cell, u_cell, x_cell_n, u_cell_n);
+            const GradientType u_grad_cell = Reconstructor::template compute_gradient<dim, n_components>(
+                cell_data.x, cell_data.u, cell_neighbors.x, cell_neighbors.u);
 
             const std::vector<Tensor<1, dim>> &normals = fe_fv.get_normal_vectors();
 
             // Interior reconstructed state at face
             const std::array<NumberType, n_components> u_minus =
-                internal::reconstruct_u(u_cell, cell->center(), x_q, u_grad_cell);
+                internal::reconstruct_u(cell_data.u, cell->center(), x_q, u_grad_cell);
 
             // Ghost cell value and position from apply_boundary_conditions
-            const std::array<NumberType, n_components> &u_ghost = u_cell_n[face_no];
-            const Point &x_ghost = x_cell_n[face_no];
+            const std::array<NumberType, n_components> &u_ghost = cell_neighbors.u[face_no];
+            const Point &x_ghost = cell_neighbors.x[face_no];
 
             // Ghost gradient via model interface (allows second-order reconstruction at boundaries)
             const auto boundary_id = cell->face(face_no)->boundary_id();
             GradientType u_grad_ghost{};
             model.boundary_ghost_gradient(u_grad_ghost, boundary_id, normals[q_face_index], x_q, u_ghost, x_ghost,
-                                          u_cell, x_cell, u_grad_cell);
+                                          cell_data.u, cell_data.x, u_grad_cell);
 
             // Ghost reconstructed state at face
             const std::array<NumberType, n_components> u_plus =
@@ -760,8 +773,8 @@ namespace DiFfRG
             const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, u_plus, u_minus);
 
             const auto &n_bnd = normals[q_face_index];
-            const auto D_bnd =
-                internal::compute_diffusion_flux(u_plus, u_minus, x_cell, x_ghost, u_cell, u_ghost, n_bnd, x_q, model);
+            const auto D_bnd = internal::compute_diffusion_flux(u_plus, u_minus, cell_data.x, x_ghost, cell_data.u,
+                                                                u_ghost, n_bnd, x_q, model);
 
             for (uint dof = 0; dof < n_face_dofs; ++dof) {
               const auto &cd_i = fe_iv.interface_dof_to_dof_indices(dof);
