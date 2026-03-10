@@ -165,8 +165,15 @@ namespace DiFfRG
 
             template <int dim> void reinit(const FEInterfaceValues<dim> &fe_iv, uint n_extractors)
             {
+              // here we assume locality of the face's dependency, on the cells and ncells dofs.
+              // this is not true for FV methods. This depends on the stencil of the method.
               uint dofs_per_cell = fe_iv.n_current_interface_dofs();
+              // so this matrix is probably not rectengular anymore
               cell_jacobian.reinit(dofs_per_cell, dofs_per_cell);
+
+              // we also need here a fancy mapping, between the jacobians dependent dofs and the dofs,
+              // which are local and which we differentiate to.
+
               if (n_extractors > 0) extractor_cell_jacobian.reinit(dofs_per_cell, n_extractors);
               joint_dof_indices = fe_iv.get_interface_dof_indices();
             }
