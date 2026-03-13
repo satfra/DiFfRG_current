@@ -53,7 +53,7 @@ namespace DiFfRG
       // create new entry in quadratures_d
       auto new_it = map.insert(std::make_pair(E, MatsubaraQuadrature<double>())).first;
       // Initialize the quadrature
-      new_it->second.reinit(T_it->first, E, 2, min_matsubara_size, 128, vacuum_quad_size, matsubara_precision_factor);
+      new_it->second.reinit(T_it->first, E, 2, min_matsubara_size, max_matsubara_size, vacuum_quad_size, matsubara_precision_factor);
 
       if (verbosity >= 0)
         spdlog::get("QuadratureProvider")
@@ -104,7 +104,7 @@ namespace DiFfRG
       // create new entry in quadratures_f
       auto new_it = map.insert(std::make_pair(E, MatsubaraQuadrature<float>())).first;
       // Initialize the quadrature
-      new_it->second.reinit(T_it->first, E, 2, min_matsubara_size, 128, vacuum_quad_size, matsubara_precision_factor);
+      new_it->second.reinit(T_it->first, E, 2, min_matsubara_size, max_matsubara_size, vacuum_quad_size, matsubara_precision_factor);
 
       if (verbosity >= 0)
         spdlog::get("QuadratureProvider")
@@ -129,6 +129,11 @@ namespace DiFfRG
     {
       if (value <= 0) throw std::invalid_argument("MatsubaraStorage: min_matsubara_size must be positive.");
       min_matsubara_size = value;
+    }
+    void MatsubaraStorage::set_max_matsubara_size(const int value)
+    {
+      if (value <= 0) throw std::invalid_argument("MatsubaraStorage: max_matsubara_size must be positive.");
+      max_matsubara_size = value;
     }
 
     QuadratureStorage::TypeIterator<double> QuadratureStorage::find_type_d(const QuadratureType type)
@@ -227,7 +232,7 @@ namespace DiFfRG
     matsubara_storage.set_verbosity(verbosity);
     quadrature_storage.set_verbosity(verbosity);
 
-    const int vacuum_quad_size = json.get_uint("/integration/vacuum_quad_size", 48);
+    const int vacuum_quad_size = json.get_uint("/integration/vacuum_quad_size", 64);
     matsubara_storage.set_vacuum_quad_size(vacuum_quad_size);
 
     const int matsubara_precision_factor = json.get_uint("/integration/matsubara_precision_factor", 0);
@@ -235,5 +240,8 @@ namespace DiFfRG
 
     const int min_matsubara_size = json.get_uint("/integration/min_matsubara_size", 16);
     matsubara_storage.set_min_matsubara_size(min_matsubara_size);
+
+    const int max_matsubara_size = json.get_uint("/integration/max_matsubara_size", 128);
+    matsubara_storage.set_max_matsubara_size(max_matsubara_size);
   }
 } // namespace DiFfRG

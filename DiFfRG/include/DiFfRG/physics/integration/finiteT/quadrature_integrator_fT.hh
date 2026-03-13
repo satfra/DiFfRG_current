@@ -45,6 +45,7 @@ namespace DiFfRG
           quadrature_provider.template matsubara_nodes<ctype, typename ExecutionSpace::memory_space>(T, typical_E);
       matsubara_weights =
           quadrature_provider.template matsubara_weights<ctype, typename ExecutionSpace::memory_space>(T, typical_E);
+      matsubara_sum_T = quadrature_provider.template matsubara_T<ctype>(T, typical_E);
       for (int i = 0; i < sdim; ++i) {
         nodes[i] = quadrature_provider.template nodes<ctype, typename ExecutionSpace::memory_space>(grid_size[i],
                                                                                                     quadrature_type[i]);
@@ -74,6 +75,7 @@ namespace DiFfRG
           quadrature_provider.template matsubara_nodes<ctype, typename ExecutionSpace::memory_space>(T, typical_E);
       matsubara_weights =
           quadrature_provider.template matsubara_weights<ctype, typename ExecutionSpace::memory_space>(T, typical_E);
+      matsubara_sum_T = quadrature_provider.template matsubara_T<ctype>(T, typical_E);
       grid_size[dim - 1] = matsubara_nodes.size();
     }
 
@@ -86,6 +88,7 @@ namespace DiFfRG
           quadrature_provider.template matsubara_nodes<ctype, typename ExecutionSpace::memory_space>(T, typical_E);
       matsubara_weights =
           quadrature_provider.template matsubara_weights<ctype, typename ExecutionSpace::memory_space>(T, typical_E);
+      matsubara_sum_T = quadrature_provider.template matsubara_T<ctype>(T, typical_E);
       grid_size[dim - 1] = matsubara_nodes.size();
     }
 
@@ -125,7 +128,7 @@ namespace DiFfRG
       const auto &start = grid_start;
       const auto &scale = grid_scale;
 
-      const auto &m_T = T;
+      const auto &m_T = matsubara_sum_T;
 
       auto functor = KOKKOS_LAMBDA(const device::array<size_t, dim> &idx, NT &update)
       {
@@ -181,7 +184,7 @@ namespace DiFfRG
       const auto &start = grid_start;
       const auto &scale = grid_scale;
 
-      const auto &m_T = T;
+      const auto &m_T = matsubara_sum_T;
 
       auto functor = KOKKOS_LAMBDA(const device::array<size_t, 1 + dim> &idx)
       {
@@ -325,6 +328,7 @@ namespace DiFfRG
     device::array<Kokkos::View<const ctype *, typename ExecutionSpace::memory_space>, sdim> weights;
 
     ctype T, typical_E;
+    ctype matsubara_sum_T;
 
     Kokkos::View<const ctype *, typename ExecutionSpace::memory_space> matsubara_nodes;
     Kokkos::View<const ctype *, typename ExecutionSpace::memory_space> matsubara_weights;
@@ -367,7 +371,7 @@ namespace DiFfRG
       const auto &start = grid_start;
       const auto &scale = grid_scale;
 
-      const auto &m_T = T;
+      const auto &m_T = matsubara_sum_T;
 
       auto functor = [&](const device::array<size_t, dim> &idx) {
         device::array<ctype, sdim> x;
@@ -463,6 +467,7 @@ namespace DiFfRG
 
     using Base::T;
     using Base::typical_E;
+    using Base::matsubara_sum_T;
   };
 
 } // namespace DiFfRG
