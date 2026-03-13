@@ -3,10 +3,10 @@
 NotebookFileLineBreakTest
 NotebookFileLineBreakTest
 NotebookDataPosition[         0,          0]
-NotebookDataLength[   3345632,      56534]
-NotebookOptionsPosition[   3334333,      56349]
-NotebookOutlinePosition[   3335163,      56376]
-CellTagsIndexPosition[   3335120,      56373]
+NotebookDataLength[   3347033,      56560]
+NotebookOptionsPosition[   3335726,      56375]
+NotebookOutlinePosition[   3336556,      56402]
+CellTagsIndexPosition[   3336513,      56399]
 WindowFrame->Normal*)
 
 (* Beginning of Notebook Content *)
@@ -1880,14 +1880,15 @@ Cell[BoxData[
  CellChangeTimes->{{3.969781602745386*^9, 3.9697816198483143`*^9}, 
    3.969781655472188*^9},
  CellLabel->
-  "In[144]:=",ExpressionUUID->"ad357dbb-9155-4481-a5a3-02286d2d11a6"],
+  "In[174]:=",ExpressionUUID->"ad357dbb-9155-4481-a5a3-02286d2d11a6"],
 
 Cell[BoxData[
  RowBox[{"SetRegisterSize", "[", "64", "]"}]], "Input",
  CellChangeTimes->{{3.969781505192833*^9, 3.9697815078961163`*^9}, {
   3.969792754633823*^9, 3.9697927554493723`*^9}, {3.969797469026575*^9, 
-  3.969797469137697*^9}},ExpressionUUID->"9cbe9a06-6f96-42de-a46f-\
-cdda44f84faf"],
+  3.969797469137697*^9}},
+ CellLabel->
+  "In[175]:=",ExpressionUUID->"9cbe9a06-6f96-42de-a46f-cdda44f84faf"],
 
 Cell[CellGroupData[{
 
@@ -1996,7 +1997,7 @@ Cell[BoxData[{
    3.963025764893848*^9}, 3.963026395306378*^9, {3.967491474427928*^9, 
    3.967491475791052*^9}, {3.969697215718693*^9, 3.969697218805395*^9}},
  CellLabel->
-  "In[146]:=",ExpressionUUID->"b5aee721-5038-44b1-9738-bae4c93c20f0"],
+  "In[176]:=",ExpressionUUID->"b5aee721-5038-44b1-9738-bae4c93c20f0"],
 
 Cell[CellGroupData[{
 
@@ -2007,24 +2008,33 @@ Cell[BoxData[
     GraphicsBox[
      NamespaceBox["NetworkGraphics",
       DynamicModuleBox[{Typeset`graph = HoldComplete[
-        Graph[{$CellContext`v10930, $CellContext`v10931, \
-$CellContext`i2$352595, $CellContext`i1$352596}, {
+        Graph[{$CellContext`v14325, $CellContext`v14326, \
+$CellContext`i2$452545, $CellContext`i1$452546}, {
          Null, {{1, 2}, {2, 1}, {3, 1}, {4, 1}}}, {EdgeStyle -> {
             Arrowheads[{{0.07, 0.6}}], 
-            UndirectedEdge[$CellContext`i2$352595, $CellContext`v10930] -> {
+            UndirectedEdge[$CellContext`v14325, $CellContext`v14326] -> {
               RGBColor[1, 0.5, 0]}, 
-            UndirectedEdge[$CellContext`v10931, $CellContext`v10930] -> {
+            UndirectedEdge[$CellContext`i2$452545, $CellContext`v14325] -> {
               RGBColor[1, 0.5, 0]}, 
-            UndirectedEdge[$CellContext`v10930, $CellContext`v10931] -> {
+            UndirectedEdge[$CellContext`i1$452546, $CellContext`v14325] -> {
               RGBColor[1, 0.5, 0]}, 
-            UndirectedEdge[$CellContext`i1$352596, $CellContext`v10930] -> {
+            UndirectedEdge[$CellContext`v14326, $CellContext`v14325] -> {
               RGBColor[1, 0.5, 0]}}, EdgeWeight -> {1, 1, 1, 1}, 
           GraphLayout -> {
            "Dimension" -> 2, 
             "VertexLayout" -> {
              "SpringElectricalEmbedding", "EdgeWeighted" -> True}}, ImageSize -> 
           Small, PerformanceGoal -> "Quality", 
-          VertexShape -> {$CellContext`v10931 -> Graphics[{
+          VertexShape -> {$CellContext`i1$452546 -> Graphics[
+              Style[
+               Disk[{0, 0}, 0.], 
+               GrayLevel[0.5]]], $CellContext`v14325 -> Graphics[
+              Style[
+               Disk[{0, 0}, 2], 
+               GrayLevel[0.5]]], $CellContext`i2$452545 -> Graphics[
+              Style[
+               Disk[{0, 0}, 0.], 
+               GrayLevel[0.5]]], $CellContext`v14326 -> Graphics[{
                Thickness[Large], 
                
                Line[{{2^Rational[-1, 2], 2^
@@ -2034,17 +2044,8 @@ $CellContext`i2$352595, $CellContext`i1$352596}, {
                Line[{{2^
                   Rational[-1, 2], -2^Rational[-1, 2]}, {-2^Rational[-1, 2], 
                   2^Rational[-1, 2]}}], 
-               Circle[{0, 0}, 1]}], $CellContext`v10930 -> Graphics[
-              Style[
-               Disk[{0, 0}, 2], 
-               GrayLevel[0.5]]], $CellContext`i2$352595 -> Graphics[
-              Style[
-               Disk[{0, 0}, 0.], 
-               GrayLevel[0.5]]], $CellContext`i1$352596 -> Graphics[
-              Style[
-               Disk[{0, 0}, 0.], 
-               GrayLevel[0.5]]]}, 
-          VertexSize -> {$CellContext`v10930 -> 0.15, $CellContext`v10931 -> 
+               Circle[{0, 0}, 1]}]}, 
+          VertexSize -> {$CellContext`v14325 -> 0.15, $CellContext`v14326 -> 
             0.25}}]]}, 
        TagBox[GraphicsGroupBox[{
           {Hue[0.6, 0.7, 0.5], Opacity[0.7], Arrowheads[{{0.07, 0.6}}], 
@@ -2113,41 +2114,38 @@ $CellContext`i2$352595, $CellContext`i1$352596}, {
   GraphicsBox[
    NamespaceBox["NetworkGraphics",
     DynamicModuleBox[{Typeset`graph = HoldComplete[
-      Graph[{$CellContext`v10921, $CellContext`v10922, $CellContext`v10923, \
-$CellContext`i1$352517, $CellContext`i2$352518}, {{{3, 1}, {1, 2}, {2, 3}}, {{
+      Graph[{$CellContext`v14316, $CellContext`v14317, $CellContext`v14318, \
+$CellContext`i1$452468, $CellContext`i2$452469}, {{{3, 1}, {1, 2}, {2, 3}}, {{
         4, 1}, {5, 2}}}, {EdgeStyle -> {
           Arrowheads[{{0.07, 0.6}}], 
-          DirectedEdge[$CellContext`v10923, $CellContext`v10921] -> {
+          DirectedEdge[$CellContext`v14318, $CellContext`v14316] -> {
             GrayLevel[0], 
             Dashing[{Small, Small}]}, 
-          DirectedEdge[$CellContext`v10922, $CellContext`v10923] -> {
-            GrayLevel[0], 
-            Dashing[{Small, Small}]}, 
-          UndirectedEdge[$CellContext`i2$352518, $CellContext`v10922] -> {
+          UndirectedEdge[$CellContext`i2$452469, $CellContext`v14317] -> {
             RGBColor[1, 0.5, 0]}, 
-          DirectedEdge[$CellContext`v10921, $CellContext`v10922] -> {
+          UndirectedEdge[$CellContext`i1$452468, $CellContext`v14316] -> {
+            RGBColor[1, 0.5, 0]}, 
+          DirectedEdge[$CellContext`v14316, $CellContext`v14317] -> {
             GrayLevel[0], 
             Dashing[{Small, Small}]}, 
-          UndirectedEdge[$CellContext`i1$352517, $CellContext`v10921] -> {
-            RGBColor[1, 0.5, 0]}}, EdgeWeight -> {1, 1, 1, 1, 1}, 
+          DirectedEdge[$CellContext`v14317, $CellContext`v14318] -> {
+            GrayLevel[0], 
+            Dashing[{Small, Small}]}}, EdgeWeight -> {1, 1, 1, 1, 1}, 
         GraphLayout -> {
          "Dimension" -> 2, 
           "VertexLayout" -> {
            "SpringElectricalEmbedding", "EdgeWeighted" -> True}}, ImageSize -> 
         Small, PerformanceGoal -> "Quality", 
-        VertexShape -> {$CellContext`i2$352518 -> Graphics[
+        VertexShape -> {$CellContext`i1$452468 -> Graphics[
             Style[
              Disk[{0, 0}, 0.], 
-             GrayLevel[0.5]]], $CellContext`v10921 -> Graphics[
-            Style[
-             Disk[{0, 0}, 2], 
-             GrayLevel[0.5]]], $CellContext`v10922 -> Graphics[
-            Style[
-             Disk[{0, 0}, 2], 
-             GrayLevel[0.5]]], $CellContext`i1$352517 -> Graphics[
+             GrayLevel[0.5]]], $CellContext`i2$452469 -> Graphics[
             Style[
              Disk[{0, 0}, 0.], 
-             GrayLevel[0.5]]], $CellContext`v10923 -> Graphics[{
+             GrayLevel[0.5]]], $CellContext`v14317 -> Graphics[
+            Style[
+             Disk[{0, 0}, 2], 
+             GrayLevel[0.5]]], $CellContext`v14318 -> Graphics[{
              Thickness[Large], 
              
              Line[{{2^Rational[-1, 2], 2^
@@ -2157,9 +2155,12 @@ $CellContext`i1$352517, $CellContext`i2$352518}, {{{3, 1}, {1, 2}, {2, 3}}, {{
              Line[{{2^
                 Rational[-1, 2], -2^Rational[-1, 2]}, {-2^Rational[-1, 2], 2^
                 Rational[-1, 2]}}], 
-             Circle[{0, 0}, 1]}]}, 
-        VertexSize -> {$CellContext`v10923 -> 0.25, $CellContext`v10921 -> 
-          0.15, $CellContext`v10922 -> 0.15}}]]}, 
+             Circle[{0, 0}, 1]}], $CellContext`v14316 -> Graphics[
+            Style[
+             Disk[{0, 0}, 2], 
+             GrayLevel[0.5]]]}, 
+        VertexSize -> {$CellContext`v14316 -> 0.15, $CellContext`v14317 -> 
+          0.15, $CellContext`v14318 -> 0.25}}]]}, 
      TagBox[GraphicsGroupBox[{
         {Hue[0.6, 0.7, 0.5], Opacity[0.7], Arrowheads[{{0.07, 0.6}}], 
          {RGBColor[1, 0.5, 0], 
@@ -2233,29 +2234,35 @@ $CellContext`i1$352517, $CellContext`i2$352518}, {{{3, 1}, {1, 2}, {2, 3}}, {{
   GraphicsBox[
    NamespaceBox["NetworkGraphics",
     DynamicModuleBox[{Typeset`graph = HoldComplete[
-      Graph[{$CellContext`v10924, $CellContext`v10925, $CellContext`v10926, \
-$CellContext`i1$352544, $CellContext`i2$352545}, {{{1, 3}, {2, 1}, {3, 2}}, {{
+      Graph[{$CellContext`v14319, $CellContext`v14320, $CellContext`v14321, \
+$CellContext`i1$452494, $CellContext`i2$452495}, {{{1, 3}, {2, 1}, {3, 2}}, {{
         4, 1}, {5, 2}}}, {EdgeStyle -> {
           Arrowheads[{{0.07, 0.6}}], 
-          UndirectedEdge[$CellContext`i2$352545, $CellContext`v10925] -> {
+          UndirectedEdge[$CellContext`i1$452494, $CellContext`v14319] -> {
             RGBColor[1, 0.5, 0]}, 
-          DirectedEdge[$CellContext`v10926, $CellContext`v10925] -> {
+          DirectedEdge[$CellContext`v14321, $CellContext`v14320] -> {
             GrayLevel[0], 
             Dashing[{Small, Small}]}, 
-          UndirectedEdge[$CellContext`i1$352544, $CellContext`v10924] -> {
-            RGBColor[1, 0.5, 0]}, 
-          DirectedEdge[$CellContext`v10924, $CellContext`v10926] -> {
+          DirectedEdge[$CellContext`v14320, $CellContext`v14319] -> {
             GrayLevel[0], 
             Dashing[{Small, Small}]}, 
-          DirectedEdge[$CellContext`v10925, $CellContext`v10924] -> {
+          DirectedEdge[$CellContext`v14319, $CellContext`v14321] -> {
             GrayLevel[0], 
-            Dashing[{Small, Small}]}}, EdgeWeight -> {1, 1, 1, 1, 1}, 
+            Dashing[{Small, Small}]}, 
+          UndirectedEdge[$CellContext`i2$452495, $CellContext`v14320] -> {
+            RGBColor[1, 0.5, 0]}}, EdgeWeight -> {1, 1, 1, 1, 1}, 
         GraphLayout -> {
          "Dimension" -> 2, 
           "VertexLayout" -> {
            "SpringElectricalEmbedding", "EdgeWeighted" -> True}}, ImageSize -> 
         Small, PerformanceGoal -> "Quality", 
-        VertexShape -> {$CellContext`v10926 -> Graphics[{
+        VertexShape -> {$CellContext`v14320 -> Graphics[
+            Style[
+             Disk[{0, 0}, 2], 
+             GrayLevel[0.5]]], $CellContext`i1$452494 -> Graphics[
+            Style[
+             Disk[{0, 0}, 0.], 
+             GrayLevel[0.5]]], $CellContext`v14321 -> Graphics[{
              Thickness[Large], 
              
              Line[{{2^Rational[-1, 2], 2^
@@ -2265,21 +2272,15 @@ $CellContext`i1$352544, $CellContext`i2$352545}, {{{1, 3}, {2, 1}, {3, 2}}, {{
              Line[{{2^
                 Rational[-1, 2], -2^Rational[-1, 2]}, {-2^Rational[-1, 2], 2^
                 Rational[-1, 2]}}], 
-             Circle[{0, 0}, 1]}], $CellContext`v10925 -> Graphics[
+             Circle[{0, 0}, 1]}], $CellContext`v14319 -> Graphics[
             Style[
              Disk[{0, 0}, 2], 
-             GrayLevel[0.5]]], $CellContext`i2$352545 -> Graphics[
-            Style[
-             Disk[{0, 0}, 0.], 
-             GrayLevel[0.5]]], $CellContext`v10924 -> Graphics[
-            Style[
-             Disk[{0, 0}, 2], 
-             GrayLevel[0.5]]], $CellContext`i1$352544 -> Graphics[
+             GrayLevel[0.5]]], $CellContext`i2$452495 -> Graphics[
             Style[
              Disk[{0, 0}, 0.], 
              GrayLevel[0.5]]]}, 
-        VertexSize -> {$CellContext`v10924 -> 0.15, $CellContext`v10925 -> 
-          0.15, $CellContext`v10926 -> 0.25}}]]}, 
+        VertexSize -> {$CellContext`v14320 -> 0.15, $CellContext`v14319 -> 
+          0.15, $CellContext`v14321 -> 0.25}}]]}, 
      TagBox[GraphicsGroupBox[{
         {Hue[0.6, 0.7, 0.5], Opacity[0.7], Arrowheads[{{0.07, 0.6}}], 
          {RGBColor[1, 0.5, 0], 
@@ -2352,26 +2353,32 @@ $CellContext`i1$352544, $CellContext`i2$352545}, {{{1, 3}, {2, 1}, {3, 2}}, {{
   GraphicsBox[
    NamespaceBox["NetworkGraphics",
     DynamicModuleBox[{Typeset`graph = HoldComplete[
-      Graph[{$CellContext`v10927, $CellContext`v10928, $CellContext`v10929, \
-$CellContext`i1$352570, $CellContext`i2$352571}, {
+      Graph[{$CellContext`v14322, $CellContext`v14323, $CellContext`v14324, \
+$CellContext`i1$452520, $CellContext`i2$452521}, {
        Null, {{1, 3}, {2, 1}, {3, 2}, {4, 1}, {5, 2}}}, {EdgeStyle -> {
           Arrowheads[{{0.07, 0.6}}], 
-          UndirectedEdge[$CellContext`i2$352571, $CellContext`v10928] -> {
+          UndirectedEdge[$CellContext`v14324, $CellContext`v14323] -> {
             RGBColor[1, 0.5, 0]}, 
-          UndirectedEdge[$CellContext`v10927, $CellContext`v10929] -> {
+          UndirectedEdge[$CellContext`v14323, $CellContext`v14322] -> {
             RGBColor[1, 0.5, 0]}, 
-          UndirectedEdge[$CellContext`v10929, $CellContext`v10928] -> {
+          UndirectedEdge[$CellContext`i2$452521, $CellContext`v14323] -> {
             RGBColor[1, 0.5, 0]}, 
-          UndirectedEdge[$CellContext`i1$352570, $CellContext`v10927] -> {
+          UndirectedEdge[$CellContext`i1$452520, $CellContext`v14322] -> {
             RGBColor[1, 0.5, 0]}, 
-          UndirectedEdge[$CellContext`v10928, $CellContext`v10927] -> {
+          UndirectedEdge[$CellContext`v14322, $CellContext`v14324] -> {
             RGBColor[1, 0.5, 0]}}, EdgeWeight -> {1, 1, 1, 1, 1}, 
         GraphLayout -> {
          "Dimension" -> 2, 
           "VertexLayout" -> {
            "SpringElectricalEmbedding", "EdgeWeighted" -> True}}, ImageSize -> 
         Small, PerformanceGoal -> "Quality", 
-        VertexShape -> {$CellContext`v10929 -> Graphics[{
+        VertexShape -> {$CellContext`v14322 -> Graphics[
+            Style[
+             Disk[{0, 0}, 2], 
+             GrayLevel[0.5]]], $CellContext`i2$452521 -> Graphics[
+            Style[
+             Disk[{0, 0}, 0.], 
+             GrayLevel[0.5]]], $CellContext`v14324 -> Graphics[{
              Thickness[Large], 
              
              Line[{{2^Rational[-1, 2], 2^
@@ -2381,21 +2388,15 @@ $CellContext`i1$352570, $CellContext`i2$352571}, {
              Line[{{2^
                 Rational[-1, 2], -2^Rational[-1, 2]}, {-2^Rational[-1, 2], 2^
                 Rational[-1, 2]}}], 
-             Circle[{0, 0}, 1]}], $CellContext`i1$352570 -> Graphics[
-            Style[
-             Disk[{0, 0}, 0.], 
-             GrayLevel[0.5]]], $CellContext`i2$352571 -> Graphics[
-            Style[
-             Disk[{0, 0}, 0.], 
-             GrayLevel[0.5]]], $CellContext`v10928 -> Graphics[
+             Circle[{0, 0}, 1]}], $CellContext`v14323 -> Graphics[
             Style[
              Disk[{0, 0}, 2], 
-             GrayLevel[0.5]]], $CellContext`v10927 -> Graphics[
+             GrayLevel[0.5]]], $CellContext`i1$452520 -> Graphics[
             Style[
-             Disk[{0, 0}, 2], 
+             Disk[{0, 0}, 0.], 
              GrayLevel[0.5]]]}, 
-        VertexSize -> {$CellContext`v10928 -> 0.15, $CellContext`v10929 -> 
-          0.25, $CellContext`v10927 -> 0.15}}]]}, 
+        VertexSize -> {$CellContext`v14323 -> 0.15, $CellContext`v14322 -> 
+          0.15, $CellContext`v14324 -> 0.25}}]]}, 
      TagBox[GraphicsGroupBox[{
         {Hue[0.6, 0.7, 0.5], Opacity[0.7], Arrowheads[{{0.07, 0.6}}], 
          {RGBColor[1, 0.5, 0], 
@@ -2495,10 +2496,11 @@ $CellContext`i1$352570, $CellContext`i2$352571}, {
    3.967545223413122*^9, 3.967568199560265*^9, {3.96756827487838*^9, 
    3.9675682853072166`*^9}, 3.96756835834778*^9, {3.969697205890265*^9, 
    3.969697219926455*^9}, 3.969701136330529*^9, 3.969780972970228*^9, 
-   3.9697815113331614`*^9, 3.969792758481578*^9, 3.969792980588584*^9},
+   3.9697815113331614`*^9, 3.969792758481578*^9, 3.969792980588584*^9, 
+   3.969797474018732*^9},
  CellLabel->
   "During evaluation of \
-In[146]:=",ExpressionUUID->"870ab2b9-b28d-42a2-a12c-1ec5fa1f8400"],
+In[176]:=",ExpressionUUID->"31c4a9b1-cb08-4769-832e-c8ec75e3d702"],
 
 Cell[BoxData[
  GraphicsBox[
@@ -9240,10 +9242,11 @@ U+XwIkv72/S76g7b5VpfB4pVOawHBZCvFjz+TG32Bk17qOOAHr8AM+PkTw==
    3.967545223413122*^9, 3.967568199560265*^9, {3.96756827487838*^9, 
    3.9675682853072166`*^9}, 3.96756835834778*^9, {3.969697205890265*^9, 
    3.969697219926455*^9}, 3.969701136330529*^9, 3.969780972970228*^9, 
-   3.9697815113331614`*^9, 3.969792758481578*^9, 3.969792981013398*^9},
+   3.9697815113331614`*^9, 3.969792758481578*^9, 3.969792980588584*^9, 
+   3.969797474137467*^9},
  CellLabel->
   "During evaluation of \
-In[146]:=",ExpressionUUID->"1ab87cd5-2989-4506-a7b6-e16a0187efbf"],
+In[176]:=",ExpressionUUID->"50a211f1-af89-4096-b583-a47f2e230bba"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/ZA/ZA.hh unchanged\"\>"], "Print",
@@ -9276,13 +9279,15 @@ flows/ZA/ZA.hh unchanged\"\>"], "Print",
    3.967545223413122*^9, 3.967568199560265*^9, {3.96756827487838*^9, 
    3.9675682853072166`*^9}, 3.96756835834778*^9, {3.969697205890265*^9, 
    3.969697219926455*^9}, 3.969701136330529*^9, 3.969780972970228*^9, 
-   3.9697815113331614`*^9, 3.969792758481578*^9, 3.969792984105845*^9},
+   3.9697815113331614`*^9, 3.969792758481578*^9, 3.969792980588584*^9, 
+   3.969797477452178*^9},
  CellLabel->
   "During evaluation of \
-In[146]:=",ExpressionUUID->"43d8e5bc-5173-47a4-8709-2ca35cf8d08e"],
+In[176]:=",ExpressionUUID->"ef417e84-17d4-4bc9-8260-916286e8d309"],
 
-Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
-flows/ZA/kernel.hh unchanged\"\>"], "Print",
+Cell[BoxData["\<\"Exported to \
+\\\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/flows/ZA/\
+kernel.hh\\\"\"\>"], "Print",
  CellChangeTimes->{
   3.962760655689211*^9, 3.9627607989882717`*^9, 3.962764204272909*^9, 
    3.962764802108053*^9, {3.962765345842146*^9, 3.962765362852559*^9}, 
@@ -9312,10 +9317,11 @@ flows/ZA/kernel.hh unchanged\"\>"], "Print",
    3.967545223413122*^9, 3.967568199560265*^9, {3.96756827487838*^9, 
    3.9675682853072166`*^9}, 3.96756835834778*^9, {3.969697205890265*^9, 
    3.969697219926455*^9}, 3.969701136330529*^9, 3.969780972970228*^9, 
-   3.9697815113331614`*^9, 3.969792758481578*^9, 3.96979298411296*^9},
+   3.9697815113331614`*^9, 3.969792758481578*^9, 3.969792980588584*^9, 
+   3.96979747745289*^9},
  CellLabel->
   "During evaluation of \
-In[146]:=",ExpressionUUID->"02dc3145-ef83-4770-a5cd-f37ab44e398b"],
+In[176]:=",ExpressionUUID->"576e2f0f-447b-49af-94e0-39a30ff5bb3c"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/ZA/src/constructor.cc unchanged\"\>"], "Print",
@@ -9348,10 +9354,11 @@ flows/ZA/src/constructor.cc unchanged\"\>"], "Print",
    3.967545223413122*^9, 3.967568199560265*^9, {3.96756827487838*^9, 
    3.9675682853072166`*^9}, 3.96756835834778*^9, {3.969697205890265*^9, 
    3.969697219926455*^9}, 3.969701136330529*^9, 3.969780972970228*^9, 
-   3.9697815113331614`*^9, 3.969792758481578*^9, 3.969792984113553*^9},
+   3.9697815113331614`*^9, 3.969792758481578*^9, 3.969792980588584*^9, 
+   3.969797477457127*^9},
  CellLabel->
   "During evaluation of \
-In[146]:=",ExpressionUUID->"950539d4-cd30-4269-b2d3-e41ecf1a9d56"],
+In[176]:=",ExpressionUUID->"18acb840-48f5-4d5c-a7ce-b799bb8c706b"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/ZA/src/CT_get.cc unchanged\"\>"], "Print",
@@ -9384,10 +9391,11 @@ flows/ZA/src/CT_get.cc unchanged\"\>"], "Print",
    3.967545223413122*^9, 3.967568199560265*^9, {3.96756827487838*^9, 
    3.9675682853072166`*^9}, 3.96756835834778*^9, {3.969697205890265*^9, 
    3.969697219926455*^9}, 3.969701136330529*^9, 3.969780972970228*^9, 
-   3.9697815113331614`*^9, 3.969792758481578*^9, 3.9697929841198387`*^9},
+   3.9697815113331614`*^9, 3.969792758481578*^9, 3.969792980588584*^9, 
+   3.969797477460087*^9},
  CellLabel->
   "During evaluation of \
-In[146]:=",ExpressionUUID->"591c39d6-1039-4209-87f0-3e19eb72c84d"],
+In[176]:=",ExpressionUUID->"7e02134f-1854-4c58-b44a-e4b2ec7c0b2b"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/ZA/src/CT_map_1.cc unchanged\"\>"], "Print",
@@ -9420,10 +9428,11 @@ flows/ZA/src/CT_map_1.cc unchanged\"\>"], "Print",
    3.967545223413122*^9, 3.967568199560265*^9, {3.96756827487838*^9, 
    3.9675682853072166`*^9}, 3.96756835834778*^9, {3.969697205890265*^9, 
    3.969697219926455*^9}, 3.969701136330529*^9, 3.969780972970228*^9, 
-   3.9697815113331614`*^9, 3.969792758481578*^9, 3.969792984120323*^9},
+   3.9697815113331614`*^9, 3.969792758481578*^9, 3.969792980588584*^9, 
+   3.9697974774630327`*^9},
  CellLabel->
   "During evaluation of \
-In[146]:=",ExpressionUUID->"e5b956c4-6b80-485a-a242-335959af6ee3"],
+In[176]:=",ExpressionUUID->"afb865b9-b6dd-4646-b353-5dbe0843f5db"],
 
 Cell[BoxData["\<\"Please run UpdateFlows[] to export an up-to-date \
 CMakeLists.txt\"\>"], "Print",
@@ -9456,10 +9465,11 @@ CMakeLists.txt\"\>"], "Print",
    3.967545223413122*^9, 3.967568199560265*^9, {3.96756827487838*^9, 
    3.9675682853072166`*^9}, 3.96756835834778*^9, {3.969697205890265*^9, 
    3.969697219926455*^9}, 3.969701136330529*^9, 3.969780972970228*^9, 
-   3.9697815113331614`*^9, 3.969792758481578*^9, 3.969792984120799*^9},
+   3.9697815113331614`*^9, 3.969792758481578*^9, 3.969792980588584*^9, 
+   3.96979747746572*^9},
  CellLabel->
   "During evaluation of \
-In[146]:=",ExpressionUUID->"6c535674-1cfe-4a8e-a4a7-51928f9302ce"],
+In[176]:=",ExpressionUUID->"c9c54f6f-8d07-4db3-bf43-c27347e86e83"],
 
 Cell[BoxData["\<\"Exported to \
 \\\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/flows/\
@@ -9493,10 +9503,11 @@ CMakeLists.txt\\\"\"\>"], "Print",
    3.967545223413122*^9, 3.967568199560265*^9, {3.96756827487838*^9, 
    3.9675682853072166`*^9}, 3.96756835834778*^9, {3.969697205890265*^9, 
    3.969697219926455*^9}, 3.969701136330529*^9, 3.969780972970228*^9, 
-   3.9697815113331614`*^9, 3.969792758481578*^9, 3.969792984131318*^9},
+   3.9697815113331614`*^9, 3.969792758481578*^9, 3.969792980588584*^9, 
+   3.969797477472097*^9},
  CellLabel->
   "During evaluation of \
-In[146]:=",ExpressionUUID->"90c9e708-3809-4b28-9ef1-8029d6921154"],
+In[176]:=",ExpressionUUID->"0fe3c7a5-92ab-490f-b023-1b111b73156d"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/flows.hh unchanged\"\>"], "Print",
@@ -9529,10 +9540,11 @@ flows/flows.hh unchanged\"\>"], "Print",
    3.967545223413122*^9, 3.967568199560265*^9, {3.96756827487838*^9, 
    3.9675682853072166`*^9}, 3.96756835834778*^9, {3.969697205890265*^9, 
    3.969697219926455*^9}, 3.969701136330529*^9, 3.969780972970228*^9, 
-   3.9697815113331614`*^9, 3.969792758481578*^9, 3.969792984891348*^9},
+   3.9697815113331614`*^9, 3.969792758481578*^9, 3.969792980588584*^9, 
+   3.969797478209516*^9},
  CellLabel->
   "During evaluation of \
-In[146]:=",ExpressionUUID->"b47a837e-2f98-4a2f-a080-49306858ce98"],
+In[176]:=",ExpressionUUID->"44c48331-878a-4416-9cb2-ad047eef8e8e"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/flows.cc unchanged\"\>"], "Print",
@@ -9565,10 +9577,11 @@ flows/flows.cc unchanged\"\>"], "Print",
    3.967545223413122*^9, 3.967568199560265*^9, {3.96756827487838*^9, 
    3.9675682853072166`*^9}, 3.96756835834778*^9, {3.969697205890265*^9, 
    3.969697219926455*^9}, 3.969701136330529*^9, 3.969780972970228*^9, 
-   3.9697815113331614`*^9, 3.969792758481578*^9, 3.96979298489636*^9},
+   3.9697815113331614`*^9, 3.969792758481578*^9, 3.969792980588584*^9, 
+   3.969797478213819*^9},
  CellLabel->
   "During evaluation of \
-In[146]:=",ExpressionUUID->"08c7e414-ce9b-4022-89aa-8298a73a65d1"]
+In[176]:=",ExpressionUUID->"d70bac07-4c83-45d4-b2c7-651bbfde5fa1"]
 }, Open  ]]
 }, Open  ]]
 }, Closed]],
@@ -9670,7 +9683,7 @@ Cell[BoxData[{
    3.967491490415001*^9}, {3.969697237545899*^9, 3.96969724061727*^9}, {
    3.969697315130467*^9, 3.969697315993308*^9}},
  CellLabel->
-  "In[151]:=",ExpressionUUID->"66e66473-19af-41fb-9f5c-313d7cb4b549"],
+  "In[181]:=",ExpressionUUID->"66e66473-19af-41fb-9f5c-313d7cb4b549"],
 
 Cell[CellGroupData[{
 
@@ -9680,22 +9693,22 @@ Cell[BoxData[
    GraphicsBox[
     NamespaceBox["NetworkGraphics",
      DynamicModuleBox[{Typeset`graph = HoldComplete[
-       Graph[{$CellContext`v11075, $CellContext`v11076, $CellContext`v11077, \
-$CellContext`i1$362106, $CellContext`i2$362107}, {{{3, 1}, {2, 3}, {1, 4}, {5,
+       Graph[{$CellContext`v14510, $CellContext`v14511, $CellContext`v14512, \
+$CellContext`i1$462099, $CellContext`i2$462100}, {{{3, 1}, {2, 3}, {1, 4}, {5,
           2}}, {{2, 1}}}, {EdgeStyle -> {
            Arrowheads[{{0.07, 0.6}}], 
-           DirectedEdge[$CellContext`v11077, $CellContext`v11075] -> {
+           DirectedEdge[$CellContext`v14511, $CellContext`v14512] -> {
              GrayLevel[0], 
              Dashing[{Small, Small}]}, 
-           DirectedEdge[$CellContext`i2$362107, $CellContext`v11076] -> {
-             GrayLevel[0], 
-             Dashing[{Small, Small}]}, 
-           UndirectedEdge[$CellContext`v11076, $CellContext`v11075] -> {
+           UndirectedEdge[$CellContext`v14511, $CellContext`v14510] -> {
              RGBColor[1, 0.5, 0]}, 
-           DirectedEdge[$CellContext`v11075, $CellContext`i1$362106] -> {
+           DirectedEdge[$CellContext`v14512, $CellContext`v14510] -> {
              GrayLevel[0], 
              Dashing[{Small, Small}]}, 
-           DirectedEdge[$CellContext`v11076, $CellContext`v11077] -> {
+           DirectedEdge[$CellContext`i2$462100, $CellContext`v14511] -> {
+             GrayLevel[0], 
+             Dashing[{Small, Small}]}, 
+           DirectedEdge[$CellContext`v14510, $CellContext`i1$462099] -> {
              GrayLevel[0], 
              Dashing[{Small, Small}]}}, EdgeWeight -> {1, 1, 1, 1, 1}, 
          GraphLayout -> {
@@ -9703,19 +9716,7 @@ $CellContext`i1$362106, $CellContext`i2$362107}, {{{3, 1}, {2, 3}, {1, 4}, {5,
            "VertexLayout" -> {
             "SpringElectricalEmbedding", "EdgeWeighted" -> True}}, ImageSize -> 
          Small, PerformanceGoal -> "Quality", 
-         VertexShape -> {$CellContext`v11076 -> Graphics[
-             Style[
-              Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`i1$362106 -> Graphics[
-             Style[
-              Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`v11075 -> Graphics[
-             Style[
-              Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`i2$362107 -> Graphics[
-             Style[
-              Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`v11077 -> Graphics[{
+         VertexShape -> {$CellContext`v14512 -> Graphics[{
               Thickness[Large], 
               
               Line[{{2^Rational[-1, 2], 2^
@@ -9724,9 +9725,21 @@ $CellContext`i1$362106, $CellContext`i2$362107}, {{{3, 1}, {2, 3}, {1, 4}, {5,
               Line[{{2^
                  Rational[-1, 2], -2^Rational[-1, 2]}, {-2^Rational[-1, 2], 2^
                  Rational[-1, 2]}}], 
-              Circle[{0, 0}, 1]}]}, 
-         VertexSize -> {$CellContext`v11076 -> 0.15, $CellContext`v11075 -> 
-           0.15, $CellContext`v11077 -> 0.25}}]]}, 
+              Circle[{0, 0}, 1]}], $CellContext`i1$462099 -> Graphics[
+             Style[
+              Disk[{0, 0}, 0.], 
+              GrayLevel[0.5]]], $CellContext`i2$462100 -> Graphics[
+             Style[
+              Disk[{0, 0}, 0.], 
+              GrayLevel[0.5]]], $CellContext`v14510 -> Graphics[
+             Style[
+              Disk[{0, 0}, 2], 
+              GrayLevel[0.5]]], $CellContext`v14511 -> Graphics[
+             Style[
+              Disk[{0, 0}, 2], 
+              GrayLevel[0.5]]]}, 
+         VertexSize -> {$CellContext`v14512 -> 0.25, $CellContext`v14510 -> 
+           0.15, $CellContext`v14511 -> 0.15}}]]}, 
       TagBox[GraphicsGroupBox[{
          {Hue[0.6, 0.7, 0.5], Opacity[0.7], Arrowheads[{{0.07, 0.6}}], 
           {RGBColor[1, 0.5, 0], 
@@ -9799,38 +9812,41 @@ $CellContext`i1$362106, $CellContext`i2$362107}, {{{3, 1}, {2, 3}, {1, 4}, {5,
   GraphicsBox[
    NamespaceBox["NetworkGraphics",
     DynamicModuleBox[{Typeset`graph = HoldComplete[
-      Graph[{$CellContext`v11078, $CellContext`v11079, $CellContext`v11080, \
-$CellContext`i1$362133, $CellContext`i2$362134}, {{{2, 1}, {1, 4}, {5, 2}}, {{
+      Graph[{$CellContext`v14513, $CellContext`v14514, $CellContext`v14515, \
+$CellContext`i1$462125, $CellContext`i2$462126}, {{{2, 1}, {1, 4}, {5, 2}}, {{
         1, 3}, {3, 2}}}, {EdgeStyle -> {
           Arrowheads[{{0.07, 0.6}}], 
-          DirectedEdge[$CellContext`i2$362134, $CellContext`v11079] -> {
-            GrayLevel[0], 
-            Dashing[{Small, Small}]}, 
-          DirectedEdge[$CellContext`v11079, $CellContext`v11078] -> {
-            GrayLevel[0], 
-            Dashing[{Small, Small}]}, 
-          DirectedEdge[$CellContext`v11078, $CellContext`i1$362133] -> {
-            GrayLevel[0], 
-            Dashing[{Small, Small}]}, 
-          UndirectedEdge[$CellContext`v11080, $CellContext`v11079] -> {
+          UndirectedEdge[$CellContext`v14513, $CellContext`v14515] -> {
             RGBColor[1, 0.5, 0]}, 
-          UndirectedEdge[$CellContext`v11078, $CellContext`v11080] -> {
-            RGBColor[1, 0.5, 0]}}, EdgeWeight -> {1, 1, 1, 1, 1}, 
+          UndirectedEdge[$CellContext`v14515, $CellContext`v14514] -> {
+            RGBColor[1, 0.5, 0]}, 
+          DirectedEdge[$CellContext`v14513, $CellContext`i1$462125] -> {
+            GrayLevel[0], 
+            Dashing[{Small, Small}]}, 
+          DirectedEdge[$CellContext`v14514, $CellContext`v14513] -> {
+            GrayLevel[0], 
+            Dashing[{Small, Small}]}, 
+          DirectedEdge[$CellContext`i2$462126, $CellContext`v14514] -> {
+            GrayLevel[0], 
+            Dashing[{Small, Small}]}}, EdgeWeight -> {1, 1, 1, 1, 1}, 
         GraphLayout -> {
          "Dimension" -> 2, 
           "VertexLayout" -> {
            "SpringElectricalEmbedding", "EdgeWeighted" -> True}}, ImageSize -> 
         Small, PerformanceGoal -> "Quality", 
-        VertexShape -> {$CellContext`i1$362133 -> Graphics[
-            Style[
-             Disk[{0, 0}, 0.], 
-             GrayLevel[0.5]]], $CellContext`v11079 -> Graphics[
+        VertexShape -> {$CellContext`v14513 -> Graphics[
             Style[
              Disk[{0, 0}, 2], 
-             GrayLevel[0.5]]], $CellContext`i2$362134 -> Graphics[
+             GrayLevel[0.5]]], $CellContext`v14514 -> Graphics[
+            Style[
+             Disk[{0, 0}, 2], 
+             GrayLevel[0.5]]], $CellContext`i1$462125 -> Graphics[
             Style[
              Disk[{0, 0}, 0.], 
-             GrayLevel[0.5]]], $CellContext`v11080 -> Graphics[{
+             GrayLevel[0.5]]], $CellContext`i2$462126 -> Graphics[
+            Style[
+             Disk[{0, 0}, 0.], 
+             GrayLevel[0.5]]], $CellContext`v14515 -> Graphics[{
              Thickness[Large], 
              
              Line[{{2^Rational[-1, 2], 2^
@@ -9840,12 +9856,9 @@ $CellContext`i1$362133, $CellContext`i2$362134}, {{{2, 1}, {1, 4}, {5, 2}}, {{
              Line[{{2^
                 Rational[-1, 2], -2^Rational[-1, 2]}, {-2^Rational[-1, 2], 2^
                 Rational[-1, 2]}}], 
-             Circle[{0, 0}, 1]}], $CellContext`v11078 -> Graphics[
-            Style[
-             Disk[{0, 0}, 2], 
-             GrayLevel[0.5]]]}, 
-        VertexSize -> {$CellContext`v11079 -> 0.15, $CellContext`v11080 -> 
-          0.25, $CellContext`v11078 -> 0.15}}]]}, 
+             Circle[{0, 0}, 1]}]}, 
+        VertexSize -> {$CellContext`v14513 -> 0.15, $CellContext`v14515 -> 
+          0.25, $CellContext`v14514 -> 0.15}}]]}, 
      TagBox[GraphicsGroupBox[{
         {Hue[0.6, 0.7, 0.5], Opacity[0.7], Arrowheads[{{0.07, 0.6}}], 
          {RGBColor[1, 0.5, 0], 
@@ -9937,10 +9950,10 @@ $CellContext`i1$362133, $CellContext`i2$362134}, {{{2, 1}, {1, 4}, {5, 2}}, {{
    3.967498401599216*^9, 3.967545230907802*^9, 3.967568289949201*^9, 
    3.967568363315881*^9, 3.9696972429681673`*^9, 3.969697318288786*^9, 
    3.969704896305436*^9, 3.969780980297744*^9, 3.969781516375688*^9, 
-   3.969792762525751*^9, 3.969792985501553*^9},
+   3.969792762525751*^9, 3.969792985501553*^9, 3.969797478809799*^9},
  CellLabel->
   "During evaluation of \
-In[151]:=",ExpressionUUID->"69a58151-43ad-49fe-a2df-749ee09b6baf"],
+In[181]:=",ExpressionUUID->"e99b6c82-0d05-4f5e-b280-58091d3c4cb2"],
 
 Cell[BoxData[
  GraphicsBox[
@@ -13435,10 +13448,10 @@ L7K0v02/q+4AVH3oa3azw3pQAPlqwePP1GZv0LSHOg7o8QsAb03WDQ==
    3.967498401599216*^9, 3.967545230907802*^9, 3.967568289949201*^9, 
    3.967568363315881*^9, 3.9696972429681673`*^9, 3.969697318288786*^9, 
    3.969704896305436*^9, 3.969780980297744*^9, 3.969781516375688*^9, 
-   3.969792762525751*^9, 3.969792985852553*^9},
+   3.969792762525751*^9, 3.969792985501553*^9, 3.9697974788676853`*^9},
  CellLabel->
   "During evaluation of \
-In[151]:=",ExpressionUUID->"1e6df0f1-2829-46bf-866b-eceddcca8c71"],
+In[181]:=",ExpressionUUID->"a50c733b-e62c-49df-b549-07236821e4aa"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/Zc/Zc.hh unchanged\"\>"], "Print",
@@ -13463,10 +13476,10 @@ flows/Zc/Zc.hh unchanged\"\>"], "Print",
    3.967498401599216*^9, 3.967545230907802*^9, 3.967568289949201*^9, 
    3.967568363315881*^9, 3.9696972429681673`*^9, 3.969697318288786*^9, 
    3.969704896305436*^9, 3.969780980297744*^9, 3.969781516375688*^9, 
-   3.969792762525751*^9, 3.96979298858821*^9},
+   3.969792762525751*^9, 3.969792985501553*^9, 3.969797481197699*^9},
  CellLabel->
   "During evaluation of \
-In[151]:=",ExpressionUUID->"d024767c-1b9d-4752-b130-eafbbca6cbca"],
+In[181]:=",ExpressionUUID->"f2ce8d8e-44f0-40f0-bc5b-6fce5b11e520"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/Zc/kernel.hh unchanged\"\>"], "Print",
@@ -13491,10 +13504,10 @@ flows/Zc/kernel.hh unchanged\"\>"], "Print",
    3.967498401599216*^9, 3.967545230907802*^9, 3.967568289949201*^9, 
    3.967568363315881*^9, 3.9696972429681673`*^9, 3.969697318288786*^9, 
    3.969704896305436*^9, 3.969780980297744*^9, 3.969781516375688*^9, 
-   3.969792762525751*^9, 3.969792988613784*^9},
+   3.969792762525751*^9, 3.969792985501553*^9, 3.969797481200905*^9},
  CellLabel->
   "During evaluation of \
-In[151]:=",ExpressionUUID->"4cb6f5bd-c5f3-4db1-a3b3-2bf1d8eb93ff"],
+In[181]:=",ExpressionUUID->"34e2d548-3a2b-437d-be56-4b5a1a4475f8"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/Zc/src/constructor.cc unchanged\"\>"], "Print",
@@ -13519,10 +13532,10 @@ flows/Zc/src/constructor.cc unchanged\"\>"], "Print",
    3.967498401599216*^9, 3.967545230907802*^9, 3.967568289949201*^9, 
    3.967568363315881*^9, 3.9696972429681673`*^9, 3.969697318288786*^9, 
    3.969704896305436*^9, 3.969780980297744*^9, 3.969781516375688*^9, 
-   3.969792762525751*^9, 3.9697929886143637`*^9},
+   3.969792762525751*^9, 3.969792985501553*^9, 3.9697974812028017`*^9},
  CellLabel->
   "During evaluation of \
-In[151]:=",ExpressionUUID->"c6da6743-6255-4646-b2b0-670c7aed9928"],
+In[181]:=",ExpressionUUID->"2266bcfe-63f7-4834-aa3a-c699acbe38bd"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/Zc/src/CT_get.cc unchanged\"\>"], "Print",
@@ -13547,10 +13560,10 @@ flows/Zc/src/CT_get.cc unchanged\"\>"], "Print",
    3.967498401599216*^9, 3.967545230907802*^9, 3.967568289949201*^9, 
    3.967568363315881*^9, 3.9696972429681673`*^9, 3.969697318288786*^9, 
    3.969704896305436*^9, 3.969780980297744*^9, 3.969781516375688*^9, 
-   3.969792762525751*^9, 3.969792988614785*^9},
+   3.969792762525751*^9, 3.969792985501553*^9, 3.96979748120446*^9},
  CellLabel->
   "During evaluation of \
-In[151]:=",ExpressionUUID->"0e88850c-cf28-4934-a7a1-182111547005"],
+In[181]:=",ExpressionUUID->"d71a1899-2ef5-490d-93f0-fcaa39cf3b9f"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/Zc/src/CT_map_1.cc unchanged\"\>"], "Print",
@@ -13575,10 +13588,10 @@ flows/Zc/src/CT_map_1.cc unchanged\"\>"], "Print",
    3.967498401599216*^9, 3.967545230907802*^9, 3.967568289949201*^9, 
    3.967568363315881*^9, 3.9696972429681673`*^9, 3.969697318288786*^9, 
    3.969704896305436*^9, 3.969780980297744*^9, 3.969781516375688*^9, 
-   3.969792762525751*^9, 3.96979298861521*^9},
+   3.969792762525751*^9, 3.969792985501553*^9, 3.969797481207592*^9},
  CellLabel->
   "During evaluation of \
-In[151]:=",ExpressionUUID->"82f50508-4632-41da-8625-552e8920a5e5"],
+In[181]:=",ExpressionUUID->"c5a9ebc6-e10a-4887-ad45-70a3ae316d36"],
 
 Cell[BoxData["\<\"Please run UpdateFlows[] to export an up-to-date \
 CMakeLists.txt\"\>"], "Print",
@@ -13603,10 +13616,10 @@ CMakeLists.txt\"\>"], "Print",
    3.967498401599216*^9, 3.967545230907802*^9, 3.967568289949201*^9, 
    3.967568363315881*^9, 3.9696972429681673`*^9, 3.969697318288786*^9, 
    3.969704896305436*^9, 3.969780980297744*^9, 3.969781516375688*^9, 
-   3.969792762525751*^9, 3.969792988615635*^9},
+   3.969792762525751*^9, 3.969792985501553*^9, 3.969797481210368*^9},
  CellLabel->
   "During evaluation of \
-In[151]:=",ExpressionUUID->"5b83f500-a4d2-462a-b37b-2cf0cb2bf301"],
+In[181]:=",ExpressionUUID->"19b323ba-eb5f-4dbf-bfcd-7825c5b08c0a"],
 
 Cell[BoxData["\<\"Exported to \
 \\\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/flows/\
@@ -13632,10 +13645,10 @@ CMakeLists.txt\\\"\"\>"], "Print",
    3.967498401599216*^9, 3.967545230907802*^9, 3.967568289949201*^9, 
    3.967568363315881*^9, 3.9696972429681673`*^9, 3.969697318288786*^9, 
    3.969704896305436*^9, 3.969780980297744*^9, 3.969781516375688*^9, 
-   3.969792762525751*^9, 3.969792988642147*^9},
+   3.969792762525751*^9, 3.969792985501553*^9, 3.969797481217815*^9},
  CellLabel->
   "During evaluation of \
-In[151]:=",ExpressionUUID->"a04405ac-599e-4395-9c71-4cbfc5ab2a0a"],
+In[181]:=",ExpressionUUID->"8064f9cc-4812-4318-b1f9-0202f3a469cf"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/flows.hh unchanged\"\>"], "Print",
@@ -13660,10 +13673,10 @@ flows/flows.hh unchanged\"\>"], "Print",
    3.967498401599216*^9, 3.967545230907802*^9, 3.967568289949201*^9, 
    3.967568363315881*^9, 3.9696972429681673`*^9, 3.969697318288786*^9, 
    3.969704896305436*^9, 3.969780980297744*^9, 3.969781516375688*^9, 
-   3.969792762525751*^9, 3.969792989629908*^9},
+   3.969792762525751*^9, 3.969792985501553*^9, 3.969797481905615*^9},
  CellLabel->
   "During evaluation of \
-In[151]:=",ExpressionUUID->"4678aa66-63a9-4fd8-ab0a-47b55b9afc00"],
+In[181]:=",ExpressionUUID->"3486debd-aebf-4003-9768-38d0a0367a11"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/flows.cc unchanged\"\>"], "Print",
@@ -13688,10 +13701,10 @@ flows/flows.cc unchanged\"\>"], "Print",
    3.967498401599216*^9, 3.967545230907802*^9, 3.967568289949201*^9, 
    3.967568363315881*^9, 3.9696972429681673`*^9, 3.969697318288786*^9, 
    3.969704896305436*^9, 3.969780980297744*^9, 3.969781516375688*^9, 
-   3.969792762525751*^9, 3.96979298968047*^9},
+   3.969792762525751*^9, 3.969792985501553*^9, 3.969797481911622*^9},
  CellLabel->
   "During evaluation of \
-In[151]:=",ExpressionUUID->"82239789-a176-44a7-9682-589275ac224c"]
+In[181]:=",ExpressionUUID->"73126e24-ee1d-4ab6-ae8c-69eb49151ea9"]
 }, Open  ]]
 }, Open  ]]
 }, Closed]]
@@ -13810,7 +13823,7 @@ Cell[BoxData[{
    3.969698112320438*^9, 3.969698112458054*^9}, 3.9696981427588587`*^9, 
    3.969700809091179*^9, 3.969781573861114*^9},
  CellLabel->
-  "In[156]:=",ExpressionUUID->"3ca3e789-c79c-4c2f-8565-a2026ce713ed"],
+  "In[186]:=",ExpressionUUID->"3ca3e789-c79c-4c2f-8565-a2026ce713ed"],
 
 Cell[CellGroupData[{
 
@@ -13820,42 +13833,39 @@ Cell[BoxData[
    GraphicsBox[
     NamespaceBox["NetworkGraphics",
      DynamicModuleBox[{Typeset`graph = HoldComplete[
-       Graph[{$CellContext`v11401, $CellContext`v11402, $CellContext`v11403, \
-$CellContext`v11404, $CellContext`i1$371678, $CellContext`i2$371679, \
-$CellContext`i3$371680}, {{{4, 1}, {1, 2}, {3, 4}, {2, 6}, {7, 3}}, {{3, 2}, {
+       Graph[{$CellContext`v14875, $CellContext`v14876, $CellContext`v14877, \
+$CellContext`v14878, $CellContext`i1$471479, $CellContext`i2$471480, \
+$CellContext`i3$471481}, {{{4, 1}, {1, 2}, {3, 4}, {2, 6}, {7, 3}}, {{3, 2}, {
          5, 1}}}, {EdgeStyle -> {
            Arrowheads[{{0.07, 0.6}}], 
-           DirectedEdge[$CellContext`v11402, $CellContext`i2$371679] -> {
+           DirectedEdge[$CellContext`i3$471481, $CellContext`v14877] -> {
              GrayLevel[0], 
              Dashing[{Small, Small}]}, 
-           DirectedEdge[$CellContext`v11403, $CellContext`v11404] -> {
+           DirectedEdge[$CellContext`v14876, $CellContext`i2$471480] -> {
              GrayLevel[0], 
              Dashing[{Small, Small}]}, 
-           DirectedEdge[$CellContext`i3$371680, $CellContext`v11403] -> {
+           DirectedEdge[$CellContext`v14875, $CellContext`v14876] -> {
              GrayLevel[0], 
              Dashing[{Small, Small}]}, 
-           DirectedEdge[$CellContext`v11404, $CellContext`v11401] -> {
+           DirectedEdge[$CellContext`v14878, $CellContext`v14875] -> {
              GrayLevel[0], 
              Dashing[{Small, Small}]}, 
-           UndirectedEdge[$CellContext`v11403, $CellContext`v11402] -> {
+           DirectedEdge[$CellContext`v14877, $CellContext`v14878] -> {
+             GrayLevel[0], 
+             Dashing[{Small, Small}]}, 
+           UndirectedEdge[$CellContext`v14877, $CellContext`v14876] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i1$371678, $CellContext`v11401] -> {
-             RGBColor[1, 0.5, 0]}, 
-           DirectedEdge[$CellContext`v11401, $CellContext`v11402] -> {
-             GrayLevel[0], 
-             Dashing[{Small, Small}]}}, EdgeWeight -> {1, 1, 1, 1, 1, 1, 1}, 
+           UndirectedEdge[$CellContext`i1$471479, $CellContext`v14875] -> {
+             RGBColor[1, 0.5, 0]}}, EdgeWeight -> {1, 1, 1, 1, 1, 1, 1}, 
          GraphLayout -> {
           "Dimension" -> 2, 
            "VertexLayout" -> {
             "SpringElectricalEmbedding", "EdgeWeighted" -> True}}, ImageSize -> 
          Small, PerformanceGoal -> "Quality", 
-         VertexShape -> {$CellContext`i3$371680 -> Graphics[
+         VertexShape -> {$CellContext`i2$471480 -> Graphics[
              Style[
               Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`v11402 -> Graphics[
-             Style[
-              Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`v11404 -> Graphics[{
+              GrayLevel[0.5]]], $CellContext`v14878 -> Graphics[{
               Thickness[Large], 
               
               Line[{{2^Rational[-1, 2], 2^
@@ -13864,22 +13874,25 @@ $CellContext`i3$371680}, {{{4, 1}, {1, 2}, {3, 4}, {2, 6}, {7, 3}}, {{3, 2}, {
               Line[{{2^
                  Rational[-1, 2], -2^Rational[-1, 2]}, {-2^Rational[-1, 2], 2^
                  Rational[-1, 2]}}], 
-              Circle[{0, 0}, 1]}], $CellContext`v11403 -> Graphics[
+              Circle[{0, 0}, 1]}], $CellContext`v14876 -> Graphics[
              Style[
               Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`v11401 -> Graphics[
+              GrayLevel[0.5]]], $CellContext`v14875 -> Graphics[
              Style[
               Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`i1$371678 -> Graphics[
+              GrayLevel[0.5]]], $CellContext`i1$471479 -> Graphics[
              Style[
               Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`i2$371679 -> Graphics[
+              GrayLevel[0.5]]], $CellContext`v14877 -> Graphics[
+             Style[
+              Disk[{0, 0}, 2], 
+              GrayLevel[0.5]]], $CellContext`i3$471481 -> Graphics[
              Style[
               Disk[{0, 0}, 0.], 
               GrayLevel[0.5]]]}, 
-         VertexSize -> {$CellContext`v11403 -> 0.15, $CellContext`v11401 -> 
-           0.15, $CellContext`v11402 -> 0.15, $CellContext`v11404 -> 
-           0.25}}]]}, 
+         VertexSize -> {$CellContext`v14877 -> 0.15, $CellContext`v14878 -> 
+           0.25, $CellContext`v14875 -> 0.15, $CellContext`v14876 -> 
+           0.15}}]]}, 
       TagBox[GraphicsGroupBox[{
          {Hue[0.6, 0.7, 0.5], Opacity[0.7], Arrowheads[{{0.07, 0.6}}], 
           {RGBColor[1, 0.5, 0], 
@@ -13973,28 +13986,28 @@ $CellContext`i3$371680}, {{{4, 1}, {1, 2}, {3, 4}, {2, 6}, {7, 3}}, {{3, 2}, {
   GraphicsBox[
    NamespaceBox["NetworkGraphics",
     DynamicModuleBox[{Typeset`graph = HoldComplete[
-      Graph[{$CellContext`v11405, $CellContext`v11406, $CellContext`v11407, \
-$CellContext`v11408, $CellContext`i2$371709, $CellContext`i3$371710, \
-$CellContext`i1$371711}, {{{4, 1}, {2, 3}, {3, 4}, {1, 5}, {6, 2}}, {{2, 1}, {
+      Graph[{$CellContext`v14879, $CellContext`v14880, $CellContext`v14881, \
+$CellContext`v14882, $CellContext`i2$471510, $CellContext`i3$471511, \
+$CellContext`i1$471512}, {{{4, 1}, {2, 3}, {3, 4}, {1, 5}, {6, 2}}, {{2, 1}, {
         7, 3}}}, {EdgeStyle -> {
           Arrowheads[{{0.07, 0.6}}], 
-          DirectedEdge[$CellContext`v11407, $CellContext`v11408] -> {
-            GrayLevel[0], 
-            Dashing[{Small, Small}]}, 
-          UndirectedEdge[$CellContext`v11406, $CellContext`v11405] -> {
+          UndirectedEdge[$CellContext`i1$471512, $CellContext`v14881] -> {
             RGBColor[1, 0.5, 0]}, 
-          DirectedEdge[$CellContext`i3$371710, $CellContext`v11406] -> {
-            GrayLevel[0], 
-            Dashing[{Small, Small}]}, 
-          UndirectedEdge[$CellContext`i1$371711, $CellContext`v11407] -> {
+          UndirectedEdge[$CellContext`v14880, $CellContext`v14879] -> {
             RGBColor[1, 0.5, 0]}, 
-          DirectedEdge[$CellContext`v11408, $CellContext`v11405] -> {
+          DirectedEdge[$CellContext`i3$471511, $CellContext`v14880] -> {
             GrayLevel[0], 
             Dashing[{Small, Small}]}, 
-          DirectedEdge[$CellContext`v11406, $CellContext`v11407] -> {
+          DirectedEdge[$CellContext`v14879, $CellContext`i2$471510] -> {
             GrayLevel[0], 
             Dashing[{Small, Small}]}, 
-          DirectedEdge[$CellContext`v11405, $CellContext`i2$371709] -> {
+          DirectedEdge[$CellContext`v14882, $CellContext`v14879] -> {
+            GrayLevel[0], 
+            Dashing[{Small, Small}]}, 
+          DirectedEdge[$CellContext`v14881, $CellContext`v14882] -> {
+            GrayLevel[0], 
+            Dashing[{Small, Small}]}, 
+          DirectedEdge[$CellContext`v14880, $CellContext`v14881] -> {
             GrayLevel[0], 
             Dashing[{Small, Small}]}}, EdgeWeight -> {1, 1, 1, 1, 1, 1, 1}, 
         GraphLayout -> {
@@ -14002,7 +14015,13 @@ $CellContext`i1$371711}, {{{4, 1}, {2, 3}, {3, 4}, {1, 5}, {6, 2}}, {{2, 1}, {
           "VertexLayout" -> {
            "SpringElectricalEmbedding", "EdgeWeighted" -> True}}, ImageSize -> 
         Small, PerformanceGoal -> "Quality", 
-        VertexShape -> {$CellContext`v11408 -> Graphics[{
+        VertexShape -> {$CellContext`v14880 -> Graphics[
+            Style[
+             Disk[{0, 0}, 2], 
+             GrayLevel[0.5]]], $CellContext`v14881 -> Graphics[
+            Style[
+             Disk[{0, 0}, 2], 
+             GrayLevel[0.5]]], $CellContext`v14882 -> Graphics[{
              Thickness[Large], 
              
              Line[{{2^Rational[-1, 2], 2^
@@ -14012,27 +14031,21 @@ $CellContext`i1$371711}, {{{4, 1}, {2, 3}, {3, 4}, {1, 5}, {6, 2}}, {{2, 1}, {
              Line[{{2^
                 Rational[-1, 2], -2^Rational[-1, 2]}, {-2^Rational[-1, 2], 2^
                 Rational[-1, 2]}}], 
-             Circle[{0, 0}, 1]}], $CellContext`v11405 -> Graphics[
-            Style[
-             Disk[{0, 0}, 2], 
-             GrayLevel[0.5]]], $CellContext`i2$371709 -> Graphics[
+             Circle[{0, 0}, 1]}], $CellContext`i2$471510 -> Graphics[
             Style[
              Disk[{0, 0}, 0.], 
-             GrayLevel[0.5]]], $CellContext`i3$371710 -> Graphics[
+             GrayLevel[0.5]]], $CellContext`i3$471511 -> Graphics[
             Style[
              Disk[{0, 0}, 0.], 
-             GrayLevel[0.5]]], $CellContext`v11407 -> Graphics[
-            Style[
-             Disk[{0, 0}, 2], 
-             GrayLevel[0.5]]], $CellContext`i1$371711 -> Graphics[
+             GrayLevel[0.5]]], $CellContext`i1$471512 -> Graphics[
             Style[
              Disk[{0, 0}, 0.], 
-             GrayLevel[0.5]]], $CellContext`v11406 -> Graphics[
+             GrayLevel[0.5]]], $CellContext`v14879 -> Graphics[
             Style[
              Disk[{0, 0}, 2], 
              GrayLevel[0.5]]]}, 
-        VertexSize -> {$CellContext`v11408 -> 0.25, $CellContext`v11406 -> 
-          0.15, $CellContext`v11405 -> 0.15, $CellContext`v11407 -> 0.15}}]]}, 
+        VertexSize -> {$CellContext`v14882 -> 0.25, $CellContext`v14880 -> 
+          0.15, $CellContext`v14879 -> 0.15, $CellContext`v14881 -> 0.15}}]]}, 
      TagBox[GraphicsGroupBox[{
         {Hue[0.6, 0.7, 0.5], Opacity[0.7], Arrowheads[{{0.07, 0.6}}], 
          {RGBColor[1, 0.5, 0], 
@@ -14125,37 +14138,46 @@ $CellContext`i1$371711}, {{{4, 1}, {2, 3}, {3, 4}, {1, 5}, {6, 2}}, {{2, 1}, {
   GraphicsBox[
    NamespaceBox["NetworkGraphics",
     DynamicModuleBox[{Typeset`graph = HoldComplete[
-      Graph[{$CellContext`v11409, $CellContext`v11410, $CellContext`v11411, \
-$CellContext`v11412, $CellContext`i1$371740, $CellContext`i2$371741, \
-$CellContext`i3$371742}, {{{3, 2}, {2, 6}, {7, 3}}, {{1, 4}, {2, 1}, {4, 3}, {
+      Graph[{$CellContext`v14883, $CellContext`v14884, $CellContext`v14885, \
+$CellContext`v14886, $CellContext`i1$471541, $CellContext`i2$471542, \
+$CellContext`i3$471543}, {{{3, 2}, {2, 6}, {7, 3}}, {{1, 4}, {2, 1}, {4, 3}, {
         5, 1}}}, {EdgeStyle -> {
           Arrowheads[{{0.07, 0.6}}], 
-          DirectedEdge[$CellContext`v11410, $CellContext`i2$371741] -> {
+          DirectedEdge[$CellContext`v14884, $CellContext`i2$471542] -> {
             GrayLevel[0], 
             Dashing[{Small, Small}]}, 
-          DirectedEdge[$CellContext`v11411, $CellContext`v11410] -> {
+          UndirectedEdge[$CellContext`i1$471541, $CellContext`v14883] -> {
+            RGBColor[1, 0.5, 0]}, 
+          DirectedEdge[$CellContext`i3$471543, $CellContext`v14885] -> {
             GrayLevel[0], 
             Dashing[{Small, Small}]}, 
-          UndirectedEdge[$CellContext`v11412, $CellContext`v11411] -> {
+          UndirectedEdge[$CellContext`v14886, $CellContext`v14885] -> {
             RGBColor[1, 0.5, 0]}, 
-          DirectedEdge[$CellContext`i3$371742, $CellContext`v11411] -> {
+          DirectedEdge[$CellContext`v14885, $CellContext`v14884] -> {
             GrayLevel[0], 
             Dashing[{Small, Small}]}, 
-          UndirectedEdge[$CellContext`v11409, $CellContext`v11412] -> {
+          UndirectedEdge[$CellContext`v14884, $CellContext`v14883] -> {
             RGBColor[1, 0.5, 0]}, 
-          UndirectedEdge[$CellContext`v11410, $CellContext`v11409] -> {
-            RGBColor[1, 0.5, 0]}, 
-          UndirectedEdge[$CellContext`i1$371740, $CellContext`v11409] -> {
+          UndirectedEdge[$CellContext`v14883, $CellContext`v14886] -> {
             RGBColor[1, 0.5, 0]}}, EdgeWeight -> {1, 1, 1, 1, 1, 1, 1}, 
         GraphLayout -> {
          "Dimension" -> 2, 
           "VertexLayout" -> {
            "SpringElectricalEmbedding", "EdgeWeighted" -> True}}, ImageSize -> 
         Small, PerformanceGoal -> "Quality", 
-        VertexShape -> {$CellContext`v11409 -> Graphics[
+        VertexShape -> {$CellContext`v14883 -> Graphics[
             Style[
              Disk[{0, 0}, 2], 
-             GrayLevel[0.5]]], $CellContext`v11412 -> Graphics[{
+             GrayLevel[0.5]]], $CellContext`v14885 -> Graphics[
+            Style[
+             Disk[{0, 0}, 2], 
+             GrayLevel[0.5]]], $CellContext`v14884 -> Graphics[
+            Style[
+             Disk[{0, 0}, 2], 
+             GrayLevel[0.5]]], $CellContext`i1$471541 -> Graphics[
+            Style[
+             Disk[{0, 0}, 0.], 
+             GrayLevel[0.5]]], $CellContext`v14886 -> Graphics[{
              Thickness[Large], 
              
              Line[{{2^Rational[-1, 2], 2^
@@ -14165,24 +14187,15 @@ $CellContext`i3$371742}, {{{3, 2}, {2, 6}, {7, 3}}, {{1, 4}, {2, 1}, {4, 3}, {
              Line[{{2^
                 Rational[-1, 2], -2^Rational[-1, 2]}, {-2^Rational[-1, 2], 2^
                 Rational[-1, 2]}}], 
-             Circle[{0, 0}, 1]}], $CellContext`v11410 -> Graphics[
-            Style[
-             Disk[{0, 0}, 2], 
-             GrayLevel[0.5]]], $CellContext`v11411 -> Graphics[
-            Style[
-             Disk[{0, 0}, 2], 
-             GrayLevel[0.5]]], $CellContext`i1$371740 -> Graphics[
+             Circle[{0, 0}, 1]}], $CellContext`i2$471542 -> Graphics[
             Style[
              Disk[{0, 0}, 0.], 
-             GrayLevel[0.5]]], $CellContext`i2$371741 -> Graphics[
-            Style[
-             Disk[{0, 0}, 0.], 
-             GrayLevel[0.5]]], $CellContext`i3$371742 -> Graphics[
+             GrayLevel[0.5]]], $CellContext`i3$471543 -> Graphics[
             Style[
              Disk[{0, 0}, 0.], 
              GrayLevel[0.5]]]}, 
-        VertexSize -> {$CellContext`v11411 -> 0.15, $CellContext`v11410 -> 
-          0.15, $CellContext`v11409 -> 0.15, $CellContext`v11412 -> 0.25}}]]}, 
+        VertexSize -> {$CellContext`v14884 -> 0.15, $CellContext`v14883 -> 
+          0.15, $CellContext`v14886 -> 0.25, $CellContext`v14885 -> 0.15}}]]}, 
      TagBox[GraphicsGroupBox[{
         {Hue[0.6, 0.7, 0.5], Opacity[0.7], Arrowheads[{{0.07, 0.6}}], 
          {RGBColor[1, 0.5, 0], 
@@ -14276,40 +14289,37 @@ $CellContext`i3$371742}, {{{3, 2}, {2, 6}, {7, 3}}, {{1, 4}, {2, 1}, {4, 3}, {
   GraphicsBox[
    NamespaceBox["NetworkGraphics",
     DynamicModuleBox[{Typeset`graph = HoldComplete[
-      Graph[{$CellContext`v11413, $CellContext`v11414, $CellContext`v11415, \
-$CellContext`v11416, $CellContext`i2$371771, $CellContext`i3$371772, \
-$CellContext`i1$371773}, {{{2, 1}, {1, 5}, {6, 2}}, {{1, 4}, {3, 2}, {4, 3}, {
+      Graph[{$CellContext`v14887, $CellContext`v14888, $CellContext`v14889, \
+$CellContext`v14890, $CellContext`i2$471572, $CellContext`i3$471573, \
+$CellContext`i1$471574}, {{{2, 1}, {1, 5}, {6, 2}}, {{1, 4}, {3, 2}, {4, 3}, {
         7, 3}}}, {EdgeStyle -> {
           Arrowheads[{{0.07, 0.6}}], 
-          DirectedEdge[$CellContext`v11414, $CellContext`v11413] -> {
+          UndirectedEdge[$CellContext`i1$471574, $CellContext`v14889] -> {
+            RGBColor[1, 0.5, 0]}, 
+          UndirectedEdge[$CellContext`v14889, $CellContext`v14888] -> {
+            RGBColor[1, 0.5, 0]}, 
+          DirectedEdge[$CellContext`i3$471573, $CellContext`v14888] -> {
             GrayLevel[0], 
             Dashing[{Small, Small}]}, 
-          UndirectedEdge[$CellContext`v11416, $CellContext`v11415] -> {
-            RGBColor[1, 0.5, 0]}, 
-          DirectedEdge[$CellContext`v11413, $CellContext`i2$371771] -> {
+          DirectedEdge[$CellContext`v14887, $CellContext`i2$471572] -> {
             GrayLevel[0], 
             Dashing[{Small, Small}]}, 
-          UndirectedEdge[$CellContext`v11415, $CellContext`v11414] -> {
-            RGBColor[1, 0.5, 0]}, 
-          UndirectedEdge[$CellContext`i1$371773, $CellContext`v11415] -> {
-            RGBColor[1, 0.5, 0]}, 
-          DirectedEdge[$CellContext`i3$371772, $CellContext`v11414] -> {
+          DirectedEdge[$CellContext`v14888, $CellContext`v14887] -> {
             GrayLevel[0], 
             Dashing[{Small, Small}]}, 
-          UndirectedEdge[$CellContext`v11413, $CellContext`v11416] -> {
+          UndirectedEdge[$CellContext`v14890, $CellContext`v14889] -> {
+            RGBColor[1, 0.5, 0]}, 
+          UndirectedEdge[$CellContext`v14887, $CellContext`v14890] -> {
             RGBColor[1, 0.5, 0]}}, EdgeWeight -> {1, 1, 1, 1, 1, 1, 1}, 
         GraphLayout -> {
          "Dimension" -> 2, 
           "VertexLayout" -> {
            "SpringElectricalEmbedding", "EdgeWeighted" -> True}}, ImageSize -> 
         Small, PerformanceGoal -> "Quality", 
-        VertexShape -> {$CellContext`i1$371773 -> Graphics[
-            Style[
-             Disk[{0, 0}, 0.], 
-             GrayLevel[0.5]]], $CellContext`v11413 -> Graphics[
+        VertexShape -> {$CellContext`v14888 -> Graphics[
             Style[
              Disk[{0, 0}, 2], 
-             GrayLevel[0.5]]], $CellContext`v11416 -> Graphics[{
+             GrayLevel[0.5]]], $CellContext`v14890 -> Graphics[{
              Thickness[Large], 
              
              Line[{{2^Rational[-1, 2], 2^
@@ -14319,21 +14329,24 @@ $CellContext`i1$371773}, {{{2, 1}, {1, 5}, {6, 2}}, {{1, 4}, {3, 2}, {4, 3}, {
              Line[{{2^
                 Rational[-1, 2], -2^Rational[-1, 2]}, {-2^Rational[-1, 2], 2^
                 Rational[-1, 2]}}], 
-             Circle[{0, 0}, 1]}], $CellContext`i2$371771 -> Graphics[
+             Circle[{0, 0}, 1]}], $CellContext`i2$471572 -> Graphics[
             Style[
              Disk[{0, 0}, 0.], 
-             GrayLevel[0.5]]], $CellContext`i3$371772 -> Graphics[
+             GrayLevel[0.5]]], $CellContext`i1$471574 -> Graphics[
             Style[
              Disk[{0, 0}, 0.], 
-             GrayLevel[0.5]]], $CellContext`v11415 -> Graphics[
+             GrayLevel[0.5]]], $CellContext`i3$471573 -> Graphics[
+            Style[
+             Disk[{0, 0}, 0.], 
+             GrayLevel[0.5]]], $CellContext`v14887 -> Graphics[
             Style[
              Disk[{0, 0}, 2], 
-             GrayLevel[0.5]]], $CellContext`v11414 -> Graphics[
+             GrayLevel[0.5]]], $CellContext`v14889 -> Graphics[
             Style[
              Disk[{0, 0}, 2], 
              GrayLevel[0.5]]]}, 
-        VertexSize -> {$CellContext`v11416 -> 0.25, $CellContext`v11415 -> 
-          0.15, $CellContext`v11413 -> 0.15, $CellContext`v11414 -> 0.15}}]]}, 
+        VertexSize -> {$CellContext`v14889 -> 0.15, $CellContext`v14888 -> 
+          0.15, $CellContext`v14890 -> 0.25, $CellContext`v14887 -> 0.15}}]]}, 
      TagBox[GraphicsGroupBox[{
         {Hue[0.6, 0.7, 0.5], Opacity[0.7], Arrowheads[{{0.07, 0.6}}], 
          {RGBColor[1, 0.5, 0], 
@@ -14427,27 +14440,27 @@ $CellContext`i1$371773}, {{{2, 1}, {1, 5}, {6, 2}}, {{1, 4}, {3, 2}, {4, 3}, {
   GraphicsBox[
    NamespaceBox["NetworkGraphics",
     DynamicModuleBox[{Typeset`graph = HoldComplete[
-      Graph[{$CellContext`v11417, $CellContext`v11418, $CellContext`v11419, \
-$CellContext`v11420, $CellContext`i2$371802, $CellContext`i1$371803, \
-$CellContext`i3$371804}, {{{4, 1}, {3, 4}, {1, 5}, {7, 3}}, {{2, 1}, {3, 2}, {
+      Graph[{$CellContext`v14891, $CellContext`v14892, $CellContext`v14893, \
+$CellContext`v14894, $CellContext`i2$471603, $CellContext`i1$471604, \
+$CellContext`i3$471605}, {{{4, 1}, {3, 4}, {1, 5}, {7, 3}}, {{2, 1}, {3, 2}, {
         6, 2}}}, {EdgeStyle -> {
           Arrowheads[{{0.07, 0.6}}], 
-          UndirectedEdge[$CellContext`v11418, $CellContext`v11417] -> {
-            RGBColor[1, 0.5, 0]}, 
-          DirectedEdge[$CellContext`v11419, $CellContext`v11420] -> {
+          DirectedEdge[$CellContext`v14893, $CellContext`v14894] -> {
             GrayLevel[0], 
             Dashing[{Small, Small}]}, 
-          UndirectedEdge[$CellContext`v11419, $CellContext`v11418] -> {
-            RGBColor[1, 0.5, 0]}, 
-          UndirectedEdge[$CellContext`i1$371803, $CellContext`v11418] -> {
-            RGBColor[1, 0.5, 0]}, 
-          DirectedEdge[$CellContext`v11417, $CellContext`i2$371802] -> {
+          DirectedEdge[$CellContext`i3$471605, $CellContext`v14893] -> {
             GrayLevel[0], 
             Dashing[{Small, Small}]}, 
-          DirectedEdge[$CellContext`i3$371804, $CellContext`v11419] -> {
+          DirectedEdge[$CellContext`v14891, $CellContext`i2$471603] -> {
             GrayLevel[0], 
             Dashing[{Small, Small}]}, 
-          DirectedEdge[$CellContext`v11420, $CellContext`v11417] -> {
+          UndirectedEdge[$CellContext`v14892, $CellContext`v14891] -> {
+            RGBColor[1, 0.5, 0]}, 
+          UndirectedEdge[$CellContext`i1$471604, $CellContext`v14892] -> {
+            RGBColor[1, 0.5, 0]}, 
+          UndirectedEdge[$CellContext`v14893, $CellContext`v14892] -> {
+            RGBColor[1, 0.5, 0]}, 
+          DirectedEdge[$CellContext`v14894, $CellContext`v14891] -> {
             GrayLevel[0], 
             Dashing[{Small, Small}]}}, EdgeWeight -> {1, 1, 1, 1, 1, 1, 1}, 
         GraphLayout -> {
@@ -14455,22 +14468,7 @@ $CellContext`i3$371804}, {{{4, 1}, {3, 4}, {1, 5}, {7, 3}}, {{2, 1}, {3, 2}, {
           "VertexLayout" -> {
            "SpringElectricalEmbedding", "EdgeWeighted" -> True}}, ImageSize -> 
         Small, PerformanceGoal -> "Quality", 
-        VertexShape -> {$CellContext`i1$371803 -> Graphics[
-            Style[
-             Disk[{0, 0}, 0.], 
-             GrayLevel[0.5]]], $CellContext`v11417 -> Graphics[
-            Style[
-             Disk[{0, 0}, 2], 
-             GrayLevel[0.5]]], $CellContext`v11419 -> Graphics[
-            Style[
-             Disk[{0, 0}, 2], 
-             GrayLevel[0.5]]], $CellContext`i3$371804 -> Graphics[
-            Style[
-             Disk[{0, 0}, 0.], 
-             GrayLevel[0.5]]], $CellContext`v11418 -> Graphics[
-            Style[
-             Disk[{0, 0}, 2], 
-             GrayLevel[0.5]]], $CellContext`v11420 -> Graphics[{
+        VertexShape -> {$CellContext`v14894 -> Graphics[{
              Thickness[Large], 
              
              Line[{{2^Rational[-1, 2], 2^
@@ -14480,12 +14478,27 @@ $CellContext`i3$371804}, {{{4, 1}, {3, 4}, {1, 5}, {7, 3}}, {{2, 1}, {3, 2}, {
              Line[{{2^
                 Rational[-1, 2], -2^Rational[-1, 2]}, {-2^Rational[-1, 2], 2^
                 Rational[-1, 2]}}], 
-             Circle[{0, 0}, 1]}], $CellContext`i2$371802 -> Graphics[
+             Circle[{0, 0}, 1]}], $CellContext`v14892 -> Graphics[
+            Style[
+             Disk[{0, 0}, 2], 
+             GrayLevel[0.5]]], $CellContext`i1$471604 -> Graphics[
+            Style[
+             Disk[{0, 0}, 0.], 
+             GrayLevel[0.5]]], $CellContext`i2$471603 -> Graphics[
+            Style[
+             Disk[{0, 0}, 0.], 
+             GrayLevel[0.5]]], $CellContext`v14893 -> Graphics[
+            Style[
+             Disk[{0, 0}, 2], 
+             GrayLevel[0.5]]], $CellContext`v14891 -> Graphics[
+            Style[
+             Disk[{0, 0}, 2], 
+             GrayLevel[0.5]]], $CellContext`i3$471605 -> Graphics[
             Style[
              Disk[{0, 0}, 0.], 
              GrayLevel[0.5]]]}, 
-        VertexSize -> {$CellContext`v11419 -> 0.15, $CellContext`v11418 -> 
-          0.15, $CellContext`v11420 -> 0.25, $CellContext`v11417 -> 0.15}}]]}, 
+        VertexSize -> {$CellContext`v14893 -> 0.15, $CellContext`v14894 -> 
+          0.25, $CellContext`v14892 -> 0.15, $CellContext`v14891 -> 0.15}}]]}, 
      TagBox[GraphicsGroupBox[{
         {Hue[0.6, 0.7, 0.5], Opacity[0.7], Arrowheads[{{0.07, 0.6}}], 
          {RGBColor[1, 0.5, 0], 
@@ -14579,27 +14592,27 @@ $CellContext`i3$371804}, {{{4, 1}, {3, 4}, {1, 5}, {7, 3}}, {{2, 1}, {3, 2}, {
   GraphicsBox[
    NamespaceBox["NetworkGraphics",
     DynamicModuleBox[{Typeset`graph = HoldComplete[
-      Graph[{$CellContext`v11421, $CellContext`v11422, $CellContext`v11423, \
-$CellContext`v11424, $CellContext`i2$371833, $CellContext`i1$371834, \
-$CellContext`i3$371835}, {{{2, 1}, {3, 2}, {1, 5}, {7, 3}}, {{1, 4}, {4, 3}, {
+      Graph[{$CellContext`v14895, $CellContext`v14896, $CellContext`v14897, \
+$CellContext`v14898, $CellContext`i2$471634, $CellContext`i1$471635, \
+$CellContext`i3$471636}, {{{2, 1}, {3, 2}, {1, 5}, {7, 3}}, {{1, 4}, {4, 3}, {
         6, 2}}}, {EdgeStyle -> {
           Arrowheads[{{0.07, 0.6}}], 
-          UndirectedEdge[$CellContext`v11424, $CellContext`v11423] -> {
+          UndirectedEdge[$CellContext`v14898, $CellContext`v14897] -> {
             RGBColor[1, 0.5, 0]}, 
-          DirectedEdge[$CellContext`v11421, $CellContext`i2$371833] -> {
+          UndirectedEdge[$CellContext`v14895, $CellContext`v14898] -> {
+            RGBColor[1, 0.5, 0]}, 
+          DirectedEdge[$CellContext`i3$471636, $CellContext`v14897] -> {
             GrayLevel[0], 
             Dashing[{Small, Small}]}, 
-          DirectedEdge[$CellContext`v11423, $CellContext`v11422] -> {
+          UndirectedEdge[$CellContext`i1$471635, $CellContext`v14896] -> {
+            RGBColor[1, 0.5, 0]}, 
+          DirectedEdge[$CellContext`v14897, $CellContext`v14896] -> {
             GrayLevel[0], 
             Dashing[{Small, Small}]}, 
-          DirectedEdge[$CellContext`v11422, $CellContext`v11421] -> {
+          DirectedEdge[$CellContext`v14895, $CellContext`i2$471634] -> {
             GrayLevel[0], 
             Dashing[{Small, Small}]}, 
-          UndirectedEdge[$CellContext`v11421, $CellContext`v11424] -> {
-            RGBColor[1, 0.5, 0]}, 
-          UndirectedEdge[$CellContext`i1$371834, $CellContext`v11422] -> {
-            RGBColor[1, 0.5, 0]}, 
-          DirectedEdge[$CellContext`i3$371835, $CellContext`v11423] -> {
+          DirectedEdge[$CellContext`v14896, $CellContext`v14895] -> {
             GrayLevel[0], 
             Dashing[{Small, Small}]}}, EdgeWeight -> {1, 1, 1, 1, 1, 1, 1}, 
         GraphLayout -> {
@@ -14607,22 +14620,10 @@ $CellContext`i3$371835}, {{{2, 1}, {3, 2}, {1, 5}, {7, 3}}, {{1, 4}, {4, 3}, {
           "VertexLayout" -> {
            "SpringElectricalEmbedding", "EdgeWeighted" -> True}}, ImageSize -> 
         Small, PerformanceGoal -> "Quality", 
-        VertexShape -> {$CellContext`v11421 -> Graphics[
+        VertexShape -> {$CellContext`v14896 -> Graphics[
             Style[
              Disk[{0, 0}, 2], 
-             GrayLevel[0.5]]], $CellContext`v11422 -> Graphics[
-            Style[
-             Disk[{0, 0}, 2], 
-             GrayLevel[0.5]]], $CellContext`i3$371835 -> Graphics[
-            Style[
-             Disk[{0, 0}, 0.], 
-             GrayLevel[0.5]]], $CellContext`i2$371833 -> Graphics[
-            Style[
-             Disk[{0, 0}, 0.], 
-             GrayLevel[0.5]]], $CellContext`v11423 -> Graphics[
-            Style[
-             Disk[{0, 0}, 2], 
-             GrayLevel[0.5]]], $CellContext`v11424 -> Graphics[{
+             GrayLevel[0.5]]], $CellContext`v14898 -> Graphics[{
              Thickness[Large], 
              
              Line[{{2^Rational[-1, 2], 2^
@@ -14632,12 +14633,24 @@ $CellContext`i3$371835}, {{{2, 1}, {3, 2}, {1, 5}, {7, 3}}, {{1, 4}, {4, 3}, {
              Line[{{2^
                 Rational[-1, 2], -2^Rational[-1, 2]}, {-2^Rational[-1, 2], 2^
                 Rational[-1, 2]}}], 
-             Circle[{0, 0}, 1]}], $CellContext`i1$371834 -> Graphics[
+             Circle[{0, 0}, 1]}], $CellContext`v14897 -> Graphics[
+            Style[
+             Disk[{0, 0}, 2], 
+             GrayLevel[0.5]]], $CellContext`i3$471636 -> Graphics[
+            Style[
+             Disk[{0, 0}, 0.], 
+             GrayLevel[0.5]]], $CellContext`v14895 -> Graphics[
+            Style[
+             Disk[{0, 0}, 2], 
+             GrayLevel[0.5]]], $CellContext`i2$471634 -> Graphics[
+            Style[
+             Disk[{0, 0}, 0.], 
+             GrayLevel[0.5]]], $CellContext`i1$471635 -> Graphics[
             Style[
              Disk[{0, 0}, 0.], 
              GrayLevel[0.5]]]}, 
-        VertexSize -> {$CellContext`v11424 -> 0.25, $CellContext`v11422 -> 
-          0.15, $CellContext`v11421 -> 0.15, $CellContext`v11423 -> 0.15}}]]}, 
+        VertexSize -> {$CellContext`v14897 -> 0.15, $CellContext`v14896 -> 
+          0.15, $CellContext`v14895 -> 0.15, $CellContext`v14898 -> 0.25}}]]}, 
      TagBox[GraphicsGroupBox[{
         {Hue[0.6, 0.7, 0.5], Opacity[0.7], Arrowheads[{{0.07, 0.6}}], 
          {RGBColor[1, 0.5, 0], 
@@ -14745,10 +14758,10 @@ $CellContext`i3$371835}, {{{2, 1}, {3, 2}, {1, 5}, {7, 3}}, {{1, 4}, {4, 3}, {
    3.969697674579158*^9, 3.969697685320807*^9}, 3.9696980762951813`*^9, {
    3.9696981140949707`*^9, 3.96969814381791*^9}, {3.969700769761709*^9, 
    3.969700810125613*^9}, 3.9697809849554768`*^9, 3.969781520068996*^9, 
-   3.969792766073723*^9, 3.969792990651359*^9},
+   3.969792766073723*^9, 3.969792990651359*^9, 3.9697974825931797`*^9},
  CellLabel->
   "During evaluation of \
-In[156]:=",ExpressionUUID->"f8aae6b0-eca5-4ba1-ba40-baf4dfee0abf"],
+In[186]:=",ExpressionUUID->"6c2ab801-dd87-42fe-ade2-9e3ebac88d8c"],
 
 Cell[BoxData[
  GraphicsBox[
@@ -30570,10 +30583,10 @@ gwnIX+n9DutBAeSrBY8/U5u9QdMe6jigxy8ArWbhxg==
    3.969697674579158*^9, 3.969697685320807*^9}, 3.9696980762951813`*^9, {
    3.9696981140949707`*^9, 3.96969814381791*^9}, {3.969700769761709*^9, 
    3.969700810125613*^9}, 3.9697809849554768`*^9, 3.969781520068996*^9, 
-   3.969792766073723*^9, 3.969792991425459*^9},
+   3.969792766073723*^9, 3.969792990651359*^9, 3.969797482826871*^9},
  CellLabel->
   "During evaluation of \
-In[156]:=",ExpressionUUID->"9dbc5e0d-a771-473b-ad61-f9f7df112ea7"],
+In[186]:=",ExpressionUUID->"f9cfa54c-7c6f-48fe-ac79-bab66f7a25b7"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/ZAcbc/ZAcbc.hh unchanged\"\>"], "Print",
@@ -30594,13 +30607,14 @@ flows/ZAcbc/ZAcbc.hh unchanged\"\>"], "Print",
    3.969697674579158*^9, 3.969697685320807*^9}, 3.9696980762951813`*^9, {
    3.9696981140949707`*^9, 3.96969814381791*^9}, {3.969700769761709*^9, 
    3.969700810125613*^9}, 3.9697809849554768`*^9, 3.969781520068996*^9, 
-   3.969792766073723*^9, 3.969792996227737*^9},
+   3.969792766073723*^9, 3.969792990651359*^9, 3.9697974873487864`*^9},
  CellLabel->
   "During evaluation of \
-In[156]:=",ExpressionUUID->"11a95331-44fc-463f-a398-ced0f993588d"],
+In[186]:=",ExpressionUUID->"5029d950-ec01-4c5a-9697-969d62144e7c"],
 
-Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
-flows/ZAcbc/kernel.hh unchanged\"\>"], "Print",
+Cell[BoxData["\<\"Exported to \
+\\\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/flows/ZAcbc/\
+kernel.hh\\\"\"\>"], "Print",
  CellChangeTimes->{
   3.9628137166164217`*^9, 3.962813878177265*^9, 3.962814125631052*^9, 
    3.962814285195863*^9, 3.9628146499752007`*^9, 3.962815128233931*^9, 
@@ -30618,10 +30632,10 @@ flows/ZAcbc/kernel.hh unchanged\"\>"], "Print",
    3.969697674579158*^9, 3.969697685320807*^9}, 3.9696980762951813`*^9, {
    3.9696981140949707`*^9, 3.96969814381791*^9}, {3.969700769761709*^9, 
    3.969700810125613*^9}, 3.9697809849554768`*^9, 3.969781520068996*^9, 
-   3.969792766073723*^9, 3.969792996276896*^9},
+   3.969792766073723*^9, 3.969792990651359*^9, 3.969797487354929*^9},
  CellLabel->
   "During evaluation of \
-In[156]:=",ExpressionUUID->"fc803d52-b6c6-413d-9f38-9227fdb92ed0"],
+In[186]:=",ExpressionUUID->"79001765-ea2a-4633-906f-264e54182407"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/ZAcbc/src/constructor.cc unchanged\"\>"], "Print",
@@ -30642,10 +30656,10 @@ flows/ZAcbc/src/constructor.cc unchanged\"\>"], "Print",
    3.969697674579158*^9, 3.969697685320807*^9}, 3.9696980762951813`*^9, {
    3.9696981140949707`*^9, 3.96969814381791*^9}, {3.969700769761709*^9, 
    3.969700810125613*^9}, 3.9697809849554768`*^9, 3.969781520068996*^9, 
-   3.969792766073723*^9, 3.969792996277748*^9},
+   3.969792766073723*^9, 3.969792990651359*^9, 3.969797487358303*^9},
  CellLabel->
   "During evaluation of \
-In[156]:=",ExpressionUUID->"f38bb165-e1dd-46e2-a5c2-f4213edb6ecf"],
+In[186]:=",ExpressionUUID->"c35a9a45-e0a2-4207-b39e-4c5acfbccd86"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/ZAcbc/src/CT_get.cc unchanged\"\>"], "Print",
@@ -30666,10 +30680,10 @@ flows/ZAcbc/src/CT_get.cc unchanged\"\>"], "Print",
    3.969697674579158*^9, 3.969697685320807*^9}, 3.9696980762951813`*^9, {
    3.9696981140949707`*^9, 3.96969814381791*^9}, {3.969700769761709*^9, 
    3.969700810125613*^9}, 3.9697809849554768`*^9, 3.969781520068996*^9, 
-   3.969792766073723*^9, 3.969792996278329*^9},
+   3.969792766073723*^9, 3.969792990651359*^9, 3.969797487361471*^9},
  CellLabel->
   "During evaluation of \
-In[156]:=",ExpressionUUID->"849522c3-79ca-48e2-a493-166ed6230fc0"],
+In[186]:=",ExpressionUUID->"81dd8240-4e8b-485e-8fba-50d66996b7c6"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/ZAcbc/src/CT_map_1.cc unchanged\"\>"], "Print",
@@ -30690,10 +30704,10 @@ flows/ZAcbc/src/CT_map_1.cc unchanged\"\>"], "Print",
    3.969697674579158*^9, 3.969697685320807*^9}, 3.9696980762951813`*^9, {
    3.9696981140949707`*^9, 3.96969814381791*^9}, {3.969700769761709*^9, 
    3.969700810125613*^9}, 3.9697809849554768`*^9, 3.969781520068996*^9, 
-   3.969792766073723*^9, 3.969792996278894*^9},
+   3.969792766073723*^9, 3.969792990651359*^9, 3.969797487364756*^9},
  CellLabel->
   "During evaluation of \
-In[156]:=",ExpressionUUID->"35544ba9-b64b-4ddd-8eb3-65557e66a4f6"],
+In[186]:=",ExpressionUUID->"a1caf480-19cf-4d35-aa89-0a7c36898d13"],
 
 Cell[BoxData["\<\"Please run UpdateFlows[] to export an up-to-date \
 CMakeLists.txt\"\>"], "Print",
@@ -30714,10 +30728,10 @@ CMakeLists.txt\"\>"], "Print",
    3.969697674579158*^9, 3.969697685320807*^9}, 3.9696980762951813`*^9, {
    3.9696981140949707`*^9, 3.96969814381791*^9}, {3.969700769761709*^9, 
    3.969700810125613*^9}, 3.9697809849554768`*^9, 3.969781520068996*^9, 
-   3.969792766073723*^9, 3.969792996279437*^9},
+   3.969792766073723*^9, 3.969792990651359*^9, 3.9697974873665037`*^9},
  CellLabel->
   "During evaluation of \
-In[156]:=",ExpressionUUID->"8f288ae1-81f4-4b88-a569-b58d7263a254"],
+In[186]:=",ExpressionUUID->"163b5709-0653-4243-b03d-b62b3742c3eb"],
 
 Cell[BoxData["\<\"Exported to \
 \\\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/flows/\
@@ -30739,10 +30753,10 @@ CMakeLists.txt\\\"\"\>"], "Print",
    3.969697674579158*^9, 3.969697685320807*^9}, 3.9696980762951813`*^9, {
    3.9696981140949707`*^9, 3.96969814381791*^9}, {3.969700769761709*^9, 
    3.969700810125613*^9}, 3.9697809849554768`*^9, 3.969781520068996*^9, 
-   3.969792766073723*^9, 3.9697929963183413`*^9},
+   3.969792766073723*^9, 3.969792990651359*^9, 3.969797487373844*^9},
  CellLabel->
   "During evaluation of \
-In[156]:=",ExpressionUUID->"2e35fac1-45ee-4f8a-97aa-baacca0eb1e8"],
+In[186]:=",ExpressionUUID->"c60573aa-b085-4d5f-9d79-d13a4d95cef6"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/flows.hh unchanged\"\>"], "Print",
@@ -30763,10 +30777,10 @@ flows/flows.hh unchanged\"\>"], "Print",
    3.969697674579158*^9, 3.969697685320807*^9}, 3.9696980762951813`*^9, {
    3.9696981140949707`*^9, 3.96969814381791*^9}, {3.969700769761709*^9, 
    3.969700810125613*^9}, 3.9697809849554768`*^9, 3.969781520068996*^9, 
-   3.969792766073723*^9, 3.969792997279065*^9},
+   3.969792766073723*^9, 3.969792990651359*^9, 3.9697974881070232`*^9},
  CellLabel->
   "During evaluation of \
-In[156]:=",ExpressionUUID->"1abd5a98-82a5-40a3-b6c7-325ba5bed24f"],
+In[186]:=",ExpressionUUID->"4eda977d-e523-41b4-a55a-716979e9db01"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/flows.cc unchanged\"\>"], "Print",
@@ -30787,10 +30801,10 @@ flows/flows.cc unchanged\"\>"], "Print",
    3.969697674579158*^9, 3.969697685320807*^9}, 3.9696980762951813`*^9, {
    3.9696981140949707`*^9, 3.96969814381791*^9}, {3.969700769761709*^9, 
    3.969700810125613*^9}, 3.9697809849554768`*^9, 3.969781520068996*^9, 
-   3.969792766073723*^9, 3.96979299732885*^9},
+   3.969792766073723*^9, 3.969792990651359*^9, 3.9697974881114197`*^9},
  CellLabel->
   "During evaluation of \
-In[156]:=",ExpressionUUID->"030fc3ac-0782-49fb-82df-658c8599fd8f"]
+In[186]:=",ExpressionUUID->"b0844d6e-bb7c-49e3-b4aa-e6917ece2471"]
 }, Open  ]]
 }, Open  ]]
 }, Closed]],
@@ -30914,7 +30928,7 @@ Cell[BoxData[{
    3.9696981603259773`*^9}, {3.9696984415914*^9, 3.9696984474862223`*^9}, {
    3.969781562813505*^9, 3.969781567684581*^9}},
  CellLabel->
-  "In[162]:=",ExpressionUUID->"d18c5c86-ac42-4884-a6ef-5e9ebc6758b6"],
+  "In[192]:=",ExpressionUUID->"d18c5c86-ac42-4884-a6ef-5e9ebc6758b6"],
 
 Cell[CellGroupData[{
 
@@ -30924,34 +30938,43 @@ Cell[BoxData[
    GraphicsBox[
     NamespaceBox["NetworkGraphics",
      DynamicModuleBox[{Typeset`graph = HoldComplete[
-       Graph[{$CellContext`v11934, $CellContext`v11935, $CellContext`v11936, \
-$CellContext`i2$388593, $CellContext`i1$388594, $CellContext`i3$388595}, {
+       Graph[{$CellContext`v15448, $CellContext`v15449, $CellContext`v15450, \
+$CellContext`i2$490167, $CellContext`i1$490168, $CellContext`i3$490169}, {
         Null, {{1, 3}, {2, 1}, {3, 2}, {4, 1}, {5, 1}, {6, 2}}}, {EdgeStyle -> {
            Arrowheads[{{0.07, 0.6}}], 
-           UndirectedEdge[$CellContext`i1$388594, $CellContext`v11934] -> {
+           UndirectedEdge[$CellContext`i1$490168, $CellContext`v15448] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i2$388593, $CellContext`v11934] -> {
+           UndirectedEdge[$CellContext`v15450, $CellContext`v15449] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i3$388595, $CellContext`v11935] -> {
+           UndirectedEdge[$CellContext`i2$490167, $CellContext`v15448] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`v11935, $CellContext`v11934] -> {
+           UndirectedEdge[$CellContext`i3$490169, $CellContext`v15449] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`v11934, $CellContext`v11936] -> {
+           UndirectedEdge[$CellContext`v15448, $CellContext`v15450] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`v11936, $CellContext`v11935] -> {
+           UndirectedEdge[$CellContext`v15449, $CellContext`v15448] -> {
              RGBColor[1, 0.5, 0]}}, EdgeWeight -> {1, 1, 1, 1, 1, 1}, 
          GraphLayout -> {
           "Dimension" -> 2, 
            "VertexLayout" -> {
             "SpringElectricalEmbedding", "EdgeWeighted" -> True}}, ImageSize -> 
          Small, PerformanceGoal -> "Quality", 
-         VertexShape -> {$CellContext`v11934 -> Graphics[
+         VertexShape -> {$CellContext`v15449 -> Graphics[
              Style[
               Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`i2$388593 -> Graphics[
+              GrayLevel[0.5]]], $CellContext`i3$490169 -> Graphics[
              Style[
               Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`v11936 -> Graphics[{
+              GrayLevel[0.5]]], $CellContext`v15448 -> Graphics[
+             Style[
+              Disk[{0, 0}, 2], 
+              GrayLevel[0.5]]], $CellContext`i2$490167 -> Graphics[
+             Style[
+              Disk[{0, 0}, 0.], 
+              GrayLevel[0.5]]], $CellContext`i1$490168 -> Graphics[
+             Style[
+              Disk[{0, 0}, 0.], 
+              GrayLevel[0.5]]], $CellContext`v15450 -> Graphics[{
               Thickness[Large], 
               
               Line[{{2^Rational[-1, 2], 2^
@@ -30960,18 +30983,9 @@ $CellContext`i2$388593, $CellContext`i1$388594, $CellContext`i3$388595}, {
               Line[{{2^
                  Rational[-1, 2], -2^Rational[-1, 2]}, {-2^Rational[-1, 2], 2^
                  Rational[-1, 2]}}], 
-              Circle[{0, 0}, 1]}], $CellContext`i3$388595 -> Graphics[
-             Style[
-              Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`v11935 -> Graphics[
-             Style[
-              Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`i1$388594 -> Graphics[
-             Style[
-              Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]]}, 
-         VertexSize -> {$CellContext`v11936 -> 0.25, $CellContext`v11935 -> 
-           0.15, $CellContext`v11934 -> 0.15}}]]}, 
+              Circle[{0, 0}, 1]}]}, 
+         VertexSize -> {$CellContext`v15450 -> 0.25, $CellContext`v15449 -> 
+           0.15, $CellContext`v15448 -> 0.15}}]]}, 
       TagBox[GraphicsGroupBox[{
          {Hue[0.6, 0.7, 0.5], Opacity[0.7], Arrowheads[{{0.07, 0.6}}], 
           {RGBColor[1, 0.5, 0], 
@@ -31056,27 +31070,27 @@ $CellContext`i2$388593, $CellContext`i1$388594, $CellContext`i3$388595}, {
    GraphicsBox[
     NamespaceBox["NetworkGraphics",
      DynamicModuleBox[{Typeset`graph = HoldComplete[
-       Graph[{$CellContext`v11926, $CellContext`v11927, $CellContext`v11928, \
-$CellContext`v11929, $CellContext`i1$388532, $CellContext`i2$388533, \
-$CellContext`i3$388534}, {{{4, 1}, {1, 2}, {2, 3}, {3, 4}}, {{5, 1}, {6, 2}, {
+       Graph[{$CellContext`v15440, $CellContext`v15441, $CellContext`v15442, \
+$CellContext`v15443, $CellContext`i1$490106, $CellContext`i2$490107, \
+$CellContext`i3$490108}, {{{4, 1}, {1, 2}, {2, 3}, {3, 4}}, {{5, 1}, {6, 2}, {
          7, 3}}}, {EdgeStyle -> {
            Arrowheads[{{0.07, 0.6}}], 
-           DirectedEdge[$CellContext`v11927, $CellContext`v11928] -> {
+           DirectedEdge[$CellContext`v15441, $CellContext`v15442] -> {
              GrayLevel[0], 
              Dashing[{Small, Small}]}, 
-           DirectedEdge[$CellContext`v11926, $CellContext`v11927] -> {
+           UndirectedEdge[$CellContext`i3$490108, $CellContext`v15442] -> {
+             RGBColor[1, 0.5, 0]}, 
+           UndirectedEdge[$CellContext`i2$490107, $CellContext`v15441] -> {
+             RGBColor[1, 0.5, 0]}, 
+           DirectedEdge[$CellContext`v15442, $CellContext`v15443] -> {
              GrayLevel[0], 
              Dashing[{Small, Small}]}, 
-           UndirectedEdge[$CellContext`i3$388534, $CellContext`v11928] -> {
-             RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i1$388532, $CellContext`v11926] -> {
-             RGBColor[1, 0.5, 0]}, 
-           DirectedEdge[$CellContext`v11928, $CellContext`v11929] -> {
+           DirectedEdge[$CellContext`v15440, $CellContext`v15441] -> {
              GrayLevel[0], 
              Dashing[{Small, Small}]}, 
-           UndirectedEdge[$CellContext`i2$388533, $CellContext`v11927] -> {
+           UndirectedEdge[$CellContext`i1$490106, $CellContext`v15440] -> {
              RGBColor[1, 0.5, 0]}, 
-           DirectedEdge[$CellContext`v11929, $CellContext`v11926] -> {
+           DirectedEdge[$CellContext`v15443, $CellContext`v15440] -> {
              GrayLevel[0], 
              Dashing[{Small, Small}]}}, EdgeWeight -> {1, 1, 1, 1, 1, 1, 1}, 
          GraphLayout -> {
@@ -31084,22 +31098,19 @@ $CellContext`i3$388534}, {{{4, 1}, {1, 2}, {2, 3}, {3, 4}}, {{5, 1}, {6, 2}, {
            "VertexLayout" -> {
             "SpringElectricalEmbedding", "EdgeWeighted" -> True}}, ImageSize -> 
          Small, PerformanceGoal -> "Quality", 
-         VertexShape -> {$CellContext`v11927 -> Graphics[
-             Style[
-              Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`v11928 -> Graphics[
-             Style[
-              Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`i1$388532 -> Graphics[
+         VertexShape -> {$CellContext`i3$490108 -> Graphics[
              Style[
               Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`v11926 -> Graphics[
+              GrayLevel[0.5]]], $CellContext`v15442 -> Graphics[
              Style[
               Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`i3$388534 -> Graphics[
+              GrayLevel[0.5]]], $CellContext`v15440 -> Graphics[
              Style[
-              Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`v11929 -> Graphics[{
+              Disk[{0, 0}, 2], 
+              GrayLevel[0.5]]], $CellContext`v15441 -> Graphics[
+             Style[
+              Disk[{0, 0}, 2], 
+              GrayLevel[0.5]]], $CellContext`v15443 -> Graphics[{
               Thickness[Large], 
               
               Line[{{2^Rational[-1, 2], 2^
@@ -31108,12 +31119,15 @@ $CellContext`i3$388534}, {{{4, 1}, {1, 2}, {2, 3}, {3, 4}}, {{5, 1}, {6, 2}, {
               Line[{{2^
                  Rational[-1, 2], -2^Rational[-1, 2]}, {-2^Rational[-1, 2], 2^
                  Rational[-1, 2]}}], 
-              Circle[{0, 0}, 1]}], $CellContext`i2$388533 -> Graphics[
+              Circle[{0, 0}, 1]}], $CellContext`i2$490107 -> Graphics[
+             Style[
+              Disk[{0, 0}, 0.], 
+              GrayLevel[0.5]]], $CellContext`i1$490106 -> Graphics[
              Style[
               Disk[{0, 0}, 0.], 
               GrayLevel[0.5]]]}, 
-         VertexSize -> {$CellContext`v11927 -> 0.15, $CellContext`v11929 -> 
-           0.25, $CellContext`v11928 -> 0.15, $CellContext`v11926 -> 
+         VertexSize -> {$CellContext`v15442 -> 0.15, $CellContext`v15440 -> 
+           0.15, $CellContext`v15443 -> 0.25, $CellContext`v15441 -> 
            0.15}}]]}, 
       TagBox[GraphicsGroupBox[{
          {Hue[0.6, 0.7, 0.5], Opacity[0.7], Arrowheads[{{0.07, 0.6}}], 
@@ -31209,35 +31223,35 @@ $CellContext`i3$388534}, {{{4, 1}, {1, 2}, {2, 3}, {3, 4}}, {{5, 1}, {6, 2}, {
    GraphicsBox[
     NamespaceBox["NetworkGraphics",
      DynamicModuleBox[{Typeset`graph = HoldComplete[
-       Graph[{$CellContext`v11930, $CellContext`v11931, $CellContext`v11932, \
-$CellContext`v11933, $CellContext`i1$388563, $CellContext`i2$388564, \
-$CellContext`i3$388565}, {
+       Graph[{$CellContext`v15444, $CellContext`v15445, $CellContext`v15446, \
+$CellContext`v15447, $CellContext`i1$490137, $CellContext`i2$490138, \
+$CellContext`i3$490139}, {
         Null, {{1, 4}, {2, 1}, {3, 2}, {4, 3}, {5, 1}, {6, 2}, {7, 3}}}, {
         EdgeStyle -> {
            Arrowheads[{{0.07, 0.6}}], 
-           UndirectedEdge[$CellContext`i2$388564, $CellContext`v11931] -> {
+           UndirectedEdge[$CellContext`v15447, $CellContext`v15446] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i3$388565, $CellContext`v11932] -> {
+           UndirectedEdge[$CellContext`v15444, $CellContext`v15447] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i1$388563, $CellContext`v11930] -> {
+           UndirectedEdge[$CellContext`i3$490139, $CellContext`v15446] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`v11931, $CellContext`v11930] -> {
+           UndirectedEdge[$CellContext`v15445, $CellContext`v15444] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`v11932, $CellContext`v11931] -> {
+           UndirectedEdge[$CellContext`v15446, $CellContext`v15445] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`v11933, $CellContext`v11932] -> {
+           UndirectedEdge[$CellContext`i2$490138, $CellContext`v15445] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`v11930, $CellContext`v11933] -> {
+           UndirectedEdge[$CellContext`i1$490137, $CellContext`v15444] -> {
              RGBColor[1, 0.5, 0]}}, EdgeWeight -> {1, 1, 1, 1, 1, 1, 1}, 
          GraphLayout -> {
           "Dimension" -> 2, 
            "VertexLayout" -> {
             "SpringElectricalEmbedding", "EdgeWeighted" -> True}}, ImageSize -> 
          Small, PerformanceGoal -> "Quality", 
-         VertexShape -> {$CellContext`v11930 -> Graphics[
+         VertexShape -> {$CellContext`i2$490138 -> Graphics[
              Style[
-              Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`v11933 -> Graphics[{
+              Disk[{0, 0}, 0.], 
+              GrayLevel[0.5]]], $CellContext`v15447 -> Graphics[{
               Thickness[Large], 
               
               Line[{{2^Rational[-1, 2], 2^
@@ -31246,25 +31260,25 @@ $CellContext`i3$388565}, {
               Line[{{2^
                  Rational[-1, 2], -2^Rational[-1, 2]}, {-2^Rational[-1, 2], 2^
                  Rational[-1, 2]}}], 
-              Circle[{0, 0}, 1]}], $CellContext`i1$388563 -> Graphics[
+              Circle[{0, 0}, 1]}], $CellContext`i3$490139 -> Graphics[
              Style[
               Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`i2$388564 -> Graphics[
+              GrayLevel[0.5]]], $CellContext`i1$490137 -> Graphics[
              Style[
               Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`i3$388565 -> Graphics[
-             Style[
-              Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`v11931 -> Graphics[
+              GrayLevel[0.5]]], $CellContext`v15446 -> Graphics[
              Style[
               Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`v11932 -> Graphics[
+              GrayLevel[0.5]]], $CellContext`v15444 -> Graphics[
+             Style[
+              Disk[{0, 0}, 2], 
+              GrayLevel[0.5]]], $CellContext`v15445 -> Graphics[
              Style[
               Disk[{0, 0}, 2], 
               GrayLevel[0.5]]]}, 
-         VertexSize -> {$CellContext`v11932 -> 0.15, $CellContext`v11933 -> 
-           0.25, $CellContext`v11930 -> 0.15, $CellContext`v11931 -> 
-           0.15}}]]}, 
+         VertexSize -> {$CellContext`v15444 -> 0.15, $CellContext`v15445 -> 
+           0.15, $CellContext`v15446 -> 0.15, $CellContext`v15447 -> 
+           0.25}}]]}, 
       TagBox[GraphicsGroupBox[{
          {Hue[0.6, 0.7, 0.5], Opacity[0.7], Arrowheads[{{0.07, 0.6}}], 
           {RGBColor[1, 0.5, 0], 
@@ -31369,10 +31383,10 @@ $CellContext`i3$388565}, {
    3.967545251341742*^9, 3.967573383196156*^9, 3.969530687271069*^9, 
    3.969698164486719*^9, {3.969698428649746*^9, 3.969698448885387*^9}, 
    3.9697809942660713`*^9, 3.969781526329115*^9, 3.969792772643197*^9, 
-   3.9697929982051573`*^9},
+   3.9697929982051573`*^9, 3.969797488871682*^9},
  CellLabel->
   "During evaluation of \
-In[162]:=",ExpressionUUID->"ecf13012-c27f-45c3-9251-4e3106885ede"],
+In[192]:=",ExpressionUUID->"9db9204a-3a47-41b0-b089-13f7fc006aee"],
 
 Cell[BoxData[
  GraphicsBox[
@@ -38982,10 +38996,10 @@ pf1t+l11B6DqmP63HQ7rQQHkqwWPP1ObvUHTHuo4oMcvAHbP/CU=
    3.967545251341742*^9, 3.967573383196156*^9, 3.969530687271069*^9, 
    3.969698164486719*^9, {3.969698428649746*^9, 3.969698448885387*^9}, 
    3.9697809942660713`*^9, 3.969781526329115*^9, 3.969792772643197*^9, 
-   3.969792998769003*^9},
+   3.9697929982051573`*^9, 3.9697974889838057`*^9},
  CellLabel->
   "During evaluation of \
-In[162]:=",ExpressionUUID->"8d11818a-95a2-41d2-b268-d378d7c91c99"],
+In[192]:=",ExpressionUUID->"46d0ca29-09b2-4f8a-885a-96b5f1e7cede"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/ZA3/ZA3.hh unchanged\"\>"], "Print",
@@ -39003,13 +39017,14 @@ flows/ZA3/ZA3.hh unchanged\"\>"], "Print",
    3.967545251341742*^9, 3.967573383196156*^9, 3.969530687271069*^9, 
    3.969698164486719*^9, {3.969698428649746*^9, 3.969698448885387*^9}, 
    3.9697809942660713`*^9, 3.969781526329115*^9, 3.969792772643197*^9, 
-   3.9697930077293386`*^9},
+   3.9697929982051573`*^9, 3.969797492715659*^9},
  CellLabel->
   "During evaluation of \
-In[162]:=",ExpressionUUID->"51de9bfe-c500-4fdd-be6f-06008dd8126b"],
+In[192]:=",ExpressionUUID->"77d66cbd-697d-4c60-ae7f-4186db9664d9"],
 
-Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
-flows/ZA3/kernel.hh unchanged\"\>"], "Print",
+Cell[BoxData["\<\"Exported to \
+\\\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/flows/ZA3/\
+kernel.hh\\\"\"\>"], "Print",
  CellChangeTimes->{
   3.962760721407254*^9, 3.962760816255821*^9, 3.962764825499447*^9, 
    3.962765682156149*^9, 3.9627657602772017`*^9, 3.962767310259221*^9, 
@@ -39024,10 +39039,10 @@ flows/ZA3/kernel.hh unchanged\"\>"], "Print",
    3.967545251341742*^9, 3.967573383196156*^9, 3.969530687271069*^9, 
    3.969698164486719*^9, {3.969698428649746*^9, 3.969698448885387*^9}, 
    3.9697809942660713`*^9, 3.969781526329115*^9, 3.969792772643197*^9, 
-   3.969793007789571*^9},
+   3.9697929982051573`*^9, 3.969797492721677*^9},
  CellLabel->
   "During evaluation of \
-In[162]:=",ExpressionUUID->"817ed36e-d27d-4b9e-a57f-6a01e5989b67"],
+In[192]:=",ExpressionUUID->"27cdb664-dc8b-41d9-b584-86c85254de14"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/ZA3/src/constructor.cc unchanged\"\>"], "Print",
@@ -39045,10 +39060,10 @@ flows/ZA3/src/constructor.cc unchanged\"\>"], "Print",
    3.967545251341742*^9, 3.967573383196156*^9, 3.969530687271069*^9, 
    3.969698164486719*^9, {3.969698428649746*^9, 3.969698448885387*^9}, 
    3.9697809942660713`*^9, 3.969781526329115*^9, 3.969792772643197*^9, 
-   3.9697930077903967`*^9},
+   3.9697929982051573`*^9, 3.969797492725256*^9},
  CellLabel->
   "During evaluation of \
-In[162]:=",ExpressionUUID->"49a2034b-4064-43ff-bc30-000fc056c753"],
+In[192]:=",ExpressionUUID->"4edb3d77-0a16-4e1a-b0a5-503e6a817b09"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/ZA3/src/CT_get.cc unchanged\"\>"], "Print",
@@ -39066,10 +39081,10 @@ flows/ZA3/src/CT_get.cc unchanged\"\>"], "Print",
    3.967545251341742*^9, 3.967573383196156*^9, 3.969530687271069*^9, 
    3.969698164486719*^9, {3.969698428649746*^9, 3.969698448885387*^9}, 
    3.9697809942660713`*^9, 3.969781526329115*^9, 3.969792772643197*^9, 
-   3.969793007790957*^9},
+   3.9697929982051573`*^9, 3.969797492729289*^9},
  CellLabel->
   "During evaluation of \
-In[162]:=",ExpressionUUID->"0379a0c2-69f9-4e99-9500-e37f986f2b92"],
+In[192]:=",ExpressionUUID->"1a888475-5b5b-42b5-9f7b-54f72685c049"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/ZA3/src/CT_map_1.cc unchanged\"\>"], "Print",
@@ -39087,10 +39102,10 @@ flows/ZA3/src/CT_map_1.cc unchanged\"\>"], "Print",
    3.967545251341742*^9, 3.967573383196156*^9, 3.969530687271069*^9, 
    3.969698164486719*^9, {3.969698428649746*^9, 3.969698448885387*^9}, 
    3.9697809942660713`*^9, 3.969781526329115*^9, 3.969792772643197*^9, 
-   3.969793007791533*^9},
+   3.9697929982051573`*^9, 3.969797492733417*^9},
  CellLabel->
   "During evaluation of \
-In[162]:=",ExpressionUUID->"43919b0d-f746-4d7c-a162-b63db89092e3"],
+In[192]:=",ExpressionUUID->"75b8e446-9501-4f87-8090-2fc690558a30"],
 
 Cell[BoxData["\<\"Please run UpdateFlows[] to export an up-to-date \
 CMakeLists.txt\"\>"], "Print",
@@ -39108,10 +39123,10 @@ CMakeLists.txt\"\>"], "Print",
    3.967545251341742*^9, 3.967573383196156*^9, 3.969530687271069*^9, 
    3.969698164486719*^9, {3.969698428649746*^9, 3.969698448885387*^9}, 
    3.9697809942660713`*^9, 3.969781526329115*^9, 3.969792772643197*^9, 
-   3.9697930077920437`*^9},
+   3.9697929982051573`*^9, 3.969797492736232*^9},
  CellLabel->
   "During evaluation of \
-In[162]:=",ExpressionUUID->"10000ff0-040e-4c06-9a05-26a5885d6e29"],
+In[192]:=",ExpressionUUID->"68b8988c-8cfa-4b78-80c4-8e85a6bd232c"],
 
 Cell[BoxData["\<\"Exported to \
 \\\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/flows/\
@@ -39130,10 +39145,10 @@ CMakeLists.txt\\\"\"\>"], "Print",
    3.967545251341742*^9, 3.967573383196156*^9, 3.969530687271069*^9, 
    3.969698164486719*^9, {3.969698428649746*^9, 3.969698448885387*^9}, 
    3.9697809942660713`*^9, 3.969781526329115*^9, 3.969792772643197*^9, 
-   3.969793008127771*^9},
+   3.9697929982051573`*^9, 3.969797492742751*^9},
  CellLabel->
   "During evaluation of \
-In[162]:=",ExpressionUUID->"5ecbafe6-0b90-4e6e-873c-fd335bd9de3d"],
+In[192]:=",ExpressionUUID->"a207200e-b9c0-4270-abd4-431b804b54ba"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/flows.hh unchanged\"\>"], "Print",
@@ -39151,10 +39166,10 @@ flows/flows.hh unchanged\"\>"], "Print",
    3.967545251341742*^9, 3.967573383196156*^9, 3.969530687271069*^9, 
    3.969698164486719*^9, {3.969698428649746*^9, 3.969698448885387*^9}, 
    3.9697809942660713`*^9, 3.969781526329115*^9, 3.969792772643197*^9, 
-   3.9697930091987963`*^9},
+   3.9697929982051573`*^9, 3.969797493464418*^9},
  CellLabel->
   "During evaluation of \
-In[162]:=",ExpressionUUID->"7f2dd57b-d153-4d62-a98c-09753510dd0d"],
+In[192]:=",ExpressionUUID->"4820257c-21f3-47c6-990b-cabe4d3bd390"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/flows.cc unchanged\"\>"], "Print",
@@ -39172,10 +39187,10 @@ flows/flows.cc unchanged\"\>"], "Print",
    3.967545251341742*^9, 3.967573383196156*^9, 3.969530687271069*^9, 
    3.969698164486719*^9, {3.969698428649746*^9, 3.969698448885387*^9}, 
    3.9697809942660713`*^9, 3.969781526329115*^9, 3.969792772643197*^9, 
-   3.969793009230526*^9},
+   3.9697929982051573`*^9, 3.9697974934699917`*^9},
  CellLabel->
   "During evaluation of \
-In[162]:=",ExpressionUUID->"3531bfca-0684-44e5-a944-320ce43e6575"]
+In[192]:=",ExpressionUUID->"70d4bf7a-1059-4b3f-a01b-72262765fc0b"]
 }, Open  ]]
 }, Open  ]]
 }, Open  ]],
@@ -39319,7 +39334,7 @@ Cell[BoxData[{
    3.969698484354821*^9}, 3.9696987041583557`*^9, {3.9697815561472692`*^9, 
    3.969781558708606*^9}},
  CellLabel->
-  "In[168]:=",ExpressionUUID->"5fd955fd-40a3-466a-beda-77200c120a86"],
+  "In[198]:=",ExpressionUUID->"5fd955fd-40a3-466a-beda-77200c120a86"],
 
 Cell[CellGroupData[{
 
@@ -39329,50 +39344,32 @@ Cell[BoxData[
    GraphicsBox[
     NamespaceBox["NetworkGraphics",
      DynamicModuleBox[{Typeset`graph = HoldComplete[
-       Graph[{$CellContext`v14059, $CellContext`v14060, $CellContext`v14061, \
-$CellContext`i3$414718, $CellContext`i2$414719, $CellContext`i4$414720, \
-$CellContext`i1$414721}, {
+       Graph[{$CellContext`v17613, $CellContext`v17614, $CellContext`v17615, \
+$CellContext`i3$516488, $CellContext`i2$516489, $CellContext`i4$516490, \
+$CellContext`i1$516491}, {
         Null, {{1, 3}, {2, 1}, {3, 2}, {4, 1}, {5, 1}, {6, 2}, {7, 2}}}, {
         EdgeStyle -> {
            Arrowheads[{{0.07, 0.6}}], 
-           UndirectedEdge[$CellContext`v14060, $CellContext`v14059] -> {
+           UndirectedEdge[$CellContext`i1$516491, $CellContext`v17614] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`v14059, $CellContext`v14061] -> {
+           UndirectedEdge[$CellContext`v17614, $CellContext`v17613] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i4$414720, $CellContext`v14060] -> {
+           UndirectedEdge[$CellContext`i3$516488, $CellContext`v17613] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i3$414718, $CellContext`v14059] -> {
+           UndirectedEdge[$CellContext`v17615, $CellContext`v17614] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i2$414719, $CellContext`v14059] -> {
+           UndirectedEdge[$CellContext`v17613, $CellContext`v17615] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i1$414721, $CellContext`v14060] -> {
+           UndirectedEdge[$CellContext`i2$516489, $CellContext`v17613] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`v14061, $CellContext`v14060] -> {
+           UndirectedEdge[$CellContext`i4$516490, $CellContext`v17614] -> {
              RGBColor[1, 0.5, 0]}}, EdgeWeight -> {1, 1, 1, 1, 1, 1, 1}, 
          GraphLayout -> {
           "Dimension" -> 2, 
            "VertexLayout" -> {
             "SpringElectricalEmbedding", "EdgeWeighted" -> True}}, ImageSize -> 
          Small, PerformanceGoal -> "Quality", 
-         VertexShape -> {$CellContext`v14060 -> Graphics[
-             Style[
-              Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`i4$414720 -> Graphics[
-             Style[
-              Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`i2$414719 -> Graphics[
-             Style[
-              Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`i1$414721 -> Graphics[
-             Style[
-              Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`i3$414718 -> Graphics[
-             Style[
-              Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`v14059 -> Graphics[
-             Style[
-              Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`v14061 -> Graphics[{
+         VertexShape -> {$CellContext`v17615 -> Graphics[{
               Thickness[Large], 
               
               Line[{{2^Rational[-1, 2], 2^
@@ -39381,9 +39378,27 @@ $CellContext`i1$414721}, {
               Line[{{2^
                  Rational[-1, 2], -2^Rational[-1, 2]}, {-2^Rational[-1, 2], 2^
                  Rational[-1, 2]}}], 
-              Circle[{0, 0}, 1]}]}, 
-         VertexSize -> {$CellContext`v14060 -> 0.15, $CellContext`v14061 -> 
-           0.25, $CellContext`v14059 -> 0.15}}]]}, 
+              Circle[{0, 0}, 1]}], $CellContext`i3$516488 -> Graphics[
+             Style[
+              Disk[{0, 0}, 0.], 
+              GrayLevel[0.5]]], $CellContext`v17614 -> Graphics[
+             Style[
+              Disk[{0, 0}, 2], 
+              GrayLevel[0.5]]], $CellContext`i1$516491 -> Graphics[
+             Style[
+              Disk[{0, 0}, 0.], 
+              GrayLevel[0.5]]], $CellContext`v17613 -> Graphics[
+             Style[
+              Disk[{0, 0}, 2], 
+              GrayLevel[0.5]]], $CellContext`i4$516490 -> Graphics[
+             Style[
+              Disk[{0, 0}, 0.], 
+              GrayLevel[0.5]]], $CellContext`i2$516489 -> Graphics[
+             Style[
+              Disk[{0, 0}, 0.], 
+              GrayLevel[0.5]]]}, 
+         VertexSize -> {$CellContext`v17615 -> 0.25, $CellContext`v17613 -> 
+           0.15, $CellContext`v17614 -> 0.15}}]]}, 
       TagBox[GraphicsGroupBox[{
          {Hue[0.6, 0.7, 0.5], Opacity[0.7], Arrowheads[{{0.07, 0.6}}], 
           {RGBColor[1, 0.5, 0], 
@@ -39478,40 +39493,55 @@ $CellContext`i1$414721}, {
    GraphicsBox[
     NamespaceBox["NetworkGraphics",
      DynamicModuleBox[{Typeset`graph = HoldComplete[
-       Graph[{$CellContext`v14051, $CellContext`v14052, $CellContext`v14053, \
-$CellContext`v14054, $CellContext`i2$414649, $CellContext`i1$414650, \
-$CellContext`i3$414651, $CellContext`i4$414652}, {
+       Graph[{$CellContext`v17605, $CellContext`v17606, $CellContext`v17607, \
+$CellContext`v17608, $CellContext`i2$516419, $CellContext`i1$516420, \
+$CellContext`i3$516421, $CellContext`i4$516422}, {
         Null, {{1, 4}, {2, 1}, {3, 2}, {4, 3}, {5, 1}, {6, 1}, {7, 2}, {8, 
          3}}}, {EdgeStyle -> {
            Arrowheads[{{0.07, 0.6}}], 
-           UndirectedEdge[$CellContext`v14053, $CellContext`v14052] -> {
+           UndirectedEdge[$CellContext`v17607, $CellContext`v17606] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i2$414649, $CellContext`v14051] -> {
+           UndirectedEdge[$CellContext`i4$516422, $CellContext`v17607] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`v14052, $CellContext`v14051] -> {
+           UndirectedEdge[$CellContext`v17605, $CellContext`v17608] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i3$414651, $CellContext`v14052] -> {
+           UndirectedEdge[$CellContext`v17608, $CellContext`v17607] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i1$414650, $CellContext`v14051] -> {
+           UndirectedEdge[$CellContext`v17606, $CellContext`v17605] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`v14054, $CellContext`v14053] -> {
+           UndirectedEdge[$CellContext`i2$516419, $CellContext`v17605] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`v14051, $CellContext`v14054] -> {
+           UndirectedEdge[$CellContext`i3$516421, $CellContext`v17606] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i4$414652, $CellContext`v14053] -> {
+           UndirectedEdge[$CellContext`i1$516420, $CellContext`v17605] -> {
              RGBColor[1, 0.5, 0]}}, EdgeWeight -> {1, 1, 1, 1, 1, 1, 1, 1}, 
          GraphLayout -> {
           "Dimension" -> 2, 
            "VertexLayout" -> {
             "SpringElectricalEmbedding", "EdgeWeighted" -> True}}, ImageSize -> 
          Small, PerformanceGoal -> "Quality", 
-         VertexShape -> {$CellContext`i4$414652 -> Graphics[
-             Style[
-              Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`v14051 -> Graphics[
+         VertexShape -> {$CellContext`v17606 -> Graphics[
              Style[
               Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`v14054 -> Graphics[{
+              GrayLevel[0.5]]], $CellContext`i3$516421 -> Graphics[
+             Style[
+              Disk[{0, 0}, 0.], 
+              GrayLevel[0.5]]], $CellContext`v17605 -> Graphics[
+             Style[
+              Disk[{0, 0}, 2], 
+              GrayLevel[0.5]]], $CellContext`i2$516419 -> Graphics[
+             Style[
+              Disk[{0, 0}, 0.], 
+              GrayLevel[0.5]]], $CellContext`v17607 -> Graphics[
+             Style[
+              Disk[{0, 0}, 2], 
+              GrayLevel[0.5]]], $CellContext`i1$516420 -> Graphics[
+             Style[
+              Disk[{0, 0}, 0.], 
+              GrayLevel[0.5]]], $CellContext`i4$516422 -> Graphics[
+             Style[
+              Disk[{0, 0}, 0.], 
+              GrayLevel[0.5]]], $CellContext`v17608 -> Graphics[{
               Thickness[Large], 
               
               Line[{{2^Rational[-1, 2], 2^
@@ -39520,24 +39550,9 @@ $CellContext`i3$414651, $CellContext`i4$414652}, {
               Line[{{2^
                  Rational[-1, 2], -2^Rational[-1, 2]}, {-2^Rational[-1, 2], 2^
                  Rational[-1, 2]}}], 
-              Circle[{0, 0}, 1]}], $CellContext`i2$414649 -> Graphics[
-             Style[
-              Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`v14052 -> Graphics[
-             Style[
-              Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`i3$414651 -> Graphics[
-             Style[
-              Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`v14053 -> Graphics[
-             Style[
-              Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`i1$414650 -> Graphics[
-             Style[
-              Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]]}, 
-         VertexSize -> {$CellContext`v14051 -> 0.15, $CellContext`v14054 -> 
-           0.25, $CellContext`v14053 -> 0.15, $CellContext`v14052 -> 
+              Circle[{0, 0}, 1]}]}, 
+         VertexSize -> {$CellContext`v17607 -> 0.15, $CellContext`v17605 -> 
+           0.15, $CellContext`v17608 -> 0.25, $CellContext`v17606 -> 
            0.15}}]]}, 
       TagBox[GraphicsGroupBox[{
          {Hue[0.6, 0.7, 0.5], Opacity[0.7], Arrowheads[{{0.07, 0.6}}], 
@@ -39643,40 +39658,46 @@ $CellContext`i3$414651, $CellContext`i4$414652}, {
    GraphicsBox[
     NamespaceBox["NetworkGraphics",
      DynamicModuleBox[{Typeset`graph = HoldComplete[
-       Graph[{$CellContext`v14055, $CellContext`v14056, $CellContext`v14057, \
-$CellContext`v14058, $CellContext`i2$414684, $CellContext`i3$414685, \
-$CellContext`i1$414686, $CellContext`i4$414687}, {
+       Graph[{$CellContext`v17609, $CellContext`v17610, $CellContext`v17611, \
+$CellContext`v17612, $CellContext`i2$516454, $CellContext`i3$516455, \
+$CellContext`i1$516456, $CellContext`i4$516457}, {
         Null, {{1, 4}, {2, 1}, {3, 2}, {4, 3}, {5, 1}, {6, 2}, {7, 2}, {8, 
          3}}}, {EdgeStyle -> {
            Arrowheads[{{0.07, 0.6}}], 
-           UndirectedEdge[$CellContext`v14056, $CellContext`v14055] -> {
+           UndirectedEdge[$CellContext`v17609, $CellContext`v17612] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i4$414687, $CellContext`v14057] -> {
+           UndirectedEdge[$CellContext`v17612, $CellContext`v17611] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i3$414685, $CellContext`v14056] -> {
+           UndirectedEdge[$CellContext`i2$516454, $CellContext`v17609] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`v14057, $CellContext`v14056] -> {
+           UndirectedEdge[$CellContext`i4$516457, $CellContext`v17611] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i2$414684, $CellContext`v14055] -> {
+           UndirectedEdge[$CellContext`v17610, $CellContext`v17609] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i1$414686, $CellContext`v14056] -> {
+           UndirectedEdge[$CellContext`i3$516455, $CellContext`v17610] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`v14058, $CellContext`v14057] -> {
+           UndirectedEdge[$CellContext`v17611, $CellContext`v17610] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`v14055, $CellContext`v14058] -> {
+           UndirectedEdge[$CellContext`i1$516456, $CellContext`v17610] -> {
              RGBColor[1, 0.5, 0]}}, EdgeWeight -> {1, 1, 1, 1, 1, 1, 1, 1}, 
          GraphLayout -> {
           "Dimension" -> 2, 
            "VertexLayout" -> {
             "SpringElectricalEmbedding", "EdgeWeighted" -> True}}, ImageSize -> 
          Small, PerformanceGoal -> "Quality", 
-         VertexShape -> {$CellContext`v14057 -> Graphics[
+         VertexShape -> {$CellContext`i1$516456 -> Graphics[
+             Style[
+              Disk[{0, 0}, 0.], 
+              GrayLevel[0.5]]], $CellContext`v17610 -> Graphics[
              Style[
               Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`v14056 -> Graphics[
+              GrayLevel[0.5]]], $CellContext`v17609 -> Graphics[
              Style[
               Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`v14058 -> Graphics[{
+              GrayLevel[0.5]]], $CellContext`v17611 -> Graphics[
+             Style[
+              Disk[{0, 0}, 2], 
+              GrayLevel[0.5]]], $CellContext`v17612 -> Graphics[{
               Thickness[Large], 
               
               Line[{{2^Rational[-1, 2], 2^
@@ -39685,25 +39706,19 @@ $CellContext`i1$414686, $CellContext`i4$414687}, {
               Line[{{2^
                  Rational[-1, 2], -2^Rational[-1, 2]}, {-2^Rational[-1, 2], 2^
                  Rational[-1, 2]}}], 
-              Circle[{0, 0}, 1]}], $CellContext`i4$414687 -> Graphics[
+              Circle[{0, 0}, 1]}], $CellContext`i4$516457 -> Graphics[
              Style[
               Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`i3$414685 -> Graphics[
+              GrayLevel[0.5]]], $CellContext`i2$516454 -> Graphics[
              Style[
               Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`v14055 -> Graphics[
-             Style[
-              Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`i2$414684 -> Graphics[
-             Style[
-              Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`i1$414686 -> Graphics[
+              GrayLevel[0.5]]], $CellContext`i3$516455 -> Graphics[
              Style[
               Disk[{0, 0}, 0.], 
               GrayLevel[0.5]]]}, 
-         VertexSize -> {$CellContext`v14056 -> 0.15, $CellContext`v14057 -> 
-           0.15, $CellContext`v14058 -> 0.25, $CellContext`v14055 -> 
-           0.15}}]]}, 
+         VertexSize -> {$CellContext`v17609 -> 0.15, $CellContext`v17611 -> 
+           0.15, $CellContext`v17610 -> 0.15, $CellContext`v17612 -> 
+           0.25}}]]}, 
       TagBox[GraphicsGroupBox[{
          {Hue[0.6, 0.7, 0.5], Opacity[0.7], Arrowheads[{{0.07, 0.6}}], 
           {RGBColor[1, 0.5, 0], 
@@ -39808,42 +39823,47 @@ $CellContext`i1$414686, $CellContext`i4$414687}, {
    GraphicsBox[
     NamespaceBox["NetworkGraphics",
      DynamicModuleBox[{Typeset`graph = HoldComplete[
-       Graph[{$CellContext`v14041, $CellContext`v14042, $CellContext`v14043, \
-$CellContext`v14044, $CellContext`v14045, $CellContext`i1$414578, \
-$CellContext`i2$414579, $CellContext`i3$414580, $CellContext`i4$414581}, {{{5,
+       Graph[{$CellContext`v17595, $CellContext`v17596, $CellContext`v17597, \
+$CellContext`v17598, $CellContext`v17599, $CellContext`i1$516348, \
+$CellContext`i2$516349, $CellContext`i3$516350, $CellContext`i4$516351}, {{{5,
           1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}}, {{6, 1}, {7, 2}, {8, 3}, {9, 
          4}}}, {EdgeStyle -> {
            Arrowheads[{{0.07, 0.6}}], 
-           DirectedEdge[$CellContext`v14045, $CellContext`v14041] -> {
+           UndirectedEdge[$CellContext`i1$516348, $CellContext`v17595] -> {
+             RGBColor[1, 0.5, 0]}, 
+           DirectedEdge[$CellContext`v17599, $CellContext`v17595] -> {
              GrayLevel[0], 
              Dashing[{Small, Small}]}, 
-           UndirectedEdge[$CellContext`i3$414580, $CellContext`v14043] -> {
+           UndirectedEdge[$CellContext`i3$516350, $CellContext`v17597] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i2$414579, $CellContext`v14042] -> {
-             RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i4$414581, $CellContext`v14044] -> {
-             RGBColor[1, 0.5, 0]}, 
-           DirectedEdge[$CellContext`v14044, $CellContext`v14045] -> {
+           DirectedEdge[$CellContext`v17597, $CellContext`v17598] -> {
              GrayLevel[0], 
              Dashing[{Small, Small}]}, 
-           DirectedEdge[$CellContext`v14043, $CellContext`v14044] -> {
+           DirectedEdge[$CellContext`v17595, $CellContext`v17596] -> {
              GrayLevel[0], 
              Dashing[{Small, Small}]}, 
-           DirectedEdge[$CellContext`v14041, $CellContext`v14042] -> {
+           DirectedEdge[$CellContext`v17596, $CellContext`v17597] -> {
              GrayLevel[0], 
              Dashing[{Small, Small}]}, 
-           UndirectedEdge[$CellContext`i1$414578, $CellContext`v14041] -> {
+           DirectedEdge[$CellContext`v17598, $CellContext`v17599] -> {
+             GrayLevel[0], 
+             Dashing[{Small, Small}]}, 
+           UndirectedEdge[$CellContext`i4$516351, $CellContext`v17598] -> {
              RGBColor[1, 0.5, 0]}, 
-           DirectedEdge[$CellContext`v14042, $CellContext`v14043] -> {
-             GrayLevel[0], 
-             Dashing[{Small, Small}]}}, 
-         EdgeWeight -> {1, 1, 1, 1, 1, 1, 1, 1, 1}, 
-         GraphLayout -> {
+           UndirectedEdge[$CellContext`i2$516349, $CellContext`v17596] -> {
+             RGBColor[1, 0.5, 0]}}, EdgeWeight -> {1, 1, 1, 1, 1, 1, 1, 1, 1},
+          GraphLayout -> {
           "Dimension" -> 2, 
            "VertexLayout" -> {
             "SpringElectricalEmbedding", "EdgeWeighted" -> True}}, ImageSize -> 
          Small, PerformanceGoal -> "Quality", 
-         VertexShape -> {$CellContext`v14045 -> Graphics[{
+         VertexShape -> {$CellContext`v17598 -> Graphics[
+             Style[
+              Disk[{0, 0}, 2], 
+              GrayLevel[0.5]]], $CellContext`i1$516348 -> Graphics[
+             Style[
+              Disk[{0, 0}, 0.], 
+              GrayLevel[0.5]]], $CellContext`v17599 -> Graphics[{
               Thickness[Large], 
               
               Line[{{2^Rational[-1, 2], 2^
@@ -39852,34 +39872,28 @@ $CellContext`i2$414579, $CellContext`i3$414580, $CellContext`i4$414581}, {{{5,
               Line[{{2^
                  Rational[-1, 2], -2^Rational[-1, 2]}, {-2^Rational[-1, 2], 2^
                  Rational[-1, 2]}}], 
-              Circle[{0, 0}, 1]}], $CellContext`i2$414579 -> Graphics[
+              Circle[{0, 0}, 1]}], $CellContext`i2$516349 -> Graphics[
              Style[
               Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`i3$414580 -> Graphics[
+              GrayLevel[0.5]]], $CellContext`i4$516351 -> Graphics[
              Style[
               Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`i1$414578 -> Graphics[
+              GrayLevel[0.5]]], $CellContext`i3$516350 -> Graphics[
              Style[
               Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`v14042 -> Graphics[
+              GrayLevel[0.5]]], $CellContext`v17596 -> Graphics[
              Style[
               Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`v14041 -> Graphics[
+              GrayLevel[0.5]]], $CellContext`v17595 -> Graphics[
              Style[
               Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`v14044 -> Graphics[
-             Style[
-              Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`i4$414581 -> Graphics[
-             Style[
-              Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`v14043 -> Graphics[
+              GrayLevel[0.5]]], $CellContext`v17597 -> Graphics[
              Style[
               Disk[{0, 0}, 2], 
               GrayLevel[0.5]]]}, 
-         VertexSize -> {$CellContext`v14044 -> 0.15, $CellContext`v14045 -> 
-           0.25, $CellContext`v14042 -> 0.15, $CellContext`v14043 -> 
-           0.15, $CellContext`v14041 -> 0.15}}]]}, 
+         VertexSize -> {$CellContext`v17595 -> 0.15, $CellContext`v17597 -> 
+           0.15, $CellContext`v17596 -> 0.15, $CellContext`v17599 -> 
+           0.25, $CellContext`v17598 -> 0.15}}]]}, 
       TagBox[GraphicsGroupBox[{
          {Hue[0.6, 0.7, 0.5], Opacity[0.7], Arrowheads[{{0.07, 0.6}}], 
           {RGBColor[1, 0.5, 0], 
@@ -39994,45 +40008,57 @@ $CellContext`i2$414579, $CellContext`i3$414580, $CellContext`i4$414581}, {{{5,
    GraphicsBox[
     NamespaceBox["NetworkGraphics",
      DynamicModuleBox[{Typeset`graph = HoldComplete[
-       Graph[{$CellContext`v14046, $CellContext`v14047, $CellContext`v14048, \
-$CellContext`v14049, $CellContext`v14050, $CellContext`i1$414614, \
-$CellContext`i2$414615, $CellContext`i3$414616, $CellContext`i4$414617}, {
+       Graph[{$CellContext`v17600, $CellContext`v17601, $CellContext`v17602, \
+$CellContext`v17603, $CellContext`v17604, $CellContext`i1$516384, \
+$CellContext`i2$516385, $CellContext`i3$516386, $CellContext`i4$516387}, {
         Null, {{1, 5}, {2, 1}, {3, 2}, {4, 3}, {5, 4}, {6, 1}, {7, 2}, {8, 
          3}, {9, 4}}}, {EdgeStyle -> {
            Arrowheads[{{0.07, 0.6}}], 
-           UndirectedEdge[$CellContext`v14049, $CellContext`v14048] -> {
+           UndirectedEdge[$CellContext`i3$516386, $CellContext`v17602] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i2$414615, $CellContext`v14047] -> {
+           UndirectedEdge[$CellContext`i1$516384, $CellContext`v17600] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`v14048, $CellContext`v14047] -> {
+           UndirectedEdge[$CellContext`v17601, $CellContext`v17600] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`v14046, $CellContext`v14050] -> {
+           UndirectedEdge[$CellContext`v17603, $CellContext`v17602] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`v14050, $CellContext`v14049] -> {
+           UndirectedEdge[$CellContext`v17602, $CellContext`v17601] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`v14047, $CellContext`v14046] -> {
+           UndirectedEdge[$CellContext`v17604, $CellContext`v17603] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i4$414617, $CellContext`v14049] -> {
+           UndirectedEdge[$CellContext`i2$516385, $CellContext`v17601] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i3$414616, $CellContext`v14048] -> {
+           UndirectedEdge[$CellContext`i4$516387, $CellContext`v17603] -> {
              RGBColor[1, 0.5, 0]}, 
-           UndirectedEdge[$CellContext`i1$414614, $CellContext`v14046] -> {
+           UndirectedEdge[$CellContext`v17600, $CellContext`v17604] -> {
              RGBColor[1, 0.5, 0]}}, EdgeWeight -> {1, 1, 1, 1, 1, 1, 1, 1, 1},
           GraphLayout -> {
           "Dimension" -> 2, 
            "VertexLayout" -> {
             "SpringElectricalEmbedding", "EdgeWeighted" -> True}}, ImageSize -> 
          Small, PerformanceGoal -> "Quality", 
-         VertexShape -> {$CellContext`v14048 -> Graphics[
+         VertexShape -> {$CellContext`v17602 -> Graphics[
              Style[
               Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`v14049 -> Graphics[
+              GrayLevel[0.5]]], $CellContext`i4$516387 -> Graphics[
+             Style[
+              Disk[{0, 0}, 0.], 
+              GrayLevel[0.5]]], $CellContext`i1$516384 -> Graphics[
+             Style[
+              Disk[{0, 0}, 0.], 
+              GrayLevel[0.5]]], $CellContext`v17603 -> Graphics[
              Style[
               Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`v14047 -> Graphics[
+              GrayLevel[0.5]]], $CellContext`i3$516386 -> Graphics[
+             Style[
+              Disk[{0, 0}, 0.], 
+              GrayLevel[0.5]]], $CellContext`v17601 -> Graphics[
              Style[
               Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`v14050 -> Graphics[{
+              GrayLevel[0.5]]], $CellContext`v17600 -> Graphics[
+             Style[
+              Disk[{0, 0}, 2], 
+              GrayLevel[0.5]]], $CellContext`v17604 -> Graphics[{
               Thickness[Large], 
               
               Line[{{2^Rational[-1, 2], 2^
@@ -40041,25 +40067,13 @@ $CellContext`i2$414615, $CellContext`i3$414616, $CellContext`i4$414617}, {
               Line[{{2^
                  Rational[-1, 2], -2^Rational[-1, 2]}, {-2^Rational[-1, 2], 2^
                  Rational[-1, 2]}}], 
-              Circle[{0, 0}, 1]}], $CellContext`v14046 -> Graphics[
-             Style[
-              Disk[{0, 0}, 2], 
-              GrayLevel[0.5]]], $CellContext`i3$414616 -> Graphics[
-             Style[
-              Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`i2$414615 -> Graphics[
-             Style[
-              Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`i4$414617 -> Graphics[
-             Style[
-              Disk[{0, 0}, 0.], 
-              GrayLevel[0.5]]], $CellContext`i1$414614 -> Graphics[
+              Circle[{0, 0}, 1]}], $CellContext`i2$516385 -> Graphics[
              Style[
               Disk[{0, 0}, 0.], 
               GrayLevel[0.5]]]}, 
-         VertexSize -> {$CellContext`v14050 -> 0.25, $CellContext`v14046 -> 
-           0.15, $CellContext`v14049 -> 0.15, $CellContext`v14048 -> 
-           0.15, $CellContext`v14047 -> 0.15}}]]}, 
+         VertexSize -> {$CellContext`v17600 -> 0.15, $CellContext`v17602 -> 
+           0.15, $CellContext`v17601 -> 0.15, $CellContext`v17603 -> 
+           0.15, $CellContext`v17604 -> 0.25}}]]}, 
       TagBox[GraphicsGroupBox[{
          {Hue[0.6, 0.7, 0.5], Opacity[0.7], Arrowheads[{{0.07, 0.6}}], 
           {RGBColor[1, 0.5, 0], 
@@ -40173,10 +40187,11 @@ $CellContext`i2$414615, $CellContext`i3$414616, $CellContext`i4$414617}, {
   3.9674994772352657`*^9, {3.967499580856701*^9, 3.9674996034494867`*^9}, 
    3.967545274013885*^9, 3.9675833379811363`*^9, 3.969520019050028*^9, 
    3.969530759039299*^9, 3.969698709000513*^9, 3.969781006435459*^9, 
-   3.969781533067822*^9, 3.969792783524469*^9, 3.969793012097808*^9},
+   3.969781533067822*^9, 3.969792783524469*^9, 3.969793012097808*^9, 
+   3.969797495957719*^9},
  CellLabel->
   "During evaluation of \
-In[168]:=",ExpressionUUID->"26ea1570-b884-410c-80bd-1063ec328021"],
+In[198]:=",ExpressionUUID->"c6872caa-f175-4af0-8359-d878d1e169e7"],
 
 Cell[BoxData[
  GraphicsBox[
@@ -56237,10 +56252,11 @@ eJGl/W36XXWHLxox/Yd6uhzWgwLIVwsef6Y2e4OmPdRxQI9fABs76bs=
   3.9674994772352657`*^9, {3.967499580856701*^9, 3.9674996034494867`*^9}, 
    3.967545274013885*^9, 3.9675833379811363`*^9, 3.969520019050028*^9, 
    3.969530759039299*^9, 3.969698709000513*^9, 3.969781006435459*^9, 
-   3.969781533067822*^9, 3.969792783524469*^9, 3.9697930128256693`*^9},
+   3.969781533067822*^9, 3.969792783524469*^9, 3.969793012097808*^9, 
+   3.969797496193164*^9},
  CellLabel->
   "During evaluation of \
-In[168]:=",ExpressionUUID->"397b76a4-006f-4e75-a490-86f506bfb015"],
+In[198]:=",ExpressionUUID->"1d1874f6-78df-48c9-86c7-05c2ac422699"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/ZA4/ZA4.hh unchanged\"\>"], "Print",
@@ -56248,21 +56264,24 @@ flows/ZA4/ZA4.hh unchanged\"\>"], "Print",
   3.9674994772352657`*^9, {3.967499580856701*^9, 3.9674996034494867`*^9}, 
    3.967545274013885*^9, 3.9675833379811363`*^9, 3.969520019050028*^9, 
    3.969530759039299*^9, 3.969698709000513*^9, 3.969781006435459*^9, 
-   3.969781533067822*^9, 3.969792783524469*^9, 3.969793187982827*^9},
+   3.969781533067822*^9, 3.969792783524469*^9, 3.969793012097808*^9, 
+   3.969797502695323*^9},
  CellLabel->
   "During evaluation of \
-In[168]:=",ExpressionUUID->"e0bb2020-731b-48d1-abe7-894f3f35b5af"],
+In[198]:=",ExpressionUUID->"564b29d2-c4fe-46bb-b32e-547ba073a754"],
 
-Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
-flows/ZA4/kernel.hh unchanged\"\>"], "Print",
+Cell[BoxData["\<\"Exported to \
+\\\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/flows/ZA4/\
+kernel.hh\\\"\"\>"], "Print",
  CellChangeTimes->{
   3.9674994772352657`*^9, {3.967499580856701*^9, 3.9674996034494867`*^9}, 
    3.967545274013885*^9, 3.9675833379811363`*^9, 3.969520019050028*^9, 
    3.969530759039299*^9, 3.969698709000513*^9, 3.969781006435459*^9, 
-   3.969781533067822*^9, 3.969792783524469*^9, 3.969793188006271*^9},
+   3.969781533067822*^9, 3.969792783524469*^9, 3.969793012097808*^9, 
+   3.969797502705021*^9},
  CellLabel->
   "During evaluation of \
-In[168]:=",ExpressionUUID->"ec3c6726-27f6-4721-8182-b8fb61176f3f"],
+In[198]:=",ExpressionUUID->"c4c4317f-2276-4cdf-b710-c0e5c0e919db"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/ZA4/src/constructor.cc unchanged\"\>"], "Print",
@@ -56270,10 +56289,11 @@ flows/ZA4/src/constructor.cc unchanged\"\>"], "Print",
   3.9674994772352657`*^9, {3.967499580856701*^9, 3.9674996034494867`*^9}, 
    3.967545274013885*^9, 3.9675833379811363`*^9, 3.969520019050028*^9, 
    3.969530759039299*^9, 3.969698709000513*^9, 3.969781006435459*^9, 
-   3.969781533067822*^9, 3.969792783524469*^9, 3.969793188006987*^9},
+   3.969781533067822*^9, 3.969792783524469*^9, 3.969793012097808*^9, 
+   3.969797502710232*^9},
  CellLabel->
   "During evaluation of \
-In[168]:=",ExpressionUUID->"e374b18f-fba3-44a9-aa2c-a145ee9fe012"],
+In[198]:=",ExpressionUUID->"e2437430-4599-4817-aa11-da27b6315af2"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/ZA4/src/CT_get.cc unchanged\"\>"], "Print",
@@ -56281,10 +56301,11 @@ flows/ZA4/src/CT_get.cc unchanged\"\>"], "Print",
   3.9674994772352657`*^9, {3.967499580856701*^9, 3.9674996034494867`*^9}, 
    3.967545274013885*^9, 3.9675833379811363`*^9, 3.969520019050028*^9, 
    3.969530759039299*^9, 3.969698709000513*^9, 3.969781006435459*^9, 
-   3.969781533067822*^9, 3.969792783524469*^9, 3.9697931880075274`*^9},
+   3.969781533067822*^9, 3.969792783524469*^9, 3.969793012097808*^9, 
+   3.969797502715296*^9},
  CellLabel->
   "During evaluation of \
-In[168]:=",ExpressionUUID->"fde38239-b5bb-4c90-90a3-b06fa86feb82"],
+In[198]:=",ExpressionUUID->"de8fe75f-1142-45ae-9ce4-b9e6b79df26e"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/ZA4/src/CT_map_1.cc unchanged\"\>"], "Print",
@@ -56292,10 +56313,11 @@ flows/ZA4/src/CT_map_1.cc unchanged\"\>"], "Print",
   3.9674994772352657`*^9, {3.967499580856701*^9, 3.9674996034494867`*^9}, 
    3.967545274013885*^9, 3.9675833379811363`*^9, 3.969520019050028*^9, 
    3.969530759039299*^9, 3.969698709000513*^9, 3.969781006435459*^9, 
-   3.969781533067822*^9, 3.969792783524469*^9, 3.969793188008081*^9},
+   3.969781533067822*^9, 3.969792783524469*^9, 3.969793012097808*^9, 
+   3.9697975027204437`*^9},
  CellLabel->
   "During evaluation of \
-In[168]:=",ExpressionUUID->"07a5cd6e-d978-4771-94e3-f73f67abc36e"],
+In[198]:=",ExpressionUUID->"d43af954-e096-44ea-bcf2-0c8167f06dfe"],
 
 Cell[BoxData["\<\"Please run UpdateFlows[] to export an up-to-date \
 CMakeLists.txt\"\>"], "Print",
@@ -56303,10 +56325,11 @@ CMakeLists.txt\"\>"], "Print",
   3.9674994772352657`*^9, {3.967499580856701*^9, 3.9674996034494867`*^9}, 
    3.967545274013885*^9, 3.9675833379811363`*^9, 3.969520019050028*^9, 
    3.969530759039299*^9, 3.969698709000513*^9, 3.969781006435459*^9, 
-   3.969781533067822*^9, 3.969792783524469*^9, 3.969793188008642*^9},
+   3.969781533067822*^9, 3.969792783524469*^9, 3.969793012097808*^9, 
+   3.9697975027214193`*^9},
  CellLabel->
   "During evaluation of \
-In[168]:=",ExpressionUUID->"fe91bf4b-6835-44c1-a857-fb4ab7dc9be0"],
+In[198]:=",ExpressionUUID->"9c3a3db5-de19-452c-9c2d-81de03cbb1f8"],
 
 Cell[BoxData["\<\"Exported to \
 \\\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/flows/\
@@ -56315,10 +56338,11 @@ CMakeLists.txt\\\"\"\>"], "Print",
   3.9674994772352657`*^9, {3.967499580856701*^9, 3.9674996034494867`*^9}, 
    3.967545274013885*^9, 3.9675833379811363`*^9, 3.969520019050028*^9, 
    3.969530759039299*^9, 3.969698709000513*^9, 3.969781006435459*^9, 
-   3.969781533067822*^9, 3.969792783524469*^9, 3.969793188028545*^9},
+   3.969781533067822*^9, 3.969792783524469*^9, 3.969793012097808*^9, 
+   3.9697975027288523`*^9},
  CellLabel->
   "During evaluation of \
-In[168]:=",ExpressionUUID->"f81b16ba-c83d-42a9-888d-a191beb40c32"],
+In[198]:=",ExpressionUUID->"25b7bec4-e12b-4793-bea3-d05ae226d2da"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/flows.hh unchanged\"\>"], "Print",
@@ -56326,10 +56350,11 @@ flows/flows.hh unchanged\"\>"], "Print",
   3.9674994772352657`*^9, {3.967499580856701*^9, 3.9674996034494867`*^9}, 
    3.967545274013885*^9, 3.9675833379811363`*^9, 3.969520019050028*^9, 
    3.969530759039299*^9, 3.969698709000513*^9, 3.969781006435459*^9, 
-   3.969781533067822*^9, 3.969792783524469*^9, 3.969793188700712*^9},
+   3.969781533067822*^9, 3.969792783524469*^9, 3.969793012097808*^9, 
+   3.969797503679492*^9},
  CellLabel->
   "During evaluation of \
-In[168]:=",ExpressionUUID->"e3af0fcf-69d5-45c1-aa56-eadc2f6317e2"],
+In[198]:=",ExpressionUUID->"d5fd525d-52e4-4b2b-9f4e-d236866b1e2c"],
 
 Cell[BoxData["\<\"/home/franz/Documents/Uni/Code/DiFfRG/Examples/YangMills/SP/\
 flows/flows.cc unchanged\"\>"], "Print",
@@ -56337,10 +56362,11 @@ flows/flows.cc unchanged\"\>"], "Print",
   3.9674994772352657`*^9, {3.967499580856701*^9, 3.9674996034494867`*^9}, 
    3.967545274013885*^9, 3.9675833379811363`*^9, 3.969520019050028*^9, 
    3.969530759039299*^9, 3.969698709000513*^9, 3.969781006435459*^9, 
-   3.969781533067822*^9, 3.969792783524469*^9, 3.969793188711775*^9},
+   3.969781533067822*^9, 3.969792783524469*^9, 3.969793012097808*^9, 
+   3.969797503686369*^9},
  CellLabel->
   "During evaluation of \
-In[168]:=",ExpressionUUID->"597720e3-1695-4e6a-a376-86751c0d8ff4"]
+In[198]:=",ExpressionUUID->"f975f57e-95b4-4aad-aee9-e7da99c5bd7e"]
 }, Open  ]]
 }, Open  ]]
 }, Open  ]]
@@ -56426,104 +56452,104 @@ Cell[88559, 1720, 7430, 140, 234, "Input",ExpressionUUID->"40087e1a-3d3a-4ddf-87
 Cell[CellGroupData[{
 Cell[96038, 1866, 396, 6, 57, "Title",ExpressionUUID->"da8b5d36-48fc-45ad-b4fc-6c61cd2a532b"],
 Cell[96437, 1874, 333, 8, 29, "Input",ExpressionUUID->"ad357dbb-9155-4481-a5a3-02286d2d11a6"],
-Cell[96773, 1884, 294, 5, 29, "Input",ExpressionUUID->"9cbe9a06-6f96-42de-a46f-cdda44f84faf"],
+Cell[96773, 1884, 320, 6, 29, "Input",ExpressionUUID->"9cbe9a06-6f96-42de-a46f-cdda44f84faf"],
 Cell[CellGroupData[{
-Cell[97092, 1893, 156, 3, 40, "Chapter",ExpressionUUID->"bf260d15-ead2-4d66-b6cb-7c640d1787c0"],
+Cell[97118, 1894, 156, 3, 40, "Chapter",ExpressionUUID->"bf260d15-ead2-4d66-b6cb-7c640d1787c0"],
 Cell[CellGroupData[{
-Cell[97273, 1900, 210, 4, 39, "Section",ExpressionUUID->"4204f8ae-8e4d-4712-a80c-babb9ac0e920"],
+Cell[97299, 1901, 210, 4, 39, "Section",ExpressionUUID->"4204f8ae-8e4d-4712-a80c-babb9ac0e920"],
 Cell[CellGroupData[{
-Cell[97508, 1908, 4009, 90, 290, "Input",ExpressionUUID->"b5aee721-5038-44b1-9738-bae4c93c20f0"],
+Cell[97534, 1909, 4009, 90, 290, "Input",ExpressionUUID->"b5aee721-5038-44b1-9738-bae4c93c20f0"],
 Cell[CellGroupData[{
-Cell[101542, 2002, 23363, 498, 70, "Print",ExpressionUUID->"870ab2b9-b28d-42a2-a12c-1ec5fa1f8400"],
-Cell[124908, 2502, 396693, 6743, 70, "Print",ExpressionUUID->"1ab87cd5-2989-4506-a7b6-e16a0187efbf"],
-Cell[521604, 9247, 2321, 34, 70, "Print",ExpressionUUID->"43d8e5bc-5173-47a4-8709-2ca35cf8d08e"],
-Cell[523928, 9283, 2324, 34, 70, "Print",ExpressionUUID->"02dc3145-ef83-4770-a5cd-f37ab44e398b"],
-Cell[526255, 9319, 2334, 34, 70, "Print",ExpressionUUID->"950539d4-cd30-4269-b2d3-e41ecf1a9d56"],
-Cell[528592, 9355, 2331, 34, 70, "Print",ExpressionUUID->"591c39d6-1039-4209-87f0-3e19eb72c84d"],
-Cell[530926, 9391, 2331, 34, 70, "Print",ExpressionUUID->"e5b956c4-6b80-485a-a242-335959af6ee3"],
-Cell[533260, 9427, 2300, 34, 70, "Print",ExpressionUUID->"6c535674-1cfe-4a8e-a4a7-51928f9302ce"],
-Cell[535563, 9463, 2339, 35, 70, "Print",ExpressionUUID->"90c9e708-3809-4b28-9ef1-8029d6921154"],
-Cell[537905, 9500, 2321, 34, 70, "Print",ExpressionUUID->"b47a837e-2f98-4a2f-a080-49306858ce98"],
-Cell[540229, 9536, 2320, 34, 70, "Print",ExpressionUUID->"08c7e414-ce9b-4022-89aa-8298a73a65d1"]
+Cell[101568, 2003, 23389, 499, 70, "Print",ExpressionUUID->"31c4a9b1-cb08-4769-832e-c8ec75e3d702"],
+Cell[124960, 2504, 396719, 6744, 70, "Print",ExpressionUUID->"50a211f1-af89-4096-b583-a47f2e230bba"],
+Cell[521682, 9250, 2347, 35, 70, "Print",ExpressionUUID->"ef417e84-17d4-4bc9-8260-916286e8d309"],
+Cell[524032, 9287, 2362, 36, 70, "Print",ExpressionUUID->"576e2f0f-447b-49af-94e0-39a30ff5bb3c"],
+Cell[526397, 9325, 2360, 35, 70, "Print",ExpressionUUID->"18acb840-48f5-4d5c-a7ce-b799bb8c706b"],
+Cell[528760, 9362, 2355, 35, 70, "Print",ExpressionUUID->"7e02134f-1854-4c58-b44a-e4b2ec7c0b2b"],
+Cell[531118, 9399, 2359, 35, 70, "Print",ExpressionUUID->"afb865b9-b6dd-4646-b353-5dbe0843f5db"],
+Cell[533480, 9436, 2325, 35, 70, "Print",ExpressionUUID->"c9c54f6f-8d07-4db3-bf43-c27347e86e83"],
+Cell[535808, 9473, 2365, 36, 70, "Print",ExpressionUUID->"0fe3c7a5-92ab-490f-b023-1b111b73156d"],
+Cell[538176, 9511, 2347, 35, 70, "Print",ExpressionUUID->"44c48331-878a-4416-9cb2-ad047eef8e8e"],
+Cell[540526, 9548, 2347, 35, 70, "Print",ExpressionUUID->"d70bac07-4c83-45d4-b2c7-651bbfde5fa1"]
 }, Open  ]]
 }, Open  ]]
 }, Closed]],
 Cell[CellGroupData[{
-Cell[542610, 9577, 255, 4, 32, "Section",ExpressionUUID->"da269f1a-cdec-4bee-9d9c-0eba53333991"],
+Cell[542934, 9590, 255, 4, 32, "Section",ExpressionUUID->"da269f1a-cdec-4bee-9d9c-0eba53333991"],
 Cell[CellGroupData[{
-Cell[542890, 9585, 3725, 87, 290, "Input",ExpressionUUID->"66e66473-19af-41fb-9f5c-313d7cb4b549"],
+Cell[543214, 9598, 3725, 87, 290, "Input",ExpressionUUID->"66e66473-19af-41fb-9f5c-313d7cb4b549"],
 Cell[CellGroupData[{
-Cell[546640, 9676, 12674, 266, 84, "Print",ExpressionUUID->"69a58151-43ad-49fe-a2df-749ee09b6baf"],
-Cell[559317, 9944, 211997, 3496, 42, "Print",ExpressionUUID->"1e6df0f1-2829-46bf-866b-eceddcca8c71"],
-Cell[771317, 13442, 1729, 26, 16, "Print",ExpressionUUID->"d024767c-1b9d-4752-b130-eafbbca6cbca"],
-Cell[773049, 13470, 1734, 26, 16, "Print",ExpressionUUID->"4cb6f5bd-c5f3-4db1-a3b3-2bf1d8eb93ff"],
-Cell[774786, 13498, 1745, 26, 16, "Print",ExpressionUUID->"c6da6743-6255-4646-b2b0-670c7aed9928"],
-Cell[776534, 13526, 1738, 26, 70, "Print",ExpressionUUID->"0e88850c-cf28-4934-a7a1-182111547005"],
-Cell[778275, 13554, 1739, 26, 70, "Print",ExpressionUUID->"82f50508-4632-41da-8625-552e8920a5e5"],
-Cell[780017, 13582, 1709, 26, 70, "Print",ExpressionUUID->"5b83f500-a4d2-462a-b37b-2cf0cb2bf301"],
-Cell[781729, 13610, 1748, 27, 70, "Print",ExpressionUUID->"a04405ac-599e-4395-9c71-4cbfc5ab2a0a"],
-Cell[783480, 13639, 1730, 26, 70, "Print",ExpressionUUID->"4678aa66-63a9-4fd8-ab0a-47b55b9afc00"],
-Cell[785213, 13667, 1729, 26, 70, "Print",ExpressionUUID->"82239789-a176-44a7-9682-589275ac224c"]
+Cell[546964, 9689, 12696, 266, 70, "Print",ExpressionUUID->"e99b6c82-0d05-4f5e-b280-58091d3c4cb2"],
+Cell[559663, 9957, 212021, 3496, 70, "Print",ExpressionUUID->"a50c733b-e62c-49df-b549-07236821e4aa"],
+Cell[771687, 13455, 1752, 26, 70, "Print",ExpressionUUID->"f2ce8d8e-44f0-40f0-bc5b-6fce5b11e520"],
+Cell[773442, 13483, 1756, 26, 70, "Print",ExpressionUUID->"34e2d548-3a2b-437d-be56-4b5a1a4475f8"],
+Cell[775201, 13511, 1767, 26, 70, "Print",ExpressionUUID->"2266bcfe-63f7-4834-aa3a-c699acbe38bd"],
+Cell[776971, 13539, 1759, 26, 70, "Print",ExpressionUUID->"d71a1899-2ef5-490d-93f0-fcaa39cf3b9f"],
+Cell[778733, 13567, 1762, 26, 70, "Print",ExpressionUUID->"c5a9ebc6-e10a-4887-ad45-70a3ae316d36"],
+Cell[780498, 13595, 1731, 26, 70, "Print",ExpressionUUID->"19b323ba-eb5f-4dbf-bfcd-7825c5b08c0a"],
+Cell[782232, 13623, 1770, 27, 70, "Print",ExpressionUUID->"8064f9cc-4812-4318-b1f9-0202f3a469cf"],
+Cell[784005, 13652, 1752, 26, 70, "Print",ExpressionUUID->"3486debd-aebf-4003-9768-38d0a0367a11"],
+Cell[785760, 13680, 1752, 26, 70, "Print",ExpressionUUID->"73126e24-ee1d-4ab6-ae8c-69eb49151ea9"]
 }, Open  ]]
 }, Open  ]]
 }, Closed]]
 }, Open  ]],
 Cell[CellGroupData[{
-Cell[787015, 13701, 184, 3, 40, "Chapter",ExpressionUUID->"36afa154-adb0-49e2-a4b7-465d32c6c9fb"],
+Cell[787585, 13714, 184, 3, 40, "Chapter",ExpressionUUID->"36afa154-adb0-49e2-a4b7-465d32c6c9fb"],
 Cell[CellGroupData[{
-Cell[787224, 13708, 332, 5, 39, "Section",ExpressionUUID->"2506ea5b-13d4-44f7-aad9-e229795db2fe"],
+Cell[787794, 13721, 332, 5, 39, "Section",ExpressionUUID->"2506ea5b-13d4-44f7-aad9-e229795db2fe"],
 Cell[CellGroupData[{
-Cell[787581, 13717, 4015, 95, 300, "Input",ExpressionUUID->"3ca3e789-c79c-4c2f-8565-a2026ce713ed"],
+Cell[788151, 13730, 4015, 95, 300, "Input",ExpressionUUID->"3ca3e789-c79c-4c2f-8565-a2026ce713ed"],
 Cell[CellGroupData[{
-Cell[791621, 13816, 43106, 934, 99, "Print",ExpressionUUID->"f8aae6b0-eca5-4ba1-ba40-baf4dfee0abf"],
-Cell[834730, 14752, 959769, 15823, 70, "Print",ExpressionUUID->"9dbc5e0d-a771-473b-ad61-f9f7df112ea7"],
-Cell[1794502, 30577, 1459, 22, 70, "Print",ExpressionUUID->"11a95331-44fc-463f-a398-ced0f993588d"],
-Cell[1795964, 30601, 1460, 22, 70, "Print",ExpressionUUID->"fc803d52-b6c6-413d-9f38-9227fdb92ed0"],
-Cell[1797427, 30625, 1469, 22, 70, "Print",ExpressionUUID->"f38bb165-e1dd-46e2-a5c2-f4213edb6ecf"],
-Cell[1798899, 30649, 1464, 22, 70, "Print",ExpressionUUID->"849522c3-79ca-48e2-a493-166ed6230fc0"],
-Cell[1800366, 30673, 1466, 22, 70, "Print",ExpressionUUID->"35544ba9-b64b-4ddd-8eb3-65557e66a4f6"],
-Cell[1801835, 30697, 1432, 22, 70, "Print",ExpressionUUID->"8f288ae1-81f4-4b88-a569-b58d7263a254"],
-Cell[1803270, 30721, 1473, 23, 70, "Print",ExpressionUUID->"2e35fac1-45ee-4f8a-97aa-baacca0eb1e8"],
-Cell[1804746, 30746, 1453, 22, 70, "Print",ExpressionUUID->"1abd5a98-82a5-40a3-b6c7-325ba5bed24f"],
-Cell[1806202, 30770, 1452, 22, 70, "Print",ExpressionUUID->"030fc3ac-0782-49fb-82df-658c8599fd8f"]
+Cell[792191, 13829, 43130, 934, 70, "Print",ExpressionUUID->"6c2ab801-dd87-42fe-ade2-9e3ebac88d8c"],
+Cell[835324, 14765, 959791, 15823, 70, "Print",ExpressionUUID->"f9cfa54c-7c6f-48fe-ac79-bab66f7a25b7"],
+Cell[1795118, 30590, 1483, 22, 70, "Print",ExpressionUUID->"5029d950-ec01-4c5a-9697-969d62144e7c"],
+Cell[1796604, 30614, 1494, 23, 70, "Print",ExpressionUUID->"79001765-ea2a-4633-906f-264e54182407"],
+Cell[1798101, 30639, 1491, 22, 70, "Print",ExpressionUUID->"c35a9a45-e0a2-4207-b39e-4c5acfbccd86"],
+Cell[1799595, 30663, 1486, 22, 70, "Print",ExpressionUUID->"81dd8240-4e8b-485e-8fba-50d66996b7c6"],
+Cell[1801084, 30687, 1488, 22, 70, "Print",ExpressionUUID->"a1caf480-19cf-4d35-aa89-0a7c36898d13"],
+Cell[1802575, 30711, 1456, 22, 70, "Print",ExpressionUUID->"163b5709-0653-4243-b03d-b62b3742c3eb"],
+Cell[1804034, 30735, 1493, 23, 70, "Print",ExpressionUUID->"c60573aa-b085-4d5f-9d79-d13a4d95cef6"],
+Cell[1805530, 30760, 1477, 22, 70, "Print",ExpressionUUID->"4eda977d-e523-41b4-a55a-716979e9db01"],
+Cell[1807010, 30784, 1477, 22, 70, "Print",ExpressionUUID->"b0844d6e-bb7c-49e3-b4aa-e6917ece2471"]
 }, Open  ]]
 }, Open  ]]
 }, Closed]],
 Cell[CellGroupData[{
-Cell[1807715, 30799, 310, 5, 32, "Section",ExpressionUUID->"285812d5-12d7-4bde-9456-1d2b469a38bb"],
+Cell[1808548, 30813, 310, 5, 32, "Section",ExpressionUUID->"285812d5-12d7-4bde-9456-1d2b469a38bb"],
 Cell[CellGroupData[{
-Cell[1808050, 30808, 4722, 108, 288, "Input",ExpressionUUID->"d18c5c86-ac42-4884-a6ef-5e9ebc6758b6"],
+Cell[1808883, 30822, 4722, 108, 288, "Input",ExpressionUUID->"d18c5c86-ac42-4884-a6ef-5e9ebc6758b6"],
 Cell[CellGroupData[{
-Cell[1812797, 30920, 21219, 454, 76, "Print",ExpressionUUID->"ecf13012-c27f-45c3-9251-4e3106885ede"],
-Cell[1834019, 31376, 461802, 7611, 53, "Print",ExpressionUUID->"8d11818a-95a2-41d2-b268-d378d7c91c99"],
-Cell[2295824, 38989, 1190, 19, 16, "Print",ExpressionUUID->"51de9bfe-c500-4fdd-be6f-06008dd8126b"],
-Cell[2297017, 39010, 1191, 19, 16, "Print",ExpressionUUID->"817ed36e-d27d-4b9e-a57f-6a01e5989b67"],
-Cell[2298211, 39031, 1202, 19, 16, "Print",ExpressionUUID->"49a2034b-4064-43ff-bc30-000fc056c753"],
-Cell[2299416, 39052, 1195, 19, 16, "Print",ExpressionUUID->"0379a0c2-69f9-4e99-9500-e37f986f2b92"],
-Cell[2300614, 39073, 1197, 19, 16, "Print",ExpressionUUID->"43919b0d-f746-4d7c-a162-b63db89092e3"],
-Cell[2301814, 39094, 1167, 19, 16, "Print",ExpressionUUID->"10000ff0-040e-4c06-9a05-26a5885d6e29"],
-Cell[2302984, 39115, 1204, 20, 16, "Print",ExpressionUUID->"5ecbafe6-0b90-4e6e-873c-fd335bd9de3d"],
-Cell[2304191, 39137, 1188, 19, 16, "Print",ExpressionUUID->"7f2dd57b-d153-4d62-a98c-09753510dd0d"],
-Cell[2305382, 39158, 1186, 19, 16, "Print",ExpressionUUID->"3531bfca-0684-44e5-a944-320ce43e6575"]
+Cell[1813630, 30934, 21241, 454, 76, "Print",ExpressionUUID->"9db9204a-3a47-41b0-b089-13f7fc006aee"],
+Cell[1834874, 31390, 461828, 7611, 53, "Print",ExpressionUUID->"46d0ca29-09b2-4f8a-885a-96b5f1e7cede"],
+Cell[2296705, 39003, 1212, 19, 16, "Print",ExpressionUUID->"77d66cbd-697d-4c60-ae7f-4186db9664d9"],
+Cell[2297920, 39024, 1227, 20, 16, "Print",ExpressionUUID->"27cdb664-dc8b-41d9-b584-86c85254de14"],
+Cell[2299150, 39046, 1224, 19, 16, "Print",ExpressionUUID->"4edb3d77-0a16-4e1a-b0a5-503e6a817b09"],
+Cell[2300377, 39067, 1219, 19, 16, "Print",ExpressionUUID->"1a888475-5b5b-42b5-9f7b-54f72685c049"],
+Cell[2301599, 39088, 1221, 19, 16, "Print",ExpressionUUID->"75b8e446-9501-4f87-8090-2fc690558a30"],
+Cell[2302823, 39109, 1189, 19, 16, "Print",ExpressionUUID->"68b8988c-8cfa-4b78-80c4-8e85a6bd232c"],
+Cell[2304015, 39130, 1228, 20, 16, "Print",ExpressionUUID->"a207200e-b9c0-4270-abd4-431b804b54ba"],
+Cell[2305246, 39152, 1210, 19, 16, "Print",ExpressionUUID->"4820257c-21f3-47c6-990b-cabe4d3bd390"],
+Cell[2306459, 39173, 1212, 19, 16, "Print",ExpressionUUID->"70d4bf7a-1059-4b3f-a01b-72262765fc0b"]
 }, Open  ]]
 }, Open  ]]
 }, Open  ]],
 Cell[CellGroupData[{
-Cell[2306629, 39184, 387, 6, 39, "Section",ExpressionUUID->"63348169-6550-45de-a8f9-8e576e0b45fd"],
+Cell[2307732, 39199, 387, 6, 39, "Section",ExpressionUUID->"63348169-6550-45de-a8f9-8e576e0b45fd"],
 Cell[CellGroupData[{
-Cell[2307041, 39194, 5773, 127, 288, "Input",ExpressionUUID->"5fd955fd-40a3-466a-beda-77200c120a86"],
+Cell[2308144, 39209, 5773, 127, 288, "Input",ExpressionUUID->"5fd955fd-40a3-466a-beda-77200c120a86"],
 Cell[CellGroupData[{
-Cell[2312839, 39325, 39607, 853, 85, "Print",ExpressionUUID->"26ea1570-b884-410c-80bd-1063ec328021"],
-Cell[2352449, 40180, 976956, 16062, 91, "Print",ExpressionUUID->"397b76a4-006f-4e75-a490-86f506bfb015"],
-Cell[3329408, 56244, 535, 9, 16, "Print",ExpressionUUID->"e0bb2020-731b-48d1-abe7-894f3f35b5af"],
-Cell[3329946, 56255, 538, 9, 16, "Print",ExpressionUUID->"ec3c6726-27f6-4721-8182-b8fb61176f3f"],
-Cell[3330487, 56266, 547, 9, 16, "Print",ExpressionUUID->"e374b18f-fba3-44a9-aa2c-a145ee9fe012"],
-Cell[3331037, 56277, 544, 9, 16, "Print",ExpressionUUID->"fde38239-b5bb-4c90-90a3-b06fa86feb82"],
-Cell[3331584, 56288, 544, 9, 16, "Print",ExpressionUUID->"07a5cd6e-d978-4771-94e3-f73f67abc36e"],
-Cell[3332131, 56299, 512, 9, 16, "Print",ExpressionUUID->"fe91bf4b-6835-44c1-a857-fb4ab7dc9be0"],
-Cell[3332646, 56310, 551, 10, 16, "Print",ExpressionUUID->"f81b16ba-c83d-42a9-888d-a191beb40c32"],
-Cell[3333200, 56322, 533, 9, 16, "Print",ExpressionUUID->"e3af0fcf-69d5-45c1-aa56-eadc2f6317e2"],
-Cell[3333736, 56333, 533, 9, 16, "Print",ExpressionUUID->"597720e3-1695-4e6a-a376-86751c0d8ff4"]
+Cell[2313942, 39340, 39623, 853, 85, "Print",ExpressionUUID->"c6872caa-f175-4af0-8359-d878d1e169e7"],
+Cell[2353568, 40195, 976980, 16063, 91, "Print",ExpressionUUID->"1d1874f6-78df-48c9-86c7-05c2ac422699"],
+Cell[3330551, 56260, 561, 10, 16, "Print",ExpressionUUID->"564b29d2-c4fe-46bb-b32e-547ba073a754"],
+Cell[3331115, 56272, 576, 11, 16, "Print",ExpressionUUID->"c4c4317f-2276-4cdf-b710-c0e5c0e919db"],
+Cell[3331694, 56285, 573, 10, 16, "Print",ExpressionUUID->"e2437430-4599-4817-aa11-da27b6315af2"],
+Cell[3332270, 56297, 568, 10, 16, "Print",ExpressionUUID->"de8fe75f-1142-45ae-9ce4-b9e6b79df26e"],
+Cell[3332841, 56309, 572, 10, 16, "Print",ExpressionUUID->"d43af954-e096-44ea-bcf2-0c8167f06dfe"],
+Cell[3333416, 56321, 540, 10, 16, "Print",ExpressionUUID->"9c3a3db5-de19-452c-9c2d-81de03cbb1f8"],
+Cell[3333959, 56333, 579, 11, 16, "Print",ExpressionUUID->"25b7bec4-e12b-4793-bea3-d05ae226d2da"],
+Cell[3334541, 56346, 559, 10, 16, "Print",ExpressionUUID->"d5fd525d-52e4-4b2b-9f4e-d236866b1e2c"],
+Cell[3335103, 56358, 559, 10, 16, "Print",ExpressionUUID->"f975f57e-95b4-4aad-aee9-e7da99c5bd7e"]
 }, Open  ]]
 }, Open  ]]
 }, Open  ]]

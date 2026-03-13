@@ -60,7 +60,7 @@ TEST_CASE("Test finite T 4D momentum + 2 angle integrals", "[integration][quadra
       NT integral{};
       integrator.get(integral, 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., powr<2>(val), 0., 1., 0.);
 
-      constexpr ctype expected_precision = 1e-6;
+      constexpr ctype expected_precision = 1e-8;
       const ctype rel_err = t_abs(reference_integral - integral) / t_abs(reference_integral);
       if (rel_err >= expected_precision) {
         std::cerr << "reference: " << reference_integral << "| integral: " << integral
@@ -85,7 +85,7 @@ TEST_CASE("Test finite T 4D momentum + 2 angle integrals", "[integration][quadra
                0.)
           .fence();
 
-      constexpr ctype expected_precision = 1e-6;
+      constexpr ctype expected_precision = 1e-8;
       for (uint i = 0; i < rsize; ++i) {
         std::cout << "i: " << i << "| coordinates: " << coordinates.forward(i)
                   << "| reference: " << coordinates.forward(i) + reference_integral
