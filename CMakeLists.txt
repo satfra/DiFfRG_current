@@ -149,7 +149,7 @@ ExternalProject_Add(
     -DCMAKE_CXX_FLAGS:STRING=-march=native
     -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-    -DENABLE_MPI:BOOL=${MPI})
+    -DMPI:BOOL=${MPI})
 
 # build general deps
 ExternalProject_Add(
@@ -170,7 +170,7 @@ ExternalProject_Add(
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
     -DBUILD_OpenBLAS:BOOL=${BUILD_OpenBLAS}
     -DCMAKE_PREFIX_PATH:PATH=${DEPEND_INSTALL_PREFIX}
-    -DENABLE_MPI:BOOL=${MPI})
+    -DMPI:BOOL=${MPI})
 
 if(BUILD_OpenBLAS)
   if(APPLE)
@@ -199,7 +199,7 @@ ExternalProject_Add(
     -DCMAKE_CXX_FLAGS:STRING=-march=native
     -DCMAKE_C_FLAGS:STRING=-march=native
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-    -DENABLE_MPI:BOOL=${MPI})
+    -DMPI:BOOL=${MPI})
 
 # build autodiff
 ExternalProject_Add(
@@ -388,8 +388,8 @@ ExternalProject_Add(
   INSTALL_DIR ${CMAKE_INSTALL_PREFIX}
   DEPENDS general_dep boost_dep deal.II_dep kokkos_dep autodiff_dep
   CMAKE_CACHE_ARGS
-    -DENABLE_MPI:BOOL=${MPI}
-    -DENABLE_HDF5:BOOL=ON
+    -DMPI:BOOL=${MPI}
+    -DHDF5:BOOL=ON
     -DBUNDLED_DIR:PATH=${DEPEND_INSTALL_PREFIX}
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
     -DDiFfRG_TEST:BOOL=${DiFfRG_TEST}

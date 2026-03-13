@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DiFfRG/common/utils.hh>
-
 #include <deal.II/base/mpi.h>
 
 namespace DiFfRG
