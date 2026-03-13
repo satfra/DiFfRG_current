@@ -368,6 +368,21 @@ target_link_libraries("<>varName<>" DiFfRG::DiFfRG)
 target_compile_options(
   "<>varName<>" PRIVATE $<$<COMPILE_LANGUAGE:CXX>: -Wno-unused-parameter
                          -Wno-unused-variable >)
+
+set_target_properties(
+  "<>varName<>"
+  PROPERTIES
+    UNITY_BUILD ON
+    UNITY_BUILD_MODE GROUP)
+
+foreach(src IN LISTS "<>varName<>"_SOURCES)
+  if(src MATCHES \"/src/CT_map_[0-9]+\\.cc$\")
+    set_source_files_properties(\"${src}\" PROPERTIES UNITY_GROUP \"all_ct_map\")
+  else()
+    set_source_files_properties(\"${src}\" PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+  endif()
+endforeach()
+
 ";
 ExportCode[fileName,cmake];
 ];
