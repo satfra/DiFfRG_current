@@ -24,13 +24,13 @@ namespace DiFfRG
   FEOutput<dim, VectorType>::FEOutput(std::string top_folder, std::string output_name, std::string output_folder,
                                       const JSONValue &json)
       : top_folder(make_folder(top_folder)), output_name(output_name), output_folder(make_folder(output_folder)),
-        filename_pvd(output_name + ".pvd"), series_number(0),
-        subdivisions(json.get_uint("/discretization/output_subdivisions")), buffer_size([&]() {
+        filename_pvd(output_name + ".pvd"), buffer_size([&]() {
           uint read_size = json.get_uint("/discretization/output_buffer_size", 100);
           // Ensure that the buffer size is at least 1.
           return read_size == 0 ? 1 : read_size;
         }()),
-        data_outs(buffer_size), save_vtk(json.get_bool("/output/vtk", true))
+        series_number(0), subdivisions(json.get_uint("/discretization/output_subdivisions")), data_outs(buffer_size),
+        save_vtk(json.get_bool("/output/vtk", true))
   {
     create_folder(this->top_folder);
     if (save_vtk) create_folder(this->top_folder + this->output_folder);
