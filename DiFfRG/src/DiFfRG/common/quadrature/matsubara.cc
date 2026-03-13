@@ -60,6 +60,13 @@ namespace DiFfRG
       reinit_0();
       return;
     }
+    // If predict_size wants far more nodes than max_size allows, the truncated Monien
+    // quadrature would be less accurate than the vacuum fallback.
+    if (m_size > 2 * max_size) {
+      m_size = abs(vacuum_quad_size);
+      reinit_0();
+      return;
+    }
     m_size = std::max(min_size, std::min(max_size, m_size));
 
     // construct the recurrence relation for the quadrature rule from [1]
@@ -120,7 +127,7 @@ namespace DiFfRG
 
     // the nodes with a logarithmic scale
     using std::log, std::exp, std::abs, std::min;
-    const long double extent = 1e6 * abs(typical_E);
+    const long double extent = 1e11 * abs(typical_E);
     const long double log_start = log(div);
     const long double log_ext = log(extent / div);
     for (int i = 0; i < m_size / 3; ++i) {

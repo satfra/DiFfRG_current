@@ -159,7 +159,7 @@ TEST_CASE("Test integrator_fT_p2 bug", "[integration][quadrature]")
   // const double q_extent = std::sqrt(x_extent * powr<2>(k));
   // const double mq2 = GENERATE(0.0, 0.5, 1.0);
   const NT h = 6.2;
-  const NT sigma = 0;
+  const NT sigma = 0.01;
   const double mq2 = powr<2>(h * sigma);
   integrator_fT.set_typical_E(k);
 
