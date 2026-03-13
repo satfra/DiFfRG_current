@@ -1,11 +1,21 @@
-name: CICDTEST
+name: CI
 
 on: [push, pull_request]
 
 jobs:
-  build:
-    runs-on: self-hosted
+  preflight:
+    name: Validate pre-flight checks
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - name: Run a one-line script
-      run: echo "Hello, world!"
+    - uses: actions/checkout@v4
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential gfortran cmake git python3 \
+          libgsl-dev libopenblas-dev libopenmpi-dev
+
+    - name: CMake configure (pre-flight validation)
+      run: |
+        mkdir build && cd build
+        cmake .. -DCMAKE_INSTALL_PREFIX=$HOME/.local/share/DiFfRG -DGPU=OFF

@@ -6,7 +6,7 @@ project(ONfiniteT)
 # Setup Application
 # ##############################################################################
 
-find_package(DiFfRG REQUIRED HINTS $ENV{HOME}/.local/share/DiFfRG/)
+find_package(DiFfRG REQUIRED HINTS ${DiFfRG_DIR} $ENV{HOME}/.local/share/DiFfRG/)
 
 add_subdirectory(flows)
 

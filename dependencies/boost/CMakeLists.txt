@@ -21,7 +21,11 @@ execute_process(
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   OUTPUT_QUIET
   OUTPUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/00_clone.log
-  ERROR_FILE ${CMAKE_CURRENT_BINARY_DIR}/00_clone.log)
+  ERROR_FILE ${CMAKE_CURRENT_BINARY_DIR}/00_clone.log
+  RESULT_VARIABLE _boost_clone_result)
+if(NOT _boost_clone_result EQUAL 0)
+  message(FATAL_ERROR "Boost clone failed. See log: ${CMAKE_CURRENT_BINARY_DIR}/00_clone.log")
+endif()
 
 message(STATUS "Downloading Boost libraries... (this may take a while)")
 execute_process(
@@ -30,15 +34,24 @@ execute_process(
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/boost/
   OUTPUT_QUIET
   OUTPUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/01_download_modules.log
-  ERROR_FILE ${CMAKE_CURRENT_BINARY_DIR}/01_download_modules.log)
+  ERROR_FILE ${CMAKE_CURRENT_BINARY_DIR}/01_download_modules.log
+  RESULT_VARIABLE _boost_modules_result)
+if(NOT _boost_modules_result EQUAL 0)
+  message(FATAL_ERROR "Boost module download failed. See log: ${CMAKE_CURRENT_BINARY_DIR}/01_download_modules.log")
+endif()
 
 message(STATUS "Patching boost...")
 execute_process(
   COMMAND
     bash -c
-    "patch ${CMAKE_CURRENT_BINARY_DIR}/boost/libs/math/include/boost/math/cstdfloat/cstdfloat_limits.hpp < ${CMAKE_CURRENT_SOURCE_DIR}/cstdfloat_limits.hpp.diff"
+    "patch --forward ${CMAKE_CURRENT_BINARY_DIR}/boost/libs/math/include/boost/math/cstdfloat/cstdfloat_limits.hpp < ${CMAKE_CURRENT_SOURCE_DIR}/cstdfloat_limits.hpp.diff"
   OUTPUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/02_patch.log
-  ERROR_FILE ${CMAKE_CURRENT_BINARY_DIR}/02_patch.log)
+  ERROR_FILE ${CMAKE_CURRENT_BINARY_DIR}/02_patch.log
+  RESULT_VARIABLE _boost_patch_result)
+if(NOT _boost_patch_result EQUAL 0)
+  # patch --forward exits 1 if already applied; only warn, don't abort
+  message(STATUS "Boost patch returned non-zero (may already be applied). See log: ${CMAKE_CURRENT_BINARY_DIR}/02_patch.log")
+endif()
 
 set(BOOST_COMPILER_ARGS
     "CC=${CMAKE_C_COMPILER} CXX=${CMAKE_CXX_COMPILER} FC=${CMAKE_Fortran_COMPILER}"
