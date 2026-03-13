@@ -38,8 +38,7 @@ It will download and build all dependencies, including DiFfRG itself.
 # directory
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
   message(
-    WARNING
-      "CMAKE_INSTALL_PREFIX not set. Setting to ${HOME_DIR}/.local/share/DiFfRG"
+    "${BoldYellow}CMAKE_INSTALL_PREFIX not set. Setting to ${HOME_DIR}/.local/share/DiFfRG${ColourReset}"
   )
   set(CMAKE_INSTALL_PREFIX
       ${HOME_DIR}/.local/share/DiFfRG
@@ -76,7 +75,8 @@ if(NOT GIT_EXECUTABLE)
       "    Arch Linux:     sudo pacman -S git\n"
       "    Rocky/RHEL:     sudo dnf install git\n"
       "    macOS:          brew install git\n"
-      "======================================================================\n")
+      "======================================================================\n"
+  )
 endif()
 
 check_language(Fortran)
@@ -103,7 +103,8 @@ if(NOT CMAKE_Fortran_COMPILER)
       "    Rocky/RHEL:     sudo dnf install gcc-gfortran\n"
       "    macOS:          brew install gcc\n"
       "  Or, if using Clang/LLVM:  install flang\n"
-      "======================================================================\n")
+      "======================================================================\n"
+  )
 endif()
 
 # GSL — required by DiFfRG
@@ -122,7 +123,8 @@ if(NOT GSL_FOUND)
       "    Arch Linux:     sudo pacman -S gsl\n"
       "    Rocky/RHEL:     sudo dnf install gsl-devel\n"
       "    macOS:          brew install gsl\n"
-      "======================================================================\n")
+      "======================================================================\n"
+  )
 endif()
 
 # LAPACK/BLAS — required by deal.II (skip if building OpenBLAS)
@@ -146,22 +148,24 @@ if(NOT BUILD_OpenBLAS)
         "\n"
         "  Or let DiFfRG build OpenBLAS for you:\n"
         "    cmake .. -DBUILD_OpenBLAS=ON\n"
-        "======================================================================\n")
+        "======================================================================\n"
+    )
   else()
     # Verify that LAPACK actually links correctly
     include(CheckCSourceCompiles)
     set(CMAKE_REQUIRED_LIBRARIES ${LAPACK_LIBRARIES})
-    check_c_source_compiles("
+    check_c_source_compiles(
+      "
       extern void dgemm_(void);
       extern void dgetrf_(void);
       int main() { dgemm_(); dgetrf_(); return 0; }
-    " LAPACK_LINKS_OK)
+    "
+      LAPACK_LINKS_OK)
     unset(CMAKE_REQUIRED_LIBRARIES)
     if(NOT LAPACK_LINKS_OK)
       message(
         WARNING
-          "\n"
-          "  LAPACK was found but key symbols could not be linked.\n"
+          "\n" "  LAPACK was found but key symbols could not be linked.\n"
           "  The LAPACK installation may be incomplete or broken.\n"
           "  If the deal.II build fails, try: cmake .. -DBUILD_OpenBLAS=ON\n")
     endif()
@@ -187,10 +191,11 @@ if(NOT Python3_FOUND AND NOT Python_FOUND)
       "    Arch Linux:     sudo pacman -S python\n"
       "    Rocky/RHEL:     sudo dnf install python3\n"
       "    macOS:          brew install python3\n"
-      "======================================================================\n")
+      "======================================================================\n"
+  )
 endif()
 
-message("${BoldGreen}All pre-flight checks passed.${ColourReset}\n")
+message("${BoldGreen}All pre-flight checks passed.${ColourReset}")
 
 option(GPU "Enable/Disable GPU support" ON)
 
@@ -214,13 +219,13 @@ else()
   set(HAVE_HIP OFF)
 endif()
 
-if(GPU AND NOT HAVE_CUDA AND NOT HAVE_HIP)
+if(GPU
+   AND NOT HAVE_CUDA
+   AND NOT HAVE_HIP)
   message(
-    WARNING
-      "\n"
-      "  GPU=ON but neither CUDA nor HIP compiler was found.\n"
-      "  The build will continue with CPU-only backends.\n"
-      "  To silence this warning, configure with -DGPU=OFF\n")
+    WARNING "\n" "  GPU=ON but neither CUDA nor HIP compiler was found.\n"
+            "  The build will continue with CPU-only backends.\n"
+            "  To silence this warning, configure with -DGPU=OFF\n")
 endif()
 
 set(HAVE_THREADS ON)
@@ -244,7 +249,8 @@ if(MPI)
         "    macOS:          brew install open-mpi\n"
         "\n"
         "  Or disable MPI: cmake .. -DMPI=OFF\n"
-        "======================================================================\n")
+        "======================================================================\n"
+    )
   endif()
 endif()
 message("")
@@ -298,7 +304,9 @@ ExternalProject_Add(
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
     -DMPI:BOOL=${MPI})
 
-message("${BoldCyan}[2/8] Configuring general dependencies (TBB, Eigen3, spdlog, ...)...${ColourReset}")
+message(
+  "${BoldCyan}[2/8] Configuring general dependencies (TBB, Eigen3, spdlog, ...)...${ColourReset}"
+)
 ExternalProject_Add(
   general_dep
   LOG_CONFIGURE ON
@@ -337,7 +345,6 @@ ExternalProject_Add(
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/sundials
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/sundials
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  DEPENDS general_dep
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
   CMAKE_CACHE_ARGS
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
@@ -357,7 +364,7 @@ ExternalProject_Add(
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/autodiff
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/autodiff
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  DEPENDS general_dep sundials_dep
+  DEPENDS general_dep
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
   CMAKE_CACHE_ARGS -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
                    -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
@@ -393,8 +400,7 @@ endif()
 
 if(NOT DEFINED Kokkos_ARCH_LIST)
   message(
-    WARNING
-      "Kokkos_ARCH_LIST not set. GPU architecture must be detectable when building Kokkos."
+    "  ${BoldYellow}Kokkos_ARCH_LIST not set. GPU architecture must be detectable when building Kokkos.${ColourReset}"
   )
   set(Kokkos_ARCH_LIST "")
 else()
@@ -495,7 +501,9 @@ endif()
 if(_dealii_jobs GREATER 8)
   set(_dealii_jobs 8)
 endif()
-message(STATUS "deal.II build parallelism: ${_dealii_jobs} threads (${_total_ram_mb} MB RAM, ${_nproc} cores)")
+message(
+  "  deal.II build parallelism: ${_dealii_jobs} threads (${_total_ram_mb} MB RAM, ${_nproc} cores)"
+)
 
 option(NODEBUG "Disable the debug build in deal.ii" OFF)
 
