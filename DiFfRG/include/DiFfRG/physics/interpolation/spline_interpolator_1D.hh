@@ -197,7 +197,7 @@ namespace DiFfRG
       NT p, qn, sig, un;
       std::vector<NT> u(size - 1);
 
-      if (lower_y1 > 0.99e99)
+      if (!std::isfinite(lower_y1) || lower_y1 >= std::numeric_limits<ctype>::max()/2)
         y2(0, 1) = u[0] = 0.0;
       else {
         y2(0, 1) = -0.5;
@@ -210,7 +210,7 @@ namespace DiFfRG
         u[i] = (yv(i + 1, 0) - yv(i, 0)) - (yv(i, 0) - yv(i - 1, 0));
         u[i] = (6.0 * u[i] / 2. - sig * u[i - 1]) / p;
       }
-      if (upper_y1 > 0.99e99)
+      if (!std::isfinite(upper_y1) || upper_y1 >= std::numeric_limits<ctype>::max()/2)
         qn = un = 0.0;
       else {
         qn = 0.5;
