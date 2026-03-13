@@ -43,11 +43,11 @@ TEMPLATE_TEST_CASE_SIG("Test momentum integrals", "[integration][quadrature inte
   const QGauss<1> x_quadrature(64);
   double integral =
       LoopIntegrals::integrate<double, dim>([&](const auto &x) { return poly(x); }, x_quadrature, x_extent, k);
-  if (!is_close(reference_integral, integral, 1e-6))
+  if (!is_close(reference_integral, integral, 1e-12))
     std::cout << "reference: " << reference_integral << ", integral: " << integral
               << " relative error: " << std::abs(reference_integral - integral) / std::abs(reference_integral)
               << std::endl;
-  CHECK(is_close(reference_integral, integral, 1e-6));
+  CHECK(is_close(reference_integral, integral, 1e-12));
 }
 
 TEMPLATE_TEST_CASE_SIG("Test momentum integrals with angle", "[integration][quadrature integration]", ((int dim), dim),
@@ -86,11 +86,11 @@ TEMPLATE_TEST_CASE_SIG("Test momentum integrals with angle", "[integration][quad
   double integral = LoopIntegrals::angle_integrate<double, dim>(
       [&](const auto &x, const auto &cos) { return poly(x) * cos_poly(cos); }, x_quadrature, x_extent, k,
       cos_quadrature);
-  if (!is_close(reference_integral, integral, 1e-6))
+  if (!is_close(reference_integral, integral, 1e-12))
     std::cout << "reference: " << reference_integral << ", integral: " << integral
               << " relative error: " << std::abs(reference_integral - integral) / std::abs(reference_integral)
               << std::endl;
-  CHECK(is_close(reference_integral, integral, 1e-6));
+  CHECK(is_close(reference_integral, integral, 1e-12));
 }
 
 TEMPLATE_TEST_CASE_SIG("Test momentum integrals with q0 integral",
@@ -132,11 +132,11 @@ TEMPLATE_TEST_CASE_SIG("Test momentum integrals with q0 integral",
   double integral = LoopIntegrals::spatial_integrate_and_integrate<double, dim>(
       [&](const auto &x, const auto &x0) { return poly(x) * q0_poly(x0); }, x_quadrature, x_extent, k, q0_quadrature,
       q0_extent);
-  if (!is_close(reference_integral, integral, 1e-6))
+  if (!is_close(reference_integral, integral, 1e-12))
     std::cout << "reference: " << reference_integral << ", integral: " << integral
               << " relative error: " << std::abs(reference_integral - integral) / std::abs(reference_integral)
               << std::endl;
-  CHECK(is_close(reference_integral, integral, 1e-6));
+  CHECK(is_close(reference_integral, integral, 1e-12));
 }
 
 TEMPLATE_TEST_CASE_SIG("Test momentum integrals with q0 integral and angle",
@@ -186,11 +186,11 @@ TEMPLATE_TEST_CASE_SIG("Test momentum integrals with q0 integral and angle",
   double integral = LoopIntegrals::spatial_angle_integrate_and_integrate<double, dim>(
       [&](const auto &x, const auto &cos, const auto &x0) { return poly(x) * q0_poly(x0) * cos_poly(cos); },
       x_quadrature, x_extent, k, cos_quadrature, q0_quadrature, q0_extent);
-  if (!is_close(reference_integral, integral, 1e-6))
+  if (!is_close(reference_integral, integral, 1e-12))
     std::cout << "reference: " << reference_integral << ", integral: " << integral
               << " relative error: " << std::abs(reference_integral - integral) / std::abs(reference_integral)
               << std::endl;
-  CHECK(is_close(reference_integral, integral, 1e-6));
+  CHECK(is_close(reference_integral, integral, 1e-12));
 }
 
 TEMPLATE_TEST_CASE_SIG("Test momentum integrals with matsubara sum",
@@ -232,11 +232,11 @@ TEMPLATE_TEST_CASE_SIG("Test momentum integrals with matsubara sum",
         return is_close(x0, 0.) ? poly(x) : poly(x) / std::pow(std::abs(x0) / (2. * M_PI * T_val), zeta_val);
       },
       x_quadrature, x_extent, k, q0_order, q0_quadrature, q0_extent, T_val);
-  if (!is_close(reference_integral, integral, 1e-5))
+  if (!is_close(reference_integral, integral, 1e-10))
     std::cout << "reference: " << reference_integral << ", integral: " << integral
               << " relative error: " << std::abs(reference_integral - integral) / std::abs(reference_integral)
               << std::endl;
-  CHECK(is_close(reference_integral, integral, 1e-5));
+  CHECK(is_close(reference_integral, integral, 1e-10));
 }
 
 TEMPLATE_TEST_CASE_SIG("Test momentum integrals with matsubara sum and angle",
@@ -286,11 +286,11 @@ TEMPLATE_TEST_CASE_SIG("Test momentum integrals with matsubara sum and angle",
                (is_close(x0, 0.) ? 1. : 1. / std::pow(std::abs(x0) / (2. * M_PI * T_val), zeta_val));
       },
       x_quadrature, x_extent, k, cos_quadrature, q0_order, q0_quadrature, q0_extent, T_val);
-  if (!is_close(reference_integral, integral, 1e-5))
+  if (!is_close(reference_integral, integral, 1e-10))
     std::cout << "reference: " << reference_integral << ", integral: " << integral
               << " relative error: " << std::abs(reference_integral - integral) / std::abs(reference_integral)
               << std::endl;
-  CHECK(is_close(reference_integral, integral, 1e-5));
+  CHECK(is_close(reference_integral, integral, 1e-10));
 }
 
 //-----------------------------------------

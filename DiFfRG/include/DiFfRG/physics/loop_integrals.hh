@@ -48,15 +48,14 @@ namespace DiFfRG
       const NT result = tbb::parallel_reduce(
           tbb::blocked_range<int>(0, x_size), NT(0),
           [&](const tbb::blocked_range<int> &r, NT running_total) -> NT {
+            const double q_max = std::sqrt(x_extent) * k;
             for (int x_it = r.begin(); x_it < r.end(); x_it++) {
-              const double x = x_q_p[x_it][0] * x_extent;
-              const double x_weight = x_q_w[x_it] * x_extent;
-              const double q2 = x * powr<2>(k);
+              const double q = x_q_p[x_it][0] * q_max;
+              const double q_weight = x_q_w[x_it] * q_max;
+              const double q2 = powr<2>(q);
 
-              running_total +=
-                  x_weight * prefactor *
-                  (0.5 * powr<d>(k) * std::pow(x, (d - 2) / 2.)) // integral over x = p^2 / k^2 in d dimensions
-                  * fun(q2);                                     // integrand
+              running_total += q_weight * prefactor * std::pow(q, d - 1) // integral over q in d dimensions
+                               * fun(q2);                               // integrand
             }
             return running_total;
           },
@@ -103,18 +102,18 @@ namespace DiFfRG
       const NT result = tbb::parallel_reduce(
           tbb::blocked_range2d<int>(0, x_size, 0, cos_size), NT(0),
           [&](const tbb::blocked_range2d<int> &r, NT running_total) -> NT {
+            const double q_max = std::sqrt(x_extent) * k;
             for (int x_it = r.rows().begin(); x_it < r.rows().end(); x_it++) {
-              const double x = x_q_p[x_it][0] * x_extent;
-              const double x_weight = x_q_w[x_it] * x_extent;
-              const double q2 = x * powr<2>(k);
+              const double q = x_q_p[x_it][0] * q_max;
+              const double q_weight = x_q_w[x_it] * q_max;
+              const double q2 = powr<2>(q);
 
               for (int cos_it = r.cols().begin(); cos_it < r.cols().end(); cos_it++) {
                 const double cos = (cos_q_p[cos_it][0] - 0.5) * 2.;
                 const double cos_weight = cos_q_w[cos_it] * 2.;
 
                 running_total +=
-                    x_weight * prefactor *
-                    (0.5 * powr<d>(k) * std::pow(x, (d - 2) / 2.)) // integral over x = p^2 / k^2 in d dimensions
+                    q_weight * prefactor * std::pow(q, d - 1) // integral over q in d dimensions
                     * 0.5 * cos_weight // integral over cos(theta), 0.5 removes the factor from the angular integral
                     * fun(q2, cos);    // integrand
               }
@@ -167,10 +166,11 @@ namespace DiFfRG
       const NT result = tbb::parallel_reduce(
           tbb::blocked_range3d<int>(0, x_size, 0, cos_size, 0, phi_size), NT(0),
           [&](const tbb::blocked_range3d<int> &r, NT running_total) -> NT {
+            const double q_max = std::sqrt(x_extent) * k;
             for (int x_it = r.pages().begin(); x_it < r.pages().end(); x_it++) {
-              const double x = x_q_p[x_it][0] * x_extent;
-              const double x_weight = x_q_w[x_it] * x_extent;
-              const double q2 = x * powr<2>(k);
+              const double q = x_q_p[x_it][0] * q_max;
+              const double q_weight = x_q_w[x_it] * q_max;
+              const double q2 = powr<2>(q);
 
               for (int cos_it = r.rows().begin(); cos_it < r.rows().end(); cos_it++) {
                 const double cos = (cos_q_p[cos_it][0] - 0.5) * 2.;
@@ -181,8 +181,7 @@ namespace DiFfRG
                   const double phi_weight = cos_q_w[cos_it] * 2. * M_PI;
 
                   running_total +=
-                      x_weight * prefactor *
-                      (0.5 * powr<d>(k) * std::pow(x, (d - 2) / 2.)) // integral over x = p^2 / k^2 in d dimensions
+                      q_weight * prefactor * std::pow(q, d - 1) // integral over q in d dimensions
                       * 0.5 * cos_weight // integral over cos(theta), 0.5 removes the factor from the angular integral
                       * phi_weight / (2. * M_PI) // integral over phi, 2pi removes the factor from the angular integral
                       * fun(q2, cos, phi);       // integrand
@@ -238,10 +237,11 @@ namespace DiFfRG
       const NT result = tbb::parallel_reduce(
           tbb::blocked_range3d<int>(0, x_size, 0, cos_size, 0, cos_size), NT(0),
           [&](const tbb::blocked_range3d<int> &r, NT running_total) -> NT {
+            const double q_max = std::sqrt(x_extent) * k;
             for (int x_it = r.pages().begin(); x_it < r.pages().end(); x_it++) {
-              const double x = x_q_p[x_it][0] * x_extent;
-              const double x_weight = x_q_w[x_it] * x_extent;
-              const double q2 = x * powr<2>(k);
+              const double q = x_q_p[x_it][0] * q_max;
+              const double q_weight = x_q_w[x_it] * q_max;
+              const double q2 = powr<2>(q);
 
               for (int cos1_it = r.rows().begin(); cos1_it < r.rows().end(); cos1_it++) {
                 const double cos1 = (cos_q_p[cos1_it][0] - 0.5) * 2.;
@@ -257,10 +257,9 @@ namespace DiFfRG
                     const double phi_weight = phi_q_w[phi_it] * 2. * M_PI;
 
                     running_total +=
-                        x_weight * prefactor *
-                        (0.5 * powr<d>(k) * std::pow(x, (d - 2) / 2.)) // integral over x = p^2 / k^2 in d dimensions
-                        * cos1_weight                                  // integral over cos(theta1)
-                        * cos2_weight                                  // integral over cos(theta2)
+                        q_weight * prefactor * std::pow(q, d - 1) // integral over q in d dimensions
+                        * cos1_weight                             // integral over cos(theta1)
+                        * cos2_weight                             // integral over cos(theta2)
                         * phi_weight /
                         S_4 // integral over phi, S_3 = 2 pi^2 removes the factor from the angular integral
                         * fun(q2, cos1, cos2, phi); // integrand
@@ -315,10 +314,11 @@ namespace DiFfRG
       const NT result = tbb::parallel_reduce(
           tbb::blocked_range2d<int>(0, x_size, 0, m_size), NT(0),
           [&](const tbb::blocked_range2d<int> &r, NT running_total) -> NT {
+            const double q_max = std::sqrt(x_extent) * k;
             for (int x_it = r.rows().begin(); x_it < r.rows().end(); x_it++) {
-              const double x = x_q_p[x_it][0] * x_extent;
-              const double x_weight = x_q_w[x_it] * x_extent;
-              const double q2 = x * powr<2>(k);
+              const double q = x_q_p[x_it][0] * q_max;
+              const double q_weight = x_q_w[x_it] * q_max;
+              const double q2 = powr<2>(q);
 
               // Do a "matsubara" (rather p0)-integral
               for (int q0_it = r.cols().begin(); q0_it < r.cols().end(); q0_it++) {
@@ -326,9 +326,8 @@ namespace DiFfRG
                 const double m_weight = m_q_w[q0_it] * m_extent;
 
                 running_total += (m_weight / (2. * M_PI)) // Matsubara integral weight
-                                 * x_weight * prefactor *
-                                 (0.5 * powr<ds>(k) * std::pow(x, (ds - 2) / 2.)) // integral over x = p^2 / k^2
-                                 * (fun(q2, q0) + fun(q2, -q0));                  // integrand
+                                 * q_weight * prefactor * std::pow(q, ds - 1) // integral over q
+                                 * (fun(q2, q0) + fun(q2, -q0));             // integrand
               }
             }
             return running_total;
@@ -383,10 +382,11 @@ namespace DiFfRG
       const NT result = tbb::parallel_reduce(
           tbb::blocked_range3d<int>(0, x_size, 0, cos_size, 0, m_size), NT(0),
           [&](const tbb::blocked_range3d<int> &r, NT running_total) -> NT {
+            const double q_max = std::sqrt(x_extent) * k;
             for (int x_it = r.pages().begin(); x_it < r.pages().end(); x_it++) {
-              const double x = x_q_p[x_it][0] * x_extent;
-              const double x_weight = x_q_w[x_it] * x_extent;
-              const double q2 = x * powr<2>(k);
+              const double q = x_q_p[x_it][0] * q_max;
+              const double q_weight = x_q_w[x_it] * q_max;
+              const double q2 = powr<2>(q);
 
               for (int cos_it = r.rows().begin(); cos_it < r.rows().end(); cos_it++) {
                 const double cos = (cos_q_p[cos_it][0] - 0.5) * 2.;
@@ -399,8 +399,7 @@ namespace DiFfRG
 
                   running_total +=
                       (m_weight / (2. * M_PI)) // Matsubara integral weight
-                      * x_weight * prefactor *
-                      (0.5 * powr<ds>(k) * std::pow(x, (ds - 2) / 2.)) // integral over x = p^2 / k^2
+                      * q_weight * prefactor * std::pow(q, ds - 1) // integral over q
                       * 0.5 * cos_weight // integral over cos(theta), 0.5 removes the factor from the angular integral
                       * (fun(q2, cos, q0) + fun(q2, cos, -q0)); // integrand
                 }
@@ -460,18 +459,18 @@ namespace DiFfRG
       const NT result_sum = tbb::parallel_reduce(
           tbb::blocked_range2d<int>(0, x_size, -m_order, m_order + 1), NT(0),
           [&](const tbb::blocked_range2d<int> &r, NT running_total) -> NT {
+            const double q_max = std::sqrt(x_extent) * k;
             for (int x_it = r.rows().begin(); x_it < r.rows().end(); x_it++) {
-              const double x = x_q_p[x_it][0] * x_extent;
-              const double x_weight = x_q_w[x_it] * x_extent;
-              const double q2 = x * powr<2>(k);
+              const double q = x_q_p[x_it][0] * q_max;
+              const double q_weight = x_q_w[x_it] * q_max;
+              const double q2 = powr<2>(q);
 
               for (int q0_it = r.cols().begin(); q0_it < r.cols().end(); q0_it++) {
                 const double q0 = 2. * M_PI * T * q0_it;
 
                 running_total += T // Matsubara sum weight
-                                 * x_weight * prefactor *
-                                 (0.5 * powr<ds>(k) * std::pow(x, (ds - 2) / 2.)) // integral over x = p^2 / k^2
-                                 * fun(q2, q0);                                   // integrand
+                                 * q_weight * prefactor * std::pow(q, ds - 1) // integral over q
+                                 * fun(q2, q0);                               // integrand
               }
             }
             return running_total;
@@ -482,10 +481,11 @@ namespace DiFfRG
       const NT result_integral = tbb::parallel_reduce(
           tbb::blocked_range2d<int>(0, x_size, 0, m_size), NT(0),
           [&](const tbb::blocked_range2d<int> &r, NT running_total) -> NT {
+            const double q_max = std::sqrt(x_extent) * k;
             for (int x_it = r.rows().begin(); x_it < r.rows().end(); x_it++) {
-              const double x = x_q_p[x_it][0] * x_extent;
-              const double x_weight = x_q_w[x_it] * x_extent;
-              const double q2 = x * powr<2>(k);
+              const double q = x_q_p[x_it][0] * q_max;
+              const double q_weight = x_q_w[x_it] * q_max;
+              const double q2 = powr<2>(q);
 
               for (int q0_it = r.cols().begin(); q0_it < r.cols().end(); q0_it++) {
                 const double q0 =
@@ -493,9 +493,8 @@ namespace DiFfRG
                 const double m_weight = m_q_w[q0_it] * (m_extent - 2. * m_order * M_PI * T);
 
                 running_total += (1. * m_weight / (2. * M_PI)) // Matsubara integral weight
-                                 * x_weight * prefactor *
-                                 (0.5 * powr<ds>(k) * std::pow(x, (ds - 2) / 2.)) // integral over x = p^2 / k^2
-                                 * (fun(q2, q0) + fun(q2, -q0));                  // integrand
+                                 * q_weight * prefactor * std::pow(q, ds - 1) // integral over q
+                                 * (fun(q2, q0) + fun(q2, -q0));             // integrand
               }
             }
             return running_total;
@@ -557,10 +556,11 @@ namespace DiFfRG
       const NT result_sum = tbb::parallel_reduce(
           tbb::blocked_range3d<int>(0, x_size, 0, cos_size, -m_order, m_order + 1), NT(0),
           [&](const tbb::blocked_range3d<int> &r, NT running_total) -> NT {
+            const double q_max = std::sqrt(x_extent) * k;
             for (int x_it = r.pages().begin(); x_it < r.pages().end(); x_it++) {
-              const double x = x_q_p[x_it][0] * x_extent;
-              const double x_weight = x_q_w[x_it] * x_extent;
-              const double q2 = x * powr<2>(k);
+              const double q = x_q_p[x_it][0] * q_max;
+              const double q_weight = x_q_w[x_it] * q_max;
+              const double q2 = powr<2>(q);
 
               for (int cos_it = r.rows().begin(); cos_it < r.rows().end(); cos_it++) {
                 const double cos = (cos_q_p[cos_it][0] - 0.5) * 2.;
@@ -571,8 +571,7 @@ namespace DiFfRG
 
                   running_total +=
                       T // Matsubara sum weight
-                      * x_weight * prefactor *
-                      (0.5 * powr<ds>(k) * std::pow(x, (ds - 2) / 2.)) // integral over x = p^2 / k^2
+                      * q_weight * prefactor * std::pow(q, ds - 1) // integral over q
                       * 0.5 * cos_weight  // integral over cos(theta), 0.5 removes the factor from the angular integral
                       * fun(q2, cos, q0); // integrand
                 }
@@ -586,10 +585,11 @@ namespace DiFfRG
       const NT result_integral = tbb::parallel_reduce(
           tbb::blocked_range3d<int>(0, x_size, 0, cos_size, 0, m_size), NT(0),
           [&](const tbb::blocked_range3d<int> &r, NT running_total) -> NT {
+            const double q_max = std::sqrt(x_extent) * k;
             for (int x_it = r.pages().begin(); x_it < r.pages().end(); x_it++) {
-              const double x = x_q_p[x_it][0] * x_extent;
-              const double x_weight = x_q_w[x_it] * x_extent;
-              const double q2 = x * powr<2>(k);
+              const double q = x_q_p[x_it][0] * q_max;
+              const double q_weight = x_q_w[x_it] * q_max;
+              const double q2 = powr<2>(q);
 
               for (int cos_it = r.rows().begin(); cos_it < r.rows().end(); cos_it++) {
                 const double cos = (cos_q_p[cos_it][0] - 0.5) * 2.;
@@ -602,8 +602,7 @@ namespace DiFfRG
 
                   running_total +=
                       (1. * m_weight / (2. * M_PI)) // Matsubara integral weight
-                      * x_weight * prefactor *
-                      (0.5 * powr<ds>(k) * std::pow(x, (ds - 2) / 2.)) // integral over x = p^2 / k^2
+                      * q_weight * prefactor * std::pow(q, ds - 1) // integral over q
                       * 0.5 * cos_weight // integral over cos(theta), 0.5 removes the factor from the angular integral
                       * (fun(q2, cos, q0) + fun(q2, cos, -q0)); // integrand
                 }
