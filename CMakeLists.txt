@@ -172,30 +172,19 @@ if(NOT BUILD_OpenBLAS)
   endif()
 endif()
 
-# Python — required by Boost build
-find_package(Python3 QUIET)
-if(NOT Python3_FOUND)
-  find_package(Python QUIET)
-endif()
-if(NOT Python3_FOUND AND NOT Python_FOUND)
-  message(
-    FATAL_ERROR
-      "\n"
-      "======================================================================\n"
-      "  Required dependency not found: Python\n"
-      "======================================================================\n"
-      "  Python is required by the Boost build system.\n"
-      "\n"
-      "  Install it using your package manager:\n"
-      "    Ubuntu/Debian:  sudo apt install python3\n"
-      "    Arch Linux:     sudo pacman -S python\n"
-      "    Rocky/RHEL:     sudo dnf install python3\n"
-      "    macOS:          brew install python3\n"
-      "======================================================================\n"
-  )
-endif()
-
 message("${BoldGreen}All pre-flight checks passed.${ColourReset}")
+
+# Optional ccache support for dependency builds
+option(USE_CCACHE "Use ccache for dependency builds if available" ON)
+if(USE_CCACHE)
+  find_program(CCACHE_PROGRAM ccache)
+  if(CCACHE_PROGRAM)
+    message("${BoldGreen}Found ccache: ${CCACHE_PROGRAM}${ColourReset}")
+    set(CCACHE_CMAKE_ARGS
+        -DCMAKE_C_COMPILER_LAUNCHER:STRING=${CCACHE_PROGRAM}
+        -DCMAKE_CXX_COMPILER_LAUNCHER:STRING=${CCACHE_PROGRAM})
+  endif()
+endif()
 
 option(GPU "Enable/Disable GPU support" ON)
 
@@ -302,6 +291,7 @@ ExternalProject_Add(
     -DCMAKE_CXX_FLAGS:STRING=-march=native
     -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+    ${CCACHE_CMAKE_ARGS}
     -DMPI:BOOL=${MPI})
 
 message(
@@ -323,6 +313,7 @@ ExternalProject_Add(
     -DCMAKE_CXX_FLAGS:STRING=-march=native
     -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+    ${CCACHE_CMAKE_ARGS}
     -DBUILD_OpenBLAS:BOOL=${BUILD_OpenBLAS}
     -DCMAKE_PREFIX_PATH:PATH=${DEPEND_INSTALL_PREFIX}
     -DMPI:BOOL=${MPI})
@@ -353,6 +344,7 @@ ExternalProject_Add(
     -DCMAKE_CXX_FLAGS:STRING=-march=native
     -DCMAKE_C_FLAGS:STRING=-march=native
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+    ${CCACHE_CMAKE_ARGS}
     -DMPI:BOOL=${MPI})
 
 message("${BoldCyan}[4/8] Configuring autodiff...${ColourReset}")
@@ -367,7 +359,8 @@ ExternalProject_Add(
   DEPENDS general_dep
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
   CMAKE_CACHE_ARGS -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
-                   -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
+                   -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+                   ${CCACHE_CMAKE_ARGS})
 
 message("${BoldCyan}[5/8] Configuring Boost...${ColourReset}")
 ExternalProject_Add(
@@ -382,7 +375,8 @@ ExternalProject_Add(
              -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
              -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
-  CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
+  CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+                   -DCCACHE_PROGRAM:STRING=${CCACHE_PROGRAM})
 
 # ##############################################################################
 # Kokkos
@@ -421,6 +415,7 @@ ExternalProject_Add(
   LOG_OUTPUT_ON_FAILURE ON
   GIT_REPOSITORY https://github.com/kokkos/kokkos.git
   GIT_TAG 5.0.1
+  GIT_SHALLOW ON
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/kokkos
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
   # DEPENDS general_dep sundials_dep autodiff_dep
@@ -493,22 +488,23 @@ math(EXPR _half_cores "${_nproc} / 2")
 if(_half_cores LESS 1)
   set(_half_cores 1)
 endif()
-# Use the lesser of half cores, RAM-based limit, and 8
+# Use the lesser of half cores, RAM-based limit, and hard cap
+set(DEALII_MAX_JOBS 16 CACHE STRING "Maximum parallel jobs for deal.II build")
 set(_dealii_jobs ${_half_cores})
 if(_max_threads_by_ram LESS _dealii_jobs)
   set(_dealii_jobs ${_max_threads_by_ram})
 endif()
-if(_dealii_jobs GREATER 8)
-  set(_dealii_jobs 8)
+if(_dealii_jobs GREATER ${DEALII_MAX_JOBS})
+  set(_dealii_jobs ${DEALII_MAX_JOBS})
 endif()
 message(
   "  deal.II build parallelism: ${_dealii_jobs} threads (${_total_ram_mb} MB RAM, ${_nproc} cores)"
 )
 
-option(NODEBUG "Disable the debug build in deal.ii" OFF)
-
-set(dealiiConfig "DebugRelease")
-if(NODEBUG)
+option(DEVEL "Enable development mode (deal.II DebugRelease build)" OFF)
+if(DEVEL)
+  set(dealiiConfig "DebugRelease")
+else()
   set(dealiiConfig "Release")
 endif()
 
@@ -520,6 +516,7 @@ ExternalProject_Add(
   LOG_OUTPUT_ON_FAILURE ON
   GIT_REPOSITORY https://github.com/dealii/dealii.git
   GIT_TAG v9.4.2
+  GIT_SHALLOW ON
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/deal.II
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
   DEPENDS general_dep boost_dep ${is_petsc_dep} sundials_dep
@@ -549,7 +546,8 @@ ExternalProject_Add(
     -DSUNDIALS_DIR:STRING=${DEPEND_INSTALL_PREFIX}
     -DBOOST_DIR:STRING=${DEPEND_INSTALL_PREFIX}
     -DCMAKE_PREFIX_PATH:STRING=${DEPEND_INSTALL_PREFIX}
-    -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
+    -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+    ${CCACHE_CMAKE_ARGS})
 
 # create a directory necessary for using deal.II
 file(MAKE_DIRECTORY ${DEPEND_INSTALL_PREFIX}/include/deal.II/bundled)

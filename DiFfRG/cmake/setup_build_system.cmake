@@ -6,16 +6,9 @@
 # dependencies
 if(${CMAKE_PROJECT_NAME} STREQUAL "DiFfRG")
   if(NOT DEFINED MPI)
-    find_package(MPI QUIET)
-    if(MPI_FOUND)
-      set(MPI
-          ON
-          CACHE BOOL "Enable MPI support")
-    else()
-      set(MPI
-          OFF
-          CACHE BOOL "Enable MPI support")
-    endif()
+    set(MPI
+        OFF
+        CACHE BOOL "Whether to build with MPI support (default: OFF)")
   endif()
 
   # If we are building DiFfRG as a standalone project, we need to set the base
@@ -49,7 +42,8 @@ if(NOT DEFINED BUNDLED_DIR OR "${BUNDLED_DIR}" STREQUAL "")
       "\n"
       "  Then configure DiFfRG with:\n"
       "    cmake .. -DBUNDLED_DIR=~/.local/share/DiFfRG/bundled\n"
-      "======================================================================\n")
+      "======================================================================\n"
+  )
 endif()
 
 if(NOT EXISTS "${BUNDLED_DIR}")
@@ -68,7 +62,8 @@ if(NOT EXISTS "${BUNDLED_DIR}")
       "    cmake --build . -- -j8\n"
       "\n"
       "  Then re-run this cmake configuration.\n"
-      "======================================================================\n")
+      "======================================================================\n"
+  )
 endif()
 
 set(CMAKE_PREFIX_PATH "${BUNDLED_DIR};${BUNDLED_DIR}/lib;${CMAKE_PREFIX_PATH}")
@@ -168,8 +163,18 @@ diffrg_find_package(Kokkos HINTS ${BUNDLED_DIR})
 message(STATUS "Found Kokkos in ${Kokkos_DIR}")
 
 # Find Boost
-diffrg_find_package(Boost VERSION 1.81 HINTS "${BUNDLED_DIR}/" "${BUNDLED_DIR}/boost_install/lib/"
-  COMPONENTS thread iostreams serialization system)
+diffrg_find_package(
+  Boost
+  VERSION
+  1.81
+  HINTS
+  "${BUNDLED_DIR}/"
+  "${BUNDLED_DIR}/boost_install/lib/"
+  COMPONENTS
+  thread
+  iostreams
+  serialization
+  system)
 message(STATUS "Boost version: ${Boost_VERSION}")
 message(STATUS "Boost include dir: ${Boost_INCLUDE_DIRS}")
 message(STATUS "Boost libraries: ${Boost_LIBRARIES}")
@@ -194,7 +199,8 @@ if(NOT GSL_FOUND)
       "    Arch Linux:     sudo pacman -S gsl\n"
       "    Rocky/RHEL:     sudo dnf install gsl-devel\n"
       "    macOS:          brew install gsl\n"
-      "======================================================================\n")
+      "======================================================================\n"
+  )
 endif()
 
 # Find autodiff
@@ -220,10 +226,16 @@ endif()
 # ##############################################################################
 
 message("")
-message("${BoldWhite}======================================================================${ColourReset}")
+message(
+  "${BoldWhite}======================================================================${ColourReset}"
+)
 message("${BoldWhite}  DiFfRG Dependency Summary${ColourReset}")
-message("${BoldWhite}======================================================================${ColourReset}")
-message("  ${BoldGreen}deal.II${ColourReset}    ${deal.II_VERSION}   (${deal.II_DIR})")
+message(
+  "${BoldWhite}======================================================================${ColourReset}"
+)
+message(
+  "  ${BoldGreen}deal.II${ColourReset}    ${deal.II_VERSION}          (${deal.II_DIR})"
+)
 message("  ${BoldGreen}TBB${ColourReset}        found          (${TBB_DIR})")
 message("  ${BoldGreen}Kokkos${ColourReset}     found          (${Kokkos_DIR})")
 message("  ${BoldGreen}Boost${ColourReset}      ${Boost_VERSION}")
@@ -236,7 +248,9 @@ message("  ${BoldGreen}h5cpp${ColourReset}      found          (${h5cpp_DIR})")
 if(${DiFfRG_MPI})
   message("  ${BoldGreen}MPI${ColourReset}        ${MPI_CXX_VERSION}")
 endif()
-message("${BoldWhite}======================================================================${ColourReset}")
+message(
+  "${BoldWhite}======================================================================${ColourReset}"
+)
 message("")
 
 # ##############################################################################
@@ -307,4 +321,11 @@ function(setup_target TARGET)
   endif()
 
   target_compile_definitions(${TARGET} PUBLIC _HAS_AUTO_PTR_ETC=0)
+
+  # Workaround: spdlog's bundled fmt uses consteval for format-string checking,
+  # which breaks on newer compilers. constexpr is functionally equivalent.
+  target_compile_definitions(${TARGET} PUBLIC FMT_CONSTEVAL=constexpr)
+  # Workaround: deal.II's tensor.h uses assert() without including <cassert>.
+  target_compile_options(
+    ${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-include cassert>)
 endfunction()
