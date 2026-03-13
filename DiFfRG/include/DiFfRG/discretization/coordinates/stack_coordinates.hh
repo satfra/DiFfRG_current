@@ -81,6 +81,11 @@ namespace DiFfRG
      */
     Idx KOKKOS_FORCEINLINE_FUNCTION backward(const NT &y) const { return Idx(std::round(y / (2. * M_PI * T))) - start; }
 
+    template <typename IT> device::array<NT, 1> KOKKOS_FORCEINLINE_FUNCTION forward(const device::array<IT, 1> &x) const
+    {
+      return {forward(x[0])};
+    }
+
     device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(auto i) const
         {
           return device::array<size_t, 1>{i};
@@ -138,6 +143,11 @@ namespace DiFfRG
     Idx KOKKOS_FORCEINLINE_FUNCTION backward(const NT &y) const
     {
       return Idx(std::round((y - M_PI * T) / (2. * M_PI * T))) - start;
+    }
+
+    template <typename IT> device::array<NT, 1> KOKKOS_FORCEINLINE_FUNCTION forward(const device::array<IT, 1> &x) const
+    {
+      return {forward(x[0])};
     }
 
     device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(auto i) const
