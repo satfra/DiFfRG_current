@@ -70,6 +70,28 @@ TEMPLATE_TEST_CASE_SIG("Test finite T momentum integrals", "[integration][quadra
       }
       CHECK(rel_err < expected_precision);
     }
+    SECTION("Volume integral (fermionic)")
+    {
+      const ctype val = GENERATE(1e-4, 1e-3, 1e-2, 1e-1, 1., 10.);
+      integrator.set_T(T);
+      integrator.set_k(k);
+      integrator.set_typical_E(val);
+
+      const NT reference_integral = V_d(dim - 1, q_extent) / powr<dim - 1>(2. * M_PI) // spatial part
+                                    * std::tanh(val / (2. * T)) / (2. * val);          // sum
+
+      NT integral{};
+      integrator.get(integral, 0., 1., 0., 0., 0., powr<2>(val) + powr<2>(M_PI * T), 2 * M_PI * T, 1., 0.);
+
+      constexpr ctype expected_precision = 5e-6;
+      const ctype rel_err = t_abs(reference_integral - integral) / t_abs(reference_integral);
+      if (rel_err >= expected_precision) {
+        std::cerr << "Failure for T = " << T << ", k = " << k << ", val = " << val << "\n"
+                  << "reference: " << reference_integral << "| integral: " << integral
+                  << "| relative error: " << rel_err << std::endl;
+      }
+      CHECK(rel_err < expected_precision);
+    }
     SECTION("Volume map")
     {
       const ctype val = GENERATE(1e-3, 1e-1, 10.);

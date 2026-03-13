@@ -218,5 +218,5 @@ private:
 
   static KOKKOS_FORCEINLINE_FUNCTION auto dq2RF(const auto &k2, const auto &p2) { return Regulator::dq2RF(k2, p2); }
 
-  static double sech(double x) { return 1 / std::cosh(x); }
+  static KOKKOS_FORCEINLINE_FUNCTION double sech(double x) { return 1 / std::cosh(x); }
 };

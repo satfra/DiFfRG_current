@@ -5,14 +5,14 @@
 # We need to find the bundle directory, which contains several external
 # dependencies
 if(${CMAKE_PROJECT_NAME} STREQUAL "DiFfRG")
-  if(NOT DEFINED ENABLE_MPI)
+  if(NOT DEFINED MPI)
     find_package(MPI QUIET)
     if(MPI_FOUND)
-      set(ENABLE_MPI
+      set(MPI
           ON
           CACHE BOOL "Enable MPI support")
     else()
-      set(ENABLE_MPI
+      set(MPI
           OFF
           CACHE BOOL "Enable MPI support")
     endif()
@@ -21,7 +21,7 @@ if(${CMAKE_PROJECT_NAME} STREQUAL "DiFfRG")
   # If we are building DiFfRG as a standalone project, we need to set the base
   # directory
   set(BASE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-  set(DiFfRG_MPI ${ENABLE_MPI})
+  set(DiFfRG_MPI ${MPI})
 else()
   # If we are building a DiFfRG-based project, we need to set the bundle
   # directory relative to the DiFfRG base directory

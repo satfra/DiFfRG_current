@@ -5,9 +5,9 @@ project(general_dep)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 set(CMAKE_BUILD_TYPE Release)
 
-# if ENABLE_MPI is not set, set it to OFF
-if(NOT DEFINED ENABLE_MPI)
-  set(ENABLE_MPI
+# if MPI is not set, set it to OFF
+if(NOT DEFINED MPI)
+  set(MPI
       OFF
       CACHE BOOL "Enable MPI support")
 endif()
