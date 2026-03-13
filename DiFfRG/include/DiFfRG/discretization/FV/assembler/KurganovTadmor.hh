@@ -12,6 +12,7 @@
 #include <deal.II/base/point.h>
 #include <deal.II/base/quadrature_lib.h>
 #include <deal.II/base/timer.h>
+#include <deal.II/base/types.h>
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_tools.h>
 #include <deal.II/fe/fe_interface_values.h>
@@ -157,25 +158,45 @@ namespace DiFfRG
         };
 
         // TODO fewer memory allocations
-        template <typename NumberType> struct CopyData_J {
+        template <typename NumberType, int dim> struct CopyData_J {
+          using Iterator = typename DoFHandler<dim>::active_cell_iterator;
+
           struct CopyDataFace_J {
+            // since face dofs do not only depend on themself but also on their neighbors (because of the
+            // reconstruction) we need to consider a general rectengular local jacobi matrix
             FullMatrix<NumberType> cell_jacobian;
             FullMatrix<NumberType> extractor_cell_jacobian;
-            std::vector<types::global_dof_index> joint_dof_indices;
+            std::vector<types::global_dof_index> to_dofs;
+            std::vector<types::global_dof_index> from_dofs;
 
-            template <int dim> void reinit(const FEInterfaceValues<dim> &fe_iv, uint n_extractors)
+            void reinit(const FEInterfaceValues<dim> &fe_iv, const Iterator &cell, const Iterator &ncell)
             {
-              // here we assume locality of the face's dependency, on the cells and ncells dofs.
-              // this is not true for FV methods. This depends on the stencil of the method.
-              uint dofs_per_cell = fe_iv.n_current_interface_dofs();
-              // so this matrix is probably not rectengular anymore
-              cell_jacobian.reinit(dofs_per_cell, dofs_per_cell);
+              cell_jacobian.reinit(size(to_dofs), size(from_dofs));
 
-              // we also need here a fancy mapping, between the jacobians dependent dofs and the dofs,
-              // which are local and which we differentiate to.
+              to_dofs = fe_iv.get_interface_dof_indices();
 
-              if (n_extractors > 0) extractor_cell_jacobian.reinit(dofs_per_cell, n_extractors);
-              joint_dof_indices = fe_iv.get_interface_dof_indices();
+              std::set<types::global_dof_index> from_dofs_set(begin(to_dofs), end(to_dofs));
+              // iterate cell neighbors
+              std::vector<types::global_dof_index> neighbor_dof_indices(cell->get_fe().n_dofs_per_cell());
+              for (const auto face_index : cell->face_indices()) {
+                if (!cell->at_boundary(face_index)) {
+                  const auto neighbor = cell->neighbor(face_index);
+                  neighbor->get_dof_indices(neighbor_dof_indices);
+                  for (const auto &dof : neighbor_dof_indices)
+                    from_dofs_set.insert(dof);
+                }
+              }
+              // iterate ncell neighbors
+              for (const auto face_index : ncell->face_indices()) {
+                if (!ncell->at_boundary(face_index)) {
+                  const auto neighbor = ncell->neighbor(face_index);
+                  neighbor->get_dof_indices(neighbor_dof_indices);
+                  for (const auto &dof : neighbor_dof_indices)
+                    from_dofs_set.insert(dof);
+                }
+              }
+
+              from_dofs = std::vector<types::global_dof_index>(begin(from_dofs_set), end(from_dofs_set));
             }
           };
 
@@ -812,7 +833,7 @@ namespace DiFfRG
         {
           using Iterator = typename DoFHandler<dim>::active_cell_iterator;
           using Scratch = internal::ScratchData<dim, NumberType>;
-          using CopyData = internal::CopyData_J<NumberType>;
+          using CopyData = internal::CopyData_J<NumberType, dim>;
           const auto &constraints = discretization.get_constraints();
 
           const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
@@ -869,7 +890,7 @@ namespace DiFfRG
         {
           using Iterator = typename DoFHandler<dim>::active_cell_iterator;
           using Scratch = internal::ScratchData<dim, NumberType>;
-          using CopyData = internal::CopyData_J<NumberType>;
+          using CopyData = internal::CopyData_J<NumberType, dim>;
           const auto &constraints = discretization.get_constraints();
 
           const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
@@ -923,9 +944,14 @@ namespace DiFfRG
             const auto &JxW = fe_iv.get_JxW_values();
             const std::vector<Tensor<1, dim>> &normals = fe_iv.get_normal_vectors();
 
+            const auto cell_neighbors = get_neighboring_cell_data(cell, solution_global, model);
+            const auto ncell_neighbors = get_neighboring_cell_data(ncell, solution_global, model);
+            const auto cell_data = get_cell_value(cell, solution_global);
+            const auto ncell_data = get_cell_value(ncell, solution_global);
+
             copy_data.face_data.emplace_back();
             auto &copy_data_face = copy_data.face_data.back();
-            copy_data_face.reinit(fe_iv, Components::count_extractors());
+            copy_data_face.reinit(fe_iv, cell, ncell);
 
             std::array<SimpleMatrix<Tensor<1, dim>, n_components>, 2> j_numflux;
             for (uint i = 0; i < n_face_dofs; ++i) {
@@ -938,11 +964,11 @@ namespace DiFfRG
               }
             }
 
-            for (uint i = 0; i < n_face_dofs; ++i) {
+            for (uint i = 0; i < n_face_dofs; ++i) { // these are effectively two
               const auto &cd_i = fe_iv.interface_dof_to_dof_indices(i);
               const uint face_no_i = cd_i[0] == numbers::invalid_unsigned_int ? 1 : 0;
               const auto &component_i = fe.system_to_component_index(cd_i[face_no_i]).first;
-              for (uint j = 0; j < n_face_dofs; ++j) {
+              for (uint j = 0; j < n_from_dofs; ++j) { // these are more, since it also depends on the neighbors
                 const auto &cd_j = fe_iv.interface_dof_to_dof_indices(j);
                 const uint face_no_j = cd_j[0] == numbers::invalid_unsigned_int ? 1 : 0;
                 const auto &component_j = fe.system_to_component_index(cd_j[face_no_j]).first;
@@ -965,8 +991,10 @@ namespace DiFfRG
           const auto copier = [&](const CopyData &c) {
             constraints.distribute_local_to_global(c.cell_jacobian, c.local_dof_indices, jacobian);
             constraints.distribute_local_to_global(c.cell_mass_jacobian, c.local_dof_indices, jacobian);
-            for (const auto &face_data : c.face_data)
-              constraints.distribute_local_to_global(face_data.cell_jacobian, face_data.joint_dof_indices, jacobian);
+            for (const auto &face_data : c.face_data) {
+              constraints.distribute_local_to_global(face_data.cell_jacobian, face_data.to_dof, face_data.from_dof,
+                                                     jacobian);
+            }
           };
 
           Scratch scratch_data(mapping, discretization.get_fe(), quadrature, quadrature_face);
