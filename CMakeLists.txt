@@ -61,9 +61,136 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
 include(CheckLanguage)
 
+# Pre-flight check: git is required for ExternalProject git clones
+find_program(GIT_EXECUTABLE git)
+if(NOT GIT_EXECUTABLE)
+  message(
+    FATAL_ERROR
+      "\n"
+      "======================================================================\n"
+      "  'git' is required but was not found.\n"
+      "======================================================================\n"
+      "  DiFfRG uses git to fetch external dependencies during the build.\n"
+      "  Install it using your package manager:\n"
+      "    Ubuntu/Debian:  sudo apt install git\n"
+      "    Arch Linux:     sudo pacman -S git\n"
+      "    Rocky/RHEL:     sudo dnf install git\n"
+      "    macOS:          brew install git\n"
+      "======================================================================\n")
+endif()
+
 check_language(Fortran)
 check_language(CXX)
 check_language(C)
+
+# ##############################################################################
+# Pre-flight checks: detect missing system dependencies early
+# ##############################################################################
+
+# Fortran compiler — required by deal.II for LAPACK
+if(NOT CMAKE_Fortran_COMPILER)
+  message(
+    FATAL_ERROR
+      "\n"
+      "======================================================================\n"
+      "  Fortran compiler not found.\n"
+      "======================================================================\n"
+      "  deal.II requires a Fortran compiler (gfortran or flang) for LAPACK.\n"
+      "\n"
+      "  Install it using your package manager:\n"
+      "    Ubuntu/Debian:  sudo apt install gfortran\n"
+      "    Arch Linux:     sudo pacman -S gcc-fortran\n"
+      "    Rocky/RHEL:     sudo dnf install gcc-gfortran\n"
+      "    macOS:          brew install gcc\n"
+      "  Or, if using Clang/LLVM:  install flang\n"
+      "======================================================================\n")
+endif()
+
+# GSL — required by DiFfRG
+find_package(GSL QUIET)
+if(NOT GSL_FOUND)
+  message(
+    FATAL_ERROR
+      "\n"
+      "======================================================================\n"
+      "  Required system dependency not found: GSL\n"
+      "======================================================================\n"
+      "  The GNU Scientific Library (GSL) must be installed on your system.\n"
+      "\n"
+      "  Install it using your package manager:\n"
+      "    Ubuntu/Debian:  sudo apt install libgsl-dev\n"
+      "    Arch Linux:     sudo pacman -S gsl\n"
+      "    Rocky/RHEL:     sudo dnf install gsl-devel\n"
+      "    macOS:          brew install gsl\n"
+      "======================================================================\n")
+endif()
+
+# LAPACK/BLAS — required by deal.II (skip if building OpenBLAS)
+option(BUILD_OpenBLAS "Build OpenBLAS" OFF)
+if(NOT BUILD_OpenBLAS)
+  find_package(LAPACK QUIET)
+  if(NOT LAPACK_FOUND)
+    message(
+      FATAL_ERROR
+        "\n"
+        "======================================================================\n"
+        "  Required system dependency not found: LAPACK/BLAS\n"
+        "======================================================================\n"
+        "  deal.II requires a LAPACK/BLAS implementation.\n"
+        "\n"
+        "  Either install a system LAPACK:\n"
+        "    Ubuntu/Debian:  sudo apt install libopenblas-dev\n"
+        "    Arch Linux:     sudo pacman -S blas-openblas\n"
+        "    Rocky/RHEL:     sudo dnf install openblas-devel\n"
+        "    macOS:          brew install openblas\n"
+        "\n"
+        "  Or let DiFfRG build OpenBLAS for you:\n"
+        "    cmake .. -DBUILD_OpenBLAS=ON\n"
+        "======================================================================\n")
+  else()
+    # Verify that LAPACK actually links correctly
+    include(CheckCSourceCompiles)
+    set(CMAKE_REQUIRED_LIBRARIES ${LAPACK_LIBRARIES})
+    check_c_source_compiles("
+      extern void dgemm_(void);
+      extern void dgetrf_(void);
+      int main() { dgemm_(); dgetrf_(); return 0; }
+    " LAPACK_LINKS_OK)
+    unset(CMAKE_REQUIRED_LIBRARIES)
+    if(NOT LAPACK_LINKS_OK)
+      message(
+        WARNING
+          "\n"
+          "  LAPACK was found but key symbols could not be linked.\n"
+          "  The LAPACK installation may be incomplete or broken.\n"
+          "  If the deal.II build fails, try: cmake .. -DBUILD_OpenBLAS=ON\n")
+    endif()
+  endif()
+endif()
+
+# Python — required by Boost build
+find_package(Python3 QUIET)
+if(NOT Python3_FOUND)
+  find_package(Python QUIET)
+endif()
+if(NOT Python3_FOUND AND NOT Python_FOUND)
+  message(
+    FATAL_ERROR
+      "\n"
+      "======================================================================\n"
+      "  Required dependency not found: Python\n"
+      "======================================================================\n"
+      "  Python is required by the Boost build system.\n"
+      "\n"
+      "  Install it using your package manager:\n"
+      "    Ubuntu/Debian:  sudo apt install python3\n"
+      "    Arch Linux:     sudo pacman -S python\n"
+      "    Rocky/RHEL:     sudo dnf install python3\n"
+      "    macOS:          brew install python3\n"
+      "======================================================================\n")
+endif()
+
+message("${BoldGreen}All pre-flight checks passed.${ColourReset}\n")
 
 option(GPU "Enable/Disable GPU support" ON)
 
@@ -87,6 +214,15 @@ else()
   set(HAVE_HIP OFF)
 endif()
 
+if(GPU AND NOT HAVE_CUDA AND NOT HAVE_HIP)
+  message(
+    WARNING
+      "\n"
+      "  GPU=ON but neither CUDA nor HIP compiler was found.\n"
+      "  The build will continue with CPU-only backends.\n"
+      "  To silence this warning, configure with -DGPU=OFF\n")
+endif()
+
 set(HAVE_THREADS ON)
 
 option(MPI "Enable MPI support" OFF)
@@ -95,7 +231,20 @@ if(MPI)
   if(MPI_FOUND)
 
   else()
-    message(FATAL_ERROR "  No MPI library found!")
+    message(
+      FATAL_ERROR
+        "\n"
+        "======================================================================\n"
+        "  MPI enabled but no MPI library found.\n"
+        "======================================================================\n"
+        "  Install an MPI implementation:\n"
+        "    Ubuntu/Debian:  sudo apt install libopenmpi-dev\n"
+        "    Arch Linux:     sudo pacman -S openmpi\n"
+        "    Rocky/RHEL:     sudo dnf install openmpi-devel\n"
+        "    macOS:          brew install open-mpi\n"
+        "\n"
+        "  Or disable MPI: cmake .. -DMPI=OFF\n"
+        "======================================================================\n")
   endif()
 endif()
 message("")
@@ -130,9 +279,7 @@ message("")
 
 include(ExternalProject)
 
-option(BUILD_OpenBLAS "Build OpenBLAS" OFF)
-
-# build hdf5 dep
+message("${BoldCyan}[1/8] Configuring HDF5...${ColourReset}")
 ExternalProject_Add(
   hdf5_dep
   LOG_CONFIGURE ON
@@ -151,7 +298,7 @@ ExternalProject_Add(
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
     -DMPI:BOOL=${MPI})
 
-# build general deps
+message("${BoldCyan}[2/8] Configuring general dependencies (TBB, Eigen3, spdlog, ...)...${ColourReset}")
 ExternalProject_Add(
   general_dep
   LOG_CONFIGURE ON
@@ -181,7 +328,7 @@ if(BUILD_OpenBLAS)
   endif()
 endif()
 
-# build sundials
+message("${BoldCyan}[3/8] Configuring SUNDIALS...${ColourReset}")
 ExternalProject_Add(
   sundials_dep
   LOG_CONFIGURE ON
@@ -201,7 +348,7 @@ ExternalProject_Add(
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
     -DMPI:BOOL=${MPI})
 
-# build autodiff
+message("${BoldCyan}[4/8] Configuring autodiff...${ColourReset}")
 ExternalProject_Add(
   autodiff_dep
   LOG_CONFIGURE ON
@@ -215,7 +362,7 @@ ExternalProject_Add(
   CMAKE_CACHE_ARGS -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
                    -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
 
-# build boost
+message("${BoldCyan}[5/8] Configuring Boost...${ColourReset}")
 ExternalProject_Add(
   boost_dep
   LOG_CONFIGURE ON
@@ -260,7 +407,7 @@ else()
   string(SUBSTRING "${Kokkos_ARCH_LIST}" 0 -1 Kokkos_ARCH_LIST)
 endif()
 
-# add the Kokkos dependency to the build
+message("${BoldCyan}[6/8] Configuring Kokkos...${ColourReset}")
 ExternalProject_Add(
   kokkos_dep
   LOG_CONFIGURE ON
@@ -325,6 +472,31 @@ if(BUILD_OpenBLAS)
   set(dealii_lapack "-DLAPACK_LIBRARIES:STRING=${BLAS_LIBRARY_PATH}")
 endif()
 
+# RAM-aware thread cap for deal.II (linking can OOM)
+cmake_host_system_information(RESULT _total_ram_mb QUERY TOTAL_PHYSICAL_MEMORY)
+math(EXPR _max_threads_by_ram "${_total_ram_mb} / 2000")
+if(_max_threads_by_ram LESS 1)
+  set(_max_threads_by_ram 1)
+endif()
+include(ProcessorCount)
+ProcessorCount(_nproc)
+if(_nproc LESS 1)
+  set(_nproc 1)
+endif()
+math(EXPR _half_cores "${_nproc} / 2")
+if(_half_cores LESS 1)
+  set(_half_cores 1)
+endif()
+# Use the lesser of half cores, RAM-based limit, and 8
+set(_dealii_jobs ${_half_cores})
+if(_max_threads_by_ram LESS _dealii_jobs)
+  set(_dealii_jobs ${_max_threads_by_ram})
+endif()
+if(_dealii_jobs GREATER 8)
+  set(_dealii_jobs 8)
+endif()
+message(STATUS "deal.II build parallelism: ${_dealii_jobs} threads (${_total_ram_mb} MB RAM, ${_nproc} cores)")
+
 option(NODEBUG "Disable the debug build in deal.ii" OFF)
 
 set(dealiiConfig "DebugRelease")
@@ -332,7 +504,7 @@ if(NODEBUG)
   set(dealiiConfig "Release")
 endif()
 
-# build deal.II
+message("${BoldCyan}[7/8] Configuring deal.II...${ColourReset}")
 ExternalProject_Add(
   deal.II_dep
   LOG_CONFIGURE ON
@@ -343,6 +515,7 @@ ExternalProject_Add(
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/deal.II
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
   DEPENDS general_dep boost_dep ${is_petsc_dep} sundials_dep
+  BUILD_COMMAND cmake --build . -- -j${_dealii_jobs}
   CMAKE_CACHE_ARGS
     -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
     -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
@@ -380,7 +553,7 @@ file(MAKE_DIRECTORY ${DEPEND_INSTALL_PREFIX}/include/deal.II/bundled)
 option(DiFfRG_TEST "Build DiFfRG tests" OFF)
 option(DiFfRG_DOCUMENTATION "Build DiFfRG documentation" ON)
 
-# build the actual DiFfRG library
+message("${BoldCyan}[8/8] Configuring DiFfRG...${ColourReset}")
 ExternalProject_Add(
   DiFfRG
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/

@@ -42,10 +42,11 @@ execute_process(
     -DHDF5_BUILD_EXAMPLES=OFF -DHDF5_BUILD_TOOLS=OFF -DHDF5_BUILD_HL_LIB=ON
     -DBUILD_SHARED_LIBS=ON -DBUILD_TESTING=OFF
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/
-  # Check if the command was successful
+  OUTPUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/hdf5_configure.log
+  ERROR_FILE ${CMAKE_CURRENT_BINARY_DIR}/hdf5_configure.log
   RESULT_VARIABLE HDF5_CONFIGURE_RESULT)
 if(NOT HDF5_CONFIGURE_RESULT EQUAL 0)
-  message(FATAL_ERROR "Failed to configure hdf5.")
+  message(FATAL_ERROR "Failed to configure HDF5. See log: ${CMAKE_CURRENT_BINARY_DIR}/hdf5_configure.log")
 endif()
 
 # briefly get the number of processors for parallel build
@@ -56,18 +57,20 @@ ProcessorCount(PROCESSOR_COUNT)
 execute_process(
   COMMAND make -j ${PROCESSOR_COUNT}
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/build
-  # Check if the command was successful
+  OUTPUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/hdf5_build.log
+  ERROR_FILE ${CMAKE_CURRENT_BINARY_DIR}/hdf5_build.log
   RESULT_VARIABLE HDF5_BUILD_RESULT)
 if(NOT HDF5_BUILD_RESULT EQUAL 0)
-  message(FATAL_ERROR "Failed to build hdf5.")
+  message(FATAL_ERROR "Failed to build HDF5. See log: ${CMAKE_CURRENT_BINARY_DIR}/hdf5_build.log")
 endif()
 
 # install hdf5
 execute_process(
   COMMAND make install
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/build
-  # Check if the command was successful
+  OUTPUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/hdf5_install.log
+  ERROR_FILE ${CMAKE_CURRENT_BINARY_DIR}/hdf5_install.log
   RESULT_VARIABLE HDF5_INSTALL_RESULT)
 if(NOT HDF5_INSTALL_RESULT EQUAL 0)
-  message(FATAL_ERROR "Failed to install hdf5.")
+  message(FATAL_ERROR "Failed to install HDF5. See log: ${CMAKE_CURRENT_BINARY_DIR}/hdf5_install.log")
 endif()

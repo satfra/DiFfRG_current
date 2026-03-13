@@ -1,7 +1,7 @@
 #!/bin/bash
 
-git clone https://github.com/satfra/DiFfRG.git --depth 1 --branch Implement-Kokkos
+git clone https://github.com/satfra/DiFfRG_current.git --depth 1 --branch main
 mkdir -p build
 cd build
-cmake ../DiFfRG -DCMAKE_BUILD_TYPE=Release -DKokkos_ARCH_LIST=Kokkos_ARCH_ADA89
+cmake ../DiFfRG -DCMAKE_BUILD_TYPE=Release
 make -j8
