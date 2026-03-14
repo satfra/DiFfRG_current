@@ -30,7 +30,7 @@ namespace DiFfRG
      * @param coordinates coordinate system of the data
      */
     LinearInterpolator1D(const Coordinates &coordinates)
-        : coordinates(coordinates), size(coordinates.size()), other_instance(nullptr)
+        : coordinates(coordinates), size(coordinates.size())
     {
       // Allocate Kokkos View
       device_data = ViewType("LinearInterpolator1D_data", size);
@@ -44,10 +44,15 @@ namespace DiFfRG
      */
     KOKKOS_FUNCTION
     LinearInterpolator1D(const LinearInterpolator1D &other)
-        : coordinates(other.coordinates), size(other.size), other_instance(nullptr)
+        : coordinates(other.coordinates), size(other.size)
     {
       // Use the same data
       device_data = other.device_data;
+    }
+
+    KOKKOS_FUNCTION ~LinearInterpolator1D()
+    {
+      KOKKOS_IF_ON_HOST((if (owns_other_instance) delete other_instance;))
     }
 
     template <typename NT2> void update(const NT2 *in_data)
@@ -132,9 +137,9 @@ namespace DiFfRG
       } else {
         // Create a new instance with the same data but in the requested memory space
         if (other_instance == nullptr) {
-          other_instance = std::make_shared<LinearInterpolator1D<NT, Coordinates, MemorySpace>>(coordinates);
-          other_instance->other_instance = std::shared_ptr<std::decay_t<decltype(*this)>>(
-              const_cast<std::decay_t<decltype(*this)> *>(this), [](std::decay_t<decltype(*this)> *) {});
+          other_instance = new LinearInterpolator1D<NT, Coordinates, MemorySpace>(coordinates);
+          owns_other_instance = true;
+          other_instance->other_instance = const_cast<std::decay_t<decltype(*this)> *>(this);
         }
         // Copy the data from the current instance to the new one
         other_instance->update(host_data);
@@ -164,6 +169,7 @@ namespace DiFfRG
     ViewType device_data;
     HostViewType host_data;
 
-    mutable std::shared_ptr<LinearInterpolator1D<NT, Coordinates, other_memory_space>> other_instance;
+    mutable LinearInterpolator1D<NT, Coordinates, other_memory_space> *other_instance = nullptr;
+    mutable bool owns_other_instance = false;
   };
 } // namespace DiFfRG

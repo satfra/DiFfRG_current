@@ -97,14 +97,15 @@ namespace DiFfRG
       // create an execution space
       ExecutionSpace space;
 
-      Kokkos::View<NT, typename ExecutionSpace::memory_space> result(Kokkos::view_alloc(space, "result"));
-
-      get(space, result, t...);
+      if (!m_result_views_initialized) {
+        m_result_view = Kokkos::View<NT, typename ExecutionSpace::memory_space>("result");
+        m_result_host = Kokkos::create_mirror_view(m_result_view);
+        m_result_views_initialized = true;
+      }
+      get(space, m_result_view, t...);
+      Kokkos::deep_copy(space, m_result_host, m_result_view);
       space.fence();
-
-      auto result_host = Kokkos::create_mirror_view(result);
-      Kokkos::deep_copy(space, result_host, result);
-      dest = result_host();
+      dest = m_result_host();
     }
 
     template <typename OT, typename... T>
@@ -173,7 +174,20 @@ namespace DiFfRG
       extents[0] = integral_view.size();
       for (int i = 0; i < dim; ++i)
         extents[1 + i] = grid_size[i];
-      auto cache = makeKokkosNDView<1 + dim, NT, ExecutionSpace>("cache", extents);
+
+      // Reuse cached view if large enough, otherwise reallocate (grow-only)
+      {
+        bool needs_realloc = false;
+        for (size_t i = 0; i < 1 + dim; ++i)
+          needs_realloc |= (extents[i] > m_cache_extents[i]);
+        if (needs_realloc) {
+          for (size_t i = 0; i < 1 + dim; ++i)
+            m_cache_extents[i] = std::max(m_cache_extents[i], extents[i]);
+          m_cache = makeKokkosNDView<1 + dim, NT, ExecutionSpace>("cache", m_cache_extents);
+        }
+      }
+      // Create a Restrict-tagged alias of the cache for no-alias optimization
+      const auto cache = KokkosNDViewRestrict<1 + dim, NT, ExecutionSpace>(m_cache);
 
       const auto m_args = device::make_tuple(args...);
 
@@ -226,16 +240,11 @@ namespace DiFfRG
                            KokkosNDLambdaWrapper<1 + dim, decltype(functor)>(functor));
 
       using TeamType = Kokkos::TeamPolicy<ExecutionSpace>::member_type;
-      // reduction
+      // reduction with vector lanes for warp-level parallelism
       Kokkos::parallel_for(
-          Kokkos::TeamPolicy(space, integral_view.size(), Kokkos::AUTO), KOKKOS_CLASS_LAMBDA(const TeamType &team) {
+          Kokkos::TeamPolicy(space, integral_view.size(), Kokkos::AUTO, 32), KOKKOS_CLASS_LAMBDA(const TeamType &team) {
             // get the current (continuous) index
             const uint k = team.league_rank();
-            // get the position for the current index
-            const auto idx = coordinates.from_linear_index(k);
-            const auto pos = coordinates.forward(idx);
-            // make a tuple of all arguments
-            const auto full_args = device::tuple_cat(pos, m_args);
 
             if (k > integral_view.size()) return;
 
@@ -243,16 +252,41 @@ namespace DiFfRG
             (void)cache;
             (void)grid_size;
 
-            auto red_functor = [&](const device::array<size_t, dim> ridx, NT &update) {
-              device::apply([&](const auto &...iargs) { update += cache(k, iargs...); }, ridx);
-            };
+            // Flatten grid_size into total element count for thread+vector splitting
+            size_t total_elements = 1;
+            for (int d = 0; d < dim; ++d)
+              total_elements *= grid_size[d];
 
             NT res{};
-            Kokkos::parallel_reduce(makeKokkosNDThreadRange<dim, TeamType>(team, grid_size),
-                                    KokkosNDLambdaWrapperReduction<dim, decltype(red_functor)>(red_functor), res);
+            Kokkos::parallel_reduce(
+                Kokkos::TeamThreadRange(team, (total_elements + 31) / 32),
+                [&](const size_t outer, NT &team_update) {
+                  NT vec_sum{};
+                  Kokkos::parallel_reduce(
+                      Kokkos::ThreadVectorRange(team, 32),
+                      [&](const size_t inner, NT &vec_update) {
+                        const size_t flat = outer * 32 + inner;
+                        if (flat < total_elements) {
+                          // Convert flat index back to multi-dimensional
+                          device::array<size_t, dim> ridx;
+                          size_t remainder = flat;
+                          for (int d = dim - 1; d >= 0; --d) {
+                            ridx[d] = remainder % grid_size[d];
+                            remainder /= grid_size[d];
+                          }
+                          device::apply([&](const auto &...iargs) { vec_update += cache(k, iargs...); }, ridx);
+                        }
+                      },
+                      vec_sum);
+                  team_update += vec_sum;
+                },
+                res);
 
-            // add the constant value
+            // add the constant value (skip coordinate computation if kernel has no constant)
             Kokkos::single(Kokkos::PerTeam(team), [&]() {
+              const auto idx = coordinates.from_linear_index(k);
+              const auto pos = coordinates.forward(idx);
+              const auto full_args = device::tuple_cat(pos, m_args);
               integral_view(k) =
                   res + device::apply([&](const auto &...iargs) { return KERNEL::constant(iargs...); }, full_args);
             });
@@ -293,30 +327,29 @@ namespace DiFfRG
     template <typename Coordinates, typename... Args>
     auto map_dist(NT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      // create an execution space
-      ExecutionSpace space;
-
       // create unmanaged host view for dest
       auto dest_view = Kokkos::View<NT *, CPU_memory, Kokkos::MemoryUnmanaged>(dest, coordinates.size());
 
-      // create device view for dest
-      auto dest_device_view = Kokkos::View<NT *, ExecutionSpace>(
-          Kokkos::view_alloc(space, "MapIntegrators_device_view"), coordinates.size());
+      // Reuse cached device view if large enough, otherwise reallocate (grow-only)
+      if (m_dest_device_size < coordinates.size()) {
+        m_dest_device = Kokkos::View<NT *, ExecutionSpace>(Kokkos::view_alloc(space, "MapIntegrators_device_view"),
+                                                           coordinates.size());
+        m_dest_device_size = coordinates.size();
+      }
+      auto dest_device_view =
+          Kokkos::View<NT *, ExecutionSpace>(m_dest_device, Kokkos::make_pair(size_t(0), coordinates.size()));
 
       // run the map function
       map(space, dest_device_view, coordinates, args...);
 
-      // copy the result from device to host
-      auto dest_host_view = Kokkos::create_mirror_view(space, dest_device_view);
-      Kokkos::deep_copy(space, dest_host_view, dest_device_view);
-
-      // copy the result from the mirror to the requested destination
-      Kokkos::deep_copy(space, dest_view, dest_host_view);
+      // copy the result from device to the unmanaged host view
+      Kokkos::deep_copy(space, dest_view, dest_device_view);
 
       return space;
     }
 
   protected:
+    ExecutionSpace space;
     QuadratureProvider &quadrature_provider;
     device::array<device::array<ctype, sdim>, 2> grid_extents;
     device::array<ctype, sdim> grid_start;
@@ -332,6 +365,15 @@ namespace DiFfRG
 
     Kokkos::View<const ctype *, typename ExecutionSpace::memory_space> matsubara_nodes;
     Kokkos::View<const ctype *, typename ExecutionSpace::memory_space> matsubara_weights;
+
+    // Persistent view caches to avoid per-call GPU memory allocation
+    mutable KokkosNDView<1 + dim, NT, ExecutionSpace> m_cache;
+    mutable device::array<size_t, 1 + dim> m_cache_extents{};
+    mutable Kokkos::View<NT *, ExecutionSpace> m_dest_device;
+    mutable size_t m_dest_device_size = 0;
+    mutable Kokkos::View<NT, typename ExecutionSpace::memory_space> m_result_view;
+    mutable typename Kokkos::View<NT, typename ExecutionSpace::memory_space>::host_mirror_type m_result_host;
+    mutable bool m_result_views_initialized = false;
   };
 
   template <int dim, typename NT, typename KERNEL>
@@ -465,9 +507,9 @@ namespace DiFfRG
     using Base::nodes;
     using Base::weights;
 
+    using Base::matsubara_sum_T;
     using Base::T;
     using Base::typical_E;
-    using Base::matsubara_sum_T;
   };
 
 } // namespace DiFfRG
