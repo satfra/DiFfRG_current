@@ -31,8 +31,7 @@ namespace DiFfRG
      * @param coordinates coordinate system of the data
      */
     LinearInterpolator3D(const Coordinates &coordinates)
-        : coordinates(coordinates), sizes(coordinates.sizes()), total_size(sizes[0] * sizes[1] * sizes[2]),
-          other_instance(nullptr)
+        : coordinates(coordinates), sizes(coordinates.sizes()), total_size(sizes[0] * sizes[1] * sizes[2])
     {
       // Allocate Kokkos View
       device_data = ViewType("LinearInterpolator3D_data", sizes[0], sizes[1], sizes[2]);
@@ -42,10 +41,15 @@ namespace DiFfRG
 
     KOKKOS_FUNCTION
     LinearInterpolator3D(const LinearInterpolator3D &other)
-        : coordinates(other.coordinates), sizes(other.sizes), total_size(other.total_size), other_instance(nullptr)
+        : coordinates(other.coordinates), sizes(other.sizes), total_size(other.total_size)
     {
       // Use the same data
       device_data = other.device_data;
+    }
+
+    KOKKOS_FUNCTION ~LinearInterpolator3D()
+    {
+      KOKKOS_IF_ON_HOST((if (owns_other_instance) delete other_instance;))
     }
 
     template <typename NT2> void update(const NT2 *in_data)
@@ -100,39 +104,39 @@ namespace DiFfRG
       idx_y = max(static_cast<decltype(idx_y)>(0), min(idx_y, static_cast<decltype(idx_y)>(sizes[1] - 1)));
       idx_z = max(static_cast<decltype(idx_z)>(0), min(idx_z, static_cast<decltype(idx_z)>(sizes[2] - 1)));
 
-      // Clamp the (upper) index to the range [1, sizes - 1]
-      size_t x1 = static_cast<size_t>(
-          min(ceil(idx_x + static_cast<decltype(idx_x)>(1e-16)), static_cast<decltype(idx_x)>(sizes[0] - 1)));
-      size_t y1 = static_cast<size_t>(
-          min(ceil(idx_y + static_cast<decltype(idx_y)>(1e-16)), static_cast<decltype(idx_y)>(sizes[1] - 1)));
-      size_t z1 = static_cast<size_t>(
-          min(ceil(idx_z + static_cast<decltype(idx_z)>(1e-16)), static_cast<decltype(idx_z)>(sizes[2] - 1)));
+      // Lower index clamped to [0, sizes-2], upper = lower+1
+      const size_t x0 = min(size_t(Kokkos::floor(idx_x)), sizes[0] - 2);
+      const size_t y0 = min(size_t(Kokkos::floor(idx_y)), sizes[1] - 2);
+      const size_t z0 = min(size_t(Kokkos::floor(idx_z)), sizes[2] - 2);
+      const size_t x1 = x0 + 1;
+      const size_t y1 = y0 + 1;
+      const size_t z1 = z0 + 1;
 
-      const auto corner000 = device_data(x1 - 1, y1 - 1, z1 - 1);
-      const auto corner010 = device_data(x1 - 1, y1, z1 - 1);
-      const auto corner100 = device_data(x1, y1 - 1, z1 - 1);
-      const auto corner110 = device_data(x1, y1, z1 - 1);
-      const auto corner001 = device_data(x1 - 1, y1 - 1, z1);
-      const auto corner011 = device_data(x1 - 1, y1, z1);
-      const auto corner101 = device_data(x1, y1 - 1, z1);
+      const auto corner000 = device_data(x0, y0, z0);
+      const auto corner010 = device_data(x0, y1, z0);
+      const auto corner100 = device_data(x1, y0, z0);
+      const auto corner110 = device_data(x1, y1, z0);
+      const auto corner001 = device_data(x0, y0, z1);
+      const auto corner011 = device_data(x0, y1, z1);
+      const auto corner101 = device_data(x1, y0, z1);
       const auto corner111 = device_data(x1, y1, z1);
 
-      const auto tx = x1 - idx_x;
-      const auto ty = y1 - idx_y;
-      const auto tz = z1 - idx_z;
+      const auto tx = idx_x - x0;
+      const auto ty = idx_y - y0;
+      const auto tz = idx_z - z0;
 
       if constexpr (std::is_arithmetic_v<NT>)
         return Kokkos::fma(
             tx,
-            Kokkos::fma(ty, Kokkos::fma(tz, corner000, Kokkos::fma(-tz, corner001, corner001)),
-                        (1 - ty) * Kokkos::fma(tz, corner010, Kokkos::fma(-tz, corner011, corner011))),
-            (1 - tx) * Kokkos::fma(ty, Kokkos::fma(tz, corner100, Kokkos::fma(-tz, corner101, corner101)),
-                                   (1 - ty) * Kokkos::fma(tz, corner110, Kokkos::fma(-tz, corner111, corner111))));
+            Kokkos::fma(ty, Kokkos::fma(tz, corner111, Kokkos::fma(-tz, corner110, corner110)),
+                        (1 - ty) * Kokkos::fma(tz, corner101, Kokkos::fma(-tz, corner100, corner100))),
+            (1 - tx) * Kokkos::fma(ty, Kokkos::fma(tz, corner011, Kokkos::fma(-tz, corner010, corner010)),
+                                   (1 - ty) * Kokkos::fma(tz, corner001, Kokkos::fma(-tz, corner000, corner000))));
       else
-        return corner000 * tx * ty * tz + corner001 * tx * ty * (1 - tz) + corner010 * tx * (1 - ty) * tz +
-               corner011 * tx * (1 - ty) * (1 - tz) + corner100 * (1 - tx) * ty * tz +
-               corner101 * (1 - tx) * ty * (1 - tz) + corner110 * (1 - tx) * (1 - ty) * tz +
-               corner111 * (1 - tx) * (1 - ty) * (1 - tz);
+        return corner000 * (1 - tx) * (1 - ty) * (1 - tz) + corner001 * (1 - tx) * (1 - ty) * tz +
+               corner010 * (1 - tx) * ty * (1 - tz) + corner011 * (1 - tx) * ty * tz +
+               corner100 * tx * (1 - ty) * (1 - tz) + corner101 * tx * (1 - ty) * tz +
+               corner110 * tx * ty * (1 - tz) + corner111 * tx * ty * tz;
     }
 
     auto &CPU() const { return get_on<CPU_memory>(); }
@@ -152,9 +156,9 @@ namespace DiFfRG
       } else {
         // Create a new instance with the same data but in the requested memory space
         if (other_instance == nullptr) {
-          other_instance = std::make_shared<LinearInterpolator3D<NT, Coordinates, MemorySpace>>(coordinates);
-          other_instance->other_instance = std::shared_ptr<std::decay_t<decltype(*this)>>(
-              const_cast<std::decay_t<decltype(*this)> *>(this), [](std::decay_t<decltype(*this)> *) {});
+          other_instance = new LinearInterpolator3D<NT, Coordinates, MemorySpace>(coordinates);
+          owns_other_instance = true;
+          other_instance->other_instance = const_cast<std::decay_t<decltype(*this)> *>(this);
         }
         // Copy the data from the current instance to the new one
         other_instance->update(host_data);
@@ -192,6 +196,7 @@ namespace DiFfRG
     ViewType device_data;
     HostViewType host_data;
 
-    mutable std::shared_ptr<LinearInterpolator3D<NT, Coordinates, other_memory_space>> other_instance;
+    mutable LinearInterpolator3D<NT, Coordinates, other_memory_space> *other_instance = nullptr;
+    mutable bool owns_other_instance = false;
   };
 } // namespace DiFfRG
