@@ -248,7 +248,7 @@ namespace DiFfRG
     {
     }
 
-    device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(auto i) const
+    device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(size_t i) const
     {
       return device::array<size_t, 1>{i};
     }
@@ -323,7 +323,7 @@ namespace DiFfRG
     {
     }
 
-    device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(auto i) const
+    device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(size_t i) const
     {
       return device::array<size_t, 1>{i};
     }

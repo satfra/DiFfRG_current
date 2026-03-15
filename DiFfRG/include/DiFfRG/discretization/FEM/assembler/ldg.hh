@@ -171,11 +171,11 @@ namespace DiFfRG
 
           for (uint i = 0; i < n_fe_subsystems; ++i) {
             const auto &fe = dofh[i]->get_fe();
-            fe_values[i] = unique_ptr<FEValues<dim>>(new FEValues<dim>(mapping, fe, quadrature, update_flags));
-            fe_interface_values[i] = unique_ptr<FEInterfaceValues<dim>>(
-                new FEInterfaceValues<dim>(mapping, fe, quadrature_face, interface_update_flags));
-            fe_boundary_values[i] = unique_ptr<FEFaceValues<dim>>(
-                new FEFaceValues<dim>(mapping, fe, quadrature_face, interface_update_flags));
+            fe_values[i] = std::make_unique<FEValues<dim>>(mapping, fe, quadrature, update_flags);
+            fe_interface_values[i] =
+                std::make_unique<FEInterfaceValues<dim>>(mapping, fe, quadrature_face, interface_update_flags);
+            fe_boundary_values[i] =
+                std::make_unique<FEFaceValues<dim>>(mapping, fe, quadrature_face, interface_update_flags);
 
             n_components[i] = fe.n_components();
             solution[i].resize(quadrature.size(), Vector<NumberType>(n_components[i]));

@@ -86,9 +86,11 @@ namespace DiFfRG
     {
       const auto fe_function_names = Components::FEFunction_Descriptor::get_names_vector();
       std::vector<std::string> fe_function_names_residual;
+      fe_function_names_residual.reserve(fe_function_names.size());
       for (const auto &name : fe_function_names)
         fe_function_names_residual.push_back(name + "_residual");
       std::vector<std::string> fe_function_names_dot;
+      fe_function_names_dot.reserve(fe_function_names.size());
       for (const auto &name : fe_function_names)
         fe_function_names_dot.push_back(name + "_dot");
 

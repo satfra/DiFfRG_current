@@ -272,7 +272,6 @@ namespace DiFfRG
           double local_indicator = 0.;
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
-            const std::vector<double> nothing = {};
             model.cell_indicator(local_indicator, x_q,
                                  i_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index]));
             copy_data.value += JxW[q_index] * local_indicator;
@@ -286,7 +285,6 @@ namespace DiFfRG
           const auto &fe_iv_s = scratch_data.fe_interface_values.get_fe_face_values(0);
           const auto &fe_iv_n = scratch_data.fe_interface_values.get_fe_face_values(1);
 
-          copy_data.face_data.emplace_back();
           auto &copy_data_face = copy_data.face_data.emplace_back();
           copy_data_face.cell_indices[0] = t_cell->active_cell_index();
           copy_data_face.cell_indices[1] = t_ncell->active_cell_index();
@@ -314,7 +312,6 @@ namespace DiFfRG
           array<double, 2> local_indicator{};
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
-            std::vector<double> nothing = {};
             model.face_indicator(local_indicator, normals[q_index], x_q,
                                  i_tie(solution_s[q_index], solution_grad_s[q_index], solution_hess_s[q_index]),
                                  i_tie(solution_n[q_index], solution_grad_n[q_index], solution_hess_n[q_index]));

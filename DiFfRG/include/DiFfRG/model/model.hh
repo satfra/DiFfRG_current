@@ -432,7 +432,8 @@ namespace DiFfRG
 
     protected:
       const double Lambda;
-      double t, k, k2, k3, k4, k5, k6;
+      double t = 0., k = 0., k2 = 0., k3 = 0., k4 = 0., k5 = 0., k6 = 0.;
+      bool time_initialized = false;
     };
   } // namespace def
 } // namespace DiFfRG
