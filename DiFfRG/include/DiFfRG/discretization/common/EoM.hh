@@ -513,8 +513,14 @@ namespace DiFfRG
 
         try {
           fe_function.vector_value(p_proj, values);
-        } catch (...) {
+        } catch (const std::exception &e) {
           // if p is outside the triangulation, give a default value
+          std::cerr << "Warning: EoM evaluation failed at point " << p_proj << ": " << e.what() << std::endl;
+          return std::array<double, dim>{{
+              std::numeric_limits<double>::quiet_NaN(),
+          }};
+        } catch (...) {
+          std::cerr << "Warning: EoM evaluation failed at point " << p_proj << " with unknown exception" << std::endl;
           return std::array<double, dim>{{
               std::numeric_limits<double>::quiet_NaN(),
           }};

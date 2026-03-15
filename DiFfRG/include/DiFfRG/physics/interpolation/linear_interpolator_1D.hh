@@ -60,7 +60,7 @@ namespace DiFfRG
       // Check if the host data is already allocated
       if (!host_data.is_allocated())
         throw std::runtime_error(
-            "SplineInterpolator1D: You probably called update() on a copied instance. This is not allowed. "
+            "LinearInterpolator1D: You probably called update() on a copied instance. This is not allowed. "
             "You need to call update() on the original instance.");
 
       Kokkos::View<const NT2 *, Kokkos::LayoutRight, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>>
@@ -75,7 +75,7 @@ namespace DiFfRG
       // Check if the host data is already allocated
       if (!host_data.is_allocated())
         throw std::runtime_error(
-            "LinearInterpolator2D: You probably called update() on a copied instance. This is not allowed. "
+            "LinearInterpolator1D: You probably called update() on a copied instance. This is not allowed. "
             "You need to call update() on the original instance.");
       // Populate host mirror
       Kokkos::deep_copy(host_data, view);
@@ -105,9 +105,11 @@ namespace DiFfRG
       idx = Kokkos::max(static_cast<decltype(idx)>(0), Kokkos::min(idx, static_cast<decltype(idx)>(size - 1)));
       // t is the fractional part of the index
       const auto t = idx - Kokkos::floor(idx);
-      // Do the linear interpolation
-      const auto lower = device_data[size_t(Kokkos::floor(idx))];
-      const auto upper = device_data[size_t(Kokkos::ceil(idx))];
+      // Do the linear interpolation, clamping upper index to valid range
+      const size_t lower_idx = Kokkos::min(size_t(Kokkos::floor(idx)), size - 2);
+      const size_t upper_idx = lower_idx + 1;
+      const auto lower = device_data[lower_idx];
+      const auto upper = device_data[upper_idx];
       if constexpr (std::is_arithmetic_v<NT>)
         return Kokkos::fma(t, upper, Kokkos::fma(-t, lower, lower));
       else

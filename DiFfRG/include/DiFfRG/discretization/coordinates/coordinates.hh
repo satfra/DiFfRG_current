@@ -34,7 +34,8 @@ namespace DiFfRG
     // Assert that all coordinates have the same ctype
     static_assert((std::is_same<typename Coordinates::ctype,
                                 typename device::tuple_element<0, device::tuple<Coordinates...>>::type::ctype>::value &&
-                   ...));
+                   ...),
+                  "CoordinatePackND: all coordinate systems must use the same ctype");
     static_assert(sizeof...(Coordinates) > 0, "CoordinatePackND requires at least one coordinate system");
     // Assert that all coordinates have the dim 1
     static_assert(((Coordinates::dim == 1) && ...), "CoordinatePackND requires all coordinates to have dim 1");

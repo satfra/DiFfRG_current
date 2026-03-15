@@ -97,8 +97,10 @@ namespace DiFfRG
                               const Vector &sol) const
       {
         using Components = typename Model::Components;
-        static_assert(n_to == Components::count_fe_functions());
-        static_assert(n_from == Components::count_fe_functions());
+        static_assert(n_to == Components::count_fe_functions(),
+                      "jacobian_flux_grad: n_to must equal count_fe_functions()");
+        static_assert(n_from == Components::count_fe_functions(),
+                      "jacobian_flux_grad: n_from must equal count_fe_functions()");
 
         const auto &u = get<tup_idx>(sol);
         const auto _du = AD_tools::template ten_to_AD<n_from>(u);
@@ -129,8 +131,10 @@ namespace DiFfRG
                               const Vector &sol) const
       {
         using Components = typename Model::Components;
-        static_assert(n_to == Components::count_fe_functions());
-        static_assert(n_from == Components::count_fe_functions());
+        static_assert(n_to == Components::count_fe_functions(),
+                      "jacobian_flux_hess: n_to must equal count_fe_functions()");
+        static_assert(n_from == Components::count_fe_functions(),
+                      "jacobian_flux_hess: n_from must equal count_fe_functions()");
 
         const auto &u = get<tup_idx>(sol);
         const auto _du = AD_tools::template ten_to_AD<n_from>(u);
@@ -162,8 +166,10 @@ namespace DiFfRG
                               const Vector &sol) const
       {
         using Components = typename Model::Components;
-        static_assert(n_to == Components::count_fe_functions());
-        static_assert(n_from == Components::count_extractors());
+        static_assert(n_to == Components::count_fe_functions(),
+                      "jacobian_flux_extr: n_to must equal count_fe_functions()");
+        static_assert(n_from == Components::count_extractors(),
+                      "jacobian_flux_extr: n_from must equal count_extractors()");
 
         const auto &e = get<tup_idx>(sol);
         auto de = AD_tools::template vector_to_AD<n_from>(e);
@@ -188,8 +194,10 @@ namespace DiFfRG
                          const Vector &sol) const
       {
         using Components = typename Model::Components;
-        static_assert(n_to == Components::count_fe_functions(to));
-        static_assert(n_from == Components::count_fe_functions(from));
+        static_assert(n_to == Components::count_fe_functions(to),
+                      "jacobian_flux: n_to must equal count_fe_functions(to)");
+        static_assert(n_from == Components::count_fe_functions(from),
+                      "jacobian_flux: n_from must equal count_fe_functions(from)");
 
         if constexpr (to == 0) {
           const auto &u = get<from>(sol);
@@ -242,8 +250,10 @@ namespace DiFfRG
                                 const Vector &sol) const
       {
         using Components = typename Model::Components;
-        static_assert(n_to == Components::count_fe_functions());
-        static_assert(n_from == Components::count_fe_functions());
+        static_assert(n_to == Components::count_fe_functions(),
+                      "jacobian_source_grad: n_to must equal count_fe_functions()");
+        static_assert(n_from == Components::count_fe_functions(),
+                      "jacobian_source_grad: n_from must equal count_fe_functions()");
 
         const auto &u = get<tup_idx>(sol);
         const auto _du = AD_tools::template ten_to_AD<n_from>(u);
@@ -272,8 +282,10 @@ namespace DiFfRG
                                 const Vector &sol) const
       {
         using Components = typename Model::Components;
-        static_assert(n_to == Components::count_fe_functions());
-        static_assert(n_from == Components::count_fe_functions());
+        static_assert(n_to == Components::count_fe_functions(),
+                      "jacobian_source_hess: n_to must equal count_fe_functions()");
+        static_assert(n_from == Components::count_fe_functions(),
+                      "jacobian_source_hess: n_from must equal count_fe_functions()");
 
         const auto &u = get<tup_idx>(sol);
         const auto _du = AD_tools::template ten_to_AD<n_from>(u);
@@ -304,8 +316,10 @@ namespace DiFfRG
       void jacobian_source_extr(SimpleMatrix<NT, n_to, n_from> &jS, const Point<dim> &p, const Vector &sol) const
       {
         using Components = typename Model::Components;
-        static_assert(n_to == Components::count_fe_functions());
-        static_assert(n_from == Components::count_extractors());
+        static_assert(n_to == Components::count_fe_functions(),
+                      "jacobian_source_extr: n_to must equal count_fe_functions()");
+        static_assert(n_from == Components::count_extractors(),
+                      "jacobian_source_extr: n_from must equal count_extractors()");
 
         const auto &e = get<tup_idx>(sol);
         auto de = AD_tools::template vector_to_AD<n_from>(e);
@@ -327,8 +341,10 @@ namespace DiFfRG
       void jacobian_source(SimpleMatrix<NT, n_to, n_from> &jS, const Point<dim> &p, const Vector &sol) const
       {
         using Components = typename Model::Components;
-        static_assert(n_to == Components::count_fe_functions(to));
-        static_assert(n_from == Components::count_fe_functions(from));
+        static_assert(n_to == Components::count_fe_functions(to),
+                      "jacobian_source: n_to must equal count_fe_functions(to)");
+        static_assert(n_from == Components::count_fe_functions(from),
+                      "jacobian_source: n_from must equal count_fe_functions(from)");
 
         if constexpr (to == 0) {
           const auto &u = get<from>(sol);
@@ -378,8 +394,10 @@ namespace DiFfRG
                                  const Vector_n &sol_n) const
       {
         using Components = typename Model::Components;
-        static_assert(n_to == Components::count_fe_functions());
-        static_assert(n_from == Components::count_fe_functions());
+        static_assert(n_to == Components::count_fe_functions(),
+                      "jacobian_numflux_grad: n_to must equal count_fe_functions()");
+        static_assert(n_from == Components::count_fe_functions(),
+                      "jacobian_numflux_grad: n_from must equal count_fe_functions()");
 
         const auto &u_s = get<tup_idx>(sol_s);
         const auto &u_n = get<tup_idx>(sol_n);
@@ -427,8 +445,10 @@ namespace DiFfRG
                                  const Vector_n &sol_n) const
       {
         using Components = typename Model::Components;
-        static_assert(n_to == Components::count_fe_functions());
-        static_assert(n_from == Components::count_fe_functions());
+        static_assert(n_to == Components::count_fe_functions(),
+                      "jacobian_numflux_hess: n_to must equal count_fe_functions()");
+        static_assert(n_from == Components::count_fe_functions(),
+                      "jacobian_numflux_hess: n_from must equal count_fe_functions()");
 
         const auto &u_s = get<tup_idx>(sol_s);
         const auto &u_n = get<tup_idx>(sol_n);
@@ -478,8 +498,10 @@ namespace DiFfRG
                                  const Vector_n &sol_n) const
       {
         using Components = typename Model::Components;
-        static_assert(n_to == Components::count_fe_functions());
-        static_assert(n_from == Components::count_extractors());
+        static_assert(n_to == Components::count_fe_functions(),
+                      "jacobian_numflux_extr: n_to must equal count_fe_functions()");
+        static_assert(n_from == Components::count_extractors(),
+                      "jacobian_numflux_extr: n_from must equal count_extractors()");
 
         const auto &e = get<tup_idx>(sol_s);
         auto de = AD_tools::template vector_to_AD<n_from>(e);
@@ -511,8 +533,10 @@ namespace DiFfRG
                             const Vector_n &sol_n) const
       {
         using Components = typename Model::Components;
-        static_assert(n_to == Components::count_fe_functions(to));
-        static_assert(n_from == Components::count_fe_functions(from));
+        static_assert(n_to == Components::count_fe_functions(to),
+                      "jacobian_numflux: n_to must equal count_fe_functions(to)");
+        static_assert(n_from == Components::count_fe_functions(from),
+                      "jacobian_numflux: n_from must equal count_fe_functions(from)");
 
         if constexpr (to == 0) {
           const auto &u_s = get<from>(sol_s);
@@ -592,8 +616,10 @@ namespace DiFfRG
                                           const Tensor<1, dim> &normal, const Point<dim> &p, const Vector &sol) const
       {
         using Components = typename Model::Components;
-        static_assert(n_to == Components::count_fe_functions());
-        static_assert(n_from == Components::count_fe_functions());
+        static_assert(n_to == Components::count_fe_functions(),
+                      "jacobian_boundary_numflux_grad: n_to must equal count_fe_functions()");
+        static_assert(n_from == Components::count_fe_functions(),
+                      "jacobian_boundary_numflux_grad: n_from must equal count_fe_functions()");
 
         const auto &u = get<tup_idx>(sol);
         auto du = AD_tools::template ten_to_AD<n_from>(u);
@@ -620,8 +646,10 @@ namespace DiFfRG
                                           const Tensor<1, dim> &normal, const Point<dim> &p, const Vector &sol) const
       {
         using Components = typename Model::Components;
-        static_assert(n_to == Components::count_fe_functions());
-        static_assert(n_from == Components::count_fe_functions());
+        static_assert(n_to == Components::count_fe_functions(),
+                      "jacobian_boundary_numflux_hess: n_to must equal count_fe_functions()");
+        static_assert(n_from == Components::count_fe_functions(),
+                      "jacobian_boundary_numflux_hess: n_from must equal count_fe_functions()");
 
         const auto &u = get<tup_idx>(sol);
         auto du = AD_tools::template ten_to_AD<n_from>(u);
@@ -649,8 +677,10 @@ namespace DiFfRG
                                           const Tensor<1, dim> &normal, const Point<dim> &p, const Vector &sol) const
       {
         using Components = typename Model::Components;
-        static_assert(n_to == Components::count_fe_functions());
-        static_assert(n_from == Components::count_extractors());
+        static_assert(n_to == Components::count_fe_functions(),
+                      "jacobian_boundary_numflux_extr: n_to must equal count_fe_functions()");
+        static_assert(n_from == Components::count_extractors(),
+                      "jacobian_boundary_numflux_extr: n_from must equal count_extractors()");
 
         const auto &e = get<tup_idx>(sol);
         auto de = AD_tools::template vector_to_AD<n_from>(e);
@@ -675,8 +705,10 @@ namespace DiFfRG
                                      const Point<dim> &p, const Vector &sol) const
       {
         using Components = typename Model::Components;
-        static_assert(n_to == Components::count_fe_functions(to));
-        static_assert(n_from == Components::count_fe_functions(from));
+        static_assert(n_to == Components::count_fe_functions(to),
+                      "jacobian_boundary_numflux: n_to must equal count_fe_functions(to)");
+        static_assert(n_from == Components::count_fe_functions(from),
+                      "jacobian_boundary_numflux: n_from must equal count_fe_functions(from)");
 
         if constexpr (to == 0) {
           const auto &u = get<from>(sol);
@@ -725,7 +757,8 @@ namespace DiFfRG
                          const Vector &u_dot) const
       {
         using Components = typename Model::Components;
-        static_assert(n_from == Components::count_fe_functions() && n_to == Components::count_fe_functions());
+        static_assert(n_from == Components::count_fe_functions() && n_to == Components::count_fe_functions(),
+                      "jacobian_mass: n_from and n_to must both equal count_fe_functions()");
 
         if constexpr (dot == 0) {
           auto du = AD_tools::template vector_to_AD<Components::count_fe_functions(0)>(u);
