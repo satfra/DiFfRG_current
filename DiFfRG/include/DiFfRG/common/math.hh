@@ -242,6 +242,14 @@ namespace DiFfRG
     using ::Kokkos::fabs;
 
     using ::Kokkos::atan2;
+    using ::Kokkos::fma;
+
+    template <typename T1, typename T2, typename T3>
+      requires(!std::is_arithmetic_v<T1> || !std::is_arithmetic_v<T2> || !std::is_arithmetic_v<T3>)
+    constexpr KOKKOS_FORCEINLINE_FUNCTION auto fma(const T1 &a, const T2 &b, const T3 &c)
+    {
+      return a * b + c;
+    }
 
     template <size_t N, typename T>
       requires std::is_arithmetic_v<T>

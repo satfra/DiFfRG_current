@@ -111,7 +111,7 @@ public:
     const double mPi = m2Pi > 0. ? std::sqrt(m2Pi) : 0.;
     const double mSigma = m2Sigma > 0. ? std::sqrt(m2Sigma) : 0.;
 
-    auto &out_file = output.csv_file("data.csv");
+    auto &out_file = output.csv("data.csv");
     out_file.set_Lambda(Lambda);
 
     out_file.value("sigma [GeV]", sigma);

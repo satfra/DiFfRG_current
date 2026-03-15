@@ -1,3 +1,5 @@
+#include "../kernel.hh"
+
 #include "../V.hh"
 
 void V_integrator::get(autodiff::real &dest, const double &k, const double &N, const double &T,
