@@ -1,3 +1,6 @@
+// Method 5: Host loop + two-phase per output point: MDRangePolicy parallel_for into 4D cache,
+// then MDRangePolicy parallel_reduce from cache. Constant added in a separate final kernel.
+
 #include <catch2/catch_all.hpp>
 
 #include <DiFfRG/common/init.hh>

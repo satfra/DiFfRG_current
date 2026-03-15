@@ -1,5 +1,7 @@
-// Method 7: Single TeamPolicy kernel, two-phase within each team: parallel_for then parallel_reduce
-// over TeamThreadMDRange into a 5D cache (no Restrict). Constant added via team_rank() == 0 guard.
+// Method 8: Mirrors QuadratureIntegrator::map() from quadrature_integrator.hh.
+// Two-phase with 5D Restrict cache. MDRangePolicy<Rank<5>> parallel_for fills cache,
+// then TeamPolicy reduction with flattened TeamThreadRange/ThreadVectorRange (vector width 32).
+// Constant added via Kokkos::single(PerTeam).
 
 #include <catch2/catch_all.hpp>
 
@@ -12,7 +14,7 @@
 // #include "./ZA4/kernel.hh"
 #include "./flows/ZA4/kernel.hh"
 
-void method7(Catch::Benchmark::Chronometer &meter)
+void method8(Catch::Benchmark::Chronometer &meter)
 {
   // -------------------------------------------------------------------------------
   // Init: should be same across all methods.
@@ -76,63 +78,91 @@ void method7(Catch::Benchmark::Chronometer &meter)
   const auto m_args = device::make_tuple(k, ZA3, ZAcbc, ZA4, dtZc, Zc, dtZA, ZA);
 
   // -------------------------------------------------------------------------------
-  // Method
+  // Method: mirrors QuadratureIntegrator::map() from quadrature_integrator.hh
   // -------------------------------------------------------------------------------
 
   // Kokkos
   using TeamPolicy = Kokkos::TeamPolicy<ExecutionSpace>;
   using TeamType = Kokkos::TeamPolicy<ExecutionSpace>::member_type;
-  using Scratch = typename ExecutionSpace::scratch_memory_space;
 
-  Kokkos::View<NT *****, GPU_memory> cache("cache", integral_view.size(), n[0].size(), n[1].size(), n[2].size(),
-                                           n[3].size());
+  // Cache with Restrict memory trait (as in production code)
+  Kokkos::View<NT *****, GPU_memory, Kokkos::MemoryTraits<Kokkos::Restrict>> cache("cache", integral_view.size(),
+                                                                                    n[0].size(), n[1].size(),
+                                                                                    n[2].size(), n[3].size());
 
   meter.measure([&] {
     GPU_exec space;
 
-    // reduction
+    // Phase 1: Fill cache via MDRangePolicy (mirrors makeKokkosNDRange<1+dim> parallel_for)
     Kokkos::parallel_for(
-        Kokkos::TeamPolicy(space, integral_view.size(), Kokkos::AUTO), KOKKOS_LAMBDA(const TeamType &team) {
-          // get the current (continuous) index
+        Kokkos::MDRangePolicy<ExecutionSpace, Kokkos::Rank<5>>(
+            space, {0, 0, 0, 0, 0},
+            {(long)integral_view.size(), (long)n[0].size(), (long)n[1].size(), (long)n[2].size(), (long)n[3].size()}),
+        KOKKOS_LAMBDA(const long ik, const long idx0, const long idx1, const long idx2, const long idx3) {
+          const auto idx_v = coordinates.from_linear_index(ik);
+          const auto pos = coordinates.forward(idx_v);
+
+          const ctype x0 = Kokkos::fma(scale[0], n[0][idx0], start[0]);
+          const ctype x1 = Kokkos::fma(scale[1], n[1][idx1], start[1]);
+          const ctype x2 = Kokkos::fma(scale[2], n[2][idx2], start[2]);
+          const ctype x3 = Kokkos::fma(scale[3], n[3][idx3], start[3]);
+
+          const ctype weight =
+              w[0][idx0] * scale[0] * w[1][idx1] * scale[1] * w[2][idx2] * scale[2] * w[3][idx3] * scale[3];
+
+          const auto full_args = device::tuple_cat(device::make_tuple(x0, x1, x2, x3), pos, m_args);
+
+          cache(ik, idx0, idx1, idx2, idx3) =
+              device::apply([&](const auto &...iargs) { return weight * KERNEL::kernel(iargs...); }, full_args);
+        });
+
+    // Phase 2: TeamPolicy reduction with TeamThreadRange/ThreadVectorRange (vector lanes of width 32)
+    size_t total_elements = n[0].size() * n[1].size() * n[2].size() * n[3].size();
+    Kokkos::parallel_for(
+        Kokkos::TeamPolicy(space, integral_view.size(), Kokkos::AUTO, 32), KOKKOS_LAMBDA(const TeamType &team) {
           const uint k = team.league_rank();
-          // get the position for the current index
-          const auto idx = coordinates.from_linear_index(k);
-          const auto pos = coordinates.forward(idx);
-          // make a tuple of all arguments
-          const auto full_args = device::tuple_cat(pos, m_args);
+
+          if (k > integral_view.size()) return;
 
           // no-ops to capture
           (void)cache;
-
-          Kokkos::parallel_for(Kokkos::TeamThreadMDRange(team, n[0].size(), n[1].size(), n[2].size(),
-                                                         n[3].size()), // range of the kernel
-                               [&](const uint idx0, const uint idx1, const uint idx2, const uint idx3) {
-                                 const ctype x0 = Kokkos::fma(scale[0], n[0][idx0], start[0]);
-                                 const ctype x1 = Kokkos::fma(scale[1], n[1][idx1], start[1]);
-                                 const ctype x2 = Kokkos::fma(scale[2], n[2][idx2], start[2]);
-                                 const ctype x3 = Kokkos::fma(scale[3], n[3][idx3], start[3]);
-
-                                 const ctype weight = w[0][idx0] * scale[0] * w[1][idx1] * scale[1] * w[2][idx2] *
-                                                      scale[2] * w[3][idx3] * scale[3];
-                                 const NT result = device::apply(
-                                     [&](const auto &...iargs) { return KERNEL::kernel(x0, x1, x2, x3, iargs...); },
-                                     full_args);
-                                 cache(k, idx0, idx1, idx2, idx3) = weight * result;
-                               });
+          (void)grid_size;
 
           NT res{};
           Kokkos::parallel_reduce(
-              Kokkos::TeamThreadMDRange(team, n[0].size(), n[1].size(), n[2].size(),
-                                        n[3].size()), // range of the kernel
-              [&](const uint idx0, const uint idx1, const uint idx2, const uint idx3, NT &update) {
-                update += cache(k, idx0, idx1, idx2, idx3);
+              Kokkos::TeamThreadRange(team, (total_elements + 31) / 32),
+              [&](const size_t outer, NT &team_update) {
+                NT vec_sum{};
+                Kokkos::parallel_reduce(
+                    Kokkos::ThreadVectorRange(team, 32),
+                    [&](const size_t inner, NT &vec_update) {
+                      const size_t flat = outer * 32 + inner;
+                      if (flat < total_elements) {
+                        // Convert flat index back to multi-dimensional
+                        size_t remainder = flat;
+                        const uint idx3 = remainder % grid_size[3];
+                        remainder /= grid_size[3];
+                        const uint idx2 = remainder % grid_size[2];
+                        remainder /= grid_size[2];
+                        const uint idx1 = remainder % grid_size[1];
+                        remainder /= grid_size[1];
+                        const uint idx0 = remainder;
+                        vec_update += cache(k, idx0, idx1, idx2, idx3);
+                      }
+                    },
+                    vec_sum);
+                team_update += vec_sum;
               },
               res);
 
-          // add the constant value
-          if (team.team_rank() == 0)
+          // add the constant value via Kokkos::single(PerTeam)
+          Kokkos::single(Kokkos::PerTeam(team), [&]() {
+            const auto idx = coordinates.from_linear_index(k);
+            const auto pos = coordinates.forward(idx);
+            const auto full_args = device::tuple_cat(pos, m_args);
             integral_view(k) =
                 res + device::apply([&](const auto &...iargs) { return KERNEL::constant(iargs...); }, full_args);
+          });
         });
     space.fence();
   });

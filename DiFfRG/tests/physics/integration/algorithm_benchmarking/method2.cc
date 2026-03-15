@@ -1,3 +1,7 @@
+// Method 2: TeamPolicy + nested TeamThreadRange / ThreadVectorMDRange (no cache).
+// One team per output point. Outer reduction over dim 0 via TeamThreadRange,
+// inner reduction over dims 1-3 via ThreadVectorMDRange (vector lanes).
+
 #include <catch2/catch_all.hpp>
 
 #include <DiFfRG/common/init.hh>
