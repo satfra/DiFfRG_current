@@ -1,4 +1,5 @@
 // standard library
+#include <filesystem>
 #include <fstream>
 
 // DiFfRG
@@ -20,7 +21,6 @@ namespace DiFfRG
       } catch (...) {
         throw std::runtime_error("Logger initialization failed: " + std::string(e.what()));
       }
-      return nullptr;
     }
   }
 
@@ -57,7 +57,9 @@ namespace DiFfRG
   bool create_folder(const std::string &path_)
   {
     auto path = make_folder(path_);
-    return (system((std::string("mkdir -p ") + path).c_str()) == 0);
+    std::error_code ec;
+    std::filesystem::create_directories(path, ec);
+    return !ec;
   }
 
   std::string time_format(size_t time_in_seconds)

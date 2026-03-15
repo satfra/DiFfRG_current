@@ -15,6 +15,7 @@ MakeKernel::InvalidSpec = "The given kernel specification is invalid.";
 MakeKernel::InvalidSpec="The parameters given to MakeKernel are not valid.";
 MakeKernel::MissingKey="The key \"`1`\" is missing.";
 MakeKernel::InvalidKey="The key \"`1`\" is invalid: `2`";
+MakeKernel::exportFailed="Export of sources.m to `1` failed.";
 
 
 Begin["`Private`"]
@@ -313,7 +314,10 @@ sources = Map[StringReplace[#,
                 outputPath -> StringTemplate["${CMAKE_CURRENT_SOURCE_DIR}/`Name`"][spec]
                 ]&, 
             sources];
-Export[FileNameJoin[outputPath, "sources.m"], sources];
+If[Export[FileNameJoin[outputPath, "sources.m"], sources] === $Failed,
+    Message[MakeKernel::exportFailed, FileNameJoin[outputPath, "sources.m"]];
+    Abort[]
+];
 Print["Please run UpdateFlows[] to export an up-to-date CMakeLists.txt"];
 ];
 
