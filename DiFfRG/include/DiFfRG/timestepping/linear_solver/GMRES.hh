@@ -31,7 +31,7 @@ namespace DiFfRG
       solver.solve(*matrix, dst, src, preconditioner);
       } catch (std::exception &e)
       {
-        std::cerr << "GMRES linear solver failed: " << e.what();
+        std::cerr << "GMRES linear solver failed: " << e.what() << std::endl;
         throw;
       }
 

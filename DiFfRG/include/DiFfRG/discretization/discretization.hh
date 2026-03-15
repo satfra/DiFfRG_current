@@ -2,11 +2,11 @@
 
 // #include <DiFfRG/discretization/FV/discretization.hh>
 
-// #include <DiFfRG/discretization/FEM/cg.hh>
-// #include <DiFfRG/discretization/FEM/dg.hh>
-// #include <DiFfRG/discretization/FEM/ldg.hh>
+#include <DiFfRG/discretization/FEM/cg.hh>
+#include <DiFfRG/discretization/FEM/dg.hh>
+#include <DiFfRG/discretization/FEM/ldg.hh>
 
-// #include <DiFfRG/discretization/variables/variables.hh>
+#include <DiFfRG/discretization/variables/variables.hh>
 
 #include <DiFfRG/discretization/data/csv_output.hh>
 #include <DiFfRG/discretization/data/data.hh>
