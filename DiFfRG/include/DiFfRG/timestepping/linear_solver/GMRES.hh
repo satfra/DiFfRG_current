@@ -9,13 +9,18 @@
 
 namespace DiFfRG
 {
-  template <typename SparseMatrixType, typename VectorType>
+  template <typename SparseMatrixType, typename VectorType,
+            typename PreconditionerType = dealii::PreconditionJacobi<SparseMatrixType>>
   class GMRES : public AbstractLinearSolver<SparseMatrixType, VectorType>
   {
   public:
     GMRES() : matrix(nullptr) {}
 
-    void init(const SparseMatrixType &matrix) { this->matrix = &matrix; }
+    void init(const SparseMatrixType &matrix)
+    {
+      this->matrix = &matrix;
+      preconditioner.initialize(matrix, 1.0);
+    }
 
     bool invert() { return false; }
 
@@ -25,12 +30,9 @@ namespace DiFfRG
       dealii::SolverControl solver_control(std::max<std::size_t>(1000, src.size() / 10), tol);
       dealii::SolverGMRES<VectorType> solver(solver_control);
 
-      //preconditioner.initialize(*matrix, 1.0);
-      preconditioner.initialize(*matrix);
       try {
-      solver.solve(*matrix, dst, src, preconditioner);
-      } catch (std::exception &e)
-      {
+        solver.solve(*matrix, dst, src, preconditioner);
+      } catch (std::exception &e) {
         std::cerr << "GMRES linear solver failed: " << e.what() << std::endl;
         throw;
       }
@@ -41,7 +43,6 @@ namespace DiFfRG
 
   private:
     const SparseMatrixType *matrix;
-    //dealii::PreconditionJacobi<SparseMatrixType> preconditioner;
-    dealii::PreconditionIdentity preconditioner;
+    PreconditionerType preconditioner;
   };
 } // namespace DiFfRG

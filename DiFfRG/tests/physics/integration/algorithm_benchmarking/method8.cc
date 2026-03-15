@@ -86,19 +86,19 @@ void method8(Catch::Benchmark::Chronometer &meter)
   using TeamType = Kokkos::TeamPolicy<ExecutionSpace>::member_type;
 
   // Cache with Restrict memory trait (as in production code)
-  Kokkos::View<NT *****, GPU_memory, Kokkos::MemoryTraits<Kokkos::Restrict>> cache("cache", integral_view.size(),
-                                                                                    n[0].size(), n[1].size(),
-                                                                                    n[2].size(), n[3].size());
+  Kokkos::View<NT *****, GPU_memory, Kokkos::MemoryTraits<Kokkos::Restrict>> cache(
+      "cache", integral_view.size(), n[0].size(), n[1].size(), n[2].size(), n[3].size());
 
   meter.measure([&] {
     GPU_exec space;
 
     // Phase 1: Fill cache via MDRangePolicy (mirrors makeKokkosNDRange<1+dim> parallel_for)
     Kokkos::parallel_for(
-        Kokkos::MDRangePolicy<ExecutionSpace, Kokkos::Rank<5>>(
-            space, {0, 0, 0, 0, 0},
-            {(long)integral_view.size(), (long)n[0].size(), (long)n[1].size(), (long)n[2].size(), (long)n[3].size()}),
-        KOKKOS_LAMBDA(const long ik, const long idx0, const long idx1, const long idx2, const long idx3) {
+        Kokkos::MDRangePolicy<ExecutionSpace, Kokkos::Rank<5>>(space, {0, 0, 0, 0, 0},
+                                                               {(size_t)integral_view.size(), (size_t)n[0].size(),
+                                                                (size_t)n[1].size(), (size_t)n[2].size(),
+                                                                (size_t)n[3].size()}),
+        KOKKOS_LAMBDA(const size_t ik, const size_t idx0, const size_t idx1, const size_t idx2, const size_t idx3) {
           const auto idx_v = coordinates.from_linear_index(ik);
           const auto pos = coordinates.forward(idx_v);
 

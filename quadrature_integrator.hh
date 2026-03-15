@@ -164,7 +164,7 @@ namespace DiFfRG
       Kokkos::parallel_for(
           Kokkos::TeamPolicy(space, integral_view.size(), Kokkos::AUTO), KOKKOS_CLASS_LAMBDA(const TeamType &team) {
             // get the current (continuous) index
-            const uint k = team.league_rank();
+            const unsigned k = team.league_rank();
             // get the position for the current index
             const auto idx = coordinates.from_linear_index(k);
             const auto pos = coordinates.forward(idx);
@@ -314,15 +314,16 @@ namespace DiFfRG
     {
       const auto m_args = device::tie(args...);
 
-      tbb::parallel_for(tbb::blocked_range<uint>(0, coordinates.size()), [&](const tbb::blocked_range<uint> &r) {
-        for (uint idx = r.begin(); idx != r.end(); ++idx) {
-          const auto dis_idx = coordinates.from_linear_index(idx);
-          const auto pos = coordinates.forward(dis_idx);
-          // make a tuple of all arguments
-          const auto full_args = device::tuple_cat(pos, m_args);
-          device::apply([&](const auto &...iargs) { get(dest[idx], iargs...); }, full_args);
-        }
-      });
+      tbb::parallel_for(tbb::blocked_range<unsigned>(0, coordinates.size()),
+                        [&](const tbb::blocked_range<unsigned> &r) {
+                          for (unsigned idx = r.begin(); idx != r.end(); ++idx) {
+                            const auto dis_idx = coordinates.from_linear_index(idx);
+                            const auto pos = coordinates.forward(dis_idx);
+                            // make a tuple of all arguments
+                            const auto full_args = device::tuple_cat(pos, m_args);
+                            device::apply([&](const auto &...iargs) { get(dest[idx], iargs...); }, full_args);
+                          }
+                        });
     }
 
     template <typename Coordinates, typename... Args>

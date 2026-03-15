@@ -5,7 +5,7 @@
 
 // standard library
 #include <fstream>
-#include <map>
+#include <unordered_map>
 #include <vector>
 
 namespace DiFfRG
@@ -58,7 +58,7 @@ namespace DiFfRG
     std::ofstream output_stream;
 
     std::vector<std::string> insertion_order;
-    std::map<std::string, std::vector<double>> values;
+    std::unordered_map<std::string, std::vector<double>> values;
 
     std::vector<std::string> header;
     std::vector<double> time_values;

@@ -38,28 +38,33 @@ namespace DiFfRG
         file_data.emplace_back(doc.GetColumn<double>(i));
     }
 
-    // now loop over all columns and find all rows that contain NaN
-    std::vector<uint> rows_to_remove;
-    // loop over rows
-    for (uint i = 0; i < file_data[0].size(); ++i) {
-      bool remove = false;
-      // loop over columns
-      for (uint j = 0; j < file_data.size(); ++j)
+    // Find rows that contain NaN in any column
+    const size_t n_rows = file_data[0].size();
+    std::vector<bool> keep(n_rows, true);
+    size_t n_removed = 0;
+    for (size_t i = 0; i < n_rows; ++i) {
+      for (size_t j = 0; j < file_data.size(); ++j) {
         if (std::isnan(file_data[j][i])) {
-          remove = true;
+          keep[i] = false;
+          n_removed++;
           break;
         }
-      if (remove) rows_to_remove.push_back(i);
+      }
     }
 
-    if (rows_to_remove.size() != 0)
-      std::cout << "ExternalDataInterpolator::setup: Removed " << rows_to_remove.size() << " rows with NaN values."
-                << std::endl;
+    if (n_removed != 0)
+      std::cout << "ExternalDataInterpolator::setup: Removed " << n_removed << " rows with NaN values." << std::endl;
 
-    // remove the rows
-    for (uint i = 0; i < file_data.size(); ++i)
-      for (uint j = 0; j < rows_to_remove.size(); ++j)
-        file_data[i].erase(file_data[i].begin() + rows_to_remove[j] - j);
+    // Remove NaN rows using copy-if pattern (O(n) per column instead of O(n*removed))
+    if (n_removed > 0) {
+      for (size_t col = 0; col < file_data.size(); ++col) {
+        size_t write = 0;
+        for (size_t row = 0; row < n_rows; ++row) {
+          if (keep[row]) file_data[col][write++] = file_data[col][row];
+        }
+        file_data[col].resize(write);
+      }
+    }
 
     // Apply the post processors
     for (uint i = 0; i < std::min(file_data.size(), post_processors.size()); ++i)

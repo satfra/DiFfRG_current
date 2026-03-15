@@ -16,6 +16,8 @@ namespace DiFfRG
 
     void fRG::set_time(double t_)
     {
+      if (time_initialized && t_ == t) return;
+      time_initialized = true;
       t = t_;
       k = std::exp(-static_cast<long double>(t)) * Lambda;
       k2 = powr<2>(k);

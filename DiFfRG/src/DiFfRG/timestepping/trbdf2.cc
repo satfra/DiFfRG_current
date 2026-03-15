@@ -67,11 +67,9 @@ namespace DiFfRG
     TC_PI tc(*this, 2, start, stop, impl.dt, impl.minimal_dt, impl.maximal_dt, output_dt);
     assembler->set_time(0.);
 
-    // initialize jacobians and inverse jacobians
-    SparseMatrixType jacobian_TR(assembler->get_sparsity_pattern_jacobian());
-    LinearSolver<SparseMatrixType, VectorType> linSolver_TR;
-    SparseMatrixType jacobian_BDF2(assembler->get_sparsity_pattern_jacobian());
-    LinearSolver<SparseMatrixType, VectorType> linSolver_BDF2;
+    // shared jacobian matrix and linear solver (TR and BDF2 stages are sequential, never simultaneous)
+    SparseMatrixType jacobian(assembler->get_sparsity_pattern_jacobian());
+    LinearSolver<SparseMatrixType, VectorType> linSolver;
 
     // all functions for assembly of the problem and linear solving
     newton_TR.residual = [&](VectorType &res, const VectorType &u) {
@@ -88,18 +86,18 @@ namespace DiFfRG
     newton_TR.update_jacobian = [&](const VectorType &u) {
       const auto t = tc.get_t();
       const auto dt = tc.get_dt();
-      jacobian_TR = 0;
+      jacobian = 0;
 
       assembler->set_time(t + dt * gamma);
-      assembler->jacobian(jacobian_TR, u, gamma * dt / 2., 1.);
+      assembler->jacobian(jacobian, u, gamma * dt / 2., 1.);
 
       if (verbosity > 0) std::cout << "jacobian TR: " << std::endl;
 
-      linSolver_TR.init(jacobian_TR);
-      linSolver_TR.invert();
+      linSolver.init(jacobian);
+      linSolver.invert();
     };
     newton_TR.lin_solve = [&](VectorType &Du, const VectorType &res) {
-      linSolver_TR.solve(res, Du, std::min(impl.abs_tol, impl.rel_tol * res.l2_norm()));
+      linSolver.solve(res, Du, std::min(impl.abs_tol, impl.rel_tol * res.l2_norm()));
     };
     newton_TR.reinit(u_n);
 
@@ -120,18 +118,18 @@ namespace DiFfRG
     newton_BDF2.update_jacobian = [&](const VectorType &u) {
       const auto t = tc.get_t();
       const auto dt = tc.get_dt();
-      jacobian_BDF2 = 0;
+      jacobian = 0;
 
       assembler->set_time(t + dt);
-      assembler->jacobian(jacobian_BDF2, u, (1. - gamma) * dt, (2. - gamma));
+      assembler->jacobian(jacobian, u, (1. - gamma) * dt, (2. - gamma));
 
       if (verbosity > 0) std::cout << "jacobian BDF2: " << std::endl;
 
-      linSolver_BDF2.init(jacobian_BDF2);
-      linSolver_BDF2.invert();
+      linSolver.init(jacobian);
+      linSolver.invert();
     };
     newton_BDF2.lin_solve = [&](VectorType &Du, const VectorType &res) {
-      linSolver_BDF2.solve(res, Du, std::min(impl.abs_tol, impl.rel_tol * res.l2_norm()));
+      linSolver.solve(res, Du, std::min(impl.abs_tol, impl.rel_tol * res.l2_norm()));
     };
     newton_BDF2.reinit(u_n);
 
@@ -155,9 +153,8 @@ namespace DiFfRG
       if ((*adaptor)(tc.get_t(), u_n)) {
         u_np1 = u_n;
         u_npgamma = u_n;
-        jacobian_TR.reinit(assembler->get_sparsity_pattern_jacobian());
+        jacobian.reinit(assembler->get_sparsity_pattern_jacobian());
         newton_TR.reinit(u_n);
-        jacobian_BDF2.reinit(assembler->get_sparsity_pattern_jacobian());
         newton_BDF2.reinit(u_n);
       }
       if (verbosity > 0) std::cout << "t = " << tc.get_t() << std::endl;

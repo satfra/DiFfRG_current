@@ -175,8 +175,10 @@ namespace DiFfRG
 
       using TeamType = Kokkos::TeamPolicy<ExecutionSpace>::member_type;
       // reduction with vector lanes for warp-level parallelism
+      constexpr int vector_width = 32;
       Kokkos::parallel_for(
-          Kokkos::TeamPolicy(space, integral_view.size(), Kokkos::AUTO, 32), KOKKOS_CLASS_LAMBDA(const TeamType &team) {
+          Kokkos::TeamPolicy(space, integral_view.size(), Kokkos::AUTO, vector_width),
+          KOKKOS_CLASS_LAMBDA(const TeamType &team) {
             // get the current (continuous) index
             const uint k = team.league_rank();
 
@@ -191,22 +193,28 @@ namespace DiFfRG
             for (int d = 0; d < dim; ++d)
               total_elements *= grid_size[d];
 
+            // Pre-compute stride array for index decomposition (avoids division/modulo in inner loop)
+            device::array<size_t, dim> strides;
+            strides[dim - 1] = 1;
+            for (int d = dim - 2; d >= 0; --d)
+              strides[d] = strides[d + 1] * grid_size[d + 1];
+
             NT res{};
             Kokkos::parallel_reduce(
-                Kokkos::TeamThreadRange(team, (total_elements + 31) / 32),
+                Kokkos::TeamThreadRange(team, (total_elements + vector_width - 1) / vector_width),
                 [&](const size_t outer, NT &team_update) {
                   NT vec_sum{};
                   Kokkos::parallel_reduce(
-                      Kokkos::ThreadVectorRange(team, 32),
+                      Kokkos::ThreadVectorRange(team, vector_width),
                       [&](const size_t inner, NT &vec_update) {
-                        const size_t flat = outer * 32 + inner;
+                        const size_t flat = outer * vector_width + inner;
                         if (flat < total_elements) {
-                          // Convert flat index back to multi-dimensional
+                          // Convert flat index back to multi-dimensional using pre-computed strides
                           device::array<size_t, dim> ridx;
                           size_t remainder = flat;
-                          for (int d = dim - 1; d >= 0; --d) {
-                            ridx[d] = remainder % grid_size[d];
-                            remainder /= grid_size[d];
+                          for (int d = 0; d < dim; ++d) {
+                            ridx[d] = remainder / strides[d];
+                            remainder -= ridx[d] * strides[d];
                           }
                           device::apply([&](const auto &...iargs) { vec_update += cache(k, iargs...); }, ridx);
                         }
