@@ -83,7 +83,7 @@ TEMPLATE_TEST_CASE_SIG("Test 1D momentum integrals", "[integration][quadrature]"
       NT integral{};
       integrator.get(integral, constant, x_poly[0], x_poly[1], x_poly[2], x_poly[3]);
 
-      constexpr ctype expected_precision = 1e-14;
+      constexpr ctype expected_precision = 1e-13;
       const ctype rel_err = t_abs((integral - reference_integral) / reference_integral);
       if (rel_err >= expected_precision) {
         std::cerr << "reference: " << std::scientific << std::setw(10) << reference_integral

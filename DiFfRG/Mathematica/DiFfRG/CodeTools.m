@@ -34,6 +34,12 @@ Example Call: SetCppNames[\"k\"->\"k_bosonic\", \"Arccos(\"->\"std::arccos(\"]";
 
 SafeFiniteTFunctions::usage="";
 
+DeclareSymmetricPoints4DP4::sanityFailed = "Sanity check failed for 4D symmetric 4-point configuration: not all dot products equal -1/3.";
+DeclareSymmetricPoints4DP3::sanityFailed = "Sanity check failed for 4D symmetric 3-point configuration: not all dot products equal -1/2.";
+DeclareSymmetricPoints3DP4::sanityFailed = "Sanity check failed for 3D symmetric 4-point configuration: not all dot products equal -1/3.";
+DeclareSymmetricPoints3DP3::sanityFailed = "Sanity check failed for 3D symmetric 3-point configuration: not all dot products equal -1/2.";
+DeclareSymmetricPoints2DP3::sanityFailed = "Sanity check failed for 2D symmetric 3-point configuration: not all dot products equal -1/2.";
+
 DeclareSymmetricPoints4DP4::usage = "DeclareSymmetricPoints4DP4[]
 Obtain C++ code declaring angles for a four-point symmetric configuration in 4D.
 The angles will have the names cosp1q, cosp2q, cosp3q and cosp4q.
@@ -137,7 +143,7 @@ vec4[\[CapitalTheta]1_,\[CapitalTheta]2_,\[Phi]_]:={Cos[\[CapitalTheta]1],Sin[\[
 
 Vectors4DSP4={vec4[\[Pi]/2,0,0],vec4[\[Pi]/2,ArcCos[-(1/3)],0],vec4[\[Pi]/2,ArcCos[-(1/3)],1 (2\[Pi])/3],vec4[\[Pi]/2,ArcCos[-(1/3)],2 (2\[Pi])/3]};
 sanity=Map[Vectors4DSP4[[#[[1]]]] . Vectors4DSP4[[#[[2]]]]&,Subsets[{1,2,3,4},{2}]];
-If[Not@AllTrue[(sanity//N),#==(-(1/3)//N)&],Print["Sanity check failed!"];Abort[];];
+If[Not@AllTrue[(sanity//N),#==(-(1/3)//N)&],Message[DeclareSymmetricPoints4DP4::sanityFailed];Abort[];];
 
 SymmetricPoint4DP4cosp1=vec4[ArcCos[Symbol@SymbolName@cos1],ArcCos[Symbol@SymbolName@cos2],Symbol@SymbolName@phi] . Vectors4DSP4[[1]]//FullSimplify;
 SymmetricPoint4DP4cosp2=vec4[ArcCos[Symbol@SymbolName@cos1],ArcCos[Symbol@SymbolName@cos2],Symbol@SymbolName@phi] . Vectors4DSP4[[2]]//FullSimplify;
@@ -163,7 +169,7 @@ vec4[\[CapitalTheta]1_,\[CapitalTheta]2_,\[Phi]_]:={Cos[\[CapitalTheta]1],Sin[\[
 
 Vectors4DSP3={vec4[0,0,0],vec4[(2\[Pi])/3,0,0],vec4[(2\[Pi])/3,\[Pi],0]};
 sanity=Map[Vectors4DSP3[[#[[1]]]] . Vectors4DSP3[[#[[2]]]]&,Subsets[{1,2,3},{2}]];
-If[Not@AllTrue[(sanity//N),#==(-(1/2)//N)&],Print["Sanity check failed!"];Abort[];];
+If[Not@AllTrue[(sanity//N),#==(-(1/2)//N)&],Message[DeclareSymmetricPoints4DP3::sanityFailed];Abort[];];
 
 SymmetricPoint4DP3cosp1=vec4[ArcCos[Symbol@SymbolName@cos1],ArcCos[Symbol@SymbolName@cos2],Symbol@SymbolName@phi] . Vectors4DSP3[[1]]//FullSimplify;
 SymmetricPoint4DP3cosp2=vec4[ArcCos[Symbol@SymbolName@cos1],ArcCos[Symbol@SymbolName@cos2],Symbol@SymbolName@phi] . Vectors4DSP3[[2]]//FullSimplify;
@@ -215,7 +221,7 @@ vec3[\[CapitalTheta]_,\[Phi]_]:={Sin[\[CapitalTheta]]Cos[\[Phi]],Sin[\[CapitalTh
 
 Vectors3DSP3={vec3[\[Pi]/2,0],vec3[\[Pi]/2,1 (2\[Pi])/3],vec3[\[Pi]/2,2 (2\[Pi])/3]};
 sanity=Map[Vectors3DSP3[[#[[1]]]] . Vectors3DSP3[[#[[2]]]]&,Subsets[{1,2,3},{2}]];
-If[Not@AllTrue[(sanity//N),#==(-(1/2)//N)&],Print["Sanity check failed!"];Abort[];];
+If[Not@AllTrue[(sanity//N),#==(-(1/2)//N)&],Message[DeclareSymmetricPoints3DP3::sanityFailed];Abort[];];
 
 SymmetricPoint3DP3cosp1=vec3[ArcCos[Symbol@SymbolName@cos1],Symbol@SymbolName@phi] . Vectors3DSP3[[1]]//FullSimplify;
 SymmetricPoint3DP3cosp2=vec3[ArcCos[Symbol@SymbolName@cos1],Symbol@SymbolName@phi] . Vectors3DSP3[[2]]//FullSimplify;
@@ -239,7 +245,7 @@ vec3[\[CapitalTheta]_,\[Phi]_]:={Sin[\[CapitalTheta]]Cos[\[Phi]],Sin[\[CapitalTh
 
 Vectors3DSP4={vec3[0,0],vec3[ArcCos[-(1/3)],0],vec3[ArcCos[-(1/3)],1 (2\[Pi])/3],vec3[ArcCos[-(1/3)],2 (2\[Pi])/3]};
 sanity=Map[Vectors3DSP4[[#[[1]]]] . Vectors3DSP4[[#[[2]]]]&,Subsets[{1,2,3,4},{2}]];
-If[Not@AllTrue[(sanity//N),#==(-(1/3)//N)&],Print["Sanity check failed!"];Abort[];];
+If[Not@AllTrue[(sanity//N),#==(-(1/3)//N)&],Message[DeclareSymmetricPoints3DP4::sanityFailed];Abort[];];
 
 SymmetricPoint3DP4cosp1=vec3[ArcCos[Symbol@SymbolName@cos1],Symbol@SymbolName@phi] . Vectors3DSP4[[1]]//FullSimplify;
 SymmetricPoint3DP4cosp2=vec3[ArcCos[Symbol@SymbolName@cos1],Symbol@SymbolName@phi] . Vectors3DSP4[[2]]//FullSimplify;
@@ -269,7 +275,7 @@ vec2[\[CapitalTheta]_]:={Cos[\[CapitalTheta]],Sin[\[CapitalTheta]]};
 
 Vectors3DSP3={vec2[0],vec2[1 (2\[Pi])/3],vec2[2 (2\[Pi])/3]};
 sanity=Map[Vectors3DSP3[[#[[1]]]] . Vectors3DSP3[[#[[2]]]]&,Subsets[{1,2,3},{2}]];
-If[Not@AllTrue[(sanity//N),#==(-(1/2)//N)&],Print["Sanity check failed!"];Abort[];];
+If[Not@AllTrue[(sanity//N),#==(-(1/2)//N)&],Message[DeclareSymmetricPoints2DP3::sanityFailed];Abort[];];
 
 SymmetricPoint3DP3cosp1=vec2[ArcCos[Symbol@SymbolName@cos1]] . Vectors3DSP3[[1]]//FullSimplify;
 SymmetricPoint3DP3cosp2=vec2[ArcCos[Symbol@SymbolName@cos1]] . Vectors3DSP3[[2]]//FullSimplify;
@@ -313,7 +319,7 @@ Return[SymmetricPoint3DP4Code];
 
 
 (* ::Input::Initialization:: *)
-SafeFiniteTFunctions[expr_,T_]:=Module[{a},inputexpr//.{
+SafeFiniteTFunctions[expr_,T_]:=Module[{a},expr//.{
 Tanh[a_/(2 T)]:>Symbol["TanhFiniteT"][a,T],Tanh[a_/T]:>Symbol["TanhFiniteT"][a,2T],Tanh[a_/(2 T)]^n_:>Symbol["TanhFiniteT"][a,T]^n,Tanh[a_/T]^n_:>Symbol["TanhFiniteT"][a,2T]^n,Coth[a_/(2 T)]:>Symbol["CothFiniteT"][a,T],Coth[a_/T]:>Symbol["CothFiniteT"][a,2T],Coth[a_/(2 T)]^n_:>Symbol["CothFiniteT"][a,T]^n,Coth[a_/T]^n_:>Symbol["CothFiniteT"][a,2T]^n,Csch[a_/(2 T)]:>Symbol["CschFiniteT"][a,T],Csch[a_/T]:>Symbol["CschFiniteT"][a,2T],Csch[a_/(2 T)]^n_:>Symbol["CschFiniteT"][a,T]^n,Csch[a_/T]^n_:>Symbol["CschFiniteT"][a,2T]^n,Sech[a_/(2 T)]:>Symbol["SechFiniteT"][a,T],Sech[a_/T]:>Symbol["SechFiniteT"][a,2T],Sech[a_/(2 T)]^n_:>Symbol["SechFiniteT"][a,T]^n,Sech[a_/T]^n_:>Symbol["SechFiniteT"][a,2T]^n
 }
 ];
@@ -325,21 +331,6 @@ Tanh[a_/(2 T)]:>Symbol["TanhFiniteT"][a,T],Tanh[a_/T]:>Symbol["TanhFiniteT"][a,2
 
 (* ::Section::Closed:: *)
 (*Kernel predefines*)
-
-
-(* ::Input::Initialization:: *)
-getRegulator[name_,{optName_,optDef_}]:=Module[{ret},
-ret="";
-If[optName=!="",
-ret=ret<>optDef<>"\n";
-];
-ret=ret<>"using Regulator = "<>name<>"<";
-If[optName=!="",
-ret=ret<>optName;
-];
-ret=ret<>">;";
-Return[FunKit`FormatCode[ret]];
-];
 
 
 (* ::Section::Closed:: *)

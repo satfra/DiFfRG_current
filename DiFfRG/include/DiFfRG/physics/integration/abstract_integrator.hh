@@ -45,6 +45,15 @@ namespace DiFfRG
   concept is_valid_kernel =
       (provides_kernel<NT, KERNEL, ctype, dim, ARGS...> && provides_constant<NT, KERNEL, ARGS...>);
 
+  template <typename NT, typename KERNEL, typename ctype, int dim, typename... ARGS>
+  consteval void check_kernel_requirements()
+  {
+    static_assert(provides_kernel<NT, KERNEL, ctype, dim, ARGS...>,
+                  "Kernel must provide a static 'kernel(...)' method callable with the integration arguments.");
+    static_assert(provides_constant<NT, KERNEL, ARGS...>,
+                  "Kernel must provide a static 'constant(...)' method returning the numeric type.");
+  }
+
   class AbstractIntegrator
   {
   public:

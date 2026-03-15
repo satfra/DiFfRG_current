@@ -5,7 +5,7 @@ tests = {};
 AppendTo[
     tests
     ,
-    VerificationTest[
+    TestCreate[
         Module[{fileName, content, exportedContent},
             fileName = "test.txt";
             content = "test content";
@@ -18,5 +18,29 @@ AppendTo[
         True
         ,
         TestID -> "ExportCode should export a file"
+    ]
+];
+
+AppendTo[tests,
+    TestCreate[
+        Quiet[CheckAbort[DiFfRG`CodeTools`Export`ExportCode[123, "x"]; "no-abort", "aborted"]],
+        "aborted",
+        TestID -> "ExportCode with non-String fileName should abort"
+    ]
+];
+
+AppendTo[tests,
+    TestCreate[
+        Quiet[CheckAbort[DiFfRG`CodeTools`Export`ExportCode["x", 123]; "no-abort", "aborted"]],
+        "aborted",
+        TestID -> "ExportCode with non-String content should abort"
+    ]
+];
+
+AppendTo[tests,
+    TestCreate[
+        Quiet[CheckAbort[DiFfRG`CodeTools`Export`ExportCode[]; "no-abort", "aborted"]],
+        "aborted",
+        TestID -> "ExportCode with no arguments should abort"
     ]
 ];

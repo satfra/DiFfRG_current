@@ -41,24 +41,14 @@ namespace DiFfRG
 
       switch (v1.kind()) {
       case json::kind::string:
-        if (v1.get_string() != v2.get_string())
-          std::cout << "v1: " << v1.get_string() << " v2: " << v2.get_string() << std::endl;
         return v1.get_string() == v2.get_string();
       case json::kind::uint64:
-        if (v1.get_uint64() != v2.get_uint64())
-          std::cout << "v1: " << v1.get_uint64() << " v2: " << v2.get_uint64() << std::endl;
         return v1.get_uint64() == v2.get_uint64();
       case json::kind::int64:
-        if (v1.get_int64() != v2.get_int64())
-          std::cout << "v1: " << v1.get_int64() << " v2: " << v2.get_int64() << std::endl;
         return v1.get_int64() == v2.get_int64();
       case json::kind::double_:
-        if (!is_close(v1.get_double(), v2.get_double(), 1e-10))
-          std::cout << "v1: " << v1.get_double() << " v2: " << v2.get_double() << std::endl;
         return is_close(v1.get_double(), v2.get_double(), 1e-10);
       case json::kind::bool_:
-        if (v1.get_bool() != v2.get_bool())
-          std::cout << "v1: " << v1.get_bool() << " v2: " << v2.get_bool() << std::endl;
         return v1.get_bool() == v2.get_bool();
       case json::kind::null:
         return true;
@@ -75,7 +65,11 @@ namespace DiFfRG
   {
     std::ifstream file(filename);
     if (!file.is_open()) throw std::runtime_error("Could not open file: " + filename);
-    value = json::parse(file);
+    try {
+      value = json::parse(file);
+    } catch (const std::exception &e) {
+      throw std::runtime_error("Failed to parse JSON file '" + filename + "': " + e.what());
+    }
   }
   JSONValue::JSONValue(const json::value &v) : value(v) {}
 
@@ -90,11 +84,7 @@ namespace DiFfRG
     try {
       return value.at_pointer(key).as_double();
     } catch (const std::exception &e) {
-      // stingstream
-      std::stringstream ss;
-      ss << "JSONValue::get_double error (missing key?)" << std::endl;
-      ss << "  At Key: " << key << std::endl;
-      throw std::runtime_error(ss.str());
+      throw std::runtime_error("JSONValue::get_double error: " + std::string(e.what()) + "\n  At Key: " + key);
     }
   }
 
@@ -103,24 +93,22 @@ namespace DiFfRG
     try {
       return value.at_pointer(key).as_int64();
     } catch (const std::exception &e) {
-      std::stringstream ss;
-      ss << "JSONValue::get_int error (missing key?)" << std::endl;
-      ss << "  At Key: " << key << std::endl;
-      throw std::runtime_error(ss.str());
+      throw std::runtime_error("JSONValue::get_int error: " + std::string(e.what()) + "\n  At Key: " + key);
     }
   }
 
   uint JSONValue::get_uint(const std::string &key) const
   {
+    int val;
     try {
-      const int val = value.at_pointer(key).as_int64();
-      return val >= 0 ? val : throw std::runtime_error("Value is negative");
+      val = value.at_pointer(key).as_int64();
     } catch (const std::exception &e) {
-      std::stringstream ss;
-      ss << "JSONValue::get_uint error (missing key?)" << std::endl;
-      ss << "  At Key: " << key << std::endl;
-      throw std::runtime_error(ss.str());
+      throw std::runtime_error("JSONValue::get_uint error: " + std::string(e.what()) + "\n  At Key: " + key);
     }
+    if (val < 0)
+      throw std::runtime_error("JSONValue::get_uint: value at key '" + key + "' is negative (" +
+                               std::to_string(val) + ")");
+    return val;
   }
 
   std::string JSONValue::get_string(const std::string &key) const
@@ -128,10 +116,7 @@ namespace DiFfRG
     try {
       return value.at_pointer(key).as_string().c_str();
     } catch (const std::exception &e) {
-      std::stringstream ss;
-      ss << "JSONValue::get_string error (missing key?)" << std::endl;
-      ss << "  At Key: " << key << std::endl;
-      throw std::runtime_error(ss.str());
+      throw std::runtime_error("JSONValue::get_string error: " + std::string(e.what()) + "\n  At Key: " + key);
     }
   }
 
@@ -140,10 +125,7 @@ namespace DiFfRG
     try {
       return value.at_pointer(key).as_bool();
     } catch (const std::exception &e) {
-      std::stringstream ss;
-      ss << "JSONValue::get_bool error (missing key?)" << std::endl;
-      ss << "  At Key: " << key << std::endl;
-      throw std::runtime_error(ss.str());
+      throw std::runtime_error("JSONValue::get_bool error: " + std::string(e.what()) + "\n  At Key: " + key);
     }
   }
 
@@ -154,7 +136,6 @@ namespace DiFfRG
     } catch (const std::exception &e) {
       return def;
     }
-    return value.at_pointer(key).as_double();
   }
 
   int JSONValue::get_int(const std::string &key, const int def) const

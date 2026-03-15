@@ -7,7 +7,8 @@
 #include <DiFfRG/physics/interpolation.hh>
 #include <DiFfRG/physics/regulators.hh>
 
-#include "./ZA4/kernel.hh"
+// #include "./ZA4/kernel.hh"
+#include "./flows/ZA4/kernel.hh"
 
 using namespace DiFfRG;
 
@@ -46,9 +47,7 @@ TEST_CASE("Benchmark ZA4 GPU vs TBB", "[integration][benchmark]")
 
     std::vector<double> result(coordinates.size());
 
-    meter.measure([&] {
-      integrator.map(result.data(), coordinates, k, ZA3, ZAcbc, ZA4, dtZc, Zc, dtZA, ZA).fence();
-    });
+    meter.measure([&] { integrator.map(result.data(), coordinates, k, ZA3, ZAcbc, ZA4, dtZc, Zc, dtZA, ZA).fence(); });
 
     REQUIRE(is_close(result[0] - 2.9958e-05, 0., 1e-9));
   };
@@ -77,9 +76,7 @@ TEST_CASE("Benchmark ZA4 GPU vs TBB", "[integration][benchmark]")
 
     std::vector<double> result(coordinates.size());
 
-    meter.measure([&] {
-      integrator.map(result.data(), coordinates, k, ZA3, ZAcbc, ZA4, dtZc, Zc, dtZA, ZA).fence();
-    });
+    meter.measure([&] { integrator.map(result.data(), coordinates, k, ZA3, ZAcbc, ZA4, dtZc, Zc, dtZA, ZA).fence(); });
 
     REQUIRE(is_close(result[0] - 2.9958e-05, 0., 1e-9));
   };

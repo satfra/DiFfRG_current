@@ -1,6 +1,7 @@
 BeginPackage["DiFfRG`CodeTools`TemplateParameterGeneration`"]
 
 TemplateParameterGeneration::usage = "";
+TemplateParameterGeneration::wrongArgs = "TemplateParameterGeneration expects an Association (and optionally a List of AD replacements), but got: `1`";
 
 Begin["`Private`"]
 
@@ -13,7 +14,8 @@ appendKeyDimension[templateParameter_List, params_Association] :=
     (* maybe rename "d" to "spatialDimension" *)
         If[KeyExistsQ[params,"d"],
             Append[templateParameter, ToString[params["d"]]],
-            Message[appendKeyDimension::missingKey, "d"]
+            Message[appendKeyDimension::missingKey, "d"];
+            Abort[]
         ]
     ]
 
@@ -23,7 +25,8 @@ appendKeyName[templateParameter_List, params_Association] :=
     Module[{},
         If[KeyExistsQ[params, "Name"],
             Append[templateParameter, ToString[params["Name"]] <> "_kernel<Regulator>"],
-            Message[appendKeyName::missingKey, "Name"]
+            Message[appendKeyName::missingKey, "Name"];
+            Abort[]
         ]
     ]
 
@@ -52,7 +55,8 @@ appendKeyDevice[templateParameter_List, params_Association] :=
         If[KeyExistsQ[params, "Device"],
             If[MemberQ[allowedDevices, params["Device"]],
                 Append[templateParameter, "DiFfRG::" <> ToString[params["Device"]] <> "_exec"],
-                Message[appendKeyDevice::wrongDevice, params["Device"], allowedDevices]
+                Message[appendKeyDevice::wrongDevice, params["Device"], allowedDevices];
+                Abort[]
             ],
             Append[templateParameter, "DiFfRG::TBB_exec"]
         ]
@@ -70,6 +74,8 @@ TemplateParameterGeneration[params_Association, ADReplacements_] :=
 
         integratorTemplateParams
     ];
+
+TemplateParameterGeneration[x___] := (Message[TemplateParameterGeneration::wrongArgs, {x}]; Abort[]);
 
 End[]
 
