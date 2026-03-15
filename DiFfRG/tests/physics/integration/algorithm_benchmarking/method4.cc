@@ -1,3 +1,7 @@
+// Method 4: Host loop + MDRangePolicy<Rank<4>> parallel_reduce per output point (no cache).
+// Sequential host loop over output points, each launching a separate GPU kernel
+// that reduces over all 4 quadrature dimensions via MDRangePolicy.
+
 #include <catch2/catch_all.hpp>
 
 #include <DiFfRG/common/init.hh>

@@ -1,3 +1,7 @@
+// Method 1: Direct TeamPolicy + TeamThreadMDRange reduction (no cache).
+// One team per output point. All 4 quadrature dimensions reduced in a single flat TeamThreadMDRange.
+// Kernel evaluation and reduction happen in one pass.
+
 #include <catch2/catch_all.hpp>
 
 #include <DiFfRG/common/init.hh>
