@@ -98,6 +98,13 @@ namespace DiFfRG
    */
   std::string time_format(size_t time_in_seconds);
 
+  template <typename T>
+    requires(!std::is_same_v<T, size_t>)
+  std::string time_format(T time_in_seconds)
+  {
+    return time_format(static_cast<size_t>(time_in_seconds));
+  }
+
   /**
    * @brief Nice output from seconds to h/min/s style string
    */
