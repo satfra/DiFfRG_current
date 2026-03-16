@@ -16,9 +16,9 @@ namespace DiFfRG
         angle_quadrature_order(json.get_uint("/integration/angle_quadrature_order")),
         angle_quadrature(QGauss<1>(angle_quadrature_order)),
         jacobian_quadrature_factor(json.get_double("/integration/jacobian_quadrature_factor")),
-        jac_x_quadrature_order(jacobian_quadrature_factor * x_quadrature_order),
+        jac_x_quadrature_order(static_cast<uint>(jacobian_quadrature_factor * x_quadrature_order)),
         jac_x_quadrature(QGauss<1>(jac_x_quadrature_order)),
-        jac_angle_quadrature_order(jacobian_quadrature_factor * angle_quadrature_order),
+        jac_angle_quadrature_order(static_cast<uint>(jacobian_quadrature_factor * angle_quadrature_order)),
         jac_angle_quadrature(QGauss<1>(jac_angle_quadrature_order)),
         x_extent_tolerance(json.get_double("/integration/x_extent_tolerance")), optimize_x(optimize_x), k(1),
         unoptimized(true), verbosity(json.get_int("/output/verbosity"))
@@ -42,10 +42,10 @@ namespace DiFfRG
 
   void FlowEquations::set_jacobian_quadrature_factor(const double jacobian_quadrature_factor)
   {
-    jac_x_quadrature_order = jacobian_quadrature_factor * x_quadrature_order;
+    jac_x_quadrature_order = static_cast<uint>(jacobian_quadrature_factor * x_quadrature_order);
     jac_x_quadrature = QGauss<1>(jac_x_quadrature_order);
 
-    jac_angle_quadrature_order = jacobian_quadrature_factor * angle_quadrature_order;
+    jac_angle_quadrature_order = static_cast<uint>(jacobian_quadrature_factor * angle_quadrature_order);
     jac_angle_quadrature = QGauss<1>(jac_angle_quadrature_order);
   }
 
@@ -119,13 +119,13 @@ namespace DiFfRG
         angle_quadrature_order(json.get_uint("/integration/angle_quadrature_order")),
         angle_quadrature(QGauss<1>(angle_quadrature_order)), // angle
         jacobian_quadrature_factor(json.get_double("/integration/jacobian_quadrature_factor")),
-        jac_x_quadrature_order(jacobian_quadrature_factor * x_quadrature_order),
+        jac_x_quadrature_order(static_cast<uint>(jacobian_quadrature_factor * x_quadrature_order)),
         jac_x_quadrature(QGauss<1>(jac_x_quadrature_order)), // jac x
-        jac_x0_quadrature_order(jacobian_quadrature_factor * x0_quadrature_order),
+        jac_x0_quadrature_order(static_cast<uint>(jacobian_quadrature_factor * x0_quadrature_order)),
         jac_x0_quadrature(QGauss<1>(jac_x0_quadrature_order)), // jac m
-        jac_q0_quadrature_order(jacobian_quadrature_factor * q0_quadrature_order),
+        jac_q0_quadrature_order(static_cast<uint>(jacobian_quadrature_factor * q0_quadrature_order)),
         jac_q0_quadrature(QGauss<1>(jac_q0_quadrature_order)), // jac m
-        jac_angle_quadrature_order(jacobian_quadrature_factor * angle_quadrature_order),
+        jac_angle_quadrature_order(static_cast<uint>(jacobian_quadrature_factor * angle_quadrature_order)),
         jac_angle_quadrature(QGauss<1>(jac_angle_quadrature_order)), // jac cos
         x_extent_tolerance(json.get_double("/integration/x_extent_tolerance")),
         x0_extent_tolerance(json.get_double("/integration/x0_extent_tolerance")),
@@ -300,16 +300,16 @@ namespace DiFfRG
 
   void FlowEquationsFiniteT::set_jacobian_quadrature_factor(const double jacobian_quadrature_factor)
   {
-    jac_x_quadrature_order = jacobian_quadrature_factor * x_quadrature_order;
+    jac_x_quadrature_order = static_cast<uint>(jacobian_quadrature_factor * x_quadrature_order);
     jac_x_quadrature = QGauss<1>(jac_x_quadrature_order);
 
-    jac_angle_quadrature_order = jacobian_quadrature_factor * angle_quadrature_order;
+    jac_angle_quadrature_order = static_cast<uint>(jacobian_quadrature_factor * angle_quadrature_order);
     jac_angle_quadrature = QGauss<1>(jac_angle_quadrature_order);
 
-    jac_x0_quadrature_order = jacobian_quadrature_factor * x0_quadrature_order;
+    jac_x0_quadrature_order = static_cast<uint>(jacobian_quadrature_factor * x0_quadrature_order);
     jac_x0_quadrature = QGauss<1>(jac_x0_quadrature_order);
 
-    jac_q0_quadrature_order = jacobian_quadrature_factor * q0_quadrature_order;
+    jac_q0_quadrature_order = static_cast<uint>(jacobian_quadrature_factor * q0_quadrature_order);
     jac_q0_quadrature = QGauss<1>(jac_q0_quadrature_order);
   }
 } // namespace DiFfRG

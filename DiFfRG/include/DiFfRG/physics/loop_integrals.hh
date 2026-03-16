@@ -55,7 +55,7 @@ namespace DiFfRG
               const double q2 = powr<2>(q);
 
               running_total += q_weight * prefactor * std::pow(q, d - 1) // integral over q in d dimensions
-                               * fun(q2);                               // integrand
+                               * fun(q2);                                // integrand
             }
             return running_total;
           },
@@ -178,7 +178,7 @@ namespace DiFfRG
 
                 for (int phi_it = r.cols().begin(); phi_it < r.cols().end(); phi_it++) {
                   const double phi = phi_q_p[phi_it][0] * 2. * M_PI;
-                  const double phi_weight = cos_q_w[cos_it] * 2. * M_PI;
+                  const double phi_weight = phi_q_w[cos_it] * 2. * M_PI;
 
                   running_total +=
                       q_weight * prefactor * std::pow(q, d - 1) // integral over q in d dimensions
@@ -256,13 +256,12 @@ namespace DiFfRG
                     const double phi = phi_q_p[phi_it][0] * 2. * M_PI;
                     const double phi_weight = phi_q_w[phi_it] * 2. * M_PI;
 
-                    running_total +=
-                        q_weight * prefactor * std::pow(q, d - 1) // integral over q in d dimensions
-                        * cos1_weight                             // integral over cos(theta1)
-                        * cos2_weight                             // integral over cos(theta2)
-                        * phi_weight /
-                        S_4 // integral over phi, S_3 = 2 pi^2 removes the factor from the angular integral
-                        * fun(q2, cos1, cos2, phi); // integrand
+                    running_total += q_weight * prefactor * std::pow(q, d - 1) // integral over q in d dimensions
+                                     * cos1_weight                             // integral over cos(theta1)
+                                     * cos2_weight                             // integral over cos(theta2)
+                                     * phi_weight /
+                                     S_4 // integral over phi, S_3 = 2 pi^2 removes the factor from the angular integral
+                                     * fun(q2, cos1, cos2, phi); // integrand
                   }
                 }
               }
@@ -325,9 +324,9 @@ namespace DiFfRG
                 const double q0 = m_q_p[q0_it][0] * m_extent;
                 const double m_weight = m_q_w[q0_it] * m_extent;
 
-                running_total += (m_weight / (2. * M_PI)) // Matsubara integral weight
+                running_total += (m_weight / (2. * M_PI))                     // Matsubara integral weight
                                  * q_weight * prefactor * std::pow(q, ds - 1) // integral over q
-                                 * (fun(q2, q0) + fun(q2, -q0));             // integrand
+                                 * (fun(q2, q0) + fun(q2, -q0));              // integrand
               }
             }
             return running_total;
@@ -398,7 +397,7 @@ namespace DiFfRG
                   const double m_weight = m_q_w[q0_it] * m_extent;
 
                   running_total +=
-                      (m_weight / (2. * M_PI)) // Matsubara integral weight
+                      (m_weight / (2. * M_PI))                     // Matsubara integral weight
                       * q_weight * prefactor * std::pow(q, ds - 1) // integral over q
                       * 0.5 * cos_weight // integral over cos(theta), 0.5 removes the factor from the angular integral
                       * (fun(q2, cos, q0) + fun(q2, cos, -q0)); // integrand
@@ -468,7 +467,7 @@ namespace DiFfRG
               for (int q0_it = r.cols().begin(); q0_it < r.cols().end(); q0_it++) {
                 const double q0 = 2. * M_PI * T * q0_it;
 
-                running_total += T // Matsubara sum weight
+                running_total += T                                            // Matsubara sum weight
                                  * q_weight * prefactor * std::pow(q, ds - 1) // integral over q
                                  * fun(q2, q0);                               // integrand
               }
@@ -492,9 +491,9 @@ namespace DiFfRG
                     (2. * m_order * M_PI * T) + m_q_p[q0_it][0] * (m_extent - 2. * (m_order + 1) * M_PI * T);
                 const double m_weight = m_q_w[q0_it] * (m_extent - 2. * m_order * M_PI * T);
 
-                running_total += (1. * m_weight / (2. * M_PI)) // Matsubara integral weight
+                running_total += (1. * m_weight / (2. * M_PI))                // Matsubara integral weight
                                  * q_weight * prefactor * std::pow(q, ds - 1) // integral over q
-                                 * (fun(q2, q0) + fun(q2, -q0));             // integrand
+                                 * (fun(q2, q0) + fun(q2, -q0));              // integrand
               }
             }
             return running_total;
@@ -570,7 +569,7 @@ namespace DiFfRG
                   const double q0 = 2. * M_PI * T * q0_it;
 
                   running_total +=
-                      T // Matsubara sum weight
+                      T                                            // Matsubara sum weight
                       * q_weight * prefactor * std::pow(q, ds - 1) // integral over q
                       * 0.5 * cos_weight  // integral over cos(theta), 0.5 removes the factor from the angular integral
                       * fun(q2, cos, q0); // integrand
@@ -601,7 +600,7 @@ namespace DiFfRG
                   const double m_weight = m_q_w[q0_it] * (m_extent - 2. * m_order * M_PI * T);
 
                   running_total +=
-                      (1. * m_weight / (2. * M_PI)) // Matsubara integral weight
+                      (1. * m_weight / (2. * M_PI))                // Matsubara integral weight
                       * q_weight * prefactor * std::pow(q, ds - 1) // integral over q
                       * 0.5 * cos_weight // integral over cos(theta), 0.5 removes the factor from the angular integral
                       * (fun(q2, cos, q0) + fun(q2, cos, -q0)); // integrand
