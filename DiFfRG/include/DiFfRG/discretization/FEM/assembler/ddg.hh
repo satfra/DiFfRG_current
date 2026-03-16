@@ -702,30 +702,18 @@ namespace DiFfRG
 
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
-            model.template jacobian_flux<0, 0>(
-                j_flux, x_q,
+            model.template jacobian_flux_source<0, 0>(
+                j_flux, j_source, x_q,
                 fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
-            model.template jacobian_source<0, 0>(
-                j_source, x_q,
+            model.template jacobian_flux_source_grad<1>(
+                j_grad_flux, j_grad_source, x_q,
                 fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
-            model.template jacobian_flux_grad<1>(
-                j_grad_flux, x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
-            model.template jacobian_source_grad<1>(
-                j_grad_source, x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
-            model.template jacobian_flux_hess<2>(
-                j_hess_flux, x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
-            model.template jacobian_source_hess<2>(
-                j_hess_source, x_q,
+            model.template jacobian_flux_source_hess<2>(
+                j_hess_flux, j_hess_source, x_q,
                 fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
             if constexpr (Components::count_extractors() > 0) {
-              model.template jacobian_flux_extr<3>(
-                  j_extr_flux, x_q,
-                  fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
-              model.template jacobian_source_extr<3>(
-                  j_extr_source, x_q,
+              model.template jacobian_flux_source_extr<3>(
+                  j_extr_flux, j_extr_source, x_q,
                   fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
             }
             model.template jacobian_mass<0>(j_mass, x_q, solution[q_index], solution_dot[q_index]);

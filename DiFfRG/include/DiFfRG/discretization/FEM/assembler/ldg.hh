@@ -1009,12 +1009,12 @@ namespace DiFfRG
                 this->model.template jacobian_mass<0>(j_mass, x_q, solution[0][q_index], solution_dot[q_index]);
                 this->model.template jacobian_mass<1>(j_mass_dot, x_q, solution[0][q_index], solution_dot[q_index]);
                 if constexpr (Components::count_extractors() > 0) {
-                  this->model.template jacobian_flux_extr<stencil>(j_extr_flux, x_q, fe_conv(sol_q));
-                  this->model.template jacobian_source_extr<stencil>(j_extr_source, x_q, fe_conv(sol_q));
+                  this->model.template jacobian_flux_source_extr<stencil>(j_extr_flux, j_extr_source, x_q,
+                                                                          fe_conv(sol_q));
                 }
               }
-              model.template jacobian_flux<k, 0>(std::get<k>(j_flux), x_q, fe_conv(sol_q));
-              model.template jacobian_source<k, 0>(std::get<k>(j_source), x_q, fe_conv(sol_q));
+              model.template jacobian_flux_source<k, 0>(std::get<k>(j_flux), std::get<k>(j_source), x_q,
+                                                         fe_conv(sol_q));
 
               if (!std::get<k>(j_flux).is_finite() || !std::get<k>(j_source).is_finite()) exception = true;
 
@@ -1554,8 +1554,7 @@ namespace DiFfRG
           SimpleMatrix<NumberType, Components::count_fe_functions(to), Components::count_fe_functions(from)> j_source;
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
-            model.template jacobian_flux<from, to>(j_flux, x_q, solution[from][q_index]);
-            model.template jacobian_source<from, to>(j_source, x_q, solution[from][q_index]);
+            model.template jacobian_flux_source<from, to>(j_flux, j_source, x_q, solution[from][q_index]);
 
             for (uint i = 0; i < to_n_dofs; ++i) {
               const auto component_i = fe_v[to]->get_fe().system_to_component_index(i).first;

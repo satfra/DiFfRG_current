@@ -106,9 +106,10 @@ namespace DiFfRG
         auto du = AD_tools::template ten_to_AD<n_from>(u);
         auto ad_sol = std::tuple_cat(tuple_first<tup_idx>(sol), std::tie(du),
                                      tuple_last<Vector::size - tup_idx - 1>(sol));
+        std::array<Tensor<1, dim, AD_type>, Components::count_fe_functions()> res{{}};
         for (uint j = 0; j < Components::count_fe_functions(); ++j) {
           for (uint d = 0; d < dim; ++d) {
-            std::array<Tensor<1, dim, AD_type>, Components::count_fe_functions()> res{{}};
+            res = {};
             seed(du[j][d]);
             asImp().flux(res, p, Vector::as(ad_sol));
             for (uint i = 0; i < Components::count_fe_functions(); ++i) {
@@ -135,10 +136,11 @@ namespace DiFfRG
         auto du = AD_tools::template ten_to_AD<n_from>(u);
         auto ad_sol = std::tuple_cat(tuple_first<tup_idx>(sol), std::tie(du),
                                      tuple_last<Vector::size - tup_idx - 1>(sol));
+        std::array<Tensor<1, dim, AD_type>, Components::count_fe_functions()> res{{}};
         for (uint j = 0; j < Components::count_fe_functions(); ++j) {
           for (uint d1 = 0; d1 < dim; ++d1)
             for (uint d2 = 0; d2 < dim; ++d2) {
-              std::array<Tensor<1, dim, AD_type>, Components::count_fe_functions()> res{{}};
+              res = {};
               seed(du[j][d1][d2]);
               asImp().flux(res, p, Vector::as(ad_sol));
               for (uint i = 0; i < Components::count_fe_functions(); ++i) {
@@ -243,9 +245,10 @@ namespace DiFfRG
         auto du = AD_tools::template ten_to_AD<n_from>(u);
         auto ad_sol = std::tuple_cat(tuple_first<tup_idx>(sol), std::tie(du),
                                      tuple_last<Vector::size - tup_idx - 1>(sol));
+        std::array<AD_type, Components::count_fe_functions()> res{{}};
         for (uint j = 0; j < Components::count_fe_functions(); ++j) {
           for (uint d = 0; d < dim; ++d) {
-            std::array<AD_type, Components::count_fe_functions()> res{{}};
+            res = {};
             seed(du[j][d]);
             asImp().source(res, p, Vector::as(ad_sol));
             for (uint i = 0; i < Components::count_fe_functions(); ++i) {
@@ -270,10 +273,11 @@ namespace DiFfRG
         auto du = AD_tools::template ten_to_AD<n_from>(u);
         auto ad_sol = std::tuple_cat(tuple_first<tup_idx>(sol), std::tie(du),
                                      tuple_last<Vector::size - tup_idx - 1>(sol));
+        std::array<AD_type, Components::count_fe_functions()> res{{}};
         for (uint j = 0; j < Components::count_fe_functions(); ++j) {
           for (uint d1 = 0; d1 < dim; ++d1) {
             for (uint d2 = 0; d2 < dim; ++d2) {
-              std::array<AD_type, Components::count_fe_functions()> res{{}};
+              res = {};
               seed(du[j][d1][d2]);
               asImp().source(res, p, Vector::as(ad_sol));
               for (uint i = 0; i < Components::count_fe_functions(); ++i) {
@@ -344,6 +348,160 @@ namespace DiFfRG
             }
             unseed(du[j]);
           }
+        }
+      }
+    };
+
+    template <typename Model, typename AD_type = autodiff::real> class ADjacobian_flux_source
+    {
+      Model &asImp() { return static_cast<Model &>(*this); }
+      const Model &asImp() const { return static_cast<const Model &>(*this); }
+      using AD_tools = internal::AD_tools<AD_type>;
+
+    public:
+      template <uint from, uint to, uint n_from, uint n_to, int dim, typename NT, typename Vector>
+      void jacobian_flux_source(SimpleMatrix<Tensor<1, dim, NT>, n_to, n_from> &jF, SimpleMatrix<NT, n_to, n_from> &jS,
+                                const Point<dim> &p, const Vector &sol) const
+      {
+        using Components = typename Model::Components;
+        static_assert(n_to == Components::count_fe_functions(to),
+                      "jacobian_flux_source: n_to must equal count_fe_functions(to)");
+        static_assert(n_from == Components::count_fe_functions(from),
+                      "jacobian_flux_source: n_from must equal count_fe_functions(from)");
+
+        if constexpr (to == 0) {
+          const auto &u = get<from>(sol);
+          auto du = AD_tools::template vector_to_AD<Components::count_fe_functions(from)>(u);
+          auto ad_sol = std::tuple_cat(tuple_first<from>(sol), std::tie(du),
+                                       tuple_last<Vector::size - from - 1>(sol));
+          for (uint j = 0; j < Components::count_fe_functions(from); ++j) {
+            std::array<Tensor<1, dim, AD_type>, Components::count_fe_functions(to)> res_flux{{}};
+            std::array<AD_type, Components::count_fe_functions(to)> res_source{{}};
+            seed(du[j]);
+            asImp().flux(res_flux, p, Vector::as(ad_sol));
+            asImp().source(res_source, p, Vector::as(ad_sol));
+            for (uint i = 0; i < Components::count_fe_functions(to); ++i) {
+              for (uint d = 0; d < dim; ++d)
+                jF(i, j)[d] = grad(res_flux[i][d]);
+              jS(i, j) = grad(res_source[i]);
+            }
+            unseed(du[j]);
+          }
+        } else {
+          auto du = AD_tools::template vector_to_AD<Components::count_fe_functions(from)>(sol);
+          for (uint j = 0; j < Components::count_fe_functions(from); ++j) {
+            std::array<Tensor<1, dim, AD_type>, Components::count_fe_functions(to)> res_flux{{}};
+            std::array<AD_type, Components::count_fe_functions(to)> res_source{{}};
+            seed(du[j]);
+            asImp().template ldg_flux<to>(res_flux, p, du);
+            asImp().template ldg_source<to>(res_source, p, du);
+            for (uint i = 0; i < Components::count_fe_functions(to); ++i) {
+              for (uint d = 0; d < dim; ++d)
+                jF(i, j)[d] = grad(res_flux[i][d]);
+              jS(i, j) = grad(res_source[i]);
+            }
+            unseed(du[j]);
+          }
+        }
+      }
+
+      template <uint tup_idx, uint n_from, uint n_to, int dim, typename NT, typename Vector>
+      void jacobian_flux_source_grad(SimpleMatrix<Tensor<1, dim, Tensor<1, dim, NT>>, n_to, n_from> &jF,
+                                     SimpleMatrix<Tensor<1, dim, NT>, n_to, n_from> &jS, const Point<dim> &p,
+                                     const Vector &sol) const
+      {
+        using Components = typename Model::Components;
+        static_assert(n_to == Components::count_fe_functions(),
+                      "jacobian_flux_source_grad: n_to must equal count_fe_functions()");
+        static_assert(n_from == Components::count_fe_functions(),
+                      "jacobian_flux_source_grad: n_from must equal count_fe_functions()");
+
+        const auto &u = get<tup_idx>(sol);
+        auto du = AD_tools::template ten_to_AD<n_from>(u);
+        auto ad_sol = std::tuple_cat(tuple_first<tup_idx>(sol), std::tie(du),
+                                     tuple_last<Vector::size - tup_idx - 1>(sol));
+        std::array<Tensor<1, dim, AD_type>, Components::count_fe_functions()> res_flux{{}};
+        std::array<AD_type, Components::count_fe_functions()> res_source{{}};
+        for (uint j = 0; j < Components::count_fe_functions(); ++j) {
+          for (uint d = 0; d < dim; ++d) {
+            res_flux = {};
+            res_source = {};
+            seed(du[j][d]);
+            asImp().flux(res_flux, p, Vector::as(ad_sol));
+            asImp().source(res_source, p, Vector::as(ad_sol));
+            for (uint i = 0; i < Components::count_fe_functions(); ++i) {
+              for (uint dd = 0; dd < dim; ++dd)
+                jF(i, j)[dd][d] = grad(res_flux[i][dd]);
+              jS(i, j)[d] = grad(res_source[i]);
+            }
+            unseed(du[j][d]);
+          }
+        }
+      }
+
+      template <uint tup_idx, uint n_from, uint n_to, int dim, typename NT, typename Vector>
+      void jacobian_flux_source_hess(SimpleMatrix<Tensor<1, dim, Tensor<2, dim, NT>>, n_to, n_from> &jF,
+                                     SimpleMatrix<Tensor<2, dim, NT>, n_to, n_from> &jS, const Point<dim> &p,
+                                     const Vector &sol) const
+      {
+        using Components = typename Model::Components;
+        static_assert(n_to == Components::count_fe_functions(),
+                      "jacobian_flux_source_hess: n_to must equal count_fe_functions()");
+        static_assert(n_from == Components::count_fe_functions(),
+                      "jacobian_flux_source_hess: n_from must equal count_fe_functions()");
+
+        const auto &u = get<tup_idx>(sol);
+        auto du = AD_tools::template ten_to_AD<n_from>(u);
+        auto ad_sol = std::tuple_cat(tuple_first<tup_idx>(sol), std::tie(du),
+                                     tuple_last<Vector::size - tup_idx - 1>(sol));
+        std::array<Tensor<1, dim, AD_type>, Components::count_fe_functions()> res_flux{{}};
+        std::array<AD_type, Components::count_fe_functions()> res_source{{}};
+        for (uint j = 0; j < Components::count_fe_functions(); ++j) {
+          for (uint d1 = 0; d1 < dim; ++d1) {
+            for (uint d2 = 0; d2 < dim; ++d2) {
+              res_flux = {};
+              res_source = {};
+              seed(du[j][d1][d2]);
+              asImp().flux(res_flux, p, Vector::as(ad_sol));
+              asImp().source(res_source, p, Vector::as(ad_sol));
+              for (uint i = 0; i < Components::count_fe_functions(); ++i) {
+                for (uint d = 0; d < dim; ++d)
+                  jF(i, j)[d][d1][d2] = grad(res_flux[i][d]);
+                jS(i, j)[d1][d2] = grad(res_source[i]);
+              }
+              unseed(du[j][d1][d2]);
+            }
+          }
+        }
+      }
+
+      template <uint tup_idx, uint n_from, uint n_to, int dim, typename NT, typename Vector>
+      void jacobian_flux_source_extr(SimpleMatrix<Tensor<1, dim, NT>, n_to, n_from> &jF,
+                                     SimpleMatrix<NT, n_to, n_from> &jS, const Point<dim> &p,
+                                     const Vector &sol) const
+      {
+        using Components = typename Model::Components;
+        static_assert(n_to == Components::count_fe_functions(),
+                      "jacobian_flux_source_extr: n_to must equal count_fe_functions()");
+        static_assert(n_from == Components::count_extractors(),
+                      "jacobian_flux_source_extr: n_from must equal count_extractors()");
+
+        const auto &e = get<tup_idx>(sol);
+        auto de = AD_tools::template vector_to_AD<n_from>(e);
+        auto ad_sol = std::tuple_cat(tuple_first<tup_idx>(sol), std::tie(de),
+                                     tuple_last<Vector::size - tup_idx - 1>(sol));
+        for (uint j = 0; j < Components::count_extractors(); ++j) {
+          std::array<Tensor<1, dim, AD_type>, Components::count_fe_functions()> res_flux{{}};
+          std::array<AD_type, Components::count_fe_functions()> res_source{{}};
+          seed(de[j]);
+          asImp().flux(res_flux, p, Vector::as(ad_sol));
+          asImp().source(res_source, p, Vector::as(ad_sol));
+          for (uint i = 0; i < Components::count_fe_functions(); ++i) {
+            for (uint d = 0; d < dim; ++d)
+              jF(i, j)[d] = grad(res_flux[i][d]);
+            jS(i, j) = grad(res_source[i]);
+          }
+          unseed(de[j]);
         }
       }
     };
@@ -867,6 +1025,7 @@ namespace DiFfRG
     template <typename Model>
     class AD_real : public ADjacobian_flux<Model, autodiff::real>,
                     public ADjacobian_source<Model, autodiff::real>,
+                    public ADjacobian_flux_source<Model, autodiff::real>,
                     public ADjacobian_numflux<Model, autodiff::real>,
                     public ADjacobian_boundary_numflux<Model, autodiff::real>,
                     public ADjacobian_mass<Model, autodiff::real>,
@@ -878,6 +1037,7 @@ namespace DiFfRG
     template <typename Model>
     class AD_dual : public ADjacobian_flux<Model, autodiff::dual>,
                     public ADjacobian_source<Model, autodiff::dual>,
+                    public ADjacobian_flux_source<Model, autodiff::dual>,
                     public ADjacobian_numflux<Model, autodiff::dual>,
                     public ADjacobian_boundary_numflux<Model, autodiff::dual>,
                     public ADjacobian_mass<Model, autodiff::dual>,
@@ -891,6 +1051,7 @@ namespace DiFfRG
     template <typename Model>
     class FE_AD : public ADjacobian_flux<Model, autodiff::real>,
                   public ADjacobian_source<Model, autodiff::real>,
+                  public ADjacobian_flux_source<Model, autodiff::real>,
                   public ADjacobian_numflux<Model, autodiff::real>,
                   public ADjacobian_boundary_numflux<Model, autodiff::real>,
                   public ADjacobian_mass<Model, autodiff::real>
@@ -903,6 +1064,11 @@ namespace DiFfRG
       }
       template <uint tup_idx, uint n_from, uint n_to, int dim, typename NT, typename Vector>
       void jacobian_source_extr(SimpleMatrix<NT, n_to, n_from> &, const Point<dim> &, const Vector &) const
+      {
+      }
+      template <uint tup_idx, uint n_from, uint n_to, int dim, typename NT, typename Vector>
+      void jacobian_flux_source_extr(SimpleMatrix<Tensor<1, dim, NT>, n_to, n_from> &,
+                                     SimpleMatrix<NT, n_to, n_from> &, const Point<dim> &, const Vector &) const
       {
       }
       template <uint tup_idx, uint n_from, uint n_to, int dim, typename NT, typename Vector_s, typename Vector_n>
@@ -963,6 +1129,28 @@ namespace DiFfRG
       }
       template <uint from, uint to, uint n_from, uint n_to, int dim, typename NT, typename Vector>
       void jacobian_source(SimpleMatrix<NT, n_to, n_from> &, const Point<dim> &, const Vector &) const
+      {
+      }
+      template <uint from, uint to, uint n_from, uint n_to, int dim, typename NT, typename Vector>
+      void jacobian_flux_source(SimpleMatrix<Tensor<1, dim, NT>, n_to, n_from> &, SimpleMatrix<NT, n_to, n_from> &,
+                                const Point<dim> &, const Vector &) const
+      {
+      }
+      template <uint tup_idx, uint n_from, uint n_to, int dim, typename NT, typename Vector>
+      void jacobian_flux_source_grad(SimpleMatrix<Tensor<1, dim, Tensor<1, dim, NT>>, n_to, n_from> &,
+                                     SimpleMatrix<Tensor<1, dim, NT>, n_to, n_from> &, const Point<dim> &,
+                                     const Vector &) const
+      {
+      }
+      template <uint tup_idx, uint n_from, uint n_to, int dim, typename NT, typename Vector>
+      void jacobian_flux_source_hess(SimpleMatrix<Tensor<1, dim, Tensor<2, dim, NT>>, n_to, n_from> &,
+                                     SimpleMatrix<Tensor<2, dim, NT>, n_to, n_from> &, const Point<dim> &,
+                                     const Vector &) const
+      {
+      }
+      template <uint tup_idx, uint n_from, uint n_to, int dim, typename NT, typename Vector>
+      void jacobian_flux_source_extr(SimpleMatrix<Tensor<1, dim, NT>, n_to, n_from> &,
+                                     SimpleMatrix<NT, n_to, n_from> &, const Point<dim> &, const Vector &) const
       {
       }
       template <uint tup_idx, uint n_from, uint n_to, int dim, typename NT, typename Vector_s, typename Vector_n>
