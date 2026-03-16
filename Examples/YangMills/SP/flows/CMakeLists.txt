@@ -17,7 +17,6 @@ set(YangMillsFlows_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/flows.cc)
 
 add_library(YangMillsFlows STATIC ${YangMillsFlows_SOURCES})
-target_link_libraries(YangMillsFlows DiFfRG::DiFfRG)
-target_compile_options(
-  YangMillsFlows PRIVATE $<$<COMPILE_LANGUAGE:CXX>: -Wno-unused-parameter
-                         -Wno-unused-variable >)
+add_library(YangMillsFlows_nowarn INTERFACE)
+target_compile_options(YangMillsFlows_nowarn INTERFACE -Wno-unused-parameter -Wno-unused-variable)
+target_link_libraries(YangMillsFlows DiFfRG::DiFfRG YangMillsFlows_nowarn)

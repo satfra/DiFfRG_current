@@ -89,12 +89,12 @@ int main(int argc, char *argv[])
     const auto ret_val = run(json, "log");
     // We print a bit of exit information.
     const auto time = timer.wall_time();
-    spdlog::get("log")->info("Program finished after " + time_format(time));
+    spdlog::get("log")->info("Program finished after " + time_format(static_cast<size_t>(time)));
     return ret_val;
   }
 
   // We print a bit of exit information.
   const auto time = timer.wall_time();
-  spdlog::get("log")->info("Program finished after " + time_format(time));
+  spdlog::get("log")->info("Program finished after " + time_format(static_cast<size_t>(time)));
   return 0;
 }
