@@ -128,15 +128,13 @@ public:
 
     // start by solving the equations for propagators
     bool eta_converged = false;
-    uint n_iter = 0;
+    int n_iter = 0;
     while (!eta_converged) {
       // copy
       for (uint i = 0; i < p_grid_size; ++i) {
         old_dtZA[i] = dtZA[i];
         old_dtZc[i] = dtZc[i];
       }
-
-      double res;
 
       const auto ZA_exec = flow_equations.ZA.map(&residual[idxv("ZA")], coordinates1D, arguments);
       const auto Zc_exec = flow_equations.Zc.map(&residual[idxv("Zc")], coordinates1D, arguments);

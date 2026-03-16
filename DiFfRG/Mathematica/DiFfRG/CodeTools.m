@@ -355,10 +355,9 @@ updateCMake[varName_:"Flows"] :=
     ${CMAKE_CURRENT_SOURCE_DIR}/flows.cc)
 
 add_library("<>varName<>" STATIC ${"<>varName<>"_SOURCES})
-target_link_libraries("<>varName<>" DiFfRG::DiFfRG)
-target_compile_options(
-  "<>varName<>" PRIVATE $<$<COMPILE_LANGUAGE:CXX>: -Wno-unused-parameter
-                         -Wno-unused-variable >)
+add_library("<>varName<>"_nowarn INTERFACE)
+target_compile_options("<>varName<>"_nowarn INTERFACE -Wno-unused-parameter -Wno-unused-variable)
+target_link_libraries("<>varName<>" DiFfRG::DiFfRG "<>varName<>"_nowarn)
 ";
 ExportCode[fileName,cmake];
 ];

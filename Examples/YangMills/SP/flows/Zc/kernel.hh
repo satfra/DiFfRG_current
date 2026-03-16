@@ -22,34 +22,46 @@ namespace DiFfRG
     {
       using namespace DiFfRG;
       using namespace DiFfRG::compute;
-      const auto _repl1 = ZA(pow(1. + powr<6>(k), 0.16666666666666666667));
-      const auto _repl2 = Zc(k);
-      const auto _repl3 = RB(powr<2>(k), powr<2>(l1));
-      const auto _repl4 = RB(powr<2>(k), powr<2>(l1) + (2.) * ((cos1) * ((l1) * (p))) + powr<2>(p));
-      const auto _repl5 = ZA(l1);
-      const auto _repl6 = powr<2>(l1);
-      const auto _repl7 = powr<2>(p);
-      const auto _repl8 = powr<2>(k);
-      const auto _repl9 = powr<6>(k);
-      const auto _repl10 = powr<2>(cos1);
-      return (-3.) * (-1. + _repl10) *
-                 ((powr<-2>((_repl1) * (_repl3) + (_repl5) * (_repl6))) *
-                  ((_repl1) * (RBdot(_repl8, _repl6)) +
-                   (dtZA(pow(1. + _repl9, 0.16666666666666666667)) +
-                    (50.) * ((-1.) * (_repl1) + ZA((1.02) * (pow(1. + _repl9, 0.16666666666666666667)))) *
-                        ((_repl9) * (powr<-1>(1. + _repl9)))) *
-                       (_repl3)) *
-                  ((powr<2>(ZAcbc((0.816496580927726) * (sqrt(_repl6 + _repl7 + (-1.) * ((cos1) * ((l1) * (p)))))))) *
-                   (powr<-1>((_repl2) * (RB(_repl8, _repl6 + _repl7 + (-2.) * ((cos1) * ((l1) * (p))))) +
-                             (_repl6 + _repl7 + (-2.) * ((cos1) * ((l1) * (p)))) *
-                                 (Zc(sqrt(_repl6 + _repl7 + (-2.) * ((cos1) * ((l1) * (p)))))))))) +
-             (-3.) * (-1. + _repl10) *
-                 ((powr<-1>((_repl1) * (_repl3) + (_repl5) * (_repl6))) *
-                  ((_repl2) * (RBdot(_repl8, _repl6 + _repl7 + (2.) * ((cos1) * ((l1) * (p))))) +
-                   ((-50.) * (_repl2) + dtZc(k) + (50.) * (Zc((1.02) * (k)))) * (_repl4)) *
-                  ((powr<2>(ZAcbc((0.816496580927726) * (sqrt(_repl6 + _repl7 + (cos1) * ((l1) * (p))))))) *
-                   (powr<-2>((_repl2) * (_repl4) + (_repl6 + _repl7 + (2.) * ((cos1) * ((l1) * (p)))) *
-                                                       (Zc(sqrt(_repl6 + _repl7 + (2.) * ((cos1) * ((l1) * (p))))))))));
+      const auto _interp1 = RBdot(powr<2>(k), powr<2>(l1));
+      const auto _interp2 = ZA(pow(1. + powr<6>(k), 0.16666666666666666667));
+      const auto _interp3 = RB(powr<2>(k), powr<2>(l1));
+      const auto _interp4 = dtZA(pow(1. + powr<6>(k), 0.16666666666666666667));
+      const auto _interp5 = ZA((1.02) * (pow(1. + powr<6>(k), 0.16666666666666666667)));
+      const auto _interp6 = ZA(l1);
+      const auto _interp7 =
+          ZAcbc((0.816496580927726) * (sqrt(powr<2>(l1) + (-1.) * ((cos1) * ((l1) * (p))) + powr<2>(p))));
+      const auto _interp8 = RB(powr<2>(k), powr<2>(l1) + (-2.) * ((cos1) * ((l1) * (p))) + powr<2>(p));
+      const auto _interp9 = Zc(k);
+      const auto _interp10 = Zc(sqrt(powr<2>(l1) + (-2.) * ((cos1) * ((l1) * (p))) + powr<2>(p)));
+      const auto _interp11 = ZAcbc((0.816496580927726) * (sqrt(powr<2>(l1) + (cos1) * ((l1) * (p)) + powr<2>(p))));
+      const auto _interp12 = RBdot(powr<2>(k), powr<2>(l1) + (2.) * ((cos1) * ((l1) * (p))) + powr<2>(p));
+      const auto _interp13 = RB(powr<2>(k), powr<2>(l1) + (2.) * ((cos1) * ((l1) * (p))) + powr<2>(p));
+      const auto _interp14 = dtZc(k);
+      const auto _interp15 = Zc((1.02) * (k));
+      const auto _interp16 = Zc(sqrt(powr<2>(l1) + (2.) * ((cos1) * ((l1) * (p))) + powr<2>(p)));
+      const auto _cse1 = powr<2>(l1);
+      const auto _cse2 = powr<2>(cos1);
+      const auto _cse3 = -1. + _cse2;
+      const auto _cse4 = powr<6>(k);
+      const auto _cse5 = (_interp2) * (_interp3);
+      const auto _cse6 = (_cse1) * (_interp6);
+      const auto _cse7 = _cse5 + _cse6;
+      const auto _cse8 = powr<2>(p);
+      return fma(
+          -3.,
+          (_cse3) *
+              ((_interp1) * (_interp2) +
+               (_interp4 + (50.) * ((-1.) * (_interp2) + _interp5) * ((_cse4) * (powr<-1>(1. + _cse4)))) * (_interp3)) *
+              ((powr<-2>(_cse7)) *
+               ((powr<2>(_interp7)) *
+                (powr<-1>((_interp8) * (_interp9) + (_cse1 + _cse8 + (-2.) * ((cos1) * ((l1) * (p)))) * (_interp10))))),
+          fma(-3.,
+              (_cse3) *
+                  ((_interp14 + (50.) * (_interp15) + (-50.) * (_interp9)) * (_interp13) + (_interp12) * (_interp9)) *
+                  ((powr<-1>(_cse7)) *
+                   ((powr<2>(_interp11)) * (powr<-2>((_interp13) * (_interp9) +
+                                                     (_cse1 + _cse8 + (2.) * ((cos1) * ((l1) * (p)))) * (_interp16))))),
+              0.));
     }
 
     static KOKKOS_FORCEINLINE_FUNCTION auto
