@@ -49,6 +49,9 @@ namespace DiFfRG
           solution_dot.resize(quadrature.size(), VectorType(n_components));
           solution_interface[0].resize(quadrature_face.size(), VectorType(n_components));
           solution_interface[1].resize(quadrature_face.size(), VectorType(n_components));
+          comp.resize(fe.n_dofs_per_cell());
+          for (uint i = 0; i < comp.size(); ++i)
+            comp[i] = fe.system_to_component_index(i).first;
         }
 
         ScratchData(const ScratchData<Discretization> &scratch_data)
@@ -60,12 +63,16 @@ namespace DiFfRG
                                   scratch_data.fe_interface_values.get_quadrature(),
                                   scratch_data.fe_interface_values.get_update_flags())
         {
+          const auto &fe = scratch_data.fe_values.get_fe();
           solution.resize(scratch_data.fe_values.get_quadrature().size(), VectorType(n_components));
           solution_dot.resize(scratch_data.fe_values.get_quadrature().size(), VectorType(n_components));
           solution_interface[0].resize(scratch_data.fe_interface_values.get_quadrature().size(),
                                        VectorType(n_components));
           solution_interface[1].resize(scratch_data.fe_interface_values.get_quadrature().size(),
                                        VectorType(n_components));
+          comp.resize(fe.n_dofs_per_cell());
+          for (uint i = 0; i < comp.size(); ++i)
+            comp[i] = fe.system_to_component_index(i).first;
         }
 
         const uint n_components;
@@ -76,6 +83,7 @@ namespace DiFfRG
         std::vector<VectorType> solution;
         std::vector<VectorType> solution_dot;
         array<std::vector<VectorType>, 2> solution_interface;
+        std::vector<uint> comp;
       };
 
       // TODO fewer memory allocations
@@ -102,6 +110,7 @@ namespace DiFfRG
           cell_mass.reinit(dofs_per_cell);
           local_dof_indices.resize(dofs_per_cell);
           cell->get_dof_indices(local_dof_indices);
+          face_data.reserve(cell->n_faces());
         }
       };
 
@@ -134,6 +143,7 @@ namespace DiFfRG
           cell_mass_jacobian.reinit(dofs_per_cell, dofs_per_cell);
           local_dof_indices.resize(dofs_per_cell);
           cell->get_dof_indices(local_dof_indices);
+          face_data.reserve(cell->n_faces());
         }
       };
 
@@ -351,14 +361,15 @@ namespace DiFfRG
           fe_v.get_function_values(solution_global, solution);
           fe_v.get_function_values(solution_global_dot, solution_dot);
 
+          const auto &comp = scratch_data.comp;
+
           array<NumberType, n_components> mass{};
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
             model.mass(mass, x_q, solution[q_index], solution_dot[q_index]);
 
             for (uint i = 0; i < n_dofs; ++i) {
-              const auto component_i =
-                  fe.system_to_component_index(i).first; // TODO is this `fe` equivalent to? `fe_v[0]->get_fe()`?
+              const auto component_i = comp[i];
               copy_data.cell_residual(i) += weight * JxW[q_index] *
                                             fe_v.shape_value_component(i, q_index, component_i) *
                                             mass[component_i]; // +phi_i(x_q) * mass(x_q, u_q)
@@ -407,6 +418,8 @@ namespace DiFfRG
           fe_v.get_function_values(solution_global, solution);
           fe_v.get_function_values(solution_global_dot, solution_dot);
 
+          const auto &comp = scratch_data.comp;
+
           array<NumberType, n_components> mass{};
           array<Tensor<1, dim, NumberType>, n_components> flux{};
           array<NumberType, n_components> source{};
@@ -417,7 +430,7 @@ namespace DiFfRG
             model.source(source, x_q, fe_tie(solution[q_index], extracted_data, variables));
 
             for (uint i = 0; i < n_dofs; ++i) {
-              const auto component_i = fe.system_to_component_index(i).first;
+              const auto component_i = comp[i];
               copy_data.cell_mass(i) += weight_mass * JxW[q_index] *
                                         fe_v.shape_value_component(i, q_index, component_i) *
                                         mass[component_i];          // +phi_i(x_q) * mass(x_q, u_q)
@@ -445,13 +458,15 @@ namespace DiFfRG
           fe_fv.get_function_values(solution_global, solution);
           const std::vector<Tensor<1, dim>> &normals = fe_fv.get_normal_vectors();
 
+          const auto &comp = scratch_data.comp;
+
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
             model.boundary_numflux(numflux, normals[q_index], x_q,
                                    fe_tie(solution[q_index], extracted_data, variables));
 
             for (uint i = 0; i < n_dofs; ++i) {
-              const auto component_i = fe.system_to_component_index(i).first;
+              const auto component_i = comp[i];
               copy_data.cell_residual(i) +=
                   weight * JxW[q_index] * // dx
                   (fe_fv.shape_value_component(i, q_index, component_i) *
@@ -483,16 +498,21 @@ namespace DiFfRG
           fe_iv_n.get_function_values(solution_global, solution_n);
           const std::vector<Tensor<1, dim>> &normals = fe_iv.get_normal_vectors();
 
+          // Pre-compute component indices for interface DoFs
+          const auto &comp = scratch_data.comp;
+          std::vector<uint> iface_comp(n_dofs);
+          for (uint i = 0; i < n_dofs; ++i) {
+            const auto &cd_i = fe_iv.interface_dof_to_dof_indices(i);
+            iface_comp[i] = cd_i[0] == numbers::invalid_unsigned_int ? comp[cd_i[1]] : comp[cd_i[0]];
+          }
+
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
             model.numflux(numflux, normals[q_index], x_q, fe_tie(solution_s[q_index], extracted_data, variables),
                           fe_tie(solution_n[q_index], extracted_data, variables));
 
             for (uint i = 0; i < n_dofs; ++i) {
-              const auto &cd_i = fe_iv.interface_dof_to_dof_indices(i);
-              const auto component_i = cd_i[0] == numbers::invalid_unsigned_int
-                                           ? fe.system_to_component_index(cd_i[1]).first
-                                           : fe.system_to_component_index(cd_i[0]).first;
+              const auto component_i = iface_comp[i];
               copy_data_face.cell_residual(i) +=
                   weight * JxW[q_index] * // dx
                   (fe_iv.jump_in_shape_values(i, q_index, component_i) *
@@ -543,6 +563,8 @@ namespace DiFfRG
           fe_v.get_function_values(solution_global, solution);
           fe_v.get_function_values(solution_global_dot, solution_dot);
 
+          const auto &comp = scratch_data.comp;
+
           SimpleMatrix<NumberType, n_components> j_mass;
           SimpleMatrix<NumberType, n_components> j_mass_dot;
           for (const auto &q_index : q_indices) {
@@ -551,9 +573,9 @@ namespace DiFfRG
             model.template jacobian_mass<1>(j_mass_dot, x_q, solution[q_index], solution_dot[q_index]);
 
             for (uint i = 0; i < n_dofs; ++i) {
-              const auto component_i = fe.system_to_component_index(i).first;
+              const auto component_i = comp[i];
               for (uint j = 0; j < n_dofs; ++j) {
-                const auto component_j = fe.system_to_component_index(j).first;
+                const auto component_j = comp[j];
                 copy_data.cell_jacobian(i, j) +=
                     JxW[q_index] * fe_v.shape_value_component(j, q_index, component_j) *
                     fe_v.shape_value_component(i, q_index, component_i) *
@@ -608,6 +630,8 @@ namespace DiFfRG
           fe_v.get_function_values(solution_global, solution);
           fe_v.get_function_values(solution_global_dot, solution_dot);
 
+          const auto &comp = scratch_data.comp;
+
           SimpleMatrix<NumberType, n_components> j_mass;
           SimpleMatrix<NumberType, n_components> j_mass_dot;
           SimpleMatrix<Tensor<1, dim>, n_components> j_flux;
@@ -628,9 +652,9 @@ namespace DiFfRG
             }
 
             for (uint i = 0; i < n_dofs; ++i) {
-              const auto component_i = fe.system_to_component_index(i).first;
+              const auto component_i = comp[i];
               for (uint j = 0; j < n_dofs; ++j) {
-                const auto component_j = fe.system_to_component_index(j).first;
+                const auto component_j = comp[j];
                 copy_data.cell_jacobian(i, j) += weight * JxW[q_index] *
                                                  fe_v.shape_value_component(j, q_index, component_j) * // dx * phi_j * (
                                                  (-scalar_product(fe_v.shape_grad_component(i, q_index, component_i),
@@ -671,6 +695,8 @@ namespace DiFfRG
           fe_fv.get_function_values(solution_global, solution);
           const std::vector<Tensor<1, dim>> &normals = fe_fv.get_normal_vectors();
 
+          const auto &comp = scratch_data.comp;
+
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
             model.template jacobian_boundary_numflux<0, 0>(j_boundary_numflux, normals[q_index], x_q,
@@ -680,9 +706,9 @@ namespace DiFfRG
                                                                fe_tie(solution[q_index], extracted_data, variables));
 
             for (uint i = 0; i < n_dofs; ++i) {
-              const auto component_i = fe.system_to_component_index(i).first;
+              const auto component_i = comp[i];
               for (uint j = 0; j < n_dofs; ++j) {
-                const auto component_j = fe.system_to_component_index(j).first;
+                const auto component_j = comp[j];
                 copy_data.cell_jacobian(i, j) +=
                     weight * JxW[q_index] * fe_fv.shape_value_component(j, q_index, component_j) * // dx * phi_j(x_q)
                     (fe_fv.shape_value_component(i, q_index, component_i) *
@@ -722,6 +748,19 @@ namespace DiFfRG
           fe_iv_n.get_function_values(solution_global, solution_n);
           const std::vector<Tensor<1, dim>> &normals = fe_iv.get_normal_vectors();
 
+          // Pre-compute component indices and face numbers for interface DoFs
+          const auto &comp = scratch_data.comp;
+          std::vector<uint> iface_comp(n_dofs);
+          std::vector<uint> iface_face_no(n_dofs);
+          std::vector<uint> iface_local_dof(n_dofs);
+          for (uint i = 0; i < n_dofs; ++i) {
+            const auto &cd_i = fe_iv.interface_dof_to_dof_indices(i);
+            const uint fno = cd_i[0] == numbers::invalid_unsigned_int ? 1 : 0;
+            iface_face_no[i] = fno;
+            iface_local_dof[i] = cd_i[fno];
+            iface_comp[i] = comp[cd_i[fno]];
+          }
+
           array<SimpleMatrix<Tensor<1, dim>, n_components>, 2> j_numflux;
           array<SimpleMatrix<Tensor<1, dim>, n_components, Components::count_extractors()>, 2> j_extr_numflux;
           for (const auto &q_index : q_indices) {
@@ -735,17 +774,15 @@ namespace DiFfRG
                                                       fe_tie(solution_n[q_index], extracted_data, variables));
 
             for (uint i = 0; i < n_dofs; ++i) {
-              const auto &cd_i = fe_iv.interface_dof_to_dof_indices(i);
-              const uint face_no_i = cd_i[0] == numbers::invalid_unsigned_int ? 1 : 0;
-              const auto &component_i = fe.system_to_component_index(cd_i[face_no_i]).first;
+              const auto component_i = iface_comp[i];
+              const uint face_no_i = iface_face_no[i];
               for (uint j = 0; j < n_dofs; ++j) {
-                const auto &cd_j = fe_iv.interface_dof_to_dof_indices(j);
-                const uint face_no_j = cd_j[0] == numbers::invalid_unsigned_int ? 1 : 0;
-                const auto &component_j = fe.system_to_component_index(cd_j[face_no_j]).first;
+                const auto component_j = iface_comp[j];
+                const uint face_no_j = iface_face_no[j];
 
                 copy_data_face.cell_jacobian(i, j) +=
                     weight * JxW[q_index] *
-                    fe_iv.get_fe_face_values(face_no_j).shape_value_component(cd_j[face_no_j], q_index,
+                    fe_iv.get_fe_face_values(face_no_j).shape_value_component(iface_local_dof[j], q_index,
                                                                               component_j) * // dx * phi_j(x_q)
                     (fe_iv.jump_in_shape_values(i, q_index, component_i) *
                      scalar_product(j_numflux[face_no_j](component_i, component_j),
