@@ -1,13 +1,9 @@
 #pragma once
 
-#include "flows/flows.hh"
-#include <DiFfRG/common/kokkos.hh>
-#include <DiFfRG/model/model.hh>
-#include <DiFfRG/physics/interpolation/spline_interpolator_1d.hh>
-#include <cmath>
-
-using namespace dealii;
+#include <DiFfRG/DiFfRG.hh>
 using namespace DiFfRG;
+
+#include "flows/flows.hh"
 
 struct Parameters {
   Parameters(const JSONValue &json)
