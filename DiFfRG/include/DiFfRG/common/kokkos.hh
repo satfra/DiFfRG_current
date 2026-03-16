@@ -178,14 +178,14 @@ namespace DiFfRG
                    >;
 
   template <int dim, typename T, typename ExecutionSpace>
-  auto makeKokkosNDView(const std::string &label, const device::array<size_t, dim> &extents)
+  auto make_kokkos_nd_view(const std::string &label, const device::array<size_t, dim> &extents)
   {
     return device::apply([&](const auto &...args) { return KokkosNDView<dim, T, ExecutionSpace>(label, args...); },
                          extents);
   }
 
   template <int dim, typename T, typename ExecutionSpace>
-  auto makeKokkosNDViewRestrict(const std::string &label, const device::array<size_t, dim> &extents)
+  auto make_kokkos_nd_view_restrict(const std::string &label, const device::array<size_t, dim> &extents)
   {
     return device::apply(
         [&](const auto &...args) { return KokkosNDViewRestrict<dim, T, ExecutionSpace>(label, args...); }, extents);
@@ -207,7 +207,7 @@ namespace DiFfRG
    * max_threads. Fills from the innermost (last) dimension outward.
    */
   template <int dim>
-  device::array<size_t, dim> computeTileHints(const device::array<size_t, dim> &extents, size_t max_threads = 256)
+  device::array<size_t, dim> compute_tile_hints(const device::array<size_t, dim> &extents, size_t max_threads = 256)
   {
     device::array<size_t, dim> tile;
     for (int i = 0; i < dim; ++i)
@@ -224,7 +224,7 @@ namespace DiFfRG
   }
 
   template <int dim, typename ExecutionSpace>
-  auto makeKokkosNDRange(ExecutionSpace &space, const device::array<size_t, dim> start,
+  auto make_kokkos_nd_range(ExecutionSpace &space, const device::array<size_t, dim> start,
                          const device::array<size_t, dim> end)
   {
     if constexpr (dim == 1) {
@@ -241,7 +241,7 @@ namespace DiFfRG
   }
 
   template <int dim, typename ExecutionSpace>
-  auto makeKokkosNDRange(ExecutionSpace &space, const device::array<size_t, dim> start,
+  auto make_kokkos_nd_range(ExecutionSpace &space, const device::array<size_t, dim> start,
                          const device::array<size_t, dim> end, const device::array<size_t, dim> tile)
   {
     if constexpr (dim == 1) {
@@ -260,7 +260,7 @@ namespace DiFfRG
   }
 
   template <int dim, typename TeamType>
-  KOKKOS_FORCEINLINE_FUNCTION auto makeKokkosNDThreadRange(const TeamType &team, const device::array<size_t, dim> end)
+  KOKKOS_FORCEINLINE_FUNCTION auto make_kokkos_nd_thread_range(const TeamType &team, const device::array<size_t, dim> end)
   {
     if constexpr (dim == 1) {
       return Kokkos::TeamThreadRange(team, end[0]);

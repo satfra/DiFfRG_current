@@ -4,7 +4,7 @@
 #include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/polynomials.hh>
-#include <DiFfRG/physics/integration/finiteT/integrator_fT_p2_4D_2ang.hh>
+#include <DiFfRG/physics/integration/finiteT/integrator_fT_p2_4d_2ang.hh>
 #include <DiFfRG/physics/interpolation.hh>
 
 using namespace DiFfRG;

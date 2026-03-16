@@ -3,7 +3,7 @@
 #include "flows/flows.hh"
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/model/model.hh>
-#include <DiFfRG/physics/interpolation/spline_interpolator_1D.hh>
+#include <DiFfRG/physics/interpolation/spline_interpolator_1d.hh>
 #include <cmath>
 
 using namespace dealii;

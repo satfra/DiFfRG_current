@@ -115,7 +115,7 @@ namespace DiFfRG
       };
 
       Kokkos::parallel_reduce("QuadratureIntegral_" + std::to_string(dim) + "D", // name of the kernel
-                              makeKokkosNDRange<dim, ExecutionSpace>(space, {0}, grid_size),
+                              make_kokkos_nd_range<dim, ExecutionSpace>(space, {0}, grid_size),
                               KokkosNDLambdaWrapperReduction<dim, decltype(functor)>(functor), dest);
     }
 
@@ -135,7 +135,7 @@ namespace DiFfRG
         if (needs_realloc) {
           for (size_t i = 0; i < 1 + dim; ++i)
             m_cache_extents[i] = std::max(m_cache_extents[i], extents[i]);
-          m_cache = makeKokkosNDView<1 + dim, NT, ExecutionSpace>("cache", m_cache_extents);
+          m_cache = make_kokkos_nd_view<1 + dim, NT, ExecutionSpace>("cache", m_cache_extents);
         }
       }
       // Create a Restrict-tagged alias of the cache for no-alias optimization
@@ -170,7 +170,7 @@ namespace DiFfRG
         device::apply([&](const auto &...iargs) { subview() = weight * KERNEL::kernel(iargs...); }, full_args);
       };
 
-      Kokkos::parallel_for(makeKokkosNDRange<1 + dim, ExecutionSpace>(space, {0}, extents),
+      Kokkos::parallel_for(make_kokkos_nd_range<1 + dim, ExecutionSpace>(space, {0}, extents),
                            KokkosNDLambdaWrapper<1 + dim, decltype(functor)>(functor));
 
       using TeamType = Kokkos::TeamPolicy<ExecutionSpace>::member_type;

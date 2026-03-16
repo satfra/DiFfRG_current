@@ -92,7 +92,7 @@ void method8(Catch::Benchmark::Chronometer &meter)
   meter.measure([&] {
     GPU_exec space;
 
-    // Phase 1: Fill cache via MDRangePolicy (mirrors makeKokkosNDRange<1+dim> parallel_for)
+    // Phase 1: Fill cache via MDRangePolicy (mirrors make_kokkos_nd_range<1+dim> parallel_for)
     Kokkos::parallel_for(
         Kokkos::MDRangePolicy<ExecutionSpace, Kokkos::Rank<5>>(space, {0, 0, 0, 0, 0},
                                                                {(size_t)integral_view.size(), (size_t)n[0].size(),

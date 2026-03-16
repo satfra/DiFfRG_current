@@ -13,4 +13,4 @@ add_subdirectory(coordinates)
 
 setup_test(mesh.cc)
 setup_test(mesh_adaptor.cc)
-setup_test(EoM_finding.cc)
+setup_test(eom_finding.cc)

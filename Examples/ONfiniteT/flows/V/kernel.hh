@@ -10,7 +10,8 @@ namespace DiFfRG
   public:
     using Regulator = _Regulator;
 
-    static KOKKOS_FORCEINLINE_FUNCTION auto kernel(const double &l1, const auto &k, const auto &N, const auto &T, const auto &m2Pi, const auto &m2Sigma)
+    static KOKKOS_FORCEINLINE_FUNCTION auto kernel(const double &l1, const auto &k, const auto &N, const auto &T,
+                                                   const auto &m2Pi, const auto &m2Sigma)
     {
       using namespace DiFfRG;
       using namespace DiFfRG::compute;
@@ -19,12 +20,13 @@ namespace DiFfRG
       const auto _interp3 = RBdot(powr<2>(k), powr<2>(l1));
       const auto _interp4 = CothFiniteT(sqrt(powr<2>(l1) + m2Sigma + RB(powr<2>(k), powr<2>(l1))), T);
       const auto _cse1 = powr<2>(l1);
-      return (0.25) *
-             (fma(-1., (_interp2) * ((_interp3) * (sqrt(powr<-1>(_cse1 + _interp1 + m2Pi)))),
-                  fma(_interp3, (_interp4) * (sqrt(powr<-1>(_cse1 + _interp1 + m2Sigma))), fma(_interp2, (_interp3) * ((sqrt(powr<-1>(_cse1 + _interp1 + m2Pi))) * (N)), 0.))));
+      return (0.25) * (fma(-1., (_interp2) * ((_interp3) * (sqrt(powr<-1>(_cse1 + _interp1 + m2Pi)))),
+                           fma(_interp3, (_interp4) * (sqrt(powr<-1>(_cse1 + _interp1 + m2Sigma))),
+                               fma(_interp2, (_interp3) * ((sqrt(powr<-1>(_cse1 + _interp1 + m2Pi))) * (N)), 0.))));
     }
 
-    static KOKKOS_FORCEINLINE_FUNCTION auto constant(const auto &k, const auto &N, const auto &T, const auto &m2Pi, const auto &m2Sigma)
+    static KOKKOS_FORCEINLINE_FUNCTION auto constant(const auto &k, const auto &N, const auto &T, const auto &m2Pi,
+                                                     const auto &m2Sigma)
     {
       using namespace DiFfRG;
       using namespace DiFfRG::compute;

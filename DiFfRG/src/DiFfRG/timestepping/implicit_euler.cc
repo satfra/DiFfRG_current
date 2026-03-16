@@ -13,7 +13,7 @@
 #include <DiFfRG/timestepping/linear_solver/UMFPack.hh>
 #include <DiFfRG/timestepping/solver/kinsol.hh>
 #include <DiFfRG/timestepping/solver/newton.hh>
-#include <DiFfRG/timestepping/timestep_control/PI.hh>
+#include <DiFfRG/timestepping/timestep_control/pi.hh>
 #include <vector>
 
 namespace DiFfRG
