@@ -29,8 +29,7 @@ namespace DiFfRG
      *
      * @param coordinates coordinate system of the data
      */
-    SplineInterpolator1D(const Coordinates &coordinates)
-        : coordinates(coordinates), size(coordinates.size())
+    SplineInterpolator1D(const Coordinates &coordinates) : coordinates(coordinates), size(coordinates.size())
     {
       // Allocate separate views for values and spline coefficients (SoA layout)
       device_values = ValueViewType("SplineInterpolator1D_values", size);
@@ -45,18 +44,14 @@ namespace DiFfRG
      *
      */
     KOKKOS_FUNCTION
-    SplineInterpolator1D(const SplineInterpolator1D &other)
-        : coordinates(other.coordinates), size(other.size)
+    SplineInterpolator1D(const SplineInterpolator1D &other) : coordinates(other.coordinates), size(other.size)
     {
       // Use the same data (reference-counted)
       device_values = other.device_values;
       device_coeffs = other.device_coeffs;
     }
 
-    KOKKOS_FUNCTION ~SplineInterpolator1D()
-    {
-      KOKKOS_IF_ON_HOST((if (owns_other_instance) delete other_instance;))
-    }
+    KOKKOS_FUNCTION ~SplineInterpolator1D() { KOKKOS_IF_ON_HOST((if (owns_other_instance) delete other_instance;)) }
 
     template <typename NT2>
     void update(const NT2 *in_data, const ctype lower_y1 = std::numeric_limits<ctype>::max(),
@@ -212,7 +207,7 @@ namespace DiFfRG
       NT p, qn, sig, un;
       std::vector<NT> u(size - 1);
 
-      if (lower_y1 > 0.99e99)
+      if (!std::isfinite(lower_y1) || lower_y1 >= std::numeric_limits<ctype>::max() / 2)
         host_coeffs(0) = u[0] = 0.0;
       else {
         host_coeffs(0) = -0.5;
@@ -225,7 +220,7 @@ namespace DiFfRG
         u[i] = (host_values(i + 1) - host_values(i)) - (host_values(i) - host_values(i - 1));
         u[i] = (6.0 * u[i] / 2. - sig * u[i - 1]) / p;
       }
-      if (upper_y1 > 0.99e99)
+      if (!std::isfinite(upper_y1) || upper_y1 >= std::numeric_limits<ctype>::max() / 2)
         qn = un = 0.0;
       else {
         qn = 0.5;
