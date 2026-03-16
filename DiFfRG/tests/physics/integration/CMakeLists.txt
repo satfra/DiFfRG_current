@@ -20,4 +20,4 @@ setup_test(distributed_quadrature_integrator.cc)
 # Benchmarks
 # ##############################################################################
 
-setup_benchmark(benchmark_integrator_1D.cc)
+setup_benchmark(benchmark_integrator_1d.cc)

@@ -10,7 +10,7 @@
 #include <DiFfRG/model/model.hh>
 #include <DiFfRG/physics/physics.hh>
 
-#include <DiFfRG/discretization/common/EoM.hh>
+#include <DiFfRG/discretization/common/eom.hh>
 
 //--------------------------------------------
 // Test logic

@@ -48,5 +48,5 @@ namespace DiFfRG
 
 #include <DiFfRG/physics/interpolation/linear_interpolator.hh>
 
-#include <DiFfRG/physics/interpolation/spline_interpolator_1D.hh>
-#include <DiFfRG/physics/interpolation/spline_interpolator_1D_stack.hh>
+#include <DiFfRG/physics/interpolation/spline_interpolator_1d.hh>
+#include <DiFfRG/physics/interpolation/spline_interpolator_1d_stack.hh>

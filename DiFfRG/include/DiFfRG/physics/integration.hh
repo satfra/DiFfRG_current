@@ -7,18 +7,18 @@
 
 #include <DiFfRG/physics/integration/vacuum/integrator_p2.hh>
 #include <DiFfRG/physics/integration/vacuum/integrator_p2_1ang.hh>
-#include <DiFfRG/physics/integration/vacuum/integrator_p2_4D_2ang.hh>
-#include <DiFfRG/physics/integration/vacuum/integrator_p2_4D_3ang.hh>
+#include <DiFfRG/physics/integration/vacuum/integrator_p2_4d_2ang.hh>
+#include <DiFfRG/physics/integration/vacuum/integrator_p2_4d_3ang.hh>
 
 #include <DiFfRG/physics/integration/finiteT/integrator_fT.hh>
 #include <DiFfRG/physics/integration/finiteT/integrator_fT_p2.hh>
 #include <DiFfRG/physics/integration/finiteT/integrator_fT_p2_1ang.hh>
-#include <DiFfRG/physics/integration/finiteT/integrator_fT_p2_4D_2ang.hh>
+#include <DiFfRG/physics/integration/finiteT/integrator_fT_p2_4d_2ang.hh>
 
-#include <DiFfRG/physics/integration/lattice/integrator_lat_1D.hh>
-#include <DiFfRG/physics/integration/lattice/integrator_lat_2D.hh>
-#include <DiFfRG/physics/integration/lattice/integrator_lat_3D.hh>
-#include <DiFfRG/physics/integration/lattice/integrator_lat_4D.hh>
+#include <DiFfRG/physics/integration/lattice/integrator_lat_1d.hh>
+#include <DiFfRG/physics/integration/lattice/integrator_lat_2d.hh>
+#include <DiFfRG/physics/integration/lattice/integrator_lat_3d.hh>
+#include <DiFfRG/physics/integration/lattice/integrator_lat_4d.hh>
 
 namespace DiFfRG
 {

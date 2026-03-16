@@ -3,7 +3,7 @@
 
 #include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/polynomials.hh>
-#include <DiFfRG/physics/integration/vacuum/integrator_p2_4D_2ang.hh>
+#include <DiFfRG/physics/integration/vacuum/integrator_p2_4d_2ang.hh>
 
 #include "../boilerplate/poly_integrand.hh"
 

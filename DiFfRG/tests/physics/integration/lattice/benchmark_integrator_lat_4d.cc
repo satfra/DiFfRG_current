@@ -6,8 +6,8 @@
 #include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/polynomials.hh>
-#include <DiFfRG/physics/integration/lattice/integrator_lat_3D.hh>
-#include <DiFfRG/physics/integration/lattice/integrator_lat_4D.hh>
+#include <DiFfRG/physics/integration/lattice/integrator_lat_3d.hh>
+#include <DiFfRG/physics/integration/lattice/integrator_lat_4d.hh>
 
 using namespace DiFfRG;
 
