@@ -78,7 +78,7 @@ namespace DiFfRG
     Integrator_p2_4D_2ang(QuadratureProvider &quadrature_provider, const JSONValue &json)
       requires provides_regulator<KERNEL>
         : Integrator_p2_4D_2ang(quadrature_provider,
-                                internal::make_int_grid<3>(json, {"x_order", "cos1_order", "cos2_order"}),
+                                internal::make_int_grid<3, NT>(json, {"x_order", "cos1_order", "cos2_order"}),
                                 optimize_x_extent<typename KERNEL::Regulator>(json))
     {
     }
