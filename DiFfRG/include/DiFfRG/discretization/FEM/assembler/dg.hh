@@ -642,13 +642,11 @@ namespace DiFfRG
             const auto &x_q = q_points[q_index];
             model.template jacobian_mass<0>(j_mass, x_q, solution[q_index], solution_dot[q_index]);
             model.template jacobian_mass<1>(j_mass_dot, x_q, solution[q_index], solution_dot[q_index]);
-            model.template jacobian_flux<0, 0>(j_flux, x_q, fe_tie(solution[q_index], extracted_data, variables));
-            model.template jacobian_source<0, 0>(j_source, x_q, fe_tie(solution[q_index], extracted_data, variables));
+            model.template jacobian_flux_source<0, 0>(j_flux, j_source, x_q,
+                                                       fe_tie(solution[q_index], extracted_data, variables));
             if constexpr (Components::count_extractors() > 0) {
-              model.template jacobian_flux_extr<1>(j_extr_flux, x_q,
-                                                   fe_tie(solution[q_index], extracted_data, variables));
-              model.template jacobian_source_extr<1>(j_extr_source, x_q,
-                                                     fe_tie(solution[q_index], extracted_data, variables));
+              model.template jacobian_flux_source_extr<1>(j_extr_flux, j_extr_source, x_q,
+                                                          fe_tie(solution[q_index], extracted_data, variables));
             }
 
             for (uint i = 0; i < n_dofs; ++i) {
