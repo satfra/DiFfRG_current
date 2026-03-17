@@ -15,10 +15,6 @@ struct Parameters {
       alphaA4 = json.get_double("/physical/alphaA4");
       alphaAcbc = json.get_double("/physical/alphaAcbc");
 
-      tilt_A3 = json.get_double("/physical/tilt_A3");
-      tilt_A4 = json.get_double("/physical/tilt_A4");
-      tilt_Acbc = json.get_double("/physical/tilt_Acbc");
-
       m2A = json.get_double("/physical/m2A");
 
       p_grid_min = json.get_double("/discretization/p_grid_min");
@@ -35,7 +31,6 @@ struct Parameters {
 
   double Lambda;
   double alphaA3, alphaA4, alphaAcbc;
-  double tilt_A3, tilt_A4, tilt_Acbc;
   double m2A;
 
   int eta_iter_max;
@@ -88,9 +83,9 @@ public:
   {
     for (uint i = 0; i < p_grid_size; ++i) {
       const double p = coordinates1D.forward(i);
-      values[idxv("ZA4") + i] = 4. * M_PI * prm.alphaA4 + prm.tilt_A4 * std::log(p / prm.p_grid_max);
-      values[idxv("ZA3") + i] = std::sqrt(4. * M_PI * prm.alphaA3) + prm.tilt_A3 * std::log(p / prm.p_grid_max);
-      values[idxv("ZAcbc") + i] = std::sqrt(4. * M_PI * prm.alphaAcbc) + prm.tilt_Acbc * std::log(p / prm.p_grid_max);
+      values[idxv("ZA4") + i] = 4. * M_PI * prm.alphaA4;
+      values[idxv("ZA3") + i] = std::sqrt(4. * M_PI * prm.alphaA3);
+      values[idxv("ZAcbc") + i] = std::sqrt(4. * M_PI * prm.alphaAcbc);
 
       values[idxv("ZA") + i] = (powr<2>(p) + prm.m2A) / powr<2>(p);
       values[idxv("Zc") + i] = 1.;
@@ -108,17 +103,17 @@ public:
   {
     const auto &variables = get<"variables">(data);
 
+    // update interpolators
     ZA3.update(&variables.data()[idxv("ZA3")]);
     ZAcbc.update(&variables.data()[idxv("ZAcbc")]);
     ZA4.update(&variables.data()[idxv("ZA4")]);
-
     ZA.update(&variables.data()[idxv("ZA")]);
     Zc.update(&variables.data()[idxv("Zc")]);
 
     // set up arguments for the integrators
     const auto arguments = device::tie(k, ZA3, ZAcbc, ZA4, dtZc, Zc, dtZA, ZA);
 
-    // copy the propagators for comparison
+    // copy the old propagators for comparison
     std::vector<double> old_dtZA(p_grid_size);
     std::vector<double> old_dtZc(p_grid_size);
 
@@ -134,7 +129,6 @@ public:
 
       const auto ZA_exec = flow_equations.ZA.map(&residual[idxv("ZA")], coordinates1D, arguments);
       const auto Zc_exec = flow_equations.Zc.map(&residual[idxv("Zc")], coordinates1D, arguments);
-      Kokkos::fence();
 
       dtZA.update(&residual[idxv("ZA")]);
       dtZc.update(&residual[idxv("Zc")]);
@@ -153,7 +147,6 @@ public:
     const auto exec_ZA4 = flow_equations.ZA4.map(&residual[idxv("ZA4")], coordinates1D, arguments);
     const auto exec_ZAcbc = flow_equations.ZAcbc.map(&residual[idxv("ZAcbc")], coordinates1D, arguments);
     const auto exec_ZA3 = flow_equations.ZA3.map(&residual[idxv("ZA3")], coordinates1D, arguments);
-    Kokkos::fence();
   }
 
   template <int dim, typename DataOut, typename Solutions>
@@ -171,5 +164,9 @@ public:
     hdf.map("ZAcbc", coordinates1D, &(variables.data()[idxv("ZAcbc")]));
     hdf.map("ZA3", coordinates1D, &(variables.data()[idxv("ZA3")]));
     hdf.map("ZA4", coordinates1D, &(variables.data()[idxv("ZA4")]));
+
+    hdf.scalar("k", k);
+    hdf.scalar("m2A",
+               variables[idxv("ZA") + 0] * powr<2>(coordinates1D.forward(0)) - powr<2>(coordinates1D.forward(0)));
   }
 };

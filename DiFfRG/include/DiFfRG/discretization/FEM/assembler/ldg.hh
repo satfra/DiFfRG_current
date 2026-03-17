@@ -24,8 +24,8 @@
 
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
-#include <DiFfRG/discretization/common/eom.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
+#include <DiFfRG/discretization/common/eom.hh>
 #include <DiFfRG/discretization/data/data_output.hh>
 
 namespace DiFfRG
@@ -1014,7 +1014,7 @@ namespace DiFfRG
                 }
               }
               model.template jacobian_flux_source<k, 0>(std::get<k>(j_flux), std::get<k>(j_source), x_q,
-                                                         fe_conv(sol_q));
+                                                        fe_conv(sol_q));
 
               if (!std::get<k>(j_flux).is_finite() || !std::get<k>(j_source).is_finite()) exception = true;
 
@@ -2002,6 +2002,7 @@ namespace DiFfRG
           extract(__extracted_data, spatial_solution, variables, true, false, false);
         const auto &extracted_data = __extracted_data;
         model.dt_variables(residual, v_tie(variables, extracted_data));
+        Kokkos::fence();
         timings_variable_residual.push_back(timer.wall_time());
       }
 
@@ -2014,6 +2015,7 @@ namespace DiFfRG
           extract(__extracted_data, spatial_solution, variables, true, false, false);
         const auto &extracted_data = __extracted_data;
         model.template jacobian_variables<0>(jacobian, v_tie(variables, extracted_data));
+        Kokkos::fence();
         timings_variable_jacobian.push_back(timer.wall_time());
       }
     };
