@@ -48,7 +48,7 @@ Rdot->{{A,A}->{"AA",1},{cb,c}->"cbc"}
 
 
 diagramStyling=<|"Styles"->{A->{Orange},c->{Black,Dashed}}|>;
-SetTexStyles[cb->"\\bar{c}"];
+FSetTexStyles[cb->"\\bar{c}"];
 
 
 Setup=<|
