@@ -113,17 +113,16 @@ namespace DiFfRG
         }
 
         template <typename Reconstructor, int dim, typename NumberType, size_t n_components>
-        std::array<NumberType, n_components>
-        reconstruct_u_derivative(const std::array<std::pair<NumberType, bool>, n_components> &u_center,
-                                 const Point<dim> &center, const Point<dim> &x,
-                                 const std::array<Point<dim>, 2 * dim> &x_n,
-                                 const std::array<std::array<std::pair<NumberType, bool>, n_components>, 2 * dim> &u_n)
+        std::array<NumberType, n_components> reconstruct_u_derivative(
+            const std::array<autodiff::Real<1, NumberType>, n_components> &u_center, const Point<dim> &center,
+            const Point<dim> &x, const std::array<Point<dim>, 2 * dim> &x_n,
+            const std::array<std::array<autodiff::Real<1, NumberType>, n_components>, 2 * dim> &u_n)
         {
           const auto u_grad_deriv =
               Reconstructor::template compute_gradient_derivative<dim, n_components>(center, u_center, x_n, u_n);
           std::array<NumberType, n_components> result;
           for (size_t c = 0; c < n_components; ++c) {
-            result[c] = u_center[c].second ? NumberType(1) : NumberType(0);
+            result[c] = autodiff::derivative(u_center[c]);
             result[c] += scalar_product(u_grad_deriv[c], x - center);
           }
           return result;
@@ -196,6 +195,7 @@ namespace DiFfRG
                 }
               }
 
+              from_dofs.resize(size(from_dofs_set));
               from_dofs = std::vector<types::global_dof_index>(begin(from_dofs_set), end(from_dofs_set));
             }
           };
@@ -395,6 +395,27 @@ namespace DiFfRG
             D[c] = 0.5 * (D_minus[c] + D_plus[c]);
           return D;
         }
+        template <int dim, typename NumberType, size_t n_components> struct CellData {
+          dealii::Point<dim> x;
+          std::array<NumberType, n_components> u;
+          std::array<dealii::types::global_dof_index, n_components> dof_indices;
+        };
+
+        template <int dim, typename NumberType, size_t n_components, size_t n_faces> struct NeighborData {
+          std::array<dealii::Point<dim>, n_faces> x;
+          std::array<std::array<NumberType, n_components>, n_faces> u;
+          std::array<std::array<dealii::types::global_dof_index, n_components>, n_faces> dof_indices;
+        };
+
+        template <int dim, typename NumberType, size_t n_components>
+        CellData<dim, autodiff::Real<1, NumberType>, n_components>
+        tag_cell_dofs(const CellData<dim, NumberType, n_components> &cell_data, dealii::types::global_dof_index dof_j);
+
+        template <int dim, typename NumberType, size_t n_components, size_t n_faces>
+        NeighborData<dim, autodiff::Real<1, NumberType>, n_components, n_faces>
+        make_tagged_neighbors(const NeighborData<dim, NumberType, n_components, n_faces> &neighbor_data,
+                              dealii::types::global_dof_index dof_j);
+
       } // namespace internal
 
       template <typename Discretization_, typename Model_,
@@ -587,17 +608,8 @@ namespace DiFfRG
                                 copy_data, flags, nullptr, nullptr, threads, batch_size);
         }
 
-        struct CellData {
-          Point x;
-          std::array<NumberType, n_components> u;
-          std::array<types::global_dof_index, n_components> dof_indices;
-        };
-
-        struct NeighborData {
-          std::array<Point, n_faces> x;
-          std::array<std::array<NumberType, n_components>, n_faces> u;
-          std::array<std::array<types::global_dof_index, n_components>, n_faces> dof_indices;
-        };
+        using CellData = internal::CellData<dim, NumberType, n_components>;
+        using NeighborData = internal::NeighborData<dim, NumberType, n_components, n_faces>;
 
         static CellData get_cell_value(const Iterator &cell, const VectorType &solution_global)
         {
@@ -936,10 +948,12 @@ namespace DiFfRG
           const auto face_worker = [&](const Iterator &cell, const unsigned int &f, const unsigned int &sf,
                                        const Iterator &ncell, const unsigned int &nf, const unsigned int &nsf,
                                        Scratch &scratch_data, CopyData &copy_data) {
-            const int q_face_index = 0;
-
             scratch_data.fe_interface_values.reinit(cell, f, sf, ncell, nf, nsf);
-            const auto &fe_iv = scratch_data.fe_interface_values;
+            const FEInterfaceValues<dim> &fe_iv = scratch_data.fe_interface_values;
+            const int q_face_index = 0;
+            const auto &face_q_points = fe_iv.get_quadrature_points();
+            const auto &x_q = face_q_points[q_face_index];
+
             const uint n_face_dofs = fe_iv.n_current_interface_dofs();
             const auto &JxW = fe_iv.get_JxW_values();
             const std::vector<Tensor<1, dim>> &normals = fe_iv.get_normal_vectors();
@@ -953,6 +967,36 @@ namespace DiFfRG
             auto &copy_data_face = copy_data.face_data.back();
             copy_data_face.reinit(fe_iv, cell, ncell);
 
+            // Precompute reconstructed_u_deriv[face_no](component, j)
+            // face_no=0: derivative of u⁻(x_q) w.r.t. from_dofs[j]
+            // face_no=1: derivative of u⁺(x_q) w.r.t. from_dofs[j]
+            std::array<SimpleMatrix<NumberType, n_components, size(copy_data_face.from_dofs)>, 2>
+                reconstructed_u_deriv{};
+
+            for (uint j = 0; j < size(copy_data_face.from_dofs); ++j) {
+              const auto dof_j = copy_data_face.from_dofs[j];
+
+              // face_no=0: d(u⁻)/d(u_j) — reconstruction from cell side
+              {
+                auto u_center_tagged = internal::tag_cell_dofs(cell_data, dof_j);
+                auto u_n_tagged = internal::make_tagged_neighbors(cell_neighbors, dof_j);
+                auto deriv = internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
+                    u_center_tagged, cell_data.x, x_q, cell_neighbors.x, u_n_tagged); // TODO: refactor parameters
+                for (size_t c = 0; c < n_components; ++c)
+                  reconstructed_u_deriv[0](c, j) = deriv[c];
+              }
+
+              // face_no=1: d(u⁺)/d(u_j) — reconstruction from neighbor side
+              {
+                auto u_center_tagged = internal::tag_cell_dofs(ncell_data, dof_j);
+                auto u_n_tagged = internal::make_tagged_neighbors(ncell_neighbors, dof_j);
+                auto deriv = internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
+                    u_center_tagged, ncell_data.x, x_q, ncell_neighbors.x, u_n_tagged); // TODO: refactor parameters
+                for (size_t c = 0; c < n_components; ++c)
+                  reconstructed_u_deriv[1](c, j) = deriv[c];
+              }
+            }
+
             std::array<SimpleMatrix<Tensor<1, dim>, n_components>, 2> j_numflux;
             for (uint i = 0; i < n_face_dofs; ++i) {
               for (uint j = 0; j < n_face_dofs; ++j) {
@@ -964,21 +1008,24 @@ namespace DiFfRG
               }
             }
 
-            for (uint i = 0; i < n_face_dofs; ++i) { // these are effectively two
+            for (uint i = 0; i < size(copy_data_face.to_dofs); ++i) { // these are effectively two
               const auto &cd_i = fe_iv.interface_dof_to_dof_indices(i);
               const uint face_no_i = cd_i[0] == numbers::invalid_unsigned_int ? 1 : 0;
               const auto &component_i = fe.system_to_component_index(cd_i[face_no_i]).first;
-              for (uint j = 0; j < n_from_dofs; ++j) { // these are more, since it also depends on the neighbors
-                const auto &cd_j = fe_iv.interface_dof_to_dof_indices(j);
-                const uint face_no_j = cd_j[0] == numbers::invalid_unsigned_int ? 1 : 0;
-                const auto &component_j = fe.system_to_component_index(cd_j[face_no_j]).first;
-                copy_data_face.cell_jacobian(i, j) +=
-                    weight * JxW[q_face_index] *
-                    fe_iv.get_fe_face_values(face_no_j).shape_value_component(cd_j[face_no_j], q_face_index,
-                                                                              component_j) * // dx * phi_j(x_q)
-                    (fe_iv.jump_in_shape_values(i, q_face_index, component_i) *
-                     scalar_product(j_numflux[face_no_j](component_i, component_j),
-                                    normals[q_face_index])); // [[phi_i(x_q)]] * j_numflux(x_q, u_q)
+              for (uint j = 0; j < size(copy_data_face.from_dofs); ++j) {
+                for (size_t face_no = 0; face_no < 2; ++face_no) {
+                  NumberType contribution{};
+                  for (size_t c = 0; c < n_components; ++c) {
+                    contribution += scalar_product(j_numflux[face_no](component_i, c), normals[q_face_index]) *
+                                    // dF/du_plus or dF/du_minus
+                                    reconstructed_u_deriv[face_no](c, j); // times du_minus/du_j or du_plus/du_j
+                  }
+                  copy_data_face.cell_jacobian(i, j) +=
+                      weight * JxW[q_face_index] *                                // dx
+                      (fe_iv.jump_in_shape_values(i, q_face_index, component_i) * // [[phi_i(x_q)]]
+                       contribution); // dF/du_plus * du_plus/du_j or dF/du_minus * du_minus/du_j contribution to the
+                                      // Jacobian
+                }
               }
             }
           };

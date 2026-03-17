@@ -3,6 +3,7 @@
 #include "catch2/catch_approx.hpp"
 #include "catch2/catch_test_macros.hpp"
 #include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
+#include <autodiff/forward/real.hpp>
 #include <cstddef>
 #include <deal.II/base/numbers.h>
 #include <deal.II/lac/vector.h>
@@ -65,7 +66,7 @@ TEST_CASE("reconstruct_u_derivative 1D single component", "[FV][KT]")
   // Reconstruct at x_q = 0.5: u_recon = 2 + 1*0.5 = 2.5
   constexpr int dim = 1;
   constexpr size_t n_components = 1;
-  using P = std::pair<NumberType, bool>;
+  using AD = autodiff::Real<1, NumberType>;
 
   const Point<dim> center(0.0);
   const Point<dim> x_q(0.5);
@@ -76,11 +77,12 @@ TEST_CASE("reconstruct_u_derivative 1D single component", "[FV][KT]")
     // minmod picks du_left = (u_left-u_c)/(-1).
     // d(du_left)/d(u_c) = -1/(-1) = 1, so d(grad)/d(u_c) = 1
     // d(u_recon)/d(u_c) = 1 + 1 * 0.5 = 1.5
-    const std::array<P, 1> u_c = {P{2.0, true}};
-    const std::array<std::array<P, 1>, 2> u_n = {std::array<P, 1>{P{1.0, false}}, std::array<P, 1>{P{4.0, false}}};
-
+    std::array<AD, 1> u_c = {AD(2.0)};
+    std::array<std::array<AD, 1>, 2> u_n = {std::array<AD, 1>{AD(1.0)}, std::array<AD, 1>{AD(4.0)}};
+    seed(u_c[0]);
     const auto result = KT::internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
         u_c, center, x_q, x_n, u_n);
+    unseed(u_c[0]);
     CHECK(result[0] == Catch::Approx(1.5));
   }
 
@@ -89,11 +91,12 @@ TEST_CASE("reconstruct_u_derivative 1D single component", "[FV][KT]")
     // d(du_left)/d(u_left) = 1/(-1) = -1, minmod picks du_left
     // d(grad)/d(u_left) = -1
     // d(u_recon)/d(u_left) = 0 + (-1) * 0.5 = -0.5
-    const std::array<P, 1> u_c = {P{2.0, false}};
-    const std::array<std::array<P, 1>, 2> u_n = {std::array<P, 1>{P{1.0, true}}, std::array<P, 1>{P{4.0, false}}};
-
+    std::array<AD, 1> u_c = {AD(2.0)};
+    std::array<std::array<AD, 1>, 2> u_n = {std::array<AD, 1>{AD(1.0)}, std::array<AD, 1>{AD(4.0)}};
+    seed(u_n[0][0]);
     const auto result = KT::internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
         u_c, center, x_q, x_n, u_n);
+    unseed(u_n[0][0]);
     CHECK(result[0] == Catch::Approx(-0.5));
   }
 
@@ -101,11 +104,12 @@ TEST_CASE("reconstruct_u_derivative 1D single component", "[FV][KT]")
   {
     // minmod picks du_left (not du_right), so d(grad)/d(u_right) = 0
     // d(u_recon)/d(u_right) = 0 + 0 = 0
-    const std::array<P, 1> u_c = {P{2.0, false}};
-    const std::array<std::array<P, 1>, 2> u_n = {std::array<P, 1>{P{1.0, false}}, std::array<P, 1>{P{4.0, true}}};
-
+    std::array<AD, 1> u_c = {AD(2.0)};
+    std::array<std::array<AD, 1>, 2> u_n = {std::array<AD, 1>{AD(1.0)}, std::array<AD, 1>{AD(4.0)}};
+    seed(u_n[1][0]);
     const auto result = KT::internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
         u_c, center, x_q, x_n, u_n);
+    unseed(u_n[1][0]);
     CHECK(result[0] == Catch::Approx(0.0));
   }
 }
@@ -118,7 +122,7 @@ TEST_CASE("reconstruct_u_derivative at local extremum (vanishing limiter)", "[FV
   // minmod(-1, 1) = 0 => flat reconstruction
   constexpr int dim = 1;
   constexpr size_t n_components = 1;
-  using P = std::pair<NumberType, bool>;
+  using AD = autodiff::Real<1, NumberType>;
 
   const Point<dim> center(0.0);
   const Point<dim> x_q(0.5);
@@ -126,21 +130,23 @@ TEST_CASE("reconstruct_u_derivative at local extremum (vanishing limiter)", "[FV
 
   SECTION("derivative w.r.t. center is Kronecker delta only")
   {
-    const std::array<P, 1> u_c = {P{3.0, true}};
-    const std::array<std::array<P, 1>, 2> u_n = {std::array<P, 1>{P{4.0, false}}, std::array<P, 1>{P{4.0, false}}};
-
+    std::array<AD, 1> u_c = {AD(3.0)};
+    std::array<std::array<AD, 1>, 2> u_n = {std::array<AD, 1>{AD(4.0)}, std::array<AD, 1>{AD(4.0)}};
+    seed(u_c[0]);
     const auto result = KT::internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
         u_c, center, x_q, x_n, u_n);
+    unseed(u_c[0]);
     CHECK(result[0] == Catch::Approx(1.0));
   }
 
   SECTION("derivative w.r.t. neighbor is zero")
   {
-    const std::array<P, 1> u_c = {P{3.0, false}};
-    const std::array<std::array<P, 1>, 2> u_n = {std::array<P, 1>{P{4.0, true}}, std::array<P, 1>{P{4.0, false}}};
-
+    std::array<AD, 1> u_c = {AD(3.0)};
+    std::array<std::array<AD, 1>, 2> u_n = {std::array<AD, 1>{AD(4.0)}, std::array<AD, 1>{AD(4.0)}};
+    seed(u_n[0][0]);
     const auto result = KT::internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
         u_c, center, x_q, x_n, u_n);
+    unseed(u_n[0][0]);
     CHECK(result[0] == Catch::Approx(0.0));
   }
 }
@@ -155,7 +161,7 @@ TEST_CASE("reconstruct_u_derivative 2D single component", "[FV][KT]")
   // gradient = (1, 1.5)
   constexpr int dim = 2;
   constexpr size_t n_components = 1;
-  using P = std::pair<NumberType, bool>;
+  using AD = autodiff::Real<1, NumberType>;
 
   const Point<dim> center(0.0, 0.0);
   const Point<dim> x_q(0.5, 0.3);
@@ -169,12 +175,13 @@ TEST_CASE("reconstruct_u_derivative 2D single component", "[FV][KT]")
     // d(grad_y)/d(u_c) = d(du_y_bottom)/d(u_c) = -1/(-1) = 1
     // grad_deriv = (1, 1)
     // d(u_recon)/d(u_c) = 1 + 1*0.5 + 1*0.3 = 1.8
-    const std::array<P, 1> u_c = {P{2.0, true}};
-    const std::array<std::array<P, 1>, 4> u_n = {std::array<P, 1>{P{1.0, false}}, std::array<P, 1>{P{4.0, false}},
-                                                 std::array<P, 1>{P{0.5, false}}, std::array<P, 1>{P{5.0, false}}};
-
+    std::array<AD, 1> u_c = {AD(2.0)};
+    std::array<std::array<AD, 1>, 4> u_n = {std::array<AD, 1>{AD(1.0)}, std::array<AD, 1>{AD(4.0)},
+                                            std::array<AD, 1>{AD(0.5)}, std::array<AD, 1>{AD(5.0)}};
+    seed(u_c[0]);
     const auto result = KT::internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
         u_c, center, x_q, x_n, u_n);
+    unseed(u_c[0]);
     CHECK(result[0] == Catch::Approx(1.8));
   }
 
@@ -183,12 +190,13 @@ TEST_CASE("reconstruct_u_derivative 2D single component", "[FV][KT]")
     // d(grad_x)/d(u_xleft) = 1/(-1) = -1 (minmod picks du_x_left)
     // d(grad_y)/d(u_xleft) = 0 (y-dimension independent)
     // d(u_recon)/d(u_xleft) = 0 + (-1)*0.5 + 0*0.3 = -0.5
-    const std::array<P, 1> u_c = {P{2.0, false}};
-    const std::array<std::array<P, 1>, 4> u_n = {std::array<P, 1>{P{1.0, true}}, std::array<P, 1>{P{4.0, false}},
-                                                 std::array<P, 1>{P{0.5, false}}, std::array<P, 1>{P{5.0, false}}};
-
+    std::array<AD, 1> u_c = {AD(2.0)};
+    std::array<std::array<AD, 1>, 4> u_n = {std::array<AD, 1>{AD(1.0)}, std::array<AD, 1>{AD(4.0)},
+                                            std::array<AD, 1>{AD(0.5)}, std::array<AD, 1>{AD(5.0)}};
+    seed(u_n[0][0]);
     const auto result = KT::internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
         u_c, center, x_q, x_n, u_n);
+    unseed(u_n[0][0]);
     CHECK(result[0] == Catch::Approx(-0.5));
   }
 
@@ -197,12 +205,13 @@ TEST_CASE("reconstruct_u_derivative 2D single component", "[FV][KT]")
     // d(grad_x)/d(u_ybottom) = 0
     // d(grad_y)/d(u_ybottom) = 1/(-1) = -1 (minmod picks du_y_bottom)
     // d(u_recon)/d(u_ybottom) = 0 + 0*0.5 + (-1)*0.3 = -0.3
-    const std::array<P, 1> u_c = {P{2.0, false}};
-    const std::array<std::array<P, 1>, 4> u_n = {std::array<P, 1>{P{1.0, false}}, std::array<P, 1>{P{4.0, false}},
-                                                 std::array<P, 1>{P{0.5, true}}, std::array<P, 1>{P{5.0, false}}};
-
+    std::array<AD, 1> u_c = {AD(2.0)};
+    std::array<std::array<AD, 1>, 4> u_n = {std::array<AD, 1>{AD(1.0)}, std::array<AD, 1>{AD(4.0)},
+                                            std::array<AD, 1>{AD(0.5)}, std::array<AD, 1>{AD(5.0)}};
+    seed(u_n[2][0]);
     const auto result = KT::internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
         u_c, center, x_q, x_n, u_n);
+    unseed(u_n[2][0]);
     CHECK(result[0] == Catch::Approx(-0.3));
   }
 }

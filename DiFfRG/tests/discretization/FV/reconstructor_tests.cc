@@ -5,6 +5,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <autodiff/forward/real.hpp>
 #include <deal.II/base/point.h>
 #include <deal.II/base/tensor.h>
 
@@ -248,7 +249,7 @@ TEST_CASE("TVD gradient computation with non-unit spacing", "[FV][reconstructor]
 
 TEST_CASE("TVD gradient derivative in 1D, one component", "[FV][reconstructor]")
 {
-  using Pair = std::pair<NumberType, bool>;
+  using AD = autodiff::Real<1, NumberType>;
   constexpr int dim = 1;
   constexpr int n_components = 1;
   const Point<dim> x_center(1.0);
@@ -258,28 +259,31 @@ TEST_CASE("TVD gradient derivative in 1D, one component", "[FV][reconstructor]")
 
   SECTION("w.r.t. cell centre")
   {
-    const std::array<Pair, 1> u_cp = {Pair{2.0, true}};
-    const std::array<std::array<Pair, 1>, 2> u_np = {std::array<Pair, 1>{Pair{1.0, false}},
-                                                     std::array<Pair, 1>{Pair{2.5, false}}};
+    std::array<AD, 1> u_cp = {AD(2.0)};
+    std::array<std::array<AD, 1>, 2> u_np = {std::array<AD, 1>{AD(1.0)}, std::array<AD, 1>{AD(2.5)}};
+    seed(u_cp[0]);
     const auto result = Reconstructor::compute_gradient_derivative<dim, n_components>(x_center, u_cp, x_n, u_np);
+    unseed(u_cp[0]);
     CHECK(result[0][0] == Catch::Approx(-1.0));
   }
 
   SECTION("w.r.t. left neighbour (inactive slope)")
   {
-    const std::array<Pair, 1> u_cp = {Pair{2.0, false}};
-    const std::array<std::array<Pair, 1>, 2> u_np = {std::array<Pair, 1>{Pair{1.0, true}},
-                                                     std::array<Pair, 1>{Pair{2.5, false}}};
+    std::array<AD, 1> u_cp = {AD(2.0)};
+    std::array<std::array<AD, 1>, 2> u_np = {std::array<AD, 1>{AD(1.0)}, std::array<AD, 1>{AD(2.5)}};
+    seed(u_np[0][0]);
     const auto result = Reconstructor::compute_gradient_derivative<dim, n_components>(x_center, u_cp, x_n, u_np);
+    unseed(u_np[0][0]);
     CHECK(result[0][0] == Catch::Approx(0.0));
   }
 
   SECTION("w.r.t. right neighbour (active slope)")
   {
-    const std::array<Pair, 1> u_cp = {Pair{2.0, false}};
-    const std::array<std::array<Pair, 1>, 2> u_np = {std::array<Pair, 1>{Pair{1.0, false}},
-                                                     std::array<Pair, 1>{Pair{2.5, true}}};
+    std::array<AD, 1> u_cp = {AD(2.0)};
+    std::array<std::array<AD, 1>, 2> u_np = {std::array<AD, 1>{AD(1.0)}, std::array<AD, 1>{AD(2.5)}};
+    seed(u_np[1][0]);
     const auto result = Reconstructor::compute_gradient_derivative<dim, n_components>(x_center, u_cp, x_n, u_np);
+    unseed(u_np[1][0]);
     CHECK(result[0][0] == Catch::Approx(1.0));
   }
 
@@ -288,26 +292,29 @@ TEST_CASE("TVD gradient derivative in 1D, one component", "[FV][reconstructor]")
     // left slope = (3-2)/(-1) = -1, right slope = (3-2)/1 = 1, MinMod = 0
     // Seed centre
     {
-      const std::array<Pair, 1> u_cp = {Pair{2.0, true}};
-      const std::array<std::array<Pair, 1>, 2> u_np = {std::array<Pair, 1>{Pair{3.0, false}},
-                                                       std::array<Pair, 1>{Pair{3.0, false}}};
+      std::array<AD, 1> u_cp = {AD(2.0)};
+      std::array<std::array<AD, 1>, 2> u_np = {std::array<AD, 1>{AD(3.0)}, std::array<AD, 1>{AD(3.0)}};
+      seed(u_cp[0]);
       const auto result = Reconstructor::compute_gradient_derivative<dim, n_components>(x_center, u_cp, x_n, u_np);
+      unseed(u_cp[0]);
       CHECK(result[0][0] == Catch::Approx(0.0));
     }
     // Seed left
     {
-      const std::array<Pair, 1> u_cp = {Pair{2.0, false}};
-      const std::array<std::array<Pair, 1>, 2> u_np = {std::array<Pair, 1>{Pair{3.0, true}},
-                                                       std::array<Pair, 1>{Pair{3.0, false}}};
+      std::array<AD, 1> u_cp = {AD(2.0)};
+      std::array<std::array<AD, 1>, 2> u_np = {std::array<AD, 1>{AD(3.0)}, std::array<AD, 1>{AD(3.0)}};
+      seed(u_np[0][0]);
       const auto result = Reconstructor::compute_gradient_derivative<dim, n_components>(x_center, u_cp, x_n, u_np);
+      unseed(u_np[0][0]);
       CHECK(result[0][0] == Catch::Approx(0.0));
     }
     // Seed right
     {
-      const std::array<Pair, 1> u_cp = {Pair{2.0, false}};
-      const std::array<std::array<Pair, 1>, 2> u_np = {std::array<Pair, 1>{Pair{3.0, false}},
-                                                       std::array<Pair, 1>{Pair{3.0, true}}};
+      std::array<AD, 1> u_cp = {AD(2.0)};
+      std::array<std::array<AD, 1>, 2> u_np = {std::array<AD, 1>{AD(3.0)}, std::array<AD, 1>{AD(3.0)}};
+      seed(u_np[1][0]);
       const auto result = Reconstructor::compute_gradient_derivative<dim, n_components>(x_center, u_cp, x_n, u_np);
+      unseed(u_np[1][0]);
       CHECK(result[0][0] == Catch::Approx(0.0));
     }
   }
@@ -319,7 +326,7 @@ TEST_CASE("TVD gradient derivative in 1D, one component", "[FV][reconstructor]")
 
 TEST_CASE("TVD gradient derivative in 1D, two components", "[FV][reconstructor]")
 {
-  using Pair = std::pair<NumberType, bool>;
+  using AD = autodiff::Real<1, NumberType>;
   constexpr int dim = 1;
   constexpr int n_components = 2;
   const Point<dim> x_center(1.0);
@@ -329,30 +336,33 @@ TEST_CASE("TVD gradient derivative in 1D, two components", "[FV][reconstructor]"
 
   SECTION("seed centre component 0 — cross-component derivative is zero")
   {
-    const std::array<Pair, 2> u_cp = {Pair{2.0, true}, Pair{5.0, false}};
-    const std::array<std::array<Pair, 2>, 2> u_np = {std::array<Pair, 2>{Pair{1.0, false}, Pair{4.5, false}},
-                                                     std::array<Pair, 2>{Pair{2.5, false}, Pair{7.0, false}}};
+    std::array<AD, 2> u_cp = {AD(2.0), AD(5.0)};
+    std::array<std::array<AD, 2>, 2> u_np = {std::array<AD, 2>{AD(1.0), AD(4.5)}, std::array<AD, 2>{AD(2.5), AD(7.0)}};
+    seed(u_cp[0]);
     const auto result = Reconstructor::compute_gradient_derivative<dim, n_components>(x_center, u_cp, x_n, u_np);
+    unseed(u_cp[0]);
     CHECK(result[0][0] == Catch::Approx(-1.0)); // right slope active for comp 0
     CHECK(result[1][0] == Catch::Approx(0.0));  // comp 1 is independent of comp 0's DOF
   }
 
   SECTION("seed centre component 1 — cross-component derivative is zero")
   {
-    const std::array<Pair, 2> u_cp = {Pair{2.0, false}, Pair{5.0, true}};
-    const std::array<std::array<Pair, 2>, 2> u_np = {std::array<Pair, 2>{Pair{1.0, false}, Pair{4.5, false}},
-                                                     std::array<Pair, 2>{Pair{2.5, false}, Pair{7.0, false}}};
+    std::array<AD, 2> u_cp = {AD(2.0), AD(5.0)};
+    std::array<std::array<AD, 2>, 2> u_np = {std::array<AD, 2>{AD(1.0), AD(4.5)}, std::array<AD, 2>{AD(2.5), AD(7.0)}};
+    seed(u_cp[1]);
     const auto result = Reconstructor::compute_gradient_derivative<dim, n_components>(x_center, u_cp, x_n, u_np);
+    unseed(u_cp[1]);
     CHECK(result[0][0] == Catch::Approx(0.0)); // comp 0 is independent of comp 1's DOF
     CHECK(result[1][0] == Catch::Approx(1.0)); // left slope active for comp 1
   }
 
   SECTION("seed left neighbour component 1 — active slope")
   {
-    const std::array<Pair, 2> u_cp = {Pair{2.0, false}, Pair{5.0, false}};
-    const std::array<std::array<Pair, 2>, 2> u_np = {std::array<Pair, 2>{Pair{1.0, false}, Pair{4.5, true}},
-                                                     std::array<Pair, 2>{Pair{2.5, false}, Pair{7.0, false}}};
+    std::array<AD, 2> u_cp = {AD(2.0), AD(5.0)};
+    std::array<std::array<AD, 2>, 2> u_np = {std::array<AD, 2>{AD(1.0), AD(4.5)}, std::array<AD, 2>{AD(2.5), AD(7.0)}};
+    seed(u_np[0][1]);
     const auto result = Reconstructor::compute_gradient_derivative<dim, n_components>(x_center, u_cp, x_n, u_np);
+    unseed(u_np[0][1]);
     CHECK(result[0][0] == Catch::Approx(0.0)); // comp 0 unaffected
     // comp 1 left slope: du_1 = (u_L1 - u_c1)/(x_L - x_c) = (u_L1 - 5)/(-1)
     // d(du_1)/d(u_L1) = 1/(-1) = -1
@@ -366,7 +376,7 @@ TEST_CASE("TVD gradient derivative in 1D, two components", "[FV][reconstructor]"
 
 TEST_CASE("TVD gradient derivative in 2D, one component", "[FV][reconstructor]")
 {
-  using Pair = std::pair<NumberType, bool>;
+  using AD = autodiff::Real<1, NumberType>;
   constexpr int dim = 2;
   constexpr int n_components = 1;
   const Point<dim> x_center(1.0, 1.0);
@@ -379,55 +389,60 @@ TEST_CASE("TVD gradient derivative in 2D, one component", "[FV][reconstructor]")
 
   SECTION("w.r.t. cell centre")
   {
-    const std::array<Pair, 1> u_cp = {Pair{2.0, true}};
-    const std::array<std::array<Pair, 1>, 4> u_np = {
-        std::array<Pair, 1>{Pair{1.0, false}}, std::array<Pair, 1>{Pair{2.5, false}},
-        std::array<Pair, 1>{Pair{0.5, false}}, std::array<Pair, 1>{Pair{3.0, false}}};
+    std::array<AD, 1> u_cp = {AD(2.0)};
+    std::array<std::array<AD, 1>, 4> u_np = {std::array<AD, 1>{AD(1.0)}, std::array<AD, 1>{AD(2.5)},
+                                             std::array<AD, 1>{AD(0.5)}, std::array<AD, 1>{AD(3.0)}};
+    seed(u_cp[0]);
     const auto result = Reconstructor::compute_gradient_derivative<dim, n_components>(x_center, u_cp, x_n, u_np);
+    unseed(u_cp[0]);
     CHECK(result[0][0] == Catch::Approx(-1.0)); // dim 0: right active, d/du_c = -1
     CHECK(result[0][1] == Catch::Approx(-1.0)); // dim 1: top active, d/du_c = -1
   }
 
   SECTION("w.r.t. left neighbour (dim 0 inactive)")
   {
-    const std::array<Pair, 1> u_cp = {Pair{2.0, false}};
-    const std::array<std::array<Pair, 1>, 4> u_np = {
-        std::array<Pair, 1>{Pair{1.0, true}}, std::array<Pair, 1>{Pair{2.5, false}},
-        std::array<Pair, 1>{Pair{0.5, false}}, std::array<Pair, 1>{Pair{3.0, false}}};
+    std::array<AD, 1> u_cp = {AD(2.0)};
+    std::array<std::array<AD, 1>, 4> u_np = {std::array<AD, 1>{AD(1.0)}, std::array<AD, 1>{AD(2.5)},
+                                             std::array<AD, 1>{AD(0.5)}, std::array<AD, 1>{AD(3.0)}};
+    seed(u_np[0][0]);
     const auto result = Reconstructor::compute_gradient_derivative<dim, n_components>(x_center, u_cp, x_n, u_np);
+    unseed(u_np[0][0]);
     CHECK(result[0][0] == Catch::Approx(0.0)); // left inactive in dim 0
     CHECK(result[0][1] == Catch::Approx(0.0)); // left doesn't participate in dim 1
   }
 
   SECTION("w.r.t. right neighbour (dim 0 active)")
   {
-    const std::array<Pair, 1> u_cp = {Pair{2.0, false}};
-    const std::array<std::array<Pair, 1>, 4> u_np = {
-        std::array<Pair, 1>{Pair{1.0, false}}, std::array<Pair, 1>{Pair{2.5, true}},
-        std::array<Pair, 1>{Pair{0.5, false}}, std::array<Pair, 1>{Pair{3.0, false}}};
+    std::array<AD, 1> u_cp = {AD(2.0)};
+    std::array<std::array<AD, 1>, 4> u_np = {std::array<AD, 1>{AD(1.0)}, std::array<AD, 1>{AD(2.5)},
+                                             std::array<AD, 1>{AD(0.5)}, std::array<AD, 1>{AD(3.0)}};
+    seed(u_np[1][0]);
     const auto result = Reconstructor::compute_gradient_derivative<dim, n_components>(x_center, u_cp, x_n, u_np);
+    unseed(u_np[1][0]);
     CHECK(result[0][0] == Catch::Approx(1.0)); // right active in dim 0
     CHECK(result[0][1] == Catch::Approx(0.0)); // right doesn't participate in dim 1
   }
 
   SECTION("w.r.t. bottom neighbour (dim 1 inactive)")
   {
-    const std::array<Pair, 1> u_cp = {Pair{2.0, false}};
-    const std::array<std::array<Pair, 1>, 4> u_np = {
-        std::array<Pair, 1>{Pair{1.0, false}}, std::array<Pair, 1>{Pair{2.5, false}},
-        std::array<Pair, 1>{Pair{0.5, true}}, std::array<Pair, 1>{Pair{3.0, false}}};
+    std::array<AD, 1> u_cp = {AD(2.0)};
+    std::array<std::array<AD, 1>, 4> u_np = {std::array<AD, 1>{AD(1.0)}, std::array<AD, 1>{AD(2.5)},
+                                             std::array<AD, 1>{AD(0.5)}, std::array<AD, 1>{AD(3.0)}};
+    seed(u_np[2][0]);
     const auto result = Reconstructor::compute_gradient_derivative<dim, n_components>(x_center, u_cp, x_n, u_np);
+    unseed(u_np[2][0]);
     CHECK(result[0][0] == Catch::Approx(0.0)); // bottom doesn't participate in dim 0
     CHECK(result[0][1] == Catch::Approx(0.0)); // bottom inactive in dim 1
   }
 
   SECTION("w.r.t. top neighbour (dim 1 active)")
   {
-    const std::array<Pair, 1> u_cp = {Pair{2.0, false}};
-    const std::array<std::array<Pair, 1>, 4> u_np = {
-        std::array<Pair, 1>{Pair{1.0, false}}, std::array<Pair, 1>{Pair{2.5, false}},
-        std::array<Pair, 1>{Pair{0.5, false}}, std::array<Pair, 1>{Pair{3.0, true}}};
+    std::array<AD, 1> u_cp = {AD(2.0)};
+    std::array<std::array<AD, 1>, 4> u_np = {std::array<AD, 1>{AD(1.0)}, std::array<AD, 1>{AD(2.5)},
+                                             std::array<AD, 1>{AD(0.5)}, std::array<AD, 1>{AD(3.0)}};
+    seed(u_np[3][0]);
     const auto result = Reconstructor::compute_gradient_derivative<dim, n_components>(x_center, u_cp, x_n, u_np);
+    unseed(u_np[3][0]);
     CHECK(result[0][0] == Catch::Approx(0.0)); // top doesn't participate in dim 0
     CHECK(result[0][1] == Catch::Approx(1.0)); // top active in dim 1
   }
@@ -439,7 +454,7 @@ TEST_CASE("TVD gradient derivative in 2D, one component", "[FV][reconstructor]")
 
 TEST_CASE("TVD gradient derivative with non-unit spacing", "[FV][reconstructor]")
 {
-  using Pair = std::pair<NumberType, bool>;
+  using AD = autodiff::Real<1, NumberType>;
   constexpr int dim = 1;
   constexpr int n_components = 1;
   const Point<dim> x_center(1.0);
@@ -451,30 +466,33 @@ TEST_CASE("TVD gradient derivative with non-unit spacing", "[FV][reconstructor]"
 
   SECTION("w.r.t. cell centre")
   {
-    const std::array<Pair, 1> u_cp = {Pair{2.0, true}};
-    const std::array<std::array<Pair, 1>, 2> u_np = {std::array<Pair, 1>{Pair{1.0, false}},
-                                                     std::array<Pair, 1>{Pair{2.5, false}}};
+    std::array<AD, 1> u_cp = {AD(2.0)};
+    std::array<std::array<AD, 1>, 2> u_np = {std::array<AD, 1>{AD(1.0)}, std::array<AD, 1>{AD(2.5)}};
+    seed(u_cp[0]);
     const auto result = Reconstructor::compute_gradient_derivative<dim, n_components>(x_center, u_cp, x_n, u_np);
+    unseed(u_cp[0]);
     // d(du_right)/d(u_c) = -1/0.5 = -2
     CHECK(result[0][0] == Catch::Approx(-2.0));
   }
 
   SECTION("w.r.t. right neighbour (active)")
   {
-    const std::array<Pair, 1> u_cp = {Pair{2.0, false}};
-    const std::array<std::array<Pair, 1>, 2> u_np = {std::array<Pair, 1>{Pair{1.0, false}},
-                                                     std::array<Pair, 1>{Pair{2.5, true}}};
+    std::array<AD, 1> u_cp = {AD(2.0)};
+    std::array<std::array<AD, 1>, 2> u_np = {std::array<AD, 1>{AD(1.0)}, std::array<AD, 1>{AD(2.5)}};
+    seed(u_np[1][0]);
     const auto result = Reconstructor::compute_gradient_derivative<dim, n_components>(x_center, u_cp, x_n, u_np);
+    unseed(u_np[1][0]);
     // d(du_right)/d(u_R) = 1/0.5 = 2
     CHECK(result[0][0] == Catch::Approx(2.0));
   }
 
   SECTION("w.r.t. left neighbour (inactive)")
   {
-    const std::array<Pair, 1> u_cp = {Pair{2.0, false}};
-    const std::array<std::array<Pair, 1>, 2> u_np = {std::array<Pair, 1>{Pair{1.0, true}},
-                                                     std::array<Pair, 1>{Pair{2.5, false}}};
+    std::array<AD, 1> u_cp = {AD(2.0)};
+    std::array<std::array<AD, 1>, 2> u_np = {std::array<AD, 1>{AD(1.0)}, std::array<AD, 1>{AD(2.5)}};
+    seed(u_np[0][0]);
     const auto result = Reconstructor::compute_gradient_derivative<dim, n_components>(x_center, u_cp, x_n, u_np);
+    unseed(u_np[0][0]);
     CHECK(result[0][0] == Catch::Approx(0.0));
   }
 }

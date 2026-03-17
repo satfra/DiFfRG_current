@@ -15,7 +15,6 @@
 // standard library
 #include <array>
 #include <cstddef>
-#include <utility>
 
 namespace DiFfRG
 {
@@ -94,62 +93,34 @@ namespace DiFfRG
       /**
        * @brief Compute the derivative of the limited gradient w.r.t. a single stencil DOF.
        *
-       * Uses the same @c std::pair<NumberType,bool> seeding convention as
-       * @c compute_reconstruction_derivative.  Exactly one entry across
-       * @p u_center and @p u_n must have its flag set to @c true.
+       * The inputs are already seeded @c autodiff::Real<1,NumberType> values;
+       * exactly one entry across @p u_center and @p u_n should have a non-zero
+       * derivative part (set via @c seed()).
        *
-       * Unlike @c compute_reconstruction_derivative, this method does not
-       * evaluate the reconstruction at a face point — it returns the
-       * per-component derivative of the gradient itself.
+       * Unlike @c compute_gradient, this method does not evaluate the
+       * reconstruction at a face point — it returns the per-component
+       * derivative of the gradient itself.
        *
        * @tparam dim          the spatial dimension
        * @tparam n_components the number of solution components
        *
        * @param center_pos  position of the cell centre
-       * @param u_center    cell-centre values as (value, is_derivative_target) pairs
+       * @param u_center    cell-centre values as seeded AD types
        * @param x_n         positions of the 2*dim neighbouring cell centres
-       * @param u_n         neighbour values as (value, is_derivative_target) pairs
+       * @param u_n         neighbour values as seeded AD types
        *
        * @return per-component gradient-derivative tensor  d(grad u_c) / d(u_target)
        */
       template <int dim, int n_components>
       static GradientType<dim, NumberType, n_components>
       compute_gradient_derivative(const dealii::Point<dim> &center_pos,
-                                  const std::array<std::pair<NumberType, bool>, n_components> &u_center,
+                                  const std::array<ADNumberType, n_components> &u_center,
                                   const std::array<dealii::Point<dim>, 2 * dim> &x_n,
-                                  const std::array<std::array<std::pair<NumberType, bool>, n_components>, 2 * dim> &u_n)
+                                  const std::array<std::array<ADNumberType, n_components>, 2 * dim> &u_n)
       {
-        // Verify that exactly one boolean flag is set across all stencil entries
-        {
-          size_t n_seeds = 0;
-          for (size_t c = 0; c < n_components; ++c)
-            if (u_center[c].second) ++n_seeds;
-          for (size_t k = 0; k < 2 * dim; ++k)
-            for (size_t c = 0; c < n_components; ++c)
-              if (u_n[k][c].second) ++n_seeds;
-          if (n_seeds != 1)
-            throw std::runtime_error("compute_gradient_derivative: exactly one derivative target "
-                                     "(bool == true) must be set across u_center and u_n, but " +
-                                     std::to_string(n_seeds) + " were found.");
-        }
-
-        // Promote stencil values to AD type, seeding the flagged entry
-        std::array<ADNumberType, n_components> u_center_AD{};
-        for (size_t c = 0; c < n_components; ++c) {
-          u_center_AD[c] = ADNumberType(u_center[c].first);
-          if (u_center[c].second) seed<1>(u_center_AD[c], NumberType(1));
-        }
-
-        std::array<std::array<ADNumberType, n_components>, 2 * dim> u_n_AD{};
-        for (size_t k = 0; k < 2 * dim; ++k)
-          for (size_t c = 0; c < n_components; ++c) {
-            u_n_AD[k][c] = ADNumberType(u_n[k][c].first);
-            if (u_n[k][c].second) seed<1>(u_n_AD[k][c], NumberType(1));
-          }
-
         // Evaluate gradient reconstruction with AD types
         const auto u_grad_AD = TVDReconstructor<Limiter, ADNumberType>::template compute_gradient<dim, n_components>(
-            center_pos, u_center_AD, x_n, u_n_AD);
+            center_pos, u_center, x_n, u_n);
 
         // Extract per-component gradient derivatives
         GradientType<dim, NumberType, n_components> result{};

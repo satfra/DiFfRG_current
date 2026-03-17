@@ -4,11 +4,13 @@
 #include <deal.II/base/point.h>
 #include <deal.II/base/tensor.h>
 
+// autodiff
+#include <autodiff/forward/real/real.hpp>
+
 // standard library
 #include <array>
 #include <concepts>
 #include <cstddef>
-#include <utility>
 
 namespace DiFfRG
 {
@@ -39,17 +41,17 @@ namespace DiFfRG
           } -> std::same_as<GradientType<2, double, 2>>;
         } &&
         // ---- compute_gradient_derivative (dim=1) ----
-        requires(const dealii::Point<1> &center, const std::array<std::pair<double, bool>, 1> &u_center,
+        requires(const dealii::Point<1> &center, const std::array<autodiff::Real<1, double>, 1> &u_center,
                  const std::array<dealii::Point<1>, 2> &x_n,
-                 const std::array<std::array<std::pair<double, bool>, 1>, 2> &u_n) {
+                 const std::array<std::array<autodiff::Real<1, double>, 1>, 2> &u_n) {
           {
             T::template compute_gradient_derivative<1, 1>(center, u_center, x_n, u_n)
           } -> std::same_as<GradientType<1, double, 1>>;
         } &&
         // ---- compute_gradient_derivative (dim=2) ----
-        requires(const dealii::Point<2> &center, const std::array<std::pair<double, bool>, 2> &u_center,
+        requires(const dealii::Point<2> &center, const std::array<autodiff::Real<1, double>, 2> &u_center,
                  const std::array<dealii::Point<2>, 4> &x_n,
-                 const std::array<std::array<std::pair<double, bool>, 2>, 4> &u_n) {
+                 const std::array<std::array<autodiff::Real<1, double>, 2>, 4> &u_n) {
           {
             T::template compute_gradient_derivative<2, 2>(center, u_center, x_n, u_n)
           } -> std::same_as<GradientType<2, double, 2>>;
