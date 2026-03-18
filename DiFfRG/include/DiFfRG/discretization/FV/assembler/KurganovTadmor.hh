@@ -170,9 +170,8 @@ namespace DiFfRG
 
             void reinit(const FEInterfaceValues<dim> &fe_iv, const Iterator &cell, const Iterator &ncell)
             {
-              cell_jacobian.reinit(size(to_dofs), size(from_dofs));
-
               to_dofs = fe_iv.get_interface_dof_indices();
+              cell_jacobian.reinit(size(to_dofs), size(from_dofs));
 
               std::set<types::global_dof_index> from_dofs_set(begin(to_dofs), end(to_dofs));
               // iterate cell neighbors
@@ -310,24 +309,6 @@ namespace DiFfRG
 
           return result;
         }
-
-        /**
-         * @brief Compute the Kurganov-Tadmor numerical flux from the left/right fluxes and wave speeds.
-         *
-         * H = 0.5 * (F_plus + F_minus) - 0.5 * a_half * (u_plus - u_minus)
-         *
-         * @tparam dim the spatial dimension
-         * @tparam NumberType the numeric type
-         * @tparam n_components the number of solution components
-         *
-         * @param F_plus flux evaluated at the "+" state
-         * @param F_minus flux evaluated at the "-" state
-         * @param a_half local wave speeds per component
-         * @param u_plus the "+" state values
-         * @param u_minus the "-" state values
-         *
-         * @return the numerical flux per component as an array of Tensor<1,dim>.
-         */
         template <int dim, typename NumberType, size_t n_components>
         std::array<dealii::Tensor<1, dim, NumberType>, n_components>
         compute_numerical_flux(const std::array<dealii::Tensor<1, dim, NumberType>, n_components> &F_plus,
@@ -347,30 +328,6 @@ namespace DiFfRG
 
       namespace internal
       {
-        /**
-         * @brief Compute the averaged diffusion flux at a face for the Kurganov-Tadmor scheme.
-         *
-         * Evaluates model.flux on both the left (u_minus) and right (u_plus) reconstructed states
-         * using a two-point gradient approximation, then returns their average:
-         * D = 0.5 * (flux(u_minus, grad) + flux(u_plus, grad))
-         *
-         * @tparam Model the model type providing the flux method
-         * @tparam NumberType the numeric type
-         * @tparam dim the spatial dimension
-         * @tparam n_components the number of solution components
-         *
-         * @param u_plus the reconstructed state on the "+" side of the interface
-         * @param u_minus the reconstructed state on the "-" side of the interface
-         * @param x_left the center of the left cell
-         * @param x_right the center of the right cell (or ghost position)
-         * @param u_left the cell-average value of the left cell
-         * @param u_right the cell-average value of the right cell (or ghost value)
-         * @param normal the outward unit normal at the face
-         * @param x_q the quadrature point position at the face
-         * @param model the model providing the flux function
-         *
-         * @return the averaged diffusion flux per component as an array of Tensor<1,dim>.
-         */
         template <typename Model, typename NumberType, int dim, size_t n_components>
         std::array<dealii::Tensor<1, dim, NumberType>, n_components>
         compute_diffusion_flux(const std::array<NumberType, n_components> &u_plus,
@@ -409,12 +366,36 @@ namespace DiFfRG
 
         template <int dim, typename NumberType, size_t n_components>
         CellData<dim, autodiff::Real<1, NumberType>, n_components>
-        tag_cell_dofs(const CellData<dim, NumberType, n_components> &cell_data, dealii::types::global_dof_index dof_j);
+        tag_cell_dofs(const CellData<dim, NumberType, n_components> &cell_data, dealii::types::global_dof_index dof_j)
+        {
+          using AD = autodiff::Real<1, NumberType>;
+          CellData<dim, AD, n_components> result;
+          result.x = cell_data.x;
+          result.dof_indices = cell_data.dof_indices;
+          for (size_t c = 0; c < n_components; ++c) {
+            result.u[c] = AD(cell_data.u[c]);
+            if (cell_data.dof_indices[c] == dof_j) seed(result.u[c]);
+          }
+          return result;
+        }
 
         template <int dim, typename NumberType, size_t n_components, size_t n_faces>
         NeighborData<dim, autodiff::Real<1, NumberType>, n_components, n_faces>
         make_tagged_neighbors(const NeighborData<dim, NumberType, n_components, n_faces> &neighbor_data,
-                              dealii::types::global_dof_index dof_j);
+                              dealii::types::global_dof_index dof_j)
+        {
+          using AD = autodiff::Real<1, NumberType>;
+          NeighborData<dim, AD, n_components, n_faces> result;
+          result.x = neighbor_data.x;
+          result.dof_indices = neighbor_data.dof_indices;
+          for (size_t face = 0; face < n_faces; ++face) {
+            for (size_t c = 0; c < n_components; ++c) {
+              result.u[face][c] = AD(neighbor_data.u[face][c]);
+              if (neighbor_data.dof_indices[face][c] == dof_j) seed(result.u[face][c]);
+            }
+          }
+          return result;
+        }
 
       } // namespace internal
 
@@ -970,8 +951,9 @@ namespace DiFfRG
             // Precompute reconstructed_u_deriv[face_no](component, j)
             // face_no=0: derivative of u⁻(x_q) w.r.t. from_dofs[j]
             // face_no=1: derivative of u⁺(x_q) w.r.t. from_dofs[j]
-            std::array<SimpleMatrix<NumberType, n_components, size(copy_data_face.from_dofs)>, 2>
-                reconstructed_u_deriv{};
+            const uint n_from = size(copy_data_face.from_dofs);
+            const std::vector<std::vector<NumberType>> zero_matrix(n_components, std::vector<NumberType>(n_from));
+            std::array<std::vector<std::vector<NumberType>>, 2> reconstructed_u_deriv{zero_matrix, zero_matrix};
 
             for (uint j = 0; j < size(copy_data_face.from_dofs); ++j) {
               const auto dof_j = copy_data_face.from_dofs[j];
@@ -981,9 +963,9 @@ namespace DiFfRG
                 auto u_center_tagged = internal::tag_cell_dofs(cell_data, dof_j);
                 auto u_n_tagged = internal::make_tagged_neighbors(cell_neighbors, dof_j);
                 auto deriv = internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
-                    u_center_tagged, cell_data.x, x_q, cell_neighbors.x, u_n_tagged); // TODO: refactor parameters
+                    u_center_tagged.u, cell_data.x, x_q, cell_neighbors.x, u_n_tagged.u); // TODO: refactor parameters
                 for (size_t c = 0; c < n_components; ++c)
-                  reconstructed_u_deriv[0](c, j) = deriv[c];
+                  reconstructed_u_deriv[0][c][j] = deriv[c];
               }
 
               // face_no=1: d(u⁺)/d(u_j) — reconstruction from neighbor side
@@ -991,9 +973,9 @@ namespace DiFfRG
                 auto u_center_tagged = internal::tag_cell_dofs(ncell_data, dof_j);
                 auto u_n_tagged = internal::make_tagged_neighbors(ncell_neighbors, dof_j);
                 auto deriv = internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
-                    u_center_tagged, ncell_data.x, x_q, ncell_neighbors.x, u_n_tagged); // TODO: refactor parameters
+                    u_center_tagged.u, ncell_data.x, x_q, ncell_neighbors.x, u_n_tagged.u); // TODO: refactor parameters
                 for (size_t c = 0; c < n_components; ++c)
-                  reconstructed_u_deriv[1](c, j) = deriv[c];
+                  reconstructed_u_deriv[1][c][j] = deriv[c];
               }
             }
 
@@ -1018,7 +1000,7 @@ namespace DiFfRG
                   for (size_t c = 0; c < n_components; ++c) {
                     contribution += scalar_product(j_numflux[face_no](component_i, c), normals[q_face_index]) *
                                     // dF/du_plus or dF/du_minus
-                                    reconstructed_u_deriv[face_no](c, j); // times du_minus/du_j or du_plus/du_j
+                                    reconstructed_u_deriv[face_no][c][j]; // times du_minus/du_j or du_plus/du_j
                   }
                   copy_data_face.cell_jacobian(i, j) +=
                       weight * JxW[q_face_index] *                                // dx
@@ -1039,7 +1021,7 @@ namespace DiFfRG
             constraints.distribute_local_to_global(c.cell_jacobian, c.local_dof_indices, jacobian);
             constraints.distribute_local_to_global(c.cell_mass_jacobian, c.local_dof_indices, jacobian);
             for (const auto &face_data : c.face_data) {
-              constraints.distribute_local_to_global(face_data.cell_jacobian, face_data.to_dof, face_data.from_dof,
+              constraints.distribute_local_to_global(face_data.cell_jacobian, face_data.to_dofs, face_data.from_dofs,
                                                      jacobian);
             }
           };

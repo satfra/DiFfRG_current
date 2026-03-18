@@ -351,3 +351,242 @@ TEST_CASE("Test compute_kt_flux_and_speeds with Burgers flux in 1D", "[FV][KT]")
     CHECK(H[0][0] == Catch::Approx(0.75));
   }
 }
+
+// ---------------------------------------------------------------------------
+// Tests for tag_cell_dofs
+// ---------------------------------------------------------------------------
+
+using KT::internal::make_tagged_neighbors;
+using KT::internal::tag_cell_dofs;
+template <int dim, typename NT, size_t nc> using KTCellData = KT::internal::CellData<dim, NT, nc>;
+template <int dim, typename NT, size_t nc, size_t nf>
+using KTNeighborData = KT::internal::NeighborData<dim, NT, nc, nf>;
+using AD = autodiff::Real<1, NumberType>;
+
+TEST_CASE("tag_cell_dofs 1D single component — matching dof is seeded", "[FV][KT][tag_cell_dofs]")
+{
+  constexpr int dim = 1;
+  constexpr size_t nc = 1;
+
+  const KTCellData<dim, NumberType, nc> cell_data{
+      .x = Point<dim>(1.0),
+      .u = {3.5},
+      .dof_indices = {42},
+  };
+
+  const auto result = tag_cell_dofs(cell_data, 42);
+
+  CHECK(result.x[0] == Catch::Approx(1.0));
+  CHECK(val(result.u[0]) == Catch::Approx(3.5));
+  CHECK(result.dof_indices[0] == 42);
+  CHECK(derivative(result.u[0]) == Catch::Approx(1.0));
+}
+
+TEST_CASE("tag_cell_dofs 1D single component — non-matching dof is not seeded", "[FV][KT][tag_cell_dofs]")
+{
+  constexpr int dim = 1;
+  constexpr size_t nc = 1;
+
+  const KTCellData<dim, NumberType, nc> cell_data{
+      .x = Point<dim>(1.0),
+      .u = {3.5},
+      .dof_indices = {42},
+  };
+
+  const auto result = tag_cell_dofs(cell_data, 99);
+
+  CHECK(val(result.u[0]) == Catch::Approx(3.5));
+  CHECK(derivative(result.u[0]) == Catch::Approx(0.0));
+}
+
+TEST_CASE("tag_cell_dofs 1D multi-component — only matching component seeded", "[FV][KT][tag_cell_dofs]")
+{
+  constexpr int dim = 1;
+  constexpr size_t nc = 2;
+
+  const KTCellData<dim, NumberType, nc> cell_data{
+      .x = Point<dim>(0.0),
+      .u = {1.0, 2.0},
+      .dof_indices = {10, 20},
+  };
+
+  SECTION("seed second component")
+  {
+    const auto result = tag_cell_dofs(cell_data, 20);
+
+    CHECK(val(result.u[0]) == Catch::Approx(1.0));
+    CHECK(derivative(result.u[0]) == Catch::Approx(0.0));
+    CHECK(val(result.u[1]) == Catch::Approx(2.0));
+    CHECK(derivative(result.u[1]) == Catch::Approx(1.0));
+    CHECK(result.dof_indices[0] == 10);
+    CHECK(result.dof_indices[1] == 20);
+  }
+
+  SECTION("seed first component")
+  {
+    const auto result = tag_cell_dofs(cell_data, 10);
+
+    CHECK(val(result.u[0]) == Catch::Approx(1.0));
+    CHECK(derivative(result.u[0]) == Catch::Approx(1.0));
+    CHECK(val(result.u[1]) == Catch::Approx(2.0));
+    CHECK(derivative(result.u[1]) == Catch::Approx(0.0));
+  }
+}
+
+TEST_CASE("tag_cell_dofs 2D single component — point preserved and seeded", "[FV][KT][tag_cell_dofs]")
+{
+  constexpr int dim = 2;
+  constexpr size_t nc = 1;
+
+  const KTCellData<dim, NumberType, nc> cell_data{
+      .x = Point<dim>(0.5, 0.7),
+      .u = {4.0},
+      .dof_indices = {5},
+  };
+
+  const auto result = tag_cell_dofs(cell_data, 5);
+
+  CHECK(result.x[0] == Catch::Approx(0.5));
+  CHECK(result.x[1] == Catch::Approx(0.7));
+  CHECK(val(result.u[0]) == Catch::Approx(4.0));
+  CHECK(derivative(result.u[0]) == Catch::Approx(1.0));
+  CHECK(result.dof_indices[0] == 5);
+}
+
+// ---------------------------------------------------------------------------
+// Tests for make_tagged_neighbors
+// ---------------------------------------------------------------------------
+
+TEST_CASE("make_tagged_neighbors 1D single component — matching dof in one face", "[FV][KT][make_tagged_neighbors]")
+{
+  constexpr int dim = 1;
+  constexpr size_t nc = 1;
+  constexpr size_t nf = 2;
+
+  const KTNeighborData<dim, NumberType, nc, nf> nd{
+      .x = {Point<dim>(-1.0), Point<dim>(1.0)},
+      .u = {std::array<NumberType, nc>{1.0}, std::array<NumberType, nc>{2.0}},
+      .dof_indices = {std::array<dealii::types::global_dof_index, nc>{10},
+                      std::array<dealii::types::global_dof_index, nc>{20}},
+  };
+
+  const auto result = make_tagged_neighbors(nd, 10);
+
+  // Face 0 matches — seeded
+  CHECK(val(result.u[0][0]) == Catch::Approx(1.0));
+  CHECK(derivative(result.u[0][0]) == Catch::Approx(1.0));
+
+  // Face 1 does not match — not seeded
+  CHECK(val(result.u[1][0]) == Catch::Approx(2.0));
+  CHECK(derivative(result.u[1][0]) == Catch::Approx(0.0));
+
+  // Positions preserved
+  CHECK(result.x[0][0] == Catch::Approx(-1.0));
+  CHECK(result.x[1][0] == Catch::Approx(1.0));
+
+  // dof_indices preserved
+  CHECK(result.dof_indices[0][0] == 10);
+  CHECK(result.dof_indices[1][0] == 20);
+}
+
+TEST_CASE("make_tagged_neighbors 1D single component — no matching dof", "[FV][KT][make_tagged_neighbors]")
+{
+  constexpr int dim = 1;
+  constexpr size_t nc = 1;
+  constexpr size_t nf = 2;
+
+  const KTNeighborData<dim, NumberType, nc, nf> nd{
+      .x = {Point<dim>(-1.0), Point<dim>(1.0)},
+      .u = {std::array<NumberType, nc>{1.0}, std::array<NumberType, nc>{2.0}},
+      .dof_indices = {std::array<dealii::types::global_dof_index, nc>{10},
+                      std::array<dealii::types::global_dof_index, nc>{20}},
+  };
+
+  const auto result = make_tagged_neighbors(nd, 99);
+
+  for (size_t face = 0; face < nf; ++face)
+    for (size_t c = 0; c < nc; ++c)
+      CHECK(derivative(result.u[face][c]) == Catch::Approx(0.0));
+}
+
+TEST_CASE("make_tagged_neighbors 1D multi-component — specific face and component seeded",
+          "[FV][KT][make_tagged_neighbors]")
+{
+  constexpr int dim = 1;
+  constexpr size_t nc = 2;
+  constexpr size_t nf = 2;
+
+  const KTNeighborData<dim, NumberType, nc, nf> nd{
+      .x = {Point<dim>(-1.0), Point<dim>(1.0)},
+      .u = {std::array<NumberType, nc>{1.0, 2.0}, std::array<NumberType, nc>{3.0, 4.0}},
+      .dof_indices = {std::array<dealii::types::global_dof_index, nc>{10, 20},
+                      std::array<dealii::types::global_dof_index, nc>{30, 40}},
+  };
+
+  SECTION("tag dof 20 — face 0, component 1")
+  {
+    const auto result = make_tagged_neighbors(nd, 20);
+
+    // Only face 0, component 1 should be seeded
+    CHECK(derivative(result.u[0][0]) == Catch::Approx(0.0));
+    CHECK(derivative(result.u[0][1]) == Catch::Approx(1.0));
+    CHECK(derivative(result.u[1][0]) == Catch::Approx(0.0));
+    CHECK(derivative(result.u[1][1]) == Catch::Approx(0.0));
+
+    // Values preserved
+    CHECK(val(result.u[0][0]) == Catch::Approx(1.0));
+    CHECK(val(result.u[0][1]) == Catch::Approx(2.0));
+    CHECK(val(result.u[1][0]) == Catch::Approx(3.0));
+    CHECK(val(result.u[1][1]) == Catch::Approx(4.0));
+  }
+
+  SECTION("tag dof 30 — face 1, component 0")
+  {
+    const auto result = make_tagged_neighbors(nd, 30);
+
+    CHECK(derivative(result.u[0][0]) == Catch::Approx(0.0));
+    CHECK(derivative(result.u[0][1]) == Catch::Approx(0.0));
+    CHECK(derivative(result.u[1][0]) == Catch::Approx(1.0));
+    CHECK(derivative(result.u[1][1]) == Catch::Approx(0.0));
+  }
+}
+
+TEST_CASE("make_tagged_neighbors 2D single component — 4 faces, one matching", "[FV][KT][make_tagged_neighbors]")
+{
+  constexpr int dim = 2;
+  constexpr size_t nc = 1;
+  constexpr size_t nf = 4;
+
+  const KTNeighborData<dim, NumberType, nc, nf> nd{
+      .x = {Point<dim>(-1.0, 0.0), Point<dim>(1.0, 0.0), Point<dim>(0.0, -1.0), Point<dim>(0.0, 1.0)},
+      .u = {std::array<NumberType, nc>{1.0}, std::array<NumberType, nc>{2.0}, std::array<NumberType, nc>{3.0},
+            std::array<NumberType, nc>{4.0}},
+      .dof_indices = {std::array<dealii::types::global_dof_index, nc>{100},
+                      std::array<dealii::types::global_dof_index, nc>{200},
+                      std::array<dealii::types::global_dof_index, nc>{300},
+                      std::array<dealii::types::global_dof_index, nc>{400}},
+  };
+
+  const auto result = make_tagged_neighbors(nd, 300);
+
+  // Only face 2 should be seeded
+  CHECK(derivative(result.u[0][0]) == Catch::Approx(0.0));
+  CHECK(derivative(result.u[1][0]) == Catch::Approx(0.0));
+  CHECK(derivative(result.u[2][0]) == Catch::Approx(1.0));
+  CHECK(derivative(result.u[3][0]) == Catch::Approx(0.0));
+
+  // Values preserved
+  CHECK(val(result.u[0][0]) == Catch::Approx(1.0));
+  CHECK(val(result.u[1][0]) == Catch::Approx(2.0));
+  CHECK(val(result.u[2][0]) == Catch::Approx(3.0));
+  CHECK(val(result.u[3][0]) == Catch::Approx(4.0));
+
+  // Positions preserved
+  CHECK(result.x[0][0] == Catch::Approx(-1.0));
+  CHECK(result.x[0][1] == Catch::Approx(0.0));
+  CHECK(result.x[2][0] == Catch::Approx(0.0));
+  CHECK(result.x[2][1] == Catch::Approx(-1.0));
+
+  // dof_indices preserved
+  CHECK(result.dof_indices[2][0] == 300);
+}
