@@ -35,6 +35,7 @@
 #include <DiFfRG/discretization/FV/reconstructor/tvd_reconstructor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 
+#include <DiFfRG/discretization/FV/assembler/flux_jacobian_hessian.hh>
 #include <DiFfRG/discretization/common/types.hh>
 #include <ranges>
 #include <tuple>
@@ -122,7 +123,7 @@ namespace DiFfRG
               Reconstructor::template compute_gradient_derivative<dim, n_components>(center, u_center, x_n, u_n);
           std::array<NumberType, n_components> result;
           for (size_t c = 0; c < n_components; ++c) {
-            result[c] = autodiff::derivative(u_center[c]);
+            result[c] = derivative(u_center[c]);
             result[c] += scalar_product(u_grad_deriv[c], x - center);
           }
           return result;
@@ -328,6 +329,180 @@ namespace DiFfRG
 
       namespace internal
       {
+        struct ZeroWaveSpeedDerivative {
+          template <typename Model, typename NumberType, int dim, size_t n_components>
+          static void
+          compute(std::array<std::array<NumberType, n_components>, dim> & /*da_plus*/,
+                  std::array<std::array<NumberType, n_components>, dim> & /*da_minus*/,
+                  const std::array<NumberType, n_components> & /*u_plus*/,
+                  const std::array<NumberType, n_components> & /*u_minus*/,
+                  const dealii::Point<dim> & /*x_q*/, const Model & /*model*/,
+                  const std::array<std::array<std::array<NumberType, n_components>, n_components>, dim> & /*J_plus*/,
+                  const std::array<std::array<std::array<NumberType, n_components>, n_components>, dim> & /*J_minus*/,
+                  const std::array<std::array<std::array<std::array<NumberType, n_components>, n_components>,
+                                              n_components>,
+                                   dim> & /*H_plus*/,
+                  const std::array<std::array<std::array<std::array<NumberType, n_components>, n_components>,
+                                              n_components>,
+                                   dim> & /*H_minus*/)
+          {
+            // da_plus and da_minus are value-initialised to zero — nothing to do.
+          }
+        };
+        struct AutodiffWaveSpeedDerivative {
+          template <typename Model, typename NumberType, int dim, size_t n_components>
+          static void
+          compute(std::array<std::array<NumberType, n_components>, dim> &da_plus,
+                  std::array<std::array<NumberType, n_components>, dim> &da_minus,
+                  const std::array<NumberType, n_components> & /*u_plus*/,
+                  const std::array<NumberType, n_components> & /*u_minus*/,
+                  const dealii::Point<dim> & /*x_q*/, const Model & /*model*/,
+                  const std::array<std::array<std::array<NumberType, n_components>, n_components>, dim> &J_plus,
+                  const std::array<std::array<std::array<NumberType, n_components>, n_components>, dim> &J_minus,
+                  const std::array<std::array<std::array<std::array<NumberType, n_components>, n_components>,
+                                              n_components>,
+                                   dim> &H_plus,
+                  const std::array<std::array<std::array<std::array<NumberType, n_components>, n_components>,
+                                              n_components>,
+                                   dim> &H_minus)
+          {
+            // Compute da[d]/du_c analytically from J and H:
+            //   a[d] = spectral_radius(J[d])
+            //   da[d]/du_c = d(spectral_radius)/dJ[d] : H[d][:][:][ c]
+            //
+            // For n_components == 1:
+            //   a[d] = |J[d][0][0]|,  da/du_c = sign(J[d][0][0]) * H[d][0][0][c]
+            //
+            // For n_components > 1:
+            //   Find the dominant eigenvalue λ* and its right/left eigenvectors v, w
+            //   (Eigen EigenSolver).  Then by first-order eigenvalue perturbation theory:
+            //     da[d]/du_c = sign(Re(λ*)) * Σ_{i,j} Re(w[i]) * Re(v[j]) * H[d][i][j][c]
+            //                  / Re(w · v)
+
+            for (size_t d = 0; d < dim; ++d) {
+              if constexpr (n_components == 1) {
+                const NumberType sign_J_plus = (J_plus[d][0][0] >= NumberType(0)) ? NumberType(1) : NumberType(-1);
+                const NumberType sign_J_minus = (J_minus[d][0][0] >= NumberType(0)) ? NumberType(1) : NumberType(-1);
+                for (size_t c = 0; c < n_components; ++c) {
+                  da_plus[d][c] = sign_J_plus * H_plus[d][0][0][c];
+                  da_minus[d][c] = sign_J_minus * H_minus[d][0][0][c];
+                }
+              } else {
+                // Build Eigen matrices for J_plus[d] and J_minus[d]
+                Eigen::Matrix<NumberType, n_components, n_components> Jp, Jm;
+                for (size_t i = 0; i < n_components; ++i)
+                  for (size_t j = 0; j < n_components; ++j) {
+                    Jp(i, j) = J_plus[d][i][j];
+                    Jm(i, j) = J_minus[d][i][j];
+                  }
+
+                // Helper lambda: fill da[d] from Jacobian eigen-decomposition and Hessian
+                auto fill_da = [&](const Eigen::Matrix<NumberType, n_components, n_components> &J,
+                                   const auto &H_side,
+                                   std::array<std::array<NumberType, n_components>, dim> &da) {
+                  Eigen::EigenSolver<Eigen::Matrix<NumberType, n_components, n_components>> es(J);
+                  // Find index of eigenvalue with largest absolute value
+                  Eigen::Index idx;
+                  es.eigenvalues().cwiseAbs().maxCoeff(&idx);
+
+                  const NumberType sign_lam =
+                      (es.eigenvalues()(idx).real() >= NumberType(0)) ? NumberType(1) : NumberType(-1);
+
+                  // Right and left eigenvectors (columns of eigenvectors() and rows of its inverse)
+                  const auto right_evec = es.eigenvectors().col(idx);
+                  // Left eigenvector is the idx-th row of the inverse eigenvector matrix
+                  const auto left_evec = es.eigenvectors().inverse().row(idx);
+
+                  const NumberType wdotv = (left_evec.dot(right_evec)).real();
+
+                  for (size_t c = 0; c < n_components; ++c) {
+                    NumberType contraction = NumberType(0);
+                    for (size_t i = 0; i < n_components; ++i)
+                      for (size_t j = 0; j < n_components; ++j)
+                        contraction += left_evec(i).real() * right_evec(j).real() * H_side[d][i][j][c];
+                    da[d][c] = sign_lam * contraction / wdotv;
+                  }
+                };
+
+                fill_da(Jp, H_plus, da_plus);
+                fill_da(Jm, H_minus, da_minus);
+              }
+            }
+          }
+        };
+
+        template <typename WaveSpeedDerivStrategy, typename Model, typename NumberType, int dim, size_t n_components>
+        std::array<SimpleMatrix<dealii::Tensor<1, dim, NumberType>, n_components>, 2>
+        compute_kt_numflux_jacobian(const std::array<NumberType, n_components> &u_plus,
+                                    const std::array<NumberType, n_components> &u_minus, const dealii::Point<dim> &x_q,
+                                    const Model &model)
+        {
+          // 1. Compute flux Jacobians J and full Hessian H via second-order forward-mode AD
+          const auto [F_plus, J_plus, H_plus] =
+              compute_flux_jacobian_and_hessian<Model, NumberType, dim, n_components>(u_plus, x_q, model);
+          const auto [F_minus, J_minus, H_minus] =
+              compute_flux_jacobian_and_hessian<Model, NumberType, dim, n_components>(u_minus, x_q, model);
+
+          // 2. Compute a_half (max local wave speed per dimension)
+          //    Same logic as compute_kt_flux_and_speeds
+          std::array<NumberType, dim> a{};
+          for (size_t d = 0; d < dim; ++d) {
+            NumberType max_eig_plus = 0.0;
+            NumberType max_eig_minus = 0.0;
+
+            if constexpr (n_components == 1) {
+              max_eig_plus = std::abs(J_plus[d][0][0]);
+              max_eig_minus = std::abs(J_minus[d][0][0]);
+            } else {
+              Eigen::Matrix<NumberType, n_components, n_components> J_plus_eigen, J_minus_eigen;
+              for (size_t i = 0; i < n_components; ++i)
+                for (size_t j = 0; j < n_components; ++j) {
+                  J_plus_eigen(i, j) = J_plus[d][i][j];
+                  J_minus_eigen(i, j) = J_minus[d][i][j];
+                }
+              Eigen::EigenSolver<Eigen::Matrix<NumberType, n_components, n_components>> es_plus(J_plus_eigen);
+              Eigen::EigenSolver<Eigen::Matrix<NumberType, n_components, n_components>> es_minus(J_minus_eigen);
+              max_eig_plus = es_plus.eigenvalues().cwiseAbs().maxCoeff();
+              max_eig_minus = es_minus.eigenvalues().cwiseAbs().maxCoeff();
+            }
+
+            a[d] = std::max(max_eig_plus, max_eig_minus);
+          }
+
+          // 3. Compute da_half / du_plus and da_half / du_minus via the strategy
+          std::array<std::array<NumberType, n_components>, dim> da_plus{}, da_minus{};
+          WaveSpeedDerivStrategy::template compute<Model, NumberType, dim, n_components>(da_plus, da_minus, u_plus,
+                                                                                         u_minus, x_q, model,
+                                                                                         J_plus, J_minus,
+                                                                                         H_plus, H_minus);
+
+          // 4. Assemble j_numflux
+          std::array<SimpleMatrix<dealii::Tensor<1, dim, NumberType>, n_components>, 2> j_numflux{};
+
+          for (size_t d = 0; d < dim; ++d) {
+            for (size_t i = 0; i < n_components; ++i) {
+              const NumberType du_i = u_plus[i] - u_minus[i];
+              for (size_t c = 0; c < n_components; ++c) {
+                const NumberType delta_ic = (i == c) ? NumberType(1) : NumberType(0);
+
+                // dH_i^d / du_minus_c
+                j_numflux[0](i, c)[d] = NumberType(0.5) * J_minus[d][i][c] + NumberType(0.5) * a[d] * delta_ic -
+                                        NumberType(0.5) * du_i * da_minus[d][c];
+
+                // dH_i^d / du_plus_c
+                j_numflux[1](i, c)[d] = NumberType(0.5) * J_plus[d][i][c] - NumberType(0.5) * a[d] * delta_ic -
+                                        NumberType(0.5) * du_i * da_plus[d][c];
+              }
+            }
+          }
+
+          return j_numflux;
+        }
+
+      } // namespace internal
+
+      namespace internal
+      {
         template <typename Model, typename NumberType, int dim, size_t n_components>
         std::array<dealii::Tensor<1, dim, NumberType>, n_components>
         compute_diffusion_flux(const std::array<NumberType, n_components> &u_plus,
@@ -400,7 +575,8 @@ namespace DiFfRG
       } // namespace internal
 
       template <typename Discretization_, typename Model_,
-                def::HasReconstructor Reconstructor_ = def::TVDReconstructor<def::MinModLimiter, double>>
+                def::HasReconstructor Reconstructor_ = def::TVDReconstructor<def::MinModLimiter, double>,
+                typename WaveSpeedDerivStrategy_ = internal::AutodiffWaveSpeedDerivative>
         requires MeshIsRectangular<typename Discretization_::Mesh>
       class Assembler : public AbstractAssembler<typename Discretization_::VectorType,
                                                  typename Discretization_::SparseMatrixType, Discretization_::dim>
@@ -427,6 +603,7 @@ namespace DiFfRG
         using Discretization = Discretization_;
         using Model = Model_;
         using Reconstructor = Reconstructor_;
+        using WaveSpeedDerivStrategy = WaveSpeedDerivStrategy_;
         using NumberType = typename Discretization::NumberType;
         using VectorType = typename Discretization::VectorType;
 
@@ -948,6 +1125,17 @@ namespace DiFfRG
             auto &copy_data_face = copy_data.face_data.back();
             copy_data_face.reinit(fe_iv, cell, ncell);
 
+            // Compute gradients and reconstructed interface values u_minus / u_plus
+            const GradientType u_grad_cell = Reconstructor::template compute_gradient<dim, n_components>(
+                cell_data.x, cell_data.u, cell_neighbors.x, cell_neighbors.u);
+            const GradientType u_grad_ncell = Reconstructor::template compute_gradient<dim, n_components>(
+                ncell_data.x, ncell_data.u, ncell_neighbors.x, ncell_neighbors.u);
+
+            const std::array<NumberType, n_components> u_minus =
+                internal::reconstruct_u(cell_data.u, cell->center(), x_q, u_grad_cell);
+            const std::array<NumberType, n_components> u_plus =
+                internal::reconstruct_u(ncell_data.u, ncell->center(), x_q, u_grad_ncell);
+
             // Precompute reconstructed_u_deriv[face_no](component, j)
             // face_no=0: derivative of u⁻(x_q) w.r.t. from_dofs[j]
             // face_no=1: derivative of u⁺(x_q) w.r.t. from_dofs[j]
@@ -963,7 +1151,7 @@ namespace DiFfRG
                 auto u_center_tagged = internal::tag_cell_dofs(cell_data, dof_j);
                 auto u_n_tagged = internal::make_tagged_neighbors(cell_neighbors, dof_j);
                 auto deriv = internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
-                    u_center_tagged.u, cell_data.x, x_q, cell_neighbors.x, u_n_tagged.u); // TODO: refactor parameters
+                    u_center_tagged.u, cell_data.x, x_q, cell_neighbors.x, u_n_tagged.u);
                 for (size_t c = 0; c < n_components; ++c)
                   reconstructed_u_deriv[0][c][j] = deriv[c];
               }
@@ -973,22 +1161,15 @@ namespace DiFfRG
                 auto u_center_tagged = internal::tag_cell_dofs(ncell_data, dof_j);
                 auto u_n_tagged = internal::make_tagged_neighbors(ncell_neighbors, dof_j);
                 auto deriv = internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
-                    u_center_tagged.u, ncell_data.x, x_q, ncell_neighbors.x, u_n_tagged.u); // TODO: refactor parameters
+                    u_center_tagged.u, ncell_data.x, x_q, ncell_neighbors.x, u_n_tagged.u);
                 for (size_t c = 0; c < n_components; ++c)
                   reconstructed_u_deriv[1][c][j] = deriv[c];
               }
             }
 
-            std::array<SimpleMatrix<Tensor<1, dim>, n_components>, 2> j_numflux;
-            for (uint i = 0; i < n_face_dofs; ++i) {
-              for (uint j = 0; j < n_face_dofs; ++j) {
-                // j_numflux[0](i, j) = du_minus_du_i[0][i][j];
-                // j_numflux[0](i, j) = 0.5 * (f_prime_minus + a_half - (u_plus - u_minus) * da_half_du_plus) *
-                //                      du_minus_du_i; // self contribution
-                // j_numflux[1](i, j) = 0.5 * (f_prime_plus - a_half - (u_plus - u_minus) * da_half_du_minus) *
-                //                      du_plus_du_i; // neighbor contribution
-              }
-            }
+            const auto j_numflux =
+                internal::compute_kt_numflux_jacobian<WaveSpeedDerivStrategy, Model, NumberType, dim, n_components>(
+                    u_plus, u_minus, x_q, model);
 
             for (uint i = 0; i < size(copy_data_face.to_dofs); ++i) { // these are effectively two
               const auto &cd_i = fe_iv.interface_dof_to_dof_indices(i);
