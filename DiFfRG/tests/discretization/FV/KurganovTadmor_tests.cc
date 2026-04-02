@@ -15,7 +15,7 @@ using NumberType = double;
 using VectorType = dealii::Vector<NumberType>;
 using namespace dealii;
 namespace KT = DiFfRG::FV::KurganovTadmor;
-using KT::internal::compute_kt_flux_and_speeds;
+using WaveSpeedStrategy = DiFfRG::FV::KurganovTadmor::MaxEigenvalueWaveSpeed;
 using KT::internal::compute_numerical_flux;
 using KT::internal::reconstruct_u;
 using Reconstructor = DiFfRG::def::TVDReconstructor<DiFfRG::def::MinModLimiter, NumberType>;
@@ -299,7 +299,8 @@ TEST_CASE("Test compute_kt_flux_and_speeds with Burgers flux in 1D", "[FV][KT]")
     const std::array<NumberType, n_components> u_plus = {2.0};
     const std::array<NumberType, n_components> u_minus = {1.0};
 
-    const auto [F_plus, F_minus, a_half] = compute_kt_flux_and_speeds(u_plus, u_minus, x_q, model);
+    const auto [F_plus, F_minus, a_half] =
+        KT::internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(u_plus, u_minus, x_q, model);
     CHECK(F_plus[0][0] == Catch::Approx(2.5));
     CHECK(F_minus[0][0] == Catch::Approx(1.0));
     CHECK(a_half[0][0] == Catch::Approx(2.0));
@@ -314,7 +315,8 @@ TEST_CASE("Test compute_kt_flux_and_speeds with Burgers flux in 1D", "[FV][KT]")
     const std::array<NumberType, n_components> u_plus = {3.0};
     const std::array<NumberType, n_components> u_minus = {3.0};
 
-    const auto [F_plus, F_minus, a_half] = compute_kt_flux_and_speeds(u_plus, u_minus, x_q, model);
+    const auto [F_plus, F_minus, a_half] =
+        KT::internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(u_plus, u_minus, x_q, model);
     CHECK(F_plus[0][0] == Catch::Approx(5.5));
     CHECK(F_minus[0][0] == Catch::Approx(5.5));
     CHECK(a_half[0][0] == Catch::Approx(3.0));
@@ -331,7 +333,8 @@ TEST_CASE("Test compute_kt_flux_and_speeds with Burgers flux in 1D", "[FV][KT]")
     const std::array<NumberType, n_components> u_plus = {-1.0};
     const std::array<NumberType, n_components> u_minus = {-3.0};
 
-    const auto [F_plus, F_minus, a_half] = compute_kt_flux_and_speeds(u_plus, u_minus, x_q, model);
+    const auto [F_plus, F_minus, a_half] =
+        KT::internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(u_plus, u_minus, x_q, model);
     CHECK(F_plus[0][0] == Catch::Approx(0.5));
     CHECK(F_minus[0][0] == Catch::Approx(4.5));
     CHECK(a_half[0][0] == Catch::Approx(3.0));
@@ -346,7 +349,8 @@ TEST_CASE("Test compute_kt_flux_and_speeds with Burgers flux in 1D", "[FV][KT]")
     const std::array<NumberType, n_components> u_plus = {2.0};
     const std::array<NumberType, n_components> u_minus = {1.0};
 
-    const auto [F_plus, F_minus, a_half] = compute_kt_flux_and_speeds(u_plus, u_minus, x_q, model);
+    const auto [F_plus, F_minus, a_half] =
+        KT::internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(u_plus, u_minus, x_q, model);
     const auto H = compute_numerical_flux(F_plus, F_minus, a_half, u_plus, u_minus);
     CHECK(H[0][0] == Catch::Approx(0.75));
   }

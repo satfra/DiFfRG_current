@@ -7,6 +7,8 @@
 #include <deal.II/base/tensor.h>
 #include <tuple>
 
+#include <DiFfRG/discretization/FV/assembler/flux_ties.hh>
+
 namespace DiFfRG
 {
   namespace FV
@@ -15,8 +17,6 @@ namespace DiFfRG
     {
       namespace internal
       {
-        template <typename... T> auto advection_flux_tie(T &&...t);
-
         template <typename NumberType, size_t n_components>
         using JacobianMatrix = std::array<std::array<NumberType, n_components>, n_components>;
 

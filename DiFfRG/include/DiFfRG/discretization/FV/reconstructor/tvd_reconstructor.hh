@@ -46,6 +46,8 @@ namespace DiFfRG
       using ADNumberType = autodiff::Real<1, NumberType>;
 
     public:
+      // Expose the Limiter type for use by other templates
+      using LimiterType = Limiter;
       /**
        * @brief Compute the gradient of u using the injected slope limiter.
        *

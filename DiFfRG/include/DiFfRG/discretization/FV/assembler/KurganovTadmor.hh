@@ -4,7 +4,6 @@
 
 // DiFfRG
 #include "DiFfRG/common/math.hh"
-#include <Eigen/Dense>
 #include <array>
 #include <autodiff/forward/real/real.hpp>
 #include <cstddef>
@@ -27,6 +26,7 @@
 #include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/vector_tools.h>
 #include <iostream>
+#include <optional>
 #include <petscvec.h>
 #include <spdlog/spdlog.h>
 #include <tbb/tbb.h>
@@ -36,8 +36,11 @@
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 
 #include <DiFfRG/discretization/FV/assembler/flux_jacobian_hessian.hh>
+#include <DiFfRG/discretization/FV/assembler/flux_ties.hh>
+#include <DiFfRG/discretization/FV/wave_speed/abstract_wave_speed.hh>
+#include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed.hh>
+#include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed_zero_deriv.hh>
 #include <DiFfRG/discretization/common/types.hh>
-#include <ranges>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -54,16 +57,6 @@ namespace DiFfRG
       {
         template <int dim, typename NumberType, size_t n_components>
         using GradientType = def::GradientType<dim, NumberType, n_components>;
-
-        template <typename... T> auto advection_flux_tie(T &&...t)
-        {
-          return named_tuple<std::tuple<T &...>, StringSet<"fe_functions">>(std::tie(t...));
-        }
-
-        template <typename... T> auto flux_tie(T &&...t)
-        {
-          return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "fe_derivatives">>(std::tie(t...));
-        }
 
         /**
          * @brief Class to hold data for each assembly thread, i.e. FEValues for cells, interfaces, as well as
@@ -169,34 +162,31 @@ namespace DiFfRG
             std::vector<types::global_dof_index> to_dofs;
             std::vector<types::global_dof_index> from_dofs;
 
-            void reinit(const FEInterfaceValues<dim> &fe_iv, const Iterator &cell, const Iterator &ncell)
+            static void collect_neighbor_dofs(std::set<types::global_dof_index> &from_dofs_set,
+                                              const Iterator &root_cell)
+            {
+              std::vector<types::global_dof_index> neighbor_dof_indices(root_cell->get_fe().n_dofs_per_cell());
+              for (const auto face_index : root_cell->face_indices()) {
+                if (!root_cell->at_boundary(face_index)) {
+                  const auto neighbor = root_cell->neighbor(face_index);
+                  neighbor->get_dof_indices(neighbor_dof_indices);
+                  for (const auto &dof : neighbor_dof_indices)
+                    from_dofs_set.insert(dof);
+                }
+              }
+            }
+
+            void reinit(const FEInterfaceValues<dim> &fe_iv, const Iterator &cell,
+                        const std::optional<Iterator> &ncell = std::nullopt)
             {
               to_dofs = fe_iv.get_interface_dof_indices();
-              cell_jacobian.reinit(size(to_dofs), size(from_dofs));
 
               std::set<types::global_dof_index> from_dofs_set(begin(to_dofs), end(to_dofs));
-              // iterate cell neighbors
-              std::vector<types::global_dof_index> neighbor_dof_indices(cell->get_fe().n_dofs_per_cell());
-              for (const auto face_index : cell->face_indices()) {
-                if (!cell->at_boundary(face_index)) {
-                  const auto neighbor = cell->neighbor(face_index);
-                  neighbor->get_dof_indices(neighbor_dof_indices);
-                  for (const auto &dof : neighbor_dof_indices)
-                    from_dofs_set.insert(dof);
-                }
-              }
-              // iterate ncell neighbors
-              for (const auto face_index : ncell->face_indices()) {
-                if (!ncell->at_boundary(face_index)) {
-                  const auto neighbor = ncell->neighbor(face_index);
-                  neighbor->get_dof_indices(neighbor_dof_indices);
-                  for (const auto &dof : neighbor_dof_indices)
-                    from_dofs_set.insert(dof);
-                }
-              }
+              collect_neighbor_dofs(from_dofs_set, cell);
+              if (ncell.has_value()) collect_neighbor_dofs(from_dofs_set, ncell.value());
 
-              from_dofs.resize(size(from_dofs_set));
               from_dofs = std::vector<types::global_dof_index>(begin(from_dofs_set), end(from_dofs_set));
+              cell_jacobian.reinit(size(to_dofs), size(from_dofs));
             }
           };
 
@@ -237,7 +227,7 @@ namespace DiFfRG
           std::array<dealii::Tensor<1, dim, NumberType>, n_components> a_half;
         };
 
-        template <typename Model, typename NumberType, int dim, size_t n_components>
+        template <typename WaveSpeedStrategy, typename Model, typename NumberType, int dim, size_t n_components>
         KTFluxData<dim, NumberType, n_components>
         compute_kt_flux_and_speeds(const std::array<NumberType, n_components> &u_plus,
                                    const std::array<NumberType, n_components> &u_minus, const dealii::Point<dim> &x_q,
@@ -255,8 +245,7 @@ namespace DiFfRG
 
           std::array<dealii::Tensor<1, dim, ADNumberType>, n_components> F_AD_plus{}, F_AD_minus{};
 
-          using JacobianMatrix = std::array<std::array<NumberType, n_components>, n_components>;
-          std::array<JacobianMatrix, dim> J_plus{}, J_minus{};
+          std::array<JacobianMatrix<NumberType, n_components>, dim> J_plus{}, J_minus{};
 
           for (size_t j = 0; j < n_components; ++j) {
             seed(u_plus_AD[j]);
@@ -281,32 +270,11 @@ namespace DiFfRG
             unseed(u_minus_AD[j]);
           }
 
-          for (size_t d = 0; d < dim; ++d) {
-            NumberType max_eig_plus = 0.0;
-            NumberType max_eig_minus = 0.0;
+          const auto a = WaveSpeedStrategy::template compute_speeds<NumberType, dim, n_components>(J_plus, J_minus);
 
-            if constexpr (n_components == 1) {
-              max_eig_plus = std::abs(J_plus[d][0][0]);
-              max_eig_minus = std::abs(J_minus[d][0][0]);
-            } else {
-              Eigen::Matrix<NumberType, n_components, n_components> J_plus_eigen, J_minus_eigen;
-              for (size_t i = 0; i < n_components; ++i)
-                for (size_t j = 0; j < n_components; ++j) {
-                  J_plus_eigen(i, j) = J_plus[d][i][j];
-                  J_minus_eigen(i, j) = J_minus[d][i][j];
-                }
-              Eigen::EigenSolver<Eigen::Matrix<NumberType, n_components, n_components>> es_plus(J_plus_eigen);
-              Eigen::EigenSolver<Eigen::Matrix<NumberType, n_components, n_components>> es_minus(J_minus_eigen);
-              max_eig_plus = es_plus.eigenvalues().cwiseAbs().maxCoeff();
-              max_eig_minus = es_minus.eigenvalues().cwiseAbs().maxCoeff();
-            }
-
-            NumberType a = std::max(max_eig_plus, max_eig_minus);
-
-            for (size_t component : std::views::iota(0u, n_components)) {
-              result.a_half[component][d] = a;
-            }
-          }
+          for (size_t d = 0; d < dim; ++d)
+            for (size_t component = 0; component < n_components; ++component)
+              result.a_half[component][d] = a[d];
 
           return result;
         }
@@ -329,109 +297,7 @@ namespace DiFfRG
 
       namespace internal
       {
-        struct ZeroWaveSpeedDerivative {
-          template <typename Model, typename NumberType, int dim, size_t n_components>
-          static void
-          compute(std::array<std::array<NumberType, n_components>, dim> & /*da_plus*/,
-                  std::array<std::array<NumberType, n_components>, dim> & /*da_minus*/,
-                  const std::array<NumberType, n_components> & /*u_plus*/,
-                  const std::array<NumberType, n_components> & /*u_minus*/,
-                  const dealii::Point<dim> & /*x_q*/, const Model & /*model*/,
-                  const std::array<std::array<std::array<NumberType, n_components>, n_components>, dim> & /*J_plus*/,
-                  const std::array<std::array<std::array<NumberType, n_components>, n_components>, dim> & /*J_minus*/,
-                  const std::array<std::array<std::array<std::array<NumberType, n_components>, n_components>,
-                                              n_components>,
-                                   dim> & /*H_plus*/,
-                  const std::array<std::array<std::array<std::array<NumberType, n_components>, n_components>,
-                                              n_components>,
-                                   dim> & /*H_minus*/)
-          {
-            // da_plus and da_minus are value-initialised to zero — nothing to do.
-          }
-        };
-        struct AutodiffWaveSpeedDerivative {
-          template <typename Model, typename NumberType, int dim, size_t n_components>
-          static void
-          compute(std::array<std::array<NumberType, n_components>, dim> &da_plus,
-                  std::array<std::array<NumberType, n_components>, dim> &da_minus,
-                  const std::array<NumberType, n_components> & /*u_plus*/,
-                  const std::array<NumberType, n_components> & /*u_minus*/,
-                  const dealii::Point<dim> & /*x_q*/, const Model & /*model*/,
-                  const std::array<std::array<std::array<NumberType, n_components>, n_components>, dim> &J_plus,
-                  const std::array<std::array<std::array<NumberType, n_components>, n_components>, dim> &J_minus,
-                  const std::array<std::array<std::array<std::array<NumberType, n_components>, n_components>,
-                                              n_components>,
-                                   dim> &H_plus,
-                  const std::array<std::array<std::array<std::array<NumberType, n_components>, n_components>,
-                                              n_components>,
-                                   dim> &H_minus)
-          {
-            // Compute da[d]/du_c analytically from J and H:
-            //   a[d] = spectral_radius(J[d])
-            //   da[d]/du_c = d(spectral_radius)/dJ[d] : H[d][:][:][ c]
-            //
-            // For n_components == 1:
-            //   a[d] = |J[d][0][0]|,  da/du_c = sign(J[d][0][0]) * H[d][0][0][c]
-            //
-            // For n_components > 1:
-            //   Find the dominant eigenvalue λ* and its right/left eigenvectors v, w
-            //   (Eigen EigenSolver).  Then by first-order eigenvalue perturbation theory:
-            //     da[d]/du_c = sign(Re(λ*)) * Σ_{i,j} Re(w[i]) * Re(v[j]) * H[d][i][j][c]
-            //                  / Re(w · v)
-
-            for (size_t d = 0; d < dim; ++d) {
-              if constexpr (n_components == 1) {
-                const NumberType sign_J_plus = (J_plus[d][0][0] >= NumberType(0)) ? NumberType(1) : NumberType(-1);
-                const NumberType sign_J_minus = (J_minus[d][0][0] >= NumberType(0)) ? NumberType(1) : NumberType(-1);
-                for (size_t c = 0; c < n_components; ++c) {
-                  da_plus[d][c] = sign_J_plus * H_plus[d][0][0][c];
-                  da_minus[d][c] = sign_J_minus * H_minus[d][0][0][c];
-                }
-              } else {
-                // Build Eigen matrices for J_plus[d] and J_minus[d]
-                Eigen::Matrix<NumberType, n_components, n_components> Jp, Jm;
-                for (size_t i = 0; i < n_components; ++i)
-                  for (size_t j = 0; j < n_components; ++j) {
-                    Jp(i, j) = J_plus[d][i][j];
-                    Jm(i, j) = J_minus[d][i][j];
-                  }
-
-                // Helper lambda: fill da[d] from Jacobian eigen-decomposition and Hessian
-                auto fill_da = [&](const Eigen::Matrix<NumberType, n_components, n_components> &J,
-                                   const auto &H_side,
-                                   std::array<std::array<NumberType, n_components>, dim> &da) {
-                  Eigen::EigenSolver<Eigen::Matrix<NumberType, n_components, n_components>> es(J);
-                  // Find index of eigenvalue with largest absolute value
-                  Eigen::Index idx;
-                  es.eigenvalues().cwiseAbs().maxCoeff(&idx);
-
-                  const NumberType sign_lam =
-                      (es.eigenvalues()(idx).real() >= NumberType(0)) ? NumberType(1) : NumberType(-1);
-
-                  // Right and left eigenvectors (columns of eigenvectors() and rows of its inverse)
-                  const auto right_evec = es.eigenvectors().col(idx);
-                  // Left eigenvector is the idx-th row of the inverse eigenvector matrix
-                  const auto left_evec = es.eigenvectors().inverse().row(idx);
-
-                  const NumberType wdotv = (left_evec.dot(right_evec)).real();
-
-                  for (size_t c = 0; c < n_components; ++c) {
-                    NumberType contraction = NumberType(0);
-                    for (size_t i = 0; i < n_components; ++i)
-                      for (size_t j = 0; j < n_components; ++j)
-                        contraction += left_evec(i).real() * right_evec(j).real() * H_side[d][i][j][c];
-                    da[d][c] = sign_lam * contraction / wdotv;
-                  }
-                };
-
-                fill_da(Jp, H_plus, da_plus);
-                fill_da(Jm, H_minus, da_minus);
-              }
-            }
-          }
-        };
-
-        template <typename WaveSpeedDerivStrategy, typename Model, typename NumberType, int dim, size_t n_components>
+        template <typename WaveSpeedStrategy, typename Model, typename NumberType, int dim, size_t n_components>
         std::array<SimpleMatrix<dealii::Tensor<1, dim, NumberType>, n_components>, 2>
         compute_kt_numflux_jacobian(const std::array<NumberType, n_components> &u_plus,
                                     const std::array<NumberType, n_components> &u_minus, const dealii::Point<dim> &x_q,
@@ -443,38 +309,13 @@ namespace DiFfRG
           const auto [F_minus, J_minus, H_minus] =
               compute_flux_jacobian_and_hessian<Model, NumberType, dim, n_components>(u_minus, x_q, model);
 
-          // 2. Compute a_half (max local wave speed per dimension)
-          //    Same logic as compute_kt_flux_and_speeds
-          std::array<NumberType, dim> a{};
-          for (size_t d = 0; d < dim; ++d) {
-            NumberType max_eig_plus = 0.0;
-            NumberType max_eig_minus = 0.0;
-
-            if constexpr (n_components == 1) {
-              max_eig_plus = std::abs(J_plus[d][0][0]);
-              max_eig_minus = std::abs(J_minus[d][0][0]);
-            } else {
-              Eigen::Matrix<NumberType, n_components, n_components> J_plus_eigen, J_minus_eigen;
-              for (size_t i = 0; i < n_components; ++i)
-                for (size_t j = 0; j < n_components; ++j) {
-                  J_plus_eigen(i, j) = J_plus[d][i][j];
-                  J_minus_eigen(i, j) = J_minus[d][i][j];
-                }
-              Eigen::EigenSolver<Eigen::Matrix<NumberType, n_components, n_components>> es_plus(J_plus_eigen);
-              Eigen::EigenSolver<Eigen::Matrix<NumberType, n_components, n_components>> es_minus(J_minus_eigen);
-              max_eig_plus = es_plus.eigenvalues().cwiseAbs().maxCoeff();
-              max_eig_minus = es_minus.eigenvalues().cwiseAbs().maxCoeff();
-            }
-
-            a[d] = std::max(max_eig_plus, max_eig_minus);
-          }
+          // 2. Compute a_half (max local wave speed per dimension) via the strategy
+          const auto a = WaveSpeedStrategy::template compute_speeds<NumberType, dim, n_components>(J_plus, J_minus);
 
           // 3. Compute da_half / du_plus and da_half / du_minus via the strategy
-          std::array<std::array<NumberType, n_components>, dim> da_plus{}, da_minus{};
-          WaveSpeedDerivStrategy::template compute<Model, NumberType, dim, n_components>(da_plus, da_minus, u_plus,
-                                                                                         u_minus, x_q, model,
-                                                                                         J_plus, J_minus,
-                                                                                         H_plus, H_minus);
+          const auto [da_plus, da_minus] =
+              WaveSpeedStrategy::template compute_speed_derivatives<NumberType, dim, n_components>(J_plus, J_minus,
+                                                                                                   H_plus, H_minus);
 
           // 4. Assemble j_numflux
           std::array<SimpleMatrix<dealii::Tensor<1, dim, NumberType>, n_components>, 2> j_numflux{};
@@ -572,11 +413,46 @@ namespace DiFfRG
           return result;
         }
 
+        template <typename Reconstructor, typename Model, int dim, typename NumberType, size_t n_components,
+                  size_t n_faces>
+        std::array<NumberType, n_components> compute_boundary_ghost_u_plus_derivative(
+            const CellData<dim, autodiff::Real<1, NumberType>, n_components> &cell_data_AD,
+            NeighborData<dim, autodiff::Real<1, NumberType>, n_components, n_faces> neighbors_AD,
+            const unsigned int boundary_face_no, const std::array<dealii::types::boundary_id, n_faces> &boundary_ids,
+            const std::array<dealii::Point<dim>, n_faces> &face_centers, const dealii::Tensor<1, dim> &normal,
+            const dealii::Point<dim> &x_q, const Model &model)
+        {
+          using AD = autodiff::Real<1, NumberType>;
+
+          model.apply_boundary_conditions(neighbors_AD.u, neighbors_AD.x, boundary_ids, face_centers, cell_data_AD.u,
+                                          cell_data_AD.x);
+
+          using ReconstructorAD = def::TVDReconstructor<typename Reconstructor::LimiterType, AD>;
+          auto u_grad_cell_AD = ReconstructorAD::template compute_gradient<dim, n_components>(
+              cell_data_AD.x, cell_data_AD.u, neighbors_AD.x, neighbors_AD.u);
+
+          std::array<dealii::Tensor<1, dim, AD>, n_components> ghost_grad_AD{};
+          model.boundary_ghost_gradient(ghost_grad_AD, boundary_ids[boundary_face_no], normal, x_q,
+                                        neighbors_AD.u[boundary_face_no], neighbors_AD.x[boundary_face_no],
+                                        cell_data_AD.u, cell_data_AD.x, u_grad_cell_AD);
+
+          std::array<AD, n_components> u_plus_AD{};
+          for (size_t c = 0; c < n_components; ++c) {
+            u_plus_AD[c] = neighbors_AD.u[boundary_face_no][c];
+            u_plus_AD[c] += dealii::scalar_product(ghost_grad_AD[c], x_q - neighbors_AD.x[boundary_face_no]);
+          }
+
+          std::array<NumberType, n_components> result{};
+          for (size_t c = 0; c < n_components; ++c)
+            result[c] = autodiff::derivative(u_plus_AD[c]);
+          return result;
+        }
+
       } // namespace internal
 
       template <typename Discretization_, typename Model_,
                 def::HasReconstructor Reconstructor_ = def::TVDReconstructor<def::MinModLimiter, double>,
-                typename WaveSpeedDerivStrategy_ = internal::AutodiffWaveSpeedDerivative>
+                def::HasWaveSpeed WaveSpeedStrategy_ = MaxEigenvalueWaveSpeed>
         requires MeshIsRectangular<typename Discretization_::Mesh>
       class Assembler : public AbstractAssembler<typename Discretization_::VectorType,
                                                  typename Discretization_::SparseMatrixType, Discretization_::dim>
@@ -603,7 +479,7 @@ namespace DiFfRG
         using Discretization = Discretization_;
         using Model = Model_;
         using Reconstructor = Reconstructor_;
-        using WaveSpeedDerivStrategy = WaveSpeedDerivStrategy_;
+        using WaveSpeedStrategy = WaveSpeedStrategy_;
         using NumberType = typename Discretization::NumberType;
         using VectorType = typename Discretization::VectorType;
 
@@ -683,7 +559,7 @@ namespace DiFfRG
           //   sparsity_pattern_jacobian.copy_from(dsp);
           // }
 
-          constexpr uint stencil = 1;
+          constexpr uint stencil = 2;
           build_sparsity(sparsity_pattern_jacobian, dof_handler, dof_handler, stencil, true);
 
           timings_reinit.push_back(timer.wall_time());
@@ -895,7 +771,8 @@ namespace DiFfRG
             const std::array<NumberType, n_components> u_plus =
                 internal::reconstruct_u(ncell_data.u, ncell->center(), x_q, u_grad_ncell);
 
-            const auto [F_plus, F_minus, a_half] = internal::compute_kt_flux_and_speeds(u_plus, u_minus, x_q, model);
+            const auto [F_plus, F_minus, a_half] =
+                internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(u_plus, u_minus, x_q, model);
             const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, u_plus, u_minus);
 
             const auto &n_face = normals[q_face_index];
@@ -960,7 +837,8 @@ namespace DiFfRG
             const std::array<NumberType, n_components> u_plus =
                 internal::reconstruct_u(u_ghost, x_ghost, x_q, u_grad_ghost);
 
-            const auto [F_plus, F_minus, a_half] = internal::compute_kt_flux_and_speeds(u_plus, u_minus, x_q, model);
+            const auto [F_plus, F_minus, a_half] =
+                internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(u_plus, u_minus, x_q, model);
             const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, u_plus, u_minus);
 
             const auto &n_bnd = normals[q_face_index];
@@ -1168,7 +1046,7 @@ namespace DiFfRG
             }
 
             const auto j_numflux =
-                internal::compute_kt_numflux_jacobian<WaveSpeedDerivStrategy, Model, NumberType, dim, n_components>(
+                internal::compute_kt_numflux_jacobian<WaveSpeedStrategy, Model, NumberType, dim, n_components>(
                     u_plus, u_minus, x_q, model);
 
             for (uint i = 0; i < size(copy_data_face.to_dofs); ++i) { // these are effectively two
@@ -1195,7 +1073,110 @@ namespace DiFfRG
 
           const auto boundary_worker = [&](const Iterator &cell, const unsigned int &face_no, Scratch &scratch_data,
                                            CopyData &copy_data) {
-            // pass
+            scratch_data.fe_interface_values.reinit(cell, face_no);
+            const auto &fe_fv = scratch_data.fe_interface_values.get_fe_face_values(0);
+            const FEInterfaceValues<dim> &fe_iv = scratch_data.fe_interface_values;
+            const uint n_face_dofs = fe_iv.n_current_interface_dofs();
+            const auto &JxW = fe_fv.get_JxW_values();
+            const auto &q_points = fe_fv.get_quadrature_points();
+            const int q_face_index = 0;
+            const auto &x_q = q_points[q_face_index];
+            const std::vector<Tensor<1, dim>> &normals = fe_fv.get_normal_vectors();
+
+            copy_data.face_data.emplace_back();
+            auto &copy_data_face = copy_data.face_data.back();
+            copy_data_face.reinit(fe_iv, cell);
+
+            // Get cell data and ghost neighbor data
+            const auto cell_neighbors = get_neighboring_cell_data(cell, solution_global, model);
+            const auto cell_data = get_cell_value(cell, solution_global);
+
+            // Build boundary_ids and face_centers arrays needed for apply_boundary_conditions
+            std::array<types::boundary_id, n_faces> boundary_ids;
+            std::array<Point, n_faces> face_centers;
+            for (const auto f : cell->face_indices()) {
+              if (cell->at_boundary(f)) {
+                boundary_ids[f] = cell->face(f)->boundary_id();
+                face_centers[f] = cell->face(f)->center();
+              } else {
+                boundary_ids[f] = numbers::invalid_boundary_id;
+              }
+            }
+
+            // Compute gradients and reconstructed interface values
+            const GradientType u_grad_cell = Reconstructor::template compute_gradient<dim, n_components>(
+                cell_data.x, cell_data.u, cell_neighbors.x, cell_neighbors.u);
+
+            // Ghost cell value and position from apply_boundary_conditions
+            const std::array<NumberType, n_components> &u_ghost = cell_neighbors.u[face_no];
+            const Point &x_ghost = cell_neighbors.x[face_no];
+
+            const auto boundary_id = cell->face(face_no)->boundary_id();
+            GradientType u_grad_ghost{};
+            model.boundary_ghost_gradient(u_grad_ghost, boundary_id, normals[q_face_index], x_q, u_ghost, x_ghost,
+                                          cell_data.u, cell_data.x, u_grad_cell);
+
+            const std::array<NumberType, n_components> u_plus =
+                internal::reconstruct_u(u_ghost, x_ghost, x_q, u_grad_ghost);
+            const std::array<NumberType, n_components> u_minus =
+                internal::reconstruct_u(cell_data.u, cell->center(), x_q, u_grad_cell);
+
+            // Precompute reconstructed_u_deriv[face_no](component, j)
+            // face_no=0: derivative of u⁻(x_q) w.r.t. from_dofs[j]
+            // face_no=1: derivative of u⁺(x_q) w.r.t. from_dofs[j] (traces through BCs)
+            const uint n_from = size(copy_data_face.from_dofs);
+            const std::vector<std::vector<NumberType>> zero_matrix(n_components, std::vector<NumberType>(n_from));
+            std::array<std::vector<std::vector<NumberType>>, 2> reconstructed_u_deriv{zero_matrix, zero_matrix};
+
+            for (uint j = 0; j < size(copy_data_face.from_dofs); ++j) {
+              const auto dof_j = copy_data_face.from_dofs[j];
+
+              // face_no=0: d(u⁻)/d(u_j) — reconstruction from cell side (same as interior)
+              {
+                auto u_center_tagged = internal::tag_cell_dofs(cell_data, dof_j);
+                auto u_n_tagged = internal::make_tagged_neighbors(cell_neighbors, dof_j);
+                auto deriv = internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
+                    u_center_tagged.u, cell_data.x, x_q, cell_neighbors.x, u_n_tagged.u);
+                for (size_t c = 0; c < n_components; ++c)
+                  reconstructed_u_deriv[0][c][j] = deriv[c];
+              }
+
+              // face_no=1: d(u⁺)/d(u_j) — ghost side derivative with AD tracing through BCs
+              {
+                auto cell_data_AD = internal::tag_cell_dofs(cell_data, dof_j);
+                auto neighbors_AD = internal::make_tagged_neighbors(cell_neighbors, dof_j);
+                auto deriv = internal::compute_boundary_ghost_u_plus_derivative<Reconstructor, Model, dim, NumberType,
+                                                                                n_components, n_faces>(
+                    cell_data_AD, neighbors_AD, face_no, boundary_ids, face_centers, normals[q_face_index], x_q, model);
+                for (size_t c = 0; c < n_components; ++c)
+                  reconstructed_u_deriv[1][c][j] = deriv[c];
+              }
+            }
+
+            // Compute numerical flux Jacobian
+            const auto j_numflux =
+                internal::compute_kt_numflux_jacobian<WaveSpeedStrategy, Model, NumberType, dim, n_components>(
+                    u_plus, u_minus, x_q, model);
+
+            // Chain-rule assembly (same pattern as interior face_worker)
+            for (uint i = 0; i < size(copy_data_face.to_dofs); ++i) {
+              const auto &cd_i = fe_iv.interface_dof_to_dof_indices(i);
+              // For single-sided boundary, all DOFs are on side 0 (interior)
+              const uint face_no_i = cd_i[0] == numbers::invalid_unsigned_int ? 1 : 0;
+              const auto &component_i = fe.system_to_component_index(cd_i[face_no_i]).first;
+              for (uint j = 0; j < size(copy_data_face.from_dofs); ++j) {
+                for (size_t face_no = 0; face_no < 2; ++face_no) {
+                  NumberType contribution{};
+                  for (size_t c = 0; c < n_components; ++c) {
+                    contribution += scalar_product(j_numflux[face_no](component_i, c), normals[q_face_index]) *
+                                    reconstructed_u_deriv[face_no][c][j];
+                  }
+                  copy_data_face.cell_jacobian(i, j) +=
+                      weight * JxW[q_face_index] *
+                      (fe_iv.jump_in_shape_values(i, q_face_index, component_i) * contribution);
+                }
+              }
+            }
           };
 
           const auto copier = [&](const CopyData &c) {

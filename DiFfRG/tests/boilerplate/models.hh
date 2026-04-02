@@ -230,7 +230,7 @@ namespace DiFfRG
           public def::AD<ModelBurgersTravelingWaveKT<dim>>
     {
     protected:
-      static constexpr double nu = 1.0;
+      static constexpr double nu = 10.0;
       static constexpr double f_plus = 2.0;
       static constexpr double f_minus = 0.0;
       static constexpr double c = (f_plus + f_minus) / 2.0;
@@ -292,7 +292,7 @@ namespace DiFfRG
     {
     protected:
       const PhysicalParameters prm;
-      static constexpr double nu = 1.0;
+      static constexpr double nu = 10.0;
       static constexpr double f_plus = 2.0;
       static constexpr double f_minus = 0.0;
       static constexpr double c = (f_plus + f_minus) / 2.0;
