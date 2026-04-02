@@ -596,7 +596,6 @@ AdjustToNKernels[nKernels_Integer] :=
 		If[nKernels != 0,
 			CloseKernels[];
 			LaunchKernels[nKernels];
-			DistributeDefinitions["TensorBases`Private`"];
 			DistributeDefinitions["FormTracer`"];
 			DistributeDefinitions[ExtendedFormTrace, InsertChargeConjRules]
 		];
@@ -606,7 +605,6 @@ RestoreKernels[] :=
 	Module[{},
 		CloseKernels[];
 		LaunchKernels[];
-		DistributeDefinitions["TensorBases`Private`"];
 		DistributeDefinitions["FormTracer`"];
 		DistributeDefinitions[ExtendedFormTrace, InsertChargeConjRules];
 	]
