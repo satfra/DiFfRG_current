@@ -105,11 +105,14 @@ namespace DiFfRG
     }
 
     /**
-     * @brief Load a map from the HDF5 file.
+     * @brief Load a map's coordinates from the HDF5 file.
      *
+     * @tparam dim The spatial dimension of the coordinate entries.
      * @param name The name of the map.
-     * @param data The data buffer to load the map into.
+     * @param series_number The series number to load (-1 for latest).
+     * @return A flattened vector of doubles with size = num_points * dim.
      */
+    template <size_t dim>
     std::vector<double> load_map_coord(const std::string &name, int series_number = -1)
     {
 #ifdef H5CPP
@@ -139,9 +142,19 @@ namespace DiFfRG
 
       auto dataset = group.get_dataset("coordinates");
       auto dataspace = dataset.dataspace();
-      std::vector<double> temp_data(dataspace.size());
-      dataset.read(temp_data);
-      return temp_data;
+
+      using coord_type = device::array<double, dim>;
+      std::vector<coord_type> compound_data(dataspace.size());
+      dataset.read(compound_data);
+
+      std::vector<double> result;
+      result.reserve(dataspace.size() * dim);
+      for (const auto &pt : compound_data)
+        for (size_t d = 0; d < dim; ++d)
+          result.push_back(pt[d]);
+      return result;
+#else
+      return {};
 #endif
     }
 

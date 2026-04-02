@@ -34,15 +34,20 @@ Print["Initialization complete.\n"];
 (* Function to run and report tests *)
 
 RunAndReportTests[exprText_String, testFileName_String] :=
-    Module[{result, successCount, failureCount, mGreen = RGBColor[0.0235294, 0.235294, 0.0235294], mRed = RGBColor[0.435294, 0, 0]},
+    Module[{result, successCount, failureCount, succeededKeys, failedKeys, mGreen = RGBColor[0.0235294, 0.235294, 0.0235294], mRed = RGBColor[0.435294, 0, 0]},
         ToExpression[exprText];
-        result = TestReport[tests, ProgressReporting -> False];
-        successCount = Length[result["TestsSucceededKeys"]];
-        failureCount = Length[result["TestsFailedWrongResultsKeys"]];
+        result = If[$VersionNumber >= 12.0,
+            TestReport[tests, ProgressReporting -> False],
+            TestReport[tests]
+        ];
+        succeededKeys = If[$VersionNumber >= 12.0, result["TestsSucceededKeys"], result["TestsSucceededIndices"]];
+        failedKeys = If[$VersionNumber >= 12.0, result["TestsFailedWrongResultsKeys"], result["TestsFailedWrongResultsIndices"]];
+        successCount = Length[succeededKeys];
+        failureCount = Length[failedKeys];
         Print[Style["  \[Checkmark] " <> ToString[successCount] <> " passed", mGreen], "    ", Style["x " <> ToString[failureCount] <> " failed", mRed]];
         If[successCount > 0,
             Print["\n", Style["  Successful Tests Details:", mGreen, Bold]];
-            Scan[(Print["\n", Style["  Test:", mGreen, Bold], " ", #["TestID"]];)&, Values[KeyTake[result["TestResults"], result["TestsSucceededKeys"]]]]
+            Scan[(Print["\n", Style["  Test:", mGreen, Bold], " ", #["TestID"]];)&, Values[KeyTake[result["TestResults"], succeededKeys]]]
         ];
         If[failureCount > 0,
             Print["\n", Style["  Failed Tests Details:", mRed, Bold]];
@@ -53,7 +58,7 @@ RunAndReportTests[exprText_String, testFileName_String] :=
                     Print["    Actual:   ", #["ActualOutput"]];
                 )&
                 ,
-                Values[KeyTake[result["TestResults"], result["TestsFailedWrongResultsKeys"]]]
+                Values[KeyTake[result["TestResults"], failedKeys]]
             ]
         ];
         Return[{successCount, failureCount}];
