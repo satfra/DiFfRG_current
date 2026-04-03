@@ -25,7 +25,7 @@ namespace DiFfRG
      * @c Limiter template parameter of the TVDReconstructor:
      * @code
      * using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model,
-     *                       def::TVDReconstructor<def::MinModLimiter, double>>;
+     *                       def::TVDReconstructor<Discretization::dim, def::MinModLimiter, double>>;
      * @endcode
      */
     class MinModLimiter

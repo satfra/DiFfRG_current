@@ -113,7 +113,7 @@ namespace DiFfRG
             const std::array<std::array<autodiff::Real<1, NumberType>, n_components>, 2 * dim> &u_n)
         {
           const auto u_grad_deriv =
-              Reconstructor::template compute_gradient_derivative<dim, n_components>(center, u_center, x_n, u_n);
+              Reconstructor::template compute_gradient_derivative<n_components>(center, u_center, x_n, u_n);
           std::array<NumberType, n_components> result;
           for (size_t c = 0; c < n_components; ++c) {
             result[c] = derivative(u_center[c]);
@@ -427,8 +427,8 @@ namespace DiFfRG
           model.apply_boundary_conditions(neighbors_AD.u, neighbors_AD.x, boundary_ids, face_centers, cell_data_AD.u,
                                           cell_data_AD.x);
 
-          using ReconstructorAD = def::TVDReconstructor<typename Reconstructor::LimiterType, AD>;
-          auto u_grad_cell_AD = ReconstructorAD::template compute_gradient<dim, n_components>(
+          using ReconstructorAD = def::TVDReconstructor<dim, typename Reconstructor::LimiterType, AD>;
+          auto u_grad_cell_AD = ReconstructorAD::template compute_gradient<n_components>(
               cell_data_AD.x, cell_data_AD.u, neighbors_AD.x, neighbors_AD.u);
 
           std::array<dealii::Tensor<1, dim, AD>, n_components> ghost_grad_AD{};
@@ -451,7 +451,8 @@ namespace DiFfRG
       } // namespace internal
 
       template <typename Discretization_, typename Model_,
-                def::HasReconstructor Reconstructor_ = def::TVDReconstructor<def::MinModLimiter, double>,
+                def::HasReconstructor Reconstructor_ =
+                    def::TVDReconstructor<Discretization_::dim, def::MinModLimiter, double>,
                 def::HasWaveSpeed WaveSpeedStrategy_ = MaxEigenvalueWaveSpeed>
         requires MeshIsRectangular<typename Discretization_::Mesh>
       class Assembler : public AbstractAssembler<typename Discretization_::VectorType,
@@ -485,6 +486,7 @@ namespace DiFfRG
 
         using Components = typename Discretization::Components;
         static constexpr uint dim = Discretization::dim;
+        static_assert(Reconstructor::dim == dim, "Reconstructor dimension must match the discretization dimension.");
         static constexpr uint n_components = Components::count_fe_functions(0);
         static constexpr uint n_faces = GeometryInfo<dim>::faces_per_cell;
         // using CacheData = internal::Cache_Data<NumberType, dim, n_components>;
@@ -759,9 +761,9 @@ namespace DiFfRG
             const auto cell_data = get_cell_value(cell, solution_global);
             const auto ncell_data = get_cell_value(ncell, solution_global);
 
-            const GradientType u_grad_cell = Reconstructor::template compute_gradient<dim, n_components>(
+            const GradientType u_grad_cell = Reconstructor::template compute_gradient<n_components>(
                 cell_data.x, cell_data.u, cell_neighbors.x, cell_neighbors.u);
-            const GradientType u_grad_ncell = Reconstructor::template compute_gradient<dim, n_components>(
+            const GradientType u_grad_ncell = Reconstructor::template compute_gradient<n_components>(
                 ncell_data.x, ncell_data.u, ncell_neighbors.x, ncell_neighbors.u);
 
             const std::vector<Tensor<1, dim>> &normals = fe_iv.get_normal_vectors();
@@ -814,7 +816,7 @@ namespace DiFfRG
             const auto cell_neighbors = get_neighboring_cell_data(cell, solution_global, model);
             const auto cell_data = get_cell_value(cell, solution_global);
 
-            const GradientType u_grad_cell = Reconstructor::template compute_gradient<dim, n_components>(
+            const GradientType u_grad_cell = Reconstructor::template compute_gradient<n_components>(
                 cell_data.x, cell_data.u, cell_neighbors.x, cell_neighbors.u);
 
             const std::vector<Tensor<1, dim>> &normals = fe_fv.get_normal_vectors();
@@ -1004,9 +1006,9 @@ namespace DiFfRG
             copy_data_face.reinit(fe_iv, cell, ncell);
 
             // Compute gradients and reconstructed interface values u_minus / u_plus
-            const GradientType u_grad_cell = Reconstructor::template compute_gradient<dim, n_components>(
+            const GradientType u_grad_cell = Reconstructor::template compute_gradient<n_components>(
                 cell_data.x, cell_data.u, cell_neighbors.x, cell_neighbors.u);
-            const GradientType u_grad_ncell = Reconstructor::template compute_gradient<dim, n_components>(
+            const GradientType u_grad_ncell = Reconstructor::template compute_gradient<n_components>(
                 ncell_data.x, ncell_data.u, ncell_neighbors.x, ncell_neighbors.u);
 
             const std::array<NumberType, n_components> u_minus =
@@ -1104,7 +1106,7 @@ namespace DiFfRG
             }
 
             // Compute gradients and reconstructed interface values
-            const GradientType u_grad_cell = Reconstructor::template compute_gradient<dim, n_components>(
+            const GradientType u_grad_cell = Reconstructor::template compute_gradient<n_components>(
                 cell_data.x, cell_data.u, cell_neighbors.x, cell_neighbors.u);
 
             // Ghost cell value and position from apply_boundary_conditions

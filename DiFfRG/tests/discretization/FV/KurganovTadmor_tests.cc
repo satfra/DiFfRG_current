@@ -18,7 +18,7 @@ namespace KT = DiFfRG::FV::KurganovTadmor;
 using WaveSpeedStrategy = DiFfRG::FV::KurganovTadmor::MaxEigenvalueWaveSpeed;
 using KT::internal::compute_numerical_flux;
 using KT::internal::reconstruct_u;
-using Reconstructor = DiFfRG::def::TVDReconstructor<DiFfRG::def::MinModLimiter, NumberType>;
+
 struct CopyData {
 };
 
@@ -67,6 +67,7 @@ TEST_CASE("reconstruct_u_derivative 1D single component", "[FV][KT]")
   constexpr int dim = 1;
   constexpr size_t n_components = 1;
   using AD = autodiff::Real<1, NumberType>;
+  using Reconstructor = DiFfRG::def::TVDReconstructor<dim, DiFfRG::def::MinModLimiter, NumberType>;
 
   const Point<dim> center(0.0);
   const Point<dim> x_q(0.5);
@@ -123,6 +124,7 @@ TEST_CASE("reconstruct_u_derivative at local extremum (vanishing limiter)", "[FV
   constexpr int dim = 1;
   constexpr size_t n_components = 1;
   using AD = autodiff::Real<1, NumberType>;
+  using Reconstructor = DiFfRG::def::TVDReconstructor<dim, DiFfRG::def::MinModLimiter, NumberType>;
 
   const Point<dim> center(0.0);
   const Point<dim> x_q(0.5);
@@ -162,6 +164,7 @@ TEST_CASE("reconstruct_u_derivative 2D single component", "[FV][KT]")
   constexpr int dim = 2;
   constexpr size_t n_components = 1;
   using AD = autodiff::Real<1, NumberType>;
+  using Reconstructor = DiFfRG::def::TVDReconstructor<dim, DiFfRG::def::MinModLimiter, NumberType>;
 
   const Point<dim> center(0.0, 0.0);
   const Point<dim> x_q(0.5, 0.3);

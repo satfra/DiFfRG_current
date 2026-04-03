@@ -30,6 +30,7 @@ namespace DiFfRG
      * When the limiter satisfies the TVD property (e.g. @c MinModLimiter),
      * the resulting reconstruction is Total Variation Diminishing.
      *
+     * @tparam dim          The spatial dimension of the reconstruction.
      * @tparam Limiter      A type satisfying the @c HasSlopeLimiter concept
      *                      (e.g. @c MinModLimiter).
      * @tparam NumberType   The numeric type used for computations
@@ -38,14 +39,17 @@ namespace DiFfRG
      * Usage with the KT assembler:
      * @code
      * using Assembler = FV::KurganovTadmor::Assembler<
-     *     Discretization, Model, def::TVDReconstructor<def::MinModLimiter, double>>;
+     *     Discretization, Model, def::TVDReconstructor<Discretization::dim, def::MinModLimiter, double>>;
      * @endcode
      */
-    template <HasSlopeLimiter Limiter, typename NumberType> class TVDReconstructor
+    template <int dim_, HasSlopeLimiter Limiter, typename NumberType> class TVDReconstructor
     {
       using ADNumberType = autodiff::Real<1, NumberType>;
 
     public:
+      static constexpr int dim = dim_;
+      static constexpr int n_faces = 2 * dim;
+
       // Expose the Limiter type for use by other templates
       using LimiterType = Limiter;
       /**
@@ -55,22 +59,21 @@ namespace DiFfRG
        * two one-sided slopes from the cell centre to its axis-aligned
        * neighbours and returns the limiter-processed gradient.
        *
-       * @tparam dim          the spatial dimension
        * @tparam n_components the number of components in u
        *
        * @param center_pos  position of the cell centre
        * @param u_center    solution values at the cell centre
-       * @param x_n         positions of the 2*dim neighbouring cell centres,
+       * @param x_n         positions of the def::n_faces<dim> neighbouring cell centres,
        *                    ordered as pairs (left, right) for dim 0, then dim 1, …
        * @param u_n         solution values at those neighbours
        *
        * @return per-component gradient vector
        */
-      template <int dim, int n_components>
+      template <int n_components>
       static GradientType<dim, NumberType, n_components>
       compute_gradient(const dealii::Point<dim> &center_pos, const std::array<NumberType, n_components> &u_center,
-                       const std::array<dealii::Point<dim>, 2 * dim> &x_n,
-                       const std::array<std::array<NumberType, n_components>, 2 * dim> &u_n)
+                       const std::array<dealii::Point<dim>, n_faces> &x_n,
+                       const std::array<std::array<NumberType, n_components>, n_faces> &u_n)
       {
         GradientType<dim, NumberType, n_components> u_grad{};
         for (size_t c = 0; c < static_cast<size_t>(n_components); c++) {
@@ -92,6 +95,35 @@ namespace DiFfRG
         return u_grad;
       }
 
+      template <int n_components>
+      static GradientType<dim, NumberType, n_components>
+      compute_gradient_at_point(const dealii::Point<dim> &center_pos, const dealii::Point<dim> &x,
+                                const std::array<NumberType, n_components> &u_center,
+                                const std::array<dealii::Point<dim>, n_faces> &x_n,
+                                const std::array<std::array<NumberType, n_components>, n_faces> &u_n)
+      {
+        GradientType<dim, NumberType, n_components> u_grad{};
+
+        for (size_t c = 0; c < static_cast<size_t>(n_components); ++c) {
+          const NumberType &u_val = u_center[c];
+          for (int d = 0, i_n_1 = 0, i_n_2 = 1; d < dim; ++d, i_n_1 += 2, i_n_2 += 2) {
+            const auto dx_1 = x_n[i_n_1] - center_pos;
+            const NumberType du_1 = (u_n[i_n_1][c] - u_val) / dx_1[d];
+            const auto dx_2 = x_n[i_n_2] - center_pos;
+            const NumberType du_2 = (u_n[i_n_2][c] - u_val) / dx_2[d];
+
+            if (x[d] < center_pos[d])
+              u_grad[c][d] = du_1;
+            else if (x[d] > center_pos[d])
+              u_grad[c][d] = du_2;
+            else
+              u_grad[c][d] = Limiter::slope_limit(du_1, du_2);
+          }
+        }
+
+        return u_grad;
+      }
+
       /**
        * @brief Compute the derivative of the limited gradient w.r.t. a single stencil DOF.
        *
@@ -103,25 +135,24 @@ namespace DiFfRG
        * reconstruction at a face point — it returns the per-component
        * derivative of the gradient itself.
        *
-       * @tparam dim          the spatial dimension
        * @tparam n_components the number of solution components
        *
        * @param center_pos  position of the cell centre
        * @param u_center    cell-centre values as seeded AD types
-       * @param x_n         positions of the 2*dim neighbouring cell centres
+       * @param x_n         positions of the def::n_faces<dim> neighbouring cell centres
        * @param u_n         neighbour values as seeded AD types
        *
        * @return per-component gradient-derivative tensor  d(grad u_c) / d(u_target)
        */
-      template <int dim, int n_components>
+      template <int n_components>
       static GradientType<dim, NumberType, n_components>
       compute_gradient_derivative(const dealii::Point<dim> &center_pos,
                                   const std::array<ADNumberType, n_components> &u_center,
-                                  const std::array<dealii::Point<dim>, 2 * dim> &x_n,
-                                  const std::array<std::array<ADNumberType, n_components>, 2 * dim> &u_n)
+                                  const std::array<dealii::Point<dim>, n_faces> &x_n,
+                                  const std::array<std::array<ADNumberType, n_components>, n_faces> &u_n)
       {
         // Evaluate gradient reconstruction with AD types
-        const auto u_grad_AD = TVDReconstructor<Limiter, ADNumberType>::template compute_gradient<dim, n_components>(
+        const auto u_grad_AD = TVDReconstructor<dim, Limiter, ADNumberType>::template compute_gradient<n_components>(
             center_pos, u_center, x_n, u_n);
 
         // Extract per-component gradient derivatives
@@ -135,7 +166,8 @@ namespace DiFfRG
     };
 
     // Verify the default instantiation satisfies the concept.
-    static_assert(HasReconstructor<TVDReconstructor<MinModLimiter, double>>);
+    static_assert(HasReconstructor<TVDReconstructor<1, MinModLimiter, double>>);
+    static_assert(HasReconstructor<TVDReconstructor<2, MinModLimiter, double>>);
 
   } // namespace def
 } // namespace DiFfRG
