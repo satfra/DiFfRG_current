@@ -2,9 +2,9 @@
 #include "DiFfRG/discretization/FV/discretization.hh"
 #include <catch2/catch_test_macros.hpp>
 
-#include <boilerplate/models.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/discretization.hh>
+#include <boilerplate/models.hh>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
@@ -33,7 +33,8 @@ static void ensure_logger()
   try {
     auto log = spdlog::stdout_color_mt("log");
     log->set_pattern("log: [%v]");
-  } catch (const spdlog::spdlog_ex &) {}
+  } catch (const spdlog::spdlog_ex &) {
+  }
 }
 
 /**
@@ -44,14 +45,13 @@ static void ensure_logger()
  * With ModelBurgersTravelingWaveKT (nu=100, dx=0.1): missing diffusion entries differ
  * by O(nu/dx) = O(1000), far above the relative tolerance of 1e-4.
  */
-TEST_CASE("KT Jacobian matches FD Jacobian for traveling wave model (detects missing diffusion)",
-          "[fv][jacobian][diffusion][kt]")
+TEST_CASE("KT Jacobian matches FD Jacobian for traveling wave model (detects missing diffusion)", "[FV][KT]")
 {
-  using Model          = Testing::ModelBurgersTravelingWaveKT<1>;
-  using NumberType     = double;
+  using Model = Testing::ModelBurgersTravelingWaveKT<1>;
+  using NumberType = double;
   using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<1>>;
-  using Assembler      = FV::KurganovTadmor::Assembler<Discretization, Model>;
-  using VectorType     = typename Discretization::VectorType;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
 
   ensure_logger();
 
@@ -106,8 +106,7 @@ TEST_CASE("KT Jacobian matches FD Jacobian for traveling wave model (detects mis
       const double scale = std::max(1.0, std::abs(fd));
       if (err > tol * scale) {
         std::cout << "Jacobian mismatch at [" << i << "," << j << "]: "
-                  << "analytic=" << analytic << "  fd=" << fd
-                  << "  rel_err=" << err / scale << "\n";
+                  << "analytic=" << analytic << "  fd=" << fd << "  rel_err=" << err / scale << "\n";
         pass = false;
       }
     }
@@ -119,14 +118,13 @@ TEST_CASE("KT Jacobian matches FD Jacobian for traveling wave model (detects mis
  * Sanity check: the same FD consistency test for the pure-advection Burgers model
  * (no diffusion flux). The current Jacobian should already pass this.
  */
-TEST_CASE("KT Jacobian matches FD Jacobian for pure advection Burgers model",
-          "[fv][jacobian][advection][kt]")
+TEST_CASE("KT Jacobian matches FD Jacobian for pure advection Burgers model", "[FV][KT]")
 {
-  using Model          = Testing::ModelBurgersKT<1>;
-  using NumberType     = double;
+  using Model = Testing::ModelBurgersKT<1>;
+  using NumberType = double;
   using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<1>>;
-  using Assembler      = FV::KurganovTadmor::Assembler<Discretization, Model>;
-  using VectorType     = typename Discretization::VectorType;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
 
   ensure_logger();
 
@@ -174,8 +172,7 @@ TEST_CASE("KT Jacobian matches FD Jacobian for pure advection Burgers model",
       const double scale = std::max(1.0, std::abs(fd));
       if (err > tol * scale) {
         std::cout << "Jacobian mismatch at [" << i << "," << j << "]: "
-                  << "analytic=" << analytic << "  fd=" << fd
-                  << "  rel_err=" << err / scale << "\n";
+                  << "analytic=" << analytic << "  fd=" << fd << "  rel_err=" << err / scale << "\n";
         pass = false;
       }
     }
