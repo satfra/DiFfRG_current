@@ -163,6 +163,25 @@ namespace DiFfRG
 
         return result;
       }
+
+      template <int n_components>
+      static GradientType<dim, NumberType, n_components>
+      compute_gradient_at_point_derivative(const dealii::Point<dim> &center_pos, const dealii::Point<dim> &x,
+                                           const std::array<ADNumberType, n_components> &u_center,
+                                           const std::array<dealii::Point<dim>, n_faces> &x_n,
+                                           const std::array<std::array<ADNumberType, n_components>, n_faces> &u_n)
+      {
+        const auto u_grad_AD =
+            TVDReconstructor<dim, Limiter, ADNumberType>::template compute_gradient_at_point<n_components>(
+                center_pos, x, u_center, x_n, u_n);
+
+        GradientType<dim, NumberType, n_components> result{};
+        for (size_t c = 0; c < n_components; ++c)
+          for (int d = 0; d < dim; ++d)
+            result[c][d] = autodiff::derivative(u_grad_AD[c][d]);
+
+        return result;
+      }
     };
 
     // Verify the default instantiation satisfies the concept.

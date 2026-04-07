@@ -80,6 +80,24 @@ namespace DiFfRG
           {
             T::template compute_gradient_derivative<2>(center, u_center, x_n, u_n)
           } -> std::same_as<GradientType<T::dim, double, 2>>;
+        } &&
+        // ---- compute_gradient_at_point_derivative (n_components=1) ----
+        requires(const dealii::Point<T::dim> &center, const dealii::Point<T::dim> &x,
+                 const std::array<autodiff::Real<1, double>, 1> &u_center,
+                 const std::array<dealii::Point<T::dim>, n_faces<T::dim>> &x_n,
+                 const std::array<std::array<autodiff::Real<1, double>, 1>, n_faces<T::dim>> &u_n) {
+          {
+            T::template compute_gradient_at_point_derivative<1>(center, x, u_center, x_n, u_n)
+          } -> std::same_as<GradientType<T::dim, double, 1>>;
+        } &&
+        // ---- compute_gradient_at_point_derivative (n_components=2) ----
+        requires(const dealii::Point<T::dim> &center, const dealii::Point<T::dim> &x,
+                 const std::array<autodiff::Real<1, double>, 2> &u_center,
+                 const std::array<dealii::Point<T::dim>, n_faces<T::dim>> &x_n,
+                 const std::array<std::array<autodiff::Real<1, double>, 2>, n_faces<T::dim>> &u_n) {
+          {
+            T::template compute_gradient_at_point_derivative<2>(center, x, u_center, x_n, u_n)
+          } -> std::same_as<GradientType<T::dim, double, 2>>;
         };
 
   } // namespace def

@@ -347,27 +347,21 @@ namespace DiFfRG
         template <typename Model, typename NumberType, int dim, size_t n_components>
         std::array<dealii::Tensor<1, dim, NumberType>, n_components>
         compute_diffusion_flux(const std::array<NumberType, n_components> &u_plus,
-                               const std::array<NumberType, n_components> &u_minus, const dealii::Point<dim> &x_left,
-                               const dealii::Point<dim> &x_right, const std::array<NumberType, n_components> &u_left,
-                               const std::array<NumberType, n_components> &u_right,
-                               const dealii::Tensor<1, dim> &normal, const dealii::Point<dim> &x_q, const Model &model)
+                               const std::array<NumberType, n_components> &u_minus,
+                               const GradientType<dim, NumberType, n_components> &grad_u_plus,
+                               const GradientType<dim, NumberType, n_components> &grad_u_minus,
+                               const dealii::Point<dim> &x_q, const Model &model)
         {
-          const dealii::Tensor<1, dim> dx_vec = x_right - x_left;
-          const NumberType dx_n = scalar_product(dx_vec, normal);
-
-          GradientType<dim, NumberType, n_components> face_gradient{};
-          for (size_t c = 0; c < n_components; ++c)
-            face_gradient[c] = normal * ((u_right[c] - u_left[c]) / dx_n);
-
           std::array<dealii::Tensor<1, dim, NumberType>, n_components> D_minus{}, D_plus{};
-          model.flux(D_minus, x_q, flux_tie(u_minus, face_gradient));
-          model.flux(D_plus, x_q, flux_tie(u_plus, face_gradient));
+          model.flux(D_minus, x_q, flux_tie(u_minus, grad_u_minus));
+          model.flux(D_plus, x_q, flux_tie(u_plus, grad_u_plus));
 
           std::array<dealii::Tensor<1, dim, NumberType>, n_components> D{};
           for (size_t c = 0; c < n_components; ++c)
             D[c] = 0.5 * (D_minus[c] + D_plus[c]);
           return D;
         }
+
         template <int dim, typename NumberType, size_t n_components> struct CellData {
           dealii::Point<dim> x;
           std::array<NumberType, n_components> u;
@@ -765,6 +759,10 @@ namespace DiFfRG
                 cell_data.x, cell_data.u, cell_neighbors.x, cell_neighbors.u);
             const GradientType u_grad_ncell = Reconstructor::template compute_gradient<n_components>(
                 ncell_data.x, ncell_data.u, ncell_neighbors.x, ncell_neighbors.u);
+            const GradientType u_grad_minus = Reconstructor::template compute_gradient_at_point<n_components>(
+                cell_data.x, x_q, cell_data.u, cell_neighbors.x, cell_neighbors.u);
+            const GradientType u_grad_plus = Reconstructor::template compute_gradient_at_point<n_components>(
+                ncell_data.x, x_q, ncell_data.u, ncell_neighbors.x, ncell_neighbors.u);
 
             const std::vector<Tensor<1, dim>> &normals = fe_iv.get_normal_vectors();
 
@@ -778,8 +776,7 @@ namespace DiFfRG
             const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, u_plus, u_minus);
 
             const auto &n_face = normals[q_face_index];
-            const auto D = internal::compute_diffusion_flux(u_plus, u_minus, cell_data.x, ncell_data.x, cell_data.u,
-                                                            ncell_data.u, n_face, x_q, model);
+            const auto D = internal::compute_diffusion_flux(u_plus, u_minus, u_grad_plus, u_grad_minus, x_q, model);
 
             const auto JxW = fe_iv.get_JxW_values();
 
@@ -818,6 +815,8 @@ namespace DiFfRG
 
             const GradientType u_grad_cell = Reconstructor::template compute_gradient<n_components>(
                 cell_data.x, cell_data.u, cell_neighbors.x, cell_neighbors.u);
+            const GradientType u_grad_minus = Reconstructor::template compute_gradient_at_point<n_components>(
+                cell_data.x, x_q, cell_data.u, cell_neighbors.x, cell_neighbors.u);
 
             const std::vector<Tensor<1, dim>> &normals = fe_fv.get_normal_vectors();
 
@@ -831,21 +830,20 @@ namespace DiFfRG
 
             // Ghost gradient via model interface (allows second-order reconstruction at boundaries)
             const auto boundary_id = cell->face(face_no)->boundary_id();
-            GradientType u_grad_ghost{};
-            model.boundary_ghost_gradient(u_grad_ghost, boundary_id, normals[q_face_index], x_q, u_ghost, x_ghost,
+            GradientType u_grad_plus{};
+            model.boundary_ghost_gradient(u_grad_plus, boundary_id, normals[q_face_index], x_q, u_ghost, x_ghost,
                                           cell_data.u, cell_data.x, u_grad_cell);
 
             // Ghost reconstructed state at face
             const std::array<NumberType, n_components> u_plus =
-                internal::reconstruct_u(u_ghost, x_ghost, x_q, u_grad_ghost);
+                internal::reconstruct_u(u_ghost, x_ghost, x_q, u_grad_plus);
 
             const auto [F_plus, F_minus, a_half] =
                 internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(u_plus, u_minus, x_q, model);
             const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, u_plus, u_minus);
 
             const auto &n_bnd = normals[q_face_index];
-            const auto D_bnd = internal::compute_diffusion_flux(u_plus, u_minus, cell_data.x, x_ghost, cell_data.u,
-                                                                u_ghost, n_bnd, x_q, model);
+            const auto D_bnd = internal::compute_diffusion_flux(u_plus, u_minus, u_grad_plus, u_grad_minus, x_q, model);
 
             for (uint dof = 0; dof < n_face_dofs; ++dof) {
               const auto &cd_i = fe_iv.interface_dof_to_dof_indices(dof);
