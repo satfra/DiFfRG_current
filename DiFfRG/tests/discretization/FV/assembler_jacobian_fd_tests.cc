@@ -93,23 +93,12 @@ TEST_CASE("KT Jacobian matches FD Jacobian for traveling wave model (detects mis
       J_fd[i][j] = (r_p[i] - r_m[i]) / (2.0 * eps);
   }
 
-  // --- Compare all entries ---
-  // The diffusion residual uses a one-sided face-gradient reconstruction together
-  // with ghost states at the physical boundaries. For perturbations of the first
-  // / last few DOFs, the minmod reconstruction sits on branch switches, so the
-  // residual is continuous but its classical derivative is not unique. The same
-  // issue already appears in the pure-advection test; diffusion widens the
-  // affected boundary layer because face gradients depend on a larger stencil.
-  //
-  // Away from that boundary layer, a missing diffusion Jacobian would still
-  // create O(nu/dx) = O(100) to O(1000) discrepancies, while the implemented
-  // analytic Jacobian matches the FD linearization to better than 1e-2.
   const int boundary_layer = 3;
   const double tol = 1e-4;
   bool pass = true;
   for (int i = 0; i < n_dofs; ++i) {
     for (int j = 0; j < n_dofs; ++j) {
-      if (j < boundary_layer || j >= n_dofs - boundary_layer) continue;
+      // if (j < boundary_layer || j >= n_dofs - boundary_layer) continue;
 
       const double analytic = J_analytic.el(i, j);
       const double fd = J_fd[i][j];
@@ -160,7 +149,7 @@ TEST_CASE("KT Jacobian matches FD Jacobian for pure advection Burgers model", "[
   SparseMatrix<NumberType> J_analytic(sp);
   assembler.jacobian(J_analytic, sol, 1.0, sol_dot, 0.0, 0.0);
 
-  const double eps = 1e-6;
+  const double eps = 1e-8;
   std::vector<std::vector<double>> J_fd(n_dofs, std::vector<double>(n_dofs, 0.0));
   for (int j = 0; j < n_dofs; ++j) {
     VectorType u_p = sol, u_m = sol;
@@ -177,12 +166,6 @@ TEST_CASE("KT Jacobian matches FD Jacobian for pure advection Burgers model", "[
   bool pass = true;
   for (int i = 0; i < n_dofs; ++i) {
     for (int j = 0; j < n_dofs; ++j) {
-      // The first and last cells use boundary ghost states located at the face,
-      // so the minmod reconstruction sits exactly on an equal-slope branch switch
-      // for perturbations of those boundary DOFs. The residual is continuous there,
-      // but its classical derivative is not unique, so AD/branch derivatives need
-      // not match a symmetric central-difference linearization.
-      if (j == 0 || j == n_dofs - 1) continue;
 
       const double analytic = J_analytic.el(i, j);
       const double fd = J_fd[i][j];
