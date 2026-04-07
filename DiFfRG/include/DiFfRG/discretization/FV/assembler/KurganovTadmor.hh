@@ -362,6 +362,76 @@ namespace DiFfRG
           return D;
         }
 
+        template <int dim, typename NumberType, size_t n_components> struct ReconstructionDerivativeData {
+          std::array<NumberType, n_components> u{};
+          GradientType<dim, NumberType, n_components> grad{};
+        };
+
+        template <int dim, typename NumberType, size_t n_components> struct DiffusionFluxJacobianData {
+          std::array<SimpleMatrix<dealii::Tensor<1, dim, NumberType>, n_components>, 2> u{};
+          std::array<SimpleMatrix<dealii::Tensor<1, dim, dealii::Tensor<1, dim, NumberType>>, n_components>, 2> grad{};
+        };
+
+        template <typename Model, typename NumberType, int dim, size_t n_components>
+        DiffusionFluxJacobianData<dim, NumberType, n_components>
+        compute_diffusion_flux_jacobian(const std::array<NumberType, n_components> &u_plus,
+                                        const std::array<NumberType, n_components> &u_minus,
+                                        const GradientType<dim, NumberType, n_components> &grad_u_plus,
+                                        const GradientType<dim, NumberType, n_components> &grad_u_minus,
+                                        const dealii::Point<dim> &x_q, const Model &model)
+        {
+          using ADNumberType = autodiff::Real<1, NumberType>;
+
+          DiffusionFluxJacobianData<dim, NumberType, n_components> result{};
+
+          std::array<ADNumberType, n_components> u_plus_AD{}, u_minus_AD{};
+          std::array<dealii::Tensor<1, dim, ADNumberType>, n_components> grad_u_plus_AD{}, grad_u_minus_AD{};
+          for (size_t c = 0; c < n_components; ++c) {
+            u_plus_AD[c] = ADNumberType(u_plus[c]);
+            u_minus_AD[c] = ADNumberType(u_minus[c]);
+            for (size_t d = 0; d < dim; ++d) {
+              grad_u_plus_AD[c][d] = ADNumberType(grad_u_plus[c][d]);
+              grad_u_minus_AD[c][d] = ADNumberType(grad_u_minus[c][d]);
+            }
+          }
+
+          std::array<dealii::Tensor<1, dim, ADNumberType>, n_components> D_minus_AD{}, D_plus_AD{};
+
+          for (size_t c = 0; c < n_components; ++c) {
+            seed(u_minus_AD[c]);
+            model.flux(D_minus_AD, x_q, flux_tie(u_minus_AD, grad_u_minus_AD));
+            for (size_t i = 0; i < n_components; ++i)
+              for (size_t d = 0; d < dim; ++d)
+                result.u[0](i, c)[d] = NumberType(0.5) * derivative(D_minus_AD[i][d]);
+            unseed(u_minus_AD[c]);
+
+            seed(u_plus_AD[c]);
+            model.flux(D_plus_AD, x_q, flux_tie(u_plus_AD, grad_u_plus_AD));
+            for (size_t i = 0; i < n_components; ++i)
+              for (size_t d = 0; d < dim; ++d)
+                result.u[1](i, c)[d] = NumberType(0.5) * derivative(D_plus_AD[i][d]);
+            unseed(u_plus_AD[c]);
+
+            for (size_t d_in = 0; d_in < dim; ++d_in) {
+              seed(grad_u_minus_AD[c][d_in]);
+              model.flux(D_minus_AD, x_q, flux_tie(u_minus_AD, grad_u_minus_AD));
+              for (size_t i = 0; i < n_components; ++i)
+                for (size_t d_out = 0; d_out < dim; ++d_out)
+                  result.grad[0](i, c)[d_out][d_in] = NumberType(0.5) * derivative(D_minus_AD[i][d_out]);
+              unseed(grad_u_minus_AD[c][d_in]);
+
+              seed(grad_u_plus_AD[c][d_in]);
+              model.flux(D_plus_AD, x_q, flux_tie(u_plus_AD, grad_u_plus_AD));
+              for (size_t i = 0; i < n_components; ++i)
+                for (size_t d_out = 0; d_out < dim; ++d_out)
+                  result.grad[1](i, c)[d_out][d_in] = NumberType(0.5) * derivative(D_plus_AD[i][d_out]);
+              unseed(grad_u_plus_AD[c][d_in]);
+            }
+          }
+
+          return result;
+        }
+
         template <int dim, typename NumberType, size_t n_components> struct CellData {
           dealii::Point<dim> x;
           std::array<NumberType, n_components> u;
@@ -409,7 +479,7 @@ namespace DiFfRG
 
         template <typename Reconstructor, typename Model, int dim, typename NumberType, size_t n_components,
                   size_t n_faces>
-        std::array<NumberType, n_components> compute_boundary_ghost_u_plus_derivative(
+        ReconstructionDerivativeData<dim, NumberType, n_components> compute_boundary_ghost_reconstruction_derivative(
             const CellData<dim, autodiff::Real<1, NumberType>, n_components> &cell_data_AD,
             NeighborData<dim, autodiff::Real<1, NumberType>, n_components, n_faces> neighbors_AD,
             const unsigned int boundary_face_no, const std::array<dealii::types::boundary_id, n_faces> &boundary_ids,
@@ -433,12 +503,15 @@ namespace DiFfRG
           std::array<AD, n_components> u_plus_AD{};
           for (size_t c = 0; c < n_components; ++c) {
             u_plus_AD[c] = neighbors_AD.u[boundary_face_no][c];
-            u_plus_AD[c] += dealii::scalar_product(ghost_grad_AD[c], x_q - neighbors_AD.x[boundary_face_no]);
+            u_plus_AD[c] += scalar_product(ghost_grad_AD[c], x_q - neighbors_AD.x[boundary_face_no]);
           }
 
-          std::array<NumberType, n_components> result{};
-          for (size_t c = 0; c < n_components; ++c)
-            result[c] = autodiff::derivative(u_plus_AD[c]);
+          ReconstructionDerivativeData<dim, NumberType, n_components> result{};
+          for (size_t c = 0; c < n_components; ++c) {
+            result.u[c] = derivative(u_plus_AD[c]);
+            for (size_t d = 0; d < dim; ++d)
+              result.grad[c][d] = derivative(ghost_grad_AD[c][d]);
+          }
           return result;
         }
 
@@ -989,8 +1062,6 @@ namespace DiFfRG
             const int q_face_index = 0;
             const auto &face_q_points = fe_iv.get_quadrature_points();
             const auto &x_q = face_q_points[q_face_index];
-
-            const uint n_face_dofs = fe_iv.n_current_interface_dofs();
             const auto &JxW = fe_iv.get_JxW_values();
             const std::vector<Tensor<1, dim>> &normals = fe_iv.get_normal_vectors();
 
@@ -1008,18 +1079,21 @@ namespace DiFfRG
                 cell_data.x, cell_data.u, cell_neighbors.x, cell_neighbors.u);
             const GradientType u_grad_ncell = Reconstructor::template compute_gradient<n_components>(
                 ncell_data.x, ncell_data.u, ncell_neighbors.x, ncell_neighbors.u);
+            const GradientType u_grad_minus = Reconstructor::template compute_gradient_at_point<n_components>(
+                cell_data.x, x_q, cell_data.u, cell_neighbors.x, cell_neighbors.u);
+            const GradientType u_grad_plus = Reconstructor::template compute_gradient_at_point<n_components>(
+                ncell_data.x, x_q, ncell_data.u, ncell_neighbors.x, ncell_neighbors.u);
 
             const std::array<NumberType, n_components> u_minus =
                 internal::reconstruct_u(cell_data.u, cell->center(), x_q, u_grad_cell);
             const std::array<NumberType, n_components> u_plus =
                 internal::reconstruct_u(ncell_data.u, ncell->center(), x_q, u_grad_ncell);
 
-            // Precompute reconstructed_u_deriv[face_no](component, j)
-            // face_no=0: derivative of u⁻(x_q) w.r.t. from_dofs[j]
-            // face_no=1: derivative of u⁺(x_q) w.r.t. from_dofs[j]
+            // Precompute reconstructed state and face-gradient derivatives for each dependency dof.
             const uint n_from = size(copy_data_face.from_dofs);
-            const std::vector<std::vector<NumberType>> zero_matrix(n_components, std::vector<NumberType>(n_from));
-            std::array<std::vector<std::vector<NumberType>>, 2> reconstructed_u_deriv{zero_matrix, zero_matrix};
+            using ReconstructionDerivatives = internal::ReconstructionDerivativeData<dim, NumberType, n_components>;
+            std::array<std::vector<ReconstructionDerivatives>, 2> reconstructed_deriv{
+                std::vector<ReconstructionDerivatives>(n_from), std::vector<ReconstructionDerivatives>(n_from)};
 
             for (uint j = 0; j < size(copy_data_face.from_dofs); ++j) {
               const auto dof_j = copy_data_face.from_dofs[j];
@@ -1028,45 +1102,67 @@ namespace DiFfRG
               {
                 auto u_center_tagged = internal::tag_cell_dofs(cell_data, dof_j);
                 auto u_n_tagged = internal::make_tagged_neighbors(cell_neighbors, dof_j);
-                auto deriv = internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
-                    u_center_tagged.u, cell_data.x, x_q, cell_neighbors.x, u_n_tagged.u);
-                for (size_t c = 0; c < n_components; ++c)
-                  reconstructed_u_deriv[0][c][j] = deriv[c];
+                reconstructed_deriv[0][j].u =
+                    internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
+                        u_center_tagged.u, cell_data.x, x_q, cell_neighbors.x, u_n_tagged.u);
+                reconstructed_deriv[0][j].grad =
+                    Reconstructor::template compute_gradient_at_point_derivative<n_components>(
+                        cell_data.x, x_q, u_center_tagged.u, cell_neighbors.x, u_n_tagged.u);
               }
 
               // face_no=1: d(u⁺)/d(u_j) — reconstruction from neighbor side
               {
                 auto u_center_tagged = internal::tag_cell_dofs(ncell_data, dof_j);
                 auto u_n_tagged = internal::make_tagged_neighbors(ncell_neighbors, dof_j);
-                auto deriv = internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
-                    u_center_tagged.u, ncell_data.x, x_q, ncell_neighbors.x, u_n_tagged.u);
-                for (size_t c = 0; c < n_components; ++c)
-                  reconstructed_u_deriv[1][c][j] = deriv[c];
+                reconstructed_deriv[1][j].u =
+                    internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
+                        u_center_tagged.u, ncell_data.x, x_q, ncell_neighbors.x, u_n_tagged.u);
+                reconstructed_deriv[1][j].grad =
+                    Reconstructor::template compute_gradient_at_point_derivative<n_components>(
+                        ncell_data.x, x_q, u_center_tagged.u, ncell_neighbors.x, u_n_tagged.u);
               }
             }
 
             const auto j_numflux =
                 internal::compute_kt_numflux_jacobian<WaveSpeedStrategy, Model, NumberType, dim, n_components>(
                     u_plus, u_minus, x_q, model);
+            const auto j_diffusion = internal::compute_diffusion_flux_jacobian<Model, NumberType, dim, n_components>(
+                u_plus, u_minus, u_grad_plus, u_grad_minus, x_q, model);
 
             for (uint i = 0; i < size(copy_data_face.to_dofs); ++i) { // these are effectively two
               const auto &cd_i = fe_iv.interface_dof_to_dof_indices(i);
               const uint face_no_i = cd_i[0] == numbers::invalid_unsigned_int ? 1 : 0;
               const auto &component_i = fe.system_to_component_index(cd_i[face_no_i]).first;
               for (uint j = 0; j < size(copy_data_face.from_dofs); ++j) {
+                NumberType diffusion_contribution{};
                 for (size_t face_no = 0; face_no < 2; ++face_no) {
-                  NumberType contribution{};
+                  NumberType advection_contribution{};
                   for (size_t c = 0; c < n_components; ++c) {
-                    contribution += scalar_product(j_numflux[face_no](component_i, c), normals[q_face_index]) *
-                                    // dF/du_plus or dF/du_minus
-                                    reconstructed_u_deriv[face_no][c][j]; // times du_minus/du_j or du_plus/du_j
+                    advection_contribution +=
+                        scalar_product(j_numflux[face_no](component_i, c), normals[q_face_index]) *
+                        reconstructed_deriv[face_no][j].u[c];
+
+                    diffusion_contribution +=
+                        scalar_product(j_diffusion.u[face_no](component_i, c), normals[q_face_index]) *
+                        reconstructed_deriv[face_no][j].u[c];
+                    for (size_t d_in = 0; d_in < dim; ++d_in)
+                      for (size_t d_out = 0; d_out < dim; ++d_out)
+                        diffusion_contribution += j_diffusion.grad[face_no](component_i, c)[d_out][d_in] *
+                                                  normals[q_face_index][d_out] *
+                                                  reconstructed_deriv[face_no][j].grad[c][d_in];
                   }
                   copy_data_face.cell_jacobian(i, j) +=
                       weight * JxW[q_face_index] *                                // dx
                       (fe_iv.jump_in_shape_values(i, q_face_index, component_i) * // [[phi_i(x_q)]]
-                       contribution); // dF/du_plus * du_plus/du_j or dF/du_minus * du_minus/du_j contribution to the
-                                      // Jacobian
+                       advection_contribution);
                 }
+
+                // The residual uses [[phi_i]] * ((H - D) · n), so after summing the
+                // contributions from both face traces into diffusion_contribution we
+                // subtract the full diffusive chain-rule term once here.
+                copy_data_face.cell_jacobian(i, j) -=
+                    weight * JxW[q_face_index] *
+                    (fe_iv.jump_in_shape_values(i, q_face_index, component_i) * diffusion_contribution);
               }
             }
           };
@@ -1076,7 +1172,6 @@ namespace DiFfRG
             scratch_data.fe_interface_values.reinit(cell, face_no);
             const auto &fe_fv = scratch_data.fe_interface_values.get_fe_face_values(0);
             const FEInterfaceValues<dim> &fe_iv = scratch_data.fe_interface_values;
-            const uint n_face_dofs = fe_iv.n_current_interface_dofs();
             const auto &JxW = fe_fv.get_JxW_values();
             const auto &q_points = fe_fv.get_quadrature_points();
             const int q_face_index = 0;
@@ -1104,8 +1199,10 @@ namespace DiFfRG
             }
 
             // Compute gradients and reconstructed interface values
-            const GradientType u_grad_cell = Reconstructor::template compute_gradient<n_components>(
+            const GradientType u_grad_plus = Reconstructor::template compute_gradient<n_components>(
                 cell_data.x, cell_data.u, cell_neighbors.x, cell_neighbors.u);
+            const GradientType u_grad_minus = Reconstructor::template compute_gradient_at_point<n_components>(
+                cell_data.x, x_q, cell_data.u, cell_neighbors.x, cell_neighbors.u);
 
             // Ghost cell value and position from apply_boundary_conditions
             const std::array<NumberType, n_components> &u_ghost = cell_neighbors.u[face_no];
@@ -1114,19 +1211,18 @@ namespace DiFfRG
             const auto boundary_id = cell->face(face_no)->boundary_id();
             GradientType u_grad_ghost{};
             model.boundary_ghost_gradient(u_grad_ghost, boundary_id, normals[q_face_index], x_q, u_ghost, x_ghost,
-                                          cell_data.u, cell_data.x, u_grad_cell);
+                                          cell_data.u, cell_data.x, u_grad_plus);
 
             const std::array<NumberType, n_components> u_plus =
                 internal::reconstruct_u(u_ghost, x_ghost, x_q, u_grad_ghost);
             const std::array<NumberType, n_components> u_minus =
-                internal::reconstruct_u(cell_data.u, cell->center(), x_q, u_grad_cell);
+                internal::reconstruct_u(cell_data.u, cell->center(), x_q, u_grad_plus);
 
-            // Precompute reconstructed_u_deriv[face_no](component, j)
-            // face_no=0: derivative of u⁻(x_q) w.r.t. from_dofs[j]
-            // face_no=1: derivative of u⁺(x_q) w.r.t. from_dofs[j] (traces through BCs)
+            // Precompute reconstructed state and face-gradient derivatives for each dependency dof.
             const uint n_from = size(copy_data_face.from_dofs);
-            const std::vector<std::vector<NumberType>> zero_matrix(n_components, std::vector<NumberType>(n_from));
-            std::array<std::vector<std::vector<NumberType>>, 2> reconstructed_u_deriv{zero_matrix, zero_matrix};
+            using ReconstructionDerivatives = internal::ReconstructionDerivativeData<dim, NumberType, n_components>;
+            std::array<std::vector<ReconstructionDerivatives>, 2> reconstructed_deriv{
+                std::vector<ReconstructionDerivatives>(n_from), std::vector<ReconstructionDerivatives>(n_from)};
 
             for (uint j = 0; j < size(copy_data_face.from_dofs); ++j) {
               const auto dof_j = copy_data_face.from_dofs[j];
@@ -1135,21 +1231,24 @@ namespace DiFfRG
               {
                 auto u_center_tagged = internal::tag_cell_dofs(cell_data, dof_j);
                 auto u_n_tagged = internal::make_tagged_neighbors(cell_neighbors, dof_j);
-                auto deriv = internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
-                    u_center_tagged.u, cell_data.x, x_q, cell_neighbors.x, u_n_tagged.u);
-                for (size_t c = 0; c < n_components; ++c)
-                  reconstructed_u_deriv[0][c][j] = deriv[c];
+                reconstructed_deriv[0][j].u =
+                    internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
+                        u_center_tagged.u, cell_data.x, x_q, cell_neighbors.x, u_n_tagged.u);
+                reconstructed_deriv[0][j].grad =
+                    Reconstructor::template compute_gradient_at_point_derivative<n_components>(
+                        cell_data.x, x_q, u_center_tagged.u, cell_neighbors.x, u_n_tagged.u);
               }
 
               // face_no=1: d(u⁺)/d(u_j) — ghost side derivative with AD tracing through BCs
               {
                 auto cell_data_AD = internal::tag_cell_dofs(cell_data, dof_j);
                 auto neighbors_AD = internal::make_tagged_neighbors(cell_neighbors, dof_j);
-                auto deriv = internal::compute_boundary_ghost_u_plus_derivative<Reconstructor, Model, dim, NumberType,
-                                                                                n_components, n_faces>(
-                    cell_data_AD, neighbors_AD, face_no, boundary_ids, face_centers, normals[q_face_index], x_q, model);
-                for (size_t c = 0; c < n_components; ++c)
-                  reconstructed_u_deriv[1][c][j] = deriv[c];
+                auto deriv =
+                    internal::compute_boundary_ghost_reconstruction_derivative<Reconstructor, Model, dim, NumberType,
+                                                                               n_components, n_faces>(
+                        cell_data_AD, neighbors_AD, face_no, boundary_ids, face_centers, normals[q_face_index], x_q,
+                        model);
+                reconstructed_deriv[1][j] = deriv;
               }
             }
 
@@ -1157,6 +1256,8 @@ namespace DiFfRG
             const auto j_numflux =
                 internal::compute_kt_numflux_jacobian<WaveSpeedStrategy, Model, NumberType, dim, n_components>(
                     u_plus, u_minus, x_q, model);
+            const auto j_diffusion = internal::compute_diffusion_flux_jacobian<Model, NumberType, dim, n_components>(
+                u_plus, u_minus, u_grad_ghost, u_grad_minus, x_q, model);
 
             // Chain-rule assembly (same pattern as interior face_worker)
             for (uint i = 0; i < size(copy_data_face.to_dofs); ++i) {
@@ -1165,16 +1266,35 @@ namespace DiFfRG
               const uint face_no_i = cd_i[0] == numbers::invalid_unsigned_int ? 1 : 0;
               const auto &component_i = fe.system_to_component_index(cd_i[face_no_i]).first;
               for (uint j = 0; j < size(copy_data_face.from_dofs); ++j) {
+                NumberType diffusion_contribution{};
                 for (size_t face_no = 0; face_no < 2; ++face_no) {
-                  NumberType contribution{};
+                  NumberType advection_contribution{};
                   for (size_t c = 0; c < n_components; ++c) {
-                    contribution += scalar_product(j_numflux[face_no](component_i, c), normals[q_face_index]) *
-                                    reconstructed_u_deriv[face_no][c][j];
+                    advection_contribution +=
+                        scalar_product(j_numflux[face_no](component_i, c), normals[q_face_index]) *
+                        reconstructed_deriv[face_no][j].u[c];
+
+                    diffusion_contribution +=
+                        scalar_product(j_diffusion.u[face_no](component_i, c), normals[q_face_index]) *
+                        reconstructed_deriv[face_no][j].u[c];
+                    for (size_t d_in = 0; d_in < dim; ++d_in)
+                      for (size_t d_out = 0; d_out < dim; ++d_out)
+                        diffusion_contribution += j_diffusion.grad[face_no](component_i, c)[d_out][d_in] *
+                                                  normals[q_face_index][d_out] *
+                                                  reconstructed_deriv[face_no][j].grad[c][d_in];
                   }
                   copy_data_face.cell_jacobian(i, j) +=
                       weight * JxW[q_face_index] *
-                      (fe_iv.jump_in_shape_values(i, q_face_index, component_i) * contribution);
+                      (fe_iv.jump_in_shape_values(i, q_face_index, component_i) * advection_contribution);
                 }
+
+                // Boundary faces use the same residual sign convention: [[phi_i]] *
+                // ((H - D) · n). diffusion_contribution already contains both the
+                // interior-side and ghost-side chain-rule pieces, so we subtract it
+                // once after the face_no sum.
+                copy_data_face.cell_jacobian(i, j) -=
+                    weight * JxW[q_face_index] *
+                    (fe_iv.jump_in_shape_values(i, q_face_index, component_i) * diffusion_contribution);
               }
             }
           };
