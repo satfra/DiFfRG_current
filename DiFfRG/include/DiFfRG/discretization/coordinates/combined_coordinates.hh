@@ -59,7 +59,7 @@ namespace DiFfRG
      * @param y physical coordinate
      * @return double grid coordinate
      */
-    std::tuple<Idx, NT> KOKKOS_FORCEINLINE_FUNCTION backward(const NT m, const NT p) const
+    std::tuple<Idx, NT> KOKKOS_FUNCTION backward(const NT m, const NT p) const
     {
       Idx m_idx = matsubara_values.backward(m);
       NT p_idx = 0;
@@ -76,7 +76,7 @@ namespace DiFfRG
       return {m_idx, p_idx};
     }
 
-    device::array<size_t, 2> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(auto i) const
+    device::array<size_t, 2> KOKKOS_INLINE_FUNCTION from_linear_index(auto i) const
     {
       device::array<size_t, 2> idx;
       // calculate the index for each coordinate system
@@ -154,7 +154,7 @@ namespace DiFfRG
      * @param y physical coordinate
      * @return double grid coordinate
      */
-    std::tuple<Idx, NT> KOKKOS_FORCEINLINE_FUNCTION backward(const NT m, const NT p) const
+    std::tuple<Idx, NT> KOKKOS_FUNCTION backward(const NT m, const NT p) const
     {
       Idx m_idx = matsubara_values.backward(m);
       NT p_idx = 0;
@@ -171,7 +171,7 @@ namespace DiFfRG
       return {m_idx, p_idx};
     }
 
-    device::array<size_t, 2> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(auto i) const
+    device::array<size_t, 2> KOKKOS_INLINE_FUNCTION from_linear_index(auto i) const
     {
       device::array<size_t, 2> idx;
       // calculate the index for each coordinate system
