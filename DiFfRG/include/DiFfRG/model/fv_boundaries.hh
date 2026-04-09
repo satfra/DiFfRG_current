@@ -65,6 +65,56 @@ namespace DiFfRG
      */
     template <typename Model> class OriginOddLinearExtrapolationBoundaries : public FVDefaultBoundaries<Model>
     {
+      template <int dim, size_t n_faces> static constexpr void assert_supported_configuration()
+      {
+        static_assert(dim == 1,
+                      "OriginOddLinearExtrapolationBoundaries currently supports only one-dimensional FV domains.");
+        static_assert(n_faces == GeometryInfo<dim>::faces_per_cell,
+                      "OriginOddLinearExtrapolationBoundaries expects one entry per cell face.");
+      }
+
+      template <size_t n_faces>
+      static bool is_boundary_face(const std::array<types::boundary_id, n_faces> &boundary_ids, const size_t face)
+      {
+        return boundary_ids[face] != numbers::invalid_boundary_id;
+      }
+
+      template <int dim>
+      static bool is_lower_boundary(const Point<dim> &face_center, const Point<dim> &cell_center)
+      {
+        return face_center[0] <= cell_center[0];
+      }
+
+      template <int dim, typename NumberType, size_t n_components, size_t n_faces>
+      static void reflect_across_origin(std::array<std::array<NumberType, n_components>, n_faces> &u_neighbors,
+                                        std::array<Point<dim>, n_faces> &x_neighbors, const size_t boundary_face,
+                                        const size_t interior_face)
+      {
+        x_neighbors[boundary_face][0] = -x_neighbors[interior_face][0];
+        for (size_t c = 0; c < n_components; ++c)
+          u_neighbors[boundary_face][c] = -u_neighbors[interior_face][c];
+      }
+
+      template <int dim, typename NumberType, size_t n_components, size_t n_faces>
+      static void extrapolate_from_cell(std::array<std::array<NumberType, n_components>, n_faces> &u_neighbors,
+                                        std::array<Point<dim>, n_faces> &x_neighbors, const size_t boundary_face,
+                                        const size_t interior_face, const Point<dim> &face_center,
+                                        const std::array<NumberType, n_components> &u_cell,
+                                        const Point<dim> &x_cell)
+      {
+        x_neighbors[boundary_face][0] = 2.0 * face_center[0] - x_cell[0];
+        for (size_t c = 0; c < n_components; ++c)
+          u_neighbors[boundary_face][c] = NumberType(2.0) * u_cell[c] - u_neighbors[interior_face][c];
+      }
+
+      template <int dim, size_t n_faces>
+      static bool has_interior_opposite_face(const std::array<types::boundary_id, n_faces> &boundary_ids,
+                                             const size_t boundary_face)
+      {
+        const auto opposite_face = GeometryInfo<dim>::opposite_face[boundary_face];
+        return !is_boundary_face(boundary_ids, opposite_face);
+      }
+
     public:
       template <int dim, typename NumberType, size_t n_components, size_t n_faces>
       void apply_boundary_conditions(std::array<std::array<NumberType, n_components>, n_faces> &u_neighbors,
@@ -73,31 +123,20 @@ namespace DiFfRG
                                      const std::array<Point<dim>, n_faces> &face_centers,
                                      const std::array<NumberType, n_components> &u_cell, const Point<dim> &x_cell) const
       {
-        static_assert(dim == 1,
-                      "OriginOddLinearExtrapolationBoundaries currently supports only one-dimensional FV domains.");
-        static_assert(n_faces == GeometryInfo<dim>::faces_per_cell,
-                      "OriginOddLinearExtrapolationBoundaries expects one entry per cell face.");
+        assert_supported_configuration<dim, n_faces>();
 
-        for (size_t f = 0; f < n_faces; ++f) {
-          if (boundary_ids[f] == numbers::invalid_boundary_id) continue;
+        for (size_t face = 0; face < n_faces; ++face) {
+          if (!is_boundary_face(boundary_ids, face)) continue;
 
-          const auto opposite_face = GeometryInfo<dim>::opposite_face[f];
-          const double x_face = face_centers[f][0];
+          const auto interior_face = GeometryInfo<dim>::opposite_face[face];
+          if (!has_interior_opposite_face<dim>(boundary_ids, face)) continue;
 
-          if (x_face <= x_cell[0]) {
-            if (boundary_ids[opposite_face] == numbers::invalid_boundary_id) {
-              x_neighbors[f][0] = -x_neighbors[opposite_face][0];
-              for (size_t c = 0; c < n_components; ++c)
-                u_neighbors[f][c] = -u_neighbors[opposite_face][c];
-            }
+          if (is_lower_boundary(face_centers[face], x_cell)) {
+            reflect_across_origin(u_neighbors, x_neighbors, face, interior_face);
             continue;
           }
 
-          x_neighbors[f][0] = 2.0 * x_face - x_cell[0];
-          if (boundary_ids[opposite_face] == numbers::invalid_boundary_id) {
-            for (size_t c = 0; c < n_components; ++c)
-              u_neighbors[f][c] = NumberType(2.0) * u_cell[c] - u_neighbors[opposite_face][c];
-          }
+          extrapolate_from_cell(u_neighbors, x_neighbors, face, interior_face, face_centers[face], u_cell, x_cell);
         }
       }
 
@@ -110,19 +149,20 @@ namespace DiFfRG
           [[maybe_unused]] const Point<dim> &x_ghost,
           [[maybe_unused]] const std::array<NumberType, n_components> &u_cell,
           [[maybe_unused]] const Point<dim> &x_cell,
-          [[maybe_unused]] const std::array<Tensor<1, dim, NumberType>, n_components> &cell_gradient,
+          const std::array<Tensor<1, dim, NumberType>, n_components> &cell_gradient,
           const std::array<types::boundary_id, n_faces> &boundary_ids,
           const std::array<std::array<Tensor<1, dim, NumberType>, n_components>, n_faces> &neighboring_gradients) const
       {
-        static_assert(dim == 1,
-                      "OriginOddLinearExtrapolationBoundaries currently supports only one-dimensional FV domains.");
-        static_assert(n_faces == GeometryInfo<dim>::faces_per_cell,
-                      "OriginOddLinearExtrapolationBoundaries expects one entry per cell face.");
+        assert_supported_configuration<dim, n_faces>();
 
-        for (size_t f = 0; f < n_faces; ++f) {
-          if (boundary_ids[f] != numbers::invalid_boundary_id) continue;
+        ghost_gradient = cell_gradient;
 
-          ghost_gradient = neighboring_gradients[f];
+        for (size_t face = 0; face < n_faces; ++face) {
+          if (!is_boundary_face(boundary_ids, face)) continue;
+
+          const auto interior_face = GeometryInfo<dim>::opposite_face[face];
+          if (has_interior_opposite_face<dim>(boundary_ids, face))
+            ghost_gradient = neighboring_gradients[interior_face];
           return;
         }
       }
