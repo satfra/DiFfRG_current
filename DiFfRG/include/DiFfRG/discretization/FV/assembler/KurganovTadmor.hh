@@ -477,11 +477,28 @@ namespace DiFfRG
           return result;
         }
 
+        template <int dim, typename NumberType, size_t n_components, size_t n_faces>
+        std::array<GradientType<dim, autodiff::Real<1, NumberType>, n_components>, n_faces>
+        lift_neighbor_gradients_to_ad(
+            const std::array<GradientType<dim, NumberType, n_components>, n_faces> &neighbor_gradients)
+        {
+          using AD = autodiff::Real<1, NumberType>;
+
+          std::array<GradientType<dim, AD, n_components>, n_faces> result{};
+          for (size_t face = 0; face < n_faces; ++face)
+            for (size_t c = 0; c < n_components; ++c)
+              for (size_t d = 0; d < dim; ++d)
+                result[face][c][d] = AD(neighbor_gradients[face][c][d]);
+          return result;
+        }
+
         template <typename Reconstructor, typename Model, int dim, typename NumberType, size_t n_components,
                   size_t n_faces>
         ReconstructionDerivativeData<dim, NumberType, n_components> compute_boundary_ghost_reconstruction_derivative(
             const CellData<dim, autodiff::Real<1, NumberType>, n_components> &cell_data_AD,
             NeighborData<dim, autodiff::Real<1, NumberType>, n_components, n_faces> neighbors_AD,
+            const std::array<GradientType<dim, autodiff::Real<1, NumberType>, n_components>, n_faces>
+                &neighbor_gradients_AD,
             const unsigned int boundary_face_no, const std::array<dealii::types::boundary_id, n_faces> &boundary_ids,
             const std::array<dealii::Point<dim>, n_faces> &face_centers, const dealii::Tensor<1, dim> &normal,
             const dealii::Point<dim> &x_q, const Model &model)
@@ -498,7 +515,8 @@ namespace DiFfRG
           std::array<dealii::Tensor<1, dim, AD>, n_components> ghost_grad_AD{};
           model.boundary_ghost_gradient(ghost_grad_AD, boundary_ids[boundary_face_no], normal, x_q,
                                         neighbors_AD.u[boundary_face_no], neighbors_AD.x[boundary_face_no],
-                                        cell_data_AD.u, cell_data_AD.x, u_grad_cell_AD);
+                                        cell_data_AD.u, cell_data_AD.x, u_grad_cell_AD, boundary_ids,
+                                        neighbor_gradients_AD);
 
           std::array<AD, n_components> u_plus_AD{};
           for (size_t c = 0; c < n_components; ++c) {
@@ -733,6 +751,27 @@ namespace DiFfRG
         {
           NeighborData data;
 
+          const auto [boundary_ids, face_centers] = get_boundary_face_data(cell);
+          for (const auto face_index : cell->face_indices()) {
+            if (boundary_ids[face_index] != numbers::invalid_boundary_id) continue;
+
+            const auto neighbor = cell->neighbor(face_index);
+            auto neighbor_data = get_cell_value(neighbor, solution_global);
+            data.x[face_index] = neighbor_data.x;
+            data.u[face_index] = neighbor_data.u;
+            data.dof_indices[face_index] = neighbor_data.dof_indices;
+          }
+
+          auto cell_data = get_cell_value(cell, solution_global);
+
+          model.apply_boundary_conditions(data.u, data.x, boundary_ids, face_centers, cell_data.u, cell_data.x);
+
+          return data;
+        }
+
+        static std::pair<std::array<types::boundary_id, n_faces>, std::array<Point, n_faces>>
+        get_boundary_face_data(const Iterator &cell)
+        {
           std::array<types::boundary_id, n_faces> boundary_ids;
           std::array<Point, n_faces> face_centers;
 
@@ -741,22 +780,30 @@ namespace DiFfRG
               const auto face = cell->face(face_index);
               boundary_ids[face_index] = face->boundary_id();
               face_centers[face_index] = face->center();
-              // u_n/x_n will be computed by model, dof_indices left zero-initialized
-            } else {
+            } else
               boundary_ids[face_index] = numbers::invalid_boundary_id;
-              const auto neighbor = cell->neighbor(face_index);
-              auto neighbor_data = get_cell_value(neighbor, solution_global);
-              data.x[face_index] = neighbor_data.x;
-              data.u[face_index] = neighbor_data.u;
-              data.dof_indices[face_index] = neighbor_data.dof_indices;
-            }
           }
 
-          auto cell_data = get_cell_value(cell, solution_global);
+          return {boundary_ids, face_centers};
+        }
 
-          model.apply_boundary_conditions(data.u, data.x, boundary_ids, face_centers, cell_data.u, cell_data.x);
+        static std::array<internal::GradientType<dim, NumberType, n_components>, n_faces>
+        compute_neighbor_gradients(const Iterator &cell, const VectorType &solution_global, const Model &model)
+        {
+          std::array<internal::GradientType<dim, NumberType, n_components>, n_faces> gradients{};
 
-          return data;
+          for (const auto face_index : cell->face_indices()) {
+            if (cell->at_boundary(face_index)) continue;
+
+            const auto neighbor = cell->neighbor(face_index);
+            const auto neighbor_data = get_cell_value(neighbor, solution_global);
+            const auto neighbor_neighbors = get_neighboring_cell_data(neighbor, solution_global, model);
+
+            gradients[face_index] = Reconstructor::template compute_gradient<n_components>(
+                neighbor_data.x, neighbor_data.u, neighbor_neighbors.x, neighbor_neighbors.u);
+          }
+
+          return gradients;
         }
 
         virtual void residual(VectorType &residual, const VectorType &solution_global, NumberType weight,
@@ -885,6 +932,9 @@ namespace DiFfRG
             // Get cell data and ghost neighbor data via apply_boundary_conditions
             const auto cell_neighbors = get_neighboring_cell_data(cell, solution_global, model);
             const auto cell_data = get_cell_value(cell, solution_global);
+            const auto neighbor_gradients = compute_neighbor_gradients(cell, solution_global, model);
+            const auto boundary_face_data = get_boundary_face_data(cell);
+            const auto &boundary_ids = boundary_face_data.first;
 
             const GradientType u_grad_cell = Reconstructor::template compute_gradient<n_components>(
                 cell_data.x, cell_data.u, cell_neighbors.x, cell_neighbors.u);
@@ -905,7 +955,7 @@ namespace DiFfRG
             const auto boundary_id = cell->face(face_no)->boundary_id();
             GradientType u_grad_plus{};
             model.boundary_ghost_gradient(u_grad_plus, boundary_id, normals[q_face_index], x_q, u_ghost, x_ghost,
-                                          cell_data.u, cell_data.x, u_grad_cell);
+                                          cell_data.u, cell_data.x, u_grad_cell, boundary_ids, neighbor_gradients);
 
             // Ghost reconstructed state at face
             const std::array<NumberType, n_components> u_plus =
@@ -1185,18 +1235,10 @@ namespace DiFfRG
             // Get cell data and ghost neighbor data
             const auto cell_neighbors = get_neighboring_cell_data(cell, solution_global, model);
             const auto cell_data = get_cell_value(cell, solution_global);
+            const auto neighbor_gradients = compute_neighbor_gradients(cell, solution_global, model);
 
             // Build boundary_ids and face_centers arrays needed for apply_boundary_conditions
-            std::array<types::boundary_id, n_faces> boundary_ids;
-            std::array<Point, n_faces> face_centers;
-            for (const auto f : cell->face_indices()) {
-              if (cell->at_boundary(f)) {
-                boundary_ids[f] = cell->face(f)->boundary_id();
-                face_centers[f] = cell->face(f)->center();
-              } else {
-                boundary_ids[f] = numbers::invalid_boundary_id;
-              }
-            }
+            const auto [boundary_ids, face_centers] = get_boundary_face_data(cell);
 
             // Compute gradients and reconstructed interface values
             const GradientType u_grad_plus = Reconstructor::template compute_gradient<n_components>(
@@ -1211,7 +1253,7 @@ namespace DiFfRG
             const auto boundary_id = cell->face(face_no)->boundary_id();
             GradientType u_grad_ghost{};
             model.boundary_ghost_gradient(u_grad_ghost, boundary_id, normals[q_face_index], x_q, u_ghost, x_ghost,
-                                          cell_data.u, cell_data.x, u_grad_plus);
+                                          cell_data.u, cell_data.x, u_grad_plus, boundary_ids, neighbor_gradients);
 
             const std::array<NumberType, n_components> u_plus =
                 internal::reconstruct_u(u_ghost, x_ghost, x_q, u_grad_ghost);
@@ -1243,11 +1285,14 @@ namespace DiFfRG
               {
                 auto cell_data_AD = internal::tag_cell_dofs(cell_data, dof_j);
                 auto neighbors_AD = internal::make_tagged_neighbors(cell_neighbors, dof_j);
+                const auto neighbor_gradients_AD =
+                    internal::lift_neighbor_gradients_to_ad<dim, NumberType, n_components, n_faces>(
+                        neighbor_gradients);
                 auto deriv =
                     internal::compute_boundary_ghost_reconstruction_derivative<Reconstructor, Model, dim, NumberType,
                                                                                n_components, n_faces>(
-                        cell_data_AD, neighbors_AD, face_no, boundary_ids, face_centers, normals[q_face_index], x_q,
-                        model);
+                        cell_data_AD, neighbors_AD, neighbor_gradients_AD, face_no, boundary_ids, face_centers,
+                        normals[q_face_index], x_q, model);
                 reconstructed_deriv[1][j] = deriv;
               }
             }

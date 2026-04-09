@@ -177,6 +177,7 @@ namespace DiFfRG
           public def::Time,                                // this handles time
           public def::LLFFlux<ModelBurgersKT<dim>>,        // use LL numflux
           public def::FlowBoundaries<ModelBurgersKT<dim>>, // use Inflow/Outflow boundaries
+          public def::FVDefaultBoundaries<ModelBurgersKT<dim>>,
           public def::AD<ModelBurgersKT<dim>>              // define all jacobians per AD
     {
     protected:
@@ -227,6 +228,7 @@ namespace DiFfRG
           public def::Time,
           public def::LLFFlux<ModelBurgersTravelingWaveKT<dim>>,
           public def::FlowBoundaries<ModelBurgersTravelingWaveKT<dim>>,
+          public def::FVDefaultBoundaries<ModelBurgersTravelingWaveKT<dim>>,
           public def::AD<ModelBurgersTravelingWaveKT<dim>>
     {
     protected:
@@ -288,6 +290,7 @@ namespace DiFfRG
           public def::Time,
           public def::LLFFlux<ModelTwoComponentBurgersKT<dim>>,
           public def::FlowBoundaries<ModelTwoComponentBurgersKT<dim>>,
+          public def::FVDefaultBoundaries<ModelTwoComponentBurgersKT<dim>>,
           public def::AD<ModelTwoComponentBurgersKT<dim>>
     {
     protected:
