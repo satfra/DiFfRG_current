@@ -3,6 +3,7 @@
 // external libraries
 #include "DiFfRG/discretization/mesh/h_adaptivity.hh"
 #include "DiFfRG/discretization/mesh/no_adaptivity.hh"
+#include <iomanip>
 #include <memory>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
@@ -126,9 +127,11 @@ bool run(std::string test_name, double expected_precision)
       double numeric_solution = initial_condition.spatial_data()[n_components * i + component];
       const auto &error_condition = is_close(numeric_solution, analytical_solution[component], expected_precision);
       if (!error_condition && 1) {
-        std::cout << "at x = " << support_points[i * n_components] << " component: " << component
-                  << " numerical: " << numeric_solution << " analytical: " << analytical_solution[component]
-                  << std::endl;
+        const auto abs_error = std::abs(numeric_solution - analytical_solution[component]);
+        std::cout << std::setprecision(17) << "at x = " << support_points[i * n_components]
+                  << " component: " << component << " numerical: " << numeric_solution
+                  << " analytical: " << analytical_solution[component] << " abs_error: " << abs_error
+                  << " tolerance: " << expected_precision << std::endl;
       }
       valid &= error_condition;
     }

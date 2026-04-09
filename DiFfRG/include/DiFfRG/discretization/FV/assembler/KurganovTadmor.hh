@@ -583,7 +583,11 @@ namespace DiFfRG
           vec.reinit(block_structure[0]);
         }
 
-        virtual IndexSet get_differential_indices() const override { return IndexSet(); }
+        virtual IndexSet get_differential_indices() const override
+        {
+          ComponentMask component_mask(model.template differential_components<dim>());
+          return DoFTools::extract_dofs(dof_handler, component_mask);
+        }
 
         virtual void attach_data_output(DataOutput<dim, VectorType> &data_out, const VectorType &solution,
                                         const VectorType & /* variables*/, const VectorType &dt_solution = VectorType(),
