@@ -8,6 +8,7 @@
 // DiFfRG
 #include <DiFfRG/model/ad.hh>
 #include <DiFfRG/model/component_descriptor.hh>
+#include <DiFfRG/model/fv_boundaries.hh>
 #include <DiFfRG/model/numflux.hh>
 
 namespace DiFfRG
@@ -358,72 +359,6 @@ namespace DiFfRG
       {
       }
 
-      /**
-       * @brief Applies boundary conditions for all boundary faces of a cell simultaneously.
-       *
-       * This allows the model to use existing internal neighbors to better reconstruct ghost states
-       * (e.g. using the opposite neighbor for linear extrapolation).
-       *
-       * @param u_neighbors [in/out] Solution values of neighbors. Internals are pre-filled; boundaries must be filled
-       * here.
-       * @param x_neighbors [in/out] Positions of neighbors.
-       * @param boundary_ids [in] Boundary IDs for boundary faces (undefined for internal).
-       * @param face_centers [in] Centers of boundary faces (undefined for internal).
-       * @param u_cell [in] Current cell solution.
-       * @param x_cell [in] Current cell center.
-       */
-      template <int dim, typename NumberType, size_t n_components, size_t n_faces>
-      void
-      apply_boundary_conditions([[maybe_unused]] std::array<std::array<NumberType, n_components>, n_faces> &u_neighbors,
-                                [[maybe_unused]] std::array<Point<dim>, n_faces> &x_neighbors,
-                                [[maybe_unused]] const std::array<types::boundary_id, n_faces> &boundary_ids,
-                                [[maybe_unused]] const std::array<Point<dim>, n_faces> &face_centers,
-                                [[maybe_unused]] const std::array<NumberType, n_components> &u_cell,
-                                [[maybe_unused]] const Point<dim> &x_cell) const
-      {
-      }
-
-      /**
-       * @brief Computes the gradient of the ghost cell at a boundary face.
-       *
-       * In a second-order Kurganov-Tadmor scheme, the numerical flux at interior faces uses
-       * linearly reconstructed states from both sides. The reconstruction requires each cell's
-       * gradient, which is computed from its neighbors via a minmod limiter. At a boundary, the
-       * ghost cell has no real neighbors-of-neighbors, so this method lets the model provide
-       * the ghost gradient directly.
-       *
-       * Common patterns:
-       * - **Default (smooth extension):** ghost gradient = interior cell gradient. Preserves
-       *   second-order accuracy for smooth solutions and outflow-type boundaries.
-       * - **Dirichlet:** If the boundary value is known analytically, compute the gradient
-       *   from the analytical solution.
-       * - **Reflecting (wall):** Negate the component of the gradient normal to the boundary.
-       * - **Zero-gradient (Neumann):** Set the normal component of the ghost gradient to zero.
-       *
-       * @param ghost_gradient [out] The gradient of the ghost cell to be filled.
-       * @param boundary_id The boundary ID of the face.
-       * @param normal The outward unit normal at the boundary face.
-       * @param x_face The position of the boundary face (quadrature point).
-       * @param u_ghost The ghost cell value (as set by apply_boundary_conditions).
-       * @param x_ghost The ghost cell position (as set by apply_boundary_conditions).
-       * @param u_cell The interior cell value.
-       * @param x_cell The interior cell center.
-       * @param cell_gradient The minmod-limited gradient of the interior cell.
-       */
-      template <int dim, typename NumberType, size_t n_components>
-      void boundary_ghost_gradient(
-          [[maybe_unused]] std::array<Tensor<1, dim, NumberType>, n_components> &ghost_gradient,
-          [[maybe_unused]] const types::boundary_id boundary_id, [[maybe_unused]] const Tensor<1, dim> &normal,
-          [[maybe_unused]] const Point<dim> &x_face,
-          [[maybe_unused]] const std::array<NumberType, n_components> &u_ghost,
-          [[maybe_unused]] const Point<dim> &x_ghost,
-          [[maybe_unused]] const std::array<NumberType, n_components> &u_cell,
-          [[maybe_unused]] const Point<dim> &x_cell,
-          [[maybe_unused]] const std::array<Tensor<1, dim, NumberType>, n_components> &cell_gradient) const
-      {
-        // Default: mirror the interior cell's gradient (smooth extension)
-        ghost_gradient = cell_gradient;
-      }
     };
 
     class Time
