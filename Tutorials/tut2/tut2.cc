@@ -1,5 +1,6 @@
 #include <DiFfRG/common/configuration_helper.hh>
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/discretization/FEM/cg.hh>
 #include <DiFfRG/discretization/discretization.hh>
 #include <DiFfRG/timestepping/timestepping.hh>
 

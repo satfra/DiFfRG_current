@@ -5,15 +5,19 @@
 BeginPackage["DiFfRG`CodeTools`Utils`"]
 
 appendDefaultAssociation::usage = "appendDefaultAssociation[config] appends default association to the given config.";
+appendDefaultAssociation::wrongArgs = "appendDefaultAssociation expects a single Association argument, but got: `1`";
 
 processParameters::usage = "processParameters[params, adReplacements] processes parameters for kernel generation.";
+processParameters::wrongArgs = "processParameters expects a List of parameters and a List of AD replacements, but got: `1`";
 
 Begin["`Private`"]
 
 ClearAll[appendDefaultAssociation, processParameters]
 
-appendDefaultAssociation[config_] :=
+appendDefaultAssociation[config_Association] :=
     Merge[{config, <|"Type" -> "double", "Reference" -> True, "Const" -> True|>}, First];
+
+appendDefaultAssociation[x___] := (Message[appendDefaultAssociation::wrongArgs, {x}]; Abort[]);
 
 processParameters[params_List, adReplacements_List] :=
     Module[{processedParams = params, paramsAD = {},i},
@@ -29,6 +33,8 @@ processParameters[params_List, adReplacements_List] :=
         ];
         {processedParams, paramsAD}
     ];
+
+processParameters[x___] := (Message[processParameters::wrongArgs, {x}]; Abort[]);
 
 End[]
 

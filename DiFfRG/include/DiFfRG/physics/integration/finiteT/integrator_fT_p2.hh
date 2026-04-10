@@ -18,12 +18,11 @@ namespace DiFfRG
                                              / powr<sdim>(2 * (ctype)M_PI); // fourier factor
 
       template <typename... T>
-      static KOKKOS_FORCEINLINE_FUNCTION NT kernel(const ctype q2, const ctype q0, const T &...t)
+      static KOKKOS_FORCEINLINE_FUNCTION NT kernel(const ctype q, const ctype q0, const T &...t)
       {
         using namespace DiFfRG::compute;
 
-        const ctype q = sqrt(q2);
-        const ctype int_element = (powr<sdim - 2>(q) / (ctype)2); // from p^2 integral
+        const ctype int_element = powr<sdim - 1>(q); // from p integral
         const NT result = KERNEL::kernel(q, q0, t...);
 
         return int_prefactor * int_element * result;
@@ -55,14 +54,14 @@ namespace DiFfRG
 
     Integrator_fT_p2(QuadratureProvider &quadrature_provider, const JSONValue &json)
       requires provides_regulator<KERNEL>
-        : Integrator_fT_p2(quadrature_provider, internal::make_int_grid<1>(json, {"x_order"}),
+        : Integrator_fT_p2(quadrature_provider, internal::make_int_grid<1, NT>(json, {"x_order"}),
                            optimize_x_extent<typename KERNEL::Regulator>(json), json.get_double("T", 1.0))
     {
     }
 
     Integrator_fT_p2(QuadratureProvider &quadrature_provider, const std::array<size_t, 1> grid_size,
                      ctype x_extent = 2., ctype T = 1, ctype typical_E = 1)
-        : Base(quadrature_provider, grid_size, {0}, {x_extent}, {QuadratureType::legendre}, T, typical_E),
+        : Base(quadrature_provider, grid_size, {0}, {std::sqrt(x_extent)}, {QuadratureType::legendre}, T, typical_E),
           x_extent(x_extent), k(1.)
     {
     }
@@ -70,13 +69,13 @@ namespace DiFfRG
     void set_x_extent(ctype x_extent)
     {
       this->x_extent = x_extent;
-      Base::set_grid_extents({0}, {x_extent * powr<2>(k)});
+      Base::set_grid_extents({0}, {std::sqrt(x_extent) * k});
     }
 
     void set_k(ctype k)
     {
       this->k = k;
-      Base::set_grid_extents({0}, {x_extent * powr<2>(k)});
+      Base::set_grid_extents({0}, {std::sqrt(x_extent) * k});
       Base::set_typical_E(k); // update typical energy
     }
 

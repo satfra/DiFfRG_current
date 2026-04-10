@@ -9,6 +9,7 @@
 
 // external libraries
 #include <autodiff/forward/real.hpp>
+#include <type_traits>
 
 namespace DiFfRG
 {
@@ -231,6 +232,54 @@ namespace DiFfRG
     using ::Kokkos::sqrt;
     using ::Kokkos::tan;
     using ::Kokkos::tanh;
+
+    using ::Kokkos::fmax;
+    using ::Kokkos::fmin;
+    using ::Kokkos::max;
+    using ::Kokkos::min;
+
+    using ::Kokkos::abs;
+    using ::Kokkos::fabs;
+
+    using ::Kokkos::atan2;
+    using ::Kokkos::fma;
+
+    template <typename T1, typename T2, typename T3>
+      requires(!std::is_arithmetic_v<T1> || !std::is_arithmetic_v<T2> || !std::is_arithmetic_v<T3>)
+    constexpr KOKKOS_FORCEINLINE_FUNCTION auto fma(const T1 &a, const T2 &b, const T3 &c)
+    {
+      return a * b + c;
+    }
+
+    template <size_t N, typename T>
+      requires std::is_arithmetic_v<T>
+    constexpr KOKKOS_FORCEINLINE_FUNCTION T conj(const autodiff::Real<N, T> x)
+    {
+      return x;
+    }
+
+    template <size_t N, typename T>
+      requires std::is_arithmetic_v<T>
+    constexpr KOKKOS_FORCEINLINE_FUNCTION T conj(const cxReal<N, T> x)
+    {
+      cxReal<N, T> res;
+      autodiff::detail::For<0, N + 1>([&](auto i) constexpr { res[i] = Kokkos::conj(x[i]); });
+      return res;
+    }
+
+    template <typename T>
+      requires std::is_arithmetic_v<T>
+    constexpr KOKKOS_FORCEINLINE_FUNCTION T conj(const T x)
+    {
+      return x;
+    }
+
+    template <typename T>
+      requires is_complex<T>::value
+    constexpr KOKKOS_FORCEINLINE_FUNCTION T conj(const T x)
+    {
+      return Kokkos::conj(x);
+    }
 
     using DiFfRG::powr;
 

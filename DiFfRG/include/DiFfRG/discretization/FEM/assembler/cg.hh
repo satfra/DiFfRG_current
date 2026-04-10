@@ -62,6 +62,11 @@ namespace DiFfRG
                                             std::vector<Tensor<2, dim, NumberType>>(n_components));
           solution_hess_interface[1].resize(quadrature_face.size(),
                                             std::vector<Tensor<2, dim, NumberType>>(n_components));
+          const uint n_dofs = fe.n_dofs_per_cell();
+          comp.resize(n_dofs);
+          cached_shape_values.resize(n_dofs);
+          cached_shape_grads.resize(n_dofs);
+          cached_shape_hessians.resize(n_dofs);
         }
 
         ScratchData(const ScratchData<Discretization> &scratch_data)
@@ -86,6 +91,11 @@ namespace DiFfRG
           solution_grad_interface[1].resize(q_face_size, std::vector<Tensor<1, dim, NumberType>>(n_components));
           solution_hess_interface[0].resize(q_face_size, std::vector<Tensor<2, dim, NumberType>>(n_components));
           solution_hess_interface[1].resize(q_face_size, std::vector<Tensor<2, dim, NumberType>>(n_components));
+          const uint n_dofs_copy = scratch_data.comp.size();
+          comp.resize(n_dofs_copy);
+          cached_shape_values.resize(n_dofs_copy);
+          cached_shape_grads.resize(n_dofs_copy);
+          cached_shape_hessians.resize(n_dofs_copy);
         }
 
         const uint n_components;
@@ -100,6 +110,13 @@ namespace DiFfRG
         array<std::vector<Vector<NumberType>>, 2> solution_interface;
         array<std::vector<std::vector<Tensor<1, dim, NumberType>>>, 2> solution_grad_interface;
         array<std::vector<std::vector<Tensor<2, dim, NumberType>>>, 2> solution_hess_interface;
+
+        std::vector<uint> comp;
+
+        // Cached per-DoF shape function data for jacobian assembly
+        std::vector<double> cached_shape_values;
+        std::vector<Tensor<1, dim>> cached_shape_grads;
+        std::vector<Tensor<2, dim>> cached_shape_hessians;
       };
 
       template <typename NumberType> struct CopyData_R {
@@ -266,7 +283,6 @@ namespace DiFfRG
           double local_indicator = 0.;
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
-            const std::vector<double> nothing = {};
             model.cell_indicator(local_indicator, x_q,
                                  i_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index]));
             copy_data.value += JxW[q_index] * local_indicator;
@@ -300,6 +316,10 @@ namespace DiFfRG
           const auto &q_points = fe_v.get_quadrature_points();
           const auto &q_indices = fe_v.quadrature_point_indices();
 
+          auto &comp = scratch_data.comp;
+          for (uint i = 0; i < n_dofs; ++i)
+            comp[i] = fe_v.get_fe().system_to_component_index(i).first;
+
           auto &solution = scratch_data.solution;
           auto &solution_dot = scratch_data.solution_dot;
           fe_v.get_function_values(solution_global, solution);
@@ -311,10 +331,8 @@ namespace DiFfRG
             model.mass(mass, x_q, solution[q_index], solution_dot[q_index]);
 
             for (uint i = 0; i < n_dofs; ++i) {
-              const auto component_i = fe_v.get_fe().system_to_component_index(i).first;
-              copy_data.cell_residual(i) += weight * JxW[q_index] *
-                                            fe_v.shape_value_component(i, q_index, component_i) *
-                                            mass[component_i]; // +phi_i(x_q) * mass(x_q, u_q)
+              copy_data.cell_residual(i) += weight * JxW[q_index] * fe_v.shape_value_component(i, q_index, comp[i]) *
+                                            mass[comp[i]]; // +phi_i(x_q) * mass(x_q, u_q)
             }
           }
         };
@@ -355,6 +373,10 @@ namespace DiFfRG
           const auto &q_points = fe_v.get_quadrature_points();
           const auto &q_indices = fe_v.quadrature_point_indices();
 
+          auto &comp = scratch_data.comp;
+          for (uint i = 0; i < n_dofs; ++i)
+            comp[i] = fe.system_to_component_index(i).first;
+
           auto &solution = scratch_data.solution;
           auto &solution_grad = scratch_data.solution_grad;
           auto &solution_hess = scratch_data.solution_hess;
@@ -378,15 +400,14 @@ namespace DiFfRG
             model.mass(mass, x_q, solution[q_index], solution_dot[q_index]);
 
             for (uint i = 0; i < n_dofs; ++i) {
-              const auto component_i = fe.system_to_component_index(i).first;
-              copy_data.cell_residual(i) += JxW[q_index] * weight * // dx *
-                                            (-scalar_product(fe_v.shape_grad_component(i, q_index, component_i),
-                                                             flux[component_i]) // -dphi_i(x_q) * flux(x_q, u_q)
-                                             + fe_v.shape_value_component(i, q_index, component_i) *
-                                                   source[component_i]); // -phi_i(x_q) * source(x_q, u_q)
-              copy_data.cell_residual(i) += weight_mass * JxW[q_index] *
-                                            fe_v.shape_value_component(i, q_index, component_i) *
-                                            mass[component_i]; // +phi_i(x_q) * mass(x_q, u_q)
+              const auto &ci = comp[i];
+              copy_data.cell_residual(i) +=
+                  JxW[q_index] * weight * // dx *
+                  (-scalar_product(fe_v.shape_grad_component(i, q_index, ci),
+                                   flux[ci])                                   // -dphi_i(x_q) * flux(x_q, u_q)
+                   + fe_v.shape_value_component(i, q_index, ci) * source[ci]); // -phi_i(x_q) * source(x_q, u_q)
+              copy_data.cell_residual(i) += weight_mass * JxW[q_index] * fe_v.shape_value_component(i, q_index, ci) *
+                                            mass[ci]; // +phi_i(x_q) * mass(x_q, u_q)
             }
           }
         };
@@ -408,6 +429,10 @@ namespace DiFfRG
           fe_fv.get_function_gradients(solution_global, solution_grad);
           fe_fv.get_function_hessians(solution_global, solution_hess);
 
+          auto &comp = scratch_data.comp;
+          for (uint i = 0; i < n_dofs; ++i)
+            comp[i] = fe.system_to_component_index(i).first;
+
           array<Tensor<1, dim, NumberType>, Components::count_fe_functions()> numflux{};
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
@@ -416,11 +441,11 @@ namespace DiFfRG
                 fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
 
             for (uint i = 0; i < n_dofs; ++i) {
-              const auto component_i = fe.system_to_component_index(i).first;
+              const auto &ci = comp[i];
               copy_data.cell_residual(i) +=
                   weight * JxW[q_index] * // dx
-                  (fe_fv.shape_value_component(i, q_index, component_i) *
-                   scalar_product(numflux[component_i], normals[q_index])); // phi_i(x_q) * numflux(x_q, u_q) * n(x_q)
+                  (fe_fv.shape_value_component(i, q_index, ci) *
+                   scalar_product(numflux[ci], normals[q_index])); // phi_i(x_q) * numflux(x_q, u_q) * n(x_q)
             }
           }
         };
@@ -455,6 +480,11 @@ namespace DiFfRG
           const auto &JxW = fe_v.get_JxW_values();
           const auto &q_points = fe_v.get_quadrature_points();
           const auto &q_indices = fe_v.quadrature_point_indices();
+
+          auto &comp = scratch_data.comp;
+          for (uint i = 0; i < n_dofs; ++i)
+            comp[i] = fe.system_to_component_index(i).first;
+
           auto &solution = scratch_data.solution;
           auto &solution_dot = scratch_data.solution_dot;
 
@@ -469,13 +499,11 @@ namespace DiFfRG
             model.template jacobian_mass<1>(j_mass_dot, x_q, solution[q_index], solution_dot[q_index]);
 
             for (uint i = 0; i < n_dofs; ++i) {
-              const auto component_i = fe.system_to_component_index(i).first;
               for (uint j = 0; j < n_dofs; ++j) {
-                const auto component_j = fe.system_to_component_index(j).first;
                 copy_data.cell_jacobian(i, j) +=
-                    JxW[q_index] * fe_v.shape_value_component(j, q_index, component_j) *
-                    fe_v.shape_value_component(i, q_index, component_i) *
-                    (alpha * j_mass_dot(component_i, component_j) + beta * j_mass(component_i, component_j));
+                    JxW[q_index] * fe_v.shape_value_component(j, q_index, comp[j]) *
+                    fe_v.shape_value_component(i, q_index, comp[i]) *
+                    (alpha * j_mass_dot(comp[i], comp[j]) + beta * j_mass(comp[i], comp[j]));
               }
             }
           }
@@ -521,6 +549,10 @@ namespace DiFfRG
           const auto &q_points = fe_v.get_quadrature_points();
           const auto &q_indices = fe_v.quadrature_point_indices();
 
+          auto &comp = scratch_data.comp;
+          for (uint i = 0; i < n_dofs; ++i)
+            comp[i] = fe.system_to_component_index(i).first;
+
           auto &solution = scratch_data.solution;
           auto &solution_dot = scratch_data.solution_dot;
           auto &solution_grad = scratch_data.solution_grad;
@@ -545,85 +577,70 @@ namespace DiFfRG
 
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
-            model.template jacobian_flux<0, 0>(
-                j_flux, x_q,
+            model.template jacobian_flux_source<0, 0>(
+                j_flux, j_source, x_q,
                 fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
-            model.template jacobian_source<0, 0>(
-                j_source, x_q,
+            model.template jacobian_flux_source_grad<1>(
+                j_grad_flux, j_grad_source, x_q,
                 fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
-            model.template jacobian_flux_grad<1>(
-                j_grad_flux, x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
-            model.template jacobian_source_grad<1>(
-                j_grad_source, x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
-            model.template jacobian_flux_hess<2>(
-                j_hess_flux, x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
-            model.template jacobian_source_hess<2>(
-                j_hess_source, x_q,
+            model.template jacobian_flux_source_hess<2>(
+                j_hess_flux, j_hess_source, x_q,
                 fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
             if constexpr (Components::count_extractors() > 0) {
-              model.template jacobian_flux_extr<3>(
-                  j_extr_flux, x_q,
-                  fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
-              model.template jacobian_source_extr<3>(
-                  j_extr_source, x_q,
+              model.template jacobian_flux_source_extr<3>(
+                  j_extr_flux, j_extr_source, x_q,
                   fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
             }
             model.template jacobian_mass<0>(j_mass, x_q, solution[q_index], solution_dot[q_index]);
             model.template jacobian_mass<1>(j_mass_dot, x_q, solution[q_index], solution_dot[q_index]);
 
-            tbb::parallel_for(
-                tbb::blocked_range2d<uint>(0, n_dofs, 0, n_dofs), [&](const tbb::blocked_range2d<uint> &range) {
-                  for (uint i = range.rows().begin(); i < range.rows().end(); ++i) {
-                    const auto component_i = fe_v.get_fe().system_to_component_index(i).first;
-                    for (uint j = range.cols().begin(); j < range.cols().end(); ++j) {
-                      const auto component_j = fe.system_to_component_index(j).first;
-                      // scalar contribution
-                      copy_data.cell_jacobian(i, j) +=
-                          weight * JxW[q_index] *
-                          fe_v.shape_value_component(j, q_index, component_j) * // dx * phi_j * (
-                          (-scalar_product(fe_v.shape_grad_component(i, q_index, component_i),
-                                           j_flux(component_i, component_j)) // -dphi_i * jflux
-                           + fe_v.shape_value_component(i, q_index, component_i) *
-                                 j_source(component_i, component_j)); // -phi_i * jsource)
-                      // gradient contribution
-                      copy_data.cell_jacobian(i, j) +=
-                          weight * JxW[q_index] *
-                          scalar_product(fe_v.shape_grad_component(j, q_index, component_j), // dx * phi_j *
-                                         -scalar_product(fe_v.shape_grad_component(i, q_index, component_i),
-                                                         j_grad_flux(component_i, component_j)) // -dphi_i * jflux
-                                             + fe_v.shape_value_component(i, q_index, component_i) *
-                                                   j_grad_source(component_i, component_j)); // -phi_i * jsource
-                      // hessian contribution
-                      copy_data.cell_jacobian(i, j) +=
-                          weight * JxW[q_index] *
-                          scalar_product(fe_v.shape_hessian_component(j, q_index, component_j),
-                                         -scalar_product(fe_v.shape_grad_component(i, q_index, component_i),
-                                                         j_hess_flux(component_i, component_j)) +
-                                             fe_v.shape_value_component(i, q_index, component_i) *
-                                                 j_hess_source(component_i, component_j));
-                      // mass contribution
-                      copy_data.cell_jacobian(i, j) +=
-                          JxW[q_index] * fe_v.shape_value_component(j, q_index, component_j) *
-                          fe_v.shape_value_component(i, q_index, component_i) *
-                          (alpha * j_mass_dot(component_i, component_j) + beta * j_mass(component_i, component_j));
-                    }
-                  }
-                });
+            // Cache per-DoF shape function data for this quadrature point
+            auto &sv = scratch_data.cached_shape_values;
+            auto &sg = scratch_data.cached_shape_grads;
+            auto &sh = scratch_data.cached_shape_hessians;
+            for (uint k = 0; k < n_dofs; ++k) {
+              sv[k] = fe_v.shape_value_component(k, q_index, comp[k]);
+              sg[k] = fe_v.shape_grad_component(k, q_index, comp[k]);
+              sh[k] = fe_v.shape_hessian_component(k, q_index, comp[k]);
+            }
+
+            const auto do_work = [&](uint i_begin, uint i_end, uint j_begin, uint j_end) {
+              for (uint i = i_begin; i < i_end; ++i) {
+                const auto &ci = comp[i];
+                const auto &sv_i = sv[i];
+                const auto &sg_i = sg[i];
+                for (uint j = j_begin; j < j_end; ++j) {
+                  const auto &cj = comp[j];
+                  NumberType contribution = weight * JxW[q_index] *
+                                            (sv[j] * (-scalar_product(sg_i, j_flux(ci, cj)) + sv_i * j_source(ci, cj)) +
+                                             scalar_product(sg[j], -scalar_product(sg_i, j_grad_flux(ci, cj)) +
+                                                                       sv_i * j_grad_source(ci, cj)) +
+                                             scalar_product(sh[j], -scalar_product(sg_i, j_hess_flux(ci, cj)) +
+                                                                       sv_i * j_hess_source(ci, cj)));
+                  contribution += JxW[q_index] * sv[j] * sv_i * (alpha * j_mass_dot(ci, cj) + beta * j_mass(ci, cj));
+                  copy_data.cell_jacobian(i, j) += contribution;
+                }
+              }
+            };
+
+            if (n_dofs * n_dofs < 64)
+              do_work(0, n_dofs, 0, n_dofs);
+            else
+              tbb::parallel_for(
+                  tbb::blocked_range2d<uint>(0, n_dofs, 0, n_dofs), [&](const tbb::blocked_range2d<uint> &range) {
+                    do_work(range.rows().begin(), range.rows().end(), range.cols().begin(), range.cols().end());
+                  });
 
             // extractor contribution
             if constexpr (Components::count_extractors() > 0) {
               for (uint i = 0; i < n_dofs; ++i) {
-                const auto component_i = fe.system_to_component_index(i).first;
                 for (uint e = 0; e < Components::count_extractors(); ++e)
                   copy_data.extractor_cell_jacobian(i, e) +=
                       weight * JxW[q_index] * // dx * phi_j * (
-                      (-scalar_product(fe_v.shape_grad_component(i, q_index, component_i),
-                                       j_extr_flux(component_i, e)) // -dphi_i * jflux
-                       + fe_v.shape_value_component(i, q_index, component_i) *
-                             j_extr_source(component_i, e)); // -phi_i * jsource)
+                      (-scalar_product(fe_v.shape_grad_component(i, q_index, comp[i]),
+                                       j_extr_flux(comp[i], e)) // -dphi_i * jflux
+                       + fe_v.shape_value_component(i, q_index, comp[i]) *
+                             j_extr_source(comp[i], e)); // -phi_i * jsource)
               }
             }
           }
@@ -646,6 +663,10 @@ namespace DiFfRG
           fe_fv.get_function_values(solution_global, solution);
           fe_fv.get_function_gradients(solution_global, solution_grad);
           fe_fv.get_function_hessians(solution_global, solution_hess);
+
+          auto &comp = scratch_data.comp;
+          for (uint i = 0; i < n_dofs; ++i)
+            comp[i] = fe.system_to_component_index(i).first;
 
           SimpleMatrix<Tensor<1, dim, NumberType>, Components::count_fe_functions()> j_boundary_numflux;
           SimpleMatrix<Tensor<1, dim, Tensor<1, dim, NumberType>>, Components::count_fe_functions()>
@@ -671,49 +692,49 @@ namespace DiFfRG
                   fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
             }
 
-            tbb::parallel_for(
-                tbb::blocked_range2d<uint>(0, n_dofs, 0, n_dofs), [&](const tbb::blocked_range2d<uint> &range) {
-                  for (uint i = range.rows().begin(); i < range.rows().end(); ++i) {
-                    const auto component_i = fe.system_to_component_index(i).first;
-                    for (uint j = range.cols().begin(); j < range.cols().end(); ++j) {
-                      const auto component_j = fe.system_to_component_index(j).first;
+            // Cache per-DoF shape function data for boundary
+            auto &bsv = scratch_data.cached_shape_values;
+            auto &bsg = scratch_data.cached_shape_grads;
+            auto &bsh = scratch_data.cached_shape_hessians;
+            for (uint k = 0; k < n_dofs; ++k) {
+              bsv[k] = fe_fv.shape_value_component(k, q_index, comp[k]);
+              bsg[k] = fe_fv.shape_grad_component(k, q_index, comp[k]);
+              bsh[k] = fe_fv.shape_hessian_component(k, q_index, comp[k]);
+            }
 
-                      // scalar contribution
-                      copy_data.cell_jacobian(i, j) +=
-                          weight * JxW[q_index] *
-                          fe_fv.shape_value_component(j, q_index, component_j) * // dx * phi_j(x_q)
-                          (fe_fv.shape_value_component(i, q_index, component_i) *
-                           scalar_product(j_boundary_numflux(component_i, component_j),
-                                          normals[q_index])); // phi_i(x_q) * j_numflux(x_q, u_q) * n(x_q)
-                      // gradient contribution
-                      copy_data.cell_jacobian(i, j) +=
-                          weight * JxW[q_index] *
-                          scalar_product(
-                              fe_fv.shape_grad_component(j, q_index, component_j), // dx * phi_j(x_q)
-                              fe_fv.shape_value_component(i, q_index, component_i) *
-                                  scalar_product(j_grad_boundary_numflux(component_i, component_j),
-                                                 normals[q_index])); // phi_i(x_q) * j_numflux(x_q, u_q) * n(x_q)
-                      // hessian contribution
-                      copy_data.cell_jacobian(i, j) +=
-                          weight * JxW[q_index] *
-                          scalar_product(
-                              fe_fv.shape_hessian_component(j, q_index, component_j), // dx * phi_j(x_q)
-                              fe_fv.shape_value_component(i, q_index, component_i) *
-                                  scalar_product(j_hess_boundary_numflux(component_i, component_j),
-                                                 normals[q_index])); // phi_i(x_q) * j_numflux(x_q, u_q) * n(x_q)
-                    }
-                  }
-                });
+            const auto do_bnd_work = [&](uint i_begin, uint i_end, uint j_begin, uint j_end) {
+              for (uint i = i_begin; i < i_end; ++i) {
+                const auto &ci = comp[i];
+                const auto &sv_i = bsv[i];
+                for (uint j = j_begin; j < j_end; ++j) {
+                  const auto &cj = comp[j];
+                  const auto n_dot_jnf = scalar_product(j_boundary_numflux(ci, cj), normals[q_index]);
+                  const auto n_dot_jgnf = scalar_product(j_grad_boundary_numflux(ci, cj), normals[q_index]);
+                  const auto n_dot_jhnf = scalar_product(j_hess_boundary_numflux(ci, cj), normals[q_index]);
+                  copy_data.cell_jacobian(i, j) +=
+                      weight * JxW[q_index] *
+                      (bsv[j] * sv_i * n_dot_jnf + scalar_product(bsg[j], sv_i * n_dot_jgnf) +
+                       scalar_product(bsh[j], sv_i * n_dot_jhnf));
+                }
+              }
+            };
+
+            if (n_dofs * n_dofs < 64)
+              do_bnd_work(0, n_dofs, 0, n_dofs);
+            else
+              tbb::parallel_for(
+                  tbb::blocked_range2d<uint>(0, n_dofs, 0, n_dofs), [&](const tbb::blocked_range2d<uint> &range) {
+                    do_bnd_work(range.rows().begin(), range.rows().end(), range.cols().begin(), range.cols().end());
+                  });
 
             // extractor contribution
             if constexpr (Components::count_extractors() > 0) {
               for (uint i = 0; i < n_dofs; ++i) {
-                const auto component_i = fe.system_to_component_index(i).first;
                 for (uint e = 0; e < Components::count_extractors(); ++e)
                   copy_data.extractor_cell_jacobian(i, e) +=
                       weight * JxW[q_index] * // dx * phi_j(x_q)
-                      (fe_fv.shape_value_component(i, q_index, component_i) *
-                       scalar_product(j_extr_boundary_numflux(component_i, e),
+                      (fe_fv.shape_value_component(i, q_index, comp[i]) *
+                       scalar_product(j_extr_boundary_numflux(comp[i], e),
                                       normals[q_index])); // phi_i(x_q) * j_numflux(x_q, u_q) * n(x_q)
               }
             }

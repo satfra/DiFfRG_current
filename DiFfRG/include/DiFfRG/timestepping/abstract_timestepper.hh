@@ -143,7 +143,7 @@ namespace DiFfRG
     double Lambda;
     int verbosity;
     double output_dt;
-    struct implicitParameters {
+    struct ImplicitParameters {
       double dt;
       double minimal_dt;
       double maximal_dt;
@@ -151,7 +151,7 @@ namespace DiFfRG
       double rel_tol;
     } impl;
 
-    struct explicitParameters {
+    struct ExplicitParameters {
       double dt;
       double minimal_dt;
       double maximal_dt;

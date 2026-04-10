@@ -61,7 +61,29 @@ TEMPLATE_TEST_CASE_SIG("Test finite T momentum integrals", "[integration][quadra
       NT integral{};
       integrator.get(integral, 0., 1., 0., 0., 0., powr<2>(val), 0., 1., 0.);
 
-      constexpr ctype expected_precision = 5e-6;
+      constexpr ctype expected_precision = 1e-8;
+      const ctype rel_err = t_abs(reference_integral - integral) / t_abs(reference_integral);
+      if (rel_err >= expected_precision) {
+        std::cerr << "Failure for T = " << T << ", k = " << k << ", val = " << val << "\n"
+                  << "reference: " << reference_integral << "| integral: " << integral
+                  << "| relative error: " << rel_err << std::endl;
+      }
+      CHECK(rel_err < expected_precision);
+    }
+    SECTION("Volume integral (fermionic)")
+    {
+      const ctype val = GENERATE(1e-4, 1e-3, 1e-2, 1e-1, 1., 10.);
+      integrator.set_T(T);
+      integrator.set_k(k);
+      integrator.set_typical_E(val);
+
+      const NT reference_integral = V_d(dim - 1, q_extent) / powr<dim - 1>(2. * M_PI) // spatial part
+                                    * std::tanh(val / (2. * T)) / (2. * val);          // sum
+
+      NT integral{};
+      integrator.get(integral, 0., 1., 0., 0., 0., powr<2>(val) + powr<2>(M_PI * T), 2 * M_PI * T, 1., 0.);
+
+      constexpr ctype expected_precision = 1e-8;
       const ctype rel_err = t_abs(reference_integral - integral) / t_abs(reference_integral);
       if (rel_err >= expected_precision) {
         std::cerr << "Failure for T = " << T << ", k = " << k << ", val = " << val << "\n"
@@ -86,7 +108,7 @@ TEMPLATE_TEST_CASE_SIG("Test finite T momentum integrals", "[integration][quadra
 
       integrator.map(integral_view.data(), coordinates, 1., 0., 0., 0., powr<2>(val), 0., 1., 0.).fence();
 
-      constexpr ctype expected_precision = 5e-6;
+      constexpr ctype expected_precision = 1e-8;
       for (uint i = 0; i < rsize; ++i) {
         const ctype rel_err = t_abs(coordinates.forward(i) + reference_integral - integral_view[i]) /
                               t_abs(coordinates.forward(i) + reference_integral);
@@ -137,7 +159,7 @@ TEST_CASE("Test integrator_fT_p2 bug", "[integration][quadrature]")
   // const double q_extent = std::sqrt(x_extent * powr<2>(k));
   // const double mq2 = GENERATE(0.0, 0.5, 1.0);
   const NT h = 6.2;
-  const NT sigma = 0;
+  const NT sigma = 0.01;
   const double mq2 = powr<2>(h * sigma);
   integrator_fT.set_typical_E(k);
 
@@ -146,7 +168,7 @@ TEST_CASE("Test integrator_fT_p2 bug", "[integration][quadrature]")
   NT integralIntegrated{};
   integrator.get(integralIntegrated, k, T, mq2);
 
-  constexpr ctype expected_precision = 1e-6;
+  constexpr ctype expected_precision = 1e-8;
   const ctype rel_err = abs(integral_fT - integralIntegrated) / abs(integralIntegrated);
   if (rel_err >= expected_precision) {
     std::cerr << "integral analytic matsubara sum: " << integralIntegrated

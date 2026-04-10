@@ -31,8 +31,22 @@ namespace DiFfRG
      */
     template <typename Model, typename Components_> class AbstractModel
     {
-      Model &asImp() { return static_cast<Model &>(*this); }
-      const Model &asImp() const { return static_cast<const Model &>(*this); }
+      Model &asImp()
+      {
+        static_assert(
+            std::is_base_of_v<AbstractModel<Model, Components_>, Model>,
+            "AbstractModel<Model, Components>: Model must inherit from AbstractModel<Model, Components> (CRTP). "
+            "Check that your model class passes itself as the first template argument.");
+        return static_cast<Model &>(*this);
+      }
+      const Model &asImp() const
+      {
+        static_assert(
+            std::is_base_of_v<AbstractModel<Model, Components_>, Model>,
+            "AbstractModel<Model, Components>: Model must inherit from AbstractModel<Model, Components> (CRTP). "
+            "Check that your model class passes itself as the first template argument.");
+        return static_cast<const Model &>(*this);
+      }
 
     protected:
       Components_ m_components;
@@ -407,7 +421,8 @@ namespace DiFfRG
 
     protected:
       const double Lambda;
-      double t, k, k2, k3, k4, k5, k6;
+      double t = 0., k = 0., k2 = 0., k3 = 0., k4 = 0., k5 = 0., k6 = 0.;
+      bool time_initialized = false;
     };
   } // namespace def
 } // namespace DiFfRG

@@ -48,12 +48,7 @@ TEMPLATE_TEST_CASE_SIG("Test 1D momentum integrals", "[integration][quadrature]"
       NT integral{};
       integrator.get(integral, 0., 1., 0., 0., 0.);
 
-      const ctype expected_precision =
-          Kokkos::max(1e-14,                                                         // machine precision
-                      1e-6                                                           // precision for worst quadrature
-                          / pow((ctype)size, 1.5)                                    // adjust for quadrature size
-                          * (dim % 2 == 1 ? pow(1e7, 1. / sqrt((ctype)dim)) : 1e-14) // adjust for odd dimensions
-          );
+      constexpr ctype expected_precision = 1e-14;
       const ctype rel_err = t_abs((integral - reference_integral) / reference_integral);
       if (rel_err >= expected_precision) {
         std::cerr << "reference: " << std::scientific << std::setw(10) << reference_integral
@@ -88,7 +83,7 @@ TEMPLATE_TEST_CASE_SIG("Test 1D momentum integrals", "[integration][quadrature]"
       NT integral{};
       integrator.get(integral, constant, x_poly[0], x_poly[1], x_poly[2], x_poly[3]);
 
-      const ctype expected_precision = Kokkos::max(1e-14, 1. / pow((ctype)size, 2));
+      constexpr ctype expected_precision = 1e-13;
       const ctype rel_err = t_abs((integral - reference_integral) / reference_integral);
       if (rel_err >= expected_precision) {
         std::cerr << "reference: " << std::scientific << std::setw(10) << reference_integral

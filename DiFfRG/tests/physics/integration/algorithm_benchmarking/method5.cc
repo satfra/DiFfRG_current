@@ -1,3 +1,6 @@
+// Method 5: Host loop + two-phase per output point: MDRangePolicy parallel_for into 4D cache,
+// then MDRangePolicy parallel_reduce from cache. Constant added in a separate final kernel.
+
 #include <catch2/catch_all.hpp>
 
 #include <DiFfRG/common/init.hh>
@@ -6,7 +9,8 @@
 #include <DiFfRG/physics/interpolation.hh>
 #include <DiFfRG/physics/regulators.hh>
 
-#include "./ZA4/kernel.hh"
+// #include "./ZA4/kernel.hh"
+#include "./flows/ZA4/kernel.hh"
 
 void method5(Catch::Benchmark::Chronometer &meter)
 {

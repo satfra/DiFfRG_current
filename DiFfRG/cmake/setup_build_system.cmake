@@ -5,32 +5,71 @@
 # We need to find the bundle directory, which contains several external
 # dependencies
 if(${CMAKE_PROJECT_NAME} STREQUAL "DiFfRG")
-  if(NOT DEFINED ENABLE_MPI)
-    find_package(MPI QUIET)
-    if(MPI_FOUND)
-      set(ENABLE_MPI
-          ON
-          CACHE BOOL "Enable MPI support")
-    else()
-      set(ENABLE_MPI
-          OFF
-          CACHE BOOL "Enable MPI support")
-    endif()
+  if(NOT DEFINED MPI)
+    set(MPI
+        OFF
+        CACHE BOOL "Whether to build with MPI support (default: OFF)")
   endif()
 
   # If we are building DiFfRG as a standalone project, we need to set the base
   # directory
   set(BASE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-  set(DiFfRG_MPI ${ENABLE_MPI})
+  set(DiFfRG_MPI ${MPI})
 else()
   # If we are building a DiFfRG-based project, we need to set the bundle
   # directory relative to the DiFfRG base directory
   set(BASE_DIR ${DiFfRG_BASE_DIR})
 endif()
 
+# ##############################################################################
+# Validate BUNDLED_DIR
+# ##############################################################################
+
+if(NOT DEFINED BUNDLED_DIR OR "${BUNDLED_DIR}" STREQUAL "")
+  message(
+    FATAL_ERROR
+      "\n"
+      "======================================================================\n"
+      "  BUNDLED_DIR is not set.\n"
+      "======================================================================\n"
+      "  DiFfRG needs to know where its bundled dependencies are installed.\n"
+      "\n"
+      "  If you have not built the dependencies yet, build from the top-level\n"
+      "  repository directory first:\n"
+      "    mkdir build && cd build\n"
+      "    cmake .. -DCMAKE_INSTALL_PREFIX=~/.local/share/DiFfRG\n"
+      "    cmake --build . -- -j8\n"
+      "\n"
+      "  Then configure DiFfRG with:\n"
+      "    cmake .. -DBUNDLED_DIR=~/.local/share/DiFfRG/bundled\n"
+      "======================================================================\n"
+  )
+endif()
+
+if(NOT EXISTS "${BUNDLED_DIR}")
+  message(
+    FATAL_ERROR
+      "\n"
+      "======================================================================\n"
+      "  BUNDLED_DIR does not exist: ${BUNDLED_DIR}\n"
+      "======================================================================\n"
+      "  The specified dependency directory was not found. This usually means\n"
+      "  the dependencies have not been built yet.\n"
+      "\n"
+      "  Build from the top-level repository directory:\n"
+      "    mkdir build && cd build\n"
+      "    cmake .. -DCMAKE_INSTALL_PREFIX=~/.local/share/DiFfRG\n"
+      "    cmake --build . -- -j8\n"
+      "\n"
+      "  Then re-run this cmake configuration.\n"
+      "======================================================================\n"
+  )
+endif()
+
 set(CMAKE_PREFIX_PATH "${BUNDLED_DIR};${BUNDLED_DIR}/lib;${CMAKE_PREFIX_PATH}")
 
 link_directories(${BUNDLED_DIR}/lib/)
+link_directories(${BUNDLED_DIR}/lib64/)
 include_directories(SYSTEM ${BUNDLED_DIR}/include)
 
 message(STATUS "DiFfRG include directory: ${BASE_DIR}/include")
@@ -64,42 +103,155 @@ if(NOT DEFINED CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "")
 endif()
 
 # ##############################################################################
+# Helper macro for find_package with actionable errors
+# ##############################################################################
+
+macro(diffrg_find_package pkg)
+  # Parse optional arguments: version and extra hints
+  cmake_parse_arguments(_DFP "" "VERSION" "HINTS;COMPONENTS" ${ARGN})
+
+  set(_dfp_args "")
+  if(_DFP_VERSION)
+    list(APPEND _dfp_args "${_DFP_VERSION}")
+  endif()
+  list(APPEND _dfp_args QUIET)
+  if(_DFP_HINTS)
+    list(APPEND _dfp_args HINTS ${_DFP_HINTS})
+  endif()
+  if(_DFP_COMPONENTS)
+    list(APPEND _dfp_args COMPONENTS ${_DFP_COMPONENTS})
+  endif()
+
+  find_package(${pkg} ${_dfp_args})
+
+  if(NOT ${pkg}_FOUND)
+    message(
+      FATAL_ERROR
+        "\n"
+        "======================================================================\n"
+        "  Required dependency not found: ${pkg}\n"
+        "======================================================================\n"
+        "  CMake could not find '${pkg}' in BUNDLED_DIR=${BUNDLED_DIR}\n"
+        "\n"
+        "  This usually means the bundled dependencies need to be (re)built.\n"
+        "  Build from the top-level repository directory:\n"
+        "    mkdir build && cd build\n"
+        "    cmake .. -DCMAKE_INSTALL_PREFIX=~/.local/share/DiFfRG\n"
+        "    cmake --build . -- -j8\n"
+        "\n"
+        "  Then re-run this cmake configuration.\n"
+        "======================================================================\n"
+    )
+  endif()
+endmacro()
+
+# ##############################################################################
 # Direct external dependencies
 # ##############################################################################
 
 # Find deal.II
-find_package(deal.II 9.4.2 QUIET REQUIRED HINTS ${BUNDLED_DIR})
+diffrg_find_package(deal.II VERSION 9.4.2 HINTS ${BUNDLED_DIR})
 deal_ii_initialize_cached_variables()
 message(STATUS "Found deal.II in  ${deal.II_DIR}")
-# deal.II link dir
 
 # Find TBB
-find_package(TBB 2022.0.0 REQUIRED HINTS ${BUNDLED_DIR})
+diffrg_find_package(TBB VERSION 2022.0.0 HINTS ${BUNDLED_DIR})
 message(STATUS "Found TBB in ${TBB_DIR}")
 
 # Find Kokkos
-find_package(Kokkos REQUIRED HINTS ${BUNDLED_DIR})
+diffrg_find_package(Kokkos HINTS ${BUNDLED_DIR})
 message(STATUS "Found Kokkos in ${Kokkos_DIR}")
 
 # Find Boost
-find_package(
-  Boost 1.81 REQUIRED HINTS ${BUNDLED_DIR}/ ${BUNDLED_DIR}/boost_install/lib/
-  COMPONENTS thread iostreams serialization system)
+diffrg_find_package(
+  Boost
+  VERSION
+  1.81
+  HINTS
+  "${BUNDLED_DIR}/"
+  "${BUNDLED_DIR}/boost_install/lib/"
+  COMPONENTS
+  thread
+  iostreams
+  serialization
+  system)
 message(STATUS "Boost version: ${Boost_VERSION}")
 message(STATUS "Boost include dir: ${Boost_INCLUDE_DIRS}")
 message(STATUS "Boost libraries: ${Boost_LIBRARIES}")
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 
-# Other dependencies
-find_package(Eigen3 3.4.0 REQUIRED HINTS ${BUNDLED_DIR})
-find_package(GSL REQUIRED)
-find_package(autodiff 1.1.0 REQUIRED HINTS ${BUNDLED_DIR})
-find_package(spdlog 1.14.1 REQUIRED HINTS ${BUNDLED_DIR})
-find_package(h5cpp 0.7.1 QUIET HINTS ${BUNDLED_DIR})
+# Find Eigen3
+diffrg_find_package(Eigen3 VERSION 3.4.0 HINTS ${BUNDLED_DIR})
+
+# Find GSL (system dependency)
+find_package(GSL QUIET)
+if(NOT GSL_FOUND)
+  message(
+    FATAL_ERROR
+      "\n"
+      "======================================================================\n"
+      "  Required system dependency not found: GSL\n"
+      "======================================================================\n"
+      "  The GNU Scientific Library (GSL) must be installed on your system.\n"
+      "\n"
+      "  Install it using your package manager:\n"
+      "    Ubuntu/Debian:  sudo apt install libgsl-dev\n"
+      "    Arch Linux:     sudo pacman -S gsl\n"
+      "    Rocky/RHEL:     sudo dnf install gsl-devel\n"
+      "    macOS:          brew install gsl\n"
+      "======================================================================\n"
+  )
+endif()
+
+# Find autodiff
+diffrg_find_package(autodiff VERSION 1.1.0 HINTS ${BUNDLED_DIR})
+
+# Find spdlog
+diffrg_find_package(spdlog VERSION 1.14.1 HINTS ${BUNDLED_DIR})
+
+# Find HDF5
+diffrg_find_package(HDF5 VERSION 2.0.0 HINTS ${BUNDLED_DIR})
+
+diffrg_find_package(h5cpp VERSION 0.7.1 HINTS ${BUNDLED_DIR})
+message(STATUS "Found h5cpp in ${h5cpp_DIR}")
+message(STATUS "HDF5 include dir: ${HDF5_INCLUDE_DIRS}")
+add_compile_definitions(H5CPP)
 
 if(${DiFfRG_MPI})
   find_package(MPI REQUIRED)
 endif()
+
+# ##############################################################################
+# Dependency summary
+# ##############################################################################
+
+message("")
+message(
+  "${BoldWhite}======================================================================${ColourReset}"
+)
+message("${BoldWhite}  DiFfRG Dependency Summary${ColourReset}")
+message(
+  "${BoldWhite}======================================================================${ColourReset}"
+)
+message(
+  "  ${BoldGreen}deal.II${ColourReset}    ${deal.II_VERSION}          (${deal.II_DIR})"
+)
+message("  ${BoldGreen}TBB${ColourReset}        found          (${TBB_DIR})")
+message("  ${BoldGreen}Kokkos${ColourReset}     found          (${Kokkos_DIR})")
+message("  ${BoldGreen}Boost${ColourReset}      ${Boost_VERSION}")
+message("  ${BoldGreen}Eigen3${ColourReset}     ${Eigen3_VERSION}")
+message("  ${BoldGreen}GSL${ColourReset}        ${GSL_VERSION}")
+message("  ${BoldGreen}autodiff${ColourReset}   found")
+message("  ${BoldGreen}spdlog${ColourReset}     ${spdlog_VERSION}")
+message("  ${BoldGreen}HDF5${ColourReset}       ${HDF5_VERSION}")
+message("  ${BoldGreen}h5cpp${ColourReset}      found          (${h5cpp_DIR})")
+if(${DiFfRG_MPI})
+  message("  ${BoldGreen}MPI${ColourReset}        ${MPI_CXX_VERSION}")
+endif()
+message(
+  "${BoldWhite}======================================================================${ColourReset}"
+)
+message("")
 
 # ##############################################################################
 # Convenience functions
@@ -153,7 +305,7 @@ function(setup_target TARGET)
   target_link_libraries(${TARGET} PUBLIC ${Boost_LIBRARIES})
   target_link_libraries(${TARGET} PUBLIC TBB::tbb)
   target_link_libraries(${TARGET} PUBLIC Kokkos::kokkos)
-  target_link_libraries(${TARGET} PUBLIC petsc)
+  # target_link_libraries(${TARGET} PUBLIC petsc)
 
   if(${DiFfRG_MPI})
     target_link_libraries(${TARGET} PUBLIC MPI::MPI_CXX)
@@ -169,4 +321,11 @@ function(setup_target TARGET)
   endif()
 
   target_compile_definitions(${TARGET} PUBLIC _HAS_AUTO_PTR_ETC=0)
+
+  # Workaround: spdlog's bundled fmt uses consteval for format-string checking,
+  # which breaks on newer compilers. constexpr is functionally equivalent.
+  target_compile_definitions(${TARGET} PUBLIC FMT_CONSTEVAL=constexpr)
+  # Workaround: deal.II's tensor.h uses assert() without including <cassert>.
+  target_compile_options(
+    ${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-include cassert>)
 endfunction()

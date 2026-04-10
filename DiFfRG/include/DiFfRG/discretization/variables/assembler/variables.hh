@@ -78,6 +78,7 @@ namespace DiFfRG
       {
         Timer timer;
         model.dt_variables(residual, fe_tie(variables));
+        Kokkos::fence();
         timings_residual.push_back(timer.wall_time());
       };
 
@@ -86,6 +87,7 @@ namespace DiFfRG
       {
         Timer timer;
         model.template jacobian_variables<0>(jacobian, fe_tie(variables));
+        Kokkos::fence();
         timings_jacobian.push_back(timer.wall_time());
       };
 

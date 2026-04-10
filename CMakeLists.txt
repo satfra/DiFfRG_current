@@ -38,8 +38,7 @@ It will download and build all dependencies, including DiFfRG itself.
 # directory
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
   message(
-    WARNING
-      "CMAKE_INSTALL_PREFIX not set. Setting to ${HOME_DIR}/.local/share/DiFfRG"
+    "${BoldYellow}CMAKE_INSTALL_PREFIX not set. Setting to ${HOME_DIR}/.local/share/DiFfRG${ColourReset}"
   )
   set(CMAKE_INSTALL_PREFIX
       ${HOME_DIR}/.local/share/DiFfRG
@@ -55,59 +54,202 @@ message(
 
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
-if(APPLE)
-  set(BLAS_LIBRARY_PATH "${DEPEND_INSTALL_PREFIX}/lib/libopenblasDiFfRG.dylib")
-else()
-  set(BLAS_LIBRARY_PATH "${DEPEND_INSTALL_PREFIX}/lib/libopenblasDiFfRG.so")
-endif()
-
 # ##############################################################################
 # Find out which backends are available
 # ##############################################################################
 
 include(CheckLanguage)
 
+# Pre-flight check: git is required for ExternalProject git clones
+find_program(GIT_EXECUTABLE git)
+if(NOT GIT_EXECUTABLE)
+  message(
+    FATAL_ERROR
+      "\n"
+      "======================================================================\n"
+      "  'git' is required but was not found.\n"
+      "======================================================================\n"
+      "  DiFfRG uses git to fetch external dependencies during the build.\n"
+      "  Install it using your package manager:\n"
+      "    Ubuntu/Debian:  sudo apt install git\n"
+      "    Arch Linux:     sudo pacman -S git\n"
+      "    Rocky/RHEL:     sudo dnf install git\n"
+      "    macOS:          brew install git\n"
+      "======================================================================\n"
+  )
+endif()
+
 check_language(Fortran)
 check_language(CXX)
 check_language(C)
 
-check_language(CUDA)
-# if the compiler id is NVHPC, then we have CUDA
-if(CMAKE_CUDA_COMPILER)
-  set(HAVE_CUDA ON)
-  set(HAVE_HIP OFF)
-else()
-  set(HAVE_CUDA OFF)
-  check_language(HIP)
-  if(CMAKE_HIP_COMPILER)
-    set(HAVE_HIP ON)
+# ##############################################################################
+# Pre-flight checks: detect missing system dependencies early
+# ##############################################################################
+
+# Fortran compiler — required by deal.II for LAPACK
+if(NOT CMAKE_Fortran_COMPILER)
+  message(
+    FATAL_ERROR
+      "\n"
+      "======================================================================\n"
+      "  Fortran compiler not found.\n"
+      "======================================================================\n"
+      "  deal.II requires a Fortran compiler (gfortran or flang) for LAPACK.\n"
+      "\n"
+      "  Install it using your package manager:\n"
+      "    Ubuntu/Debian:  sudo apt install gfortran\n"
+      "    Arch Linux:     sudo pacman -S gcc-fortran\n"
+      "    Rocky/RHEL:     sudo dnf install gcc-gfortran\n"
+      "    macOS:          brew install gcc\n"
+      "  Or, if using Clang/LLVM:  install flang\n"
+      "======================================================================\n"
+  )
+endif()
+
+# GSL — required by DiFfRG
+find_package(GSL QUIET)
+if(NOT GSL_FOUND)
+  message(
+    FATAL_ERROR
+      "\n"
+      "======================================================================\n"
+      "  Required system dependency not found: GSL\n"
+      "======================================================================\n"
+      "  The GNU Scientific Library (GSL) must be installed on your system.\n"
+      "\n"
+      "  Install it using your package manager:\n"
+      "    Ubuntu/Debian:  sudo apt install libgsl-dev\n"
+      "    Arch Linux:     sudo pacman -S gsl\n"
+      "    Rocky/RHEL:     sudo dnf install gsl-devel\n"
+      "    macOS:          brew install gsl\n"
+      "======================================================================\n"
+  )
+endif()
+
+# LAPACK/BLAS — required by deal.II (skip if building OpenBLAS)
+option(BUILD_OpenBLAS "Build OpenBLAS" OFF)
+if(NOT BUILD_OpenBLAS)
+  find_package(LAPACK QUIET)
+  if(NOT LAPACK_FOUND)
+    message(
+      FATAL_ERROR
+        "\n"
+        "======================================================================\n"
+        "  Required system dependency not found: LAPACK/BLAS\n"
+        "======================================================================\n"
+        "  deal.II requires a LAPACK/BLAS implementation.\n"
+        "\n"
+        "  Either install a system LAPACK:\n"
+        "    Ubuntu/Debian:  sudo apt install libopenblas-dev\n"
+        "    Arch Linux:     sudo pacman -S blas-openblas\n"
+        "    Rocky/RHEL:     sudo dnf install openblas-devel\n"
+        "    macOS:          brew install openblas\n"
+        "\n"
+        "  Or let DiFfRG build OpenBLAS for you:\n"
+        "    cmake .. -DBUILD_OpenBLAS=ON\n"
+        "======================================================================\n"
+    )
   else()
-    set(HAVE_HIP OFF)
+    # Verify that LAPACK actually links correctly
+    include(CheckCSourceCompiles)
+    set(CMAKE_REQUIRED_LIBRARIES ${LAPACK_LIBRARIES})
+    check_c_source_compiles(
+      "
+      extern void dgemm_(void);
+      extern void dgetrf_(void);
+      int main() { dgemm_(); dgetrf_(); return 0; }
+    "
+      LAPACK_LINKS_OK)
+    unset(CMAKE_REQUIRED_LIBRARIES)
+    if(NOT LAPACK_LINKS_OK)
+      message(
+        WARNING
+          "\n" "  LAPACK was found but key symbols could not be linked.\n"
+          "  The LAPACK installation may be incomplete or broken.\n"
+          "  If the deal.II build fails, try: cmake .. -DBUILD_OpenBLAS=ON\n")
+    endif()
   endif()
 endif()
 
+message("${BoldGreen}All pre-flight checks passed.${ColourReset}")
+
+# Optional ccache support for dependency builds
+option(USE_CCACHE "Use ccache for dependency builds if available" ON)
+if(USE_CCACHE)
+  find_program(CCACHE_PROGRAM ccache)
+  if(CCACHE_PROGRAM)
+    message("${BoldGreen}Found ccache: ${CCACHE_PROGRAM}${ColourReset}")
+    set(CCACHE_CMAKE_ARGS
+        -DCMAKE_C_COMPILER_LAUNCHER:STRING=${CCACHE_PROGRAM}
+        -DCMAKE_CXX_COMPILER_LAUNCHER:STRING=${CCACHE_PROGRAM})
+  endif()
+endif()
+
+option(GPU "Enable/Disable GPU support" ON)
+
+if(GPU)
+  check_language(CUDA)
+  # if the compiler id is NVHPC, then we have CUDA
+  if(CMAKE_CUDA_COMPILER)
+    set(HAVE_CUDA ON)
+    set(HAVE_HIP OFF)
+  else()
+    set(HAVE_CUDA OFF)
+    check_language(HIP)
+    if(CMAKE_HIP_COMPILER)
+      set(HAVE_HIP ON)
+    else()
+      set(HAVE_HIP OFF)
+    endif()
+  endif()
+else()
+  set(HAVE_CUDA OFF)
+  set(HAVE_HIP OFF)
+endif()
+
+if(GPU
+   AND NOT HAVE_CUDA
+   AND NOT HAVE_HIP)
+  message(
+    WARNING "\n" "  GPU=ON but neither CUDA nor HIP compiler was found.\n"
+            "  The build will continue with CPU-only backends.\n"
+            "  To silence this warning, configure with -DGPU=OFF\n")
+endif()
+
 set(HAVE_THREADS ON)
-# if ENABLE_MPI is not set, set it to OFF
-if(NOT DEFINED ENABLE_MPI)
+
+option(MPI "Enable MPI support" OFF)
+if(MPI)
   find_package(MPI)
   if(MPI_FOUND)
-    set(ENABLE_MPI
-        ON
-        CACHE BOOL "Enable MPI support")
+
   else()
-    set(ENABLE_MPI
-        OFF
-        CACHE BOOL "Enable MPI support")
+    message(
+      FATAL_ERROR
+        "\n"
+        "======================================================================\n"
+        "  MPI enabled but no MPI library found.\n"
+        "======================================================================\n"
+        "  Install an MPI implementation:\n"
+        "    Ubuntu/Debian:  sudo apt install libopenmpi-dev\n"
+        "    Arch Linux:     sudo pacman -S openmpi\n"
+        "    Rocky/RHEL:     sudo dnf install openmpi-devel\n"
+        "    macOS:          brew install open-mpi\n"
+        "\n"
+        "  Or disable MPI: cmake .. -DMPI=OFF\n"
+        "======================================================================\n"
+    )
   endif()
 endif()
 message("")
 
 message("Available parallel backends:")
 # make the on and off values green/yellow
-if(ENABLE_MPI)
-  message("  ${BoldGreen}MPI: ${ENABLE_MPI}${ColourReset}")
+if(MPI)
+  message("  ${BoldGreen}MPI: ${MPI}${ColourReset}")
 else()
-  message("  ${BoldYellow}MPI: ${ENABLE_MPI}${ColourReset}")
+  message("  ${BoldYellow}MPI: ${MPI}${ColourReset}")
 endif()
 if(HAVE_CUDA)
   message("  ${BoldGreen}CUDA: ${HAVE_CUDA}${ColourReset}")
@@ -132,36 +274,29 @@ message("")
 
 include(ExternalProject)
 
-# build hdf5
+message("${BoldCyan}[1/8] Configuring HDF5...${ColourReset}")
 ExternalProject_Add(
   hdf5_dep
   LOG_CONFIGURE ON
-  LOG_INSTALL ON
   LOG_OUTPUT_ON_FAILURE ON
+  BUILD_COMMAND cmake -E echo "Skipping build step for hdf5."
+  INSTALL_COMMAND cmake -E echo "Skipping install step for hdf5."
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/hdf5
-  GIT_REPOSITORY https://github.com/HDFGroup/hdf5.git
-  GIT_TAG hdf5_1.14.6
+  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/hdf5
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
   CMAKE_CACHE_ARGS
-    -DCMAKE_Fortran_COMPILER:STRING=${CMAKE_Fortran_COMPILER}
-    -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
-    -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
-    -DHDF5_USE_GNU_DIRS:BOOL=ON
-    -DHDF5_INSTALL_CMAKE_DIR:STRING=lib/cmake/hdf5
-    -DHDF5_ENABLE_PARALLEL:BOOL=${ENABLE_MPI}
-    -DHDF5_TEST_PARALLEL:BOOL=OFF
-    -DHDF5_ALLOW_UNSUPPORTED:BOOL=ON
-    -DALLOW_UNSUPPORTED:BOOL=ON
-    -DHDF5_BUILD_FORTRAN:BOOL=OFF
-    -DHDF5_BUILD_CPP_LIB:BOOL=ON
-    -DHDF5_ENABLE_SZIP_SUPPORT:BOOL=OFF
-    -DHDF5_ENABLE_ZLIB_SUPPORT:BOOL=ON
-    -DCMAKE_CXX_STANDARD:STRING=20
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
-    -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
+    -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
+    -DCMAKE_CXX_FLAGS:STRING=-march=native
+    -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
+    -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+    ${CCACHE_CMAKE_ARGS}
+    -DMPI:BOOL=${MPI})
 
-# build general deps
+message(
+  "${BoldCyan}[2/8] Configuring general dependencies (TBB, Eigen3, spdlog, ...)...${ColourReset}"
+)
 ExternalProject_Add(
   general_dep
   LOG_CONFIGURE ON
@@ -178,9 +313,22 @@ ExternalProject_Add(
     -DCMAKE_CXX_FLAGS:STRING=-march=native
     -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-    -DENABLE_MPI:BOOL=${ENABLE_MPI})
+    -DCPM_SOURCE_CACHE:PATH=${CMAKE_CURRENT_BINARY_DIR}/cpm-cache
+    ${CCACHE_CMAKE_ARGS}
+    -DBUILD_OpenBLAS:BOOL=${BUILD_OpenBLAS}
+    -DCMAKE_PREFIX_PATH:PATH=${DEPEND_INSTALL_PREFIX}
+    -DMPI:BOOL=${MPI})
 
-# build sundials
+if(BUILD_OpenBLAS)
+  if(APPLE)
+    set(BLAS_LIBRARY_PATH
+        "${DEPEND_INSTALL_PREFIX}/lib/libopenblasDiFfRG.dylib")
+  else()
+    set(BLAS_LIBRARY_PATH "${DEPEND_INSTALL_PREFIX}/lib/libopenblasDiFfRG.so")
+  endif()
+endif()
+
+message("${BoldCyan}[3/8] Configuring SUNDIALS...${ColourReset}")
 ExternalProject_Add(
   sundials_dep
   LOG_CONFIGURE ON
@@ -189,7 +337,6 @@ ExternalProject_Add(
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/sundials
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/sundials
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  DEPENDS general_dep
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
   CMAKE_CACHE_ARGS
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
@@ -198,9 +345,10 @@ ExternalProject_Add(
     -DCMAKE_CXX_FLAGS:STRING=-march=native
     -DCMAKE_C_FLAGS:STRING=-march=native
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-    -DENABLE_MPI:BOOL=${ENABLE_MPI})
+    ${CCACHE_CMAKE_ARGS}
+    -DMPI:BOOL=${MPI})
 
-# build autodiff
+message("${BoldCyan}[4/8] Configuring autodiff...${ColourReset}")
 ExternalProject_Add(
   autodiff_dep
   LOG_CONFIGURE ON
@@ -209,12 +357,13 @@ ExternalProject_Add(
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/autodiff
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/autodiff
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  DEPENDS general_dep sundials_dep
+  DEPENDS general_dep
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
   CMAKE_CACHE_ARGS -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
-                   -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
+                   -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+                   ${CCACHE_CMAKE_ARGS})
 
-# build boost
+message("${BoldCyan}[5/8] Configuring Boost...${ColourReset}")
 ExternalProject_Add(
   boost_dep
   LOG_CONFIGURE ON
@@ -227,8 +376,8 @@ ExternalProject_Add(
              -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
              -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
-  CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
-
+  CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+                   -DCCACHE_PROGRAM:STRING=${CCACHE_PROGRAM})
 
 # ##############################################################################
 # Kokkos
@@ -246,8 +395,7 @@ endif()
 
 if(NOT DEFINED Kokkos_ARCH_LIST)
   message(
-    WARNING
-      "Kokkos_ARCH_LIST not set. GPU architecture must be detectable when building Kokkos."
+    "  ${BoldYellow}Kokkos_ARCH_LIST not set. GPU architecture must be detectable when building Kokkos.${ColourReset}"
   )
   set(Kokkos_ARCH_LIST "")
 else()
@@ -260,17 +408,18 @@ else()
   string(SUBSTRING "${Kokkos_ARCH_LIST}" 0 -1 Kokkos_ARCH_LIST)
 endif()
 
-# add the Kokkos dependency to the build
+message("${BoldCyan}[6/8] Configuring Kokkos...${ColourReset}")
 ExternalProject_Add(
   kokkos_dep
   LOG_CONFIGURE ON
   LOG_INSTALL ON
   LOG_OUTPUT_ON_FAILURE ON
   GIT_REPOSITORY https://github.com/kokkos/kokkos.git
-  GIT_TAG 4.6.01
+  GIT_TAG 5.0.1
+  GIT_SHALLOW ON
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/kokkos
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  DEPENDS general_dep sundials_dep autodiff_dep
+  # DEPENDS general_dep sundials_dep autodiff_dep
   CMAKE_ARGS -DCMAKE_CXX_FLAGS=-fPIC
   CMAKE_CACHE_ARGS
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
@@ -294,30 +443,73 @@ ExternalProject_Add(
 # PETSc
 # ##############################################################################
 
-# build PETSc
-ExternalProject_Add(
-  petsc_dep
-  LOG_CONFIGURE ON
-  LOG_INSTALL ON
-  LOG_OUTPUT_ON_FAILURE ON
-  DEPENDS general_dep sundials_dep autodiff_dep kokkos_dep
-  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/petsc
-  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/petsc
-  INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
-  BUILD_COMMAND cmake -E echo "Skipping build step for PETSc."
-  INSTALL_COMMAND cmake -E echo "Skipping install step for PETSc."
-  # Propagate DEPEND_INSTALL_PREFIX to the dependencies
-  CMAKE_CACHE_ARGS
-    -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-    -DOpenBLAS_LIBRARY:STRING=${BLAS_LIBRARY_PATH}
-    -DHAVE_MPI:BOOL=${ENABLE_MPI})
+option(BUILD_PETSC "Build PETSc" OFF)
+
+if(BUILD_PETSC)
+  # build PETSc
+  ExternalProject_Add(
+    petsc_dep
+    LOG_CONFIGURE ON
+    LOG_INSTALL ON
+    LOG_OUTPUT_ON_FAILURE ON
+    DEPENDS general_dep # sundials_dep autodiff_dep kokkos_dep
+    PREFIX ${CMAKE_CURRENT_BINARY_DIR}/petsc
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/petsc
+    INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
+    BUILD_COMMAND cmake -E echo "Skipping build step for PETSc."
+    INSTALL_COMMAND cmake -E echo "Skipping install step for PETSc."
+    # Propagate DEPEND_INSTALL_PREFIX to the dependencies
+    CMAKE_CACHE_ARGS
+      -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+      -DOpenBLAS_LIBRARY:STRING=${BLAS_LIBRARY_PATH} -DHAVE_MPI:BOOL=${MPI})
+  set(is_petsc_dep petsc_dep)
+endif()
 
 # ##############################################################################
 # deal.II
 # ##############################################################################
 
-# build deal.II
+if(BUILD_OpenBLAS)
+  set(dealii_lapack "-DLAPACK_LIBRARIES:STRING=${BLAS_LIBRARY_PATH}")
+endif()
+
+# RAM-aware thread cap for deal.II (linking can OOM)
+cmake_host_system_information(RESULT _total_ram_mb QUERY TOTAL_PHYSICAL_MEMORY)
+math(EXPR _max_threads_by_ram "${_total_ram_mb} / 2000")
+if(_max_threads_by_ram LESS 1)
+  set(_max_threads_by_ram 1)
+endif()
+include(ProcessorCount)
+ProcessorCount(_nproc)
+if(_nproc LESS 1)
+  set(_nproc 1)
+endif()
+math(EXPR _half_cores "${_nproc} / 2")
+if(_half_cores LESS 1)
+  set(_half_cores 1)
+endif()
+# Use the lesser of half cores, RAM-based limit, and hard cap
+set(DEALII_MAX_JOBS 16 CACHE STRING "Maximum parallel jobs for deal.II build")
+set(_dealii_jobs ${_half_cores})
+if(_max_threads_by_ram LESS _dealii_jobs)
+  set(_dealii_jobs ${_max_threads_by_ram})
+endif()
+if(_dealii_jobs GREATER ${DEALII_MAX_JOBS})
+  set(_dealii_jobs ${DEALII_MAX_JOBS})
+endif()
+message(
+  "  deal.II build parallelism: ${_dealii_jobs} threads (${_total_ram_mb} MB RAM, ${_nproc} cores)"
+)
+
+option(DEVEL "Enable development mode (deal.II DebugRelease build)" OFF)
+if(DEVEL)
+  set(dealiiConfig "DebugRelease")
+else()
+  set(dealiiConfig "Release")
+endif()
+
+message("${BoldCyan}[7/8] Configuring deal.II...${ColourReset}")
 ExternalProject_Add(
   deal.II_dep
   LOG_CONFIGURE ON
@@ -325,35 +517,40 @@ ExternalProject_Add(
   LOG_OUTPUT_ON_FAILURE ON
   GIT_REPOSITORY https://github.com/dealii/dealii.git
   GIT_TAG v9.4.2
+  GIT_SHALLOW ON
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/deal.II
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  DEPENDS general_dep boost_dep petsc_dep sundials_dep
+  DEPENDS general_dep boost_dep ${is_petsc_dep} sundials_dep
+  BUILD_COMMAND cmake --build . -- -j${_dealii_jobs}
   CMAKE_CACHE_ARGS
     -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
     -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
     -DCMAKE_Fortran_COMPILER:STRING=${CMAKE_Fortran_COMPILER}
-    -DCMAKE_BUILD_TYPE:STRING=DebugRelease
+    -DCMAKE_BUILD_TYPE:STRING=${dealiiConfig}
     -DCMAKE_POLICY_VERSION_MINIMUM:STRING=3.5
     -DCMAKE_POLICY_DEFAULT_CMP0167:STRING=NEW
     -DCMAKE_WARN_DEPRECATED:BOOL=OFF
     -DDEAL_II_CXX_FLAGS:STRING=-march=native
-    -DLAPACK_LIBRARIES:STRING=${BLAS_LIBRARY_PATH}
     -DDEAL_II_COMPONENT_EXAMPLES:BOOL=OFF
     -DDEAL_II_COMPONENT_DOCUMENTATION:BOOL=OFF
-    -DDEAL_II_WITH_MPI:BOOL=${ENABLE_MPI}
+    -DDEAL_II_WITH_MPI:BOOL=${MPI}
     -DDEAL_II_WITH_KOKKOS:BOOL=OFF
     -DDEAL_II_WITH_UMFPACK:BOOL=ON
     -DDEAL_II_WITH_TASKFLOW:BOOL=OFF
+    ${dealii_lapack}
     -DDEAL_II_WITH_LAPACK:BOOL=ON
-    -DDEAL_II_WITH_HDF5:BOOL=${HDF5_FOUND}
-    -DHDF5_INCLUDE_DIRS:PATH=${HDF5_INCLUDE_DIRS}
+    -DDEAL_II_WITH_HDF5:BOOL=OFF
     -DPETSC_DIR:PATH=${DEPEND_INSTALL_PREFIX}
     -DPETSC_ARCH:STRING=arch-linux-c-opt
     -DCMAKE_CXX_STANDARD:STRING=17
     -DTBB_DIR:STRING=${DEPEND_INSTALL_PREFIX}
     -DSUNDIALS_DIR:STRING=${DEPEND_INSTALL_PREFIX}
     -DBOOST_DIR:STRING=${DEPEND_INSTALL_PREFIX}
-    -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX})
+    -DBOOST_INCLUDEDIR:PATH=${DEPEND_INSTALL_PREFIX}/include
+    -DBOOST_LIBRARYDIR:PATH=${DEPEND_INSTALL_PREFIX}/lib
+    -DCMAKE_PREFIX_PATH:STRING=${DEPEND_INSTALL_PREFIX}
+    -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+    ${CCACHE_CMAKE_ARGS})
 
 # create a directory necessary for using deal.II
 file(MAKE_DIRECTORY ${DEPEND_INSTALL_PREFIX}/include/deal.II/bundled)
@@ -365,7 +562,7 @@ file(MAKE_DIRECTORY ${DEPEND_INSTALL_PREFIX}/include/deal.II/bundled)
 option(DiFfRG_TEST "Build DiFfRG tests" OFF)
 option(DiFfRG_DOCUMENTATION "Build DiFfRG documentation" ON)
 
-# build the actual DiFfRG library
+message("${BoldCyan}[8/8] Configuring DiFfRG...${ColourReset}")
 ExternalProject_Add(
   DiFfRG
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/
@@ -373,8 +570,8 @@ ExternalProject_Add(
   INSTALL_DIR ${CMAKE_INSTALL_PREFIX}
   DEPENDS general_dep boost_dep deal.II_dep kokkos_dep autodiff_dep
   CMAKE_CACHE_ARGS
-    -DENABLE_MPI:BOOL=${ENABLE_MPI}
-    -DENABLE_HDF5:BOOL=${HDF5_FOUND}
+    -DMPI:BOOL=${MPI}
+    -DHDF5:BOOL=ON
     -DBUNDLED_DIR:PATH=${DEPEND_INSTALL_PREFIX}
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
     -DDiFfRG_TEST:BOOL=${DiFfRG_TEST}

@@ -25,6 +25,8 @@ if(NOT DEFINED BUNDLED_DIR)
   message(STATUS "BUNDLED_DIR not set, defaulting to ${BUNDLED_DIR}")
 endif()
 
+set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} ${BUNDLED_DIR})
+
 # ##############################################################################
 # Documentation
 # ##############################################################################
@@ -58,7 +60,7 @@ if(DiFfRG_DOCUMENTATION AND DOXYGEN_FOUND)
     CODE "file(CREATE_LINK ${CMAKE_INSTALL_PREFIX}/documentation/html/index.html ${CMAKE_INSTALL_PREFIX}/Documentation.html SYMBOLIC)"
   )
 
-elseif(DiFfRG_DOCUMENTATION AND DOXYGEN_FOUND)
+elseif(DiFfRG_DOCUMENTATION AND NOT DOXYGEN_FOUND)
   message("Doxygen needs to be installed to generate the doxygen documentation")
 endif()
 
@@ -90,6 +92,62 @@ option(DiFfRG_TEST "Build tests" OFF)
 if(DiFfRG_TEST)
   enable_testing()
   add_subdirectory(tests)
+
+  # Mathematica tests — detect Wolfram executable
+  set(WOLFRAM_EXE "")
+  execute_process(
+    COMMAND bash -c "which wolframscript"
+    OUTPUT_VARIABLE WOLFRAM_EXE
+    ERROR_QUIET)
+  if(WOLFRAM_EXE STREQUAL "")
+    execute_process(
+      COMMAND bash -c "which wolfram"
+      OUTPUT_VARIABLE WOLFRAM_EXE
+      ERROR_QUIET)
+  endif()
+  if(WOLFRAM_EXE STREQUAL "")
+    execute_process(
+      COMMAND bash -c "which math"
+      OUTPUT_VARIABLE WOLFRAM_EXE
+      ERROR_QUIET)
+  endif()
+  if(DEFINED ENV{WOLFRAM_SCRIPT})
+    set(WOLFRAM_EXE $ENV{WOLFRAM_SCRIPT})
+  endif()
+  string(REPLACE "\n" "" WOLFRAM_EXE "${WOLFRAM_EXE}")
+
+  if(NOT WOLFRAM_EXE STREQUAL "")
+    message(STATUS "Found Wolfram executable: ${WOLFRAM_EXE}")
+
+    set(MATHEMATICA_TEST_RUNNER
+        ${CMAKE_CURRENT_SOURCE_DIR}/Mathematica/DiFfRG/Tests/TestRunner.m)
+
+    add_custom_target(
+      mathematica-test
+      COMMAND ${WOLFRAM_EXE} -script ${MATHEMATICA_TEST_RUNNER} | tee
+              ${CMAKE_CURRENT_BINARY_DIR}/mathematica-test.log
+      DEPENDS ${MATHEMATICA_TEST_RUNNER}
+      COMMENT "Running Mathematica tests"
+      VERBATIM)
+
+    # Run a single test file or directory:
+    #   make mathematica-test-single FILE=ExportTests.m
+    # Note: $(FILE) is expanded by Make at build time, not by CMake at
+    # configure time. VERBATIM is intentionally omitted so Make resolves it.
+    add_custom_target(
+      mathematica-test-single
+      COMMAND ${WOLFRAM_EXE} -script ${MATHEMATICA_TEST_RUNNER} $(FILE) | tee
+              ${CMAKE_CURRENT_BINARY_DIR}/mathematica-test.log
+      DEPENDS ${MATHEMATICA_TEST_RUNNER}
+      COMMENT "Running Mathematica test")
+
+    add_test(
+      NAME mathematica_tests
+      COMMAND ${WOLFRAM_EXE} -script ${MATHEMATICA_TEST_RUNNER}
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/Mathematica/DiFfRG/Tests)
+  else()
+    message(STATUS "wolframscript/wolfram/math not found — Mathematica tests disabled")
+  endif()
 endif()
 
 # ##############################################################################

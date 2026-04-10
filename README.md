@@ -49,10 +49,11 @@ To compile and run this project, there are very few requirements which you can e
 - [git](https://git-scm.com/) for external requirements and to clone this repository.
 - [CMake](https://www.cmake.org/) for the build systems of DiFfRG, deal.ii and other libraries.
 - [GNU Make](https://www.gnu.org/software/make/) or another generator of your choice.
-- A compiler supporting at least the C++20 standard. This project is only tested using the [GCC](https://gcc.gnu.org/) compiler suite, as well as with `AppleClang`, but in principle, ICC or standard Clang should also work.
-- The GNU Scientific Library [GSL](https://www.gnu.org/software/gsl/). If not found by DiFfRG, it will try to install it by itself.
+- A compiler supporting at least the C++20 standard, including a Fortran compiler (e.g. `gfortran`). This project is only tested using the [GCC](https://gcc.gnu.org/) compiler suite, as well as with `AppleClang`, but in principle, ICC or standard Clang should also work.
+- LAPACK and BLAS in some form, e.g. [OpenBLAS](https://www.openblas.net/). Alternatively, pass `-DBUILD_OpenBLAS=ON` to have DiFfRG build OpenBLAS.
+- The GNU Scientific Library [GSL](https://www.gnu.org/software/gsl/).
+- [Python](https://www.python.org/) is required by the Boost build system and used for visualization.
 - [Doxygen](https://www.doxygen.org/) and [graphviz](https://www.graphviz.org/download/) to build the documentation.
-- [Python](https://www.python.org/) is used in the library both for visualization purposes and within the build system of DiFfRG. 
 
 The following requirements are optional:
 - [ParaView](https://www.paraview.org/), a program to visualize and post-process the vtk data saved by DiFfRG when treating FEM discretizations.
@@ -63,7 +64,7 @@ The framework has been tested with the following systems:
 
 #### Arch Linux
 ```bash
-$ pacman -S git cmake gcc paraview python doxygen graphviz gsl
+$ pacman -S git cmake gcc gcc-fortran blas-openblas paraview python doxygen graphviz gsl
 ```
 For a CUDA-enabled build, additionally 
 ```bash
@@ -73,7 +74,7 @@ $ pacman -S cuda
 
 #### Rocky Linux
 ```bash
-$ dnf --enablerepo=devel install -y gcc-toolset-12 cmake git doxygen doxygen-latex python3 python3-pip gsl-devel patch
+$ dnf --enablerepo=devel install -y gcc-toolset-12 cmake git openblas-devel doxygen doxygen-latex python3 python3-pip gsl-devel patch
 $ scl enable gcc-toolset-12 bash
 ```
 
@@ -82,17 +83,17 @@ The second line is necessary to switch into a shell where `g++-12` is available
 #### Ubuntu
 ```bash
 $ apt-get update
-$ apt-get install git cmake paraview build-essential python3 doxygen graphviz libgsl-dev
+$ apt-get install git cmake gfortran libopenblas-dev paraview build-essential python3 doxygen graphviz libgsl-dev
 ```
 For a CUDA-enabled build, additionally 
 ```bash
 $ apt-get install cuda
 ```
 
-#### MacOS
+#### macOS
 First, install xcode and homebrew, then run
 ```bash
-$ brew install cmake doxygen paraview graphviz gsl bash
+$ brew install cmake gcc doxygen paraview graphviz gsl python3 bash
 ```
 
 *Note: you have to install a newer GNU version of bash, since by default, only version 3.2 is installed, and for installation, PETSc requires a newer version*
@@ -129,7 +130,7 @@ If you wish to change this directory, or some other default values, you can set 
 set(DiFfRG_INSTALL_DIR $ENV{HOME}/.local/share/DiFfRG/)
 set(DiFfRG_BUILD_DIR $ENV{HOME}/.local/share/DiFfRG/build/)
 set(DiFfRG_SOURCE_DIR $ENV{HOME}/.local/share/DiFfRG/src/)
-set(TRY_DiFfRG_VERSION Implement-Kokkos)
+set(TRY_DiFfRG_VERSION main)
 set(PARALLEL_JOBS 8)
 ```
 
@@ -147,7 +148,15 @@ $ cd build
 $ cmake ../ -DCMAKE_INSTALL_PREFIX=~/.local/share/DiFfRG/ -DCMAKE_BUILD_TYPE=Release
 $ cmake --build ./ -- -j8
 ```
-By default, the library will install itself to `$HOME/.local/shared/DiFfRG`, but you can control the destination by pointing `CMAKE_INSTALL_PREFIX` to a directory of your choice.
+By default, the library will install itself to `$HOME/.local/share/DiFfRG`, but you can control the destination by pointing `CMAKE_INSTALL_PREFIX` to a directory of your choice.
+
+### Verifying your installation
+
+After installation, you can verify that all dependencies are correctly found:
+```bash
+$ cmake -DBUNDLED_DIR=~/.local/share/DiFfRG/bundled -P ~/.local/share/DiFfRG/cmake/verify_install.cmake
+```
+This prints a pass/fail table for each dependency, helping diagnose any issues.
 
 ### Docker and other container runtime environments
 

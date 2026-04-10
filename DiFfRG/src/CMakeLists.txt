@@ -1,6 +1,18 @@
 # add_compile_definitions(CUDA_API_PER_THREAD_DEFAULT_STREAM)
+
+# boost_json.cc includes boost/json/src.hpp (the compiled boost::json source).
+# It must NOT be compiled with CUDA offloading, otherwise the static member
+# key_value_pair::empty_ ends up in device code and causes nvlink duplicate
+# symbol errors when libDiFfRG.a appears more than once on the link line.
+add_library(DiFfRG_boost_json STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/boost_json.cc)
+set_target_properties(DiFfRG_boost_json PROPERTIES
+    LANGUAGE CXX
+    LINKER_LANGUAGE CXX
+    CUDA_SEPARABLE_COMPILATION OFF)
+target_include_directories(DiFfRG_boost_json SYSTEM PRIVATE ${Boost_INCLUDE_DIRS})
+
 set(DiFfRG_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/boost_json.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/configuration_helper.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/csv_reader.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/external_data_interpolator.cc
@@ -40,6 +52,8 @@ set(DiFfRG_SOURCES
 
 add_library(DiFfRG STATIC ${DiFfRG_SOURCES})
 
+target_link_libraries(DiFfRG PUBLIC DiFfRG_boost_json)
+
 setup_target(DiFfRG)
 
 if(h5cpp_FOUND)
@@ -58,6 +72,6 @@ set_property(TARGET DiFfRG PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS ON)
 
 include(GNUInstallDirs)
 install(
-  TARGETS DiFfRG
+  TARGETS DiFfRG DiFfRG_boost_json
   EXPORT DiFfRGTargets
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})

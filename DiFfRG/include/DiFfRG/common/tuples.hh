@@ -224,14 +224,14 @@ namespace DiFfRG
   }
 
   template <typename T, std::size_t... Indices>
-  auto vectorToTupleHelper(const std::vector<T> &v, std::index_sequence<Indices...>)
+  auto vector_to_tuple_helper(const std::vector<T> &v, std::index_sequence<Indices...>)
   {
     return std::tie(v[Indices]...);
   }
   template <std::size_t N, typename T> auto vector_to_tuple(const std::vector<T> &v)
   {
     assert(v.size() >= N);
-    return vectorToTupleHelper(v, std::make_index_sequence<N>());
+    return vector_to_tuple_helper(v, std::make_index_sequence<N>());
   }
 
   template <typename Head, typename... Tail> constexpr auto tuple_tail(const std::tuple<Head, Tail...> &t)

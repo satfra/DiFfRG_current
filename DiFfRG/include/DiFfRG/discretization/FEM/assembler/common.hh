@@ -19,8 +19,8 @@
 #include <tbb/tbb.h>
 
 #include <DiFfRG/common/utils.hh>
-#include <DiFfRG/discretization/common/EoM.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
+#include <DiFfRG/discretization/common/eom.hh>
 #include <DiFfRG/discretization/data/data_output.hh>
 
 namespace DiFfRG
@@ -86,9 +86,11 @@ namespace DiFfRG
     {
       const auto fe_function_names = Components::FEFunction_Descriptor::get_names_vector();
       std::vector<std::string> fe_function_names_residual;
+      fe_function_names_residual.reserve(fe_function_names.size());
       for (const auto &name : fe_function_names)
         fe_function_names_residual.push_back(name + "_residual");
       std::vector<std::string> fe_function_names_dot;
+      fe_function_names_dot.reserve(fe_function_names.size());
       for (const auto &name : fe_function_names)
         fe_function_names_dot.push_back(name + "_dot");
 
@@ -142,6 +144,7 @@ namespace DiFfRG
         extract(__extracted_data, spatial_solution, variables, true, false, false);
       const auto &extracted_data = __extracted_data;
       model.dt_variables(residual, v_tie(variables, extracted_data));
+      Kokkos::fence();
       timings_variable_residual.push_back(timer.wall_time());
     };
     virtual void jacobian_variables(FullMatrix<NumberType> &jacobian, const VectorType &variables,
@@ -153,6 +156,7 @@ namespace DiFfRG
         extract(__extracted_data, spatial_solution, variables, true, false, false);
       const auto &extracted_data = __extracted_data;
       model.template jacobian_variables<0>(jacobian, v_tie(variables, extracted_data));
+      Kokkos::fence();
       timings_variable_jacobian.push_back(timer.wall_time());
     };
 

@@ -1,6 +1,7 @@
 #pragma once
 
-#include "DiFfRG/physics/utils.hh"
+#include "DiFfRG/physics/interpolation.hh"
+#include "DiFfRG/physics/physics.hh"
 
 namespace DiFfRG
 {
@@ -9,21 +10,23 @@ namespace DiFfRG
   public:
     using Regulator = _Regulator;
 
-    static KOKKOS_FORCEINLINE_FUNCTION auto kernel(const auto &l1, const double &k, const double &N, const double &T,
+    static KOKKOS_FORCEINLINE_FUNCTION auto kernel(const double &l1, const auto &k, const auto &N, const auto &T,
                                                    const auto &m2Pi, const auto &m2Sigma)
     {
       using namespace DiFfRG;
       using namespace DiFfRG::compute;
-      const auto _repl1 = RB(powr<2>(k), powr<2>(l1));
-      const auto _repl2 = RBdot(powr<2>(k), powr<2>(l1));
-      return 0.25 * (-1. + N) * _repl2 * sqrt(powr<-1>(_repl1 + powr<2>(l1) + m2Pi)) *
-                 powr<-1>(tanh(0.5 * sqrt(_repl1 + powr<2>(l1) + m2Pi) * powr<-1>(T))) +
-             0.25 * _repl2 * sqrt(powr<-1>(_repl1 + powr<2>(l1) + m2Sigma)) *
-                 powr<-1>(tanh(0.5 * sqrt(_repl1 + powr<2>(l1) + m2Sigma) * powr<-1>(T)));
+      const auto _interp1 = RB(powr<2>(k), powr<2>(l1));
+      const auto _interp2 = CothFiniteT(sqrt(powr<2>(l1) + m2Pi + RB(powr<2>(k), powr<2>(l1))), T);
+      const auto _interp3 = RBdot(powr<2>(k), powr<2>(l1));
+      const auto _interp4 = CothFiniteT(sqrt(powr<2>(l1) + m2Sigma + RB(powr<2>(k), powr<2>(l1))), T);
+      const auto _cse1 = powr<2>(l1);
+      return (0.25) * (fma(-1., (_interp2) * ((_interp3) * (sqrt(powr<-1>(_cse1 + _interp1 + m2Pi)))),
+                           fma(_interp3, (_interp4) * (sqrt(powr<-1>(_cse1 + _interp1 + m2Sigma))),
+                               fma(_interp2, (_interp3) * ((sqrt(powr<-1>(_cse1 + _interp1 + m2Pi))) * (N)), 0.))));
     }
 
-    static KOKKOS_FORCEINLINE_FUNCTION auto constant(const double &k, const double &N, const double &T,
-                                                     const auto &m2Pi, const auto &m2Sigma)
+    static KOKKOS_FORCEINLINE_FUNCTION auto constant(const auto &k, const auto &N, const auto &T, const auto &m2Pi,
+                                                     const auto &m2Sigma)
     {
       using namespace DiFfRG;
       using namespace DiFfRG::compute;

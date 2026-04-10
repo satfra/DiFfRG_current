@@ -3,7 +3,7 @@
 
 #include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/polynomials.hh>
-#include <DiFfRG/physics/integration/vacuum/integrator_p2_4D_2ang.hh>
+#include <DiFfRG/physics/integration/vacuum/integrator_p2_4d_2ang.hh>
 
 #include "../boilerplate/poly_integrand.hh"
 
@@ -34,7 +34,7 @@ TEST_CASE("Test 4D momentum + 2 angle integrals", "[integration][quadrature]")
 
     const ctype x_extent = GENERATE(take(1, random(1., 2.)));
     QuadratureProvider quadrature_provider;
-    Integrator_p2_4D_2ang<4, NT, PolyIntegrand<3, NT>, ExecutionSpace> integrator(quadrature_provider, {64, 24, 24},
+    Integrator_p2_4D_2ang<4, NT, PolyIntegrand<3, NT>, ExecutionSpace> integrator(quadrature_provider, {32, 8, 8},
                                                                                   x_extent);
 
     SECTION("Volume integral")
@@ -48,7 +48,7 @@ TEST_CASE("Test 4D momentum + 2 angle integrals", "[integration][quadrature]")
       NT integral{};
       integrator.get(integral, 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0.);
 
-      const ctype expected_precision = 1e-9;
+      constexpr ctype expected_precision = 1e-14;
       const ctype rel_err = t_abs((integral - reference_integral) / reference_integral);
       if (rel_err >= expected_precision) {
         std::cerr << "reference: " << std::scientific << std::setw(10) << reference_integral
@@ -98,7 +98,7 @@ TEST_CASE("Test 4D momentum + 2 angle integrals", "[integration][quadrature]")
       integrator.get(integral, constant, poly[0], poly[1], poly[2], poly[3], cos1_poly[0], cos1_poly[1], cos1_poly[2],
                      cos1_poly[3], cos2_poly[0], cos2_poly[1], cos2_poly[2], cos2_poly[3]);
 
-      const ctype expected_precision = 1e-9;
+      constexpr ctype expected_precision = 1e-12;
       const ctype rel_err = t_abs((integral - reference_integral) / reference_integral);
       if (rel_err >= expected_precision) {
         std::cerr << "reference: " << std::scientific << std::setw(10) << reference_integral

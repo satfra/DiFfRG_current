@@ -1,15 +1,7 @@
 #pragma once
 
 #include <DiFfRG/common/utils.hh>
-
-#ifdef HAVE_MPI
-#include <mpi.h>
-#else
-#ifndef MPI_Comm
-#define MPI_Comm int
-#define MPI_COMM_WORLD 1
-#endif
-#endif
+#include <deal.II/base/mpi.h>
 
 namespace DiFfRG
 {

@@ -1,4 +1,5 @@
 // standard library
+#include <filesystem>
 #include <fstream>
 
 // DiFfRG
@@ -14,8 +15,12 @@ namespace DiFfRG
       log->flush_on(spdlog::level::info);
       return log;
     } catch (const spdlog::spdlog_ex &e) {
-      throw std::runtime_error("Could not create logger: " + std::string(e.what()));
-      return nullptr;
+      try {
+        auto log = spdlog::get(name);
+        return log;
+      } catch (...) {
+        throw std::runtime_error("Logger initialization failed: " + std::string(e.what()));
+      }
     }
   }
 
@@ -52,7 +57,9 @@ namespace DiFfRG
   bool create_folder(const std::string &path_)
   {
     auto path = make_folder(path_);
-    return (system((std::string("mkdir -p ") + path).c_str()) == 0);
+    std::error_code ec;
+    std::filesystem::create_directories(path, ec);
+    return !ec;
   }
 
   std::string time_format(size_t time_in_seconds)

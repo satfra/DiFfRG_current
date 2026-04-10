@@ -30,7 +30,9 @@ namespace DiFfRG
       {
         using std::max, std::abs;
         using namespace autodiff;
-        static_assert(std::is_same<M, Model>::value, "The call of this method should not have touched M.");
+        static_assert(std::is_same<M, Model>::value,
+                      "Internal error: template parameter M must be the same as Model. "
+                      "Do not explicitly specify the M template parameter.");
         using Components = typename M::Components;
 
         std::array<Tensor<1, dim, NumberType>, Components::count_fe_functions(0)> F_s{};
@@ -93,13 +95,15 @@ namespace DiFfRG
                        const Tensor<1, dim> &normal, const Point<dim> &p, const Solutions_s &u_s,
                        const Solutions_n &u_n) const
       {
-        static_assert(std::is_same<M, Model>::value, "The call of this method should not have touched M.");
-        static_assert(dependent >= 1, "This is LDG, not DG.");
+        static_assert(std::is_same<M, Model>::value,
+                      "Internal error: template parameter M must be the same as Model. "
+                      "Do not explicitly specify the M template parameter.");
+        static_assert(dependent >= 1, "ldg_numflux requires dependent >= 1 (use numflux for dependent == 0).");
 
         using Dirs = typename C<dependent - 1>::template value<0>;
         using UD = typename C<dependent - 1>::template value<1>;
         static_assert(Dirs::size == UD::size && UD::size >= M::Components::count_fe_functions(dependent),
-                      "Mismatch in array sizes.");
+                      "LDG numflux: FlowDirections::size and UpDown::size must both be >= count_fe_functions(dependent).");
         using Components = typename M::Components;
 
         Tensor<1, dim> t;
@@ -132,7 +136,9 @@ namespace DiFfRG
       void numflux(std::array<Tensor<1, dim, NumberType>, M::Components::count_fe_functions(0)> &,
                    const Tensor<1, dim> &, const Point<dim> &, const Solutions_s &, const Solutions_n &) const
       {
-        static_assert(std::is_same<M, Model>::value, "The call of this method should not have touched M.");
+        static_assert(std::is_same<M, Model>::value,
+                      "Internal error: template parameter M must be the same as Model. "
+                      "Do not explicitly specify the M template parameter.");
       }
     };
 
@@ -146,7 +152,9 @@ namespace DiFfRG
       void boundary_numflux(std::array<Tensor<1, dim, NumberType>, M::Components::count_fe_functions(0)> &F,
                             const Tensor<1, dim> & /*normal*/, const Point<dim> &p, const Solutions &sol) const
       {
-        static_assert(std::is_same<M, Model>::value, "The call of this method should not have touched M.");
+        static_assert(std::is_same<M, Model>::value,
+                      "Internal error: template parameter M must be the same as Model. "
+                      "Do not explicitly specify the M template parameter.");
         asImp().flux(F, p, sol);
       }
 
@@ -155,7 +163,9 @@ namespace DiFfRG
       ldg_boundary_numflux(std::array<Tensor<1, dim, NumberType>, M::Components::count_fe_functions(dependent)> &BNF,
                            const Tensor<1, dim> & /*normal*/, const Point<dim> &p, const Solutions &u) const
       {
-        static_assert(std::is_same<M, Model>::value, "The call of this method should not have touched M.");
+        static_assert(std::is_same<M, Model>::value,
+                      "Internal error: template parameter M must be the same as Model. "
+                      "Do not explicitly specify the M template parameter.");
         asImp().template ldg_flux<dependent>(BNF, p, u);
       }
     };

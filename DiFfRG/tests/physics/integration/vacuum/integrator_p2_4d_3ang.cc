@@ -3,7 +3,7 @@
 
 #include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/polynomials.hh>
-#include <DiFfRG/physics/integration/vacuum/integrator_p2_4D_3ang.hh>
+#include <DiFfRG/physics/integration/vacuum/integrator_p2_4d_3ang.hh>
 
 #include "../boilerplate/poly_integrand.hh"
 
@@ -34,8 +34,8 @@ TEST_CASE("Test 4D momentum + 3 angle integrals", "[integration][quadrature]")
 
     const ctype x_extent = GENERATE(take(1, random(1., 2.)));
     QuadratureProvider quadrature_provider;
-    Integrator_p2_4D_3ang<dim, NT, PolyIntegrand<4, NT>, ExecutionSpace> integrator(quadrature_provider,
-                                                                                    {64, 24, 24, 24}, x_extent);
+    Integrator_p2_4D_3ang<dim, NT, PolyIntegrand<4, NT>, ExecutionSpace> integrator(quadrature_provider, {32, 8, 8, 8},
+                                                                                    x_extent);
 
     SECTION("Volume integral")
     {
@@ -48,7 +48,7 @@ TEST_CASE("Test 4D momentum + 3 angle integrals", "[integration][quadrature]")
       NT integral{};
       integrator.get(integral, 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0.);
 
-      const ctype expected_precision = 1e-10;
+      constexpr ctype expected_precision = 1e-12;
       const ctype rel_err = t_abs((integral - reference_integral) / reference_integral);
       if (rel_err >= expected_precision) {
         std::cerr << "reference: " << std::scientific << std::setw(10) << reference_integral
@@ -105,7 +105,7 @@ TEST_CASE("Test 4D momentum + 3 angle integrals", "[integration][quadrature]")
                      cos1_poly[3], cos2_poly[0], cos2_poly[1], cos2_poly[2], cos2_poly[3], phi_poly[0], phi_poly[1],
                      phi_poly[2], phi_poly[3]);
 
-      const ctype expected_precision = 1e-8;
+      constexpr ctype expected_precision = 1e-11;
       const ctype rel_err = t_abs((integral - reference_integral) / reference_integral);
       if (rel_err >= expected_precision) {
         std::cerr << "reference: " << std::scientific << std::setw(10) << reference_integral

@@ -126,8 +126,13 @@ namespace DiFfRG
       template <> struct _ctype<autodiff::Real<1, complex<double>>> {
         using value = double;
       };
+
+      template <typename T> inline constexpr bool _is_autodiff = false;
+      template <int N, typename U> inline constexpr bool _is_autodiff<autodiff::Real<N, U>> = true;
     } // namespace internal
 
     template <typename CT> using ctype = typename internal::_ctype<CT>::value;
+
+    template <typename T> inline constexpr bool is_autodiff = internal::_is_autodiff<T>;
   } // namespace get_type
 } // namespace DiFfRG

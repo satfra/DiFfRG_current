@@ -34,7 +34,8 @@ namespace DiFfRG
     // Assert that all coordinates have the same ctype
     static_assert((std::is_same<typename Coordinates::ctype,
                                 typename device::tuple_element<0, device::tuple<Coordinates...>>::type::ctype>::value &&
-                   ...));
+                   ...),
+                  "CoordinatePackND: all coordinate systems must use the same ctype");
     static_assert(sizeof...(Coordinates) > 0, "CoordinatePackND requires at least one coordinate system");
     // Assert that all coordinates have the dim 1
     static_assert(((Coordinates::dim == 1) && ...), "CoordinatePackND requires all coordinates to have dim 1");
@@ -100,7 +101,7 @@ namespace DiFfRG
       return sizes;
     }
 
-    device::array<size_t, sizeof...(Coordinates)> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(size_t s) const
+    device::array<size_t, sizeof...(Coordinates)> KOKKOS_INLINE_FUNCTION from_linear_index(size_t s) const
     {
       device::array<size_t, sizeof...(Coordinates)> idx;
       // calculate the index for each coordinate system
@@ -165,7 +166,7 @@ namespace DiFfRG
 
     size_t KOKKOS_FORCEINLINE_FUNCTION size() const { return m_size; }
 
-    device::array<size_t, dim> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(size_t s) const
+    device::array<size_t, dim> KOKKOS_INLINE_FUNCTION from_linear_index(size_t s) const
     {
       device::array<size_t, dim> result{};
       // we do it for m_sizes
@@ -184,7 +185,7 @@ namespace DiFfRG
       return forward({{i...}});
     }
 
-    template <typename IT> KOKKOS_FORCEINLINE_FUNCTION device::array<ctype, dim> forward(device::array<IT, dim> i) const
+    template <typename IT> KOKKOS_INLINE_FUNCTION device::array<ctype, dim> forward(device::array<IT, dim> i) const
     {
       for (size_t j = 0; j < dim; ++j) {
         i[j] += offsets[j];
@@ -197,7 +198,7 @@ namespace DiFfRG
       static_assert(sizeof...(I) == dim);
       return backward({{i...}});
     }
-    KOKKOS_FORCEINLINE_FUNCTION device::array<ctype, dim> backward(device::array<size_t, dim> i) const
+    KOKKOS_INLINE_FUNCTION device::array<ctype, dim> backward(device::array<size_t, dim> i) const
     {
       auto result = Base::backward(i);
       for (size_t j = 0; j < dim; ++j) {
@@ -247,7 +248,7 @@ namespace DiFfRG
     {
     }
 
-    device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(auto i) const
+    device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(size_t i) const
     {
       return device::array<size_t, 1>{i};
     }
@@ -322,7 +323,7 @@ namespace DiFfRG
     {
     }
 
-    device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(auto i) const
+    device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(size_t i) const
     {
       return device::array<size_t, 1>{i};
     }

@@ -1,3 +1,7 @@
+// Method 6: Two-phase with 5D Restrict cache. MDRangePolicy<Rank<5>> parallel_for fills all output
+// points at once, then TeamPolicy + TeamThreadMDRange reduces each output's slice.
+// Constant added via Kokkos::single(PerTeam).
+
 #include <catch2/catch_all.hpp>
 
 #include <DiFfRG/common/init.hh>
@@ -6,7 +10,8 @@
 #include <DiFfRG/physics/interpolation.hh>
 #include <DiFfRG/physics/regulators.hh>
 
-#include "./ZA4/kernel.hh"
+// #include "./ZA4/kernel.hh"
+#include "./flows/ZA4/kernel.hh"
 
 void method6(Catch::Benchmark::Chronometer &meter)
 {

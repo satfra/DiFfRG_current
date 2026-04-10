@@ -1,5 +1,6 @@
 bin*/
 build*/
+local_install/
 .idea/
 profile/
 .ipynb_checkpoints

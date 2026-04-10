@@ -53,7 +53,7 @@ namespace DiFfRG
         data_out->flush(t);
         last_save = t;
       }
-      old_solution = solution;
+      old_solution.swap(solution);
 
       const auto ms_passed =
           std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)

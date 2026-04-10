@@ -2,18 +2,24 @@
 
 // DiFfRG
 #include "distribution.hh"
+#include <DiFfRG/common/types.hh>
 #include <DiFfRG/physics/integration/distribution.hh>
 
 namespace DiFfRG
 {
   namespace internal
   {
-    template <int dim>
+    template <int dim, typename NT = double>
     std::array<size_t, dim> make_int_grid(const JSONValue &json, const std::array<std::string, dim> &names)
     {
       std::array<size_t, dim> int_grid;
       for (int i = 0; i < dim; ++i)
         int_grid[i] = json.get_uint("/integration/" + names[i]);
+      if constexpr (get_type::is_autodiff<NT>) {
+        const double factor = json.get_double("/integration/jacobian_quadrature_factor", 0.8);
+        for (int i = 0; i < dim; ++i)
+          int_grid[i] = static_cast<size_t>(factor * int_grid[i]);
+      }
       return int_grid;
     }
   } // namespace internal
@@ -44,6 +50,15 @@ namespace DiFfRG
   template <typename NT, typename KERNEL, typename ctype, int dim, typename... ARGS>
   concept is_valid_kernel =
       (provides_kernel<NT, KERNEL, ctype, dim, ARGS...> && provides_constant<NT, KERNEL, ARGS...>);
+
+  template <typename NT, typename KERNEL, typename ctype, int dim, typename... ARGS>
+  consteval void check_kernel_requirements()
+  {
+    static_assert(provides_kernel<NT, KERNEL, ctype, dim, ARGS...>,
+                  "Kernel must provide a static 'kernel(...)' method callable with the integration arguments.");
+    static_assert(provides_constant<NT, KERNEL, ARGS...>,
+                  "Kernel must provide a static 'constant(...)' method returning the numeric type.");
+  }
 
   class AbstractIntegrator
   {

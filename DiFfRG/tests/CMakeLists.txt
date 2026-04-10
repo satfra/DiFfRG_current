@@ -13,7 +13,15 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(Catch2)
 list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/contrib)
 
-find_package(DiFfRG HINTS ${CMAKE_PREFIX_PATH})
+# When building in-tree (as a subdirectory of the library), the DiFfRG target
+# already exists. Only call find_package for out-of-tree builds.
+if(NOT TARGET DiFfRG)
+  find_package(DiFfRG HINTS ${CMAKE_PREFIX_PATH})
+else()
+  if(NOT TARGET DiFfRG::DiFfRG_boost_json)
+    add_library(DiFfRG::DiFfRG_boost_json ALIAS DiFfRG_boost_json)
+  endif()
+endif()
 
 function(setup_test SOURCE)
   # Create a test executable from the source file, removing the extension

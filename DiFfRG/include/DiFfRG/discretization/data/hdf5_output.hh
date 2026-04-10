@@ -270,7 +270,7 @@ namespace DiFfRG
     void close_file();
 
   private:
-    const JSONValue &json;
+    [[maybe_unused]] const JSONValue &json;
     const std::string top_folder;
     const std::string output_name;
 

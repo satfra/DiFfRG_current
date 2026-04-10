@@ -12,6 +12,7 @@ void method4(Catch::Benchmark::Chronometer &);
 void method5(Catch::Benchmark::Chronometer &);
 void method6(Catch::Benchmark::Chronometer &);
 void method7(Catch::Benchmark::Chronometer &);
+void method8(Catch::Benchmark::Chronometer &);
 
 TEST_CASE("Benchmark different ND quadrature integrals", "[integration][quadrature]")
 {
@@ -23,4 +24,5 @@ TEST_CASE("Benchmark different ND quadrature integrals", "[integration][quadratu
   BENCHMARK_ADVANCED("method5 GPU")(Catch::Benchmark::Chronometer meter) { method5(meter); };
   BENCHMARK_ADVANCED("method6 GPU")(Catch::Benchmark::Chronometer meter) { method6(meter); };
   BENCHMARK_ADVANCED("method7 GPU")(Catch::Benchmark::Chronometer meter) { method7(meter); };
+  BENCHMARK_ADVANCED("method8 GPU")(Catch::Benchmark::Chronometer meter) { method8(meter); };
 }

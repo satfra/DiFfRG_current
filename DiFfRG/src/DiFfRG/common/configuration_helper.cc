@@ -22,9 +22,9 @@ namespace DiFfRG
     try {
       parse();
     } catch (const std::exception &e) {
-      std::cerr << "While reading the CLI arguments an error occured:\n    " << e.what() << "\n" << std::endl;
+      std::cerr << "While reading the CLI arguments an error occurred:\n    " << e.what() << "\n" << std::endl;
       print_usage_message();
-      exit(0);
+      exit(1);
     }
 
     create_folder(get_top_folder());
@@ -84,9 +84,9 @@ namespace DiFfRG
     try {
       parse_cli();
     } catch (const std::exception &e) {
-      std::cerr << "While reading the CLI arguments an error occured:\n    " << e.what() << "\n" << std::endl;
+      std::cerr << "While reading the CLI arguments an error occurred:\n    " << e.what() << "\n" << std::endl;
       print_usage_message();
-      exit(0);
+      exit(1);
     }
 
     try {
@@ -102,19 +102,24 @@ namespace DiFfRG
         std::getline(ss1, path, '=');
         std::getline(ss1, value, '=');
 
-        if (param.second == "double")
-          json().at_pointer(path) = std::stod(value);
-        else if (param.second == "bool")
-          json().at_pointer(path) = (value == "true");
-        else if (param.second == "int")
-          json().at_pointer(path) = std::stoi(value);
-        else if (param.second == "string")
-          json().at_pointer(path) = value;
+        try {
+          if (param.second == "double")
+            json().at_pointer(path) = std::stod(value);
+          else if (param.second == "bool")
+            json().at_pointer(path) = (value == "true");
+          else if (param.second == "int")
+            json().at_pointer(path) = std::stoi(value);
+          else if (param.second == "string")
+            json().at_pointer(path) = value;
+        } catch (const std::exception &e) {
+          throw std::runtime_error("Failed to parse CLI parameter '" + path + "=" + value + "' as " + param.second +
+                                   ": " + e.what());
+        }
       }
     } catch (const std::exception &e) {
-      std::cerr << "While reading the parameter file an error occured:\n    " << e.what() << "\n" << std::endl;
+      std::cerr << "While reading the parameter file an error occurred:\n    " << e.what() << "\n" << std::endl;
       print_usage_message();
-      exit(0);
+      exit(1);
     }
   }
 
@@ -127,9 +132,9 @@ namespace DiFfRG
     try {
       parse_cli();
     } catch (const std::exception &e) {
-      std::cerr << "While reading the CLI arguments an error occured:\n    " << e.what() << "\n" << std::endl;
+      std::cerr << "While reading the CLI arguments an error occurred:\n    " << e.what() << "\n" << std::endl;
       print_usage_message();
-      exit(0);
+      exit(1);
     }
   }
 
@@ -148,10 +153,10 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
   --help                      shows this text
   --generate-parameter-file   generates a parameter file with some default values
   -p                          specifiy a parameter file other than the standard parameter.json
-  -sd                         overwrite a double parameter. This should be in the format '-s physical/T=0.1'
-  -si                         overwrite an integer parameter. This should be in the format '-s physical/Nc=1'
-  -sb                         overwrite a boolean parameter. This should be in the format '-s physical/use_sth=true'
-  -ss                         overwrite a string parameter. This should be in the format '-s physical/a=hello'
+  -sd                         overwrite a double parameter. This should be in the format '-sd /physical/T=0.1'
+  -si                         overwrite an integer parameter. This should be in the format '-si /physical/Nc=1'
+  -sb                         overwrite a boolean parameter. This should be in the format '-sb /physical/use_sth=true'
+  -ss                         overwrite a string parameter. This should be in the format '-ss /physical/a=hello'
 )";
     std::cout << help_text << std::endl;
   }
@@ -192,7 +197,8 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
         cli_parameters.push_back({args.front(), "string"});
         args.pop_front();
       } else {
-        std::cout << "Discarded CLI argument:    " << args.front() << std::endl;
+        std::cerr << "WARNING: Unrecognized CLI argument '" << args.front() << "' was ignored. Use --help for usage."
+                  << std::endl;
         args.pop_front();
       }
     }
@@ -242,6 +248,36 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
     std::ofstream file(parameter_file);
     json.print(file);
     file.close();
+
+    std::cout << "\nGenerated parameter file: " << parameter_file << "\n\n"
+              << "Parameter sections:\n"
+              << "  /physical          Physical parameters (e.g. temperature, couplings, cutoff scale)\n"
+              << "  /integration       Quadrature settings for momentum-space loop integrals\n"
+              << "    x_quadrature_order           Order of radial momentum quadrature\n"
+              << "    angle_quadrature_order        Order of angular quadrature\n"
+              << "    x0/q0_quadrature_order        Order of Matsubara frequency quadrature\n"
+              << "    x0/q0_summands                Number of Matsubara summands\n"
+              << "    *_extent_tolerance            Tolerance for integration domain extent\n"
+              << "    jacobian_quadrature_factor    Quadrature reduction factor for Jacobian assembly\n"
+              << "  /discretization    Spatial discretization settings\n"
+              << "    fe_order                      Finite element polynomial order\n"
+              << "    threads                       Number of threads for assembly\n"
+              << "    batch_size                    Batch size for GPU kernel launches\n"
+              << "    overintegration               Extra quadrature points beyond FE order\n"
+              << "    output_subdivisions           VTK output subdivisions per cell\n"
+              << "    EoM_abs_tol / EoM_max_iter    Equation-of-motion solver tolerance and iteration limit\n"
+              << "    grid/*                        Grid specification (format: \"start:step:stop\")\n"
+              << "    adaptivity/*                  h-adaptive mesh refinement settings\n"
+              << "  /timestepping      Time integration settings\n"
+              << "    final_time                    End time for the RG flow\n"
+              << "    output_dt                     Time interval between output snapshots\n"
+              << "    explicit/*                    Explicit timestepper (dt, tolerances)\n"
+              << "    implicit/*                    Implicit timestepper (dt, tolerances)\n"
+              << "  /output            Output settings\n"
+              << "    verbosity                     Log verbosity level (0 = minimal)\n"
+              << "    folder                        Output directory\n"
+              << "    name                          Base name for output files\n"
+              << std::endl;
   }
 
   std::string ConfigurationHelper::get_log_file() const

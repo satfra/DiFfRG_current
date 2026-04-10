@@ -29,13 +29,14 @@ namespace DiFfRG
      *
      * @param coordinates coordinate system of the data
      */
-    SplineInterpolator1D(const Coordinates &coordinates)
-        : coordinates(coordinates), size(coordinates.size()), other_instance(nullptr)
+    SplineInterpolator1D(const Coordinates &coordinates) : coordinates(coordinates), size(coordinates.size())
     {
-      // Allocate Kokkos View
-      device_data = ViewType("SplineInterpolator1D_data", size);
-      // Create host mirror
-      host_data = Kokkos::create_mirror_view(device_data);
+      // Allocate separate views for values and spline coefficients (SoA layout)
+      device_values = ValueViewType("SplineInterpolator1D_values", size);
+      device_coeffs = CoeffViewType("SplineInterpolator1D_coeffs", size);
+      // Create host mirrors
+      host_values = Kokkos::create_mirror_view(device_values);
+      host_coeffs = Kokkos::create_mirror_view(device_coeffs);
     }
 
     /**
@@ -43,62 +44,68 @@ namespace DiFfRG
      *
      */
     KOKKOS_FUNCTION
-    SplineInterpolator1D(const SplineInterpolator1D &other)
-        : coordinates(other.coordinates), size(other.size), other_instance(nullptr)
+    SplineInterpolator1D(const SplineInterpolator1D &other) : coordinates(other.coordinates), size(other.size)
     {
-      // Use the same data
-      device_data = other.device_data;
+      // Use the same data (reference-counted)
+      device_values = other.device_values;
+      device_coeffs = other.device_coeffs;
     }
+
+    KOKKOS_FUNCTION ~SplineInterpolator1D() { KOKKOS_IF_ON_HOST((if (owns_other_instance) delete other_instance;)) }
 
     template <typename NT2>
     void update(const NT2 *in_data, const ctype lower_y1 = std::numeric_limits<ctype>::max(),
                 const ctype upper_y1 = std::numeric_limits<ctype>::max())
     {
       // Check if the host data is already allocated
-      if (!host_data.is_allocated())
+      if (!host_values.is_allocated())
         throw std::runtime_error(
             "SplineInterpolator1D: You probably called update() on a copied instance. This is not allowed. "
             "You need to call update() on the original instance.");
 
-      Kokkos::View<const NT2 *, Kokkos::LayoutRight, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>>
-          in_view(in_data, size);
-      update(in_view, lower_y1, upper_y1);
+      // Copy values from input data
+      for (size_t i = 0; i < size; ++i)
+        host_values(i) = in_data[i];
+
+      // Build the spline coefficients
+      build_y2(lower_y1, upper_y1);
+
+      // Copy data to device
+      Kokkos::deep_copy(device_values, host_values);
+      Kokkos::deep_copy(device_coeffs, host_coeffs);
     }
 
     template <typename View>
-      requires(Kokkos::is_view<View>::value && (View::rank == 1 || View::rank == 2))
+      requires(Kokkos::is_view<View>::value && View::rank == 1)
     void update(const View &view, const ctype lower_y1 = std::numeric_limits<ctype>::max(),
                 const ctype upper_y1 = std::numeric_limits<ctype>::max())
     {
       // Check if the host data is already allocated
-      if (!host_data.is_allocated())
+      if (!host_values.is_allocated())
         throw std::runtime_error(
-            "LinearInterpolator2D: You probably called update() on a copied instance. This is not allowed. "
+            "SplineInterpolator1D: You probably called update() on a copied instance. This is not allowed. "
             "You need to call update() on the original instance.");
-      // Populate host mirror
-      if constexpr (View::rank == ViewType::rank) {
-        Kokkos::deep_copy(host_data, view);
-      } else {
-        auto host_data_subview = Kokkos::subview(host_data, Kokkos::ALL(), 0);
-        Kokkos::deep_copy(host_data_subview, view);
 
-        // Build the spline coefficients
-        build_y2(lower_y1, upper_y1);
-      }
+      // Copy values from input view
+      Kokkos::deep_copy(host_values, view);
+
+      // Build the spline coefficients
+      build_y2(lower_y1, upper_y1);
 
       // Copy data to device
-      Kokkos::deep_copy(device_data, host_data);
+      Kokkos::deep_copy(device_values, host_values);
+      Kokkos::deep_copy(device_coeffs, host_coeffs);
     }
 
     NT operator[](size_t i) const
     {
       // Check if the host data is already allocated
-      if (!host_data.is_allocated())
+      if (!host_values.is_allocated())
         throw std::runtime_error(
             "SplineInterpolator1D: You probably called operator[]() on a copied instance. This is not allowed. "
             "You need to call operator[]() on the original instance.");
 
-      return host_data.data()[i]; // Access the host data directly
+      return host_values(i);
     }
 
     /**
@@ -112,23 +119,24 @@ namespace DiFfRG
       ctype idx = coordinates.backward(x);
       // Clamp the index to the range [0, size - 1]
       idx = Kokkos::max(static_cast<decltype(idx)>(0), Kokkos::min(idx, static_cast<decltype(idx)>(size - 1)));
-      const size_t lidx = size_t(Kokkos::floor(idx));
+      const size_t lidx = Kokkos::min(size_t(Kokkos::floor(idx)), size - 2);
       const size_t uidx = lidx + 1;
       // t is the fractional part of the index
       const ctype t = idx - lidx;
 
-      // Do the spline interpolation
-      const NT lower = device_data(lidx, 0);
-      const NT upper = device_data(uidx, 0);
+      // SoA layout: separate reads from values and coefficients views for coalesced GPU access
+      const NT lower = device_values(lidx);
+      const NT upper = device_values(uidx);
+      const NT cl = device_coeffs(lidx);
+      const NT cu = device_coeffs(uidx);
+
+      const ctype tm1 = t - 1;
+      const NT cubic = t * tm1 * ((t + 1) * cl - (t - 2) * cu);
 
       if constexpr (std::is_arithmetic_v<NT>)
-        return Kokkos::fma(t, upper, Kokkos::fma(-t, lower, lower)) // linear part
-               + t * (powr<2>(t) - 1) * device_data(lidx, 1) / (ctype)(6) -
-               (t - 2) * (t - 1) * t * device_data(uidx, 1) / (ctype)(6); // cubic part
+        return Kokkos::fma(t, upper, Kokkos::fma(-t, lower, lower)) + cubic; // linear + cubic
       else
-        return t * upper + (1 - t) * lower // linear part
-               + t * (powr<2>(t) - 1) * device_data(lidx, 1) / (ctype)(6) -
-               (t - 2) * (t - 1) * t * device_data(uidx, 1) / (ctype)(6); // cubic part
+        return t * upper + (1 - t) * lower + cubic; // linear + cubic
     }
 
     auto &CPU() const { return get_on<CPU_memory>(); }
@@ -137,22 +145,23 @@ namespace DiFfRG
     template <typename MemorySpace> auto &get_on() const
     {
       // Check if the host data is already allocated
-      if (!host_data.is_allocated())
+      if (!host_values.is_allocated())
         throw std::runtime_error(
             "SplineInterpolator1D: You probably called get_on() on a copied instance. This is not allowed. "
             "You need to call get_on() on the original instance.");
 
       if constexpr (std::is_same_v<MemorySpace, DefaultMemorySpace>) {
-        return *this; // Return the current instance if the memory space matches
+        // remove constness
+        return const_cast<SplineInterpolator1D<NT, Coordinates, MemorySpace> &>(*this);
       } else {
         // Create a new instance with the same data but in the requested memory space
         if (other_instance == nullptr) {
-          other_instance = std::make_shared<SplineInterpolator1D<NT, Coordinates, MemorySpace>>(coordinates);
-          other_instance->other_instance = std::shared_ptr<std::decay_t<decltype(*this)>>(
-              const_cast<std::decay_t<decltype(*this)> *>(this), [](std::decay_t<decltype(*this)> *) {});
+          other_instance = new SplineInterpolator1D<NT, Coordinates, MemorySpace>(coordinates);
+          owns_other_instance = true;
+          other_instance->other_instance = const_cast<std::decay_t<decltype(*this)> *>(this);
         }
         // Copy the data from the current instance to the new one
-        other_instance->update(host_data);
+        other_instance->update(host_values);
         // Return the new instance
         return *other_instance;
       }
@@ -167,11 +176,11 @@ namespace DiFfRG
 
     NT *data()
     {
-      if (!host_data.is_allocated())
+      if (!host_values.is_allocated())
         throw std::runtime_error(
-            "LinearInterpolator1D: You probably called data() on a copied instance. This is not allowed. "
+            "SplineInterpolator1D: You probably called data() on a copied instance. This is not allowed. "
             "You need to call data() on the original instance.");
-      return host_data.data();
+      return host_values.data();
     }
 
     friend class SplineInterpolator1D<NT, Coordinates, other_memory_space>;
@@ -180,44 +189,50 @@ namespace DiFfRG
     const Coordinates coordinates;
     const size_t size;
 
-    using ViewType = Kokkos::View<NT *[2], DefaultMemorySpace, Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
-    using HostViewType = typename ViewType::HostMirror;
+    using ValueViewType = Kokkos::View<NT *, DefaultMemorySpace, Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
+    using CoeffViewType = Kokkos::View<NT *, DefaultMemorySpace, Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
+    using HostValueViewType = typename ValueViewType::host_mirror_type;
+    using HostCoeffViewType = typename CoeffViewType::host_mirror_type;
 
-    ViewType device_data;
-    HostViewType host_data;
+    ValueViewType device_values;
+    CoeffViewType device_coeffs;
+    HostValueViewType host_values;
+    HostCoeffViewType host_coeffs;
 
-    mutable std::shared_ptr<SplineInterpolator1D<NT, Coordinates, other_memory_space>> other_instance;
+    mutable SplineInterpolator1D<NT, Coordinates, other_memory_space> *other_instance = nullptr;
+    mutable bool owns_other_instance = false;
 
     void build_y2(const ctype lower_y1, const ctype upper_y1)
     {
-      const auto &yv = host_data;
-      auto &y2 = host_data;
-
       NT p, qn, sig, un;
       std::vector<NT> u(size - 1);
 
-      if (lower_y1 > 0.99e99)
-        y2(0, 1) = u[0] = 0.0;
+      if (!std::isfinite(lower_y1) || lower_y1 >= std::numeric_limits<ctype>::max() / 2)
+        host_coeffs(0) = u[0] = 0.0;
       else {
-        y2(0, 1) = -0.5;
-        u[0] = 3.0 * ((yv(1, 0) - yv(0, 0)) - lower_y1);
+        host_coeffs(0) = -0.5;
+        u[0] = 3.0 * ((host_values(1) - host_values(0)) - lower_y1);
       }
       for (size_t i = 1; i < size - 1; i++) {
         sig = 0.5;
-        p = sig * y2(i - 1, 1) + 2.0;
-        y2(i, 1) = (sig - 1.0) / p;
-        u[i] = (yv(i + 1, 0) - yv(i, 0)) - (yv(i, 0) - yv(i - 1, 0));
+        p = sig * host_coeffs(i - 1) + 2.0;
+        host_coeffs(i) = (sig - 1.0) / p;
+        u[i] = (host_values(i + 1) - host_values(i)) - (host_values(i) - host_values(i - 1));
         u[i] = (6.0 * u[i] / 2. - sig * u[i - 1]) / p;
       }
-      if (upper_y1 > 0.99e99)
+      if (!std::isfinite(upper_y1) || upper_y1 >= std::numeric_limits<ctype>::max() / 2)
         qn = un = 0.0;
       else {
         qn = 0.5;
-        un = 3.0 * (upper_y1 - (yv(size - 1, 0) - yv(size - 2, 0)));
+        un = 3.0 * (upper_y1 - (host_values(size - 1) - host_values(size - 2)));
       }
-      y2(size - 1, 1) = (un - qn * u[size - 2]) / (qn * y2(size - 2, 1) + 1);
+      host_coeffs(size - 1) = (un - qn * u[size - 2]) / (qn * host_coeffs(size - 2) + 1);
       for (int k = size - 2; k >= 0; k--)
-        y2(k, 1) = y2(k, 1) * y2(k + 1, 1) + u[k];
+        host_coeffs(k) = host_coeffs(k) * host_coeffs(k + 1) + u[k];
+
+      // Precompute division by 6 so operator() avoids per-call divides
+      for (size_t k = 0; k < size; ++k)
+        host_coeffs(k) /= (ctype)6;
     }
   };
 } // namespace DiFfRG

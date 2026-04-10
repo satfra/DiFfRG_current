@@ -6,6 +6,27 @@
 namespace DiFfRG
 {
   /**
+   * @brief Checks that an interpolator class provides the required type aliases (value_type, ctype).
+   */
+  template <typename T>
+  concept has_interpolator_types = requires {
+    typename T::value_type;
+    typename T::ctype;
+  };
+
+  /**
+   * @brief Checks that an interpolator class provides the required methods
+   * (get_coordinates, get_on<CPU_memory>, get_on<GPU_memory>) and a call operator with the correct arity.
+   */
+  template <typename T>
+  concept has_interpolator_methods = has_interpolator_types<T> && requires(T t) {
+    t.get_coordinates();
+    t.template get_on<CPU_memory>();
+    t.template get_on<GPU_memory>();
+    requires has_n_call_operator<T, typename T::ctype, T::dim>;
+  };
+
+  /**
    * @brief A concept for what is an interpolator class
    *
    * An interpolator class must provide the following methods:
@@ -18,14 +39,7 @@ namespace DiFfRG
    * @tparam T The type to check
    */
   template <typename T>
-  concept is_interpolator = requires(T t) {
-    typename T::value_type;
-    typename T::ctype;
-    t.get_coordinates();
-    t.template get_on<CPU_memory>();
-    t.template get_on<GPU_memory>();
-    requires has_n_call_operator<T, typename T::ctype, T::dim>;
-  };
+  concept is_interpolator = has_interpolator_types<T> && has_interpolator_methods<T>;
 } // namespace DiFfRG
 
 #include <DiFfRG/discretization/coordinates/combined_coordinates.hh>
@@ -34,5 +48,5 @@ namespace DiFfRG
 
 #include <DiFfRG/physics/interpolation/linear_interpolator.hh>
 
-#include <DiFfRG/physics/interpolation/spline_interpolator_1D.hh>
-#include <DiFfRG/physics/interpolation/spline_interpolator_1D_stack.hh>
+#include <DiFfRG/physics/interpolation/spline_interpolator_1d.hh>
+#include <DiFfRG/physics/interpolation/spline_interpolator_1d_stack.hh>

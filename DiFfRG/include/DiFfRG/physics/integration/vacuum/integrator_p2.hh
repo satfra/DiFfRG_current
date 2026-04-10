@@ -21,13 +21,12 @@ namespace DiFfRG
                                              / powr<dim>(2 * (ctype)M_PI); // fourier factor
 
       template <typename... T>
-      static KOKKOS_FORCEINLINE_FUNCTION NT kernel(const ctype q2, const T &...t)
+      static KOKKOS_FORCEINLINE_FUNCTION NT kernel(const ctype q, const T &...t)
         requires provides_kernel<NT, KERNEL, ctype, 1, T...>
       {
         using namespace DiFfRG::compute;
 
-        const ctype q = sqrt(q2);
-        const ctype int_element = (powr<dim - 2>(q) / (ctype)2); // from p^2 integral
+        const ctype int_element = powr<dim - 1>(q); // from p integral
         const NT result = KERNEL::kernel(q, t...);
 
         return int_prefactor * int_element * result;
@@ -72,26 +71,27 @@ namespace DiFfRG
 
     Integrator_p2(QuadratureProvider &quadrature_provider, const JSONValue &json)
       requires provides_regulator<KERNEL>
-        : Integrator_p2(quadrature_provider, internal::make_int_grid<1>(json, {"x_order"}),
+        : Integrator_p2(quadrature_provider, internal::make_int_grid<1, NT>(json, {"x_order"}),
                         optimize_x_extent<typename KERNEL::Regulator>(json))
     {
     }
 
     Integrator_p2(QuadratureProvider &quadrature_provider, const std::array<size_t, 1> grid_size, ctype x_extent = 2.)
-        : Base(quadrature_provider, grid_size, {0}, {x_extent}, {QuadratureType::legendre}), x_extent(x_extent), k(1.)
+        : Base(quadrature_provider, grid_size, {0}, {std::sqrt(x_extent)}, {QuadratureType::legendre}),
+          x_extent(x_extent), k(1.)
     {
     }
 
     void set_x_extent(ctype x_extent)
     {
       this->x_extent = x_extent;
-      Base::set_grid_extents({0}, {x_extent * powr<2>(k)});
+      Base::set_grid_extents({0}, {std::sqrt(x_extent) * k});
     }
 
     void set_k(ctype k)
     {
       this->k = k;
-      Base::set_grid_extents({0}, {x_extent * powr<2>(k)});
+      Base::set_grid_extents({0}, {std::sqrt(x_extent) * k});
     }
 
   private:

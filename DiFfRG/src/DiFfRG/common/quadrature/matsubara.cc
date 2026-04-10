@@ -11,13 +11,13 @@ namespace DiFfRG
 {
   template <typename NT> int MatsubaraQuadrature<NT>::predict_size(const NT T, const NT typical_E, const int step)
   {
-    const NT relative_distance = abs(typical_E) / abs(2 * M_PI * T + 1e-16);
+    const NT relative_distance = std::fabs(typical_E) / std::fabs(2. * M_PI * T + 1e-16);
     // From some testing, switching here to the vacuum quadrature will generate relative errors of order 5e-6 when using
     // the default arguments
     if (is_close(T, NT{}) || relative_distance > 1e+4) return -vacuum_quad_size;
 
-    const NT E_max = 1e4 * precision_factor * std::abs(typical_E);
-    int size = 5 + int(std::sqrt(4 * E_max / (M_PI * M_PI * std::abs(T))));
+    const NT E_max = 2e3 * precision_factor * std::fabs(typical_E);
+    int size = 5 + int(std::sqrt(4. * E_max / (M_PI * M_PI * std::fabs(T))));
     size = (int)std::ceil(size / (double)step) * step;
     return size;
   }
@@ -57,6 +57,13 @@ namespace DiFfRG
     // If m_size is negative, we use the vacuum quadrature
     if (m_size < 0) {
       m_size = abs(m_size);
+      reinit_0();
+      return;
+    }
+    // If predict_size wants far more nodes than max_size allows, the truncated Monien
+    // quadrature would be less accurate than the vacuum fallback.
+    if (m_size > 2 * max_size) {
+      m_size = abs(vacuum_quad_size);
       reinit_0();
       return;
     }
@@ -120,7 +127,7 @@ namespace DiFfRG
 
     // the nodes with a logarithmic scale
     using std::log, std::exp, std::abs, std::min;
-    const long double extent = 1e6 * abs(typical_E);
+    const long double extent = 1e11 * abs(typical_E);
     const long double log_start = log(div);
     const long double log_ext = log(extent / div);
     for (int i = 0; i < m_size / 3; ++i) {
