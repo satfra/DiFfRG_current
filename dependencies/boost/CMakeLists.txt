@@ -14,7 +14,7 @@ set(BOOST_TARBALL_URL
 )
 set(BOOST_TARBALL
     "${CMAKE_CURRENT_BINARY_DIR}/boost-${TRY_BOOST_VERSION}.tar.gz")
-set(BOOST_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/boost-${TRY_BOOST_VERSION}")
+set(BOOST_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/boost_1_81_0")
 
 if(NOT EXISTS ${BOOST_TARBALL})
   message(STATUS "Downloading Boost ${TRY_BOOST_VERSION} tarball...")
@@ -98,5 +98,31 @@ add_custom_target(
   DEPENDS build_boost_boostrap)
 
 install(
-  CODE "execute_process(COMMAND ${CMAKE_COMMAND} --build ${CMAKE_CURRENT_BINARY_DIR} --target build_boost_b2)"
+  CODE [[
+    execute_process(
+      COMMAND ${CMAKE_COMMAND} --build ${CMAKE_CURRENT_BINARY_DIR} --target build_boost_b2
+      RESULT_VARIABLE boost_build_result
+      COMMAND_ECHO STDOUT)
+
+    if(NOT boost_build_result EQUAL 0)
+      message(
+        FATAL_ERROR
+          "Boost installation failed while running the nested build target build_boost_b2."
+      )
+    endif()
+
+    if(NOT EXISTS "${CMAKE_INSTALL_PREFIX}/include/boost")
+      message(
+        FATAL_ERROR
+          "Boost installation did not produce ${CMAKE_INSTALL_PREFIX}/include/boost."
+      )
+    endif()
+
+    if(NOT EXISTS "${CMAKE_INSTALL_PREFIX}/lib")
+      message(
+        FATAL_ERROR
+          "Boost installation did not produce ${CMAKE_INSTALL_PREFIX}/lib."
+      )
+    endif()
+  ]]
 )
