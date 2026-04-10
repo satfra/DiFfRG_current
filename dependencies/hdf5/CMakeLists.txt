@@ -15,11 +15,34 @@ endif()
 # Set up external dependencies
 
 # download HDF5, if it is not already downloaded
-if(NOT EXISTS ${CMAKE_CURRENT_BINARY_DIR}/hdf5.tar.gz)
+set(HDF5_TARBALL "${CMAKE_CURRENT_BINARY_DIR}/hdf5.tar.gz")
+set(HDF5_TARBALL_VALID FALSE)
+if(EXISTS ${HDF5_TARBALL})
+  file(SIZE ${HDF5_TARBALL} HDF5_TARBALL_SIZE)
+  if(HDF5_TARBALL_SIZE GREATER 0)
+    set(HDF5_TARBALL_VALID TRUE)
+  else()
+    file(REMOVE ${HDF5_TARBALL})
+  endif()
+endif()
+
+if(NOT HDF5_TARBALL_VALID)
   message(STATUS "Downloading hdf5...")
-  file(DOWNLOAD
-       https://github.com/HDFGroup/hdf5/releases/download/2.0.0/hdf5.tar.gz
-       ${CMAKE_CURRENT_BINARY_DIR}/hdf5.tar.gz)
+  file(
+    DOWNLOAD https://github.com/HDFGroup/hdf5/releases/download/2.0.0/hdf5.tar.gz
+    ${HDF5_TARBALL}
+    STATUS HDF5_DOWNLOAD_STATUS
+    LOG HDF5_DOWNLOAD_LOG)
+  list(GET HDF5_DOWNLOAD_STATUS 0 HDF5_DOWNLOAD_CODE)
+  if(NOT HDF5_DOWNLOAD_CODE EQUAL 0)
+    file(REMOVE ${HDF5_TARBALL})
+    message(FATAL_ERROR "Failed to download HDF5: ${HDF5_DOWNLOAD_STATUS}\n${HDF5_DOWNLOAD_LOG}")
+  endif()
+  file(SIZE ${HDF5_TARBALL} HDF5_TARBALL_SIZE)
+  if(NOT HDF5_TARBALL_SIZE GREATER 0)
+    file(REMOVE ${HDF5_TARBALL})
+    message(FATAL_ERROR "Failed to download HDF5: archive is empty.")
+  endif()
 else()
   message(STATUS "hdf5 already downloaded.")
 endif()
