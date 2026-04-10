@@ -10,6 +10,9 @@ profile/
 .cache/
 .venv/
 .vscode/
+.claude/
+.codex/
+.opencode/
 
 ## Core latex/pdflatex auxiliary files:
 *.aux

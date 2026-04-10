@@ -268,7 +268,7 @@ namespace DiFfRG
         return LoopIntegrals::spatial_angle_integrate_and_sum<NT, d>(fun, x_quadrature, x_extent, k, angle_quadrature,
                                                                      q0_summands, q0_quadrature, q0_extent, T);
     }
-    template <typename NT, typename FUN> NT sum(const FUN &fun, const double T, const double /*k*/) const
+    template <typename NT, typename FUN> NT sum(const FUN &fun, const double T, [[maybe_unused]] const double k) const
     {
       if constexpr (std::is_same_v<NT, autodiff::real> || std::is_same_v<NT, autodiff::dual>)
         return LoopIntegrals::sum<NT>(fun, q0_summands, jac_q0_quadrature, q0_extent, T);

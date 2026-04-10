@@ -1,3 +1,5 @@
+#include "DiFfRG/discretization/FV/assembler/KurganovTadmor.hh"
+#include "DiFfRG/discretization/FV/discretization.hh"
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_test_macros.hpp>
 
@@ -20,7 +22,7 @@ TEST_CASE("Test explicit euler with DG constant model", "[timestepping][constant
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = DG::Assembler<Discretization, Model>;
   using TimeStepper = TimeStepperExplicitEuler<VectorType, SparseMatrixType, dim>;
-  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_explicit_euler_constant_dg", 1e-4));
+  REQUIRE(run<Model, Discretization, Assembler, TimeStepper, false, true>("test_explicit_euler_constant_dg", 1e-4));
 }
 TEST_CASE("Test explicit euler with DG exponential model", "[timestepping][exponential][explicit_euler][dg]")
 {
@@ -32,7 +34,7 @@ TEST_CASE("Test explicit euler with DG exponential model", "[timestepping][expon
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = DG::Assembler<Discretization, Model>;
   using TimeStepper = TimeStepperExplicitEuler<VectorType, SparseMatrixType, dim>;
-  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_explicit_euler_exponential_dg", 1e-4));
+  REQUIRE(run<Model, Discretization, Assembler, TimeStepper, false, true>("test_explicit_euler_exponential_dg", 1e-4));
 }
 TEST_CASE("Test explicit euler with DG Burgers model", "[timestepping][Burgers][explicit_euler][dg]")
 {
@@ -44,5 +46,43 @@ TEST_CASE("Test explicit euler with DG Burgers model", "[timestepping][Burgers][
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = DG::Assembler<Discretization, Model>;
   using TimeStepper = TimeStepperExplicitEuler<VectorType, SparseMatrixType, dim>;
-  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_explicit_euler_burgers_dg", 1e-4));
+  REQUIRE(run<Model, Discretization, Assembler, TimeStepper, false, true>("test_explicit_euler_burgers_dg", 1e-4));
+}
+TEST_CASE("Test explicit euler with KT Burgers model", "[timestepping][Burgers][explicit_euler][kt]")
+{
+  constexpr uint dim = 1;
+  using Model = Testing::ModelBurgersKT<dim>;
+  using NumberType = double;
+  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<dim>>;
+  using VectorType = typename Discretization::VectorType;
+  using SparseMatrixType = typename Discretization::SparseMatrixType;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using TimeStepper = TimeStepperExplicitEuler<VectorType, SparseMatrixType, dim>;
+  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_explicit_euler_burgers_kt", 1e-4));
+}
+TEST_CASE("Test explicit euler with KT viscous Burgers traveling wave",
+          "[timestepping][Burgers][explicit_euler][kt][traveling_wave]")
+{
+  constexpr uint dim = 1;
+  using Model = Testing::ModelBurgersTravelingWaveKT<dim>;
+  using NumberType = double;
+  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<dim>>;
+  using VectorType = typename Discretization::VectorType;
+  using SparseMatrixType = typename Discretization::SparseMatrixType;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using TimeStepper = TimeStepperExplicitEuler<VectorType, SparseMatrixType, dim>;
+  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_explicit_euler_traveling_wave_kt", 3e-4));
+}
+TEST_CASE("Test explicit euler with KT two-component Burgers system",
+          "[timestepping][Burgers][explicit_euler][kt][two_component]")
+{
+  constexpr uint dim = 1;
+  using Model = Testing::ModelTwoComponentBurgersKT<dim>;
+  using NumberType = double;
+  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<dim>>;
+  using VectorType = typename Discretization::VectorType;
+  using SparseMatrixType = typename Discretization::SparseMatrixType;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using TimeStepper = TimeStepperExplicitEuler<VectorType, SparseMatrixType, dim>;
+  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_explicit_euler_two_component_burgers_kt", 3e-4));
 }
