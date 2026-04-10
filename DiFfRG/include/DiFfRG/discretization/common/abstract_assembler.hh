@@ -111,7 +111,7 @@ namespace DiFfRG
     virtual void residual_variables([[maybe_unused]] VectorType &residual, [[maybe_unused]] const VectorType &variables,
                                     [[maybe_unused]] const VectorType &spatial_solution)
     {
-      throw std::runtime_error("Not implemented!");
+      throw std::runtime_error("residual_variables() is not implemented by this assembler");
     };
 
     /**
@@ -126,7 +126,7 @@ namespace DiFfRG
                                     [[maybe_unused]] const VectorType &variables,
                                     [[maybe_unused]] const VectorType &spatial_solution)
     {
-      throw std::runtime_error("Not implemented!");
+      throw std::runtime_error("jacobian_variables() is not implemented by this assembler");
     };
 
     /**

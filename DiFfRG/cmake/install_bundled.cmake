@@ -66,6 +66,6 @@ if(${WolframLanguage_FOUND})
     PATTERN "*.nb")
 else()
   message(
-    ERROR
-    "Wolfram Language not found. Skipping install of Mathematica package.")
+    WARNING
+      "Wolfram Language not found. Skipping install of Mathematica package.")
 endif()

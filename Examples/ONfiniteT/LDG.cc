@@ -1,13 +1,7 @@
-#include <DiFfRG/common/configuration_helper.hh>
-#include <DiFfRG/common/init.hh>
-#include <DiFfRG/common/utils.hh>
-#include <DiFfRG/discretization/discretization.hh>
-#include <DiFfRG/timestepping/timestepping.hh>
+#include <DiFfRG/DiFfRG.hh>
+using namespace DiFfRG;
 
 #include "model_LDG.hh"
-
-using namespace dealii;
-using namespace DiFfRG;
 
 // Choices for types
 using Model = ON_finiteT;

@@ -1,4 +1,4 @@
-set(YangMillsFlows_SOURCES 
+set(YangMillsFlows_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/ZA/src/constructor.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/ZA/src/CT_get.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/ZA/src/CT_map_1.cc
@@ -17,7 +17,19 @@ set(YangMillsFlows_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/flows.cc)
 
 add_library(YangMillsFlows STATIC ${YangMillsFlows_SOURCES})
-target_link_libraries(YangMillsFlows DiFfRG::DiFfRG)
-target_compile_options(
-  YangMillsFlows PRIVATE $<$<COMPILE_LANGUAGE:CXX>: -Wno-unused-parameter
-                         -Wno-unused-variable >)
+add_library(YangMillsFlows_nowarn INTERFACE)
+target_compile_options(YangMillsFlows_nowarn INTERFACE -Wno-unused-parameter
+                                                       -Wno-unused-variable)
+target_link_libraries(YangMillsFlows DiFfRG::DiFfRG YangMillsFlows_nowarn)
+
+set_target_properties(YangMillsFlows PROPERTIES UNITY_BUILD ON UNITY_BUILD_MODE
+                                                               GROUP)
+
+foreach(src IN LISTS YangMillsFlows_SOURCES)
+  if(src MATCHES "/src/CT_map_[0-9]+\.cc$")
+    set_source_files_properties("${src}" PROPERTIES UNITY_GROUP "all_ct_map")
+  else()
+    set_source_files_properties("${src}" PROPERTIES SKIP_UNITY_BUILD_INCLUSION
+                                                    ON)
+  endif()
+endforeach()

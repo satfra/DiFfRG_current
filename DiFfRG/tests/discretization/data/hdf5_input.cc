@@ -225,6 +225,35 @@ TEST_CASE("Test HDF5 input", "[input][hdf5]")
     }
   }
 
+  SECTION("Test load_map_coord returns correct coordinate values")
+  {
+    LinearCoordinates1D<double> coords1(10, 0.0, 1.0);
+    LinearCoordinates1D<double> coords2(5, -1.0, 1.0);
+    CoordinatePackND<LinearCoordinates1D<double>, LinearCoordinates1D<double>> coords2d(coords1, coords2);
+
+    std::vector<double> test_data(coords2d.size(), 0.0);
+
+    {
+      HDF5Output hdf5_output(tmp.string(), hdf5FileName, json);
+      hdf5_output.map("test_map_coord", coords2d, test_data.data());
+      hdf5_output.flush(1.0);
+    }
+
+    {
+      HDF5Input hdf5_input(hdf5_file.string());
+
+      auto coord_vec = hdf5_input.load_map_coord<2>("test_map_coord");
+      REQUIRE(coord_vec.size() == coords2d.size() * 2);
+
+      // Verify spot values against make_grid
+      const auto grid = make_grid(coords2d);
+      for (size_t i = 0; i < coords2d.size(); ++i) {
+        CHECK(coord_vec[2 * i + 0] == Catch::Approx(grid[i][0]));
+        CHECK(coord_vec[2 * i + 1] == Catch::Approx(grid[i][1]));
+      }
+    }
+  }
+
   // Clean up test file
   if (false && std::filesystem::exists(hdf5_file)) std::filesystem::remove(hdf5_file);
 }

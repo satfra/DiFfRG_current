@@ -1,3 +1,6 @@
+// standard library
+#include <array>
+
 // external libraries
 #include <boost/numeric/odeint.hpp>
 #include <boost/numeric/odeint/external/eigen/eigen.hpp>
@@ -49,13 +52,15 @@ namespace DiFfRG
 
     // At output_dt intervals this function saves intermediate solutions
     dealii::Vector<double> output_dealii(initial_data);
-    std::vector<Eigen::VectorXd> output_vec;
-    std::vector<double> output_times;
+    std::array<Eigen::VectorXd, 2> output_ring;
+    std::array<double, 2> output_ring_times{};
+    uint ring_count = 0;
     uint n_saves = 0;
     Eigen::VectorXd sol_save;
     auto output_step = [&](const Eigen::VectorXd &sol, const double t) {
-      output_vec.push_back(sol);
-      output_times.push_back(t);
+      output_ring[ring_count % 2] = sol;
+      output_ring_times[ring_count % 2] = t;
+      ring_count++;
 
       sol_save = sol;
 
@@ -64,11 +69,13 @@ namespace DiFfRG
         double t_save = t_start + output_dt * n_saves;
         if (t_save > t) break;
         n_saves++;
-        if (output_times.size() >= 2) {
-          const double t_prev = output_times[output_times.size() - 2];
-          const double t_next = output_times[output_times.size() - 1];
+        if (ring_count >= 2) {
+          const uint cur = (ring_count - 1) % 2;
+          const uint prev = (ring_count - 2) % 2;
+          const double t_prev = output_ring_times[prev];
+          const double t_next = output_ring_times[cur];
           const double alpha = (t_save - t_prev) / (t_next - t_prev);
-          sol_save = alpha * output_vec[output_times.size() - 1] + (1. - alpha) * output_vec[output_times.size() - 2];
+          sol_save = alpha * output_ring[cur] + (1. - alpha) * output_ring[prev];
         }
 
         console_out(t_save, "output", 3);
@@ -143,13 +150,15 @@ namespace DiFfRG
 
     // At output_dt intervals this function saves intermediate solutions
     dealii::BlockVector<double> output_dealii(initial_data);
-    std::vector<Eigen::VectorXd> output_vec;
-    std::vector<double> output_times;
+    std::array<Eigen::VectorXd, 2> output_ring;
+    std::array<double, 2> output_ring_times{};
+    uint ring_count = 0;
     uint n_saves = 0;
     Eigen::VectorXd sol_save;
     auto output_step = [&](const Eigen::VectorXd &sol, const double t) {
-      output_vec.push_back(sol);
-      output_times.push_back(t);
+      output_ring[ring_count % 2] = sol;
+      output_ring_times[ring_count % 2] = t;
+      ring_count++;
 
       sol_save = sol;
 
@@ -158,11 +167,13 @@ namespace DiFfRG
         double t_save = t_start + output_dt * n_saves;
         if (t_save > t) break;
         n_saves++;
-        if (output_times.size() >= 2) {
-          const double t_prev = output_times[output_times.size() - 2];
-          const double t_next = output_times[output_times.size() - 1];
+        if (ring_count >= 2) {
+          const uint cur = (ring_count - 1) % 2;
+          const uint prev = (ring_count - 2) % 2;
+          const double t_prev = output_ring_times[prev];
+          const double t_next = output_ring_times[cur];
           const double alpha = (t_save - t_prev) / (t_next - t_prev);
-          sol_save = alpha * output_vec[output_times.size() - 1] + (1. - alpha) * output_vec[output_times.size() - 2];
+          sol_save = alpha * output_ring[cur] + (1. - alpha) * output_ring[prev];
         }
 
         console_out(t_save, "output", 3);
@@ -229,13 +240,15 @@ namespace DiFfRG
 
     // At output_dt intervals this function saves intermediate solutions
     dealii::Vector<double> output_dealii(initial_data.size());
-    std::vector<Eigen::VectorXd> output_vec;
-    std::vector<double> output_times;
+    std::array<Eigen::VectorXd, 2> output_ring;
+    std::array<double, 2> output_ring_times{};
+    uint ring_count = 0;
     uint n_saves = 0;
     Eigen::VectorXd sol_save;
     auto output_step = [&](const Eigen::VectorXd &sol, const double t) {
-      output_vec.push_back(sol);
-      output_times.push_back(t);
+      output_ring[ring_count % 2] = sol;
+      output_ring_times[ring_count % 2] = t;
+      ring_count++;
 
       sol_save = sol;
 
@@ -244,11 +257,13 @@ namespace DiFfRG
         double t_save = t_start + output_dt * n_saves;
         if (t_save > t) break;
         n_saves++;
-        if (output_times.size() >= 2) {
-          const double t_prev = output_times[output_times.size() - 2];
-          const double t_next = output_times[output_times.size() - 1];
+        if (ring_count >= 2) {
+          const uint cur = (ring_count - 1) % 2;
+          const uint prev = (ring_count - 2) % 2;
+          const double t_prev = output_ring_times[prev];
+          const double t_next = output_ring_times[cur];
           const double alpha = (t_save - t_prev) / (t_next - t_prev);
-          sol_save = alpha * output_vec[output_times.size() - 1] + (1. - alpha) * output_vec[output_times.size() - 2];
+          sol_save = alpha * output_ring[cur] + (1. - alpha) * output_ring[prev];
         }
 
         console_out(t_save, "output", 3);

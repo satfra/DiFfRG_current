@@ -1,16 +1,8 @@
-#include <DiFfRG/common/configuration_helper.hh>
-#include <DiFfRG/common/csv_reader.hh>
-#include <DiFfRG/common/init.hh>
-#include <DiFfRG/common/utils.hh>
-#include <DiFfRG/discretization/discretization.hh>
-#include <DiFfRG/discretization/variables/variables.hh>
-#include <DiFfRG/timestepping/timestepping.hh>
+#include <DiFfRG/DiFfRG.hh>
+using namespace DiFfRG;
 
 #include "model.hh"
 #include "tuning.hh"
-
-using namespace dealii;
-using namespace DiFfRG;
 
 // Choices for types
 using Model = YangMills;
@@ -89,12 +81,12 @@ int main(int argc, char *argv[])
     const auto ret_val = run(json, "log");
     // We print a bit of exit information.
     const auto time = timer.wall_time();
-    spdlog::get("log")->info("Program finished after " + time_format(time));
+    spdlog::get("log")->info("Program finished after " + time_format(static_cast<size_t>(time)));
     return ret_val;
   }
 
   // We print a bit of exit information.
   const auto time = timer.wall_time();
-  spdlog::get("log")->info("Program finished after " + time_format(time));
+  spdlog::get("log")->info("Program finished after " + time_format(static_cast<size_t>(time)));
   return 0;
 }

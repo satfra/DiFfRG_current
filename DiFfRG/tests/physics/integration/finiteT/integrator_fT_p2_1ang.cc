@@ -61,7 +61,7 @@ TEMPLATE_TEST_CASE_SIG("Test finite T momentum integrals with 1 angle", "[integr
       NT integral{};
       integrator.get(integral, 0., 1., 0., 0., 0., 1., 0., 0., 0., powr<2>(val), 0., 1., 0.);
 
-      constexpr ctype expected_precision = 1e-6;
+      constexpr ctype expected_precision = 1e-8;
       const ctype rel_err = t_abs(reference_integral - integral) / t_abs(reference_integral);
       if (rel_err >= expected_precision) {
         std::cerr << "reference: " << reference_integral << "| integral: " << integral
@@ -84,7 +84,7 @@ TEMPLATE_TEST_CASE_SIG("Test finite T momentum integrals with 1 angle", "[integr
       integrator.map(integral_view.data(), coordinates, 1., 0., 0., 0., 1., 0., 0., 0., powr<2>(val), 0., 1., 0.)
           .fence();
 
-      constexpr ctype expected_precision = 1e-6;
+      constexpr ctype expected_precision = 1e-8;
       for (uint i = 0; i < rsize; ++i) {
         const ctype rel_err = t_abs(coordinates.forward(i) + reference_integral - integral_view[i]) /
                               t_abs(coordinates.forward(i) + reference_integral);

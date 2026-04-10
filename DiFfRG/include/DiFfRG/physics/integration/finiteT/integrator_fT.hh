@@ -25,7 +25,7 @@ namespace DiFfRG
 
     Integrator_fT(QuadratureProvider &quadrature_provider, const JSONValue &json)
       requires provides_regulator<KERNEL>
-        : Integrator_fT(quadrature_provider, internal::make_int_grid<2>(json, {"x_order", "cos1_order"}),
+        : Integrator_fT(quadrature_provider, internal::make_int_grid<2, NT>(json, {"x_order", "cos1_order"}),
                         json.get_double("T", 1.0))
     {
     }

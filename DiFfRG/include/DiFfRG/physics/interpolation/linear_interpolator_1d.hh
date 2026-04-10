@@ -30,7 +30,7 @@ namespace DiFfRG
      * @param coordinates coordinate system of the data
      */
     LinearInterpolator1D(const Coordinates &coordinates)
-        : coordinates(coordinates), size(coordinates.size()), other_instance(nullptr)
+        : coordinates(coordinates), size(coordinates.size())
     {
       // Allocate Kokkos View
       device_data = ViewType("LinearInterpolator1D_data", size);
@@ -44,10 +44,15 @@ namespace DiFfRG
      */
     KOKKOS_FUNCTION
     LinearInterpolator1D(const LinearInterpolator1D &other)
-        : coordinates(other.coordinates), size(other.size), other_instance(nullptr)
+        : coordinates(other.coordinates), size(other.size)
     {
       // Use the same data
       device_data = other.device_data;
+    }
+
+    KOKKOS_FUNCTION ~LinearInterpolator1D()
+    {
+      KOKKOS_IF_ON_HOST((if (owns_other_instance) delete other_instance;))
     }
 
     template <typename NT2> void update(const NT2 *in_data)
@@ -55,7 +60,7 @@ namespace DiFfRG
       // Check if the host data is already allocated
       if (!host_data.is_allocated())
         throw std::runtime_error(
-            "SplineInterpolator1D: You probably called update() on a copied instance. This is not allowed. "
+            "LinearInterpolator1D: You probably called update() on a copied instance. This is not allowed. "
             "You need to call update() on the original instance.");
 
       Kokkos::View<const NT2 *, Kokkos::LayoutRight, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>>
@@ -70,7 +75,7 @@ namespace DiFfRG
       // Check if the host data is already allocated
       if (!host_data.is_allocated())
         throw std::runtime_error(
-            "LinearInterpolator2D: You probably called update() on a copied instance. This is not allowed. "
+            "LinearInterpolator1D: You probably called update() on a copied instance. This is not allowed. "
             "You need to call update() on the original instance.");
       // Populate host mirror
       Kokkos::deep_copy(host_data, view);
@@ -100,9 +105,11 @@ namespace DiFfRG
       idx = Kokkos::max(static_cast<decltype(idx)>(0), Kokkos::min(idx, static_cast<decltype(idx)>(size - 1)));
       // t is the fractional part of the index
       const auto t = idx - Kokkos::floor(idx);
-      // Do the linear interpolation
-      const auto lower = device_data[size_t(Kokkos::floor(idx))];
-      const auto upper = device_data[size_t(Kokkos::ceil(idx))];
+      // Do the linear interpolation, clamping upper index to valid range
+      const size_t lower_idx = Kokkos::min(size_t(Kokkos::floor(idx)), size - 2);
+      const size_t upper_idx = lower_idx + 1;
+      const auto lower = device_data[lower_idx];
+      const auto upper = device_data[upper_idx];
       if constexpr (std::is_arithmetic_v<NT>)
         return Kokkos::fma(t, upper, Kokkos::fma(-t, lower, lower));
       else
@@ -127,13 +134,14 @@ namespace DiFfRG
             "You need to call get_on() on the original instance.");
 
       if constexpr (std::is_same_v<MemorySpace, DefaultMemorySpace>) {
-        return *this; // Return the current instance if the memory space matches
+        // remove constness
+        return const_cast<LinearInterpolator1D<NT, Coordinates, MemorySpace> &>(*this);
       } else {
         // Create a new instance with the same data but in the requested memory space
         if (other_instance == nullptr) {
-          other_instance = std::make_shared<LinearInterpolator1D<NT, Coordinates, MemorySpace>>(coordinates);
-          other_instance->other_instance = std::shared_ptr<std::decay_t<decltype(*this)>>(
-              const_cast<std::decay_t<decltype(*this)> *>(this), [](std::decay_t<decltype(*this)> *) {});
+          other_instance = new LinearInterpolator1D<NT, Coordinates, MemorySpace>(coordinates);
+          owns_other_instance = true;
+          other_instance->other_instance = const_cast<std::decay_t<decltype(*this)> *>(this);
         }
         // Copy the data from the current instance to the new one
         other_instance->update(host_data);
@@ -158,11 +166,12 @@ namespace DiFfRG
     const size_t size;
 
     using ViewType = Kokkos::View<NT *, DefaultMemorySpace, Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
-    using HostViewType = typename ViewType::HostMirror;
+    using HostViewType = typename ViewType::host_mirror_type;
 
     ViewType device_data;
     HostViewType host_data;
 
-    mutable std::shared_ptr<LinearInterpolator1D<NT, Coordinates, other_memory_space>> other_instance;
+    mutable LinearInterpolator1D<NT, Coordinates, other_memory_space> *other_instance = nullptr;
+    mutable bool owns_other_instance = false;
   };
 } // namespace DiFfRG

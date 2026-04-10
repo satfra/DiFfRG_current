@@ -5,9 +5,9 @@ project(general_dep)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 set(CMAKE_BUILD_TYPE Release)
 
-# if ENABLE_MPI is not set, set it to OFF
-if(NOT DEFINED ENABLE_MPI)
-  set(ENABLE_MPI
+# if MPI is not set, set it to OFF
+if(NOT DEFINED MPI)
+  set(MPI
       OFF
       CACHE BOOL "Enable MPI support")
 endif()
@@ -42,26 +42,34 @@ cpmaddpackage(
   GIT_TAG
   v2022.1.0)
 
-# OpenBlas
-include(ProcessorCount)
-ProcessorCount(N_PROCESSORS)
+option(BUILD_OpenBLAS "Build OpenBLAS" ON)
 
-cpmaddpackage(
-  NAME
-  OpenBLAS
-  GITHUB_REPOSITORY
-  OpenMathLib/OpenBLAS
-  VERSION
-  0.3.30
-  OPTIONS
-  "CMAKE_BUILD_TYPE Release"
-  "BUILD_SHARED_LIBS ON"
-  "LIBNAMESUFFIX DiFfRG"
-  "USE_OPENMP OFF"
-  "NUM_PARALLEL ${N_PROCESSORS}"
-  "BUILD_TESTING OFF"
-  "DYNAMIC_ARCH OFF"
-  "NUM_THREADS=64")
+if(BUILD_OpenBLAS)
+  message(STATUS "Building OpenBLAS.")
+
+  # OpenBlas
+  include(ProcessorCount)
+  ProcessorCount(N_PROCESSORS)
+
+  cpmaddpackage(
+    NAME
+    OpenBLAS
+    GITHUB_REPOSITORY
+    OpenMathLib/OpenBLAS
+    VERSION
+    0.3.30
+    OPTIONS
+    "CMAKE_BUILD_TYPE Release"
+    "BUILD_SHARED_LIBS ON"
+    "LIBNAMESUFFIX DiFfRG"
+    "USE_OPENMP OFF"
+    "NUM_PARALLEL ${N_PROCESSORS}"
+    "BUILD_TESTING OFF"
+    "DYNAMIC_ARCH OFF"
+    "NUM_THREADS=64")
+else()
+  message(STATUS "Skipping OpenBLAS build.")
+endif()
 
 # Get Eigen3
 message(STATUS "Adding Eigen3...")
@@ -172,6 +180,7 @@ cpmaddpackage(
   "CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE}"
   "H5CPP_DISABLE_TESTS ON"
   "H5CPP_CONAN DISABLE"
+  "H5CPP_BUILD_DOCS OFF"
   GITHUB_REPOSITORY
   ess-dmsc/h5cpp
   GIT_TAG

@@ -182,19 +182,11 @@ public:
     using namespace DiFfRG::compute;
     const auto _repl1 = RF(powr<2>(k), powr<2>(lf1));
     const auto _repl2 = RFdot(powr<2>(k), powr<2>(lf1));
-    return (12.4) *
-           ((-1.) * (_repl1 + lf1) *
-                ((_repl2) *
-                 ((powr<-1>(powr<2>(_repl1) + (2.) * ((_repl1) * (lf1)) + powr<2>(lf1) + mq2)) *
-                  ((powr<-1>(T)) * (powr<2>(sech((0.5) * ((std::sqrt(powr<2>(_repl1) + (2.) * ((_repl1) * (lf1)) +
-                                                                     powr<2>(lf1) + mq2)) *
-                                                          (powr<-1>(T))))))))) +
-            (2.) * (_repl1 + lf1) *
-                ((_repl2) *
-                 ((std::sqrt(powr<-3>(powr<2>(_repl1) + (2.) * ((_repl1) * (lf1)) + powr<2>(lf1) + mq2))) *
-                  (std::tanh((0.5) * ((std::sqrt(powr<2>(_repl1) + (2.) * ((_repl1) * (lf1)) + powr<2>(lf1) + mq2)) *
-                                      (powr<-1>(T)))))))) *
-           (std::sqrt(mq2));
+    // Analytic fermionic Matsubara sum: T Σ_n 1/(E² + ω_n²) = tanh(E/(2T)) / (2E)
+    // with E² = (RF + q)² + mq2
+    const auto E2 = powr<2>(_repl1) + (2.) * (_repl1 * lf1) + powr<2>(lf1) + mq2;
+    const auto E = std::sqrt(E2);
+    return (-4.) * (_repl1 + lf1) * _repl2 * std::tanh((0.5) * E / T) / E;
   }
 
   static KOKKOS_FORCEINLINE_FUNCTION double constant(const double & /* k */, const double & /* T */,
@@ -217,6 +209,4 @@ private:
   static KOKKOS_FORCEINLINE_FUNCTION auto dq2RB(const auto &k2, const auto &p2) { return Regulator::dq2RB(k2, p2); }
 
   static KOKKOS_FORCEINLINE_FUNCTION auto dq2RF(const auto &k2, const auto &p2) { return Regulator::dq2RF(k2, p2); }
-
-  static double sech(double x) { return 1 / std::cosh(x); }
 };

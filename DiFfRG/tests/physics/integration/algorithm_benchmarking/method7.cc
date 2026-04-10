@@ -1,3 +1,6 @@
+// Method 7: Single TeamPolicy kernel, two-phase within each team: parallel_for then parallel_reduce
+// over TeamThreadMDRange into a 5D cache (no Restrict). Constant added via team_rank() == 0 guard.
+
 #include <catch2/catch_all.hpp>
 
 #include <DiFfRG/common/init.hh>
@@ -6,7 +9,8 @@
 #include <DiFfRG/physics/interpolation.hh>
 #include <DiFfRG/physics/regulators.hh>
 
-#include "./ZA4/kernel.hh"
+// #include "./ZA4/kernel.hh"
+#include "./flows/ZA4/kernel.hh"
 
 void method7(Catch::Benchmark::Chronometer &meter)
 {

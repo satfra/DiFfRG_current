@@ -12,13 +12,16 @@
   "physical": {
     "Lambda": 100.0,
     "Nc": 3.0,
-    "m2A": -96.46362231,
+    "m2A": -93.3204702,
+
     "alphaA4": 0.10,
     "alphaA3": 0.10,
     "alphaAcbc": 0.10,
+
     "tilt_A4": 0.0,
     "tilt_A3": 0.0,
     "tilt_Acbc": 0.0,
+
     "eta_iter_max": 20,
     "eta_tol": 1e-3
   },
@@ -35,6 +38,7 @@
     "p_grid_min": 1e-4,
     "p_grid_max": 100.0,
     "p_grid_bias": 12.0,
+
     "fe_order": 3,
     "threads": 8,
     "batch_size": 64,
@@ -55,7 +59,7 @@
     }
   },
   "timestepping": {
-    "final_time": 1.4e+1,
+    "final_time": 14.0,
     "output_dt": 2e-1,
     "explicit": {
       "dt": 2e-1,

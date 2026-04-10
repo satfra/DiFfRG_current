@@ -45,6 +45,7 @@ namespace DiFfRG
 
       void set_vacuum_quad_size(const int size);
       void set_min_matsubara_size(const int value);
+      void set_max_matsubara_size(const int value);
       void set_matsubara_precision_factor(const int value);
 
     private:
@@ -67,9 +68,10 @@ namespace DiFfRG
       StorageType<float> quadratures_f;
 
       int verbosity = 0;
-      int vacuum_quad_size = 48;
+      int vacuum_quad_size = 64;
       int matsubara_precision_factor = 0;
       int min_matsubara_size = 32;
+      int max_matsubara_size = 128;
 
       std::mutex m_mutex;
     };
@@ -183,6 +185,15 @@ namespace DiFfRG
     auto matsubara_weights(const NT T, const NT typical_E)
     {
       return matsubara_storage.get_matsubara_quadrature<NT>(T, typical_E).template weights<MemorySpace>();
+    }
+
+    /**
+     * @brief Get the effective temperature for the Matsubara zero-mode weight.
+     * Returns 0 for vacuum (T=0) quadratures and the physical T for Monien quadratures.
+     */
+    template <typename NT = double> NT matsubara_T(const NT T, const NT typical_E)
+    {
+      return matsubara_storage.get_matsubara_quadrature<NT>(T, typical_E).get_T();
     }
 
   private:

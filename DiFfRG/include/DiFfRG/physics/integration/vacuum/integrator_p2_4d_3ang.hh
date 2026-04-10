@@ -19,14 +19,13 @@ namespace DiFfRG
       static constexpr ctype int_prefactor = powr<-4>((ctype)2 * M_PI); // fourier factor
 
       template <typename... T>
-      static KOKKOS_FORCEINLINE_FUNCTION NT kernel(const ctype q2, const ctype cos1, const ctype cos2, const ctype phi,
+      static KOKKOS_FORCEINLINE_FUNCTION NT kernel(const ctype q, const ctype cos1, const ctype cos2, const ctype phi,
                                                    const T &...t)
         requires provides_kernel<NT, KERNEL, ctype, 4, T...>
       {
         using namespace DiFfRG::compute;
 
-        const ctype q = sqrt(q2);
-        const ctype int_element = powr<4 - 2>(q) / (ctype)2; // from p^2 integral
+        const ctype int_element = powr<4 - 1>(q); // from p integral
 
         // sqrt(1. - powr<2>(cos1)); // the cos1 integral jacobian is already included
         // in the chebyshev2 quadrature
@@ -79,14 +78,14 @@ namespace DiFfRG
     Integrator_p2_4D_3ang(QuadratureProvider &quadrature_provider, const JSONValue &json)
       requires provides_regulator<KERNEL>
         : Integrator_p2_4D_3ang(quadrature_provider,
-                                internal::make_int_grid<4>(json, {"x_order", "cos1_order", "cos2_order", "phi_order"}),
+                                internal::make_int_grid<4, NT>(json, {"x_order", "cos1_order", "cos2_order", "phi_order"}),
                                 optimize_x_extent<typename KERNEL::Regulator>(json))
     {
     }
 
     Integrator_p2_4D_3ang(QuadratureProvider &quadrature_provider, const std::array<size_t, 4> grid_size,
                           ctype x_extent = 2.)
-        : Base(quadrature_provider, grid_size, {0, 0, -1, 0}, {x_extent, 1, 1, 2 * M_PI},
+        : Base(quadrature_provider, grid_size, {0, 0, -1, 0}, {std::sqrt(x_extent), 1, 1, 2 * M_PI},
                {QuadratureType::legendre, QuadratureType::chebyshev2, QuadratureType::legendre,
                 QuadratureType::legendre}),
           x_extent(x_extent), k(1.)
@@ -96,13 +95,13 @@ namespace DiFfRG
     void set_x_extent(ctype x_extent)
     {
       this->x_extent = x_extent;
-      Base::set_grid_extents({0, 0, -1, 0}, {x_extent * powr<2>(k), 1, 1, 2 * M_PI});
+      Base::set_grid_extents({0, 0, -1, 0}, {std::sqrt(x_extent) * k, 1, 1, 2 * M_PI});
     }
 
     void set_k(ctype k)
     {
       this->k = k;
-      Base::set_grid_extents({0, 0, -1, 0}, {x_extent * powr<2>(k), 1, 1, 2 * M_PI});
+      Base::set_grid_extents({0, 0, -1, 0}, {std::sqrt(x_extent) * k, 1, 1, 2 * M_PI});
     }
 
   private:

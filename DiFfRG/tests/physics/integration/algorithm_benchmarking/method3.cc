@@ -1,3 +1,7 @@
+// Method 3: TeamPolicy with explicit team size + nested TeamThreadRange / ThreadVectorRange (no cache).
+// One team per output point with team size = n[0]*n[1]. Outer TeamThreadRange over flattened dims 0-1,
+// inner ThreadVectorRange over flattened dims 2-3.
+
 #include <catch2/catch_all.hpp>
 
 #include <DiFfRG/common/init.hh>
@@ -6,7 +10,8 @@
 #include <DiFfRG/physics/interpolation.hh>
 #include <DiFfRG/physics/regulators.hh>
 
-#include "./ZA4/kernel.hh"
+// #include "./ZA4/kernel.hh"
+#include "./flows/ZA4/kernel.hh"
 
 void method3(Catch::Benchmark::Chronometer &meter)
 {

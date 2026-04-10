@@ -3,7 +3,6 @@
 #include <deal.II/base/logstream.h>
 #include <deal.II/base/timer.h>
 #include <deal.II/lac/block_vector.h>
-#include <deal.II/lac/vector_memory.h>
 
 // DiFfRG
 #include <DiFfRG/timestepping/solver/kinsol.hh>
@@ -97,18 +96,15 @@ namespace DiFfRG
     const VectorType &u_prev = initial_vector;
     const VectorType &u = iterate_vector;
 
-    GrowingVectorMemory<VectorType> mem;
-    typename VectorMemory<VectorType>::Pointer tmp(mem);
-    tmp->reinit(u, true);
+    eest_tmp.reinit(u);
 
     using std::abs, std::max, std::sqrt;
-    tbb::parallel_for(tbb::blocked_range<unsigned int>(0, tmp->size()), [&](tbb::blocked_range<unsigned int> r) {
+    tbb::parallel_for(tbb::blocked_range<unsigned int>(0, eest_tmp.size()), [&](tbb::blocked_range<unsigned int> r) {
       for (unsigned int n = r.begin(); n < r.end(); ++n) {
-        (*tmp)[n] = abs(err[n]) / (abstol + max(abs(u_prev[n]), abs(u[n])) * reltol);
+        eest_tmp[n] = abs(err[n]) / (abstol + max(abs(u_prev[n]), abs(u[n])) * reltol);
       }
     });
-    return tmp->l2_norm() / sqrt(tmp->size());
-    return tmp->linfty_norm(); // tmp->l2_norm() / sqrt(tmp->size());
+    return eest_tmp.l2_norm() / sqrt(eest_tmp.size());
   }
 
   template <typename VectorType_> bool KINSOL<VectorType_>::check()

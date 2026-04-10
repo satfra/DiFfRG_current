@@ -19,12 +19,11 @@ namespace DiFfRG
                                              * (1 / (ctype)2);             // divide the cos integral out
 
       template <typename... T>
-      static KOKKOS_FORCEINLINE_FUNCTION NT kernel(const ctype q2, const ctype cos, const ctype q0, const T &...t)
+      static KOKKOS_FORCEINLINE_FUNCTION NT kernel(const ctype q, const ctype cos, const ctype q0, const T &...t)
       {
         using namespace DiFfRG::compute;
 
-        const ctype q = sqrt(q2);
-        const ctype int_element = powr<sdim - 2>(q) / (ctype)2; // from p^2 integral
+        const ctype int_element = powr<sdim - 1>(q); // from p integral
         const NT result = KERNEL::kernel(q, cos, q0, t...);
 
         return int_prefactor * int_element * result;
@@ -54,14 +53,14 @@ namespace DiFfRG
 
     Integrator_fT_p2_1ang(QuadratureProvider &quadrature_provider, const JSONValue &json)
       requires provides_regulator<KERNEL>
-        : Integrator_fT_p2_1ang(quadrature_provider, internal::make_int_grid<2>(json, {"x_order", "cos1_order"}),
+        : Integrator_fT_p2_1ang(quadrature_provider, internal::make_int_grid<2, NT>(json, {"x_order", "cos1_order"}),
                                 optimize_x_extent<typename KERNEL::Regulator>(json), json.get_double("T", 1.0))
     {
     }
 
     Integrator_fT_p2_1ang(QuadratureProvider &quadrature_provider, const std::array<size_t, 2> grid_size,
                           ctype x_extent = 2., ctype T = 1, ctype typical_E = 1)
-        : Base(quadrature_provider, grid_size, {0, -1.}, {x_extent, 1.},
+        : Base(quadrature_provider, grid_size, {0, -1.}, {std::sqrt(x_extent), 1.},
                {QuadratureType::legendre, QuadratureType::legendre}, T, typical_E),
           x_extent(x_extent), k(1.)
     {
@@ -70,13 +69,13 @@ namespace DiFfRG
     void set_x_extent(ctype x_extent)
     {
       this->x_extent = x_extent;
-      Base::set_grid_extents({0, -1.}, {x_extent * powr<2>(k), 1.});
+      Base::set_grid_extents({0, -1.}, {std::sqrt(x_extent) * k, 1.});
     }
 
     void set_k(ctype k)
     {
       this->k = k;
-      Base::set_grid_extents({0, -1.}, {x_extent * powr<2>(k), 1.});
+      Base::set_grid_extents({0, -1.}, {std::sqrt(x_extent) * k, 1.});
       Base::set_typical_E(k); // update typical energy
     }
 

@@ -1,3 +1,5 @@
+#include "../kernel.hh"
+
 #include "../V.hh"
 
 V_integrator::V_integrator(DiFfRG::QuadratureProvider &quadrature_provider, const DiFfRG::JSONValue &json)

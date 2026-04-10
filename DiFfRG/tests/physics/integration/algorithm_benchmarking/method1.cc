@@ -1,3 +1,7 @@
+// Method 1: Direct TeamPolicy + TeamThreadMDRange reduction (no cache).
+// One team per output point. All 4 quadrature dimensions reduced in a single flat TeamThreadMDRange.
+// Kernel evaluation and reduction happen in one pass.
+
 #include <catch2/catch_all.hpp>
 
 #include <DiFfRG/common/init.hh>
@@ -6,7 +10,8 @@
 #include <DiFfRG/physics/interpolation.hh>
 #include <DiFfRG/physics/regulators.hh>
 
-#include "./ZA4/kernel.hh"
+// #include "./ZA4/kernel.hh"
+#include "./flows/ZA4/kernel.hh"
 
 void method1(Catch::Benchmark::Chronometer &meter)
 {

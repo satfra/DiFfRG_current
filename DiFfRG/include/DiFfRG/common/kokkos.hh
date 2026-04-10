@@ -162,6 +162,14 @@ namespace DiFfRG
                                     ExecutionSpace                              // Choice between GPU and CPU
                                     >;
   template <int dim, typename T, typename ExecutionSpace>
+  using KokkosNDViewRestrict =
+      Kokkos::View<typename GetKokkosNDStarType<dim, T>::type, // Get the star syntax for dimensionality recursively
+                                                               // with a helper
+                   ExecutionSpace,                             // Choice between GPU and CPU
+                   Kokkos::MemoryTraits<Kokkos::Restrict>      // No-alias hint for compiler optimization
+                   >;
+
+  template <int dim, typename T, typename ExecutionSpace>
   using KokkosNDViewUnmanaged =
       Kokkos::View<typename GetKokkosNDStarType<dim, T>::type, // Get the star syntax for dimensionality recursively
                                                                // with a helper
@@ -170,10 +178,17 @@ namespace DiFfRG
                    >;
 
   template <int dim, typename T, typename ExecutionSpace>
-  auto makeKokkosNDView(const std::string &label, const device::array<size_t, dim> &extents)
+  auto make_kokkos_nd_view(const std::string &label, const device::array<size_t, dim> &extents)
   {
     return device::apply([&](const auto &...args) { return KokkosNDView<dim, T, ExecutionSpace>(label, args...); },
                          extents);
+  }
+
+  template <int dim, typename T, typename ExecutionSpace>
+  auto make_kokkos_nd_view_restrict(const std::string &label, const device::array<size_t, dim> &extents)
+  {
+    return device::apply(
+        [&](const auto &...args) { return KokkosNDViewRestrict<dim, T, ExecutionSpace>(label, args...); }, extents);
   }
 
   // ------------------------------------------------
@@ -187,8 +202,29 @@ namespace DiFfRG
   };
   template <int dim, typename ExecutionSpace> using KokkosNDRange = KokkosNDRangeHelper<dim, ExecutionSpace>::type;
 
+  /**
+   * @brief Compute clamped tile sizes for MDRangePolicy so that the product of tile dimensions does not exceed
+   * max_threads. Fills from the innermost (last) dimension outward.
+   */
+  template <int dim>
+  device::array<size_t, dim> compute_tile_hints(const device::array<size_t, dim> &extents, size_t max_threads = 256)
+  {
+    device::array<size_t, dim> tile;
+    for (int i = 0; i < dim; ++i)
+      tile[i] = 1;
+
+    size_t budget = max_threads;
+    // Fill from innermost dimension outward
+    for (int i = dim - 1; i >= 0; --i) {
+      tile[i] = std::min(extents[i], budget);
+      budget /= tile[i];
+      if (budget == 0) break;
+    }
+    return tile;
+  }
+
   template <int dim, typename ExecutionSpace>
-  auto makeKokkosNDRange(ExecutionSpace &space, const device::array<size_t, dim> start,
+  auto make_kokkos_nd_range(ExecutionSpace &space, const device::array<size_t, dim> start,
                          const device::array<size_t, dim> end)
   {
     if constexpr (dim == 1) {
@@ -204,8 +240,27 @@ namespace DiFfRG
     }
   }
 
+  template <int dim, typename ExecutionSpace>
+  auto make_kokkos_nd_range(ExecutionSpace &space, const device::array<size_t, dim> start,
+                         const device::array<size_t, dim> end, const device::array<size_t, dim> tile)
+  {
+    if constexpr (dim == 1) {
+      return KokkosNDRange<dim, ExecutionSpace>(space, start[0], end[0]);
+    } else {
+      Kokkos::Array<size_t, dim> start_view;
+      Kokkos::Array<size_t, dim> end_view;
+      Kokkos::Array<size_t, dim> tile_view;
+      for (size_t i = 0; i < dim; ++i) {
+        start_view[i] = start[i];
+        end_view[i] = end[i];
+        tile_view[i] = tile[i];
+      }
+      return KokkosNDRange<dim, ExecutionSpace>(space, start_view, end_view, tile_view);
+    }
+  }
+
   template <int dim, typename TeamType>
-  KOKKOS_FORCEINLINE_FUNCTION auto makeKokkosNDThreadRange(const TeamType &team, const device::array<size_t, dim> end)
+  KOKKOS_FORCEINLINE_FUNCTION auto make_kokkos_nd_thread_range(const TeamType &team, const device::array<size_t, dim> end)
   {
     if constexpr (dim == 1) {
       return Kokkos::TeamThreadRange(team, end[0]);
@@ -244,30 +299,14 @@ namespace DiFfRG
     FUN fun;
   };
 
-#ifdef KOKKOS_ENABLE_CUDA
-  template <int i, typename Head, typename... Tail> constexpr auto tuple_first(const device::tuple<Head, Tail...> &t)
-  {
-    if constexpr (i == 0)
-      return device::tuple();
-    else if constexpr (i == 1)
-      return device::apply([](auto &head, auto &.../*tail*/) { return device::tie(head); }, t);
-    else
-      return device::apply(
-          [](auto &head, auto &...tail) {
-            return device::tuple_cat(device::tie(head), tuple_first<i - 1>(device::tie(tail...)));
-          },
-          t);
-  }
-#endif
-
   /**
    * @brief This is a functor which wraps a lambda for reduction.
    * Basically, this is necessary when one wants to call a variadic lambda on an NVIDIA GPU.
    * CUDA seems to be unable to expand the variadic arguments - in contrast, a direct approach does indeed work for
    * openMP or serial compilation.
    * To get around this limitation, the KokkosNDLambdaWrapperReduction packs the indices into an array.
-   * If you wonder, whether there's a difference when using tie and tuples: https://godbolt.org/z/M3bG39rsM
-   * No. Therefore, we spare the ourselves the hassle and simply use an array.
+   * Uses compile-time index sequences to extract the first `dim` args as indices and the last arg as the reduction
+   * value, avoiding recursive tuple_first/tuple_cat overhead per GPU thread.
    *
    * @tparam dim Number of arguments taken
    * @tparam FUN The lambda to which we forward the indices
@@ -280,18 +319,17 @@ namespace DiFfRG
       requires(sizeof...(Args) == dim + 1)
     KOKKOS_FORCEINLINE_FUNCTION void operator()(Args &&...args) const
     {
-      auto tuple = device::tie(args...);
-      fun(makeArray(tuple_first<dim>(tuple)), device::get<dim>(tuple)); // the last argument is the reduction result
+      impl(device::make_integer_sequence<size_t, dim>{}, device::forward<Args>(args)...);
     }
 
     FUN fun;
 
-    template <typename... Args>
-      requires(sizeof...(Args) == dim)
-    KOKKOS_FORCEINLINE_FUNCTION auto makeArray(device::tuple<Args...> &&tuple) const
+  private:
+    template <size_t... Is, typename... Args>
+    KOKKOS_FORCEINLINE_FUNCTION void impl(device::integer_sequence<size_t, Is...>, Args &&...args) const
     {
-      return device::apply([](auto &&...args) { return device::array<size_t, dim>{{static_cast<size_t>(args)...}}; },
-                           tuple);
+      auto tuple = device::tie(args...);
+      fun(device::array<size_t, dim>{{static_cast<size_t>(device::get<Is>(tuple))...}}, device::get<dim>(tuple));
     }
   };
 } // namespace DiFfRG

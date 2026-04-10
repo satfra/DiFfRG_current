@@ -4,7 +4,7 @@ PacletObject[
     <|
         "Name" -> "DiFfRG",
         "Version" -> "1.0.0",
-        "WolframVersion" -> "13.3+",
+        "WolframVersion" -> "11.0+",
         "Extensions" ->
             {
                 {

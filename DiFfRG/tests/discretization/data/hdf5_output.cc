@@ -305,8 +305,8 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
       auto maps_group = root.get_group("maps");
       REQUIRE(maps_group.has_group("spline"));
       auto spline_group = maps_group.get_group("spline");
-      REQUIRE(spline_group.has_group(int_to_string(0, 6)));
-      auto sub_group = spline_group.get_group(int_to_string(0, 6));
+      REQUIRE(spline_group.has_group(std::to_string(0)));
+      auto sub_group = spline_group.get_group(std::to_string(0));
       REQUIRE(sub_group.has_dataset("data"));
       auto spline_dataset = sub_group.get_dataset("data");
       std::vector<double> spline_map_data(coord_size);
@@ -321,8 +321,8 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
       spdlog::get("log")->info("checking lin2d map...");
       REQUIRE(maps_group.has_group("lin2d"));
       auto lin2d_group = maps_group.get_group("lin2d");
-      REQUIRE(lin2d_group.has_group(int_to_string(0, 6)));
-      auto lin2d_sub_group = lin2d_group.get_group(int_to_string(0, 6));
+      REQUIRE(lin2d_group.has_group(std::to_string(0)));
+      auto lin2d_sub_group = lin2d_group.get_group(std::to_string(0));
       REQUIRE(lin2d_sub_group.has_dataset("data"));
       auto lin2d_dataset = lin2d_sub_group.get_dataset("data");
       std::vector<double> lin2d_map_data(coord_size * coord_size);
@@ -337,8 +337,8 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
       spdlog::get("log")->info("checking lin2d direct map...");
       REQUIRE(maps_group.has_group("lin2d_Direct"));
       auto lin2d_direct_group = maps_group.get_group("lin2d_Direct");
-      REQUIRE(lin2d_direct_group.has_group(int_to_string(0, 6)));
-      auto lin2d_direct_sub_group = lin2d_direct_group.get_group(int_to_string(0, 6));
+      REQUIRE(lin2d_direct_group.has_group(std::to_string(0)));
+      auto lin2d_direct_sub_group = lin2d_direct_group.get_group(std::to_string(0));
       REQUIRE(lin2d_direct_sub_group.has_dataset("data"));
       auto lin2d_direct_dataset = lin2d_direct_sub_group.get_dataset("data");
       std::vector<double> lin2d_direct_map_data(coord_size * coord_size);
@@ -374,15 +374,15 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
       auto maps_group = root.get_group("maps");
       REQUIRE(maps_group.has_group("spline"));
       auto spline_group = maps_group.get_group("spline");
-      REQUIRE(spline_group.has_group(int_to_string(0, 6)));
-      auto sub_group = spline_group.get_group(int_to_string(0, 6));
+      REQUIRE(spline_group.has_group(std::to_string(0)));
+      auto sub_group = spline_group.get_group(std::to_string(0));
       REQUIRE(sub_group.has_dataset("data"));
 
       spdlog::get("log")->info("checking lin2d map...");
       REQUIRE(maps_group.has_group("lin2d"));
       auto lin2d_group = maps_group.get_group("lin2d");
-      REQUIRE(lin2d_group.has_group(int_to_string(0, 6)));
-      auto lin2d_sub_group = lin2d_group.get_group(int_to_string(0, 6));
+      REQUIRE(lin2d_group.has_group(std::to_string(0)));
+      auto lin2d_sub_group = lin2d_group.get_group(std::to_string(0));
       REQUIRE(lin2d_sub_group.has_dataset("data"));
 
       // Skip the explicit data verification here, we just wanted to know that the convenience method worked.

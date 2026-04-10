@@ -30,7 +30,7 @@ namespace DiFfRG
      * @param coordinates coordinate system of the data
      */
     LinearInterpolator2D(const Coordinates &coordinates)
-        : coordinates(coordinates), sizes(coordinates.sizes()), total_size(sizes[0] * sizes[1]), other_instance(nullptr)
+        : coordinates(coordinates), sizes(coordinates.sizes()), total_size(sizes[0] * sizes[1])
     {
       // Allocate Kokkos View
       device_data = ViewType("LinearInterpolator2D_data", sizes[0], sizes[1]);
@@ -44,10 +44,15 @@ namespace DiFfRG
      */
     KOKKOS_FUNCTION
     LinearInterpolator2D(const LinearInterpolator2D &other)
-        : coordinates(other.coordinates), sizes(other.sizes), total_size(other.total_size), other_instance(nullptr)
+        : coordinates(other.coordinates), sizes(other.sizes), total_size(other.total_size)
     {
       // Use the same data
       device_data = other.device_data;
+    }
+
+    KOKKOS_FUNCTION ~LinearInterpolator2D()
+    {
+      KOKKOS_IF_ON_HOST((if (owns_other_instance) delete other_instance;))
     }
 
     template <typename NT2> void update(const NT2 *in_data)
@@ -101,26 +106,26 @@ namespace DiFfRG
       idx_x = max(static_cast<decltype(idx_x)>(0), min(idx_x, static_cast<decltype(idx_x)>(sizes[0] - 1)));
       idx_y = max(static_cast<decltype(idx_y)>(0), min(idx_y, static_cast<decltype(idx_y)>(sizes[1] - 1)));
 
-      // Clamp the (upper) index to the range [1, sizes - 1]
-      size_t x1 = static_cast<size_t>(
-          min(ceil(idx_x + static_cast<decltype(idx_x)>(1e-16)), static_cast<decltype(idx_x)>(sizes[0] - 1)));
-      size_t y1 = static_cast<size_t>(
-          min(ceil(idx_y + static_cast<decltype(idx_y)>(1e-16)), static_cast<decltype(idx_y)>(sizes[1] - 1)));
+      // Lower index clamped to [0, sizes-2], upper = lower+1
+      const size_t x0 = min(size_t(Kokkos::floor(idx_x)), sizes[0] - 2);
+      const size_t y0 = min(size_t(Kokkos::floor(idx_y)), sizes[1] - 2);
+      const size_t x1 = x0 + 1;
+      const size_t y1 = y0 + 1;
 
-      const auto corner00 = device_data(x1 - 1, y1 - 1);
-      const auto corner01 = device_data(x1 - 1, y1);
-      const auto corner10 = device_data(x1, y1 - 1);
+      const auto corner00 = device_data(x0, y0);
+      const auto corner01 = device_data(x0, y1);
+      const auto corner10 = device_data(x1, y0);
       const auto corner11 = device_data(x1, y1);
 
-      const auto tx = x1 - idx_x;
-      const auto ty = y1 - idx_y;
+      const auto tx = idx_x - x0;
+      const auto ty = idx_y - y0;
 
       if constexpr (std::is_arithmetic_v<NT>)
-        return Kokkos::fma(ty, Kokkos::fma(tx, corner00, Kokkos::fma(-tx, corner10, corner10)),
-                           (1 - ty) * Kokkos::fma(tx, corner01, Kokkos::fma(-tx, corner11, corner11)));
+        return Kokkos::fma(ty, Kokkos::fma(tx, corner11, Kokkos::fma(-tx, corner01, corner01)),
+                           (1 - ty) * Kokkos::fma(tx, corner10, Kokkos::fma(-tx, corner00, corner00)));
       else
-        return corner00 * tx * ty + corner01 * tx * (1 - ty) + corner10 * (1 - tx) * ty +
-               corner11 * (1 - tx) * (1 - ty);
+        return corner00 * (1 - tx) * (1 - ty) + corner01 * (1 - tx) * ty + corner10 * tx * (1 - ty) +
+               corner11 * tx * ty;
     }
 
     auto &CPU() const { return get_on<CPU_memory>(); }
@@ -135,13 +140,14 @@ namespace DiFfRG
             "You need to call get_on[]() on the original instance.");
 
       if constexpr (std::is_same_v<MemorySpace, DefaultMemorySpace>) {
-        return *this; // Return the current instance if the memory space matches
+        // remove constness
+        return const_cast<LinearInterpolator2D<NT, Coordinates, MemorySpace> &>(*this);
       } else {
         // Create a new instance with the same data but in the requested memory space
         if (other_instance == nullptr) {
-          other_instance = std::make_shared<LinearInterpolator2D<NT, Coordinates, MemorySpace>>(coordinates);
-          other_instance->other_instance = std::shared_ptr<std::decay_t<decltype(*this)>>(
-              const_cast<std::decay_t<decltype(*this)> *>(this), [](std::decay_t<decltype(*this)> *) {});
+          other_instance = new LinearInterpolator2D<NT, Coordinates, MemorySpace>(coordinates);
+          owns_other_instance = true;
+          other_instance->other_instance = const_cast<std::decay_t<decltype(*this)> *>(this);
         }
         // Copy the data from the current instance to the new one
         other_instance->update(host_data);
@@ -174,11 +180,12 @@ namespace DiFfRG
     const size_t total_size;
 
     using ViewType = Kokkos::View<NT **, DefaultMemorySpace, Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
-    using HostViewType = typename ViewType::HostMirror;
+    using HostViewType = typename ViewType::host_mirror_type;
 
     ViewType device_data;
     HostViewType host_data;
 
-    mutable std::shared_ptr<LinearInterpolator2D<NT, Coordinates, other_memory_space>> other_instance;
+    mutable LinearInterpolator2D<NT, Coordinates, other_memory_space> *other_instance = nullptr;
+    mutable bool owns_other_instance = false;
   };
 } // namespace DiFfRG

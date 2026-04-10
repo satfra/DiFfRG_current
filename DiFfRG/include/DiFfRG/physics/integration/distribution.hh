@@ -28,7 +28,7 @@ namespace DiFfRG
     }
 
   private:
-    MPI_Comm mpi_comm;
+    [[maybe_unused]] MPI_Comm mpi_comm;
 
     std::vector<void *> integrators;
     std::vector<NodeDistribution> node_distributions;

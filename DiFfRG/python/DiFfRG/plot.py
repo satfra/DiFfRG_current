@@ -79,6 +79,8 @@ def plot_1D(
             data["xerr"] = None
         if not "alpha" in data:
             data["alpha"] = 1.0
+        if not "zorder" in data:
+            data["zorder"] = 2
 
         # Prepare the data
         sorted_idx = np.argsort(data["x"], axis=-1)
@@ -98,6 +100,7 @@ def plot_1D(
                 marker=data["marker"],
                 linestyle="None",
                 alpha=data["alpha"],
+                zorder=data["zorder"],
             )
         else:
             ax.plot(
@@ -108,6 +111,7 @@ def plot_1D(
                 lw=data["lw"],
                 linestyle=data["linestyle"],
                 alpha=data["alpha"],
+                zorder=data["zorder"],
             )
 
     # Set axis labels

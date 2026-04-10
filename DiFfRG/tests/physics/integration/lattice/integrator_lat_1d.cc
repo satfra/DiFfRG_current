@@ -7,7 +7,7 @@
 #include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/polynomials.hh>
-#include <DiFfRG/physics/integration/lattice/integrator_lat_1D.hh>
+#include <DiFfRG/physics/integration/lattice/integrator_lat_1d.hh>
 
 using namespace DiFfRG;
 
