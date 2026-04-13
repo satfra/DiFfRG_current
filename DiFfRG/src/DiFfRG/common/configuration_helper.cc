@@ -236,7 +236,12 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
            {"explicit",
             {{"dt", 1e-2}, {"minimal_dt", 1e-6}, {"maximal_dt", 1e-1}, {"abs_tol", 1e-4}, {"rel_tol", 1e-4}}},
            {"implicit",
-            {{"dt", 1e-4}, {"minimal_dt", 1e-6}, {"maximal_dt", 1e-1}, {"abs_tol", 1e-13}, {"rel_tol", 1e-7}}}}},
+            {{"dt", 1e-4},
+             {"minimal_dt", 1e-6},
+             {"maximal_dt", 1e-1},
+             {"abs_tol", 1e-13},
+             {"rel_tol", 1e-7},
+             {"max_steps", 1000000}}}}},
          {"output", {{"verbosity", 0}, {"folder", "output/"}, {"name", "output"}}}});
 
     std::ofstream file(parameter_file);

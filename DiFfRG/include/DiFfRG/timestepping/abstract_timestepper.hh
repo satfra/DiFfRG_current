@@ -23,6 +23,7 @@ namespace DiFfRG
    * - /timestepping/implicit/maximal_dt: The maximal timestep size for an implicit timestepping algorithm.
    * - /timestepping/implicit/abs_tol: The absolute tolerance for an implicit timestepping algorithm.
    * - /timestepping/implicit/rel_tol: The relative tolerance for an implicit timestepping algorithm.
+   * - /timestepping/implicit/max_steps: The maximal number of internal SUNDIALS steps between outputs.
    * - /timestepping/explicit/dt: The timestep size for an explicit timestepping algorithm.
    * - /timestepping/explicit/minimal_dt: The minimal timestep size for an explicit timestepping algorithm.
    * - /timestepping/explicit/maximal_dt: The maximal timestep size for an explicit timestepping algorithm.
@@ -75,6 +76,7 @@ namespace DiFfRG
       impl.maximal_dt = json.get_double("/timestepping/implicit/maximal_dt");
       impl.abs_tol = json.get_double("/timestepping/implicit/abs_tol");
       impl.rel_tol = json.get_double("/timestepping/implicit/rel_tol");
+      impl.max_steps = json.get_uint("/timestepping/implicit/max_steps", 1000000);
 
       expl.dt = json.get_double("/timestepping/explicit/dt");
       expl.minimal_dt = json.get_double("/timestepping/explicit/minimal_dt");
@@ -149,6 +151,7 @@ namespace DiFfRG
       double maximal_dt;
       double abs_tol;
       double rel_tol;
+      uint max_steps;
     } impl;
 
     struct explicitParameters {

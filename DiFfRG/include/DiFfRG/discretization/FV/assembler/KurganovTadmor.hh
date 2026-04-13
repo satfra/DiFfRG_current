@@ -27,7 +27,6 @@
 #include <deal.II/numerics/vector_tools.h>
 #include <iostream>
 #include <optional>
-#include <petscvec.h>
 #include <spdlog/spdlog.h>
 #include <tbb/tbb.h>
 
