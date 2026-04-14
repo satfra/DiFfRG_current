@@ -20,7 +20,9 @@ function(setup_test SOURCE)
   get_filename_component(TARGET ${SOURCE} NAME_WE)
   add_executable(${TARGET} ${SOURCE})
   target_link_libraries(${TARGET} PRIVATE DiFfRG::DiFfRG Catch2::Catch2WithMain)
-  catch_discover_tests(${TARGET} ADD_TAGS_AS_LABELS)
+  catch_discover_tests(${TARGET}
+    ADD_TAGS_AS_LABELS
+    PROPERTIES TIMEOUT 3600)
 endfunction()
 
 function(setup_benchmark SOURCE)

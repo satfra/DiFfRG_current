@@ -1,6 +1,8 @@
 bin*/
 build*/
+local_install/
 .idea/
+.zed/
 profile/
 .ipynb_checkpoints
 *.pvd
@@ -12,6 +14,13 @@ profile/
 .claude/
 .codex/
 .opencode/
+
+## profiling metadata
+.xctrace-home/
+profile.time-profile.xml
+profile.time-sample.xml
+profile.trace/
+
 
 ## Core latex/pdflatex auxiliary files:
 *.aux

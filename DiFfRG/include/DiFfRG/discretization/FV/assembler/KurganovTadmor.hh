@@ -630,16 +630,35 @@ namespace DiFfRG
         {
           Timer timer;
 
+          std::vector<IndexSet> component_boundary_dofs(Components::count_fe_functions());
+          for (uint c = 0; c < Components::count_fe_functions(); ++c) {
+            ComponentMask component_mask(Components::count_fe_functions(), false);
+            component_mask.set(c, true);
+            component_boundary_dofs[c] = DoFTools::extract_boundary_dofs(dof_handler, component_mask);
+          }
+          std::vector<std::vector<Point>> component_boundary_points(Components::count_fe_functions());
+          for (uint c = 0; c < Components::count_fe_functions(); ++c) {
+            component_boundary_points[c].resize(component_boundary_dofs[c].n_elements());
+            for (uint i = 0; i < component_boundary_dofs[c].n_elements(); ++i)
+              component_boundary_points[c][i] =
+                  discretization.get_support_point(component_boundary_dofs[c].nth_index_in_set(i));
+          }
+
+          auto &constraints = discretization.get_constraints();
+          constraints.clear();
+          DoFTools::make_hanging_node_constraints(dof_handler, constraints);
+          model.affine_constraints(constraints, component_boundary_dofs, component_boundary_points);
+          constraints.close();
+
           // Mass sparsity pattern
           {
             DynamicSparsityPattern dsp(dof_handler.n_dofs());
-            DoFTools::make_sparsity_pattern(dof_handler, dsp, discretization.get_constraints(),
-                                            /*keep_constrained_dofs = */ true);
+            DoFTools::make_sparsity_pattern(dof_handler, dsp, constraints, /*keep_constrained_dofs = */ true);
             sparsity_pattern_mass.copy_from(dsp);
             mass_matrix.reinit(sparsity_pattern_mass);
             MatrixCreator::create_mass_matrix(dof_handler, quadrature, mass_matrix,
                                               static_cast<Function<dim, NumberType> *>(nullptr),
-                                              discretization.get_constraints());
+                                              constraints);
           }
           // // Jacobian sparsity pattern
           // {

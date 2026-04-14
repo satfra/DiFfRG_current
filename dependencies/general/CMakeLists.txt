@@ -155,7 +155,7 @@ cpmaddpackage(
   GITHUB_REPOSITORY
   gabime/spdlog
   VERSION
-  1.14.1
+  1.17.0
   OPTIONS
   "CMAKE_BUILD_TYPE Release"
   "SPDLOG_INSTALL ON"

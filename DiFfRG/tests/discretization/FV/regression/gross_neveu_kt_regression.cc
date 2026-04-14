@@ -1,5 +1,8 @@
 #include "DiFfRG/discretization/FV/assembler/KurganovTadmor.hh"
+#include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed_zero_deriv.hh>
 #include "DiFfRG/discretization/FV/discretization.hh"
+#include "DiFfRG/timestepping/explicit_euler.hh"
+#include "DiFfRG/timestepping/implicit_euler.hh"
 
 #include <DiFfRG/common/json.hh>
 #include <DiFfRG/common/math.hh>
@@ -8,8 +11,8 @@
 #include <DiFfRG/physics/thermodynamics.hh>
 #include <DiFfRG/timestepping/timestepping.hh>
 
-#include <catch2/catch_approx.hpp>
-#include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_all.hpp>
+#include <deal.II/base/numbers.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
@@ -19,14 +22,15 @@
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
 #include <iomanip>
 #include <limits>
 #include <numbers>
 #include <optional>
+#include <regex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 #include <vector>
@@ -41,10 +45,6 @@ namespace
   constexpr double pi = std::numbers::pi_v<double>;
   constexpr double d_gamma = 2.0;
   constexpr double h = 1.0;
-  constexpr double N_flavors = 2.0;
-  constexpr double temperature = 0.00625;
-  constexpr double beta = powr<-1>(temperature);
-  constexpr double chemical_potential = 0.6;
   constexpr double Lambda = 1.0e5;
   constexpr double k_ir = 1.0e-4;
   constexpr double final_time = 20.72326583694641;
@@ -54,7 +54,7 @@ namespace
   constexpr double abs_tol = 5.0e-14;
   constexpr double rel_tol = 2.0e-14;
   constexpr double grid_tol = 1.0e-12;
-  constexpr double fixture_derivative_tol = 1.0e-4;
+  constexpr double mean_field_n_flavors = std::numeric_limits<double>::quiet_NaN();
 
   using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">>;
   using Components = ComponentDescriptor<FEFunctionDesc>;
@@ -65,9 +65,22 @@ namespace
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
   template <typename Model>
-  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor>;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor, DiFfRG::FV::KurganovTadmor::MaxEigenvalueWaveSpeedZeroDeriv>;
+  // using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor>;
   using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
-  using ExplicitTimeStepper = TimeStepperBoostRK54<VectorType, SparseMatrixType, dim>;
+  using ExplicitStepper = TimeStepperExplicitEuler<VectorType, SparseMatrixType, dim>;
+  using ImplicitEuler = TimeStepperImplicitEuler<VectorType, SparseMatrixType, dim, UMFPack>;
+
+  struct FlowCase {
+    std::string relative_path;
+    std::string filename;
+    bool is_mean_field;
+    double temperature;
+    double chemical_potential;
+    double n_flavors;
+    double profile_abs_tol;
+    double profile_rel_tol;
+  };
 
   void ensure_logger()
   {
@@ -79,6 +92,27 @@ namespace
   }
 
   template <typename T> double scalar_value(const T &x) { return static_cast<double>(x); }
+
+  std::string describe_flow_case(const FlowCase &flow_case)
+  {
+    std::ostringstream description;
+    description << std::setprecision(17);
+    description << "flow=" << (flow_case.relative_path.empty() ? flow_case.filename : flow_case.relative_path)
+                << ", kind=" << (flow_case.is_mean_field ? "MF" : "finite-N")
+                << ", T=" << flow_case.temperature << ", mu=" << flow_case.chemical_potential << ", N=";
+    if (flow_case.is_mean_field)
+      description << "MF";
+    else
+      description << flow_case.n_flavors;
+    return description.str();
+  }
+
+  double fermion_derivative_factor(const double energy, const double temperature)
+  {
+    if (temperature == 0.0) return 0.0;
+    const double occupation = nF(energy, temperature);
+    return powr<-1>(temperature) * occupation * (1.0 - occupation);
+  }
 
   double json_number_to_double(const json::value &value)
   {
@@ -96,6 +130,87 @@ namespace
       result.push_back(json_number_to_double(value));
     return result;
   }
+
+  FlowCase make_flow_case(const std::string_view relative_path, const std::string_view filename, const bool is_mean_field,
+                          const double temperature, const double chemical_potential, const double n_flavors)
+  {
+    constexpr double regression_profile_abs_tol = 1.0e-6;
+    constexpr double regression_profile_rel_tol = 1.0e-7;
+    return FlowCase{std::string(relative_path), std::string(filename), is_mean_field, temperature, chemical_potential,
+                    n_flavors, regression_profile_abs_tol, regression_profile_rel_tol};
+  }
+
+  template <typename Derived>
+  struct GrossNeveuFlowDescriptor {
+    static FlowCase flow_case()
+    {
+      return make_flow_case(Derived::relative_path, Derived::filename, Derived::is_mean_field, Derived::temperature,
+                            Derived::chemical_potential, Derived::n_flavors);
+    }
+  };
+
+  struct FlowMF_T00625_Mu06 : GrossNeveuFlowDescriptor<FlowMF_T00625_Mu06> {
+    static constexpr auto relative_path = "data/flow_MF_T=0.00625,mu=0.6.json";
+    static constexpr auto filename = "flow_MF_T=0.00625,mu=0.6.json";
+    static constexpr bool is_mean_field = true;
+    static constexpr double temperature = 0.00625;
+    static constexpr double chemical_potential = 0.6;
+    static constexpr double n_flavors = mean_field_n_flavors;
+  };
+
+  struct FlowMF_T00125_Mu06 : GrossNeveuFlowDescriptor<FlowMF_T00125_Mu06> {
+    static constexpr auto relative_path = "data/flow_MF_T=0.0125,mu=0.6.json";
+    static constexpr auto filename = "flow_MF_T=0.0125,mu=0.6.json";
+    static constexpr bool is_mean_field = true;
+    static constexpr double temperature = 0.0125;
+    static constexpr double chemical_potential = 0.6;
+    static constexpr double n_flavors = mean_field_n_flavors;
+  };
+
+  struct FlowMF_T01_Mu01 : GrossNeveuFlowDescriptor<FlowMF_T01_Mu01> {
+    static constexpr auto relative_path = "data/flow_MF_T=0.1,mu=0.1.json";
+    static constexpr auto filename = "flow_MF_T=0.1,mu=0.1.json";
+    static constexpr bool is_mean_field = true;
+    static constexpr double temperature = 0.1;
+    static constexpr double chemical_potential = 0.1;
+    static constexpr double n_flavors = mean_field_n_flavors;
+  };
+
+  struct FlowN16_T00625_Mu06 : GrossNeveuFlowDescriptor<FlowN16_T00625_Mu06> {
+    static constexpr auto relative_path = "data/flow_N=16,T=0.00625,mu=0.6.json";
+    static constexpr auto filename = "flow_N=16,T=0.00625,mu=0.6.json";
+    static constexpr bool is_mean_field = false;
+    static constexpr double temperature = 0.00625;
+    static constexpr double chemical_potential = 0.6;
+    static constexpr double n_flavors = 16.0;
+  };
+
+  struct FlowN2_T00625_Mu06 : GrossNeveuFlowDescriptor<FlowN2_T00625_Mu06> {
+    static constexpr auto relative_path = "data/flow_N=2,T=0.00625,mu=0.6.json";
+    static constexpr auto filename = "flow_N=2,T=0.00625,mu=0.6.json";
+    static constexpr bool is_mean_field = false;
+    static constexpr double temperature = 0.00625;
+    static constexpr double chemical_potential = 0.6;
+    static constexpr double n_flavors = 2.0;
+  };
+
+  struct FlowN2_T00125_Mu06 : GrossNeveuFlowDescriptor<FlowN2_T00125_Mu06> {
+    static constexpr auto relative_path = "data/flow_N=2,T=0.0125,mu=0.6.json";
+    static constexpr auto filename = "flow_N=2,T=0.0125,mu=0.6.json";
+    static constexpr bool is_mean_field = false;
+    static constexpr double temperature = 0.0125;
+    static constexpr double chemical_potential = 0.6;
+    static constexpr double n_flavors = 2.0;
+  };
+
+  struct FlowN2_T01_Mu01 : GrossNeveuFlowDescriptor<FlowN2_T01_Mu01> {
+    static constexpr auto relative_path = "data/flow_N=2,T=0.1,mu=0.1.json";
+    static constexpr auto filename = "flow_N=2,T=0.1,mu=0.1.json";
+    static constexpr bool is_mean_field = false;
+    static constexpr double temperature = 0.1;
+    static constexpr double chemical_potential = 0.1;
+    static constexpr double n_flavors = 2.0;
+  };
 
   struct GraphData {
     std::string label;
@@ -118,20 +233,6 @@ namespace
   {
     if (!label.starts_with("t=")) throw std::runtime_error("Unexpected graph label: " + label);
     return std::stod(label.substr(2));
-  }
-
-  std::vector<double> numerical_derivative(const std::vector<double> &x, const std::vector<double> &y)
-  {
-    if (x.size() != y.size()) throw std::runtime_error("Derivative input size mismatch.");
-    if (x.size() < 3) throw std::runtime_error("Need at least three points to compute a derivative.");
-
-    std::vector<double> derivative(y.size(), 0.0);
-    derivative.front() = (-3.0 * y[0] + 4.0 * y[1] - y[2]) / (x[2] - x[0]);
-    for (std::size_t i = 1; i + 1 < y.size(); ++i)
-      derivative[i] = (y[i + 1] - y[i - 1]) / (x[i + 1] - x[i - 1]);
-    derivative.back() =
-        (3.0 * y[y.size() - 1] - 4.0 * y[y.size() - 2] + y[y.size() - 3]) / (x[x.size() - 1] - x[x.size() - 3]);
-    return derivative;
   }
 
   std::vector<double> reconstruct_potential_from_u(const std::vector<double> &u_values)
@@ -215,7 +316,7 @@ namespace
                                      public def::AD<Derived>
   {
   public:
-    GrossNeveuKTSourceOnlyBase(const JSONValue &json) : def::fRG(json) {}
+    GrossNeveuKTSourceOnlyBase(const JSONValue &json, const FlowCase &flow_case) : def::fRG(json), flow_case(flow_case) {}
 
     template <typename Vector> void initial_condition(const Point<dim> &x, Vector &values) const
     {
@@ -244,16 +345,21 @@ namespace
 
       const double sigma = x[0];
       const double E_f = std::sqrt(k2 + powr<2>(h * sigma));
-      const double n_plus = nF(E_f + chemical_potential, temperature);
-      const double n_minus = nF(E_f - chemical_potential, temperature);
-      const double g = 1.0 - n_plus - n_minus;
-      const double dg_dE = beta * (n_plus * (1.0 - n_plus) + n_minus * (1.0 - n_minus));
       const double A = (d_gamma / pi) * (k3 / 2.0);
+
+      const double n_plus = nF(E_f + flow_case.chemical_potential, flow_case.temperature);
+      const double n_minus = nF(E_f - flow_case.chemical_potential, flow_case.temperature);
+      const double g = 1.0 - n_plus - n_minus;
+      const double dg_dE = fermion_derivative_factor(E_f + flow_case.chemical_potential, flow_case.temperature) +
+                           fermion_derivative_factor(E_f - flow_case.chemical_potential, flow_case.temperature);
       const double S = A * sigma * (dg_dE / powr<2>(E_f) - g / powr<3>(E_f));
 
       // The KT assembler adds source terms to the residual, so the PDE source enters with a minus sign here.
       s_i[0] = static_cast<SourceNumberType>(-S);
     }
+
+  protected:
+    FlowCase flow_case;
   };
 
   class GrossNeveuKTMeanFieldModel : public GrossNeveuKTSourceOnlyBase<GrossNeveuKTMeanFieldModel>
@@ -267,6 +373,25 @@ namespace
   public:
     using GrossNeveuKTSourceOnlyBase<GrossNeveuKTFluxModel>::GrossNeveuKTSourceOnlyBase;
 
+    template <int spatial_dim, typename Constraints>
+    void affine_constraints(Constraints &constraints, const std::vector<IndexSet> &component_boundary_dofs,
+                            const std::vector<std::vector<Point<spatial_dim>>> &component_boundary_points)
+    {
+      static_assert(spatial_dim == dim, "GrossNeveuKTModel is one-dimensional.");
+
+      const auto &boundary_dofs = component_boundary_dofs[0];
+      const auto &boundary_points = component_boundary_points[0];
+
+      for (uint i = 0; i < boundary_dofs.n_elements(); ++i) {
+          std::cout << "hello i'm executed" << std::endl;
+        if (std::abs(boundary_points[i][0]) > grid_tol) continue;
+
+        const auto dof = boundary_dofs.nth_index_in_set(i);
+        constraints.add_line(dof);
+        constraints.set_inhomogeneity(dof, 0.0);
+      }
+    }
+
     template <int spatial_dim, typename FluxNumberType, typename Solutions, std::size_t n_fe_functions>
     void flux(std::array<Tensor<1, spatial_dim, FluxNumberType>, n_fe_functions> &F_i,
               [[maybe_unused]] const Point<spatial_dim> &x, const Solutions &sol) const
@@ -277,20 +402,22 @@ namespace
       const auto &fe_derivatives = get<1>(sol);
       const FluxNumberType eb_argument = FluxNumberType(k2) + fe_derivatives[0][0];
       const double eb_argument_value = scalar_value(eb_argument);
-      if (!(isfinite(eb_argument_value) && eb_argument_value > 0.0))
-        throw std::runtime_error("Encountered non-positive k^2 + d_sigma u in Gross-Neveu diffusion flux.");
 
       using std::sqrt;
 
       const FluxNumberType E_b = sqrt(eb_argument);
-      const FluxNumberType thermal_factor = cothS(E_b, temperature);
+      const FluxNumberType thermal_factor =
+          flow_case.temperature == 0.0 ? FluxNumberType(1.0) : cothS(E_b, flow_case.temperature);
 
-      F_i[0][0] = FluxNumberType(-1.0 / (pi * N_flavors)) * FluxNumberType(k3 / 2.0) * thermal_factor / E_b;
+      F_i[0][0] =
+          FluxNumberType(-1.0 / (pi * flow_case.n_flavors)) * FluxNumberType(k3 / 2.0) * thermal_factor / E_b;
     }
   };
 
-  JSONValue make_json()
+  JSONValue make_json([[maybe_unused]] const FlowCase &flow_case)
   {
+    const double starting_dt = 1.0e-10;
+
     return json::value(
         {{"physical", {{"Lambda", Lambda}}},
          {"discretization",
@@ -311,15 +438,17 @@ namespace
             {{"dt", 1e-8},
              {"minimal_dt", 1e-8},
              {"maximal_dt", 1.0},
-             {"abs_tol", 1e-15},
-             {"rel_tol", 1e-15},
+             {"abs_tol", 1e-10},
+             {"rel_tol", 1e-10},
              {"max_steps", 5000000}}}}},
-         {"output", {{"verbosity", 0}, {"vtk", false}, {"hdf5", false}}}});
+         {"output", {{"verbosity", 3}, {"vtk", false}, {"hdf5", false}}}});
   }
+
+
 
   std::filesystem::path repo_root()
   {
-    return std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().parent_path().parent_path();
+    return std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().parent_path().parent_path().parent_path();
   }
 
   std::filesystem::path fixture_path(const std::string &filename)
@@ -327,24 +456,37 @@ namespace
     const auto local_fixture = std::filesystem::path(__FILE__).parent_path() / "data" / filename;
     if (std::filesystem::exists(local_fixture)) return local_fixture;
 
-    const auto ancillary_fixture = repo_root() / "ancillary_2108_10616" / "extracted" / "anc" / filename;
-    if (std::filesystem::exists(ancillary_fixture)) return ancillary_fixture;
-
     throw std::runtime_error("Could not find regression fixture: " + filename);
   }
 
-  std::pair<GraphData, GraphData> load_reference_ir_pair(const std::filesystem::path &path,
-                                                         const double derivative_tolerance = fixture_derivative_tol)
+  std::filesystem::path local_fixture_path(const std::string_view relative_path)
+  {
+    return std::filesystem::path(__FILE__).parent_path() / std::filesystem::path(relative_path);
+  }
+
+  std::filesystem::path fixture_path(const FlowCase &flow_case)
+  {
+    if (!flow_case.relative_path.empty()) {
+      const auto local_fixture = local_fixture_path(flow_case.relative_path);
+      if (std::filesystem::exists(local_fixture)) return local_fixture;
+    }
+
+    return fixture_path(flow_case.filename);
+  }
+
+  std::pair<GraphData, GraphData> load_reference_ir_pair(const FlowCase &flow_case)
   {
     const double expected_final_time = std::log(Lambda / k_ir);
 
-    const JSONValue fixture_json(path.string());
+    const JSONValue fixture_json(fixture_path(flow_case).string());
     json::value fixture_value = static_cast<json::value>(fixture_json);
     const auto &root = fixture_value.as_object();
     const auto &graphs = root.at("graphs").as_array();
 
     REQUIRE(graphs.size() >= 2);
 
+    // The local fixtures store each time slice as an ordered (U, u) pair even though both
+    // graphs are labeled with the same ylabel metadata.
     const GraphData reference_U = parse_graph(graphs[graphs.size() - 2].as_object());
     const GraphData reference_u = parse_graph(graphs[graphs.size() - 1].as_object());
 
@@ -359,12 +501,9 @@ namespace
     for (std::size_t i = 0; i < reference_u.x.size(); ++i)
       REQUIRE(reference_u.x[i] == Catch::Approx(static_cast<double>(i) * delta_sigma).margin(grid_tol));
 
-    const auto reference_derivative = numerical_derivative(reference_U.x, reference_U.y);
-    double max_fixture_derivative_error = 0.0;
-    for (std::size_t i = 0; i < reference_u.y.size(); ++i)
-      max_fixture_derivative_error =
-          std::max(max_fixture_derivative_error, std::abs(reference_derivative[i] - reference_u.y[i]));
-    REQUIRE(max_fixture_derivative_error < derivative_tolerance);
+    const auto reconstructed_U = reconstruct_potential_from_u(reference_u.y);
+    if (const auto mismatch = compare_profiles("fixture U reconstruction", reference_U.x, reconstructed_U, reference_U.y))
+      FAIL(*mismatch);
 
     return {reference_U, reference_u};
   }
@@ -381,9 +520,10 @@ namespace
     return Config::ConfigurationMesh<1>(0u, std::vector<Config::GridAxis>{sigma_axis});
   }
 
-  template <typename Model, typename Stepper> SimulationResult run_flow_to_ir(const JSONValue &json)
+  template <typename Model, typename Stepper> SimulationResult run_flow_to_ir(const FlowCase &flow_case)
   {
-    Model model(json);
+    const JSONValue json = make_json(flow_case);
+    Model model(json, flow_case);
     Mesh mesh(make_mesh_config());
     Discretization discretization(mesh, json);
     Assembler<Model> assembler(discretization, model, json);
@@ -427,70 +567,70 @@ namespace
       result.x.push_back(sigma);
       result.u.push_back(u_value);
     }
+    if (!result.x.empty() && std::abs(result.x.front()) < grid_tol) result.u.front() = 0.0;
     result.U = reconstruct_potential_from_u(result.u);
     return result;
   }
 
-  template <typename Model> VectorType assemble_uv_residual(const JSONValue &json)
+  template <typename FlowParam> SimulationResult run_flow_to_ir(const FlowCase &flow_case)
   {
-    Model model(json);
-    Mesh mesh(make_mesh_config());
-    Discretization discretization(mesh, json);
-    Assembler<Model> assembler(discretization, model, json);
-
-    FV::FlowingVariables<Discretization> state(discretization);
-    state.interpolate(model);
-
-    VectorType uv_residual(state.spatial_data().size());
-    VectorType uv_dt(state.spatial_data().size());
-    uv_residual = 0.0;
-    uv_dt = 0.0;
-    assembler.residual(uv_residual, state.spatial_data(), 1.0, uv_dt, 1.0);
-    return uv_residual;
+    if constexpr (FlowParam::is_mean_field)
+      return run_flow_to_ir<GrossNeveuKTMeanFieldModel, ImplicitTimeStepper>(flow_case);
+    else
+      return run_flow_to_ir<GrossNeveuKTFluxModel, ImplicitTimeStepper>(flow_case);
   }
+
+  template <typename FlowParam>
+  struct GrossNeveuFlowFixture {
+    static FlowCase flow_case() { return FlowParam::flow_case(); }
+
+    static std::filesystem::path expected_local_fixture_path() { return local_fixture_path(FlowParam::relative_path); }
+
+    void run_regression()
+    {
+      const FlowCase current_flow = flow_case();
+      INFO(describe_flow_case(current_flow));
+
+      REQUIRE(current_flow.filename == std::filesystem::path(current_flow.relative_path).filename().string());
+      REQUIRE(fixture_path(current_flow) == expected_local_fixture_path());
+      REQUIRE(std::filesystem::exists(expected_local_fixture_path()));
+
+      const auto [reference_U, reference_u] = load_reference_ir_pair(current_flow);
+      const auto simulation = run_flow_to_ir<FlowParam>(current_flow);
+
+      for (std::size_t i = 0; i < simulation.x.size(); ++i)
+        REQUIRE(simulation.x[i] == Catch::Approx(reference_u.x[i]).margin(grid_tol));
+
+      if (const auto u_mismatch = compare_profiles("u(sigma)", simulation.x, simulation.u, reference_u.y,
+                                                   current_flow.profile_abs_tol, current_flow.profile_rel_tol))
+        FAIL(*u_mismatch);
+
+      if (const auto U_mismatch = compare_profiles("U(sigma)", simulation.x, simulation.U, reference_U.y,
+                                                   current_flow.profile_abs_tol, current_flow.profile_rel_tol))
+        FAIL(*U_mismatch);
+    }
+  };
+
 } // namespace
 
-TEST_CASE("KT Gross-Neveu source-only regression matches the MF IR flow at T=0.00625, mu=0.6",
-          "[FV][KT][GrossNeveu][MF][regression]")
+TEMPLATE_TEST_CASE_METHOD(GrossNeveuFlowFixture, "KT Gross-Neveu mean-field regressions match reference flows",
+                          "[FV][KT][GrossNeveu][MF][regression]", FlowMF_T00625_Mu06, FlowMF_T00125_Mu06,
+                          FlowMF_T01_Mu01)
 {
   ensure_logger();
-  constexpr double mf_profile_abs_tol = 1.0e-6;
-  constexpr double mf_profile_rel_tol = 1.0e-7;
 
-  const auto [reference_U, reference_u] =
-      load_reference_ir_pair(fixture_path("flow_MF_T=0.00625,mu=0.6.json"), 1.0e-3);
-  const JSONValue json = make_json();
-  const auto simulation = run_flow_to_ir<GrossNeveuKTMeanFieldModel, ExplicitTimeStepper>(json);
+  REQUIRE(TestType::flow_case().is_mean_field);
 
-  for (std::size_t i = 0; i < simulation.x.size(); ++i)
-    REQUIRE(simulation.x[i] == Catch::Approx(reference_u.x[i]).margin(grid_tol));
-
-  const auto u_mismatch =
-      compare_profiles("u(sigma)", simulation.x, simulation.u, reference_u.y, mf_profile_abs_tol, mf_profile_rel_tol);
-  if (u_mismatch) FAIL(*u_mismatch);
-
-  const auto U_mismatch =
-      compare_profiles("U(sigma)", simulation.x, simulation.U, reference_U.y, mf_profile_abs_tol, mf_profile_rel_tol);
-  if (U_mismatch) FAIL(*U_mismatch);
+  this->run_regression();
 }
 
-TEST_CASE("KT Gross-Neveu flux model extends the source-only model with a non-zero UV transport residual",
-          "[FV][KT][GrossNeveu][flux]")
+TEMPLATE_TEST_CASE_METHOD(GrossNeveuFlowFixture, "KT Gross-Neveu finite-N regressions match reference flows",
+                          "[FV][KT][GrossNeveu][regression]", FlowN16_T00625_Mu06, FlowN2_T00625_Mu06,
+                          FlowN2_T00125_Mu06, FlowN2_T01_Mu01)
 {
   ensure_logger();
 
-  const JSONValue json = make_json();
-  const VectorType source_only_residual = assemble_uv_residual<GrossNeveuKTMeanFieldModel>(json);
-  const VectorType flux_residual = assemble_uv_residual<GrossNeveuKTFluxModel>(json);
+  REQUIRE_FALSE(TestType::flow_case().is_mean_field);
 
-  REQUIRE(source_only_residual.size() == flux_residual.size());
-
-  double max_abs_difference = 0.0;
-  for (unsigned int i = 0; i < source_only_residual.size(); ++i) {
-    REQUIRE(std::isfinite(source_only_residual[i]));
-    REQUIRE(std::isfinite(flux_residual[i]));
-    max_abs_difference = std::max(max_abs_difference, std::abs(flux_residual[i] - source_only_residual[i]));
-  }
-
-  REQUIRE(max_abs_difference > 1.0e-8);
+  this->run_regression();
 }
