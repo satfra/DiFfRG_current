@@ -64,7 +64,7 @@ namespace DiFfRG
           return -0.0078125 *
                  (powr<-3>(1 + mf2) * powr<-2>(T) *
                   (-3 * powr<2>(T) * powr<3>(SechFiniteT(((-mu + k * powr<1>(sqrt(1 + mf2)))), T)) *
-                       powr<1>(sqrt(1 + mf2)) * SinhFiniteT((3 * (-mu + k * powr<1>(sqrt(1 + mf2)))), T) +
+                       powr<1>(sqrt(1 + mf2)) * Sinh((3 * (-mu + k * powr<1>(sqrt(1 + mf2)))) / T * 0.5) +
                    powr<2>(SechFiniteT(((-mu + k * powr<1>(sqrt(1 + mf2)))), T)) *
                        (6 * k * (1. + mf2) * T + (2 * (1 + mf2) * powr<2>(k) - 3 * powr<2>(T)) *
                                                      powr<1>(sqrt(1 + mf2)) *
@@ -72,7 +72,7 @@ namespace DiFfRG
                    2. * powr<2>(SechFiniteT(((mu + k * powr<1>(sqrt(1 + mf2)))), T)) *
                        (3. * k * (1. + mf2) * T +
                         ((1 + mf2) * powr<2>(k) - 3 * powr<2>(T) -
-                         3. * CoshFiniteT((mu + k * powr<1>(sqrt(1. + mf2))), T) * powr<2>(T)) *
+                         3. * Cosh((mu + k * powr<1>(sqrt(1. + mf2))) / T * 0.5) * powr<2>(T)) *
                             powr<1>(sqrt(1. + mf2)) * TanhFiniteT(((mu + k * powr<1>(sqrt(1. + mf2)))), T))));
         else
           throw std::runtime_error("Threshold Function F is not implemented for given indices");
@@ -331,30 +331,29 @@ namespace DiFfRG
                   Tanh((powr<-1>(T) * (-mu + k * powr<1>(sqrt(1 + mf2)))) / 2.)) /
                      8. +
                  (powr<2>(k) *
-                      powr<-2>(powr<4>(k) * powr<2>(mb2 - mf2) +
-                               2 * powr<2>(k) *
-                                   ((2 - mb2 + 3 * mf2) * powr<2>(mu) + (2 + mb2 + mf2) * powr<2>(Pi) * powr<2>(T)) +
-                               powr<2>(powr<2>(mu) + powr<2>(Pi) * powr<2>(T)) +
-                               4 * (-mb2 + mf2) * mu * powr<3>(k) * powr<1>(sqrt(1 + mf2)) +
-                               4 * k * mu * (powr<2>(mu) + powr<2>(Pi) * powr<2>(T)) * powr<1>(sqrt(1 + mf2))) *
-                      powr<-3>(sqrt(1 + mf2)) *
-                      ((-2 + mb2 - 3 * mf2) * powr<6>(k) * powr<2>(mb2 - mf2) +
-                       powr<4>(k) * (-((8 + 40 * mf2 - 6 * mb2 * (4 + 5 * mf2) + 3 * powr<2>(mb2) + 35 * powr<2>(mf2)) *
-                                       powr<2>(mu)) +
-                                     (8 + 8 * mf2 + 2 * mb2 * (4 + mf2) + 3 * powr<2>(mb2) + 3 * powr<2>(mf2)) *
-                                         powr<2>(Pi) * powr<2>(T)) +
-                       powr<2>(k) * ((-22 + 3 * mb2 - 25 * mf2) * powr<4>(mu) -
-                                     2 * (-2 + mb2 - 3 * mf2) * powr<2>(mu) * powr<2>(Pi) * powr<2>(T) +
-                                     (10 + 3 * mb2 + 7 * mf2) * powr<4>(Pi) * powr<4>(T)) +
-                       (-powr<2>(mu) + powr<2>(Pi) * powr<2>(T)) * powr<2>(powr<2>(mu) + powr<2>(Pi) * powr<2>(T)) -
-                       8 * mu * powr<5>(k) * (-mb2 + mf2 - 3 * mb2 * mf2 + powr<2>(mb2) + 2 * powr<2>(mf2)) *
-                           powr<1>(sqrt(1 + mf2)) +
-                       8 * mu * powr<3>(k) *
-                           ((-3 + 2 * mb2 - 5 * mf2) * powr<2>(mu) + (1 + mf2) * powr<2>(Pi) * powr<2>(T)) *
-                           powr<1>(sqrt(1 + mf2)) -
-                       8 * k * mu * (powr<4>(mu) - powr<4>(Pi) * powr<4>(T)) * powr<1>(sqrt(1 + mf2))) *
-                      TanhFiniteT(mu + k * powr<1>(sqrt(1 + mf2))),
-                  T) /
+                  powr<-2>(powr<4>(k) * powr<2>(mb2 - mf2) +
+                           2 * powr<2>(k) *
+                               ((2 - mb2 + 3 * mf2) * powr<2>(mu) + (2 + mb2 + mf2) * powr<2>(Pi) * powr<2>(T)) +
+                           powr<2>(powr<2>(mu) + powr<2>(Pi) * powr<2>(T)) +
+                           4 * (-mb2 + mf2) * mu * powr<3>(k) * powr<1>(sqrt(1 + mf2)) +
+                           4 * k * mu * (powr<2>(mu) + powr<2>(Pi) * powr<2>(T)) * powr<1>(sqrt(1 + mf2))) *
+                  powr<-3>(sqrt(1 + mf2)) *
+                  ((-2 + mb2 - 3 * mf2) * powr<6>(k) * powr<2>(mb2 - mf2) +
+                   powr<4>(k) * (-((8 + 40 * mf2 - 6 * mb2 * (4 + 5 * mf2) + 3 * powr<2>(mb2) + 35 * powr<2>(mf2)) *
+                                   powr<2>(mu)) +
+                                 (8 + 8 * mf2 + 2 * mb2 * (4 + mf2) + 3 * powr<2>(mb2) + 3 * powr<2>(mf2)) *
+                                     powr<2>(Pi) * powr<2>(T)) +
+                   powr<2>(k) * ((-22 + 3 * mb2 - 25 * mf2) * powr<4>(mu) -
+                                 2 * (-2 + mb2 - 3 * mf2) * powr<2>(mu) * powr<2>(Pi) * powr<2>(T) +
+                                 (10 + 3 * mb2 + 7 * mf2) * powr<4>(Pi) * powr<4>(T)) +
+                   (-powr<2>(mu) + powr<2>(Pi) * powr<2>(T)) * powr<2>(powr<2>(mu) + powr<2>(Pi) * powr<2>(T)) -
+                   8 * mu * powr<5>(k) * (-mb2 + mf2 - 3 * mb2 * mf2 + powr<2>(mb2) + 2 * powr<2>(mf2)) *
+                       powr<1>(sqrt(1 + mf2)) +
+                   8 * mu * powr<3>(k) *
+                       ((-3 + 2 * mb2 - 5 * mf2) * powr<2>(mu) + (1 + mf2) * powr<2>(Pi) * powr<2>(T)) *
+                       powr<1>(sqrt(1 + mf2)) -
+                   8 * k * mu * (powr<4>(mu) - powr<4>(Pi) * powr<4>(T)) * powr<1>(sqrt(1 + mf2))) *
+                  TanhFiniteT(mu + k * powr<1>(sqrt(1 + mf2)), T)) /
                      8.;
         else
           throw std::runtime_error("Threshold Function FBFermiPiT is not implemented for given indices");
