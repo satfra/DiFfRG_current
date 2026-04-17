@@ -131,7 +131,7 @@ verify_dep(autodiff CONFIG_NAMES "autodiffConfig.cmake")
 verify_dep(spdlog   CONFIG_NAMES "spdlogConfig.cmake")
 verify_dep(HDF5     CONFIG_NAMES "hdf5-config.cmake" "HDF5Config.cmake")
 
-verify_dep(h5cpp    CONFIG_NAMES "h5cppConfig.cmake")
+verify_dep(h5cpp    CONFIG_NAMES "h5cppConfig.cmake" "h5cpp-config.cmake")
 
 # System dependencies
 verify_system_dep(GSL "gsl")
