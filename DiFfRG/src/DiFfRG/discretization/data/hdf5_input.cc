@@ -9,12 +9,10 @@ namespace DiFfRG
 #ifdef H5CPP
     path = this->file_name;
 
-    // Check if file exists
     if (!std::filesystem::exists(path))
       throw std::runtime_error("HDF5Input: The file '" + this->file_name + "' does not exist.");
 
-    // Open the file
-    h5_file = hdf5::file::open(path, hdf5::file::AccessFlags::ReadWrite);
+    h5_file = DiFfRG::hdf5::File::open(path.string(), DiFfRG::hdf5::Access::ReadWrite);
 
     auto root = h5_file.root();
     if (!root.has_group("scalars"))
@@ -24,13 +22,13 @@ namespace DiFfRG
     if (!root.has_group("coordinates"))
       throw std::runtime_error("HDF5Input: The file '" + this->file_name + "' does not contain a 'coordinates' group.");
 
-    scalars = root.get_group("scalars");
-    maps = root.get_group("maps");
-    coords = root.get_group("coordinates");
+    scalars = root.open_group("scalars");
+    maps = root.open_group("maps");
+    coords = root.open_group("coordinates");
 #endif
   }
 
 #ifdef H5CPP
-  hdf5::file::File &HDF5Input::get_file() { return h5_file; }
+  DiFfRG::hdf5::File &HDF5Input::get_file() { return h5_file; }
 #endif
 } // namespace DiFfRG

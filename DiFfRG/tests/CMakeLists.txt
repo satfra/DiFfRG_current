@@ -47,6 +47,7 @@ include(Catch)
 
 add_subdirectory(common)
 add_subdirectory(discretization)
+add_subdirectory(hdf5lib)
 add_subdirectory(model)
 add_subdirectory(physics)
 add_subdirectory(timestepping)

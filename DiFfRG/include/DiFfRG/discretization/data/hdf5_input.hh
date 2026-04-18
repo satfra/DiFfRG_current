@@ -35,14 +35,12 @@ namespace DiFfRG
         throw std::runtime_error("HDF5Input::map: The map '" + name + "' has not been written to the file '" +
                                  file_name + "'.");
 
-      auto super_group = maps.get_group(name);
+      auto super_group = maps.open_group(name);
       if (series_number < 0) {
-        // Get the latest series number
         size_t max_series = 0;
-        for (const auto &node : super_group.nodes) {
-          if (!is_group(node)) continue;
-          const std::string grp_name = node.link().path().name();
-          size_t grp_num = std::stoul(grp_name);
+        for (const auto &child : super_group.child_names()) {
+          if (!super_group.child_is_group(child)) continue;
+          size_t grp_num = std::stoul(child);
           if (grp_num > max_series) {
             max_series = grp_num;
           }
@@ -53,9 +51,9 @@ namespace DiFfRG
         throw std::runtime_error("HDF5Input::map: The map '" + name + "' does not have series number " +
                                  std::to_string(series_number) + " in the file '" + file_name + "'.");
 
-      auto group = super_group.get_group(std::to_string(series_number));
+      auto group = super_group.open_group(std::to_string(series_number));
 
-      auto dataset = group.get_dataset("data");
+      auto dataset = group.open_dataset("data");
       auto dataspace = dataset.dataspace();
       std::vector<double> temp_data(dataspace.size());
       dataset.read(temp_data);
@@ -76,14 +74,12 @@ namespace DiFfRG
         throw std::runtime_error("HDF5Input::map: The map '" + name + "' has not been written to the file '" +
                                  file_name + "'.");
 
-      auto super_group = maps.get_group(name);
+      auto super_group = maps.open_group(name);
       if (series_number < 0) {
-        // Get the latest series number
         size_t max_series = 0;
-        for (const auto &node : super_group.nodes) {
-          if (!is_group(node)) continue;
-          const std::string grp_name = node.link().path().name();
-          size_t grp_num = std::stoul(grp_name);
+        for (const auto &child : super_group.child_names()) {
+          if (!super_group.child_is_group(child)) continue;
+          size_t grp_num = std::stoul(child);
           if (grp_num > max_series) {
             max_series = grp_num;
           }
@@ -94,9 +90,9 @@ namespace DiFfRG
         throw std::runtime_error("HDF5Input::map: The map '" + name + "' does not have series number " +
                                  std::to_string(series_number) + " in the file '" + file_name + "'.");
 
-      auto group = super_group.get_group(std::to_string(series_number));
+      auto group = super_group.open_group(std::to_string(series_number));
 
-      auto dataset = group.get_dataset("data");
+      auto dataset = group.open_dataset("data");
       auto dataspace = dataset.dataspace();
       std::vector<double> temp_data(dataspace.size());
       dataset.read(temp_data);
@@ -120,14 +116,12 @@ namespace DiFfRG
         throw std::runtime_error("HDF5Input::map: The map '" + name + "' has not been written to the file '" +
                                  file_name + "'.");
 
-      auto super_group = maps.get_group(name);
+      auto super_group = maps.open_group(name);
       if (series_number < 0) {
-        // Get the latest series number
         size_t max_series = 0;
-        for (const auto &node : super_group.nodes) {
-          if (!is_group(node)) continue;
-          const std::string grp_name = node.link().path().name();
-          size_t grp_num = std::stoul(grp_name);
+        for (const auto &child : super_group.child_names()) {
+          if (!super_group.child_is_group(child)) continue;
+          size_t grp_num = std::stoul(child);
           if (grp_num > max_series) {
             max_series = grp_num;
           }
@@ -138,9 +132,9 @@ namespace DiFfRG
         throw std::runtime_error("HDF5Input::map: The map '" + name + "' does not have series number " +
                                  std::to_string(series_number) + " in the file '" + file_name + "'.");
 
-      auto group = super_group.get_group(std::to_string(series_number));
+      auto group = super_group.open_group(std::to_string(series_number));
 
-      auto dataset = group.get_dataset("coordinates");
+      auto dataset = group.open_dataset("coordinates");
       auto dataspace = dataset.dataspace();
 
       using coord_type = device::array<double, dim>;
@@ -179,7 +173,7 @@ namespace DiFfRG
         throw std::runtime_error("HDF5Input::scalar: The scalar '" + name + "' has not been written to the file '" +
                                  file_name + "'.");
 
-      auto dataset = scalars.get_dataset(name);
+      auto dataset = scalars.open_dataset(name);
       auto dataspace = dataset.dataspace();
       std::vector<T> value(dataspace.size());
       dataset.read(value);
@@ -188,7 +182,7 @@ namespace DiFfRG
     }
 
 #ifdef H5CPP
-    hdf5::file::File &get_file();
+    DiFfRG::hdf5::File &get_file();
 #endif
 
   private:
@@ -201,16 +195,13 @@ namespace DiFfRG
         throw std::runtime_error("HDF5Input::map: The coordinates '" + coord_name +
                                  "' have not been written to the file '" + file_name + "'.");
 
-      // Check that the coordinates match
       const auto in_data = make_grid(coordinates);
 
       using ctype = typename Coordinates::ctype;
       using cortype = device::array<ctype, Coordinates::dim>;
       std::vector<cortype> file_data(coordinates.size());
 
-      // Load the coordinates from the file
-      auto dataset = coords.get_dataset(coord_name);
-      // Check that the dataspace matches
+      auto dataset = coords.open_dataset(coord_name);
       const auto dataspace = dataset.dataspace();
       if (dataspace.size() != (hssize_t)coordinates.size())
         throw std::runtime_error("HDF5Input::map: The coordinates '" + coord_name + "' in the file '" + file_name +
@@ -219,7 +210,6 @@ namespace DiFfRG
                                  ").");
       dataset.read(file_data);
 
-      // Compare the coordinates
       for (size_t i = 0; i < coordinates.size(); ++i) {
         for (size_t j = 0; j < Coordinates::dim; ++j) {
           if (std::abs(file_data[i][j] - in_data[i][j]) > 1e-12) {
@@ -231,10 +221,10 @@ namespace DiFfRG
     }
 
 #ifdef H5CPP
-    hdf5::file::File h5_file;
-    hdf5::node::Group scalars;
-    hdf5::node::Group maps;
-    hdf5::node::Group coords;
+    DiFfRG::hdf5::File h5_file;
+    DiFfRG::hdf5::Group scalars;
+    DiFfRG::hdf5::Group maps;
+    DiFfRG::hdf5::Group coords;
 #endif
 
     std::filesystem::path path;

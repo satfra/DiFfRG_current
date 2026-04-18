@@ -10,7 +10,7 @@
 #include <deal.II/numerics/data_out.h>
 
 #ifdef H5CPP
-#include <h5cpp/hdf5.hpp>
+#include <hdf5lib/hdf5.hh>
 #endif
 
 // standard library

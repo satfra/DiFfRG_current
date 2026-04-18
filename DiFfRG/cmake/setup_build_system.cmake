@@ -209,11 +209,8 @@ diffrg_find_package(autodiff VERSION 1.1.0 HINTS ${BUNDLED_DIR})
 # Find spdlog
 diffrg_find_package(spdlog VERSION 1.14.1 HINTS ${BUNDLED_DIR})
 
-# Find HDF5
+# Find HDF5 (static, minimal)
 diffrg_find_package(HDF5 VERSION 2.0.0 HINTS ${BUNDLED_DIR})
-
-diffrg_find_package(h5cpp VERSION 0.7.1 HINTS ${BUNDLED_DIR})
-message(STATUS "Found h5cpp in ${h5cpp_DIR}")
 message(STATUS "HDF5 include dir: ${HDF5_INCLUDE_DIRS}")
 add_compile_definitions(H5CPP)
 
@@ -243,8 +240,7 @@ message("  ${BoldGreen}Eigen3${ColourReset}     ${Eigen3_VERSION}")
 message("  ${BoldGreen}GSL${ColourReset}        ${GSL_VERSION}")
 message("  ${BoldGreen}autodiff${ColourReset}   found")
 message("  ${BoldGreen}spdlog${ColourReset}     ${spdlog_VERSION}")
-message("  ${BoldGreen}HDF5${ColourReset}       ${HDF5_VERSION}")
-message("  ${BoldGreen}h5cpp${ColourReset}      found          (${h5cpp_DIR})")
+message("  ${BoldGreen}HDF5${ColourReset}       ${HDF5_VERSION} (static)")
 if(${DiFfRG_MPI})
   message("  ${BoldGreen}MPI${ColourReset}        ${MPI_CXX_VERSION}")
 endif()

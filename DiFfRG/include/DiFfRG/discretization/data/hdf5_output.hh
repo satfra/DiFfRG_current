@@ -30,32 +30,21 @@ namespace DiFfRG
      */
     HDF5Output(const std::string top_folder, const std::string output_name, const JSONValue &json);
 
-    void write_series_record(hdf5::node::Group &group, const int series_number)
+    void write_series_record(DiFfRG::hdf5::Group &group, const int series_number)
     {
       const std::string value = std::to_string(series_number);
 
       if (!group.has_dataset("series_numbers")) {
-        hdf5::property::LinkCreationList lcpl;
-        hdf5::property::DatasetCreationList dcpl;
-
-        // in order to append data we have to use a chunked layout of the dataset
-        dcpl.layout(hdf5::property::DatasetLayout::Chunked);
-        dcpl.chunk({128});
-
-        hdf5::dataspace::Simple space({1}, {hdf5::dataspace::Simple::unlimited});
-        auto type = hdf5::datatype::create<std::string>();
-
-        auto data_set = group.create_dataset("series_numbers", type, space, dcpl, lcpl);
-        data_set.write(value); // write data
+        // chunked layout so we can append later
+        auto space = DiFfRG::hdf5::Dataspace::simple_unlimited({1});
+        auto type = DiFfRG::hdf5::type_of<std::string>();
+        auto data_set = group.create_chunked_dataset("series_numbers", type, space, {128});
+        data_set.write_at(0, value);
       } else {
-        auto data_set = group.get_dataset("series_numbers");
-
-        const size_t cur_size = data_set.dataspace().size();
-        const size_t sel_start = cur_size;
-        data_set.resize({cur_size + 1}); // grow dataset
-
-        hdf5::dataspace::Hyperslab selection{{sel_start}, {1}, {1}, {1}};
-        data_set.write(value, selection); // write data
+        auto data_set = group.open_dataset("series_numbers");
+        const std::size_t cur_size = static_cast<std::size_t>(data_set.dataspace().size());
+        data_set.resize({cur_size + 1});
+        data_set.write_at(static_cast<hsize_t>(cur_size), value);
       }
     }
 
@@ -77,24 +66,14 @@ namespace DiFfRG
       open_file();
 
       if (!scalars.has_dataset(name)) {
-        hdf5::property::LinkCreationList lcpl;
-        hdf5::property::DatasetCreationList dcpl;
-
-        // in order to append data we have to use a chunked layout of the dataset
-        dcpl.layout(hdf5::property::DatasetLayout::Chunked);
-        dcpl.chunk({128});
-
-        hdf5::dataspace::Simple space({1}, {hdf5::dataspace::Simple::unlimited});
-        auto type = hdf5::datatype::create<std::decay_t<T>>();
-
-        auto data_set = scalars.create_dataset(name, type, space, dcpl, lcpl);
-        data_set.write(value); // write data
+        auto space = DiFfRG::hdf5::Dataspace::simple_unlimited({1});
+        auto type = DiFfRG::hdf5::type_of<std::decay_t<T>>();
+        auto data_set = scalars.create_chunked_dataset(name, type, space, {128});
+        data_set.write_at(0, value);
         written_scalars.push_back(name);
       } else {
-        auto data_set = scalars.get_dataset(name);
-
-        auto type = hdf5::datatype::create<std::decay_t<T>>();
-        // Check if the type matches the dataset type
+        auto data_set = scalars.open_dataset(name);
+        auto type = DiFfRG::hdf5::type_of<std::decay_t<T>>();
         if (data_set.datatype() != type)
           throw std::runtime_error(
               "HDF5Output::scalar: The type of the value does not match the type of the dataset '" + name +
@@ -103,17 +82,13 @@ namespace DiFfRG
         if (std::find(written_scalars.begin(), written_scalars.end(), name) == written_scalars.end()) {
           written_scalars.push_back(name);
         } else {
-          // If the scalar has already been written, we do not write it again.
           throw std::runtime_error("HDF5Output::scalar: The scalar '" + name +
                                    "' has already been written to the file '" + output_name + "'.");
         }
 
-        const size_t cur_size = data_set.dataspace().size();
-        const size_t sel_start = cur_size;
-        data_set.resize({cur_size + 1}); // grow dataset
-
-        hdf5::dataspace::Hyperslab selection{{sel_start}, {1}, {1}, {1}};
-        data_set.write(value, selection); // write data
+        const std::size_t cur_size = static_cast<std::size_t>(data_set.dataspace().size());
+        data_set.resize({cur_size + 1});
+        data_set.write_at(static_cast<hsize_t>(cur_size), value);
       }
 #endif
     }
@@ -135,15 +110,15 @@ namespace DiFfRG
 
       const auto grid_data = make_grid(coordinates);
 
-      hdf5::Dimensions dims;
+      DiFfRG::hdf5::Dims dims;
       for (const auto &dim : coordinates.sizes())
         dims.push_back(dim);
-      hdf5::dataspace::Simple space(dims);
+      auto space = DiFfRG::hdf5::Dataspace::simple(dims);
       using coord_type = std::decay_t<decltype(grid_data[0])>;
-      auto c_type = hdf5::datatype::create<coord_type>();
+      auto c_type = DiFfRG::hdf5::type_of<coord_type>();
       auto dataset = coords.create_dataset(name, c_type, space);
 
-      dataset.write(grid_data); // write data
+      dataset.write(grid_data);
 
       coord_identifiers[name] = coordinates.to_string();
 #endif
@@ -164,11 +139,11 @@ namespace DiFfRG
 
       using value_type = std::decay_t<T>;
 
-      hdf5::node::Group n_group;
+      DiFfRG::hdf5::Group n_group;
       if (!maps.has_group(name)) {
         n_group = maps.create_group(name);
       } else {
-        n_group = maps.get_group(name);
+        n_group = maps.open_group(name);
       }
 
       if (n_group.has_group(std::to_string(map_series_numbers[name])))
@@ -178,19 +153,16 @@ namespace DiFfRG
       auto group = n_group.create_group(std::to_string(map_series_numbers[name]));
       write_series_record(group, map_series_numbers[name]);
 
-      // Create a dataset for the data
-      hdf5::Dimensions dims;
+      DiFfRG::hdf5::Dims dims;
       for (const auto &dim : coordinates.sizes())
         dims.push_back(dim);
-      hdf5::dataspace::Simple space(dims);
-      auto d_type = hdf5::datatype::create<value_type>();
+      auto space = DiFfRG::hdf5::Dataspace::simple(dims);
+      auto d_type = DiFfRG::hdf5::type_of<value_type>();
       auto dataset = group.create_dataset("data", d_type, space);
 
-      // Write the data to the dataset
-      dataset.write(hdf5::ArrayAdapter<value_type>(const_cast<value_type *>(data), coordinates.size()));
+      dataset.write(data, coordinates.size());
 
-      // Link the coordinates to the map
-      group.create_link("coordinates", "/coordinates/" + coord_name);
+      group.create_soft_link("coordinates", "/coordinates/" + coord_name);
 
       written_maps.push_back(name);
       map_series_numbers[name]++;
@@ -220,11 +192,11 @@ namespace DiFfRG
 
       check_coordinates(coord_name, interpolator.get_coordinates());
 
-      hdf5::node::Group n_group;
+      DiFfRG::hdf5::Group n_group;
       if (!maps.has_group(name)) {
         n_group = maps.create_group(name);
       } else {
-        n_group = maps.get_group(name);
+        n_group = maps.open_group(name);
       }
 
       if (n_group.has_group(std::to_string(map_series_numbers[name])))
@@ -234,16 +206,14 @@ namespace DiFfRG
       auto group = n_group.create_group(std::to_string(map_series_numbers[name]));
       write_series_record(group, map_series_numbers[name]);
 
-      // Create a dataset for the interpolator data
-      hdf5::Dimensions dims;
+      DiFfRG::hdf5::Dims dims;
       const auto coordinates = interpolator.get_coordinates();
       for (const auto &dim : coordinates.sizes())
         dims.push_back(dim);
-      hdf5::dataspace::Simple space(dims);
-      auto d_type = hdf5::datatype::create<value_type>();
+      auto space = DiFfRG::hdf5::Dataspace::simple(dims);
+      auto d_type = DiFfRG::hdf5::type_of<value_type>();
       auto dataset = group.create_dataset("data", d_type, space);
 
-      // Write the data to the dataset
       std::vector<value_type> data(interpolator.get_coordinates().size());
       for (size_t i = 0; i < data.size(); ++i) {
         const auto lcoord = coordinates.forward(coordinates.from_linear_index(i));
@@ -251,8 +221,7 @@ namespace DiFfRG
       }
       dataset.write(data);
 
-      // Link the coordinates to the map
-      group.create_link("coordinates", "/coordinates/" + coord_name);
+      group.create_soft_link("coordinates", "/coordinates/" + coord_name);
 
       written_maps.push_back(name);
       map_series_numbers[name]++;
@@ -261,7 +230,7 @@ namespace DiFfRG
     }
 
 #ifdef H5CPP
-    hdf5::file::File &get_file();
+    DiFfRG::hdf5::File &get_file();
 #endif
 
     void flush(const double time);
@@ -286,7 +255,6 @@ namespace DiFfRG
     template <typename COORD> void check_coordinates(const std::string &coord_name, const COORD &coordinates)
     {
       if (!coords.has_dataset(coord_name)) {
-        // If the coordinates have not been written yet, we write them now.
         map(coord_name, coordinates);
         return;
       }
@@ -297,10 +265,10 @@ namespace DiFfRG
     }
 
 #ifdef H5CPP
-    hdf5::file::File h5_file;
-    hdf5::node::Group scalars;
-    hdf5::node::Group maps;
-    hdf5::node::Group coords;
+    DiFfRG::hdf5::File h5_file;
+    DiFfRG::hdf5::Group scalars;
+    DiFfRG::hdf5::Group maps;
+    DiFfRG::hdf5::Group coords;
 #endif
 
     std::filesystem::path path;
