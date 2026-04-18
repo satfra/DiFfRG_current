@@ -9,28 +9,54 @@ set(CMAKE_BUILD_TYPE Release)
 set(TRY_BOOST_VERSION "1.81.0")
 include(ProcessorCount)
 ProcessorCount(PARALLEL_JOBS)
-set(BOOST_TARBALL_URL
-    "https://sourceforge.net/projects/boost/files/boost/1.81.0/boost_1_81_0.tar.gz/download"
+set(BOOST_TARBALL_URLS
+    "https://archives.boost.io/release/${TRY_BOOST_VERSION}/source/boost_1_81_0.tar.gz"
+    "https://boostorg.jfrog.io/artifactory/main/release/${TRY_BOOST_VERSION}/source/boost_1_81_0.tar.gz"
+    "https://sourceforge.net/projects/boost/files/boost/${TRY_BOOST_VERSION}/boost_1_81_0.tar.gz/download"
 )
-set(BOOST_TARBALL
-    "${CMAKE_CURRENT_BINARY_DIR}/boost-${TRY_BOOST_VERSION}.tar.gz")
+
+# Cache the tarball outside the build tree so a fresh build/ dir does not
+# re-download it. Honors XDG_CACHE_HOME when set; falls back to $HOME/.cache
+# (which works on both Linux and macOS).
+if(DEFINED ENV{XDG_CACHE_HOME} AND NOT "$ENV{XDG_CACHE_HOME}" STREQUAL "")
+  set(_diffrg_cache_root "$ENV{XDG_CACHE_HOME}/DiFfRG")
+else()
+  set(_diffrg_cache_root "$ENV{HOME}/.cache/DiFfRG")
+endif()
+file(MAKE_DIRECTORY "${_diffrg_cache_root}")
+
+set(BOOST_TARBALL "${_diffrg_cache_root}/boost_1_81_0.tar.gz")
 set(BOOST_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/boost_1_81_0")
 
 if(NOT EXISTS ${BOOST_TARBALL})
-  message(STATUS "Downloading Boost ${TRY_BOOST_VERSION} tarball...")
-  file(
-    DOWNLOAD ${BOOST_TARBALL_URL} ${BOOST_TARBALL}
-    EXPECTED_HASH
-      SHA256=205666dea9f6a7cfed87c7a6dfbeb52a2c1b9de55712c9c1a87735d7181452b6
-    SHOW_PROGRESS
-    STATUS _download_status
-    LOG _download_log)
-  list(GET _download_status 0 _download_code)
-  if(NOT _download_code EQUAL 0)
+  set(_boost_download_ok FALSE)
+  foreach(_url IN LISTS BOOST_TARBALL_URLS)
+    message(STATUS "Downloading Boost ${TRY_BOOST_VERSION} from ${_url} ...")
+    file(
+      DOWNLOAD ${_url} ${BOOST_TARBALL}
+      EXPECTED_HASH
+        SHA256=205666dea9f6a7cfed87c7a6dfbeb52a2c1b9de55712c9c1a87735d7181452b6
+      INACTIVITY_TIMEOUT 30
+      TIMEOUT 600
+      SHOW_PROGRESS
+      STATUS _download_status
+      LOG _download_log)
+    list(GET _download_status 0 _download_code)
+    if(_download_code EQUAL 0)
+      set(_boost_download_ok TRUE)
+      break()
+    endif()
     file(REMOVE ${BOOST_TARBALL})
     message(
+      WARNING
+        "Boost download from ${_url} failed (${_download_status}); trying next mirror."
+    )
+  endforeach()
+  if(NOT _boost_download_ok)
+    message(
       FATAL_ERROR
-        "Boost tarball download failed: ${_download_status}\n${_download_log}")
+        "All Boost tarball mirrors failed.\nLast download log:\n${_download_log}"
+    )
   endif()
 endif()
 
