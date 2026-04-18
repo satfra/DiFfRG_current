@@ -56,8 +56,8 @@ target_link_libraries(DiFfRG PUBLIC DiFfRG_boost_json)
 
 setup_target(DiFfRG)
 
-find_package(HDF5 REQUIRED)
-target_compile_definitions(DiFfRG PUBLIC H5CPP)
+# The hdf5-static imported target is created by find_package(HDF5) in
+# setup_build_system.cmake. The H5CPP compile definition is added there too.
 target_link_libraries(DiFfRG PUBLIC hdf5-static)
 target_include_directories(DiFfRG PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
