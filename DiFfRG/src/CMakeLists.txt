@@ -56,13 +56,13 @@ target_link_libraries(DiFfRG PUBLIC DiFfRG_boost_json)
 
 setup_target(DiFfRG)
 
-if(h5cpp_FOUND)
-  find_package(HDF5 REQUIRED)
-  find_package(h5cpp REQUIRED)
-  target_compile_definitions(DiFfRG PUBLIC H5CPP)
-  target_link_libraries(DiFfRG PUBLIC h5cpp HDF5::HDF5)
-  message(STATUS "HDF5 support enabled")
-endif()
+find_package(HDF5 REQUIRED)
+target_compile_definitions(DiFfRG PUBLIC H5CPP)
+target_link_libraries(DiFfRG PUBLIC hdf5-static)
+target_include_directories(DiFfRG PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
+    $<INSTALL_INTERFACE:include>)
+message(STATUS "HDF5 (static) support enabled")
 
 target_include_directories(
   DiFfRG INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>

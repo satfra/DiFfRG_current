@@ -79,7 +79,7 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
     // nothing, the logger is already set up
   }
 
-  fs::path tmp{std::filesystem::temp_directory_path()};
+  std::filesystem::path tmp{std::filesystem::temp_directory_path()};
   std::string hdf5FileName = "DiFfRG_test_hdf5_output.h5";
 
   SECTION("Scalars")
@@ -100,15 +100,15 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
         std::filesystem::path hdf5_file(tmp / hdf5FileName);
         REQUIRE(std::filesystem::exists(hdf5_file));
         REQUIRE(std::filesystem::is_regular_file(hdf5_file));
-        auto file = hdf5::file::open(hdf5_file, hdf5::file::AccessFlags::ReadOnly);
+        auto file = DiFfRG::hdf5::File::open(hdf5_file.string(), DiFfRG::hdf5::Access::ReadOnly);
 
         // Check if the file contains the time dataset
         auto root = file.root();
         REQUIRE(root.has_group("scalars"));
-        auto scalars_group = root.get_group("scalars");
+        auto scalars_group = root.open_group("scalars");
         REQUIRE(scalars_group.has_dataset("time"));
-        auto time_dataset = scalars_group.get_dataset("time");
-        REQUIRE(time_dataset.datatype() == hdf5::datatype::create<double>());
+        auto time_dataset = scalars_group.open_dataset("time");
+        REQUIRE(time_dataset.datatype() == DiFfRG::hdf5::type_of<double>());
         std::vector<double> time_data(1);
         time_dataset.read(time_data);
         REQUIRE(time_data[0] == 4.0);
@@ -136,16 +136,16 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
     REQUIRE(std::filesystem::is_regular_file(hdf5_file));
     // Check if the file contains the expected datasets
 
-    auto file = hdf5::file::open(hdf5_file, hdf5::file::AccessFlags::ReadOnly);
+    auto file = DiFfRG::hdf5::File::open(hdf5_file.string(), DiFfRG::hdf5::Access::ReadOnly);
 
     auto root = file.root();
     REQUIRE(root.has_group("scalars"));
-    auto scalars_group = root.get_group("scalars");
+    auto scalars_group = root.open_group("scalars");
 
     spdlog::get("log")->info("checking time...");
     REQUIRE(scalars_group.has_dataset("time"));
-    auto time_dataset = scalars_group.get_dataset("time");
-    REQUIRE(time_dataset.datatype() == hdf5::datatype::create<double>());
+    auto time_dataset = scalars_group.open_dataset("time");
+    REQUIRE(time_dataset.datatype() == DiFfRG::hdf5::type_of<double>());
     std::vector<double> time_data(2);
     time_dataset.read(time_data);
     REQUIRE(time_data.size() == 2);
@@ -154,8 +154,8 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
 
     spdlog::get("log")->info("checking d...");
     REQUIRE(scalars_group.has_dataset("d"));
-    auto d_dataset = scalars_group.get_dataset("d");
-    REQUIRE(d_dataset.datatype() == hdf5::datatype::create<double>());
+    auto d_dataset = scalars_group.open_dataset("d");
+    REQUIRE(d_dataset.datatype() == DiFfRG::hdf5::type_of<double>());
     std::vector<double> d_data(2);
     d_dataset.read(d_data);
     REQUIRE(d_data.size() == 2);
@@ -164,8 +164,8 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
 
     spdlog::get("log")->info("checking i...");
     REQUIRE(scalars_group.has_dataset("i"));
-    auto i_dataset = scalars_group.get_dataset("i");
-    REQUIRE(i_dataset.datatype() == hdf5::datatype::create<int>());
+    auto i_dataset = scalars_group.open_dataset("i");
+    REQUIRE(i_dataset.datatype() == DiFfRG::hdf5::type_of<int>());
     std::vector<int> i_data(2);
     i_dataset.read(i_data);
     REQUIRE(i_data.size() == 2);
@@ -174,8 +174,8 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
 
     spdlog::get("log")->info("checking s...");
     REQUIRE(scalars_group.has_dataset("s"));
-    auto s_dataset = scalars_group.get_dataset("s");
-    REQUIRE(s_dataset.datatype() == hdf5::datatype::create<std::string>());
+    auto s_dataset = scalars_group.open_dataset("s");
+    REQUIRE(s_dataset.datatype() == DiFfRG::hdf5::type_of<std::string>());
     std::vector<std::string> s_data(2);
     s_dataset.read(s_data);
     REQUIRE(s_data.size() == 2);
@@ -184,8 +184,8 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
 
     spdlog::get("log")->info("checking c...");
     REQUIRE(scalars_group.has_dataset("c"));
-    auto c_dataset = scalars_group.get_dataset("c");
-    REQUIRE(c_dataset.datatype() == hdf5::datatype::create<complex<double>>());
+    auto c_dataset = scalars_group.open_dataset("c");
+    REQUIRE(c_dataset.datatype() == DiFfRG::hdf5::type_of<complex<double>>());
     std::vector<complex<double>> c_data(2);
     c_dataset.read(c_data);
     REQUIRE(c_data.size() == 2);
@@ -194,8 +194,8 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
 
     spdlog::get("log")->info("checking ad...");
     REQUIRE(scalars_group.has_dataset("ad"));
-    auto ad_dataset = scalars_group.get_dataset("ad");
-    REQUIRE(ad_dataset.datatype() == hdf5::datatype::create<autodiff::real>());
+    auto ad_dataset = scalars_group.open_dataset("ad");
+    REQUIRE(ad_dataset.datatype() == DiFfRG::hdf5::type_of<autodiff::real>());
     std::vector<autodiff::real> ad_data(2);
     ad_dataset.read(ad_data);
     REQUIRE(ad_data.size() == 2);
@@ -206,8 +206,8 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
 
     spdlog::get("log")->info("checking arr...");
     REQUIRE(scalars_group.has_dataset("arr"));
-    auto arr_dataset = scalars_group.get_dataset("arr");
-    REQUIRE(arr_dataset.datatype() == hdf5::datatype::create<std::array<double, 3>>());
+    auto arr_dataset = scalars_group.open_dataset("arr");
+    REQUIRE(arr_dataset.datatype() == DiFfRG::hdf5::type_of<std::array<double, 3>>());
     std::vector<std::array<double, 3>> arr_data(2);
     arr_dataset.read(arr_data);
     REQUIRE(arr_data.size() == 2);
@@ -277,14 +277,14 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
       REQUIRE(std::filesystem::is_regular_file(hdf5_file));
 
       // Check if the file contains the expected dataset
-      auto file = hdf5::file::open(hdf5_file, hdf5::file::AccessFlags::ReadOnly);
+      auto file = DiFfRG::hdf5::File::open(hdf5_file.string(), DiFfRG::hdf5::Access::ReadOnly);
       auto root = file.root();
       REQUIRE(root.has_group("coordinates"));
-      auto coords_group = root.get_group("coordinates");
+      auto coords_group = root.open_group("coordinates");
 
       spdlog::get("log")->info("checking log coordinates...");
       REQUIRE(coords_group.has_dataset("log"));
-      auto log_dataset = coords_group.get_dataset("log");
+      auto log_dataset = coords_group.open_dataset("log");
       std::vector<device::array<double, 1>> log_data(coord_size);
       log_dataset.read(log_data);
       for (size_t i = 0; i < coord_size; ++i) {
@@ -293,7 +293,7 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
 
       spdlog::get("log")->info("checking loglog coordinates...");
       REQUIRE(coords_group.has_dataset("loglog"));
-      auto loglog_dataset = coords_group.get_dataset("loglog");
+      auto loglog_dataset = coords_group.open_dataset("loglog");
       std::vector<device::array<double, 2>> loglog_data(coord_size * coord_size);
       loglog_dataset.read(loglog_data);
       for (size_t i = 0; i < loglog_coords.size(); ++i) {
@@ -302,13 +302,13 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
 
       spdlog::get("log")->info("checking spline map...");
       REQUIRE(root.has_group("maps"));
-      auto maps_group = root.get_group("maps");
+      auto maps_group = root.open_group("maps");
       REQUIRE(maps_group.has_group("spline"));
-      auto spline_group = maps_group.get_group("spline");
+      auto spline_group = maps_group.open_group("spline");
       REQUIRE(spline_group.has_group(std::to_string(0)));
-      auto sub_group = spline_group.get_group(std::to_string(0));
+      auto sub_group = spline_group.open_group(std::to_string(0));
       REQUIRE(sub_group.has_dataset("data"));
-      auto spline_dataset = sub_group.get_dataset("data");
+      auto spline_dataset = sub_group.open_dataset("data");
       std::vector<double> spline_map_data(coord_size);
       spline_dataset.read(spline_map_data);
       for (size_t i = 0; i < coord_size; ++i) {
@@ -320,11 +320,11 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
 
       spdlog::get("log")->info("checking lin2d map...");
       REQUIRE(maps_group.has_group("lin2d"));
-      auto lin2d_group = maps_group.get_group("lin2d");
+      auto lin2d_group = maps_group.open_group("lin2d");
       REQUIRE(lin2d_group.has_group(std::to_string(0)));
-      auto lin2d_sub_group = lin2d_group.get_group(std::to_string(0));
+      auto lin2d_sub_group = lin2d_group.open_group(std::to_string(0));
       REQUIRE(lin2d_sub_group.has_dataset("data"));
-      auto lin2d_dataset = lin2d_sub_group.get_dataset("data");
+      auto lin2d_dataset = lin2d_sub_group.open_dataset("data");
       std::vector<double> lin2d_map_data(coord_size * coord_size);
       lin2d_dataset.read(lin2d_map_data);
       for (size_t i = 0; i < coord_size * coord_size; ++i) {
@@ -336,11 +336,11 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
 
       spdlog::get("log")->info("checking lin2d direct map...");
       REQUIRE(maps_group.has_group("lin2d_Direct"));
-      auto lin2d_direct_group = maps_group.get_group("lin2d_Direct");
+      auto lin2d_direct_group = maps_group.open_group("lin2d_Direct");
       REQUIRE(lin2d_direct_group.has_group(std::to_string(0)));
-      auto lin2d_direct_sub_group = lin2d_direct_group.get_group(std::to_string(0));
+      auto lin2d_direct_sub_group = lin2d_direct_group.open_group(std::to_string(0));
       REQUIRE(lin2d_direct_sub_group.has_dataset("data"));
-      auto lin2d_direct_dataset = lin2d_direct_sub_group.get_dataset("data");
+      auto lin2d_direct_dataset = lin2d_direct_sub_group.open_dataset("data");
       std::vector<double> lin2d_direct_map_data(coord_size * coord_size);
       lin2d_direct_dataset.read(lin2d_direct_map_data);
       for (size_t i = 0; i < coord_size * coord_size; ++i) {
@@ -366,23 +366,23 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
       REQUIRE(std::filesystem::is_regular_file(hdf5_file));
 
       // Check if the file contains the expected dataset
-      auto file = hdf5::file::open(hdf5_file, hdf5::file::AccessFlags::ReadOnly);
+      auto file = DiFfRG::hdf5::File::open(hdf5_file.string(), DiFfRG::hdf5::Access::ReadOnly);
       auto root = file.root();
 
       spdlog::get("log")->info("checking spline map...");
       REQUIRE(root.has_group("maps"));
-      auto maps_group = root.get_group("maps");
+      auto maps_group = root.open_group("maps");
       REQUIRE(maps_group.has_group("spline"));
-      auto spline_group = maps_group.get_group("spline");
+      auto spline_group = maps_group.open_group("spline");
       REQUIRE(spline_group.has_group(std::to_string(0)));
-      auto sub_group = spline_group.get_group(std::to_string(0));
+      auto sub_group = spline_group.open_group(std::to_string(0));
       REQUIRE(sub_group.has_dataset("data"));
 
       spdlog::get("log")->info("checking lin2d map...");
       REQUIRE(maps_group.has_group("lin2d"));
-      auto lin2d_group = maps_group.get_group("lin2d");
+      auto lin2d_group = maps_group.open_group("lin2d");
       REQUIRE(lin2d_group.has_group(std::to_string(0)));
-      auto lin2d_sub_group = lin2d_group.get_group(std::to_string(0));
+      auto lin2d_sub_group = lin2d_group.open_group(std::to_string(0));
       REQUIRE(lin2d_sub_group.has_dataset("data"));
 
       // Skip the explicit data verification here, we just wanted to know that the convenience method worked.

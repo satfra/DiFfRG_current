@@ -18,7 +18,7 @@ namespace DiFfRG
     path = this->top_folder + this->output_name;
     create_folder(path.parent_path().string());
 
-    h5_file = hdf5::file::create(path, hdf5::file::AccessFlags::Truncate);
+    h5_file = DiFfRG::hdf5::File::open(path.string(), DiFfRG::hdf5::Access::Truncate);
 
     auto root = h5_file.root();
     scalars = root.create_group("scalars");
@@ -34,7 +34,6 @@ namespace DiFfRG
     if (written_scalars.size() > 0) scalar<double>("time", time);
     if (initial_scalars.size() == 0) initial_scalars = written_scalars;
 
-    // ensure that initial_scalars have the same content as written_scalars
     for (const auto &name : initial_scalars) {
       if (std::find(written_scalars.begin(), written_scalars.end(), name) == written_scalars.end())
         throw std::runtime_error("HDF5Output::flush: The scalar '" + name +
@@ -44,10 +43,10 @@ namespace DiFfRG
     for (const auto &name : written_maps) {
       // the series number got incremented in the call, thus the -1
       const size_t series_number = map_series_numbers[name] - 1;
-      auto n_group = maps.get_group(name);
-      auto group = n_group.get_group(std::to_string(series_number));
-      group.attributes.create_from<double>("time", time);
-      group.attributes.create_from<int>("series_number", series_number);
+      auto n_group = maps.open_group(name);
+      auto group = n_group.open_group(std::to_string(series_number));
+      group.write_attribute("time", time);
+      group.write_attribute("series_number", static_cast<int>(series_number));
     }
 
     written_scalars.clear();
@@ -58,7 +57,7 @@ namespace DiFfRG
   }
 
 #ifdef H5CPP
-  hdf5::file::File &HDF5Output::get_file()
+  DiFfRG::hdf5::File &HDF5Output::get_file()
   {
     open_file();
     return h5_file;
@@ -69,11 +68,11 @@ namespace DiFfRG
   {
 #ifdef H5CPP
     if (opened) return;
-    h5_file = hdf5::file::open(path, hdf5::file::AccessFlags::ReadWrite);
+    h5_file = DiFfRG::hdf5::File::open(path.string(), DiFfRG::hdf5::Access::ReadWrite);
     auto root = h5_file.root();
-    scalars = root.get_group("scalars");
-    maps = root.get_group("maps");
-    coords = root.get_group("coordinates");
+    scalars = root.open_group("scalars");
+    maps = root.open_group("maps");
+    coords = root.open_group("coordinates");
     opened = true;
 #endif
   }
