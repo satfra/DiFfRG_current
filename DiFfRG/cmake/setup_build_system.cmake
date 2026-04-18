@@ -230,19 +230,64 @@ message("${BoldWhite}  DiFfRG Dependency Summary${ColourReset}")
 message(
   "${BoldWhite}======================================================================${ColourReset}"
 )
-message(
-  "  ${BoldGreen}deal.II${ColourReset}    ${deal.II_VERSION}          (${deal.II_DIR})"
-)
-message("  ${BoldGreen}TBB${ColourReset}        found          (${TBB_DIR})")
-message("  ${BoldGreen}Kokkos${ColourReset}     found          (${Kokkos_DIR})")
-message("  ${BoldGreen}Boost${ColourReset}      ${Boost_VERSION}")
-message("  ${BoldGreen}Eigen3${ColourReset}     ${Eigen3_VERSION}")
-message("  ${BoldGreen}GSL${ColourReset}        ${GSL_VERSION}")
-message("  ${BoldGreen}autodiff${ColourReset}   found")
-message("  ${BoldGreen}spdlog${ColourReset}     ${spdlog_VERSION}")
-message("  ${BoldGreen}HDF5${ColourReset}       ${HDF5_VERSION} (static)")
+
+# Resolve a path string for Boost: prefer Boost_DIR (CMake config package),
+# otherwise fall back to the first include directory.
+if(DEFINED Boost_DIR AND NOT "${Boost_DIR}" STREQUAL "Boost_DIR-NOTFOUND")
+  set(_boost_path "${Boost_DIR}")
+else()
+  list(GET Boost_INCLUDE_DIRS 0 _boost_path)
+endif()
+
+# Resolve a path string for HDF5: prefer HDF5_DIR if it points at a CMake
+# config package, otherwise fall back to the first include directory.
+if(DEFINED HDF5_DIR AND NOT "${HDF5_DIR}" STREQUAL "HDF5_DIR-NOTFOUND")
+  set(_hdf5_path "${HDF5_DIR}")
+else()
+  list(GET HDF5_INCLUDE_DIRS 0 _hdf5_path)
+endif()
+
+# Pretty-print one summary row with fixed-width name and version columns so
+# the (path) field aligns identically across every dependency. ARGN is an
+# optional trailing annotation (e.g. "[static]").
+function(_diffrg_summary_row name version path)
+  set(_name_width 10)
+  set(_version_width 14)
+
+  string(LENGTH "${name}" _nlen)
+  string(LENGTH "${version}" _vlen)
+  math(EXPR _npad "${_name_width} - ${_nlen}")
+  math(EXPR _vpad "${_version_width} - ${_vlen}")
+  if(_npad LESS 1)
+    set(_npad 1)
+  endif()
+  if(_vpad LESS 1)
+    set(_vpad 1)
+  endif()
+  string(REPEAT " " ${_npad} _nspaces)
+  string(REPEAT " " ${_vpad} _vspaces)
+
+  set(_suffix "")
+  if(ARGN)
+    set(_suffix " ${ARGN}")
+  endif()
+
+  message(
+    "  ${BoldGreen}${name}${ColourReset}${_nspaces}${version}${_vspaces}(${path})${_suffix}"
+  )
+endfunction()
+
+_diffrg_summary_row("deal.II"  "${deal.II_VERSION}"  "${deal.II_DIR}")
+_diffrg_summary_row("TBB"      "${TBB_VERSION}"      "${TBB_DIR}")
+_diffrg_summary_row("Kokkos"   "${Kokkos_VERSION}"   "${Kokkos_DIR}")
+_diffrg_summary_row("Boost"    "${Boost_VERSION}"    "${_boost_path}")
+_diffrg_summary_row("Eigen3"   "${Eigen3_VERSION}"   "${Eigen3_DIR}")
+_diffrg_summary_row("GSL"      "${GSL_VERSION}"      "${GSL_INCLUDE_DIRS}")
+_diffrg_summary_row("autodiff" "${autodiff_VERSION}" "${autodiff_DIR}")
+_diffrg_summary_row("spdlog"   "${spdlog_VERSION}"   "${spdlog_DIR}")
+_diffrg_summary_row("HDF5"     "${HDF5_VERSION}"     "${_hdf5_path}" "[static]")
 if(${DiFfRG_MPI})
-  message("  ${BoldGreen}MPI${ColourReset}        ${MPI_CXX_VERSION}")
+  _diffrg_summary_row("MPI"    "${MPI_CXX_VERSION}"  "${MPI_CXX_INCLUDE_DIRS}")
 endif()
 message(
   "${BoldWhite}======================================================================${ColourReset}"
