@@ -9,9 +9,10 @@ set(CMAKE_BUILD_TYPE Release)
 set(TRY_BOOST_VERSION "1.81.0")
 include(ProcessorCount)
 ProcessorCount(PARALLEL_JOBS)
+set(BOOST_SHA256
+    "205666dea9f6a7cfed87c7a6dfbeb52a2c1b9de55712c9c1a87735d7181452b6")
 set(BOOST_TARBALL_URLS
     "https://archives.boost.io/release/${TRY_BOOST_VERSION}/source/boost_1_81_0.tar.gz"
-    "https://boostorg.jfrog.io/artifactory/main/release/${TRY_BOOST_VERSION}/source/boost_1_81_0.tar.gz"
     "https://sourceforge.net/projects/boost/files/boost/${TRY_BOOST_VERSION}/boost_1_81_0.tar.gz/download"
 )
 
@@ -28,28 +29,42 @@ file(MAKE_DIRECTORY "${_diffrg_cache_root}")
 set(BOOST_TARBALL "${_diffrg_cache_root}/boost_1_81_0.tar.gz")
 set(BOOST_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/boost_1_81_0")
 
+# Reject a cached tarball whose hash does not match — otherwise a prior
+# truncated / wrong download silently poisons every subsequent build.
+if(EXISTS ${BOOST_TARBALL})
+  file(SHA256 ${BOOST_TARBALL} _cached_sha256)
+  if(NOT _cached_sha256 STREQUAL ${BOOST_SHA256})
+    message(
+      STATUS
+        "Cached Boost tarball at ${BOOST_TARBALL} has wrong SHA256 (${_cached_sha256}); removing."
+    )
+    file(REMOVE ${BOOST_TARBALL})
+  endif()
+endif()
+
 if(NOT EXISTS ${BOOST_TARBALL})
   set(_boost_download_ok FALSE)
   foreach(_url IN LISTS BOOST_TARBALL_URLS)
     message(STATUS "Downloading Boost ${TRY_BOOST_VERSION} from ${_url} ...")
     file(
       DOWNLOAD ${_url} ${BOOST_TARBALL}
-      EXPECTED_HASH
-        SHA256=205666dea9f6a7cfed87c7a6dfbeb52a2c1b9de55712c9c1a87735d7181452b6
+      EXPECTED_HASH SHA256=${BOOST_SHA256}
       INACTIVITY_TIMEOUT 30
-      TIMEOUT 600
       SHOW_PROGRESS
       STATUS _download_status
       LOG _download_log)
     list(GET _download_status 0 _download_code)
-    if(_download_code EQUAL 0)
-      set(_boost_download_ok TRUE)
-      break()
+    if(_download_code EQUAL 0 AND EXISTS ${BOOST_TARBALL})
+      file(SHA256 ${BOOST_TARBALL} _downloaded_sha256)
+      if(_downloaded_sha256 STREQUAL ${BOOST_SHA256})
+        set(_boost_download_ok TRUE)
+        break()
+      endif()
     endif()
     file(REMOVE ${BOOST_TARBALL})
     message(
       WARNING
-        "Boost download from ${_url} failed (${_download_status}); trying next mirror."
+        "Boost download from ${_url} failed or returned wrong content (${_download_status}); trying next mirror."
     )
   endforeach()
   if(NOT _boost_download_ok)
