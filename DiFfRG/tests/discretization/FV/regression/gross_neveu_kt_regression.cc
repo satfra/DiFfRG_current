@@ -422,7 +422,7 @@ namespace
         {{"physical", {{"Lambda", Lambda}}},
          {"discretization",
           {{"fe_order", 0},
-           {"threads", 1},
+           {"threads", 8},
            {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
