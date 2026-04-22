@@ -57,12 +57,34 @@ namespace DiFfRG
         template <int dim, typename NumberType, size_t n_components>
         using GradientType = def::GradientType<dim, NumberType, n_components>;
 
+        template <int dim, typename NumberType, size_t n_components> struct CellData {
+          dealii::Point<dim> x;
+          std::array<NumberType, n_components> u;
+          std::array<dealii::types::global_dof_index, n_components> dof_indices;
+        };
+
+        template <int dim, typename NumberType, size_t n_components> struct NeighborData {
+          static constexpr size_t n_faces = 2 * dim;
+          std::array<dealii::Point<dim>, n_faces> x;
+          std::array<std::array<NumberType, n_components>, n_faces> u;
+          std::array<std::array<dealii::types::global_dof_index, n_components>, n_faces> dof_indices;
+        };
+
+        template <int dim, typename NumberType, size_t n_components> struct CellStencilData {
+          static constexpr size_t n_faces = 2 * dim;
+          CellData<dim, NumberType, n_components> cell;
+          NeighborData<dim, NumberType, n_components> neighbors;
+          std::array<types::boundary_id, n_faces> boundary_ids;
+          std::array<dealii::Point<dim>, n_faces> face_centers;
+        };
+
         /**
          * @brief Class to hold data for each assembly thread, i.e. FEValues for cells, interfaces, as well as
          * pre-allocated data structures for the solutions
          */
-        template <int dim, typename NumberType> struct ScratchData {
+        template <int dim, typename NumberType, size_t n_components> struct ScratchData {
           using VectorType = Vector<NumberType>;
+          static constexpr size_t n_faces = 2 * dim;
 
           ScratchData(const Mapping<dim> &mapping, const FiniteElement<dim> &fe, const Quadrature<dim> &quadrature,
                       const Quadrature<dim - 1> &quadrature_face,
@@ -72,23 +94,29 @@ namespace DiFfRG
                                                                  update_quadrature_points | update_JxW_values |
                                                                  update_normal_vectors)
               : fe_values(mapping, fe, quadrature, update_flags),
-                fe_interface_values(mapping, fe, quadrature_face, interface_update_flags)
+                fe_interface_values(mapping, fe, quadrature_face, interface_update_flags),
+                cell_dof_indices(n_components), ncell_dof_indices(n_components)
           {
           }
 
-          ScratchData(const ScratchData<dim, NumberType> &scratch_data)
+          ScratchData(const ScratchData<dim, NumberType, n_components> &scratch_data)
               : fe_values(scratch_data.fe_values.get_mapping(), scratch_data.fe_values.get_fe(),
                           scratch_data.fe_values.get_quadrature(), scratch_data.fe_values.get_update_flags()),
                 fe_interface_values(scratch_data.fe_interface_values.get_mapping(),
                                     scratch_data.fe_interface_values.get_fe(),
                                     scratch_data.fe_interface_values.get_quadrature(),
-                                    scratch_data.fe_interface_values.get_update_flags())
-
+                                    scratch_data.fe_interface_values.get_update_flags()),
+                cell_dof_indices(n_components), ncell_dof_indices(n_components)
           {
           }
 
           FEValues<dim> fe_values;
           FEInterfaceValues<dim> fe_interface_values;
+          std::vector<types::global_dof_index> cell_dof_indices;
+          std::vector<types::global_dof_index> ncell_dof_indices;
+          CellStencilData<dim, NumberType, n_components> cell_stencil;
+          CellStencilData<dim, NumberType, n_components> ncell_stencil;
+          CellStencilData<dim, NumberType, n_components> temporary_stencil;
         };
 
         template <int dim, typename NumberType, size_t n_components>
@@ -145,6 +173,8 @@ namespace DiFfRG
             cell_residual.reinit(dofs_per_cell);
             cell_mass.reinit(dofs_per_cell);
             local_dof_indices.resize(dofs_per_cell);
+            face_data.clear();
+            face_data.reserve(cell->n_faces());
             cell->get_dof_indices(local_dof_indices);
           }
         };
@@ -160,17 +190,19 @@ namespace DiFfRG
             FullMatrix<NumberType> extractor_cell_jacobian;
             std::vector<types::global_dof_index> to_dofs;
             std::vector<types::global_dof_index> from_dofs;
+            std::vector<types::global_dof_index> neighbor_dof_indices;
 
-            static void collect_neighbor_dofs(std::set<types::global_dof_index> &from_dofs_set,
-                                              const Iterator &root_cell)
+            static void append_neighbor_dofs(std::vector<types::global_dof_index> &from_dofs,
+                                             std::vector<types::global_dof_index> &neighbor_dof_indices,
+                                             const Iterator &root_cell)
             {
-              std::vector<types::global_dof_index> neighbor_dof_indices(root_cell->get_fe().n_dofs_per_cell());
+              if (neighbor_dof_indices.size() != root_cell->get_fe().n_dofs_per_cell())
+                neighbor_dof_indices.resize(root_cell->get_fe().n_dofs_per_cell());
               for (const auto face_index : root_cell->face_indices()) {
                 if (!root_cell->at_boundary(face_index)) {
                   const auto neighbor = root_cell->neighbor(face_index);
                   neighbor->get_dof_indices(neighbor_dof_indices);
-                  for (const auto &dof : neighbor_dof_indices)
-                    from_dofs_set.insert(dof);
+                  from_dofs.insert(from_dofs.end(), neighbor_dof_indices.begin(), neighbor_dof_indices.end());
                 }
               }
             }
@@ -179,12 +211,15 @@ namespace DiFfRG
                         const std::optional<Iterator> &ncell = std::nullopt)
             {
               to_dofs = fe_iv.get_interface_dof_indices();
+              from_dofs.clear();
+              from_dofs.reserve(to_dofs.size() + GeometryInfo<dim>::faces_per_cell * cell->get_fe().n_dofs_per_cell() *
+                                                     (ncell.has_value() ? 2 : 1));
+              from_dofs.insert(from_dofs.end(), to_dofs.begin(), to_dofs.end());
+              append_neighbor_dofs(from_dofs, neighbor_dof_indices, cell);
+              if (ncell.has_value()) append_neighbor_dofs(from_dofs, neighbor_dof_indices, ncell.value());
 
-              std::set<types::global_dof_index> from_dofs_set(begin(to_dofs), end(to_dofs));
-              collect_neighbor_dofs(from_dofs_set, cell);
-              if (ncell.has_value()) collect_neighbor_dofs(from_dofs_set, ncell.value());
-
-              from_dofs = std::vector<types::global_dof_index>(begin(from_dofs_set), end(from_dofs_set));
+              std::sort(from_dofs.begin(), from_dofs.end());
+              from_dofs.erase(std::unique(from_dofs.begin(), from_dofs.end()), from_dofs.end());
               cell_jacobian.reinit(size(to_dofs), size(from_dofs));
             }
           };
@@ -201,6 +236,8 @@ namespace DiFfRG
             if (n_extractors > 0) extractor_cell_jacobian.reinit(dofs_per_cell, n_extractors);
             cell_mass_jacobian.reinit(dofs_per_cell, dofs_per_cell);
             local_dof_indices.resize(dofs_per_cell);
+            face_data.clear();
+            face_data.reserve(cell->n_faces());
             cell->get_dof_indices(local_dof_indices);
           }
         };
@@ -431,18 +468,6 @@ namespace DiFfRG
           return result;
         }
 
-        template <int dim, typename NumberType, size_t n_components> struct CellData {
-          dealii::Point<dim> x;
-          std::array<NumberType, n_components> u;
-          std::array<dealii::types::global_dof_index, n_components> dof_indices;
-        };
-
-        template <int dim, typename NumberType, size_t n_components, size_t n_faces> struct NeighborData {
-          std::array<dealii::Point<dim>, n_faces> x;
-          std::array<std::array<NumberType, n_components>, n_faces> u;
-          std::array<std::array<dealii::types::global_dof_index, n_components>, n_faces> dof_indices;
-        };
-
         template <int dim, typename NumberType, size_t n_components>
         CellData<dim, autodiff::Real<1, NumberType>, n_components>
         tag_cell_dofs(const CellData<dim, NumberType, n_components> &cell_data, dealii::types::global_dof_index dof_j)
@@ -458,16 +483,16 @@ namespace DiFfRG
           return result;
         }
 
-        template <int dim, typename NumberType, size_t n_components, size_t n_faces>
-        NeighborData<dim, autodiff::Real<1, NumberType>, n_components, n_faces>
-        make_tagged_neighbors(const NeighborData<dim, NumberType, n_components, n_faces> &neighbor_data,
+        template <int dim, typename NumberType, size_t n_components>
+        NeighborData<dim, autodiff::Real<1, NumberType>, n_components>
+        make_tagged_neighbors(const NeighborData<dim, NumberType, n_components> &neighbor_data,
                               dealii::types::global_dof_index dof_j)
         {
           using AD = autodiff::Real<1, NumberType>;
-          NeighborData<dim, AD, n_components, n_faces> result;
+          NeighborData<dim, AD, n_components> result;
           result.x = neighbor_data.x;
           result.dof_indices = neighbor_data.dof_indices;
-          for (size_t face = 0; face < n_faces; ++face) {
+          for (size_t face = 0; face < NeighborData<dim, NumberType, n_components>::n_faces; ++face) {
             for (size_t c = 0; c < n_components; ++c) {
               result.u[face][c] = AD(neighbor_data.u[face][c]);
               if (neighbor_data.dof_indices[face][c] == dof_j) seed(result.u[face][c]);
@@ -495,7 +520,7 @@ namespace DiFfRG
                   size_t n_faces>
         ReconstructionDerivativeData<dim, NumberType, n_components> compute_boundary_ghost_reconstruction_derivative(
             const CellData<dim, autodiff::Real<1, NumberType>, n_components> &cell_data_AD,
-            NeighborData<dim, autodiff::Real<1, NumberType>, n_components, n_faces> neighbors_AD,
+            NeighborData<dim, autodiff::Real<1, NumberType>, n_components> neighbors_AD,
             const std::array<GradientType<dim, autodiff::Real<1, NumberType>, n_components>, n_faces>
                 &neighbor_gradients_AD,
             const unsigned int boundary_face_no, const std::array<dealii::types::boundary_id, n_faces> &boundary_ids,
@@ -657,8 +682,7 @@ namespace DiFfRG
             sparsity_pattern_mass.copy_from(dsp);
             mass_matrix.reinit(sparsity_pattern_mass);
             MatrixCreator::create_mass_matrix(dof_handler, quadrature, mass_matrix,
-                                              static_cast<Function<dim, NumberType> *>(nullptr),
-                                              constraints);
+                                              static_cast<Function<dim, NumberType> *>(nullptr), constraints);
           }
           // // Jacobian sparsity pattern
           // {
@@ -687,8 +711,10 @@ namespace DiFfRG
           model.dt_variables(residual, fv_tie(variables));
         };
 
-        virtual void jacobian_variables(FullMatrix<NumberType> &jacobian, const VectorType &variables,
-                                        const VectorType &) override {
+        virtual void jacobian_variables([[maybe_unused]] FullMatrix<NumberType> &jacobian,
+                                        [[maybe_unused]] const VectorType &variables, const VectorType &) override
+        {
+          static_assert(true, "jacobian_variables is not implemented for this model");
           // model.template jacobian_variables<0>(jacobian, fv_tie(variables));
         };
 
@@ -704,7 +730,7 @@ namespace DiFfRG
         virtual void mass(VectorType &mass, const VectorType &solution_global, const VectorType &solution_global_dot,
                           NumberType weight) override
         {
-          using Scratch = internal::ScratchData<dim, NumberType>;
+          using Scratch = internal::ScratchData<dim, NumberType, n_components>;
           using CopyData = internal::CopyData_R<NumberType>;
           const auto &constraints = discretization.get_constraints();
 
@@ -752,65 +778,58 @@ namespace DiFfRG
         }
 
         using CellData = internal::CellData<dim, NumberType, n_components>;
-        using NeighborData = internal::NeighborData<dim, NumberType, n_components, n_faces>;
+        using NeighborData = internal::NeighborData<dim, NumberType, n_components>;
+        using CellStencilData = internal::CellStencilData<dim, NumberType, n_components>;
 
-        static CellData get_cell_value(const Iterator &cell, const VectorType &solution_global)
+        static void fill_cell_data(const Iterator &cell, const VectorType &solution_global,
+                                   std::vector<types::global_dof_index> &scratch_dof_indices, CellData &data)
         {
-          CellData data;
-          data.x = cell->center();
-          std::vector<types::global_dof_index> global_cell_dof_indices(n_components);
-          cell->get_dof_indices(global_cell_dof_indices);
-          for (unsigned int i = 0; i < n_components; ++i) {
-            data.dof_indices[i] = global_cell_dof_indices[i];
-            data.u[i] = solution_global(global_cell_dof_indices[i]);
-          }
+          if (scratch_dof_indices.size() != n_components) scratch_dof_indices.resize(n_components);
 
-          return data;
+          data.x = cell->center();
+          cell->get_dof_indices(scratch_dof_indices);
+          for (unsigned int i = 0; i < n_components; ++i) {
+            data.dof_indices[i] = scratch_dof_indices[i];
+            data.u[i] = solution_global(scratch_dof_indices[i]);
+          }
         }
 
-        static NeighborData get_neighboring_cell_data(const Iterator &cell, const VectorType &solution_global,
-                                                      const Model &model)
+        static void fill_cell_stencil(const Iterator &cell, const VectorType &solution_global, const Model &model,
+                                      std::vector<types::global_dof_index> &scratch_dof_indices,
+                                      CellStencilData &stencil)
         {
-          NeighborData data;
+          stencil.neighbors = {};
+          stencil.boundary_ids.fill(numbers::invalid_boundary_id);
+          stencil.face_centers = {};
+          for (auto &neighbor_dof_indices : stencil.neighbors.dof_indices)
+            neighbor_dof_indices.fill(numbers::invalid_dof_index);
 
-          const auto [boundary_ids, face_centers] = get_boundary_face_data(cell);
+          fill_cell_data(cell, solution_global, scratch_dof_indices, stencil.cell);
+
           for (const auto face_index : cell->face_indices()) {
-            if (boundary_ids[face_index] != numbers::invalid_boundary_id) continue;
+            const auto face = cell->face(face_index);
+            stencil.face_centers[face_index] = face->center();
+            if (cell->at_boundary(face_index)) {
+              stencil.boundary_ids[face_index] = face->boundary_id();
+              continue;
+            }
 
             const auto neighbor = cell->neighbor(face_index);
-            auto neighbor_data = get_cell_value(neighbor, solution_global);
-            data.x[face_index] = neighbor_data.x;
-            data.u[face_index] = neighbor_data.u;
-            data.dof_indices[face_index] = neighbor_data.dof_indices;
+            CellData neighbor_data;
+            fill_cell_data(neighbor, solution_global, scratch_dof_indices, neighbor_data);
+            stencil.neighbors.x[face_index] = neighbor_data.x;
+            stencil.neighbors.u[face_index] = neighbor_data.u;
+            stencil.neighbors.dof_indices[face_index] = neighbor_data.dof_indices;
           }
 
-          auto cell_data = get_cell_value(cell, solution_global);
-
-          model.apply_boundary_conditions(data.u, data.x, boundary_ids, face_centers, cell_data.u, cell_data.x);
-
-          return data;
-        }
-
-        static std::pair<std::array<types::boundary_id, n_faces>, std::array<Point, n_faces>>
-        get_boundary_face_data(const Iterator &cell)
-        {
-          std::array<types::boundary_id, n_faces> boundary_ids;
-          std::array<Point, n_faces> face_centers;
-
-          for (const auto face_index : cell->face_indices()) {
-            if (cell->at_boundary(face_index)) {
-              const auto face = cell->face(face_index);
-              boundary_ids[face_index] = face->boundary_id();
-              face_centers[face_index] = face->center();
-            } else
-              boundary_ids[face_index] = numbers::invalid_boundary_id;
-          }
-
-          return {boundary_ids, face_centers};
+          model.apply_boundary_conditions(stencil.neighbors.u, stencil.neighbors.x, stencil.boundary_ids,
+                                          stencil.face_centers, stencil.cell.u, stencil.cell.x);
         }
 
         static std::array<internal::GradientType<dim, NumberType, n_components>, n_faces>
-        compute_neighbor_gradients(const Iterator &cell, const VectorType &solution_global, const Model &model)
+        compute_neighbor_gradients(const Iterator &cell, const VectorType &solution_global, const Model &model,
+                                   std::vector<types::global_dof_index> &scratch_dof_indices,
+                                   CellStencilData &temporary_stencil)
         {
           std::array<internal::GradientType<dim, NumberType, n_components>, n_faces> gradients{};
 
@@ -818,11 +837,11 @@ namespace DiFfRG
             if (cell->at_boundary(face_index)) continue;
 
             const auto neighbor = cell->neighbor(face_index);
-            const auto neighbor_data = get_cell_value(neighbor, solution_global);
-            const auto neighbor_neighbors = get_neighboring_cell_data(neighbor, solution_global, model);
+            fill_cell_stencil(neighbor, solution_global, model, scratch_dof_indices, temporary_stencil);
 
             gradients[face_index] = Reconstructor::template compute_gradient<n_components>(
-                neighbor_data.x, neighbor_data.u, neighbor_neighbors.x, neighbor_neighbors.u);
+                temporary_stencil.cell.x, temporary_stencil.cell.u, temporary_stencil.neighbors.x,
+                temporary_stencil.neighbors.u);
           }
 
           return gradients;
@@ -832,7 +851,7 @@ namespace DiFfRG
                               const VectorType &solution_global_dot, NumberType weight_mass,
                               const VectorType & /* variables */ = VectorType()) override
         {
-          using Scratch = internal::ScratchData<dim, NumberType>;
+          using Scratch = internal::ScratchData<dim, NumberType, n_components>;
           using CopyData = internal::CopyData_R<NumberType>;
           const auto &constraints = discretization.get_constraints();
 
@@ -892,10 +911,16 @@ namespace DiFfRG
             auto &copy_data_face = copy_data.face_data.back();
             copy_data_face.reinit(fe_iv);
 
-            const auto cell_neighbors = get_neighboring_cell_data(cell, solution_global, model);
-            const auto ncell_neighbors = get_neighboring_cell_data(ncell, solution_global, model);
-            const auto cell_data = get_cell_value(cell, solution_global);
-            const auto ncell_data = get_cell_value(ncell, solution_global);
+            fill_cell_stencil(cell, solution_global, model, scratch_data.cell_dof_indices,
+                              scratch_data.cell_stencil);
+            fill_cell_stencil(ncell, solution_global, model, scratch_data.ncell_dof_indices,
+                              scratch_data.ncell_stencil);
+            const auto &cell_stencil = scratch_data.cell_stencil;
+            const auto &ncell_stencil = scratch_data.ncell_stencil;
+            const auto &cell_neighbors = cell_stencil.neighbors;
+            const auto &ncell_neighbors = ncell_stencil.neighbors;
+            const auto &cell_data = cell_stencil.cell;
+            const auto &ncell_data = ncell_stencil.cell;
 
             const GradientType u_grad_cell = Reconstructor::template compute_gradient<n_components>(
                 cell_data.x, cell_data.u, cell_neighbors.x, cell_neighbors.u);
@@ -909,9 +934,9 @@ namespace DiFfRG
             const std::vector<Tensor<1, dim>> &normals = fe_iv.get_normal_vectors();
 
             const std::array<NumberType, n_components> u_minus =
-                internal::reconstruct_u(cell_data.u, cell->center(), x_q, u_grad_cell);
+                internal::reconstruct_u(cell_data.u, cell_data.x, x_q, u_grad_cell);
             const std::array<NumberType, n_components> u_plus =
-                internal::reconstruct_u(ncell_data.u, ncell->center(), x_q, u_grad_ncell);
+                internal::reconstruct_u(ncell_data.u, ncell_data.x, x_q, u_grad_ncell);
 
             const auto [F_plus, F_minus, a_half] =
                 internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(u_plus, u_minus, x_q, model);
@@ -951,12 +976,14 @@ namespace DiFfRG
             const int q_face_index = 0; // only one quadrature point per face for FV
             const auto &x_q = q_points[q_face_index];
 
-            // Get cell data and ghost neighbor data via apply_boundary_conditions
-            const auto cell_neighbors = get_neighboring_cell_data(cell, solution_global, model);
-            const auto cell_data = get_cell_value(cell, solution_global);
-            const auto neighbor_gradients = compute_neighbor_gradients(cell, solution_global, model);
-            const auto boundary_face_data = get_boundary_face_data(cell);
-            const auto &boundary_ids = boundary_face_data.first;
+            fill_cell_stencil(cell, solution_global, model, scratch_data.cell_dof_indices,
+                              scratch_data.cell_stencil);
+            const auto &cell_stencil = scratch_data.cell_stencil;
+            const auto &cell_neighbors = cell_stencil.neighbors;
+            const auto &cell_data = cell_stencil.cell;
+            const auto neighbor_gradients = compute_neighbor_gradients(
+                cell, solution_global, model, scratch_data.ncell_dof_indices, scratch_data.temporary_stencil);
+            const auto &boundary_ids = cell_stencil.boundary_ids;
 
             const GradientType u_grad_cell = Reconstructor::template compute_gradient<n_components>(
                 cell_data.x, cell_data.u, cell_neighbors.x, cell_neighbors.u);
@@ -967,14 +994,14 @@ namespace DiFfRG
 
             // Interior reconstructed state at face
             const std::array<NumberType, n_components> u_minus =
-                internal::reconstruct_u(cell_data.u, cell->center(), x_q, u_grad_cell);
+                internal::reconstruct_u(cell_data.u, cell_data.x, x_q, u_grad_cell);
 
             // Ghost cell value and position from apply_boundary_conditions
             const std::array<NumberType, n_components> &u_ghost = cell_neighbors.u[face_no];
             const Point &x_ghost = cell_neighbors.x[face_no];
 
             // Ghost gradient via model interface (allows second-order reconstruction at boundaries)
-            const auto boundary_id = cell->face(face_no)->boundary_id();
+            const auto boundary_id = boundary_ids[face_no];
             GradientType u_grad_plus{};
             model.boundary_ghost_gradient(u_grad_plus, boundary_id, normals[q_face_index], x_q, u_ghost, x_ghost,
                                           cell_data.u, cell_data.x, u_grad_cell, boundary_ids, neighbor_gradients);
@@ -1025,7 +1052,7 @@ namespace DiFfRG
                                    NumberType beta = 1.) override
         {
           using Iterator = typename DoFHandler<dim>::active_cell_iterator;
-          using Scratch = internal::ScratchData<dim, NumberType>;
+          using Scratch = internal::ScratchData<dim, NumberType, n_components>;
           using CopyData = internal::CopyData_J<NumberType, dim>;
           const auto &constraints = discretization.get_constraints();
 
@@ -1082,7 +1109,7 @@ namespace DiFfRG
                               const VectorType & /* variables */ = VectorType()) override
         {
           using Iterator = typename DoFHandler<dim>::active_cell_iterator;
-          using Scratch = internal::ScratchData<dim, NumberType>;
+          using Scratch = internal::ScratchData<dim, NumberType, n_components>;
           using CopyData = internal::CopyData_J<NumberType, dim>;
           const auto &constraints = discretization.get_constraints();
 
@@ -1137,10 +1164,16 @@ namespace DiFfRG
             const auto &JxW = fe_iv.get_JxW_values();
             const std::vector<Tensor<1, dim>> &normals = fe_iv.get_normal_vectors();
 
-            const auto cell_neighbors = get_neighboring_cell_data(cell, solution_global, model);
-            const auto ncell_neighbors = get_neighboring_cell_data(ncell, solution_global, model);
-            const auto cell_data = get_cell_value(cell, solution_global);
-            const auto ncell_data = get_cell_value(ncell, solution_global);
+            fill_cell_stencil(cell, solution_global, model, scratch_data.cell_dof_indices,
+                              scratch_data.cell_stencil);
+            fill_cell_stencil(ncell, solution_global, model, scratch_data.ncell_dof_indices,
+                              scratch_data.ncell_stencil);
+            const auto &cell_stencil = scratch_data.cell_stencil;
+            const auto &ncell_stencil = scratch_data.ncell_stencil;
+            const auto &cell_neighbors = cell_stencil.neighbors;
+            const auto &ncell_neighbors = ncell_stencil.neighbors;
+            const auto &cell_data = cell_stencil.cell;
+            const auto &ncell_data = ncell_stencil.cell;
 
             copy_data.face_data.emplace_back();
             auto &copy_data_face = copy_data.face_data.back();
@@ -1157,9 +1190,9 @@ namespace DiFfRG
                 ncell_data.x, x_q, ncell_data.u, ncell_neighbors.x, ncell_neighbors.u);
 
             const std::array<NumberType, n_components> u_minus =
-                internal::reconstruct_u(cell_data.u, cell->center(), x_q, u_grad_cell);
+                internal::reconstruct_u(cell_data.u, cell_data.x, x_q, u_grad_cell);
             const std::array<NumberType, n_components> u_plus =
-                internal::reconstruct_u(ncell_data.u, ncell->center(), x_q, u_grad_ncell);
+                internal::reconstruct_u(ncell_data.u, ncell_data.x, x_q, u_grad_ncell);
 
             // Precompute reconstructed state and face-gradient derivatives for each dependency dof.
             const uint n_from = size(copy_data_face.from_dofs);
@@ -1254,16 +1287,18 @@ namespace DiFfRG
             auto &copy_data_face = copy_data.face_data.back();
             copy_data_face.reinit(fe_iv, cell);
 
-            // Get cell data and ghost neighbor data
-            const auto cell_neighbors = get_neighboring_cell_data(cell, solution_global, model);
-            const auto cell_data = get_cell_value(cell, solution_global);
-            const auto neighbor_gradients = compute_neighbor_gradients(cell, solution_global, model);
-
-            // Build boundary_ids and face_centers arrays needed for apply_boundary_conditions
-            const auto [boundary_ids, face_centers] = get_boundary_face_data(cell);
+            fill_cell_stencil(cell, solution_global, model, scratch_data.cell_dof_indices,
+                              scratch_data.cell_stencil);
+            const auto &cell_stencil = scratch_data.cell_stencil;
+            const auto &cell_neighbors = cell_stencil.neighbors;
+            const auto &cell_data = cell_stencil.cell;
+            const auto neighbor_gradients = compute_neighbor_gradients(
+                cell, solution_global, model, scratch_data.ncell_dof_indices, scratch_data.temporary_stencil);
+            const auto &boundary_ids = cell_stencil.boundary_ids;
+            const auto &face_centers = cell_stencil.face_centers;
 
             // Compute gradients and reconstructed interface values
-            const GradientType u_grad_plus = Reconstructor::template compute_gradient<n_components>(
+            const GradientType u_grad_cell = Reconstructor::template compute_gradient<n_components>(
                 cell_data.x, cell_data.u, cell_neighbors.x, cell_neighbors.u);
             const GradientType u_grad_minus = Reconstructor::template compute_gradient_at_point<n_components>(
                 cell_data.x, x_q, cell_data.u, cell_neighbors.x, cell_neighbors.u);
@@ -1272,15 +1307,15 @@ namespace DiFfRG
             const std::array<NumberType, n_components> &u_ghost = cell_neighbors.u[face_no];
             const Point &x_ghost = cell_neighbors.x[face_no];
 
-            const auto boundary_id = cell->face(face_no)->boundary_id();
+            const auto boundary_id = boundary_ids[face_no];
             GradientType u_grad_ghost{};
             model.boundary_ghost_gradient(u_grad_ghost, boundary_id, normals[q_face_index], x_q, u_ghost, x_ghost,
-                                          cell_data.u, cell_data.x, u_grad_plus, boundary_ids, neighbor_gradients);
+                                          cell_data.u, cell_data.x, u_grad_cell, boundary_ids, neighbor_gradients);
 
             const std::array<NumberType, n_components> u_plus =
                 internal::reconstruct_u(u_ghost, x_ghost, x_q, u_grad_ghost);
             const std::array<NumberType, n_components> u_minus =
-                internal::reconstruct_u(cell_data.u, cell->center(), x_q, u_grad_plus);
+                internal::reconstruct_u(cell_data.u, cell_data.x, x_q, u_grad_cell);
 
             // Precompute reconstructed state and face-gradient derivatives for each dependency dof.
             const uint n_from = size(copy_data_face.from_dofs);
@@ -1308,8 +1343,7 @@ namespace DiFfRG
                 auto cell_data_AD = internal::tag_cell_dofs(cell_data, dof_j);
                 auto neighbors_AD = internal::make_tagged_neighbors(cell_neighbors, dof_j);
                 const auto neighbor_gradients_AD =
-                    internal::lift_neighbor_gradients_to_ad<dim, NumberType, n_components, n_faces>(
-                        neighbor_gradients);
+                    internal::lift_neighbor_gradients_to_ad<dim, NumberType, n_components, n_faces>(neighbor_gradients);
                 auto deriv =
                     internal::compute_boundary_ghost_reconstruction_derivative<Reconstructor, Model, dim, NumberType,
                                                                                n_components, n_faces>(
@@ -1393,7 +1427,7 @@ namespace DiFfRG
 
         void build_sparsity(SparsityPattern &sparsity_pattern, const DoFHandler<dim> &to_dofh,
                             const DoFHandler<dim> &from_dofh, const int stencil = 2,
-                            bool add_extractor_dofs = false) const
+                            [[maybe_unused]] bool add_extractor_dofs = false) const
         {
           const auto &triangulation = discretization.get_triangulation();
 
