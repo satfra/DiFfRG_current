@@ -8,8 +8,10 @@ GetStandardKernelDefinitions::usage = "GetStandardKernelDefinitions[] returns a 
 
 MakeKernel::usage = "MakeKernel[kernel_Association, parameterList_List,integrandFlow_,constantFlow_:0., integrandDefinitions_String:\"\", constantDefinitions_String:\"\"]
 Make a kernel from a given flow equation, parmeter list and kernel. The kernel must be a valid specification of an integration kernel.
-This Function creates an integrator that evaluates (constantFlow + \[Integral]integrandFlow). One can prepend additional c++ definitions to the flow equation by using the integrandDefinitions and constantDefinitions parameters. 
-These are prepended to the respective methods of the integration kernel, allowing one to e.g. define specific angles one needs for the flow code.";
+This Function creates an integrator that evaluates (constantFlow + \[Integral]integrandFlow). One can prepend additional c++ definitions to the flow equation by using the integrandDefinitions and constantDefinitions parameters.
+These are prepended to the respective methods of the integration kernel, allowing one to e.g. define specific angles one needs for the flow code.
+
+The options \"KernelReturnTransform\" and \"ConstantReturnTransform\" (default Identity) accept a Mathematica function applied to the optimized expression before code generation, which lets you wrap the return value, e.g. \"KernelReturnTransform\" -> Re renders the kernel return as real(...).";
 
 MakeKernel::Invalid = "The given arguments are invalid. See MakeKernel::usage";
 
@@ -67,7 +69,7 @@ GetStandardKernelDefinitions[] :=
 
 (* Internal functions added here with Internal`*::usage *)
 
-Options[MakeKernel] = {"Coordinates" -> {}, "CoordinateArguments" -> {}, "IntegrationVariables" -> {}, "KernelDefinitions" -> $StandardKernelDefinitions, "Regulator" -> "DiFfRG::PolynomialExpRegulator", "RegulatorOpts" -> {"", ""}, "KernelBody" -> "", "KernelReturnType" -> "auto", "ConstantBody" -> "", "ConstantReturnType" -> "auto", "Parameters" -> {}, "Name" -> "", "d" -> -1, "Integrator" -> "", "AD" -> False, "ctype" -> "double", "Device" -> "TBB", "Type" -> "double"};
+Options[MakeKernel] = {"Coordinates" -> {}, "CoordinateArguments" -> {}, "IntegrationVariables" -> {}, "KernelDefinitions" -> $StandardKernelDefinitions, "Regulator" -> "DiFfRG::PolynomialExpRegulator", "RegulatorOpts" -> {"", ""}, "KernelBody" -> "", "KernelReturnType" -> "auto", "KernelReturnTransform" -> Identity, "ConstantBody" -> "", "ConstantReturnType" -> "auto", "ConstantReturnTransform" -> Identity, "Parameters" -> {}, "Name" -> "", "d" -> -1, "Integrator" -> "", "AD" -> False, "ctype" -> "double", "Device" -> "TBB", "Type" -> "double"};
 
 MakeKernel[__] :=
     (
@@ -110,8 +112,8 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
                 ,
                 spec["Parameters"]
             ];
-        kernel = FunKit`MakeCppFunction[expr, "Name" -> "kernel", "Return" -> OptionValue["KernelReturnType"], "Suffix" -> "", "Prefix" -> "static KOKKOS_FORCEINLINE_FUNCTION", "Parameters" -> Join[intVariables, getArgs, parametersKernel], "Body" -> StringTemplate["using namespace DiFfRG;using namespace DiFfRG::compute;\n`1`"][OptionValue["KernelBody"]]];
-        constant = FunKit`MakeCppFunction[constExpr, "Name" -> "constant", "Return" -> OptionValue["ConstantReturnType"], "Suffix" -> "", "Prefix" -> "static KOKKOS_FORCEINLINE_FUNCTION", "Parameters" -> Join[getArgs, parametersKernel], "Body" -> StringTemplate["using namespace DiFfRG;using namespace DiFfRG::compute;\n`1`"][OptionValue["ConstantBody"]]];
+        kernel = FunKit`MakeCppFunction[expr, "Name" -> "kernel", "Return" -> OptionValue["KernelReturnType"], "Suffix" -> "", "Prefix" -> "static KOKKOS_FORCEINLINE_FUNCTION", "Parameters" -> Join[intVariables, getArgs, parametersKernel], "Body" -> StringTemplate["using namespace DiFfRG;using namespace DiFfRG::compute;\n`1`"][OptionValue["KernelBody"]], "ReturnTransform" -> OptionValue["KernelReturnTransform"]];
+        constant = FunKit`MakeCppFunction[constExpr, "Name" -> "constant", "Return" -> OptionValue["ConstantReturnType"], "Suffix" -> "", "Prefix" -> "static KOKKOS_FORCEINLINE_FUNCTION", "Parameters" -> Join[getArgs, parametersKernel], "Body" -> StringTemplate["using namespace DiFfRG;using namespace DiFfRG::compute;\n`1`"][OptionValue["ConstantBody"]], "ReturnTransform" -> OptionValue["ConstantReturnTransform"]];
         kernelClass = FunKit`MakeCppClass["TemplateTypes" -> {"_Regulator"}, "Name" -> OptionValue["Name"] <> "_kernel", "MembersPublic" -> {"using Regulator = _Regulator;", kernel, constant}, "MembersPrivate" -> kernelDefs];
         kernelHeader = FunKit`MakeCppHeader["Includes" -> {"DiFfRG/physics/interpolation.hh", "DiFfRG/physics/physics.hh"}, "Body" -> {"namespace DiFfRG {", kernelClass, StringTemplate["} using DiFfRG::`1`_kernel;"][spec["Name"]]}];
         (********************************************************************)
