@@ -81,8 +81,17 @@ namespace DiFfRG
   {
 #ifdef H5CPP
     if (!opened) return;
+    // Release cached child handles first; otherwise HDF5's internal ref count
+    // keeps the file open at the OS level even after H5Fclose, holding the
+    // file lock and leaving on-disk metadata unflushed.
+    scalars = DiFfRG::hdf5::Group{};
+    maps = DiFfRG::hdf5::Group{};
+    coords = DiFfRG::hdf5::Group{};
+    h5_file.flush();
     h5_file.close();
     opened = false;
 #endif
   }
+
+  HDF5Output::~HDF5Output() { close_file(); }
 } // namespace DiFfRG

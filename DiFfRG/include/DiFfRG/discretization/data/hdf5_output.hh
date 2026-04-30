@@ -30,6 +30,8 @@ namespace DiFfRG
      */
     HDF5Output(const std::string top_folder, const std::string output_name, const JSONValue &json);
 
+    ~HDF5Output();
+
     void write_series_record(DiFfRG::hdf5::Group &group, const int series_number)
     {
       const std::string value = std::to_string(series_number);

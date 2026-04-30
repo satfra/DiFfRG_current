@@ -39,6 +39,11 @@ namespace DiFfRG::hdf5
 
     void close() noexcept { h_.reset(); }
 
+    void flush()
+    {
+      if (h_.valid()) throw_if_negative(H5Fflush(h_.get(), H5F_SCOPE_GLOBAL), "H5Fflush failed");
+    }
+
     Group root()
     {
       hid_t g = H5Gopen2(h_.get(), "/", H5P_DEFAULT);
