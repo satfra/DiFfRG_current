@@ -294,6 +294,8 @@ ExternalProject_Add(
 # PETSc
 # ##############################################################################
 
+option(PETSC_WITH_CLEAN "Force PETSc to clean its build and external packages before configure" OFF)
+
 # build PETSc
 ExternalProject_Add(
   petsc_dep
@@ -311,6 +313,7 @@ ExternalProject_Add(
   CMAKE_CACHE_ARGS
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
     -DOpenBLAS_LIBRARY:STRING=${BLAS_LIBRARY_PATH}
+    -DPETSC_WITH_CLEAN:BOOL=${PETSC_WITH_CLEAN}
     -DHAVE_MPI:BOOL=${ENABLE_MPI})
 
 # ##############################################################################
@@ -318,6 +321,8 @@ ExternalProject_Add(
 # ##############################################################################
 
 # build deal.II
+find_program(PATCH_EXECUTABLE patch REQUIRED)
+
 ExternalProject_Add(
   deal.II_dep
   LOG_CONFIGURE ON
@@ -327,6 +332,8 @@ ExternalProject_Add(
   GIT_TAG v9.4.2
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/deal.II
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+  PATCH_COMMAND ${PATCH_EXECUTABLE} -p1 -i
+                ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/dealii_ida_max_num_steps.patch
   DEPENDS general_dep boost_dep petsc_dep sundials_dep
   CMAKE_CACHE_ARGS
     -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}

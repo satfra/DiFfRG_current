@@ -36,7 +36,9 @@ message(STATUS "Patching boost...")
 execute_process(
   COMMAND
     bash -c
-    "patch ${CMAKE_CURRENT_BINARY_DIR}/boost/libs/math/include/boost/math/cstdfloat/cstdfloat_limits.hpp < ${CMAKE_CURRENT_SOURCE_DIR}/cstdfloat_limits.hpp.diff"
+    "if ! grep -q '__GNUC__ < 14' ${CMAKE_CURRENT_BINARY_DIR}/boost/libs/math/include/boost/math/cstdfloat/cstdfloat_limits.hpp; then \
+       patch --batch --forward ${CMAKE_CURRENT_BINARY_DIR}/boost/libs/math/include/boost/math/cstdfloat/cstdfloat_limits.hpp < ${CMAKE_CURRENT_SOURCE_DIR}/cstdfloat_limits.hpp.diff; \
+     fi"
   OUTPUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/02_patch.log
   ERROR_FILE ${CMAKE_CURRENT_BINARY_DIR}/02_patch.log)
 
