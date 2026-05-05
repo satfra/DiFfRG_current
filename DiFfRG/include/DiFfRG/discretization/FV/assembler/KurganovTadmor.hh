@@ -14,7 +14,6 @@
 #include <deal.II/base/types.h>
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_tools.h>
-#include <deal.II/fe/fe_interface_values.h>
 #include <deal.II/fe/fe_values.h>
 #include <deal.II/grid/tria_iterator_base.h>
 #include <deal.II/lac/full_matrix.h>
@@ -88,43 +87,27 @@ namespace DiFfRG
          * pre-allocated data structures for the solutions
          */
         template <int dim, typename NumberType, size_t n_components> struct ScratchData {
-          using VectorType = Vector<NumberType>;
-          static constexpr size_t n_faces = 2 * dim;
+          using QuadratureValue = std::array<NumberType, n_components>;
 
-          ScratchData(const Mapping<dim> &mapping, const FiniteElement<dim> &fe, const Quadrature<dim> &quadrature,
-                      const Quadrature<dim - 1> &quadrature_face,
-                      const UpdateFlags update_flags = update_values | update_gradients | update_quadrature_points |
-                                                       update_JxW_values,
-                      const UpdateFlags interface_update_flags = update_values | update_gradients |
-                                                                 update_quadrature_points | update_JxW_values |
-                                                                 update_normal_vectors)
-              : fe_values(mapping, fe, quadrature, update_flags),
-                fe_interface_values(mapping, fe, quadrature_face, interface_update_flags),
-                cell_dof_indices(n_components), ncell_dof_indices(n_components),
-                solution_values(quadrature.size(), VectorType(n_components)),
-                solution_dot_values(quadrature.size(), VectorType(n_components))
+          ScratchData(const Quadrature<dim> &quadrature)
+              : cell_dof_indices(n_components),
+                ncell_dof_indices(n_components),
+                solution_values(quadrature.size()), solution_dot_values(quadrature.size())
           {
           }
 
           ScratchData(const ScratchData<dim, NumberType, n_components> &scratch_data)
-              : fe_values(scratch_data.fe_values.get_mapping(), scratch_data.fe_values.get_fe(),
-                          scratch_data.fe_values.get_quadrature(), scratch_data.fe_values.get_update_flags()),
-                fe_interface_values(scratch_data.fe_interface_values.get_mapping(),
-                                    scratch_data.fe_interface_values.get_fe(),
-                                    scratch_data.fe_interface_values.get_quadrature(),
-                                    scratch_data.fe_interface_values.get_update_flags()),
-                cell_dof_indices(n_components), ncell_dof_indices(n_components),
-                solution_values(scratch_data.solution_values.size(), VectorType(n_components)),
-                solution_dot_values(scratch_data.solution_dot_values.size(), VectorType(n_components))
+              : cell_dof_indices(n_components),
+                ncell_dof_indices(n_components),
+                solution_values(scratch_data.solution_values.size()),
+                solution_dot_values(scratch_data.solution_dot_values.size())
           {
           }
 
-          FEValues<dim> fe_values;
-          FEInterfaceValues<dim> fe_interface_values;
           std::vector<types::global_dof_index> cell_dof_indices;
           std::vector<types::global_dof_index> ncell_dof_indices;
-          std::vector<VectorType> solution_values;
-          std::vector<VectorType> solution_dot_values;
+          std::vector<QuadratureValue> solution_values;
+          std::vector<QuadratureValue> solution_dot_values;
           std::array<std::vector<ReconstructionDerivativeData<dim, NumberType, n_components>>, 2>
               reconstructed_derivatives;
           CellStencilData<dim, NumberType, n_components> cell_stencil;
@@ -165,14 +148,13 @@ namespace DiFfRG
         // TODO fewer memory allocations
         template <typename NumberType> struct CopyData_R {
           struct CopyDataFace_R {
-
             Vector<NumberType> cell_residual;
             std::vector<types::global_dof_index> joint_dof_indices;
 
-            template <int dim> void reinit(const FEInterfaceValues<dim> &fe_iv)
+            void reinit(const unsigned int n_face_dofs)
             {
-              cell_residual.reinit(fe_iv.n_current_interface_dofs());
-              joint_dof_indices = fe_iv.get_interface_dof_indices();
+              cell_residual.reinit(n_face_dofs);
+              joint_dof_indices.resize(n_face_dofs);
             }
           };
 
@@ -180,15 +162,22 @@ namespace DiFfRG
           Vector<NumberType> cell_mass;
           std::vector<types::global_dof_index> local_dof_indices;
           std::vector<CopyDataFace_R> face_data;
+          unsigned int active_face_count = 0;
 
           template <class Iterator> void reinit(const Iterator &cell, uint dofs_per_cell)
           {
             cell_residual.reinit(dofs_per_cell);
             cell_mass.reinit(dofs_per_cell);
             local_dof_indices.resize(dofs_per_cell);
-            face_data.clear();
-            face_data.reserve(cell->n_faces());
+            if (face_data.size() != cell->n_faces()) face_data.resize(cell->n_faces());
+            active_face_count = 0;
             cell->get_dof_indices(local_dof_indices);
+          }
+
+          CopyDataFace_R &next_face_data()
+          {
+            AssertIndexRange(active_face_count, face_data.size());
+            return face_data[active_face_count++];
           }
         };
 
@@ -220,14 +209,29 @@ namespace DiFfRG
               }
             }
 
-            void reinit(const FEInterfaceValues<dim> &fe_iv, const Iterator &cell,
+            template <std::size_t n_local_dofs>
+            static void append_cell_dofs(std::vector<types::global_dof_index> &dofs,
+                                         const std::array<types::global_dof_index, n_local_dofs> &cell_dofs)
+            {
+              dofs.insert(dofs.end(), cell_dofs.begin(), cell_dofs.end());
+            }
+
+            template <std::size_t n_local_dofs>
+            void reinit(const std::array<types::global_dof_index, n_local_dofs> &cell_dofs, const Iterator &cell,
+                        const std::optional<std::array<types::global_dof_index, n_local_dofs>> &ncell_dofs = std::nullopt,
                         const std::optional<Iterator> &ncell = std::nullopt)
             {
-              to_dofs = fe_iv.get_interface_dof_indices();
+              to_dofs.resize(ncell_dofs.has_value() ? 2 * n_local_dofs : n_local_dofs);
+              std::copy(cell_dofs.begin(), cell_dofs.end(), to_dofs.begin());
+              if (ncell_dofs.has_value())
+                std::copy(ncell_dofs->begin(), ncell_dofs->end(), to_dofs.begin() + n_local_dofs);
               from_dofs.clear();
-              from_dofs.reserve(to_dofs.size() + GeometryInfo<dim>::faces_per_cell * cell->get_fe().n_dofs_per_cell() *
-                                                     (ncell.has_value() ? 2 : 1));
-              from_dofs.insert(from_dofs.end(), to_dofs.begin(), to_dofs.end());
+              const auto required_capacity =
+                  to_dofs.size() +
+                  GeometryInfo<dim>::faces_per_cell * cell->get_fe().n_dofs_per_cell() * (ncell.has_value() ? 2 : 1);
+              if (from_dofs.capacity() < required_capacity) from_dofs.reserve(required_capacity);
+              append_cell_dofs(from_dofs, cell_dofs);
+              if (ncell_dofs.has_value()) append_cell_dofs(from_dofs, *ncell_dofs);
               append_neighbor_dofs(from_dofs, neighbor_dof_indices, cell);
               if (ncell.has_value()) append_neighbor_dofs(from_dofs, neighbor_dof_indices, ncell.value());
 
@@ -242,6 +246,7 @@ namespace DiFfRG
           FullMatrix<NumberType> cell_mass_jacobian;
           std::vector<types::global_dof_index> local_dof_indices;
           std::vector<CopyDataFace_J> face_data;
+          unsigned int active_face_count = 0;
 
           template <class Iterator> void reinit(const Iterator &cell, uint dofs_per_cell, uint n_extractors)
           {
@@ -249,9 +254,15 @@ namespace DiFfRG
             if (n_extractors > 0) extractor_cell_jacobian.reinit(dofs_per_cell, n_extractors);
             cell_mass_jacobian.reinit(dofs_per_cell, dofs_per_cell);
             local_dof_indices.resize(dofs_per_cell);
-            face_data.clear();
-            face_data.reserve(cell->n_faces());
+            if (face_data.size() != cell->n_faces()) face_data.resize(cell->n_faces());
+            active_face_count = 0;
             cell->get_dof_indices(local_dof_indices);
+          }
+
+          CopyDataFace_J &next_face_data()
+          {
+            AssertIndexRange(active_face_count, face_data.size());
+            return face_data[active_face_count++];
           }
         };
 
@@ -611,6 +622,11 @@ namespace DiFfRG
         using Iterator = typename DoFHandler<Discretization::dim>::active_cell_iterator;
         using Point = dealii::Point<dim>;
         using Scratch = internal::ScratchData<dim, NumberType, n_components>;
+        struct CellGeometryCacheEntry {
+          std::array<types::global_dof_index, n_components> dof_indices{};
+          std::vector<Point> quadrature_points;
+          std::vector<NumberType> jxw;
+        };
 
         Assembler(Discretization &discretization, Model &model, const JSONValue &json)
             : discretization(discretization), model(model), dof_handler(discretization.get_dof_handler()),
@@ -708,6 +724,7 @@ namespace DiFfRG
 
           constexpr uint stencil = 2;
           build_sparsity(sparsity_pattern_jacobian, dof_handler, dof_handler, stencil, true);
+          rebuild_cell_geometry_cache();
 
           timings_reinit.push_back(timer.wall_time());
         }
@@ -747,31 +764,26 @@ namespace DiFfRG
           using CopyData = internal::CopyData_R<NumberType>;
           const auto &constraints = discretization.get_constraints();
 
-          Scratch scratch_data(mapping, discretization.get_fe(), quadrature, quadrature_face);
+          Scratch scratch_data(quadrature);
           CopyData copy_data;
 
           const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
-            scratch_data.fe_values.reinit(cell);
-            const auto &fe_v = scratch_data.fe_values;
-            const uint n_dofs = fe_v.get_fe().n_dofs_per_cell();
+            const auto &cell_geometry = get_cell_geometry(cell);
+            constexpr uint n_dofs = n_components;
 
             copy_data.reinit(cell, n_dofs);
-
-            const auto &JxW = fe_v.get_JxW_values();
-            const auto &q_points = fe_v.get_quadrature_points();
-            const auto &q_indices = fe_v.quadrature_point_indices();
 
             fill_constant_quadrature_values(cell, solution_global, solution_global_dot, scratch_data);
 
             std::array<NumberType, n_components> mass_values{};
-            for (const auto &q_index : q_indices) {
-              const auto &x_q = q_points[q_index];
+            for (size_t q_index = 0; q_index < cell_geometry.quadrature_points.size(); ++q_index) {
+              const auto &x_q = cell_geometry.quadrature_points[q_index];
               model.mass(mass_values, x_q, scratch_data.solution_values[q_index], scratch_data.solution_dot_values[q_index]);
 
               for (uint i = 0; i < n_dofs; ++i) {
                 const auto component_i = local_component_of_dof[i];
-                copy_data.cell_mass(i) += weight * JxW[q_index] * fe_v.shape_value_component(i, q_index, component_i) *
-                                          mass_values[component_i]; // +phi_i(x_q) * mass(x_q, u_q)
+                copy_data.cell_mass(i) +=
+                    weight * cell_geometry.jxw[q_index] * mass_values[component_i]; // +phi_i(x_q) * mass(x_q, u_q)
               }
             }
           };
@@ -793,8 +805,6 @@ namespace DiFfRG
         static void fill_cell_data(const Iterator &cell, const VectorType &solution_global,
                                    std::vector<types::global_dof_index> &scratch_dof_indices, CellData &data)
         {
-          if (scratch_dof_indices.size() != n_components) scratch_dof_indices.resize(n_components);
-
           data.x = cell->center();
           cell->get_dof_indices(scratch_dof_indices);
           for (unsigned int i = 0; i < n_components; ++i) {
@@ -869,6 +879,22 @@ namespace DiFfRG
           return gradients;
         }
 
+        static Tensor<1, dim> face_normal_from_cell(const Iterator &cell, const unsigned int face_no)
+        {
+          const auto face_offset = cell->face(face_no)->center() - cell->center();
+          const auto norm = face_offset.norm();
+          AssertThrow(norm > 0., ExcMessage("Degenerate FV face normal."));
+          return face_offset / norm;
+        }
+
+        static double face_jxw(const Iterator &cell, const unsigned int face_no)
+        {
+          if constexpr (dim == 1)
+            return 1.;
+          else
+            return cell->face(face_no)->measure();
+        }
+
         virtual void residual(VectorType &residual, const VectorType &solution_global, NumberType weight,
                               const VectorType &solution_global_dot, NumberType weight_mass,
                               const VectorType & /* variables */ = VectorType()) override
@@ -876,38 +902,30 @@ namespace DiFfRG
           using CopyData = internal::CopyData_R<NumberType>;
           const auto &constraints = discretization.get_constraints();
 
-          Scratch scratch_data(mapping, discretization.get_fe(), quadrature, quadrature_face);
+          Scratch scratch_data(quadrature);
           CopyData copy_data;
 
           const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
-            scratch_data.fe_values.reinit(cell);
-            const auto &fe_v = scratch_data.fe_values;
-            const uint n_dofs = fe_v.get_fe().n_dofs_per_cell();
+            const auto &cell_geometry = get_cell_geometry(cell);
+            constexpr uint n_dofs = n_components;
 
             copy_data.reinit(cell, n_dofs);
-
-            const auto &JxW = fe_v.get_JxW_values();
-
-            const auto &q_points = fe_v.get_quadrature_points();
-            const auto &q_indices = fe_v.quadrature_point_indices();
 
             fill_constant_quadrature_values(cell, solution_global, solution_global_dot, scratch_data);
 
             std::array<NumberType, n_components> mass{};
             std::array<NumberType, n_components> source{};
-            for (const auto &q_index : q_indices) {
-              const auto &x_q = q_points[q_index];
+            for (size_t q_index = 0; q_index < cell_geometry.quadrature_points.size(); ++q_index) {
+              const auto &x_q = cell_geometry.quadrature_points[q_index];
               model.mass(mass, x_q, scratch_data.solution_values[q_index], scratch_data.solution_dot_values[q_index]);
               model.source(source, x_q, fv_tie(scratch_data.solution_values[q_index]));
 
               for (uint i = 0; i < n_dofs; ++i) {
                 const auto component_i = local_component_of_dof[i];
-                copy_data.cell_mass(i) += weight_mass * JxW[q_index] *
-                                          fe_v.shape_value_component(i, q_index, component_i) *
-                                          mass[component_i];          // +phi_i(x_q) * mass(x_q, u_q)
-                copy_data.cell_residual(i) += JxW[q_index] * weight * // dx *
-                                              (fe_v.shape_value_component(i, q_index, component_i) *
-                                               source[component_i]); // -phi_i(x_q) * source(x_q, u_q)
+                copy_data.cell_mass(i) +=
+                    weight_mass * cell_geometry.jxw[q_index] * mass[component_i]; // +phi_i(x_q) * mass(x_q, u_q)
+                copy_data.cell_residual(i) +=
+                    cell_geometry.jxw[q_index] * weight * source[component_i]; // -phi_i(x_q) * source(x_q, u_q)
               }
             }
           };
@@ -915,18 +933,15 @@ namespace DiFfRG
           const auto face_worker = [&](const Iterator &cell, const unsigned int &f, const unsigned int &sf,
                                        const Iterator &ncell, const unsigned int &nf, const unsigned int &nsf,
                                        Scratch &scratch_data, CopyData &copy_data) {
-            scratch_data.fe_interface_values.reinit(cell, f, sf, ncell, nf, nsf);
-            const FEInterfaceValues<dim> &fe_iv = scratch_data.fe_interface_values;
-
-            const auto &face_q_points = fe_iv.get_quadrature_points();
             const int q_face_index = 0; // only one quadrature point per face for FV (constant FE)
-            const auto &x_q = face_q_points[q_face_index];
+            (void)q_face_index;
+            const auto x_q = cell->face(f)->center();
+            const auto n_face = face_normal_from_cell(cell, f);
+            const auto JxW = face_jxw(cell, f);
+            const uint n_face_dofs = 2 * n_components;
 
-            const uint n_face_dofs = fe_iv.n_current_interface_dofs();
-
-            copy_data.face_data.emplace_back();
-            auto &copy_data_face = copy_data.face_data.back();
-            copy_data_face.reinit(fe_iv);
+            auto &copy_data_face = copy_data.next_face_data();
+            copy_data_face.reinit(n_face_dofs);
 
             fill_cell_stencil(cell, solution_global, model, scratch_data.cell_dof_indices,
                               scratch_data.cell_stencil);
@@ -948,8 +963,6 @@ namespace DiFfRG
             const GradientType u_grad_plus = Reconstructor::template compute_gradient_at_point<n_components>(
                 ncell_data.x, x_q, ncell_data.u, ncell_neighbors.x, ncell_neighbors.u);
 
-            const std::vector<Tensor<1, dim>> &normals = fe_iv.get_normal_vectors();
-
             const std::array<NumberType, n_components> u_minus =
                 internal::reconstruct_u(cell_data.u, cell_data.x, x_q, u_grad_cell);
             const std::array<NumberType, n_components> u_plus =
@@ -958,40 +971,30 @@ namespace DiFfRG
             const auto [F_plus, F_minus, a_half] =
                 internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(u_plus, u_minus, x_q, model);
             const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, u_plus, u_minus);
-
-            const auto &n_face = normals[q_face_index];
             const auto D = internal::compute_diffusion_flux(u_plus, u_minus, u_grad_plus, u_grad_minus, x_q, model);
 
-            const auto JxW = fe_iv.get_JxW_values();
-
-            for (uint dof = 0; dof < n_face_dofs; ++dof) {
-              const auto &cd_i = fe_iv.interface_dof_to_dof_indices(dof);
-              const auto component_i = cd_i[0] == numbers::invalid_unsigned_int
-                                           ? fe.system_to_component_index(cd_i[1]).first
-                                           : fe.system_to_component_index(cd_i[0]).first;
-              copy_data_face.cell_residual(dof) +=
-                  weight * JxW[q_face_index] *
-                  (fe_iv.jump_in_shape_values(dof, q_face_index, component_i) *
-                   (scalar_product(H[component_i], n_face) -
-                    scalar_product(D[component_i], n_face))); // [[phi_i]] * (H - D) · n
+            for (uint component_i = 0; component_i < n_components; ++component_i) {
+              copy_data_face.joint_dof_indices[component_i] = cell_data.dof_indices[component_i];
+              copy_data_face.joint_dof_indices[n_components + component_i] = ncell_data.dof_indices[component_i];
+              const auto flux_contribution =
+                  weight * JxW * (scalar_product(H[component_i], n_face) - scalar_product(D[component_i], n_face));
+              copy_data_face.cell_residual(component_i) += flux_contribution;
+              copy_data_face.cell_residual(n_components + component_i) -= flux_contribution;
             }
           };
 
           const auto boundary_worker = [&](const Iterator &cell, const unsigned int &face_no, Scratch &scratch_data,
                                            CopyData &copy_data) {
-            scratch_data.fe_interface_values.reinit(cell, face_no);
-            const auto &fe_fv = scratch_data.fe_interface_values.get_fe_face_values(0);
-            const FEInterfaceValues<dim> &fe_iv = scratch_data.fe_interface_values;
-            const uint n_face_dofs = fe_iv.n_current_interface_dofs();
+            const uint n_face_dofs = n_components;
 
-            copy_data.face_data.emplace_back();
-            auto &copy_data_face = copy_data.face_data.back();
-            copy_data_face.reinit(fe_iv);
+            auto &copy_data_face = copy_data.next_face_data();
+            copy_data_face.reinit(n_face_dofs);
 
-            const auto &JxW = fe_fv.get_JxW_values();
-            const auto &q_points = fe_fv.get_quadrature_points();
             const int q_face_index = 0; // only one quadrature point per face for FV
-            const auto &x_q = q_points[q_face_index];
+            (void)q_face_index;
+            const auto x_q = cell->face(face_no)->center();
+            const auto JxW = face_jxw(cell, face_no);
+            const auto n_bnd = face_normal_from_cell(cell, face_no);
 
             fill_cell_stencil(cell, solution_global, model, scratch_data.cell_dof_indices,
                               scratch_data.cell_stencil);
@@ -1007,8 +1010,6 @@ namespace DiFfRG
             const GradientType u_grad_minus = Reconstructor::template compute_gradient_at_point<n_components>(
                 cell_data.x, x_q, cell_data.u, cell_neighbors.x, cell_neighbors.u);
 
-            const std::vector<Tensor<1, dim>> &normals = fe_fv.get_normal_vectors();
-
             // Interior reconstructed state at face
             const std::array<NumberType, n_components> u_minus =
                 internal::reconstruct_u(cell_data.u, cell_data.x, x_q, u_grad_cell);
@@ -1020,7 +1021,7 @@ namespace DiFfRG
             // Ghost gradient via model interface (allows second-order reconstruction at boundaries)
             const auto boundary_id = boundary_ids[face_no];
             GradientType u_grad_plus{};
-            model.boundary_ghost_gradient(u_grad_plus, boundary_id, normals[q_face_index], x_q, u_ghost, x_ghost,
+            model.boundary_ghost_gradient(u_grad_plus, boundary_id, n_bnd, x_q, u_ghost, x_ghost,
                                           cell_data.u, cell_data.x, u_grad_cell, boundary_ids, neighbor_gradients);
 
             // Ghost reconstructed state at face
@@ -1031,25 +1032,20 @@ namespace DiFfRG
                 internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(u_plus, u_minus, x_q, model);
             const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, u_plus, u_minus);
 
-            const auto &n_bnd = normals[q_face_index];
             const auto D_bnd = internal::compute_diffusion_flux(u_plus, u_minus, u_grad_plus, u_grad_minus, x_q, model);
 
-            for (uint dof = 0; dof < n_face_dofs; ++dof) {
-              const auto &cd_i = fe_iv.interface_dof_to_dof_indices(dof);
-              const auto component_i = cd_i[0] == numbers::invalid_unsigned_int
-                                           ? fe.system_to_component_index(cd_i[1]).first
-                                           : fe.system_to_component_index(cd_i[0]).first;
-              copy_data_face.cell_residual(dof) +=
-                  weight * JxW[q_face_index] *
-                  (fe_iv.jump_in_shape_values(dof, q_face_index, component_i) *
-                   (scalar_product(H[component_i], n_bnd) - scalar_product(D_bnd[component_i], n_bnd)));
+            for (uint component_i = 0; component_i < n_components; ++component_i) {
+              copy_data_face.joint_dof_indices[component_i] = cell_data.dof_indices[component_i];
+              copy_data_face.cell_residual(component_i) +=
+                  weight * JxW * (scalar_product(H[component_i], n_bnd) - scalar_product(D_bnd[component_i], n_bnd));
             }
           };
 
           const auto copier = [&](const CopyData &c) {
             constraints.distribute_local_to_global(c.cell_residual, c.local_dof_indices, residual);
             constraints.distribute_local_to_global(c.cell_mass, c.local_dof_indices, residual);
-            for (const auto &face_data : c.face_data) {
+            for (unsigned int face_index = 0; face_index < c.active_face_count; ++face_index) {
+              const auto &face_data = c.face_data[face_index];
               constraints.distribute_local_to_global(face_data.cell_residual, face_data.joint_dof_indices, residual);
             }
           };
@@ -1073,21 +1069,17 @@ namespace DiFfRG
           const auto &constraints = discretization.get_constraints();
 
           const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
-            scratch_data.fe_values.reinit(cell);
-            const auto &fe_v = scratch_data.fe_values;
-            const uint n_dofs = fe_v.get_fe().n_dofs_per_cell();
+            const auto &cell_geometry = get_cell_geometry(cell);
+            constexpr uint n_dofs = n_components;
 
             copy_data.reinit(cell, n_dofs, Components::count_extractors());
-            const auto &JxW = fe_v.get_JxW_values();
-            const auto &q_points = fe_v.get_quadrature_points();
-            const auto &q_indices = fe_v.quadrature_point_indices();
 
             fill_constant_quadrature_values(cell, solution_global, solution_global_dot, scratch_data);
 
             SimpleMatrix<NumberType, n_components> j_mass;
             SimpleMatrix<NumberType, n_components> j_mass_dot;
-            for (const auto &q_index : q_indices) {
-              const auto &x_q = q_points[q_index];
+            for (size_t q_index = 0; q_index < cell_geometry.quadrature_points.size(); ++q_index) {
+              const auto &x_q = cell_geometry.quadrature_points[q_index];
               model.template jacobian_mass<0>(j_mass, x_q, scratch_data.solution_values[q_index],
                                               scratch_data.solution_dot_values[q_index]);
               model.template jacobian_mass<1>(j_mass_dot, x_q, scratch_data.solution_values[q_index],
@@ -1097,10 +1089,9 @@ namespace DiFfRG
                 const auto component_i = local_component_of_dof[i];
                 for (uint j = 0; j < n_dofs; ++j) {
                   const auto component_j = local_component_of_dof[j];
-                  copy_data.cell_jacobian(i, j) +=
-                      JxW[q_index] * fe_v.shape_value_component(j, q_index, component_j) *
-                      fe_v.shape_value_component(i, q_index, component_i) *
-                      (alpha * j_mass_dot(component_i, component_j) + beta * j_mass(component_i, component_j));
+                  copy_data.cell_jacobian(i, j) += cell_geometry.jxw[q_index] *
+                                                   (alpha * j_mass_dot(component_i, component_j) +
+                                                    beta * j_mass(component_i, component_j));
                 }
               }
             }
@@ -1109,7 +1100,7 @@ namespace DiFfRG
             constraints.distribute_local_to_global(c.cell_jacobian, c.local_dof_indices, jacobian);
           };
 
-          Scratch scratch_data(mapping, discretization.get_fe(), quadrature, quadrature_face);
+          Scratch scratch_data(quadrature);
           CopyData copy_data;
           MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
 
@@ -1128,22 +1119,18 @@ namespace DiFfRG
           const auto &constraints = discretization.get_constraints();
 
           const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
-            scratch_data.fe_values.reinit(cell);
-            const auto &fe_v = scratch_data.fe_values;
-            const uint n_dofs = fe_v.get_fe().n_dofs_per_cell();
+            const auto &cell_geometry = get_cell_geometry(cell);
+            constexpr uint n_dofs = n_components;
 
             copy_data.reinit(cell, n_dofs, Components::count_extractors());
-            const auto &JxW = fe_v.get_JxW_values();
-            const auto &q_points = fe_v.get_quadrature_points();
-            const auto &q_indices = fe_v.quadrature_point_indices();
 
             fill_constant_quadrature_values(cell, solution_global, solution_global_dot, scratch_data);
 
             SimpleMatrix<NumberType, n_components> j_mass;
             SimpleMatrix<NumberType, n_components> j_mass_dot;
             SimpleMatrix<NumberType, n_components> j_source;
-            for (const auto &q_index : q_indices) {
-              const auto &x_q = q_points[q_index];
+            for (size_t q_index = 0; q_index < cell_geometry.quadrature_points.size(); ++q_index) {
+              const auto &x_q = cell_geometry.quadrature_points[q_index];
               model.template jacobian_mass<0>(j_mass, x_q, scratch_data.solution_values[q_index],
                                               scratch_data.solution_dot_values[q_index]);
               model.template jacobian_mass<1>(j_mass_dot, x_q, scratch_data.solution_values[q_index],
@@ -1154,13 +1141,10 @@ namespace DiFfRG
                 const auto component_i = local_component_of_dof[i];
                 for (uint j = 0; j < n_dofs; ++j) {
                   const auto component_j = local_component_of_dof[j];
-                  copy_data.cell_jacobian(i, j) += weight * JxW[q_index] * // dx * phi_j
-                                                   fe_v.shape_value_component(j, q_index, component_j) *
-                                                   (fe_v.shape_value_component(i, q_index, component_i) *
-                                                    j_source(component_i, component_j)); // -phi_i * jsource
+                  copy_data.cell_jacobian(i, j) +=
+                      weight * cell_geometry.jxw[q_index] * j_source(component_i, component_j); // -phi_i * jsource
                   copy_data.cell_mass_jacobian(i, j) +=
-                      JxW[q_index] * fe_v.shape_value_component(j, q_index, component_j) *
-                      fe_v.shape_value_component(i, q_index, component_i) *
+                      cell_geometry.jxw[q_index] *
                       (alpha * j_mass_dot(component_i, component_j) + beta * j_mass(component_i, component_j));
                 }
               }
@@ -1169,13 +1153,11 @@ namespace DiFfRG
           const auto face_worker = [&](const Iterator &cell, const unsigned int &f, const unsigned int &sf,
                                        const Iterator &ncell, const unsigned int &nf, const unsigned int &nsf,
                                        Scratch &scratch_data, CopyData &copy_data) {
-            scratch_data.fe_interface_values.reinit(cell, f, sf, ncell, nf, nsf);
-            const FEInterfaceValues<dim> &fe_iv = scratch_data.fe_interface_values;
             const int q_face_index = 0;
-            const auto &face_q_points = fe_iv.get_quadrature_points();
-            const auto &x_q = face_q_points[q_face_index];
-            const auto &JxW = fe_iv.get_JxW_values();
-            const std::vector<Tensor<1, dim>> &normals = fe_iv.get_normal_vectors();
+            (void)q_face_index;
+            const auto x_q = cell->face(f)->center();
+            const auto JxW = face_jxw(cell, f);
+            const auto n_face = face_normal_from_cell(cell, f);
 
             fill_cell_stencil(cell, solution_global, model, scratch_data.cell_dof_indices,
                               scratch_data.cell_stencil);
@@ -1188,9 +1170,9 @@ namespace DiFfRG
             const auto &cell_data = cell_stencil.cell;
             const auto &ncell_data = ncell_stencil.cell;
 
-            copy_data.face_data.emplace_back();
-            auto &copy_data_face = copy_data.face_data.back();
-            copy_data_face.reinit(fe_iv, cell, ncell);
+            auto &copy_data_face = copy_data.next_face_data();
+            copy_data_face.reinit(cell_data.dof_indices, cell,
+                                  std::optional<decltype(ncell_data.dof_indices)>{ncell_data.dof_indices}, ncell);
 
             // Compute gradients and reconstructed interface values u_minus / u_plus
             const GradientType u_grad_cell = Reconstructor::template compute_gradient<n_components>(
@@ -1209,8 +1191,10 @@ namespace DiFfRG
 
             // Precompute reconstructed state and face-gradient derivatives for each dependency dof.
             const uint n_from = size(copy_data_face.from_dofs);
-            for (auto &derivatives : scratch_data.reconstructed_derivatives)
+            for (auto &derivatives : scratch_data.reconstructed_derivatives) {
+              if (derivatives.capacity() < n_from) derivatives.reserve(n_from);
               derivatives.resize(n_from);
+            }
             auto &reconstructed_deriv = scratch_data.reconstructed_derivatives;
 
             for (uint j = 0; j < size(copy_data_face.from_dofs); ++j) {
@@ -1247,64 +1231,56 @@ namespace DiFfRG
             const auto j_diffusion = internal::compute_diffusion_flux_jacobian<Model, NumberType, dim, n_components>(
                 u_plus, u_minus, u_grad_plus, u_grad_minus, x_q, model);
 
-            for (uint i = 0; i < size(copy_data_face.to_dofs); ++i) { // these are effectively two
-              const auto &cd_i = fe_iv.interface_dof_to_dof_indices(i);
-              const uint face_no_i = cd_i[0] == numbers::invalid_unsigned_int ? 1 : 0;
-              const auto &component_i = fe.system_to_component_index(cd_i[face_no_i]).first;
+            for (uint i = 0; i < size(copy_data_face.to_dofs); ++i) {
+              const bool cell_side_i = i < n_components;
+              const auto component_i = cell_side_i ? i : i - n_components;
+              const auto jump_i = cell_side_i ? NumberType(1.) : NumberType(-1.);
               for (uint j = 0; j < size(copy_data_face.from_dofs); ++j) {
                 NumberType diffusion_contribution{};
                 for (size_t face_no = 0; face_no < 2; ++face_no) {
                   NumberType advection_contribution{};
                   for (size_t c = 0; c < n_components; ++c) {
                     advection_contribution +=
-                        scalar_product(j_numflux[face_no](component_i, c), normals[q_face_index]) *
+                        scalar_product(j_numflux[face_no](component_i, c), n_face) *
                         reconstructed_deriv[face_no][j].u[c];
 
                     diffusion_contribution +=
-                        scalar_product(j_diffusion.u[face_no](component_i, c), normals[q_face_index]) *
+                        scalar_product(j_diffusion.u[face_no](component_i, c), n_face) *
                         reconstructed_deriv[face_no][j].u[c];
                     for (size_t d_in = 0; d_in < dim; ++d_in)
                       for (size_t d_out = 0; d_out < dim; ++d_out)
                         diffusion_contribution += j_diffusion.grad[face_no](component_i, c)[d_out][d_in] *
-                                                  normals[q_face_index][d_out] *
+                                                  n_face[d_out] *
                                                   reconstructed_deriv[face_no][j].grad[c][d_in];
                   }
                   copy_data_face.cell_jacobian(i, j) +=
-                      weight * JxW[q_face_index] *                                // dx
-                      (fe_iv.jump_in_shape_values(i, q_face_index, component_i) * // [[phi_i(x_q)]]
-                       advection_contribution);
+                      weight * JxW * jump_i * advection_contribution;
                 }
 
                 // The residual uses [[phi_i]] * ((H - D) · n), so after summing the
                 // contributions from both face traces into diffusion_contribution we
                 // subtract the full diffusive chain-rule term once here.
                 copy_data_face.cell_jacobian(i, j) -=
-                    weight * JxW[q_face_index] *
-                    (fe_iv.jump_in_shape_values(i, q_face_index, component_i) * diffusion_contribution);
+                    weight * JxW * jump_i * diffusion_contribution;
               }
             }
           };
 
           const auto boundary_worker = [&](const Iterator &cell, const unsigned int &face_no, Scratch &scratch_data,
                                            CopyData &copy_data) {
-            scratch_data.fe_interface_values.reinit(cell, face_no);
-            const auto &fe_fv = scratch_data.fe_interface_values.get_fe_face_values(0);
-            const FEInterfaceValues<dim> &fe_iv = scratch_data.fe_interface_values;
-            const auto &JxW = fe_fv.get_JxW_values();
-            const auto &q_points = fe_fv.get_quadrature_points();
             const int q_face_index = 0;
-            const auto &x_q = q_points[q_face_index];
-            const std::vector<Tensor<1, dim>> &normals = fe_fv.get_normal_vectors();
-
-            copy_data.face_data.emplace_back();
-            auto &copy_data_face = copy_data.face_data.back();
-            copy_data_face.reinit(fe_iv, cell);
+            (void)q_face_index;
+            const auto x_q = cell->face(face_no)->center();
+            const auto JxW = face_jxw(cell, face_no);
+            const auto n_face = face_normal_from_cell(cell, face_no);
 
             fill_cell_stencil(cell, solution_global, model, scratch_data.cell_dof_indices,
                               scratch_data.cell_stencil);
             const auto &cell_stencil = scratch_data.cell_stencil;
             const auto &cell_neighbors = cell_stencil.neighbors;
             const auto &cell_data = cell_stencil.cell;
+            auto &copy_data_face = copy_data.next_face_data();
+            copy_data_face.reinit(cell_data.dof_indices, cell);
             const auto neighbor_gradients = compute_neighbor_gradients(
                 cell, solution_global, model, scratch_data.ncell_dof_indices, scratch_data.temporary_stencil);
             const auto &boundary_ids = cell_stencil.boundary_ids;
@@ -1322,7 +1298,7 @@ namespace DiFfRG
 
             const auto boundary_id = boundary_ids[face_no];
             GradientType u_grad_ghost{};
-            model.boundary_ghost_gradient(u_grad_ghost, boundary_id, normals[q_face_index], x_q, u_ghost, x_ghost,
+            model.boundary_ghost_gradient(u_grad_ghost, boundary_id, n_face, x_q, u_ghost, x_ghost,
                                           cell_data.u, cell_data.x, u_grad_cell, boundary_ids, neighbor_gradients);
 
             const std::array<NumberType, n_components> u_plus =
@@ -1332,8 +1308,10 @@ namespace DiFfRG
 
             // Precompute reconstructed state and face-gradient derivatives for each dependency dof.
             const uint n_from = size(copy_data_face.from_dofs);
-            for (auto &derivatives : scratch_data.reconstructed_derivatives)
+            for (auto &derivatives : scratch_data.reconstructed_derivatives) {
+              if (derivatives.capacity() < n_from) derivatives.reserve(n_from);
               derivatives.resize(n_from);
+            }
             auto &reconstructed_deriv = scratch_data.reconstructed_derivatives;
 
             for (uint j = 0; j < size(copy_data_face.from_dofs); ++j) {
@@ -1361,7 +1339,7 @@ namespace DiFfRG
                     internal::compute_boundary_ghost_reconstruction_derivative<Reconstructor, Model, dim, NumberType,
                                                                                n_components, n_faces>(
                         cell_data_AD, neighbors_AD, neighbor_gradients_AD, face_no, boundary_ids, face_centers,
-                        normals[q_face_index], x_q, model);
+                        n_face, x_q, model);
                 reconstructed_deriv[1][j] = deriv;
               }
             }
@@ -1375,31 +1353,27 @@ namespace DiFfRG
 
             // Chain-rule assembly (same pattern as interior face_worker)
             for (uint i = 0; i < size(copy_data_face.to_dofs); ++i) {
-              const auto &cd_i = fe_iv.interface_dof_to_dof_indices(i);
-              // For single-sided boundary, all DOFs are on side 0 (interior)
-              const uint face_no_i = cd_i[0] == numbers::invalid_unsigned_int ? 1 : 0;
-              const auto &component_i = fe.system_to_component_index(cd_i[face_no_i]).first;
+              const auto component_i = i;
               for (uint j = 0; j < size(copy_data_face.from_dofs); ++j) {
                 NumberType diffusion_contribution{};
                 for (size_t face_no = 0; face_no < 2; ++face_no) {
                   NumberType advection_contribution{};
                   for (size_t c = 0; c < n_components; ++c) {
                     advection_contribution +=
-                        scalar_product(j_numflux[face_no](component_i, c), normals[q_face_index]) *
+                        scalar_product(j_numflux[face_no](component_i, c), n_face) *
                         reconstructed_deriv[face_no][j].u[c];
 
                     diffusion_contribution +=
-                        scalar_product(j_diffusion.u[face_no](component_i, c), normals[q_face_index]) *
+                        scalar_product(j_diffusion.u[face_no](component_i, c), n_face) *
                         reconstructed_deriv[face_no][j].u[c];
                     for (size_t d_in = 0; d_in < dim; ++d_in)
                       for (size_t d_out = 0; d_out < dim; ++d_out)
                         diffusion_contribution += j_diffusion.grad[face_no](component_i, c)[d_out][d_in] *
-                                                  normals[q_face_index][d_out] *
+                                                  n_face[d_out] *
                                                   reconstructed_deriv[face_no][j].grad[c][d_in];
                   }
                   copy_data_face.cell_jacobian(i, j) +=
-                      weight * JxW[q_face_index] *
-                      (fe_iv.jump_in_shape_values(i, q_face_index, component_i) * advection_contribution);
+                      weight * JxW * advection_contribution;
                 }
 
                 // Boundary faces use the same residual sign convention: [[phi_i]] *
@@ -1407,8 +1381,7 @@ namespace DiFfRG
                 // interior-side and ghost-side chain-rule pieces, so we subtract it
                 // once after the face_no sum.
                 copy_data_face.cell_jacobian(i, j) -=
-                    weight * JxW[q_face_index] *
-                    (fe_iv.jump_in_shape_values(i, q_face_index, component_i) * diffusion_contribution);
+                    weight * JxW * diffusion_contribution;
               }
             }
           };
@@ -1416,13 +1389,14 @@ namespace DiFfRG
           const auto copier = [&](const CopyData &c) {
             constraints.distribute_local_to_global(c.cell_jacobian, c.local_dof_indices, jacobian);
             constraints.distribute_local_to_global(c.cell_mass_jacobian, c.local_dof_indices, jacobian);
-            for (const auto &face_data : c.face_data) {
+            for (unsigned int face_index = 0; face_index < c.active_face_count; ++face_index) {
+              const auto &face_data = c.face_data[face_index];
               constraints.distribute_local_to_global(face_data.cell_jacobian, face_data.to_dofs, face_data.from_dofs,
                                                      jacobian);
             }
           };
 
-          Scratch scratch_data(mapping, discretization.get_fe(), quadrature, quadrature_face);
+          Scratch scratch_data(quadrature);
           CopyData copy_data;
           MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells | MeshWorker::assemble_boundary_faces |
                                             MeshWorker::assemble_own_interior_faces_once;
@@ -1492,6 +1466,31 @@ namespace DiFfRG
           // if (add_extractor_dofs)
           //   throw std::runtime_error("Extractor dofs are not yet supported in the Kurganov-Tadmor assembler.");
           sparsity_pattern.copy_from(dsp);
+        }
+
+        void rebuild_cell_geometry_cache()
+        {
+          FEValues<dim> fe_values(mapping, fe, quadrature, update_quadrature_points | update_JxW_values);
+          cell_geometry_cache.clear();
+          cell_geometry_cache.resize(triangulation.n_active_cells());
+
+          std::vector<types::global_dof_index> dof_indices(fe.dofs_per_cell);
+          for (const auto &cell : dof_handler.active_cell_iterators()) {
+            auto &cache_entry = cell_geometry_cache[cell->active_cell_index()];
+            fe_values.reinit(cell);
+            cell->get_dof_indices(dof_indices);
+            for (uint i = 0; i < n_components; ++i)
+              cache_entry.dof_indices[i] = dof_indices[i];
+            cache_entry.quadrature_points = fe_values.get_quadrature_points();
+            cache_entry.jxw.assign(fe_values.get_JxW_values().begin(), fe_values.get_JxW_values().end());
+          }
+        }
+
+        const CellGeometryCacheEntry &get_cell_geometry(const Iterator &cell) const
+        {
+          const auto cell_index = cell->active_cell_index();
+          AssertIndexRange(cell_index, cell_geometry_cache.size());
+          return cell_geometry_cache[cell_index];
         }
 
         void log(const std::string logger)
@@ -1565,6 +1564,7 @@ namespace DiFfRG
         std::vector<double> timings_residual;
         std::vector<double> timings_jacobian;
         std::array<unsigned int, n_components> local_component_of_dof{};
+        std::vector<CellGeometryCacheEntry> cell_geometry_cache;
       };
     } // namespace KurganovTadmor
   } // namespace FV
