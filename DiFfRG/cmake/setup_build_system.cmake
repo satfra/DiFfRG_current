@@ -70,7 +70,12 @@ set(CMAKE_PREFIX_PATH "${BUNDLED_DIR};${BUNDLED_DIR}/lib;${CMAKE_PREFIX_PATH}")
 
 link_directories(${BUNDLED_DIR}/lib/)
 link_directories(${BUNDLED_DIR}/lib64/)
-include_directories(SYSTEM ${BUNDLED_DIR}/include)
+# Emit -I (not -isystem) for the bundled include root so it wins over CPATH
+# entries injected by environment modules. Cluster HDF5/MPI modules set CPATH
+# to point at parallel HDF5 builds whose hdf5.h pulls in mpi.h and clashes
+# with deal.II's MPI stubs when DEAL_II_WITH_MPI=OFF. -isystem would lose to
+# CPATH in GCC's search order; -I wins.
+include_directories(${BUNDLED_DIR}/include)
 
 message(STATUS "DiFfRG include directory: ${BASE_DIR}/include")
 message(STATUS "DiFfRG bundle directory: ${BUNDLED_DIR}")
