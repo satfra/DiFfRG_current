@@ -183,7 +183,10 @@ diffrg_find_package(
 message(STATUS "Boost version: ${Boost_VERSION}")
 message(STATUS "Boost include dir: ${Boost_INCLUDE_DIRS}")
 message(STATUS "Boost libraries: ${Boost_LIBRARIES}")
-include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
+# Non-SYSTEM: see comment near include_directories(${BUNDLED_DIR}/include) above.
+# Boost_INCLUDE_DIRS typically resolves to ${BUNDLED_DIR}/include, and any
+# -isystem on that same path would let CPATH (cluster modules) win for <hdf5.h>.
+include_directories(${Boost_INCLUDE_DIRS})
 
 # Find Eigen3
 diffrg_find_package(Eigen3 VERSION 3.4.0 HINTS ${BUNDLED_DIR})
@@ -316,7 +319,10 @@ function(setup_dealii TARGET)
     target_link_libraries(${TARGET} INTERFACE deal_II)
     set(_build "RELEASE")
   endif()
-  target_include_directories(${TARGET} SYSTEM PUBLIC ${DEAL_II_INCLUDE_DIRS})
+  # Non-SYSTEM: see comment near include_directories(${BUNDLED_DIR}/include).
+  # DEAL_II_INCLUDE_DIRS contains ${BUNDLED_DIR}/include; emitting it as -isystem
+  # would let CPATH (cluster HDF5 module) shadow the bundled <hdf5.h>.
+  target_include_directories(${TARGET} PUBLIC ${DEAL_II_INCLUDE_DIRS})
 
   set(_cflags "${DEAL_II_CXX_FLAGS} ${DEAL_II_CXX_FLAGS_${_build}}")
   # remove c++20 flag and O2 flag - CMake adds them automatically and we thus
