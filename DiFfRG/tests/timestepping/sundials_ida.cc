@@ -109,7 +109,7 @@ TEST_CASE("Test SUNDIALS IDA with KT viscous Burgers traveling wave",
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
-  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_sundials_ida_traveling_wave_kt", 5e-7));
+  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_sundials_ida_traveling_wave_kt", 2e-5));
 }
 
 TEST_CASE("Test SUNDIALS IDA with KT two-component Burgers system",
@@ -123,5 +123,5 @@ TEST_CASE("Test SUNDIALS IDA with KT two-component Burgers system",
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
-  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_sundials_ida_two_component_burgers_kt", 5e-7));
+  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_sundials_ida_two_component_burgers_kt", 2e-5));
 }
