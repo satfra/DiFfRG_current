@@ -442,10 +442,10 @@ namespace DiFfRG
           // 2. Compute a_half (max local wave speed per dimension) via the strategy
           const auto a = WaveSpeedStrategy::template compute_speeds<NumberType, dim, n_components>(J_plus, J_minus);
 
-          // 3. Compute da_half / du_plus and da_half / du_minus via the strategy
+          // 3. Compute da_half / du_plus and da_half / du_minus for the selected wave-speed branch.
           const auto [da_plus, da_minus] =
-              WaveSpeedStrategy::template compute_speed_derivatives<NumberType, dim, n_components>(J_plus, J_minus,
-                                                                                                   H_plus, H_minus);
+              WaveSpeedStrategy::template compute_selected_speed_derivatives<NumberType, dim, n_components>(
+                  J_plus, J_minus, H_plus, H_minus);
 
           // 4. Assemble j_numflux
           std::array<SimpleMatrix<dealii::Tensor<1, dim, NumberType>, n_components>, 2> j_numflux{};

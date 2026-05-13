@@ -215,7 +215,9 @@ Suggested commit message:
 Trace KT boundary Jacobians through conditioned stencils
 ```
 
-## Step 6: Selected-wave-speed Jacobian fix
+## Step 6: Selected-wave-speed Jacobian fix [done]
+
+Committed as `Match KT Jacobians to the selected wave-speed branch`.
 
 Intent:
 - Make the KT Jacobian match the actually selected max-eigenvalue branch instead of always differentiating both candidate branches symmetrically.
