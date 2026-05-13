@@ -14,42 +14,60 @@ namespace DiFfRG
   namespace def
   {
     using namespace dealii;
+    template <int dim, typename NumberType, std::size_t n_components>
+    using BoundaryStencilValues = std::array<std::array<NumberType, n_components>, 2 * dim + 3>;
+
+    template <int dim> using BoundaryStencilPoints = std::array<Point<dim>, 2 * dim + 3>;
+
+    namespace BoundaryStencilIndex
+    {
+      constexpr size_t lower_outer = 0;
+      constexpr size_t lower_inner = 1;
+      constexpr size_t physical_cell = 2;
+      constexpr size_t upper_inner = 3;
+      constexpr size_t upper_outer = 4;
+    } // namespace BoundaryStencilIndex
 
     /**
      * @brief Default FV boundary strategy used by the Kurganov-Tadmor assembler.
      *
-     * The ghost states are left untouched and the ghost gradient is copied from the
-     * interior cell, reproducing the behavior that used to live in AbstractModel.
+     * In the stencil-only KT implementation this means affine extrapolation from the
+     * nearest physical cells on either boundary.
      */
     template <typename Model> class FVDefaultBoundaries
     {
     public:
-      template <int dim, typename NumberType, size_t n_components, size_t n_faces>
-      void
-      apply_boundary_conditions([[maybe_unused]] std::array<std::array<NumberType, n_components>, n_faces> &u_neighbors,
-                                [[maybe_unused]] std::array<Point<dim>, n_faces> &x_neighbors,
-                                [[maybe_unused]] const std::array<types::boundary_id, n_faces> &boundary_ids,
-                                [[maybe_unused]] const std::array<Point<dim>, n_faces> &face_centers,
-                                [[maybe_unused]] const std::array<NumberType, n_components> &u_cell,
-                                [[maybe_unused]] const Point<dim> &x_cell) const
+      template <int dim, typename NumberType, size_t n_components>
+      bool apply_boundary_stencil(BoundaryStencilValues<dim, NumberType, n_components> &u_stencil,
+                                  BoundaryStencilPoints<dim> &x_stencil, const Point<dim> &x_face) const
       {
-      }
+        static_assert(dim == 1, "FV KT boundary stencils currently support only one-dimensional FV domains.");
 
-      template <int dim, typename NumberType, size_t n_components, size_t n_faces>
-      void
-      boundary_ghost_gradient(std::array<Tensor<1, dim, NumberType>, n_components> &ghost_gradient,
-                              [[maybe_unused]] const types::boundary_id boundary_id,
-                              [[maybe_unused]] const Tensor<1, dim> &normal, [[maybe_unused]] const Point<dim> &x_face,
-                              [[maybe_unused]] const std::array<NumberType, n_components> &u_ghost,
-                              [[maybe_unused]] const Point<dim> &x_ghost,
-                              [[maybe_unused]] const std::array<NumberType, n_components> &u_cell,
-                              [[maybe_unused]] const Point<dim> &x_cell,
-                              const std::array<Tensor<1, dim, NumberType>, n_components> &cell_gradient,
-                              [[maybe_unused]] const std::array<types::boundary_id, n_faces> &boundary_ids,
-                              [[maybe_unused]] const std::array<std::array<Tensor<1, dim, NumberType>, n_components>,
-                                                                n_faces> &neighboring_gradients) const
-      {
-        ghost_gradient = cell_gradient;
+        using namespace BoundaryStencilIndex;
+        const bool lower_boundary = x_face[0] <= x_stencil[physical_cell][0];
+        const double delta =
+            lower_boundary ? (x_stencil[upper_inner][0] - x_stencil[physical_cell][0])
+                           : (x_stencil[physical_cell][0] - x_stencil[lower_inner][0]);
+
+        if (lower_boundary) {
+          x_stencil[lower_inner][0] = x_stencil[physical_cell][0] - delta;
+          x_stencil[lower_outer][0] = x_stencil[physical_cell][0] - 2.0 * delta;
+          for (size_t c = 0; c < n_components; ++c) {
+            u_stencil[lower_inner][c] = NumberType(2.0) * u_stencil[physical_cell][c] - u_stencil[upper_inner][c];
+            u_stencil[lower_outer][c] =
+                NumberType(3.0) * u_stencil[physical_cell][c] - NumberType(2.0) * u_stencil[upper_inner][c];
+          }
+          return true;
+        }
+
+        x_stencil[upper_inner][0] = x_stencil[physical_cell][0] + delta;
+        x_stencil[upper_outer][0] = x_stencil[physical_cell][0] + 2.0 * delta;
+        for (size_t c = 0; c < n_components; ++c) {
+          u_stencil[upper_inner][c] = NumberType(2.0) * u_stencil[physical_cell][c] - u_stencil[lower_inner][c];
+          u_stencil[upper_outer][c] =
+              NumberType(3.0) * u_stencil[physical_cell][c] - NumberType(2.0) * u_stencil[lower_inner][c];
+        }
+        return true;
       }
     };
 
@@ -65,106 +83,43 @@ namespace DiFfRG
      */
     template <typename Model> class OriginOddLinearExtrapolationBoundaries : public FVDefaultBoundaries<Model>
     {
-      template <int dim, size_t n_faces> static constexpr void assert_supported_configuration()
+      static bool is_lower_boundary_1d(const Point<1> &x_face, const BoundaryStencilPoints<1> &x_stencil)
       {
-        static_assert(dim == 1,
-                      "OriginOddLinearExtrapolationBoundaries currently supports only one-dimensional FV domains.");
-        static_assert(n_faces == GeometryInfo<dim>::faces_per_cell,
-                      "OriginOddLinearExtrapolationBoundaries expects one entry per cell face.");
-      }
-
-      template <size_t n_faces>
-      static bool is_boundary_face(const std::array<types::boundary_id, n_faces> &boundary_ids, const size_t face)
-      {
-        return boundary_ids[face] != numbers::invalid_boundary_id;
-      }
-
-      template <int dim>
-      static bool is_lower_boundary(const Point<dim> &face_center, const Point<dim> &cell_center)
-      {
-        return face_center[0] <= cell_center[0];
-      }
-
-      template <int dim, typename NumberType, size_t n_components, size_t n_faces>
-      static void reflect_across_origin(std::array<std::array<NumberType, n_components>, n_faces> &u_neighbors,
-                                        std::array<Point<dim>, n_faces> &x_neighbors, const size_t boundary_face,
-                                        const size_t interior_face)
-      {
-        x_neighbors[boundary_face][0] = -x_neighbors[interior_face][0];
-        for (size_t c = 0; c < n_components; ++c)
-          u_neighbors[boundary_face][c] = -u_neighbors[interior_face][c];
-      }
-
-      template <int dim, typename NumberType, size_t n_components, size_t n_faces>
-      static void extrapolate_from_cell(std::array<std::array<NumberType, n_components>, n_faces> &u_neighbors,
-                                        std::array<Point<dim>, n_faces> &x_neighbors, const size_t boundary_face,
-                                        const size_t interior_face, const Point<dim> &face_center,
-                                        const std::array<NumberType, n_components> &u_cell,
-                                        const Point<dim> &x_cell)
-      {
-        x_neighbors[boundary_face][0] = 2.0 * face_center[0] - x_cell[0];
-        for (size_t c = 0; c < n_components; ++c)
-          u_neighbors[boundary_face][c] = NumberType(2.0) * u_cell[c] - u_neighbors[interior_face][c];
-      }
-
-      template <int dim, size_t n_faces>
-      static bool has_interior_opposite_face(const std::array<types::boundary_id, n_faces> &boundary_ids,
-                                             const size_t boundary_face)
-      {
-        const auto opposite_face = GeometryInfo<dim>::opposite_face[boundary_face];
-        return !is_boundary_face(boundary_ids, opposite_face);
+        return x_face[0] <= x_stencil[BoundaryStencilIndex::physical_cell][0];
       }
 
     public:
-      template <int dim, typename NumberType, size_t n_components, size_t n_faces>
-      void apply_boundary_conditions(std::array<std::array<NumberType, n_components>, n_faces> &u_neighbors,
-                                     std::array<Point<dim>, n_faces> &x_neighbors,
-                                     const std::array<types::boundary_id, n_faces> &boundary_ids,
-                                     const std::array<Point<dim>, n_faces> &face_centers,
-                                     const std::array<NumberType, n_components> &u_cell, const Point<dim> &x_cell) const
+      template <int dim, typename NumberType, size_t n_components>
+      bool apply_boundary_stencil(BoundaryStencilValues<dim, NumberType, n_components> &u_stencil,
+                                  BoundaryStencilPoints<dim> &x_stencil, const Point<dim> &x_face) const
       {
-        assert_supported_configuration<dim, n_faces>();
+        static_assert(dim == 1,
+                      "OriginOddLinearExtrapolationBoundaries currently supports only one-dimensional FV domains.");
 
-        for (size_t face = 0; face < n_faces; ++face) {
-          if (!is_boundary_face(boundary_ids, face)) continue;
+        const bool lower_boundary = is_lower_boundary_1d(x_face, x_stencil);
+        using namespace BoundaryStencilIndex;
+        const double delta = lower_boundary ? (x_stencil[upper_inner][0] - x_stencil[physical_cell][0])
+                                            : (x_stencil[physical_cell][0] - x_stencil[lower_inner][0]);
 
-          const auto interior_face = GeometryInfo<dim>::opposite_face[face];
-          if (!has_interior_opposite_face<dim>(boundary_ids, face)) continue;
-
-          if (is_lower_boundary(face_centers[face], x_cell)) {
-            reflect_across_origin(u_neighbors, x_neighbors, face, interior_face);
-            continue;
+        if (lower_boundary) {
+          x_stencil[lower_inner][0] = x_stencil[physical_cell][0] - delta;
+          x_stencil[lower_outer][0] = x_stencil[physical_cell][0] - 2.0 * delta;
+          for (size_t c = 0; c < n_components; ++c) {
+            u_stencil[lower_inner][c] = -u_stencil[upper_inner][c];
+            u_stencil[lower_outer][c] = -u_stencil[upper_outer][c];
+            u_stencil[physical_cell][c] = NumberType(0.0);
           }
-
-          extrapolate_from_cell(u_neighbors, x_neighbors, face, interior_face, face_centers[face], u_cell, x_cell);
+          return true;
         }
-      }
 
-      template <int dim, typename NumberType, size_t n_components, size_t n_faces>
-      void boundary_ghost_gradient(
-          std::array<Tensor<1, dim, NumberType>, n_components> &ghost_gradient,
-          [[maybe_unused]] const types::boundary_id boundary_id, [[maybe_unused]] const Tensor<1, dim> &normal,
-          [[maybe_unused]] const Point<dim> &x_face,
-          [[maybe_unused]] const std::array<NumberType, n_components> &u_ghost,
-          [[maybe_unused]] const Point<dim> &x_ghost,
-          [[maybe_unused]] const std::array<NumberType, n_components> &u_cell,
-          [[maybe_unused]] const Point<dim> &x_cell,
-          const std::array<Tensor<1, dim, NumberType>, n_components> &cell_gradient,
-          const std::array<types::boundary_id, n_faces> &boundary_ids,
-          const std::array<std::array<Tensor<1, dim, NumberType>, n_components>, n_faces> &neighboring_gradients) const
-      {
-        assert_supported_configuration<dim, n_faces>();
-
-        ghost_gradient = cell_gradient;
-
-        for (size_t face = 0; face < n_faces; ++face) {
-          if (!is_boundary_face(boundary_ids, face)) continue;
-
-          const auto interior_face = GeometryInfo<dim>::opposite_face[face];
-          if (has_interior_opposite_face<dim>(boundary_ids, face))
-            ghost_gradient = neighboring_gradients[interior_face];
-          return;
+        x_stencil[upper_inner][0] = x_stencil[physical_cell][0] + delta;
+        x_stencil[upper_outer][0] = x_stencil[physical_cell][0] + 2.0 * delta;
+        for (size_t c = 0; c < n_components; ++c) {
+          u_stencil[upper_inner][c] = NumberType(2.0) * u_stencil[physical_cell][c] - u_stencil[lower_inner][c];
+          u_stencil[upper_outer][c] =
+              NumberType(3.0) * u_stencil[physical_cell][c] - NumberType(2.0) * u_stencil[lower_inner][c];
         }
+        return true;
       }
     };
   } // namespace def
