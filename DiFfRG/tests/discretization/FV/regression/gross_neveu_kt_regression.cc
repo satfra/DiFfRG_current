@@ -58,6 +58,7 @@ namespace
 
   using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">>;
   using Components = ComponentDescriptor<FEFunctionDesc>;
+  template <typename Model> using ConstrainUAtOrigin = def::ConstrainOriginSupportPointToZero<"u", Model>;
   using NumberType = double;
   using Mesh = RectangularMesh<dim>;
   using Discretization = FV::Discretization<Components, NumberType, Mesh>;
@@ -65,8 +66,7 @@ namespace
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
   template <typename Model>
-  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor, DiFfRG::FV::KurganovTadmor::MaxEigenvalueWaveSpeedZeroDeriv>;
-  // using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor>;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor>;
   using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
   using ExplicitStepper = TimeStepperExplicitEuler<VectorType, SparseMatrixType, dim>;
   using ImplicitEuler = TimeStepperImplicitEuler<VectorType, SparseMatrixType, dim, UMFPack>;
@@ -268,8 +268,10 @@ namespace
     double max_rel_error = 0.0;
     for (std::size_t i = 0; i < simulated.size(); ++i) {
       const double abs_error = std::abs(simulated[i] - reference[i]);
-      const double scale = std::max(1.0, std::abs(reference[i]));
-      const double rel_error = abs_error / scale;
+      const double reference_magnitude = std::abs(reference[i]);
+      const double rel_error =
+          reference_magnitude == 0.0 ? (abs_error == 0.0 ? 0.0 : std::numeric_limits<double>::infinity())
+                                     : abs_error / reference_magnitude;
       max_abs_error = std::max(max_abs_error, abs_error);
       max_rel_error = std::max(max_rel_error, rel_error);
 
@@ -312,6 +314,7 @@ namespace
   template <typename Derived>
   class GrossNeveuKTSourceOnlyBase : public def::AbstractModel<Derived, Components>,
                                      public def::fRG,
+                                     public ConstrainUAtOrigin<Derived>,
                                      public def::OriginOddLinearExtrapolationBoundaries<Derived>,
                                      public def::AD<Derived>
   {
@@ -373,25 +376,6 @@ namespace
   public:
     using GrossNeveuKTSourceOnlyBase<GrossNeveuKTFluxModel>::GrossNeveuKTSourceOnlyBase;
 
-    template <int spatial_dim, typename Constraints>
-    void affine_constraints(Constraints &constraints, const std::vector<IndexSet> &component_boundary_dofs,
-                            const std::vector<std::vector<Point<spatial_dim>>> &component_boundary_points)
-    {
-      static_assert(spatial_dim == dim, "GrossNeveuKTModel is one-dimensional.");
-
-      const auto &boundary_dofs = component_boundary_dofs[0];
-      const auto &boundary_points = component_boundary_points[0];
-
-      for (uint i = 0; i < boundary_dofs.n_elements(); ++i) {
-          std::cout << "hello i'm executed" << std::endl;
-        if (std::abs(boundary_points[i][0]) > grid_tol) continue;
-
-        const auto dof = boundary_dofs.nth_index_in_set(i);
-        constraints.add_line(dof);
-        constraints.set_inhomogeneity(dof, 0.0);
-      }
-    }
-
     template <int spatial_dim, typename FluxNumberType, typename Solutions, std::size_t n_fe_functions>
     void flux(std::array<Tensor<1, spatial_dim, FluxNumberType>, n_fe_functions> &F_i,
               [[maybe_unused]] const Point<spatial_dim> &x, const Solutions &sol) const
@@ -441,7 +425,7 @@ namespace
              {"abs_tol", 1e-10},
              {"rel_tol", 1e-10},
              {"max_steps", 5000000}}}}},
-         {"output", {{"verbosity", 3}, {"vtk", false}, {"hdf5", false}}}});
+         {"output", {{"verbosity", 1}, {"vtk", false}, {"hdf5", false}}}});
   }
 
 
