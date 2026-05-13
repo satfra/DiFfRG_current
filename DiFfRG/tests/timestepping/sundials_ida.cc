@@ -3,7 +3,7 @@
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_test_macros.hpp>
 
-#include <boilerplate/models.hh>
+#include <boilerplate/kt_models.hh>
 #include <boilerplate/timestepping.hh>
 
 using namespace DiFfRG;

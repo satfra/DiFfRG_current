@@ -57,6 +57,15 @@ namespace DiFfRG
         template <int dim, typename NumberType, size_t n_components>
         using GradientType = def::GradientType<dim, NumberType, n_components>;
 
+        namespace BoundaryStencilIndex
+        {
+          constexpr size_t lower_outer = 0;
+          constexpr size_t lower_inner = 1;
+          constexpr size_t physical_cell = 2;
+          constexpr size_t upper_inner = 3;
+          constexpr size_t upper_outer = 4;
+        } // namespace BoundaryStencilIndex
+
         template <int dim, typename NumberType, size_t n_components> struct ReconstructionDerivativeData {
           std::array<NumberType, n_components> u{};
           GradientType<dim, NumberType, n_components> grad{};
@@ -146,6 +155,59 @@ namespace DiFfRG
           return result;
         }
 
+        template <typename NumberType, size_t n_components>
+        bool is_lower_boundary_stencil(const std::array<dealii::Point<1>, 5> &x_stencil, const dealii::Point<1> &x_face)
+        {
+          return x_face[0] <= x_stencil[BoundaryStencilIndex::physical_cell][0];
+        }
+
+        template <typename NumberType, size_t n_components> struct BoundaryStencilData1D {
+          std::array<dealii::Point<1>, 5> x{};
+          std::array<std::array<NumberType, n_components>, 5> u{};
+          std::array<std::array<dealii::types::global_dof_index, n_components>, 5> dof_indices{};
+          bool lower_boundary = true;
+          size_t ghost_center = BoundaryStencilIndex::lower_inner;
+          size_t ghost_left = BoundaryStencilIndex::lower_outer;
+          size_t ghost_right = BoundaryStencilIndex::physical_cell;
+        };
+
+        template <typename NumberType, size_t n_components>
+        CellStencilData<1, NumberType, n_components>
+        make_boundary_side_stencil_1d(const BoundaryStencilData1D<NumberType, n_components> &boundary_stencil,
+                                      const size_t center_index, const size_t left_index, const size_t right_index)
+        {
+          CellStencilData<1, NumberType, n_components> result{};
+          result.boundary_ids.fill(dealii::numbers::invalid_boundary_id);
+          result.face_centers = {};
+
+          result.cell.x = boundary_stencil.x[center_index];
+          result.cell.u = boundary_stencil.u[center_index];
+          result.cell.dof_indices = boundary_stencil.dof_indices[center_index];
+          result.neighbors.x[0] = boundary_stencil.x[left_index];
+          result.neighbors.x[1] = boundary_stencil.x[right_index];
+          result.neighbors.u[0] = boundary_stencil.u[left_index];
+          result.neighbors.u[1] = boundary_stencil.u[right_index];
+          result.neighbors.dof_indices[0] = boundary_stencil.dof_indices[left_index];
+          result.neighbors.dof_indices[1] = boundary_stencil.dof_indices[right_index];
+          return result;
+        }
+
+        template <typename NumberType, size_t n_components>
+        CellStencilData<1, NumberType, n_components>
+        make_physical_boundary_side_stencil_1d(const BoundaryStencilData1D<NumberType, n_components> &boundary_stencil)
+        {
+          using namespace BoundaryStencilIndex;
+          return make_boundary_side_stencil_1d(boundary_stencil, physical_cell, lower_inner, upper_inner);
+        }
+
+        template <typename NumberType, size_t n_components>
+        CellStencilData<1, NumberType, n_components>
+        make_ghost_boundary_side_stencil_1d(const BoundaryStencilData1D<NumberType, n_components> &boundary_stencil)
+        {
+          return make_boundary_side_stencil_1d(boundary_stencil, boundary_stencil.ghost_center,
+                                               boundary_stencil.ghost_left, boundary_stencil.ghost_right);
+        }
+
         // TODO fewer memory allocations
         template <typename NumberType> struct CopyData_R {
           struct CopyDataFace_R {
@@ -201,13 +263,20 @@ namespace DiFfRG
             {
               if (neighbor_dof_indices.size() != root_cell->get_fe().n_dofs_per_cell())
                 neighbor_dof_indices.resize(root_cell->get_fe().n_dofs_per_cell());
-              for (const auto face_index : root_cell->face_indices()) {
-                if (!root_cell->at_boundary(face_index)) {
-                  const auto neighbor = root_cell->neighbor(face_index);
+
+              const auto append_recursive = [&](const auto &self, const Iterator &cell, const unsigned int depth) -> void {
+                for (const auto face_index : cell->face_indices()) {
+                  if (cell->at_boundary(face_index)) continue;
+
+                  const auto neighbor = cell->neighbor(face_index);
                   neighbor->get_dof_indices(neighbor_dof_indices);
                   from_dofs.insert(from_dofs.end(), neighbor_dof_indices.begin(), neighbor_dof_indices.end());
+
+                  if (depth > 1) self(self, neighbor, depth - 1);
                 }
-              }
+              };
+
+              append_recursive(append_recursive, root_cell, 2);
             }
 
             template <std::size_t n_local_dofs>
@@ -521,58 +590,20 @@ namespace DiFfRG
           return result;
         }
 
-        template <int dim, typename NumberType, size_t n_components, size_t n_faces>
-        std::array<GradientType<dim, autodiff::Real<1, NumberType>, n_components>, n_faces>
-        lift_neighbor_gradients_to_ad(
-            const std::array<GradientType<dim, NumberType, n_components>, n_faces> &neighbor_gradients)
+        template <typename NumberType, size_t n_components>
+        std::array<std::array<autodiff::Real<1, NumberType>, n_components>, 5>
+        make_tagged_physical_boundary_stencil(
+            const std::array<std::array<NumberType, n_components>, 5> &u_stencil,
+            const std::array<std::array<dealii::types::global_dof_index, n_components>, 5> &dof_stencil,
+            dealii::types::global_dof_index dof_j)
         {
           using AD = autodiff::Real<1, NumberType>;
-
-          std::array<GradientType<dim, AD, n_components>, n_faces> result{};
-          for (size_t face = 0; face < n_faces; ++face)
-            for (size_t c = 0; c < n_components; ++c)
-              for (size_t d = 0; d < dim; ++d)
-                result[face][c][d] = AD(neighbor_gradients[face][c][d]);
-          return result;
-        }
-
-        template <typename Reconstructor, typename Model, int dim, typename NumberType, size_t n_components,
-                  size_t n_faces>
-        ReconstructionDerivativeData<dim, NumberType, n_components> compute_boundary_ghost_reconstruction_derivative(
-            const CellData<dim, autodiff::Real<1, NumberType>, n_components> &cell_data_AD,
-            NeighborData<dim, autodiff::Real<1, NumberType>, n_components> neighbors_AD,
-            const std::array<GradientType<dim, autodiff::Real<1, NumberType>, n_components>, n_faces>
-                &neighbor_gradients_AD,
-            const unsigned int boundary_face_no, const std::array<dealii::types::boundary_id, n_faces> &boundary_ids,
-            const std::array<dealii::Point<dim>, n_faces> &face_centers, const dealii::Tensor<1, dim> &normal,
-            const dealii::Point<dim> &x_q, const Model &model)
-        {
-          using AD = autodiff::Real<1, NumberType>;
-
-          model.apply_boundary_conditions(neighbors_AD.u, neighbors_AD.x, boundary_ids, face_centers, cell_data_AD.u,
-                                          cell_data_AD.x);
-
-          using ReconstructorAD = def::TVDReconstructor<dim, typename Reconstructor::LimiterType, AD>;
-          auto u_grad_cell_AD = ReconstructorAD::template compute_gradient<n_components>(
-              cell_data_AD.x, cell_data_AD.u, neighbors_AD.x, neighbors_AD.u);
-
-          std::array<dealii::Tensor<1, dim, AD>, n_components> ghost_grad_AD{};
-          model.boundary_ghost_gradient(ghost_grad_AD, boundary_ids[boundary_face_no], normal, x_q,
-                                        neighbors_AD.u[boundary_face_no], neighbors_AD.x[boundary_face_no],
-                                        cell_data_AD.u, cell_data_AD.x, u_grad_cell_AD, boundary_ids,
-                                        neighbor_gradients_AD);
-
-          std::array<AD, n_components> u_plus_AD{};
-          for (size_t c = 0; c < n_components; ++c) {
-            u_plus_AD[c] = neighbors_AD.u[boundary_face_no][c];
-            u_plus_AD[c] += scalar_product(ghost_grad_AD[c], x_q - neighbors_AD.x[boundary_face_no]);
-          }
-
-          ReconstructionDerivativeData<dim, NumberType, n_components> result{};
-          for (size_t c = 0; c < n_components; ++c) {
-            result.u[c] = derivative(u_plus_AD[c]);
-            for (size_t d = 0; d < dim; ++d)
-              result.grad[c][d] = derivative(ghost_grad_AD[c][d]);
+          std::array<std::array<AD, n_components>, 5> result{};
+          for (size_t stencil_index = 0; stencil_index < 5; ++stencil_index) {
+            for (size_t c = 0; c < n_components; ++c) {
+              result[stencil_index][c] = AD(u_stencil[stencil_index][c]);
+              if (dof_stencil[stencil_index][c] == dof_j) seed(result[stencil_index][c]);
+            }
           }
           return result;
         }
@@ -820,6 +851,18 @@ namespace DiFfRG
             stencil.face_centers[face_index] = face->center();
             if (cell->at_boundary(face_index)) {
               stencil.boundary_ids[face_index] = face->boundary_id();
+              if constexpr (dim == 1) {
+                auto boundary_stencil =
+                    build_boundary_stencil_1d<NumberType>(cell, face_index, solution_global, scratch_dof_indices);
+                const bool boundary_supported = model.apply_boundary_stencil(
+                    boundary_stencil.u, boundary_stencil.x, dealii::Point<1>(face->center()[0]));
+                AssertThrow(boundary_supported,
+                            ExcMessage("KT boundary stencil was rejected while populating a boundary-adjacent cell stencil."));
+
+                stencil.neighbors.x[face_index] = boundary_stencil.x[boundary_stencil.ghost_center];
+                stencil.neighbors.u[face_index] = boundary_stencil.u[boundary_stencil.ghost_center];
+                stencil.neighbors.dof_indices[face_index] = boundary_stencil.dof_indices[boundary_stencil.ghost_center];
+              }
               continue;
             }
 
@@ -831,8 +874,62 @@ namespace DiFfRG
             stencil.neighbors.dof_indices[face_index] = neighbor_data.dof_indices;
           }
 
-          model.apply_boundary_conditions(stencil.neighbors.u, stencil.neighbors.x, stencil.boundary_ids,
-                                          stencil.face_centers, stencil.cell.u, stencil.cell.x);
+        }
+
+        template <typename BoundaryNumberType>
+        static internal::BoundaryStencilData1D<BoundaryNumberType, n_components>
+        build_boundary_stencil_1d(const Iterator &cell, const unsigned int boundary_face_no,
+                                  const VectorType &solution_global,
+                                  std::vector<types::global_dof_index> &scratch_dof_indices)
+        {
+          static_assert(dim == 1, "Paper-style boundary stencils currently support only dim=1.");
+
+          using namespace internal::BoundaryStencilIndex;
+          const auto interior_face = GeometryInfo<1>::opposite_face[boundary_face_no];
+          AssertThrow(!cell->at_boundary(interior_face),
+                      ExcMessage("KT boundary stencil requires at least two interior cells behind the boundary face."));
+
+          internal::BoundaryStencilData1D<BoundaryNumberType, n_components> boundary_stencil{};
+          boundary_stencil.lower_boundary = boundary_face_no == 0;
+          boundary_stencil.ghost_center = boundary_stencil.lower_boundary ? lower_inner : upper_inner;
+          boundary_stencil.ghost_left = boundary_stencil.lower_boundary ? lower_outer : physical_cell;
+          boundary_stencil.ghost_right = boundary_stencil.lower_boundary ? physical_cell : upper_outer;
+          for (auto &dofs : boundary_stencil.dof_indices)
+            dofs.fill(numbers::invalid_dof_index);
+
+          CellData cell_data;
+          fill_cell_data(cell, solution_global, scratch_dof_indices, cell_data);
+          boundary_stencil.x[physical_cell] = cell_data.x;
+          boundary_stencil.u[physical_cell] = cell_data.u;
+          boundary_stencil.dof_indices[physical_cell] = cell_data.dof_indices;
+
+          auto neighbor = cell->neighbor(interior_face);
+          CellData first_interior;
+          fill_cell_data(neighbor, solution_global, scratch_dof_indices, first_interior);
+
+          AssertThrow(!neighbor->at_boundary(interior_face),
+                      ExcMessage("KT boundary stencil requires a second interior cell behind the boundary face."));
+          auto next_neighbor = neighbor->neighbor(interior_face);
+          CellData second_interior;
+          fill_cell_data(next_neighbor, solution_global, scratch_dof_indices, second_interior);
+
+          if (boundary_stencil.lower_boundary) {
+            boundary_stencil.x[upper_inner] = first_interior.x;
+            boundary_stencil.x[upper_outer] = second_interior.x;
+            boundary_stencil.u[upper_inner] = first_interior.u;
+            boundary_stencil.u[upper_outer] = second_interior.u;
+            boundary_stencil.dof_indices[upper_inner] = first_interior.dof_indices;
+            boundary_stencil.dof_indices[upper_outer] = second_interior.dof_indices;
+          } else {
+            boundary_stencil.x[lower_inner] = first_interior.x;
+            boundary_stencil.x[lower_outer] = second_interior.x;
+            boundary_stencil.u[lower_inner] = first_interior.u;
+            boundary_stencil.u[lower_outer] = second_interior.u;
+            boundary_stencil.dof_indices[lower_inner] = first_interior.dof_indices;
+            boundary_stencil.dof_indices[lower_outer] = second_interior.dof_indices;
+          }
+
+          return boundary_stencil;
         }
 
         static void fill_constant_quadrature_values(const Iterator &cell, const VectorType &solution_global,
@@ -989,34 +1086,37 @@ namespace DiFfRG
             fill_cell_stencil(cell, solution_global, model, scratch_data.cell_dof_indices,
                               scratch_data.cell_stencil);
             const auto &cell_stencil = scratch_data.cell_stencil;
-            const auto &cell_neighbors = cell_stencil.neighbors;
             const auto &cell_data = cell_stencil.cell;
-            const auto neighbor_gradients = compute_neighbor_gradients(
-                cell, solution_global, model, scratch_data.ncell_dof_indices, scratch_data.temporary_stencil);
-            const auto &boundary_ids = cell_stencil.boundary_ids;
-
-            const GradientType u_grad_cell = Reconstructor::template compute_gradient<n_components>(
-                cell_data.x, cell_data.u, cell_neighbors.x, cell_neighbors.u);
-            const GradientType u_grad_minus = Reconstructor::template compute_gradient_at_point<n_components>(
-                cell_data.x, x_q, cell_data.u, cell_neighbors.x, cell_neighbors.u);
-
-            // Interior reconstructed state at face
-            const std::array<NumberType, n_components> u_minus =
-                internal::reconstruct_u(cell_data.u, cell_data.x, x_q, u_grad_cell);
-
-            // Ghost cell value and position from apply_boundary_conditions
-            const std::array<NumberType, n_components> &u_ghost = cell_neighbors.u[face_no];
-            const Point &x_ghost = cell_neighbors.x[face_no];
-
-            // Ghost gradient via model interface (allows second-order reconstruction at boundaries)
-            const auto boundary_id = boundary_ids[face_no];
             GradientType u_grad_plus{};
-            model.boundary_ghost_gradient(u_grad_plus, boundary_id, n_bnd, x_q, u_ghost, x_ghost,
-                                          cell_data.u, cell_data.x, u_grad_cell, boundary_ids, neighbor_gradients);
+            GradientType u_grad_minus{};
+            std::array<NumberType, n_components> u_plus{};
+            std::array<NumberType, n_components> u_minus{};
 
-            // Ghost reconstructed state at face
-            const std::array<NumberType, n_components> u_plus =
-                internal::reconstruct_u(u_ghost, x_ghost, x_q, u_grad_plus);
+            static_assert(dim == 1, "KT boundary-face assembly currently requires one-dimensional boundary stencils.");
+
+            auto boundary_stencil =
+                build_boundary_stencil_1d<NumberType>(cell, face_no, solution_global, scratch_data.ncell_dof_indices);
+            const bool boundary_supported =
+                model.apply_boundary_stencil(boundary_stencil.u, boundary_stencil.x, dealii::Point<1>(x_q[0]));
+            AssertThrow(boundary_supported, ExcMessage("KT boundary stencil was rejected by the model boundary policy."));
+
+            const auto physical_stencil = internal::make_boundary_side_stencil_1d<NumberType, n_components>(
+                boundary_stencil, internal::BoundaryStencilIndex::physical_cell, internal::BoundaryStencilIndex::lower_inner,
+                internal::BoundaryStencilIndex::upper_inner);
+            const auto ghost_stencil =
+                internal::make_ghost_boundary_side_stencil_1d<NumberType, n_components>(boundary_stencil);
+
+            const auto u_grad_cell = Reconstructor::template compute_gradient<n_components>(
+                physical_stencil.cell.x, physical_stencil.cell.u, physical_stencil.neighbors.x, physical_stencil.neighbors.u);
+            const auto u_grad_ghost = Reconstructor::template compute_gradient<n_components>(
+                ghost_stencil.cell.x, ghost_stencil.cell.u, ghost_stencil.neighbors.x, ghost_stencil.neighbors.u);
+            u_grad_minus = Reconstructor::template compute_gradient_at_point<n_components>(
+                physical_stencil.cell.x, x_q, physical_stencil.cell.u, physical_stencil.neighbors.x,
+                physical_stencil.neighbors.u);
+            u_grad_plus = Reconstructor::template compute_gradient_at_point<n_components>(
+                ghost_stencil.cell.x, x_q, ghost_stencil.cell.u, ghost_stencil.neighbors.x, ghost_stencil.neighbors.u);
+            u_minus = internal::reconstruct_u(physical_stencil.cell.u, physical_stencil.cell.x, x_q, u_grad_cell);
+            u_plus = internal::reconstruct_u(ghost_stencil.cell.u, ghost_stencil.cell.x, x_q, u_grad_ghost);
 
             const auto [F_plus, F_minus, a_half] =
                 internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(u_plus, u_minus, x_q, model);
@@ -1267,34 +1367,41 @@ namespace DiFfRG
             fill_cell_stencil(cell, solution_global, model, scratch_data.cell_dof_indices,
                               scratch_data.cell_stencil);
             const auto &cell_stencil = scratch_data.cell_stencil;
-            const auto &cell_neighbors = cell_stencil.neighbors;
             const auto &cell_data = cell_stencil.cell;
             auto &copy_data_face = copy_data.next_face_data();
             copy_data_face.reinit(cell_data.dof_indices, cell);
-            const auto neighbor_gradients = compute_neighbor_gradients(
-                cell, solution_global, model, scratch_data.ncell_dof_indices, scratch_data.temporary_stencil);
-            const auto &boundary_ids = cell_stencil.boundary_ids;
-            const auto &face_centers = cell_stencil.face_centers;
-
-            // Compute gradients and reconstructed interface values
-            const GradientType u_grad_cell = Reconstructor::template compute_gradient<n_components>(
-                cell_data.x, cell_data.u, cell_neighbors.x, cell_neighbors.u);
-            const GradientType u_grad_minus = Reconstructor::template compute_gradient_at_point<n_components>(
-                cell_data.x, x_q, cell_data.u, cell_neighbors.x, cell_neighbors.u);
-
-            // Ghost cell value and position from apply_boundary_conditions
-            const std::array<NumberType, n_components> &u_ghost = cell_neighbors.u[face_no];
-            const Point &x_ghost = cell_neighbors.x[face_no];
-
-            const auto boundary_id = boundary_ids[face_no];
             GradientType u_grad_ghost{};
-            model.boundary_ghost_gradient(u_grad_ghost, boundary_id, n_face, x_q, u_ghost, x_ghost,
-                                          cell_data.u, cell_data.x, u_grad_cell, boundary_ids, neighbor_gradients);
+            GradientType u_grad_minus{};
+            std::array<NumberType, n_components> u_plus{};
+            std::array<NumberType, n_components> u_minus{};
 
-            const std::array<NumberType, n_components> u_plus =
-                internal::reconstruct_u(u_ghost, x_ghost, x_q, u_grad_ghost);
-            const std::array<NumberType, n_components> u_minus =
-                internal::reconstruct_u(cell_data.u, cell_data.x, x_q, u_grad_cell);
+            static_assert(dim == 1, "KT boundary-face Jacobians currently require one-dimensional boundary stencils.");
+            const auto boundary_stencil =
+                build_boundary_stencil_1d<NumberType>(cell, face_no, solution_global, scratch_data.ncell_dof_indices);
+
+            auto conditioned_boundary_stencil = boundary_stencil;
+            const bool boundary_supported =
+                model.apply_boundary_stencil(conditioned_boundary_stencil.u, conditioned_boundary_stencil.x,
+                                             dealii::Point<1>(x_q[0]));
+            AssertThrow(boundary_supported, ExcMessage("KT boundary stencil was rejected by the model boundary policy."));
+
+            const auto physical_stencil = internal::make_boundary_side_stencil_1d<NumberType, n_components>(
+                conditioned_boundary_stencil, internal::BoundaryStencilIndex::physical_cell,
+                internal::BoundaryStencilIndex::lower_inner, internal::BoundaryStencilIndex::upper_inner);
+            const auto ghost_stencil =
+                internal::make_ghost_boundary_side_stencil_1d<NumberType, n_components>(conditioned_boundary_stencil);
+
+            const auto u_grad_cell = Reconstructor::template compute_gradient<n_components>(
+                physical_stencil.cell.x, physical_stencil.cell.u, physical_stencil.neighbors.x, physical_stencil.neighbors.u);
+            const auto u_grad_plus = Reconstructor::template compute_gradient<n_components>(
+                ghost_stencil.cell.x, ghost_stencil.cell.u, ghost_stencil.neighbors.x, ghost_stencil.neighbors.u);
+            u_grad_minus = Reconstructor::template compute_gradient_at_point<n_components>(
+                physical_stencil.cell.x, x_q, physical_stencil.cell.u, physical_stencil.neighbors.x,
+                physical_stencil.neighbors.u);
+            u_grad_ghost = Reconstructor::template compute_gradient_at_point<n_components>(
+                ghost_stencil.cell.x, x_q, ghost_stencil.cell.u, ghost_stencil.neighbors.x, ghost_stencil.neighbors.u);
+            u_minus = internal::reconstruct_u(physical_stencil.cell.u, physical_stencil.cell.x, x_q, u_grad_cell);
+            u_plus = internal::reconstruct_u(ghost_stencil.cell.u, ghost_stencil.cell.x, x_q, u_grad_plus);
 
             // Precompute reconstructed state and face-gradient derivatives for each dependency dof.
             const uint n_from = size(copy_data_face.from_dofs);
@@ -1306,31 +1413,51 @@ namespace DiFfRG
 
             for (uint j = 0; j < size(copy_data_face.from_dofs); ++j) {
               const auto dof_j = copy_data_face.from_dofs[j];
-
-              // face_no=0: d(u⁻)/d(u_j) — reconstruction from cell side (same as interior)
-              {
-                auto u_center_tagged = internal::tag_cell_dofs(cell_data, dof_j);
-                auto u_n_tagged = internal::make_tagged_neighbors(cell_neighbors, dof_j);
-                reconstructed_deriv[0][j].u =
-                    internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
-                        u_center_tagged.u, cell_data.x, x_q, cell_neighbors.x, u_n_tagged.u);
-                reconstructed_deriv[0][j].grad =
-                    Reconstructor::template compute_gradient_at_point_derivative<n_components>(
-                        cell_data.x, x_q, u_center_tagged.u, cell_neighbors.x, u_n_tagged.u);
-              }
-
-              // face_no=1: d(u⁺)/d(u_j) — ghost side derivative with AD tracing through BCs
-              {
-                auto cell_data_AD = internal::tag_cell_dofs(cell_data, dof_j);
-                auto neighbors_AD = internal::make_tagged_neighbors(cell_neighbors, dof_j);
-                const auto neighbor_gradients_AD =
-                    internal::lift_neighbor_gradients_to_ad<dim, NumberType, n_components, n_faces>(neighbor_gradients);
-                auto deriv =
-                    internal::compute_boundary_ghost_reconstruction_derivative<Reconstructor, Model, dim, NumberType,
-                                                                               n_components, n_faces>(
-                        cell_data_AD, neighbors_AD, neighbor_gradients_AD, face_no, boundary_ids, face_centers,
-                        n_face, x_q, model);
-                reconstructed_deriv[1][j] = deriv;
+              auto u_stencil_tagged = internal::make_tagged_physical_boundary_stencil<NumberType, n_components>(
+                  boundary_stencil.u, boundary_stencil.dof_indices, dof_j);
+              internal::BoundaryStencilData1D<autodiff::Real<1, NumberType>, n_components> boundary_stencil_ad{};
+              boundary_stencil_ad.x = boundary_stencil.x;
+              boundary_stencil_ad.u = u_stencil_tagged;
+              boundary_stencil_ad.dof_indices = boundary_stencil.dof_indices;
+              boundary_stencil_ad.lower_boundary = boundary_stencil.lower_boundary;
+              boundary_stencil_ad.ghost_center = boundary_stencil.ghost_center;
+              boundary_stencil_ad.ghost_left = boundary_stencil.ghost_left;
+              boundary_stencil_ad.ghost_right = boundary_stencil.ghost_right;
+              const bool boundary_supported_ad =
+                  model.apply_boundary_stencil(boundary_stencil_ad.u, boundary_stencil_ad.x, dealii::Point<1>(x_q[0]));
+              AssertThrow(boundary_supported_ad,
+                          ExcMessage("KT boundary stencil was rejected during AD reconstruction tracing."));
+              const auto physical_stencil_ad =
+                  internal::make_physical_boundary_side_stencil_1d<autodiff::Real<1, NumberType>, n_components>(
+                      boundary_stencil_ad);
+              const auto ghost_stencil_ad =
+                  internal::make_ghost_boundary_side_stencil_1d<autodiff::Real<1, NumberType>, n_components>(
+                      boundary_stencil_ad);
+              using ReconstructorAD = def::TVDReconstructor<1, typename Reconstructor::LimiterType,
+                                                            autodiff::Real<1, NumberType>>;
+              const auto u_grad_cell_ad = ReconstructorAD::template compute_gradient<n_components>(
+                  physical_stencil_ad.cell.x, physical_stencil_ad.cell.u, physical_stencil_ad.neighbors.x,
+                  physical_stencil_ad.neighbors.u);
+              const auto u_grad_ghost_ad = ReconstructorAD::template compute_gradient<n_components>(
+                  ghost_stencil_ad.cell.x, ghost_stencil_ad.cell.u, ghost_stencil_ad.neighbors.x,
+                  ghost_stencil_ad.neighbors.u);
+              const auto u_grad_minus_ad = ReconstructorAD::template compute_gradient_at_point<n_components>(
+                  physical_stencil_ad.cell.x, x_q, physical_stencil_ad.cell.u, physical_stencil_ad.neighbors.x,
+                  physical_stencil_ad.neighbors.u);
+              const auto u_grad_plus_ad = ReconstructorAD::template compute_gradient_at_point<n_components>(
+                  ghost_stencil_ad.cell.x, x_q, ghost_stencil_ad.cell.u, ghost_stencil_ad.neighbors.x,
+                  ghost_stencil_ad.neighbors.u);
+              const auto u_minus_ad =
+                  internal::reconstruct_u(physical_stencil_ad.cell.u, physical_stencil_ad.cell.x, x_q, u_grad_cell_ad);
+              const auto u_plus_ad =
+                  internal::reconstruct_u(ghost_stencil_ad.cell.u, ghost_stencil_ad.cell.x, x_q, u_grad_ghost_ad);
+              for (size_t c = 0; c < n_components; ++c) {
+                reconstructed_deriv[0][j].u[c] = derivative(u_minus_ad[c]);
+                reconstructed_deriv[1][j].u[c] = derivative(u_plus_ad[c]);
+                for (size_t d = 0; d < dim; ++d) {
+                  reconstructed_deriv[0][j].grad[c][d] = derivative(u_grad_minus_ad[c][d]);
+                  reconstructed_deriv[1][j].grad[c][d] = derivative(u_grad_plus_ad[c][d]);
+                }
               }
             }
 

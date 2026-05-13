@@ -11,7 +11,7 @@
 #include <deal.II/base/point.h>
 #include <deal.II/base/tensor.h>
 
-#include <boilerplate/models.hh>
+#include <boilerplate/kt_models.hh>
 
 using NumberType = double;
 using namespace dealii;
