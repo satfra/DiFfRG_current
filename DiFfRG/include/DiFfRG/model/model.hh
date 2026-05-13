@@ -5,7 +5,13 @@
 #include <deal.II/base/point.h>
 #include <deal.II/base/tensor.h>
 
+// standard library
+#include <cmath>
+#include <limits>
+#include <optional>
+
 // DiFfRG
+#include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
 #include <DiFfRG/model/ad.hh>
 #include <DiFfRG/model/component_descriptor.hh>
 #include <DiFfRG/model/fv_boundaries.hh>
@@ -352,13 +358,106 @@ namespace DiFfRG
       {
       }
 
-      template <int dim, typename Constraints>
-      void affine_constraints([[maybe_unused]] Constraints &constraints,
-                              [[maybe_unused]] const std::vector<IndexSet> &component_boundary_dofs,
-                              [[maybe_unused]] const std::vector<std::vector<Point<dim>>> &component_boundary_points)
+      /**
+       * @brief Add affine constraints to the FE/DG system before sparsity patterns and operators are rebuilt.
+       *
+       * Boundary-only constraints should use `apply_boundary_affine_constraints(constraints, context)` and inspect
+       * `context.template boundary<"u">()`. Constraints that may need interior support points should use
+       * `apply_affine_constraints(constraints, context)` and inspect `context.template support<"u">()`.
+       */
+      template <typename Constraints, typename Context>
+      void affine_constraints(Constraints &constraints, const Context &context) const
       {
+        if constexpr (requires(const Model &model, Constraints &constraint_matrix,
+                               const Context &affine_constraint_context) {
+                        model.apply_boundary_affine_constraints(constraint_matrix, affine_constraint_context);
+                      })
+          asImp().apply_boundary_affine_constraints(constraints, context);
+        if constexpr (requires(const Model &model, Constraints &constraint_matrix,
+                               const Context &affine_constraint_context) {
+                        model.apply_affine_constraints(constraint_matrix, affine_constraint_context);
+                      })
+          asImp().apply_affine_constraints(constraints, context);
       }
 
+    };
+
+    namespace internal
+    {
+      template <FixedString component_name, typename Context>
+      std::optional<types::global_dof_index> select_origin_candidate([[maybe_unused]] const Context &context,
+                                                                     const auto &view)
+      {
+        constexpr int dim = Context::dimension;
+        static_assert(dim == 1, "Origin affine-constraint helpers currently support only one-dimensional domains.");
+        static_assert(Context::template component_size<component_name>() == 1,
+                      "Origin affine-constraint helpers require a scalar FE-function component.");
+
+        std::optional<types::global_dof_index> best_dof;
+        double best_abs_x = std::numeric_limits<double>::infinity();
+        bool best_is_negative = true;
+
+        for (uint i = 0; i < view.dofs.n_elements(); ++i) {
+          const auto dof = view.dofs.nth_index_in_set(i);
+          const double x = view.points[i][0];
+          const double abs_x = std::abs(x);
+          const bool is_negative = x < 0.0;
+
+          const bool is_better = !best_dof.has_value() || abs_x < best_abs_x ||
+                                 (abs_x == best_abs_x &&
+                                  (is_negative < best_is_negative ||
+                                   (is_negative == best_is_negative && dof < *best_dof)));
+          if (!is_better) continue;
+
+          best_dof = dof;
+          best_abs_x = abs_x;
+          best_is_negative = is_negative;
+        }
+
+        return best_dof;
+      }
+    } // namespace internal
+
+    /**
+     * @brief Constrain the boundary dof of a named scalar FE-function component nearest the origin to zero.
+     */
+    template <FixedString component_name, typename Model> class ConstrainOriginBoundaryPointToZero
+    {
+    public:
+      template <typename Constraints, typename Context>
+      void apply_boundary_affine_constraints(Constraints &constraints, const Context &context) const
+      {
+        const auto candidate =
+            internal::select_origin_candidate<component_name>(context, context.template boundary<component_name>());
+        if (!candidate.has_value()) return;
+
+        constraints.add_line(*candidate);
+        constraints.set_inhomogeneity(*candidate, 0.0);
+      }
+    };
+
+    /**
+     * @brief Constrain the support dof of a named scalar FE-function component nearest the origin to zero.
+     *
+     * This is useful for cell-centered DG0/FV layouts where `sigma = 0` is not itself a boundary support point.
+     */
+    template <FixedString component_name, typename Model> class ConstrainOriginSupportPointToZero
+    {
+    public:
+      template <typename Constraints, typename Context>
+      void apply_affine_constraints(Constraints &constraints, const Context &context) const
+      {
+        const auto candidate =
+            internal::select_origin_candidate<component_name>(context, context.template support<component_name>());
+        if (!candidate.has_value()) return;
+
+        constraints.add_line(*candidate);
+        constraints.set_inhomogeneity(*candidate, 0.0);
+      }
+    };
+
+    template <typename Model> class NoAffineConstraints
+    {
     };
 
     class Time

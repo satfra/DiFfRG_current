@@ -193,25 +193,13 @@ namespace DiFfRG
         }
         timings_reinit.push_back(timer.wall_time());
 
-        // Boundary dofs
-        std::vector<IndexSet> component_boundary_dofs(Components::count_fe_functions());
-        for (uint c = 0; c < Components::count_fe_functions(); ++c) {
-          ComponentMask component_mask(Components::count_fe_functions(), false);
-          component_mask.set(c, true);
-          component_boundary_dofs[c] = DoFTools::extract_boundary_dofs(dof_handler, component_mask);
-        }
-        std::vector<std::vector<Point<dim>>> component_boundary_points(Components::count_fe_functions());
-        for (uint c = 0; c < Components::count_fe_functions(); ++c) {
-          component_boundary_points[c].resize(component_boundary_dofs[c].n_elements());
-          for (uint i = 0; i < component_boundary_dofs[c].n_elements(); ++i)
-            component_boundary_points[c][i] =
-                discretization.get_support_point(component_boundary_dofs[c].nth_index_in_set(i));
-        }
+        const auto metadata = DiFfRG::internal::build_affine_constraint_metadata<Components, dim>(discretization);
+        const AffineConstraintContext<Components, dim> context(metadata);
 
         auto &constraints = discretization.get_constraints();
         constraints.clear();
         DoFTools::make_hanging_node_constraints(dof_handler, constraints);
-        model.affine_constraints(constraints, component_boundary_dofs, component_boundary_points);
+        model.affine_constraints(constraints, context);
         constraints.close();
       }
 

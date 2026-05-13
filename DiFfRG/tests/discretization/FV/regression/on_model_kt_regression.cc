@@ -1,0 +1,867 @@
+#include "DiFfRG/discretization/FV/assembler/KurganovTadmor.hh"
+#include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed_zero_deriv.hh>
+#include "DiFfRG/discretization/FV/discretization.hh"
+#include "DiFfRG/timestepping/timestepping.hh"
+
+#include <DiFfRG/common/json.hh>
+#include <DiFfRG/common/math.hh>
+#include <DiFfRG/discretization/discretization.hh>
+#include <DiFfRG/model/model.hh>
+
+#include <catch2/catch_all.hpp>
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/spdlog.h>
+
+#include <algorithm>
+#include <array>
+#include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <filesystem>
+#include <iomanip>
+#include <limits>
+#include <optional>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <system_error>
+#include <utility>
+#include <vector>
+
+namespace
+{
+  using namespace DiFfRG;
+  using namespace dealii;
+  using std::get;
+
+  constexpr uint dim = 1;
+  constexpr double final_time = 60.0;
+  constexpr double sigma_max = 10.0;
+  constexpr std::size_t n_cells = 800;
+  constexpr double delta_sigma = sigma_max / static_cast<double>(n_cells - 1);
+  constexpr double grid_tol = 1.0e-12;
+  constexpr double origin_tol = 1.0e-12;
+  constexpr double scenario_i_lambda = 1.0e6;
+  constexpr double scenario_ii_lambda = 1.0e12;
+  constexpr double scenario_iii_lambda = 1.0e12;
+  constexpr double scenario_iv_lambda = 1.0e8;
+
+  using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">>;
+  using Components = ComponentDescriptor<FEFunctionDesc>;
+  template <typename Model> using ConstrainUAtOrigin = def::ConstrainOriginSupportPointToZero<"u", Model>;
+  using NumberType = double;
+  using Mesh = RectangularMesh<dim>;
+  using Discretization = FV::Discretization<Components, NumberType, Mesh>;
+  using VectorType = typename Discretization::VectorType;
+  using SparseMatrixType = typename Discretization::SparseMatrixType;
+  using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
+
+  template <typename Model>
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor,
+                                                  FV::KurganovTadmor::MaxEigenvalueWaveSpeedZeroDeriv>;
+  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
+
+  struct GridSettings {
+    std::size_t cells;
+    double sigma_min;
+    double sigma_max;
+  };
+
+  GridSettings default_grid_settings() { return GridSettings{n_cells, 0.0, sigma_max}; }
+
+  enum class ScenarioKind {
+    I,
+    II,
+    III,
+    IV,
+  };
+
+  struct FlowCase {
+    std::string relative_path;
+    std::string label;
+    ScenarioKind scenario;
+    double n_flavors;
+    double lambda;
+    std::optional<std::size_t> profile_group_index;
+    bool has_reference_potential;
+    double profile_abs_tol;
+    double profile_rel_tol;
+  };
+
+  struct ProfileData {
+    std::vector<double> x;
+    std::vector<double> y;
+  };
+
+  struct ReferenceSnapshot {
+    double time;
+    std::optional<ProfileData> U;
+    ProfileData u;
+  };
+
+  struct ReferenceFlowData {
+    std::vector<ReferenceSnapshot> snapshots;
+  };
+
+  void ensure_logger()
+  {
+    try {
+      auto log = spdlog::stdout_color_mt("log");
+      log->set_pattern("log: [%v]");
+    } catch (const spdlog::spdlog_ex &) {
+    }
+  }
+
+  template <typename T> double scalar_value(const T &x) { return static_cast<double>(x); }
+
+  template <typename T> double scalar_value(const autodiff::Real<1, T> &x) { return static_cast<double>(x.val()); }
+
+  FlowCase make_flow_case(const std::string_view relative_path, const std::string_view label, const ScenarioKind scenario,
+                          const double n_flavors, const double lambda, const std::optional<std::size_t> profile_group_index,
+                          const bool has_reference_potential)
+  {
+    constexpr double regression_profile_abs_tol = 7.5e-3;
+    constexpr double regression_profile_rel_tol = 5.0e-3;
+    return FlowCase{std::string(relative_path), std::string(label), scenario, n_flavors, lambda, profile_group_index,
+                    has_reference_potential, regression_profile_abs_tol, regression_profile_rel_tol};
+  }
+
+  template <typename Derived>
+  struct ONFlowDescriptor {
+    static FlowCase flow_case()
+    {
+      return make_flow_case(Derived::relative_path, Derived::label, Derived::scenario, Derived::n_flavors,
+                            Derived::lambda, Derived::profile_group_index, Derived::has_reference_potential);
+    }
+  };
+
+  struct ScenarioI_ON1 : ONFlowDescriptor<ScenarioI_ON1> {
+    static constexpr auto relative_path = "data/2108_02504/sc_i_on_1_10_100_n_800_xmax_10_lambda_1e6_tir_60_rg_flow.json";
+    static constexpr auto label = "Scenario I, N=1";
+    static constexpr ScenarioKind scenario = ScenarioKind::I;
+    static constexpr double n_flavors = 1.0;
+    static constexpr double lambda = scenario_i_lambda;
+    static constexpr std::optional<std::size_t> profile_group_index = 0;
+    static constexpr bool has_reference_potential = false;
+  };
+
+  struct ScenarioI_ON3 : ONFlowDescriptor<ScenarioI_ON3> {
+    static constexpr auto relative_path = "data/2108_02504/sc_i_on_3_n_800_xmax_10_lambda_1e6_tir_60_rg_flow.json";
+    static constexpr auto label = "Scenario I, N=3";
+    static constexpr ScenarioKind scenario = ScenarioKind::I;
+    static constexpr double n_flavors = 3.0;
+    static constexpr double lambda = scenario_i_lambda;
+    static constexpr std::optional<std::size_t> profile_group_index = std::nullopt;
+    static constexpr bool has_reference_potential = true;
+  };
+
+  struct ScenarioI_ON10 : ONFlowDescriptor<ScenarioI_ON10> {
+    static constexpr auto relative_path = "data/2108_02504/sc_i_on_1_10_100_n_800_xmax_10_lambda_1e6_tir_60_rg_flow.json";
+    static constexpr auto label = "Scenario I, N=10";
+    static constexpr ScenarioKind scenario = ScenarioKind::I;
+    static constexpr double n_flavors = 10.0;
+    static constexpr double lambda = scenario_i_lambda;
+    static constexpr std::optional<std::size_t> profile_group_index = 1;
+    static constexpr bool has_reference_potential = false;
+  };
+
+  struct ScenarioI_ON100 : ONFlowDescriptor<ScenarioI_ON100> {
+    static constexpr auto relative_path = "data/2108_02504/sc_i_on_1_10_100_n_800_xmax_10_lambda_1e6_tir_60_rg_flow.json";
+    static constexpr auto label = "Scenario I, N=100";
+    static constexpr ScenarioKind scenario = ScenarioKind::I;
+    static constexpr double n_flavors = 100.0;
+    static constexpr double lambda = scenario_i_lambda;
+    static constexpr std::optional<std::size_t> profile_group_index = 2;
+    static constexpr bool has_reference_potential = false;
+  };
+
+  struct ScenarioII_ON4 : ONFlowDescriptor<ScenarioII_ON4> {
+    static constexpr auto relative_path = "data/2108_02504/sc_ii_n_on_4_n_800_xmax_10_lambda_1e12_tir_60_rg_flow.json";
+    static constexpr auto label = "Scenario II, N=4";
+    static constexpr ScenarioKind scenario = ScenarioKind::II;
+    static constexpr double n_flavors = 4.0;
+    static constexpr double lambda = scenario_ii_lambda;
+    static constexpr std::optional<std::size_t> profile_group_index = std::nullopt;
+    static constexpr bool has_reference_potential = true;
+  };
+
+  struct ScenarioIII_ON4 : ONFlowDescriptor<ScenarioIII_ON4> {
+    static constexpr auto relative_path = "data/2108_02504/sc_iii_on_4_n_800_xmax_10_lambda_1e12_tir_60_rg_flow.json";
+    static constexpr auto label = "Scenario III, N=4";
+    static constexpr ScenarioKind scenario = ScenarioKind::III;
+    static constexpr double n_flavors = 4.0;
+    static constexpr double lambda = scenario_iii_lambda;
+    static constexpr std::optional<std::size_t> profile_group_index = std::nullopt;
+    static constexpr bool has_reference_potential = true;
+  };
+
+  struct ScenarioIV_ON3 : ONFlowDescriptor<ScenarioIV_ON3> {
+    static constexpr auto relative_path = "data/2108_02504/sc_iv_on_3_n_800_xmax_10_lambda_1e8_tir_60_rg_flow.json";
+    static constexpr auto label = "Scenario IV, N=3";
+    static constexpr ScenarioKind scenario = ScenarioKind::IV;
+    static constexpr double n_flavors = 3.0;
+    static constexpr double lambda = scenario_iv_lambda;
+    static constexpr std::optional<std::size_t> profile_group_index = std::nullopt;
+    static constexpr bool has_reference_potential = true;
+  };
+
+  double json_number_to_double(const json::value &value)
+  {
+    if (value.is_double()) return value.as_double();
+    if (value.is_int64()) return static_cast<double>(value.as_int64());
+    if (value.is_uint64()) return static_cast<double>(value.as_uint64());
+    throw std::runtime_error("Expected JSON number.");
+  }
+
+  ProfileData parse_profile(const json::array &pairs)
+  {
+    ProfileData result;
+    result.x.reserve(pairs.size());
+    result.y.reserve(pairs.size());
+    for (const auto &entry : pairs) {
+      const auto &pair = entry.as_array();
+      if (pair.size() != 2) throw std::runtime_error("Expected [x, y] profile entries.");
+      result.x.push_back(json_number_to_double(pair[0]));
+      result.y.push_back(json_number_to_double(pair[1]));
+    }
+    return result;
+  }
+
+  std::optional<std::string> compare_profiles(const std::string &name, const std::vector<double> &x_values,
+                                              const std::vector<double> &simulated,
+                                              const std::vector<double> &reference, const double abs_tolerance,
+                                              const double rel_tolerance)
+  {
+    if (x_values.size() != simulated.size() || x_values.size() != reference.size())
+      return std::string("Size mismatch while comparing ") + name + ".";
+
+    std::ostringstream mismatch;
+    mismatch << std::setprecision(17);
+
+    std::size_t mismatch_count = 0;
+    double max_abs_error = 0.0;
+    double max_rel_error = 0.0;
+    for (std::size_t i = 0; i < simulated.size(); ++i) {
+      const double abs_error = std::abs(simulated[i] - reference[i]);
+      const double reference_magnitude = std::abs(reference[i]);
+      const double rel_error =
+          reference_magnitude == 0.0 ? (abs_error == 0.0 ? 0.0 : std::numeric_limits<double>::infinity())
+                                     : abs_error / reference_magnitude;
+      max_abs_error = std::max(max_abs_error, abs_error);
+      max_rel_error = std::max(max_rel_error, rel_error);
+
+      if (abs_error <= abs_tolerance || rel_error <= rel_tolerance) continue;
+
+      if (mismatch_count == 0) mismatch << name << " comparison failed.\n";
+      if (mismatch_count < 8) {
+        mismatch << "  i=" << i << ", sigma=" << x_values[i] << ", simulated=" << simulated[i]
+                 << ", reference=" << reference[i] << ", abs_error=" << abs_error << ", rel_error=" << rel_error
+                 << '\n';
+      }
+      ++mismatch_count;
+    }
+
+    if (mismatch_count == 0) return std::nullopt;
+
+    mismatch << "  total mismatches=" << mismatch_count << ", max_abs_error=" << max_abs_error
+             << ", max_rel_error=" << max_rel_error;
+    return mismatch.str();
+  }
+
+  struct TemporaryDirectory {
+    TemporaryDirectory()
+    {
+      const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
+      path = std::filesystem::temp_directory_path() /
+             ("on_model_kt_regression_" + std::to_string(static_cast<std::int64_t>(nonce)));
+      std::filesystem::create_directories(path);
+    }
+
+    ~TemporaryDirectory()
+    {
+      std::error_code ec;
+      std::filesystem::remove_all(path, ec);
+    }
+
+    std::filesystem::path path;
+  };
+
+  double scenario_potential(const ScenarioKind scenario, const double sigma)
+  {
+    const double abs_sigma = std::abs(sigma);
+    switch (scenario) {
+      case ScenarioKind::I:
+        if (abs_sigma <= 2.0) return -0.5 * abs_sigma * abs_sigma;
+        if (abs_sigma <= 3.0) return -2.0;
+        return 0.5 * (abs_sigma * abs_sigma - 13.0);
+      case ScenarioKind::II:
+        return -0.5 * abs_sigma * abs_sigma + std::pow(abs_sigma, 4) / 24.0;
+      case ScenarioKind::III:
+        return 0.5 * abs_sigma * abs_sigma - std::pow(abs_sigma, 4) / 20.0 + std::pow(abs_sigma, 6) / 720.0;
+      case ScenarioKind::IV:
+        if (abs_sigma <= std::sqrt(8.0)) return -std::pow(abs_sigma * abs_sigma, 1.0 / 3.0);
+        return 0.5 * abs_sigma * abs_sigma - 6.0;
+    }
+    throw std::runtime_error("Unknown O(N) test scenario.");
+  }
+
+  template <template <typename> typename BoundaryStrategy,
+            template <typename> typename ConstraintStrategy = def::NoAffineConstraints>
+  class ONKTModelBase : public def::AbstractModel<ONKTModelBase<BoundaryStrategy, ConstraintStrategy>, Components>,
+                        public def::fRG,
+                        public BoundaryStrategy<ONKTModelBase<BoundaryStrategy, ConstraintStrategy>>,
+                        public ConstraintStrategy<ONKTModelBase<BoundaryStrategy, ConstraintStrategy>>,
+                        public def::AD<ONKTModelBase<BoundaryStrategy, ConstraintStrategy>>
+  {
+  public:
+    ONKTModelBase(const JSONValue &json, const FlowCase &flow_case) : def::fRG(json), flow_case(flow_case) {}
+
+    void begin_diagnostics() const { diagnostics = Diagnostics{}; }
+
+    void diagnose_state(std::ostream &out, const std::vector<Point<dim>> &support_points, const VectorType &solution,
+                        const VectorType &, const VectorType &) const
+    {
+      out << "KT diagnostic: u/sigma denominator from assembled flux";
+      if (diagnostics.advection_seen)
+        out << " value=" << diagnostics.advection_denominator << " abs=" << diagnostics.min_abs_advection_denominator
+            << " sigma=" << diagnostics.advection_sigma << " u=" << diagnostics.advection_u;
+      else
+        out << " unavailable";
+      out << '\n';
+
+      out << "KT diagnostic: r+du/dsigma denominator from assembled flux";
+      if (diagnostics.diffusion_seen)
+        out << " value=" << diagnostics.diffusion_denominator << " abs=" << diagnostics.min_abs_diffusion_denominator
+            << " sigma=" << diagnostics.diffusion_sigma << " du_dsigma=" << diagnostics.diffusion_du_dsigma;
+      else
+        out << " unavailable";
+      out << '\n';
+
+      if (solution.size() == support_points.size() && !support_points.empty()) {
+        std::size_t min_u_over_sigma_index = 0;
+        std::size_t min_du_index = 0;
+        double min_u_over_sigma_denominator = std::numeric_limits<double>::infinity();
+        double min_du_denominator = std::numeric_limits<double>::infinity();
+        for (std::size_t i = 0; i < support_points.size(); ++i) {
+          const double sigma = support_points[i][0];
+          const double u = solution[i];
+          const double u_over_sigma =
+              std::abs(sigma) < origin_tol ? 0.0 : u / sigma;
+          const double advection_denominator = this->k + u_over_sigma;
+          if (std::abs(advection_denominator) < std::abs(min_u_over_sigma_denominator)) {
+            min_u_over_sigma_denominator = advection_denominator;
+            min_u_over_sigma_index = i;
+          }
+
+          double du_dsigma = 0.0;
+          if (support_points.size() > 1) {
+            if (i == 0)
+              du_dsigma = (solution[1] - solution[0]) / (support_points[1][0] - support_points[0][0]);
+            else if (i + 1 == support_points.size())
+              du_dsigma = (solution[i] - solution[i - 1]) / (support_points[i][0] - support_points[i - 1][0]);
+            else
+              du_dsigma =
+                  (solution[i + 1] - solution[i - 1]) / (support_points[i + 1][0] - support_points[i - 1][0]);
+          }
+          const double diffusion_denominator = this->k + du_dsigma;
+          if (std::abs(diffusion_denominator) < std::abs(min_du_denominator)) {
+            min_du_denominator = diffusion_denominator;
+            min_du_index = i;
+          }
+        }
+
+        out << "KT diagnostic: cellwise min(r + u/sigma) dof=" << min_u_over_sigma_index
+            << " sigma=" << support_points[min_u_over_sigma_index][0] << " value=" << min_u_over_sigma_denominator
+            << " u=" << solution[min_u_over_sigma_index] << '\n';
+        out << "KT diagnostic: cellwise min(r + estimated du/dsigma) dof=" << min_du_index
+            << " sigma=" << support_points[min_du_index][0] << " value=" << min_du_denominator
+            << " u=" << solution[min_du_index] << '\n';
+      }
+    }
+
+    template <typename Vector> void initial_condition(const Point<dim> &x, Vector &values) const
+    {
+      const double sigma = x[0];
+      const double right = scenario_potential(flow_case.scenario, sigma + 0.5 * delta_sigma);
+      const double left = scenario_potential(flow_case.scenario, sigma - 0.5 * delta_sigma);
+      values[0] = (right - left) / delta_sigma;
+    }
+
+    template <int spatial_dim, typename FluxNumberType, typename Solutions, std::size_t n_fe_functions>
+    void KurganovTadmor_advection_flux(
+        std::array<Tensor<1, spatial_dim, FluxNumberType>, n_fe_functions> &F_i, const Point<spatial_dim> &x,
+        const Solutions &sol) const
+    {
+      static_assert(spatial_dim == dim, "ONKTModel is one-dimensional.");
+      static_assert(n_fe_functions == 1, "ONKTModel expects a single FE function.");
+
+      const auto &fe_functions = get<0>(sol);
+      const FluxNumberType u = fe_functions[0];
+      const double sigma = x[0];
+      const double r = k;
+      const double regulator_insertion = 0.5 * r;
+
+      const FluxNumberType u_over_sigma =
+          std::abs(sigma) < origin_tol ? FluxNumberType(0.0) : u / FluxNumberType(sigma);
+      note_advection_denominator(sigma, u);
+      F_i[0][0] = FluxNumberType(regulator_insertion * (flow_case.n_flavors - 1.0)) /
+                  (FluxNumberType(r) + u_over_sigma);
+    }
+
+    template <int spatial_dim, typename FluxNumberType, typename Solutions, std::size_t n_fe_functions>
+    void flux(std::array<Tensor<1, spatial_dim, FluxNumberType>, n_fe_functions> &F_i, const Point<spatial_dim> &x,
+              const Solutions &sol) const
+    {
+      static_assert(spatial_dim == dim, "ONKTModel is one-dimensional.");
+      static_assert(n_fe_functions == 1, "ONKTModel expects a single FE function.");
+
+      const auto &fe_derivatives = get<1>(sol);
+      const FluxNumberType du_dsigma = fe_derivatives[0][0];
+      const double r = k;
+      const double half_dr_dt = -0.5 * r;
+
+      (void)x;
+      note_diffusion_denominator(x[0], du_dsigma);
+      F_i[0][0] = FluxNumberType(half_dr_dt) / (FluxNumberType(r) + du_dsigma);
+    }
+
+  private:
+    struct Diagnostics {
+      double min_abs_advection_denominator = std::numeric_limits<double>::infinity();
+      double advection_denominator = std::numeric_limits<double>::quiet_NaN();
+      double advection_sigma = std::numeric_limits<double>::quiet_NaN();
+      double advection_u = std::numeric_limits<double>::quiet_NaN();
+      bool advection_seen = false;
+
+      double min_abs_diffusion_denominator = std::numeric_limits<double>::infinity();
+      double diffusion_denominator = std::numeric_limits<double>::quiet_NaN();
+      double diffusion_sigma = std::numeric_limits<double>::quiet_NaN();
+      double diffusion_du_dsigma = std::numeric_limits<double>::quiet_NaN();
+      bool diffusion_seen = false;
+    };
+
+    template <typename FluxNumberType> void note_advection_denominator(const double sigma, const FluxNumberType &u) const
+    {
+      const double u_value = static_cast<double>(u);
+      const double u_over_sigma = std::abs(sigma) < origin_tol ? 0.0 : u_value / sigma;
+      const double denominator = this->k + u_over_sigma;
+      if (!diagnostics.advection_seen || std::abs(denominator) < diagnostics.min_abs_advection_denominator) {
+        diagnostics.min_abs_advection_denominator = std::abs(denominator);
+        diagnostics.advection_denominator = denominator;
+        diagnostics.advection_sigma = sigma;
+        diagnostics.advection_u = u_value;
+        diagnostics.advection_seen = true;
+      }
+    }
+
+    template <typename FluxNumberType>
+    void note_diffusion_denominator(const double sigma, const FluxNumberType &du_dsigma) const
+    {
+      const double du_dsigma_value = static_cast<double>(du_dsigma);
+      const double denominator = this->k + du_dsigma_value;
+      if (!diagnostics.diffusion_seen || std::abs(denominator) < diagnostics.min_abs_diffusion_denominator) {
+        diagnostics.min_abs_diffusion_denominator = std::abs(denominator);
+        diagnostics.diffusion_denominator = denominator;
+        diagnostics.diffusion_sigma = sigma;
+        diagnostics.diffusion_du_dsigma = du_dsigma_value;
+        diagnostics.diffusion_seen = true;
+      }
+    }
+
+    FlowCase flow_case;
+    mutable Diagnostics diagnostics;
+  };
+
+  using ONKTModel = ONKTModelBase<def::OriginOddLinearExtrapolationBoundaries, ConstrainUAtOrigin>;
+  using ONKTOriginConstrainedModel = ONKTModel;
+  using ONSymmetricDefaultBoundaryModel = ONKTModelBase<def::FVDefaultBoundaries>;
+  using ONSymmetricDefaultBoundaryConstrainedModel = ONKTModelBase<def::FVDefaultBoundaries, ConstrainUAtOrigin>;
+
+  JSONValue make_json(const FlowCase &flow_case)
+  {
+    return json::value(
+        {{"physical", {{"Lambda", flow_case.lambda}}},
+         {"discretization",
+          {{"fe_order", 0},
+           {"threads", 8},
+           {"batch_size", 64},
+           {"overintegration", 0},
+           {"output_subdivisions", 1},
+           {"output_buffer_size", 1},
+           {"EoM_abs_tol", 1e-10},
+           {"EoM_max_iter", 0}}},
+         {"timestepping",
+          {{"final_time", final_time},
+           {"output_dt", 2.0},
+           {"explicit",
+            {{"dt", 1e-8}, {"minimal_dt", 1e-12}, {"maximal_dt", 1.0}, {"abs_tol", 1e-12}, {"rel_tol", 1e-10}}},
+           {"implicit",
+            {{"dt", 1e-8},
+             {"minimal_dt", 1e-14},
+             {"maximal_dt", 1.0},
+             {"abs_tol", 1e-7},
+             {"rel_tol", 1e-7},
+             {"max_steps", 5000000}}}}},
+         {"output", {{"verbosity", 1}, {"vtk", false}, {"hdf5", false}}}});
+  }
+
+  std::filesystem::path local_fixture_path(const std::string_view relative_path)
+  {
+    return std::filesystem::path(__FILE__).parent_path() / std::filesystem::path(relative_path);
+  }
+
+  std::vector<double> reference_times()
+  {
+    std::vector<double> times;
+    for (std::size_t i = 0; i <= 30; ++i)
+      times.push_back(2.0 * static_cast<double>(i));
+    return times;
+  }
+
+  ReferenceFlowData load_reference_flow(const FlowCase &flow_case)
+  {
+    const auto fixture = local_fixture_path(flow_case.relative_path);
+    REQUIRE(std::filesystem::exists(fixture));
+
+    const JSONValue fixture_json(fixture.string());
+    json::value fixture_value = static_cast<json::value>(fixture_json);
+    const auto &root = fixture_value.as_array();
+
+    ReferenceFlowData data;
+    const auto times = reference_times();
+
+    if (flow_case.profile_group_index.has_value()) {
+      REQUIRE(root.size() >= 3);
+      const auto &profiles = root.at(*flow_case.profile_group_index).as_array();
+      REQUIRE(profiles.size() == times.size());
+
+      data.snapshots.reserve(times.size());
+      for (std::size_t i = 0; i < times.size(); ++i)
+        data.snapshots.push_back(ReferenceSnapshot{times[i], std::nullopt, parse_profile(profiles[i].as_array())});
+      return data;
+    }
+
+    REQUIRE(root.size() == 2);
+    const auto &U_profiles = root.at(0).as_array();
+    const auto &u_profiles = root.at(1).as_array();
+    REQUIRE(U_profiles.size() == times.size());
+    REQUIRE(u_profiles.size() == times.size());
+
+    data.snapshots.reserve(times.size());
+    for (std::size_t i = 0; i < times.size(); ++i)
+      data.snapshots.push_back(
+          ReferenceSnapshot{times[i], parse_profile(U_profiles[i].as_array()), parse_profile(u_profiles[i].as_array())});
+    return data;
+  }
+
+  std::vector<double> reconstruct_potential_from_u(const std::vector<double> &x_values,
+                                                   const std::vector<double> &u_values)
+  {
+    REQUIRE(x_values.size() == u_values.size());
+
+    std::vector<double> U_values(u_values.size(), 0.0);
+    for (std::size_t i = 1; i < u_values.size(); ++i) {
+      const double dx = x_values[i] - x_values[i - 1];
+      U_values[i] = U_values[i - 1] + 0.5 * dx * (u_values[i - 1] + u_values[i]);
+    }
+    return U_values;
+  }
+
+  struct SimulationResult {
+    std::vector<double> x;
+    std::vector<double> u;
+    std::vector<double> U;
+  };
+
+  Config::ConfigurationMesh<1> make_mesh_config(const GridSettings &grid_settings = default_grid_settings())
+  {
+    const double delta = (grid_settings.sigma_max - grid_settings.sigma_min) /
+                         static_cast<double>(grid_settings.cells - 1);
+    const Config::GridAxis sigma_axis(grid_settings.sigma_min - 0.5 * delta, delta, grid_settings.sigma_max + 0.5 * delta);
+    return Config::ConfigurationMesh<1>(0u, std::vector<Config::GridAxis>{sigma_axis});
+  }
+
+  void initialize_exact_cell_averages(FV::FlowingVariables<Discretization> &state, const std::vector<Point<dim>> &support_points,
+                                      const FlowCase &flow_case)
+  {
+    auto &u = state.spatial_data();
+    REQUIRE(u.size() == support_points.size());
+    for (unsigned int i = 0; i < u.size(); ++i) {
+      const double sigma = support_points[i][0];
+      const double right = scenario_potential(flow_case.scenario, sigma + 0.5 * delta_sigma);
+      const double left = scenario_potential(flow_case.scenario, sigma - 0.5 * delta_sigma);
+      u[i] = (right - left) / delta_sigma;
+    }
+  }
+
+  SimulationResult sample_state(const FV::FlowingVariables<Discretization> &state, const Discretization &discretization)
+  {
+    const auto &support_points = discretization.get_support_points();
+
+    std::vector<std::pair<double, double>> sampled_u;
+    sampled_u.reserve(state.spatial_data().size());
+    for (unsigned int i = 0; i < state.spatial_data().size(); ++i)
+      sampled_u.emplace_back(support_points[i][0], state.spatial_data()[i]);
+    std::sort(sampled_u.begin(), sampled_u.end(), [](const auto &lhs, const auto &rhs) { return lhs.first < rhs.first; });
+
+    SimulationResult result;
+    result.x.reserve(sampled_u.size());
+    result.u.reserve(sampled_u.size());
+    for (const auto &[sigma, u_value] : sampled_u) {
+      result.x.push_back(sigma);
+      result.u.push_back(u_value);
+    }
+    if (!result.x.empty() && std::abs(result.x.front()) < grid_tol) result.u.front() = 0.0;
+    result.U = reconstruct_potential_from_u(result.x, result.u);
+    return result;
+  }
+
+  SimulationResult restrict_to_nonnegative_half(const SimulationResult &full_domain_result)
+  {
+    SimulationResult result;
+    for (std::size_t i = 0; i < full_domain_result.x.size(); ++i) {
+      if (full_domain_result.x[i] < -grid_tol) continue;
+      result.x.push_back(full_domain_result.x[i]);
+      result.u.push_back(full_domain_result.u[i]);
+    }
+    if (!result.x.empty() && std::abs(result.x.front()) < grid_tol) result.u.front() = 0.0;
+    result.U = reconstruct_potential_from_u(result.x, result.u);
+    return result;
+  }
+
+  template <typename ModelType = ONKTModel>
+  std::vector<SimulationResult> run_flow_snapshots(const FlowCase &flow_case, const std::vector<double> &times_to_sample,
+                                                   const GridSettings &grid_settings = default_grid_settings())
+  {
+    const JSONValue json = make_json(flow_case);
+    ModelType model(json, flow_case);
+    Mesh mesh(make_mesh_config(grid_settings));
+    Discretization discretization(mesh, json);
+    Assembler<ModelType> assembler(discretization, model, json);
+
+    TemporaryDirectory tmp_dir;
+    DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), "on_model_kt_regression", "output", json);
+    auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
+    ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+
+    FV::FlowingVariables<Discretization> state(discretization);
+    state.interpolate(model);
+
+    const auto &support_points = discretization.get_support_points();
+    REQUIRE(support_points.size() == grid_settings.cells);
+
+    std::vector<double> initial_support_points;
+    initial_support_points.reserve(support_points.size());
+    for (const auto &point : support_points)
+      initial_support_points.push_back(point[0]);
+    std::sort(initial_support_points.begin(), initial_support_points.end());
+
+    const double delta = (grid_settings.sigma_max - grid_settings.sigma_min) /
+                         static_cast<double>(grid_settings.cells - 1);
+    for (std::size_t i = 0; i < initial_support_points.size(); ++i)
+      REQUIRE(initial_support_points[i] ==
+              Catch::Approx(grid_settings.sigma_min + static_cast<double>(i) * delta).margin(grid_tol));
+
+    initialize_exact_cell_averages(state, support_points, flow_case);
+
+    std::vector<SimulationResult> snapshots;
+    snapshots.reserve(times_to_sample.size());
+    double current_time = 0.0;
+    for (const double target_time : times_to_sample) {
+      REQUIRE(target_time >= current_time - 1e-12);
+      if (target_time > current_time + 1e-12) {
+        try {
+          time_stepper.run(&state, current_time, target_time);
+        } catch (const std::exception &exception) {
+          FAIL(std::string("O(N) KT regression solve failed at t=") + std::to_string(target_time) + ": " +
+               exception.what());
+        }
+        current_time = target_time;
+      }
+      snapshots.push_back(sample_state(state, discretization));
+    }
+
+    return snapshots;
+  }
+
+  std::vector<std::size_t> selected_snapshot_indices()
+  {
+    return {30};
+  }
+
+  template <typename ModelType = ONKTModel>
+  void run_flow_to_time(const FlowCase &flow_case, const double target_time,
+                        const GridSettings &grid_settings = default_grid_settings())
+  {
+    const JSONValue json = make_json(flow_case);
+    ModelType model(json, flow_case);
+    Mesh mesh(make_mesh_config(grid_settings));
+    Discretization discretization(mesh, json);
+    Assembler<ModelType> assembler(discretization, model, json);
+
+    TemporaryDirectory tmp_dir;
+    DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), "on_model_kt_regression", "output", json);
+    auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
+    ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+
+    FV::FlowingVariables<Discretization> state(discretization);
+    state.interpolate(model);
+
+    const auto &support_points = discretization.get_support_points();
+    REQUIRE(support_points.size() == grid_settings.cells);
+    initialize_exact_cell_averages(state, support_points, flow_case);
+
+    time_stepper.run(&state, 0.0, target_time);
+  }
+
+  template <typename FlowParam>
+  struct ONFlowFixture {
+    static FlowCase flow_case() { return FlowParam::flow_case(); }
+
+    void run_regression()
+    {
+      const FlowCase current_flow = flow_case();
+      INFO(current_flow.label << ", Lambda=" << current_flow.lambda);
+
+      const auto reference = load_reference_flow(current_flow);
+      const auto indices = selected_snapshot_indices();
+
+      std::vector<double> times_to_sample;
+      times_to_sample.reserve(indices.size());
+      for (const auto index : indices) {
+        REQUIRE(index < reference.snapshots.size());
+        times_to_sample.push_back(reference.snapshots[index].time);
+      }
+
+      const auto snapshots = run_flow_snapshots(current_flow, times_to_sample);
+      REQUIRE(snapshots.size() == indices.size());
+
+      for (std::size_t snapshot_index = 0; snapshot_index < indices.size(); ++snapshot_index) {
+        const auto &reference_snapshot = reference.snapshots[indices[snapshot_index]];
+        const auto &simulation = snapshots[snapshot_index];
+
+        INFO("t=" << reference_snapshot.time);
+
+        for (std::size_t i = 0; i < simulation.x.size(); ++i)
+          REQUIRE(simulation.x[i] == Catch::Approx(reference_snapshot.u.x[i]).margin(grid_tol));
+
+        if (const auto u_mismatch = compare_profiles("u(sigma)", simulation.x, simulation.u, reference_snapshot.u.y,
+                                                     current_flow.profile_abs_tol, current_flow.profile_rel_tol))
+          FAIL(*u_mismatch);
+
+        if (current_flow.has_reference_potential) {
+          REQUIRE(reference_snapshot.U.has_value());
+          if (const auto U_mismatch =
+                  compare_profiles("U(sigma)", simulation.x, simulation.U, reference_snapshot.U->y,
+                                   current_flow.profile_abs_tol, current_flow.profile_rel_tol))
+            FAIL(*U_mismatch);
+        }
+      }
+    }
+  };
+
+} // namespace
+
+TEMPLATE_TEST_CASE_METHOD(ONFlowFixture, "KT O(N) regressions match arXiv 2108.02504 flow snapshots",
+                          "[FV][KT][ON][regression]", ScenarioI_ON1, ScenarioI_ON3, ScenarioI_ON10, ScenarioI_ON100,
+                          ScenarioII_ON4, ScenarioIII_ON4, ScenarioIV_ON3)
+{
+  ensure_logger();
+
+  this->run_regression();
+}
+
+TEST_CASE("KT O(N) symmetric default-boundary full-domain run matches the reference on sigma >= 0 - ScenarioI_ON3",
+          "[FV][KT][ON][regression][symmetric-default-boundary][diagnostic]")
+{
+  ensure_logger();
+
+  const auto flow_case = ScenarioI_ON3::flow_case();
+  INFO(flow_case.label << ", symmetric/default-boundary diagnostic, Lambda=" << flow_case.lambda);
+
+  const auto reference = load_reference_flow(flow_case);
+  const auto indices = selected_snapshot_indices();
+
+  std::vector<double> times_to_sample;
+  times_to_sample.reserve(indices.size());
+  for (const auto index : indices) {
+    REQUIRE(index < reference.snapshots.size());
+    times_to_sample.push_back(reference.snapshots[index].time);
+  }
+
+  GridSettings symmetric_grid{2 * n_cells - 1, -sigma_max, sigma_max};
+  const auto full_domain_snapshots =
+      run_flow_snapshots<ONSymmetricDefaultBoundaryConstrainedModel>(flow_case, times_to_sample, symmetric_grid);
+  REQUIRE(full_domain_snapshots.size() == indices.size());
+
+  for (std::size_t snapshot_index = 0; snapshot_index < indices.size(); ++snapshot_index) {
+    const auto &reference_snapshot = reference.snapshots[indices[snapshot_index]];
+    const auto full_domain_positive_half = restrict_to_nonnegative_half(full_domain_snapshots[snapshot_index]);
+
+    INFO("t=" << reference_snapshot.time);
+
+    REQUIRE(full_domain_positive_half.x.size() == reference_snapshot.u.x.size());
+    for (std::size_t i = 0; i < full_domain_positive_half.x.size(); ++i)
+      REQUIRE(full_domain_positive_half.x[i] == Catch::Approx(reference_snapshot.u.x[i]).margin(grid_tol));
+
+    if (const auto u_mismatch =
+            compare_profiles("u_full(sigma >= 0)", full_domain_positive_half.x, full_domain_positive_half.u,
+                             reference_snapshot.u.y, flow_case.profile_abs_tol, flow_case.profile_rel_tol))
+      FAIL(*u_mismatch);
+
+    if (flow_case.has_reference_potential) {
+      REQUIRE(reference_snapshot.U.has_value());
+      if (const auto U_mismatch =
+              compare_profiles("U_full(sigma >= 0)", full_domain_positive_half.x, full_domain_positive_half.U,
+                               reference_snapshot.U->y, flow_case.profile_abs_tol, flow_case.profile_rel_tol))
+        FAIL(*U_mismatch);
+    }
+  }
+}
+
+TEST_CASE("KT O(N) half-domain origin-constrained diagnostic solve reaches final time - ScenarioI_ON3",
+          "[FV][KT][ON][regression][origin-constrained][diagnostic]")
+{
+  ensure_logger();
+
+  const auto flow_case = ScenarioI_ON3::flow_case();
+  INFO(flow_case.label << ", half-domain origin-constrained diagnostic, Lambda=" << flow_case.lambda);
+
+  run_flow_to_time<ONKTOriginConstrainedModel>(flow_case, final_time);
+}
+
+TEST_CASE("KT O(N) half-domain run matches the symmetric full-domain run on sigma >= 0 - ScenarioI_ON3",
+          "[FV][KT][ON][regression][symmetric-default-boundary][diagnostic]")
+{
+  ensure_logger();
+
+  const auto flow_case = ScenarioI_ON3::flow_case();
+  INFO(flow_case.label << ", half-vs-full-domain comparison, Lambda=" << flow_case.lambda);
+
+  const std::vector<double> times_to_sample{0.0, 5.0, 10.0, 12.0, 15.0, 20.0};
+
+  const auto half_domain_snapshots = run_flow_snapshots<ONKTModel>(flow_case, times_to_sample);
+  GridSettings symmetric_grid{2 * n_cells - 1, -sigma_max, sigma_max};
+  const auto full_domain_snapshots =
+      run_flow_snapshots<ONSymmetricDefaultBoundaryConstrainedModel>(flow_case, times_to_sample, symmetric_grid);
+
+  REQUIRE(half_domain_snapshots.size() == times_to_sample.size());
+  REQUIRE(full_domain_snapshots.size() == times_to_sample.size());
+
+  for (std::size_t snapshot_index = 0; snapshot_index < times_to_sample.size(); ++snapshot_index) {
+    const auto &half_domain_snapshot = half_domain_snapshots[snapshot_index];
+    const auto full_domain_positive_half = restrict_to_nonnegative_half(full_domain_snapshots[snapshot_index]);
+
+    INFO("t=" << times_to_sample[snapshot_index]);
+
+    REQUIRE(half_domain_snapshot.x.size() == full_domain_positive_half.x.size());
+    for (std::size_t i = 0; i < half_domain_snapshot.x.size(); ++i)
+      REQUIRE(half_domain_snapshot.x[i] == Catch::Approx(full_domain_positive_half.x[i]).margin(grid_tol));
+
+    if (const auto u_mismatch =
+            compare_profiles("u_half(sigma) vs u_full(sigma)", half_domain_snapshot.x, half_domain_snapshot.u,
+                             full_domain_positive_half.u, flow_case.profile_abs_tol, flow_case.profile_rel_tol))
+      FAIL(*u_mismatch);
+  }
+}
