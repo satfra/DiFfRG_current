@@ -58,7 +58,7 @@ namespace DiFfRG
       }
       const auto &get_dof_handler(const uint i = 0) const { return *(dof_handler[i]); }
       auto &get_dof_handler(const uint i = 0) { return *(dof_handler[i]); }
-      const auto get_dof_handler_list() const
+      auto get_dof_handler_list() const
       {
         std::vector<const DoFHandler<dim> *> ret;
         for (uint i = 0; i < Components::count_fe_subsystems(); ++i)

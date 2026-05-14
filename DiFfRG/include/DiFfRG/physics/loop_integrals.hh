@@ -153,7 +153,7 @@ namespace DiFfRG
       const auto &cos_q_w = cos_quadrature.get_weights();
       const int cos_size = cos_quadrature.size();
       const auto &phi_q_p = cos_quadrature.get_points();
-      const auto &phi_q_w = cos_quadrature.get_weights();
+      [[maybe_unused]] const auto &phi_q_w = cos_quadrature.get_weights();
       const int phi_size = cos_quadrature.size();
 
       static_assert(d > 1, "Dimension must be greater than one");

@@ -283,4 +283,6 @@ The following third-party libraries are utilised by DiFfRG. They are automatical
 - [spdlog](https://github.com/gabime/spdlog) for logging.
 - [Doxygen Awesome](https://github.com/jothepro/doxygen-awesome-css) for a modern doxygen theme.
 - [Boost](https://www.boost.org/) provides explicit time-stepping and various math algorithms.
-- [Eigen](https://eigen.tuxfamily.org/) for some linear-algebra related tasks.
+- [Eigen](https://eigen.tuxfamily.org/) for linear-algebra related tasks.
+- [HDF5](https://www.hdfgroup.org/solutions/hdf5/) for hierarchical data format storage and I/O operations.
+- [h5cpp](https://github.com/ess-dmsc/h5cpp) for C++ bindings to HDF5.
