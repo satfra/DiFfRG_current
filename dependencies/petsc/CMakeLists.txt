@@ -26,11 +26,21 @@ endif()
 if(HAVE_MPI)
   message(STATUS "Building PETSc with MPI support")
   set(PETSC_OPTIONS
-      "–download-mumps –download-scalapack –download-parmetis –download-metis –download-ptscotch –download-hwloc -download-bison -with-mpi=1"
+      "--download-mumps --download-scalapack --download-parmetis --download-metis --download-ptscotch --download-hwloc --download-bison --with-mpi=1 --with-mpi-dir=/opt/homebrew/opt/open-mpi"
   )
 else()
   message(STATUS "Building PETSc without MPI support")
-  set(PETSC_OPTIONS "-with-mpi=0")
+  set(PETSC_OPTIONS "--with-mpi=0")
+endif()
+
+if(OpenBLAS_LIBRARY)
+  set(PETSC_BLAS_OPTIONS
+      "--with-blas-lib=${OpenBLAS_LIBRARY} --with-lapack-lib=${OpenBLAS_LIBRARY}"
+  )
+endif()
+
+if(PETSC_WITH_CLEAN)
+  set(PETSC_CLEAN_OPTION "--with-clean")
 endif()
 
 execute_process(
@@ -38,12 +48,9 @@ execute_process(
     bash -c
     "
     ./configure --COPTFLAGS=\"-O3 -march=native -ffp-contract=fast\" \
-    --with-mpi-dir=/opt/homebrew/opt/open-mpi \
     --CXXOPTFLAGS=\"-O3 -march=native -ffp-contract=fast\"  \
     --FOPTFLAGS=\"-O3 -march=native -ffp-contract=fast\" \
-    --with-blas-lib=${OpenBLAS_LIBRARY} \
-    --with-lapack-lib=${OpenBLAS_LIBRARY} \
-    --prefix=${CMAKE_INSTALL_PREFIX} ${PETSC_OPTIONS} --with-clean --with-debugging=0 &> ${CMAKE_CURRENT_BINARY_DIR}/01_configure.log"
+    --prefix=${CMAKE_INSTALL_PREFIX} ${PETSC_OPTIONS} ${PETSC_BLAS_OPTIONS} ${PETSC_CLEAN_OPTION} --with-debugging=0 &> ${CMAKE_CURRENT_BINARY_DIR}/01_configure.log"
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/petsc
   RESULT_VARIABLE ret)
 
