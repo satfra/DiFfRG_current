@@ -1,8 +1,7 @@
 #include "DiFfRG/discretization/FV/assembler/KurganovTadmor.hh"
 #include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed_zero_deriv.hh>
 #include "DiFfRG/discretization/FV/discretization.hh"
-#include "DiFfRG/timestepping/explicit_euler.hh"
-#include "DiFfRG/timestepping/implicit_euler.hh"
+#include "kt_regression_helpers.hh"
 
 #include <DiFfRG/common/json.hh>
 #include <DiFfRG/common/math.hh>
@@ -13,25 +12,17 @@
 
 #include <catch2/catch_all.hpp>
 #include <deal.II/base/numbers.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
-#include <spdlog/spdlog.h>
 
-#include <algorithm>
 #include <array>
-#include <chrono>
 #include <cmath>
-#include <cstdint>
 #include <filesystem>
 #include <iomanip>
 #include <limits>
 #include <numbers>
-#include <optional>
-#include <regex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -62,14 +53,13 @@ namespace
   using NumberType = double;
   using Mesh = RectangularMesh<dim>;
   using Discretization = FV::Discretization<Components, NumberType, Mesh>;
+  using SampledProfile = kt_regression::SampledProfile;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
   template <typename Model>
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor>;
   using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
-  using ExplicitStepper = TimeStepperExplicitEuler<VectorType, SparseMatrixType, dim>;
-  using ImplicitEuler = TimeStepperImplicitEuler<VectorType, SparseMatrixType, dim, UMFPack>;
 
   struct FlowCase {
     std::string relative_path;
@@ -81,17 +71,6 @@ namespace
     double profile_abs_tol;
     double profile_rel_tol;
   };
-
-  void ensure_logger()
-  {
-    try {
-      auto log = spdlog::stdout_color_mt("log");
-      log->set_pattern("log: [%v]");
-    } catch (const spdlog::spdlog_ex &) {
-    }
-  }
-
-  template <typename T> double scalar_value(const T &x) { return static_cast<double>(x); }
 
   std::string describe_flow_case(const FlowCase &flow_case)
   {
@@ -112,23 +91,6 @@ namespace
     if (temperature == 0.0) return 0.0;
     const double occupation = nF(energy, temperature);
     return powr<-1>(temperature) * occupation * (1.0 - occupation);
-  }
-
-  double json_number_to_double(const json::value &value)
-  {
-    if (value.is_double()) return value.as_double();
-    if (value.is_int64()) return static_cast<double>(value.as_int64());
-    if (value.is_uint64()) return static_cast<double>(value.as_uint64());
-    throw std::runtime_error("Expected JSON number.");
-  }
-
-  std::vector<double> json_array_to_doubles(const json::array &values)
-  {
-    std::vector<double> result;
-    result.reserve(values.size());
-    for (const auto &value : values)
-      result.push_back(json_number_to_double(value));
-    return result;
   }
 
   FlowCase make_flow_case(const std::string_view relative_path, const std::string_view filename, const bool is_mean_field,
@@ -224,8 +186,8 @@ namespace
     GraphData result;
     result.label = std::string(graph.at("label").as_string().c_str());
     result.ylabel = std::string(graph.at("ylabel").as_string().c_str());
-    result.x = json_array_to_doubles(graph.at("x").as_array());
-    result.y = json_array_to_doubles(graph.at("y").as_array());
+    result.x = kt_regression::json_array_to_doubles(graph.at("x").as_array());
+    result.y = kt_regression::json_array_to_doubles(graph.at("y").as_array());
     return result;
   }
 
@@ -250,66 +212,6 @@ namespace
     }
     return U_values;
   }
-
-  std::optional<std::string> compare_profiles(const std::string &name, const std::vector<double> &x_values,
-                                              const std::vector<double> &simulated,
-                                              const std::vector<double> &reference,
-                                              const double abs_tolerance = abs_tol,
-                                              const double rel_tolerance = rel_tol)
-  {
-    if (x_values.size() != simulated.size() || x_values.size() != reference.size())
-      return std::string("Size mismatch while comparing ") + name + ".";
-
-    std::ostringstream mismatch;
-    mismatch << std::setprecision(17);
-
-    std::size_t mismatch_count = 0;
-    double max_abs_error = 0.0;
-    double max_rel_error = 0.0;
-    for (std::size_t i = 0; i < simulated.size(); ++i) {
-      const double abs_error = std::abs(simulated[i] - reference[i]);
-      const double reference_magnitude = std::abs(reference[i]);
-      const double rel_error =
-          reference_magnitude == 0.0 ? (abs_error == 0.0 ? 0.0 : std::numeric_limits<double>::infinity())
-                                     : abs_error / reference_magnitude;
-      max_abs_error = std::max(max_abs_error, abs_error);
-      max_rel_error = std::max(max_rel_error, rel_error);
-
-      if (abs_error <= abs_tolerance || rel_error <= rel_tolerance) continue;
-
-      if (mismatch_count == 0) mismatch << name << " comparison failed.\n";
-      if (mismatch_count < 8) {
-        mismatch << "  i=" << i << ", sigma=" << x_values[i] << ", simulated=" << simulated[i]
-                 << ", reference=" << reference[i] << ", abs_error=" << abs_error << ", rel_error=" << rel_error
-                 << '\n';
-      }
-      ++mismatch_count;
-    }
-
-    if (mismatch_count == 0) return std::nullopt;
-
-    mismatch << "  total mismatches=" << mismatch_count << ", max_abs_error=" << max_abs_error
-             << ", max_rel_error=" << max_rel_error;
-    return mismatch.str();
-  }
-
-  struct TemporaryDirectory {
-    TemporaryDirectory()
-    {
-      const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
-      path = std::filesystem::temp_directory_path() /
-             ("gross_neveu_kt_regression_" + std::to_string(static_cast<std::int64_t>(nonce)));
-      std::filesystem::create_directories(path);
-    }
-
-    ~TemporaryDirectory()
-    {
-      std::error_code ec;
-      std::filesystem::remove_all(path, ec);
-    }
-
-    std::filesystem::path path;
-  };
 
   template <typename Derived>
   class GrossNeveuKTSourceOnlyBase : public def::AbstractModel<Derived, Components>,
@@ -385,7 +287,6 @@ namespace
 
       const auto &fe_derivatives = get<1>(sol);
       const FluxNumberType eb_argument = FluxNumberType(k2) + fe_derivatives[0][0];
-      const double eb_argument_value = scalar_value(eb_argument);
 
       using std::sqrt;
 
@@ -400,8 +301,6 @@ namespace
 
   JSONValue make_json([[maybe_unused]] const FlowCase &flow_case)
   {
-    const double starting_dt = 1.0e-10;
-
     return json::value(
         {{"physical", {{"Lambda", Lambda}}},
          {"discretization",
@@ -427,14 +326,6 @@ namespace
              {"max_steps", 5000000}}}}},
          {"output", {{"verbosity", 1}, {"vtk", false}, {"hdf5", false}}}});
   }
-
-
-
-  std::filesystem::path repo_root()
-  {
-    return std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().parent_path().parent_path().parent_path();
-  }
-
   std::filesystem::path fixture_path(const std::string &filename)
   {
     const auto local_fixture = std::filesystem::path(__FILE__).parent_path() / "data" / filename;
@@ -486,7 +377,8 @@ namespace
       REQUIRE(reference_u.x[i] == Catch::Approx(static_cast<double>(i) * delta_sigma).margin(grid_tol));
 
     const auto reconstructed_U = reconstruct_potential_from_u(reference_u.y);
-    if (const auto mismatch = compare_profiles("fixture U reconstruction", reference_U.x, reconstructed_U, reference_U.y))
+    if (const auto mismatch = kt_regression::compare_profiles("fixture U reconstruction", reference_U.x, reconstructed_U,
+                                                              reference_U.y, abs_tol, rel_tol))
       FAIL(*mismatch);
 
     return {reference_U, reference_u};
@@ -512,7 +404,7 @@ namespace
     Discretization discretization(mesh, json);
     Assembler<Model> assembler(discretization, model, json);
 
-    TemporaryDirectory tmp_dir;
+    kt_regression::TemporaryDirectory tmp_dir("gross_neveu_kt_regression");
     DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), "gross_neveu_kt_regression", "output", json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     Stepper time_stepper(json, &assembler, &data_out, adaptor.get());
@@ -538,20 +430,10 @@ namespace
       FAIL(std::string("Gross-Neveu KT regression solve failed: ") + exception.what());
     }
 
-    std::vector<std::pair<double, double>> sampled_u;
-    sampled_u.reserve(state.spatial_data().size());
-    for (unsigned int i = 0; i < state.spatial_data().size(); ++i)
-      sampled_u.emplace_back(support_points[i][0], state.spatial_data()[i]);
-    std::sort(sampled_u.begin(), sampled_u.end(), [](const auto &lhs, const auto &rhs) { return lhs.first < rhs.first; });
-
+    const SampledProfile sampled_u = kt_regression::sample_sorted_profile(state, discretization, grid_tol);
     SimulationResult result;
-    result.x.reserve(sampled_u.size());
-    result.u.reserve(sampled_u.size());
-    for (const auto &[sigma, u_value] : sampled_u) {
-      result.x.push_back(sigma);
-      result.u.push_back(u_value);
-    }
-    if (!result.x.empty() && std::abs(result.x.front()) < grid_tol) result.u.front() = 0.0;
+    result.x = sampled_u.x;
+    result.u = sampled_u.y;
     result.U = reconstruct_potential_from_u(result.u);
     return result;
   }
@@ -585,12 +467,14 @@ namespace
       for (std::size_t i = 0; i < simulation.x.size(); ++i)
         REQUIRE(simulation.x[i] == Catch::Approx(reference_u.x[i]).margin(grid_tol));
 
-      if (const auto u_mismatch = compare_profiles("u(sigma)", simulation.x, simulation.u, reference_u.y,
-                                                   current_flow.profile_abs_tol, current_flow.profile_rel_tol))
+      if (const auto u_mismatch = kt_regression::compare_profiles("u(sigma)", simulation.x, simulation.u, reference_u.y,
+                                                                  current_flow.profile_abs_tol,
+                                                                  current_flow.profile_rel_tol))
         FAIL(*u_mismatch);
 
-      if (const auto U_mismatch = compare_profiles("U(sigma)", simulation.x, simulation.U, reference_U.y,
-                                                   current_flow.profile_abs_tol, current_flow.profile_rel_tol))
+      if (const auto U_mismatch = kt_regression::compare_profiles("U(sigma)", simulation.x, simulation.U, reference_U.y,
+                                                                  current_flow.profile_abs_tol,
+                                                                  current_flow.profile_rel_tol))
         FAIL(*U_mismatch);
     }
   };
@@ -601,7 +485,7 @@ TEMPLATE_TEST_CASE_METHOD(GrossNeveuFlowFixture, "KT Gross-Neveu mean-field regr
                           "[FV][KT][GrossNeveu][MF][regression]", FlowMF_T00625_Mu06, FlowMF_T00125_Mu06,
                           FlowMF_T01_Mu01)
 {
-  ensure_logger();
+  kt_regression::ensure_logger();
 
   REQUIRE(TestType::flow_case().is_mean_field);
 
@@ -612,7 +496,7 @@ TEMPLATE_TEST_CASE_METHOD(GrossNeveuFlowFixture, "KT Gross-Neveu finite-N regres
                           "[FV][KT][GrossNeveu][regression]", FlowN16_T00625_Mu06, FlowN2_T00625_Mu06,
                           FlowN2_T00125_Mu06, FlowN2_T01_Mu01)
 {
-  ensure_logger();
+  kt_regression::ensure_logger();
 
   REQUIRE_FALSE(TestType::flow_case().is_mean_field);
 
