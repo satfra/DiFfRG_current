@@ -4,7 +4,7 @@
 
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/discretization.hh>
-#include <boilerplate/models.hh>
+#include <boilerplate/kt_models.hh>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 

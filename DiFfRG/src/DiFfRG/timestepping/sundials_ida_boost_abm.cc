@@ -54,7 +54,7 @@ namespace DiFfRG
 
     // Create a SUNDIALS IDA object with the right settings for spatial data
     typename SUNDIALS::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
-                                                                1e6, 0, impl.abs_tol, impl.rel_tol);
+                                                                impl.max_steps, 0, impl.abs_tol, impl.rel_tol);
     typename SUNDIALS::IDA<VectorType> time_stepper(ida_data);
 
     // Initialize initial condition
@@ -284,14 +284,14 @@ namespace DiFfRG
         const auto ms_passed =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
                 .count();
-        console_out(t, "jacobian construction", 1, ms_passed);
+        console_out(t, "jacobian construction", 2, ms_passed);
         now = std::chrono::high_resolution_clock::now();
 
         if (linSolver.invert()) {
           const auto ms_passed =
               std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
                   .count();
-          console_out(t, "jacobian inversion", 2, ms_passed);
+          console_out(t, "jacobian inversion", 3, ms_passed);
         }
       } catch (std::exception &e) {
         std::cerr << e.what() << std::endl;

@@ -11,7 +11,7 @@
 #include <deal.II/base/point.h>
 #include <deal.II/base/tensor.h>
 
-#include <boilerplate/models.hh>
+#include <boilerplate/kt_models.hh>
 
 using NumberType = double;
 using namespace dealii;
@@ -157,6 +157,35 @@ TEST_CASE("compute_speeds 2D 1-component — independent per dimension", "[FV][w
   const auto a = MaxEigenvalueWaveSpeed::compute_speeds<NumberType, dim, nc>(J_plus, J_minus);
   CHECK(a[0] == Catch::Approx(3.0));
   CHECK(a[1] == Catch::Approx(5.0));
+}
+
+TEST_CASE("selected speed derivatives average equal max-speed branches", "[FV][wave_speed]")
+{
+  constexpr int dim = 2;
+  constexpr size_t nc = 1;
+
+  std::array<JacobianMatrix<NumberType, nc>, dim> J_plus{}, J_minus{};
+  J_plus[0][0][0] = 2.0;
+  J_minus[0][0][0] = -3.0;
+  J_plus[1][0][0] = -4.0;
+  J_minus[1][0][0] = 4.0;
+
+  HessianTensor<NumberType, dim, nc> H_plus{}, H_minus{};
+  H_plus[0][0][0][0] = 2.0;
+  H_minus[0][0][0][0] = 6.0;
+  H_plus[1][0][0][0] = 2.0;
+  H_minus[1][0][0][0] = 6.0;
+
+  const auto branches = MaxEigenvalueWaveSpeed::select_speed_branches<NumberType, dim, nc>(J_plus, J_minus);
+  const auto [da_plus, da_minus] =
+      MaxEigenvalueWaveSpeed::compute_selected_speed_derivatives<NumberType, dim, nc>(J_plus, J_minus, H_plus, H_minus);
+
+  CHECK(branches[0] == KT::WaveSpeedBranch::minus);
+  CHECK(branches[1] == KT::WaveSpeedBranch::average);
+  CHECK(da_plus[0][0] == Catch::Approx(0.0));
+  CHECK(da_minus[0][0] == Catch::Approx(-6.0));
+  CHECK(da_plus[1][0] == Catch::Approx(-1.0));
+  CHECK(da_minus[1][0] == Catch::Approx(3.0));
 }
 
 // ===========================================================================

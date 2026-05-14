@@ -443,28 +443,27 @@ ExternalProject_Add(
 # PETSc
 # ##############################################################################
 
-option(BUILD_PETSC "Build PETSc" OFF)
+option(PETSC_WITH_CLEAN "Force PETSc to clean its build and external packages before configure" OFF)
 
-if(BUILD_PETSC)
-  # build PETSc
-  ExternalProject_Add(
-    petsc_dep
-    LOG_CONFIGURE ON
-    LOG_INSTALL ON
-    LOG_OUTPUT_ON_FAILURE ON
-    DEPENDS general_dep # sundials_dep autodiff_dep kokkos_dep
-    PREFIX ${CMAKE_CURRENT_BINARY_DIR}/petsc
-    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/petsc
-    INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
-    BUILD_COMMAND cmake -E echo "Skipping build step for PETSc."
-    INSTALL_COMMAND cmake -E echo "Skipping install step for PETSc."
-    # Propagate DEPEND_INSTALL_PREFIX to the dependencies
-    CMAKE_CACHE_ARGS
-      -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-      -DOpenBLAS_LIBRARY:STRING=${BLAS_LIBRARY_PATH} -DHAVE_MPI:BOOL=${MPI})
-  set(is_petsc_dep petsc_dep)
-endif()
+# build PETSc
+ExternalProject_Add(
+  petsc_dep
+  LOG_CONFIGURE ON
+  LOG_INSTALL ON
+  LOG_OUTPUT_ON_FAILURE ON
+  DEPENDS general_dep sundials_dep autodiff_dep kokkos_dep
+  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/petsc
+  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/petsc
+  INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+  CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
+  BUILD_COMMAND cmake -E echo "Skipping build step for PETSc."
+  INSTALL_COMMAND cmake -E echo "Skipping install step for PETSc."
+  # Propagate DEPEND_INSTALL_PREFIX to the dependencies
+  CMAKE_CACHE_ARGS
+    -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+    -DOpenBLAS_LIBRARY:STRING=${BLAS_LIBRARY_PATH}
+    -DPETSC_WITH_CLEAN:BOOL=${PETSC_WITH_CLEAN}
+    -DHAVE_MPI:BOOL=${MPI})
 
 # ##############################################################################
 # deal.II
@@ -510,6 +509,9 @@ else()
 endif()
 
 message("${BoldCyan}[7/8] Configuring deal.II...${ColourReset}")
+# build deal.II
+find_program(PATCH_EXECUTABLE patch REQUIRED)
+
 ExternalProject_Add(
   deal.II_dep
   LOG_CONFIGURE ON
@@ -520,8 +522,10 @@ ExternalProject_Add(
   GIT_SHALLOW ON
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/deal.II
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  DEPENDS general_dep boost_dep ${is_petsc_dep} sundials_dep
   BUILD_COMMAND cmake --build . -- -j${_dealii_jobs}
+  PATCH_COMMAND ${PATCH_EXECUTABLE} -p1 -i
+                ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/dealii_ida_max_num_steps.patch
+  DEPENDS general_dep boost_dep petsc_dep sundials_dep
   CMAKE_CACHE_ARGS
     -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
     -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
