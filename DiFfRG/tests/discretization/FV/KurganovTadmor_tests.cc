@@ -366,8 +366,7 @@ TEST_CASE("Test compute_kt_flux_and_speeds with Burgers flux in 1D", "[FV][KT]")
 using KT::internal::make_tagged_neighbors;
 using KT::internal::tag_cell_dofs;
 template <int dim, typename NT, size_t nc> using KTCellData = KT::internal::CellData<dim, NT, nc>;
-template <int dim, typename NT, size_t nc, size_t nf>
-using KTNeighborData = KT::internal::NeighborData<dim, NT, nc, nf>;
+template <int dim, typename NT, size_t nc> using KTNeighborData = KT::internal::NeighborData<dim, NT, nc>;
 using AD = autodiff::Real<1, NumberType>;
 
 TEST_CASE("tag_cell_dofs 1D single component — matching dof is seeded", "[FV][KT][tag_cell_dofs]")
@@ -468,9 +467,8 @@ TEST_CASE("make_tagged_neighbors 1D single component — matching dof in one fac
 {
   constexpr int dim = 1;
   constexpr size_t nc = 1;
-  constexpr size_t nf = 2;
 
-  const KTNeighborData<dim, NumberType, nc, nf> nd{
+  const KTNeighborData<dim, NumberType, nc> nd{
       .x = {Point<dim>(-1.0), Point<dim>(1.0)},
       .u = {std::array<NumberType, nc>{1.0}, std::array<NumberType, nc>{2.0}},
       .dof_indices = {std::array<dealii::types::global_dof_index, nc>{10},
@@ -500,9 +498,8 @@ TEST_CASE("make_tagged_neighbors 1D single component — no matching dof", "[FV]
 {
   constexpr int dim = 1;
   constexpr size_t nc = 1;
-  constexpr size_t nf = 2;
 
-  const KTNeighborData<dim, NumberType, nc, nf> nd{
+  const KTNeighborData<dim, NumberType, nc> nd{
       .x = {Point<dim>(-1.0), Point<dim>(1.0)},
       .u = {std::array<NumberType, nc>{1.0}, std::array<NumberType, nc>{2.0}},
       .dof_indices = {std::array<dealii::types::global_dof_index, nc>{10},
@@ -511,7 +508,7 @@ TEST_CASE("make_tagged_neighbors 1D single component — no matching dof", "[FV]
 
   const auto result = make_tagged_neighbors(nd, 99);
 
-  for (size_t face = 0; face < nf; ++face)
+  for (size_t face = 0; face < KTNeighborData<dim, NumberType, nc>::n_faces; ++face)
     for (size_t c = 0; c < nc; ++c)
       CHECK(derivative(result.u[face][c]) == Catch::Approx(0.0));
 }
@@ -521,9 +518,8 @@ TEST_CASE("make_tagged_neighbors 1D multi-component — specific face and compon
 {
   constexpr int dim = 1;
   constexpr size_t nc = 2;
-  constexpr size_t nf = 2;
 
-  const KTNeighborData<dim, NumberType, nc, nf> nd{
+  const KTNeighborData<dim, NumberType, nc> nd{
       .x = {Point<dim>(-1.0), Point<dim>(1.0)},
       .u = {std::array<NumberType, nc>{1.0, 2.0}, std::array<NumberType, nc>{3.0, 4.0}},
       .dof_indices = {std::array<dealii::types::global_dof_index, nc>{10, 20},
@@ -562,9 +558,8 @@ TEST_CASE("make_tagged_neighbors 2D single component — 4 faces, one matching",
 {
   constexpr int dim = 2;
   constexpr size_t nc = 1;
-  constexpr size_t nf = 4;
 
-  const KTNeighborData<dim, NumberType, nc, nf> nd{
+  const KTNeighborData<dim, NumberType, nc> nd{
       .x = {Point<dim>(-1.0, 0.0), Point<dim>(1.0, 0.0), Point<dim>(0.0, -1.0), Point<dim>(0.0, 1.0)},
       .u = {std::array<NumberType, nc>{1.0}, std::array<NumberType, nc>{2.0}, std::array<NumberType, nc>{3.0},
             std::array<NumberType, nc>{4.0}},

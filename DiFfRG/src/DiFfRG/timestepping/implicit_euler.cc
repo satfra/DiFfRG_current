@@ -65,14 +65,14 @@ namespace DiFfRG
       const auto ms_passed =
           std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
               .count();
-      console_out(tc.get_t(), "jacobian construction", 1, ms_passed);
+      console_out(tc.get_t(), "jacobian construction", 2, ms_passed);
       now = std::chrono::high_resolution_clock::now();
 
       if (linSolver.invert()) {
         const auto ms_passed =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
                 .count();
-        console_out(tc.get_t(), "jacobian inversion", 2, ms_passed);
+        console_out(tc.get_t(), "jacobian inversion", 3, ms_passed);
       }
     };
 

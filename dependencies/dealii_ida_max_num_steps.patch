@@ -1,0 +1,22 @@
+diff --git a/source/sundials/ida.cc b/source/sundials/ida.cc
+index 2c66cf8..38eb0a7 100644
+--- a/source/sundials/ida.cc
++++ b/source/sundials/ida.cc
+@@ -37,6 +37,7 @@
+ 
+ #  include <iomanip>
+ #  include <iostream>
++#  include <limits>
+ 
+ DEAL_II_NAMESPACE_OPEN
+ 
+@@ -325,7 +326,8 @@ namespace SUNDIALS
+     status = IDASetSuppressAlg(ida_mem, data.ignore_algebraic_terms_for_errors);
+     AssertIDA(status);
+ 
+-    //  status = IDASetMaxNumSteps(ida_mem, max_steps);
++    status = IDASetMaxNumSteps(ida_mem, std::numeric_limits<long int>::max());
++    AssertIDA(status);
+     status = IDASetStopTime(ida_mem, data.final_time);
+     AssertIDA(status);
+ 

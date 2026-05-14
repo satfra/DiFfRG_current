@@ -146,6 +146,173 @@ public:
 };
 ```
 
+## Affine constraints
+
+Sometimes a model should pin a few individual degrees of freedom directly, instead of expressing the condition through a
+flux or a boundary stencil. Typical examples are:
+- imposing `u(0)=0`,
+- fixing several FE functions at the origin,
+- selecting one representative in the presence of a zero mode.
+
+This is done through **affine constraints**.
+
+### When is this used?
+
+Before the assemblers rebuild sparsity patterns and operators, they ask the model whether some dofs should be removed
+from the linear algebra and prescribed to a fixed value. The model can then add lines to the deal.II
+`AffineConstraints` object.
+
+There are two model-side entry points:
+- `apply_boundary_affine_constraints(constraints, context)` for constraints on dofs sitting on boundary faces,
+- `apply_affine_constraints(constraints, context)` for constraints that may need any support dof, including interior
+  support points.
+
+The assemblers call the lower-level `affine_constraints(...)` hook with the context object. Models should usually
+implement one of the two `apply_*` hooks above or inherit one of the helper mixins.
+
+### What is `context`?
+
+The second argument of the `apply_*_affine_constraints(...)` hooks is a small helper object that exposes the dofs and
+support points of each FE function by its compile-time name.
+
+For example, if the model uses
+```Cpp
+using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">, Scalar<"v">>;
+using Components = ComponentDescriptor<FEFunctionDesc>;
+constexpr auto idxf = FEFunctionDesc{};
+```
+then inside one of the affine-constraint hooks you can write
+```Cpp
+const auto u_support = context.template support<"u">();
+const auto v_boundary = context.template boundary<"v">();
+```
+
+Each of these views has two members:
+- `.dofs`: the `IndexSet` of the selected FE function,
+- `.points`: the corresponding support points.
+
+These two are aligned: `view.points[i]` is the point belonging to `view.dofs.nth_index_in_set(i)`.
+
+There are two kinds of views:
+- `support<"...">()` returns **all** support dofs of that FE function,
+- `boundary<"...">()` returns only the **boundary** dofs of that FE function.
+
+Use the view that matches the condition: boundary-face constraints should inspect `boundary<"...">()`, while
+cell-centered or interior support-point constraints should inspect `support<"...">()`.
+
+### Smallest useful example: constrain one component
+
+For the common one-dimensional case `u(0)=0`, there are two ready-made helpers:
+```Cpp
+template <typename Model> using ConstrainBoundaryUAtOrigin = def::ConstrainOriginBoundaryPointToZero<"u", Model>;
+template <typename Model> using ConstrainSupportUAtOrigin = def::ConstrainOriginSupportPointToZero<"u", Model>;
+
+class MyModel : public def::AbstractModel<MyModel, Components>,
+                public ConstrainBoundaryUAtOrigin<MyModel>,
+                public def::fRG,
+                ...
+{
+  ...
+};
+```
+
+Both helpers do the following:
+1. inspect the selected view of the FE function `"u"` and choose the representative nearest to `x=0`,
+2. break symmetric ties by preferring the non-negative side,
+3. constrain the selected dof to `0`.
+
+Use `ConstrainOriginBoundaryPointToZero` for dofs sitting on boundary faces. Use
+`ConstrainOriginSupportPointToZero` for FV and DG0-like layouts where the representative nearest the origin can be an
+interior or cell-centered support point.
+
+### Manual example: constrain several components differently
+
+If different FE functions should be treated differently, write a custom
+`apply_affine_constraints(...)` method:
+```Cpp
+class MyModel : public def::AbstractModel<MyModel, Components>,
+                public def::fRG,
+                ...
+{
+public:
+  template <typename Constraints, typename Context>
+  void apply_affine_constraints(Constraints &constraints, const Context &context) const
+  {
+    const auto u = context.template support<"u">();
+
+    // Enforce u(0) = 0 using a support point.
+    for (uint i = 0; i < u.dofs.n_elements(); ++i) {
+      if (std::abs(u.points[i][0]) > 1.0e-12) continue;
+
+      const auto dof = u.dofs.nth_index_in_set(i);
+      constraints.add_line(dof);
+      constraints.set_inhomogeneity(dof, 0.0);
+      break;
+    }
+  }
+
+  template <typename Constraints, typename Context>
+  void apply_boundary_affine_constraints(Constraints &constraints, const Context &context) const
+  {
+    const auto v = context.template boundary<"v">();
+
+    // Enforce v(0) = 1 using a boundary dof.
+    for (uint i = 0; i < v.dofs.n_elements(); ++i) {
+      if (std::abs(v.points[i][0]) > 1.0e-12) continue;
+
+      const auto dof = v.dofs.nth_index_in_set(i);
+      constraints.add_line(dof);
+      constraints.set_inhomogeneity(dof, 1.0);
+      break;
+    }
+  }
+};
+```
+
+The important point is that the selection happens by **name**, not by guessing that `"u"` is component `0` and `"v"`
+is component `1`.
+
+### Reusing helpers for several named FE functions
+
+If several FE functions should receive the same type of origin constraint, it is usually cleaner to wrap the provided
+single-component helper into a small mixin:
+```Cpp
+template <typename Model>
+class ConstrainUAndVAtOrigin
+  : public def::ConstrainOriginSupportPointToZero<"u", Model>,
+    public def::ConstrainOriginSupportPointToZero<"v", Model>
+{
+public:
+  template <typename Constraints, typename Context>
+  void apply_affine_constraints(Constraints &constraints, const Context &context) const
+  {
+    def::ConstrainOriginSupportPointToZero<"u", Model>::apply_affine_constraints(constraints, context);
+    def::ConstrainOriginSupportPointToZero<"v", Model>::apply_affine_constraints(constraints, context);
+  }
+};
+```
+
+Then the model just inherits the wrapper:
+```Cpp
+class MyModel : public def::AbstractModel<MyModel, Components>,
+                public ConstrainUAndVAtOrigin<MyModel>,
+                ...
+{
+  ...
+};
+```
+
+This gives the same “strategy mixin” style as the FV boundary helpers.
+
+### When should this not be used?
+
+Affine constraints are for pinning a few specific dofs. They are usually **not** the right tool for:
+- full PDE boundary conditions that are already naturally expressed through numerical fluxes,
+- KT ghost-cell behavior, which belongs into the FV boundary stencil helpers,
+- conditions that should be applied to a whole face or through weak boundary terms.
+
+If the condition is really “pick this named dof and set it to a fixed value”, affine constraints are a good fit.
+
 ### Assemblers and discretizations
 
 The actual numerical calculation of the flow equations (rather, their weak form) is done by the so-called assemblers. These are responsible for the actual discretization of the flow equations on the finite element space. In DiFfRG, we provide a set of assemblers for different discretizations, which are all derived from the abstract assembler class DiFfRG::AbstractAssembler.

@@ -88,38 +88,40 @@ namespace DiFfRG
     m_data_out.build_patches(subdivisions);
 
 #ifdef H5CPP
-    auto h5_file = hdf5_output->get_file();
-    auto h5_group = h5_file.root().get_group("FE");
-    {
-      auto cur_group = h5_group.create_group(Utilities::int_to_string(series_number, 6));
-      cur_group.attributes.template create_from<double>("time", time);
-      cur_group.attributes.template create_from<int>("series_number", series_number);
-      cur_group.attributes.template create_from<std::string>("output_name", output_name);
+    if (hdf5_output != nullptr) {
+      auto h5_file = hdf5_output->get_file();
+      auto h5_group = h5_file.root().get_group("FE");
+      {
+        auto cur_group = h5_group.create_group(Utilities::int_to_string(series_number, 6));
+        cur_group.attributes.template create_from<double>("time", time);
+        cur_group.attributes.template create_from<int>("series_number", series_number);
+        cur_group.attributes.template create_from<std::string>("output_name", output_name);
 
-      DataOutBase::DataOutFilterFlags mflags(false, false);
-      DataOutBase::DataOutFilter data_filter(mflags);
-      // Filter the data and store it in data_filter
-      m_data_out.write_filtered_data(data_filter);
-      // Write the filtered data to HDF5
-      std::vector<double> node_data;
-      data_filter.fill_node_data(node_data);
+        DataOutBase::DataOutFilterFlags mflags(false, false);
+        DataOutBase::DataOutFilter data_filter(mflags);
+        // Filter the data and store it in data_filter
+        m_data_out.write_filtered_data(data_filter);
+        // Write the filtered data to HDF5
+        std::vector<double> node_data;
+        data_filter.fill_node_data(node_data);
 
-      hdf5::dataspace::Simple nodes_space({data_filter.n_nodes(), dim});
-      auto nodes = cur_group.create_dataset("nodes", hdf5::datatype::create<double>(), nodes_space);
-      nodes.write(node_data);
+        hdf5::dataspace::Simple nodes_space({data_filter.n_nodes(), dim});
+        auto nodes = cur_group.create_dataset("nodes", hdf5::datatype::create<double>(), nodes_space);
+        nodes.write(node_data);
 
-      for (uint i = 0; i < data_filter.n_data_sets(); ++i) {
-        hdf5::dataspace::Simple data_space({data_filter.n_nodes()});
-        const std::string name = data_filter.get_data_set_name(i);
-        auto dataset = cur_group.create_dataset(name, hdf5::datatype::create<double>(), data_space);
+        for (uint i = 0; i < data_filter.n_data_sets(); ++i) {
+          hdf5::dataspace::Simple data_space({data_filter.n_nodes()});
+          const std::string name = data_filter.get_data_set_name(i);
+          auto dataset = cur_group.create_dataset(name, hdf5::datatype::create<double>(), data_space);
 
-        // To forgo the need for a copy, we have to do some casting around the constness of the data.
-        // See also https://ess-dmsc.github.io/h5cpp/stable/advanced/c_arrays.html
-        const double *data_set_data = data_filter.get_data_set(i);
-        dataset.write(hdf5::ArrayAdapter<double>(const_cast<double *>(data_set_data), data_filter.n_nodes()));
+          // To forgo the need for a copy, we have to do some casting around the constness of the data.
+          // See also https://ess-dmsc.github.io/h5cpp/stable/advanced/c_arrays.html
+          const double *data_set_data = data_filter.get_data_set(i);
+          dataset.write(hdf5::ArrayAdapter<double>(const_cast<double *>(data_set_data), data_filter.n_nodes()));
+        }
       }
+      hdf5_output->close_file();
     }
-    hdf5_output->close_file();
 #endif
 
     auto output_func = [=, this](const uint m_series_number, const double m_time) {

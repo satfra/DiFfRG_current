@@ -13,11 +13,14 @@ namespace DiFfRG
   {
     namespace KurganovTadmor
     {
+      enum class WaveSpeedBranch { plus, minus, average };
+
       /**
        * @brief Default wave-speed strategy.
        *
        * compute_speeds: a[d] = max(spectral_radius(J_plus[d]), spectral_radius(J_minus[d]))
        * compute_speed_derivatives: analytical derivative via eigenvector perturbation theory
+       * compute_selected_speed_derivatives: derivative for the branch selected by compute_speeds
        */
       struct MaxEigenvalueWaveSpeed {
 
@@ -26,7 +29,42 @@ namespace DiFfRG
         compute_speeds(const std::array<internal::JacobianMatrix<NumberType, n_components>, dim> &J_plus,
                        const std::array<internal::JacobianMatrix<NumberType, n_components>, dim> &J_minus)
         {
+          const auto [spectral_radius_plus, spectral_radius_minus] =
+              compute_spectral_radii<NumberType, dim, n_components>(J_plus, J_minus);
+
           std::array<NumberType, dim> a{};
+          for (size_t d = 0; d < dim; ++d)
+            a[d] = std::max(spectral_radius_plus[d], spectral_radius_minus[d]);
+          return a;
+        }
+
+        template <typename NumberType, int dim, size_t n_components>
+        static std::array<WaveSpeedBranch, dim>
+        select_speed_branches(const std::array<internal::JacobianMatrix<NumberType, n_components>, dim> &J_plus,
+                              const std::array<internal::JacobianMatrix<NumberType, n_components>, dim> &J_minus)
+        {
+          const auto [spectral_radius_plus, spectral_radius_minus] =
+              compute_spectral_radii<NumberType, dim, n_components>(J_plus, J_minus);
+
+          std::array<WaveSpeedBranch, dim> branches{};
+          for (size_t d = 0; d < dim; ++d) {
+            if (spectral_radius_plus[d] > spectral_radius_minus[d])
+              branches[d] = WaveSpeedBranch::plus;
+            else if (spectral_radius_minus[d] > spectral_radius_plus[d])
+              branches[d] = WaveSpeedBranch::minus;
+            else
+              branches[d] = WaveSpeedBranch::average;
+          }
+          return branches;
+        }
+
+      private:
+        template <typename NumberType, int dim, size_t n_components>
+        static std::pair<std::array<NumberType, dim>, std::array<NumberType, dim>>
+        compute_spectral_radii(const std::array<internal::JacobianMatrix<NumberType, n_components>, dim> &J_plus,
+                               const std::array<internal::JacobianMatrix<NumberType, n_components>, dim> &J_minus)
+        {
+          std::array<NumberType, dim> spectral_radius_plus{}, spectral_radius_minus{};
           for (size_t d = 0; d < dim; ++d) {
             NumberType max_eig_plus = 0.0;
             NumberType max_eig_minus = 0.0;
@@ -47,11 +85,13 @@ namespace DiFfRG
               max_eig_minus = es_minus.eigenvalues().cwiseAbs().maxCoeff();
             }
 
-            a[d] = std::max(max_eig_plus, max_eig_minus);
+            spectral_radius_plus[d] = max_eig_plus;
+            spectral_radius_minus[d] = max_eig_minus;
           }
-          return a;
+          return {spectral_radius_plus, spectral_radius_minus};
         }
 
+      public:
         /**
          * @brief Compute da[d]/du_c analytically from J and H:
          *   a[d] = spectral_radius(J[d])
@@ -128,6 +168,36 @@ namespace DiFfRG
               fill_da(Jm, H_minus, da_minus);
             }
           }
+          return {da_plus, da_minus};
+        }
+
+        template <typename NumberType, int dim, size_t n_components>
+        static std::pair<std::array<std::array<NumberType, n_components>, dim>,
+                         std::array<std::array<NumberType, n_components>, dim>>
+        compute_selected_speed_derivatives(
+            const std::array<internal::JacobianMatrix<NumberType, n_components>, dim> &J_plus,
+            const std::array<internal::JacobianMatrix<NumberType, n_components>, dim> &J_minus,
+            const internal::HessianTensor<NumberType, dim, n_components> &H_plus,
+            const internal::HessianTensor<NumberType, dim, n_components> &H_minus)
+        {
+          const auto [raw_da_plus, raw_da_minus] =
+              compute_speed_derivatives<NumberType, dim, n_components>(J_plus, J_minus, H_plus, H_minus);
+          const auto branches = select_speed_branches<NumberType, dim, n_components>(J_plus, J_minus);
+
+          std::array<std::array<NumberType, n_components>, dim> da_plus{}, da_minus{};
+          for (size_t d = 0; d < dim; ++d) {
+            if (branches[d] == WaveSpeedBranch::plus)
+              da_plus[d] = raw_da_plus[d];
+            else if (branches[d] == WaveSpeedBranch::minus)
+              da_minus[d] = raw_da_minus[d];
+            else {
+              for (size_t c = 0; c < n_components; ++c) {
+                da_plus[d][c] = NumberType(0.5) * raw_da_plus[d][c];
+                da_minus[d][c] = NumberType(0.5) * raw_da_minus[d][c];
+              }
+            }
+          }
+
           return {da_plus, da_minus};
         }
       };
