@@ -10,6 +10,15 @@
 
 using namespace DiFfRG;
 
+namespace
+{
+  void check_complex_approx(const complex<double> actual, const complex<double> expected)
+  {
+    CHECK(real(actual) == Catch::Approx(real(expected)));
+    CHECK(imag(actual) == Catch::Approx(imag(expected)));
+  }
+} // namespace
+
 TEMPLATE_TEST_CASE_SIG("Test 1D momentum integrals", "[integration][quadrature]", ((int dim), dim), (2), (3), (4), (5))
 {
   DiFfRG::Init();
@@ -101,4 +110,41 @@ TEMPLATE_TEST_CASE_SIG("Test 1D momentum integrals", "[integration][quadrature]"
   SECTION("Threads") { check(Threads_exec(), (double)0); }
   // Check on GPU
   SECTION("GPU") { check(GPU_exec(), (double)0); }
+}
+
+TEST_CASE("Integrator_p2 propagates second-order complex autodiff through TBB", "[integration][quadrature][autodiff]")
+{
+  DiFfRG::Init();
+
+  using NT = cxReal<2, double>;
+  using ctype = typename get_type::ctype<NT>;
+  static_assert(std::is_same_v<ctype, double>);
+
+  QuadratureProvider quadrature_provider;
+  Integrator_p2<3, NT, ParameterizedPolynomialIntegrand<NT>, TBB_exec> integrator(quadrature_provider, {96}, 1.);
+  Integrator_p2<3, NT, PolyIntegrand<1, NT>, TBB_exec> reference_integrator(quadrature_provider, {96}, 1.);
+  integrator.set_k(1.);
+  reference_integrator.set_k(1.);
+
+  const complex<double> m0(0.7, 0.2);
+  const NT m(std::array<complex<double>, 3>{m0, complex<double>(1., 0.), complex<double>(0., 0.)});
+
+  NT integral{};
+  integrator.get(integral, m);
+
+  NT poly_integral{};
+  reference_integrator.get(poly_integral, NT{}, m, m * m, m * m * m, NT{});
+
+  const ctype prefactor = S_d_prec<ctype>(3) / powr<3>(2. * M_PI);
+  const complex<double> expected_value = prefactor * (m0 / 3. + m0 * m0 / 4. + m0 * m0 * m0 / 5.);
+  const complex<double> expected_first_derivative = prefactor * (1. / 3. + m0 / 2. + 3. * m0 * m0 / 5.);
+  const complex<double> expected_second_derivative = prefactor * (1. / 2. + 6. * m0 / 5.);
+
+  check_complex_approx(autodiff::val(integral), autodiff::val(poly_integral));
+  check_complex_approx(autodiff::derivative<1>(integral), autodiff::derivative<1>(poly_integral));
+  check_complex_approx(autodiff::derivative<2>(integral), autodiff::derivative<2>(poly_integral));
+
+  check_complex_approx(autodiff::val(integral), expected_value);
+  check_complex_approx(autodiff::derivative<1>(integral), expected_first_derivative);
+  check_complex_approx(autodiff::derivative<2>(integral), expected_second_derivative);
 }
