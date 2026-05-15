@@ -25,6 +25,8 @@ MakeKernel::InvalidKey = "The key \"`1`\" is invalid: `2`";
 
 MakeKernel::exportFailed = "Export of sources.m to `1` failed.";
 
+MakeKernel::InvalidADOrders = "ADOrders must be Automatic or a duplicate-free list of supported AD orders. Supported orders are: `1`.";
+
 Begin["`Private`"]
 
 Needs["DiFfRG`CodeTools`Utils`"]
@@ -37,7 +39,12 @@ Needs["DiFfRG`CodeTools`TemplateParameterGeneration`"]
 
 Needs["DiFfRG`CodeTools`Regulator`"]
 
-$ADReplacements = {"double" -> "autodiff::real", "DiFfRG::complex<double>" -> "cxreal"};
+$ADReplacementsByOrder = <|
+    1 -> {"double" -> "autodiff::real", "DiFfRG::complex<double>" -> "cxreal"},
+    2 -> {"double" -> "autodiff::Real<2, double>", "DiFfRG::complex<double>" -> "cxReal<2, double>"}
+|>;
+
+$ADReplacements = $ADReplacementsByOrder[1];
 
 $PredefRegFunc = {"RB", "RF", "RBdot", "RFdot", "dq2RB", "dq2RF"};
 
@@ -58,7 +65,7 @@ CheckKey[kernel_Association, name_String, test_, msg_String] :=
 
 KernelSpecQ[spec_Association] :=
     Module[{validKeys, validKeyTypes},
-        validKeys = CheckKey[spec, "Name", StringQ[#] && StringLength[#] > 0&, "Cannot be empty"] && CheckKey[spec, "Integrator", StringQ[#] && StringLength[#] > 0&, "Cannot be empty"] && CheckKey[spec, "d", IntegerQ[#] && # >= 0&, "Must be an Integer >= 0"] && CheckKey[spec, "AD", BooleanQ, "Must be a Boolean"] && CheckKey[spec, "Device", MemberQ[{"Threads", "TBB", "GPU"}, #]&, "Must be Threads, TBB or GPU."] && CheckKey[spec, "Type", StringQ[#] && StringLength[#] > 0&, "Cannot be empty"];
+        validKeys = CheckKey[spec, "Name", StringQ[#] && StringLength[#] > 0&, "Cannot be empty"] && CheckKey[spec, "Integrator", StringQ[#] && StringLength[#] > 0&, "Cannot be empty"] && CheckKey[spec, "d", IntegerQ[#] && # >= 0&, "Must be an Integer >= 0"] && CheckKey[spec, "AD", BooleanQ, "Must be a Boolean"] && CheckKey[spec, "ADOrders", validADOrdersQ, "Must be Automatic or a duplicate-free list of supported AD orders"] && CheckKey[spec, "Device", MemberQ[{"Threads", "TBB", "GPU"}, #]&, "Must be Threads, TBB or GPU."] && CheckKey[spec, "Type", StringQ[#] && StringLength[#] > 0&, "Cannot be empty"];
         Return[validKeys];
     ];
 
@@ -67,7 +74,29 @@ GetStandardKernelDefinitions[] :=
 
 (* Internal functions added here with Internal`*::usage *)
 
-Options[MakeKernel] = {"Coordinates" -> {}, "CoordinateArguments" -> {}, "IntegrationVariables" -> {}, "KernelDefinitions" -> $StandardKernelDefinitions, "Regulator" -> "DiFfRG::PolynomialExpRegulator", "RegulatorOpts" -> {"", ""}, "KernelBody" -> "", "KernelReturnType" -> "auto", "ConstantBody" -> "", "ConstantReturnType" -> "auto", "Parameters" -> {}, "Name" -> "", "d" -> -1, "Integrator" -> "", "AD" -> False, "ctype" -> "double", "Device" -> "TBB", "Type" -> "double"};
+Options[MakeKernel] = {"Coordinates" -> {}, "CoordinateArguments" -> {}, "IntegrationVariables" -> {}, "KernelDefinitions" -> $StandardKernelDefinitions, "Regulator" -> "DiFfRG::PolynomialExpRegulator", "RegulatorOpts" -> {"", ""}, "KernelBody" -> "", "KernelReturnType" -> "auto", "ConstantBody" -> "", "ConstantReturnType" -> "auto", "Parameters" -> {}, "Name" -> "", "d" -> -1, "Integrator" -> "", "AD" -> False, "ADOrders" -> Automatic, "ctype" -> "double", "Device" -> "TBB", "Type" -> "double"};
+
+validADOrdersQ[Automatic] :=
+    True;
+
+validADOrdersQ[orders_List] :=
+    DuplicateFreeQ[orders] && AllTrue[orders, IntegerQ[#] && KeyExistsQ[$ADReplacementsByOrder, #]&];
+
+validADOrdersQ[_] :=
+    False;
+
+getADOrders[spec_Association] :=
+    Module[{orders},
+        If[Not @ spec["AD"],
+            Return[{}]
+        ];
+        orders = If[spec["ADOrders"] === Automatic, {1}, spec["ADOrders"]];
+        If[Not @ validADOrdersQ[orders],
+            Message[MakeKernel::InvalidADOrders, Keys[$ADReplacementsByOrder]];
+            Abort[]
+        ];
+        orders
+    ];
 
 MakeKernel[__] :=
     (
@@ -79,7 +108,7 @@ MakeKernel[kernelExpr_, OptionsPattern[]] :=
     MakeKernel @@ (Join[{kernelExpr, 0}, Thread[Rule @@ {#, OptionValue[MakeKernel, #]}]& @ Keys[Options[MakeKernel]]]);
 
 MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
-    Module[{expr, const, exec, kernel, constant, kernelClass, kernelHeader, integratorHeader, integratorCpp, integratorTemplateParams, integratorADTemplateParams, tparams = <|"Name" -> "...t", "Type" -> "auto&&", "Reference" -> False, "Const" -> False|>, kernelDefs = OptionValue["KernelDefinitions"], coordinates = OptionValue["Coordinates"], getArgs = OptionValue["CoordinateArguments"], intVariables = OptionValue["IntegrationVariables"], preArguments, regulator, params, paramsAD, explParamAD, arguments, outputPath, sources, returnType, returnTypeAD, returnTypePointer, returnTypePointerAD, spec, parameters, parametersKernel},
+    Module[{expr, const, exec, kernel, constant, kernelClass, kernelHeader, integratorHeader, integratorCpp, integratorTemplateParams, tparams = <|"Name" -> "...t", "Type" -> "auto&&", "Reference" -> False, "Const" -> False|>, kernelDefs = OptionValue["KernelDefinitions"], coordinates = OptionValue["Coordinates"], getArgs = OptionValue["CoordinateArguments"], intVariables = OptionValue["IntegrationVariables"], preArguments, regulator, params, adOrders, adSpecs, explParamAD, arguments, outputPath, sources, returnType, returnTypePointer, spec, parameters, parametersKernel},
         spec = Association @@ Thread[Rule @@ {#, OptionValue[MakeKernel, #]}]& @ Keys[Options[MakeKernel]];
         If[Not @ KernelSpecQ[spec],
             Message[MakeKernel::InvalidSpec];
@@ -120,7 +149,7 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
         (*We set up lists of parameters for the map/get functions, depending on their AD setting*)
         parameters = spec["Parameters"];
         params = FunKit`Private`prepParam /@ parameters;
-        {params, paramsAD} = processParameters[params, $ADReplacements];
+        params = First @ processParameters[params, $ADReplacements];
         arguments = StringRiffle[Map[#["Name"]&, params], ", "];
         getArgs = FunKit`Private`prepParam /@ getArgs;
         getArgs = Map[Append[#, "Type" -> "double"]&, getArgs];
@@ -138,12 +167,22 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
             ];
         integratorTemplateParams = TemplateParameterGeneration[spec];
         integratorTemplateParams = StringRiffle[integratorTemplateParams, ", "];
-        integratorADTemplateParams = TemplateParameterGeneration[spec, $ADReplacements];
-        integratorADTemplateParams = StringRiffle[integratorADTemplateParams, ", "];
         returnType = spec["ctype"];
         returnTypePointer = StringTemplate["`1`*"][returnType];
-        returnTypeAD = spec["ctype"] /. $ADReplacements;
-        returnTypePointerAD = StringTemplate["`1`*"][returnTypeAD];
+        adOrders = getADOrders[spec];
+        adSpecs =
+            Map[
+                <|
+                    "Order" -> #,
+                    "Suffix" -> If[# === 1, "AD", "AD" <> ToString[#]],
+                    "Replacements" -> $ADReplacementsByOrder[#],
+                    "IntegratorTemplateParams" -> StringRiffle[TemplateParameterGeneration[spec, $ADReplacementsByOrder[#]], ", "],
+                    "ReturnType" -> spec["ctype"] /. $ADReplacementsByOrder[#],
+                    "Params" -> Last @ processParameters[params, $ADReplacementsByOrder[#]]
+                |>&
+                ,
+                adOrders
+            ];
         (* Now, we create the header which holds the class with the integrators and the map/get methods *)
         integratorHeader =
             FunKit`MakeCppHeader[
@@ -164,13 +203,9 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
                                         getRegulator[OptionValue["Regulator"], OptionValue["RegulatorOpts"]]
                                         ,
                                         StringTemplate["`1`<`2`> integrator;"][spec["Integrator"], integratorTemplateParams]
-                                        ,
-                                        If[spec["AD"],
-                                            StringTemplate["`1`<`2`> integrator_AD;"][spec["Integrator"], integratorADTemplateParams]
-                                            ,
-                                            ""
-                                        ]
                                     }
+                                    ,
+                                    Map[StringTemplate["`1`<`2`> integrator_`3`;"][spec["Integrator"], #["IntegratorTemplateParams"], #["Suffix"]]&, adSpecs]
                                     ,
                                     Map[FunKit`MakeCppFunction["Name" -> "map", "Return" -> exec, "Body" -> None, "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> returnTypePointer, "Const" -> False, "Reference" -> False|>, <|"Name" -> "coordinates", "Reference" -> True, "Type" -> #, "Const" -> True|>}, params]]&, coordinates]
                                     ,
@@ -180,23 +215,21 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
                                             {}
                                         ]& @ {FunKit`MakeCppFunction["Name" -> "map", "Return" -> exec, "Body" -> "return device::apply([&](const auto...t){return map(dest, coordinates, t...);}, args);", "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> "IT*", "Reference" -> False, "Const" -> False|>, <|"Name" -> "coordinates", "Reference" -> True, "Type" -> "C", "Const" -> True|>, <|"Name" -> "args", "Type" -> "device::tuple<T...>", "Reference" -> True, "Const" -> True|>}], "Templates" -> {"IT", "C", "...T"}]}
                                     ,
-                                    If[spec["AD"],
-                                            #
+                                    Flatten[
+                                        Map[
+                                            With[{ad = #}, Map[FunKit`MakeCppFunction["Name" -> "map", "Return" -> "void", "Body" -> None, "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> StringTemplate["`1`*"][ad["ReturnType"]], "Const" -> False, "Reference" -> False|>, <|"Name" -> "coordinates", "Reference" -> True, "Type" -> #, "Const" -> True|>}, ad["Params"]]]&, coordinates]]&
                                             ,
-                                            {}
-                                        ]& @ Map[FunKit`MakeCppFunction["Name" -> "map", "Return" -> "void", "Body" -> None, "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> returnTypePointerAD, "Const" -> False, "Reference" -> False|>, <|"Name" -> "coordinates", "Reference" -> True, "Type" -> #, "Const" -> True|>}, paramsAD]]&, coordinates]
+                                            adSpecs
+                                        ]
+                                    ]
                                     ,
                                     {
                                         FunKit`MakeCppFunction["Name" -> "get", "Return" -> "void", "Body" -> None, "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> returnType, "Reference" -> True, "Const" -> False|>}, getArgs, params]]
                                         ,
                                         FunKit`MakeCppFunction["Name" -> "get", "Return" -> "void", "Body" -> "device::apply([&](const auto...t){get(dest, " <> preArguments <> "t...);}, args);", "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> "IT", "Reference" -> True, "Const" -> False|>}, getArgs, {<|"Name" -> "args", "Type" -> "device::tuple<T...>", "Reference" -> True, "Const" -> True|>}], "Templates" -> {"IT", "...T"}]
-                                        ,
-                                        If[spec["AD"],
-                                                #
-                                                ,
-                                                ""
-                                            ]& @ FunKit`MakeCppFunction["Name" -> "get", "Return" -> "void", "Body" -> None, "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> returnTypeAD, "Reference" -> True, "Const" -> False|>}, getArgs, paramsAD]]
                                     }
+                                    ,
+                                    Map[FunKit`MakeCppFunction["Name" -> "get", "Return" -> "void", "Body" -> None, "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> #["ReturnType"], "Reference" -> True, "Const" -> False|>}, getArgs, #["Params"]]]&, adSpecs]
                                 ]
                             ,
                             "MembersPrivate" -> {"DiFfRG::QuadratureProvider& quadrature_provider;"}
@@ -220,8 +253,8 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
                             "Class" -> StringTemplate["`Name`_integrator"][spec]
                             ,
                             "Suffix" ->
-                                If[spec["AD"],
-                                    ": integrator(quadrature_provider, json), integrator_AD(quadrature_provider, json), quadrature_provider(quadrature_provider)"
+                                If[Length[adSpecs] > 0,
+                                    ": integrator(quadrature_provider, json), " <> StringRiffle[Map[StringTemplate["integrator_`1`(quadrature_provider, json)"][#["Suffix"]]&, adSpecs], ", "] <> ", quadrature_provider(quadrature_provider)"
                                     ,
                                     ": integrator(quadrature_provider, json), quadrature_provider(quadrature_provider)"
                                 ]
@@ -235,9 +268,43 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
                     }
             ];
         integratorCpp["CT", "get"] = FunKit`MakeCppBlock["Includes" -> {"../kernel.hh"}, "Body" -> {StringTemplate["#include \"../`Name`.hh\"\n"][spec], FunKit`MakeCppFunction["Name" -> "get", "Class" -> StringTemplate["`Name`_integrator"][spec], "Body" -> StringTemplate["integrator.get(dest, `1` `2`);"][preArguments, arguments], "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> returnType, "Reference" -> True, "Const" -> False|>}, getArgs, params], "Return" -> "void"]}];
-        integratorCpp["AD", "get"] = FunKit`MakeCppBlock["Includes" -> {"../kernel.hh"}, "Body" -> {StringTemplate["#include \"../`Name`.hh\"\n"][spec], FunKit`MakeCppFunction["Name" -> "get", "Class" -> StringTemplate["`Name`_integrator"][spec], "Body" -> StringTemplate["integrator_AD.get(dest, `1` `2`);"][preArguments, arguments], "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> returnTypeAD, "Reference" -> True, "Const" -> False|>}, getArgs, paramsAD], "Return" -> "void"]}];
+        integratorCpp["AD", "get"] =
+            FunKit`MakeCppBlock[
+                "Includes" -> {"../kernel.hh"}
+                ,
+                "Body" ->
+                    Join[
+                        {StringTemplate["#include \"../`Name`.hh\"\n"][spec]}
+                        ,
+                        Map[
+                            FunKit`MakeCppFunction["Name" -> "get", "Class" -> StringTemplate["`Name`_integrator"][spec], "Body" -> StringTemplate["integrator_`1`.get(dest, `2` `3`);"][#["Suffix"], preArguments, arguments], "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> #["ReturnType"], "Reference" -> True, "Const" -> False|>}, getArgs, #["Params"]], "Return" -> "void"]&
+                            ,
+                            adSpecs
+                        ]
+                    ]
+            ];
         integratorCpp["CT", "map"] = Map[FunKit`MakeCppBlock["Includes" -> {"../kernel.hh"}, "Body" -> {StringTemplate["#include \"../`Name`.hh\"\n"][spec], FunKit`MakeCppFunction["Name" -> "map", "Return" -> exec, "Class" -> StringTemplate["`Name`_integrator"][spec], "Body" -> StringTemplate["return integrator.map(dest, coordinates, `1`);"][arguments], "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> returnTypePointer, "Const" -> False, "Reference" -> False|>, <|"Name" -> "coordinates", "Reference" -> True, "Type" -> #, "Const" -> True|>}, params]]}]&, coordinates];
-        integratorCpp["AD", "map"] = Map[FunKit`MakeCppBlock["Includes" -> {"../kernel.hh"}, "Body" -> {StringTemplate["#include \"../`Name`.hh\"\n"][spec], FunKit`MakeCppFunction["Name" -> "map", "Return" -> exec, "Class" -> spec["Name"] <> "_integrator", "Body" -> StringTemplate["return integrator_AD.map(dest, coordinates, `1`);"][arguments], "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> returnTypePointerAD, "Const" -> False, "Reference" -> False|>, <|"Name" -> "coordinates", "Reference" -> True, "Type" -> #, "Const" -> True|>}, paramsAD]]}]&, coordinates];
+        integratorCpp["AD", "map"] =
+            Map[
+                With[{coordinate = #},
+                    FunKit`MakeCppBlock[
+                        "Includes" -> {"../kernel.hh"}
+                        ,
+                        "Body" ->
+                            Join[
+                                {StringTemplate["#include \"../`Name`.hh\"\n"][spec]}
+                                ,
+                                Map[
+                                    FunKit`MakeCppFunction["Name" -> "map", "Return" -> exec, "Class" -> spec["Name"] <> "_integrator", "Body" -> StringTemplate["return integrator_`1`.map(dest, coordinates, `2`);"][#["Suffix"], arguments], "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> StringTemplate["`1`*"][#["ReturnType"]], "Const" -> False, "Reference" -> False|>, <|"Name" -> "coordinates", "Reference" -> True, "Type" -> coordinate, "Const" -> True|>}, #["Params"]]]&
+                                    ,
+                                    adSpecs
+                                ]
+                            ]
+                    ]
+                ]&
+                ,
+                coordinates
+            ];
         outputPath = FileNameJoin[flowDir, spec["Name"]];
         ExportCode[FileNameJoin[outputPath, spec["Name"] <> ".hh"], integratorHeader];
         ExportCode[FileNameJoin[outputPath, "kernel.hh"], kernelHeader];
