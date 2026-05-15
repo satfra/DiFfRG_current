@@ -1,0 +1,27 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "full-debug",
+      "displayName": "Full DiFfRG Debug",
+      "binaryDir": "${sourceDir}/build_install",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/local_install"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "full-debug",
+      "displayName": "Build Full DiFfRG Debug",
+      "configurePreset": "full-debug",
+      "jobs": 8
+    }
+  ]
+}
