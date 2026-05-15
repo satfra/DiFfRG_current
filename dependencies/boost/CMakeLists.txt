@@ -64,18 +64,18 @@ if(NOT _boost_patch_result EQUAL 0)
 endif()
 
 if(CCACHE_PROGRAM)
-  set(BOOST_COMPILER_ARGS
-      "CC=${CCACHE_PROGRAM} ${CMAKE_C_COMPILER} CXX=${CCACHE_PROGRAM} ${CMAKE_CXX_COMPILER}"
-  )
+  set(BOOST_CC_ENV "${CCACHE_PROGRAM} ${CMAKE_C_COMPILER}")
+  set(BOOST_CXX_ENV "${CCACHE_PROGRAM} ${CMAKE_CXX_COMPILER}")
 else()
-  set(BOOST_COMPILER_ARGS "CC=${CMAKE_C_COMPILER} CXX=${CMAKE_CXX_COMPILER}")
+  set(BOOST_CC_ENV "${CMAKE_C_COMPILER}")
+  set(BOOST_CXX_ENV "${CMAKE_CXX_COMPILER}")
 endif()
 
 add_custom_target(
   build_boost_boostrap
   COMMAND
     bash -c
-    "${BOOST_COMPILER_ARGS} ./bootstrap.sh --prefix=${CMAKE_INSTALL_PREFIX} &> ${CMAKE_CURRENT_BINARY_DIR}/03_bootstrap.log"
+    "CC=\"${BOOST_CC_ENV}\" CXX=\"${BOOST_CXX_ENV}\" ./bootstrap.sh --prefix=${CMAKE_INSTALL_PREFIX} &> ${CMAKE_CURRENT_BINARY_DIR}/03_bootstrap.log"
   WORKING_DIRECTORY ${BOOST_SOURCE_DIR}
   VERBATIM)
 
@@ -83,7 +83,7 @@ add_custom_target(
   build_boost_b2
   COMMAND
     bash -c
-    "echo 'Building Boost...'; ${BOOST_COMPILER_ARGS} ./b2 --build-dir=${CMAKE_CURRENT_BINARY_DIR}/boost-build \
+    "echo 'Building Boost...'; CC=\"${BOOST_CC_ENV}\" CXX=\"${BOOST_CXX_ENV}\" ./b2 --build-dir=${CMAKE_CURRENT_BINARY_DIR}/boost-build \
         --prefix=${CMAKE_INSTALL_PREFIX} \
         --with-headers \
         --with-iostreams \
