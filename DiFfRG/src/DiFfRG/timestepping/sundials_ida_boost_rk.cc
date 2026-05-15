@@ -4,6 +4,9 @@
 #include <deal.II/base/timer.h>
 #include <deal.II/lac/block_vector.h>
 #include <deal.II/sundials/ida.h>
+#include <algorithm>
+#include <cstddef>
+#include <limits>
 
 // DiFfRG
 #include <DiFfRG/common/eigen.hh>
@@ -70,6 +73,17 @@ namespace DiFfRG
     dealii::Vector<double> spatial_y_dealii(spatial_y.size());
     dealii::Vector<double> variable_dy_dealii(variable_y.size());
 
+    // The explicit variables are integrated "on demand" with the spatial solution held
+    // fixed over each IDA trial step. Rather than pinning it to the step's right endpoint
+    // -- which biases the explicit variable, because the coupling then always lags or
+    // leads the true spatial trajectory -- the spatial solution is linearly interpolated
+    // across the step between these two endpoints: spatial_lo at spatial_lo_time (the
+    // start of the segment) and spatial_hi at spatial_hi_time (its end).
+    dealii::Vector<double> spatial_lo(spatial_y.size());
+    dealii::Vector<double> spatial_hi(spatial_y.size());
+    double spatial_lo_time = t_start;
+    double spatial_hi_time = t_start;
+
     using namespace boost::numeric::odeint;
     auto variable_stepper = make_controlled<error_stepper_type>(expl.abs_tol, expl.rel_tol);
 
@@ -79,6 +93,16 @@ namespace DiFfRG
       eigen_to_dealii(x, variable_y_dealii);
 
       variable_dy_dealii = 0;
+
+      // linearly interpolate the spatial solution across the current segment so the
+      // coupling tracks the spatial trajectory instead of being pinned to one endpoint
+      double alpha = (spatial_hi_time > spatial_lo_time)
+                         ? (t - spatial_lo_time) / (spatial_hi_time - spatial_lo_time)
+                         : 1.;
+      alpha = std::clamp(alpha, 0., 1.);
+      spatial_y_dealii = spatial_lo;
+      spatial_y_dealii *= (1. - alpha);
+      spatial_y_dealii.add(alpha, spatial_hi);
 
       assembler->set_time(t);
       assembler->residual_variables(variable_dy_dealii, variable_y_dealii, spatial_y_dealii);
@@ -97,70 +121,135 @@ namespace DiFfRG
 
     Eigen::VectorXd variable_sol;
     Eigen::VectorXd variable_ret;
+    // Buffered trajectory of the explicit variables, sampled at the times the explicit
+    // stepper visited. Entries [0, committed_count) belong to IDA trial steps that were
+    // accepted and are never discarded; the remaining entries are speculative -- they
+    // belong to the IDA trial step currently being solved and are dropped if IDA rejects
+    // that step.
     std::vector<Eigen::VectorXd> variable_buffer;
     std::vector<double> variable_buffer_times;
+    std::size_t committed_count = 0;
+    // End time of the IDA trial step the buffer was last advanced to. IDA solves a trial
+    // step by calling residual / setup_jacobian repeatedly at its end time; a later
+    // request for a larger time means that trial step was accepted, a request for a
+    // smaller time means IDA rejected it and backtracked to a smaller step.
+    double frontier = -std::numeric_limits<double>::infinity();
     double cur_dt = expl.dt;
 
-    auto request_variables = [&](VectorType &variable_y, const VectorType &spatial_y, const double t) {
-      if (variable_buffer.size() == 0) {
-        // at t = 0 just return the initial condition
-        variable_y = initial_data.block(1);
+    // Linearly interpolate the buffered trajectory to time t (clamped to the buffer range).
+    auto interpolate_buffer = [&](VectorType &variable_y, const double t) {
+      if (t <= variable_buffer_times.front()) {
+        eigen_to_dealii(variable_buffer.front(), variable_y);
+        return;
+      }
+      if (t >= variable_buffer_times.back()) {
+        eigen_to_dealii(variable_buffer.back(), variable_y);
+        return;
+      }
+      std::size_t idx = 0;
+      for (std::size_t i = 0; i + 1 < variable_buffer_times.size(); ++i)
+        if (variable_buffer_times[i] <= t && t <= variable_buffer_times[i + 1]) idx = i;
+      const double t_prev = variable_buffer_times[idx];
+      const double t_next = variable_buffer_times[idx + 1];
+      const double alpha = (t - t_prev) / (t_next - t_prev);
+      variable_ret = alpha * variable_buffer[idx + 1] + (1. - alpha) * variable_buffer[idx];
+      eigen_to_dealii(variable_ret, variable_y);
+    };
 
+    // Integrate the explicit variables forward from the end of the buffer up to time t,
+    // appending every sub-step. The spatial solution is interpolated across the segment
+    // between spatial_lo (at the buffer's last time) and spatial_y (at t). Sub-steps are
+    // never allowed to overshoot t: spatial_y is only the valid endpoint for the interval
+    // up to t, and an overshoot would also misalign the buffer with IDA's trial-step
+    // boundaries (so accepted/rejected steps can no longer be told apart cleanly).
+    auto extend_buffer = [&](const VectorType &spatial_y, const double t) {
+      variable_sol = variable_buffer.back();
+      spatial_hi = spatial_y;
+      spatial_lo_time = variable_buffer_times.back();
+      spatial_hi_time = t;
+      double step_time = variable_buffer_times.back();
+      failed_step_checker fail_checker; // to throw a runtime_error if step size adjustment fails
+      while (step_time < t && !is_close(step_time, t)) {
+        controlled_step_result res;
+        cur_dt = std::min(cur_dt, expl.maximal_dt);
+        // cap the sub-step so it lands exactly on t instead of overshooting
+        const bool capped = cur_dt > t - step_time;
+        double dt = capped ? t - step_time : cur_dt;
+        do {
+          res = variable_stepper.try_step(get_variable_residual, variable_sol, step_time, dt);
+          fail_checker(); // check number of failed steps
+        } while (res == fail);
+        // only an un-capped sub-step may feed its adapted size back into cur_dt
+        if (!capped) cur_dt = dt;
+        variable_buffer.push_back(variable_sol);
+        variable_buffer_times.push_back(step_time);
+        fail_checker.reset(); // if we reach here, the step was successful -> reset fail checker
+      }
+    };
+
+    // Serve the explicit variables at time t for a speculative IDA call (residual /
+    // jacobian). IDA calls this at the end time of the trial step it is currently
+    // solving: if t advanced past `frontier`, the previous trial step was accepted and
+    // its speculative buffer entries are committed; if t fell below `frontier`, IDA
+    // rejected the previous trial step, so those entries are discarded before the buffer
+    // is re-integrated -- this is what keeps a rejected step from contaminating the
+    // explicit trajectory.
+    auto request_variables = [&](VectorType &variable_y, const VectorType &spatial_y, const double t) {
+      if (variable_buffer.empty()) {
+        // at t = t_start just store the initial condition
+        variable_y = initial_data.block(1);
         dealii_to_eigen(variable_y, variable_sol);
         variable_buffer.push_back(variable_sol);
         variable_buffer_times.push_back(t);
-
-      } else if (is_close(t, variable_buffer_times.back())) {
-
-        // if we are at the last time point, just return the last variable
-        eigen_to_dealii(variable_buffer.back(), variable_y);
-
-      } else if (t <= variable_buffer_times.back()) {
-
-        // find the two closest time points
-        double t_prev = t_start, t_next = t_start;
-        uint idx = 0;
-        for (uint i = 0; i < variable_buffer_times.size() - 1; ++i)
-          if (variable_buffer_times[i] <= t && t <= variable_buffer_times[i + 1]) {
-            idx = i;
-            t_prev = variable_buffer_times[idx];
-            t_next = variable_buffer_times[idx + 1];
-          }
-        const double alpha = (t - t_prev) / (t_next - t_prev);
-
-        variable_ret = alpha * variable_buffer[idx + 1] + (1. - alpha) * variable_buffer[idx];
-        eigen_to_dealii(variable_ret, variable_y);
-
-      } else {
-
-        // solve for the new variable
-        variable_sol = variable_buffer.back();
-        spatial_y_dealii = spatial_y;
-        double step_time = variable_buffer_times.back();
-        failed_step_checker fail_checker; // to throw a runtime_error if step size adjustment fails
-        while (step_time < t) {
-          controlled_step_result res;
-          cur_dt = std::min(cur_dt, expl.maximal_dt);
-          do {
-            res = variable_stepper.try_step(get_variable_residual, variable_sol, step_time, cur_dt);
-            fail_checker(); // check number of failed steps
-          } while (res == fail);
-
-          variable_buffer.push_back(variable_sol);
-          variable_buffer_times.push_back(step_time);
-          fail_checker.reset(); // if we reach here, the step was successful -> reset fail checker
-        }
-
-        // interpolate
-        const double t_prev = variable_buffer_times[variable_buffer_times.size() - 2];
-        const double t_next = variable_buffer_times[variable_buffer_times.size() - 1];
-        const double alpha = (t - t_prev) / (t_next - t_prev);
-
-        variable_ret = alpha * variable_buffer[variable_buffer_times.size() - 1] +
-                       (1. - alpha) * variable_buffer[variable_buffer_times.size() - 2];
-        eigen_to_dealii(variable_sol, variable_y);
+        committed_count = 1;
+        frontier = t;
+        spatial_lo = spatial_y;
+        spatial_hi = spatial_y;
+        spatial_lo_time = t;
+        spatial_hi_time = t;
+        assembler->set_time(t);
+        return;
       }
 
+      if (t > frontier && !is_close(t, frontier)) {
+        // IDA advanced -> the trial step to `frontier` was accepted; commit it, then
+        // speculatively extend the buffer to the new trial end time. The accepted
+        // frontier solution becomes the left endpoint of the next segment.
+        committed_count = variable_buffer.size();
+        spatial_lo = spatial_hi;
+        extend_buffer(spatial_y, t);
+        frontier = t;
+      } else if (t < frontier && !is_close(t, frontier)) {
+        // IDA rejected the trial step to `frontier` -> drop its speculative buffer tail
+        // and re-integrate from the last committed entry to the new trial end time.
+        variable_buffer.resize(committed_count);
+        variable_buffer_times.resize(committed_count);
+        extend_buffer(spatial_y, t);
+        frontier = t;
+      }
+      // else: another residual / jacobian evaluation for the same trial step -> the
+      // buffer already covers t, just interpolate.
+
+      interpolate_buffer(variable_y, t);
+      assembler->set_time(t);
+    };
+
+    // Sample the explicit variables at an accepted time t, from output_step and at the
+    // end of the run. t is known to be accepted, so this never discards buffer entries;
+    // it only extends the buffer if t lies beyond the last buffered step (which happens
+    // at the very end of the run).
+    auto commit_variables = [&](VectorType &variable_y, const VectorType &spatial_y, const double t) {
+      if (variable_buffer.empty()) {
+        request_variables(variable_y, spatial_y, t);
+        return;
+      }
+      if (t > variable_buffer_times.back() && !is_close(t, variable_buffer_times.back())) {
+        committed_count = variable_buffer.size();
+        spatial_lo = spatial_hi;
+        extend_buffer(spatial_y, t);
+        frontier = std::max(frontier, t);
+      }
+      interpolate_buffer(variable_y, t);
       assembler->set_time(t);
     };
 
@@ -200,7 +289,7 @@ namespace DiFfRG
       if (!is_close(last_save, t, 1e-10)) {
         assembler->set_time(t);
 
-        request_variables(variable_y, sol, t);
+        commit_variables(variable_y, sol, t);
         assembler->set_time(t);
         assembler->attach_data_output(*data_out, sol, variable_y, sol_dot, (*residual));
         data_out->flush(t);
@@ -321,7 +410,7 @@ namespace DiFfRG
     }
 
     initial_data.block(0) = spatial_y;
-    request_variables(initial_data.block(1), spatial_y, t_stop);
+    commit_variables(initial_data.block(1), spatial_y, t_stop);
   }
 } // namespace DiFfRG
 

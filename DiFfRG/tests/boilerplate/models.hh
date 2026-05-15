@@ -163,5 +163,94 @@ namespace DiFfRG
         F_i[0][0] = 0.5 * powr<2>(fe_functions[0]);
       }
     };
+
+    // A coupled FEM + explicit-variable model used to exercise the hybrid IDA + explicit
+    // timesteppers (TimeStepperSUNDIALS_IDA_Boost{ABM,RK}).
+    //
+    // The FEM function u obeys the logistic ODE  du/dt = K u (1 - u)  at every spatial
+    // point, i.e. u(t) = 1 / (1 + exp(-K (t - t_mid))).  For a large K this is a sharp
+    // transition centred at t_mid: u stays near 0 for a long time and then rises steeply
+    // to 1.  The implicit IDA controller grows its step in the flat region and is then
+    // forced to reject and retry steps as it crosses the transition.
+    //
+    // The explicit variable v obeys  dv/dt = -v u(t)^2 , i.e. it is coupled to the FEM
+    // solution.  Using  u^2 = u - (1/K) du/dt  and  \int u dt = (1/K) ln(1 + e^{K(t-t_mid)}),
+    // its exact solution is
+    //     v(t) = v0 exp( -[ Iu(t) - Iu(0) - (u(t) - u(0)) / K ] ),
+    //     Iu(t) = (1/K) ln(1 + e^{K (t - t_mid)}).
+    //
+    // If a rejected IDA step is allowed to leak into the explicit-variable buffer, the
+    // variable is integrated along a trajectory that IDA never accepted and v(t_final)
+    // deviates from the exact value above.  That is the regression this model guards
+    // against.
+    template <uint dim>
+    class ModelHybridRollback
+        : public def::AbstractModel<
+              ModelHybridRollback<dim>,
+              ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>, VariableDescriptor<Scalar<"v">>,
+                                  ExtractorDescriptor<Scalar<"u_eom">>>>,
+          public def::Time,                                  // this handles time
+          public def::NoNumFlux<ModelHybridRollback<dim>>,   // pure source term, no spatial coupling
+          public def::FlowBoundaries<ModelHybridRollback<dim>>,
+          public def::AD<ModelHybridRollback<dim>>           // define all jacobians per AD
+    {
+    public:
+      static constexpr double K = 30.;     // sharpness of the FEM transition
+      static constexpr double t_mid = 0.5; // location of the FEM transition
+      static constexpr double v0 = 1.;     // initial value of the explicit variable
+
+      const PhysicalParameters prm;
+      ModelHybridRollback(PhysicalParameters prm) : prm(prm) {}
+
+      static double u_exact(double tt) { return 1. / (1. + std::exp(-K * (tt - t_mid))); }
+      // antiderivative of u_exact
+      static double Iu(double tt) { return std::log1p(std::exp(K * (tt - t_mid))) / K; }
+
+      template <typename Vector> void initial_condition(const Point<dim> & /*pos*/, Vector &values) const
+      {
+        values[0] = u_exact(0.);
+      }
+      template <typename Vector> void initial_condition_variables(Vector &values) const { values[0] = v0; }
+
+      // du/dt = K u (1 - u);  the residual convention is u_dot = -source.
+      template <typename NT, typename Solution>
+      void source(std::array<NT, 1> &s_i, const Point<dim> & /*p*/, const Solution &sol) const
+      {
+        const auto u = get<0>(sol)[0];
+        s_i[0] = -K * u * (1. - u);
+      }
+
+      // u is spatially constant, so the extraction location is irrelevant; a fixed, well
+      // defined root at x = 0.5 simply keeps the EoM search well-posed.
+      template <int d, typename Vector> std::array<double, 1> EoM(const Point<d> &x, const Vector & /*u*/) const
+      {
+        return {{x[0] - 0.5}};
+      }
+
+      // hand the FEM solution at the EoM point to the explicit-variable residual
+      template <typename NT, typename Solution>
+      void extract(std::array<NT, 1> &extractors, const Point<dim> & /*x*/, const Solution &sol) const
+      {
+        extractors[0] = get<"fe_functions">(sol)[0];
+      }
+
+      // dv/dt = -v u^2;  the residual convention is v_dot = -r_a.
+      template <typename Vector, typename Solution> void dt_variables(Vector &r_a, const Solution &sol) const
+      {
+        const auto u = get<"extractors">(sol)[0];
+        const auto v = get<"variables">(sol)[0];
+        r_a[0] = v * u * u;
+      }
+
+      // exact FEM solution (validated by the standard test harness, block 0)
+      double solution(const Point<dim> & /*pos*/) const { return u_exact(t); }
+      // exact explicit-variable solution (validated by the dedicated test, block 1)
+      double variable_solution() const
+      {
+        // \int_0^t u^2 dt' = (Iu(t) - Iu(0)) - (u(t) - u(0)) / K
+        const double int_u2 = (Iu(t) - Iu(0.)) - (u_exact(t) - u_exact(0.)) / K;
+        return v0 * std::exp(-int_u2);
+      }
+    };
   } // namespace Testing
 } // namespace DiFfRG
