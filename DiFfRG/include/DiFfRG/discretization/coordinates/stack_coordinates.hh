@@ -65,6 +65,11 @@ namespace DiFfRG
     {
     }
 
+    device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(size_t i) const
+    {
+      return device::array<size_t, 1>{i};
+    }
+
     /**
      * @brief Transform from the grid to the physical space
      *
@@ -72,6 +77,11 @@ namespace DiFfRG
      * @return NumberType physical coordinate
      */
     NT KOKKOS_FORCEINLINE_FUNCTION forward(const Idx &x) const { return NT(x + start) * 2. * M_PI * T; }
+
+    template <typename IT> device::array<NT, 1> KOKKOS_FORCEINLINE_FUNCTION forward(const device::array<IT, 1> &x) const
+    {
+      return {forward(x[0])};
+    }
 
     /**
      * @brief Transform from the physical space to the grid
@@ -115,6 +125,11 @@ namespace DiFfRG
     {
     }
 
+    device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(size_t i) const
+    {
+      return device::array<size_t, 1>{i};
+    }
+
     /**
      * @brief Transform from the grid to the physical space
      *
@@ -122,6 +137,11 @@ namespace DiFfRG
      * @return NumberType physical coordinate
      */
     NT KOKKOS_FORCEINLINE_FUNCTION forward(const Idx &x) const { return (NT(x + start) + 0.5) * 2. * M_PI * T; }
+
+    template <typename IT> device::array<NT, 1> KOKKOS_FORCEINLINE_FUNCTION forward(const device::array<IT, 1> &x) const
+    {
+      return {forward(x[0])};
+    }
 
     /**
      * @brief Transform from the physical space to the grid
