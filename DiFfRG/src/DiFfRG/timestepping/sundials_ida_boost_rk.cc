@@ -121,19 +121,40 @@ namespace DiFfRG
 
     Eigen::VectorXd variable_sol;
     Eigen::VectorXd variable_ret;
-    // Buffered trajectory of the explicit variables, sampled at the times the explicit
-    // stepper visited. Entries [0, committed_count) belong to IDA trial steps that were
-    // accepted and are never discarded; the remaining entries are speculative -- they
-    // belong to the IDA trial step currently being solved and are dropped if IDA rejects
-    // that step.
+    // Trajectory of the explicit variables, sampled at the times the explicit stepper
+    // visited. All entries are committed -- they correspond to IDA trial steps that have
+    // been accepted. No speculative entries are ever appended, so a rejected trial step
+    // cannot pollute the buffer.
     std::vector<Eigen::VectorXd> variable_buffer;
     std::vector<double> variable_buffer_times;
-    std::size_t committed_count = 0;
-    // End time of the IDA trial step the buffer was last advanced to. IDA solves a trial
-    // step by calling residual / setup_jacobian repeatedly at its end time; a later
-    // request for a larger time means that trial step was accepted, a request for a
-    // smaller time means IDA rejected it and backtracked to a smaller step.
+    // End time of the last accepted IDA trial step that has been *folded into the
+    // committed buffer*. The committed segments cover [t_start, t_committed].
+    double t_committed = t_start;
+    // Latest IDA trial endpoint that has been confirmed accepted but not yet folded
+    // into the committed buffer. We defer running an explicit substep until the gap
+    // (t_pending - t_committed) is at least cur_dt -- this decouples the explicit
+    // stepper's call rate from IDA's internal step count and keeps the (heavy)
+    // dt_variables evaluation cadence at the explicit timescale even when IDA collapses
+    // its dt to << cur_dt at marginal points.
+    double t_pending = t_start;
+    dealii::Vector<double> spatial_pending(spatial_y.size());
+    // End time of the IDA trial step the controller is currently solving. A later
+    // request at a strictly larger time means that trial step was accepted (the trial's
+    // converged spatial state is then transferred to spatial_pending); a request at a
+    // smaller time means IDA rejected it (spatial_pending is left untouched).
     double frontier = -std::numeric_limits<double>::infinity();
+    // Cached values of dv/dt at the two most recent committed points. dv_committed is
+    // estimated by backward-differencing the two most recent buffer entries (no extra
+    // dt_variables call is required); dv_prev_committed is the dv_committed value
+    // cached one commit ago. Together they drive a quadratic predictor used to serve
+    // `v` to IDA during Newton iterations on a speculative trial step. The predictor is
+    // deterministic (it does not depend on IDA's still-unconverged trial spatial guess),
+    // which is what Newton needs to converge consistently when the FEM equation reads
+    // `v` back through an extractor.
+    Eigen::VectorXd dv_committed;
+    Eigen::VectorXd dv_prev_committed;
+    double t_prev_committed = -std::numeric_limits<double>::infinity();
+    bool have_prev_dv = false;
     double cur_dt = expl.dt;
 
     // Linearly interpolate the buffered trajectory to time t (clamped to the buffer range).
@@ -156,98 +177,152 @@ namespace DiFfRG
       eigen_to_dealii(variable_ret, variable_y);
     };
 
-    // Integrate the explicit variables forward from the end of the buffer up to time t,
-    // appending every sub-step. The spatial solution is interpolated across the segment
-    // between spatial_lo (at the buffer's last time) and spatial_y (at t). Sub-steps are
-    // never allowed to overshoot t: spatial_y is only the valid endpoint for the interval
-    // up to t, and an overshoot would also misalign the buffer with IDA's trial-step
-    // boundaries (so accepted/rejected steps can no longer be told apart cleanly).
-    auto extend_buffer = [&](const VectorType &spatial_y, const double t) {
-      variable_sol = variable_buffer.back();
-      spatial_hi = spatial_y;
-      spatial_lo_time = variable_buffer_times.back();
+    // Refresh the predictor's cached dv/dt by evaluating the variable residual at the
+    // current committed point. Costs ONE dt_variables call per commit (commits happen
+    // once per cur_dt of accepted t under the batching scheme).
+    auto refresh_dv_committed_from_buffer = [&]() {
+      if (dv_committed.size() > 0) {
+        if (dv_prev_committed.size() != dv_committed.size()) dv_prev_committed.resize(dv_committed.size());
+        dv_prev_committed = dv_committed;
+        t_prev_committed = t_committed;
+        have_prev_dv = true;
+      }
+      const std::size_t N = variable_buffer.size();
+      if (N == 0) return;
+      eigen_to_dealii(variable_buffer[N - 1], variable_y_dealii);
+      variable_dy_dealii = 0;
+      spatial_y_dealii = spatial_lo;
+      assembler->set_time(t_committed);
+      assembler->residual_variables(variable_dy_dealii, variable_y_dealii, spatial_y_dealii);
+      if (dv_committed.size() != static_cast<Eigen::Index>(variable_dy_dealii.size()))
+        dv_committed.resize(variable_dy_dealii.size());
+      dealii_to_eigen(variable_dy_dealii, dv_committed);
+      dv_committed *= -1.;
+    };
+
+    // Quadratic predictor at time t. Falls back to linear before the first d2v
+    // estimate is available.
+    auto eval_predictor = [&](Eigen::VectorXd &out, const double t) {
+      out = variable_buffer.back();
+      const double dt = t - t_committed;
+      out += dt * dv_committed;
+      if (have_prev_dv && t_committed > t_prev_committed) {
+        const double inv_dtc = 1. / (t_committed - t_prev_committed);
+        out += (0.5 * dt * dt * inv_dtc) * (dv_committed - dv_prev_committed);
+      }
+    };
+
+    // Re-integrate the explicit variables forward from the last committed time to time
+    // `t` -- which is required to be the endpoint of an *accepted* IDA trial step --
+    // using `accepted_spatial` as the spatial solution at `t`. The spatial solution is
+    // linearly interpolated across the segment between `spatial_lo` (at `t_committed`)
+    // and `accepted_spatial` (at `t`), both of which are converged values, so the
+    // explicit integration sees a faithful spatial trajectory and never speculative
+    // intermediate Newton iterates. Sub-steps are never allowed to overshoot t.
+    auto commit_segment_to = [&](const dealii::Vector<double> &accepted_spatial, const double t) {
+      spatial_hi = accepted_spatial;
       spatial_hi_time = t;
+      // spatial_lo / spatial_lo_time were left at the previous committed point and are
+      // the correct left endpoint for this segment.
+      variable_sol = variable_buffer.back();
       double step_time = variable_buffer_times.back();
-      failed_step_checker fail_checker; // to throw a runtime_error if step size adjustment fails
+      failed_step_checker fail_checker;
       while (step_time < t && !is_close(step_time, t)) {
         controlled_step_result res;
         cur_dt = std::min(cur_dt, expl.maximal_dt);
-        // cap the sub-step so it lands exactly on t instead of overshooting
         const bool capped = cur_dt > t - step_time;
         double dt = capped ? t - step_time : cur_dt;
         do {
           res = variable_stepper.try_step(get_variable_residual, variable_sol, step_time, dt);
-          fail_checker(); // check number of failed steps
+          fail_checker();
         } while (res == fail);
-        // only an un-capped sub-step may feed its adapted size back into cur_dt
         if (!capped) cur_dt = dt;
         variable_buffer.push_back(variable_sol);
         variable_buffer_times.push_back(step_time);
-        fail_checker.reset(); // if we reach here, the step was successful -> reset fail checker
+        fail_checker.reset();
       }
+      // Slide the committed point forward
+      t_committed = t;
+      spatial_lo = accepted_spatial;
+      spatial_lo_time = t;
+      // Refresh the predictor used by the next speculative Newton solve. This costs
+      // zero dt_variables calls -- the slope is read off the buffer.
+      refresh_dv_committed_from_buffer();
     };
 
     // Serve the explicit variables at time t for a speculative IDA call (residual /
-    // jacobian). IDA calls this at the end time of the trial step it is currently
-    // solving: if t advanced past `frontier`, the previous trial step was accepted and
-    // its speculative buffer entries are committed; if t fell below `frontier`, IDA
-    // rejected the previous trial step, so those entries are discarded before the buffer
-    // is re-integrated -- this is what keeps a rejected step from contaminating the
-    // explicit trajectory.
+    // jacobian). The trial endpoint `frontier` is only committed once IDA confirms its
+    // acceptance (signalled by a later request at a strictly larger time, in which case
+    // the saved `spatial_hi` is the converged spatial state at `frontier`). Within a
+    // single still-unaccepted Newton solve we serve a first-order predictor in v built
+    // entirely from the last committed state -- this makes the FEM residual a
+    // deterministic function of IDA's spatial trial state, which is required for Newton
+    // convergence when the FEM source reads v through an extractor.
     auto request_variables = [&](VectorType &variable_y, const VectorType &spatial_y, const double t) {
       if (variable_buffer.empty()) {
-        // at t = t_start just store the initial condition
+        // Initialise at t = t_start; the initial condition is by construction accepted.
         variable_y = initial_data.block(1);
         dealii_to_eigen(variable_y, variable_sol);
         variable_buffer.push_back(variable_sol);
         variable_buffer_times.push_back(t);
-        committed_count = 1;
+        t_committed = t;
+        t_pending = t;
         frontier = t;
         spatial_lo = spatial_y;
         spatial_hi = spatial_y;
+        spatial_pending = spatial_y;
         spatial_lo_time = t;
         spatial_hi_time = t;
+        if (dv_committed.size() != static_cast<Eigen::Index>(variable_sol.size()))
+          dv_committed.resize(variable_sol.size());
+        dv_committed.setZero();
         assembler->set_time(t);
         return;
       }
 
       if (t > frontier && !is_close(t, frontier)) {
-        // IDA advanced -> the trial step to `frontier` was accepted; commit it, then
-        // speculatively extend the buffer to the new trial end time. The accepted
-        // frontier solution becomes the left endpoint of the next segment.
-        committed_count = variable_buffer.size();
-        spatial_lo = spatial_hi;
-        extend_buffer(spatial_y, t);
+        // IDA advanced -> the previous trial at `frontier` was accepted. spatial_hi
+        // (saved from the last call at `frontier`) is the converged spatial state
+        // there; commit the segment immediately.
+        if (frontier > t_committed && !is_close(frontier, t_committed))
+          commit_segment_to(spatial_hi, frontier);
         frontier = t;
+        spatial_hi = spatial_y;
+        spatial_hi_time = t;
       } else if (t < frontier && !is_close(t, frontier)) {
-        // IDA rejected the trial step to `frontier` -> drop its speculative buffer tail
-        // and re-integrate from the last committed entry to the new trial end time.
-        variable_buffer.resize(committed_count);
-        variable_buffer_times.resize(committed_count);
-        extend_buffer(spatial_y, t);
+        // IDA rejected the previous trial at `frontier`; spatial_pending is left alone.
         frontier = t;
+        spatial_hi = spatial_y;
+        spatial_hi_time = t;
+      } else {
+        // Another residual / jacobian evaluation at the same trial endpoint; track the
+        // latest spatial guess so that, if this trial is later accepted, the eventual
+        // commit uses the converged spatial state.
+        spatial_hi = spatial_y;
       }
-      // else: another residual / jacobian evaluation for the same trial step -> the
-      // buffer already covers t, just interpolate.
 
-      interpolate_buffer(variable_y, t);
+      // Quadratic predictor (linear before the first d2v estimate is available). The
+      // result is independent of `spatial_y`, so repeated Newton iterations at the same
+      // trial endpoint (and even retries after rejection) all see the same v(t).
+      eval_predictor(variable_ret, t);
+      eigen_to_dealii(variable_ret, variable_y);
       assembler->set_time(t);
     };
 
-    // Sample the explicit variables at an accepted time t, from output_step and at the
-    // end of the run. t is known to be accepted, so this never discards buffer entries;
-    // it only extends the buffer if t lies beyond the last buffered step (which happens
-    // at the very end of the run).
+    // Sample the explicit variables at an accepted time t (called from output_step and
+    // at the end of the run). Any pending accepted-but-not-yet-committed segment is
+    // folded into the committed buffer first regardless of the cur_dt threshold; the
+    // buffer is then extended to t using the converged spatial state passed in.
     auto commit_variables = [&](VectorType &variable_y, const VectorType &spatial_y, const double t) {
       if (variable_buffer.empty()) {
         request_variables(variable_y, spatial_y, t);
         return;
       }
-      if (t > variable_buffer_times.back() && !is_close(t, variable_buffer_times.back())) {
-        committed_count = variable_buffer.size();
-        spatial_lo = spatial_hi;
-        extend_buffer(spatial_y, t);
-        frontier = std::max(frontier, t);
+      if (frontier > t_committed && !is_close(frontier, t_committed))
+        commit_segment_to(spatial_hi, frontier);
+      if (t > t_committed && !is_close(t, t_committed)) {
+        commit_segment_to(spatial_y, t);
+        if (t > frontier) frontier = t;
       }
       interpolate_buffer(variable_y, t);
       assembler->set_time(t);

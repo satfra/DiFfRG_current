@@ -252,5 +252,153 @@ namespace DiFfRG
         return v0 * std::exp(-int_u2);
       }
     };
+
+    // A smooth coupled FEM + explicit-variable model used to measure how the hybrid
+    // timesteppers behave when each IDA trial step contains only one or two explicit
+    // sub-steps -- the regime in which a typical FRG production run operates and the
+    // regime in which a per-trial-step reset() of the multistep stepper would be most
+    // visible.  K is chosen small enough that IDA does not need to reject any steps,
+    // so the rollback machinery is not exercised; the test is purely about whether the
+    // explicit integration retains its design accuracy on accepted steps.
+    //
+    // FEM:        du/dt = -K u                ->  u(t) = u0 exp(-K t)
+    // variable:   dv/dt = -u                  ->  v(t) = v0 + (u0/K) (exp(-K t) - 1)
+    template <uint dim>
+    class ModelHybridSmooth
+        : public def::AbstractModel<
+              ModelHybridSmooth<dim>,
+              ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>, VariableDescriptor<Scalar<"v">>,
+                                  ExtractorDescriptor<Scalar<"u_eom">>>>,
+          public def::Time,                                  // this handles time
+          public def::NoNumFlux<ModelHybridSmooth<dim>>,
+          public def::FlowBoundaries<ModelHybridSmooth<dim>>,
+          public def::AD<ModelHybridSmooth<dim>>
+    {
+    public:
+      static constexpr double K = 2.;
+      static constexpr double u0 = 1.;
+      static constexpr double v0 = 0.;
+
+      const PhysicalParameters prm;
+      ModelHybridSmooth(PhysicalParameters prm) : prm(prm) {}
+
+      static double u_exact(double tt) { return u0 * std::exp(-K * tt); }
+
+      template <typename Vector> void initial_condition(const Point<dim> & /*pos*/, Vector &values) const
+      {
+        values[0] = u0;
+      }
+      template <typename Vector> void initial_condition_variables(Vector &values) const { values[0] = v0; }
+
+      // du/dt = -K u;  residual convention is u_dot = -source.
+      template <typename NT, typename Solution>
+      void source(std::array<NT, 1> &s_i, const Point<dim> & /*p*/, const Solution &sol) const
+      {
+        const auto u = get<0>(sol)[0];
+        s_i[0] = K * u;
+      }
+
+      template <int d, typename Vector> std::array<double, 1> EoM(const Point<d> &x, const Vector & /*u*/) const
+      {
+        return {{x[0] - 0.5}};
+      }
+
+      template <typename NT, typename Solution>
+      void extract(std::array<NT, 1> &extractors, const Point<dim> & /*x*/, const Solution &sol) const
+      {
+        extractors[0] = get<"fe_functions">(sol)[0];
+      }
+
+      // dv/dt = -u;  residual convention is v_dot = -r_a.
+      template <typename Vector, typename Solution> void dt_variables(Vector &r_a, const Solution &sol) const
+      {
+        const auto u = get<"extractors">(sol)[0];
+        r_a[0] = u;
+      }
+
+      double solution(const Point<dim> & /*pos*/) const { return u_exact(t); }
+      double variable_solution() const { return v0 + (u0 / K) * (std::exp(-K * t) - 1.); }
+    };
+
+    // A coupled FEM + explicit-variable model with two-way coupling, as in a production
+    // FRG model where the explicit-variable wave-function renormalisations feed back into
+    // the FEM source: the FEM equation reads v through the extractor and v's residual
+    // reads u.  The ModelHybridRollback test only has one-way coupling (FEM drives v but
+    // v does not feed back into FEM), so a regression in how the explicit variable is
+    // served back to IDA during Newton iterations cannot be detected by it.
+    //
+    // FEM:        du/dt = -K (u - v)         (FEM source reads the variable v via extractor[1])
+    // variable:   dv/dt = +K (u - v)         (variable residual reads u via extractor[0])
+    //
+    // Conserved:  u + v = u0 + v0
+    // Decaying :  u - v = (u0 - v0) exp(-2 K t)
+    //   =>  u(t) = (u0+v0)/2 + (u0-v0)/2 exp(-2 K t)
+    //       v(t) = (u0+v0)/2 - (u0-v0)/2 exp(-2 K t)
+    template <uint dim>
+    class ModelHybridTwoWay
+        : public def::AbstractModel<
+              ModelHybridTwoWay<dim>,
+              ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>, VariableDescriptor<Scalar<"v">>,
+                                  ExtractorDescriptor<Scalar<"u_eom">, Scalar<"v_eom">>>>,
+          public def::Time,                                  // this handles time
+          public def::NoNumFlux<ModelHybridTwoWay<dim>>,
+          public def::FlowBoundaries<ModelHybridTwoWay<dim>>,
+          public def::AD<ModelHybridTwoWay<dim>>
+    {
+    public:
+      static constexpr double K = 5.;
+      static constexpr double u0 = 1.;
+      static constexpr double v0 = 0.;
+
+      const PhysicalParameters prm;
+      ModelHybridTwoWay(PhysicalParameters prm) : prm(prm) {}
+
+      static double u_exact(double tt)
+      {
+        return 0.5 * (u0 + v0) + 0.5 * (u0 - v0) * std::exp(-2. * K * tt);
+      }
+      static double v_exact(double tt)
+      {
+        return 0.5 * (u0 + v0) - 0.5 * (u0 - v0) * std::exp(-2. * K * tt);
+      }
+
+      template <typename Vector> void initial_condition(const Point<dim> & /*pos*/, Vector &values) const
+      {
+        values[0] = u0;
+      }
+      template <typename Vector> void initial_condition_variables(Vector &values) const { values[0] = v0; }
+
+      // du/dt = -K (u - v);  residual convention is u_dot = -source, source = K (u - v).
+      template <typename NT, typename Solution>
+      void source(std::array<NT, 1> &s_i, const Point<dim> & /*p*/, const Solution &sol) const
+      {
+        const auto u = get<0>(sol)[0];
+        const auto v = get<"extractors">(sol)[1];
+        s_i[0] = K * (u - v);
+      }
+
+      template <int d, typename Vector> std::array<double, 1> EoM(const Point<d> &x, const Vector & /*u*/) const
+      {
+        return {{x[0] - 0.5}};
+      }
+
+      template <typename NT, typename Solution>
+      void extract(std::array<NT, 2> &extractors, const Point<dim> & /*x*/, const Solution &sol) const
+      {
+        extractors[0] = get<"fe_functions">(sol)[0];
+        extractors[1] = get<"variables">(sol)[0];
+      }
+
+      // dv/dt = +K (u - v);  residual convention is v_dot = -r_a.
+      template <typename Vector, typename Solution> void dt_variables(Vector &r_a, const Solution &sol) const
+      {
+        const auto u = get<"extractors">(sol)[0];
+        const auto v = get<"variables">(sol)[0];
+        r_a[0] = -K * (u - v);
+      }
+
+      double solution(const Point<dim> & /*pos*/) const { return u_exact(t); }
+      double variable_solution() const { return v_exact(t); }
+    };
   } // namespace Testing
 } // namespace DiFfRG

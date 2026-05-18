@@ -61,7 +61,7 @@ bool run(std::string test_name, double expected_precision)
           {{"dt", 1e-4}, {"minimal_dt", 1e-6}, {"maximal_dt", 1e-1}, {"abs_tol", 1e-16}, {"rel_tol", 1e-12}}},
          {"implicit",
           {{"dt", 1e-4}, {"minimal_dt", 1e-6}, {"maximal_dt", 1e-1}, {"abs_tol", 1e-16}, {"rel_tol", 1e-12}}}}},
-       {"output", {{"verbosity", 0}}}});
+       {"output", {{"verbosity", 0}, {"vtk", false}}}});
 
   const double final_time = json.get_double("/timestepping/final_time");
 
