@@ -5,14 +5,20 @@ on: [push, pull_request]
 jobs:
   preflight:
     name: Validate pre-flight checks
-    runs-on: ubuntu-latest
+    runs-on: itp
+    container: ubuntu:24.04
     steps:
+    - name: Install checkout prerequisites
+      run: |
+        apt-get update
+        apt-get install -y ca-certificates git
+
     - uses: actions/checkout@v4
 
     - name: Install system dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential gfortran cmake git python3 \
+        apt-get update
+        apt-get install -y build-essential gfortran cmake git python3 \
           libgsl-dev libopenblas-dev libopenmpi-dev
 
     - name: CMake configure (pre-flight validation)

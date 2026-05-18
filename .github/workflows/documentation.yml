@@ -5,18 +5,24 @@ jobs:
   # Build job
   build:
     # Specify runner +  build & upload the static files as an artifact
-    runs-on: ubuntu-latest
+    runs-on: itp
+    container: ubuntu:24.04
     steps:
+      - name: Install checkout prerequisites
+        run: |
+          apt-get update
+          apt-get install -y ca-certificates git
+
       - name: Check out repository code
         uses: actions/checkout@v4
       - name: Install doxygen
         run: | 
-          sudo apt-get update
-          sudo apt-get install cmake build-essential python3 graphviz
+          apt-get update
+          apt-get install -y cmake build-essential python3 python3-venv python3-pip graphviz wget ca-certificates
           wget https://www.doxygen.nl/files/doxygen-1.12.0.linux.bin.tar.gz
           tar xfv doxygen-1.12.0.linux.bin.tar.gz
           cd doxygen-1.12.0/
-          sudo make install
+          make install
           cd ..
       - name: Create temporary working-directory
         run: mkdir build
@@ -56,7 +62,8 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
+    runs-on: itp
+    container: ubuntu:24.04
     needs: build
     steps:
         - name: Deploy to GitHub Pages
