@@ -35,6 +35,7 @@ namespace DiFfRG
       {
         // Use the algebraic identity min(a,b) = 0.5*(a+b-|a-b|) instead of std::min so that
         // AD follows the active branch away from ties without introducing a std::min discontinuity.
+        using std::abs;
         const auto a1 = abs(du_1), a2 = abs(du_2);
         const auto min_a = NumberType(0.5) * (a1 + a2 - abs(a1 - a2));
         return NumberType(0.5) * (limiter_utils::sgn(du_1) + limiter_utils::sgn(du_2)) * min_a;
