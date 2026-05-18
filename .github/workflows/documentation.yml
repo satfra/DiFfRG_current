@@ -5,7 +5,7 @@ jobs:
   # Build job
   build:
     # Specify runner +  build & upload the static files as an artifact
-    runs-on: itp
+    runs-on: gha-diffrg
     container: ubuntu:24.04
     steps:
       - name: Install checkout prerequisites
@@ -62,7 +62,7 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: itp
+    runs-on: gha-diffrg
     container: ubuntu:24.04
     needs: build
     steps:
