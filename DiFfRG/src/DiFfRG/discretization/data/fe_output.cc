@@ -72,10 +72,34 @@ namespace DiFfRG
     // Clear the data_out and attached_solutions lists.
     output_threads.clear();
     attached_solutions.clear();
+
+    // Surface a captured worker exception only when we are not already unwinding.
+    std::exception_ptr to_throw;
+    {
+      std::lock_guard<std::mutex> lk(exception_mutex);
+      if (stored_exception && std::uncaught_exceptions() == 0) {
+        to_throw = stored_exception;
+        stored_exception = nullptr;
+      }
+    }
+    if (to_throw) std::rethrow_exception(to_throw);
   }
 
   template <uint dim, typename VectorType> void FEOutput<dim, VectorType>::flush(double time)
   {
+    // Surface any exception captured from a previous worker thread before doing more work.
+    {
+      std::exception_ptr to_throw;
+      {
+        std::lock_guard<std::mutex> lk(exception_mutex);
+        if (stored_exception) {
+          to_throw = stored_exception;
+          stored_exception = nullptr;
+        }
+      }
+      if (to_throw) std::rethrow_exception(to_throw);
+    }
+
     update_buffers();
 
     // The .vtu file will be named like output_name_000001.vtu, where the number is the
@@ -118,24 +142,37 @@ namespace DiFfRG
 #endif
 
     auto output_func = [=, this](const uint m_series_number, const double m_time) {
-      auto &m_data_out = data_outs[m_series_number % buffer_size];
-      if (save_vtk) {
-        // We add the .vtu file to the time series and write the .pvd file.
-        time_series.emplace_back(m_time, filename_vtu);
-        try {
-          std::ofstream output_pvd(top_folder + filename_pvd);
-          DataOutBase::write_pvd_record(output_pvd, time_series);
-        } catch (const std::exception &e) {
-          throw std::runtime_error("FEOutput::flush: Could not write pvd file.");
+      try {
+        auto &m_data_out = data_outs[m_series_number % buffer_size];
+        if (save_vtk) {
+          // Serialize mutation of time_series and writes to the shared .pvd path.
+          // The per-series .vtu write below goes to a unique filename and stays
+          // outside the lock so multiple workers can write .vtu files in parallel.
+          {
+            std::lock_guard<std::mutex> lk(output_mutex);
+            time_series.emplace_back(m_time, filename_vtu);
+            try {
+              std::ofstream output_pvd(top_folder + filename_pvd);
+              DataOutBase::write_pvd_record(output_pvd, time_series);
+            } catch (const std::exception &e) {
+              throw std::runtime_error("FEOutput::flush: Could not write pvd file.");
+            }
+          }
+
+          auto flags = DataOutBase::VtkFlags(m_time, m_series_number);
+          m_data_out.set_flags(flags);
+
+          std::ofstream output_vtu(top_folder + filename_vtu);
+          m_data_out.write_vtu(output_vtu);
         }
-
-        auto flags = DataOutBase::VtkFlags(m_time, m_series_number);
-        m_data_out.set_flags(flags);
-
-        std::ofstream output_vtu(top_folder + filename_vtu);
-        m_data_out.write_vtu(output_vtu);
+        m_data_out.clear();
+      } catch (...) {
+        // Never let an exception escape the worker thread (that would call
+        // std::terminate). Capture the first one; later workers' exceptions are
+        // dropped because the first is enough to fail the main-thread caller.
+        std::lock_guard<std::mutex> lk(exception_mutex);
+        if (!stored_exception) stored_exception = std::current_exception();
       }
-      m_data_out.clear();
     };
 
     // If the buffer size is 1, we save ourselves the cost of spawning a thread

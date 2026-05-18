@@ -108,3 +108,74 @@ TEST_CASE("Test FE output on Constant model", "[output][cg]")
   }
   std::cout << "FEOutput finished after " << timer.wall_time() << " seconds." << std::endl;
 }
+
+// Regression test for the nondeterministic timestepper-test crashes (SIGSEGV / "Could not
+// write pvd file."). Pre-fix, multiple writer threads spawned by flush() race on
+// time_series and on the shared .pvd path, which manifests as undefined behaviour and as
+// std::terminate via an uncaught exception escaping the worker thread. This test rapidly
+// flushes many times at the default async buffer size so the race is reliably triggered.
+TEST_CASE("FEOutput async flush is thread-safe under repeated flushes", "[output][cg][regression]")
+{
+  DiFfRG::Init();
+
+  using namespace dealii;
+  using namespace DiFfRG;
+
+  constexpr uint dim = 1;
+  using Model = Testing::ModelConstant<dim>;
+  using NumberType = double;
+  using Discretization = CG::Discretization<typename Model::Components, NumberType, RectangularMesh<dim>>;
+  using VectorType = typename Discretization::VectorType;
+
+  // Default output_buffer_size (100) means every flush spawns a writer thread.
+  JSONValue json = json::value(
+      {{"physical", {}},
+       {"discretization",
+        {{"fe_order", 3},
+         {"threads", 4},
+         {"batch_size", 64},
+         {"overintegration", 0},
+         {"output_subdivisions", 2},
+         {"EoM_abs_tol", 1e-10},
+         {"EoM_max_iter", 0},
+         {"grid", {{"x_grid", "0:0.05:1"}, {"y_grid", "0:0.1:1"}, {"z_grid", "0:0.1:1"}, {"refine", 0}}},
+         {"adaptivity",
+          {{"start_adapt_at", 0.},
+           {"adapt_dt", 1e-1},
+           {"level", 0},
+           {"refine_percent", 1e-1},
+           {"coarsen_percent", 5e-2}}}}},
+       {"output", {{"live_plot", false}, {"verbosity", 0}}}});
+
+  Testing::PhysicalParameters p_prm = {/*x0_initial = */ 0., /*x1_initial = */ 1.};
+
+  try {
+    auto log = spdlog::stdout_color_mt("log");
+    log->set_pattern("log: [%v]");
+  } catch (const spdlog::spdlog_ex &) {
+    // logger already set up
+  }
+
+  Model model(p_prm);
+  RectangularMesh<dim> mesh(json);
+  Discretization discretization(mesh, json);
+
+  FE::FlowingVariables initial_condition(discretization);
+  initial_condition.interpolate(model);
+  const VectorType &src = initial_condition.spatial_data();
+
+  constexpr uint output_num = 200;
+
+  REQUIRE_NOTHROW([&]() {
+    FEOutput<dim, VectorType> fe_output("./testing_stress", "stress_output", "vtu", json);
+    HDF5Output hdf5_output("./testing_stress/", "stress_output.h5", json);
+    auto root_group = hdf5_output.get_file().root();
+    root_group.create_group("FE");
+    fe_output.set_hdf5_output(&hdf5_output);
+
+    for (uint i = 0; i < output_num; ++i) {
+      fe_output.attach(discretization.get_dof_handler(), src, "solution");
+      fe_output.flush(static_cast<double>(i));
+    }
+  }());
+}

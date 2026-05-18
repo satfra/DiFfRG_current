@@ -14,7 +14,9 @@
 #endif
 
 // standard library
+#include <exception>
 #include <list>
+#include <mutex>
 #include <thread>
 
 namespace DiFfRG
@@ -85,6 +87,13 @@ namespace DiFfRG
     std::vector<DataOut<safe_dim>> data_outs;
     std::list<std::thread> output_threads;
     std::list<std::list<typename VectorMemory<VectorType>::Pointer>> attached_solutions;
+
+    // serializes worker-thread access to time_series and the shared .pvd file
+    std::mutex output_mutex;
+    // captures any exception thrown inside a worker thread so it can be re-raised on the
+    // main thread at the next flush() (or at destruction, if no other throw is unwinding)
+    std::mutex exception_mutex;
+    std::exception_ptr stored_exception;
 
     GrowingVectorMemory<VectorType> mem;
 
