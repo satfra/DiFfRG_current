@@ -5,7 +5,7 @@ on: [push, pull_request]
 jobs:
   preflight:
     name: Validate pre-flight checks
-    runs-on: itp
+    runs-on: gha-diffrg
     container: ubuntu:24.04
     steps:
     - name: Install checkout prerequisites
