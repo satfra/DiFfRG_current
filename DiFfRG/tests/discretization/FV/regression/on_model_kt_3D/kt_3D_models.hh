@@ -268,6 +268,125 @@ namespace on_kt_3D
   using LSM_rho_integrator_PolyExp = LSM_rho_integrator_base<PolyExpFlows>;
   using LSM_rho_integrator_Litim = LSM_rho_integrator_base<LitimT0Flows>;
 
+  // --- ρ-coord large-N "all-pion" KT model -----------------------------------
+  //
+  // The sigma (radial) mode is replaced by another pion: all N modes are
+  // treated as Goldstones with mass m²_pion = u (no derivative dependence).
+  //   F_total = N · V_pion(u)
+  // This eliminates the derivative-dependent diffusion flux entirely — the
+  // PDE becomes purely hyperbolic (first-order advection), which is the
+  // setting KT was designed for. Diagnostic: if KT reaches t=4 here but
+  // fails on the full O(N) split, the derivative-dependent diffusion flux
+  // (or its interaction with KT's face reconstruction) is the discriminator.
+  //
+  // KT split: all flux goes in the advection slot (depends on u only); the
+  // diffusion slot is identically zero.
+  template <typename FlowsType>
+  class LSM_rho_largeN_base : public def::AbstractModel<LSM_rho_largeN_base<FlowsType>, Components>,
+                              public def::fRG,
+                              public def::FVDefaultBoundaries<LSM_rho_largeN_base<FlowsType>>,
+                              public def::AD<LSM_rho_largeN_base<FlowsType>>
+  {
+  public:
+    LSM_rho_largeN_base(const JSONValue &json, const GridSettings & /*grid*/)
+        : def::fRG(json), flows_(json), T_(integrator_T())
+    {
+      flows_.set_k(this->Lambda);
+      flows_.set_T(T_);
+    }
+
+    template <typename Vector> void initial_condition(const Point<dim> &x, Vector &values) const
+    {
+      const double rho = x[0];
+      values[0] = LSMPhysicalParameters::m2 + 0.5 * LSMPhysicalParameters::lambda_quartic * rho;
+    }
+
+    void set_time(double t_)
+    {
+      this->t = t_;
+      this->k = std::exp(-t_) * this->Lambda;
+      flows_.set_k(this->k);
+    }
+
+    // F_adv = N · V_pion(u)  (all N modes have m²_pion = u).
+    template <int spatial_dim, typename NT, typename Solutions, std::size_t n_fe_functions>
+    void KurganovTadmor_advection_flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i,
+                                       const Point<spatial_dim> & /*x*/, const Solutions &sol) const
+    {
+      static_assert(spatial_dim == dim);
+      static_assert(n_fe_functions == 1);
+      const auto &fe_functions = get<0>(sol);
+      const NT m2Pi = fe_functions[0];
+      NT pion_loop;
+      flows_.V_pion.get(pion_loop, this->k, LSMPhysicalParameters::N, T_, m2Pi);
+      F_i[0][0] = LSMPhysicalParameters::N * pion_loop;
+    }
+
+    // No derivative-dependent (diffusion) flux: purely hyperbolic PDE.
+    template <int spatial_dim, typename NT, typename Solutions, std::size_t n_fe_functions>
+    void flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i, const Point<spatial_dim> & /*x*/,
+              const Solutions & /*sol*/) const
+    {
+      static_assert(spatial_dim == dim);
+      static_assert(n_fe_functions == 1);
+      F_i[0][0] = NT(0.0);
+    }
+
+  private:
+    static constexpr double integrator_T();
+
+    mutable FlowsType flows_;
+    double T_;
+  };
+
+  template <> constexpr double LSM_rho_largeN_base<PolyExpFlows>::integrator_T() { return LSMPhysicalParameters::T; }
+  template <> constexpr double LSM_rho_largeN_base<LitimT0Flows>::integrator_T() { return 0.0; }
+
+  using LSM_rho_largeN_PolyExp = LSM_rho_largeN_base<PolyExpFlows>;
+  using LSM_rho_largeN_Litim = LSM_rho_largeN_base<LitimT0Flows>;
+
+  // CG counterpart of the large-N model (combined flux F = N · V_pion(u)).
+  class LSM_CG_largeN : public def::AbstractModel<LSM_CG_largeN, Components>,
+                        public def::fRG,
+                        public def::LLFFlux<LSM_CG_largeN>,
+                        public def::FlowBoundaries<LSM_CG_largeN>,
+                        public def::AD<LSM_CG_largeN>
+  {
+  public:
+    LSM_CG_largeN(const JSONValue &json, const GridSettings & /*grid*/) : def::fRG(json), flows_(json)
+    {
+      flows_.set_k(this->Lambda);
+      flows_.set_T(LSMPhysicalParameters::T);
+    }
+
+    template <typename Vector> void initial_condition(const Point<dim> &x, Vector &values) const
+    {
+      const double rho = x[0];
+      values[0] = LSMPhysicalParameters::m2 + 0.5 * LSMPhysicalParameters::lambda_quartic * rho;
+    }
+
+    void set_time(double t_)
+    {
+      this->t = t_;
+      this->k = std::exp(-t_) * this->Lambda;
+      flows_.set_k(this->k);
+    }
+
+    template <typename NT, typename Solution>
+    void flux(std::array<Tensor<1, dim, NT>, Components::count_fe_functions(0)> &F, const Point<dim> & /*x*/,
+              const Solution &sol) const
+    {
+      const auto &fe_functions = get<"fe_functions">(sol);
+      const NT m2Pi = fe_functions[0];
+      NT pion_loop;
+      flows_.V_pion.get(pion_loop, this->k, LSMPhysicalParameters::N, LSMPhysicalParameters::T, m2Pi);
+      F[0][0] = LSMPhysicalParameters::N * pion_loop;
+    }
+
+  private:
+    mutable PolyExpFlows flows_;
+  };
+
   // --- CG model (matches Examples/ONfiniteT/model.hh) ------------------------
   //
   // CG uses ρ-coords with a combined flux (no advection/diffusion split,
