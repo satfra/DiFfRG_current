@@ -433,11 +433,25 @@ namespace DiFfRG
                                     const std::array<NumberType, n_components> &u_minus, const dealii::Point<dim> &x_q,
                                     const Model &model)
         {
-          // 1. Compute flux Jacobians J and full Hessian H via second-order forward-mode AD
-          const auto [F_plus, J_plus, H_plus] =
-              compute_flux_jacobian_and_hessian<Model, NumberType, dim, n_components>(u_plus, x_q, model);
-          const auto [F_minus, J_minus, H_minus] =
-              compute_flux_jacobian_and_hessian<Model, NumberType, dim, n_components>(u_minus, x_q, model);
+          // 1. Compute flux Jacobians J (and Hessian H, if the wave-speed strategy
+          // needs it) via either Real<2>-AD, Real<1>-AD + FD, or Real<1>-AD only,
+          // depending on the strategy's `needs_hessian` and `hessian_via_fd` traits.
+          //
+          //   needs_hessian   hessian_via_fd   path used
+          //   ------------    --------------   ---------
+          //   false           (ignored)        compute_flux_jacobian_only          (Real<1>, H=0)
+          //   true            false            compute_flux_jacobian_and_hessian   (Real<2>)
+          //   true            true             compute_flux_jacobian_and_hessian_fd(Real<1> + central FD)
+          auto compute_FJH = [&](const std::array<NumberType, n_components> &u) {
+            if constexpr (!WaveSpeedStrategy::needs_hessian)
+              return compute_flux_jacobian_only<Model, NumberType, dim, n_components>(u, x_q, model);
+            else if constexpr (WaveSpeedStrategy::hessian_via_fd)
+              return compute_flux_jacobian_and_hessian_fd<Model, NumberType, dim, n_components>(u, x_q, model);
+            else
+              return compute_flux_jacobian_and_hessian<Model, NumberType, dim, n_components>(u, x_q, model);
+          };
+          auto [F_plus, J_plus, H_plus] = compute_FJH(u_plus);
+          auto [F_minus, J_minus, H_minus] = compute_FJH(u_minus);
 
           // 2. Compute a_half (max local wave speed per dimension) via the strategy
           const auto a = WaveSpeedStrategy::template compute_speeds<NumberType, dim, n_components>(J_plus, J_minus);

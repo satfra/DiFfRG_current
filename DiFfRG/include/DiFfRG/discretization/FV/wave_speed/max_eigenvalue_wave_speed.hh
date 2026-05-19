@@ -23,6 +23,16 @@ namespace DiFfRG
        * compute_selected_speed_derivatives: derivative for the branch selected by compute_speeds
        */
       struct MaxEigenvalueWaveSpeed {
+        // Whether this strategy uses the Hessian in compute_(selected_)speed_derivatives.
+        // When false, compute_kt_numflux_jacobian can skip computing H entirely and use
+        // a cheaper, less-noisy Real<1, double> path to extract J.
+        static constexpr bool needs_hessian = true;
+        // Whether H should be obtained via finite differences on Real<1>-AD Jacobians
+        // instead of via second-order forward-mode AD. The default-AD path is faster
+        // but Real<2> seeded through a quadrature integrator picks up roundoff in its
+        // ε² coefficient, which contaminates the J extraction too. The FD variant
+        // (MaxEigenvalueWaveSpeedFD) flips this to true.
+        static constexpr bool hessian_via_fd = false;
 
         template <typename NumberType, int dim, size_t n_components>
         static std::array<NumberType, dim>
