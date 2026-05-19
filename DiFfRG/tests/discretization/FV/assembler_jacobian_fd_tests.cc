@@ -1,5 +1,6 @@
 #include "DiFfRG/discretization/FV/assembler/KurganovTadmor.hh"
 #include "DiFfRG/discretization/FV/discretization.hh"
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <DiFfRG/common/utils.hh>
@@ -7,6 +8,8 @@
 #include <boilerplate/kt_models.hh>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
+
+#include <cmath>
 
 using namespace DiFfRG;
 using namespace dealii;
@@ -179,4 +182,68 @@ TEST_CASE("KT Jacobian matches FD Jacobian for pure advection Burgers model", "[
     }
   }
   REQUIRE(pass);
+}
+
+TEST_CASE("KT first-order Jacobian strategy does not use reconstruction-neighbor columns", "[FV][KT]")
+{
+  using Model = Testing::ModelBurgersKT<1>;
+  using NumberType = double;
+  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<1>>;
+  using ResidualReconstructor =
+      def::TVDReconstructor<Discretization::dim, def::MinModLimiter, NumberType>;
+  using JacobianReconstructor = def::FirstOrderReconstructor<Discretization::dim, NumberType>;
+  using ExactAssembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using ApproxJacobianAssembler =
+      FV::KurganovTadmor::Assembler<Discretization, Model, ResidualReconstructor,
+                                    FV::KurganovTadmor::MaxEigenvalueWaveSpeed, JacobianReconstructor>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  Testing::PhysicalParameters p_prm;
+  p_prm.initial_x0[0] = 0.0;
+  p_prm.initial_x1[0] = 1.0;
+  const JSONValue json = make_json();
+
+  Model model(p_prm);
+  RectangularMesh<1> mesh(json);
+  Discretization discretization(mesh, json);
+  ExactAssembler exact_assembler(discretization, model, json);
+  ApproxJacobianAssembler approx_assembler(discretization, model, json);
+
+  FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+  VectorType sol = state.spatial_data();
+  const int n_dofs = static_cast<int>(sol.size());
+  REQUIRE(n_dofs > 5);
+
+  for (int i = 0; i < n_dofs; ++i)
+    sol[i] = 1.0 + 0.1 * static_cast<double>(i) + 0.03 * static_cast<double>(i * i);
+
+  VectorType sol_dot(n_dofs);
+  VectorType residual_exact(n_dofs);
+  VectorType residual_approx(n_dofs);
+  exact_assembler.residual(residual_exact, sol, 1.0, sol_dot, 0.0);
+  approx_assembler.residual(residual_approx, sol, 1.0, sol_dot, 0.0);
+
+  for (int i = 0; i < n_dofs; ++i)
+    CHECK(residual_approx[i] == Catch::Approx(residual_exact[i]).margin(1e-12));
+
+  const SparsityPattern &sp = approx_assembler.get_sparsity_pattern_jacobian();
+  SparseMatrix<NumberType> jacobian(sp);
+  approx_assembler.jacobian(jacobian, sol, 1.0, sol_dot, 0.0, 0.0);
+
+  const int row = n_dofs / 2;
+  REQUIRE(row >= 2);
+  REQUIRE(row + 2 < n_dofs);
+
+  CHECK_FALSE(sp.exists(row, row - 2));
+  CHECK_FALSE(sp.exists(row, row + 2));
+  CHECK(jacobian.el(row, row - 2) == Catch::Approx(0.0).margin(1e-12));
+  CHECK(jacobian.el(row, row + 2) == Catch::Approx(0.0).margin(1e-12));
+
+  const bool has_immediate_neighbor_contribution =
+      (sp.exists(row, row - 1) && std::abs(jacobian.el(row, row - 1)) > 1e-12) ||
+      (sp.exists(row, row + 1) && std::abs(jacobian.el(row, row + 1)) > 1e-12);
+  CHECK(has_immediate_neighbor_contribution);
 }

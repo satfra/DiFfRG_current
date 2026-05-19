@@ -49,6 +49,7 @@ namespace DiFfRG
     public:
       static constexpr int dim = dim_;
       static constexpr int n_faces = 2 * dim;
+      static constexpr int jacobian_stencil_radius = 2;
 
       // Expose the Limiter type for use by other templates
       using LimiterType = Limiter;

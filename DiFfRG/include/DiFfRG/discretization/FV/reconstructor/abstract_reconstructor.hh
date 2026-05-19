@@ -26,13 +26,16 @@ namespace DiFfRG
     /**
      * @brief Concept that any gradient-reconstruction strategy must satisfy.
      */
-    template <typename T>
-    concept HasReconstructor =
-        requires {
-          {
-            T::dim
-          } -> std::convertible_to<int>;
-        } &&
+	    template <typename T>
+	    concept HasReconstructor =
+	        requires {
+	          {
+	            T::dim
+	          } -> std::convertible_to<int>;
+	          {
+	            T::jacobian_stencil_radius
+	          } -> std::convertible_to<int>;
+	        } &&
         // ---- compute_gradient (n_components=1) ----
         requires(const dealii::Point<T::dim> &center, const std::array<double, 1> &u_center,
                  const std::array<dealii::Point<T::dim>, n_faces<T::dim>> &x_n,

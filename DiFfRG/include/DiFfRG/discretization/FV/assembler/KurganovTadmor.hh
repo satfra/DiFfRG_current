@@ -31,6 +31,7 @@
 
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
+#include <DiFfRG/discretization/FV/reconstructor/first_order_reconstructor.hh>
 #include <DiFfRG/discretization/FV/reconstructor/tvd_reconstructor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 
@@ -289,7 +290,8 @@ namespace DiFfRG
             template <std::size_t n_local_dofs>
             void reinit(const std::array<types::global_dof_index, n_local_dofs> &cell_dofs, const Iterator &cell,
                         const std::optional<std::array<types::global_dof_index, n_local_dofs>> &ncell_dofs = std::nullopt,
-                        const std::optional<Iterator> &ncell = std::nullopt)
+                        const std::optional<Iterator> &ncell = std::nullopt,
+                        const bool include_reconstruction_neighbors = true)
             {
               to_dofs.resize(ncell_dofs.has_value() ? 2 * n_local_dofs : n_local_dofs);
               std::copy(cell_dofs.begin(), cell_dofs.end(), to_dofs.begin());
@@ -298,12 +300,17 @@ namespace DiFfRG
               from_dofs.clear();
               const auto required_capacity =
                   to_dofs.size() +
-                  GeometryInfo<dim>::faces_per_cell * cell->get_fe().n_dofs_per_cell() * (ncell.has_value() ? 2 : 1);
+                  (include_reconstruction_neighbors
+                       ? GeometryInfo<dim>::faces_per_cell * cell->get_fe().n_dofs_per_cell() *
+                             (ncell.has_value() ? 2 : 1)
+                       : 0);
               if (from_dofs.capacity() < required_capacity) from_dofs.reserve(required_capacity);
               append_cell_dofs(from_dofs, cell_dofs);
               if (ncell_dofs.has_value()) append_cell_dofs(from_dofs, *ncell_dofs);
-              append_neighbor_dofs(from_dofs, neighbor_dof_indices, cell);
-              if (ncell.has_value()) append_neighbor_dofs(from_dofs, neighbor_dof_indices, ncell.value());
+              if (include_reconstruction_neighbors) {
+                append_neighbor_dofs(from_dofs, neighbor_dof_indices, cell);
+                if (ncell.has_value()) append_neighbor_dofs(from_dofs, neighbor_dof_indices, ncell.value());
+              }
 
               std::sort(from_dofs.begin(), from_dofs.end());
               from_dofs.erase(std::unique(from_dofs.begin(), from_dofs.end()), from_dofs.end());
@@ -627,7 +634,8 @@ namespace DiFfRG
       template <typename Discretization_, typename Model_,
                 def::HasReconstructor Reconstructor_ =
                     def::TVDReconstructor<Discretization_::dim, def::MinModLimiter, double>,
-                def::HasWaveSpeed WaveSpeedStrategy_ = MaxEigenvalueWaveSpeed>
+                def::HasWaveSpeed WaveSpeedStrategy_ = MaxEigenvalueWaveSpeed,
+                def::HasReconstructor JacobianReconstructor_ = Reconstructor_>
         requires MeshIsRectangular<typename Discretization_::Mesh>
       class Assembler : public AbstractAssembler<typename Discretization_::VectorType,
                                                  typename Discretization_::SparseMatrixType, Discretization_::dim>
@@ -655,12 +663,15 @@ namespace DiFfRG
         using Model = Model_;
         using Reconstructor = Reconstructor_;
         using WaveSpeedStrategy = WaveSpeedStrategy_;
+        using JacobianReconstructor = JacobianReconstructor_;
         using NumberType = typename Discretization::NumberType;
         using VectorType = typename Discretization::VectorType;
 
         using Components = typename Discretization::Components;
         static constexpr uint dim = Discretization::dim;
         static_assert(Reconstructor::dim == dim, "Reconstructor dimension must match the discretization dimension.");
+        static_assert(JacobianReconstructor::dim == dim,
+                      "JacobianReconstructor dimension must match the discretization dimension.");
         static constexpr uint n_components = Components::count_fe_functions(0);
         static constexpr uint n_faces = GeometryInfo<dim>::faces_per_cell;
         // using CacheData = internal::Cache_Data<NumberType, dim, n_components>;
@@ -757,7 +768,7 @@ namespace DiFfRG
           //   sparsity_pattern_jacobian.copy_from(dsp);
           // }
 
-          constexpr uint stencil = 2;
+          constexpr uint stencil = JacobianReconstructor::jacobian_stencil_radius;
           build_sparsity(sparsity_pattern_jacobian, dof_handler, dof_handler, stencil, true);
           rebuild_cell_geometry_cache();
 
@@ -1276,16 +1287,17 @@ namespace DiFfRG
 
             auto &copy_data_face = copy_data.next_face_data();
             copy_data_face.reinit(cell_data.dof_indices, cell,
-                                  std::optional<decltype(ncell_data.dof_indices)>{ncell_data.dof_indices}, ncell);
+                                  std::optional<decltype(ncell_data.dof_indices)>{ncell_data.dof_indices}, ncell,
+                                  JacobianReconstructor::jacobian_stencil_radius > 1);
 
             // Compute gradients and reconstructed interface values u_minus / u_plus
-            const GradientType u_grad_cell = Reconstructor::template compute_gradient<n_components>(
+            const GradientType u_grad_cell = JacobianReconstructor::template compute_gradient<n_components>(
                 cell_data.x, cell_data.u, cell_neighbors.x, cell_neighbors.u);
-            const GradientType u_grad_ncell = Reconstructor::template compute_gradient<n_components>(
+            const GradientType u_grad_ncell = JacobianReconstructor::template compute_gradient<n_components>(
                 ncell_data.x, ncell_data.u, ncell_neighbors.x, ncell_neighbors.u);
-            const GradientType u_grad_minus = Reconstructor::template compute_gradient_at_point<n_components>(
+            const GradientType u_grad_minus = JacobianReconstructor::template compute_gradient_at_point<n_components>(
                 cell_data.x, x_q, cell_data.u, cell_neighbors.x, cell_neighbors.u);
-            const GradientType u_grad_plus = Reconstructor::template compute_gradient_at_point<n_components>(
+            const GradientType u_grad_plus = JacobianReconstructor::template compute_gradient_at_point<n_components>(
                 ncell_data.x, x_q, ncell_data.u, ncell_neighbors.x, ncell_neighbors.u);
 
             const std::array<NumberType, n_components> u_minus =
@@ -1309,10 +1321,10 @@ namespace DiFfRG
                 auto u_center_tagged = internal::tag_cell_dofs(cell_data, dof_j);
                 auto u_n_tagged = internal::make_tagged_neighbors(cell_neighbors, dof_j);
                 reconstructed_deriv[0][j].u =
-                    internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
+                    internal::reconstruct_u_derivative<JacobianReconstructor, dim, NumberType, n_components>(
                         u_center_tagged.u, cell_data.x, x_q, cell_neighbors.x, u_n_tagged.u);
                 reconstructed_deriv[0][j].grad =
-                    Reconstructor::template compute_gradient_at_point_derivative<n_components>(
+                    JacobianReconstructor::template compute_gradient_at_point_derivative<n_components>(
                         cell_data.x, x_q, u_center_tagged.u, cell_neighbors.x, u_n_tagged.u);
               }
 
@@ -1321,10 +1333,10 @@ namespace DiFfRG
                 auto u_center_tagged = internal::tag_cell_dofs(ncell_data, dof_j);
                 auto u_n_tagged = internal::make_tagged_neighbors(ncell_neighbors, dof_j);
                 reconstructed_deriv[1][j].u =
-                    internal::reconstruct_u_derivative<Reconstructor, dim, NumberType, n_components>(
+                    internal::reconstruct_u_derivative<JacobianReconstructor, dim, NumberType, n_components>(
                         u_center_tagged.u, ncell_data.x, x_q, ncell_neighbors.x, u_n_tagged.u);
                 reconstructed_deriv[1][j].grad =
-                    Reconstructor::template compute_gradient_at_point_derivative<n_components>(
+                    JacobianReconstructor::template compute_gradient_at_point_derivative<n_components>(
                         ncell_data.x, x_q, u_center_tagged.u, ncell_neighbors.x, u_n_tagged.u);
               }
             }
@@ -1383,7 +1395,9 @@ namespace DiFfRG
             const auto &cell_stencil = scratch_data.cell_stencil;
             const auto &cell_data = cell_stencil.cell;
             auto &copy_data_face = copy_data.next_face_data();
-            copy_data_face.reinit(cell_data.dof_indices, cell);
+            copy_data_face.reinit(cell_data.dof_indices, cell, std::optional<decltype(cell_data.dof_indices)>{},
+                                  std::optional<Iterator>{},
+                                  JacobianReconstructor::jacobian_stencil_radius > 1);
             GradientType u_grad_ghost{};
             GradientType u_grad_minus{};
             std::array<NumberType, n_components> u_plus{};
@@ -1405,14 +1419,14 @@ namespace DiFfRG
             const auto ghost_stencil =
                 internal::make_ghost_boundary_side_stencil_1d<NumberType, n_components>(conditioned_boundary_stencil);
 
-            const auto u_grad_cell = Reconstructor::template compute_gradient<n_components>(
+            const auto u_grad_cell = JacobianReconstructor::template compute_gradient<n_components>(
                 physical_stencil.cell.x, physical_stencil.cell.u, physical_stencil.neighbors.x, physical_stencil.neighbors.u);
-            const auto u_grad_plus = Reconstructor::template compute_gradient<n_components>(
+            const auto u_grad_plus = JacobianReconstructor::template compute_gradient<n_components>(
                 ghost_stencil.cell.x, ghost_stencil.cell.u, ghost_stencil.neighbors.x, ghost_stencil.neighbors.u);
-            u_grad_minus = Reconstructor::template compute_gradient_at_point<n_components>(
+            u_grad_minus = JacobianReconstructor::template compute_gradient_at_point<n_components>(
                 physical_stencil.cell.x, x_q, physical_stencil.cell.u, physical_stencil.neighbors.x,
                 physical_stencil.neighbors.u);
-            u_grad_ghost = Reconstructor::template compute_gradient_at_point<n_components>(
+            u_grad_ghost = JacobianReconstructor::template compute_gradient_at_point<n_components>(
                 ghost_stencil.cell.x, x_q, ghost_stencil.cell.u, ghost_stencil.neighbors.x, ghost_stencil.neighbors.u);
             u_minus = internal::reconstruct_u(physical_stencil.cell.u, physical_stencil.cell.x, x_q, u_grad_cell);
             u_plus = internal::reconstruct_u(ghost_stencil.cell.u, ghost_stencil.cell.x, x_q, u_grad_plus);
@@ -1447,32 +1461,22 @@ namespace DiFfRG
               const auto ghost_stencil_ad =
                   internal::make_ghost_boundary_side_stencil_1d<autodiff::Real<1, NumberType>, n_components>(
                       boundary_stencil_ad);
-              using ReconstructorAD = def::TVDReconstructor<1, typename Reconstructor::LimiterType,
-                                                            autodiff::Real<1, NumberType>>;
-              const auto u_grad_cell_ad = ReconstructorAD::template compute_gradient<n_components>(
-                  physical_stencil_ad.cell.x, physical_stencil_ad.cell.u, physical_stencil_ad.neighbors.x,
-                  physical_stencil_ad.neighbors.u);
-              const auto u_grad_ghost_ad = ReconstructorAD::template compute_gradient<n_components>(
-                  ghost_stencil_ad.cell.x, ghost_stencil_ad.cell.u, ghost_stencil_ad.neighbors.x,
-                  ghost_stencil_ad.neighbors.u);
-              const auto u_grad_minus_ad = ReconstructorAD::template compute_gradient_at_point<n_components>(
-                  physical_stencil_ad.cell.x, x_q, physical_stencil_ad.cell.u, physical_stencil_ad.neighbors.x,
-                  physical_stencil_ad.neighbors.u);
-              const auto u_grad_plus_ad = ReconstructorAD::template compute_gradient_at_point<n_components>(
-                  ghost_stencil_ad.cell.x, x_q, ghost_stencil_ad.cell.u, ghost_stencil_ad.neighbors.x,
-                  ghost_stencil_ad.neighbors.u);
-              const auto u_minus_ad =
-                  internal::reconstruct_u(physical_stencil_ad.cell.u, physical_stencil_ad.cell.x, x_q, u_grad_cell_ad);
-              const auto u_plus_ad =
-                  internal::reconstruct_u(ghost_stencil_ad.cell.u, ghost_stencil_ad.cell.x, x_q, u_grad_ghost_ad);
-              for (size_t c = 0; c < n_components; ++c) {
-                reconstructed_deriv[0][j].u[c] = derivative(u_minus_ad[c]);
-                reconstructed_deriv[1][j].u[c] = derivative(u_plus_ad[c]);
-                for (size_t d = 0; d < dim; ++d) {
-                  reconstructed_deriv[0][j].grad[c][d] = derivative(u_grad_minus_ad[c][d]);
-                  reconstructed_deriv[1][j].grad[c][d] = derivative(u_grad_plus_ad[c][d]);
-                }
-              }
+              reconstructed_deriv[0][j].u =
+                  internal::reconstruct_u_derivative<JacobianReconstructor, dim, NumberType, n_components>(
+                      physical_stencil_ad.cell.u, physical_stencil_ad.cell.x, x_q, physical_stencil_ad.neighbors.x,
+                      physical_stencil_ad.neighbors.u);
+              reconstructed_deriv[1][j].u =
+                  internal::reconstruct_u_derivative<JacobianReconstructor, dim, NumberType, n_components>(
+                      ghost_stencil_ad.cell.u, ghost_stencil_ad.cell.x, x_q, ghost_stencil_ad.neighbors.x,
+                      ghost_stencil_ad.neighbors.u);
+              reconstructed_deriv[0][j].grad =
+                  JacobianReconstructor::template compute_gradient_at_point_derivative<n_components>(
+                      physical_stencil_ad.cell.x, x_q, physical_stencil_ad.cell.u, physical_stencil_ad.neighbors.x,
+                      physical_stencil_ad.neighbors.u);
+              reconstructed_deriv[1][j].grad =
+                  JacobianReconstructor::template compute_gradient_at_point_derivative<n_components>(
+                      ghost_stencil_ad.cell.x, x_q, ghost_stencil_ad.cell.u, ghost_stencil_ad.neighbors.x,
+                      ghost_stencil_ad.neighbors.u);
             }
 
             // Compute numerical flux Jacobian
