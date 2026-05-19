@@ -3,6 +3,8 @@
 #include <deal.II/lac/block_vector.h>
 #include <deal.II/sundials/ida.h>
 
+#include <fstream>
+
 // DiFfRG
 #include <DiFfRG/common/eigen.hh>
 #include <DiFfRG/common/types.hh>
@@ -56,14 +58,28 @@ namespace DiFfRG
     uint stuck = 0;
     double stuck_t = 0.;
     uint failure_counter = 0;
+    // DIAG (Stage 2): split failure counters and per-callback bookkeeping
+    uint diag_res_input_nan = 0;
+    uint diag_res_output_nan = 0;
+    uint diag_jac_throw = 0;
+    uint diag_linsolver_throw = 0;
+    double diag_last_residual_norm = std::numeric_limits<double>::quiet_NaN();
+    double diag_last_y_norm = std::numeric_limits<double>::quiet_NaN();
 
     // Initialize initial condition
     VectorType y = initial_data;
     VectorType y_dot = initial_data;
     y_dot *= 0.;
 
-    // Pointer to current residual for monitoring
-    VectorType *residual;
+    // Pointer to current residual for monitoring. Must be initialised before
+    // SUNDIALS::IDA calls `output_step` at the initial `t = 0` (the IDA wrapper
+    // may emit an initial-condition output before the first residual lambda
+    // has run and set this pointer). Without this placeholder the first
+    // `output_step` dereferences uninitialised garbage and the process
+    // segfaults inside `time_stepper.solve_dae`.
+    VectorType residual_placeholder = initial_data;
+    residual_placeholder *= 0.;
+    VectorType *residual = &residual_placeholder;
 
     // Tells SUNDIALS to do an internal reset, e.g. if we do local refinement
     time_stepper.solver_should_restart = [&](const double t, VectorType &sol, VectorType &sol_dot) -> bool {
@@ -104,12 +120,24 @@ namespace DiFfRG
         stuck_t = t;
       }
 
-      if (!is_close(t, 0.) && stuck > 100)
+      if (!is_close(t, 0.) && stuck > 100) {
+        std::cerr << "[DIAG] STUCK at t=" << t << " | res_in_nan=" << diag_res_input_nan
+                  << " res_out_nan=" << diag_res_output_nan << " jac_throw=" << diag_jac_throw
+                  << " linsolver_throw=" << diag_linsolver_throw
+                  << " | last_res_norm=" << diag_last_residual_norm << " last_y_norm=" << diag_last_y_norm
+                  << std::endl;
         throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
+      }
       if (is_close(t, 0.) && stuck > 200)
         throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
       if (failure_counter > 200) throw std::runtime_error("timestep failure, at t = " + std::to_string(t));
-      if (!std::isfinite(y.l1_norm())) return ++failure_counter;
+      if (!std::isfinite(y.l1_norm())) {
+        diag_res_input_nan++;
+        std::cerr << "[DIAG] RES FAIL @ t=" << t << " : y has non-finite l1_norm=" << y.l1_norm()
+                  << " (failure_counter=" << failure_counter + 1 << ")" << std::endl;
+        return ++failure_counter;
+      }
+      diag_last_y_norm = y.l1_norm();
 
       assembler->set_time(t);
 
@@ -117,7 +145,49 @@ namespace DiFfRG
       assembler->residual(res, y, 1., y_dot, 1.);
       residual = &res;
 
-      if (!std::isfinite(res.l1_norm())) return ++failure_counter;
+      if (!std::isfinite(res.l1_norm())) {
+        diag_res_output_nan++;
+        // find first non-finite cell for diagnosis
+        std::size_t bad_idx = res.size();
+        for (std::size_t i = 0; i < res.size(); ++i)
+          if (!std::isfinite(res[i])) {
+            bad_idx = i;
+            break;
+          }
+        // On the very first failure, dump the FULL y profile to a file so we can
+        // see whether the checkerboard is at rho=0, rho_max, or both.
+        if (diag_res_output_nan == 1) {
+          std::ofstream f("DIAG_full_y_at_first_failure.txt");
+          f << "# t=" << t << " first_bad_cell=" << bad_idx << " n=" << y.size() << "\n";
+          f << "# cell  y               y_dot           res\n";
+          for (std::size_t i = 0; i < y.size(); ++i)
+            f << i << "  " << y[i] << "  " << y_dot[i] << "  " << res[i] << "\n";
+          f.close();
+          std::cerr << "[DIAG] Wrote full y profile to DIAG_full_y_at_first_failure.txt"
+                    << std::endl;
+        }
+        if (diag_res_output_nan <= 3) {
+          std::cerr << "[DIAG] RES FAIL @ t=" << t << " first_bad=" << bad_idx << "\n  y nearby: ";
+          for (std::size_t i = (bad_idx >= 5 ? bad_idx - 5 : 0);
+               i < std::min<std::size_t>(y.size(), bad_idx + 6); ++i)
+            std::cerr << "y[" << i << "]=" << y[i] << " ";
+          std::cerr << "\n  y_dot nearby: ";
+          for (std::size_t i = (bad_idx >= 5 ? bad_idx - 5 : 0);
+               i < std::min<std::size_t>(y_dot.size(), bad_idx + 6); ++i)
+            std::cerr << "y_dot[" << i << "]=" << y_dot[i] << " ";
+          std::cerr << "\n  res nearby: ";
+          for (std::size_t i = (bad_idx >= 5 ? bad_idx - 5 : 0);
+               i < std::min<std::size_t>(res.size(), bad_idx + 6); ++i)
+            std::cerr << "res[" << i << "]=" << res[i] << " ";
+          std::cerr << std::endl;
+        } else {
+          std::cerr << "[DIAG] RES FAIL @ t=" << t << " first_bad=" << bad_idx
+                    << " y[bad]=" << y[bad_idx] << " y_dot[bad]=" << y_dot[bad_idx]
+                    << " (fc=" << failure_counter + 1 << ")" << std::endl;
+        }
+        return ++failure_counter;
+      }
+      diag_last_residual_norm = res.l1_norm();
 
       const auto ms_passed =
           std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
@@ -154,7 +224,9 @@ namespace DiFfRG
           console_out(t, "jacobian inversion", 3, ms_passed);
         }
       } catch (std::exception &e) {
-        std::cerr << e.what() << std::endl;
+        diag_jac_throw++;
+        std::cerr << "[DIAG] JAC FAIL @ t=" << t << " : " << e.what()
+                  << " (failure_counter=" << failure_counter + 1 << ")" << std::endl;
         return ++failure_counter;
       }
 
@@ -226,8 +298,12 @@ namespace DiFfRG
     BlockVectorType y_dot = initial_data;
     y_dot *= 0.;
 
-    // Pointer to current residual for monitoring
-    BlockVectorType *residual;
+    // Pointer to current residual for monitoring. See the VectorType overload
+    // for why this needs a placeholder before SUNDIALS::IDA's first
+    // `output_step` call at `t = 0`.
+    BlockVectorType residual_placeholder = initial_data;
+    residual_placeholder *= 0.;
+    BlockVectorType *residual = &residual_placeholder;
 
     // Tells SUNDIALS to do an internal reset, e.g. if we do local refinement
     time_stepper.solver_should_restart = [&](const double t, BlockVectorType &sol, BlockVectorType &sol_dot) -> bool {

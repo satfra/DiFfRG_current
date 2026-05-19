@@ -9,7 +9,8 @@
 #include <deal.II/lac/vector.h>
 #include <deal.II/meshworker/mesh_loop.h>
 #include <oneapi/tbb/parallel_for_each.h>
-#include <petscvec.h>
+
+// #include <petscvec.h>
 
 using NumberType = double;
 using VectorType = dealii::Vector<NumberType>;

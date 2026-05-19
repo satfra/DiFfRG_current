@@ -232,8 +232,7 @@ namespace DiFfRG
     }
 
     void print_console_out(const std::string &name, const double t, const size_t milliseconds,
-                           const std::optional<std::string> calc_dt = std::nullopt,
-                           const size_t calls = 0) const
+                           const std::optional<std::string> calc_dt = std::nullopt, const size_t calls = 0) const
     {
       if (name.size() > console_name_width) throw std::runtime_error("console_out: log label is too long: " + name);
 
@@ -242,13 +241,14 @@ namespace DiFfRG
       std::cout << "[" << std::setw(console_name_width) << std::left << name << "]";
       std::cout << " t: " << std::setw(10) << std::left << std::setprecision(4) << std::scientific << t;
       if (Lambda > 0.0) {
-        std::cout << " | k: " << std::setw(10) << std::left << std::setprecision(4) << std::scientific << exp(-t) * Lambda;
+        std::cout << " | k: " << std::setw(10) << std::left << std::setprecision(4) << std::scientific
+                  << exp(-t) * Lambda;
       }
       if (calc_dt.has_value()) {
-        std::cout << " | calc_dt: " << calc_dt.value();
+        std::cout << " | calc_dt: " << std::setw(10) << calc_dt.value();
       }
       if (calls > 0) {
-        std::cout << " | calls: " << calls;
+        std::cout << " | calls: " << std::setw(10) << calls;
       }
       std::cout << " | calc_t: " << time_format_ms(milliseconds);
       std::cout << std::endl;
@@ -269,12 +269,12 @@ namespace DiFfRG
     {
       if (verbosity < verbosity_level) return;
 
-      const size_t milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                      std::chrono::high_resolution_clock::now() - start_time)
-                                      .count();
+      const size_t milliseconds =
+          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start_time)
+              .count();
       if (verbosity >= 4) {
-        const auto calc_dt = calc_dt_ms >= 0.0 ? std::optional<std::string>(time_format_ms(size_t(calc_dt_ms)))
-                                               : std::nullopt;
+        const auto calc_dt =
+            calc_dt_ms >= 0.0 ? std::optional<std::string>(time_format_ms(size_t(calc_dt_ms))) : std::nullopt;
         print_console_out(name, t, milliseconds, calc_dt);
         return;
       }
@@ -285,9 +285,9 @@ namespace DiFfRG
       if (milliseconds - stats.first_ms < 1000) return;
 
       const auto calc_dt =
-          stats.has_calc_dt ? std::optional<std::string>(
-                                  format_uncertain_ms(stats.mean_calc_dt_ms(), stats.calc_dt_uncertainty_ms()))
-                            : std::nullopt;
+          stats.has_calc_dt
+              ? std::optional<std::string>(format_uncertain_ms(stats.mean_calc_dt_ms(), stats.calc_dt_uncertainty_ms()))
+              : std::nullopt;
       print_console_out(category, stats.latest_t, stats.last_ms, calc_dt, stats.calls);
       stats = {};
     }

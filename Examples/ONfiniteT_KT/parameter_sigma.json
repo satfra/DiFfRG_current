@@ -28,7 +28,7 @@
     "EoM_max_iter": 0,
     "output_buffer_size": 100,
     "grid": {
-      "x_grid": "0:1.16e-3:1.74e-1",
+      "x_grid": "-5.8e-4:1.16e-3:1.7458e-1",
       "y_grid": "0:0.1:1",
       "z_grid": "0:0.1:1",
       "refine": 0

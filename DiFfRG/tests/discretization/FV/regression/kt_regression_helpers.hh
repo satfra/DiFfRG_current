@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/json.hh>
 
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -29,6 +30,14 @@ namespace kt_regression
       log->set_pattern("log: [%v]");
     } catch (const spdlog::spdlog_ex &) {
     }
+  }
+
+  // Ensure DiFfRG (MPI/Kokkos/TBB) is initialized exactly once. Required by
+  // tests that construct a QuadratureProvider directly (i.e. tests that use
+  // the integrator-based fluxes rather than a closed-form expression).
+  inline void ensure_diffrg_initialized()
+  {
+    static const DiFfRG::Init diffrg_init;
   }
 
   inline double json_number_to_double(const DiFfRG::json::value &value)
