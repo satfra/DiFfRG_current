@@ -10,7 +10,7 @@
 #include <DiFfRG/discretization/data/fe_output.hh>
 
 #ifdef H5CPP
-#include <h5cpp/utilities/array_adapter.hpp>
+#include <hdf5lib/hdf5.hh>
 #endif
 
 #include <memory>
@@ -72,10 +72,34 @@ namespace DiFfRG
     // Clear the data_out and attached_solutions lists.
     output_threads.clear();
     attached_solutions.clear();
+
+    // Surface a captured worker exception only when we are not already unwinding.
+    std::exception_ptr to_throw;
+    {
+      std::lock_guard<std::mutex> lk(exception_mutex);
+      if (stored_exception && std::uncaught_exceptions() == 0) {
+        to_throw = stored_exception;
+        stored_exception = nullptr;
+      }
+    }
+    if (to_throw) std::rethrow_exception(to_throw);
   }
 
   template <uint dim, typename VectorType> void FEOutput<dim, VectorType>::flush(double time)
   {
+    // Surface any exception captured from a previous worker thread before doing more work.
+    {
+      std::exception_ptr to_throw;
+      {
+        std::lock_guard<std::mutex> lk(exception_mutex);
+        if (stored_exception) {
+          to_throw = stored_exception;
+          stored_exception = nullptr;
+        }
+      }
+      if (to_throw) std::rethrow_exception(to_throw);
+    }
+
     update_buffers();
 
     // The .vtu file will be named like output_name_000001.vtu, where the number is the
@@ -88,61 +112,67 @@ namespace DiFfRG
     m_data_out.build_patches(subdivisions);
 
 #ifdef H5CPP
-    if (hdf5_output != nullptr) {
-      auto h5_file = hdf5_output->get_file();
-      auto h5_group = h5_file.root().get_group("FE");
-      {
-        auto cur_group = h5_group.create_group(Utilities::int_to_string(series_number, 6));
-        cur_group.attributes.template create_from<double>("time", time);
-        cur_group.attributes.template create_from<int>("series_number", series_number);
-        cur_group.attributes.template create_from<std::string>("output_name", output_name);
+    auto h5_file = hdf5_output->get_file();
+    auto h5_group = h5_file.root().open_group("FE");
+    {
+      auto cur_group = h5_group.create_group(Utilities::int_to_string(series_number, 6));
+      cur_group.write_attribute("time", time);
+      cur_group.write_attribute("series_number", static_cast<int>(series_number));
+      cur_group.write_attribute("output_name", output_name);
 
-        DataOutBase::DataOutFilterFlags mflags(false, false);
-        DataOutBase::DataOutFilter data_filter(mflags);
-        // Filter the data and store it in data_filter
-        m_data_out.write_filtered_data(data_filter);
-        // Write the filtered data to HDF5
-        std::vector<double> node_data;
-        data_filter.fill_node_data(node_data);
+      DataOutBase::DataOutFilterFlags mflags(false, false);
+      DataOutBase::DataOutFilter data_filter(mflags);
+      m_data_out.write_filtered_data(data_filter);
+      std::vector<double> node_data;
+      data_filter.fill_node_data(node_data);
 
-        hdf5::dataspace::Simple nodes_space({data_filter.n_nodes(), dim});
-        auto nodes = cur_group.create_dataset("nodes", hdf5::datatype::create<double>(), nodes_space);
-        nodes.write(node_data);
+      auto nodes_space = DiFfRG::hdf5::Dataspace::simple({data_filter.n_nodes(), dim});
+      auto nodes = cur_group.create_dataset("nodes", DiFfRG::hdf5::type_of<double>(), nodes_space);
+      nodes.write(node_data);
 
-        for (uint i = 0; i < data_filter.n_data_sets(); ++i) {
-          hdf5::dataspace::Simple data_space({data_filter.n_nodes()});
-          const std::string name = data_filter.get_data_set_name(i);
-          auto dataset = cur_group.create_dataset(name, hdf5::datatype::create<double>(), data_space);
-
-          // To forgo the need for a copy, we have to do some casting around the constness of the data.
-          // See also https://ess-dmsc.github.io/h5cpp/stable/advanced/c_arrays.html
-          const double *data_set_data = data_filter.get_data_set(i);
-          dataset.write(hdf5::ArrayAdapter<double>(const_cast<double *>(data_set_data), data_filter.n_nodes()));
-        }
+      for (uint i = 0; i < data_filter.n_data_sets(); ++i) {
+        auto data_space = DiFfRG::hdf5::Dataspace::simple({data_filter.n_nodes()});
+        const std::string name = data_filter.get_data_set_name(i);
+        auto dataset = cur_group.create_dataset(name, DiFfRG::hdf5::type_of<double>(), data_space);
+        const double *data_set_data = data_filter.get_data_set(i);
+        dataset.write(data_set_data, data_filter.n_nodes());
       }
       hdf5_output->close_file();
     }
 #endif
 
     auto output_func = [=, this](const uint m_series_number, const double m_time) {
-      auto &m_data_out = data_outs[m_series_number % buffer_size];
-      if (save_vtk) {
-        // We add the .vtu file to the time series and write the .pvd file.
-        time_series.emplace_back(m_time, filename_vtu);
-        try {
-          std::ofstream output_pvd(top_folder + filename_pvd);
-          DataOutBase::write_pvd_record(output_pvd, time_series);
-        } catch (const std::exception &e) {
-          throw std::runtime_error("FEOutput::flush: Could not write pvd file.");
+      try {
+        auto &m_data_out = data_outs[m_series_number % buffer_size];
+        if (save_vtk) {
+          // Serialize mutation of time_series and writes to the shared .pvd path.
+          // The per-series .vtu write below goes to a unique filename and stays
+          // outside the lock so multiple workers can write .vtu files in parallel.
+          {
+            std::lock_guard<std::mutex> lk(output_mutex);
+            time_series.emplace_back(m_time, filename_vtu);
+            try {
+              std::ofstream output_pvd(top_folder + filename_pvd);
+              DataOutBase::write_pvd_record(output_pvd, time_series);
+            } catch (const std::exception &e) {
+              throw std::runtime_error("FEOutput::flush: Could not write pvd file.");
+            }
+          }
+
+          auto flags = DataOutBase::VtkFlags(m_time, m_series_number);
+          m_data_out.set_flags(flags);
+
+          std::ofstream output_vtu(top_folder + filename_vtu);
+          m_data_out.write_vtu(output_vtu);
         }
-
-        auto flags = DataOutBase::VtkFlags(m_time, m_series_number);
-        m_data_out.set_flags(flags);
-
-        std::ofstream output_vtu(top_folder + filename_vtu);
-        m_data_out.write_vtu(output_vtu);
+        m_data_out.clear();
+      } catch (...) {
+        // Never let an exception escape the worker thread (that would call
+        // std::terminate). Capture the first one; later workers' exceptions are
+        // dropped because the first is enough to fail the main-thread caller.
+        std::lock_guard<std::mutex> lk(exception_mutex);
+        if (!stored_exception) stored_exception = std::current_exception();
       }
-      m_data_out.clear();
     };
 
     // If the buffer size is 1, we save ourselves the cost of spawning a thread
