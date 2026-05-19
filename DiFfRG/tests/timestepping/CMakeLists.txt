@@ -9,6 +9,7 @@ add_subdirectory(solver)
 # ##############################################################################
 
 setup_test(sundials_ida.cc)
+setup_test(sundials_ida_boost.cc)
 setup_test(implicit_euler.cc)
 setup_test(explicit_euler.cc)
 setup_test(trbdf2.cc)

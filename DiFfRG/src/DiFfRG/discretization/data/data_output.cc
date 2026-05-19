@@ -23,12 +23,10 @@ namespace DiFfRG
   {
 #ifdef H5CPP
     if (use_hdf5) {
-      // create the file
       h5_files.emplace(filename_h5, HDF5Output(top_folder, filename_h5, json));
       if constexpr (dim > 0) {
-        hdf5::node::Group root_group = h5_files.at(filename_h5).get_file().root();
-        // create the FE group
-        auto h5_fe_group = std::make_shared<hdf5::node::Group>(root_group.create_group("FE"));
+        auto root_group = h5_files.at(filename_h5).get_file().root();
+        root_group.create_group("FE");
         fe_out.set_hdf5_output(&h5_files.at(filename_h5));
       }
     }

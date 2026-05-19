@@ -7,119 +7,53 @@
 #include <autodiff/forward/real/real.hpp>
 
 #ifdef H5CPP
-#include <h5cpp/hdf5.hpp>
+#include <hdf5lib/hdf5.hh>
 #endif
 
 #ifdef H5CPP
-namespace hdf5
+namespace DiFfRG::hdf5
 {
-  namespace datatype
-  {
-    template <typename T> class TypeTrait<DiFfRG::complex<T>>
+  template <typename T> struct TypeTrait<DiFfRG::complex<T>> {
+    static Datatype get()
     {
-    private:
-      using element_type = TypeTrait<T>;
+      auto t = Datatype::compound(2 * sizeof(T));
+      t.insert("real", 0, type_of<T>());
+      t.insert("imag", sizeof(T), type_of<T>());
+      return t;
+    }
+  };
 
-    public:
-      using Type = DiFfRG::complex<T>;
-      using TypeClass = Compound;
-
-      static TypeClass create(const Type & = Type())
-      {
-        datatype::Compound type = datatype::Compound::create(2 * sizeof(T));
-
-        type.insert("real", 0, element_type::create(T()));
-        type.insert("imag", alignof(T), element_type::create(T()));
-
-        return type;
-      }
-      const static TypeClass &get(const Type & = Type())
-      {
-        const static TypeClass &cref_ = create();
-        return cref_;
-      }
-    };
-
-    template <size_t N, typename T> class TypeTrait<autodiff::Real<N, T>>
+  template <std::size_t N, typename T> struct TypeTrait<autodiff::Real<N, T>> {
+    static Datatype get()
     {
-    private:
-      using element_type = TypeTrait<T>;
+      auto t = Datatype::compound((N + 1) * sizeof(T));
+      t.insert("val", 0, type_of<T>());
+      for (std::size_t i = 1; i <= N; ++i)
+        t.insert("d_" + std::to_string(i), i * sizeof(T), type_of<T>());
+      return t;
+    }
+  };
 
-    public:
-      using Type = autodiff::Real<N, T>;
-      using TypeClass = Compound;
-
-      static TypeClass create(const Type & = Type())
-      {
-        datatype::Compound type = datatype::Compound::create(N * sizeof(autodiff::Real<N, T>));
-
-        type.insert("val", 0, element_type::create(T()));
-        for (size_t i = 1; i <= N; ++i) {
-          type.insert("d_" + std::to_string(i), i * sizeof(T), element_type::create(T()));
-        }
-
-        return type;
-      }
-      const static TypeClass &get(const Type & = Type())
-      {
-        const static TypeClass &cref_ = create();
-        return cref_;
-      }
-    };
-
-    template <typename T, size_t N> class TypeTrait<std::array<T, N>>
+  template <typename T, std::size_t N> struct TypeTrait<std::array<T, N>> {
+    static Datatype get()
     {
-    private:
-      using element_type = TypeTrait<T>;
+      auto t = Datatype::compound(N * sizeof(T));
+      for (std::size_t i = 0; i < N; ++i)
+        t.insert("component " + std::to_string(i), i * sizeof(T), type_of<T>());
+      return t;
+    }
+  };
 
-    public:
-      using Type = std::array<T, N>;
-      using TypeClass = Compound;
-
-      static TypeClass create(const Type & = Type())
-      {
-        datatype::Compound type = datatype::Compound::create(N * sizeof(T));
-
-        for (size_t i = 0; i < N; ++i) {
-          type.insert("component " + std::to_string(i), i * sizeof(T), element_type::create(T()));
-        }
-
-        return type;
-      }
-      const static TypeClass &get(const Type & = Type())
-      {
-        const static TypeClass &cref_ = create();
-        return cref_;
-      }
-    };
-
-    template <typename T, size_t N>
-      requires(!std::is_same_v<std::array<T, N>, DiFfRG::device::array<T, N>>)
-    class TypeTrait<DiFfRG::device::array<T, N>>
+  template <typename T, std::size_t N>
+    requires(!std::is_same_v<std::array<T, N>, DiFfRG::device::array<T, N>>)
+  struct TypeTrait<DiFfRG::device::array<T, N>> {
+    static Datatype get()
     {
-    private:
-      using element_type = TypeTrait<T>;
-
-    public:
-      using Type = DiFfRG::device::array<T, N>;
-      using TypeClass = Compound;
-
-      static TypeClass create(const Type & = Type())
-      {
-        datatype::Compound type = datatype::Compound::create(N * sizeof(T));
-
-        for (size_t i = 0; i < N; ++i) {
-          type.insert("component " + std::to_string(i), i * sizeof(T), element_type::create(T()));
-        }
-
-        return type;
-      }
-      const static TypeClass &get(const Type & = Type())
-      {
-        const static TypeClass &cref_ = create();
-        return cref_;
-      }
-    };
-  } // namespace datatype
-} // namespace hdf5
+      auto t = Datatype::compound(N * sizeof(T));
+      for (std::size_t i = 0; i < N; ++i)
+        t.insert("component " + std::to_string(i), i * sizeof(T), type_of<T>());
+      return t;
+    }
+  };
+} // namespace DiFfRG::hdf5
 #endif
