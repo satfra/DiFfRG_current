@@ -21,6 +21,14 @@ namespace DiFfRG
        * compute_selected_speed_derivatives: returns da = 0.
        */
       struct MaxEigenvalueWaveSpeedZeroDeriv {
+        // The wave speed's derivative is hard-coded to zero, so the Hessian is never used.
+        // Setting needs_hessian = false lets compute_kt_numflux_jacobian skip the Real<2>
+        // AD pass entirely (use Real<1>-only Jacobian extraction). This both halves the
+        // AD work and — more importantly — eliminates the noise that compounds when
+        // Real<2> is propagated through the quadrature-based flux's `1/sqrt(...)` chains.
+        static constexpr bool needs_hessian = false;
+        // Irrelevant when needs_hessian is false; declared for trait uniformity.
+        static constexpr bool hessian_via_fd = false;
 
         template <typename NumberType, int dim, size_t n_components>
         static std::array<NumberType, dim>

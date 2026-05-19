@@ -1,6 +1,12 @@
 #include "DiFfRG/discretization/FV/assembler/KurganovTadmor.hh"
+#include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed.hh>
+#include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed_fd.hh>
 #include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed_zero_deriv.hh>
 #include "DiFfRG/discretization/FV/discretization.hh"
+// CG comparison test (same physics as KT but with continuous Galerkin
+// discretisation). See ON_CG_LSM_Model below.
+#include <DiFfRG/discretization/FEM/assembler/cg.hh>
+#include <DiFfRG/discretization/FEM/cg.hh>
 #include "DiFfRG/timestepping/timestepping.hh"
 #include "kt_regression_helpers.hh"
 
@@ -807,7 +813,159 @@ namespace
     mutable ONIntegratorLitimFlows flows_;
   };
 
-  JSONValue make_json(const FlowCase &flow_case, const int threads = 8)
+  // ===========================================================================
+  // CG comparison model — same physics as ONIntegratorKTModel (PolynomialExp
+  // T=0.05 integrator-based flux, same V_pion / V_sigma kernels, same LSM
+  // initial potential, same Lambda), but using a CG discretisation rather
+  // than KT.
+  //
+  // The point of the comparison: KT's Jacobian path seeds Real<2, double>
+  // through the integrator (for the wave-speed Hessian), CG only seeds
+  // Real<1, double>. If KT fails and CG passes on identical physics, the
+  // second-order-AD-through-quadrature is the precision bottleneck.
+  //
+  // CG only calls `flux()`, so the advection and diffusion pieces are
+  // combined into a single flux here: F = (N-1)·V_pion(u/σ) + V_sigma(∂u/∂σ).
+  // ===========================================================================
+  class ON_CG_LSM_Model : public def::AbstractModel<ON_CG_LSM_Model, Components>,
+                          public def::fRG,
+                          public def::LLFFlux<ON_CG_LSM_Model>,
+                          public def::FlowBoundaries<ON_CG_LSM_Model>,
+                          public ConstrainUAtOrigin<ON_CG_LSM_Model>,
+                          public def::AD<ON_CG_LSM_Model>
+  {
+  public:
+    ON_CG_LSM_Model(const JSONValue &json, const FlowCase &flow_case, const GridSettings &grid_settings)
+        : def::fRG(json), flow_case_(flow_case), cell_width_(grid_spacing(grid_settings)), flows_(json)
+    {
+      flows_.set_k(this->Lambda);
+      flows_.set_T(LSMPhysicalParameters::T);
+    }
+
+    template <typename Vector> void initial_condition(const Point<dim> &x, Vector &values) const
+    {
+      const double sigma = x[0];
+      const double right = scenario_potential(flow_case_.scenario, sigma + 0.5 * cell_width_);
+      const double left = scenario_potential(flow_case_.scenario, sigma - 0.5 * cell_width_);
+      values[0] = (right - left) / cell_width_;
+    }
+
+    void set_time(double t_)
+    {
+      t = t_;
+      k = std::exp(-t) * Lambda;
+      flows_.set_k(k);
+    }
+
+    // Combined CG flux: F = (N-1)·V_pion(u/σ) + V_sigma(∂u/∂σ).
+    // Same origin guard as ONIntegratorKTModel for the u/σ singularity at σ=0.
+    template <typename NT, typename Solution>
+    void flux(std::array<Tensor<1, dim, NT>, Components::count_fe_functions(0)> &F, const Point<dim> &x,
+              const Solution &sol) const
+    {
+      const auto &fe_functions = get<"fe_functions">(sol);
+      const auto &fe_derivatives = get<"fe_derivatives">(sol);
+
+      const NT u = fe_functions[0];
+      const NT du_dsigma = fe_derivatives[0][0];
+      const double sigma = x[0];
+      const NT m2Pi = (std::abs(sigma) < origin_tol) ? NT(0.0) : (u / NT(sigma));
+      const NT m2Sigma = du_dsigma;
+
+      NT pion_loop, sigma_loop;
+      flows_.V_pion.get(pion_loop, k, flow_case_.n_flavors, LSMPhysicalParameters::T, m2Pi);
+      flows_.V_sigma.get(sigma_loop, k, flow_case_.n_flavors, LSMPhysicalParameters::T, m2Sigma);
+      F[0][0] = (flow_case_.n_flavors - 1.0) * pion_loop + sigma_loop;
+    }
+
+  private:
+    FlowCase flow_case_;
+    double cell_width_;
+    mutable ONIntegratorFlows flows_;
+  };
+
+  // ===========================================================================
+  // KT ρ-coordinate variant of the same physics. FE variable is now
+  //   m²(ρ) = ∂V/∂ρ
+  // (with ρ = σ²/2). The LSM initial potential V_init(σ) = (m²/2)σ² + (λ/8)σ⁴
+  // becomes V_init(ρ) = m²·ρ + (λ/2)·ρ², so the initial profile is
+  //   m²_init(ρ) = m² + λ·ρ
+  // (linear, hence cell-averaged value equals point value at cell centre).
+  //
+  // KT split in ρ-form:
+  //   F_adv  = (N-1) · V_pion(m²_Pi = m²)            — depends on u only
+  //   F_diff = V_sigma(m²_Sigma = m² + 2ρ · ∂m²/∂ρ)  — depends on u and grad u
+  //
+  // Note the *2ρ* amplifier in F_diff at large ρ — this is the dual of the
+  // 1/σ amplifier the σ-form KT test exhibits at small σ.
+  // ===========================================================================
+  class ON_KT_RHO_LSM_Model : public def::AbstractModel<ON_KT_RHO_LSM_Model, Components>,
+                              public def::fRG,
+                              public def::FVDefaultBoundaries<ON_KT_RHO_LSM_Model>,
+                              public def::AD<ON_KT_RHO_LSM_Model>
+  {
+  public:
+    ON_KT_RHO_LSM_Model(const JSONValue &json, const FlowCase &flow_case, const GridSettings & /*grid_settings*/)
+        : def::fRG(json), flow_case_(flow_case), flows_(json)
+    {
+      flows_.set_k(this->Lambda);
+      flows_.set_T(LSMPhysicalParameters::T);
+    }
+
+    template <typename Vector> void initial_condition(const Point<dim> &x, Vector &values) const
+    {
+      // m²(ρ) = m² + λ·ρ. Linear in ρ ⇒ cell-averaged value == point value.
+      const double rho = x[0];
+      values[0] = LSMPhysicalParameters::m2 + LSMPhysicalParameters::lambda_quartic * rho;
+    }
+
+    void set_time(double t_)
+    {
+      t = t_;
+      k = std::exp(-t) * Lambda;
+      flows_.set_k(k);
+    }
+
+    template <int spatial_dim, typename NT, typename Solutions, std::size_t n_fe_functions>
+    void KurganovTadmor_advection_flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i,
+                                       const Point<spatial_dim> & /*x*/, const Solutions &sol) const
+    {
+      static_assert(spatial_dim == dim, "ON_KT_RHO_LSM_Model is one-dimensional.");
+      static_assert(n_fe_functions == 1, "ON_KT_RHO_LSM_Model expects a single FE function.");
+
+      const auto &fe_functions = get<0>(sol);
+      const NT m2Pi = fe_functions[0];  // m²_Pi = m² in ρ-form (no 1/σ)
+
+      NT pion_loop;
+      flows_.V_pion.get(pion_loop, k, flow_case_.n_flavors, LSMPhysicalParameters::T, m2Pi);
+      F_i[0][0] = (flow_case_.n_flavors - 1.0) * pion_loop;
+    }
+
+    template <int spatial_dim, typename NT, typename Solutions, std::size_t n_fe_functions>
+    void flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i, const Point<spatial_dim> &x,
+              const Solutions &sol) const
+    {
+      static_assert(spatial_dim == dim, "ON_KT_RHO_LSM_Model is one-dimensional.");
+      static_assert(n_fe_functions == 1, "ON_KT_RHO_LSM_Model expects a single FE function.");
+
+      const auto &fe_functions = get<0>(sol);
+      const auto &fe_derivatives = get<1>(sol);
+      const double rho = x[0];
+
+      // m²_Sigma = m² + 2ρ·∂m²/∂ρ. The 2ρ factor is the geometric amplifier.
+      const NT m2Sigma = fe_functions[0] + NT(2.0 * rho) * fe_derivatives[0][0];
+
+      NT sigma_loop;
+      flows_.V_sigma.get(sigma_loop, k, flow_case_.n_flavors, LSMPhysicalParameters::T, m2Sigma);
+      F_i[0][0] = sigma_loop;
+    }
+
+  private:
+    FlowCase flow_case_;
+    mutable ONIntegratorFlows flows_;
+  };
+
+  JSONValue make_json(const FlowCase &flow_case, const int threads = 8, const int fe_order = 0)
   {
     return json::value(
         {{"physical", {{"Lambda", flow_case.lambda}}},
@@ -819,7 +977,8 @@ namespace
            {"x_extent_tolerance", 1.0e-3},
            {"jacobian_quadrature_factor", 0.5}}},
          {"discretization",
-          {{"fe_order", 0},
+          // fe_order=0 for FV cells; pass fe_order>0 for the CG comparison test.
+          {{"fe_order", fe_order},
            {"threads", threads},
            {"batch_size", 64},
            {"overintegration", 0},
@@ -1036,6 +1195,73 @@ namespace
     const auto &support_points = discretization.get_support_points();
     REQUIRE(support_points.size() == grid_settings.cells);
     initialize_exact_cell_averages(state, support_points, flow_case, grid_settings);
+
+    time_stepper.run(&state, 0.0, target_time);
+  }
+
+  // KT counterpart of run_flow_to_time but explicitly parameterised on the
+  // WaveSpeedStrategy (the existing run_flow_to_time hard-codes ZeroDeriv via the
+  // file-level `Assembler` alias). Lets test cases compare
+  // MaxEigenvalueWaveSpeed (Real<2> AD H) vs MaxEigenvalueWaveSpeedFD (Real<1>
+  // AD + central FD H) vs MaxEigenvalueWaveSpeedZeroDeriv (no H) on identical
+  // physics.
+  template <typename ModelType, typename WaveSpeedStrategy>
+  void run_flow_to_time_ws(const FlowCase &flow_case, const double target_time,
+                           const GridSettings &grid_settings = default_grid_settings(),
+                           const int threads = 8)
+  {
+    using AssemblerWS = FV::KurganovTadmor::Assembler<Discretization, ModelType, Reconstructor, WaveSpeedStrategy>;
+
+    const JSONValue json = make_json(flow_case, threads);
+    ModelType model(json, flow_case, grid_settings);
+    Mesh mesh(make_mesh_config(grid_settings));
+    Discretization discretization(mesh, json);
+    AssemblerWS assembler(discretization, model, json);
+
+    kt_regression::TemporaryDirectory tmp_dir("on_model_kt_regression");
+    DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), "on_model_kt_regression", "output", json);
+    auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
+    ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+
+    FV::FlowingVariables<Discretization> state(discretization);
+    state.interpolate(model);
+
+    const auto &support_points = discretization.get_support_points();
+    REQUIRE(support_points.size() == grid_settings.cells);
+    initialize_exact_cell_averages(state, support_points, flow_case, grid_settings);
+
+    time_stepper.run(&state, 0.0, target_time);
+  }
+
+  // CG counterpart of run_flow_to_time. Same lifetime/structure but instantiates
+  // CG::Discretization and CG::Assembler, and lets the model.initial_condition
+  // do the cell-averaged interpolation (no FV-style exact cell-average override
+  // — CG support points are vertices/internal nodes, not cell centres).
+  template <typename ModelType>
+  void run_flow_to_time_cg(const FlowCase &flow_case, const double target_time,
+                           const GridSettings &grid_settings = default_grid_settings(),
+                           const int threads = 8, const int fe_order = 4)
+  {
+    using CGDiscretization = CG::Discretization<Components, NumberType, Mesh>;
+    using CGAssembler = CG::Assembler<CGDiscretization, ModelType>;
+    using CGTimeStepper =
+        TimeStepperSUNDIALS_IDA<typename CGDiscretization::VectorType,
+                                typename CGDiscretization::SparseMatrixType, dim, UMFPack>;
+
+    const JSONValue json = make_json(flow_case, threads, fe_order);
+    ModelType model(json, flow_case, grid_settings);
+    Mesh mesh(make_mesh_config(grid_settings));
+    CGDiscretization discretization(mesh, json);
+    CGAssembler assembler(discretization, model, json);
+
+    kt_regression::TemporaryDirectory tmp_dir("on_model_kt_regression_cg");
+    DataOutput<dim, typename CGDiscretization::VectorType> data_out(
+        tmp_dir.path.string(), "on_model_kt_regression_cg", "output", json);
+    auto adaptor = std::make_unique<NoAdaptivity<typename CGDiscretization::VectorType>>();
+    CGTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+
+    FE::FlowingVariables state(discretization);
+    state.interpolate(model);
 
     time_stepper.run(&state, 0.0, target_time);
   }
@@ -1294,4 +1520,148 @@ TEST_CASE("KT O(N) physical-scale integrator-based smoke test - Litim regulator 
   constexpr double target_time = 4.0;
   GridSettings narrow_grid{151, 0.0, 0.174};
   run_flow_to_time<ONIntegratorLitimKTModel>(flow_case, target_time, narrow_grid, diagnostic_threads);
+}
+
+// KT in ρ-coordinates for direct comparison with KT-σ and CG-ρ-combined.
+// Same LSM physics, PolyExp T=0.05 integrator-based flux, V_pion / V_sigma
+// split, but with m² = ∂V/∂ρ as the FE variable. The geometric amplifier
+// is now 2ρ at large ρ (in m²_Sigma) instead of 1/σ at small σ.
+TEST_CASE("KT O(N) physical-scale integrator-based smoke test - rho-coords",
+          "[FV][KT][ON][smoke][integrator][physical-scale][kt-rho]")
+{
+  kt_regression::ensure_logger();
+  kt_regression::ensure_diffrg_initialized();
+
+  const auto flow_case = LSMPhysical_ON2::flow_case();
+  INFO(flow_case.label << ", KT rho-coords smoke test, Lambda=" << flow_case.lambda
+                       << ", T=" << LSMPhysicalParameters::T);
+
+  constexpr double target_time = 4.0;
+  // rho_max chosen so that sqrt(2 * rho_max) ≈ sigma_max = 10 ⇒ rho_max = 50.
+  // 800 cells keeps the cell width comparable to the sigma-form default grid.
+  GridSettings rho_grid{800, 0.0, 50.0};
+  run_flow_to_time<ON_KT_RHO_LSM_Model>(flow_case, target_time, rho_grid, diagnostic_threads);
+}
+
+// Same KT ρ-coords model, but on the *fine* mesh that the user-facing
+// example Examples/ONfiniteT_KT/parameter.json uses (150 cells over
+// [0, 0.015], dx ≈ 1e-4). Diagnostic: isolates whether the example's
+// far-earlier failure (~t = 0.008) vs the wide-mesh test's t ≈ 2.14
+// is due to mesh resolution rather than something orchestration-related.
+TEST_CASE("KT O(N) physical-scale integrator-based smoke test - rho-coords, fine mesh",
+          "[FV][KT][ON][smoke][integrator][physical-scale][kt-rho][kt-rho-fine]")
+{
+  kt_regression::ensure_logger();
+  kt_regression::ensure_diffrg_initialized();
+
+  const auto flow_case = LSMPhysical_ON2::flow_case();
+  INFO(flow_case.label << ", KT rho-coords smoke test on fine mesh, Lambda=" << flow_case.lambda
+                       << ", T=" << LSMPhysicalParameters::T);
+
+  constexpr double target_time = 4.0;
+  // 150 cells over [0, 0.015]: dx ≈ 1e-4 — matches the user-facing example.
+  GridSettings rho_grid{150, 0.0, 0.015};
+  run_flow_to_time<ON_KT_RHO_LSM_Model>(flow_case, target_time, rho_grid, diagnostic_threads);
+}
+
+// ============================================================================
+// Wave-speed-strategy comparison tests
+// ----------------------------------------------------------------------------
+// All other KT integrator tests above use MaxEigenvalueWaveSpeedZeroDeriv (the
+// file-level `Assembler` alias hard-codes it). The tests below sweep all three
+// strategies on the same physics so we can quantify the per-strategy
+// failure-time difference cleanly. Tags:
+//   [ws-zerod] — MaxEigenvalueWaveSpeedZeroDeriv (Real<1>, H=0)
+//   [ws-ad]    — MaxEigenvalueWaveSpeed (Real<2> AD for H)
+//   [ws-fd]    — MaxEigenvalueWaveSpeedFD (Real<1> + central FD for H)
+// ============================================================================
+
+TEST_CASE("KT wavespeed comparison - sigma-coords PolyExp T=0.05, MaxEigenvalueWaveSpeedZeroDeriv",
+          "[FV][KT][ON][smoke][integrator][physical-scale][ws-comparison][ws-zerod][ws-sigma]")
+{
+  kt_regression::ensure_logger();
+  kt_regression::ensure_diffrg_initialized();
+  const auto flow_case = LSMPhysical_ON2::flow_case();
+  INFO(flow_case.label << ", wavespeed strategy = ZeroDeriv");
+  run_flow_to_time_ws<ONIntegratorKTModel, FV::KurganovTadmor::MaxEigenvalueWaveSpeedZeroDeriv>(
+      flow_case, 4.0, default_grid_settings(), diagnostic_threads);
+}
+
+TEST_CASE("KT wavespeed comparison - sigma-coords PolyExp T=0.05, MaxEigenvalueWaveSpeed",
+          "[FV][KT][ON][smoke][integrator][physical-scale][ws-comparison][ws-ad][ws-sigma]")
+{
+  kt_regression::ensure_logger();
+  kt_regression::ensure_diffrg_initialized();
+  const auto flow_case = LSMPhysical_ON2::flow_case();
+  INFO(flow_case.label << ", wavespeed strategy = MaxEigenvalueWaveSpeed (Real<2> AD H)");
+  run_flow_to_time_ws<ONIntegratorKTModel, FV::KurganovTadmor::MaxEigenvalueWaveSpeed>(
+      flow_case, 4.0, default_grid_settings(), diagnostic_threads);
+}
+
+TEST_CASE("KT wavespeed comparison - sigma-coords PolyExp T=0.05, MaxEigenvalueWaveSpeedFD",
+          "[FV][KT][ON][smoke][integrator][physical-scale][ws-comparison][ws-fd][ws-sigma]")
+{
+  kt_regression::ensure_logger();
+  kt_regression::ensure_diffrg_initialized();
+  const auto flow_case = LSMPhysical_ON2::flow_case();
+  INFO(flow_case.label << ", wavespeed strategy = MaxEigenvalueWaveSpeedFD (Real<1> + central-FD H)");
+  run_flow_to_time_ws<ONIntegratorKTModel, FV::KurganovTadmor::MaxEigenvalueWaveSpeedFD>(
+      flow_case, 4.0, default_grid_settings(), diagnostic_threads);
+}
+
+TEST_CASE("KT wavespeed comparison - rho-coords PolyExp T=0.05, MaxEigenvalueWaveSpeedZeroDeriv",
+          "[FV][KT][ON][smoke][integrator][physical-scale][ws-comparison][ws-zerod][ws-rho]")
+{
+  kt_regression::ensure_logger();
+  kt_regression::ensure_diffrg_initialized();
+  const auto flow_case = LSMPhysical_ON2::flow_case();
+  INFO(flow_case.label << ", rho-coords, wavespeed strategy = ZeroDeriv");
+  GridSettings rho_grid{800, 0.0, 50.0};
+  run_flow_to_time_ws<ON_KT_RHO_LSM_Model, FV::KurganovTadmor::MaxEigenvalueWaveSpeedZeroDeriv>(
+      flow_case, 4.0, rho_grid, diagnostic_threads);
+}
+
+TEST_CASE("KT wavespeed comparison - rho-coords PolyExp T=0.05, MaxEigenvalueWaveSpeed",
+          "[FV][KT][ON][smoke][integrator][physical-scale][ws-comparison][ws-ad][ws-rho]")
+{
+  kt_regression::ensure_logger();
+  kt_regression::ensure_diffrg_initialized();
+  const auto flow_case = LSMPhysical_ON2::flow_case();
+  INFO(flow_case.label << ", rho-coords, wavespeed strategy = MaxEigenvalueWaveSpeed (Real<2> AD H)");
+  GridSettings rho_grid{800, 0.0, 50.0};
+  run_flow_to_time_ws<ON_KT_RHO_LSM_Model, FV::KurganovTadmor::MaxEigenvalueWaveSpeed>(
+      flow_case, 4.0, rho_grid, diagnostic_threads);
+}
+
+TEST_CASE("KT wavespeed comparison - rho-coords PolyExp T=0.05, MaxEigenvalueWaveSpeedFD",
+          "[FV][KT][ON][smoke][integrator][physical-scale][ws-comparison][ws-fd][ws-rho]")
+{
+  kt_regression::ensure_logger();
+  kt_regression::ensure_diffrg_initialized();
+  const auto flow_case = LSMPhysical_ON2::flow_case();
+  INFO(flow_case.label << ", rho-coords, wavespeed strategy = MaxEigenvalueWaveSpeedFD (Real<1> + central-FD H)");
+  GridSettings rho_grid{800, 0.0, 50.0};
+  run_flow_to_time_ws<ON_KT_RHO_LSM_Model, FV::KurganovTadmor::MaxEigenvalueWaveSpeedFD>(
+      flow_case, 4.0, rho_grid, diagnostic_threads);
+}
+
+// CG-vs-KT comparison test: same physics as the failing
+// [smoke][integrator][physical-scale] case (same V_pion/V_sigma kernels,
+// same LSM initial potential, same Lambda, same PolyExp T=0.05 regulator),
+// but the KT FV discretisation is replaced with CG order-4. If this test
+// passes while the KT counterpart fails, the integrator+AD path is fine and
+// the KT-specific Real<2, double> wave-speed Hessian path is the precision
+// bottleneck.
+TEST_CASE("CG O(N) physical-scale integrator-based comparison test - same physics as KT, PolyExp T=0.05",
+          "[CG][ON][smoke][integrator][physical-scale][cg-vs-kt]")
+{
+  kt_regression::ensure_logger();
+  kt_regression::ensure_diffrg_initialized();
+
+  const auto flow_case = LSMPhysical_ON2::flow_case();
+  INFO(flow_case.label << ", CG comparison test, Lambda=" << flow_case.lambda
+                       << ", T=" << LSMPhysicalParameters::T);
+
+  constexpr double target_time = 4.0;
+  run_flow_to_time_cg<ON_CG_LSM_Model>(flow_case, target_time, default_grid_settings(), diagnostic_threads);
 }
