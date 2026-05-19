@@ -43,6 +43,7 @@ namespace on_kt_3D
     {
       using namespace DiFfRG;
       using namespace DiFfRG::compute;
+      using Kokkos::sqrt;
       const auto _interp1 = Regulator::RB(powr<2>(k), powr<2>(l1));
       const auto _interp2 = CothFiniteT(sqrt(powr<2>(l1) + m2Pi + _interp1), T);
       const auto _interp3 = Regulator::RBdot(powr<2>(k), powr<2>(l1));
@@ -67,6 +68,7 @@ namespace on_kt_3D
     {
       using namespace DiFfRG;
       using namespace DiFfRG::compute;
+      using Kokkos::sqrt;
       const auto _interp1 = Regulator::RB(powr<2>(k), powr<2>(l1));
       const auto _interp3 = Regulator::RBdot(powr<2>(k), powr<2>(l1));
       const auto _interp4 = CothFiniteT(sqrt(powr<2>(l1) + m2Sigma + _interp1), T);
@@ -92,6 +94,7 @@ namespace on_kt_3D
     {
       using namespace DiFfRG;
       using namespace DiFfRG::compute;
+      using Kokkos::sqrt;
       const auto _interp1 = Regulator::RB(powr<2>(k), powr<2>(l1));
       const auto _interp3 = Regulator::RBdot(powr<2>(k), powr<2>(l1));
       const auto _cse1 = powr<2>(l1);
@@ -113,6 +116,7 @@ namespace on_kt_3D
     {
       using namespace DiFfRG;
       using namespace DiFfRG::compute;
+      using Kokkos::sqrt;
       const auto _interp1 = Regulator::RB(powr<2>(k), powr<2>(l1));
       const auto _interp3 = Regulator::RBdot(powr<2>(k), powr<2>(l1));
       const auto _cse1 = powr<2>(l1);
