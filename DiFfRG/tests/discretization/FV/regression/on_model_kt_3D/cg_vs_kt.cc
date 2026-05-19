@@ -47,6 +47,53 @@
 #include <DiFfRG/discretization/FV/limiter/central_limiter.hh>
 #include <DiFfRG/discretization/FV/limiter/van_albada_limiter.hh>
 
+namespace
+{
+  // Diagnostic wave-speed strategy: a_half ≡ 0. This removes the
+  // wave-speed dissipation term `−0.5·a_half·(u_+ − u_−)` from the numerical
+  // flux in the RESIDUAL (not just the Jacobian, which is what ZeroDeriv
+  // does). Tests whether the dissipation term itself is the bottleneck
+  // for IDA.
+  //
+  // Note: this makes KT formally unstable in the hyperbolic sense (pure
+  // central flux). For our parabolic-dominated fRG flow that should still
+  // be tractable — the diffusion piece dominates the dissipation anyway.
+  struct ZeroWaveSpeed {
+    static constexpr bool needs_hessian = false;
+    static constexpr bool hessian_via_fd = false;
+
+    template <typename NT, int d, size_t n_c>
+    static std::array<NT, d>
+    compute_speeds(const std::array<DiFfRG::FV::KurganovTadmor::internal::JacobianMatrix<NT, n_c>, d> & /*J_plus*/,
+                   const std::array<DiFfRG::FV::KurganovTadmor::internal::JacobianMatrix<NT, n_c>, d> & /*J_minus*/)
+    {
+      return std::array<NT, d>{};  // zero-initialized
+    }
+
+    template <typename NT, int d, size_t n_c>
+    static std::pair<std::array<std::array<NT, n_c>, d>, std::array<std::array<NT, n_c>, d>>
+    compute_speed_derivatives(
+        [[maybe_unused]] const std::array<DiFfRG::FV::KurganovTadmor::internal::JacobianMatrix<NT, n_c>, d> &J_plus,
+        [[maybe_unused]] const std::array<DiFfRG::FV::KurganovTadmor::internal::JacobianMatrix<NT, n_c>, d> &J_minus,
+        [[maybe_unused]] const DiFfRG::FV::KurganovTadmor::internal::HessianTensor<NT, d, n_c> &H_plus,
+        [[maybe_unused]] const DiFfRG::FV::KurganovTadmor::internal::HessianTensor<NT, d, n_c> &H_minus)
+    {
+      return {};
+    }
+
+    template <typename NT, int d, size_t n_c>
+    static std::pair<std::array<std::array<NT, n_c>, d>, std::array<std::array<NT, n_c>, d>>
+    compute_selected_speed_derivatives(
+        [[maybe_unused]] const std::array<DiFfRG::FV::KurganovTadmor::internal::JacobianMatrix<NT, n_c>, d> &J_plus,
+        [[maybe_unused]] const std::array<DiFfRG::FV::KurganovTadmor::internal::JacobianMatrix<NT, n_c>, d> &J_minus,
+        [[maybe_unused]] const DiFfRG::FV::KurganovTadmor::internal::HessianTensor<NT, d, n_c> &H_plus,
+        [[maybe_unused]] const DiFfRG::FV::KurganovTadmor::internal::HessianTensor<NT, d, n_c> &H_minus)
+    {
+      return {};
+    }
+  };
+}  // namespace
+
 #include <catch2/catch_all.hpp>
 
 namespace
@@ -140,6 +187,33 @@ TEST_CASE("CG-vs-KT: CG on CG-Example adaptive non-uniform grid",
 }
 
 // ============================================================================
+// Test 9-10: Large-N "all-pion" model — the sigma (radial) mode is replaced
+// by another pion, so all N modes have m²_pion = u and the total flux is
+//   F = N · V_pion(u).
+// This eliminates the derivative-dependent diffusion flux entirely: the PDE
+// becomes purely hyperbolic (first-order advection) — the setting KT was
+// designed for. If KT reaches t=4 here but fails on the full O(N) split,
+// then the derivative-dependent diffusion flux (or its interaction with
+// KT's per-face reconstruction) is the discriminator.
+// ============================================================================
+
+TEST_CASE("CG-vs-KT: KT-ρ large-N all-pion (purely hyperbolic, no diffusion flux)",
+          "[cg-vs-kt][kt-largeN]")
+{
+  kt_regression::ensure_logger();
+  kt_regression::ensure_diffrg_initialized();
+  run_flow_to_time<LSM_rho_largeN_PolyExp>(default_rho_grid(), final_time);
+}
+
+TEST_CASE("CG-vs-KT: CG-ρ large-N all-pion (reference)",
+          "[cg-vs-kt][cg-largeN]")
+{
+  kt_regression::ensure_logger();
+  kt_regression::ensure_diffrg_initialized();
+  run_flow_to_time_cg<LSM_CG_largeN>(default_rho_grid(), final_time);
+}
+
+// ============================================================================
 // Tests 6-7: BOTH kinks removed (limiter + wave-speed).
 //
 // Default file-level Reconstructor is MinMod, which is C^0 but NOT C^1 in u
@@ -176,6 +250,46 @@ TEST_CASE("CG-vs-KT: KT-ρ uniform grid, VanAlbada limiter + ZeroDeriv (both kin
   Mesh mesh(make_mesh_config(grid));
   Discretization discretization(mesh, json);
   AssemblerVA assembler(discretization, model, json);
+
+  kt_regression::TemporaryDirectory tmp_dir("on_kt_3D");
+  DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), "on_kt_3D", "output", json);
+  auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
+  ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+
+  FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+
+  time_stepper.run(&state, 0.0, final_time);
+}
+
+// ============================================================================
+// Test 8: WAVE-SPEED DISSIPATION REMOVED FROM RESIDUAL (not just from J).
+// Uses ZeroWaveSpeed strategy — a_half ≡ 0, so the numerical flux is pure
+// central: F_num = 0.5·(F(u_+) + F(u_-)). Formally unstable hyperbolically,
+// but for the parabolic-dominated fRG flow the diffusion should carry it.
+// If KT THEN reaches t=4 → the wave-speed dissipation term in the residual
+// is the IDA-stalling factor (and the fix is to reformulate the numerical
+// flux so it doesn't add this kind of residual contribution).
+// If KT still fails → the bottleneck is even more upstream (boundary
+// stencil, mass matrix structure, or the central flux itself).
+// ============================================================================
+
+TEST_CASE("CG-vs-KT: KT-ρ uniform grid, Central limiter + ZeroWaveSpeed (a_half=0 in RESIDUAL)",
+          "[cg-vs-kt][kt-no-dissipation][!shouldfail]")
+{
+  kt_regression::ensure_logger();
+  kt_regression::ensure_diffrg_initialized();
+
+  using ReconstructorC = def::TVDReconstructor<dim, def::CentralLimiter, double>;
+  using AssemblerNoD = FV::KurganovTadmor::Assembler<Discretization, LSM_rho_integrator_PolyExp, ReconstructorC,
+                                                     ZeroWaveSpeed>;
+
+  const auto grid = default_rho_grid();
+  const JSONValue json = make_json(/*threads=*/1);
+  LSM_rho_integrator_PolyExp model(json, grid);
+  Mesh mesh(make_mesh_config(grid));
+  Discretization discretization(mesh, json);
+  AssemblerNoD assembler(discretization, model, json);
 
   kt_regression::TemporaryDirectory tmp_dir("on_kt_3D");
   DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), "on_kt_3D", "output", json);
