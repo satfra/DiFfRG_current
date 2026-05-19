@@ -73,7 +73,7 @@ GetStandardKernelDefinitions[] :=
 
 (* Internal functions added here with Internal`*::usage *)
 
-Options[MakeKernel] = {"Coordinates" -> {}, "CoordinateArguments" -> {}, "IntegrationVariables" -> {}, "KernelDefinitions" -> $StandardKernelDefinitions, "Regulator" -> "DiFfRG::PolynomialExpRegulator", "RegulatorOpts" -> {"", ""}, "KernelBody" -> "", "KernelReturnType" -> "auto", "ConstantBody" -> "", "ConstantReturnType" -> "auto", "Parameters" -> {}, "Name" -> "", "d" -> -1, "Integrator" -> "", "AD" -> False, "ADOrders" -> Automatic, "ctype" -> "double", "Device" -> "TBB", "Type" -> "double", "KernelReturnTransform" -> Identity};
+Options[MakeKernel] = {"Coordinates" -> {}, "CoordinateArguments" -> {}, "IntegrationVariables" -> {}, "KernelDefinitions" -> $StandardKernelDefinitions, "Regulator" -> "DiFfRG::PolynomialExpRegulator", "RegulatorOpts" -> {"", ""}, "KernelBody" -> "", "KernelReturnType" -> "auto", "ConstantBody" -> "", "ConstantReturnType" -> "auto", "Parameters" -> {}, "Name" -> "", "d" -> -1, "Integrator" -> "", "AD" -> False, "ADOrders" -> Automatic, "ctype" -> "double", "Device" -> "TBB", "Type" -> "double", "KernelReturnTransform" -> Identity, "ConstantReturnTransform" -> Identity};
 
 validADOrdersQ[Automatic] :=
     True;

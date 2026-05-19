@@ -8,6 +8,12 @@
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/discretization/discretization.hh>
 #include <DiFfRG/model/model.hh>
+// Headers needed by the integrator-based smoke test below
+// (V_pion_kernel_integrator / V_sigma_kernel_integrator + Integrator_p2 wrappers)
+#include <DiFfRG/physics/integration.hh>
+#include <DiFfRG/physics/physics.hh>
+#include <DiFfRG/physics/regulators.hh>
+#include <DiFfRG/physics/thermodynamics.hh>
 
 #include <catch2/catch_all.hpp>
 
@@ -74,6 +80,21 @@ namespace
     II,
     III,
     IV,
+    // Realistic linear-sigma-model initial potential at physical RG scale:
+    //   V_0(sigma) = (m2/2) sigma^2 + (lambda/8) sigma^4
+    // with m2 and lambda taken from `LSMPhysicalParameters` (defaulted to the
+    // values used by Examples/ONfiniteT_KT/parameter.json: m2 = -0.1,
+    // lambda = 71.6). This scenario exercises the analytical Litim flow at the
+    // **same physical regime as the user-facing example**, with
+    // Lambda = O(1) instead of the 1e6..1e12 used by Scenarios I..IV — i.e.
+    // no "warm-up" stretch before the wave speed becomes O(1).
+    LinearSigmaModelPhysical,
+  };
+
+  struct LSMPhysicalParameters {
+    static constexpr double m2 = -0.1;
+    static constexpr double lambda_quartic = 71.6;
+    static constexpr double T = 0.05;  // used by the integrator-based smoke test below
   };
 
   struct FlowCase {
@@ -196,6 +217,20 @@ namespace
     static constexpr bool has_reference_potential = true;
   };
 
+  // Realistic physical-scale linear sigma model. Lambda = 0.65 (no UV warm-up),
+  // N = 2, initial double-well from m2 = -0.1, lambda_quartic = 71.6, T = 0.05
+  // matches Examples/ONfiniteT_KT/parameter.json.
+  constexpr double lsm_physical_lambda = 0.65;
+  struct LSMPhysical_ON2 : ONFlowDescriptor<LSMPhysical_ON2> {
+    static constexpr auto relative_path = "";  // no reference data; smoke test only
+    static constexpr auto label = "LSM physical-scale, N=2";
+    static constexpr ScenarioKind scenario = ScenarioKind::LinearSigmaModelPhysical;
+    static constexpr double n_flavors = 2.0;
+    static constexpr double lambda = lsm_physical_lambda;
+    static constexpr std::optional<std::size_t> profile_group_index = std::nullopt;
+    static constexpr bool has_reference_potential = false;
+  };
+
   ProfileData parse_profile(const json::array &pairs)
   {
     ProfileData result;
@@ -225,6 +260,12 @@ namespace
       case ScenarioKind::IV:
         if (abs_sigma <= std::sqrt(8.0)) return -std::pow(abs_sigma * abs_sigma, 1.0 / 3.0);
         return 0.5 * abs_sigma * abs_sigma - 6.0;
+      case ScenarioKind::LinearSigmaModelPhysical:
+        // V_0(sigma) = (m2/2) sigma^2 + (lambda/8) sigma^4. Smooth, double-well
+        // when m2 < 0. m2 and lambda fixed to match the
+        // Examples/ONfiniteT_KT/parameter.json values.
+        return 0.5 * LSMPhysicalParameters::m2 * sigma * sigma +
+               (LSMPhysicalParameters::lambda_quartic / 8.0) * std::pow(sigma, 4);
     }
     throw std::runtime_error("Unknown O(N) test scenario.");
   }
@@ -436,10 +477,347 @@ namespace
   using ONSymmetricDefaultBoundaryDiagnosticModel =
       ONKTDiagnosticModel<def::FVDefaultBoundaries, ConstrainUAtOrigin>;
 
+  // ===========================================================================
+  // Integrator-based per-mode loop kernels (pion piece and sigma piece of the
+  // finite-T LPA flow with a PolynomialExp regulator). These mirror the
+  // kernels at Examples/ONfiniteT/flows/V_{pion,sigma}/kernel.hh that the
+  // user-facing example uses.
+  //
+  // The smoke test below reproduces exactly that integrator-based setup so we
+  // can probe whether the KT + IDA failure observed in
+  // Examples/ONfiniteT_KT/ is reproducible from inside the regression suite.
+  // ===========================================================================
+
+  template <typename _Regulator> class V_pion_kernel_integrator
+  {
+  public:
+    using Regulator = _Regulator;
+
+    static KOKKOS_FORCEINLINE_FUNCTION auto kernel(const double &l1, const auto &k, const auto & /*N*/,
+                                                   const auto &T, const auto &m2Pi)
+    {
+      using namespace DiFfRG;
+      using namespace DiFfRG::compute;
+      const auto _interp1 = Regulator::RB(powr<2>(k), powr<2>(l1));
+      const auto _interp2 = CothFiniteT(sqrt(powr<2>(l1) + m2Pi + _interp1), T);
+      const auto _interp3 = Regulator::RBdot(powr<2>(k), powr<2>(l1));
+      const auto _cse1 = powr<2>(l1);
+      return (0.25) * (_interp2) * (_interp3) * (sqrt(powr<-1>(_cse1 + _interp1 + m2Pi)));
+    }
+
+    static KOKKOS_FORCEINLINE_FUNCTION auto constant(const auto & /*k*/, const auto & /*N*/, const auto & /*T*/,
+                                                     const auto & /*m2Pi*/)
+    {
+      return 0.;
+    }
+  };
+
+  template <typename _Regulator> class V_sigma_kernel_integrator
+  {
+  public:
+    using Regulator = _Regulator;
+
+    static KOKKOS_FORCEINLINE_FUNCTION auto kernel(const double &l1, const auto &k, const auto & /*N*/,
+                                                   const auto &T, const auto &m2Sigma)
+    {
+      using namespace DiFfRG;
+      using namespace DiFfRG::compute;
+      const auto _interp1 = Regulator::RB(powr<2>(k), powr<2>(l1));
+      const auto _interp3 = Regulator::RBdot(powr<2>(k), powr<2>(l1));
+      const auto _interp4 = CothFiniteT(sqrt(powr<2>(l1) + m2Sigma + _interp1), T);
+      const auto _cse1 = powr<2>(l1);
+      return (0.25) * (_interp3) * (_interp4) * (sqrt(powr<-1>(_cse1 + _interp1 + m2Sigma)));
+    }
+
+    static KOKKOS_FORCEINLINE_FUNCTION auto constant(const auto & /*k*/, const auto & /*N*/, const auto & /*T*/,
+                                                     const auto & /*m2Sigma*/)
+    {
+      return 0.;
+    }
+  };
+
+  // Wrapper that owns the per-NumberType integrator instances. The Real<2, double>
+  // variant is required because KT's compute_flux_jacobian_and_hessian seeds
+  // second-order AD for the advection-flux Hessian.
+  template <typename Kernel> class IntegratorWrapper
+  {
+  public:
+    using Regulator = DiFfRG::PolynomialExpRegulator<>;
+
+    IntegratorWrapper(DiFfRG::QuadratureProvider &qp, const DiFfRG::JSONValue &json)
+        : integrator(qp, json), integrator_AD(qp, json), integrator_AD2(qp, json)
+    {
+    }
+
+    DiFfRG::Integrator_p2<3, double, Kernel, DiFfRG::TBB_exec> integrator;
+    DiFfRG::Integrator_p2<3, autodiff::real, Kernel, DiFfRG::TBB_exec> integrator_AD;
+    DiFfRG::Integrator_p2<3, autodiff::Real<2, double>, Kernel, DiFfRG::TBB_exec> integrator_AD2;
+
+    void get(double &dest, const double &k, const double &N, const double &T, const double &m2)
+    {
+      integrator.get(dest, k, N, T, m2);
+    }
+    void get(autodiff::real &dest, const double &k, const double &N, const double &T, const autodiff::real &m2)
+    {
+      integrator_AD.get(dest, k, N, T, m2);
+    }
+    void get(autodiff::Real<2, double> &dest, const double &k, const double &N, const double &T,
+             const autodiff::Real<2, double> &m2)
+    {
+      integrator_AD2.get(dest, k, N, T, m2);
+    }
+  };
+
+  using V_pion_integrator_t = IntegratorWrapper<V_pion_kernel_integrator<DiFfRG::PolynomialExpRegulator<>>>;
+  using V_sigma_integrator_t = IntegratorWrapper<V_sigma_kernel_integrator<DiFfRG::PolynomialExpRegulator<>>>;
+
+  // T=0 / Litim variants of the same per-mode kernels — used to compare the
+  // integrator+AD path against the analytical closed-form on identical
+  // physics (Litim regulator, T=0). The CothFiniteT thermal factor reduces
+  // to +1 at T=0 and is therefore omitted. Everything else (the
+  // `0.25 · RBdot · sqrt(1/(l1² + RB + m²))` form) matches the PolynomialExp
+  // counterpart so we can A/B-test regulator+T choice.
+  template <typename _Regulator> class V_pion_kernel_litim_T0
+  {
+  public:
+    using Regulator = _Regulator;
+    static KOKKOS_FORCEINLINE_FUNCTION auto kernel(const double &l1, const auto &k, const auto & /*N*/,
+                                                   const auto & /*T*/, const auto &m2Pi)
+    {
+      using namespace DiFfRG;
+      using namespace DiFfRG::compute;
+      const auto _interp1 = Regulator::RB(powr<2>(k), powr<2>(l1));
+      const auto _interp3 = Regulator::RBdot(powr<2>(k), powr<2>(l1));
+      const auto _cse1 = powr<2>(l1);
+      return (0.25) * (_interp3) * (sqrt(powr<-1>(_cse1 + _interp1 + m2Pi)));
+    }
+    static KOKKOS_FORCEINLINE_FUNCTION auto constant(const auto & /*k*/, const auto & /*N*/, const auto & /*T*/,
+                                                     const auto & /*m2Pi*/) { return 0.; }
+  };
+
+  template <typename _Regulator> class V_sigma_kernel_litim_T0
+  {
+  public:
+    using Regulator = _Regulator;
+    static KOKKOS_FORCEINLINE_FUNCTION auto kernel(const double &l1, const auto &k, const auto & /*N*/,
+                                                   const auto & /*T*/, const auto &m2Sigma)
+    {
+      using namespace DiFfRG;
+      using namespace DiFfRG::compute;
+      const auto _interp1 = Regulator::RB(powr<2>(k), powr<2>(l1));
+      const auto _interp3 = Regulator::RBdot(powr<2>(k), powr<2>(l1));
+      const auto _cse1 = powr<2>(l1);
+      return (0.25) * (_interp3) * (sqrt(powr<-1>(_cse1 + _interp1 + m2Sigma)));
+    }
+    static KOKKOS_FORCEINLINE_FUNCTION auto constant(const auto & /*k*/, const auto & /*N*/, const auto & /*T*/,
+                                                     const auto & /*m2Sigma*/) { return 0.; }
+  };
+
+  using V_pion_litim_integrator_t = IntegratorWrapper<V_pion_kernel_litim_T0<DiFfRG::LitimRegulator<>>>;
+  using V_sigma_litim_integrator_t = IntegratorWrapper<V_sigma_kernel_litim_T0<DiFfRG::LitimRegulator<>>>;
+
+  class ONIntegratorLitimFlows
+  {
+  public:
+    ONIntegratorLitimFlows(const DiFfRG::JSONValue &json)
+        : quadrature_provider(json), V_pion(quadrature_provider, json), V_sigma(quadrature_provider, json)
+    {
+    }
+    void set_k(double k)
+    {
+      DiFfRG::all_set_k(V_pion, k);
+      DiFfRG::all_set_k(V_sigma, k);
+    }
+    void set_T(double T)
+    {
+      DiFfRG::all_set_T(V_pion, T);
+      DiFfRG::all_set_T(V_sigma, T);
+    }
+
+    DiFfRG::QuadratureProvider quadrature_provider;
+    V_pion_litim_integrator_t V_pion;
+    V_sigma_litim_integrator_t V_sigma;
+  };
+
+  // Container for the flow integrators. Owns its own QuadratureProvider.
+  class ONIntegratorFlows
+  {
+  public:
+    ONIntegratorFlows(const DiFfRG::JSONValue &json)
+        : quadrature_provider(json), V_pion(quadrature_provider, json), V_sigma(quadrature_provider, json)
+    {
+    }
+    void set_k(double k)
+    {
+      DiFfRG::all_set_k(V_pion, k);
+      DiFfRG::all_set_k(V_sigma, k);
+    }
+    void set_T(double T)
+    {
+      DiFfRG::all_set_T(V_pion, T);
+      DiFfRG::all_set_T(V_sigma, T);
+    }
+
+    DiFfRG::QuadratureProvider quadrature_provider;
+    V_pion_integrator_t V_pion;
+    V_sigma_integrator_t V_sigma;
+  };
+
+  // Integrator-based KT O(N) model in sigma-coordinates. Mirrors
+  // Examples/ONfiniteT_KT/model_sigma.hh:
+  //   F_adv  = (N-1) * V_pion(m^2_Pi = u/sigma)
+  //   F_diff = V_sigma(m^2_Sigma = du/dsigma)
+  // with the same OriginOdd / ConstrainUAtOrigin / def::AD inheritance as
+  // ONKTModel, but with the analytic flux replaced by the integrator.
+  class ONIntegratorKTModel : public def::AbstractModel<ONIntegratorKTModel, Components>,
+                              public def::fRG,
+                              public def::OriginOddLinearExtrapolationBoundaries<ONIntegratorKTModel>,
+                              public ConstrainUAtOrigin<ONIntegratorKTModel>,
+                              public def::AD<ONIntegratorKTModel>
+  {
+  public:
+    ONIntegratorKTModel(const JSONValue &json, const FlowCase &flow_case, const GridSettings &grid_settings)
+        : def::fRG(json), flow_case_(flow_case), cell_width_(grid_spacing(grid_settings)), flows_(json)
+    {
+      flows_.set_k(this->Lambda);
+      flows_.set_T(LSMPhysicalParameters::T);
+    }
+
+    template <typename Vector> void initial_condition(const Point<dim> &x, Vector &values) const
+    {
+      const double sigma = x[0];
+      const double right = scenario_potential(flow_case_.scenario, sigma + 0.5 * cell_width_);
+      const double left = scenario_potential(flow_case_.scenario, sigma - 0.5 * cell_width_);
+      values[0] = (right - left) / cell_width_;
+    }
+
+    void set_time(double t_)
+    {
+      t = t_;
+      k = std::exp(-t) * Lambda;
+      flows_.set_k(k);
+    }
+
+    template <int spatial_dim, typename NT, typename Solutions, std::size_t n_fe_functions>
+    void KurganovTadmor_advection_flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i,
+                                       const Point<spatial_dim> &x, const Solutions &sol) const
+    {
+      static_assert(spatial_dim == dim, "ONIntegratorKTModel is one-dimensional.");
+      static_assert(n_fe_functions == 1, "ONIntegratorKTModel expects a single FE function.");
+
+      const auto &fe_functions = get<0>(sol);
+      const NT u = fe_functions[0];
+      const double sigma = x[0];
+      const NT m2Pi = (std::abs(sigma) < origin_tol) ? NT(0.0) : (u / NT(sigma));
+
+      NT pion_loop;
+      flows_.V_pion.get(pion_loop, k, flow_case_.n_flavors, LSMPhysicalParameters::T, m2Pi);
+      F_i[0][0] = (flow_case_.n_flavors - 1.0) * pion_loop;
+    }
+
+    template <int spatial_dim, typename NT, typename Solutions, std::size_t n_fe_functions>
+    void flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i, const Point<spatial_dim> & /*x*/,
+              const Solutions &sol) const
+    {
+      static_assert(spatial_dim == dim, "ONIntegratorKTModel is one-dimensional.");
+      static_assert(n_fe_functions == 1, "ONIntegratorKTModel expects a single FE function.");
+
+      const auto &fe_derivatives = get<1>(sol);
+      const NT m2Sigma = fe_derivatives[0][0];
+
+      NT sigma_loop;
+      flows_.V_sigma.get(sigma_loop, k, flow_case_.n_flavors, LSMPhysicalParameters::T, m2Sigma);
+      F_i[0][0] = sigma_loop;
+    }
+
+  private:
+    FlowCase flow_case_;
+    double cell_width_;
+    mutable ONIntegratorFlows flows_;
+  };
+
+  // Same model as ONIntegratorKTModel but with Litim regulator at T=0,
+  // matching the analytic ONKTModel's physics exactly. Used to isolate
+  // whether KT+IDA failure is in the integrator/AD path itself (rather than
+  // in the PolynomialExp+finite-T choice).
+  class ONIntegratorLitimKTModel : public def::AbstractModel<ONIntegratorLitimKTModel, Components>,
+                                   public def::fRG,
+                                   public def::OriginOddLinearExtrapolationBoundaries<ONIntegratorLitimKTModel>,
+                                   public ConstrainUAtOrigin<ONIntegratorLitimKTModel>,
+                                   public def::AD<ONIntegratorLitimKTModel>
+  {
+  public:
+    ONIntegratorLitimKTModel(const JSONValue &json, const FlowCase &flow_case, const GridSettings &grid_settings)
+        : def::fRG(json), flow_case_(flow_case), cell_width_(grid_spacing(grid_settings)), flows_(json)
+    {
+      flows_.set_k(this->Lambda);
+      flows_.set_T(0.0);  // Litim closed-form is T=0
+    }
+
+    template <typename Vector> void initial_condition(const Point<dim> &x, Vector &values) const
+    {
+      const double sigma = x[0];
+      const double right = scenario_potential(flow_case_.scenario, sigma + 0.5 * cell_width_);
+      const double left = scenario_potential(flow_case_.scenario, sigma - 0.5 * cell_width_);
+      values[0] = (right - left) / cell_width_;
+    }
+
+    void set_time(double t_)
+    {
+      t = t_;
+      k = std::exp(-t) * Lambda;
+      flows_.set_k(k);
+    }
+
+    template <int spatial_dim, typename NT, typename Solutions, std::size_t n_fe_functions>
+    void KurganovTadmor_advection_flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i,
+                                       const Point<spatial_dim> &x, const Solutions &sol) const
+    {
+      static_assert(spatial_dim == dim, "ONIntegratorLitimKTModel is one-dimensional.");
+      static_assert(n_fe_functions == 1, "ONIntegratorLitimKTModel expects a single FE function.");
+
+      const auto &fe_functions = get<0>(sol);
+      const NT u = fe_functions[0];
+      const double sigma = x[0];
+      const NT m2Pi = (std::abs(sigma) < origin_tol) ? NT(0.0) : (u / NT(sigma));
+
+      NT pion_loop;
+      flows_.V_pion.get(pion_loop, k, flow_case_.n_flavors, 0.0, m2Pi);
+      F_i[0][0] = (flow_case_.n_flavors - 1.0) * pion_loop;
+    }
+
+    template <int spatial_dim, typename NT, typename Solutions, std::size_t n_fe_functions>
+    void flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i, const Point<spatial_dim> & /*x*/,
+              const Solutions &sol) const
+    {
+      static_assert(spatial_dim == dim, "ONIntegratorLitimKTModel is one-dimensional.");
+      static_assert(n_fe_functions == 1, "ONIntegratorLitimKTModel expects a single FE function.");
+
+      const auto &fe_derivatives = get<1>(sol);
+      const NT m2Sigma = fe_derivatives[0][0];
+
+      NT sigma_loop;
+      flows_.V_sigma.get(sigma_loop, k, flow_case_.n_flavors, 0.0, m2Sigma);
+      F_i[0][0] = sigma_loop;
+    }
+
+  private:
+    FlowCase flow_case_;
+    double cell_width_;
+    mutable ONIntegratorLitimFlows flows_;
+  };
+
   JSONValue make_json(const FlowCase &flow_case, const int threads = 8)
   {
     return json::value(
         {{"physical", {{"Lambda", flow_case.lambda}}},
+         // /integration block is required by the integrator-based smoke test below
+         // (Integrator_p2 reads x_order and x_extent_tolerance). The existing
+         // analytic-flux scenarios ignore these keys.
+         {"integration",
+          {{"x_order", 32},
+           {"x_extent_tolerance", 1.0e-3},
+           {"jacobian_quadrature_factor", 0.5}}},
          {"discretization",
           {{"fe_order", 0},
            {"threads", threads},
@@ -817,4 +1195,103 @@ TEST_CASE("KT O(N) half-domain run matches the symmetric full-domain run on sigm
             full_domain_positive_half.u, flow_case.profile_abs_tol, flow_case.profile_rel_tol))
       FAIL(*u_mismatch);
   }
+}
+
+// Physical-scale smoke test:
+// Runs the analytical KT O(N) Litim flow with IDA in the same parameter regime
+// as Examples/ONfiniteT_KT/parameter.json (Lambda = 0.65, m2 = -0.1, lambda_quartic = 71.6,
+// N = 2). The integrator-based finite-T variant of this physics fails IDA with
+// a checkerboard instability (see /IDA_failure_diagnosis.md at the repo root).
+// This test isolates whether the analytical-flux KT + IDA can handle the
+// physical-scale regime at all. There is no reference profile to compare
+// against; the test only asserts that IDA reaches `target_time` without
+// throwing.
+TEST_CASE("KT O(N) physical-scale LSM smoke test - Lambda=0.65, m2=-0.1, lambda=71.6, N=2 reaches final time",
+          "[FV][KT][ON][smoke][physical-scale]")
+{
+  kt_regression::ensure_logger();
+
+  const auto flow_case = LSMPhysical_ON2::flow_case();
+  INFO(flow_case.label << ", physical-scale smoke test, Lambda=" << flow_case.lambda);
+
+  constexpr double target_time = 4.0;  // matches Examples/ONfiniteT_KT/parameter.json
+  run_flow_to_time(flow_case, target_time, default_grid_settings(), diagnostic_threads);
+}
+
+// Integrator-based counterpart of the previous smoke test. Same model, same
+// initial potential, same Lambda; only the flux changes — from the analytic
+// closed-form Litim expression used by ONKTModel above to the finite-T
+// PolynomialExp quadrature-based flux used by the user-facing example
+// Examples/ONfiniteT_KT/model_sigma.hh. If this test fails while the analytic
+// one passes, that pins the KT + IDA failure on the integrator/AD interaction,
+// not on the SSB physics or the Lambda regime.
+TEST_CASE("KT O(N) physical-scale integrator-based smoke test - same physics, finite-T PolynomialExp quadrature flux",
+          "[FV][KT][ON][smoke][integrator][physical-scale]")
+{
+  kt_regression::ensure_logger();
+  kt_regression::ensure_diffrg_initialized();  // required for QuadratureProvider construction
+
+  const auto flow_case = LSMPhysical_ON2::flow_case();
+  INFO(flow_case.label << ", integrator-based smoke test, Lambda=" << flow_case.lambda
+                       << ", T=" << LSMPhysicalParameters::T);
+
+  constexpr double target_time = 4.0;
+  run_flow_to_time<ONIntegratorKTModel>(flow_case, target_time, default_grid_settings(), diagnostic_threads);
+}
+
+// Same integrator-based model and physics as above, but run on the SAME mesh
+// used by Examples/ONfiniteT_KT/parameter_sigma.json (151 narrow cells from
+// ~0 to ~0.174, dx ≈ 1.16e-3). The previous test uses the regression suite's
+// default grid (800 wide cells over [0, 10], dx ≈ 0.0125) and succeeds. If
+// this test fails where the previous one passed, the difference is the mesh
+// — specifically that the 10× finer cells push the lowest cell centres so
+// close to sigma = 0 that the 1/sigma geometric amplifier in the pion
+// advection flux becomes O(several hundred) instead of O(40).
+TEST_CASE("KT O(N) physical-scale integrator-based smoke test - example-style narrow mesh",
+          "[FV][KT][ON][smoke][integrator][physical-scale][narrow-mesh]")
+{
+  kt_regression::ensure_logger();
+  kt_regression::ensure_diffrg_initialized();
+
+  const auto flow_case = LSMPhysical_ON2::flow_case();
+  INFO(flow_case.label << ", integrator-based smoke test on narrow mesh, Lambda=" << flow_case.lambda
+                       << ", T=" << LSMPhysicalParameters::T);
+
+  constexpr double target_time = 4.0;
+  // Matches Examples/ONfiniteT_KT/parameter_sigma.json (after the cell-0-at-origin
+  // grid shift): 151 cells of width ~1.16e-3, mesh centres at 0, dx, 2dx, ..., sigma_max.
+  GridSettings narrow_grid{151, 0.0, 0.174};
+  run_flow_to_time<ONIntegratorKTModel>(flow_case, target_time, narrow_grid, diagnostic_threads);
+}
+
+// Matched-physics quadrature counterpart of the analytic smoke test:
+// Litim regulator, T=0, same LSM initial potential and Lambda. If this
+// completes while the PolynomialExp+finite-T variants fail, the trigger is
+// in the regulator/temperature choice (not the integrator/AD path).
+TEST_CASE("KT O(N) physical-scale integrator-based smoke test - Litim regulator at T=0",
+          "[FV][KT][ON][smoke][integrator][physical-scale][litim-T0]")
+{
+  kt_regression::ensure_logger();
+  kt_regression::ensure_diffrg_initialized();
+
+  const auto flow_case = LSMPhysical_ON2::flow_case();
+  INFO(flow_case.label << ", integrator-based Litim T=0 smoke test, Lambda=" << flow_case.lambda);
+
+  constexpr double target_time = 4.0;
+  run_flow_to_time<ONIntegratorLitimKTModel>(flow_case, target_time, default_grid_settings(), diagnostic_threads);
+}
+
+TEST_CASE("KT O(N) physical-scale integrator-based smoke test - Litim regulator at T=0, narrow mesh",
+          "[FV][KT][ON][smoke][integrator][physical-scale][litim-T0][narrow-mesh]")
+{
+  kt_regression::ensure_logger();
+  kt_regression::ensure_diffrg_initialized();
+
+  const auto flow_case = LSMPhysical_ON2::flow_case();
+  INFO(flow_case.label << ", integrator-based Litim T=0 smoke test on narrow mesh, Lambda="
+                       << flow_case.lambda);
+
+  constexpr double target_time = 4.0;
+  GridSettings narrow_grid{151, 0.0, 0.174};
+  run_flow_to_time<ONIntegratorLitimKTModel>(flow_case, target_time, narrow_grid, diagnostic_threads);
 }

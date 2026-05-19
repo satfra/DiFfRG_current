@@ -112,32 +112,39 @@ namespace DiFfRG
     m_data_out.build_patches(subdivisions);
 
 #ifdef H5CPP
-    auto h5_file = hdf5_output->get_file();
-    auto h5_group = h5_file.root().open_group("FE");
-    {
-      auto cur_group = h5_group.create_group(Utilities::int_to_string(series_number, 6));
-      cur_group.write_attribute("time", time);
-      cur_group.write_attribute("series_number", static_cast<int>(series_number));
-      cur_group.write_attribute("output_name", output_name);
+    // hdf5_output is only non-null when /output/hdf5 is true (see
+    // DataOutput::DataOutput in data_output.cc). When HDF5 output is disabled
+    // we must skip this block, otherwise dereferencing the null pointer
+    // segfaults — historically masked by Catch2's SIGSEGV handler in the
+    // regression suite.
+    if (hdf5_output != nullptr) {
+      auto h5_file = hdf5_output->get_file();
+      auto h5_group = h5_file.root().open_group("FE");
+      {
+        auto cur_group = h5_group.create_group(Utilities::int_to_string(series_number, 6));
+        cur_group.write_attribute("time", time);
+        cur_group.write_attribute("series_number", static_cast<int>(series_number));
+        cur_group.write_attribute("output_name", output_name);
 
-      DataOutBase::DataOutFilterFlags mflags(false, false);
-      DataOutBase::DataOutFilter data_filter(mflags);
-      m_data_out.write_filtered_data(data_filter);
-      std::vector<double> node_data;
-      data_filter.fill_node_data(node_data);
+        DataOutBase::DataOutFilterFlags mflags(false, false);
+        DataOutBase::DataOutFilter data_filter(mflags);
+        m_data_out.write_filtered_data(data_filter);
+        std::vector<double> node_data;
+        data_filter.fill_node_data(node_data);
 
-      auto nodes_space = DiFfRG::hdf5::Dataspace::simple({data_filter.n_nodes(), dim});
-      auto nodes = cur_group.create_dataset("nodes", DiFfRG::hdf5::type_of<double>(), nodes_space);
-      nodes.write(node_data);
+        auto nodes_space = DiFfRG::hdf5::Dataspace::simple({data_filter.n_nodes(), dim});
+        auto nodes = cur_group.create_dataset("nodes", DiFfRG::hdf5::type_of<double>(), nodes_space);
+        nodes.write(node_data);
 
-      for (uint i = 0; i < data_filter.n_data_sets(); ++i) {
-        auto data_space = DiFfRG::hdf5::Dataspace::simple({data_filter.n_nodes()});
-        const std::string name = data_filter.get_data_set_name(i);
-        auto dataset = cur_group.create_dataset(name, DiFfRG::hdf5::type_of<double>(), data_space);
-        const double *data_set_data = data_filter.get_data_set(i);
-        dataset.write(data_set_data, data_filter.n_nodes());
+        for (uint i = 0; i < data_filter.n_data_sets(); ++i) {
+          auto data_space = DiFfRG::hdf5::Dataspace::simple({data_filter.n_nodes()});
+          const std::string name = data_filter.get_data_set_name(i);
+          auto dataset = cur_group.create_dataset(name, DiFfRG::hdf5::type_of<double>(), data_space);
+          const double *data_set_data = data_filter.get_data_set(i);
+          dataset.write(data_set_data, data_filter.n_nodes());
+        }
+        hdf5_output->close_file();
       }
-      hdf5_output->close_file();
     }
 #endif
 

@@ -6,6 +6,7 @@
 #include <DiFfRG/discretization/FV/discretization.hh>
 #include <DiFfRG/discretization/FV/limiter/minmod_limiter.hh>
 #include <DiFfRG/discretization/FV/reconstructor/tvd_reconstructor.hh>
+#include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed_zero_deriv.hh>
 #include <DiFfRG/model/fv_boundaries.hh>
 
 #include <tbb/global_control.h>
@@ -19,7 +20,8 @@ using Discretization = FV::Discretization<Model::Components, double, Rectangular
 using VectorType = typename Discretization::VectorType;
 using SparseMatrixType = typename Discretization::SparseMatrixType;
 using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
-using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor>;
+using WaveSpeed = FV::KurganovTadmor::MaxEigenvalueWaveSpeedZeroDeriv;
+using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor, WaveSpeed>;
 using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
 
 int main(int argc, char *argv[])
@@ -29,10 +31,7 @@ int main(int argc, char *argv[])
   tbb::global_control tbb_pin(tbb::global_control::max_allowed_parallelism, 1);
 
   // Initialize DiFfRG and thus the MPI and Kokkos environments.
-  // Use parameter_sigma.json by default so the binary can be invoked as `./KT_sigma`
-  // without arguments. (The CLI `-p <file>` flag still overrides it.)
   const auto config_helper = DiFfRG::Init(argc, argv, "parameter_sigma.json").get_configuration_helper();
-  // get all needed parameters and parse from the CLI
   const auto json = config_helper.get_json();
 
   // Define the objects needed to run the simulation
@@ -41,7 +40,6 @@ int main(int argc, char *argv[])
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
   DataOutput<dim, VectorType> data_out(json);
-  // KT requires a fixed rectangular mesh; no h-adaptivity.
   NoAdaptivity<VectorType> mesh_adaptor;
   TimeStepper time_stepper(json, &assembler, &data_out, &mesh_adaptor);
 
@@ -49,7 +47,22 @@ int main(int argc, char *argv[])
   FV::FlowingVariables<Discretization> initial_condition(discretization);
   initial_condition.interpolate(model);
 
-  // Now we start the timestepping
+  // EXPERIMENT: mirror the test's initialize_exact_cell_averages — override
+  // each cell with the exact cell-averaged value of V_init. If this fixes
+  // the IDA failure, the difference is that interpolate() does NOT produce
+  // the same values as model.initial_condition for FV.
+  {
+    const auto &support_points = discretization.get_support_points();
+    auto &u = initial_condition.data().block(0);
+    const double dx = 1.16e-3;  // matches parameter_sigma.json grid step
+    const double m2 = -0.1, lam = 71.6;
+    auto V = [&](double s) { return 0.5 * m2 * s * s + (lam / 8.0) * s * s * s * s; };
+    for (unsigned int i = 0; i < u.size(); ++i) {
+      const double sigma = support_points[i][0];
+      u[i] = (V(sigma + 0.5 * dx) - V(sigma - 0.5 * dx)) / dx;
+    }
+  }
+
   Timer timer;
   try {
     time_stepper.run(&initial_condition, 0., json.get_double("/timestepping/final_time"));
