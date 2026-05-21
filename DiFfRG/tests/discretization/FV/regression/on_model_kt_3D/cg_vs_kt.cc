@@ -99,6 +99,7 @@ namespace
 namespace
 {
   using namespace on_kt_3D;
+  static constexpr int uthreads = 16;
 }
 
 // ============================================================================
@@ -113,7 +114,7 @@ TEST_CASE("CG-vs-KT: CG on KT-Example uniform grid + default tolerance",
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
-  run_flow_to_time_cg<LSM_CG>(default_rho_grid(), final_time, /*threads=*/1, /*fe_order=*/4,
+  run_flow_to_time_cg<LSM_CG>(default_rho_grid(), final_time, /*threads=*/uthreads, /*fe_order=*/4,
                               /*abs_tol=*/1.0e-7, /*rel_tol=*/1.0e-7);
 }
 
@@ -129,7 +130,7 @@ TEST_CASE("CG-vs-KT: CG on KT-Example uniform grid + tight tolerance",
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
-  run_flow_to_time_cg<LSM_CG>(default_rho_grid(), final_time, /*threads=*/1, /*fe_order=*/4,
+  run_flow_to_time_cg<LSM_CG>(default_rho_grid(), final_time, /*threads=*/uthreads, /*fe_order=*/4,
                               /*abs_tol=*/1.0e-13, /*rel_tol=*/1.0e-7);
 }
 
@@ -245,7 +246,7 @@ TEST_CASE("CG-vs-KT: KT-ρ uniform grid, VanAlbada limiter + ZeroDeriv (both kin
                                                     FV::KurganovTadmor::MaxEigenvalueWaveSpeedZeroDeriv>;
 
   const auto grid = default_rho_grid();
-  const JSONValue json = make_json(/*threads=*/1);
+  const JSONValue json = make_json(/*threads=*/uthreads);
   LSM_rho_integrator_PolyExp model(json, grid);
   Mesh mesh(make_mesh_config(grid));
   Discretization discretization(mesh, json);
@@ -285,7 +286,7 @@ TEST_CASE("CG-vs-KT: KT-ρ uniform grid, Central limiter + ZeroWaveSpeed (a_half
                                                      ZeroWaveSpeed>;
 
   const auto grid = default_rho_grid();
-  const JSONValue json = make_json(/*threads=*/1);
+  const JSONValue json = make_json(/*threads=*/uthreads);
   LSM_rho_integrator_PolyExp model(json, grid);
   Mesh mesh(make_mesh_config(grid));
   Discretization discretization(mesh, json);
@@ -313,7 +314,7 @@ TEST_CASE("CG-vs-KT: KT-ρ uniform grid, Central limiter + ZeroDeriv (both kinks
                                                    FV::KurganovTadmor::MaxEigenvalueWaveSpeedZeroDeriv>;
 
   const auto grid = default_rho_grid();
-  const JSONValue json = make_json(/*threads=*/1);
+  const JSONValue json = make_json(/*threads=*/uthreads);
   LSM_rho_integrator_PolyExp model(json, grid);
   Mesh mesh(make_mesh_config(grid));
   Discretization discretization(mesh, json);

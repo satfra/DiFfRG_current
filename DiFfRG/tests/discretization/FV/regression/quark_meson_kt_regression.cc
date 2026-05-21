@@ -37,7 +37,7 @@ namespace
   constexpr double sigma_min = 0.0;
   constexpr double sigma_max_over_lambda = 1.5;
   constexpr double sigma_max = sigma_max_over_lambda * lambda_uv;
-  constexpr double delta_sigma = 1.0e-3;
+  constexpr double delta_sigma = 3.0e-3;  // N = (sigma_max - sigma_min)/delta_sigma = 300 cells
   constexpr std::size_t n_cells = static_cast<std::size_t>((sigma_max - sigma_min) / delta_sigma + 0.5);
   constexpr double grid_tol = 1.0e-12;
 
@@ -345,11 +345,11 @@ namespace
   {
     return json::value(
         {{"physical", {{"Lambda", lambda_uv}}},
-         {"integration", {{"x_order", 100}, {"x_extent_tolerance", 1.0e-4}, {"jacobian_quadrature_factor", 0.5}}},
+         {"integration", {{"x_order", 32}, {"x_extent_tolerance", 1.0e-4}, {"jacobian_quadrature_factor", 0.5}}},
          {"discretization",
           {{"fe_order", 0},
-           {"threads", 1},
-           {"batch_size", 64},
+           {"threads", 16},
+           {"batch_size", 32},
            {"overintegration", 0},
            {"output_subdivisions", 1},
            {"output_buffer_size", 1},
@@ -364,8 +364,8 @@ namespace
             {{"dt", 1.0e-9},
              {"minimal_dt", 1.0e-15},
              {"maximal_dt", 1.0e-5},
-             {"abs_tol", 1.0e-12},
-             {"rel_tol", 1.0e-12},
+             {"abs_tol", 1.0e-15},
+             {"rel_tol", 1.0e-8},
              {"max_steps", 20000000}}}}},
          {"output", {{"verbosity", 1}, {"vtk", false}, {"hdf5", false}}}});
   }
