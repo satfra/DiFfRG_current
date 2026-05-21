@@ -73,6 +73,8 @@ namespace on_kt_3D
       const NT du_dsigma = fe_derivatives[0][0];
       const double k2 = k * k;
       const double prefactor = (k * k * k * k * k) / (12.0 * M_PI * M_PI);
+      // KT residual sums fluxes: (H + D)·n. Diffusion flux = physical flux, same sign as
+      // advection (CG convention). ∝ +1/√ is decreasing in the gradient ⇒ forward.
       F_i[0][0] = NT(prefactor) / sqrt(NT(k2) + du_dsigma);
     }
   };
@@ -121,6 +123,7 @@ namespace on_kt_3D
       const NT m2Sigma = fe_functions[0] + NT(2.0 * rho) * fe_derivatives[0][0];
       const double k2 = k * k;
       const double prefactor = (k * k * k * k * k) / (12.0 * M_PI * M_PI);
+      // Same sign as advection: KT sums (H + D)·n (see σ-analytic note above).
       F_i[0][0] = NT(prefactor) / sqrt(NT(k2) + m2Sigma);
     }
   };
@@ -180,6 +183,7 @@ namespace on_kt_3D
       const NT m2Sigma = fe_derivatives[0][0];
       NT sigma_loop;
       flows_.V_sigma.get(sigma_loop, this->k, LSMPhysicalParameters::N, T_, m2Sigma);
+      // Same sign as advection: KT sums (H + D)·n; see note in quark_meson_kt_regression.cc.
       F_i[0][0] = sigma_loop;
     }
 
@@ -252,6 +256,7 @@ namespace on_kt_3D
       const NT m2Sigma = fe_functions[0] + NT(2.0 * rho) * fe_derivatives[0][0];
       NT sigma_loop;
       flows_.V_sigma.get(sigma_loop, this->k, LSMPhysicalParameters::N, T_, m2Sigma);
+      // Same sign as advection: KT sums (H + D)·n; see note in quark_meson_kt_regression.cc.
       F_i[0][0] = sigma_loop;
     }
 
