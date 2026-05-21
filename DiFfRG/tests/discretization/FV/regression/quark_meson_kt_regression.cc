@@ -313,6 +313,10 @@ namespace
       NT sigma_loop{};
       flows.sigma.get(sigma_loop, k, PaperLitimParameters::Nc, PaperLitimParameters::Nf, PaperLitimParameters::T,
                       PaperLitimParameters::muq, PaperLitimParameters::hPhi, m2_sigma);
+      // KT residual sums the fluxes: (H + D)·n. The diffusion flux is the physical flux
+      // with the same sign as the advection flux (conservation-law / CG convention). The
+      // sigma loop ∝ +1/√(k²+m²_σ) is a decreasing function of m²_σ = ∂_σ u, i.e.
+      // ∂F_diff/∂(∂_σ u) < 0 — the forward-diffusion sign under (H + D).
       F_i[0][0] = sigma_loop;
     }
 

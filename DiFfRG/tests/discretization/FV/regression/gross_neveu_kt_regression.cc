@@ -294,8 +294,10 @@ namespace
       const FluxNumberType thermal_factor =
           flow_case.temperature == 0.0 ? FluxNumberType(1.0) : cothS(E_b, flow_case.temperature);
 
+      // KT residual sums the fluxes: (H + D)·n, so the diffusion flux is the physical
+      // flux with the same sign as the advection flux (conservation-law / CG convention).
       F_i[0][0] =
-          FluxNumberType(-1.0 / (pi * flow_case.n_flavors)) * FluxNumberType(k3 / 2.0) * thermal_factor / E_b;
+          FluxNumberType(1.0 / (pi * flow_case.n_flavors)) * FluxNumberType(k3 / 2.0) * thermal_factor / E_b;
     }
   };
 

@@ -138,7 +138,9 @@ namespace DiFfRG
       void flux(std::array<Tensor<1, dim, NT>, 1> &F_i, const Point<dim> & /*pos*/, const Solution &sol) const
       {
         const auto &fe_derivatives = get<1>(sol);
-        F_i[0] = nu * fe_derivatives[0];
+        // KT sums (H + D)·n: the diffusion flux is the physical conservation-law viscous
+        // flux -ν·∂u (decreasing in the gradient ⇒ forward diffusion).
+        F_i[0] = -nu * fe_derivatives[0];
       }
 
       template <int mdim, typename NumberType, size_t n_components>
@@ -198,7 +200,9 @@ namespace DiFfRG
       void flux(std::array<Tensor<1, dim, NT>, 2> &F_i, const Point<dim> & /*pos*/, const Solution &sol) const
       {
         const auto &fe_derivatives = get<1>(sol);
-        F_i[0] = nu * fe_derivatives[0];
+        // KT sums (H + D)·n: the diffusion flux is the physical conservation-law viscous
+        // flux -ν·∂u (decreasing in the gradient ⇒ forward diffusion).
+        F_i[0] = -nu * fe_derivatives[0];
         F_i[1] = 0.0;
       }
 

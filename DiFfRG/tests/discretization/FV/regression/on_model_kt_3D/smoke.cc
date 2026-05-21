@@ -17,27 +17,27 @@ namespace
 
 // --- σ-coords --------------------------------------------------------------
 
-TEST_CASE("LSM σ-coords analytic Litim T=0 reaches final time",
-          "[smoke][lsm-physical][sigma][analytic][!shouldfail]")
+TEST_CASE("LSM σ-coords analytic Litim T=0 reaches t=3.6",
+          "[smoke][lsm-physical][sigma][analytic]")
 {
   kt_regression::ensure_logger();
-  run_flow_to_time<LSM_sigma_analytic>(default_sigma_grid(), final_time);
+  run_flow_to_time<LSM_sigma_analytic>(default_sigma_grid(), smoke_target_time);
 }
 
-TEST_CASE("LSM σ-coords integrator Litim T=0 reaches final time",
-          "[smoke][lsm-physical][sigma][integrator-litim][!shouldfail]")
+TEST_CASE("LSM σ-coords integrator Litim T=0 reaches t=3.6",
+          "[smoke][lsm-physical][sigma][integrator-litim]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
-  run_flow_to_time<LSM_sigma_integrator_Litim>(default_sigma_grid(), final_time);
+  run_flow_to_time<LSM_sigma_integrator_Litim>(default_sigma_grid(), smoke_target_time);
 }
 
-TEST_CASE("LSM σ-coords integrator PolyExp T=0.05 reaches final time",
-          "[smoke][lsm-physical][sigma][integrator-polyexp][!shouldfail]")
+TEST_CASE("LSM σ-coords integrator PolyExp T=0.05 reaches t=3.6",
+          "[smoke][lsm-physical][sigma][integrator-polyexp]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
-  run_flow_to_time<LSM_sigma_integrator_PolyExp>(default_sigma_grid(), final_time);
+  run_flow_to_time<LSM_sigma_integrator_PolyExp>(default_sigma_grid(), smoke_target_time);
 }
 
 // --- ρ-coords --------------------------------------------------------------

@@ -245,10 +245,10 @@ namespace DiFfRG
                   << exp(-t) * Lambda;
       }
       if (calc_dt.has_value()) {
-        std::cout << " | calc_dt: " << std::setw(7) << calc_dt.value();
+        std::cout << " | calc_dt: " << std::setw(11) << calc_dt.value();
       }
       if (calls > 0) {
-        std::cout << " | calls: " << std::setw(10) << calls;
+        std::cout << " | calls: " << std::setw(4) << calls;
       }
       std::cout << " | calc_t: " << time_format_ms(milliseconds);
       std::cout << std::endl;

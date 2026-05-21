@@ -298,7 +298,11 @@ namespace
 
       (void)x;
       static_cast<const Derived *>(this)->note_diffusion_denominator(x[0], du_dsigma);
-      F_i[0][0] = FluxNumberType(half_dr_dt) / (FluxNumberType(r) + du_dsigma);
+      // KT residual sums the fluxes: (H + D)·n. The advection flux above uses
+      // +0.5*r, so the diffusion flux carries the same +0.5*r prefactor (i.e.
+      // -half_dr_dt, since half_dr_dt = ½∂_t r < 0) — the conservation-law /
+      // CG convention where all flux contributions share their physical sign.
+      F_i[0][0] = FluxNumberType(-half_dr_dt) / (FluxNumberType(r) + du_dsigma);
     }
 
   protected:

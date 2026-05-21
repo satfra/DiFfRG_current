@@ -1085,11 +1085,18 @@ namespace DiFfRG
             const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, u_plus, u_minus);
             const auto D = internal::compute_diffusion_flux(u_plus, u_minus, u_grad_plus, u_grad_minus, x_q, model);
 
+            // Sign convention: the face flux is (H + D)·n, i.e. the advection numerical
+            // flux H (from KurganovTadmor_advection_flux) and the diffusion flux D (from
+            // flux()) are SUMMED. Both model methods therefore return the physical flux
+            // with the same sign — exactly the conservation-law convention used by CG /
+            // LLFFlux (which sums all contributions into one flux F). A diffusion flux
+            // f_diff must be a DECREASING function of the gradient (∂f_diff/∂(∂u) < 0)
+            // for forward diffusion, e.g. f_diff = -ν·∂u for the heat/viscous term.
             for (uint component_i = 0; component_i < n_components; ++component_i) {
               copy_data_face.joint_dof_indices[component_i] = cell_data.dof_indices[component_i];
               copy_data_face.joint_dof_indices[n_components + component_i] = ncell_data.dof_indices[component_i];
               const auto flux_contribution =
-                  weight * JxW * (scalar_product(H[component_i], n_face) - scalar_product(D[component_i], n_face));
+                  weight * JxW * (scalar_product(H[component_i], n_face) + scalar_product(D[component_i], n_face));
               copy_data_face.cell_residual(component_i) += flux_contribution;
               copy_data_face.cell_residual(n_components + component_i) -= flux_contribution;
             }
@@ -1152,7 +1159,7 @@ namespace DiFfRG
             for (uint component_i = 0; component_i < n_components; ++component_i) {
               copy_data_face.joint_dof_indices[component_i] = cell_data.dof_indices[component_i];
               copy_data_face.cell_residual(component_i) +=
-                  weight * JxW * (scalar_product(H[component_i], n_bnd) - scalar_product(D_bnd[component_i], n_bnd));
+                  weight * JxW * (scalar_product(H[component_i], n_bnd) + scalar_product(D_bnd[component_i], n_bnd));
             }
           };
 
@@ -1373,10 +1380,10 @@ namespace DiFfRG
                       weight * JxW * jump_i * advection_contribution;
                 }
 
-                // The residual uses [[phi_i]] * ((H - D) · n), so after summing the
+                // The residual uses [[phi_i]] * ((H + D) · n), so after summing the
                 // contributions from both face traces into diffusion_contribution we
-                // subtract the full diffusive chain-rule term once here.
-                copy_data_face.cell_jacobian(i, j) -=
+                // add the full diffusive chain-rule term once here.
+                copy_data_face.cell_jacobian(i, j) +=
                     weight * JxW * jump_i * diffusion_contribution;
               }
             }
@@ -1512,10 +1519,10 @@ namespace DiFfRG
                 }
 
                 // Boundary faces use the same residual sign convention: [[phi_i]] *
-                // ((H - D) · n). diffusion_contribution already contains both the
-                // interior-side and ghost-side chain-rule pieces, so we subtract it
+                // ((H + D) · n). diffusion_contribution already contains both the
+                // interior-side and ghost-side chain-rule pieces, so we add it
                 // once after the face_no sum.
-                copy_data_face.cell_jacobian(i, j) -=
+                copy_data_face.cell_jacobian(i, j) +=
                     weight * JxW * diffusion_contribution;
               }
             }
