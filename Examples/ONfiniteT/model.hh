@@ -9,17 +9,17 @@ struct Parameters {
   {
     try {
       Lambda = value.get_double("/physical/Lambda");
-      N = value.get_double("/physical/N");
+      Nf = value.get_double("/physical/Nf");
       T = value.get_double("/physical/T");
       lambda = value.get_double("/physical/lambda");
       m2 = value.get_double("/physical/m2");
 
-      std::cout << "Parameters: " << Lambda << " " << N << " " << T << " " << lambda << " " << m2 << std::endl;
+      std::cout << "Parameters: " << Lambda << " " << Nf << " " << T << " " << lambda << " " << m2 << std::endl;
     } catch (std::exception &e) {
       std::cout << "Error in reading parameters: " << e.what() << std::endl;
     }
   }
-  double Lambda, N, T, lambda, m2;
+  double Lambda, Nf, T, lambda, m2;
 };
 
 // As for components, we have one FE function (u) and no extractors or variables.
@@ -85,7 +85,7 @@ public:
     const auto m2Pi = fe_functions[idxf("m2")];
     const auto m2Sigma = fe_functions[idxf("m2")] + 2. * rho * fe_derivatives[idxf("m2")][0];
 
-    flow_equations.V.get(flux[idxf("m2")][0], k, prm.N, prm.T, m2Pi, m2Sigma);
+    flow_equations.V.get(flux[idxf("m2")][0], k, prm.Nf, prm.T, m2Pi, m2Sigma);
   }
 
   template <int dim, typename NumberType, typename Solution> void cell_indicator(NumberType &indicator, const Point<dim> & /*p*/, const Solution &sol) const

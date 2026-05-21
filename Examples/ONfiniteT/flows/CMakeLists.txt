@@ -5,9 +5,10 @@ set(ONFiniteTFlows_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/flows.cc)
 
 add_library(ONFiniteTFlows STATIC ${ONFiniteTFlows_SOURCES})
-add_library(ONFiniteTFlows_nowarn INTERFACE)
-target_compile_options(ONFiniteTFlows_nowarn INTERFACE -Wno-unused-parameter -Wno-unused-variable)
-target_link_libraries(ONFiniteTFlows DiFfRG::DiFfRG ONFiniteTFlows_nowarn)
+target_link_libraries(ONFiniteTFlows DiFfRG::DiFfRG)
+target_compile_options(
+  ONFiniteTFlows PRIVATE $<$<COMPILE_LANGUAGE:CXX>: -Wno-unused-parameter
+                         -Wno-unused-variable >)
 
 set_target_properties(
   ONFiniteTFlows
