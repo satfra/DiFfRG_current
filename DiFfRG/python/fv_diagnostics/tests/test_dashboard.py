@@ -1,5 +1,6 @@
 import argparse
 
+import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -10,7 +11,9 @@ from diffrg_fv_diagnostics.dashboard import (
     available_panels,
     cell_interval_edges,
     choose_series,
+    metadata_advection_offset,
     parse_x_range,
+    resolve_advection_offset,
     Series,
     warning_line_data,
     warning_line_label,
@@ -52,12 +55,40 @@ def test_warning_line_data_uses_sigma_bound_for_cell_state_panel():
     assert warning_line_label("Cell state and reconstruction") == r"$-k^2\sigma$"
 
 
+def test_warning_line_data_applies_advection_offset_to_cell_state_panel():
+    x, y = warning_line_data("Cell state and reconstruction", 0.6, Series(number=0, time=0.0), (0.0, 0.5),
+                             advection_offset=0.001695)
+
+    np.testing.assert_allclose(x, [0.0, 0.5])
+    np.testing.assert_allclose(y, [-0.001695, -0.181695])
+    assert warning_line_label("Cell state and reconstruction", 0.001695) == r"$-k^2\sigma-c_\sigma$"
+
+
 def test_warning_line_data_keeps_horizontal_bound_for_face_slopes():
     x, y = warning_line_data("Face slopes", 0.6, Series(number=0, time=0.0), (0.0, 0.5))
 
     np.testing.assert_allclose(x, [0.0, 0.5])
     np.testing.assert_allclose(y, [-0.36, -0.36])
     assert warning_line_label("Face slopes") == r"$-k^2$"
+
+
+def test_warning_line_data_does_not_apply_advection_offset_to_face_slopes():
+    x, y = warning_line_data("Face slopes", 0.6, Series(number=0, time=0.0), (0.0, 0.5),
+                             advection_offset=0.001695)
+
+    np.testing.assert_allclose(x, [0.0, 0.5])
+    np.testing.assert_allclose(y, [-0.36, -0.36])
+
+
+def test_metadata_advection_offset_reads_hdf5_configuration(tmp_path):
+    path = tmp_path / "diagnostic.h5"
+    with h5py.File(path, "w") as h5:
+        h5.attrs["configuration_json"] = '{"physical":{"Lambda":0.6,"cSigma":0.001695}}'
+
+    with h5py.File(path, "r") as h5:
+        assert metadata_advection_offset([h5]) == 0.001695
+        assert resolve_advection_offset([h5], None) == 0.001695
+        assert resolve_advection_offset([h5], 0.2) == 0.2
 
 
 def test_autoscale_y_ignores_warning_lines():
@@ -72,6 +103,20 @@ def test_autoscale_y_ignores_warning_lines():
         lower, upper = axis.get_ylim()
         assert lower > -1.0e-6
         assert upper < 1.0e-6
+    finally:
+        plt.close(figure)
+
+
+def test_autoscale_y_includes_visible_line_segment_boundary_values():
+    figure, axis = plt.subplots()
+    try:
+        axis.plot([0.0, 1.0], [-100.0, 100.0])
+
+        autoscale_y(axis, (0.49, 0.51))
+
+        lower, upper = axis.get_ylim()
+        assert lower < -2.0
+        assert upper > 2.0
     finally:
         plt.close(figure)
 

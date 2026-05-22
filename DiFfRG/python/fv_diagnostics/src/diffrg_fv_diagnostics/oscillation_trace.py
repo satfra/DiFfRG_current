@@ -25,6 +25,8 @@ class ConvexityMargin:
     sigma: float
     side: str
     slope: float
+    kind: str = "diffusion"
+    singular_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -44,11 +46,17 @@ class ResidualAttribution:
 class OscillationTracePoint:
     number: int
     time: float
-    convexity: ConvexityMargin
+    diffusion_margin: ConvexityMargin
+    advection_margin: ConvexityMargin
+    critical_margin: ConvexityMargin
     curvature: CurvatureIndicator
     slope_jump: float
     slope_jump_sigma: float
     dominant_residual: ResidualAttribution | None
+
+    @property
+    def convexity(self) -> ConvexityMargin:
+        return self.critical_margin
 
 
 def finite_values(x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -69,9 +77,42 @@ def min_convexity_margin(lambda_uv: float, time: float, minus: tuple[np.ndarray,
             continue
         margin = k2 + slope
         index = int(np.argmin(margin))
-        candidates.append(ConvexityMargin(float(margin[index]), float(x[index]), side, float(slope[index])))
+        candidates.append(ConvexityMargin(float(margin[index]), float(x[index]), side, float(slope[index]), "diffusion"))
     if not candidates:
-        return ConvexityMargin(float("nan"), float("nan"), "none", float("nan"))
+        return ConvexityMargin(float("nan"), float("nan"), "none", float("nan"), "diffusion")
+    return min(candidates, key=lambda item: item.value)
+
+
+def min_advection_convexity_margin(lambda_uv: float, time: float, advection_offset: float,
+                                   minus: tuple[np.ndarray, np.ndarray],
+                                   plus: tuple[np.ndarray, np.ndarray]) -> ConvexityMargin:
+    k = lambda_uv * np.exp(-time)
+    k2 = k * k
+    candidates = []
+    singular_count = 0
+    for side, (x_raw, u_raw) in (("minus", minus), ("plus", plus)):
+        x, u = finite_values(x_raw, u_raw)
+        singular_count += int(np.count_nonzero(x <= 0.0))
+        positive = x > 0.0
+        if not np.any(positive):
+            continue
+        x = x[positive]
+        m2_pion = (u[positive] + advection_offset) / x
+        margin = k2 + m2_pion
+        index = int(np.argmin(margin))
+        candidates.append(
+            ConvexityMargin(float(margin[index]), float(x[index]), side, float(m2_pion[index]), "advection",
+                            singular_count))
+    if not candidates:
+        return ConvexityMargin(float("nan"), float("nan"), "none", float("nan"), "advection", singular_count)
+    best = min(candidates, key=lambda item: item.value)
+    return ConvexityMargin(best.value, best.sigma, best.side, best.slope, best.kind, singular_count)
+
+
+def critical_convexity_margin(diffusion: ConvexityMargin, advection: ConvexityMargin) -> ConvexityMargin:
+    candidates = [margin for margin in (diffusion, advection) if np.isfinite(margin.value)]
+    if not candidates:
+        return diffusion
     return min(candidates, key=lambda item: item.value)
 
 
@@ -109,14 +150,19 @@ def dominant_residual_near_sigma(residuals: dict[str, tuple[np.ndarray, np.ndarr
     return best
 
 
-def trace_series(series: object, lambda_uv: float, read_map: MapReader) -> OscillationTracePoint:
-    minus = read_map("face_du_dx_minus", series)
-    plus = read_map("face_du_dx_plus", series)
-    convexity = min_convexity_margin(lambda_uv, series.time, minus, plus)
+def trace_series(series: object, lambda_uv: float, read_map: MapReader, advection_offset: float = 0.0) -> OscillationTracePoint:
+    slope_minus = read_map("face_du_dx_minus", series)
+    slope_plus = read_map("face_du_dx_plus", series)
+    diffusion_margin = min_convexity_margin(lambda_uv, series.time, slope_minus, slope_plus)
+
+    u_minus = read_map("face_u_minus", series)
+    u_plus = read_map("face_u_plus", series)
+    advection_margin = min_advection_convexity_margin(lambda_uv, series.time, advection_offset, u_minus, u_plus)
+    critical_margin = critical_convexity_margin(diffusion_margin, advection_margin)
 
     cell_x, cell_u = read_map("cell_u", series)
     curvature = cell_curvature_indicator(cell_x, cell_u)
-    slope_jump, slope_jump_sigma = face_slope_jump(minus, plus)
+    slope_jump, slope_jump_sigma = face_slope_jump(slope_minus, slope_plus)
 
     residuals = {}
     for name in RESIDUAL_MAP_LABELS:
@@ -124,9 +170,10 @@ def trace_series(series: object, lambda_uv: float, read_map: MapReader) -> Oscil
             residuals[name] = read_map(name, series)
         except KeyError:
             continue
-    dominant = dominant_residual_near_sigma(residuals, convexity.sigma)
+    dominant = dominant_residual_near_sigma(residuals, critical_margin.sigma)
 
-    return OscillationTracePoint(number=series.number, time=series.time, convexity=convexity, curvature=curvature,
+    return OscillationTracePoint(number=series.number, time=series.time, diffusion_margin=diffusion_margin,
+                                 advection_margin=advection_margin, critical_margin=critical_margin, curvature=curvature,
                                  slope_jump=slope_jump, slope_jump_sigma=slope_jump_sigma,
                                  dominant_residual=dominant)
 
@@ -134,7 +181,7 @@ def trace_series(series: object, lambda_uv: float, read_map: MapReader) -> Oscil
 def select_trace_rows(trace: list[OscillationTracePoint], convexity_margin: float, trace_count: int) -> list[OscillationTracePoint]:
     if not trace:
         return []
-    dangerous = [point for point in trace if np.isfinite(point.convexity.value) and point.convexity.value <= convexity_margin]
+    dangerous = [point for point in trace if np.isfinite(point.critical_margin.value) and point.critical_margin.value <= convexity_margin]
     if dangerous:
         return dangerous[:trace_count]
-    return sorted(trace, key=lambda point: point.convexity.value)[:trace_count]
+    return sorted(trace, key=lambda point: point.critical_margin.value)[:trace_count]

@@ -373,11 +373,11 @@ namespace
     mutable QuarkMesonLitimFlows flows;
   };
 
-  JSONValue make_json(const double final_time, const double output_dt = 1.0e-1, const double explicit_dt = 1.0e-8,
+  JSONValue make_json(const double final_time, const double output_dt = 2.0e-2, const double explicit_dt = 1.0e-8,
                       const double explicit_abs_tol = 1.0e-12, const double explicit_rel_tol = 1.0e-12)
   {
     return json::value(
-        {{"physical", {{"Lambda", lambda_uv}}},
+        {{"physical", {{"Lambda", lambda_uv}, {"cSigma", PaperLitimParameters::cSigma}}},
          {"integration", {{"x_order", 32}, {"x_extent_tolerance", 1.0e-4}, {"jacobian_quadrature_factor", 0.5}}},
          {"discretization",
           {{"fe_order", 0},

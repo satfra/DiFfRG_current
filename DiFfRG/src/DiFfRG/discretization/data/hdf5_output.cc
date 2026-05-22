@@ -21,6 +21,7 @@ namespace DiFfRG
     h5_file = DiFfRG::hdf5::File::open(path.string(), DiFfRG::hdf5::Access::Truncate);
 
     auto root = h5_file.root();
+    root.write_attribute("configuration_json", json::serialize(static_cast<json::value>(json)));
     scalars = root.create_group("scalars");
     maps = root.create_group("maps");
     coords = root.create_group("coordinates");

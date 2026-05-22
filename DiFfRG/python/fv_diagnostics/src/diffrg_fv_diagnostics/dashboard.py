@@ -14,6 +14,7 @@ Optional examples:
 from __future__ import annotations
 
 import argparse
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from contextlib import ExitStack
@@ -191,18 +192,20 @@ def warning_line_value(lambda_uv: float, series: Series) -> float:
     return -(k * k)
 
 
-def warning_line_label(panel_title: str) -> str:
+def warning_line_label(panel_title: str, advection_offset: float = 0.0) -> str:
     if panel_title == CELL_STATE_PANEL_TITLE:
+        if advection_offset != 0.0:
+            return r"$-k^2\sigma-c_\sigma$"
         return r"$-k^2\sigma$"
     return r"$-k^2$"
 
 
 def warning_line_data(panel_title: str, lambda_uv: float, series: Series,
-                      x_range: tuple[float, float]) -> tuple[np.ndarray, np.ndarray]:
+                      x_range: tuple[float, float], advection_offset: float = 0.0) -> tuple[np.ndarray, np.ndarray]:
     x = np.asarray(x_range, dtype=float)
     y_value = warning_line_value(lambda_uv, series)
     if panel_title == CELL_STATE_PANEL_TITLE:
-        return x, y_value * x
+        return x, y_value * x - advection_offset
     return x, np.full_like(x, y_value, dtype=float)
 
 
@@ -337,9 +340,32 @@ def autoscale_y(axis: plt.Axes, xlim: tuple[float, float]) -> None:
         y = np.asarray(line.get_ydata())
         if line.get_gid() in {"warning-line", "diagnostic-marker"}:
             continue
-        mask = (x >= lower) & (x <= upper) & np.isfinite(y)
+        finite = np.isfinite(x) & np.isfinite(y)
+        x = x[finite]
+        y = y[finite]
+        if x.size == 0:
+            continue
+
+        mask = (x >= lower) & (x <= upper)
         if np.any(mask):
             visible_values.append(y[mask])
+        if x.size < 2:
+            continue
+
+        edge_values = []
+        for boundary in (lower, upper):
+            x0 = x[:-1]
+            x1 = x[1:]
+            y0 = y[:-1]
+            y1 = y[1:]
+            spans_boundary = ((x0 <= boundary) & (boundary <= x1)) | ((x1 <= boundary) & (boundary <= x0))
+            nonvertical = x0 != x1
+            segment_mask = spans_boundary & nonvertical
+            if np.any(segment_mask):
+                fraction = (boundary - x0[segment_mask]) / (x1[segment_mask] - x0[segment_mask])
+                edge_values.append(y0[segment_mask] + fraction * (y1[segment_mask] - y0[segment_mask]))
+        if edge_values:
+            visible_values.append(np.concatenate(edge_values))
 
     if not visible_values:
         axis.relim()
@@ -375,6 +401,36 @@ def available_maps(h5_files: list[h5py.File], h5_paths: list[Path]) -> list[MapS
             seen.add(key)
             result.append(MapSpec(file_index=file_index, file_path=h5_paths[file_index], name=name))
     return result
+
+
+def configuration_from_hdf5(h5_files: Iterable[h5py.File]) -> dict:
+    for h5 in h5_files:
+        value = h5.attrs.get("configuration_json")
+        if value is None:
+            continue
+        if isinstance(value, bytes):
+            value = value.decode()
+        try:
+            parsed = json.loads(str(value))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return {}
+
+
+def metadata_advection_offset(h5_files: Iterable[h5py.File]) -> float | None:
+    configuration = configuration_from_hdf5(h5_files)
+    physical = configuration.get("physical")
+    if not isinstance(physical, dict) or "cSigma" not in physical:
+        return None
+    return float(physical["cSigma"])
+
+
+def resolve_advection_offset(h5_files: Iterable[h5py.File], cli_value: float | None) -> float:
+    if cli_value is not None:
+        return cli_value
+    return metadata_advection_offset(h5_files) or 0.0
 
 
 def common_series(h5_files: list[h5py.File], map_specs: Iterable[MapSpec]) -> list[Series]:
@@ -431,7 +487,8 @@ def print_oscillation_trace(trace: list[OscillationTracePoint], convexity_margin
         print("[FV oscillation trace] no trace rows available")
         return
 
-    print("[FV oscillation trace] series,time,min_k2_plus_m2,sigma,side,slope,max_abs_d2u,sigma_d2u,"
+    print("[FV oscillation trace] series,time,critical_margin,critical_kind,sigma,side,mode_value,"
+          "diffusion_margin,advection_margin,advection_singular_count,max_abs_d2u,sigma_d2u,"
           "slope_jump,sigma_jump,dominant_residual,residual_sigma,residual_value")
     for point in rows:
         residual_name = "unavailable"
@@ -441,8 +498,10 @@ def print_oscillation_trace(trace: list[OscillationTracePoint], convexity_margin
             residual_name = RESIDUAL_MAP_LABELS.get(point.dominant_residual.name, point.dominant_residual.name)
             residual_sigma = point.dominant_residual.sigma
             residual_value = point.dominant_residual.value
-        print(f"[FV oscillation trace] {point.number},{point.time:.16e},{point.convexity.value:.16e},"
-              f"{point.convexity.sigma:.16e},{point.convexity.side},{point.convexity.slope:.16e},"
+        print(f"[FV oscillation trace] {point.number},{point.time:.16e},{point.critical_margin.value:.16e},"
+              f"{point.critical_margin.kind},{point.critical_margin.sigma:.16e},{point.critical_margin.side},"
+              f"{point.critical_margin.slope:.16e},{point.diffusion_margin.value:.16e},"
+              f"{point.advection_margin.value:.16e},{point.advection_margin.singular_count},"
               f"{point.curvature.value:.16e},{point.curvature.sigma:.16e},{point.slope_jump:.16e},"
               f"{point.slope_jump_sigma:.16e},{residual_name},{residual_sigma:.16e},{residual_value:.16e}")
 
@@ -450,17 +509,21 @@ def print_oscillation_trace(trace: list[OscillationTracePoint], convexity_margin
 def plot_oscillation_trace(axis_margin: plt.Axes, axis_curvature: plt.Axes, trace: list[OscillationTracePoint],
                            convexity_margin: float) -> None:
     times = np.asarray([point.time for point in trace], dtype=float)
-    margins = np.asarray([point.convexity.value for point in trace], dtype=float)
+    margins = np.asarray([point.critical_margin.value for point in trace], dtype=float)
+    diffusion_margins = np.asarray([point.diffusion_margin.value for point in trace], dtype=float)
+    advection_margins = np.asarray([point.advection_margin.value for point in trace], dtype=float)
     curvatures = np.asarray([point.curvature.value for point in trace], dtype=float)
     slope_jumps = np.asarray([point.slope_jump for point in trace], dtype=float)
 
-    axis_margin.plot(times, margins, linewidth=1.35, label=r"$\min(k^2+m_\sigma^2)$")
+    axis_margin.plot(times, margins, linewidth=1.35, label="critical")
+    axis_margin.plot(times, diffusion_margins, "--", linewidth=1.0, label=r"$k^2+m_\sigma^2$")
+    axis_margin.plot(times, advection_margins, ":", linewidth=1.0, label=r"$k^2+m_\pi^2$")
     axis_margin.axhline(convexity_margin, color="red", linestyle="--", linewidth=1.1, alpha=0.85,
                         label="margin")
     axis_margin.axhline(0.0, color="black", linestyle=":", linewidth=1.0, alpha=0.7, label="zero")
     axis_margin.set_title("Convexity margin history")
     axis_margin.set_xlabel(r"$t$")
-    axis_margin.set_ylabel(r"$k^2+m_\sigma^2$")
+    axis_margin.set_ylabel("margin")
     axis_margin.grid(True, alpha=0.25)
     axis_margin.legend(loc="best", fontsize="small", frameon=False)
 
@@ -475,7 +538,7 @@ def plot_oscillation_trace(axis_margin: plt.Axes, axis_curvature: plt.Axes, trac
 
 def plot_maps(h5_paths: list[Path], selected_series: Iterable[Series], component: int, output: Path | None,
               xlim: tuple[float, float] | None, lambda_uv: float, oscillation_trace: bool,
-              convexity_margin: float, trace_count: int) -> None:
+              convexity_margin: float, trace_count: int, advection_offset_cli: float | None) -> None:
     selected_series = list(selected_series)
     if not selected_series:
         raise RuntimeError("No matching time slices were selected.")
@@ -487,6 +550,7 @@ def plot_maps(h5_paths: list[Path], selected_series: Iterable[Series], component
             raise RuntimeError("No supported diagnostic maps were found in the HDF5 file.")
         map_names = [spec.name for spec in map_specs]
         spec_by_name = {spec.name: spec for spec in map_specs}
+        advection_offset = resolve_advection_offset(h5_files, advection_offset_cli)
         panels = available_panels(map_specs)
         if not panels:
             raise RuntimeError("No supported dashboard panels can be built from the HDF5 file.")
@@ -494,7 +558,7 @@ def plot_maps(h5_paths: list[Path], selected_series: Iterable[Series], component
         trace_points: list[OscillationTracePoint] = []
         trace_by_number: dict[int, OscillationTracePoint] = {}
         if oscillation_trace:
-            required_trace_maps = {"cell_u", "face_du_dx_minus", "face_du_dx_plus"}
+            required_trace_maps = {"cell_u", "face_u_minus", "face_u_plus", "face_du_dx_minus", "face_du_dx_plus"}
             missing_trace_maps = sorted(required_trace_maps - set(spec_by_name))
             if missing_trace_maps:
                 raise RuntimeError("Oscillation trace requires missing maps: " + ", ".join(missing_trace_maps))
@@ -506,7 +570,9 @@ def plot_maps(h5_paths: list[Path], selected_series: Iterable[Series], component
                     raise KeyError(map_name)
                 return read_curve_data(h5_files, spec_by_name, map_name, series, component)
 
-            trace_points = [trace_series(series, lambda_uv, read_trace_map) for series in all_trace_series]
+            trace_points = [
+                trace_series(series, lambda_uv, read_trace_map, advection_offset) for series in all_trace_series
+            ]
             trace_by_number = {point.number: point for point in trace_points}
             print_oscillation_trace(trace_points, convexity_margin, trace_count)
 
@@ -544,8 +610,8 @@ def plot_maps(h5_paths: list[Path], selected_series: Iterable[Series], component
             if panel.title in WARNING_LINE_PANELS and np.isfinite(axis_x_min) and np.isfinite(axis_x_max):
                 x_range = (axis_x_min, axis_x_max)
                 for series_index, series in enumerate(series_to_plot):
-                    label = warning_line_label(panel.title) if interactive or series_index == 0 else "_nolegend_"
-                    x_warning, y_warning = warning_line_data(panel.title, lambda_uv, series, x_range)
+                    label = warning_line_label(panel.title, advection_offset) if interactive or series_index == 0 else "_nolegend_"
+                    x_warning, y_warning = warning_line_data(panel.title, lambda_uv, series, x_range, advection_offset)
                     (warning_line,) = axis.plot(x_warning, y_warning, color="red", linestyle="--", linewidth=1.25,
                                                 alpha=0.9, label=label)
                     warning_line.set_gid("warning-line")
@@ -555,10 +621,10 @@ def plot_maps(h5_paths: list[Path], selected_series: Iterable[Series], component
             if trace_by_number:
                 for series_index, series in enumerate(series_to_plot):
                     point = trace_by_number.get(series.number)
-                    if point is None or not np.isfinite(point.convexity.sigma):
+                    if point is None or not np.isfinite(point.critical_margin.sigma):
                         continue
                     label = r"trace $\sigma$" if interactive or series_index == 0 else "_nolegend_"
-                    marker = axis.axvline(point.convexity.sigma, color="black", linestyle=":", linewidth=1.0,
+                    marker = axis.axvline(point.critical_margin.sigma, color="black", linestyle=":", linewidth=1.0,
                                           alpha=0.5, label=label)
                     marker.set_gid("diagnostic-marker")
                     if interactive:
@@ -608,13 +674,13 @@ def plot_maps(h5_paths: list[Path], selected_series: Iterable[Series], component
                     line.set_data(x, y)
                     autoscale_y(axis, axis.get_xlim())
                 for axis, panel_title, x_range, line in warning_lines:
-                    x_warning, y_warning = warning_line_data(panel_title, lambda_uv, series, x_range)
+                    x_warning, y_warning = warning_line_data(panel_title, lambda_uv, series, x_range, advection_offset)
                     line.set_data(x_warning, y_warning)
                     autoscale_y(axis, axis.get_xlim())
                 for axis, marker in diagnostic_markers:
                     point = trace_by_number.get(series.number)
-                    if point is not None and np.isfinite(point.convexity.sigma):
-                        marker.set_xdata([point.convexity.sigma, point.convexity.sigma])
+                    if point is not None and np.isfinite(point.critical_margin.sigma):
+                        marker.set_xdata([point.critical_margin.sigma, point.critical_margin.sigma])
                     autoscale_y(axis, axis.get_xlim())
                 title.set_text(f"{diagnostic_title(h5_paths, map_names)}, component {component} - "
                                f"{format_label(series)}")
@@ -646,6 +712,9 @@ def main() -> None:
                         help="Add oscillator-origin trace tables and history panels.")
     parser.add_argument("--convexity-margin", type=float, default=0.1,
                         help="Warning threshold used when selecting oscillation trace rows. Defaults to 0.1.")
+    parser.add_argument("--advection-offset", type=float,
+                        help="Explicit-breaking offset c_sigma for the advection/pion convexity bound. "
+                             "Defaults to /physical/cSigma metadata when available, otherwise 0.")
     parser.add_argument("--trace-count", type=int, default=12,
                         help="Maximum number of oscillation trace rows to print. Defaults to 12.")
     parser.add_argument("--output", type=Path, help="Optional image path. If omitted, opens an interactive window.")
@@ -667,7 +736,7 @@ def main() -> None:
         selected_series = choose_series(all_series, args.max_slices, args.series, args.times)
 
     plot_maps(h5_paths, selected_series, args.component, args.output, args.xlim, args.lambda_uv,
-              args.oscillation_trace, args.convexity_margin, args.trace_count)
+              args.oscillation_trace, args.convexity_margin, args.trace_count, args.advection_offset)
 
 
 if __name__ == "__main__":
