@@ -28,8 +28,13 @@ endif()
 set(_all_passed TRUE)
 
 # Check for a dependency by looking for its CMake config file
+#
+# Pass ALLOW_SYSTEM to additionally accept the dependency when it is provided by
+# a system install (outside BUNDLED_DIR). This is used for Boost, which DiFfRG
+# may consume from the system instead of the bundled build
+# (see DiFfRG_SYSTEM_BOOST in the top-level CMakeLists.txt).
 macro(verify_dep name)
-  cmake_parse_arguments(_VD "" "" "CONFIG_NAMES" ${ARGN})
+  cmake_parse_arguments(_VD "ALLOW_SYSTEM" "" "CONFIG_NAMES" ${ARGN})
 
   # Pad name to 15 chars for alignment
   string(LENGTH "${name}" _name_len)
@@ -62,6 +67,24 @@ macro(verify_dep name)
       endforeach()
     endif()
   endforeach()
+
+  # Fall back to a system install when explicitly allowed (e.g. system Boost).
+  if(NOT _found AND _VD_ALLOW_SYSTEM)
+    foreach(_sys_dir "/usr/lib/cmake" "/usr/lib64/cmake" "/usr/local/lib/cmake"
+                     "/usr/share/cmake" "/opt/homebrew/lib/cmake")
+      if(NOT _found AND EXISTS "${_sys_dir}")
+        foreach(_config_name ${_VD_CONFIG_NAMES})
+          if(NOT _found)
+            file(GLOB_RECURSE _sys_matches "${_sys_dir}/${_config_name}")
+            if(_sys_matches)
+              list(GET _sys_matches 0 _found_path)
+              set(_found TRUE)
+            endif()
+          endif()
+        endforeach()
+      endif()
+    endforeach()
+  endif()
 
   if(_found)
     message("  ${Green}PASS${Reset}  ${name}${_spaces}  ${_found_path}")
@@ -125,7 +148,7 @@ message("----------------------------------------------------------------------"
 verify_dep(deal.II  CONFIG_NAMES "deal.IIConfig.cmake")
 verify_dep(TBB      CONFIG_NAMES "TBBConfig.cmake" "tbb/TBBConfig.cmake")
 verify_dep(Kokkos   CONFIG_NAMES "KokkosConfig.cmake")
-verify_dep(Boost    CONFIG_NAMES "BoostConfig.cmake" "boost_headers/BoostConfig.cmake")
+verify_dep(Boost    ALLOW_SYSTEM CONFIG_NAMES "BoostConfig.cmake" "boost_headers/BoostConfig.cmake")
 verify_dep(Eigen3   CONFIG_NAMES "Eigen3Config.cmake")
 verify_dep(autodiff CONFIG_NAMES "autodiffConfig.cmake")
 verify_dep(spdlog   CONFIG_NAMES "spdlogConfig.cmake")

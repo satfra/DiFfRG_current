@@ -162,7 +162,15 @@ message(STATUS "Found TBB in ${TBB_DIR}")
 diffrg_find_package(Kokkos HINTS ${BUNDLED_DIR})
 message(STATUS "Found Kokkos in ${Kokkos_DIR}")
 
-# Find Boost
+# Find Boost. find_package also honors BOOST_ROOT/Boost_DIR and standard system
+# paths, so a system Boost (selected via DiFfRG_SYSTEM_BOOST in the top-level
+# build) is picked up here when BUNDLED_DIR does not contain one. Use Boost's own
+# BoostConfig.cmake (config mode); the legacy FindBoost module is removed in
+# CMake >= 3.30. Boost has shipped BoostConfig.cmake since 1.70, and DiFfRG
+# requires >= 1.81, so config mode always applies.
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 NEW)
+endif()
 diffrg_find_package(
   Boost
   VERSION
@@ -303,14 +311,18 @@ message("")
 function(setup_dealii TARGET)
 
   if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_link_libraries(${TARGET} PUBLIC deal_II.g)
-    target_link_libraries(${TARGET} INTERFACE deal_II.g)
     set(_build "DEBUG")
-  elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
-    target_link_libraries(${TARGET} PUBLIC deal_II)
-    target_link_libraries(${TARGET} INTERFACE deal_II)
+  else()
     set(_build "RELEASE")
   endif()
+
+  # deal.II >= 9.7 renamed its imported targets; the pre-9.7 names deal_II /
+  # deal_II.g no longer exist. Link the config-aware umbrella target
+  # dealii::dealii, which (unlike DEAL_II_INCLUDE_DIRS) also propagates the
+  # include dirs of optional features such as UMFPACK/suitesparse.
+  target_link_libraries(${TARGET} PUBLIC dealii::dealii)
+  target_link_libraries(${TARGET} INTERFACE dealii::dealii)
+
   target_include_directories(${TARGET} SYSTEM PUBLIC ${DEAL_II_INCLUDE_DIRS})
 
   set(_cflags "${DEAL_II_CXX_FLAGS} ${DEAL_II_CXX_FLAGS_${_build}}")

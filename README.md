@@ -52,7 +52,8 @@ To compile and run this project, there are very few requirements which you can e
 - A compiler supporting at least the C++20 standard, including a Fortran compiler (e.g. `gfortran`). This project is only tested using the [GCC](https://gcc.gnu.org/) compiler suite, as well as with `AppleClang`, but in principle, ICC or standard Clang should also work.
 - LAPACK and BLAS in some form, e.g. [OpenBLAS](https://www.openblas.net/). Alternatively, pass `-DBUILD_OpenBLAS=ON` to have DiFfRG build OpenBLAS.
 - The GNU Scientific Library [GSL](https://www.gnu.org/software/gsl/).
-- [Python](https://www.python.org/) is required by the Boost build system and used for visualization.
+- [Python](https://www.python.org/) is used for visualization (and by the bundled Boost build system).
+- [Boost](https://www.boost.org/) (≥ 1.81) is detected automatically and used if present; otherwise DiFfRG builds a bundled copy. Control this with `-DDiFfRG_SYSTEM_BOOST=AUTO/ON/OFF` (default `AUTO`) and `-DBOOST_ROOT=<path>`.
 - [Doxygen](https://www.doxygen.org/) and [graphviz](https://www.graphviz.org/download/) to build the documentation.
 
 The following requirements are optional:

@@ -364,20 +364,101 @@ ExternalProject_Add(
                    ${CCACHE_CMAKE_ARGS})
 
 message("${BoldCyan}[5/8] Configuring Boost...${ColourReset}")
-ExternalProject_Add(
-  boost_dep
-  LOG_CONFIGURE ON
-  LOG_INSTALL ON
-  LOG_OUTPUT_ON_FAILURE ON
-  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/boost
-  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/boost
-  INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
-             -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
-             -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
-  # Propagate DEPEND_INSTALL_PREFIX to the dependencies
-  CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-                   -DCCACHE_PROGRAM:STRING=${CCACHE_PROGRAM})
+
+# Use a system Boost when one is suitable, otherwise build the bundled copy.
+# DiFfRG_SYSTEM_BOOST controls this:
+#   AUTO (default) - detect a system Boost >= DiFfRG_BOOST_MIN_VERSION; fall back
+#                    to the bundled build if none is found
+#   ON             - require a system Boost (fatal error if none is found)
+#   OFF            - always build the bundled Boost
+# BOOST_ROOT (standard CMake cache var) may be set to point at a specific install.
+set(DiFfRG_SYSTEM_BOOST "AUTO" CACHE STRING
+    "Use a system Boost: AUTO (detect, fallback to bundled), ON (require system), OFF (always build bundled)")
+set_property(CACHE DiFfRG_SYSTEM_BOOST PROPERTY STRINGS AUTO ON OFF)
+set(DiFfRG_BOOST_MIN_VERSION 1.81)
+set(DiFfRG_BOOST_KNOWN_GOOD_MAX 1.87) # last version validated against bundled deal.II 9.4.2
+
+set(_use_system_boost OFF)
+if(NOT DiFfRG_SYSTEM_BOOST STREQUAL "OFF")
+  # Prefer Boost's own BoostConfig.cmake (config mode); the legacy FindBoost
+  # module is removed in CMake >= 3.30.
+  if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+  endif()
+  find_package(Boost ${DiFfRG_BOOST_MIN_VERSION} QUIET
+               COMPONENTS thread iostreams serialization system)
+  if(Boost_FOUND)
+    set(_use_system_boost ON)
+    if(Boost_VERSION VERSION_GREATER ${DiFfRG_BOOST_KNOWN_GOOD_MAX})
+      message(
+        WARNING
+          "Using system Boost ${Boost_VERSION}, which is newer than the last version "
+          "(${DiFfRG_BOOST_KNOWN_GOOD_MAX}) validated against the bundled deal.II 9.4.2. "
+          "If the deal.II build fails, configure with -DDiFfRG_SYSTEM_BOOST=OFF.")
+    endif()
+  elseif(DiFfRG_SYSTEM_BOOST STREQUAL "ON")
+    message(
+      FATAL_ERROR
+        "\n"
+        "======================================================================\n"
+        "  DiFfRG_SYSTEM_BOOST=ON but no system Boost >= ${DiFfRG_BOOST_MIN_VERSION} was found.\n"
+        "======================================================================\n"
+        "  Install Boost via your package manager:\n"
+        "    Ubuntu/Debian:  sudo apt install libboost-all-dev\n"
+        "    Arch Linux:     sudo pacman -S boost\n"
+        "    Rocky/RHEL:     sudo dnf install boost-devel\n"
+        "    macOS:          brew install boost\n"
+        "\n"
+        "  Or point at a specific install: -DBOOST_ROOT=<path>\n"
+        "  Or build the bundled copy:      -DDiFfRG_SYSTEM_BOOST=OFF\n"
+        "======================================================================\n")
+  endif()
+endif()
+
+# Resolve the Boost location passed to deal.II and the DiFfRG library build, and
+# decide whether the bundled boost_dep target is needed.
+if(_use_system_boost)
+  # Config-mode find_package(Boost) populates Boost_INCLUDE_DIRS and Boost_DIR
+  # (the BoostConfig.cmake directory) but not the legacy Boost_LIBRARY_DIRS, so
+  # derive the install prefix and library dir ourselves.
+  list(GET Boost_INCLUDE_DIRS 0 _boost_incdir)
+  get_filename_component(_boost_root "${_boost_incdir}" DIRECTORY) # install prefix (parent of include/)
+  set(_boost_config_dir "${Boost_DIR}")                           # dir containing BoostConfig.cmake
+  if(DEFINED Boost_LIBRARY_DIRS AND NOT "${Boost_LIBRARY_DIRS}" STREQUAL "")
+    list(GET Boost_LIBRARY_DIRS 0 _boost_libdir)
+  elseif(EXISTS "${_boost_root}/lib")
+    set(_boost_libdir "${_boost_root}/lib")
+  else()
+    set(_boost_libdir "${_boost_root}/lib64")
+  endif()
+  # Pass the config-package dir on as a hint so downstream config-mode lookups
+  # (deal.II with CMP0167=NEW, and the DiFfRG library) resolve the same Boost.
+  set(_boost_extra_args -DBoost_DIR:PATH=${_boost_config_dir})
+  set(_boost_dep "")
+  message(
+    "  ${BoldGreen}Using system Boost ${Boost_VERSION} (${_boost_incdir}); skipping bundled Boost build.${ColourReset}"
+  )
+else()
+  set(_boost_root "${DEPEND_INSTALL_PREFIX}")
+  set(_boost_incdir "${DEPEND_INSTALL_PREFIX}/include")
+  set(_boost_libdir "${DEPEND_INSTALL_PREFIX}/lib")
+  set(_boost_extra_args "")
+  set(_boost_dep boost_dep)
+  ExternalProject_Add(
+    boost_dep
+    LOG_CONFIGURE ON
+    LOG_INSTALL ON
+    LOG_OUTPUT_ON_FAILURE ON
+    PREFIX ${CMAKE_CURRENT_BINARY_DIR}/boost
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/boost
+    INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
+               -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
+               -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
+    # Propagate DEPEND_INSTALL_PREFIX to the dependencies
+    CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+                     -DCCACHE_PROGRAM:STRING=${CCACHE_PROGRAM})
+endif()
 
 # ##############################################################################
 # Kokkos
@@ -415,7 +496,7 @@ ExternalProject_Add(
   LOG_INSTALL ON
   LOG_OUTPUT_ON_FAILURE ON
   GIT_REPOSITORY https://github.com/kokkos/kokkos.git
-  GIT_TAG 5.0.1
+  GIT_TAG 5.1.1
   GIT_SHALLOW ON
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/kokkos
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
@@ -432,7 +513,11 @@ ExternalProject_Add(
     -DCMAKE_CUDA_COMPILER:STRING=${CMAKE_CUDA_COMPILER}
     -DKokkos_ENABLE_CUDA:BOOL=${HAVE_CUDA}
     -DKokkos_ENABLE_CUDA_CONSTEXPR:BOOL=${HAVE_CUDA}
-    -DKokkos_ENABLE_CUDA_RELOCATABLE_DEVICE_CODE:BOOL=${HAVE_CUDA}
+    -DKokkos_ENABLE_CUDA_RELOCATABLE_DEVICE_CODE:BOOL=OFF
+    # deal.II 9.7.1 uses the deprecated Kokkos::View<>::HostMirror alias, which
+    # Kokkos 5.x gates behind DEPRECATED_CODE_4. Re-enable it so the bundled
+    # deal.II compiles against Kokkos 5.1.1.
+    -DKokkos_ENABLE_DEPRECATED_CODE_4:BOOL=ON
     -DKokkos_ENABLE_HIP:BOOL=${HAVE_HIP}
     -DKokkos_ENABLE_OPENMP:BOOL=OFF
     -DKokkos_ENABLE_THREADS:BOOL=${HAVE_THREADS}
@@ -516,11 +601,16 @@ ExternalProject_Add(
   LOG_INSTALL ON
   LOG_OUTPUT_ON_FAILURE ON
   GIT_REPOSITORY https://github.com/dealii/dealii.git
-  GIT_TAG v9.4.2
+  GIT_TAG v9.7.1
   GIT_SHALLOW ON
+  # Patch deal.II 9.7.1 for clang-CUDA + Kokkos 5.x + Boost 1.9x (see
+  # patches/dealii-9.7.1-clang-cuda.patch and deal.II issue #18797).
+  # Idempotent: if already applied, the reverse --check succeeds so re-runs and
+  # re-clones are both safe. sh -c keeps it working on Linux and macOS.
+  PATCH_COMMAND sh -c "git apply --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-clang-cuda.patch' || git apply --reverse --check --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-clang-cuda.patch'"
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/deal.II
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  DEPENDS general_dep boost_dep ${is_petsc_dep} sundials_dep
+  DEPENDS general_dep ${_boost_dep} ${is_petsc_dep} sundials_dep
   BUILD_COMMAND cmake --build . -- -j${_dealii_jobs}
   CMAKE_CACHE_ARGS
     -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
@@ -534,21 +624,25 @@ ExternalProject_Add(
     -DDEAL_II_COMPONENT_EXAMPLES:BOOL=OFF
     -DDEAL_II_COMPONENT_DOCUMENTATION:BOOL=OFF
     -DDEAL_II_WITH_MPI:BOOL=${MPI}
-    -DDEAL_II_WITH_KOKKOS:BOOL=OFF
+    -DDEAL_II_WITH_KOKKOS:BOOL=ON
     -DDEAL_II_WITH_UMFPACK:BOOL=ON
     -DDEAL_II_WITH_TASKFLOW:BOOL=OFF
     ${dealii_lapack}
     -DDEAL_II_WITH_LAPACK:BOOL=ON
     -DDEAL_II_WITH_HDF5:BOOL=OFF
+    -DDEAL_II_WITH_VTK:BOOL=OFF
     -DPETSC_DIR:PATH=${DEPEND_INSTALL_PREFIX}
     -DPETSC_ARCH:STRING=arch-linux-c-opt
-    -DCMAKE_CXX_STANDARD:STRING=17
+    -DCMAKE_CXX_STANDARD:STRING=20
     -DCMAKE_CXX_EXTENSIONS:BOOL=OFF
+    -DKOKKOS_DIR:STRING=${DEPEND_INSTALL_PREFIX}
     -DTBB_DIR:STRING=${DEPEND_INSTALL_PREFIX}
     -DSUNDIALS_DIR:STRING=${DEPEND_INSTALL_PREFIX}
-    -DBOOST_DIR:STRING=${DEPEND_INSTALL_PREFIX}
-    -DBOOST_INCLUDEDIR:PATH=${DEPEND_INSTALL_PREFIX}/include
-    -DBOOST_LIBRARYDIR:PATH=${DEPEND_INSTALL_PREFIX}/lib
+    -DBOOST_ROOT:PATH=${_boost_root}
+    -DBOOST_DIR:STRING=${_boost_root}
+    -DBOOST_INCLUDEDIR:PATH=${_boost_incdir}
+    -DBOOST_LIBRARYDIR:PATH=${_boost_libdir}
+    ${_boost_extra_args}
     -DCMAKE_PREFIX_PATH:STRING=${DEPEND_INSTALL_PREFIX}
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
     ${CCACHE_CMAKE_ARGS})
@@ -569,11 +663,13 @@ ExternalProject_Add(
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/DiFfRG/
   INSTALL_DIR ${CMAKE_INSTALL_PREFIX}
-  DEPENDS general_dep boost_dep deal.II_dep kokkos_dep autodiff_dep
+  DEPENDS general_dep ${_boost_dep} deal.II_dep kokkos_dep autodiff_dep
   CMAKE_CACHE_ARGS
     -DMPI:BOOL=${MPI}
     -DHDF5:BOOL=ON
     -DBUNDLED_DIR:PATH=${DEPEND_INSTALL_PREFIX}
+    -DBOOST_ROOT:PATH=${_boost_root}
+    ${_boost_extra_args}
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
     -DDiFfRG_TEST:BOOL=${DiFfRG_TEST}
     -DDiFfRG_DOCUMENTATION:BOOL=${DiFfRG_DOCUMENTATION}
