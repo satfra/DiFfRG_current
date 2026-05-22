@@ -1,15 +1,17 @@
-# DiFfRG build test on Rocky Linux 9 (CPU-only).
+# DiFfRG build test on Rocky Linux 9 with CUDA (GPU on, no MPI).
 # Build from the repository root as context.
-FROM rockylinux:9
+#
+# No GPU is present during `docker build`, so pin a CUDA architecture via the
+# cuda_arch build-arg (default AMPERE80 / compute 8.0). The test suite is
+# compiled here but executed only on a GPU host (containers/test_all.sh).
+FROM nvidia/cuda:12.8.1-devel-rockylinux9
 LABEL type=diffrg-build-test
 
 ARG threads=4
+ARG cuda_arch=AMPERE80
 
-# Rocky 9's default GCC (11) lacks full C++20; use gcc-toolset-12. openblas-devel
-# lives in the (disabled-by-default) devel repo; EPEL provides sundials-devel.
-# cmake from AppStream is >= 3.26. Rocky's Boost (1.75) is older than DiFfRG's
-# floor (1.81), so Boost falls back to the bundled build -- a deliberate test of
-# that path; TBB/HDF5/SUNDIALS are auto-detected.
+# Rocky 9 needs gcc-toolset-12 for C++20; openblas-devel from the devel repo,
+# sundials-devel from EPEL. Boost (1.75) is below DiFfRG's 1.81 floor -> bundled.
 RUN dnf -y install epel-release \
     && dnf -y --enablerepo=devel install \
         gcc-toolset-12 cmake git \
@@ -18,8 +20,6 @@ RUN dnf -y install epel-release \
         doxygen graphviz python3 patch which \
     && dnf clean all
 
-# Make gcc-toolset-12 the active toolchain for non-interactive bash so its GCC 12
-# is on PATH for the whole build.
 RUN echo "source /opt/rh/gcc-toolset-12/enable" > /.bashenv
 ENV BASH_ENV=/.bashenv
 
@@ -28,7 +28,8 @@ COPY . /DiFfRG
 
 RUN cmake -S /DiFfRG -B /build \
         -DCMAKE_BUILD_TYPE=Release \
-        -DGPU=OFF -DMPI=OFF -DDiFfRG_DOCUMENTATION=OFF \
+        -DGPU=ON -DMPI=OFF -DDiFfRG_DOCUMENTATION=OFF \
+        -DKokkos_ARCH=${cuda_arch} -DKokkos_ARCH_LIST=${cuda_arch} \
     && cmake --build /build -j ${threads} \
     && cmake -DDiFfRG_TEST=ON /build/DiFfRG/src/DiFfRG-build \
     && cmake --build /build/DiFfRG/src/DiFfRG-build -j ${threads}

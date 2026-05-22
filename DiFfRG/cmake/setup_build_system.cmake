@@ -223,7 +223,13 @@ diffrg_find_package(spdlog VERSION 1.14.1 HINTS ${BUNDLED_DIR})
 # or by the user) selects bundled vs system. Do not pass the version to
 # find_package: HDF5's config-version file uses a same-major-version policy, so
 # requesting 1.12 would reject a newer 2.x install; gate the version manually.
+# Config mode first (bundled static build + distros that ship a CMake config,
+# e.g. Arch); then module mode (FindHDF5) for config-less system installs
+# (Fedora/Debian/Ubuntu). HDF5_DIR/HDF5_ROOT are set by the top-level build.
 find_package(HDF5 CONFIG QUIET COMPONENTS C HINTS ${BUNDLED_DIR})
+if(NOT HDF5_FOUND OR HDF5_VERSION VERSION_LESS 1.12.0)
+  find_package(HDF5 MODULE QUIET COMPONENTS C)
+endif()
 if(NOT HDF5_FOUND OR HDF5_VERSION VERSION_LESS 1.12.0)
   message(
     FATAL_ERROR

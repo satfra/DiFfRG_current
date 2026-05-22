@@ -407,35 +407,54 @@ set(_hdf5_user_dir "${HDF5_DIR}")
 # Do not pass the version to find_package: HDF5's config-version file uses a
 # same-major-version compatibility policy, so requesting 1.12 would reject a
 # newer 2.x install. Gate the version manually instead.
+# Many distros (Fedora, Debian, Ubuntu, ...) ship HDF5 without a CMake config
+# package (only headers + libs + the FindHDF5 module / pkg-config). So try config
+# mode first (gives imported targets; matches the bundled static build and Arch),
+# then fall back to module mode (FindHDF5) for those config-less installs.
+macro(_diffrg_find_hdf5)
+  find_package(HDF5 QUIET CONFIG COMPONENTS C ${ARGN})
+  if(NOT HDF5_FOUND OR HDF5_VERSION VERSION_LESS ${DiFfRG_HDF5_MIN_VERSION})
+    find_package(HDF5 QUIET MODULE COMPONENTS C)
+  endif()
+endmacro()
+
 if(NOT "${_hdf5_user_dir}" STREQUAL "")
-  find_package(HDF5 QUIET CONFIG COMPONENTS C
-    PATHS "${_hdf5_user_dir}"
-    PATH_SUFFIXES lib/cmake/hdf5 lib64/cmake/hdf5 cmake/hdf5 share/cmake/hdf5
-    NO_DEFAULT_PATH)
+  set(HDF5_ROOT "${_hdf5_user_dir}")
+  _diffrg_find_hdf5(PATHS "${_hdf5_user_dir}"
+    PATH_SUFFIXES lib/cmake/hdf5 lib64/cmake/hdf5 cmake/hdf5 share/cmake/hdf5)
   if(NOT HDF5_FOUND OR HDF5_VERSION VERSION_LESS ${DiFfRG_HDF5_MIN_VERSION})
     message(FATAL_ERROR
       "HDF5_DIR=${_hdf5_user_dir} does not provide a usable HDF5 >= ${DiFfRG_HDF5_MIN_VERSION} "
       "(found '${HDF5_VERSION}').\n"
-      "  Point it at a prefix containing hdf5-config.cmake, or use -DBUILD_HDF5=ON.")
+      "  Point it at an HDF5 install prefix, or use -DBUILD_HDF5=ON.")
   endif()
   message(STATUS "[HDF5] Using HDF5 ${HDF5_VERSION} from HDF5_DIR=${_hdf5_user_dir}")
 elseif(BUILD_HDF5)
   set(_build_hdf5 ON)
 else()
-  find_package(HDF5 QUIET CONFIG COMPONENTS C)
+  _diffrg_find_hdf5()
   if(NOT HDF5_FOUND OR HDF5_VERSION VERSION_LESS ${DiFfRG_HDF5_MIN_VERSION})
     set(_build_hdf5 ON)
   endif()
 endif()
 
 if(_build_hdf5)
-  set(_hdf5_dir "${DEPEND_INSTALL_PREFIX}")
+  set(_hdf5_extra_args "")
   set(_hdf5_dep hdf5_dep)
 else()
-  set(_hdf5_dir "${HDF5_DIR}") # the discovered hdf5-config.cmake directory
+  # Pass the config-package dir on if config mode found it; otherwise (module
+  # mode) pass the install prefix so the library build resolves the same HDF5.
+  if(HDF5_DIR AND NOT "${HDF5_DIR}" STREQUAL "HDF5_DIR-NOTFOUND")
+    set(_hdf5_extra_args -DHDF5_DIR:PATH=${HDF5_DIR})
+    set(_hdf5_loc "${HDF5_DIR}")
+  else()
+    list(GET HDF5_INCLUDE_DIRS 0 _hdf5_inc0)
+    get_filename_component(_hdf5_loc "${_hdf5_inc0}" DIRECTORY)
+    set(_hdf5_extra_args -DHDF5_ROOT:PATH=${_hdf5_loc})
+  endif()
   set(_hdf5_dep "")
   message(
-    "  ${BoldGreen}[HDF5] Using system HDF5 ${HDF5_VERSION} (${HDF5_DIR}); skipping bundled build.${ColourReset}"
+    "  ${BoldGreen}[HDF5] Using system HDF5 ${HDF5_VERSION} (${_hdf5_loc}); skipping bundled build.${ColourReset}"
   )
 endif()
 
@@ -460,19 +479,36 @@ if(NOT _build_sundials)
   find_library(_SUN_ARKODE NAMES sundials_arkode HINTS ${_sun_hint} PATH_SUFFIXES lib lib64)
   find_library(_SUN_KINSOL NAMES sundials_kinsol HINTS ${_sun_hint} PATH_SUFFIXES lib lib64)
   find_library(_SUN_NVEC NAMES sundials_nvecserial HINTS ${_sun_hint} PATH_SUFFIXES lib lib64)
-  find_path(_SUN_INC sundials/sundials_version.h HINTS ${_sun_hint} PATH_SUFFIXES include)
+  # The version macros live in sundials_config.h on most installs (sundials_version.h
+  # only declares the runtime accessors and #includes the config -- e.g. on Fedora
+  # it carries no macros), so locate the config header and read whichever of the
+  # two actually defines SUNDIALS_VERSION_MAJOR.
+  find_path(_SUN_INC sundials/sundials_config.h HINTS ${_sun_hint} PATH_SUFFIXES include)
   set(_sun_ok FALSE)
   set(_sun_ver "")
   if(_SUN_ARKODE AND _SUN_KINSOL AND _SUN_NVEC AND _SUN_INC)
-    file(STRINGS "${_SUN_INC}/sundials/sundials_version.h" _sun_mj REGEX "#define SUNDIALS_VERSION_MAJOR")
-    file(STRINGS "${_SUN_INC}/sundials/sundials_version.h" _sun_mn REGEX "#define SUNDIALS_VERSION_MINOR")
-    file(STRINGS "${_SUN_INC}/sundials/sundials_version.h" _sun_pt REGEX "#define SUNDIALS_VERSION_PATCH")
-    string(REGEX REPLACE "^.*MAJOR[ \t]+([0-9]+).*" "\\1" _sun_mj "${_sun_mj}")
-    string(REGEX REPLACE "^.*MINOR[ \t]+([0-9]+).*" "\\1" _sun_mn "${_sun_mn}")
-    string(REGEX REPLACE "^.*PATCH[ \t]+([0-9]+).*" "\\1" _sun_pt "${_sun_pt}")
-    set(_sun_ver "${_sun_mj}.${_sun_mn}.${_sun_pt}")
-    if(NOT _sun_ver VERSION_LESS ${DiFfRG_SUNDIALS_MIN_VERSION})
-      set(_sun_ok TRUE)
+    set(_sun_verhdr "")
+    foreach(_h sundials/sundials_config.h sundials/sundials_version.h)
+      if(EXISTS "${_SUN_INC}/${_h}")
+        file(STRINGS "${_SUN_INC}/${_h}" _sun_probe REGEX "#define[ \t]+SUNDIALS_VERSION_MAJOR")
+        if(_sun_probe)
+          set(_sun_verhdr "${_SUN_INC}/${_h}")
+          break()
+        endif()
+      endif()
+    endforeach()
+    if(_sun_verhdr)
+      file(STRINGS "${_sun_verhdr}" _sun_mj REGEX "#define[ \t]+SUNDIALS_VERSION_MAJOR")
+      file(STRINGS "${_sun_verhdr}" _sun_mn REGEX "#define[ \t]+SUNDIALS_VERSION_MINOR")
+      file(STRINGS "${_sun_verhdr}" _sun_pt REGEX "#define[ \t]+SUNDIALS_VERSION_PATCH")
+      string(REGEX REPLACE "^.*MAJOR[ \t]+([0-9]+).*" "\\1" _sun_mj "${_sun_mj}")
+      string(REGEX REPLACE "^.*MINOR[ \t]+([0-9]+).*" "\\1" _sun_mn "${_sun_mn}")
+      string(REGEX REPLACE "^.*PATCH[ \t]+([0-9]+).*" "\\1" _sun_pt "${_sun_pt}")
+      set(_sun_ver "${_sun_mj}.${_sun_mn}.${_sun_pt}")
+      if(_sun_ver MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+         AND NOT _sun_ver VERSION_LESS ${DiFfRG_SUNDIALS_MIN_VERSION})
+        set(_sun_ok TRUE)
+      endif()
     endif()
   endif()
   if(_sun_ok)
@@ -835,7 +871,7 @@ ExternalProject_Add(
     -DBOOST_ROOT:PATH=${_boost_root}
     ${_boost_extra_args}
     -DTBB_DIR:STRING=${_tbb_dir}
-    -DHDF5_DIR:PATH=${_hdf5_dir}
+    ${_hdf5_extra_args}
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
     -DDiFfRG_TEST:BOOL=${DiFfRG_TEST}
     -DDiFfRG_DOCUMENTATION:BOOL=${DiFfRG_DOCUMENTATION}

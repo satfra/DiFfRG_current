@@ -1,0 +1,21 @@
+# Keep the Docker build context (the repo root, COPY . /DiFfRG) small: exclude
+# build trees, caches, VCS metadata and other host-only artifacts. Anything the
+# in-container CMake build needs (dependencies/, DiFfRG/, patches/, CMakeLists)
+# is fetched fresh or lives in the tracked tree.
+build/
+bin/
+**/bin/
+**/build/
+.git/
+.venv/
+.cache/
+.idea/
+.devcontainer/
+containers/logs/
+thoughts/
+.claude/
+slurm-*.out
+*.log
+**/*.o
+**/*.a
+**/__pycache__/

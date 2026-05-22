@@ -1,14 +1,32 @@
-FROM "ubuntu:24.04" as base
-LABEL type=diffrg-image
+# DiFfRG build test on Ubuntu 24.04 (CPU-only).
+# Build from the repository root as context, e.g. via containers/test_all.sh:
+#   docker buildx build -t diffrg-test-ubuntu24.04 -f containers/Base/ubuntu24.04 .
+FROM ubuntu:24.04
+LABEL type=diffrg-build-test
 
-# set a directory for the app
-WORKDIR /
+ARG threads=4
 ARG DEBIAN_FRONTEND=noninteractive
 
-COPY ../deploy.sh /deploy.sh
+# Toolchain (cmake 3.28, gcc 13 -> C++20) + the system dependencies DiFfRG can
+# consume directly: GSL and LAPACK/BLAS are required; Boost/TBB/HDF5/SUNDIALS are
+# auto-detected and used when new enough, otherwise the bundled copies are built.
+RUN apt-get -y update && apt-get -y install --no-install-recommends \
+        git cmake build-essential gfortran \
+        libopenblas-dev libgsl-dev \
+        libboost-all-dev libtbb-dev libhdf5-dev libsundials-dev \
+        doxygen graphviz python3 patch ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-# install dependencies
-RUN apt-get -y update
-RUN apt-get -y install git cmake libopenblas-dev build-essential python3 doxygen graphviz libgsl-dev
-# install DiFfRG
-RUN bash deploy.sh
+WORKDIR /DiFfRG
+COPY . /DiFfRG
+
+# Superbuild (deps + library), then compile the test suite in the library
+# sub-build. The install prefix is left at the default ($HOME/.local/share/DiFfRG,
+# i.e. /root/.local/share/DiFfRG here). ctest is run separately
+# (containers/test_all.sh) so its output lands in its own log. GPU/MPI off.
+RUN cmake -S /DiFfRG -B /build \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DGPU=OFF -DMPI=OFF -DDiFfRG_DOCUMENTATION=OFF \
+    && cmake --build /build -j ${threads} \
+    && cmake -DDiFfRG_TEST=ON /build/DiFfRG/src/DiFfRG-build \
+    && cmake --build /build/DiFfRG/src/DiFfRG-build -j ${threads}
