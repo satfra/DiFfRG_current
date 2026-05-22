@@ -85,6 +85,14 @@ namespace DiFfRG
     double spatial_lo_time = t_start;
     double spatial_hi_time = t_start;
 
+    // Ring of the most recent *accepted* spatial checkpoints (time, converged state),
+    // kept at length <= 3 so the explicit RHS can interpolate the spatial coupling
+    // quadratically in time (O(dt^3)) instead of linearly. Bounded memory: at most three
+    // FEM vectors. Only converged accepted states are ever stored -- never a speculative
+    // Newton trial iterate.
+    std::vector<double> spatial_ckpt_times;
+    std::vector<dealii::Vector<double>> spatial_ckpts;
+
     using namespace boost::numeric::odeint;
 
     constexpr size_t Steps = 8;
@@ -111,15 +119,32 @@ namespace DiFfRG
 
       variable_dy_dealii = 0;
 
-      // linearly interpolate the spatial solution across the current segment so the
-      // coupling tracks the spatial trajectory instead of being pinned to one endpoint
-      double alpha = (spatial_hi_time > spatial_lo_time)
-                         ? (t - spatial_lo_time) / (spatial_hi_time - spatial_lo_time)
-                         : 1.;
-      alpha = std::clamp(alpha, 0., 1.);
-      spatial_y_dealii = spatial_lo;
-      spatial_y_dealii *= (1. - alpha);
-      spatial_y_dealii.add(alpha, spatial_hi);
+      // Interpolate the spatial solution in time across the accepted checkpoints so the
+      // coupling tracks the spatial trajectory. Quadratic (3-point Lagrange, O(dt^3)) once
+      // three checkpoints exist, falling back to linear / constant early on. The query is
+      // clamped into the stencil span, so this is always interpolation, never extrapolation.
+      const std::size_t nck = spatial_ckpt_times.size();
+      if (nck >= 3) {
+        const std::size_t i0 = nck - 3, i1 = nck - 2, i2 = nck - 1;
+        const double t0 = spatial_ckpt_times[i0], t1 = spatial_ckpt_times[i1], t2 = spatial_ckpt_times[i2];
+        const double tc = std::clamp(t, t0, t2);
+        const double L0 = ((tc - t1) * (tc - t2)) / ((t0 - t1) * (t0 - t2));
+        const double L1 = ((tc - t0) * (tc - t2)) / ((t1 - t0) * (t1 - t2));
+        const double L2 = ((tc - t0) * (tc - t1)) / ((t2 - t0) * (t2 - t1));
+        spatial_y_dealii = spatial_ckpts[i0];
+        spatial_y_dealii *= L0;
+        spatial_y_dealii.add(L1, spatial_ckpts[i1]);
+        spatial_y_dealii.add(L2, spatial_ckpts[i2]);
+      } else if (nck == 2) {
+        const double t0 = spatial_ckpt_times[0], t1 = spatial_ckpt_times[1];
+        double alpha = (t1 > t0) ? (t - t0) / (t1 - t0) : 1.;
+        alpha = std::clamp(alpha, 0., 1.);
+        spatial_y_dealii = spatial_ckpts[0];
+        spatial_y_dealii *= (1. - alpha);
+        spatial_y_dealii.add(alpha, spatial_ckpts[1]);
+      } else {
+        spatial_y_dealii = spatial_ckpts.empty() ? spatial_lo : spatial_ckpts.back();
+      }
 
       assembler->set_time(t);
       assembler->residual_variables(variable_dy_dealii, variable_y_dealii, spatial_y_dealii);
@@ -179,7 +204,10 @@ namespace DiFfRG
     Eigen::VectorXd dv_prev_committed;
     double t_prev_committed = -std::numeric_limits<double>::infinity();
     bool have_prev_dv = false;
-    double cur_dt = expl.dt;
+    // Honour the user's explicit-step cap, exactly as the RK path does. Set once and held
+    // fixed: the ABM multistep order requires a uniform dt across its history, so cur_dt
+    // must never change after this point.
+    const double cur_dt = std::min(expl.dt, expl.maximal_dt);
 
     // Linearly interpolate the buffered trajectory to time t (clamped to the buffer range).
     auto interpolate_buffer = [&](VectorType &variable_y, const double t) {
@@ -243,37 +271,59 @@ namespace DiFfRG
       }
     };
 
-    // Re-integrate the explicit variables forward from the last committed time to time
-    // `t` -- which is required to be the endpoint of an *accepted* IDA trial step --
-    // using `accepted_spatial` as the spatial solution at `t`. The spatial solution is
-    // linearly interpolated across the segment between `spatial_lo` (at `t_committed`)
-    // and `accepted_spatial` (at `t`), both of which are converged values, so the
-    // explicit integration sees a faithful spatial trajectory and never speculative
-    // intermediate Newton iterates.
-    auto commit_segment_to = [&](const dealii::Vector<double> &accepted_spatial, const double t) {
-      spatial_hi = accepted_spatial;
-      spatial_hi_time = t;
-      // spatial_lo / spatial_lo_time were left at the previous committed point and are
-      // the correct left endpoint for this segment.
-      variable_sol = variable_buffer.back();
+    // Push an accepted spatial checkpoint (converged state at an accepted time) onto the
+    // ring, keeping at most the three most recent. Consumed by get_variable_residual for
+    // the quadratic-in-time spatial interpolation.
+    auto push_checkpoint = [&](const double t, const dealii::Vector<double> &S) {
+      spatial_ckpt_times.push_back(t);
+      spatial_ckpts.push_back(S);
+      if (spatial_ckpt_times.size() > 3) {
+        spatial_ckpt_times.erase(spatial_ckpt_times.begin());
+        spatial_ckpts.erase(spatial_ckpts.begin());
+      }
+    };
+
+    // Advance the ABM integrator in uniform cur_dt steps while a *whole* step still fits
+    // inside [step_time, limit]. Never overshoots: the trailing gap (< cur_dt) is left to
+    // be served by interpolation/prediction. Every do_step uses the same cur_dt and the
+    // same RHS lambda, so the multistep history stays contiguous at uniform step size --
+    // which is what keeps ABM at its design order. No reset() on this (accepted) path.
+    auto advance_abm_to = [&](const double limit) {
       double step_time = variable_buffer_times.back();
-      // The multistep history is stitched across consecutive accepted segments: the
-      // residual function is the same lambda and the segments are contiguous in time, so
-      // ABM keeps its design order. The history is only reset on a rollback path (which
-      // we never exercise here -- rejected trials never make it into the buffer).
-      while (step_time < t && !is_close(step_time, t)) {
+      variable_sol = variable_buffer.back();
+      while (step_time + cur_dt <= limit + 1e-12 * std::max(1.0, std::abs(limit))) {
         variable_stepper.do_step(get_variable_residual, variable_sol, step_time, cur_dt);
         step_time += cur_dt;
         variable_buffer.push_back(variable_sol);
         variable_buffer_times.push_back(step_time);
       }
-      // Slide the committed point forward
-      t_committed = t;
-      spatial_lo = accepted_spatial;
-      spatial_lo_time = t;
-      // Refresh the predictor used by the next speculative Newton solve. This costs
-      // zero dt_variables calls -- the slope is read off the buffer.
-      refresh_dv_committed_from_buffer();
+    };
+
+    // Extend the accepted (pending) window to time `t` -- the endpoint of an *accepted*
+    // IDA trial step, with `accepted_spatial` its converged spatial state -- and, once at
+    // least one whole cur_dt fits, drain uniform ABM steps across it. The committed point
+    // is slid to the last ABM grid time actually produced (NOT the raw IDA endpoint `t`),
+    // which keeps the invariant t_committed == variable_buffer_times.back() and stops the
+    // explicit trajectory from desyncing or freezing relative to IDA. While the window is
+    // still shorter than cur_dt nothing is appended: accepted time simply accumulates over
+    // successive calls -- the documented `t_pending` batching -- until a full step fits.
+    auto commit_segment_to = [&](const dealii::Vector<double> &accepted_spatial, const double t) {
+      t_pending = t;
+      spatial_pending = accepted_spatial;
+      spatial_hi = accepted_spatial;
+      spatial_hi_time = t;
+      if (variable_buffer_times.back() + cur_dt <= t_pending + 1e-12 * std::max(1.0, std::abs(t_pending))) {
+        // Make the window's right endpoint available to the spatial interpolation before
+        // integrating across it, then drain whole uniform steps.
+        push_checkpoint(t_pending, spatial_pending);
+        advance_abm_to(t_pending);
+        // Slide the committed point to the last grid time we actually produced.
+        t_committed = variable_buffer_times.back();
+        spatial_lo = spatial_pending;
+        spatial_lo_time = t_committed;
+        // Refresh the predictor used by the next speculative Newton solve.
+        refresh_dv_committed_from_buffer();
+      }
     };
 
     // Serve the explicit variables at time t for a speculative IDA call (residual /
@@ -299,6 +349,9 @@ namespace DiFfRG
         spatial_pending = spatial_y;
         spatial_lo_time = t;
         spatial_hi_time = t;
+        // Seed the checkpoint ring with the (accepted) initial condition so the spatial
+        // interpolation has a left endpoint.
+        push_checkpoint(t, spatial_y);
         // Seed the predictor with a real dv estimate at the initial condition; this is
         // the only dt_variables call that does not double up with one inside an ABM
         // substep.
@@ -353,7 +406,16 @@ namespace DiFfRG
         commit_segment_to(spatial_y, t);
         if (t > frontier) frontier = t;
       }
-      interpolate_buffer(variable_y, t);
+      // Serve v at t. If t lies within the committed buffer, interpolate it; the trailing
+      // remainder (< cur_dt) that was intentionally left un-stepped is served by the
+      // quadratic predictor (O(dt^3)) rather than the clamped buffer value, which would
+      // otherwise lag by up to cur_dt at output points and at t_stop.
+      if (t > variable_buffer_times.back() && !is_close(t, variable_buffer_times.back())) {
+        eval_predictor(variable_ret, t);
+        eigen_to_dealii(variable_ret, variable_y);
+      } else {
+        interpolate_buffer(variable_y, t);
+      }
       assembler->set_time(t);
     };
 
