@@ -285,7 +285,7 @@ namespace
 
   class QuarkMesonKTModel : public def::AbstractModel<QuarkMesonKTModel, Components>,
                             public def::fRG,
-                            public def::FVDefaultBoundaries<QuarkMesonKTModel>,
+                            public def::OriginShiftedOddLinearExtrapolationBoundaries<QuarkMesonKTModel>,
                             public ConstrainExplicitBreakingOrigin<QuarkMesonKTModel>,
                             public def::AD<QuarkMesonKTModel>
   {
@@ -300,6 +300,12 @@ namespace
     {
       values[0] = PaperLitimParameters::m2Phi * x[0] + PaperLitimParameters::lambdaPhi * std::pow(x[0], 3) -
                   PaperLitimParameters::cSigma;
+    }
+
+    template <typename NT, std::size_t n_components> std::array<NT, n_components> origin_odd_reflection_values() const
+    {
+      static_assert(n_components == 1, "QuarkMesonKTModel expects one FE function.");
+      return {NT(-PaperLitimParameters::cSigma)};
     }
 
     void set_time(const double t_)
@@ -454,6 +460,7 @@ namespace
     const auto &support_points = discretization.get_support_points();
     REQUIRE(support_points.size() == n_cells);
     initialize_exact_cell_averages(state, support_points);
+    discretization.get_constraints().distribute(state.spatial_data());
 
     time_stepper.run(&state, 0.0, final_time);
 
@@ -587,6 +594,28 @@ TEST_CASE("QM initial cell averages reconstruct diffusion second derivative on i
   CHECK(max_side_mismatch < 1.0e-12);
   CHECK(max_fv_error < 2.0e-9);
   CHECK(max_pointwise_offset_error < 2.0e-9);
+}
+
+TEST_CASE("QM initialized flow state satisfies the explicit-breaking origin constraint",
+          "[FV][KT][QuarkMeson][regression][origin-constraint]")
+{
+  kt_regression::ensure_logger();
+  kt_regression::ensure_diffrg_initialized();
+
+  const JSONValue json = make_json(0.0);
+  QuarkMesonKTModel model(json);
+  Mesh mesh(make_mesh_config());
+  Discretization discretization(mesh, json);
+  [[maybe_unused]] ExactJacobianAssembler<QuarkMesonKTModel> assembler(discretization, model, json);
+  FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+
+  const auto &support_points = discretization.get_support_points();
+  REQUIRE(support_points.size() == n_cells);
+  initialize_exact_cell_averages(state, support_points);
+  discretization.get_constraints().distribute(state.spatial_data());
+
+  CHECK(state.spatial_data()[0] == Catch::Approx(-PaperLitimParameters::cSigma).margin(1.0e-14));
 }
 
 TEST_CASE("KT quark-meson LPA Litim flow reaches final time with exact TVD Jacobian",

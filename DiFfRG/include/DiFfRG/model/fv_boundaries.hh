@@ -81,8 +81,8 @@ namespace DiFfRG
      *
      * The strategy currently targets one-dimensional FV domains, i.e. a single field-space direction.
      */
-    template <typename Model> class OriginOddLinearExtrapolationBoundaries : public FVDefaultBoundaries<Model>
-    {
+	    template <typename Model> class OriginOddLinearExtrapolationBoundaries : public FVDefaultBoundaries<Model>
+	    {
       static bool is_lower_boundary_1d(const Point<1> &x_face, const BoundaryStencilPoints<1> &x_stencil)
       {
         return x_face[0] <= x_stencil[BoundaryStencilIndex::physical_cell][0];
@@ -119,8 +119,58 @@ namespace DiFfRG
           u_stencil[upper_outer][c] =
               NumberType(3.0) * u_stencil[physical_cell][c] - NumberType(2.0) * u_stencil[lower_inner][c];
         }
-        return true;
-      }
-    };
-  } // namespace def
-} // namespace DiFfRG
+	        return true;
+	      }
+	    };
+
+	    /**
+	     * @brief FV boundary strategy using odd reflection around a model-provided origin value.
+	     *
+	     * This mirrors `u - b` oddly at the lower boundary and keeps affine extrapolation at the upper boundary.
+	     */
+	    template <typename Model> class OriginShiftedOddLinearExtrapolationBoundaries : public FVDefaultBoundaries<Model>
+	    {
+	      static bool is_lower_boundary_1d(const Point<1> &x_face, const BoundaryStencilPoints<1> &x_stencil)
+	      {
+	        return x_face[0] <= x_stencil[BoundaryStencilIndex::physical_cell][0];
+	      }
+
+	    public:
+	      template <int dim, typename NumberType, size_t n_components>
+	      bool apply_boundary_stencil(BoundaryStencilValues<dim, NumberType, n_components> &u_stencil,
+	                                  BoundaryStencilPoints<dim> &x_stencil, const Point<dim> &x_face) const
+	      {
+	        static_assert(dim == 1, "OriginShiftedOddLinearExtrapolationBoundaries currently supports only 1D FV domains.");
+
+	        const bool lower_boundary = is_lower_boundary_1d(x_face, x_stencil);
+	        using namespace BoundaryStencilIndex;
+	        const double delta = lower_boundary ? (x_stencil[upper_inner][0] - x_stencil[physical_cell][0])
+	                                            : (x_stencil[physical_cell][0] - x_stencil[lower_inner][0]);
+
+	        if (lower_boundary) {
+	          const auto origin_values =
+	              static_cast<const Model &>(*this).template origin_odd_reflection_values<NumberType, n_components>();
+
+	          x_stencil[lower_inner][0] = x_stencil[physical_cell][0] - delta;
+	          x_stencil[lower_outer][0] = x_stencil[physical_cell][0] - 2.0 * delta;
+	          for (size_t c = 0; c < n_components; ++c) {
+	            const NumberType b = origin_values[c];
+	            u_stencil[lower_inner][c] = NumberType(2.0) * b - u_stencil[upper_inner][c];
+	            u_stencil[lower_outer][c] = NumberType(2.0) * b - u_stencil[upper_outer][c];
+	            u_stencil[physical_cell][c] = b;
+	          }
+	          return true;
+	        }
+
+	        x_stencil[upper_inner][0] = x_stencil[physical_cell][0] + delta;
+	        x_stencil[upper_outer][0] = x_stencil[physical_cell][0] + 2.0 * delta;
+	        for (size_t c = 0; c < n_components; ++c) {
+	          u_stencil[upper_inner][c] = NumberType(2.0) * u_stencil[physical_cell][c] - u_stencil[lower_inner][c];
+	          u_stencil[upper_outer][c] =
+	              NumberType(3.0) * u_stencil[physical_cell][c] - NumberType(2.0) * u_stencil[lower_inner][c];
+	        }
+	        return true;
+	      }
+	    };
+	  } // namespace def
+	} // namespace DiFfRG
