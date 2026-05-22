@@ -2,9 +2,9 @@
   "physical": {
     "Lambda": 1.0,
     "N": 2.0,
-    "lambda2": 0.0024,
-    "lambda4": -0.3,
-    "lambda6": 1.0,
+    "lambda2": -0.1,
+    "lambda4": 50.0,
+    "lambda6": 0.0,
     "T": 1e-3
   },
   "integration": {
@@ -20,7 +20,7 @@
     "jacobian_quadrature_factor": 5E-1
   },
   "discretization": {
-    "fe_order": 4,
+    "fe_order": 2,
     "threads": 32,
     "batch_size": 8,
     "overintegration": 0,
@@ -29,7 +29,7 @@
     "EoM_max_iter": 100,
     "output_buffer_size": 100,
     "grid": {
-      "x_grid": "0:0.001:0.15, 0.15:0.025:1",
+      "x_grid": "0:1e-4:5e-3, 5e-3:5e-4:6e-3, 6e-3:1e-3:1.5e-2",
       "y_grid": "0:0.1:1",
       "z_grid": "0:0.1:1",
       "refine": 0

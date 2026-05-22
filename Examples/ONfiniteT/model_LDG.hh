@@ -95,7 +95,7 @@ public:
     const auto &fe_derivatives = get<"LDG1">(sol);
 
     const auto m2Pi = fe_functions[idxf("u")];
-    const auto m2Sigma = fe_functions[idxf("u")];// + 2. * rho * fe_derivatives[idxl("du")];
+    const auto m2Sigma = fe_functions[idxf("u")] + 2. * rho * fe_derivatives[idxl("du")];
 
     flow_equations.V.get(flux[idxf("u")][0], k, prm.N, prm.T, m2Pi, m2Sigma);
   }
