@@ -3,6 +3,7 @@ import numpy as np
 from diffrg_fv_diagnostics.oscillation_trace import (
     cell_curvature_indicator,
     dominant_residual_near_sigma,
+    min_advection_convexity_margin,
     min_convexity_margin,
     select_trace_rows,
     trace_series,
@@ -26,6 +27,20 @@ def test_min_convexity_margin_detects_face_and_side():
     assert margin.sigma == 0.023
     np.testing.assert_allclose(margin.value, 0.01)
     np.testing.assert_allclose(margin.slope, -0.35)
+
+
+def test_min_advection_convexity_margin_detects_face_side_and_origin_singularity():
+    x = np.array([0.0, 0.022, 0.023])
+    minus = (x, np.array([-0.001695, -0.002, -0.010]))
+    plus = (x, np.array([-0.001695, -0.004, -0.003]))
+
+    margin = min_advection_convexity_margin(0.6, 0.0, 0.001695, minus, plus)
+
+    assert margin.kind == "advection"
+    assert margin.side == "minus"
+    assert margin.sigma == 0.023
+    assert margin.singular_count == 2
+    np.testing.assert_allclose(margin.value, 0.36 + (-0.010 + 0.001695) / 0.023)
 
 
 def test_cell_curvature_indicator_finds_largest_second_difference():
@@ -60,6 +75,8 @@ def test_trace_series_combines_convexity_curvature_jump_and_residuals():
     maps = {
         "face_du_dx_minus": (x_face, np.array([-0.10, -0.35, -0.20])),
         "face_du_dx_plus": (x_face, np.array([-0.11, -0.20, -0.21])),
+        "face_u_minus": (x_face, np.array([0.1, 0.2, 0.3])),
+        "face_u_plus": (x_face, np.array([0.1, 0.2, 0.3])),
         "cell_u": (x_cell, np.array([0.0, 0.0, 1.0, 0.0])),
         "cell_advection_contribution": (x_cell, np.array([0.0, 0.1, 0.0, 0.0])),
         "cell_diffusion_contribution": (x_cell, np.array([0.0, 0.0, -0.8, 0.0])),
@@ -68,6 +85,7 @@ def test_trace_series_combines_convexity_curvature_jump_and_residuals():
     point = trace_series(DummySeries(7, 0.0), 0.6, lambda name, _series: maps[name])
 
     assert point.number == 7
+    assert point.critical_margin.kind == "diffusion"
     assert point.convexity.side == "minus"
     assert point.convexity.sigma == 0.023
     np.testing.assert_allclose(point.slope_jump, 0.15)
@@ -75,16 +93,38 @@ def test_trace_series_combines_convexity_curvature_jump_and_residuals():
     assert point.dominant_residual.name == "cell_diffusion_contribution"
 
 
+def test_trace_series_selects_advection_margin_when_it_is_more_dangerous():
+    x_face = np.array([0.022, 0.023, 0.024])
+    x_cell = np.array([0.021, 0.022, 0.023, 0.024])
+    maps = {
+        "face_du_dx_minus": (x_face, np.array([-0.10, -0.12, -0.20])),
+        "face_du_dx_plus": (x_face, np.array([-0.11, -0.10, -0.21])),
+        "face_u_minus": (x_face, np.array([0.1, -0.010, 0.3])),
+        "face_u_plus": (x_face, np.array([0.1, 0.2, 0.3])),
+        "cell_u": (x_cell, np.array([0.0, 0.0, 1.0, 0.0])),
+    }
+
+    point = trace_series(DummySeries(8, 0.0), 0.6, lambda name, _series: maps[name], advection_offset=0.001695)
+
+    assert point.critical_margin.kind == "advection"
+    assert point.critical_margin.sigma == 0.023
+    np.testing.assert_allclose(point.critical_margin.value, 0.36 + (-0.010 + 0.001695) / 0.023)
+
+
 def test_select_trace_rows_prefers_first_margin_crossings():
     points = [
         trace_series(DummySeries(0, 0.0), 0.6, lambda name, _series: {
             "face_du_dx_minus": (np.array([0.0]), np.array([-0.1])),
             "face_du_dx_plus": (np.array([0.0]), np.array([-0.1])),
+            "face_u_minus": (np.array([1.0]), np.array([1.0])),
+            "face_u_plus": (np.array([1.0]), np.array([1.0])),
             "cell_u": (np.array([0.0, 1.0, 2.0]), np.zeros(3)),
         }[name]),
         trace_series(DummySeries(1, 0.0), 0.6, lambda name, _series: {
             "face_du_dx_minus": (np.array([0.0]), np.array([-0.31])),
             "face_du_dx_plus": (np.array([0.0]), np.array([-0.1])),
+            "face_u_minus": (np.array([1.0]), np.array([1.0])),
+            "face_u_plus": (np.array([1.0]), np.array([1.0])),
             "cell_u": (np.array([0.0, 1.0, 2.0]), np.zeros(3)),
         }[name]),
     ]

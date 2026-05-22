@@ -22,6 +22,16 @@ uv run --project DiFfRG/python/fv_diagnostics diffrg-fv-dashboard \
 ```
 
 This prints the first dangerous convexity-margin slices and adds history panels for
-`min(k^2 + m_sigma^2)` and the cell oscillation indicator. If the matching residual
+the critical `k^2 + m^2` margin and the cell oscillation indicator. If the matching residual
 diagnostic file is next to the reconstruction file, the table also reports the
 dominant local residual contribution.
+
+For quark-meson diagnostics, the advection/pion margin uses
+`k^2 + (u + c_sigma) / sigma`. New HDF5 files provide `c_sigma` through
+metadata; for older files pass it explicitly:
+
+```bash
+uv run --project DiFfRG/python/fv_diagnostics diffrg-fv-dashboard \
+  /path/to/run_fv_reconstruction_diagnostics.h5 \
+  --oscillation-trace --advection-offset 0.001695
+```

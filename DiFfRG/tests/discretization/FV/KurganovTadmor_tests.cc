@@ -192,6 +192,9 @@ TEST_CASE("KT FV reconstruction diagnostics write expected HDF5 maps", "[FV][KT]
 
   auto file = DiFfRG::hdf5::File::open(hdf5_file.string(), DiFfRG::hdf5::Access::ReadOnly);
   auto root = file.root();
+  const auto configuration_json = root.read_attribute<std::string>("configuration_json");
+  CHECK(configuration_json.find("\"physical\"") != std::string::npos);
+  CHECK(configuration_json.find("\"Lambda\"") != std::string::npos);
   REQUIRE(root.has_group("maps"));
   REQUIRE(root.has_group("coordinates"));
   auto maps = root.open_group("maps");
