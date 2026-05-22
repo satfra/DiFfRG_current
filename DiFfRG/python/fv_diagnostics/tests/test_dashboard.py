@@ -9,12 +9,14 @@ from diffrg_fv_diagnostics.dashboard import (
     MapSpec,
     autoscale_y,
     available_panels,
+    cell_boundary_coordinates,
     cell_interval_edges,
     choose_series,
     metadata_advection_offset,
     parse_x_range,
     resolve_advection_offset,
     Series,
+    set_cell_boundary_grid,
     warning_line_data,
     warning_line_label,
     warning_line_value,
@@ -131,6 +133,77 @@ def test_cell_interval_edges_infers_missing_boundaries():
     left, right = cell_interval_edges(np.array([0.5, 1.5, 2.5]), None)
     np.testing.assert_allclose(left, [0.0, 1.0, 2.0])
     np.testing.assert_allclose(right, [1.0, 2.0, 3.0])
+
+
+def write_map(h5: h5py.File, name: str, coordinates: list[float]) -> None:
+    group = h5.create_group(f"maps/{name}/0")
+    group.create_dataset("coordinates", data=np.asarray(coordinates, dtype=float))
+    group.create_dataset("data", data=np.zeros(len(coordinates), dtype=float))
+
+
+def test_cell_boundary_coordinates_prefers_face_coordinates(tmp_path):
+    path = tmp_path / "diagnostic.h5"
+    with h5py.File(path, "w") as h5:
+        write_map(h5, "cell_u", [0.5, 1.5])
+        write_map(h5, "face_u_minus", [0.0, 1.0, 2.0])
+
+    with h5py.File(path, "r") as h5:
+        specs = {
+            "cell_u": MapSpec(file_index=0, file_path=path, name="cell_u"),
+            "face_u_minus": MapSpec(file_index=0, file_path=path, name="face_u_minus"),
+        }
+
+        boundaries = cell_boundary_coordinates([h5], specs, Series(number=0, time=0.0))
+
+    np.testing.assert_allclose(boundaries, [0.0, 1.0, 2.0])
+
+
+def test_cell_boundary_coordinates_infers_residual_only_boundaries(tmp_path):
+    path = tmp_path / "diagnostic.h5"
+    with h5py.File(path, "w") as h5:
+        write_map(h5, "cell_total_residual", [0.5, 1.5, 2.5])
+
+    with h5py.File(path, "r") as h5:
+        specs = {
+            "cell_total_residual": MapSpec(file_index=0, file_path=path, name="cell_total_residual"),
+        }
+
+        boundaries = cell_boundary_coordinates([h5], specs, Series(number=0, time=0.0))
+
+    np.testing.assert_allclose(boundaries, [0.0, 1.0, 2.0, 3.0])
+
+
+def test_cell_boundary_coordinates_uses_face_only_coordinates(tmp_path):
+    path = tmp_path / "diagnostic.h5"
+    with h5py.File(path, "w") as h5:
+        write_map(h5, "face_diffusion_flux", [0.0, 1.0, 2.0])
+
+    with h5py.File(path, "r") as h5:
+        specs = {
+            "face_diffusion_flux": MapSpec(file_index=0, file_path=path, name="face_diffusion_flux"),
+        }
+
+        boundaries = cell_boundary_coordinates([h5], specs, Series(number=0, time=0.0))
+
+    np.testing.assert_allclose(boundaries, [0.0, 1.0, 2.0])
+
+
+def test_set_cell_boundary_grid_uses_axis_spanning_collection():
+    figure, axis = plt.subplots()
+    try:
+        collection = set_cell_boundary_grid(axis, np.array([0.0, 1.0, 2.0]))
+
+        assert collection.get_gid() == "cell-boundary-grid"
+        assert collection in axis.collections
+        assert len(collection.get_segments()) == 3
+
+        set_cell_boundary_grid(axis, np.array([0.5, 1.5]), collection)
+
+        segments = collection.get_segments()
+        assert len(segments) == 2
+        np.testing.assert_allclose(segments[0], [[0.5, 0.0], [0.5, 1.0]])
+    finally:
+        plt.close(figure)
 
 
 def test_available_panels_synthesizes_cell_reconstruction_panel_for_legacy_maps():

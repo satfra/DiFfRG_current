@@ -22,6 +22,7 @@ from typing import Iterable
 
 import h5py
 import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
 from matplotlib.widgets import RangeSlider, Slider
 import numpy as np
 
@@ -60,6 +61,19 @@ MAP_NAMES = RECONSTRUCTION_MAP_NAMES + RESIDUAL_CONTRIBUTION_MAP_NAMES
 DEFAULT_LAMBDA_UV = 0.6
 WARNING_LINE_PANELS = {"Cell state and reconstruction", "Face slopes"}
 CELL_STATE_PANEL_TITLE = "Cell state and reconstruction"
+CELL_COORDINATE_MAP_NAMES = (
+    "cell_u",
+    "cell_du_dx",
+) + RESIDUAL_CONTRIBUTION_MAP_NAMES
+FACE_COORDINATE_MAP_NAMES = (
+    "face_u_minus",
+    "face_u_plus",
+    "face_du_dx_minus",
+    "face_du_dx_plus",
+    "face_advection_flux",
+    "face_diffusion_flux",
+    "face_total_flux",
+)
 
 
 @dataclass(frozen=True)
@@ -280,6 +294,54 @@ def cell_interval_edges(cell_x: np.ndarray, face_x: np.ndarray | None) -> tuple[
     edges[0] = cell_x[0] - 0.5 * (cell_x[1] - cell_x[0])
     edges[-1] = cell_x[-1] + 0.5 * (cell_x[-1] - cell_x[-2])
     return edges[:-1], edges[1:]
+
+
+def read_map_coordinates(h5_files: list[h5py.File], spec_by_name: dict[str, MapSpec], map_name: str,
+                         series: Series) -> np.ndarray:
+    spec = spec_by_name[map_name]
+    series_group = h5_files[spec.file_index][f"maps/{spec.name}/{series.number}"]
+    return read_coordinates(series_group)
+
+
+def cell_boundary_coordinates(h5_files: list[h5py.File], spec_by_name: dict[str, MapSpec],
+                              series: Series) -> np.ndarray:
+    face_x = None
+    for map_name in FACE_COORDINATE_MAP_NAMES:
+        if map_name in spec_by_name:
+            face_x = read_map_coordinates(h5_files, spec_by_name, map_name, series)
+            break
+
+    cell_x = None
+    for map_name in CELL_COORDINATE_MAP_NAMES:
+        if map_name in spec_by_name:
+            cell_x = read_map_coordinates(h5_files, spec_by_name, map_name, series)
+            break
+    if cell_x is None or len(cell_x) == 0:
+        if face_x is None:
+            return np.empty(0, dtype=float)
+        return face_x[np.isfinite(face_x)]
+
+    if face_x is not None and len(face_x) != len(cell_x) + 1:
+        face_x = None
+
+    left_x, right_x = cell_interval_edges(cell_x, face_x)
+    boundaries = np.concatenate((left_x[:1], right_x))
+    return boundaries[np.isfinite(boundaries)]
+
+
+def cell_boundary_segments(boundaries: np.ndarray) -> list[list[tuple[float, float]]]:
+    return [[(float(boundary), 0.0), (float(boundary), 1.0)] for boundary in boundaries]
+
+
+def set_cell_boundary_grid(axis: plt.Axes, boundaries: np.ndarray,
+                           collection: LineCollection | None = None) -> LineCollection:
+    if collection is None:
+        collection = LineCollection([], transform=axis.get_xaxis_transform(), colors="0.65",
+                                    linestyles=":", linewidths=0.6, alpha=0.45, zorder=0.5)
+        collection.set_gid("cell-boundary-grid")
+        axis.add_collection(collection, autolim=False)
+    collection.set_segments(cell_boundary_segments(boundaries))
+    return collection
 
 
 def read_curve_data(h5_files: list[h5py.File], spec_by_name: dict[str, MapSpec], map_name: str, series: Series,
@@ -588,12 +650,17 @@ def plot_maps(h5_paths: list[Path], selected_series: Iterable[Series], component
         time_lines: list[tuple[plt.Axes, str, object]] = []
         warning_lines: list[tuple[plt.Axes, str, tuple[float, float], object]] = []
         diagnostic_markers: list[tuple[plt.Axes, object]] = []
+        boundary_grids: list[tuple[plt.Axes, LineCollection]] = []
         interactive = output is None
 
         for axis, panel in zip(data_axes, panels):
             series_to_plot = selected_series[:1] if interactive else selected_series
             axis_x_min = np.inf
             axis_x_max = -np.inf
+            boundaries = cell_boundary_coordinates(h5_files, spec_by_name, series_to_plot[0])
+            boundary_grid = set_cell_boundary_grid(axis, boundaries)
+            if interactive:
+                boundary_grids.append((axis, boundary_grid))
             for curve in panel.curves:
                 for series_index, series in enumerate(series_to_plot):
                     x, y = read_curve_data(h5_files, spec_by_name, curve.map_name, series, component)
@@ -633,7 +700,7 @@ def plot_maps(h5_paths: list[Path], selected_series: Iterable[Series], component
             axis.set_title(panel.title)
             axis.set_xlabel(r"$\sigma$")
             axis.set_ylabel(panel.ylabel)
-            axis.grid(True, alpha=0.25)
+            axis.grid(True, axis="y", alpha=0.25)
             axis.legend(loc="best", fontsize="small", frameon=False)
 
         if trace_points:
@@ -682,6 +749,9 @@ def plot_maps(h5_paths: list[Path], selected_series: Iterable[Series], component
                     if point is not None and np.isfinite(point.critical_margin.sigma):
                         marker.set_xdata([point.critical_margin.sigma, point.critical_margin.sigma])
                     autoscale_y(axis, axis.get_xlim())
+                for axis, boundary_grid in boundary_grids:
+                    boundaries = cell_boundary_coordinates(h5_files, spec_by_name, series)
+                    set_cell_boundary_grid(axis, boundaries, boundary_grid)
                 title.set_text(f"{diagnostic_title(h5_paths, map_names)}, component {component} - "
                                f"{format_label(series)}")
                 fig.canvas.draw_idle()
