@@ -17,8 +17,10 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <limits>
+#include <numbers>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -37,7 +39,7 @@ namespace
   constexpr double sigma_min = 0.0;
   constexpr double sigma_max_over_lambda = 1.5;
   constexpr double sigma_max = sigma_max_over_lambda * lambda_uv;
-  constexpr double delta_sigma = 3.0e-3;  // N = (sigma_max - sigma_min)/delta_sigma = 300 cells
+  constexpr double delta_sigma = 3.0e-3; // N = (sigma_max - sigma_min)/delta_sigma = 300 cells
   constexpr std::size_t n_cells = static_cast<std::size_t>((sigma_max - sigma_min) / delta_sigma + 0.5);
   constexpr double grid_tol = 1.0e-12;
 
@@ -82,13 +84,44 @@ namespace
       FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor, FV::KurganovTadmor::MaxEigenvalueWaveSpeed,
                                     JacobianReconstructor>;
   using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
+  using ExplicitTimeStepper = TimeStepperBoostRK54<VectorType, SparseMatrixType, dim>;
 
   double grid_spacing() { return delta_sigma; }
+
+  double stable_coth(const double x)
+  {
+    if (std::abs(x) < 1.0e-4) return 1.0 / x + x / 3.0 - x * x * x / 45.0;
+    return 1.0 / std::tanh(x);
+  }
+
+  double analytic_sigma_litim_loop(const double k, const double m2_sigma, const double T)
+  {
+    const double energy = std::sqrt(k * k + m2_sigma);
+    const double thermal_factor = stable_coth(energy / (2.0 * T));
+    return std::pow(k, 5) * thermal_factor / (12.0 * std::numbers::pi * std::numbers::pi * energy);
+  }
+
+  double relative_error(const double value, const double reference)
+  {
+    const double scale = std::max({1.0, std::abs(value), std::abs(reference)});
+    return std::abs(value - reference) / scale;
+  }
 
   double initial_potential(const double sigma)
   {
     return 0.5 * PaperLitimParameters::m2Phi * sigma * sigma +
            0.25 * PaperLitimParameters::lambdaPhi * std::pow(sigma, 4) - PaperLitimParameters::cSigma * sigma;
+  }
+
+  double initial_potential_second_derivative(const double sigma)
+  {
+    return PaperLitimParameters::m2Phi + 3.0 * PaperLitimParameters::lambdaPhi * sigma * sigma;
+  }
+
+  double finite_volume_second_derivative_at_face(const double face_sigma)
+  {
+    return initial_potential_second_derivative(face_sigma) +
+           0.5 * PaperLitimParameters::lambdaPhi * grid_spacing() * grid_spacing();
   }
 
   void log_bad_bosonic_mass_argument(const char *label, const double x, const double k, const double m2)
@@ -307,8 +340,7 @@ namespace
 
       const auto &fe_derivatives = get<1>(sol);
       const NT m2_sigma = fe_derivatives[0][0];
-      if constexpr (std::is_same_v<std::decay_t<NT>, double>)
-        log_bad_bosonic_mass_argument("sigma", x[0], k, m2_sigma);
+      if constexpr (std::is_same_v<std::decay_t<NT>, double>) log_bad_bosonic_mass_argument("sigma", x[0], k, m2_sigma);
 
       NT sigma_loop{};
       flows.sigma.get(sigma_loop, k, PaperLitimParameters::Nc, PaperLitimParameters::Nf, PaperLitimParameters::T,
@@ -341,7 +373,8 @@ namespace
     mutable QuarkMesonLitimFlows flows;
   };
 
-  JSONValue make_json(const double final_time)
+  JSONValue make_json(const double final_time, const double output_dt = 1.0e-1, const double explicit_dt = 1.0e-8,
+                      const double explicit_abs_tol = 1.0e-12, const double explicit_rel_tol = 1.0e-12)
   {
     return json::value(
         {{"physical", {{"Lambda", lambda_uv}}},
@@ -357,9 +390,13 @@ namespace
            {"EoM_max_iter", 0}}},
          {"timestepping",
           {{"final_time", final_time},
-           {"output_dt", final_time},
+           {"output_dt", output_dt},
            {"explicit",
-            {{"dt", 1.0e-8}, {"minimal_dt", 1.0e-12}, {"maximal_dt", 1.0}, {"abs_tol", 1.0e-12}, {"rel_tol", 1.0e-12}}},
+            {{"dt", explicit_dt},
+             {"minimal_dt", 1.0e-12},
+             {"maximal_dt", 1.0},
+             {"abs_tol", explicit_abs_tol},
+             {"rel_tol", explicit_rel_tol}}},
            {"implicit",
             {{"dt", 1.0e-9},
              {"minimal_dt", 1.0e-15},
@@ -367,7 +404,12 @@ namespace
              {"abs_tol", 1.0e-15},
              {"rel_tol", 1.0e-8},
              {"max_steps", 20000000}}}}},
-         {"output", {{"verbosity", 1}, {"vtk", false}, {"hdf5", false}}}});
+         {"output",
+          {{"verbosity", 1},
+           {"vtk", false},
+           {"hdf5", true},
+           {"fv_reconstruction_diagnostics", true},
+           {"fv_residual_contribution_diagnostics", true}}}});
   }
 
   Config::ConfigurationMesh<1> make_mesh_config()
@@ -390,19 +432,21 @@ namespace
     }
   }
 
-  template <typename AssemblerType> kt_regression::SampledProfile run_flow(const double final_time)
+  template <typename AssemblerType, typename TimeStepperType = ImplicitTimeStepper>
+  kt_regression::SampledProfile run_flow(const double final_time, const JSONValue &json,
+                                         const std::string &output_prefix = "quark_meson_kt_regression")
   {
     kt_regression::ensure_diffrg_initialized();
-    const JSONValue json = make_json(final_time);
     QuarkMesonKTModel model(json);
     Mesh mesh(make_mesh_config());
     Discretization discretization(mesh, json);
     AssemblerType assembler(discretization, model, json);
 
-    kt_regression::TemporaryDirectory tmp_dir("quark_meson_kt_regression");
-    DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), "quark_meson_kt_regression", "output", json);
+    kt_regression::TemporaryDirectory tmp_dir(output_prefix, false);
+    std::clog << "[QM DIAG] retaining output directory " << tmp_dir.path << '\n';
+    DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), output_prefix, "output", json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
-    ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+    TimeStepperType time_stepper(json, &assembler, &data_out, adaptor.get());
 
     FV::FlowingVariables<Discretization> state(discretization);
     state.interpolate(model);
@@ -416,7 +460,134 @@ namespace
     return kt_regression::sample_sorted_profile(state, discretization, grid_tol);
   }
 
+  template <typename AssemblerType, typename TimeStepperType = ImplicitTimeStepper>
+  kt_regression::SampledProfile run_flow(const double final_time)
+  {
+    const JSONValue json = make_json(final_time);
+    return run_flow<AssemblerType, TimeStepperType>(final_time, json);
+  }
+
 } // namespace
+
+TEST_CASE("QM sigma Litim diffusion loop matches analytic finite-T result near pole",
+          "[FV][KT][QuarkMeson][regression][litim-sigma-loop]")
+{
+  kt_regression::ensure_logger();
+  kt_regression::ensure_diffrg_initialized();
+
+  constexpr double t_problem = 0.00172622;
+  const double k = lambda_uv * std::exp(-t_problem);
+  const JSONValue json = make_json(t_problem);
+  QuarkMesonLitimFlows flows(json);
+  flows.set_k(k);
+  flows.set_T(PaperLitimParameters::T);
+
+  const std::array<double, 4> eps_values = {1.0e-2, 1.0e-4, 1.0e-6, 1.0e-8};
+
+  double max_relative_error = 0.0;
+  std::clog << "[QM sigma Litim loop] eps,m2_sigma,numeric,analytic,abs_error,rel_error\n";
+  for (const double eps : eps_values) {
+    const double m2_sigma = -k * k + eps;
+    double numeric = 0.0;
+    flows.sigma.get(numeric, k, PaperLitimParameters::Nc, PaperLitimParameters::Nf, PaperLitimParameters::T,
+                    PaperLitimParameters::muq, PaperLitimParameters::hPhi, m2_sigma);
+
+    const double analytic = analytic_sigma_litim_loop(k, m2_sigma, PaperLitimParameters::T);
+    const double abs_error = std::abs(numeric - analytic);
+    const double rel_error = relative_error(numeric, analytic);
+    max_relative_error = std::max(max_relative_error, rel_error);
+
+    std::clog << std::scientific << std::setprecision(16) << "[QM sigma Litim loop] " << eps << ',' << m2_sigma << ','
+              << numeric << ',' << analytic << ',' << abs_error << ',' << rel_error << '\n';
+
+    CAPTURE(eps, m2_sigma, numeric, analytic, abs_error, rel_error);
+    REQUIRE(std::isfinite(numeric));
+    REQUIRE(std::isfinite(analytic));
+    CHECK(rel_error < 1.0e-5);
+  }
+
+  CAPTURE(max_relative_error);
+  CHECK(max_relative_error < 1.0e-5);
+}
+
+TEST_CASE("QM initial cell averages reconstruct diffusion second derivative on interior faces",
+          "[FV][KT][QuarkMeson][regression][diffusion-reconstruction]")
+{
+  kt_regression::ensure_logger();
+  kt_regression::ensure_diffrg_initialized();
+
+  const JSONValue json = make_json(0.0);
+  QuarkMesonKTModel model(json);
+  Mesh mesh(make_mesh_config());
+  Discretization discretization(mesh, json);
+  FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+
+  const auto &support_points = discretization.get_support_points();
+  REQUIRE(support_points.size() == n_cells);
+  initialize_exact_cell_averages(state, support_points);
+
+  const auto &cell_averages = state.spatial_data();
+  REQUIRE(cell_averages.size() == support_points.size());
+
+  double max_side_mismatch = 0.0;
+  double max_fv_error = 0.0;
+  double max_pointwise_offset_error = 0.0;
+  std::size_t checked_faces = 0;
+
+  for (std::size_t upper_cell = 2; upper_cell + 1 < support_points.size(); ++upper_cell) {
+    const std::size_t lower_cell = upper_cell - 1;
+    const Point<dim> face(0.5 * (support_points[lower_cell][0] + support_points[upper_cell][0]));
+    const double face_sigma = face[0];
+
+    const std::array<Point<dim>, 2> lower_neighbors = {support_points[lower_cell - 1], support_points[upper_cell]};
+    const std::array<std::array<double, 1>, 2> lower_neighbor_values = {
+        std::array<double, 1>{cell_averages[lower_cell - 1]}, std::array<double, 1>{cell_averages[upper_cell]}};
+    const std::array<double, 1> lower_value = {cell_averages[lower_cell]};
+    const auto lower_gradient = Reconstructor::template compute_gradient_at_point<1>(
+        support_points[lower_cell], face, lower_value, lower_neighbors, lower_neighbor_values);
+
+    const std::array<Point<dim>, 2> upper_neighbors = {support_points[lower_cell], support_points[upper_cell + 1]};
+    const std::array<std::array<double, 1>, 2> upper_neighbor_values = {
+        std::array<double, 1>{cell_averages[lower_cell]}, std::array<double, 1>{cell_averages[upper_cell + 1]}};
+    const std::array<double, 1> upper_value = {cell_averages[upper_cell]};
+    const auto upper_gradient = Reconstructor::template compute_gradient_at_point<1>(
+        support_points[upper_cell], face, upper_value, upper_neighbors, upper_neighbor_values);
+
+    const double reconstructed_lower = lower_gradient[0][0];
+    const double reconstructed_upper = upper_gradient[0][0];
+    const double expected_from_cell_averages = (cell_averages[upper_cell] - cell_averages[lower_cell]) /
+                                               (support_points[upper_cell][0] - support_points[lower_cell][0]);
+    const double expected_fv = finite_volume_second_derivative_at_face(face_sigma);
+    const double expected_pointwise = initial_potential_second_derivative(face_sigma);
+    const double expected_pointwise_offset = 0.5 * PaperLitimParameters::lambdaPhi * grid_spacing() * grid_spacing();
+
+    const double side_mismatch = std::abs(reconstructed_lower - reconstructed_upper);
+    const double fv_error =
+        std::max(std::abs(reconstructed_lower - expected_fv), std::abs(reconstructed_upper - expected_fv));
+    const double pointwise_offset_error =
+        std::abs((reconstructed_lower - expected_pointwise) - expected_pointwise_offset);
+
+    max_side_mismatch = std::max(max_side_mismatch, side_mismatch);
+    max_fv_error = std::max(max_fv_error, fv_error);
+    max_pointwise_offset_error = std::max(max_pointwise_offset_error, pointwise_offset_error);
+    ++checked_faces;
+
+    CAPTURE(upper_cell, face_sigma, reconstructed_lower, reconstructed_upper, expected_from_cell_averages, expected_fv,
+            expected_pointwise);
+    CHECK(reconstructed_lower == Catch::Approx(expected_from_cell_averages).margin(1.0e-12));
+    CHECK(reconstructed_upper == Catch::Approx(expected_from_cell_averages).margin(1.0e-12));
+    CHECK(reconstructed_lower == Catch::Approx(expected_fv).margin(2.0e-9));
+    CHECK(reconstructed_upper == Catch::Approx(expected_fv).margin(2.0e-9));
+    CHECK(reconstructed_lower - expected_pointwise == Catch::Approx(expected_pointwise_offset).margin(2.0e-9));
+  }
+
+  CAPTURE(checked_faces, max_side_mismatch, max_fv_error, max_pointwise_offset_error);
+  CHECK(checked_faces == n_cells - 3);
+  CHECK(max_side_mismatch < 1.0e-12);
+  CHECK(max_fv_error < 2.0e-9);
+  CHECK(max_pointwise_offset_error < 2.0e-9);
+}
 
 TEST_CASE("KT quark-meson LPA Litim flow reaches final time with exact TVD Jacobian",
           "[FV][KT][QuarkMeson][regression][2601.23005]")
@@ -440,4 +611,19 @@ TEST_CASE("KT quark-meson LPA Litim flow reaches final time with first-order Jac
 
   for (const double value : first_order_profile.y)
     REQUIRE(std::isfinite(value));
+}
+
+TEST_CASE("KT quark-meson explicit RK exposes non-finite derivative near problematic region",
+          "[FV][KT][QuarkMeson][regression][2601.23005][explicit-rk][diagnostic]")
+{
+  kt_regression::ensure_logger();
+
+  constexpr double t_problem = 0.00172622;
+  constexpr double output_dt = 1.0e-5;
+  constexpr double explicit_final_time = t_problem + output_dt;
+  const JSONValue json = make_json(explicit_final_time, output_dt, 1.0e-8, 1.0e-10, 1.0e-10);
+
+  REQUIRE_THROWS_WITH((run_flow<ExactJacobianAssembler<QuarkMesonKTModel>, ExplicitTimeStepper>(
+                          explicit_final_time, json, "quark_meson_kt_explicit_regression")),
+                      Catch::Matchers::ContainsSubstring("dy is not finite"));
 }

@@ -1,14 +1,23 @@
 #include "DiFfRG/discretization/FV/assembler/KurganovTadmor.hh"
+#include "DiFfRG/discretization/FV/discretization.hh"
 #include "DiFfRG/model/model.hh"
 #include "catch2/catch_approx.hpp"
 #include "catch2/catch_test_macros.hpp"
+#include <DiFfRG/common/json.hh>
+#include <DiFfRG/discretization/data/data_output.hh>
 #include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
+#include <boilerplate/kt_models.hh>
 #include <autodiff/forward/real.hpp>
+#include <chrono>
 #include <cstddef>
 #include <deal.II/base/numbers.h>
 #include <deal.II/lac/vector.h>
 #include <deal.II/meshworker/mesh_loop.h>
+#include <filesystem>
 #include <oneapi/tbb/parallel_for_each.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/spdlog.h>
+#include <vector>
 
 // #include <petscvec.h>
 
@@ -39,6 +48,307 @@ public:
     F_i[idxf("u")][0] = u[0] * u[0] / 2.0 + x[0];
   }
 };
+
+class ResidualContributionModel
+    : public DiFfRG::def::AbstractModel<ResidualContributionModel, Components>,
+      public DiFfRG::def::Time,
+      public DiFfRG::def::LLFFlux<ResidualContributionModel>,
+      public DiFfRG::def::FlowBoundaries<ResidualContributionModel>,
+      public DiFfRG::def::FVDefaultBoundaries<ResidualContributionModel>,
+      public DiFfRG::def::AD<ResidualContributionModel>
+{
+public:
+  template <typename Vector> void initial_condition(const Point<1> &pos, Vector &values) const
+  {
+    values[0] = 1.0 + 0.25 * pos[0];
+  }
+
+  std::array<double, 1> solution(const Point<1> &pos) const { return {1.0 + 0.25 * pos[0]}; }
+
+  template <typename NT, typename Solution>
+  void KurganovTadmor_advection_flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/,
+                                     const Solution &sol) const
+  {
+    const auto &u = get<"fe_functions">(sol);
+    F_i[0][0] = 0.5 * u[0] * u[0];
+  }
+
+  template <typename NT, typename Solution>
+  void flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution &sol) const
+  {
+    const auto &du = get<"fe_derivatives">(sol);
+    F_i[0][0] = 0.1 * du[0][0];
+  }
+
+  template <typename NT, typename Solution>
+  void source(std::array<NT, 1> &s_i, const Point<1> &pos, const Solution &sol) const
+  {
+    const auto &u = get<"fe_functions">(sol);
+    s_i[0] = 0.5 + pos[0] + 0.25 * u[0];
+  }
+
+  template <typename NT, typename Vector, typename VectorDot>
+  void mass(std::array<NT, 1> &m_i, const Point<1> & /*pos*/, const Vector &u, const VectorDot &dt_u) const
+  {
+    m_i[0] = dt_u[0] + 0.125 * u[0];
+  }
+
+  template <int mdim, typename NT, size_t n_components>
+  bool apply_boundary_stencil(DiFfRG::def::BoundaryStencilValues<mdim, NT, n_components> &u_stencil,
+                              DiFfRG::def::BoundaryStencilPoints<mdim> &x_stencil, const Point<mdim> &x_face) const
+  {
+    static_assert(mdim == 1);
+    DiFfRG::Testing::fill_face_ghost_solution_boundary_stencil(u_stencil, x_stencil, x_face,
+                                                               [this](const Point<1> &pos) { return solution(pos); });
+    return true;
+  }
+};
+
+static DiFfRG::JSONValue make_fv_reconstruction_diagnostics_json()
+{
+  return DiFfRG::json::value(
+      {{"physical", {{"Lambda", 1.}}},
+       {"discretization",
+        {{"fe_order", 0},
+         {"threads", 1},
+         {"batch_size", 8},
+         {"overintegration", 0},
+         {"output_subdivisions", 1},
+         {"EoM_abs_tol", 1e-10},
+         {"EoM_max_iter", 0},
+         {"grid", {{"x_grid", "0:0.25:1"}, {"y_grid", "0:1:1"}, {"z_grid", "0:1:1"}, {"refine", 0}}}}},
+       {"output",
+        {{"verbosity", 0},
+         {"vtk", false},
+         {"hdf5", true},
+         {"fv_reconstruction_diagnostics", true},
+         {"fv_residual_contribution_diagnostics", false},
+         {"output_buffer_size", 1}}}});
+}
+
+static DiFfRG::JSONValue make_fv_residual_contribution_diagnostics_json()
+{
+  auto json = make_fv_reconstruction_diagnostics_json();
+  json.set_bool("/output/fv_reconstruction_diagnostics", false);
+  json.set_bool("/output/fv_residual_contribution_diagnostics", true);
+  return json;
+}
+
+static std::filesystem::path make_unique_test_directory(const std::string &prefix)
+{
+  const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
+  auto path =
+      std::filesystem::temp_directory_path() / (prefix + "_" + std::to_string(static_cast<long long>(nonce)));
+  std::filesystem::create_directories(path);
+  return path;
+}
+
+static void ensure_logger()
+{
+  try {
+    auto log = spdlog::stdout_color_mt("log");
+    log->set_pattern("log: [%v]");
+  } catch (const spdlog::spdlog_ex &) {
+  }
+}
+
+TEST_CASE("KT FV reconstruction diagnostics write expected HDF5 maps", "[FV][KT][hdf5]")
+{
+#ifndef H5CPP
+  SUCCEED("HDF5 support is disabled.");
+#else
+  using Model = DiFfRG::Testing::ModelBurgersKT<1>;
+  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<1>>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  auto json = make_fv_reconstruction_diagnostics_json();
+  DiFfRG::Testing::PhysicalParameters prm;
+  prm.initial_x0[0] = 1.0;
+  prm.initial_x1[0] = 0.5;
+
+  Model model(prm);
+  DiFfRG::RectangularMesh<1> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  DiFfRG::FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+  const VectorType &solution = state.spatial_data();
+  REQUIRE(solution.size() > 3);
+
+  const auto output_dir = make_unique_test_directory("kt_fv_reconstruction_diagnostics");
+  const std::string output_name = "kt_diag_unit";
+  DiFfRG::DataOutput<1, VectorType> data_out(output_dir.string(), output_name, "output", json);
+
+  assembler.attach_data_output(data_out, solution, VectorType());
+  data_out.flush(0.25);
+
+  const auto hdf5_file = output_dir / (output_name + "_fv_reconstruction_diagnostics.h5");
+  REQUIRE(std::filesystem::exists(hdf5_file));
+  REQUIRE(std::filesystem::is_regular_file(hdf5_file));
+
+  auto file = DiFfRG::hdf5::File::open(hdf5_file.string(), DiFfRG::hdf5::Access::ReadOnly);
+  auto root = file.root();
+  REQUIRE(root.has_group("maps"));
+  REQUIRE(root.has_group("coordinates"));
+  auto maps = root.open_group("maps");
+
+  const auto read_map = [&](const std::string &name, const std::size_t expected_size) {
+    REQUIRE(maps.has_group(name));
+    auto map_group = maps.open_group(name);
+    REQUIRE(map_group.has_group("0"));
+    auto series_group = map_group.open_group("0");
+    REQUIRE(series_group.has_dataset("data"));
+    CHECK(series_group.read_attribute<double>("time") == Catch::Approx(0.25));
+    CHECK(series_group.read_attribute<int>("series_number") == 0);
+
+    auto dataset = series_group.open_dataset("data");
+    const auto extents = dataset.dataspace().extents();
+    REQUIRE(extents.size() == 1);
+    CHECK(extents[0] == expected_size);
+
+    std::vector<std::array<double, 1>> values(expected_size);
+    dataset.read(values);
+    REQUIRE(values.size() == expected_size);
+    for (const auto &value : values)
+      CHECK(std::isfinite(value[0]));
+    return values;
+  };
+
+  const std::size_t n_cells = solution.size();
+  const auto cell_u = read_map("cell_u", n_cells);
+  const auto cell_du_dx = read_map("cell_du_dx", n_cells);
+  const auto cell_u_constant = read_map("cell_u_constant", 2 * n_cells);
+  const auto cell_u_reconstruction = read_map("cell_u_reconstruction", 2 * n_cells);
+  const auto face_u_minus = read_map("face_u_minus", n_cells + 1);
+  const auto face_u_plus = read_map("face_u_plus", n_cells + 1);
+  const auto face_du_dx_minus = read_map("face_du_dx_minus", n_cells + 1);
+  const auto face_du_dx_plus = read_map("face_du_dx_plus", n_cells + 1);
+  const auto face_advection_flux = read_map("face_advection_flux", n_cells + 1);
+  const auto face_diffusion_flux = read_map("face_diffusion_flux", n_cells + 1);
+  const auto face_total_flux = read_map("face_total_flux", n_cells + 1);
+
+  const auto &support_points = discretization.get_support_points();
+  REQUIRE(support_points.size() == n_cells);
+  for (std::size_t i = 0; i < n_cells; ++i) {
+    const double x = support_points[i][0];
+    CHECK(cell_u[i][0] == Catch::Approx(1.0 + 0.5 * x).margin(1e-14));
+    CHECK(cell_du_dx[i][0] == Catch::Approx(0.5).margin(1e-14));
+    CHECK(cell_u_constant[2 * i][0] == Catch::Approx(cell_u[i][0]).margin(1e-14));
+    CHECK(cell_u_constant[2 * i + 1][0] == Catch::Approx(cell_u[i][0]).margin(1e-14));
+    CHECK(cell_u_reconstruction[2 * i][0] == Catch::Approx(1.0 + 0.5 * (0.25 * i)).margin(1e-14));
+    CHECK(cell_u_reconstruction[2 * i + 1][0] == Catch::Approx(1.0 + 0.5 * (0.25 * (i + 1))).margin(1e-14));
+  }
+
+  for (std::size_t i = 0; i < n_cells + 1; ++i) {
+    const double x_face = 0.25 * static_cast<double>(i);
+    const double expected_u = 1.0 + 0.5 * x_face;
+    const double expected_advection_flux = 0.5 * expected_u * expected_u;
+    CHECK(face_u_minus[i][0] == Catch::Approx(expected_u).margin(1e-14));
+    CHECK(face_u_plus[i][0] == Catch::Approx(expected_u).margin(1e-14));
+    CHECK(face_du_dx_minus[i][0] == Catch::Approx(0.5).margin(1e-14));
+    CHECK(face_du_dx_plus[i][0] == Catch::Approx(0.5).margin(1e-14));
+    CHECK(face_advection_flux[i][0] == Catch::Approx(expected_advection_flux).margin(1e-14));
+    CHECK(face_diffusion_flux[i][0] == Catch::Approx(0.0).margin(1e-14));
+    CHECK(face_total_flux[i][0] == Catch::Approx(expected_advection_flux).margin(1e-14));
+  }
+
+  std::filesystem::remove_all(output_dir);
+#endif
+}
+
+TEST_CASE("KT FV residual contribution diagnostics reconstruct assembled residual", "[FV][KT][hdf5]")
+{
+#ifndef H5CPP
+  SUCCEED("HDF5 support is disabled.");
+#else
+  using Model = ResidualContributionModel;
+  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<1>>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  auto json = make_fv_residual_contribution_diagnostics_json();
+  Model model;
+  DiFfRG::RectangularMesh<1> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  DiFfRG::FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+  const VectorType &solution = state.spatial_data();
+  REQUIRE(solution.size() > 3);
+
+  VectorType solution_dot(solution.size());
+  for (unsigned int i = 0; i < solution_dot.size(); ++i)
+    solution_dot[i] = 0.05 + 0.01 * static_cast<double>(i);
+
+  VectorType residual(solution.size());
+  residual = 0.;
+  assembler.residual(residual, solution, 1.0, solution_dot, 1.0);
+
+  const auto output_dir = make_unique_test_directory("kt_fv_residual_contribution_diagnostics");
+  const std::string output_name = "kt_residual_diag_unit";
+  DiFfRG::DataOutput<1, VectorType> data_out(output_dir.string(), output_name, "output", json);
+
+  assembler.attach_data_output(data_out, solution, VectorType(), solution_dot, residual);
+  data_out.flush(0.5);
+
+  const auto hdf5_file = output_dir / (output_name + "_fv_residual_contribution_diagnostics.h5");
+  REQUIRE(std::filesystem::exists(hdf5_file));
+  REQUIRE(std::filesystem::is_regular_file(hdf5_file));
+
+  auto file = DiFfRG::hdf5::File::open(hdf5_file.string(), DiFfRG::hdf5::Access::ReadOnly);
+  auto root = file.root();
+  REQUIRE(root.has_group("maps"));
+  auto maps = root.open_group("maps");
+
+  const auto read_map = [&](const std::string &name, const std::size_t expected_size) {
+    REQUIRE(maps.has_group(name));
+    auto map_group = maps.open_group(name);
+    REQUIRE(map_group.has_group("0"));
+    auto series_group = map_group.open_group("0");
+    REQUIRE(series_group.has_dataset("data"));
+    CHECK(series_group.read_attribute<double>("time") == Catch::Approx(0.5));
+    CHECK(series_group.read_attribute<int>("series_number") == 0);
+
+    auto dataset = series_group.open_dataset("data");
+    const auto extents = dataset.dataspace().extents();
+    REQUIRE(extents.size() == 1);
+    CHECK(extents[0] == expected_size);
+
+    std::vector<std::array<double, 1>> values(expected_size);
+    dataset.read(values);
+    for (const auto &value : values)
+      CHECK(std::isfinite(value[0]));
+    return values;
+  };
+
+  const std::size_t n_cells = solution.size();
+  const auto advection = read_map("cell_advection_contribution", n_cells);
+  const auto diffusion = read_map("cell_diffusion_contribution", n_cells);
+  const auto source = read_map("cell_source_contribution", n_cells);
+  const auto mass = read_map("cell_mass_contribution", n_cells);
+  const auto total = read_map("cell_total_residual", n_cells);
+  const auto total_minus_residual = read_map("cell_total_minus_residual", n_cells);
+
+  bool has_nonzero_split = false;
+  for (std::size_t i = 0; i < n_cells; ++i) {
+    const double reconstructed_total = advection[i][0] + diffusion[i][0] + source[i][0] + mass[i][0];
+    CHECK(total[i][0] == Catch::Approx(reconstructed_total).margin(1e-12));
+    CHECK(total_minus_residual[i][0] == Catch::Approx(0.0).margin(1e-12));
+    has_nonzero_split = has_nonzero_split || std::abs(advection[i][0]) > 0.0 || std::abs(diffusion[i][0]) > 0.0 ||
+                        std::abs(source[i][0]) > 0.0 || std::abs(mass[i][0]) > 0.0;
+  }
+  CHECK(has_nonzero_split);
+
+  std::filesystem::remove_all(output_dir);
+#endif
+}
 
 TEST_CASE("u_plus u_minus compoutation", "[FV][KT]")
 {
