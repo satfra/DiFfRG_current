@@ -17,16 +17,6 @@
 TEST_CASE("Test HDF5 output", "[output][hdf5]")
 {
   DiFfRG::Init();
-#ifndef H5CPP
-  HDF5Output hdf5_output(tmp.string(), hdf5FileName, json);
-
-  // Output should throw an error if H5CPP is not enabled
-  REQUIRE_THROWS_AS(hdf5_output.scalar("d", 42.0), std::runtime_error);
-  REQUIRE_THROWS_AS(hdf5_output.map("coords", DiFfRG::Coordinates1D<double>({0.0, 1.0})), std::runtime_error);
-  REQUIRE_NOTHROW(hdf5_output.flush());
-
-  exit(0);
-#endif
 
   using namespace dealii;
   using namespace DiFfRG;

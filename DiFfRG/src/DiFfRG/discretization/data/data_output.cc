@@ -21,7 +21,6 @@ namespace DiFfRG
         output_folder(make_folder(output_folder)), Lambda(-1.), fe_out(top_folder, output_name, output_folder, json),
         use_hdf5(json.get_bool("/output/hdf5", true)), filename_h5(output_name + ".h5")
   {
-#ifdef H5CPP
     if (use_hdf5) {
       h5_files.emplace(filename_h5, HDF5Output(top_folder, filename_h5, json));
       if constexpr (dim > 0) {
@@ -30,7 +29,6 @@ namespace DiFfRG
         fe_out.set_hdf5_output(&h5_files.at(filename_h5));
       }
     }
-#endif
     set_Lambda(json.get_double("/physical/Lambda"));
   }
 
@@ -58,7 +56,6 @@ namespace DiFfRG
     return obj->second;
   }
 
-#ifdef H5CPP
   template <uint dim, typename VectorType> HDF5Output &DataOutput<dim, VectorType>::hdf5(const std::string &name)
   {
     const auto obj = h5_files.find(name);
@@ -75,7 +72,6 @@ namespace DiFfRG
   {
     return h5_files.at(filename_h5);
   }
-#endif
 
   template <uint dim, typename VectorType> const std::string &DataOutput<dim, VectorType>::get_output_name() const
   {

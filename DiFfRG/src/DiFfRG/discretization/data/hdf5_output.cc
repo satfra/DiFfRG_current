@@ -13,7 +13,6 @@ namespace DiFfRG
       : json(json), top_folder(make_folder(top_folder)),
         output_name(has_suffix(_output_name, ".h5") ? _output_name : _output_name + ".h5"), opened(false)
   {
-#ifdef H5CPP
     create_folder(this->top_folder);
     path = this->top_folder + this->output_name;
     create_folder(path.parent_path().string());
@@ -25,12 +24,10 @@ namespace DiFfRG
     maps = root.create_group("maps");
     coords = root.create_group("coordinates");
     h5_file.close();
-#endif
   }
 
   void HDF5Output::flush(const double time)
   {
-#ifdef H5CPP
     if (written_scalars.size() > 0) scalar<double>("time", time);
     if (initial_scalars.size() == 0) initial_scalars = written_scalars;
 
@@ -53,20 +50,16 @@ namespace DiFfRG
     written_maps.clear();
 
     close_file();
-#endif
   }
 
-#ifdef H5CPP
   DiFfRG::hdf5::File &HDF5Output::get_file()
   {
     open_file();
     return h5_file;
   }
-#endif
 
   void HDF5Output::open_file()
   {
-#ifdef H5CPP
     if (opened) return;
     h5_file = DiFfRG::hdf5::File::open(path.string(), DiFfRG::hdf5::Access::ReadWrite);
     auto root = h5_file.root();
@@ -74,12 +67,10 @@ namespace DiFfRG
     maps = root.open_group("maps");
     coords = root.open_group("coordinates");
     opened = true;
-#endif
   }
 
   void HDF5Output::close_file()
   {
-#ifdef H5CPP
     if (!opened) return;
     // Release cached child handles first; otherwise HDF5's internal ref count
     // keeps the file open at the OS level even after H5Fclose, holding the
@@ -90,7 +81,6 @@ namespace DiFfRG
     h5_file.flush();
     h5_file.close();
     opened = false;
-#endif
   }
 
   HDF5Output::~HDF5Output() { close_file(); }

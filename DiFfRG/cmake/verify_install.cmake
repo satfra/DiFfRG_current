@@ -30,9 +30,9 @@ set(_all_passed TRUE)
 # Check for a dependency by looking for its CMake config file
 #
 # Pass ALLOW_SYSTEM to additionally accept the dependency when it is provided by
-# a system install (outside BUNDLED_DIR). This is used for Boost, which DiFfRG
-# may consume from the system instead of the bundled build
-# (see DiFfRG_SYSTEM_BOOST in the top-level CMakeLists.txt).
+# a system install (outside BUNDLED_DIR). Used for Boost, TBB and HDF5, which
+# DiFfRG may consume from the system instead of the bundled build (see the
+# <LIB>_DIR / BUILD_<LIB> options in the top-level CMakeLists.txt).
 macro(verify_dep name)
   cmake_parse_arguments(_VD "ALLOW_SYSTEM" "" "CONFIG_NAMES" ${ARGN})
 
@@ -146,13 +146,13 @@ message("----------------------------------------------------------------------"
 
 # Bundled dependencies
 verify_dep(deal.II  CONFIG_NAMES "deal.IIConfig.cmake")
-verify_dep(TBB      CONFIG_NAMES "TBBConfig.cmake" "tbb/TBBConfig.cmake")
+verify_dep(TBB      ALLOW_SYSTEM CONFIG_NAMES "TBBConfig.cmake" "tbb/TBBConfig.cmake")
 verify_dep(Kokkos   CONFIG_NAMES "KokkosConfig.cmake")
 verify_dep(Boost    ALLOW_SYSTEM CONFIG_NAMES "BoostConfig.cmake" "boost_headers/BoostConfig.cmake")
 verify_dep(Eigen3   CONFIG_NAMES "Eigen3Config.cmake")
 verify_dep(autodiff CONFIG_NAMES "autodiffConfig.cmake")
 verify_dep(spdlog   CONFIG_NAMES "spdlogConfig.cmake")
-verify_dep(HDF5     CONFIG_NAMES "hdf5-config.cmake" "HDF5Config.cmake")
+verify_dep(HDF5     ALLOW_SYSTEM CONFIG_NAMES "hdf5-config.cmake" "HDF5Config.cmake")
 
 # System dependencies
 verify_system_dep(GSL "gsl")

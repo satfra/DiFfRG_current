@@ -58,9 +58,6 @@ namespace DiFfRG
      */
     template <typename T> void scalar(const std::string &name, const T value)
     {
-#ifndef H5CPP
-      throw std::runtime_error("HDF5Output::scalar: HDF5 support is not enabled. Please compile with H5CPP support.");
-#else
       if (initial_scalars.size() > 0 &&
           std::find(initial_scalars.begin(), initial_scalars.end(), name) == initial_scalars.end())
         throw std::runtime_error("HDF5Output::scalar: The scalar '" + name + "' has not been registered before!");
@@ -92,7 +89,6 @@ namespace DiFfRG
         data_set.resize({cur_size + 1});
         data_set.write_at(static_cast<hsize_t>(cur_size), value);
       }
-#endif
     }
     void scalar(const std::string &name, const char *value) { scalar<std::string>(name, std::string(value)); }
 
@@ -100,9 +96,6 @@ namespace DiFfRG
       requires is_coordinates<COORD>
     void map(const std::string &name, const COORD &coordinates)
     {
-#ifndef H5CPP
-      throw std::runtime_error("HDF5Output::map: HDF5 support is not enabled. Please compile with H5CPP support.");
-#else
       if (coords.has_dataset(name)) {
         throw std::runtime_error("HDF5Output::map: The coordinates '" + name +
                                  "' have already been written to the file '" + output_name + "'.");
@@ -123,17 +116,12 @@ namespace DiFfRG
       dataset.write(grid_data);
 
       coord_identifiers[name] = coordinates.to_string();
-#endif
     }
 
     template <typename COORD, typename T>
       requires is_coordinates<COORD>
     void map(const std::string &name, const COORD &coordinates, T *data)
     {
-#ifndef H5CPP
-      throw std::runtime_error("HDF5Output::map: HDF5 support is not enabled. Please compile with H5CPP support.");
-#else
-
       open_file();
 
       const std::string coord_name = coordinates.to_string();
@@ -168,7 +156,6 @@ namespace DiFfRG
 
       written_maps.push_back(name);
       map_series_numbers[name]++;
-#endif
     }
 
     template <typename INTERP>
@@ -182,10 +169,6 @@ namespace DiFfRG
       requires is_interpolator<INTERP>
     void map(const std::string &name, const std::string &coord_name, const INTERP &_interpolator)
     {
-#ifndef H5CPP
-      throw std::runtime_error("HDF5Output::map: HDF5 support is not enabled. Please compile with H5CPP support.");
-#else
-
       open_file();
 
       using value_type = typename std::decay_t<INTERP>::value_type;
@@ -227,13 +210,9 @@ namespace DiFfRG
 
       written_maps.push_back(name);
       map_series_numbers[name]++;
-
-#endif
     }
 
-#ifdef H5CPP
     DiFfRG::hdf5::File &get_file();
-#endif
 
     void flush(const double time);
 
@@ -266,12 +245,10 @@ namespace DiFfRG
                                  "' do not match the interpolator's coordinates.");
     }
 
-#ifdef H5CPP
     DiFfRG::hdf5::File h5_file;
     DiFfRG::hdf5::Group scalars;
     DiFfRG::hdf5::Group maps;
     DiFfRG::hdf5::Group coords;
-#endif
 
     std::filesystem::path path;
   };

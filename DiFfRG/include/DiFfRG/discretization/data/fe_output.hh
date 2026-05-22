@@ -9,9 +9,7 @@
 #include <deal.II/lac/vector_memory.h>
 #include <deal.II/numerics/data_out.h>
 
-#ifdef H5CPP
 #include <hdf5lib/hdf5.hh>
-#endif
 
 // standard library
 #include <exception>

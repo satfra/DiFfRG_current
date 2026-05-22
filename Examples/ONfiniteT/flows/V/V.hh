@@ -19,8 +19,7 @@ namespace DiFfRG
 
     Integrator_p2<3, autodiff::real, V_kernel<Regulator>, DiFfRG::TBB_exec> integrator_AD;
 
-    void get(double &dest, const double &k, const double &N, const double &T, const double &m2Pi,
-             const double &m2Sigma);
+    void get(double &dest, const double &k, const double &N, const double &T, const double &m2Pi, const double &m2Sigma);
 
     template <typename IT, typename... T> void get(IT &dest, const device::tuple<T...> &args)
     {

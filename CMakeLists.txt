@@ -274,25 +274,260 @@ message("")
 
 include(ExternalProject)
 
+# ##############################################################################
+# Dependency selection: system vs bundled
+#
+# Boost, TBB, HDF5 and SUNDIALS can each be taken from the system instead of
+# being rebuilt. For every one of them:
+#   <LIB>_DIR set     -> use the install at that prefix (FATAL if unusable)
+#   BUILD_<LIB>=ON    -> always build the bundled, pinned copy
+#   otherwise (auto)  -> use a viable system install if found, else build it
+# The blocks below resolve, for each library, whether the bundled ExternalProject
+# is needed (_build_<lib>) and which location to hand to deal.II / the DiFfRG
+# library build.
+# ##############################################################################
+
+set(BOOST_DIR "" CACHE PATH
+    "Use the Boost install at this prefix instead of building one")
+option(BUILD_BOOST "Always build the bundled, pinned Boost (ignore any system Boost)" OFF)
+set(TBB_DIR "" CACHE PATH
+    "Use the TBB install at this prefix instead of building one")
+option(BUILD_TBB "Always build the bundled oneTBB (ignore any system TBB)" OFF)
+set(HDF5_DIR "" CACHE PATH
+    "Use the HDF5 install at this prefix instead of building one")
+option(BUILD_HDF5 "Always build the bundled HDF5 (ignore any system HDF5)" OFF)
+set(SUNDIALS_DIR "" CACHE PATH
+    "Use the SUNDIALS install at this prefix instead of building one")
+option(BUILD_SUNDIALS "Always build the bundled SUNDIALS (ignore any system SUNDIALS)" OFF)
+
+set(DiFfRG_BOOST_MIN_VERSION 1.81)
+set(DiFfRG_TBB_MIN_VERSION 2021)
+set(DiFfRG_HDF5_MIN_VERSION 1.12.0)
+set(DiFfRG_SUNDIALS_MIN_VERSION 5.4.0)   # deal.II's own SUNDIALS floor
+set(DiFfRG_SUNDIALS_KNOWN_GOOD_MAX 7.7)  # newest version validated with bundled deal.II
+
+# ----------------------------------------------------------------------------
+# Boost — needed by both deal.II and the DiFfRG library. Use Boost's own
+# BoostConfig.cmake (config mode); the legacy FindBoost module is removed in
+# CMake >= 3.30 and deal.II 9.7 consumes a modern config-mode Boost fine.
+# ----------------------------------------------------------------------------
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 NEW)
+endif()
+set(_boost_components thread iostreams serialization system)
+set(_build_boost OFF)
+set(_boost_user_dir "${BOOST_DIR}")
+if(NOT "${_boost_user_dir}" STREQUAL "")
+  set(BOOST_ROOT "${_boost_user_dir}")
+  find_package(Boost ${DiFfRG_BOOST_MIN_VERSION} QUIET COMPONENTS ${_boost_components})
+  if(NOT Boost_FOUND)
+    message(FATAL_ERROR
+      "BOOST_DIR=${_boost_user_dir} does not provide a usable Boost >= ${DiFfRG_BOOST_MIN_VERSION}.\n"
+      "  Point it at a prefix containing BoostConfig.cmake, or use -DBUILD_BOOST=ON.")
+  endif()
+  message(STATUS "[Boost] Using Boost ${Boost_VERSION} from BOOST_DIR=${_boost_user_dir}")
+elseif(BUILD_BOOST)
+  set(_build_boost ON)
+else()
+  find_package(Boost ${DiFfRG_BOOST_MIN_VERSION} QUIET COMPONENTS ${_boost_components})
+  if(NOT Boost_FOUND)
+    set(_build_boost ON)
+  endif()
+endif()
+
+if(_build_boost)
+  set(_boost_root "${DEPEND_INSTALL_PREFIX}")
+  set(_boost_incdir "${DEPEND_INSTALL_PREFIX}/include")
+  set(_boost_libdir "${DEPEND_INSTALL_PREFIX}/lib")
+  set(_boost_extra_args "")
+  set(_boost_dep boost_dep)
+else()
+  # Config mode populates Boost_INCLUDE_DIRS and Boost_DIR but not the legacy
+  # Boost_LIBRARY_DIRS, so derive the install prefix and library dir ourselves.
+  list(GET Boost_INCLUDE_DIRS 0 _boost_incdir)
+  get_filename_component(_boost_root "${_boost_incdir}" DIRECTORY)
+  if(DEFINED Boost_LIBRARY_DIRS AND NOT "${Boost_LIBRARY_DIRS}" STREQUAL "")
+    list(GET Boost_LIBRARY_DIRS 0 _boost_libdir)
+  elseif(EXISTS "${_boost_root}/lib")
+    set(_boost_libdir "${_boost_root}/lib")
+  else()
+    set(_boost_libdir "${_boost_root}/lib64")
+  endif()
+  set(_boost_extra_args -DBoost_DIR:PATH=${Boost_DIR})
+  set(_boost_dep "")
+  message(
+    "  ${BoldGreen}[Boost] Using system Boost ${Boost_VERSION} (${_boost_incdir}); skipping bundled build.${ColourReset}"
+  )
+endif()
+
+# ----------------------------------------------------------------------------
+# TBB — needed by both deal.II (path-based) and the DiFfRG library
+# (find_package(TBB) -> TBB::tbb). The bundled oneTBB is built inside general_dep
+# (see GENERAL_BUILD_TBB), not its own ExternalProject.
+# ----------------------------------------------------------------------------
+set(_build_tbb OFF)
+# find_package(TBB) overwrites TBB_DIR with the discovered config dir; capture
+# the user-given prefix first.
+set(_tbb_user_dir "${TBB_DIR}")
+if(NOT "${_tbb_user_dir}" STREQUAL "")
+  find_package(TBB ${DiFfRG_TBB_MIN_VERSION} QUIET CONFIG
+    PATHS "${_tbb_user_dir}"
+    PATH_SUFFIXES lib/cmake/TBB lib64/cmake/TBB cmake/TBB
+    NO_DEFAULT_PATH)
+  if(NOT TBB_FOUND)
+    message(FATAL_ERROR
+      "TBB_DIR=${_tbb_user_dir} does not provide TBB >= ${DiFfRG_TBB_MIN_VERSION}.\n"
+      "  Point it at a prefix containing TBBConfig.cmake, or use -DBUILD_TBB=ON.")
+  endif()
+  message(STATUS "[TBB] Using TBB ${TBB_VERSION} from TBB_DIR=${_tbb_user_dir}")
+elseif(BUILD_TBB)
+  set(_build_tbb ON)
+else()
+  find_package(TBB ${DiFfRG_TBB_MIN_VERSION} QUIET CONFIG)
+  if(NOT TBB_FOUND)
+    set(_build_tbb ON)
+  endif()
+endif()
+
+if(_build_tbb)
+  set(_tbb_dir "${DEPEND_INSTALL_PREFIX}")
+else()
+  set(_tbb_dir "${TBB_DIR}") # the discovered TBBConfig.cmake directory
+  message(
+    "  ${BoldGreen}[TBB] Using system TBB ${TBB_VERSION} (${TBB_DIR}); skipping bundled build.${ColourReset}"
+  )
+endif()
+
+# ----------------------------------------------------------------------------
+# HDF5 — needed only by the DiFfRG library (deal.II is built with
+# DEAL_II_WITH_HDF5=OFF). DiFfRG only uses the HDF5 C API, so 1.12 is the floor.
+# ----------------------------------------------------------------------------
+set(_build_hdf5 OFF)
+set(_hdf5_user_dir "${HDF5_DIR}")
+# Do not pass the version to find_package: HDF5's config-version file uses a
+# same-major-version compatibility policy, so requesting 1.12 would reject a
+# newer 2.x install. Gate the version manually instead.
+if(NOT "${_hdf5_user_dir}" STREQUAL "")
+  find_package(HDF5 QUIET CONFIG COMPONENTS C
+    PATHS "${_hdf5_user_dir}"
+    PATH_SUFFIXES lib/cmake/hdf5 lib64/cmake/hdf5 cmake/hdf5 share/cmake/hdf5
+    NO_DEFAULT_PATH)
+  if(NOT HDF5_FOUND OR HDF5_VERSION VERSION_LESS ${DiFfRG_HDF5_MIN_VERSION})
+    message(FATAL_ERROR
+      "HDF5_DIR=${_hdf5_user_dir} does not provide a usable HDF5 >= ${DiFfRG_HDF5_MIN_VERSION} "
+      "(found '${HDF5_VERSION}').\n"
+      "  Point it at a prefix containing hdf5-config.cmake, or use -DBUILD_HDF5=ON.")
+  endif()
+  message(STATUS "[HDF5] Using HDF5 ${HDF5_VERSION} from HDF5_DIR=${_hdf5_user_dir}")
+elseif(BUILD_HDF5)
+  set(_build_hdf5 ON)
+else()
+  find_package(HDF5 QUIET CONFIG COMPONENTS C)
+  if(NOT HDF5_FOUND OR HDF5_VERSION VERSION_LESS ${DiFfRG_HDF5_MIN_VERSION})
+    set(_build_hdf5 ON)
+  endif()
+endif()
+
+if(_build_hdf5)
+  set(_hdf5_dir "${DEPEND_INSTALL_PREFIX}")
+  set(_hdf5_dep hdf5_dep)
+else()
+  set(_hdf5_dir "${HDF5_DIR}") # the discovered hdf5-config.cmake directory
+  set(_hdf5_dep "")
+  message(
+    "  ${BoldGreen}[HDF5] Using system HDF5 ${HDF5_VERSION} (${HDF5_DIR}); skipping bundled build.${ColourReset}"
+  )
+endif()
+
+# ----------------------------------------------------------------------------
+# SUNDIALS — needed only by deal.II (DiFfRG links it transitively via
+# dealii::dealii). Replicate deal.II's own discovery: the arkode/kinsol/nvecserial
+# libraries plus version >= 5.4.0; otherwise build the bundled copy.
+# ----------------------------------------------------------------------------
+set(_build_sundials OFF)
+set(_sundials_prefix "${DEPEND_INSTALL_PREFIX}")
+set(_sundials_dep "")
+set(_sun_hint "")
+set(_sun_explicit OFF)
+if(NOT "${SUNDIALS_DIR}" STREQUAL "")
+  set(_sun_hint "${SUNDIALS_DIR}")
+  set(_sun_explicit ON)
+elseif(BUILD_SUNDIALS)
+  set(_build_sundials ON)
+endif()
+
+if(NOT _build_sundials)
+  find_library(_SUN_ARKODE NAMES sundials_arkode HINTS ${_sun_hint} PATH_SUFFIXES lib lib64)
+  find_library(_SUN_KINSOL NAMES sundials_kinsol HINTS ${_sun_hint} PATH_SUFFIXES lib lib64)
+  find_library(_SUN_NVEC NAMES sundials_nvecserial HINTS ${_sun_hint} PATH_SUFFIXES lib lib64)
+  find_path(_SUN_INC sundials/sundials_version.h HINTS ${_sun_hint} PATH_SUFFIXES include)
+  set(_sun_ok FALSE)
+  set(_sun_ver "")
+  if(_SUN_ARKODE AND _SUN_KINSOL AND _SUN_NVEC AND _SUN_INC)
+    file(STRINGS "${_SUN_INC}/sundials/sundials_version.h" _sun_mj REGEX "#define SUNDIALS_VERSION_MAJOR")
+    file(STRINGS "${_SUN_INC}/sundials/sundials_version.h" _sun_mn REGEX "#define SUNDIALS_VERSION_MINOR")
+    file(STRINGS "${_SUN_INC}/sundials/sundials_version.h" _sun_pt REGEX "#define SUNDIALS_VERSION_PATCH")
+    string(REGEX REPLACE "^.*MAJOR[ \t]+([0-9]+).*" "\\1" _sun_mj "${_sun_mj}")
+    string(REGEX REPLACE "^.*MINOR[ \t]+([0-9]+).*" "\\1" _sun_mn "${_sun_mn}")
+    string(REGEX REPLACE "^.*PATCH[ \t]+([0-9]+).*" "\\1" _sun_pt "${_sun_pt}")
+    set(_sun_ver "${_sun_mj}.${_sun_mn}.${_sun_pt}")
+    if(NOT _sun_ver VERSION_LESS ${DiFfRG_SUNDIALS_MIN_VERSION})
+      set(_sun_ok TRUE)
+    endif()
+  endif()
+  if(_sun_ok)
+    if(_sun_explicit)
+      set(_sundials_prefix "${SUNDIALS_DIR}")
+    else()
+      get_filename_component(_sundials_prefix "${_SUN_INC}" DIRECTORY)
+    endif()
+    if(_sun_ver VERSION_GREATER ${DiFfRG_SUNDIALS_KNOWN_GOOD_MAX})
+      message(WARNING
+        "Using system SUNDIALS ${_sun_ver}, newer than the last version "
+        "(${DiFfRG_SUNDIALS_KNOWN_GOOD_MAX}) validated with the bundled deal.II. "
+        "If the deal.II build fails, configure with -DBUILD_SUNDIALS=ON.")
+    endif()
+    message(
+      "  ${BoldGreen}[SUNDIALS] Using system SUNDIALS ${_sun_ver} (${_SUN_INC}); skipping bundled build.${ColourReset}"
+    )
+  elseif(_sun_explicit)
+    message(FATAL_ERROR
+      "SUNDIALS_DIR=${SUNDIALS_DIR} does not provide SUNDIALS >= ${DiFfRG_SUNDIALS_MIN_VERSION} "
+      "with the required libraries (arkode, kinsol, nvecserial).\n"
+      "  Use -DBUILD_SUNDIALS=ON to build the bundled SUNDIALS.")
+  else()
+    set(_build_sundials ON)
+  endif()
+endif()
+
+if(_build_sundials)
+  set(_sundials_prefix "${DEPEND_INSTALL_PREFIX}")
+  set(_sundials_dep sundials_dep)
+endif()
+
 message("${BoldCyan}[1/8] Configuring HDF5...${ColourReset}")
-ExternalProject_Add(
-  hdf5_dep
-  LOG_CONFIGURE ON
-  LOG_OUTPUT_ON_FAILURE ON
-  BUILD_COMMAND cmake -E echo "Skipping build step for hdf5."
-  INSTALL_COMMAND cmake -E echo "Skipping install step for hdf5."
-  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/hdf5
-  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/hdf5
-  INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  # Propagate DEPEND_INSTALL_PREFIX to the dependencies
-  CMAKE_CACHE_ARGS
-    -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
-    -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
-    -DCMAKE_CXX_FLAGS:STRING=-march=native
-    -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
-    -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-    ${CCACHE_CMAKE_ARGS}
-    -DMPI:BOOL=${MPI})
+if(_build_hdf5)
+  ExternalProject_Add(
+    hdf5_dep
+    LOG_CONFIGURE ON
+    LOG_OUTPUT_ON_FAILURE ON
+    BUILD_COMMAND cmake -E echo "Skipping build step for hdf5."
+    INSTALL_COMMAND cmake -E echo "Skipping install step for hdf5."
+    PREFIX ${CMAKE_CURRENT_BINARY_DIR}/hdf5
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/hdf5
+    INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+    # Propagate DEPEND_INSTALL_PREFIX to the dependencies
+    CMAKE_CACHE_ARGS
+      -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
+      -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
+      -DCMAKE_CXX_FLAGS:STRING=-march=native
+      -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
+      -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+      ${CCACHE_CMAKE_ARGS}
+      -DMPI:BOOL=${MPI})
+else()
+  message("  ${BoldGreen}Using system HDF5; skipping bundled HDF5 build.${ColourReset}")
+endif()
 
 message(
   "${BoldCyan}[2/8] Configuring general dependencies (TBB, Eigen3, spdlog, ...)...${ColourReset}"
@@ -305,7 +540,7 @@ ExternalProject_Add(
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/general
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/general
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  DEPENDS hdf5_dep
+  DEPENDS ${_hdf5_dep}
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
   CMAKE_CACHE_ARGS
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
@@ -316,6 +551,7 @@ ExternalProject_Add(
     -DCPM_SOURCE_CACHE:PATH=${CMAKE_CURRENT_BINARY_DIR}/cpm-cache
     ${CCACHE_CMAKE_ARGS}
     -DBUILD_OpenBLAS:BOOL=${BUILD_OpenBLAS}
+    -DGENERAL_BUILD_TBB:BOOL=${_build_tbb}
     -DCMAKE_PREFIX_PATH:PATH=${DEPEND_INSTALL_PREFIX}
     -DMPI:BOOL=${MPI})
 
@@ -329,24 +565,28 @@ if(BUILD_OpenBLAS)
 endif()
 
 message("${BoldCyan}[3/8] Configuring SUNDIALS...${ColourReset}")
-ExternalProject_Add(
-  sundials_dep
-  LOG_CONFIGURE ON
-  LOG_INSTALL ON
-  LOG_OUTPUT_ON_FAILURE ON
-  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/sundials
-  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/sundials
-  INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  # Propagate DEPEND_INSTALL_PREFIX to the dependencies
-  CMAKE_CACHE_ARGS
-    -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
-    -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
-    -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
-    -DCMAKE_CXX_FLAGS:STRING=-march=native
-    -DCMAKE_C_FLAGS:STRING=-march=native
-    -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-    ${CCACHE_CMAKE_ARGS}
-    -DMPI:BOOL=${MPI})
+if(_build_sundials)
+  ExternalProject_Add(
+    sundials_dep
+    LOG_CONFIGURE ON
+    LOG_INSTALL ON
+    LOG_OUTPUT_ON_FAILURE ON
+    PREFIX ${CMAKE_CURRENT_BINARY_DIR}/sundials
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/sundials
+    INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+    # Propagate DEPEND_INSTALL_PREFIX to the dependencies
+    CMAKE_CACHE_ARGS
+      -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
+      -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
+      -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
+      -DCMAKE_CXX_FLAGS:STRING=-march=native
+      -DCMAKE_C_FLAGS:STRING=-march=native
+      -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+      ${CCACHE_CMAKE_ARGS}
+      -DMPI:BOOL=${MPI})
+else()
+  message("  ${BoldGreen}Using system SUNDIALS; skipping bundled SUNDIALS build.${ColourReset}")
+endif()
 
 message("${BoldCyan}[4/8] Configuring autodiff...${ColourReset}")
 ExternalProject_Add(
@@ -364,86 +604,8 @@ ExternalProject_Add(
                    ${CCACHE_CMAKE_ARGS})
 
 message("${BoldCyan}[5/8] Configuring Boost...${ColourReset}")
-
-# Use a system Boost when one is suitable, otherwise build the bundled copy.
-# DiFfRG_SYSTEM_BOOST controls this:
-#   AUTO (default) - detect a system Boost >= DiFfRG_BOOST_MIN_VERSION; fall back
-#                    to the bundled build if none is found
-#   ON             - require a system Boost (fatal error if none is found)
-#   OFF            - always build the bundled Boost
-# BOOST_ROOT (standard CMake cache var) may be set to point at a specific install.
-set(DiFfRG_SYSTEM_BOOST "AUTO" CACHE STRING
-    "Use a system Boost: AUTO (detect, fallback to bundled), ON (require system), OFF (always build bundled)")
-set_property(CACHE DiFfRG_SYSTEM_BOOST PROPERTY STRINGS AUTO ON OFF)
-set(DiFfRG_BOOST_MIN_VERSION 1.81)
-set(DiFfRG_BOOST_KNOWN_GOOD_MAX 1.87) # last version validated against bundled deal.II 9.4.2
-
-set(_use_system_boost OFF)
-if(NOT DiFfRG_SYSTEM_BOOST STREQUAL "OFF")
-  # Prefer Boost's own BoostConfig.cmake (config mode); the legacy FindBoost
-  # module is removed in CMake >= 3.30.
-  if(POLICY CMP0167)
-    cmake_policy(SET CMP0167 NEW)
-  endif()
-  find_package(Boost ${DiFfRG_BOOST_MIN_VERSION} QUIET
-               COMPONENTS thread iostreams serialization system)
-  if(Boost_FOUND)
-    set(_use_system_boost ON)
-    if(Boost_VERSION VERSION_GREATER ${DiFfRG_BOOST_KNOWN_GOOD_MAX})
-      message(
-        WARNING
-          "Using system Boost ${Boost_VERSION}, which is newer than the last version "
-          "(${DiFfRG_BOOST_KNOWN_GOOD_MAX}) validated against the bundled deal.II 9.4.2. "
-          "If the deal.II build fails, configure with -DDiFfRG_SYSTEM_BOOST=OFF.")
-    endif()
-  elseif(DiFfRG_SYSTEM_BOOST STREQUAL "ON")
-    message(
-      FATAL_ERROR
-        "\n"
-        "======================================================================\n"
-        "  DiFfRG_SYSTEM_BOOST=ON but no system Boost >= ${DiFfRG_BOOST_MIN_VERSION} was found.\n"
-        "======================================================================\n"
-        "  Install Boost via your package manager:\n"
-        "    Ubuntu/Debian:  sudo apt install libboost-all-dev\n"
-        "    Arch Linux:     sudo pacman -S boost\n"
-        "    Rocky/RHEL:     sudo dnf install boost-devel\n"
-        "    macOS:          brew install boost\n"
-        "\n"
-        "  Or point at a specific install: -DBOOST_ROOT=<path>\n"
-        "  Or build the bundled copy:      -DDiFfRG_SYSTEM_BOOST=OFF\n"
-        "======================================================================\n")
-  endif()
-endif()
-
-# Resolve the Boost location passed to deal.II and the DiFfRG library build, and
-# decide whether the bundled boost_dep target is needed.
-if(_use_system_boost)
-  # Config-mode find_package(Boost) populates Boost_INCLUDE_DIRS and Boost_DIR
-  # (the BoostConfig.cmake directory) but not the legacy Boost_LIBRARY_DIRS, so
-  # derive the install prefix and library dir ourselves.
-  list(GET Boost_INCLUDE_DIRS 0 _boost_incdir)
-  get_filename_component(_boost_root "${_boost_incdir}" DIRECTORY) # install prefix (parent of include/)
-  set(_boost_config_dir "${Boost_DIR}")                           # dir containing BoostConfig.cmake
-  if(DEFINED Boost_LIBRARY_DIRS AND NOT "${Boost_LIBRARY_DIRS}" STREQUAL "")
-    list(GET Boost_LIBRARY_DIRS 0 _boost_libdir)
-  elseif(EXISTS "${_boost_root}/lib")
-    set(_boost_libdir "${_boost_root}/lib")
-  else()
-    set(_boost_libdir "${_boost_root}/lib64")
-  endif()
-  # Pass the config-package dir on as a hint so downstream config-mode lookups
-  # (deal.II with CMP0167=NEW, and the DiFfRG library) resolve the same Boost.
-  set(_boost_extra_args -DBoost_DIR:PATH=${_boost_config_dir})
-  set(_boost_dep "")
-  message(
-    "  ${BoldGreen}Using system Boost ${Boost_VERSION} (${_boost_incdir}); skipping bundled Boost build.${ColourReset}"
-  )
-else()
-  set(_boost_root "${DEPEND_INSTALL_PREFIX}")
-  set(_boost_incdir "${DEPEND_INSTALL_PREFIX}/include")
-  set(_boost_libdir "${DEPEND_INSTALL_PREFIX}/lib")
-  set(_boost_extra_args "")
-  set(_boost_dep boost_dep)
+# Boost selection was resolved above; only register the bundled build if needed.
+if(_build_boost)
   ExternalProject_Add(
     boost_dep
     LOG_CONFIGURE ON
@@ -458,6 +620,8 @@ else()
     # Propagate DEPEND_INSTALL_PREFIX to the dependencies
     CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
                      -DCCACHE_PROGRAM:STRING=${CCACHE_PROGRAM})
+else()
+  message("  ${BoldGreen}Using system Boost; skipping bundled Boost build.${ColourReset}")
 endif()
 
 # ##############################################################################
@@ -610,7 +774,7 @@ ExternalProject_Add(
   PATCH_COMMAND sh -c "git apply --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-clang-cuda.patch' || git apply --reverse --check --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-clang-cuda.patch'"
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/deal.II
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  DEPENDS general_dep ${_boost_dep} ${is_petsc_dep} sundials_dep
+  DEPENDS general_dep ${_boost_dep} ${is_petsc_dep} ${_sundials_dep}
   BUILD_COMMAND cmake --build . -- -j${_dealii_jobs}
   CMAKE_CACHE_ARGS
     -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
@@ -636,8 +800,8 @@ ExternalProject_Add(
     -DCMAKE_CXX_STANDARD:STRING=20
     -DCMAKE_CXX_EXTENSIONS:BOOL=OFF
     -DKOKKOS_DIR:STRING=${DEPEND_INSTALL_PREFIX}
-    -DTBB_DIR:STRING=${DEPEND_INSTALL_PREFIX}
-    -DSUNDIALS_DIR:STRING=${DEPEND_INSTALL_PREFIX}
+    -DTBB_DIR:STRING=${_tbb_dir}
+    -DSUNDIALS_DIR:STRING=${_sundials_prefix}
     -DBOOST_ROOT:PATH=${_boost_root}
     -DBOOST_DIR:STRING=${_boost_root}
     -DBOOST_INCLUDEDIR:PATH=${_boost_incdir}
@@ -670,6 +834,8 @@ ExternalProject_Add(
     -DBUNDLED_DIR:PATH=${DEPEND_INSTALL_PREFIX}
     -DBOOST_ROOT:PATH=${_boost_root}
     ${_boost_extra_args}
+    -DTBB_DIR:STRING=${_tbb_dir}
+    -DHDF5_DIR:PATH=${_hdf5_dir}
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
     -DDiFfRG_TEST:BOOL=${DiFfRG_TEST}
     -DDiFfRG_DOCUMENTATION:BOOL=${DiFfRG_DOCUMENTATION}

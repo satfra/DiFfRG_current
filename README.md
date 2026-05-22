@@ -53,7 +53,7 @@ To compile and run this project, there are very few requirements which you can e
 - LAPACK and BLAS in some form, e.g. [OpenBLAS](https://www.openblas.net/). Alternatively, pass `-DBUILD_OpenBLAS=ON` to have DiFfRG build OpenBLAS.
 - The GNU Scientific Library [GSL](https://www.gnu.org/software/gsl/).
 - [Python](https://www.python.org/) is used for visualization (and by the bundled Boost build system).
-- [Boost](https://www.boost.org/) (≥ 1.81) is detected automatically and used if present; otherwise DiFfRG builds a bundled copy. Control this with `-DDiFfRG_SYSTEM_BOOST=AUTO/ON/OFF` (default `AUTO`) and `-DBOOST_ROOT=<path>`.
+- [Boost](https://www.boost.org/) (≥ 1.81), [TBB](https://github.com/uxlfoundation/oneTBB) (oneTBB ≥ 2021), [HDF5](https://www.hdfgroup.org/) (≥ 1.12) and [SUNDIALS](https://computing.llnl.gov/projects/sundials) (≥ 5.4) are each detected automatically and used if a viable version is present; otherwise DiFfRG builds a bundled copy. For each, pass `-D<LIB>_DIR=<prefix>` to use a specific install or `-DBUILD_<LIB>=ON` to force the bundled build (`<LIB>` ∈ `BOOST`, `TBB`, `HDF5`, `SUNDIALS`).
 - [Doxygen](https://www.doxygen.org/) and [graphviz](https://www.graphviz.org/download/) to build the documentation.
 
 The following requirements are optional:

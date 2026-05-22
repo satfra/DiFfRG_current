@@ -30,7 +30,6 @@ namespace DiFfRG
      */
     void load_map(const std::string &name, double *data, int series_number = -1)
     {
-#ifdef H5CPP
       if (!maps.has_group(name))
         throw std::runtime_error("HDF5Input::map: The map '" + name + "' has not been written to the file '" +
                                  file_name + "'.");
@@ -58,7 +57,6 @@ namespace DiFfRG
       std::vector<double> temp_data(dataspace.size());
       dataset.read(temp_data);
       std::copy(temp_data.begin(), temp_data.end(), data);
-#endif
     }
 
     /**
@@ -69,7 +67,6 @@ namespace DiFfRG
      */
     std::vector<double> load_map(const std::string &name, int series_number = -1)
     {
-#ifdef H5CPP
       if (!maps.has_group(name))
         throw std::runtime_error("HDF5Input::map: The map '" + name + "' has not been written to the file '" +
                                  file_name + "'.");
@@ -97,7 +94,6 @@ namespace DiFfRG
       std::vector<double> temp_data(dataspace.size());
       dataset.read(temp_data);
       return temp_data;
-#endif
     }
 
     /**
@@ -111,7 +107,6 @@ namespace DiFfRG
     template <size_t dim>
     std::vector<double> load_map_coord(const std::string &name, int series_number = -1)
     {
-#ifdef H5CPP
       if (!maps.has_group(name))
         throw std::runtime_error("HDF5Input::map: The map '" + name + "' has not been written to the file '" +
                                  file_name + "'.");
@@ -147,9 +142,6 @@ namespace DiFfRG
         for (size_t d = 0; d < dim; ++d)
           result.push_back(pt[d]);
       return result;
-#else
-      return {};
-#endif
     }
 
     /**
@@ -168,7 +160,6 @@ namespace DiFfRG
 
     template <typename T> std::vector<T> load_scalar(const std::string &name)
     {
-#ifdef H5CPP
       if (!scalars.has_dataset(name))
         throw std::runtime_error("HDF5Input::scalar: The scalar '" + name + "' has not been written to the file '" +
                                  file_name + "'.");
@@ -178,12 +169,9 @@ namespace DiFfRG
       std::vector<T> value(dataspace.size());
       dataset.read(value);
       return value;
-#endif
     }
 
-#ifdef H5CPP
     DiFfRG::hdf5::File &get_file();
-#endif
 
   private:
     const std::string file_name;
@@ -220,12 +208,10 @@ namespace DiFfRG
       }
     }
 
-#ifdef H5CPP
     DiFfRG::hdf5::File h5_file;
     DiFfRG::hdf5::Group scalars;
     DiFfRG::hdf5::Group maps;
     DiFfRG::hdf5::Group coords;
-#endif
 
     std::filesystem::path path;
   };

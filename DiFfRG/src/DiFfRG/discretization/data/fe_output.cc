@@ -9,9 +9,7 @@
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/data/fe_output.hh>
 
-#ifdef H5CPP
 #include <hdf5lib/hdf5.hh>
-#endif
 
 #include <memory>
 #include <stdexcept>
@@ -111,7 +109,6 @@ namespace DiFfRG
 
     m_data_out.build_patches(subdivisions);
 
-#ifdef H5CPP
     auto h5_file = hdf5_output->get_file();
     auto h5_group = h5_file.root().open_group("FE");
     {
@@ -139,7 +136,6 @@ namespace DiFfRG
       }
     }
     hdf5_output->close_file();
-#endif
 
     auto output_func = [=, this](const uint m_series_number, const double m_time) {
       try {

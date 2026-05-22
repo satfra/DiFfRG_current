@@ -154,8 +154,9 @@ diffrg_find_package(deal.II VERSION 9.4.2 HINTS ${BUNDLED_DIR})
 deal_ii_initialize_cached_variables()
 message(STATUS "Found deal.II in  ${deal.II_DIR}")
 
-# Find TBB
-diffrg_find_package(TBB VERSION 2022.0.0 HINTS ${BUNDLED_DIR})
+# Find TBB. TBB_DIR (set by the top-level build, or by the user) selects bundled
+# vs system; DiFfRG requires oneTBB >= 2021.
+diffrg_find_package(TBB VERSION 2021 HINTS ${BUNDLED_DIR})
 message(STATUS "Found TBB in ${TBB_DIR}")
 
 # Find Kokkos
@@ -163,7 +164,7 @@ diffrg_find_package(Kokkos HINTS ${BUNDLED_DIR})
 message(STATUS "Found Kokkos in ${Kokkos_DIR}")
 
 # Find Boost. find_package also honors BOOST_ROOT/Boost_DIR and standard system
-# paths, so a system Boost (selected via DiFfRG_SYSTEM_BOOST in the top-level
+# paths, so a system Boost (selected via BOOST_DIR/BUILD_BOOST in the top-level
 # build) is picked up here when BUNDLED_DIR does not contain one. Use Boost's own
 # BoostConfig.cmake (config mode); the legacy FindBoost module is removed in
 # CMake >= 3.30. Boost has shipped BoostConfig.cmake since 1.70, and DiFfRG
@@ -217,10 +218,43 @@ diffrg_find_package(autodiff VERSION 1.1.0 HINTS ${BUNDLED_DIR})
 # Find spdlog
 diffrg_find_package(spdlog VERSION 1.14.1 HINTS ${BUNDLED_DIR})
 
-# Find HDF5 (static, minimal)
-diffrg_find_package(HDF5 VERSION 2.0.0 HINTS ${BUNDLED_DIR})
+# Find HDF5. DiFfRG uses only the HDF5 C API, so 1.12 is the floor. Prefer config
+# mode so the imported targets are exported; HDF5_DIR (set by the top-level build,
+# or by the user) selects bundled vs system. Do not pass the version to
+# find_package: HDF5's config-version file uses a same-major-version policy, so
+# requesting 1.12 would reject a newer 2.x install; gate the version manually.
+find_package(HDF5 CONFIG QUIET COMPONENTS C HINTS ${BUNDLED_DIR})
+if(NOT HDF5_FOUND OR HDF5_VERSION VERSION_LESS 1.12.0)
+  message(
+    FATAL_ERROR
+      "\n"
+      "======================================================================\n"
+      "  Required dependency not found: HDF5 >= 1.12 (found '${HDF5_VERSION}')\n"
+      "======================================================================\n"
+      "  CMake could not find an HDF5 (>= 1.12) config in BUNDLED_DIR=${BUNDLED_DIR}\n"
+      "  or via HDF5_DIR. Build the bundled dependencies, install a system HDF5,\n"
+      "  or pass -DHDF5_DIR=<prefix-with-hdf5-config.cmake>.\n"
+      "======================================================================\n")
+endif()
+message(STATUS "HDF5 version: ${HDF5_VERSION}")
 message(STATUS "HDF5 include dir: ${HDF5_INCLUDE_DIRS}")
-add_compile_definitions(H5CPP)
+# Resolve the HDF5 link target: the bundled static build exports hdf5-static;
+# system installs vary (hdf5-shared / hdf5::hdf5 / HDF5::HDF5), or only set vars.
+if(TARGET hdf5-static)
+  set(DiFfRG_HDF5_LIBRARIES hdf5-static)
+elseif(TARGET hdf5::hdf5-static)
+  set(DiFfRG_HDF5_LIBRARIES hdf5::hdf5-static)
+elseif(TARGET hdf5-shared)
+  set(DiFfRG_HDF5_LIBRARIES hdf5-shared)
+elseif(TARGET hdf5::hdf5)
+  set(DiFfRG_HDF5_LIBRARIES hdf5::hdf5)
+elseif(TARGET HDF5::HDF5)
+  set(DiFfRG_HDF5_LIBRARIES HDF5::HDF5)
+else()
+  set(DiFfRG_HDF5_LIBRARIES ${HDF5_C_LIBRARIES} ${HDF5_LIBRARIES})
+  include_directories(SYSTEM ${HDF5_INCLUDE_DIRS})
+endif()
+message(STATUS "HDF5 link target(s): ${DiFfRG_HDF5_LIBRARIES}")
 
 if(${DiFfRG_MPI})
   find_package(MPI REQUIRED)
