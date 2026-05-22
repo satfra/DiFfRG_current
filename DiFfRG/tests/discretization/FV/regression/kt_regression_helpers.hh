@@ -99,7 +99,7 @@ namespace kt_regression
   }
 
   struct TemporaryDirectory {
-    explicit TemporaryDirectory(const std::string &prefix)
+    explicit TemporaryDirectory(const std::string &prefix, const bool cleanup = true) : cleanup(cleanup)
     {
       const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
       path = std::filesystem::temp_directory_path() /
@@ -109,11 +109,13 @@ namespace kt_regression
 
     ~TemporaryDirectory()
     {
+      if (!cleanup) return;
       std::error_code ec;
       std::filesystem::remove_all(path, ec);
     }
 
     std::filesystem::path path;
+    bool cleanup;
   };
 
   struct SampledProfile {
