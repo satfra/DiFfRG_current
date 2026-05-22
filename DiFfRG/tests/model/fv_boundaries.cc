@@ -28,10 +28,23 @@ namespace
   {
   };
 
-  struct DummyModelOriginOddLinearExtrapolation
-      : public DiFfRG::def::OriginOddLinearExtrapolationBoundaries<DummyModelOriginOddLinearExtrapolation>
-  {
-  };
+	  struct DummyModelOriginOddLinearExtrapolation
+	      : public DiFfRG::def::OriginOddLinearExtrapolationBoundaries<DummyModelOriginOddLinearExtrapolation>
+	  {
+	  };
+
+	  struct DummyModelOriginShiftedOddLinearExtrapolation
+	      : public DiFfRG::def::OriginShiftedOddLinearExtrapolationBoundaries<DummyModelOriginShiftedOddLinearExtrapolation>
+	  {
+	    static constexpr double origin_value = -3.0;
+
+	    template <typename NumberType, std::size_t n_components>
+	    std::array<NumberType, n_components> origin_odd_reflection_values() const
+	    {
+	      static_assert(n_components == 1, "Dummy shifted boundary model is scalar.");
+	      return {NumberType(origin_value)};
+	    }
+	  };
 
   template <std::size_t n_components>
   DiFfRG::def::BoundaryStencilValues<1, autodiff::Real<1, double>, n_components>
@@ -146,7 +159,7 @@ namespace
     return false;
   }
 
-  ReconstructionSummary1D lower_boundary_half_domain_reconstruction(const std::array<double, 3> &physical_values)
+	  ReconstructionSummary1D lower_boundary_half_domain_reconstruction(const std::array<double, 3> &physical_values)
   {
     DummyModelOriginOddLinearExtrapolation model;
 
@@ -180,8 +193,45 @@ namespace
       result.dgrad_u_minus[derivative_index] = derivative(tagged_reconstruction.grad_u_minus);
     }
 
-    return result;
-  }
+	    return result;
+	  }
+
+	  ReconstructionSummary1D shifted_lower_boundary_half_domain_reconstruction(const std::array<double, 3> &physical_values)
+	  {
+	    DummyModelOriginShiftedOddLinearExtrapolation model;
+
+	    const DiFfRG::def::BoundaryStencilValues<1, double, 1> raw_u_stencil{
+	        {{{0.0}}, {{0.0}}, {{physical_values[0]}}, {{physical_values[1]}}, {{physical_values[2]}}}};
+	    const DiFfRG::def::BoundaryStencilPoints<1> raw_x_stencil{
+	        {Point<1>(0.0), Point<1>(0.0), Point<1>(0.5), Point<1>(1.5), Point<1>(2.5)}};
+	    const std::array<std::array<types::global_dof_index, 1>, 5> dof_stencil{
+	        {{{numbers::invalid_dof_index}}, {{numbers::invalid_dof_index}}, {{10}}, {{11}}, {{12}}}};
+
+	    auto u_stencil = raw_u_stencil;
+	    auto x_stencil = raw_x_stencil;
+	    REQUIRE(model.apply_boundary_stencil(u_stencil, x_stencil, Point<1>(0.0)));
+
+	    const auto reconstruction = compute_boundary_trace(x_stencil, u_stencil, dof_stencil, Point<1>(0.0));
+
+	    ReconstructionSummary1D result;
+	    result.u_plus = scalar_value(reconstruction.u_plus);
+	    result.u_minus = scalar_value(reconstruction.u_minus);
+	    result.grad_u_plus = scalar_value(reconstruction.grad_u_plus);
+	    result.grad_u_minus = scalar_value(reconstruction.grad_u_minus);
+
+	    for (std::size_t derivative_index = 0; derivative_index < 3; ++derivative_index) {
+	      auto tagged_stencil = make_tagged_stencil(raw_u_stencil, dof_stencil, 10 + derivative_index);
+	      auto tagged_points = raw_x_stencil;
+	      REQUIRE(model.apply_boundary_stencil(tagged_stencil, tagged_points, Point<1>(0.0)));
+	      const auto tagged_reconstruction = compute_boundary_trace(tagged_points, tagged_stencil, dof_stencil, Point<1>(0.0));
+	      result.du_plus[derivative_index] = derivative(tagged_reconstruction.u_plus);
+	      result.du_minus[derivative_index] = derivative(tagged_reconstruction.u_minus);
+	      result.dgrad_u_plus[derivative_index] = derivative(tagged_reconstruction.grad_u_plus);
+	      result.dgrad_u_minus[derivative_index] = derivative(tagged_reconstruction.grad_u_minus);
+	    }
+
+	    return result;
+	  }
 
   ReconstructionSummary1D origin_full_domain_interior_face_reconstruction(const std::array<double, 3> &physical_values)
   {
@@ -435,8 +485,8 @@ TEST_CASE("OriginOddLinearExtrapolationBoundaries applies the paper-style two-gh
   }
 }
 
-TEST_CASE("OriginOddLinearExtrapolationBoundaries preserves stencil derivatives under AD conditioning",
-          "[Model][FV][Boundaries]")
+	TEST_CASE("OriginOddLinearExtrapolationBoundaries preserves stencil derivatives under AD conditioning",
+	          "[Model][FV][Boundaries]")
 {
   using namespace DiFfRG;
 
@@ -497,11 +547,111 @@ TEST_CASE("OriginOddLinearExtrapolationBoundaries preserves stencil derivatives 
       CHECK_THAT(derivative(tagged_stencil[3][0]), Catch::Matchers::WithinAbs(-1.0, tolerance));
       CHECK_THAT(derivative(tagged_stencil[4][0]), Catch::Matchers::WithinAbs(-2.0, tolerance));
     }
-  }
-}
+	  }
+	}
 
-TEST_CASE("Origin boundary reconstruction differs from the mirrored full-domain interior face",
-          "[Model][FV][Boundaries][Reconstruction]")
+	TEST_CASE("OriginShiftedOddLinearExtrapolationBoundaries applies a shifted origin stencil",
+	          "[Model][FV][Boundaries]")
+	{
+	  using namespace DiFfRG;
+
+	  DummyModelOriginShiftedOddLinearExtrapolation model;
+	  constexpr double b = DummyModelOriginShiftedOddLinearExtrapolation::origin_value;
+
+	  SECTION("lower boundary reflects around the origin value")
+	  {
+	    def::BoundaryStencilValues<1, double, 1> u_stencil{{{{11.0}}, {{12.0}}, {{1.0}}, {{2.0}}, {{4.0}}}};
+	    def::BoundaryStencilPoints<1> x_stencil{{Point<1>(-2.0), Point<1>(-1.0), Point<1>(0.5), Point<1>(1.5), Point<1>(2.5)}};
+
+	    REQUIRE(model.apply_boundary_stencil(u_stencil, x_stencil, Point<1>(0.0)));
+
+	    CHECK_THAT(x_stencil[0][0], Catch::Matchers::WithinAbs(-1.5, tolerance));
+	    CHECK_THAT(x_stencil[1][0], Catch::Matchers::WithinAbs(-0.5, tolerance));
+	    CHECK_THAT(u_stencil[0][0], Catch::Matchers::WithinAbs(2.0 * b - 4.0, tolerance));
+	    CHECK_THAT(u_stencil[1][0], Catch::Matchers::WithinAbs(2.0 * b - 2.0, tolerance));
+	    CHECK_THAT(u_stencil[2][0], Catch::Matchers::WithinAbs(b, tolerance));
+	  }
+
+	  SECTION("upper boundary keeps affine extrapolation")
+	  {
+	    def::BoundaryStencilValues<1, double, 1> u_stencil{{{{1.0}}, {{3.0}}, {{5.0}}, {{17.0}}, {{19.0}}}};
+	    def::BoundaryStencilPoints<1> x_stencil{{Point<1>(7.5), Point<1>(8.5), Point<1>(9.5), Point<1>(20.0), Point<1>(21.0)}};
+
+	    REQUIRE(model.apply_boundary_stencil(u_stencil, x_stencil, Point<1>(10.0)));
+
+	    CHECK_THAT(x_stencil[3][0], Catch::Matchers::WithinAbs(10.5, tolerance));
+	    CHECK_THAT(x_stencil[4][0], Catch::Matchers::WithinAbs(11.5, tolerance));
+	    CHECK_THAT(u_stencil[3][0], Catch::Matchers::WithinAbs(7.0, tolerance));
+	    CHECK_THAT(u_stencil[4][0], Catch::Matchers::WithinAbs(9.0, tolerance));
+	  }
+	}
+
+	TEST_CASE("OriginShiftedOddLinearExtrapolationBoundaries preserves stencil derivatives under AD conditioning",
+	          "[Model][FV][Boundaries]")
+	{
+	  using namespace DiFfRG;
+
+	  DummyModelOriginShiftedOddLinearExtrapolation model;
+
+	  SECTION("lower boundary derivatives match shifted odd reflection")
+	  {
+	    def::BoundaryStencilValues<1, double, 1> u_stencil{{{{0.0}}, {{0.0}}, {{1.0}}, {{2.0}}, {{4.0}}}};
+	    def::BoundaryStencilPoints<1> x_stencil{{Point<1>(0.0), Point<1>(0.0), Point<1>(0.5), Point<1>(1.5), Point<1>(2.5)}};
+	    const std::array<std::array<types::global_dof_index, 1>, 5> dof_stencil{
+	        {{{numbers::invalid_dof_index}}, {{numbers::invalid_dof_index}}, {{10}}, {{11}}, {{12}}}};
+
+	    {
+	      auto tagged_stencil = make_tagged_stencil(u_stencil, dof_stencil, 11);
+	      auto conditioned_points = x_stencil;
+	      REQUIRE(model.apply_boundary_stencil(tagged_stencil, conditioned_points, Point<1>(0.0)));
+	      CHECK_THAT(derivative(tagged_stencil[1][0]), Catch::Matchers::WithinAbs(-1.0, tolerance));
+	      CHECK_THAT(derivative(tagged_stencil[0][0]), Catch::Matchers::WithinAbs(0.0, tolerance));
+	      CHECK_THAT(derivative(tagged_stencil[2][0]), Catch::Matchers::WithinAbs(0.0, tolerance));
+	    }
+
+	    {
+	      auto tagged_stencil = make_tagged_stencil(u_stencil, dof_stencil, 12);
+	      auto conditioned_points = x_stencil;
+	      REQUIRE(model.apply_boundary_stencil(tagged_stencil, conditioned_points, Point<1>(0.0)));
+	      CHECK_THAT(derivative(tagged_stencil[1][0]), Catch::Matchers::WithinAbs(0.0, tolerance));
+	      CHECK_THAT(derivative(tagged_stencil[0][0]), Catch::Matchers::WithinAbs(-1.0, tolerance));
+	      CHECK_THAT(derivative(tagged_stencil[2][0]), Catch::Matchers::WithinAbs(0.0, tolerance));
+	    }
+
+	    {
+	      auto tagged_stencil = make_tagged_stencil(u_stencil, dof_stencil, 10);
+	      auto conditioned_points = x_stencil;
+	      REQUIRE(model.apply_boundary_stencil(tagged_stencil, conditioned_points, Point<1>(0.0)));
+	      CHECK_THAT(derivative(tagged_stencil[2][0]), Catch::Matchers::WithinAbs(0.0, tolerance));
+	    }
+	  }
+	}
+
+	TEST_CASE("Shifted origin boundary reconstruction reduces to zero-origin reconstruction after subtracting shift",
+	          "[Model][FV][Boundaries][Reconstruction]")
+	{
+	  constexpr double b = DummyModelOriginShiftedOddLinearExtrapolation::origin_value;
+	  const std::array<double, 3> zero_origin_values{{1.0, 3.0, 5.0}};
+	  const std::array<double, 3> shifted_values{{zero_origin_values[0] + b, zero_origin_values[1] + b,
+	                                              zero_origin_values[2] + b}};
+
+	  const auto zero_origin = lower_boundary_half_domain_reconstruction(zero_origin_values);
+	  const auto shifted = shifted_lower_boundary_half_domain_reconstruction(shifted_values);
+
+	  CHECK_THAT(shifted.u_plus - b, Catch::Matchers::WithinAbs(zero_origin.u_plus, tolerance));
+	  CHECK_THAT(shifted.u_minus - b, Catch::Matchers::WithinAbs(zero_origin.u_minus, tolerance));
+	  CHECK_THAT(shifted.grad_u_plus, Catch::Matchers::WithinAbs(zero_origin.grad_u_plus, tolerance));
+	  CHECK_THAT(shifted.grad_u_minus, Catch::Matchers::WithinAbs(zero_origin.grad_u_minus, tolerance));
+	  for (std::size_t i = 0; i < 3; ++i) {
+	    CHECK_THAT(shifted.du_plus[i], Catch::Matchers::WithinAbs(zero_origin.du_plus[i], tolerance));
+	    CHECK_THAT(shifted.du_minus[i], Catch::Matchers::WithinAbs(zero_origin.du_minus[i], tolerance));
+	    CHECK_THAT(shifted.dgrad_u_plus[i], Catch::Matchers::WithinAbs(zero_origin.dgrad_u_plus[i], tolerance));
+	    CHECK_THAT(shifted.dgrad_u_minus[i], Catch::Matchers::WithinAbs(zero_origin.dgrad_u_minus[i], tolerance));
+	  }
+	}
+
+	TEST_CASE("Origin boundary reconstruction differs from the mirrored full-domain interior face",
+	          "[Model][FV][Boundaries][Reconstruction]")
 {
   SECTION("deterministic non-clipped stencil exposes the dropped origin dof")
   {
