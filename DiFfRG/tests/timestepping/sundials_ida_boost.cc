@@ -41,7 +41,7 @@ using namespace DiFfRG;
 template <typename Model, typename TimeStepper>
 bool run_hybrid(const std::string &test_name, double expected_precision, double cur_dt = 1e-3,
                 double final_time = 1.0, double output_dt = 5e-2, double impl_max_dt = 1e-1,
-                double impl_rel_tol = 1e-6)
+                double impl_rel_tol = 1e-6, int coupling_mode = 0, double expl_max_dt = 1e-2)
 {
   using namespace dealii;
   constexpr uint dim = 1;
@@ -70,7 +70,12 @@ bool run_hybrid(const std::string &test_name, double expected_precision, double 
         {{"final_time", final_time},
          {"output_dt", output_dt},
          {"explicit",
-          {{"dt", cur_dt}, {"minimal_dt", 1e-7}, {"maximal_dt", 1e-2}, {"abs_tol", 1e-13}, {"rel_tol", 1e-10}}},
+          {{"dt", cur_dt},
+           {"minimal_dt", 1e-7},
+           {"maximal_dt", expl_max_dt},
+           {"abs_tol", 1e-13},
+           {"rel_tol", 1e-10},
+           {"coupling_mode", coupling_mode}}},
          {"implicit",
           {{"dt", 1e-3}, {"minimal_dt", 1e-7}, {"maximal_dt", impl_max_dt}, {"abs_tol", 1e-10},
            {"rel_tol", impl_rel_tol}}}}},
@@ -205,6 +210,89 @@ TEST_CASE("Hybrid ABM cur_dt scan on two-way coupled problem",
                                     /*final_time=*/1.0, /*output_dt=*/5e-2,
                                     /*impl_max_dt=*/5e-2);
   }
+}
+
+//--------------------------------------------
+// Diagnostic scans comparing the three coupling modes (0 lag / predictor, 1 stagger,
+// 2 predict / lookahead) in the regime they are designed for: dt_implicit << dt_explicit.
+// The explicit step is held large (maximal_dt = 2e-1) and IDA's step small
+// (impl_max_dt = 1e-3), so IDA subsamples each explicit step ~100x. The v-error vs cur_dt
+// is printed for each mode so the modes can be compared directly from the log. Non-gating.
+//--------------------------------------------
+
+namespace
+{
+const char *coupling_mode_name(int m) { return m == 0 ? "lag" : (m == 1 ? "stagger" : "predict"); }
+} // namespace
+
+TEST_CASE("Hybrid ABM coupling-mode scan, dt_impl<<dt_expl, two-way",
+          "[timestepping][sundials_ida_boost][abm][scan][modes]")
+{
+  using Model = Testing::ModelHybridTwoWay<1>;
+  using VectorType = dealii::Vector<double>;
+  using SparseMatrixType = dealii::SparseMatrix<double>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<VectorType, SparseMatrixType, 1, UMFPack>;
+  for (int mode : {0, 1, 2})
+    for (double cur_dt : {1e-1, 5e-2, 2.5e-2}) {
+      const std::string tag =
+          "test_modes_twoway_" + std::string(coupling_mode_name(mode)) + "_" + std::to_string(cur_dt);
+      run_hybrid<Model, TimeStepper>(tag, /*tol=*/1e-30, /*cur_dt=*/cur_dt,
+                                      /*final_time=*/1.0, /*output_dt=*/5e-2,
+                                      /*impl_max_dt=*/1e-3, /*impl_rel_tol=*/1e-6,
+                                      /*coupling_mode=*/mode, /*expl_max_dt=*/2e-1);
+    }
+}
+
+TEST_CASE("Hybrid ABM coupling-mode scan, dt_impl<<dt_expl, smooth",
+          "[timestepping][sundials_ida_boost][abm][scan][modes]")
+{
+  using Model = Testing::ModelHybridSmooth<1>;
+  using VectorType = dealii::Vector<double>;
+  using SparseMatrixType = dealii::SparseMatrix<double>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<VectorType, SparseMatrixType, 1, UMFPack>;
+  for (int mode : {0, 1, 2})
+    for (double cur_dt : {1e-1, 5e-2, 2.5e-2}) {
+      const std::string tag =
+          "test_modes_smooth_" + std::string(coupling_mode_name(mode)) + "_" + std::to_string(cur_dt);
+      run_hybrid<Model, TimeStepper>(tag, /*tol=*/1e-30, /*cur_dt=*/cur_dt,
+                                      /*final_time=*/1.0, /*output_dt=*/5e-2,
+                                      /*impl_max_dt=*/1e-3, /*impl_rel_tol=*/1e-6,
+                                      /*coupling_mode=*/mode, /*expl_max_dt=*/2e-1);
+    }
+}
+
+// Weak explicit<-implicit coupling: the explicit variable is nearly autonomous, so the
+// arrow-1 extrapolation that destabilises mode 1 on the stiff two-way model should be
+// harmless here. This isolates how the v-serving choice affects the *implicit* (u)
+// accuracy in the dt_impl<<dt_expl regime, and checks mode 2 specifically.
+TEST_CASE("Hybrid ABM coupling-mode scan, dt_impl<<dt_expl, weak coupling",
+          "[timestepping][sundials_ida_boost][abm][scan][modes]")
+{
+  using Model = Testing::ModelHybridWeakCoupling<1>;
+  using VectorType = dealii::Vector<double>;
+  using SparseMatrixType = dealii::SparseMatrix<double>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<VectorType, SparseMatrixType, 1, UMFPack>;
+  for (int mode : {0, 1, 2})
+    for (double cur_dt : {1e-1, 5e-2, 2.5e-2}) {
+      const std::string tag =
+          "test_modes_weak_" + std::string(coupling_mode_name(mode)) + "_" + std::to_string(cur_dt);
+      run_hybrid<Model, TimeStepper>(tag, /*tol=*/1e-30, /*cur_dt=*/cur_dt,
+                                      /*final_time=*/1.0, /*output_dt=*/5e-2,
+                                      /*impl_max_dt=*/1e-3, /*impl_rel_tol=*/1e-6,
+                                      /*coupling_mode=*/mode, /*expl_max_dt=*/2e-1);
+    }
+}
+
+TEST_CASE("Hybrid ABM mode 2 (lookahead) handles weak explicit<-implicit coupling",
+          "[timestepping][sundials_ida_boost][abm][diag]")
+{
+  using Model = Testing::ModelHybridWeakCoupling<1>;
+  using VectorType = dealii::Vector<double>;
+  using SparseMatrixType = dealii::SparseMatrix<double>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<VectorType, SparseMatrixType, 1, UMFPack>;
+  REQUIRE(run_hybrid<Model, TimeStepper>("test_diag_abm_weak_predict", /*tol=*/1e-3, /*cur_dt=*/5e-2,
+                                          /*final_time=*/1.0, /*output_dt=*/5e-2, /*impl_max_dt=*/1e-3,
+                                          /*impl_rel_tol=*/1e-6, /*coupling_mode=*/2, /*expl_max_dt=*/2e-1));
 }
 
 TEST_CASE("Hybrid RK stepper retains accuracy on smooth problem at ~1 substep per IDA step",

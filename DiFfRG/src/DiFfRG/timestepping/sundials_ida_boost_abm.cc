@@ -112,6 +112,25 @@ namespace DiFfRG
     adams_bashforth_moulton<Steps, State, Value, Deriv, Time, Algebra, Operations, Resizer, InitializingStepper>
         variable_stepper;
 
+    // [PREDICT, mode 2] Persistent cache for the forward lookahead: a copy of the multistep
+    // stepper plus the lookahead trajectory it has produced beyond the committed buffer
+    // front. The cache is valid until the committed buffer / checkpoints change (i.e. until
+    // commit_segment_to runs, which happens between IDA steps, never within one Newton
+    // solve), so all residual / jacobian evaluations of a step reuse it. This is what turns
+    // the lookahead cost from O(extra steps) * (Newton iterations) into ~O(extra steps).
+    decltype(variable_stepper) look_stepper;
+    std::vector<double> look_times;
+    std::vector<Eigen::VectorXd> look_states;
+    bool look_valid = false;
+
+    // When true, the spatial coupling read by the explicit RHS is *extrapolated* in time
+    // (no clamp into the checkpoint span) rather than interpolated. Used only by the
+    // opt-in staggered-lookahead serving below, where the explicit stepper is advanced
+    // into not-yet-accepted territory and therefore genuinely needs spatial data beyond
+    // the last accepted checkpoint. The committed (accepted-region) integration always
+    // runs with this false, i.e. pure interpolation.
+    bool spatial_extrapolate = false;
+
     auto get_variable_residual = [&](const Eigen::VectorXd &x, Eigen::VectorXd &dxdt, const double t) {
       const auto now = std::chrono::high_resolution_clock::now();
 
@@ -122,12 +141,14 @@ namespace DiFfRG
       // Interpolate the spatial solution in time across the accepted checkpoints so the
       // coupling tracks the spatial trajectory. Quadratic (3-point Lagrange, O(dt^3)) once
       // three checkpoints exist, falling back to linear / constant early on. The query is
-      // clamped into the stencil span, so this is always interpolation, never extrapolation.
+      // normally clamped into the stencil span (interpolation only); when
+      // spatial_extrapolate is set (staggered-lookahead serving) the clamp is lifted so the
+      // explicit step can read the spatial trajectory extrapolated forward to its endpoint.
       const std::size_t nck = spatial_ckpt_times.size();
       if (nck >= 3) {
         const std::size_t i0 = nck - 3, i1 = nck - 2, i2 = nck - 1;
         const double t0 = spatial_ckpt_times[i0], t1 = spatial_ckpt_times[i1], t2 = spatial_ckpt_times[i2];
-        const double tc = std::clamp(t, t0, t2);
+        const double tc = spatial_extrapolate ? t : std::clamp(t, t0, t2);
         const double L0 = ((tc - t1) * (tc - t2)) / ((t0 - t1) * (t0 - t2));
         const double L1 = ((tc - t0) * (tc - t2)) / ((t1 - t0) * (t1 - t2));
         const double L2 = ((tc - t0) * (tc - t1)) / ((t2 - t0) * (t2 - t1));
@@ -138,7 +159,7 @@ namespace DiFfRG
       } else if (nck == 2) {
         const double t0 = spatial_ckpt_times[0], t1 = spatial_ckpt_times[1];
         double alpha = (t1 > t0) ? (t - t0) / (t1 - t0) : 1.;
-        alpha = std::clamp(alpha, 0., 1.);
+        if (!spatial_extrapolate) alpha = std::clamp(alpha, 0., 1.);
         spatial_y_dealii = spatial_ckpts[0];
         spatial_y_dealii *= (1. - alpha);
         spatial_y_dealii.add(alpha, spatial_ckpts[1]);
@@ -209,6 +230,31 @@ namespace DiFfRG
     // must never change after this point.
     const double cur_dt = std::min(expl.dt, expl.maximal_dt);
 
+    // How the explicit variable couples to the (implicit) spatial block, via
+    // /timestepping/explicit/coupling_mode:
+    //   0 LAG             : the explicit buffer lags IDA; the committed/output trajectory
+    //                        reads the spatial coupling *interpolated* between accepted
+    //                        checkpoints (best one-way accuracy), and v is served to IDA by
+    //                        a forward predictor (cheap, but the served v plateaus -> the
+    //                        two-way coupling error floors). One set of explicit steps.
+    //   1 STAGGER (default): the explicit grid leads the *accepted* region by half a step
+    //                        (midpoint-triggered, advance_lead_half); the spatial coupling
+    //                        is extrapolated only half an explicit step, and IDA's
+    //                        sub-queries past the midpoint are served by interpolation.
+    //                        One set of explicit steps (minimal cost); trades a bounded
+    //                        half-step extrapolation in the output for an interpolated v.
+    //   2 PREDICT (expensive): keeps the LAG committed/output path (interpolated coupling)
+    //                        AND additionally serves v to IDA from a separate forward
+    //                        lookahead integration interpolated to the query time -- both
+    //                        coupling arrows interpolated (best accuracy) at the cost of a
+    //                        second set of explicit RHS evaluations.
+    const int coupling_mode = json.get_int("/timestepping/explicit/coupling_mode", 1);
+    const bool mode_lag = (coupling_mode == 0);
+    const bool mode_stagger = (coupling_mode == 1);
+    const bool mode_predict = (coupling_mode == 2);
+    // Largest IDA time confirmed accepted (drives the half-step trigger in STAGGER mode).
+    double t_accepted = t_start;
+
     // Linearly interpolate the buffered trajectory to time t (clamped to the buffer range).
     auto interpolate_buffer = [&](VectorType &variable_y, const double t) {
       if (t <= variable_buffer_times.front()) {
@@ -258,6 +304,22 @@ namespace DiFfRG
       dv_committed *= -1.;
     };
 
+    // [STAGGER, investigation] Re-anchor the forward predictor at the explicit buffer's
+    // front, with a slope from backward-differencing the last two buffer points (no extra
+    // RHS eval). Needed because mode 1 never calls commit_segment_to, so otherwise the
+    // predictor stays frozen at t_start with t_start's slope and is served (stale) for
+    // every first-half query.
+    auto refresh_predictor_from_buffer_tail = [&]() {
+      const std::size_t N = variable_buffer.size();
+      if (N < 2) return;
+      const double dt = variable_buffer_times[N - 1] - variable_buffer_times[N - 2];
+      if (dt <= 0) return;
+      t_committed = variable_buffer_times[N - 1];
+      if (dv_committed.size() != variable_buffer[N - 1].size()) dv_committed.resize(variable_buffer[N - 1].size());
+      dv_committed = (variable_buffer[N - 1] - variable_buffer[N - 2]) / dt;
+      have_prev_dv = false; // linear extrapolation off the fresh anchor
+    };
+
     // Quadratic predictor at time t (>= t_committed). Falls back to linear before the
     // first second-derivative estimate is available.
     auto eval_predictor = [&](Eigen::VectorXd &out, const double t) {
@@ -271,16 +333,131 @@ namespace DiFfRG
       }
     };
 
+    // [STAGGER] Advance the REAL explicit buffer forward in whole cur_dt steps -- each
+    // taken exactly ONCE over the run -- until its front leads the accepted spatial region
+    // (t_accepted) by no more than half a step. Equivalently, the step landing on a grid
+    // point t_{k+1} is taken once t_accepted has reached the interval midpoint t_k + dt/2,
+    // so the explicit RHS reads the spatial coupling interpolated over [t_k, midpoint] and
+    // EXTRAPOLATED only over (midpoint, t_{k+1}] -- a half-step extrapolation. When IDA
+    // leaps far ahead (t_accepted >> front) the same loop drains several whole steps whose
+    // endpoints lie inside the accepted region, i.e. read the coupling by interpolation:
+    // the "explicit catches up" degeneration. Reads only accepted checkpoints (never IDA's
+    // trial iterate), so the served value stays a deterministic function of t.
+    auto advance_lead_half = [&]() {
+      spatial_extrapolate = true;
+      double step_time = variable_buffer_times.back();
+      variable_sol = variable_buffer.back();
+      int guard = 0;
+      while (t_accepted + 1e-12 * std::max(1.0, std::abs(t_accepted)) >= step_time + 0.5 * cur_dt &&
+             guard++ < 1000000) {
+        variable_stepper.do_step(get_variable_residual, variable_sol, step_time, cur_dt);
+        step_time += cur_dt;
+        variable_buffer.push_back(variable_sol);
+        variable_buffer_times.push_back(step_time);
+      }
+      spatial_extrapolate = false;
+    };
+
+    // [STAGGER] Drain whole cur_dt steps until the buffer brackets `target` (used at output
+    // / t_stop, where the accepted spatial state at `target` is already a checkpoint, so the
+    // coupling is interpolated up to it).
+    auto advance_lead_to = [&](const double target) {
+      spatial_extrapolate = true;
+      double step_time = variable_buffer_times.back();
+      variable_sol = variable_buffer.back();
+      int guard = 0;
+      while (step_time < target && !is_close(step_time, target) && guard++ < 1000000) {
+        variable_stepper.do_step(get_variable_residual, variable_sol, step_time, cur_dt);
+        step_time += cur_dt;
+        variable_buffer.push_back(variable_sol);
+        variable_buffer_times.push_back(step_time);
+      }
+      spatial_extrapolate = false;
+    };
+
     // Push an accepted spatial checkpoint (converged state at an accepted time) onto the
     // ring, keeping at most the three most recent. Consumed by get_variable_residual for
     // the quadratic-in-time spatial interpolation.
     auto push_checkpoint = [&](const double t, const dealii::Vector<double> &S) {
+      // Guard against near-duplicate times: two checkpoints closer than ~0.1*cur_dt would
+      // make a Lagrange denominator (t_i - t_j) near zero and blow up the quadratic. This
+      // happens e.g. when an output-time checkpoint coincides with a recently pushed one.
+      // Replace (update) the last checkpoint instead of appending a degenerate stencil node.
+      if (!spatial_ckpt_times.empty() && t - spatial_ckpt_times.back() < 0.1 * cur_dt) {
+        spatial_ckpt_times.back() = t;
+        spatial_ckpts.back() = S;
+        return;
+      }
       spatial_ckpt_times.push_back(t);
       spatial_ckpts.push_back(S);
       if (spatial_ckpt_times.size() > 3) {
         spatial_ckpt_times.erase(spatial_ckpt_times.begin());
         spatial_ckpts.erase(spatial_ckpts.begin());
       }
+    };
+
+    // Push an accepted checkpoint only once its time has advanced by ~cur_dt/2 since the
+    // last one, i.e. downsample IDA's acceptances to ~half the EXPLICIT cadence. This keeps
+    // the 3-point stencil ~cur_dt wide with its latest point ~half a step behind the
+    // explicit front, so the half-step extrapolation in advance_lead_half is a
+    // well-conditioned ~half-stencil extrapolation. Without downsampling, when
+    // dt_implicit << dt_explicit the stencil would be only ~dt_implicit wide and
+    // extrapolating half an explicit step would amplify wildly.
+    auto maybe_push_checkpoint = [&](const double t, const dealii::Vector<double> &S) {
+      if (spatial_ckpt_times.empty() || t - spatial_ckpt_times.back() >= 0.5 * cur_dt - 1e-12)
+        push_checkpoint(t, S);
+    };
+
+    // [PREDICT, mode 2] Serve v(t) to IDA from a forward LOOKAHEAD, CACHED per accepted
+    // frontier. The committed/output buffer keeps advancing via the LAG path's
+    // commit_segment_to (interpolated coupling), so both arrows are interpolated -- best
+    // accuracy. The lookahead trajectory (look_times / look_states), produced by a copy of
+    // the multistep stepper that reads the spatial coupling extrapolated to each endpoint,
+    // is built ONCE per validity epoch and only EXTENDED (never recomputed) as IDA's trial
+    // time grows. commit_segment_to invalidates it (look_valid=false) whenever the committed
+    // buffer / checkpoints change, which happens between IDA steps, never within a Newton
+    // solve -- so every residual / jacobian evaluation of a step reuses the same lookahead.
+    // The result depends only on the committed buffer + accepted checkpoints, never on IDA's
+    // trial iterate, so it is a deterministic function of t (required for Newton).
+    auto serve_lookahead = [&](VectorType &variable_y, const double t) {
+      if (t <= variable_buffer_times.back() || is_close(t, variable_buffer_times.back())) {
+        interpolate_buffer(variable_y, t);
+        return;
+      }
+      if (variable_buffer.size() < 2) {
+        eval_predictor(variable_ret, t);
+        eigen_to_dealii(variable_ret, variable_y);
+        return;
+      }
+      // (Re)seed the cache from the current committed front when it has been invalidated.
+      if (!look_valid) {
+        look_stepper = variable_stepper; // copy the committed multistep history
+        look_times.assign(1, variable_buffer_times.back());
+        look_states.assign(1, variable_buffer.back());
+        look_valid = true;
+      }
+      // Extend the cached lookahead until it brackets t (no work if it already does).
+      if (look_times.back() < t && !is_close(look_times.back(), t)) {
+        spatial_extrapolate = true;
+        Eigen::VectorXd s = look_states.back();
+        double st = look_times.back();
+        int guard = 0;
+        while (st < t && !is_close(st, t) && guard++ < 100000) {
+          look_stepper.do_step(get_variable_residual, s, st, cur_dt);
+          st += cur_dt;
+          look_states.push_back(s);
+          look_times.push_back(st);
+        }
+        spatial_extrapolate = false;
+      }
+      // Interpolate the cached lookahead at t.
+      std::size_t idx = look_times.size() - 2;
+      for (std::size_t i = 0; i + 1 < look_times.size(); ++i)
+        if (look_times[i] <= t && t <= look_times[i + 1]) idx = i;
+      const double t0 = look_times[idx], t1 = look_times[idx + 1];
+      const double a = (t1 > t0) ? std::clamp((t - t0) / (t1 - t0), 0., 1.) : 1.;
+      variable_ret = (1. - a) * look_states[idx] + a * look_states[idx + 1];
+      eigen_to_dealii(variable_ret, variable_y);
     };
 
     // Advance the ABM integrator in uniform cur_dt steps while a *whole* step still fits
@@ -323,6 +500,8 @@ namespace DiFfRG
         spatial_lo_time = t_committed;
         // Refresh the predictor used by the next speculative Newton solve.
         refresh_dv_committed_from_buffer();
+        // The committed front / checkpoints moved -> the PREDICT lookahead cache is stale.
+        look_valid = false;
       }
     };
 
@@ -362,10 +541,17 @@ namespace DiFfRG
 
       if (t > frontier && !is_close(t, frontier)) {
         // IDA advanced -> the previous trial at `frontier` was accepted. spatial_hi
-        // (saved from the last call at `frontier`) is the converged spatial state
-        // there; commit the segment immediately.
-        if (frontier > t_committed && !is_close(frontier, t_committed))
+        // (saved from the last call at `frontier`) is the converged spatial state there.
+        t_accepted = std::max(t_accepted, frontier);
+        if (mode_stagger) {
+          // Record it as a (downsampled) checkpoint feeding the spatial extrapolation; the
+          // explicit buffer is advanced lazily in the serving step below, not here.
+          maybe_push_checkpoint(frontier, spatial_hi);
+        } else if (frontier > t_committed && !is_close(frontier, t_committed)) {
+          // LAG / PREDICT: fold the accepted segment into the committed (interpolated)
+          // output buffer.
           commit_segment_to(spatial_hi, frontier);
+        }
         // Move on to the new trial endpoint; its spatial state is still speculative.
         frontier = t;
         spatial_hi = spatial_y;
@@ -383,11 +569,28 @@ namespace DiFfRG
         spatial_hi = spatial_y;
       }
 
-      // Quadratic predictor (linear before the first d2v estimate is available). The
-      // result is independent of `spatial_y`, so repeated Newton iterations at the same
-      // trial endpoint (and even retries after rejection) all see the same v(t).
-      eval_predictor(variable_ret, t);
-      eigen_to_dealii(variable_ret, variable_y);
+      // Serve v(t) to IDA. All three modes are independent of `spatial_y`, so repeated
+      // Newton iterations at the same trial endpoint (and retries after rejection) all see
+      // the same v(t) -- which is what keeps Newton convergent when the FEM source reads v.
+      if (mode_stagger) {
+        // Keep the explicit grid half a step ahead of the accepted region, then: queries
+        // past the current interval's midpoint fall inside the buffer -> interpolate
+        // (centered); queries still in the first half are served by the forward predictor
+        // (re-anchored at the buffer front).
+        advance_lead_half();
+        refresh_predictor_from_buffer_tail();
+        if (t <= variable_buffer_times.back() || is_close(t, variable_buffer_times.back())) {
+          interpolate_buffer(variable_y, t);
+        } else {
+          eval_predictor(variable_ret, t);
+          eigen_to_dealii(variable_ret, variable_y);
+        }
+      } else if (mode_predict) {
+        serve_lookahead(variable_y, t);
+      } else {
+        eval_predictor(variable_ret, t);
+        eigen_to_dealii(variable_ret, variable_y);
+      }
       assembler->set_time(t);
     };
 
@@ -398,6 +601,20 @@ namespace DiFfRG
     auto commit_variables = [&](VectorType &variable_y, const VectorType &spatial_y, const double t) {
       if (variable_buffer.empty()) {
         request_variables(variable_y, spatial_y, t);
+        return;
+      }
+      if (mode_stagger) {
+        // The accepted spatial state at t is known here, so record it as a checkpoint
+        // (anchoring the spatial coupling at the right end), then advance the explicit
+        // buffer up to t and interpolate. Each step is still taken exactly once.
+        if (frontier > spatial_ckpt_times.back() && !is_close(frontier, spatial_ckpt_times.back()))
+          maybe_push_checkpoint(frontier, spatial_hi);
+        push_checkpoint(t, spatial_y);
+        if (t > frontier) frontier = t;
+        t_accepted = std::max(t_accepted, t);
+        advance_lead_to(t);
+        interpolate_buffer(variable_y, t);
+        assembler->set_time(t);
         return;
       }
       if (frontier > t_committed && !is_close(frontier, t_committed))
