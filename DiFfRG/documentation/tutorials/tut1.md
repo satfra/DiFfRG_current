@@ -107,20 +107,26 @@ After setting up the configuration, we choose the algorithms used in our simulat
 After making an alias for the numerical model, which we will specify in a moment, we choose a spatial (field space) dimension, which is here simply taken from the Model.
 
 The `Discretization` gives a prescription to discretize the field space. Here, we choose the `CG`, i.e. *Continuous Galerkin* discretization and accordingly a fitting `Assembler`. The assembler, as the name implies, assembles the system of equations to be solved. In practice, the differential equation you specify in the `Model` is discretized by the `Assembler` using the `Discretization` and brought into the form of a time-dependent, nonlinear ODE (ordinary differential equation)
-$$
-  F(\partial_t v_i, v_i) = 0\,,
-$$
+
+```{math}
+F(\partial_t v_i, v_i) = 0\,,
+```
+
 where $v_i$ are the components of the discretization. The `Assembler` is directly invoked by the `TimeStepper` which requests the construction of the above equation at every (RG) time step and evolves the system according to it.
 If you are unfamiliar with [FEM](https://en.wikipedia.org/wiki/Finite_element_method) methods, it would be recommended to at least understand the basics of it.
 
 Next, we choose the [*SUNDIALS_IDA*](https://computing.llnl.gov/projects/sundials/ida) timestepper, which is the most performant choice for FEM setups with spontaneous symmetry breaking. IDA is a differential-algebraic solver, i.e. it solves both equations dependent on time, as above,
-$$
-  F(\partial_t v_i, v_i) = 0\,,
-$$
+
+```{math}
+F(\partial_t v_i, v_i) = 0\,,
+```
+
 but also stationary (secondary) equations without explicit dependence on time derivatives,
-$$
-  G(v_i) = 0\,.
-$$
+
+```{math}
+G(v_i) = 0\,.
+```
+
 We will show the utility of this in a later tutorial.
 Note that the TimeStepper takes an additional argument, where we can choose the linear solver. The direct solver `UMFPack` is a simple but good choice, as it solves any linear system exactly. However, with large systems, e.g. in $d\geq2$, `GMRES` or another iterative solver is usually much faster and thus preferred.
 
@@ -153,13 +159,17 @@ and use it to run the time-stepper from RG-time 0 to the final RG-time, which we
   auto time = timer.wall_time();
 ```
 Note here, that RG-time is defined on the level of the code as positive, i.e.
-$$
-  t_+ = \ln \Lambda / k
-$$
+
+```{math}
+t_+ = \ln \Lambda / k
+```
+
 whereas the usual convention is
-$$
-  t_- = \ln k / \Lambda
-$$
+
+```{math}
+t_- = \ln k / \Lambda
+```
+
 Furthermore, we recorded the time the simulation took using the `dealii::Timer` class.
 
 We finish the program by printing a bit of information to the log file, in particular the performance and utilization of the `Assembler`.
@@ -174,9 +184,10 @@ We finish the program by printing a bit of information to the log file, in parti
 ## model.hh
 
 Now we need to specify the equation system to solve. For this example, we will just implement Burgers' equation, which is not fRG-related but a simple hydrodynamic equation given by
-$$
-  \partial_t u(x,t) + \frac12 \partial_x u(x,t)^2 = 0
-$$
+
+```{math}
+\partial_t u(x,t) + \frac12 \partial_x u(x,t)^2 = 0
+```
 
 First things first, we set a few things up before we get to the equation system:
 ```cpp
@@ -234,10 +245,12 @@ Now we define the actual numerical model. We need to derive the class from `def:
 - `def::fRG` provides a method where $t$ is automatically communicated to the model and the RG-scale $k$ is computed from it. Furthermore, it defines the variables `t` and `k` which can be directly used in the code.
 - `def::FlowBoundaries` is necessary to close the FEM system, as the boundary conditions at $x=0$ and $x = x_\textrm{max}$ need to be specified. `def::FlowBoundaries` sets up inflow/outflow boundary conditions.
 - `def::AD` creates methods for the automatic evaluation of jacobians of our system, i.e.
-$$
-  \frac{\partial (\partial_t u - \frac12 \partial_x u^2)}{\partial u}\,\qquad\text{and}\qquad
+
+```{math}
+\frac{\partial (\partial_t u - \frac12 \partial_x u^2)}{\partial u}\,\qquad\text{and}\qquad
   \frac{\partial (\partial_t u - \frac12 \partial_x u^2)}{\partial (\partial_t u)}\,.
-$$
+```
+
 This is achieved by the use of [automatic differentiation](https://en.wikipedia.org/wiki/Automatic_differentiation), using the [autodiff](https://autodiff.github.io/) library. This is also the reason why we must template and not use explicit types in the methods of the numerical model, as will be seen below.
 
 ```cpp
@@ -272,9 +285,11 @@ The `initial_condition` method is invoked by the `initial_condition.interpolate(
 };
 ```
 The `flux` method implements the actual equation. If we don't specify anything else, the `Assembler` will construct the equation
-$$
-  \partial_t u + \partial_x (F_i(u)) = 0
-$$
+
+```{math}
+\partial_t u + \partial_x (F_i(u)) = 0
+```
+
 so that our choice of $F_i(u) = \frac12 u^2$ exactly implements Burgers' equation.
 
 ## parameters.json

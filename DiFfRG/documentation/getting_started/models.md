@@ -22,43 +22,66 @@ Inside the class we can now overwrite all methods from DiFfRG::def::AbstractMode
 ## Spatial discretization
 
 The FE functions usually correspond to expansion coefficients in a derivative expansion. As an example consider a bosonic theory as in [this](https://arxiv.org/abs/2305.00816) paper: Treating a purely bosonic theory in first-order derivative expansion, the effective action is given by
-$$\large
+
+```{math}
+\large
   \Gamma_k[\phi] = \int_x \bigg(\frac{1}{2}Z(\rho)(\partial_\mu\phi)^2 + V(\rho) \bigg)\,,
-$$
+```
+
 where $ \rho = \phi^2 / 2 $.
 A flowing reparametrization of the field $ \phi $ is being performed and is given by
-$$\large
+
+```{math}
+\large
   \dot\phi(x) = \frac{1}{2} \eta(\rho) \phi\,.
-$$
+```
+
 where we introduced the anomalous dimension $ \eta = \frac{\partial_{t_+} Z}{Z} $.
 
 The flow is then fully parametrized in terms of FE functions
-$$
+
+```{math}
 \begin{aligned}\large
   u_1(x) &= m^2(\rho) = \partial_\rho V(\rho)\,, \\\large
   u_2(x) &= \eta(\rho)\,,
 \end{aligned}
-$$
+```
+
 where we also chose the field $ x = \rho $. We see here that the FE functions live on a spatial discretization of the d-dimensional field space $ \mathbb{R}^d $.
 
 With the above ansatz one can quickly compute flow equations from the Wetterich equation,
-$$\large
+
+```{math}
+\large
   k\partial_k \Gamma_k[\Phi] = \frac{1}{2}\text{Tr}\, G_{\alpha\beta}\,k\partial_k R^{\alpha\beta}\,.
-$$
-We remark that the time $$\large t = t_+ = \ln\left(\frac{\Lambda}{k}\right)\,,$$ as used in DiFfRG, is opposite in sign to the RG-time as defined in most literature, $t_- = \ln\left(\frac{k}{\Lambda}\right)$. This is simply due to many time solvers not accepting negative time arguments.
+```
+
+We remark that the time 
+
+```{math}
+\large t = t_+ = \ln\left(\frac{\Lambda}{k}\right)\,,
+```
+
+ as used in DiFfRG, is opposite in sign to the RG-time as defined in most literature, $t_- = \ln\left(\frac{k}{\Lambda}\right)$. This is simply due to many time solvers not accepting negative time arguments.
 
 In order to discretize the flow equations on a finite element space, the flow equations are expressed in the standard differential-algebraic form
-$$\large
+
+```{math}
+\large
   m_i(\partial_t u_j, u_j, x) + \partial_x F_i(u_j, \partial_x u_j, \partial_x^2 u_j, e_b, v_a, x) + s_i(u_j, \partial_x u_j, \partial_x^2 u_j, e_b, v_a, x) = 0\,,
-$$
+```
+
 where $ m_i $ are called the mass functions, $ F_i $ the fluxes and $ s_i $ the sources. The latter two are functions of the FE functions, their derivatives, the field variable, the variables and the extractors.
 
 In principle, the above system of equations can contain both equations containing the time derivatives, i.e. differential components, and equations without time derivatives, i.e. algebraic components. In order to solve the resulting DAEs one is currently restricted to the **SUNDIALS IDA** solver, which is however highly efficient and actually recommended for most cases.
 
 Alternatively, the restricted formulation, allowing only for differential components,
-$$\large
+
+```{math}
+\large
   m_{ij}(x) \partial_t u_j + \partial_x F_i(u_j, \partial_x u_j, \partial_x^2 u_j, e_b, v_a, x) + s_i(u_j, \partial_x u_j, \partial_x^2 u_j, e_b, v_a, x) = 0\,,
-$$
+```
+
 is used for all other provided ODE solvers, i.e. Runge-Kutta methods.
 
 Note, that in the above definitions a change from $ t = t_+ \to t_- $ simply moves all terms onto the other side, i.e. when calculating the flow equations in the standard $t_-$, one can still copy and paste everything without changing signs if the mass functions are simply $ m_i = \partial_{t_+} u_i = - \partial_{t_-} u_i $ (as is default).

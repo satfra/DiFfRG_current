@@ -14,39 +14,47 @@ What actually changes is only the system of equations in `model.hh`, i.e. the nu
 This section assumes the reader is already familiar with the model. If not, [this](https://arxiv.org/abs/2309.07335) paper and references therein may be helpful.
 
 Consider the effective action for a Quark-Meson model in LPA, given by
-$$\large
+
+```{math}
+\large
   \Gamma_k[\bar q, q, \phi] = \int_x \bigg( \bar q (\partial_\mu\gamma_\mu + i \mu_q \gamma_0)q + \frac{1}{2}(\partial_\mu\phi)^2 + V(\rho) \bigg)\,,
-$$
+```
 
 The flow of the potential can be calculated from this Ansatz as
-$$
-  \partial_t V_k(\rho) = \frac{k^4}{4\pi^2}\bigg[
+
+```{math}
+\partial_t V_k(\rho) = \frac{k^4}{4\pi^2}\bigg[
       (N_f^2-1)l_0^{(B,4)}\,(m_\pi^2;T)
       + l_0^{(B,4)}\,(m_\sigma^2;T)\bigg]
       + \frac{k^4}{4\pi^2}\bigg[- 4 N_c N_f l_0^{(F,4)}\,(m_q^2;T,\mu_q)
     \bigg]\,,
-$$
+```
+
 where the threshold functions $l_0^{(i,d)}$ are given as
-$$
-	l_0^{(B,d)}
+
+```{math}
+l_0^{(B,d)}
 	= \frac{T}{2k} \sum_{n \in \mathbb{Z}} \int_{x} x^{\frac{d-1}{2}} \partial_t r_\phi(x) G_{\phi,n}(m_\phi^2)
 	= \frac{k}{d-1} \frac{\coth \left(\frac{\epsilon_\phi}{2 T}\right)}{\epsilon_\phi}\,,
-$$
-$$
-	l_0^{(F,d)}
+```
+
+```{math}
+l_0^{(F,d)}
 	= \frac{T}{k} \sum_{n \in \mathbb{Z}} \int_{x} x^{\frac{d-1}{2}} \partial_t r_q(x) G_{q,n}(m_q^2)
 	= \frac{k}{2(d-1)} \frac{\tanh \left(\frac{\epsilon_q - \mu_q }{2 T}\right) + \tanh \left(\frac{\epsilon_q + \mu_q}{2 T}\right)}{ \epsilon_q} \,.
-$$
+```
 
 We used flat shape functions
-$$
-  r_\phi(x) = (1 / x - 1)\Theta(1-x)\,,\qquad r_q(x) = (1 / \sqrt{x} - 1)\Theta(1-x)\,,\qquad x = p^2 / k^2
-$$
+
+```{math}
+r_\phi(x) = (1 / x - 1)\Theta(1-x)\,,\qquad r_q(x) = (1 / \sqrt{x} - 1)\Theta(1-x)\,,\qquad x = p^2 / k^2
+```
 
 And defined the dispersions
-$$
-	\epsilon_i =\sqrt{k_i^2+{ m_i}^2}\,.
-$$
+
+```{math}
+\epsilon_i =\sqrt{k_i^2+{ m_i}^2}\,.
+```
 
 This is all we need to numerically solve the model in the following.
 
@@ -88,9 +96,11 @@ As explained above, the quarks live in the fundamental representation of the col
 As we are treating a finite temperature and density model, we need `T` (temperature) and `muq` (quark chemical potential). `m2Phi`, `lambdaPhi` are the parameters for the potential at the initial UV scale, `hPhi` is the constant Yukawa coupling which connects mesonic and quark degrees of freedom.
 
 The system consists, as in [Tutorial 1](tut1.md) simply of one FE function, `u`, which is in our case
-$$
-  u(x) \equiv m^2_\pi(\rho_\phi)\,.
-$$
+
+```{math}
+u(x) \equiv m^2_\pi(\rho_\phi)\,.
+```
+
 ```cpp
 using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">>;
 using Components = ComponentDescriptor<FEFunctionDesc>;
@@ -126,9 +136,11 @@ public:
   }
 ```
 Our UV-initial potential is given by
-$$
-  V_\textrm{UV} (\rho_\phi) = m^2_\phi \rho_\phi + \frac{\lambda_\Phi}{4} \rho_\phi^2\,.
-$$
+
+```{math}
+V_\textrm{UV} (\rho_\phi) = m^2_\phi \rho_\phi + \frac{\lambda_\Phi}{4} \rho_\phi^2\,.
+```
+
 Of course, nothing prevents the addition of further parameters, as this is just a LEFT. The reader is encouraged to experiment with higher-order terms for the initial condition.
 
 The main part of the setup is, of course, the flow of $u(x)\equiv m^2_\pi(\rho_\phi)$ itself:
@@ -149,9 +161,11 @@ The main part of the setup is, of course, the flow of $u(x)\equiv m^2_\pi(\rho_\
   }
 ```
 As explained above, we simply have a flux term which fully describes the equation, given as in Tutorial 1 by
-$$
-  \partial_t u + \partial_x (F_i(u)) = 0
-$$
+
+```{math}
+\partial_t u + \partial_x (F_i(u)) = 0
+```
+
 and $F_i(u)$ is the flow of the effective potential $V_k(\rho)$, as written down above.
 
 Finally, we define the different contributions to the flow of $V_k(\rho)$ utilizing the pre-implemented Litim regulator threshold functions from `fRG::TFLitimSpatial`:
