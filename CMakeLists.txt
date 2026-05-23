@@ -486,6 +486,7 @@ if(NOT _build_sundials)
   find_path(_SUN_INC sundials/sundials_config.h HINTS ${_sun_hint} PATH_SUFFIXES include)
   set(_sun_ok FALSE)
   set(_sun_ver "")
+  set(_sun_reject_reason "")
   if(_SUN_ARKODE AND _SUN_KINSOL AND _SUN_NVEC AND _SUN_INC)
     set(_sun_verhdr "")
     foreach(_h sundials/sundials_config.h sundials/sundials_version.h)
@@ -505,8 +506,33 @@ if(NOT _build_sundials)
       string(REGEX REPLACE "^.*MINOR[ \t]+([0-9]+).*" "\\1" _sun_mn "${_sun_mn}")
       string(REGEX REPLACE "^.*PATCH[ \t]+([0-9]+).*" "\\1" _sun_pt "${_sun_pt}")
       set(_sun_ver "${_sun_mj}.${_sun_mn}.${_sun_pt}")
-      if(_sun_ver MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$"
-         AND NOT _sun_ver VERSION_LESS ${DiFfRG_SUNDIALS_MIN_VERSION})
+      # deal.II refuses a SUNDIALS whose MPI setting differs from its own
+      # (DEAL_II_WITH_MPI). The system package (e.g. Ubuntu's libsundials-dev)
+      # is typically MPI-enabled, so a version/library check alone is not enough
+      # -- it would be accepted here and then rejected by deal.II at configure.
+      # Read SUNDIALS_MPI_ENABLED from sundials_config.h and require it to match.
+      set(_sun_mpi 0)
+      if(EXISTS "${_SUN_INC}/sundials/sundials_config.h")
+        file(STRINGS "${_SUN_INC}/sundials/sundials_config.h" _sun_mpi_line
+             REGEX "^[ \t]*#define[ \t]+SUNDIALS_MPI_ENABLED[ \t]+[01]")
+        if(_sun_mpi_line)
+          string(REGEX REPLACE "^.*SUNDIALS_MPI_ENABLED[ \t]+([01]).*" "\\1"
+                 _sun_mpi "${_sun_mpi_line}")
+        endif()
+      endif()
+      if(MPI)
+        set(_want_mpi 1)
+      else()
+        set(_want_mpi 0)
+      endif()
+      if(NOT _sun_ver MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+         OR _sun_ver VERSION_LESS ${DiFfRG_SUNDIALS_MIN_VERSION})
+        set(_sun_reject_reason
+            "version ${_sun_ver} < required ${DiFfRG_SUNDIALS_MIN_VERSION}")
+      elseif(NOT _sun_mpi STREQUAL _want_mpi)
+        set(_sun_reject_reason
+            "its MPI support (SUNDIALS_MPI_ENABLED=${_sun_mpi}) does not match this build (MPI=${MPI})")
+      else()
         set(_sun_ok TRUE)
       endif()
     endif()
@@ -527,11 +553,19 @@ if(NOT _build_sundials)
       "  ${BoldGreen}[SUNDIALS] Using system SUNDIALS ${_sun_ver} (${_SUN_INC}); skipping bundled build.${ColourReset}"
     )
   elseif(_sun_explicit)
+    if(NOT _sun_reject_reason)
+      set(_sun_reject_reason
+          "the required libraries (arkode, kinsol, nvecserial) or version header were not found")
+    endif()
     message(FATAL_ERROR
-      "SUNDIALS_DIR=${SUNDIALS_DIR} does not provide SUNDIALS >= ${DiFfRG_SUNDIALS_MIN_VERSION} "
-      "with the required libraries (arkode, kinsol, nvecserial).\n"
-      "  Use -DBUILD_SUNDIALS=ON to build the bundled SUNDIALS.")
+      "SUNDIALS_DIR=${SUNDIALS_DIR} is not usable: ${_sun_reject_reason}.\n"
+      "  Use -DBUILD_SUNDIALS=ON to build the bundled SUNDIALS instead.")
   else()
+    if(_sun_reject_reason)
+      message(
+        "  ${BoldYellow}[SUNDIALS] Ignoring system SUNDIALS (${_sun_reject_reason}); building the bundled copy.${ColourReset}"
+      )
+    endif()
     set(_build_sundials ON)
   endif()
 endif()
@@ -539,6 +573,21 @@ endif()
 if(_build_sundials)
   set(_sundials_prefix "${DEPEND_INSTALL_PREFIX}")
   set(_sundials_dep sundials_dep)
+endif()
+
+# deal.II's FindSUNDIALS, when handed an explicit SUNDIALS_DIR, searches only
+# <DIR>/lib and <DIR>/lib64 -- it misses Debian/Ubuntu multiarch paths such as
+# /usr/lib/x86_64-linux-gnu, so it finds the headers but not the libraries and
+# then *silently* disables SUNDIALS (it is auto/optional). DiFfRG, however,
+# requires it (SUNDIALS::KINSOL/IDA), so that failure only surfaces later when
+# kinsol.cc fails to compile. Therefore: only hand deal.II the hint for a
+# bundled build or an explicit -DSUNDIALS_DIR (both have a plain lib/); for an
+# auto-detected system install, omit the hint and let deal.II's standard,
+# multiarch-aware search locate the libraries.
+if(_build_sundials OR _sun_explicit)
+  set(_dealii_sundials_arg "-DSUNDIALS_DIR:STRING=${_sundials_prefix}")
+else()
+  set(_dealii_sundials_arg "")
 endif()
 
 message("${BoldCyan}[1/8] Configuring HDF5...${ColourReset}")
@@ -838,7 +887,10 @@ ExternalProject_Add(
     -DCMAKE_CXX_EXTENSIONS:BOOL=OFF
     -DKOKKOS_DIR:STRING=${DEPEND_INSTALL_PREFIX}
     -DTBB_DIR:STRING=${_tbb_dir}
-    -DSUNDIALS_DIR:STRING=${_sundials_prefix}
+    # Required by DiFfRG -- force ON so an unusable SUNDIALS fails here at
+    # configure rather than silently disabling and breaking kinsol.cc later.
+    -DDEAL_II_WITH_SUNDIALS:BOOL=ON
+    ${_dealii_sundials_arg}
     -DBOOST_ROOT:PATH=${_boost_root}
     -DBOOST_DIR:STRING=${_boost_root}
     -DBOOST_INCLUDEDIR:PATH=${_boost_incdir}

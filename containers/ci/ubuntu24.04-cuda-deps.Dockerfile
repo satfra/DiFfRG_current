@@ -49,7 +49,7 @@ RUN cmake -S /src -B /build \
 # --------------------------------------------------------------------------- #
 FROM nvidia/cuda:12.8.1-devel-ubuntu24.04
 LABEL type=diffrg-deps
-LABEL org.opencontainers.image.source=https://github.com/satfra/DiFfRG
+LABEL org.opencontainers.image.source=https://github.com/satfra/DiFfRG_current
 LABEL org.opencontainers.image.description="DiFfRG bundled dependencies (Ubuntu 24.04, CUDA) for manual GPU builds"
 
 ARG DEBIAN_FRONTEND=noninteractive
