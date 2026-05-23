@@ -283,6 +283,28 @@ TEST_CASE("Hybrid ABM coupling-mode scan, dt_impl<<dt_expl, weak coupling",
     }
 }
 
+// Stress test: severely under-resolved one-way coupling (smooth model, K=2) at very
+// coarse explicit steps so K*cur_dt = O(1). This is the regime where STAGGER's output
+// riding on half-step-EXTRAPOLATED coupling should overshoot, while LAG's interpolated
+// coupling stays bounded -- i.e. where LAG can beat STAGGER. Non-gating diagnostic.
+TEST_CASE("Hybrid ABM coupling-mode scan, stiff under-resolved one-way",
+          "[timestepping][sundials_ida_boost][abm][scan][stiff]")
+{
+  using Model = Testing::ModelHybridSmooth<1>;
+  using VectorType = dealii::Vector<double>;
+  using SparseMatrixType = dealii::SparseMatrix<double>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<VectorType, SparseMatrixType, 1, UMFPack>;
+  for (int mode : {0, 1, 2})
+    for (double cur_dt : {5e-1, 2.5e-1, 1.25e-1}) {
+      const std::string tag =
+          "test_stiff_" + std::string(coupling_mode_name(mode)) + "_" + std::to_string(cur_dt);
+      run_hybrid<Model, TimeStepper>(tag, /*tol=*/1e-30, /*cur_dt=*/cur_dt,
+                                      /*final_time=*/1.0, /*output_dt=*/5e-1,
+                                      /*impl_max_dt=*/1e-3, /*impl_rel_tol=*/1e-6,
+                                      /*coupling_mode=*/mode, /*expl_max_dt=*/1.0);
+    }
+}
+
 TEST_CASE("Hybrid ABM mode 2 (lookahead) handles weak explicit<-implicit coupling",
           "[timestepping][sundials_ida_boost][abm][diag]")
 {
