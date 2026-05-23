@@ -1,0 +1,37 @@
+name: CI
+
+# Build the DiFfRG library and run the test suite against the pre-built
+# dependency image (ghcr.io/satfra/diffrg-deps), so the slow superbuild
+# (deal.II, Kokkos, ...) is not repeated on every run. Refresh that image with
+# containers/ci/build-and-push.sh when the bundled dependencies change.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build-and-test:
+    name: Build library + run tests (CPU)
+    runs-on: ubuntu-latest
+    # CPU dependency image. If the GHCR package is private, add:
+    #   credentials:
+    #     username: ${{ github.actor }}
+    #     password: ${{ secrets.GITHUB_TOKEN }}
+    container:
+      image: ghcr.io/satfra/diffrg-deps:ubuntu24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build DiFfRG library
+        run: |
+          cmake -S DiFfRG -B DiFfRG/bin \
+            -DBUNDLED_DIR="${DiFfRG_BUNDLED_DIR:-/opt/DiFfRG/bundled}" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DDiFfRG_TEST=ON \
+            -DDiFfRG_DOCUMENTATION=OFF
+          cmake --build DiFfRG/bin -j 4
+
+      - name: Run tests
+        run: ctest --test-dir DiFfRG/bin --output-on-failure

@@ -1,0 +1,47 @@
+name: Build dependency image
+
+# Manual (workflow_dispatch only) refresh of the pre-built DiFfRG dependency
+# image consumed by ci.yml. This runs the full superbuild (deal.II dominates,
+# possibly ~3 h on GitHub-hosted runners -- within the 6 h job limit), so the
+# primary path is to run containers/ci/build-and-push.sh locally; this workflow
+# is a backup for when a maintainer prefers to offload it to Actions.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag under ghcr.io/satfra/diffrg-deps (moving tag consumed by CI)"
+        default: ubuntu24.04
+        required: true
+
+jobs:
+  build-deps-image:
+    name: Build & push dependency image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push CPU dependency image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: containers/ci/ubuntu24.04-deps.Dockerfile
+          push: true
+          build-args: |
+            threads=4
+          tags: |
+            ghcr.io/satfra/diffrg-deps:${{ inputs.tag }}
+            ghcr.io/satfra/diffrg-deps:${{ inputs.tag }}-${{ github.run_number }}
