@@ -65,6 +65,26 @@ The `Build dependency image` workflow (`.github/workflows/build-ci-images.yml`) 
 the same on a `workflow_dispatch` trigger. Note hosted runners are slow (2–4 cores),
 so the superbuild can take ~3 h; the local script is the recommended path.
 
+## Test-count badge (README)
+
+The README shows a `tests N/M passing` badge (green when all pass, red otherwise).
+GitHub doesn't expose the test count, so `ci.yml` publishes it to a Gist that
+[shields.io](https://shields.io) renders. One-time setup:
+
+1. **Create a public Gist** (gist.github.com) with a file named `diffrg-tests.json`
+   (any placeholder content). Note its ID — the long hash in the Gist URL.
+2. **Create a PAT** (classic) with **only** the `gist` scope, and add it as a repo
+   secret named **`GIST_SECRET`** (Settings → Secrets and variables → Actions).
+3. **Fill in the two placeholders:**
+   - `.github/workflows/ci.yml` → `gistID: REPLACE_WITH_GIST_ID`
+   - `README.md` badge URL → `REPLACE_WITH_GIST_OWNER` (the Gist owner's username)
+     and `REPLACE_WITH_GIST_ID`.
+
+The badge updates on every **push to `main`** (the `Update test-count badge` step).
+PRs intentionally skip it — fork PRs can't read secrets — but PR runs still build
+and test; only the badge isn't refreshed. The job parses ctest's
+`"<F> tests failed out of <T>"` summary line, so it needs no extra tooling.
+
 ## Verifying the CI path locally
 
 Reproduce exactly what `ci.yml` does, against a pulled (or locally built) image:
