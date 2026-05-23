@@ -1,16 +1,16 @@
-# Numerical Models {#Models}
-
+(Models)=
+# Numerical Models
 In DiFfRG the computational setup is fully described by a ***numerical model***. 
 A model essentially is a description of a large set of coupled differential equations and some additional methods to handle data output.
 
-In general, we have three components to any flow, which are **FE functions** \f$ u_i(x),\,i\in\{0,\dots,N_f-1\} \f$, **variables** \f$ v_a,\,a\in\{0,\dots,N_v-1\} \f$ and **extractors** \f$ e_b,\,b\in\{0,\dots,N_e-1\} \f$. 
+In general, we have three components to any flow, which are **FE functions** $ u_i(x),\,i\in\{0,\dots,N_f-1\} $, **variables** $ v_a,\,a\in\{0,\dots,N_v-1\} $ and **extractors** $ e_b,\,b\in\{0,\dots,N_e-1\} $. 
 
-The latter two are just independent variables, whereas the FE functions depend additionaly on a field variable, \f$ u_i(x),\,x\in\mathbb{R}^d \f$. In other words, the FE functions explicitly live on a spatial discretization of the field space.
+The latter two are just independent variables, whereas the FE functions depend additionaly on a field variable, $ u_i(x),\,x\in\mathbb{R}^d $. In other words, the FE functions explicitly live on a spatial discretization of the field space.
 
 ## Defining a model
 
 Any model you define should at least be inherited from the abstract model class DiFfRG::def::AbstractModel to ensure that all necessary methods are at least defined to do nothing, i.e.
-```Cpp
+```cpp
 using namespace DiFfRG;
 class MyModel : public def::AbstractModel<MyModel>, ...
 {
@@ -22,94 +22,96 @@ Inside the class we can now overwrite all methods from DiFfRG::def::AbstractMode
 ## Spatial discretization
 
 The FE functions usually correspond to expansion coefficients in a derivative expansion. As an example consider a bosonic theory as in [this](https://arxiv.org/abs/2305.00816) paper: Treating a purely bosonic theory in first-order derivative expansion, the effective action is given by
-\f[\large
+$$\large
   \Gamma_k[\phi] = \int_x \bigg(\frac{1}{2}Z(\rho)(\partial_\mu\phi)^2 + V(\rho) \bigg)\,,
-\f]
-where \f$ \rho = \phi^2 / 2 \f$.
-A flowing reparametrization of the field \f$ \phi \f$ is being performed and is given by
-\f[\large
+$$
+where $ \rho = \phi^2 / 2 $.
+A flowing reparametrization of the field $ \phi $ is being performed and is given by
+$$\large
   \dot\phi(x) = \frac{1}{2} \eta(\rho) \phi\,.
-\f]
-where we introduced the anomalous dimension \f$ \eta = \frac{\partial_{t_+} Z}{Z} \f$.
+$$
+where we introduced the anomalous dimension $ \eta = \frac{\partial_{t_+} Z}{Z} $.
 
 The flow is then fully parametrized in terms of FE functions
-\f{align}{\large
+$$
+\begin{aligned}\large
   u_1(x) &= m^2(\rho) = \partial_\rho V(\rho)\,, \\\large
   u_2(x) &= \eta(\rho)\,,
-\f}
-where we also chose the field \f$ x = \rho \f$. We see here that the FE functions live on a spatial discretization of the d-dimensional field space \f$ \mathbb{R}^d \f$.
+\end{aligned}
+$$
+where we also chose the field $ x = \rho $. We see here that the FE functions live on a spatial discretization of the d-dimensional field space $ \mathbb{R}^d $.
 
 With the above ansatz one can quickly compute flow equations from the Wetterich equation,
-\f[\large
+$$\large
   k\partial_k \Gamma_k[\Phi] = \frac{1}{2}\text{Tr}\, G_{\alpha\beta}\,k\partial_k R^{\alpha\beta}\,.
-\f]
-We remark that the time \f[\large t = t_+ = \ln\left(\frac{\Lambda}{k}\right)\,,\f] as used in DiFfRG, is opposite in sign to the RG-time as defined in most literature, \f$t_- = \ln\left(\frac{k}{\Lambda}\right)\f$. This is simply due to many time solvers not accepting negative time arguments.
+$$
+We remark that the time $$\large t = t_+ = \ln\left(\frac{\Lambda}{k}\right)\,,$$ as used in DiFfRG, is opposite in sign to the RG-time as defined in most literature, $t_- = \ln\left(\frac{k}{\Lambda}\right)$. This is simply due to many time solvers not accepting negative time arguments.
 
 In order to discretize the flow equations on a finite element space, the flow equations are expressed in the standard differential-algebraic form
-\f[\large
+$$\large
   m_i(\partial_t u_j, u_j, x) + \partial_x F_i(u_j, \partial_x u_j, \partial_x^2 u_j, e_b, v_a, x) + s_i(u_j, \partial_x u_j, \partial_x^2 u_j, e_b, v_a, x) = 0\,,
-\f]
-where \f$ m_i \f$ are called the mass functions, \f$ F_i \f$ the fluxes and \f$ s_i \f$ the sources. The latter two are functions of the FE functions, their derivatives, the field variable, the variables and the extractors.
+$$
+where $ m_i $ are called the mass functions, $ F_i $ the fluxes and $ s_i $ the sources. The latter two are functions of the FE functions, their derivatives, the field variable, the variables and the extractors.
 
 In principle, the above system of equations can contain both equations containing the time derivatives, i.e. differential components, and equations without time derivatives, i.e. algebraic components. In order to solve the resulting DAEs one is currently restricted to the **SUNDIALS IDA** solver, which is however highly efficient and actually recommended for most cases.
 
 Alternatively, the restricted formulation, allowing only for differential components,
-\f[\large
+$$\large
   m_{ij}(x) \partial_t u_j + \partial_x F_i(u_j, \partial_x u_j, \partial_x^2 u_j, e_b, v_a, x) + s_i(u_j, \partial_x u_j, \partial_x^2 u_j, e_b, v_a, x) = 0\,,
-\f]
+$$
 is used for all other provided ODE solvers, i.e. Runge-Kutta methods.
 
-Note, that in the above definitions a change from \f$ t = t_+ \to t_- \f$ simply moves all terms onto the other side, i.e. when calculating the flow equations in the standard \f$t_-\f$, one can still copy and paste everything without changing signs if the mass functions are simply \f$ m_i = \partial_{t_+} u_i = - \partial_{t_-} u_i \f$ (as is default).
+Note, that in the above definitions a change from $ t = t_+ \to t_- $ simply moves all terms onto the other side, i.e. when calculating the flow equations in the standard $t_-$, one can still copy and paste everything without changing signs if the mass functions are simply $ m_i = \partial_{t_+} u_i = - \partial_{t_-} u_i $ (as is default).
 
 The above components of standard form have direct analogues in the abstract ***numerical model*** which must be reimplemented for any system of flow equations. For actual implementation examples, especially regarding the template structure, please take a look at the models contained in the `DiFfRG/models/` folder.
 
 The relevant methods are also documented in DiFfRG::def::AbstractModel and read as follows:
 
-- The mass function \f$m_i(\partial_t u_j, u_j, x)\f$ is implemented in the method 
-```Cpp
+- The mass function $m_i(\partial_t u_j, u_j, x)$ is implemented in the method 
+```cpp
   template <int dim, typename NumberType, typename Vector, typename Vector_dot, size_t n_fe_functions>
   void mass(std::array<NumberType, n_fe_functions> &m_i, const Point<dim> &x, const Vector &u, const Vector_dot &u_dot) const;
 ```  
 Note, that the precise template structure is not important, the only important thing is that the types are consistent with the rest of the model. It is however necessary to leave at least the NumberType, Vector, and Vector_dot template parameters, as these can differ between calls.  
-The `m_i` argument is the resulting mass function \f$m_i\f$, with \f$N_f\f$ components. This method should fill the `m_i` argument with the desired structure of the flow equation. `x` is a d-dimensional array of field coordinates, and both `u` (~\f$u_i(x)\f$) and `u_dot` (~\f$\partial_t u_i(x)\f$) have \f$N_f\f$ components.  
-The standard implementation of this method simply sets \f$m_i = \partial_t u_i\f$.  
+The `m_i` argument is the resulting mass function $m_i$, with $N_f$ components. This method should fill the `m_i` argument with the desired structure of the flow equation. `x` is a d-dimensional array of field coordinates, and both `u` (~$u_i(x)$) and `u_dot` (~$\partial_t u_i(x)$) have $N_f$ components.  
+The standard implementation of this method simply sets $m_i = \partial_t u_i$.  
  
 .
-- If not using a DAE, the mass matrix \f$m_{ij}(x)\f$ is implemented in the method 
-```Cpp
+- If not using a DAE, the mass matrix $m_{ij}(x)$ is implemented in the method 
+```cpp
   template <int dim, typename NumberType, size_t n_fe_functions>
   void mass(std::array<std::array<NumberType, n_fe_functions>, M::Components::count_fe_functions()> &m_ij, const Point<dim> &x) const;
 ```
-The `m_ij` argument is the resulting mass matrix \f$m_{ij}\f$, with \f$N_f\f$ components in each dimension. This method should fill the `mass` argument with the desired structure of the flow equation. `x` is a d-dimensional array of field coordinates.
-The standard implementation of this method simply sets \f$m_{ij} = \delta_{ij}\f$.
+The `m_ij` argument is the resulting mass matrix $m_{ij}$, with $N_f$ components in each dimension. This method should fill the `mass` argument with the desired structure of the flow equation. `x` is a d-dimensional array of field coordinates.
+The standard implementation of this method simply sets $m_{ij} = \delta_{ij}$.
 
 .
-- The flux function \f$F_i(u_j, \partial_x u_j, \partial_x^2 u_j, e_b, v_a, x)\f$ is given by
-```Cpp
+- The flux function $F_i(u_j, \partial_x u_j, \partial_x^2 u_j, e_b, v_a, x)$ is given by
+```cpp
   template <int dim, typename NumberType, typename Solution, size_t n_fe_functions>
   void flux(std::array<Tensor<1, dim, NumberType>, n_fe_functions> &F_i, const Point<dim> &x, const Solution &sol) const;
 ```
 Onve again, it is necessary to leave the `NumberType` and `Solution` templates, whereas the rest can be dropped.
-`F_i` has \f$N_f\f$ components, `x` gives the coordinate in field space and `sol` contains all other arguments of the flux function. In practice, `sol` is a `std::tuple<...>` which contains
+`F_i` has $N_f$ components, `x` gives the coordinate in field space and `sol` contains all other arguments of the flux function. In practice, `sol` is a `std::tuple<...>` which contains
   0. the array u_j
-  1. the array of arrays \f$\partial_x u_j\f$
-  2. the array of arrays of arrays \f$\partial_x^2 u_j\f$
-  3. the array of extractors \f$e_b\f$
+  1. the array of arrays $\partial_x u_j$
+  2. the array of arrays of arrays $\partial_x^2 u_j$
+  3. the array of extractors $e_b$
 Lastly, the variables are communicated separately to the model, see the ***Other variables***-section below
-The standard implementation of this method simply sets \f$F_i = 0\f$.
+The standard implementation of this method simply sets $F_i = 0$.
 
 .
-- The source function \f$s_i(u_j, \partial_x u_j, \partial_x^2 u_j, e_b, v_a, x)\f$ is given by
-```Cpp
+- The source function $s_i(u_j, \partial_x u_j, \partial_x^2 u_j, e_b, v_a, x)$ is given by
+```cpp
   template <int dim, typename NumberType, typename Solution, size_t n_fe_functions>
   void source(std::array<NumberType, n_fe_functions> &s_i, const Point<dim> &x, const Solution &sol) const;
 ```
 Again, it is necessary to leave the `NumberType` and `Solution` templates, whereas the rest can be dropped.
-`s_i` has \f$N_f\f$ components, `x` gives the coordinate in field space and `sol` contains all other arguments of the flux function, with the layout as explained above in the flux case.
-The standard implementation of this method simply sets \f$s_i = 0\f$.
+`s_i` has $N_f$ components, `x` gives the coordinate in field space and `sol` contains all other arguments of the flux function, with the layout as explained above in the flux case.
+The standard implementation of this method simply sets $s_i = 0$.
 
 Picking up the example from above, we can now sketch the implementation of the numerical model as follows:
-```Cpp
+```cpp
 using namespace DiFfRG;
 
 using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">, Scalar<"v">>;
@@ -167,8 +169,7 @@ Underlying the assemblers are the actual discretizations, which are implemented 
 
 Putting everything together, we can write a straightforward main function to run the flow equations:
 
-```Cpp
-
+```cpp
 using namespace dealii;
 using namespace DiFfRG;
 
@@ -222,7 +223,7 @@ int main(int argc, char *argv[])
 
 Here we have chosen a `dDG` discretization, which is a discontinuous Galerkin discretization with a direct discontinuous Galerkin assembler. The timestepper is the SUNDIALS IDA solver, which is the recommended solver for most cases.
 For the `dDG` discretization it is also necessary to supply a numerical flux, which can be done by modifying the numerical model as follows:
-```Cpp
+```cpp
 class MyModel : public def::AbstractModel<MyModel>,
                 public def::fRG,                    // this handles the fRG time
                 public def::LLFFlux<largeN>,        // use a LLF numflux

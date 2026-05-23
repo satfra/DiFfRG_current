@@ -468,6 +468,7 @@ set(_sundials_prefix "${DEPEND_INSTALL_PREFIX}")
 set(_sundials_dep "")
 set(_sun_hint "")
 set(_sun_explicit OFF)
+set(_sun_mpi_mismatch OFF)
 if(NOT "${SUNDIALS_DIR}" STREQUAL "")
   set(_sun_hint "${SUNDIALS_DIR}")
   set(_sun_explicit ON)
@@ -505,9 +506,31 @@ if(NOT _build_sundials)
       string(REGEX REPLACE "^.*MINOR[ \t]+([0-9]+).*" "\\1" _sun_mn "${_sun_mn}")
       string(REGEX REPLACE "^.*PATCH[ \t]+([0-9]+).*" "\\1" _sun_pt "${_sun_pt}")
       set(_sun_ver "${_sun_mj}.${_sun_mn}.${_sun_pt}")
+      # deal.II requires deal.II and SUNDIALS to agree on MPI support; otherwise it
+      # silently sets DEAL_II_WITH_SUNDIALS=OFF, which leaves the dealii::SUNDIALS
+      # namespace undefined and breaks our KINSOL/IDA wrappers at compile time. Probe
+      # the system SUNDIALS MPI setting (sundials_config.h) and require it to match the
+      # MPI option this build passes to deal.II.
+      set(_sun_mpi OFF)
+      if(EXISTS "${_SUN_INC}/sundials/sundials_config.h")
+        file(STRINGS "${_SUN_INC}/sundials/sundials_config.h" _sun_mpi_probe
+             REGEX "#define[ \t]+SUNDIALS_MPI_ENABLED[ \t]+1")
+        if(_sun_mpi_probe)
+          set(_sun_mpi ON)
+        endif()
+      endif()
+      if(MPI)
+        set(_sun_want_mpi ON)
+      else()
+        set(_sun_want_mpi OFF)
+      endif()
       if(_sun_ver MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$"
          AND NOT _sun_ver VERSION_LESS ${DiFfRG_SUNDIALS_MIN_VERSION})
-        set(_sun_ok TRUE)
+        if(_sun_mpi STREQUAL _sun_want_mpi)
+          set(_sun_ok TRUE)
+        else()
+          set(_sun_mpi_mismatch ON)
+        endif()
       endif()
     endif()
   endif()
@@ -526,6 +549,22 @@ if(NOT _build_sundials)
     message(
       "  ${BoldGreen}[SUNDIALS] Using system SUNDIALS ${_sun_ver} (${_SUN_INC}); skipping bundled build.${ColourReset}"
     )
+  elseif(_sun_mpi_mismatch)
+    # Found a usable SUNDIALS, but its MPI support does not match MPI=${MPI}.
+    if(_sun_explicit)
+      message(FATAL_ERROR
+        "SUNDIALS_DIR=${SUNDIALS_DIR} provides SUNDIALS ${_sun_ver} built with "
+        "SUNDIALS_MPI_ENABLED=${_sun_mpi}, but DiFfRG is configured with MPI=${MPI}. "
+        "deal.II requires deal.II and SUNDIALS to agree on MPI support.\n"
+        "  Use -DBUILD_SUNDIALS=ON to build a matching bundled SUNDIALS, or point "
+        "SUNDIALS_DIR at a SUNDIALS whose MPI setting matches MPI=${MPI}.")
+    else()
+      message(
+        "  ${BoldYellow}[SUNDIALS] System SUNDIALS ${_sun_ver} (${_SUN_INC}) MPI setting "
+        "(SUNDIALS_MPI_ENABLED=${_sun_mpi}) does not match MPI=${MPI}; building the bundled "
+        "SUNDIALS instead. deal.II requires both to agree on MPI.${ColourReset}")
+      set(_build_sundials ON)
+    endif()
   elseif(_sun_explicit)
     message(FATAL_ERROR
       "SUNDIALS_DIR=${SUNDIALS_DIR} does not provide SUNDIALS >= ${DiFfRG_SUNDIALS_MIN_VERSION} "

@@ -1,7 +1,8 @@
 [![arXiv](https://img.shields.io/badge/arXiv-2412.13043-b31b1b.svg?style=for-the-badge)](https://arxiv.org/abs/2412.13043)
-[![Doxygen](https://img.shields.io/badge/doxygen-2C4AA8?style=for-the-badge&logo=c%2B%2B&logoColor=white)](https://satfra.github.io/DiFfRG/cpp/index.html)
-[![Wolfram](https://img.shields.io/badge/wolfram_doc-cf1c10?style=for-the-badge&logo=wolfram)](https://satfra.github.io/DiFfRG/wolfram/html/guide/DiFfRG.html)
-[![Python](https://img.shields.io/badge/python_doc-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://satfra.github.io/DiFfRG/python/index.html)
+[![Documentation](https://img.shields.io/badge/documentation-2C4AA8?style=for-the-badge&logo=readthedocs&logoColor=white)](https://satfra.github.io/DiFfRG_current/)
+[![C++](https://img.shields.io/badge/c%2B%2B_api-2C4AA8?style=for-the-badge&logo=c%2B%2B&logoColor=white)](https://satfra.github.io/DiFfRG_current/cpp.html)
+[![Wolfram](https://img.shields.io/badge/wolfram_doc-cf1c10?style=for-the-badge&logo=wolfram)](https://satfra.github.io/DiFfRG_current/_generated_mathematica/index.html)
+[![Python](https://img.shields.io/badge/python_doc-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://satfra.github.io/DiFfRG_current/python.html)
 
 <h3>[This is the development repository for DiFfRG. For the current stable version, please visit [the main repository](https://github.com/satfra/DiFfRG)</h3>
 
@@ -23,7 +24,7 @@ Both explicit and implicit time-stepping methods are available and allow thus fo
 
 We also include a set of tools for the evaluation of integrals and discretization of momentum dependencies.
 
-For an overview, please see the [accompanying paper](https://arxiv.org/abs/2412.13043), the ***[tutorial page](https://satfra.github.io/DiFfRG/cpp/TutorialTOC.html)*** in the [documentation](https://satfra.github.io/DiFfRG/cpp/index.html) and the examples in `Examples/`. 
+For an overview, please see the [accompanying paper](https://arxiv.org/abs/2412.13043), the ***[tutorials](https://satfra.github.io/DiFfRG/tutorials/index.html)*** in the [documentation](https://satfra.github.io/DiFfRG/) and the examples in `Examples/`. 
 
 This library has been developed within the [fQCD Collaboration](https://fQCD-Collaboration.github.io).
 
@@ -186,11 +187,11 @@ Afterwards, one proceeds with the above Rocky Linux setup.
 
 ## Getting started with simulating fRG flows
 
-For an overview, please see the ***[tutorial page](https://satfra.github.io/DiFfRG/cpp/TutorialTOC.html)*** in the [documentation](https://satfra.github.io/DiFfRG/cpp/index.html). A local documentation is also always built automatically when running the setup script, but can also be built manually by running
+For an overview, please see the ***[tutorials](https://satfra.github.io/DiFfRG/tutorials/index.html)*** in the [documentation](https://satfra.github.io/DiFfRG/). A local copy of the documentation is also built automatically when running the setup script, but can also be built manually by running
 ```bash
 $ make documentation
 ```
-inside the `DiFfRG_build` directory. You can find then a code reference in the top directory.
+inside the `DiFfRG_build` directory (this requires the Python documentation toolchain, see `DiFfRG/documentation/requirements.txt`). You can then find the rendered site in the install directory.
 
 All backend code is contained in the DiFfRG directory.
 
