@@ -39,6 +39,7 @@ RUN cmake -S /src -B /build \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/opt/DiFfRG \
         -DGPU=ON -DMPI=OFF -DDiFfRG_DOCUMENTATION=OFF \
+        -DNATIVE=OFF \
         -DKokkos_ARCH=${cuda_arch} -DKokkos_ARCH_LIST=${cuda_arch} \
     && cmake --build /build \
         --target general_dep deal.II_dep kokkos_dep autodiff_dep \

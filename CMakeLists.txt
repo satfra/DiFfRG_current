@@ -186,6 +186,29 @@ if(USE_CCACHE)
   endif()
 endif()
 
+# ##############################################################################
+# Native architecture optimization
+# ##############################################################################
+# Whether to optimize for the CPU of the build machine (-march=native). ON gives
+# the fastest binaries but they only run on CPUs with the same instruction set;
+# turn OFF for portable builds (e.g. CI images that must run on other hardware).
+option(NATIVE "Optimize for the build machine's CPU (-march=native). Disable for portable binaries." ON)
+diffrg_report_native(${NATIVE} "${CMAKE_CXX_COMPILER}")
+
+# Per-language flag fragments forwarded to the dependency ExternalProjects. Empty
+# when NATIVE=OFF, so the corresponding CMAKE_CACHE_ARGS entry simply vanishes.
+if(NATIVE)
+  set(_native_cxx_arg "-DCMAKE_CXX_FLAGS:STRING=-march=native")
+  set(_native_c_arg "-DCMAKE_C_FLAGS:STRING=-march=native")
+  set(_native_dealii_arg "-DDEAL_II_CXX_FLAGS:STRING=-march=native")
+  set(_native_petsc_flag "-march=native")
+else()
+  set(_native_cxx_arg "")
+  set(_native_c_arg "")
+  set(_native_dealii_arg "")
+  set(_native_petsc_flag "")
+endif()
+
 option(GPU "Enable/Disable GPU support" ON)
 
 if(GPU)
@@ -682,7 +705,7 @@ if(_build_hdf5)
     CMAKE_CACHE_ARGS
       -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
       -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
-      -DCMAKE_CXX_FLAGS:STRING=-march=native
+      ${_native_cxx_arg}
       -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
       -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
       ${CCACHE_CMAKE_ARGS}
@@ -709,7 +732,7 @@ ExternalProject_Add(
   CMAKE_CACHE_ARGS
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
     -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
-    -DCMAKE_CXX_FLAGS:STRING=-march=native
+    ${_native_cxx_arg}
     -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
     -DCPM_SOURCE_CACHE:PATH=${CMAKE_CURRENT_BINARY_DIR}/cpm-cache
@@ -743,8 +766,8 @@ if(_build_sundials)
       -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
       -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
       -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
-      -DCMAKE_CXX_FLAGS:STRING=-march=native
-      -DCMAKE_C_FLAGS:STRING=-march=native
+      ${_native_cxx_arg}
+      ${_native_c_arg}
       -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
       ${CCACHE_CMAKE_ARGS}
       -DMPI:BOOL=${MPI})
@@ -796,7 +819,11 @@ endif()
 # Kokkos
 # ##############################################################################
 
-if(NOT DEFINED Kokkos_ARCH)
+# Kokkos_ARCH_NATIVE is Kokkos' *host* -march=native switch (cmake/kokkos_arch.cmake:
+# it adds -march=native -mtune=native to the host compiler), so it must follow the
+# NATIVE option -- otherwise the bundled Kokkos objects bake in the build machine's
+# ISA (e.g. AVX-512) and crash on lesser hardware. GPU archs come from Kokkos_ARCH_LIST.
+if(NATIVE AND NOT DEFINED Kokkos_ARCH)
   set(Kokkos_ARCH_NATIVE
       ON
       CACHE BOOL "Enable Kokkos native architecture")
@@ -879,6 +906,7 @@ if(BUILD_PETSC)
     # Propagate DEPEND_INSTALL_PREFIX to the dependencies
     CMAKE_CACHE_ARGS
       -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+      -DNATIVE:BOOL=${NATIVE}
       -DOpenBLAS_LIBRARY:STRING=${BLAS_LIBRARY_PATH} -DHAVE_MPI:BOOL=${MPI})
   set(is_petsc_dep petsc_dep)
 endif()
@@ -957,7 +985,7 @@ ExternalProject_Add(
     -DCMAKE_POLICY_DEFAULT_CMP0167:STRING=NEW
     -DDEAL_II_UNITY_BUILD:BOOL=ON
     -DCMAKE_WARN_DEPRECATED:BOOL=OFF
-    -DDEAL_II_CXX_FLAGS:STRING=-march=native
+    ${_native_dealii_arg}
     -DDEAL_II_COMPONENT_EXAMPLES:BOOL=OFF
     -DDEAL_II_COMPONENT_DOCUMENTATION:BOOL=OFF
     -DDEAL_II_WITH_MPI:BOOL=${MPI}
@@ -1013,6 +1041,7 @@ ExternalProject_Add(
     -DTBB_DIR:STRING=${_tbb_dir}
     ${_hdf5_extra_args}
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
+    -DNATIVE:BOOL=${NATIVE}
     -DDiFfRG_TEST:BOOL=${DiFfRG_TEST}
     -DDiFfRG_DOCUMENTATION:BOOL=${DiFfRG_DOCUMENTATION}
     -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_INSTALL_PREFIX})

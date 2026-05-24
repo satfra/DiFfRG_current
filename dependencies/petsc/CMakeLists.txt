@@ -16,6 +16,18 @@ execute_process(
   OUTPUT_QUIET)
 
 message(STATUS "Configuring PETSc...")
+# Native architecture: -march=native unless a portable (NATIVE=OFF) build was
+# requested, mirroring the rest of the superbuild.
+if(NOT DEFINED NATIVE)
+  set(NATIVE
+      ON
+      CACHE BOOL "Optimize for the build machine's CPU (-march=native)")
+endif()
+if(NATIVE)
+  set(PETSC_MARCH "-march=native")
+else()
+  set(PETSC_MARCH "")
+endif()
 # config MPI
 if(NOT DEFINED HAVE_MPI)
   set(HAVE_MPI
@@ -37,10 +49,10 @@ execute_process(
   COMMAND
     bash -c
     "
-    ./configure --COPTFLAGS=\"-O3 -march=native -ffp-contract=fast\" \
+    ./configure --COPTFLAGS=\"-O3 ${PETSC_MARCH} -ffp-contract=fast\" \
     --with-mpi-dir=/opt/homebrew/opt/open-mpi \
-    --CXXOPTFLAGS=\"-O3 -march=native -ffp-contract=fast\"  \
-    --FOPTFLAGS=\"-O3 -march=native -ffp-contract=fast\" \
+    --CXXOPTFLAGS=\"-O3 ${PETSC_MARCH} -ffp-contract=fast\"  \
+    --FOPTFLAGS=\"-O3 ${PETSC_MARCH} -ffp-contract=fast\" \
     --with-blas-lib=${OpenBLAS_LIBRARY} \
     --with-lapack-lib=${OpenBLAS_LIBRARY} \
     --prefix=${CMAKE_INSTALL_PREFIX} ${PETSC_OPTIONS} --with-clean --with-debugging=0 &> ${CMAKE_CURRENT_BINARY_DIR}/01_configure.log"

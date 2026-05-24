@@ -21,6 +21,14 @@ else()
   set(BASE_DIR ${DiFfRG_BASE_DIR})
 endif()
 
+# Whether to optimize for the build machine's CPU (-march=native). Defaults ON;
+# the superbuild forwards -DNATIVE=OFF for portable/CI builds. Kept in sync with
+# the top-level option so a standalone library build behaves identically.
+option(NATIVE "Optimize for the build machine's CPU (-march=native). Disable for portable binaries." ON)
+if(COMMAND diffrg_report_native)
+  diffrg_report_native(${NATIVE} "${CMAKE_CXX_COMPILER}")
+endif()
+
 # ##############################################################################
 # Validate BUNDLED_DIR
 # ##############################################################################
@@ -406,8 +414,15 @@ function(setup_target TARGET)
   endif()
 
   if(NOT ${CMAKE_BUILD_TYPE} STREQUAL Debug)
+    # -march=native only when NATIVE is set (default ON); the fast-math flags are
+    # CPU-portable and always applied in non-Debug builds.
+    if(NATIVE)
+      set(_arch_flag -march=native)
+    else()
+      set(_arch_flag)
+    endif()
     target_compile_options(
-      ${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-march=native -ffast-math
+      ${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:${_arch_flag} -ffast-math
                        -ffp-contract=fast -fno-finite-math-only >)
     target_compile_options(${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:
                                             --use_fast_math>)

@@ -115,7 +115,7 @@ docker run "${run_args[@]}" "${moving}" bash -c "
   cp -r /src/DiFfRG /tmp/DiFfRG-src
   cmake -S /tmp/DiFfRG-src -B /tmp/diffrg-bin \
     -DBUNDLED_DIR=\"\${DiFfRG_BUNDLED_DIR}\" \
-    -DCMAKE_BUILD_TYPE=Release -DDiFfRG_TEST=ON -DDiFfRG_DOCUMENTATION=OFF
+    -DCMAKE_BUILD_TYPE=Release -DDiFfRG_TEST=ON -DDiFfRG_DOCUMENTATION=OFF -DNATIVE=OFF
   cmake --build /tmp/diffrg-bin -j ${threads} ${ctest_step}
 "
 echo "   Smoke test PASSED for ${moving}."

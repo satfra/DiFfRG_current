@@ -30,7 +30,8 @@ jobs:
             -DBUNDLED_DIR="${DiFfRG_BUNDLED_DIR:-/opt/DiFfRG/bundled}" \
             -DCMAKE_BUILD_TYPE=Release \
             -DDiFfRG_TEST=ON \
-            -DDiFfRG_DOCUMENTATION=OFF
+            -DDiFfRG_DOCUMENTATION=OFF \
+            -DNATIVE=OFF
           cmake --build DiFfRG/bin -j 4
 
       - name: Run tests

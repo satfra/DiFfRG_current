@@ -40,10 +40,14 @@ COPY . /src
 # DEPENDS on exactly these, so they yield a complete dependency tree while leaving
 # the library out of the image. deal.II_dep transitively builds any bundled
 # Kokkos/SUNDIALS it needs. Deps install to ${prefix}/bundled -> /opt/DiFfRG/bundled.
+# NATIVE=OFF: this image is pushed and pulled on arbitrary hosts/runners, so the
+# deps must NOT bake in the build machine's ISA (e.g. AVX-512) -- otherwise they
+# SIGILL on a CPU without it. Build a generic, portable target instead.
 RUN cmake -S /src -B /build \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/opt/DiFfRG \
         -DGPU=OFF -DMPI=OFF -DDiFfRG_DOCUMENTATION=OFF \
+        -DNATIVE=OFF \
     && cmake --build /build \
         --target general_dep deal.II_dep kokkos_dep autodiff_dep \
         -j ${threads}
