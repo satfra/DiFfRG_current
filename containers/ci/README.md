@@ -80,10 +80,13 @@ GitHub doesn't expose the test count, so `ci.yml` publishes it to a Gist that
    - `README.md` badge URL → `REPLACE_WITH_GIST_OWNER` (the Gist owner's username)
      and `REPLACE_WITH_GIST_ID`.
 
-The badge updates on every **push to `main`** (the `Update test-count badge` step).
-PRs intentionally skip it — fork PRs can't read secrets — but PR runs still build
-and test; only the badge isn't refreshed. The job parses ctest's
-`"<F> tests failed out of <T>"` summary line, so it needs no extra tooling.
+The badge updates on every **push to `main`** (the `Update test-count badge` step,
+which runs with `if: always()`). It shows `N/M passing` (green if all pass, red if
+any fail), or red **`build failed`** if the library didn't compile — so a broken
+build never leaves the badge stuck at a stale/placeholder value. PRs intentionally
+skip the update — fork PRs can't read secrets — but PR runs still build and test.
+The count comes from parsing ctest's `"<F> tests failed out of <T>"` summary line,
+so it needs no extra tooling.
 
 ## Verifying the CI path locally
 

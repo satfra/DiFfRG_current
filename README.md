@@ -1,9 +1,6 @@
 [![Tests](https://img.shields.io/endpoint?style=for-the-badge&url=https://gist.githubusercontent.com/satfra/336ebc0aaa7dc9a0e71ca01dd4361a12/raw/diffrg-tests.json)](https://github.com/satfra/DiFfRG_current/actions/workflows/ci.yml)
 [![arXiv](https://img.shields.io/badge/arXiv-2412.13043-b31b1b.svg?style=for-the-badge)](https://arxiv.org/abs/2412.13043)
 [![Documentation](https://img.shields.io/badge/documentation-2C4AA8?style=for-the-badge&logo=readthedocs&logoColor=white)](https://satfra.github.io/DiFfRG_current/)
-[![C++](https://img.shields.io/badge/c%2B%2B_api-2C4AA8?style=for-the-badge&logo=c%2B%2B&logoColor=white)](https://satfra.github.io/DiFfRG_current/cpp.html)
-[![Wolfram](https://img.shields.io/badge/wolfram_doc-cf1c10?style=for-the-badge&logo=wolfram)](https://satfra.github.io/DiFfRG_current/_generated_mathematica/index.html)
-[![Python](https://img.shields.io/badge/python_doc-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://satfra.github.io/DiFfRG_current/python.html)
 
 <h3>[This is the development repository for DiFfRG. For the current stable version, please visit [the main repository](https://github.com/satfra/DiFfRG)</h3>
 

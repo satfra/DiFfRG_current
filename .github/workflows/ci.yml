@@ -25,6 +25,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build DiFfRG library
+        id: build
         run: |
           cmake -S DiFfRG -B DiFfRG/bin \
             -DBUNDLED_DIR="${DiFfRG_BUNDLED_DIR:-/opt/DiFfRG/bundled}" \
@@ -34,39 +35,69 @@ jobs:
             -DNATIVE=OFF
           cmake --build DiFfRG/bin -j 4
 
+      # Runs only when the build succeeded (default fail-fast). Uses `set +e` so a
+      # test failure doesn't abort here -- we record the result, publish the badge,
+      # then fail the job at the end so a red badge is still written on failure.
       - name: Run tests
         id: tests
         run: |
           set +e
           ctest --test-dir DiFfRG/bin -j4 --output-on-failure | tee /tmp/ctest.log
-          # don't fail the job here -- we record the result, publish the badge,
-          # then fail at the end so a red badge still gets written on failure.
           # ctest always prints: "<P>% tests passed, <F> tests failed out of <T>"
           summary=$(grep -Eo '[0-9]+ tests failed out of [0-9]+' /tmp/ctest.log | tail -1)
           failed=$(echo "$summary" | awk '{print $1}')
           total=$(echo "$summary" | awk '{print $NF}')
           passed=$((total - failed))
-          echo "passed=$passed"   >> "$GITHUB_OUTPUT"
-          echo "total=$total"     >> "$GITHUB_OUTPUT"
-          echo "failed=$failed"   >> "$GITHUB_OUTPUT"
-          if [ "${failed:-1}" -eq 0 ]; then echo "color=brightgreen" >> "$GITHUB_OUTPUT"; else echo "color=red" >> "$GITHUB_OUTPUT"; fi
+          echo "passed=$passed" >> "$GITHUB_OUTPUT"
+          echo "total=$total"   >> "$GITHUB_OUTPUT"
+          echo "failed=$failed" >> "$GITHUB_OUTPUT"
           echo "### Tests: ${passed}/${total} passing" >> "$GITHUB_STEP_SUMMARY"
 
-      # Publish the count to a Gist that shields.io reads (see containers/ci/README.md
-      # for setup). Only on push to main: PRs (esp. from forks) can't access secrets.
+      # Decide the badge text/colour. Runs even if the build failed (always()), so a
+      # broken build shows a red "build failed" badge instead of leaving the gist at
+      # its stale/placeholder value.
+      - name: Compute badge content
+        id: badge
+        if: always() && github.event_name == 'push'
+        run: |
+          if [ "${{ steps.build.outcome }}" != "success" ]; then
+            echo "message=build failed" >> "$GITHUB_OUTPUT"
+            echo "color=red"            >> "$GITHUB_OUTPUT"
+          elif [ -z "${{ steps.tests.outputs.total }}" ]; then
+            echo "message=no tests run" >> "$GITHUB_OUTPUT"
+            echo "color=red"            >> "$GITHUB_OUTPUT"
+          else
+            echo "message=${{ steps.tests.outputs.passed }}/${{ steps.tests.outputs.total }} passing" >> "$GITHUB_OUTPUT"
+            if [ "${{ steps.tests.outputs.failed }}" = "0" ]; then
+              echo "color=brightgreen" >> "$GITHUB_OUTPUT"
+            else
+              echo "color=red"         >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      # Publish to a Gist that shields.io reads (see containers/ci/README.md for
+      # setup). Only on push to main: PRs (esp. from forks) can't access secrets.
       - name: Update test-count badge
-        if: github.event_name == 'push'
+        if: always() && github.event_name == 'push'
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
           auth: ${{ secrets.GIST_SECRET }}
           gistID: 336ebc0aaa7dc9a0e71ca01dd4361a12
           filename: diffrg-tests.json
           label: tests
-          message: ${{ steps.tests.outputs.passed }}/${{ steps.tests.outputs.total }} passing
-          color: ${{ steps.tests.outputs.color }}
+          message: ${{ steps.badge.outputs.message }}
+          color: ${{ steps.badge.outputs.color }}
 
-      - name: Fail the job if any test failed
-        if: steps.tests.outputs.failed != '0'
+      # Reflect build/test failures in the job conclusion (the test step swallows
+      # ctest's exit code on purpose; the build step's failure is preserved here too).
+      - name: Fail the job if the build or any test failed
+        if: always()
         run: |
-          echo "${{ steps.tests.outputs.failed }} test(s) failed."
-          exit 1
+          if [ "${{ steps.build.outcome }}" != "success" ]; then
+            echo "Build failed."
+            exit 1
+          fi
+          if [ "${{ steps.tests.outputs.failed }}" != "0" ]; then
+            echo "${{ steps.tests.outputs.failed }} test(s) failed."
+            exit 1
+          fi
