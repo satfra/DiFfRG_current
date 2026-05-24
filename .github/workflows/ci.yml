@@ -38,7 +38,7 @@ jobs:
         id: tests
         run: |
           set +e
-          ctest --test-dir DiFfRG/bin --output-on-failure | tee /tmp/ctest.log
+          ctest --test-dir DiFfRG/bin -j4 --output-on-failure | tee /tmp/ctest.log
           # don't fail the job here -- we record the result, publish the badge,
           # then fail at the end so a red badge still gets written on failure.
           # ctest always prints: "<P>% tests passed, <F> tests failed out of <T>"

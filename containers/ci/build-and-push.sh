@@ -100,7 +100,7 @@ docker buildx build --load \
 echo
 echo "Smoke-testing ${moving} (build DiFfRG library + ctest against baked deps)..."
 run_args=(--rm -v "${repo}:/src:ro")
-ctest_step="&& ctest --test-dir /tmp/diffrg-bin --output-on-failure"
+ctest_step="&& ctest --test-dir /tmp/diffrg-bin -j ${threads} --output-on-failure"
 if [[ ${cuda} -eq 1 ]]; then
   if command -v nvidia-smi >/dev/null 2>&1; then
     run_args+=(--gpus all)
