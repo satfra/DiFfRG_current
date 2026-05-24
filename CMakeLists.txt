@@ -358,9 +358,9 @@ if(NOT "${_boost_user_dir}" STREQUAL "")
         "  Point it at a prefix containing BoostConfig.cmake, or use -DBUILD_BOOST=ON."
     )
   endif()
-  message(
-    STATUS
-      "[Boost] Using Boost ${Boost_VERSION} from BOOST_DIR=${_boost_user_dir}")
+  set(_boost_status
+      "  ${BoldGreen}[Boost] Using Boost ${Boost_VERSION} from BOOST_DIR=${_boost_user_dir}.${ColourReset}"
+  )
 elseif(BUILD_BOOST)
   set(_build_boost ON)
 else()
@@ -391,8 +391,8 @@ else()
   endif()
   set(_boost_extra_args -DBoost_DIR:PATH=${Boost_DIR})
   set(_boost_dep "")
-  message(
-    "  ${BoldGreen}[Boost] Using system Boost ${Boost_VERSION} (${_boost_incdir}); skipping bundled build.${ColourReset}"
+  set(_boost_status
+      "  ${BoldGreen}[Boost] Using system Boost ${Boost_VERSION} (${_boost_incdir}); skipping bundled build.${ColourReset}"
   )
 endif()
 
@@ -425,7 +425,9 @@ if(NOT "${_tbb_user_dir}" STREQUAL "")
         "  Point it at a prefix containing TBBConfig.cmake, or use -DBUILD_TBB=ON."
     )
   endif()
-  message(STATUS "[TBB] Using TBB ${TBB_VERSION} from TBB_DIR=${_tbb_user_dir}")
+  set(_tbb_status
+      "  ${BoldGreen}[TBB] Using TBB ${TBB_VERSION} from TBB_DIR=${_tbb_user_dir}.${ColourReset}"
+  )
 elseif(BUILD_TBB)
   set(_build_tbb ON)
 else()
@@ -439,8 +441,8 @@ if(_build_tbb)
   set(_tbb_dir "${DEPEND_INSTALL_PREFIX}")
 else()
   set(_tbb_dir "${TBB_DIR}") # the discovered TBBConfig.cmake directory
-  message(
-    "  ${BoldGreen}[TBB] Using system TBB ${TBB_VERSION} (${TBB_DIR}); skipping bundled build.${ColourReset}"
+  set(_tbb_status
+      "  ${BoldGreen}[TBB] Using system TBB ${TBB_VERSION} (${TBB_DIR}); skipping bundled build.${ColourReset}"
   )
 endif()
 
@@ -481,8 +483,9 @@ if(NOT "${_hdf5_user_dir}" STREQUAL "")
         "(found '${HDF5_VERSION}').\n"
         "  Point it at an HDF5 install prefix, or use -DBUILD_HDF5=ON.")
   endif()
-  message(
-    STATUS "[HDF5] Using HDF5 ${HDF5_VERSION} from HDF5_DIR=${_hdf5_user_dir}")
+  set(_hdf5_status
+      "  ${BoldGreen}[HDF5] Using HDF5 ${HDF5_VERSION} from HDF5_DIR=${_hdf5_user_dir}.${ColourReset}"
+  )
 elseif(BUILD_HDF5)
   set(_build_hdf5 ON)
 else()
@@ -507,8 +510,8 @@ else()
     set(_hdf5_extra_args -DHDF5_ROOT:PATH=${_hdf5_loc})
   endif()
   set(_hdf5_dep "")
-  message(
-    "  ${BoldGreen}[HDF5] Using system HDF5 ${HDF5_VERSION} (${_hdf5_loc}); skipping bundled build.${ColourReset}"
+  set(_hdf5_status
+      "  ${BoldGreen}[HDF5] Using system HDF5 ${HDF5_VERSION} (${_hdf5_loc}); skipping bundled build.${ColourReset}"
   )
 endif()
 
@@ -629,8 +632,8 @@ if(NOT _build_sundials)
           "(${DiFfRG_SUNDIALS_KNOWN_GOOD_MAX}) validated with the bundled deal.II. "
           "If the deal.II build fails, configure with -DBUILD_SUNDIALS=ON.")
     endif()
-    message(
-      "  ${BoldGreen}[SUNDIALS] Using system SUNDIALS ${_sun_ver} (${_SUN_INC}); skipping bundled build.${ColourReset}"
+    set(_sundials_status
+        "  ${BoldGreen}[SUNDIALS] Using system SUNDIALS ${_sun_ver} (${_SUN_INC}); skipping bundled build.${ColourReset}"
     )
   elseif(_sun_mpi_mismatch)
     # Found a usable SUNDIALS, but its MPI support does not match MPI=${MPI}.
@@ -643,10 +646,8 @@ if(NOT _build_sundials)
           "  Use -DBUILD_SUNDIALS=ON to build a matching bundled SUNDIALS, or point "
           "SUNDIALS_DIR at a SUNDIALS whose MPI setting matches MPI=${MPI}.")
     else()
-      message(
-        "  ${BoldYellow}[SUNDIALS] System SUNDIALS ${_sun_ver} (${_SUN_INC}) MPI setting "
-        "(SUNDIALS_MPI_ENABLED=${_sun_mpi}) does not match MPI=${MPI}; building the bundled "
-        "SUNDIALS instead. deal.II requires both to agree on MPI.${ColourReset}"
+      set(_sundials_status
+          "  ${BoldYellow}[SUNDIALS] System SUNDIALS ${_sun_ver} (${_SUN_INC}) MPI setting (SUNDIALS_MPI_ENABLED=${_sun_mpi}) does not match MPI=${MPI}; building the bundled SUNDIALS instead. deal.II requires both to agree on MPI.${ColourReset}"
       )
       set(_build_sundials ON)
     endif()
@@ -662,8 +663,8 @@ if(NOT _build_sundials)
         "  Use -DBUILD_SUNDIALS=ON to build the bundled SUNDIALS instead.")
   else()
     if(_sun_reject_reason)
-      message(
-        "  ${BoldYellow}[SUNDIALS] Ignoring system SUNDIALS (${_sun_reject_reason}); building the bundled copy.${ColourReset}"
+      set(_sundials_status
+          "  ${BoldYellow}[SUNDIALS] Ignoring system SUNDIALS (${_sun_reject_reason}); building the bundled copy.${ColourReset}"
       )
     endif()
     set(_build_sundials ON)
@@ -711,14 +712,15 @@ if(_build_hdf5)
       ${CCACHE_CMAKE_ARGS}
       -DMPI:BOOL=${MPI})
 else()
-  message(
-    "  ${BoldGreen}Using system HDF5; skipping bundled HDF5 build.${ColourReset}"
-  )
+  message(${_hdf5_status})
 endif()
 
 message(
   "${BoldCyan}[2/8] Configuring general dependencies (TBB, Eigen3, spdlog, ...)...${ColourReset}"
 )
+if(NOT _build_tbb)
+  message(${_tbb_status})
+endif()
 ExternalProject_Add(
   general_dep
   LOG_CONFIGURE ON
@@ -752,6 +754,9 @@ if(BUILD_OpenBLAS)
 endif()
 
 message("${BoldCyan}[3/8] Configuring SUNDIALS...${ColourReset}")
+if(_sundials_status)
+  message(${_sundials_status})
+endif()
 if(_build_sundials)
   ExternalProject_Add(
     sundials_dep
@@ -771,10 +776,6 @@ if(_build_sundials)
       -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
       ${CCACHE_CMAKE_ARGS}
       -DMPI:BOOL=${MPI})
-else()
-  message(
-    "  ${BoldGreen}Using system SUNDIALS; skipping bundled SUNDIALS build.${ColourReset}"
-  )
 endif()
 
 message("${BoldCyan}[4/8] Configuring autodiff...${ColourReset}")
@@ -810,14 +811,14 @@ if(_build_boost)
     CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
                      -DCCACHE_PROGRAM:STRING=${CCACHE_PROGRAM})
 else()
-  message(
-    "  ${BoldGreen}Using system Boost; skipping bundled Boost build.${ColourReset}"
-  )
+  message(${_boost_status})
 endif()
 
 # ##############################################################################
 # Kokkos
 # ##############################################################################
+
+message("${BoldCyan}[6/8] Configuring Kokkos...${ColourReset}")
 
 # Kokkos_ARCH_NATIVE is Kokkos' *host* -march=native switch (cmake/kokkos_arch.cmake:
 # it adds -march=native -mtune=native to the host compiler), so it must follow the
@@ -835,7 +836,7 @@ endif()
 
 if(NOT DEFINED Kokkos_ARCH_LIST)
   message(
-    "  ${BoldYellow}Kokkos_ARCH_LIST not set. GPU architecture must be detectable when building Kokkos.${ColourReset}"
+    "  ${BoldYellow}[Kokkos] Kokkos_ARCH_LIST not set. GPU architecture must be detectable when building Kokkos.${ColourReset}"
   )
   set(Kokkos_ARCH_LIST "")
 else()
@@ -848,7 +849,6 @@ else()
   string(SUBSTRING "${Kokkos_ARCH_LIST}" 0 -1 Kokkos_ARCH_LIST)
 endif()
 
-message("${BoldCyan}[6/8] Configuring Kokkos...${ColourReset}")
 ExternalProject_Add(
   kokkos_dep
   LOG_CONFIGURE ON
@@ -915,6 +915,8 @@ endif()
 # deal.II
 # ##############################################################################
 
+message("${BoldCyan}[7/8] Configuring deal.II...${ColourReset}")
+
 if(BUILD_OpenBLAS)
   set(dealii_lapack "-DLAPACK_LIBRARIES:STRING=${BLAS_LIBRARY_PATH}")
 endif()
@@ -946,7 +948,7 @@ if(_dealii_jobs GREATER ${DEALII_MAX_JOBS})
   set(_dealii_jobs ${DEALII_MAX_JOBS})
 endif()
 message(
-  "  deal.II build parallelism: ${_dealii_jobs} threads (${_total_ram_mb} MB RAM, ${_nproc} cores)"
+  "  ${BoldGreen}[deal.II] build parallelism: ${_dealii_jobs} threads (${_total_ram_mb} MB RAM, ${_nproc} cores).${ColourReset}"
 )
 
 option(DEVEL "Enable development mode (deal.II DebugRelease build)" OFF)
@@ -956,7 +958,6 @@ else()
   set(dealiiConfig "Release")
 endif()
 
-message("${BoldCyan}[7/8] Configuring deal.II...${ColourReset}")
 ExternalProject_Add(
   deal.II_dep
   LOG_CONFIGURE ON
@@ -1017,6 +1018,86 @@ ExternalProject_Add(
 
 # create a directory necessary for using deal.II
 file(MAKE_DIRECTORY ${DEPEND_INSTALL_PREFIX}/include/deal.II/bundled)
+
+# ##############################################################################
+# Pin resolved dependencies for standalone library rebuilds
+# ##############################################################################
+#
+# Record exactly which Boost/TBB/HDF5 this superbuild resolved (system vs
+# bundled) into a small CMake snippet inside the bundle dir. A later standalone
+# library build (cd DiFfRG && cmake .. -DBUNDLED_DIR=...) and downstream
+# find_package(DiFfRG) consumers include it (see
+# DiFfRG/cmake/setup_build_system.cmake) so they reuse exactly these
+# dependencies instead of re-running find_package and possibly latching onto a
+# different system install or a stray copy in the bundle dir.
+#
+# Written at configure time (file(WRITE) creates missing parents) and
+# overwritten on every configure, so switching system<->bundled regenerates a
+# correct pin. Pinned hint variables are guarded with if(NOT DEFINED ...) so an
+# explicit -DBOOST_ROOT=/-DTBB_DIR=/-DHDF5_DIR= on the command line still wins.
+
+# Bundled Boost builds Boost itself, so its version is not yet known via
+# find_package; read it from the bundled source. For a system Boost we already
+# have Boost_VERSION.
+set(_pinned_boost_version "${Boost_VERSION}")
+if(_build_boost)
+  file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/boost/CMakeLists.txt"
+       _boost_ver_line REGEX "set\\(TRY_BOOST_VERSION")
+  if(_boost_ver_line)
+    string(REGEX REPLACE ".*\"([0-9]+\\.[0-9]+\\.[0-9]+)\".*" "\\1"
+                         _pinned_boost_version "${_boost_ver_line}")
+  endif()
+endif()
+
+set(_pin_content
+    "# Auto-generated by the DiFfRG superbuild -- do not edit.
+# Pins the Boost/TBB/HDF5 the superbuild resolved so a standalone library
+# rebuild given this bundle dir reuses exactly the same dependencies.
+# if(NOT DEFINED) guards let an explicit -DX= on the command line override.
+
+")
+
+# Boost: always pin BOOST_ROOT. For a system Boost also pin the exact
+# BoostConfig.cmake dir (Boost_DIR) -- with CMP0167 NEW, config-mode
+# find_package then resolves straight to it and ignores HINTS/CMAKE_PREFIX_PATH,
+# so a stray Boost in the bundle dir is never picked up.
+string(APPEND _pin_content
+       "if(NOT DEFINED BOOST_ROOT)\n  set(BOOST_ROOT \"${_boost_root}\")\nendif()\n")
+if(NOT _build_boost)
+  string(APPEND _pin_content
+         "if(NOT DEFINED Boost_DIR)\n  set(Boost_DIR \"${Boost_DIR}\")\nendif()\n")
+endif()
+string(APPEND _pin_content
+       "set(DiFfRG_PINNED_BOOST_VERSION \"${_pinned_boost_version}\")\n\n")
+
+# TBB: pin the config dir (bundled prefix or discovered TBBConfig.cmake dir).
+string(APPEND _pin_content
+       "if(NOT DEFINED TBB_DIR)\n  set(TBB_DIR \"${_tbb_dir}\")\nendif()\n")
+if(NOT _build_tbb)
+  string(APPEND _pin_content
+         "set(DiFfRG_PINNED_TBB_VERSION \"${TBB_VERSION}\")\n")
+endif()
+string(APPEND _pin_content "\n")
+
+# HDF5: only a system HDF5 needs pinning (bundled lives in BUNDLED_DIR and is
+# found by HINTS). Mirror the config-mode (HDF5_DIR) vs module-mode (HDF5_ROOT)
+# branch used above for the DiFfRG ExternalProject.
+if(NOT _build_hdf5)
+  if(HDF5_DIR AND NOT "${HDF5_DIR}" STREQUAL "HDF5_DIR-NOTFOUND")
+    string(APPEND _pin_content
+           "if(NOT DEFINED HDF5_DIR)\n  set(HDF5_DIR \"${HDF5_DIR}\")\nendif()\n")
+  else()
+    string(APPEND _pin_content
+           "if(NOT DEFINED HDF5_ROOT)\n  set(HDF5_ROOT \"${_hdf5_loc}\")\nendif()\n")
+  endif()
+  string(APPEND _pin_content
+         "set(DiFfRG_PINNED_HDF5_VERSION \"${HDF5_VERSION}\")\n")
+endif()
+
+file(WRITE "${DEPEND_INSTALL_PREFIX}/DiFfRG_bundled_config.cmake" "${_pin_content}")
+message(
+  "  ${BoldGreen}[pin] Recorded resolved dependencies in ${DEPEND_INSTALL_PREFIX}/DiFfRG_bundled_config.cmake${ColourReset}"
+)
 
 # ##############################################################################
 # DiFfRG

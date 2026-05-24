@@ -37,7 +37,7 @@ COPY . /src
 # a pinned Kokkos architecture since no device is visible at build time.
 RUN cmake -S /src -B /build \
         -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/opt/DiFfRG \
+        -DCMAKE_INSTALL_PREFIX=$HOME/.local/share/DiFfRG \
         -DGPU=ON -DMPI=OFF -DDiFfRG_DOCUMENTATION=OFF \
         -DNATIVE=OFF \
         -DKokkos_ARCH=${cuda_arch} -DKokkos_ARCH_LIST=${cuda_arch} \
@@ -62,6 +62,8 @@ RUN apt-get -y update && apt-get -y install --no-install-recommends \
         doxygen graphviz python3 patch ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /opt/DiFfRG/bundled /opt/DiFfRG/bundled
+# COPY/ENV can't shell-expand; the literal /root (= $HOME for root) matches the
+# $HOME-based install prefix used in the builder stage.
+COPY --from=builder /root/.local/share/DiFfRG/bundled /root/.local/share/DiFfRG/bundled
 
-ENV DiFfRG_BUNDLED_DIR=/opt/DiFfRG/bundled
+ENV DiFfRG_BUNDLED_DIR=/root/.local/share/DiFfRG/bundled

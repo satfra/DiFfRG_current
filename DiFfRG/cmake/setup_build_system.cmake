@@ -76,6 +76,31 @@ endif()
 
 set(CMAKE_PREFIX_PATH "${BUNDLED_DIR};${BUNDLED_DIR}/lib;${CMAKE_PREFIX_PATH}")
 
+# ##############################################################################
+# Pinned dependency configuration
+# ##############################################################################
+#
+# The superbuild records the Boost/TBB/HDF5 it resolved (system vs bundled) in
+# DiFfRG_bundled_config.cmake inside the bundle dir. Load it before the
+# find_package calls below so this build -- whether a standalone library rebuild
+# or a downstream find_package(DiFfRG) -- reuses exactly those dependencies
+# instead of re-resolving and possibly picking a different system install or a
+# stray copy. The pin uses if(NOT DEFINED) guards, so an explicit -DX= still
+# wins. It also records DiFfRG_PINNED_<X>_VERSION, checked after each find below.
+set(_diffrg_pin "${BUNDLED_DIR}/DiFfRG_bundled_config.cmake")
+if(EXISTS "${_diffrg_pin}")
+  message(STATUS "Loading pinned dependency configuration: ${_diffrg_pin}")
+  include("${_diffrg_pin}")
+endif()
+
+# The pin sets the upper-case BOOST_ROOT (the convention used by the superbuild
+# and deal.II). CMake >= 3.27 only honors upper-case <PKG>_ROOT when CMP0144 is
+# NEW; otherwise find_package ignores it and warns. Opt in here so BOOST_ROOT is
+# respected. Set before find_package(Boost) is invoked below.
+if(POLICY CMP0144)
+  cmake_policy(SET CMP0144 NEW)
+endif()
+
 link_directories(${BUNDLED_DIR}/lib/)
 link_directories(${BUNDLED_DIR}/lib64/)
 include_directories(SYSTEM ${BUNDLED_DIR}/include)
@@ -166,6 +191,14 @@ message(STATUS "Found deal.II in  ${deal.II_DIR}")
 # vs system; DiFfRG requires oneTBB >= 2021.
 diffrg_find_package(TBB VERSION 2021 HINTS ${BUNDLED_DIR})
 message(STATUS "Found TBB in ${TBB_DIR}")
+if(DEFINED DiFfRG_PINNED_TBB_VERSION
+   AND NOT TBB_VERSION VERSION_EQUAL DiFfRG_PINNED_TBB_VERSION)
+  message(
+    WARNING
+      "TBB version drift: the superbuild pinned ${DiFfRG_PINNED_TBB_VERSION} but this build "
+      "found ${TBB_VERSION} (${TBB_DIR}). The dependency changed since the bundle was built. "
+      "If you hit link/ABI errors, rebuild the bundled dependencies.")
+endif()
 
 # Find Kokkos
 diffrg_find_package(Kokkos HINTS ${BUNDLED_DIR})
@@ -196,6 +229,18 @@ message(STATUS "Boost version: ${Boost_VERSION}")
 message(STATUS "Boost include dir: ${Boost_INCLUDE_DIRS}")
 message(STATUS "Boost libraries: ${Boost_LIBRARIES}")
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
+# Boost is ABI-critical: a version divergence from what the superbuild pinned
+# (e.g. a system Boost upgraded in place after the bundle was built) is a hard
+# error rather than a warning.
+if(DEFINED DiFfRG_PINNED_BOOST_VERSION
+   AND NOT Boost_VERSION VERSION_EQUAL DiFfRG_PINNED_BOOST_VERSION)
+  message(
+    FATAL_ERROR
+      "Boost version mismatch: the superbuild pinned ${DiFfRG_PINNED_BOOST_VERSION} but this "
+      "build found ${Boost_VERSION} (${Boost_DIR}). The dependency changed since the bundle was "
+      "built (e.g. a system upgrade). Rebuild the bundled dependencies, or pass an explicit "
+      "-DBoost_DIR= / -DBOOST_ROOT= pointing at Boost ${DiFfRG_PINNED_BOOST_VERSION}.")
+endif()
 
 # Find Eigen3
 diffrg_find_package(Eigen3 VERSION 3.4.0 HINTS ${BUNDLED_DIR})
@@ -269,6 +314,14 @@ else()
   include_directories(SYSTEM ${HDF5_INCLUDE_DIRS})
 endif()
 message(STATUS "HDF5 link target(s): ${DiFfRG_HDF5_LIBRARIES}")
+if(DEFINED DiFfRG_PINNED_HDF5_VERSION
+   AND NOT HDF5_VERSION VERSION_EQUAL DiFfRG_PINNED_HDF5_VERSION)
+  message(
+    WARNING
+      "HDF5 version drift: the superbuild pinned ${DiFfRG_PINNED_HDF5_VERSION} but this build "
+      "found ${HDF5_VERSION}. The dependency changed since the bundle was built. "
+      "If you hit link/ABI errors, rebuild the bundled dependencies.")
+endif()
 
 if(${DiFfRG_MPI})
   find_package(MPI REQUIRED)

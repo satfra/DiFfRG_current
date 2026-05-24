@@ -94,7 +94,7 @@ docker buildx build --load \
 
 # Smoke test: build the DiFfRG library + run the test suite *inside* the freshly
 # built image, against the baked dependency tree. This proves the multi-stage
-# COPY of /opt/DiFfRG/bundled yields a usable tree before we publish it.
+# COPY of /root/.local/share/DiFfRG/bundled yields a usable tree before we publish it.
 # The repo is mounted read-only and built in a tmpfs-style /tmp dir so the image
 # stays clean. CUDA images skip ctest unless a host GPU is present.
 echo

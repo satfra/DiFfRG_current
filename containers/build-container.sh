@@ -6,7 +6,8 @@
 #   -j  build threads (default: half the host cores)
 #   -a  Kokkos CUDA arch for CUDA images (default: AMPERE80)
 #
-# The image builds the local working tree (cmake superbuild) into /opt/DiFfRG and
+# The image builds the local working tree (cmake superbuild) into the default
+# install prefix ($HOME/.local/share/DiFfRG) and
 # compiles the test suite. After a successful build the tests are run via
 # `docker run` and both logs are written to containers/logs/:
 #   <image>.log         the build (compile) output, incl. system-vs-bundled deps

@@ -4,10 +4,11 @@ CI for DiFfRG is split in two so that the expensive part runs rarely:
 
 1. **Dependency image** (this directory) — bakes the bundled superbuild
    dependencies (deal.II, Kokkos, autodiff, GSL, Eigen, spdlog, rapidcsv, …) into
-   `/opt/DiFfRG/bundled`. Built **rarely**, locally, and pushed to GHCR.
+   the default install prefix `/root/.local/share/DiFfRG/bundled` (exposed as
+   `$DiFfRG_BUNDLED_DIR`). Built **rarely**, locally, and pushed to GHCR.
 2. **Library build + tests** (`.github/workflows/ci.yml`) — on every push to a main
    branch and every pull request, builds *only* the DiFfRG library against that
-   pre-built tree (`-DBUNDLED_DIR=/opt/DiFfRG/bundled`) and runs `ctest`. Minutes,
+   pre-built tree (`-DBUNDLED_DIR=$DiFfRG_BUNDLED_DIR`) and runs `ctest`. Minutes,
    not hours, because the superbuild is already cached in the image.
 
 This contrasts with `containers/Base/` and `containers/CUDA/`, which rebuild
