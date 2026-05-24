@@ -1,5 +1,5 @@
-# Installation {#Installation}
-
+(Installation)=
+# Installation
 To compile and run this project, there are very few requirements which you can easily install using your package manager on Linux or MacOS:
 
 - [git](https://git-scm.com/) for external requirements and to clone this repository.
@@ -16,9 +16,12 @@ The following requirements are optional:
 - [CUDA](https://developer.nvidia.com/cuda-toolkit) for integration routines on the GPU, which gives a huge speedup for the calculation of fully momentum dependent flow equations (10 - 100x). In case you wish to use CUDA, make sure you have a compiler available on your system compatible with your version of `nvcc`, e.g. `g++`<=13.2 for CUDA 12.5
 
 All other requirements are bundled and automatically built with DiFfRG.
+
+## Supported systems
+
 The framework has been tested with the following systems:
 
-#### Arch Linux
+### Arch Linux
 ```bash
 $ pacman -S git cmake gcc gcc-fortran blas-openblas paraview python doxygen graphviz gsl
 ```
@@ -29,7 +32,7 @@ $ pacman -U https://archive.archlinux.org/packages/g/gcc12/gcc12-12.3.0-6-x86_64
             https://archive.archlinux.org/packages/c/cuda/cuda-12.3.2-1-x86_64.pkg.tar.zst
 ```
 
-#### Rocky Linux
+### Rocky Linux
 ```bash
 $ dnf --enablerepo=devel install -y gcc-toolset-12 cmake git openblas-devel doxygen doxygen-latex python3 python3-pip gsl-devel
 $ scl enable gcc-toolset-12 bash
@@ -37,23 +40,23 @@ $ scl enable gcc-toolset-12 bash
 
 The second line is necessary to switch into a shell where `g++-12` is available
 
-#### Ubuntu
+### Ubuntu
 ```bash
 $ apt-get update
 $ apt-get install git cmake gfortran libopenblas-dev paraview build-essential python3 doxygen graphviz libgsl-dev
 ```
 
-#### MacOS
+### MacOS
 First, install xcode and homebrew, then run
 ```bash
 $ brew install cmake gcc doxygen paraview graphviz gsl python3 bash
 ```
 
-#### Windows
+### Windows
 
 If using Windows, instead of running the project directly, it is recommended to use [WSL](https://learn.microsoft.com/en-us/windows/wsl/setup/environment) and then go through the installation as if on Linux (e.g. Arch or Ubuntu).
 
-#### Docker and other container runtime environments
+### Docker and other container runtime environments
 
 Although a native install should be unproblematic in most cases, the setup with CUDA functionality may be daunting. Especially on high-performance clusters, and also depending on the packages available for  chosen distribution, it may be much easier to work with the framework inside a container.
 

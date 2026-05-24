@@ -278,33 +278,40 @@ include(ExternalProject)
 # Dependency selection: system vs bundled
 #
 # Boost, TBB, HDF5 and SUNDIALS can each be taken from the system instead of
-# being rebuilt. For every one of them:
-#   <LIB>_DIR set     -> use the install at that prefix (FATAL if unusable)
-#   BUILD_<LIB>=ON    -> always build the bundled, pinned copy
-#   otherwise (auto)  -> use a viable system install if found, else build it
-# The blocks below resolve, for each library, whether the bundled ExternalProject
-# is needed (_build_<lib>) and which location to hand to deal.II / the DiFfRG
-# library build.
+# being rebuilt. For every one of them: <LIB>_DIR set     -> use the install at
+# that prefix (FATAL if unusable) BUILD_<LIB>=ON    -> always build the bundled,
+# pinned copy otherwise (auto)  -> use a viable system install if found, else
+# build it The blocks below resolve, for each library, whether the bundled
+# ExternalProject is needed (_build_<lib>) and which location to hand to deal.II
+# / the DiFfRG library build.
 # ##############################################################################
 
-set(BOOST_DIR "" CACHE PATH
-    "Use the Boost install at this prefix instead of building one")
-option(BUILD_BOOST "Always build the bundled, pinned Boost (ignore any system Boost)" OFF)
-set(TBB_DIR "" CACHE PATH
-    "Use the TBB install at this prefix instead of building one")
+set(BOOST_DIR
+    ""
+    CACHE PATH "Use the Boost install at this prefix instead of building one")
+option(BUILD_BOOST
+       "Always build the bundled, pinned Boost (ignore any system Boost)" OFF)
+set(TBB_DIR
+    ""
+    CACHE PATH "Use the TBB install at this prefix instead of building one")
 option(BUILD_TBB "Always build the bundled oneTBB (ignore any system TBB)" OFF)
-set(HDF5_DIR "" CACHE PATH
-    "Use the HDF5 install at this prefix instead of building one")
+set(HDF5_DIR
+    ""
+    CACHE PATH "Use the HDF5 install at this prefix instead of building one")
 option(BUILD_HDF5 "Always build the bundled HDF5 (ignore any system HDF5)" OFF)
-set(SUNDIALS_DIR "" CACHE PATH
-    "Use the SUNDIALS install at this prefix instead of building one")
-option(BUILD_SUNDIALS "Always build the bundled SUNDIALS (ignore any system SUNDIALS)" OFF)
+set(SUNDIALS_DIR
+    ""
+    CACHE PATH
+          "Use the SUNDIALS install at this prefix instead of building one")
+option(BUILD_SUNDIALS
+       "Always build the bundled SUNDIALS (ignore any system SUNDIALS)" OFF)
 
 set(DiFfRG_BOOST_MIN_VERSION 1.81)
 set(DiFfRG_TBB_MIN_VERSION 2021)
 set(DiFfRG_HDF5_MIN_VERSION 1.12.0)
-set(DiFfRG_SUNDIALS_MIN_VERSION 5.4.0)   # deal.II's own SUNDIALS floor
-set(DiFfRG_SUNDIALS_KNOWN_GOOD_MAX 7.7)  # newest version validated with bundled deal.II
+set(DiFfRG_SUNDIALS_MIN_VERSION 5.4.0) # deal.II's own SUNDIALS floor
+set(DiFfRG_SUNDIALS_KNOWN_GOOD_MAX 7.7) # newest version validated with bundled
+                                        # deal.II
 
 # ----------------------------------------------------------------------------
 # Boost — needed by both deal.II and the DiFfRG library. Use Boost's own
@@ -319,17 +326,23 @@ set(_build_boost OFF)
 set(_boost_user_dir "${BOOST_DIR}")
 if(NOT "${_boost_user_dir}" STREQUAL "")
   set(BOOST_ROOT "${_boost_user_dir}")
-  find_package(Boost ${DiFfRG_BOOST_MIN_VERSION} QUIET COMPONENTS ${_boost_components})
+  find_package(Boost ${DiFfRG_BOOST_MIN_VERSION} QUIET
+               COMPONENTS ${_boost_components})
   if(NOT Boost_FOUND)
-    message(FATAL_ERROR
-      "BOOST_DIR=${_boost_user_dir} does not provide a usable Boost >= ${DiFfRG_BOOST_MIN_VERSION}.\n"
-      "  Point it at a prefix containing BoostConfig.cmake, or use -DBUILD_BOOST=ON.")
+    message(
+      FATAL_ERROR
+        "BOOST_DIR=${_boost_user_dir} does not provide a usable Boost >= ${DiFfRG_BOOST_MIN_VERSION}.\n"
+        "  Point it at a prefix containing BoostConfig.cmake, or use -DBUILD_BOOST=ON."
+    )
   endif()
-  message(STATUS "[Boost] Using Boost ${Boost_VERSION} from BOOST_DIR=${_boost_user_dir}")
+  message(
+    STATUS
+      "[Boost] Using Boost ${Boost_VERSION} from BOOST_DIR=${_boost_user_dir}")
 elseif(BUILD_BOOST)
   set(_build_boost ON)
 else()
-  find_package(Boost ${DiFfRG_BOOST_MIN_VERSION} QUIET COMPONENTS ${_boost_components})
+  find_package(Boost ${DiFfRG_BOOST_MIN_VERSION} QUIET
+               COMPONENTS ${_boost_components})
   if(NOT Boost_FOUND)
     set(_build_boost ON)
   endif()
@@ -362,22 +375,32 @@ endif()
 
 # ----------------------------------------------------------------------------
 # TBB — needed by both deal.II (path-based) and the DiFfRG library
-# (find_package(TBB) -> TBB::tbb). The bundled oneTBB is built inside general_dep
-# (see GENERAL_BUILD_TBB), not its own ExternalProject.
+# (find_package(TBB) -> TBB::tbb). The bundled oneTBB is built inside
+# general_dep (see GENERAL_BUILD_TBB), not its own ExternalProject.
 # ----------------------------------------------------------------------------
 set(_build_tbb OFF)
 # find_package(TBB) overwrites TBB_DIR with the discovered config dir; capture
 # the user-given prefix first.
 set(_tbb_user_dir "${TBB_DIR}")
 if(NOT "${_tbb_user_dir}" STREQUAL "")
-  find_package(TBB ${DiFfRG_TBB_MIN_VERSION} QUIET CONFIG
-    PATHS "${_tbb_user_dir}"
-    PATH_SUFFIXES lib/cmake/TBB lib64/cmake/TBB cmake/TBB
+  find_package(
+    TBB
+    ${DiFfRG_TBB_MIN_VERSION}
+    QUIET
+    CONFIG
+    PATHS
+    "${_tbb_user_dir}"
+    PATH_SUFFIXES
+    lib/cmake/TBB
+    lib64/cmake/TBB
+    cmake/TBB
     NO_DEFAULT_PATH)
   if(NOT TBB_FOUND)
-    message(FATAL_ERROR
-      "TBB_DIR=${_tbb_user_dir} does not provide TBB >= ${DiFfRG_TBB_MIN_VERSION}.\n"
-      "  Point it at a prefix containing TBBConfig.cmake, or use -DBUILD_TBB=ON.")
+    message(
+      FATAL_ERROR
+        "TBB_DIR=${_tbb_user_dir} does not provide TBB >= ${DiFfRG_TBB_MIN_VERSION}.\n"
+        "  Point it at a prefix containing TBBConfig.cmake, or use -DBUILD_TBB=ON."
+    )
   endif()
   message(STATUS "[TBB] Using TBB ${TBB_VERSION} from TBB_DIR=${_tbb_user_dir}")
 elseif(BUILD_TBB)
@@ -406,11 +429,11 @@ set(_build_hdf5 OFF)
 set(_hdf5_user_dir "${HDF5_DIR}")
 # Do not pass the version to find_package: HDF5's config-version file uses a
 # same-major-version compatibility policy, so requesting 1.12 would reject a
-# newer 2.x install. Gate the version manually instead.
-# Many distros (Fedora, Debian, Ubuntu, ...) ship HDF5 without a CMake config
-# package (only headers + libs + the FindHDF5 module / pkg-config). So try config
-# mode first (gives imported targets; matches the bundled static build and Arch),
-# then fall back to module mode (FindHDF5) for those config-less installs.
+# newer 2.x install. Gate the version manually instead. Many distros (Fedora,
+# Debian, Ubuntu, ...) ship HDF5 without a CMake config package (only headers +
+# libs + the FindHDF5 module / pkg-config). So try config mode first (gives
+# imported targets; matches the bundled static build and Arch), then fall back
+# to module mode (FindHDF5) for those config-less installs.
 macro(_diffrg_find_hdf5)
   find_package(HDF5 QUIET CONFIG COMPONENTS C ${ARGN})
   if(NOT HDF5_FOUND OR HDF5_VERSION VERSION_LESS ${DiFfRG_HDF5_MIN_VERSION})
@@ -420,15 +443,23 @@ endmacro()
 
 if(NOT "${_hdf5_user_dir}" STREQUAL "")
   set(HDF5_ROOT "${_hdf5_user_dir}")
-  _diffrg_find_hdf5(PATHS "${_hdf5_user_dir}"
-    PATH_SUFFIXES lib/cmake/hdf5 lib64/cmake/hdf5 cmake/hdf5 share/cmake/hdf5)
+  _diffrg_find_hdf5(
+    PATHS
+    "${_hdf5_user_dir}"
+    PATH_SUFFIXES
+    lib/cmake/hdf5
+    lib64/cmake/hdf5
+    cmake/hdf5
+    share/cmake/hdf5)
   if(NOT HDF5_FOUND OR HDF5_VERSION VERSION_LESS ${DiFfRG_HDF5_MIN_VERSION})
-    message(FATAL_ERROR
-      "HDF5_DIR=${_hdf5_user_dir} does not provide a usable HDF5 >= ${DiFfRG_HDF5_MIN_VERSION} "
-      "(found '${HDF5_VERSION}').\n"
-      "  Point it at an HDF5 install prefix, or use -DBUILD_HDF5=ON.")
+    message(
+      FATAL_ERROR
+        "HDF5_DIR=${_hdf5_user_dir} does not provide a usable HDF5 >= ${DiFfRG_HDF5_MIN_VERSION} "
+        "(found '${HDF5_VERSION}').\n"
+        "  Point it at an HDF5 install prefix, or use -DBUILD_HDF5=ON.")
   endif()
-  message(STATUS "[HDF5] Using HDF5 ${HDF5_VERSION} from HDF5_DIR=${_hdf5_user_dir}")
+  message(
+    STATUS "[HDF5] Using HDF5 ${HDF5_VERSION} from HDF5_DIR=${_hdf5_user_dir}")
 elseif(BUILD_HDF5)
   set(_build_hdf5 ON)
 else()
@@ -460,14 +491,16 @@ endif()
 
 # ----------------------------------------------------------------------------
 # SUNDIALS — needed only by deal.II (DiFfRG links it transitively via
-# dealii::dealii). Replicate deal.II's own discovery: the arkode/kinsol/nvecserial
-# libraries plus version >= 5.4.0; otherwise build the bundled copy.
+# dealii::dealii). Replicate deal.II's own discovery: the
+# arkode/kinsol/nvecserial libraries plus version >= 5.4.0; otherwise build the
+# bundled copy.
 # ----------------------------------------------------------------------------
 set(_build_sundials OFF)
 set(_sundials_prefix "${DEPEND_INSTALL_PREFIX}")
 set(_sundials_dep "")
 set(_sun_hint "")
 set(_sun_explicit OFF)
+set(_sun_mpi_mismatch OFF)
 if(NOT "${SUNDIALS_DIR}" STREQUAL "")
   set(_sun_hint "${SUNDIALS_DIR}")
   set(_sun_explicit ON)
@@ -476,22 +509,41 @@ elseif(BUILD_SUNDIALS)
 endif()
 
 if(NOT _build_sundials)
-  find_library(_SUN_ARKODE NAMES sundials_arkode HINTS ${_sun_hint} PATH_SUFFIXES lib lib64)
-  find_library(_SUN_KINSOL NAMES sundials_kinsol HINTS ${_sun_hint} PATH_SUFFIXES lib lib64)
-  find_library(_SUN_NVEC NAMES sundials_nvecserial HINTS ${_sun_hint} PATH_SUFFIXES lib lib64)
-  # The version macros live in sundials_config.h on most installs (sundials_version.h
-  # only declares the runtime accessors and #includes the config -- e.g. on Fedora
-  # it carries no macros), so locate the config header and read whichever of the
-  # two actually defines SUNDIALS_VERSION_MAJOR.
-  find_path(_SUN_INC sundials/sundials_config.h HINTS ${_sun_hint} PATH_SUFFIXES include)
+  find_library(
+    _SUN_ARKODE
+    NAMES sundials_arkode
+    HINTS ${_sun_hint}
+    PATH_SUFFIXES lib lib64)
+  find_library(
+    _SUN_KINSOL
+    NAMES sundials_kinsol
+    HINTS ${_sun_hint}
+    PATH_SUFFIXES lib lib64)
+  find_library(
+    _SUN_NVEC
+    NAMES sundials_nvecserial
+    HINTS ${_sun_hint}
+    PATH_SUFFIXES lib lib64)
+  # The version macros live in sundials_config.h on most installs
+  # (sundials_version.h only declares the runtime accessors and #includes the
+  # config -- e.g. on Fedora it carries no macros), so locate the config header
+  # and read whichever of the two actually defines SUNDIALS_VERSION_MAJOR.
+  find_path(
+    _SUN_INC sundials/sundials_config.h
+    HINTS ${_sun_hint}
+    PATH_SUFFIXES include)
   set(_sun_ok FALSE)
   set(_sun_ver "")
   set(_sun_reject_reason "")
-  if(_SUN_ARKODE AND _SUN_KINSOL AND _SUN_NVEC AND _SUN_INC)
+  if(_SUN_ARKODE
+     AND _SUN_KINSOL
+     AND _SUN_NVEC
+     AND _SUN_INC)
     set(_sun_verhdr "")
     foreach(_h sundials/sundials_config.h sundials/sundials_version.h)
       if(EXISTS "${_SUN_INC}/${_h}")
-        file(STRINGS "${_SUN_INC}/${_h}" _sun_probe REGEX "#define[ \t]+SUNDIALS_VERSION_MAJOR")
+        file(STRINGS "${_SUN_INC}/${_h}" _sun_probe
+             REGEX "#define[ \t]+SUNDIALS_VERSION_MAJOR")
         if(_sun_probe)
           set(_sun_verhdr "${_SUN_INC}/${_h}")
           break()
@@ -499,41 +551,45 @@ if(NOT _build_sundials)
       endif()
     endforeach()
     if(_sun_verhdr)
-      file(STRINGS "${_sun_verhdr}" _sun_mj REGEX "#define[ \t]+SUNDIALS_VERSION_MAJOR")
-      file(STRINGS "${_sun_verhdr}" _sun_mn REGEX "#define[ \t]+SUNDIALS_VERSION_MINOR")
-      file(STRINGS "${_sun_verhdr}" _sun_pt REGEX "#define[ \t]+SUNDIALS_VERSION_PATCH")
-      string(REGEX REPLACE "^.*MAJOR[ \t]+([0-9]+).*" "\\1" _sun_mj "${_sun_mj}")
-      string(REGEX REPLACE "^.*MINOR[ \t]+([0-9]+).*" "\\1" _sun_mn "${_sun_mn}")
-      string(REGEX REPLACE "^.*PATCH[ \t]+([0-9]+).*" "\\1" _sun_pt "${_sun_pt}")
+      file(STRINGS "${_sun_verhdr}" _sun_mj
+           REGEX "#define[ \t]+SUNDIALS_VERSION_MAJOR")
+      file(STRINGS "${_sun_verhdr}" _sun_mn
+           REGEX "#define[ \t]+SUNDIALS_VERSION_MINOR")
+      file(STRINGS "${_sun_verhdr}" _sun_pt
+           REGEX "#define[ \t]+SUNDIALS_VERSION_PATCH")
+      string(REGEX REPLACE "^.*MAJOR[ \t]+([0-9]+).*" "\\1" _sun_mj
+                           "${_sun_mj}")
+      string(REGEX REPLACE "^.*MINOR[ \t]+([0-9]+).*" "\\1" _sun_mn
+                           "${_sun_mn}")
+      string(REGEX REPLACE "^.*PATCH[ \t]+([0-9]+).*" "\\1" _sun_pt
+                           "${_sun_pt}")
       set(_sun_ver "${_sun_mj}.${_sun_mn}.${_sun_pt}")
-      # deal.II refuses a SUNDIALS whose MPI setting differs from its own
-      # (DEAL_II_WITH_MPI). The system package (e.g. Ubuntu's libsundials-dev)
-      # is typically MPI-enabled, so a version/library check alone is not enough
-      # -- it would be accepted here and then rejected by deal.II at configure.
-      # Read SUNDIALS_MPI_ENABLED from sundials_config.h and require it to match.
-      set(_sun_mpi 0)
+      # deal.II requires deal.II and SUNDIALS to agree on MPI support; otherwise
+      # it silently sets DEAL_II_WITH_SUNDIALS=OFF, which leaves the
+      # dealii::SUNDIALS namespace undefined and breaks our KINSOL/IDA wrappers
+      # at compile time. Probe the system SUNDIALS MPI setting
+      # (sundials_config.h) and require it to match the MPI option this build
+      # passes to deal.II.
+      set(_sun_mpi OFF)
       if(EXISTS "${_SUN_INC}/sundials/sundials_config.h")
-        file(STRINGS "${_SUN_INC}/sundials/sundials_config.h" _sun_mpi_line
-             REGEX "^[ \t]*#define[ \t]+SUNDIALS_MPI_ENABLED[ \t]+[01]")
-        if(_sun_mpi_line)
-          string(REGEX REPLACE "^.*SUNDIALS_MPI_ENABLED[ \t]+([01]).*" "\\1"
-                 _sun_mpi "${_sun_mpi_line}")
+        file(STRINGS "${_SUN_INC}/sundials/sundials_config.h" _sun_mpi_probe
+             REGEX "#define[ \t]+SUNDIALS_MPI_ENABLED[ \t]+1")
+        if(_sun_mpi_probe)
+          set(_sun_mpi ON)
         endif()
       endif()
       if(MPI)
-        set(_want_mpi 1)
+        set(_sun_want_mpi ON)
       else()
-        set(_want_mpi 0)
+        set(_sun_want_mpi OFF)
       endif()
-      if(NOT _sun_ver MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$"
-         OR _sun_ver VERSION_LESS ${DiFfRG_SUNDIALS_MIN_VERSION})
-        set(_sun_reject_reason
-            "version ${_sun_ver} < required ${DiFfRG_SUNDIALS_MIN_VERSION}")
-      elseif(NOT _sun_mpi STREQUAL _want_mpi)
-        set(_sun_reject_reason
-            "its MPI support (SUNDIALS_MPI_ENABLED=${_sun_mpi}) does not match this build (MPI=${MPI})")
-      else()
-        set(_sun_ok TRUE)
+      if(_sun_ver MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+         AND NOT _sun_ver VERSION_LESS ${DiFfRG_SUNDIALS_MIN_VERSION})
+        if(_sun_mpi STREQUAL _sun_want_mpi)
+          set(_sun_ok TRUE)
+        else()
+          set(_sun_mpi_mismatch ON)
+        endif()
       endif()
     endif()
   endif()
@@ -544,22 +600,43 @@ if(NOT _build_sundials)
       get_filename_component(_sundials_prefix "${_SUN_INC}" DIRECTORY)
     endif()
     if(_sun_ver VERSION_GREATER ${DiFfRG_SUNDIALS_KNOWN_GOOD_MAX})
-      message(WARNING
-        "Using system SUNDIALS ${_sun_ver}, newer than the last version "
-        "(${DiFfRG_SUNDIALS_KNOWN_GOOD_MAX}) validated with the bundled deal.II. "
-        "If the deal.II build fails, configure with -DBUILD_SUNDIALS=ON.")
+      message(
+        WARNING
+          "Using system SUNDIALS ${_sun_ver}, newer than the last version "
+          "(${DiFfRG_SUNDIALS_KNOWN_GOOD_MAX}) validated with the bundled deal.II. "
+          "If the deal.II build fails, configure with -DBUILD_SUNDIALS=ON.")
     endif()
     message(
       "  ${BoldGreen}[SUNDIALS] Using system SUNDIALS ${_sun_ver} (${_SUN_INC}); skipping bundled build.${ColourReset}"
     )
+  elseif(_sun_mpi_mismatch)
+    # Found a usable SUNDIALS, but its MPI support does not match MPI=${MPI}.
+    if(_sun_explicit)
+      message(
+        FATAL_ERROR
+          "SUNDIALS_DIR=${SUNDIALS_DIR} provides SUNDIALS ${_sun_ver} built with "
+          "SUNDIALS_MPI_ENABLED=${_sun_mpi}, but DiFfRG is configured with MPI=${MPI}. "
+          "deal.II requires deal.II and SUNDIALS to agree on MPI support.\n"
+          "  Use -DBUILD_SUNDIALS=ON to build a matching bundled SUNDIALS, or point "
+          "SUNDIALS_DIR at a SUNDIALS whose MPI setting matches MPI=${MPI}.")
+    else()
+      message(
+        "  ${BoldYellow}[SUNDIALS] System SUNDIALS ${_sun_ver} (${_SUN_INC}) MPI setting "
+        "(SUNDIALS_MPI_ENABLED=${_sun_mpi}) does not match MPI=${MPI}; building the bundled "
+        "SUNDIALS instead. deal.II requires both to agree on MPI.${ColourReset}"
+      )
+      set(_build_sundials ON)
+    endif()
   elseif(_sun_explicit)
     if(NOT _sun_reject_reason)
       set(_sun_reject_reason
-          "the required libraries (arkode, kinsol, nvecserial) or version header were not found")
+          "the required libraries (arkode, kinsol, nvecserial) or version header were not found"
+      )
     endif()
-    message(FATAL_ERROR
-      "SUNDIALS_DIR=${SUNDIALS_DIR} is not usable: ${_sun_reject_reason}.\n"
-      "  Use -DBUILD_SUNDIALS=ON to build the bundled SUNDIALS instead.")
+    message(
+      FATAL_ERROR
+        "SUNDIALS_DIR=${SUNDIALS_DIR} is not usable: ${_sun_reject_reason}.\n"
+        "  Use -DBUILD_SUNDIALS=ON to build the bundled SUNDIALS instead.")
   else()
     if(_sun_reject_reason)
       message(
@@ -611,7 +688,9 @@ if(_build_hdf5)
       ${CCACHE_CMAKE_ARGS}
       -DMPI:BOOL=${MPI})
 else()
-  message("  ${BoldGreen}Using system HDF5; skipping bundled HDF5 build.${ColourReset}")
+  message(
+    "  ${BoldGreen}Using system HDF5; skipping bundled HDF5 build.${ColourReset}"
+  )
 endif()
 
 message(
@@ -670,7 +749,9 @@ if(_build_sundials)
       ${CCACHE_CMAKE_ARGS}
       -DMPI:BOOL=${MPI})
 else()
-  message("  ${BoldGreen}Using system SUNDIALS; skipping bundled SUNDIALS build.${ColourReset}")
+  message(
+    "  ${BoldGreen}Using system SUNDIALS; skipping bundled SUNDIALS build.${ColourReset}"
+  )
 endif()
 
 message("${BoldCyan}[4/8] Configuring autodiff...${ColourReset}")
@@ -684,9 +765,9 @@ ExternalProject_Add(
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
   DEPENDS general_dep
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
-  CMAKE_CACHE_ARGS -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
-                   -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-                   ${CCACHE_CMAKE_ARGS})
+  CMAKE_CACHE_ARGS
+    -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
+    -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX} ${CCACHE_CMAKE_ARGS})
 
 message("${BoldCyan}[5/8] Configuring Boost...${ColourReset}")
 # Boost selection was resolved above; only register the bundled build if needed.
@@ -706,7 +787,9 @@ if(_build_boost)
     CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
                      -DCCACHE_PROGRAM:STRING=${CCACHE_PROGRAM})
 else()
-  message("  ${BoldGreen}Using system Boost; skipping bundled Boost build.${ColourReset}")
+  message(
+    "  ${BoldGreen}Using system Boost; skipping bundled Boost build.${ColourReset}"
+  )
 endif()
 
 # ##############################################################################
@@ -824,7 +907,9 @@ if(_half_cores LESS 1)
   set(_half_cores 1)
 endif()
 # Use the lesser of half cores, RAM-based limit, and hard cap
-set(DEALII_MAX_JOBS 16 CACHE STRING "Maximum parallel jobs for deal.II build")
+set(DEALII_MAX_JOBS
+    16
+    CACHE STRING "Maximum parallel jobs for deal.II build")
 set(_dealii_jobs ${_half_cores})
 if(_max_threads_by_ram LESS _dealii_jobs)
   set(_dealii_jobs ${_max_threads_by_ram})
@@ -853,10 +938,12 @@ ExternalProject_Add(
   GIT_TAG v9.7.1
   GIT_SHALLOW ON
   # Patch deal.II 9.7.1 for clang-CUDA + Kokkos 5.x + Boost 1.9x (see
-  # patches/dealii-9.7.1-clang-cuda.patch and deal.II issue #18797).
-  # Idempotent: if already applied, the reverse --check succeeds so re-runs and
-  # re-clones are both safe. sh -c keeps it working on Linux and macOS.
-  PATCH_COMMAND sh -c "git apply --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-clang-cuda.patch' || git apply --reverse --check --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-clang-cuda.patch'"
+  # patches/dealii-9.7.1-clang-cuda.patch and deal.II issue #18797). Idempotent:
+  # if already applied, the reverse --check succeeds so re-runs and re-clones
+  # are both safe. sh -c keeps it working on Linux and macOS.
+  PATCH_COMMAND
+    sh -c
+    "git apply --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-clang-cuda.patch' || git apply --reverse --check --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-clang-cuda.patch'"
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/deal.II
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
   DEPENDS general_dep ${_boost_dep} ${is_petsc_dep} ${_sundials_dep}

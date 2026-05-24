@@ -1,5 +1,5 @@
-# Tutorial 1: Creating an Application {#tut1}
-
+(tut1)=
+# Tutorial 1: Creating an Application
 This first tutorial will guide you through the process of setting up a new application using the DiFfRG. This first program will simply solve a hydrodynamic equation unrelated to fRG, but introduce the basic structure of a typical DiFfRG application.
 
 You can find the full code as described here also in `Tutorials/tut1`.
@@ -28,13 +28,13 @@ $ touch parameters.json
 The `CMakeLists.txt` file is the first thing we need to set up. [CMake](https://www.cmake.org) is a powerful build system which automates complex setup of dependencies and structure of C++ programs. For a deeper understanding, please consult the [documentation](https://cmake.org/cmake/help/latest/) and see the `DiFfRG` build system setup in `DiFfRG/cmake/setup_build_system.cmake`.
 
 In our case, we need to tell CMake about our new simulation and about the `DiFfRG` library. In practice, our `CMakeLists.txt` file looks as in the following:
-```CMake
+```cmake
 cmake_minimum_required(VERSION 3.26.4)
 
 project(tut1)
 ```
 In the above, we first request a minimum version of `CMake` and then declare our project.
-```CMake
+```cmake
 find_package(DiFfRG REQUIRED HINTS /opt/DiFfRG)
 ```
 Afterwards, we request `CMake` to find the `DiFfRG` package. We set the default install path here, which is `/opt/DiFfRG`, but depending on where you installed `DiFfRG`, you will have to change this.
@@ -65,7 +65,7 @@ which will build the whole project using 8 cores. However, doing this will at th
 
 Now we are ready to set up the main structure of the program in `tut1.cc`.
 
-```Cpp
+```cpp
 #include <DiFfRG/common/configuration_helper.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/discretization.hh>
@@ -83,7 +83,7 @@ The includes in the first few rows are parts of the `DiFfRG` and we will use the
 All relevant classes and functions are in the `DiFfRG` master namespace, so for convenience we just import all symbols from this namespace into our code by `using namespace DiFfRG;`.
 
 The actual program logic starts with the entry point, the `main` function. The first thing to do in the `main` function is to read the parameter file `parameters.json` we created earlier:
-```Cpp
+```cpp
   // get all needed parameters and parse from the CLI
   ConfigurationHelper config_helper(argc, argv);
   const auto json = config_helper.get_json();
@@ -94,7 +94,7 @@ In order for this class to parse the flags and arguments passed from the command
 Afterwards, we load the entire parameter structure into the `json` variable, which has the same structure as the original json file.
 
 After setting up the configuration, we choose the algorithms used in our simulation. To do so, we make some convenient type aliases with the chosen class types:
-```Cpp
+```cpp
   // Choices for types
   using Model = Tut1;
   constexpr uint dim = Model::dim;
@@ -107,24 +107,30 @@ After setting up the configuration, we choose the algorithms used in our simulat
 After making an alias for the numerical model, which we will specify in a moment, we choose a spatial (field space) dimension, which is here simply taken from the Model.
 
 The `Discretization` gives a prescription to discretize the field space. Here, we choose the `CG`, i.e. *Continuous Galerkin* discretization and accordingly a fitting `Assembler`. The assembler, as the name implies, assembles the system of equations to be solved. In practice, the differential equation you specify in the `Model` is discretized by the `Assembler` using the `Discretization` and brought into the form of a time-dependent, nonlinear ODE (ordinary differential equation)
-\f[
-  F(\partial_t v_i, v_i) = 0\,,
-\f]
-where \f$v_i\f$ are the components of the discretization. The `Assembler` is directly invoked by the `TimeStepper` which requests the construction of the above equation at every (RG) time step and evolves the system according to it.
+
+```{math}
+F(\partial_t v_i, v_i) = 0\,,
+```
+
+where $v_i$ are the components of the discretization. The `Assembler` is directly invoked by the `TimeStepper` which requests the construction of the above equation at every (RG) time step and evolves the system according to it.
 If you are unfamiliar with [FEM](https://en.wikipedia.org/wiki/Finite_element_method) methods, it would be recommended to at least understand the basics of it.
 
 Next, we choose the [*SUNDIALS_IDA*](https://computing.llnl.gov/projects/sundials/ida) timestepper, which is the most performant choice for FEM setups with spontaneous symmetry breaking. IDA is a differential-algebraic solver, i.e. it solves both equations dependent on time, as above,
-\f[
-  F(\partial_t v_i, v_i) = 0\,,
-\f]
-but also stationary (secondary) equations without explicit dependence on time derivatives,
-\f[
-  G(v_i) = 0\,.
-\f]
-We will show the utility of this in a later tutorial.
-Note that the TimeStepper takes an additional argument, where we can choose the linear solver. The direct solver `UMFPack` is a simple but good choice, as it solves any linear system exactly. However, with large systems, e.g. in \f$d\geq2\f$, `GMRES` or another iterative solver is usually much faster and thus preferred.
 
-```Cpp
+```{math}
+F(\partial_t v_i, v_i) = 0\,,
+```
+
+but also stationary (secondary) equations without explicit dependence on time derivatives,
+
+```{math}
+G(v_i) = 0\,.
+```
+
+We will show the utility of this in a later tutorial.
+Note that the TimeStepper takes an additional argument, where we can choose the linear solver. The direct solver `UMFPack` is a simple but good choice, as it solves any linear system exactly. However, with large systems, e.g. in $d\geq2$, `GMRES` or another iterative solver is usually much faster and thus preferred.
+
+```cpp
   // Define the objects needed to run the simulation
   Model model(json);
   RectangularMesh<dim> mesh(json);
@@ -135,13 +141,13 @@ Note that the TimeStepper takes an additional argument, where we can choose the 
 We now use the types we defined above to construct objects of all the classes described above.
 
 With everything prepared, we are now ready to set up and run the equation system. To do so, we create an initial condition on the discretization (i.e. FEM space) we set up before,
-```Cpp
+```cpp
   // Set up the initial condition
   FE::FlowingVariables initial_condition(discretization);
   initial_condition.interpolate(model);
 ```
 and use it to run the time-stepper from RG-time 0 to the final RG-time, which we infer from the parameter file:
-```Cpp
+```cpp
   // Now we start the timestepping
   Timer timer;
   try {
@@ -153,17 +159,21 @@ and use it to run the time-stepper from RG-time 0 to the final RG-time, which we
   auto time = timer.wall_time();
 ```
 Note here, that RG-time is defined on the level of the code as positive, i.e.
-\f[
-  t_+ = \ln \Lambda / k
-\f]
+
+```{math}
+t_+ = \ln \Lambda / k
+```
+
 whereas the usual convention is
-\f[
-  t_- = \ln k / \Lambda
-\f]
+
+```{math}
+t_- = \ln k / \Lambda
+```
+
 Furthermore, we recorded the time the simulation took using the `dealii::Timer` class.
 
 We finish the program by printing a bit of information to the log file, in particular the performance and utilization of the `Assembler`.
-```Cpp
+```cpp
   // We print a bit of exit information.
   assembler.log("log");
   spdlog::get("log")->info("Simulation finished after " + time_format(time));
@@ -174,12 +184,13 @@ We finish the program by printing a bit of information to the log file, in parti
 ## model.hh
 
 Now we need to specify the equation system to solve. For this example, we will just implement Burgers' equation, which is not fRG-related but a simple hydrodynamic equation given by
-\f[
-  \partial_t u(x,t) + \frac12 \partial_x u(x,t)^2 = 0
-\f]
+
+```{math}
+\partial_t u(x,t) + \frac12 \partial_x u(x,t)^2 = 0
+```
 
 First things first, we set a few things up before we get to the equation system:
-```Cpp
+```cpp
 #pragma once
 
 #include <DiFfRG/model/model.hh>
@@ -204,23 +215,23 @@ struct Parameters {
 Although not necessary in this case, the `#pragma once` compiler directive ensures that the header file is not included multiple times (similar to the use of include guards), which would lead to compiler errors.
 The `DiFfRG/model/model.hh` header contains basic predefines necessary for the setup of a numerical model. Again, we import all symbols from the `DiFfRG` namespace.
 
-Afterwards, we create a struct to hold parameters we read once from the `JSON` variable. We call these a,b,c,d and will use them to construct the initial condition for the differential equation, i.e. \f$u(x,0)\f$.
+Afterwards, we create a struct to hold parameters we read once from the `JSON` variable. We call these a,b,c,d and will use them to construct the initial condition for the differential equation, i.e. $u(x,0)$.
 
 With this in place, let's set the equation system structure up:
-```Cpp
+```cpp
 using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">>;
 using Components = ComponentDescriptor<FEFunctionDesc>;
 constexpr auto idxf = FEFunctionDesc{};
 ```
 Our system is very small, consisting only of a single equation. With large fRG simulations this can grow however extremely large, using momentum grids of variables and large vertex expansions. Thus, `DiFfRG` provides a mechanism of describing these systems and smartly indexing the numerical degrees of freedom. Here, we use a descriptor to tell the library how many and what kinds of functions we have. We use one function which lives on a FEM discretization and thus use the `FEFunctionDescriptor` with one `Scalar` which we call "u" as in the above equation.
 
-If we had two variables, e.g. another one called \f$v\f$, we would declare this as
+If we had two variables, e.g. another one called $v$, we would declare this as
 `FEFunctionDescriptor<Scalar<"u">, Scalar<"v">>;`. We will treat the declaration of larger systems in a later tutorial in-detail.
 
 The `ComponentDescriptor` type packs the `FEFunctionDescriptor` together with other parts of the equation system; here, we only have a FE function and thus do not provide more template parameters.
 Creating a compile-time constant (`constexpr`) object of the descriptor is useful for easier access to the indices, which we will use below.
 
-```Cpp
+```cpp
 /**
  * @brief This class implements the numerical model for Burgers' equation.
  */
@@ -231,16 +242,18 @@ class Tut1 : public def::AbstractModel<Tut1, Components>,
 {
 ```
 Now we define the actual numerical model. We need to derive the class from `def::AbstractModel`, which defines all necessary methods so our numerical model can be used by the `Assembler`. Here, we also communicate the structure of our equation system through the `Components` type we declared earlier. Furthermore, we derive from a few more classes:
-- `def::fRG` provides a method where \f$t\f$ is automatically communicated to the model and the RG-scale \f$k\f$ is computed from it. Furthermore, it defines the variables `t` and `k` which can be directly used in the code.
-- `def::FlowBoundaries` is necessary to close the FEM system, as the boundary conditions at \f$x=0\f$ and \f$x = x_\textrm{max}\f$ need to be specified. `def::FlowBoundaries` sets up inflow/outflow boundary conditions.
+- `def::fRG` provides a method where $t$ is automatically communicated to the model and the RG-scale $k$ is computed from it. Furthermore, it defines the variables `t` and `k` which can be directly used in the code.
+- `def::FlowBoundaries` is necessary to close the FEM system, as the boundary conditions at $x=0$ and $x = x_\textrm{max}$ need to be specified. `def::FlowBoundaries` sets up inflow/outflow boundary conditions.
 - `def::AD` creates methods for the automatic evaluation of jacobians of our system, i.e.
-\f[
-  \frac{\partial (\partial_t u - \frac12 \partial_x u^2)}{\partial u}\,\qquad\text{and}\qquad
+
+```{math}
+\frac{\partial (\partial_t u - \frac12 \partial_x u^2)}{\partial u}\,\qquad\text{and}\qquad
   \frac{\partial (\partial_t u - \frac12 \partial_x u^2)}{\partial (\partial_t u)}\,.
-\f]
+```
+
 This is achieved by the use of [automatic differentiation](https://en.wikipedia.org/wiki/Automatic_differentiation), using the [autodiff](https://autodiff.github.io/) library. This is also the reason why we must template and not use explicit types in the methods of the numerical model, as will be seen below.
 
-```Cpp
+```cpp
 private:
   const Parameters prm;
 
@@ -249,9 +262,9 @@ public:
 
   Tut1(const JSONValue &json) : def::fRG(json.get_double("/physical/Lambda")), prm(json) {}
 ```
-Here, we have only written the constructor, communicated \f$\Lambda\f$ to the `def::fRG` base class and created a `Parameters` object.
+Here, we have only written the constructor, communicated $\Lambda$ to the `def::fRG` base class and created a `Parameters` object.
 
-```Cpp
+```cpp
   template <typename Vector> void initial_condition(const Point<dim> &pos, Vector &values) const
   {
     const auto x = pos[0];
@@ -260,7 +273,7 @@ Here, we have only written the constructor, communicated \f$\Lambda\f$ to the `d
 ```
 The `initial_condition` method is invoked by the `initial_condition.interpolate(model)` call from above. We use the parameters `a,b,c,d` to set up a polynomial initial condition. Here, we also use the indexing provided by the `FEFunctionDescriptor` class, to retrieve the position of "u" within the array of FE functions. In this case, it is of course trivial, as `idxf("u")` always evaluates to `0`. Note however, that the lookup is done statically at compile time and is thus much faster than dynamic lookup, such as with a `std::map`.
 
-```Cpp
+```cpp
   template <typename NT, typename Solution> void flux(std::array<Tensor<1, dim, NT>, Components::count_fe_functions(0)> &F_i, const Point<dim> &/*x*/, const Solution &sol) const
   {
     const auto &fe_functions = get<"fe_functions">(sol);
@@ -272,16 +285,18 @@ The `initial_condition` method is invoked by the `initial_condition.interpolate(
 };
 ```
 The `flux` method implements the actual equation. If we don't specify anything else, the `Assembler` will construct the equation
-\f[
-  \partial_t u + \partial_x (F_i(u)) = 0
-\f]
-so that our choice of \f$F_i(u) = \frac12 u^2\f$ exactly implements Burgers' equation.
+
+```{math}
+\partial_t u + \partial_x (F_i(u)) = 0
+```
+
+so that our choice of $F_i(u) = \frac12 u^2$ exactly implements Burgers' equation.
 
 ## parameters.json
 
 The parameter file contains usually user-defined quantities in a "physical" subsection and further paramters for the backend:
 
-```JSON
+```json
 {
   "physical": {
     "Lambda" : 1.0,
@@ -292,7 +307,7 @@ The parameter file contains usually user-defined quantities in a "physical" subs
   },
 ```
 These sections are just the parameters we also use in the numerical model, i.e. user-space parmeters.
-```JSON
+```json
   "discretization": {
     "fe_order": 3,
     "threads": 8,
@@ -320,8 +335,8 @@ The discretization section configures the FEM setup of our simulation:
 - `EoM_max_iter` sets the number of bisections used in determining the position of the EoM.
 - `x_grid` this works in a python-like slice syntax and sets the  used in a `RectangularMesh`. The parameter also supports locally different cell sizes: "0:1e-4:1e-2, 1e-2:1e-3:1" creates 100 cells between 0 and 1e-2, and 100 cells between 1e-2 and 1.
 - `y_grid` and `z_grid` work identically, but are only used in 2D / 3D simulations.
-- `refine` can be used to quickly increase the cell count by \f$2^\textrm{refine}\f$.
-```JSON
+- `refine` can be used to quickly increase the cell count by $2^\textrm{refine}$.
+```json
     "adaptivity": {
       "start_adapt_at": 0E0,
       "adapt_dt": 1E-1,
@@ -332,7 +347,7 @@ The discretization section configures the FEM setup of our simulation:
   },
 ```
 The adaptivity section sets parameters for adaptive refinement of the discretization mesh. As we have not set this up in the numerical model, we will postpone the explanation of this section to a later tutorial.
-```JSON
+```json
   "timestepping": {
     "final_time": 10.0,
     "output_dt": 1E-1,
@@ -361,7 +376,7 @@ The timestepping section controls the behavior of the `Timestepper` class:
   - `abs_tol` and `rel_tol` set absolute and relative error tolerance for the timestepping. While the FE parts of the system usually require a higher precision (< 1e-7 relative precision), especially in the presence of spontaneaous symmetry breaking, explicit tolerances can be chosen much more freely.
 For more information about timesteppers and their relationship with spontaneous symmetry breaking in fRG, see also [this paper](https://arxiv.org/abs/2302.04736).
 
-```JSON
+```json
   "output": {
     "verbosity": 0,
     "folder": "./",
