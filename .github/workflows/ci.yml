@@ -58,7 +58,7 @@ jobs:
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
           auth: ${{ secrets.GIST_SECRET }}
-          gistID: REPLACE_WITH_GIST_ID
+          gistID: 336ebc0aaa7dc9a0e71ca01dd4361a12
           filename: diffrg-tests.json
           label: tests
           message: ${{ steps.tests.outputs.passed }}/${{ steps.tests.outputs.total }} passing
