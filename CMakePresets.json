@@ -12,7 +12,17 @@
       "binaryDir": "${sourceDir}/build_install",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_INSTALL_PREFIX": "${sourceDir}/local_install"
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/local_install",
+        "BUILD_PETSC": "OFF"
+      }
+    },
+    {
+      "name": "full-debug-petsc",
+      "displayName": "Full DiFfRG Debug With PETSc",
+      "inherits": "full-debug",
+      "binaryDir": "${sourceDir}/build_install_petsc",
+      "cacheVariables": {
+        "BUILD_PETSC": "ON"
       }
     }
   ],
@@ -21,6 +31,12 @@
       "name": "full-debug",
       "displayName": "Build Full DiFfRG Debug",
       "configurePreset": "full-debug",
+      "jobs": 8
+    },
+    {
+      "name": "full-debug-petsc",
+      "displayName": "Build Full DiFfRG Debug With PETSc",
+      "configurePreset": "full-debug-petsc",
       "jobs": 8
     }
   ]
