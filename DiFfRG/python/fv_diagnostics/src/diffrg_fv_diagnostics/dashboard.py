@@ -23,7 +23,8 @@ from typing import Iterable
 import h5py
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
-from matplotlib.widgets import RangeSlider, Slider
+from matplotlib.ticker import FuncFormatter
+from matplotlib.widgets import CheckButtons, RangeSlider, Slider
 import numpy as np
 
 from diffrg_fv_diagnostics.oscillation_trace import (
@@ -39,6 +40,8 @@ RECONSTRUCTION_MAP_NAMES = (
     "cell_du_dx",
     "cell_u_constant",
     "cell_u_reconstruction",
+    "cell_m2_pion_constant",
+    "cell_m2_sigma_constant",
     "face_u_minus",
     "face_u_plus",
     "face_du_dx_minus",
@@ -59,8 +62,9 @@ RESIDUAL_CONTRIBUTION_MAP_NAMES = (
 
 MAP_NAMES = RECONSTRUCTION_MAP_NAMES + RESIDUAL_CONTRIBUTION_MAP_NAMES
 DEFAULT_LAMBDA_UV = 0.6
-WARNING_LINE_PANELS = {"Cell state and reconstruction", "Face slopes"}
+WARNING_LINE_PANELS = {"Cell state and reconstruction", "Face slopes", "Advection vs diffusion masses"}
 CELL_STATE_PANEL_TITLE = "Cell state and reconstruction"
+FACE_SLOPES_PANEL_TITLE = "Face slopes"
 CELL_COORDINATE_MAP_NAMES = (
     "cell_u",
     "cell_du_dx",
@@ -120,6 +124,14 @@ DASHBOARD_PANELS = (
         curves=(
             CurveSpec("face_du_dx_minus", r"$\partial_\sigma u^-$"),
             CurveSpec("face_du_dx_plus", r"$\partial_\sigma u^+$", style="--"),
+        ),
+    ),
+    PanelSpec(
+        title=r"Advection vs diffusion masses",
+        ylabel=r"$m^2$",
+        curves=(
+            CurveSpec("cell_m2_pion_constant", r"$m_\pi^2=(u_i+c_\sigma)/\sigma_i$", linewidth=1.15),
+            CurveSpec("cell_m2_sigma_constant", r"$m_\sigma^2=\partial_\sigma u_i$", style="--"),
         ),
     ),
     PanelSpec(
@@ -221,6 +233,24 @@ def warning_line_data(panel_title: str, lambda_uv: float, series: Series,
     if panel_title == CELL_STATE_PANEL_TITLE:
         return x, y_value * x - advection_offset
     return x, np.full_like(x, y_value, dtype=float)
+
+
+def format_margin_tick(value: float) -> str:
+    if value == 0.0:
+        return "0"
+    return f"{value:.1e}"
+
+
+def face_slope_margin_tick(value: float, lambda_uv: float, series: Series) -> str:
+    return format_margin_tick(value - warning_line_value(lambda_uv, series))
+
+
+def set_face_slope_margin_ticks(axis: plt.Axes, lambda_uv: float, series: Series) -> None:
+    axis.yaxis.set_major_formatter(
+        FuncFormatter(lambda value, _position: face_slope_margin_tick(value, lambda_uv, series))
+    )
+    axis.yaxis.get_offset_text().set_visible(False)
+    axis.set_ylabel(r"$\partial_\sigma u^\pm+k^2$")
 
 
 def series_for_map(h5: h5py.File, map_name: str) -> list[Series]:
@@ -345,13 +375,18 @@ def set_cell_boundary_grid(axis: plt.Axes, boundaries: np.ndarray,
 
 
 def read_curve_data(h5_files: list[h5py.File], spec_by_name: dict[str, MapSpec], map_name: str, series: Series,
-                    component: int) -> tuple[np.ndarray, np.ndarray]:
+                    component: int, advection_offset: float = 0.0) -> tuple[np.ndarray, np.ndarray]:
     if map_name in spec_by_name:
         spec = spec_by_name[map_name]
         series_group = h5_files[spec.file_index][f"maps/{spec.name}/{series.number}"]
         return read_coordinates(series_group), read_component(series_group, component)
 
-    if map_name not in {"cell_u_constant", "cell_u_reconstruction"}:
+    if map_name not in {
+        "cell_u_constant",
+        "cell_u_reconstruction",
+        "cell_m2_pion_constant",
+        "cell_m2_sigma_constant",
+    }:
         raise KeyError(f"Unsupported diagnostic map {map_name!r}.")
 
     cell_spec = spec_by_name["cell_u"]
@@ -376,9 +411,17 @@ def read_curve_data(h5_files: list[h5py.File], spec_by_name: dict[str, MapSpec],
     if map_name == "cell_u_constant":
         y[0::2] = cell_u
         y[1::2] = cell_u
-    else:
+    elif map_name == "cell_u_reconstruction":
         y[0::2] = cell_u + cell_du_dx * (left_x - cell_x)
         y[1::2] = cell_u + cell_du_dx * (right_x - cell_x)
+    elif map_name == "cell_m2_pion_constant":
+        with np.errstate(divide="ignore", invalid="ignore"):
+            m2_pion = (cell_u + advection_offset) / cell_x
+        y[0::2] = m2_pion
+        y[1::2] = m2_pion
+    else:
+        y[0::2] = cell_du_dx
+        y[1::2] = cell_du_dx
     return x, y
 
 
@@ -394,13 +437,15 @@ def diagnostic_title(h5_paths: list[Path], map_names: list[str]) -> str:
     return "FV diagnostics: " + ", ".join(path.name for path in h5_paths)
 
 
-def autoscale_y(axis: plt.Axes, xlim: tuple[float, float]) -> None:
+def autoscale_y(axis: plt.Axes, xlim: tuple[float, float], include_warning_lines: bool = False) -> None:
     visible_values = []
     lower, upper = xlim
     for line in axis.lines:
         x = np.asarray(line.get_xdata())
         y = np.asarray(line.get_ydata())
-        if line.get_gid() in {"warning-line", "diagnostic-marker"}:
+        if line.get_gid() == "diagnostic-marker":
+            continue
+        if line.get_gid() == "warning-line" and not include_warning_lines:
             continue
         finite = np.isfinite(x) & np.isfinite(y)
         x = x[finite]
@@ -444,10 +489,12 @@ def autoscale_y(axis: plt.Axes, xlim: tuple[float, float]) -> None:
     axis.set_ylim(y_min - margin, y_max + margin)
 
 
-def apply_x_range(axes: Iterable[plt.Axes], xlim: tuple[float, float]) -> None:
+def apply_x_range(axes: Iterable[plt.Axes], xlim: tuple[float, float],
+                  include_warning_lines_for_axes: set[plt.Axes] | None = None) -> None:
+    include_warning_lines_for_axes = include_warning_lines_for_axes or set()
     for axis in axes:
         axis.set_xlim(*xlim)
-        autoscale_y(axis, xlim)
+        autoscale_y(axis, xlim, axis in include_warning_lines_for_axes)
 
 
 def available_maps(h5_files: list[h5py.File], h5_paths: list[Path]) -> list[MapSpec]:
@@ -534,7 +581,12 @@ def sibling_diagnostic_paths(paths: Iterable[Path]) -> list[Path]:
 def available_panels(map_specs: Iterable[MapSpec]) -> list[PanelSpec]:
     map_names = {spec.name for spec in map_specs}
     if {"cell_u", "cell_du_dx"} <= map_names and ({"face_u_minus", "face_u_plus"} & map_names):
-        map_names = map_names | {"cell_u_constant", "cell_u_reconstruction"}
+        map_names = map_names | {
+            "cell_u_constant",
+            "cell_u_reconstruction",
+            "cell_m2_pion_constant",
+            "cell_m2_sigma_constant",
+        }
     panels = []
     for panel in DASHBOARD_PANELS:
         curves = tuple(curve for curve in panel.curves if curve.map_name in map_names)
@@ -649,6 +701,8 @@ def plot_maps(h5_paths: list[Path], selected_series: Iterable[Series], component
         global_x_max = -np.inf
         time_lines: list[tuple[plt.Axes, str, object]] = []
         warning_lines: list[tuple[plt.Axes, str, tuple[float, float], object]] = []
+        warning_line_axes: set[plt.Axes] = set()
+        face_slope_axes: list[plt.Axes] = []
         diagnostic_markers: list[tuple[plt.Axes, object]] = []
         boundary_grids: list[tuple[plt.Axes, LineCollection]] = []
         interactive = output is None
@@ -663,7 +717,8 @@ def plot_maps(h5_paths: list[Path], selected_series: Iterable[Series], component
                 boundary_grids.append((axis, boundary_grid))
             for curve in panel.curves:
                 for series_index, series in enumerate(series_to_plot):
-                    x, y = read_curve_data(h5_files, spec_by_name, curve.map_name, series, component)
+                    x, y = read_curve_data(h5_files, spec_by_name, curve.map_name, series, component,
+                                           advection_offset)
                     label = curve.label if interactive or series_index == 0 else "_nolegend_"
                     (line,) = axis.plot(x, y, curve.style, linewidth=curve.linewidth, alpha=curve.alpha,
                                         label=label)
@@ -684,6 +739,7 @@ def plot_maps(h5_paths: list[Path], selected_series: Iterable[Series], component
                     warning_line.set_gid("warning-line")
                     if interactive:
                         warning_lines.append((axis, panel.title, x_range, warning_line))
+                        warning_line_axes.add(axis)
 
             if trace_by_number:
                 for series_index, series in enumerate(series_to_plot):
@@ -700,6 +756,10 @@ def plot_maps(h5_paths: list[Path], selected_series: Iterable[Series], component
             axis.set_title(panel.title)
             axis.set_xlabel(r"$\sigma$")
             axis.set_ylabel(panel.ylabel)
+            if panel.title == FACE_SLOPES_PANEL_TITLE and (interactive or len(series_to_plot) == 1):
+                set_face_slope_margin_ticks(axis, lambda_uv, series_to_plot[0])
+                if interactive:
+                    face_slope_axes.append(axis)
             axis.grid(True, axis="y", alpha=0.25)
             axis.legend(loc="best", fontsize="small", frameon=False)
 
@@ -719,39 +779,61 @@ def plot_maps(h5_paths: list[Path], selected_series: Iterable[Series], component
         else:
             fig.subplots_adjust(bottom=0.18, hspace=0.42, wspace=0.28)
             initial_xlim = xlim if xlim is not None else (global_x_min, global_x_max)
-            apply_x_range(data_axes, initial_xlim)
+            include_warning_lines_in_autoscale = False
+
+            def warning_autoscale_axes() -> set[plt.Axes]:
+                if include_warning_lines_in_autoscale:
+                    return warning_line_axes
+                return set()
+
+            def autoscale_axis(axis: plt.Axes) -> None:
+                autoscale_y(axis, axis.get_xlim(), axis in warning_autoscale_axes())
+
+            apply_x_range(data_axes, initial_xlim, warning_autoscale_axes())
             sigma_axis = fig.add_axes([0.12, 0.035, 0.76, 0.03])
             sigma_slider = RangeSlider(sigma_axis, r"$\sigma$", global_x_min, global_x_max, valinit=initial_xlim,
                                        valfmt="%.5g")
 
             def update_x(bounds: tuple[float, float]) -> None:
-                apply_x_range(data_axes, bounds)
+                apply_x_range(data_axes, bounds, warning_autoscale_axes())
                 fig.canvas.draw_idle()
 
             sigma_slider.on_changed(update_x)
 
             time_axis = fig.add_axes([0.12, 0.085, 0.76, 0.03])
             series_slider = Slider(time_axis, "series", 0, len(selected_series) - 1, valinit=0, valstep=1)
+            convexity_scale_axis = fig.add_axes([0.895, 0.033, 0.095, 0.062])
+            convexity_scale_toggle = CheckButtons(convexity_scale_axis, ["scale\nbounds"], [False])
+
+            def update_convexity_scale(_label: str) -> None:
+                nonlocal include_warning_lines_in_autoscale
+                include_warning_lines_in_autoscale = not include_warning_lines_in_autoscale
+                apply_x_range(data_axes, sigma_slider.val, warning_autoscale_axes())
+                fig.canvas.draw_idle()
+
+            convexity_scale_toggle.on_clicked(update_convexity_scale)
 
             def update_time(index_value: float) -> None:
                 index = int(index_value)
                 series = selected_series[index]
                 for axis, map_name, line in time_lines:
-                    x, y = read_curve_data(h5_files, spec_by_name, map_name, series, component)
+                    x, y = read_curve_data(h5_files, spec_by_name, map_name, series, component, advection_offset)
                     line.set_data(x, y)
-                    autoscale_y(axis, axis.get_xlim())
+                    autoscale_axis(axis)
                 for axis, panel_title, x_range, line in warning_lines:
                     x_warning, y_warning = warning_line_data(panel_title, lambda_uv, series, x_range, advection_offset)
                     line.set_data(x_warning, y_warning)
-                    autoscale_y(axis, axis.get_xlim())
+                    autoscale_axis(axis)
                 for axis, marker in diagnostic_markers:
                     point = trace_by_number.get(series.number)
                     if point is not None and np.isfinite(point.critical_margin.sigma):
                         marker.set_xdata([point.critical_margin.sigma, point.critical_margin.sigma])
-                    autoscale_y(axis, axis.get_xlim())
+                    autoscale_axis(axis)
                 for axis, boundary_grid in boundary_grids:
                     boundaries = cell_boundary_coordinates(h5_files, spec_by_name, series)
                     set_cell_boundary_grid(axis, boundaries, boundary_grid)
+                for axis in face_slope_axes:
+                    set_face_slope_margin_ticks(axis, lambda_uv, series)
                 title.set_text(f"{diagnostic_title(h5_paths, map_names)}, component {component} - "
                                f"{format_label(series)}")
                 fig.canvas.draw_idle()
