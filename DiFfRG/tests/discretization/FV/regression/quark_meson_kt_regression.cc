@@ -83,7 +83,7 @@ namespace
   using FirstOrderJacobianAssembler =
       FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor, FV::KurganovTadmor::MaxEigenvalueWaveSpeed,
                                     JacobianReconstructor>;
-  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
+  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, GMRES>;
   using ExplicitTimeStepper = TimeStepperBoostRK54<VectorType, SparseMatrixType, dim>;
 
   double grid_spacing() { return delta_sigma; }
@@ -380,7 +380,7 @@ namespace
   };
 
   JSONValue make_json(const double final_time, const double output_dt = 2.0e-2, const double explicit_dt = 1.0e-8,
-                      const double explicit_abs_tol = 1.0e-12, const double explicit_rel_tol = 1.0e-12)
+                      const double explicit_abs_tol = 1.0e-14, const double explicit_rel_tol = 1.0e-14)
   {
     return json::value(
         {{"physical", {{"Lambda", lambda_uv}, {"cSigma", PaperLitimParameters::cSigma}}},
@@ -407,8 +407,8 @@ namespace
             {{"dt", 1.0e-9},
              {"minimal_dt", 1.0e-15},
              {"maximal_dt", 1.0e-5},
-             {"abs_tol", 1.0e-15},
-             {"rel_tol", 1.0e-8},
+             {"abs_tol", 1.0e-10},
+             {"rel_tol", 1.0e-10},
              {"max_steps", 20000000}}}}},
          {"output",
           {{"verbosity", 1},
