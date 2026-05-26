@@ -15,6 +15,10 @@ struct Parameters {
       alphaA4 = json.get_double("/physical/alphaA4");
       alphaAcbc = json.get_double("/physical/alphaAcbc");
 
+      tilt_A3 = json.get_double("/physical/tilt_A3");
+      tilt_A4 = json.get_double("/physical/tilt_A4");
+      tilt_Acbc = json.get_double("/physical/tilt_Acbc");
+
       m2A = json.get_double("/physical/m2A");
 
       p_grid_min = json.get_double("/discretization/p_grid_min");
@@ -31,6 +35,7 @@ struct Parameters {
 
   double Lambda;
   double alphaA3, alphaA4, alphaAcbc;
+  double tilt_A3, tilt_A4, tilt_Acbc;
   double m2A;
 
   int eta_iter_max;
@@ -83,9 +88,9 @@ public:
   {
     for (uint i = 0; i < p_grid_size; ++i) {
       const double p = coordinates1D.forward(i);
-      values[idxv("ZA4") + i] = 4. * M_PI * prm.alphaA4;
-      values[idxv("ZA3") + i] = std::sqrt(4. * M_PI * prm.alphaA3);
-      values[idxv("ZAcbc") + i] = std::sqrt(4. * M_PI * prm.alphaAcbc);
+      values[idxv("ZA4") + i] = 4. * M_PI * prm.alphaA4 + prm.tilt_A4 * std::log(p / prm.p_grid_max);
+      values[idxv("ZA3") + i] = std::sqrt(4. * M_PI * prm.alphaA3) + prm.tilt_A3 * std::log(p / prm.p_grid_max);
+      values[idxv("ZAcbc") + i] = std::sqrt(4. * M_PI * prm.alphaAcbc) + prm.tilt_Acbc * std::log(p / prm.p_grid_max);
 
       values[idxv("ZA") + i] = (powr<2>(p) + prm.m2A) / powr<2>(p);
       values[idxv("Zc") + i] = 1.;
@@ -103,17 +108,17 @@ public:
   {
     const auto &variables = get<"variables">(data);
 
-    // update interpolators
     ZA3.update(&variables.data()[idxv("ZA3")]);
     ZAcbc.update(&variables.data()[idxv("ZAcbc")]);
     ZA4.update(&variables.data()[idxv("ZA4")]);
+
     ZA.update(&variables.data()[idxv("ZA")]);
     Zc.update(&variables.data()[idxv("Zc")]);
 
     // set up arguments for the integrators
     const auto arguments = device::tie(k, ZA3, ZAcbc, ZA4, dtZc, Zc, dtZA, ZA);
 
-    // copy the old propagators for comparison
+    // copy the propagators for comparison
     std::vector<double> old_dtZA(p_grid_size);
     std::vector<double> old_dtZc(p_grid_size);
 
@@ -153,6 +158,11 @@ public:
   void readouts(DataOut &output, const Point<dim> &, const Solutions &sol) const
   {
     const auto &variables = get<"variables">(sol);
+
+    // sanity check: make sure 0 < Zc[0] < 1
+    if (Zc[0] < 0 || Zc[0] > 1) {
+      throw std::runtime_error("Diverging result: Zc(0) = " + std::to_string(Zc[0]));
+    }
 
     auto &hdf = output.hdf5();
     hdf.map("ZA", coordinates1D, &(variables.data()[idxv("ZA")]));

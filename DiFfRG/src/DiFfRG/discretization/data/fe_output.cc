@@ -9,9 +9,7 @@
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/data/fe_output.hh>
 
-#ifdef H5CPP
 #include <hdf5lib/hdf5.hh>
-#endif
 
 #include <memory>
 #include <stdexcept>
@@ -56,7 +54,12 @@ namespace DiFfRG
     while (attached_solutions.size() > buffer_size) {
       // first, join the thread if it is still running
       if (output_threads.front().joinable()) output_threads.front().join();
+      // The worker only writes files; clearing its DataOut (which frees Kokkos-backed vectors)
+      // is done here on the main thread, after the join, so it can never run concurrently with
+      // the main thread's other Kokkos work. This also readies the slot for its next reuse.
+      data_outs[output_thread_series.front() % buffer_size].clear();
       output_threads.pop_front();
+      output_thread_series.pop_front();
       // then, remove the first attached_solutions
       attached_solutions.pop_front();
     }
@@ -71,7 +74,16 @@ namespace DiFfRG
 
     // Clear the data_out and attached_solutions lists.
     output_threads.clear();
+    output_thread_series.clear();
     attached_solutions.clear();
+    // Free the DataOut copies of the solution vectors and drain GrowingVectorMemory's shared pool
+    // now, while we are on the main thread and Kokkos is still alive, rather than leaving these
+    // (Kokkos-backed) deallocations for program teardown. NB: a rare exit-time crash can still
+    // occur deeper down, inside deal.II's GrowingVectorMemory Kokkos finalize hook, when that
+    // hook registry is corrupted by concurrent lazy registration during parallel vector
+    // allocation -- that is an upstream deal.II/Kokkos teardown race, tracked separately.
+    data_outs.clear();
+    GrowingVectorMemory<VectorType>::release_unused_memory();
 
     // Surface a captured worker exception only when we are not already unwinding.
     std::exception_ptr to_throw;
@@ -111,42 +123,33 @@ namespace DiFfRG
 
     m_data_out.build_patches(subdivisions);
 
-#ifdef H5CPP
-    // hdf5_output is only non-null when /output/hdf5 is true (see
-    // DataOutput::DataOutput in data_output.cc). When HDF5 output is disabled
-    // we must skip this block, otherwise dereferencing the null pointer
-    // segfaults — historically masked by Catch2's SIGSEGV handler in the
-    // regression suite.
-    if (hdf5_output != nullptr) {
-      auto h5_file = hdf5_output->get_file();
-      auto h5_group = h5_file.root().open_group("FE");
-      {
-        auto cur_group = h5_group.create_group(Utilities::int_to_string(series_number, 6));
-        cur_group.write_attribute("time", time);
-        cur_group.write_attribute("series_number", static_cast<int>(series_number));
-        cur_group.write_attribute("output_name", output_name);
+    auto h5_file = hdf5_output->get_file();
+    auto h5_group = h5_file.root().open_group("FE");
+    {
+      auto cur_group = h5_group.create_group(Utilities::int_to_string(series_number, 6));
+      cur_group.write_attribute("time", time);
+      cur_group.write_attribute("series_number", static_cast<int>(series_number));
+      cur_group.write_attribute("output_name", output_name);
 
-        DataOutBase::DataOutFilterFlags mflags(false, false);
-        DataOutBase::DataOutFilter data_filter(mflags);
-        m_data_out.write_filtered_data(data_filter);
-        std::vector<double> node_data;
-        data_filter.fill_node_data(node_data);
+      DataOutBase::DataOutFilterFlags mflags(false, false);
+      DataOutBase::DataOutFilter data_filter(mflags);
+      m_data_out.write_filtered_data(data_filter);
+      std::vector<double> node_data;
+      data_filter.fill_node_data(node_data);
 
-        auto nodes_space = DiFfRG::hdf5::Dataspace::simple({data_filter.n_nodes(), dim});
-        auto nodes = cur_group.create_dataset("nodes", DiFfRG::hdf5::type_of<double>(), nodes_space);
-        nodes.write(node_data);
+      auto nodes_space = DiFfRG::hdf5::Dataspace::simple({data_filter.n_nodes(), dim});
+      auto nodes = cur_group.create_dataset("nodes", DiFfRG::hdf5::type_of<double>(), nodes_space);
+      nodes.write(node_data);
 
-        for (uint i = 0; i < data_filter.n_data_sets(); ++i) {
-          auto data_space = DiFfRG::hdf5::Dataspace::simple({data_filter.n_nodes()});
-          const std::string name = data_filter.get_data_set_name(i);
-          auto dataset = cur_group.create_dataset(name, DiFfRG::hdf5::type_of<double>(), data_space);
-          const double *data_set_data = data_filter.get_data_set(i);
-          dataset.write(data_set_data, data_filter.n_nodes());
-        }
-        hdf5_output->close_file();
+      for (uint i = 0; i < data_filter.n_data_sets(); ++i) {
+        auto data_space = DiFfRG::hdf5::Dataspace::simple({data_filter.n_nodes()});
+        const std::string name = data_filter.get_data_set_name(i);
+        auto dataset = cur_group.create_dataset(name, DiFfRG::hdf5::type_of<double>(), data_space);
+        const double *data_set_data = data_filter.get_data_set(i);
+        dataset.write(data_set_data, data_filter.n_nodes());
       }
     }
-#endif
+    hdf5_output->close_file();
 
     auto output_func = [=, this](const uint m_series_number, const double m_time) {
       try {
@@ -172,7 +175,9 @@ namespace DiFfRG
           std::ofstream output_vtu(top_folder + filename_vtu);
           m_data_out.write_vtu(output_vtu);
         }
-        m_data_out.clear();
+        // NB: m_data_out.clear() is intentionally NOT called here -- it frees Kokkos-backed
+        // vectors and is performed on the main thread (synchronous path below, or update_buffers
+        // after this worker is joined) to avoid concurrent Kokkos dispatch from multiple threads.
       } catch (...) {
         // Never let an exception escape the worker thread (that would call
         // std::terminate). Capture the first one; later workers' exceptions are
@@ -185,9 +190,12 @@ namespace DiFfRG
     // If the buffer size is 1, we save ourselves the cost of spawning a thread
     if (buffer_size == 1) {
       output_func(series_number, time);
+      // synchronous path: clear the DataOut here on the main thread (see note in output_func)
+      data_outs[series_number % buffer_size].clear();
       attached_solutions.back().clear();
     } else {
       output_threads.emplace_back(output_func, series_number, time);
+      output_thread_series.push_back(series_number);
       // We need to prepare the next attached_solutions list
       attached_solutions.emplace_back();
     }

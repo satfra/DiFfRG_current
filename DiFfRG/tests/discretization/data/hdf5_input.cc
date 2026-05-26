@@ -20,21 +20,6 @@ TEST_CASE("Test HDF5 input", "[input][hdf5]")
 {
   DiFfRG::Init();
 
-#ifndef H5CPP
-  // Test that HDF5Input throws appropriate errors when H5CPP is not enabled
-  fs::path tmp{std::filesystem::temp_directory_path()};
-  std::string hdf5FileName = "DiFfRG_test_hdf5_input_no_h5cpp.h5";
-
-  // Create the file path
-  std::filesystem::path hdf5_file(tmp / hdf5FileName);
-
-  // For this test, just check that the constructor works without H5CPP
-  // The actual functionality will be tested in the H5CPP section
-  DiFfRG::HDF5Input hdf5_input(hdf5_file.string());
-
-  return; // Skip the rest of the test if H5CPP is not available
-#endif
-
   using namespace DiFfRG;
   namespace fs = std::filesystem;
 

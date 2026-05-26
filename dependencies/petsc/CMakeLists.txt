@@ -16,6 +16,18 @@ execute_process(
   OUTPUT_QUIET)
 
 message(STATUS "Configuring PETSc...")
+# Native architecture: -march=native unless a portable (NATIVE=OFF) build was
+# requested, mirroring the rest of the superbuild.
+if(NOT DEFINED NATIVE)
+  set(NATIVE
+      ON
+      CACHE BOOL "Optimize for the build machine's CPU (-march=native)")
+endif()
+if(NATIVE)
+  set(PETSC_MARCH "-march=native")
+else()
+  set(PETSC_MARCH "")
+endif()
 # config MPI
 if(NOT DEFINED HAVE_MPI)
   set(HAVE_MPI
@@ -26,31 +38,24 @@ endif()
 if(HAVE_MPI)
   message(STATUS "Building PETSc with MPI support")
   set(PETSC_OPTIONS
-      "--download-mumps --download-scalapack --download-parmetis --download-metis --download-ptscotch --download-hwloc --download-bison --with-mpi=1 --with-mpi-dir=/opt/homebrew/opt/open-mpi"
+      "–download-mumps –download-scalapack –download-parmetis –download-metis –download-ptscotch –download-hwloc -download-bison -with-mpi=1"
   )
 else()
   message(STATUS "Building PETSc without MPI support")
-  set(PETSC_OPTIONS "--with-mpi=0")
-endif()
-
-if(OpenBLAS_LIBRARY)
-  set(PETSC_BLAS_OPTIONS
-      "--with-blas-lib=${OpenBLAS_LIBRARY} --with-lapack-lib=${OpenBLAS_LIBRARY}"
-  )
-endif()
-
-if(PETSC_WITH_CLEAN)
-  set(PETSC_CLEAN_OPTION "--with-clean")
+  set(PETSC_OPTIONS "-with-mpi=0")
 endif()
 
 execute_process(
   COMMAND
     bash -c
     "
-    ./configure --COPTFLAGS=\"-O3 -march=native -ffp-contract=fast\" \
-    --CXXOPTFLAGS=\"-O3 -march=native -ffp-contract=fast\"  \
-    --FOPTFLAGS=\"-O3 -march=native -ffp-contract=fast\" \
-    --prefix=${CMAKE_INSTALL_PREFIX} ${PETSC_OPTIONS} ${PETSC_BLAS_OPTIONS} ${PETSC_CLEAN_OPTION} --with-debugging=0 &> ${CMAKE_CURRENT_BINARY_DIR}/01_configure.log"
+    ./configure --COPTFLAGS=\"-O3 ${PETSC_MARCH} -ffp-contract=fast\" \
+    --with-mpi-dir=/opt/homebrew/opt/open-mpi \
+    --CXXOPTFLAGS=\"-O3 ${PETSC_MARCH} -ffp-contract=fast\"  \
+    --FOPTFLAGS=\"-O3 ${PETSC_MARCH} -ffp-contract=fast\" \
+    --with-blas-lib=${OpenBLAS_LIBRARY} \
+    --with-lapack-lib=${OpenBLAS_LIBRARY} \
+    --prefix=${CMAKE_INSTALL_PREFIX} ${PETSC_OPTIONS} --with-clean --with-debugging=0 &> ${CMAKE_CURRENT_BINARY_DIR}/01_configure.log"
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/petsc
   RESULT_VARIABLE ret)
 

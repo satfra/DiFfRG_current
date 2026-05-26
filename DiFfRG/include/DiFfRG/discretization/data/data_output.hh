@@ -43,14 +43,12 @@ namespace DiFfRG
      */
     CsvOutput &csv(const std::string &name);
 
-#ifdef H5CPP
     /**
      * @brief Returns a reference to the HDF5 file associated with the given name, which is used to write data to .h5
      * files. If the object does not exist, it is created.
      */
     HDF5Output &hdf5(const std::string &name);
     HDF5Output &hdf5();
-#endif
 
     /**
      * @brief Save all attached data vectors to a .vtu and append it to the time series. Also flush any attached scalar
@@ -98,10 +96,8 @@ namespace DiFfRG
     FEOutput<dim, VectorType> fe_out;
     std::map<std::string, CsvOutput> csv_files;
 
-#ifdef H5CPP
     bool use_hdf5;
     const std::string filename_h5;
     std::map<std::string, HDF5Output> h5_files;
-#endif
   };
 } // namespace DiFfRG

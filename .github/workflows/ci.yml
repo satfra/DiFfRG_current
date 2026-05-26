@@ -1,0 +1,268 @@
+name: CI
+
+# Build DiFfRG against the stable dependency image by default. If dependency
+# inputs change, build a commit-specific image first and test against that exact
+# tag before promoting it to the stable tag on main.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  DIFFRG_DEPS_REPOSITORY: ghcr.io/satfra/diffrg-deps
+  DIFFRG_DEPS_STABLE_TAG: ubuntu24.04
+  DIFFRG_BUILD_JOBS: 4
+  DIFFRG_TEST_JOBS: 4
+
+jobs:
+  deps-image:
+    name: Select dependency image
+    runs-on: ubuntu-latest
+    outputs:
+      image_ref: ${{ steps.select.outputs.image_ref }}
+      docker_ref: ${{ steps.select.outputs.docker_ref }}
+      rebuilt: ${{ steps.select.outputs.rebuilt }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect dependency image changes
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git fetch --no-tags origin "${{ github.base_ref }}"
+            changed="$(git diff --name-only FETCH_HEAD...HEAD)"
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            before="${{ github.event.before }}"
+            if [[ -z "${before}" || "${before}" =~ ^0+$ ]]; then
+              if git rev-parse HEAD^ >/dev/null 2>&1; then
+                changed="$(git diff --name-only HEAD^ HEAD)"
+              else
+                changed="$(git ls-tree -r --name-only HEAD)"
+              fi
+            else
+              changed="$(git diff --name-only "${before}" HEAD)"
+            fi
+          else
+            changed=""
+          fi
+
+          printf '%s\n' "${changed}"
+          if printf '%s\n' "${changed}" | grep -Eq '^(CMakeLists\.txt|dependencies/|patches/|containers/ci/)'; then
+            rebuild=true
+          else
+            rebuild=false
+          fi
+
+          echo "rebuild=${rebuild}" >> "${GITHUB_OUTPUT}"
+          echo "Changed dependency/image inputs: ${rebuild}" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Reject fork dependency image changes
+        if: steps.detect.outputs.rebuild == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        shell: bash
+        run: |
+          echo "::error::This pull request changes dependency image inputs, but fork PRs cannot push test images to GHCR. Re-run from a branch in this repository or update the dependency image manually."
+          exit 1
+
+      - name: Log in to GHCR
+        if: steps.detect.outputs.rebuild == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        if: steps.detect.outputs.rebuild == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build dependency image
+        if: steps.detect.outputs.rebuild == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: containers/ci/ubuntu24.04-deps.Dockerfile
+          push: true
+          build-args: |
+            threads=4
+          tags: ${{ env.DIFFRG_DEPS_REPOSITORY }}:ci-${{ github.sha }}
+
+      - name: Select image
+        id: select
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          stable="${DIFFRG_DEPS_REPOSITORY}:${DIFFRG_DEPS_STABLE_TAG}"
+          ci="${DIFFRG_DEPS_REPOSITORY}:ci-${GITHUB_SHA}"
+          if [[ "${{ steps.detect.outputs.rebuild }}" == "true" ]]; then
+            docker_ref="${ci}"
+          else
+            docker_ref="${stable}"
+          fi
+
+          echo "docker_ref=${docker_ref}" >> "${GITHUB_OUTPUT}"
+          echo "image_ref=docker://${docker_ref}" >> "${GITHUB_OUTPUT}"
+          echo "rebuilt=${{ steps.detect.outputs.rebuild }}" >> "${GITHUB_OUTPUT}"
+          echo "Using dependency image: docker://${docker_ref}" >> "${GITHUB_STEP_SUMMARY}"
+
+  build-and-test:
+    name: Build and test
+    needs: deps-image
+    runs-on: [self-hosted, linux, x64]
+    env:
+      DIFFRG_DEPS_IMAGE: ${{ needs.deps-image.outputs.image_ref }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pull dependency image
+        id: deps
+        env:
+          SINGULARITY_DOCKER_USERNAME: ${{ github.actor }}
+          SINGULARITY_DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if command -v singularity >/dev/null 2>&1; then
+            singularity_bin=singularity
+          elif command -v apptainer >/dev/null 2>&1; then
+            singularity_bin=apptainer
+          else
+            echo "Neither singularity nor apptainer was found on PATH." >&2
+            exit 127
+          fi
+          sif="${RUNNER_TEMP}/diffrg-deps.sif"
+          echo "Pulling ${DIFFRG_DEPS_IMAGE}"
+          "${singularity_bin}" pull --force "${sif}" "${DIFFRG_DEPS_IMAGE}"
+          echo "sif=${sif}" >> "$GITHUB_OUTPUT"
+
+          bundle_dir="$("${singularity_bin}" exec --cleanenv "${sif}" bash -lc 'printf "%s" "${DiFfRG_BUNDLED_DIR:-/opt/diffrg/bundled}"')"
+          if ! "${singularity_bin}" exec --cleanenv "${sif}" bash -lc 'test -r "${DiFfRG_BUNDLED_DIR:-/opt/diffrg/bundled}"'; then
+            echo "::error::Dependency image ${DIFFRG_DEPS_IMAGE} does not expose a readable dependency bundle at ${bundle_dir}."
+            exit 1
+          fi
+
+      - name: Build DiFfRG
+        id: build
+        run: |
+          set -euo pipefail
+          bash containers/singularity-run.sh \
+            -b "${GITHUB_WORKSPACE}:/work" \
+            -w /work \
+            "${{ steps.deps.outputs.sif }}" \
+            bash -lc '
+              set -euo pipefail
+              cmake -S DiFfRG -B DiFfRG/bin \
+                -DBUNDLED_DIR="${DiFfRG_BUNDLED_DIR:-/opt/diffrg/bundled}" \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DDiFfRG_TEST=ON \
+                -DDiFfRG_DOCUMENTATION=OFF \
+                -DNATIVE=OFF
+              cmake --build DiFfRG/bin -j "${{ env.DIFFRG_BUILD_JOBS }}"
+            '
+
+      # Runs only when the build succeeded (default fail-fast). Uses `set +e` so a
+      # test failure doesn't abort here -- we record the result, publish the badge,
+      # then fail the job at the end so a red badge is still written on failure.
+      - name: Run tests
+        id: tests
+        run: |
+          set +e
+          bash containers/singularity-run.sh \
+            -b "${GITHUB_WORKSPACE}:/work" \
+            -w /work \
+            "${{ steps.deps.outputs.sif }}" \
+            bash -lc 'ctest --test-dir DiFfRG/bin -j "${{ env.DIFFRG_TEST_JOBS }}" --output-on-failure' | tee "${RUNNER_TEMP}/ctest.log"
+          summary=$(grep -Eo '[0-9]+ tests failed out of [0-9]+' "${RUNNER_TEMP}/ctest.log" | tail -1)
+          failed=$(echo "$summary" | awk '{print $1}')
+          total=$(echo "$summary" | awk '{print $NF}')
+          passed=$((total - failed))
+          echo "passed=$passed" >> "$GITHUB_OUTPUT"
+          echo "total=$total"   >> "$GITHUB_OUTPUT"
+          echo "failed=$failed" >> "$GITHUB_OUTPUT"
+          echo "### Tests: ${passed}/${total} passing" >> "$GITHUB_STEP_SUMMARY"
+
+      # Decide the badge text/colour. Runs even if the build failed (always()), so a
+      # broken build shows a red "build failed" badge instead of leaving the gist at
+      # its stale/placeholder value.
+      - name: Compute badge content
+        id: badge
+        if: always() && github.event_name == 'push'
+        run: |
+          if [ "${{ steps.build.outcome }}" != "success" ]; then
+            echo "message=build failed" >> "$GITHUB_OUTPUT"
+            echo "color=red"            >> "$GITHUB_OUTPUT"
+          elif [ -z "${{ steps.tests.outputs.total }}" ]; then
+            echo "message=no tests run" >> "$GITHUB_OUTPUT"
+            echo "color=red"            >> "$GITHUB_OUTPUT"
+          else
+            echo "message=${{ steps.tests.outputs.passed }}/${{ steps.tests.outputs.total }} passing" >> "$GITHUB_OUTPUT"
+            if [ "${{ steps.tests.outputs.failed }}" = "0" ]; then
+              echo "color=brightgreen" >> "$GITHUB_OUTPUT"
+            else
+              echo "color=red"         >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      # Publish to a Gist that shields.io reads (see containers/ci/README.md for
+      # setup). Only on push to main: PRs (esp. from forks) can't access secrets.
+      - name: Update test-count badge
+        if: always() && github.event_name == 'push'
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_SECRET }}
+          gistID: 336ebc0aaa7dc9a0e71ca01dd4361a12
+          filename: diffrg-tests.json
+          label: tests
+          message: ${{ steps.badge.outputs.message }}
+          color: ${{ steps.badge.outputs.color }}
+
+      # Reflect build/test failures in the job conclusion (the test step swallows
+      # ctest's exit code on purpose; the build step's failure is preserved here too).
+      - name: Fail the job if the build or any test failed
+        if: always()
+        run: |
+          if [ "${{ steps.build.outcome }}" != "success" ]; then
+            echo "Build failed."
+            exit 1
+          fi
+          if [ "${{ steps.tests.outputs.failed }}" != "0" ]; then
+            echo "${{ steps.tests.outputs.failed }} test(s) failed."
+            exit 1
+          fi
+
+  promote-deps-image:
+    name: Promote dependency image
+    needs: [deps-image, build-and-test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.deps-image.outputs.rebuilt == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Promote tested dependency image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            -t "${DIFFRG_DEPS_REPOSITORY}:${DIFFRG_DEPS_STABLE_TAG}" \
+            -t "${DIFFRG_DEPS_REPOSITORY}:${DIFFRG_DEPS_STABLE_TAG}-${GITHUB_RUN_NUMBER}" \
+            "${{ needs.deps-image.outputs.docker_ref }}"

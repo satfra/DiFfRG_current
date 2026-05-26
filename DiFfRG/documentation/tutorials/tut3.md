@@ -1,9 +1,10 @@
-# Tutorial 3: Code generation from Mathematica and Extractors {#tut3}
+(tut3)=
+# Tutorial 3: Code generation from Mathematica and Extractors
 This tutorial describes, how to generate flow equations from Mathematica and use them in the c-Code.
 
 ## Generation of Flow equations
 First, one has to import the `DiFfRG` package and set the current directory.
-```Mathematica
+```mathematica
 Get["DiFfRG`"]
 SetDirectory[GetDirectory[]];
 ```
@@ -12,14 +13,14 @@ The `GetDirectory[]` command returns the directory of the current notebook of wo
 diagramatic derivation of the flow equations. The method works as folows:
 1. Use `QMeSderivation` to derive a diagramatic description of the 1PI-n-Point Functions
 2. Insert the propagators in the flow equations
-3. Compute the \f$STr\f$ with `FormTracer`
+3. Compute the $STr$ with `FormTracer`
 4. Export the flow equations ()
 
 ### 1. QMeSderivation
 This will just quickly recap the process, to derive the diagramatic expressions, a more detailed version
 can be found [here](https://github.com/QMeS-toolbox/QMeS-Derivation). First, one has to define the
 Master-Equation
-```Mathematica
+```mathematica
 fRGEq = {
    "Prefactor" -> {1/2},
    <|"type" -> "Regulatordot", "indices" -> {i, j}|>,
@@ -27,7 +28,7 @@ fRGEq = {
    };
 ```
 After that, one defines the structure of the model
-```Mathematica
+```mathematica
 fields = <|"bosonic" -> {\[Sigma][p], \[CapitalPi][p, {a}]},
 
    "fermionic" -> {{qb[p, {d, c, f}], q[p, {d, c, f}]}}|>;

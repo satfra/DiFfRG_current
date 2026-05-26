@@ -17,7 +17,7 @@ Environment variables:
 
 Examples:
   bash install.sh
-  THREADS=4 FOLDER=/opt/DiFfRG bash install.sh
+  THREADS=4 FOLDER=$HOME/my_diffrg bash install.sh
   bash <(curl -sL https://github.com/satfra/DiFfRG_current/raw/refs/heads/main/install.sh)
 
 Report issues: https://github.com/satfra/DiFfRG/issues
