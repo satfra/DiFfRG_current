@@ -7,6 +7,15 @@ name: Build dependency image
 # is a backup for when a maintainer prefers to offload it to Actions.
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - CMakeLists.txt
+      - dependencies/**
+      - patches/**
+      - containers/ci/**
+      - .github/workflows/build-ci-images.yml
   workflow_dispatch:
     inputs:
       tag:
@@ -43,5 +52,5 @@ jobs:
           build-args: |
             threads=4
           tags: |
-            ghcr.io/satfra/diffrg-deps:${{ inputs.tag }}
-            ghcr.io/satfra/diffrg-deps:${{ inputs.tag }}-${{ github.run_number }}
+            ghcr.io/satfra/diffrg-deps:${{ github.event_name == 'workflow_dispatch' && inputs.tag || 'ubuntu24.04' }}
+            ghcr.io/satfra/diffrg-deps:${{ github.event_name == 'workflow_dispatch' && inputs.tag || 'ubuntu24.04' }}-${{ github.run_number }}

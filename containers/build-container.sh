@@ -8,8 +8,8 @@
 #
 # The image builds the local working tree (cmake superbuild) into the default
 # install prefix ($HOME/.local/share/DiFfRG) and
-# compiles the test suite. After a successful build the tests are run via
-# `docker run` and both logs are written to containers/logs/:
+# compiles the test suite. After a successful build the tests are run through
+# Singularity and both logs are written to containers/logs/:
 #   <image>.log         the build (compile) output, incl. system-vs-bundled deps
 #   <image>_ctest.log   the ctest results
 # CUDA images only run ctest when a host GPU (nvidia-smi) is available.
@@ -102,12 +102,12 @@ testdir="/build/DiFfRG/src/DiFfRG-build"
 ctest_cmd="ctest --test-dir ${testdir} --output-on-failure"
 if [[ ${is_cuda} -eq 1 ]]; then
   if command -v nvidia-smi >/dev/null 2>&1; then
-    echo "Running GPU tests (docker run --gpus all). Log: logs/${name}_ctest.log"
-    docker run --rm --gpus all "${tag}" bash -c "${ctest_cmd}" 2>&1 | tee "logs/${name}_ctest.log"
+    echo "Running GPU tests (Singularity --nv). Log: logs/${name}_ctest.log"
+    bash "${scriptpath}/singularity-run.sh" -g -W "docker-daemon://${tag}" bash -lc "${ctest_cmd}" 2>&1 | tee "logs/${name}_ctest.log"
   else
     echo "No host GPU (nvidia-smi) found; skipping ctest for ${name}." | tee "logs/${name}_ctest.log"
   fi
 else
-  echo "Running tests (docker run). Log: logs/${name}_ctest.log"
-  docker run --rm "${tag}" bash -c "${ctest_cmd}" 2>&1 | tee "logs/${name}_ctest.log"
+  echo "Running tests (Singularity). Log: logs/${name}_ctest.log"
+  bash "${scriptpath}/singularity-run.sh" -W "docker-daemon://${tag}" bash -lc "${ctest_cmd}" 2>&1 | tee "logs/${name}_ctest.log"
 fi

@@ -37,13 +37,14 @@ COPY . /src
 # a pinned Kokkos architecture since no device is visible at build time.
 RUN cmake -S /src -B /build \
         -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=$HOME/.local/share/DiFfRG \
+        -DCMAKE_INSTALL_PREFIX=/opt/diffrg \
         -DGPU=ON -DMPI=OFF -DDiFfRG_DOCUMENTATION=OFF \
         -DNATIVE=OFF \
         -DKokkos_ARCH=${cuda_arch} -DKokkos_ARCH_LIST=${cuda_arch} \
     && cmake --build /build \
         --target general_dep deal.II_dep kokkos_dep autodiff_dep \
-        -j ${threads}
+        -j ${threads} \
+    && chmod -R a+rX /opt/diffrg
 
 # --------------------------------------------------------------------------- #
 # Stage 2: slim runtime image with the dependency tree + CUDA toolchain.
@@ -62,8 +63,8 @@ RUN apt-get -y update && apt-get -y install --no-install-recommends \
         doxygen graphviz python3 patch ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# COPY/ENV can't shell-expand; the literal /root (= $HOME for root) matches the
-# $HOME-based install prefix used in the builder stage.
-COPY --from=builder /root/.local/share/DiFfRG/bundled /root/.local/share/DiFfRG/bundled
+# Keep the dependency bundle outside /root so Singularity/Apptainer execution as
+# the host user can read it.
+COPY --from=builder /opt/diffrg/bundled /opt/diffrg/bundled
 
-ENV DiFfRG_BUNDLED_DIR=/root/.local/share/DiFfRG/bundled
+ENV DiFfRG_BUNDLED_DIR=/opt/diffrg/bundled

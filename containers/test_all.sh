@@ -8,8 +8,9 @@
 # / build.sh). Per-image logs in containers/logs/:
 #   <image>.log         build (compile) output, incl. system-vs-bundled deps
 #   <image>_ctest.log   ctest results (CUDA images: only when a host GPU exists)
-# Images are removed after each build to reclaim disk space; a PASS/FAIL summary
-# (build + tests) is printed at the end.
+# Docker images are removed after each build to reclaim disk space; Singularity
+# SIFs are cached under containers/logs/sif-cache for the matching test run.
+# A PASS/FAIL summary (build + tests) is printed at the end.
 #
 # Usage: test_all.sh [-j <threads>] [-a <cuda_arch>]
 # Expect roughly ~20-40 min per image (deal.II dominates).
@@ -102,10 +103,10 @@ for dockerfile in "${images[@]}"; do
       echo "No host GPU; skipping ctest for ${name}." >"logs/${name}_ctest.log"
       test_status="SKIP(no GPU)"
     else
-      run_args=(--rm)
-      [[ ${is_cuda} -eq 1 ]] && run_args+=(--gpus all)
-      if docker run "${run_args[@]}" "${tag}" \
-        bash -c "ctest --test-dir ${testdir} --output-on-failure" &>"logs/${name}_ctest.log"; then
+      singularity_args=(-W)
+      [[ ${is_cuda} -eq 1 ]] && singularity_args+=(-g)
+      if bash "${scriptpath}/singularity-run.sh" "${singularity_args[@]}" "docker-daemon://${tag}" \
+        bash -lc "ctest --test-dir ${testdir} --output-on-failure" &>"logs/${name}_ctest.log"; then
         test_status="PASS"
         echo "   ${name}: tests PASS"
       else
@@ -116,7 +117,7 @@ for dockerfile in "${images[@]}"; do
     fi
   fi
 
-  # Reclaim space; we only keep the logs.
+  # Reclaim Docker image space; we only keep the logs and Singularity cache.
   docker rmi -f "${tag}" &>/dev/null
   summary="${summary}$(printf '  %-20s build:%-5s tests:%-12s (logs/%s.log, logs/%s_ctest.log)\n' \
     "${name}" "${build_status}" "${test_status}" "${name}" "${name}")"$'\n'

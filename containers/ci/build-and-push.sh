@@ -12,7 +12,7 @@
 #   -j <threads>  build threads (default: half the host cores)
 #   -a <cuda_arch> Kokkos CUDA arch for the CUDA image (default: AMPERE80)
 #   -t <tag>      base tag name (default: ubuntu24.04, or ubuntu24.04-cuda with -c)
-#   -n            no-push: build + smoke-test only (don't push to GHCR)
+#   -n            no-push: build + Singularity smoke-test only (don't push to GHCR)
 #
 # Images are tagged twice under ghcr.io/satfra/diffrg-deps:
 #   <tag>             moving tag consumed by CI (.github/workflows/ci.yml)
@@ -92,29 +92,28 @@ docker buildx build --load \
   --progress=plain \
   "${build_args[@]}"
 
-# Smoke test: build the DiFfRG library + run the test suite *inside* the freshly
-# built image, against the baked dependency tree. This proves the multi-stage
-# COPY of /root/.local/share/DiFfRG/bundled yields a usable tree before we publish it.
-# The repo is mounted read-only and built in a tmpfs-style /tmp dir so the image
-# stays clean. CUDA images skip ctest unless a host GPU is present.
+# Smoke test: build the DiFfRG library + run the test suite through Singularity,
+# against the baked dependency tree from the freshly built Docker image. This
+# proves the image is usable in the cluster runtime before we publish it. CUDA
+# images skip ctest unless a host GPU is present.
 echo
-echo "Smoke-testing ${moving} (build DiFfRG library + ctest against baked deps)..."
-run_args=(--rm -v "${repo}:/src:ro")
+echo "Smoke-testing ${moving} with Singularity (build DiFfRG library + ctest against baked deps)..."
+singularity_args=(-b "${repo}:/src" -w /tmp)
 ctest_step="&& ctest --test-dir /tmp/diffrg-bin -j ${threads} --output-on-failure"
 if [[ ${cuda} -eq 1 ]]; then
   if command -v nvidia-smi >/dev/null 2>&1; then
-    run_args+=(--gpus all)
+    singularity_args=(-g "${singularity_args[@]}")
   else
     echo "No host GPU (nvidia-smi); building library only, skipping ctest."
     ctest_step=""
   fi
 fi
 
-docker run "${run_args[@]}" "${moving}" bash -c "
+image_ref="docker-daemon://${moving}"
+bash "${scriptpath}/../singularity-run.sh" "${singularity_args[@]}" "${image_ref}" bash -lc "
   set -e
-  cp -r /src/DiFfRG /tmp/DiFfRG-src
-  cmake -S /tmp/DiFfRG-src -B /tmp/diffrg-bin \
-    -DBUNDLED_DIR=\"\${DiFfRG_BUNDLED_DIR}\" \
+  cmake -S /src/DiFfRG -B /tmp/diffrg-bin \
+    -DBUNDLED_DIR=\"\${DiFfRG_BUNDLED_DIR:-/opt/diffrg/bundled}\" \
     -DCMAKE_BUILD_TYPE=Release -DDiFfRG_TEST=ON -DDiFfRG_DOCUMENTATION=OFF -DNATIVE=OFF
   cmake --build /tmp/diffrg-bin -j ${threads} ${ctest_step}
 "

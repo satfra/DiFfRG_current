@@ -10,7 +10,7 @@
 #       -f containers/ci/ubuntu24.04-deps.Dockerfile .
 #
 # Multi-stage: the `builder` stage runs the superbuild; the final stage carries
-# only the installed dependency tree (/root/.local/share/DiFfRG/bundled) plus the toolchain and
+# only the installed dependency tree (/opt/diffrg/bundled) plus the toolchain and
 # system libraries the standalone library build needs -- not the multi-GB build
 # scratch dir, and no DiFfRG library source.
 
@@ -40,19 +40,21 @@ COPY . /src
 # DEPENDS on exactly these, so they yield a complete dependency tree while leaving
 # the library out of the image. deal.II_dep transitively builds any bundled
 # Kokkos/SUNDIALS it needs. With no -DCMAKE_INSTALL_PREFIX override the superbuild's
-# default ($HOME/.local/share/DiFfRG, i.e. /root/... here) is used, so deps land in
-# ${prefix}/bundled -> /root/.local/share/DiFfRG/bundled.
+# prefix is set to /opt/diffrg so Singularity/Apptainer runs as an ordinary
+# host user can read the baked bundle. Avoid /root paths in images consumed by
+# Singularity.
 # NATIVE=OFF: this image is pushed and pulled on arbitrary hosts/runners, so the
 # deps must NOT bake in the build machine's ISA (e.g. AVX-512) -- otherwise they
 # SIGILL on a CPU without it. Build a generic, portable target instead.
 RUN cmake -S /src -B /build \
         -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=$HOME/.local/share/DiFfRG \
+        -DCMAKE_INSTALL_PREFIX=/opt/diffrg \
         -DGPU=OFF -DMPI=OFF -DDiFfRG_DOCUMENTATION=OFF \
         -DNATIVE=OFF \
     && cmake --build /build \
         --target general_dep deal.II_dep kokkos_dep autodiff_dep \
-        -j ${threads}
+        -j ${threads} \
+    && chmod -R a+rX /opt/diffrg
 
 # --------------------------------------------------------------------------- #
 # Stage 2: slim runtime image with just the dependency tree + toolchain.
@@ -74,9 +76,9 @@ RUN apt-get -y update && apt-get -y install --no-install-recommends \
         doxygen graphviz python3 patch ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# COPY/ENV can't shell-expand, so the literal /root (= $HOME for the root user) is
-# used; it matches the $HOME-based install prefix in the builder stage.
-COPY --from=builder /root/.local/share/DiFfRG/bundled /root/.local/share/DiFfRG/bundled
+# Keep the dependency bundle outside /root so Singularity/Apptainer execution as
+# the host user can read it.
+COPY --from=builder /opt/diffrg/bundled /opt/diffrg/bundled
 
 # Consumed by the CI library build: cmake -DBUNDLED_DIR=$DiFfRG_BUNDLED_DIR ...
-ENV DiFfRG_BUNDLED_DIR=/root/.local/share/DiFfRG/bundled
+ENV DiFfRG_BUNDLED_DIR=/opt/diffrg/bundled

@@ -13,27 +13,51 @@ on:
 
 jobs:
   build-and-test:
-    name: Build library + run tests (CPU)
-    runs-on: ubuntu-latest
-    # CPU dependency image. If the GHCR package is private, add:
-    #   credentials:
-    #     username: ${{ github.actor }}
-    #     password: ${{ secrets.GITHUB_TOKEN }}
-    container:
-      image: ghcr.io/satfra/diffrg-deps:ubuntu24.04
+    name: Build library + run tests (CPU, Singularity)
+    runs-on: [self-hosted, linux, x64]
+    env:
+      DIFFRG_DEPS_IMAGE: docker://ghcr.io/satfra/diffrg-deps:ubuntu24.04
     steps:
       - uses: actions/checkout@v4
+
+      - name: Pull dependency image
+        id: deps
+        env:
+          SINGULARITY_DOCKER_USERNAME: ${{ github.actor }}
+          SINGULARITY_DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if command -v singularity >/dev/null 2>&1; then
+            singularity_bin=singularity
+          elif command -v apptainer >/dev/null 2>&1; then
+            singularity_bin=apptainer
+          else
+            echo "Neither singularity nor apptainer was found on PATH." >&2
+            exit 127
+          fi
+          sif="${RUNNER_TEMP}/diffrg-deps-ubuntu24.04.sif"
+          "${singularity_bin}" pull --force "${sif}" "${DIFFRG_DEPS_IMAGE}"
+          echo "sif=${sif}" >> "$GITHUB_OUTPUT"
+          "${singularity_bin}" exec --cleanenv "${sif}" bash -lc 'test -r "${DiFfRG_BUNDLED_DIR:-/opt/diffrg/bundled}"'
 
       - name: Build DiFfRG library
         id: build
         run: |
-          cmake -S DiFfRG -B DiFfRG/bin \
-            -DBUNDLED_DIR="${DiFfRG_BUNDLED_DIR:-$HOME/.local/share/DiFfRG/bundled}" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DDiFfRG_TEST=ON \
-            -DDiFfRG_DOCUMENTATION=OFF \
-            -DNATIVE=OFF
-          cmake --build DiFfRG/bin -j "$(nproc)"
+          set -euo pipefail
+          bash containers/singularity-run.sh \
+            -b "${GITHUB_WORKSPACE}:/work" \
+            -w /work \
+            "${{ steps.deps.outputs.sif }}" \
+            bash -lc '
+              set -euo pipefail
+              cmake -S DiFfRG -B DiFfRG/bin \
+                -DBUNDLED_DIR="${DiFfRG_BUNDLED_DIR:-/opt/diffrg/bundled}" \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DDiFfRG_TEST=ON \
+                -DDiFfRG_DOCUMENTATION=OFF \
+                -DNATIVE=OFF
+              cmake --build DiFfRG/bin -j "$(nproc)"
+            '
 
       # Runs only when the build succeeded (default fail-fast). Uses `set +e` so a
       # test failure doesn't abort here -- we record the result, publish the badge,
@@ -42,9 +66,13 @@ jobs:
         id: tests
         run: |
           set +e
-          ctest --test-dir DiFfRG/bin -j "$(nproc)" --output-on-failure | tee /tmp/ctest.log
+          bash containers/singularity-run.sh \
+            -b "${GITHUB_WORKSPACE}:/work" \
+            -w /work \
+            "${{ steps.deps.outputs.sif }}" \
+            bash -lc 'ctest --test-dir DiFfRG/bin -j "$(nproc)" --output-on-failure' | tee "${RUNNER_TEMP}/ctest.log"
           # ctest always prints: "<P>% tests passed, <F> tests failed out of <T>"
-          summary=$(grep -Eo '[0-9]+ tests failed out of [0-9]+' /tmp/ctest.log | tail -1)
+          summary=$(grep -Eo '[0-9]+ tests failed out of [0-9]+' "${RUNNER_TEMP}/ctest.log" | tail -1)
           failed=$(echo "$summary" | awk '{print $1}')
           total=$(echo "$summary" | awk '{print $NF}')
           passed=$((total - failed))
