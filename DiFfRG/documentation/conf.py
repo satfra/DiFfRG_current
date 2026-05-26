@@ -20,7 +20,20 @@ DIFFRG_DIR = HERE.parent  # the DiFfRG/ library subfolder
 project = "DiFfRG"
 author = "Franz R. Sattler"
 copyright = "2025, Franz R. Sattler"
-release = "1.0"
+
+
+def _read_version() -> str:
+    """Read the single source of truth for the version (repo-root VERSION file)."""
+    for candidate in (DIFFRG_DIR.parent / "VERSION", DIFFRG_DIR / "VERSION"):
+        try:
+            return candidate.read_text().strip()
+        except OSError:
+            continue
+    return "unknown"
+
+
+release = _read_version()
+version = release
 
 # -- General configuration ----------------------------------------------------
 

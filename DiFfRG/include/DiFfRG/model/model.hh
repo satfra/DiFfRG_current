@@ -23,7 +23,8 @@ namespace DiFfRG
     /**
      * @brief The abstract interface for any numerical model.
      * Most methods have a standard implementation, which can be overwritten if needed.
-     * To see how the models are used, refer to the DiFfRG::AbstractAssembler class and the [guide](#HowTo).
+     * To see how the models are used, refer to the DiFfRG::AbstractAssembler class and the Numerical Models guide
+     * in the documentation.
      *
      * @tparam Model The model which implements this interface. (CRTP)
      * @tparam Components_ The components of the model, this must be a DiFfRG::ComponentDescriptor.
