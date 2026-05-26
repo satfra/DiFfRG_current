@@ -1,6 +1,7 @@
 bin*/
 build*/
 local_install/
+CMakeUserPresets.json
 .idea/
 profile/
 .ipynb_checkpoints
