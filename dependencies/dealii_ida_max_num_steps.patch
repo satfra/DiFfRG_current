@@ -2,12 +2,11 @@ diff --git a/include/deal.II/sundials/ida.h b/include/deal.II/sundials/ida.h
 index 78b2f21..44ca63c 100644
 --- a/include/deal.II/sundials/ida.h
 +++ b/include/deal.II/sundials/ida.h
-@@ -47,1 +47,2 @@
- #  include <memory>
-+#  include <limits>
-@@ -612,1 +613,19 @@ namespace SUNDIALS
+@@ -610,4 +610,22 @@ namespace SUNDIALS
+     /**
+      * Destructor.
+      */
      ~IDA();
-+
 +    struct Statistics
 +    {
 +      bool valid = false;
@@ -22,19 +21,27 @@ index 78b2f21..44ca63c 100644
 +      double current_step_size = 0.;
 +      double current_time = 0.;
 +    };
-+
 +    Statistics
 +    get_statistics() const;
 diff --git a/source/sundials/ida.cc b/source/sundials/ida.cc
 index 2c66cf8..38eb0a7 100644
 --- a/source/sundials/ida.cc
 +++ b/source/sundials/ida.cc
-@@ -40,1 +40,2 @@
+@@ -40,2 +40,3 @@
+ #  include <iomanip>
  #  include <iostream>
 +#  include <limits>
-@@ -163,1 +164,36 @@ namespace SUNDIALS
+@@ -158,10 +159,45 @@ namespace SUNDIALS
+   template <typename VectorType>
+   IDA<VectorType>::~IDA()
+   {
+     IDAFree(&ida_mem);
+ #  if DEAL_II_SUNDIALS_VERSION_GTE(6, 0, 0)
+     const int status = SUNContext_Free(&ida_ctx);
+     (void)status;
+     AssertIDA(status);
+ #  endif
    }
-+
 +  template <typename VectorType>
 +  typename IDA<VectorType>::Statistics
 +  IDA<VectorType>::get_statistics() const
@@ -42,7 +49,6 @@ index 2c66cf8..38eb0a7 100644
 +    Statistics statistics;
 +    if (ida_mem == nullptr)
 +      return statistics;
-+
 +    statistics.valid = true;
 +    int status = IDAGetNumSteps(ida_mem, &statistics.num_steps);
 +    statistics.valid = statistics.valid && status >= 0;
@@ -66,10 +72,9 @@ index 2c66cf8..38eb0a7 100644
 +    statistics.valid = statistics.valid && status >= 0;
 +    status = IDAGetCurrentTime(ida_mem, &statistics.current_time);
 +    statistics.valid = statistics.valid && status >= 0;
-+
 +    return statistics;
 +  }
-@@ -328,1 +364,2 @@ namespace SUNDIALS
+@@ -329 +365,2 @@ namespace SUNDIALS
 -    //  status = IDASetMaxNumSteps(ida_mem, max_steps);
 +    status = IDASetMaxNumSteps(ida_mem, std::numeric_limits<long int>::max());
 +    AssertIDA(status);
