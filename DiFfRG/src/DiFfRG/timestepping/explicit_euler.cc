@@ -33,8 +33,6 @@ namespace DiFfRG
     double last_save = start;
     double t = start;
     while (t < stop) {
-      const auto now = std::chrono::high_resolution_clock::now();
-
       if ((*adaptor)(t, old_solution)) {
         solution = old_solution;
         inverse_mass_matrix.initialize(mass_matrix);
@@ -55,10 +53,7 @@ namespace DiFfRG
       }
       old_solution.swap(solution);
 
-      const auto ms_passed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-              .count();
-      console_out(t, "explicit residual", 1, ms_passed);
+      console_out(t, "explicit residual", 1);
     }
 
     initial_condition->spatial_data() = solution;
