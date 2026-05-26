@@ -972,7 +972,10 @@ ExternalProject_Add(
   # are both safe. sh -c keeps it working on Linux and macOS.
   PATCH_COMMAND
     sh -c
-    "set -e; for patch in '${CMAKE_CURRENT_SOURCE_DIR}/dependencies/dealii_ida_max_num_steps.patch' '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-clang-cuda.patch'; do git apply --whitespace=nowarn \"$patch\" || git apply --reverse --check --whitespace=nowarn \"$patch\"; done"
+    "git apply --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/dependencies/dealii_ida_max_num_steps.patch' || git apply --reverse --check --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/dependencies/dealii_ida_max_num_steps.patch'"
+    COMMAND
+    sh -c
+    "git apply --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-clang-cuda.patch' || git apply --reverse --check --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-clang-cuda.patch'"
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/deal.II
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
   DEPENDS general_dep ${_boost_dep} ${is_petsc_dep} ${_sundials_dep}
