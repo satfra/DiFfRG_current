@@ -1,31 +1,33 @@
 name: Documentation
 run-name: Build and deploy the documentation
-on: [push]
+on:
+  push:
+    branches:
+      - main
 jobs:
   # Build job
   build:
     #runs-on: ubuntu-latest
     runs-on: [self-hosted, Linux, X64]
+    # The dependency image already bakes doxygen, graphviz and python3, so the
+    # docs toolchain is installed inside this ephemeral container -- never on the
+    # self-hosted node. The docs build is robust to the doxygen version
+    # (fix_doxygen_css.py handles >=1.13 and is a no-op otherwise).
+    container:
+      image: ghcr.io/satfra/diffrg-deps:ubuntu24.04
     steps:
       - name: Check out repository code
         uses: actions/checkout@v4
-      - name: Install Doxygen and Graphviz
+      - name: Install Python documentation toolchain
         run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake build-essential graphviz
-          wget https://www.doxygen.nl/files/doxygen-1.12.0.linux.bin.tar.gz
-          tar xfv doxygen-1.12.0.linux.bin.tar.gz
-          cd doxygen-1.12.0/
-          sudo make install
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          # doxysphinx supports Python 3.9–3.12 only.
-          python-version: '3.12'
-      - name: Install documentation toolchain
-        run: python -m pip install -r DiFfRG/documentation/requirements.txt
+          apt-get update && apt-get install -y --no-install-recommends python3-venv
+          python3 -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -r DiFfRG/documentation/requirements.txt
       - name: Build unified documentation (C++ / Python / Mathematica)
-        run: bash DiFfRG/documentation/build.sh
+        run: |
+          . .venv/bin/activate
+          bash DiFfRG/documentation/build.sh
       - name: Upload static files as artifact
         if: github.ref == 'refs/heads/main'
         id: deployment
