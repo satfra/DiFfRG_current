@@ -10,6 +10,7 @@
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/data/data_output.hh>
 #include <DiFfRG/timestepping/linear_solver/GMRES.hh>
+#include <DiFfRG/timestepping/linear_solver/ScaledGMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/UMFPack.hh>
 #include <DiFfRG/timestepping/sundials_diagnostics.hh>
 #include <DiFfRG/timestepping/sundials_ida.hh>
@@ -563,6 +564,42 @@ template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::S
 template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 1, DiFfRG::GMRES>;
 template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 2, DiFfRG::GMRES>;
 template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 3, DiFfRG::GMRES>;
+
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 0,
+                                               DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                               DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                               DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                               DiFfRG::ScaledUMFPack>;
+
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
+                                               DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                               DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                               DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                               DiFfRG::ScaledUMFPack>;
+
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 0,
+                                               DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                               DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                               DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                               DiFfRG::ScaledGMRES>;
+
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
+                                               DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                               DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                               DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                               DiFfRG::ScaledGMRES>;
 
 template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
                                                DiFfRG::GMRES>;
