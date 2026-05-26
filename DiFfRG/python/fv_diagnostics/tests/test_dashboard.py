@@ -1,4 +1,5 @@
 import argparse
+import subprocess
 
 import h5py
 import matplotlib.pyplot as plt
@@ -6,20 +7,27 @@ import numpy as np
 
 from diffrg_fv_diagnostics.dashboard import (
     CurveSpec,
+    HDF5Input,
     MapSpec,
     autoscale_y,
     available_panels,
+    cached_hdf5_path,
     cell_boundary_coordinates,
     cell_interval_edges,
     choose_series,
     face_slope_margin_tick,
     format_margin_tick,
+    materialize_hdf5_sources,
     metadata_advection_offset,
     parse_x_range,
+    parse_hdf5_source,
     read_curve_data,
+    remote_sibling_source,
     resolve_advection_offset,
     Series,
     set_cell_boundary_grid,
+    sibling_diagnostic_inputs,
+    transfer_argument_for_remote,
     warning_line_data,
     warning_line_label,
     warning_line_value,
@@ -38,6 +46,124 @@ def test_parse_x_range_rejects_degenerate_range():
         pass
     else:
         raise AssertionError("degenerate x range was accepted")
+
+
+def test_parse_hdf5_source_accepts_ssh_config_alias_relative_path():
+    source = parse_hdf5_source("itp:path/to/run_fv_reconstruction_diagnostics.h5")
+
+    assert source.is_remote
+    assert source.remote == "itp:path/to/run_fv_reconstruction_diagnostics.h5"
+    assert source.name == "run_fv_reconstruction_diagnostics.h5"
+
+
+def test_parse_hdf5_source_accepts_ssh_config_alias_absolute_path():
+    source = parse_hdf5_source("itp:/scratch/run_fv_reconstruction_diagnostics.h5")
+
+    assert source.is_remote
+    assert source.remote == "itp:/scratch/run_fv_reconstruction_diagnostics.h5"
+    assert source.name == "run_fv_reconstruction_diagnostics.h5"
+
+
+def test_parse_hdf5_source_accepts_user_host_remote_path():
+    source = parse_hdf5_source("alice@itp:path/to/run_fv_reconstruction_diagnostics.h5")
+
+    assert source.is_remote
+    assert source.remote == "alice@itp:path/to/run_fv_reconstruction_diagnostics.h5"
+    assert source.name == "run_fv_reconstruction_diagnostics.h5"
+
+
+def test_parse_hdf5_source_keeps_local_paths_local(tmp_path):
+    path = tmp_path / "run_fv_reconstruction_diagnostics.h5"
+    source = parse_hdf5_source(str(path))
+
+    assert not source.is_remote
+    assert source.local_path == path
+    assert source.name == "run_fv_reconstruction_diagnostics.h5"
+
+
+def test_remote_sibling_source_rewrites_scp_style_path():
+    source = parse_hdf5_source("itp:path/to/run_fv_reconstruction_diagnostics.h5")
+
+    sibling = remote_sibling_source(source)
+
+    assert sibling is not None
+    assert sibling.remote == "itp:path/to/run_fv_residual_contribution_diagnostics.h5"
+    assert sibling.name == "run_fv_residual_contribution_diagnostics.h5"
+
+
+def test_remote_sibling_source_rewrites_ssh_uri_path():
+    source = parse_hdf5_source("ssh://itp/path/to/run_fv_residual_contribution_diagnostics.h5")
+
+    sibling = remote_sibling_source(source)
+
+    assert sibling is not None
+    assert sibling.remote == "ssh://itp/path/to/run_fv_reconstruction_diagnostics.h5"
+    assert sibling.name == "run_fv_reconstruction_diagnostics.h5"
+
+
+def test_transfer_argument_for_remote_converts_ssh_uri_to_scp_style_path():
+    assert transfer_argument_for_remote(
+        "ssh://alice@itp/path/to/run_fv_reconstruction_diagnostics.h5"
+    ) == "alice@itp:/path/to/run_fv_reconstruction_diagnostics.h5"
+
+
+def test_sibling_diagnostic_inputs_adds_optional_remote_sibling():
+    source = parse_hdf5_source("itp:path/to/run_fv_reconstruction_diagnostics.h5")
+
+    inputs = sibling_diagnostic_inputs([source])
+
+    assert inputs[0] == HDF5Input(source=source, required=True)
+    assert inputs[1].source.remote == "itp:path/to/run_fv_residual_contribution_diagnostics.h5"
+    assert not inputs[1].required
+
+
+def test_cached_hdf5_path_keeps_readable_basename(tmp_path):
+    source = parse_hdf5_source("itp:path/to/run_fv_reconstruction_diagnostics.h5")
+
+    cached = cached_hdf5_path(source, tmp_path)
+
+    assert cached.name == "run_fv_reconstruction_diagnostics.h5"
+    assert cached.parent.parent == tmp_path
+
+
+def test_materialize_hdf5_sources_uses_rsync_for_remote_source(monkeypatch, tmp_path):
+    source = parse_hdf5_source("itp:path/to/run_fv_reconstruction_diagnostics.h5")
+    commands = []
+
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    monkeypatch.setattr("diffrg_fv_diagnostics.dashboard.shutil.which", lambda name: "/usr/bin/rsync")
+
+    def fake_run(command, check):
+        commands.append((command, check))
+
+    monkeypatch.setattr("diffrg_fv_diagnostics.dashboard.subprocess.run", fake_run)
+
+    paths = materialize_hdf5_sources([HDF5Input(source=source, required=True)], refresh=True)
+
+    assert paths[0].name == "run_fv_reconstruction_diagnostics.h5"
+    assert commands == [([
+        "rsync",
+        "-av",
+        "--",
+        "itp:path/to/run_fv_reconstruction_diagnostics.h5",
+        str(paths[0]),
+    ], True)]
+
+
+def test_materialize_hdf5_sources_skips_missing_optional_remote_sibling(monkeypatch, tmp_path):
+    source = parse_hdf5_source("itp:path/to/run_fv_residual_contribution_diagnostics.h5")
+
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    monkeypatch.setattr("diffrg_fv_diagnostics.dashboard.shutil.which", lambda name: "/usr/bin/rsync")
+
+    def fake_run(command, check):
+        raise subprocess.CalledProcessError(returncode=23, cmd=command)
+
+    monkeypatch.setattr("diffrg_fv_diagnostics.dashboard.subprocess.run", fake_run)
+
+    paths = materialize_hdf5_sources([HDF5Input(source=source, required=False)], refresh=True)
+
+    assert paths == []
 
 
 def test_choose_series_by_nearest_unique_times():

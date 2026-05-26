@@ -14,11 +14,16 @@ Optional examples:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
+import shutil
+import subprocess
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from contextlib import ExitStack
 from typing import Iterable
+from urllib.parse import urlparse
 
 import h5py
 import matplotlib.pyplot as plt
@@ -91,6 +96,32 @@ class MapSpec:
     file_index: int
     file_path: Path
     name: str
+
+
+@dataclass(frozen=True)
+class HDF5Source:
+    raw: str
+    local_path: Path | None = None
+    remote: str | None = None
+    display_name: str | None = None
+
+    @property
+    def is_remote(self) -> bool:
+        return self.remote is not None
+
+    @property
+    def name(self) -> str:
+        if self.display_name is not None:
+            return self.display_name
+        if self.local_path is not None:
+            return self.local_path.name
+        return Path(self.raw).name
+
+
+@dataclass(frozen=True)
+class HDF5Input:
+    source: HDF5Source
+    required: bool = True
 
 
 @dataclass(frozen=True)
@@ -207,6 +238,91 @@ def parse_x_range(value: str) -> tuple[float, float]:
     if not lower_value < upper_value:
         raise argparse.ArgumentTypeError("Expected lower x bound to be smaller than upper x bound.")
     return lower_value, upper_value
+
+
+def is_ssh_uri(value: str) -> bool:
+    parsed = urlparse(value)
+    return parsed.scheme == "ssh" and bool(parsed.netloc)
+
+
+def is_scp_like_source(value: str) -> bool:
+    if "://" in value or ":" not in value:
+        return False
+    prefix = value.split(":", maxsplit=1)[0]
+    if not prefix or "/" in prefix:
+        return False
+    return True
+
+
+def display_name_for_remote(remote: str) -> str:
+    if is_ssh_uri(remote):
+        parsed = urlparse(remote)
+        return Path(parsed.path).name
+    return Path(remote.rsplit(":", maxsplit=1)[1]).name
+
+
+def transfer_argument_for_remote(remote: str) -> str:
+    if not is_ssh_uri(remote):
+        return remote
+    parsed = urlparse(remote)
+    host = parsed.hostname or parsed.netloc
+    if parsed.username:
+        host = f"{parsed.username}@{host}"
+    return f"{host}:{parsed.path}"
+
+
+def parse_hdf5_source(value: str) -> HDF5Source:
+    if is_ssh_uri(value) or is_scp_like_source(value):
+        return HDF5Source(raw=value, remote=value, display_name=display_name_for_remote(value))
+    return HDF5Source(raw=value, local_path=Path(value), display_name=Path(value).name)
+
+
+def cache_base_dir() -> Path:
+    root = os.environ.get("XDG_CACHE_HOME")
+    if root:
+        return Path(root) / "diffrg-fv-diagnostics"
+    return Path.home() / ".cache" / "diffrg-fv-diagnostics"
+
+
+def cached_hdf5_path(source: HDF5Source, cache_dir: Path | None = None) -> Path:
+    if source.remote is None:
+        if source.local_path is None:
+            raise ValueError(f"source {source.raw!r} is neither local nor remote")
+        return source.local_path
+    cache_dir = cache_base_dir() if cache_dir is None else cache_dir
+    digest = hashlib.sha256(source.remote.encode("utf-8")).hexdigest()[:16]
+    return cache_dir / digest / source.name
+
+
+def transfer_remote_source(source: HDF5Source, destination: Path, refresh: bool = False) -> Path:
+    if source.remote is None:
+        if source.local_path is None:
+            raise ValueError(f"source {source.raw!r} is neither local nor remote")
+        return source.local_path
+    if destination.exists() and not refresh:
+        return destination
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    transfer_source = transfer_argument_for_remote(source.remote)
+    if shutil.which("rsync") is not None:
+        command = ["rsync", "-av", "--", transfer_source, str(destination)]
+    else:
+        command = ["scp", transfer_source, str(destination)]
+    subprocess.run(command, check=True)
+    return destination
+
+
+def materialize_hdf5_sources(inputs: Iterable[HDF5Input], refresh: bool = False) -> list[Path]:
+    paths = []
+    for item in inputs:
+        destination = cached_hdf5_path(item.source)
+        try:
+            paths.append(transfer_remote_source(item.source, destination, refresh))
+        except subprocess.CalledProcessError as error:
+            if item.required:
+                raise
+            print(f"[FV dashboard] skipping unavailable sibling diagnostic {item.source.raw!r}: {error}")
+    return paths
 
 
 def cutoff_scale(lambda_uv: float, series: Series) -> float:
@@ -557,24 +673,71 @@ def common_series(h5_files: list[h5py.File], map_specs: Iterable[MapSpec]) -> li
     return [by_number[number] for number in sorted(common_numbers)]
 
 
-def sibling_diagnostic_paths(paths: Iterable[Path]) -> list[Path]:
-    result = []
-    seen = set()
+def sibling_name(name: str) -> str | None:
     replacements = {
         "_fv_reconstruction_diagnostics.h5": "_fv_residual_contribution_diagnostics.h5",
         "_fv_residual_contribution_diagnostics.h5": "_fv_reconstruction_diagnostics.h5",
     }
+    for suffix, sibling_suffix in replacements.items():
+        if name.endswith(suffix):
+            return name.removesuffix(suffix) + sibling_suffix
+    return None
+
+
+def remote_sibling_source(source: HDF5Source) -> HDF5Source | None:
+    if source.remote is None:
+        return None
+    sibling = sibling_name(source.name)
+    if sibling is None:
+        return None
+
+    if is_ssh_uri(source.remote):
+        parsed = urlparse(source.remote)
+        sibling_path = str(PurePosixPath(parsed.path).with_name(sibling))
+        raw = parsed._replace(path=sibling_path).geturl()
+    else:
+        prefix, remote_path = source.remote.rsplit(":", maxsplit=1)
+        raw = f"{prefix}:{PurePosixPath(remote_path).with_name(sibling)}"
+    return HDF5Source(raw=raw, remote=raw, display_name=sibling)
+
+
+def sibling_diagnostic_paths(paths: Iterable[Path]) -> list[Path]:
+    result = []
+    seen = set()
     for path in paths:
         for candidate in (path,):
             if candidate not in seen:
                 result.append(candidate)
                 seen.add(candidate)
-        for suffix, sibling_suffix in replacements.items():
-            if path.name.endswith(suffix):
-                sibling = path.with_name(path.name.removesuffix(suffix) + sibling_suffix)
-                if sibling.exists() and sibling not in seen:
-                    result.append(sibling)
-                    seen.add(sibling)
+        sibling = sibling_name(path.name)
+        if sibling is None:
+            continue
+        sibling_path = path.with_name(sibling)
+        if sibling_path.exists() and sibling_path not in seen:
+            result.append(sibling_path)
+            seen.add(sibling_path)
+    return result
+
+
+def sibling_diagnostic_inputs(sources: Iterable[HDF5Source]) -> list[HDF5Input]:
+    result = []
+    seen = set()
+    for source in sources:
+        if source.raw not in seen:
+            result.append(HDF5Input(source=source, required=True))
+            seen.add(source.raw)
+
+        if source.is_remote:
+            sibling = remote_sibling_source(source)
+            if sibling is not None and sibling.raw not in seen:
+                result.append(HDF5Input(source=sibling, required=False))
+                seen.add(sibling.raw)
+        elif source.local_path is not None:
+            for sibling_path in sibling_diagnostic_paths([source.local_path]):
+                raw = str(sibling_path)
+                if raw not in seen:
+                    result.append(HDF5Input(source=parse_hdf5_source(raw), required=False))
+                    seen.add(raw)
     return result
 
 
@@ -845,9 +1008,9 @@ def plot_maps(h5_paths: list[Path], selected_series: Iterable[Series], component
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("hdf5_file", type=Path, nargs="+",
-                        help="Path(s) to reconstruction and/or residual-contribution diagnostics HDF5 files. "
-                             "A sibling diagnostic file is auto-added when present.")
+    parser.add_argument("hdf5_file", nargs="+",
+                        help="Path(s) or SSH sources for reconstruction and/or residual-contribution diagnostics HDF5 "
+                             "files. A sibling diagnostic file is auto-added when present.")
     parser.add_argument("--component", type=int, default=0, help="Component index to plot.")
     parser.add_argument("--max-slices", type=int, default=6,
                         help="Number of evenly spaced time slices to plot when --series/--times is omitted.")
@@ -870,12 +1033,15 @@ def main() -> None:
     parser.add_argument("--trace-count", type=int, default=12,
                         help="Maximum number of oscillation trace rows to print. Defaults to 12.")
     parser.add_argument("--output", type=Path, help="Optional image path. If omitted, opens an interactive window.")
+    parser.add_argument("--refresh", action="store_true",
+                        help="Force re-copy of remote SSH HDF5 sources into the local cache.")
     args = parser.parse_args()
 
     if args.series is not None and args.times is not None:
         raise SystemExit("Use either --series or --times, not both.")
 
-    h5_paths = sibling_diagnostic_paths(args.hdf5_file)
+    h5_sources = [parse_hdf5_source(value) for value in args.hdf5_file]
+    h5_paths = materialize_hdf5_sources(sibling_diagnostic_inputs(h5_sources), args.refresh)
     with ExitStack() as stack:
         h5_files = [stack.enter_context(h5py.File(path, "r")) for path in h5_paths]
         map_specs = available_maps(h5_files, h5_paths)
