@@ -1,12 +1,9 @@
-diff --git a/include/deal.II/sundials/ida.h b/include/deal.II/sundials/ida.h
-index 78b2f21..44ca63c 100644
 --- a/include/deal.II/sundials/ida.h
 +++ b/include/deal.II/sundials/ida.h
-@@ -610,4 +610,22 @@ namespace SUNDIALS
-     /**
-      * Destructor.
+@@ -611,6 +611,24 @@
       */
      ~IDA();
+ 
 +    struct Statistics
 +    {
 +      bool valid = false;
@@ -21,27 +18,27 @@ index 78b2f21..44ca63c 100644
 +      double current_step_size = 0.;
 +      double current_time = 0.;
 +    };
++
 +    Statistics
 +    get_statistics() const;
-diff --git a/source/sundials/ida.cc b/source/sundials/ida.cc
-index 2c66cf8..38eb0a7 100644
++
+     /**
+      * Integrate differential-algebraic equations. This function returns the
+      * final number of computed steps.
 --- a/source/sundials/ida.cc
 +++ b/source/sundials/ida.cc
-@@ -40,2 +40,3 @@
+@@ -39,6 +39,7 @@
+ 
  #  include <iomanip>
  #  include <iostream>
 +#  include <limits>
-@@ -158,10 +159,45 @@ namespace SUNDIALS
-   template <typename VectorType>
-   IDA<VectorType>::~IDA()
-   {
-     IDAFree(&ida_mem);
- #  if DEAL_II_SUNDIALS_VERSION_GTE(6, 0, 0)
-     const int status = SUNContext_Free(&ida_ctx);
-     (void)status;
-     AssertIDA(status);
+ 
+ DEAL_II_NAMESPACE_OPEN
+ 
+@@ -165,6 +166,41 @@
  #  endif
    }
+ 
 +  template <typename VectorType>
 +  typename IDA<VectorType>::Statistics
 +  IDA<VectorType>::get_statistics() const
@@ -49,6 +46,7 @@ index 2c66cf8..38eb0a7 100644
 +    Statistics statistics;
 +    if (ida_mem == nullptr)
 +      return statistics;
++
 +    statistics.valid = true;
 +    int status = IDAGetNumSteps(ida_mem, &statistics.num_steps);
 +    statistics.valid = statistics.valid && status >= 0;
@@ -72,9 +70,20 @@ index 2c66cf8..38eb0a7 100644
 +    statistics.valid = statistics.valid && status >= 0;
 +    status = IDAGetCurrentTime(ida_mem, &statistics.current_time);
 +    statistics.valid = statistics.valid && status >= 0;
++
 +    return statistics;
 +  }
-@@ -329 +365,2 @@ namespace SUNDIALS
++
+ 
+ 
+   template <typename VectorType>
+@@ -325,7 +361,8 @@
+     status = IDASetSuppressAlg(ida_mem, data.ignore_algebraic_terms_for_errors);
+     AssertIDA(status);
+ 
 -    //  status = IDASetMaxNumSteps(ida_mem, max_steps);
 +    status = IDASetMaxNumSteps(ida_mem, std::numeric_limits<long int>::max());
 +    AssertIDA(status);
+     status = IDASetStopTime(ida_mem, data.final_time);
+     AssertIDA(status);
+ 
