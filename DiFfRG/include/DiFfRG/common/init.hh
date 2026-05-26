@@ -4,6 +4,7 @@
 #include <DiFfRG/common/configuration_helper.hh>
 
 // external libraries
+#include <deal.II/base/init_finalize.h>
 #include <deal.II/base/mpi.h>
 
 namespace DiFfRG
@@ -24,6 +25,6 @@ namespace DiFfRG
     int argc;
     char **argv;
     std::string parameter_file;
-    static dealii::Utilities::MPI::MPI_InitFinalize *mpi_initialization;
+    static dealii::InitFinalize *mpi_initialization;
   };
 } // namespace DiFfRG

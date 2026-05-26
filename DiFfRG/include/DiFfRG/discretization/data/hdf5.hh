@@ -6,11 +6,8 @@
 
 #include <autodiff/forward/real/real.hpp>
 
-#ifdef H5CPP
 #include <hdf5lib/hdf5.hh>
-#endif
 
-#ifdef H5CPP
 namespace DiFfRG::hdf5
 {
   template <typename T> struct TypeTrait<DiFfRG::complex<T>> {
@@ -56,4 +53,3 @@ namespace DiFfRG::hdf5
     }
   };
 } // namespace DiFfRG::hdf5
-#endif

@@ -6,7 +6,6 @@ namespace DiFfRG
   HDF5Input::HDF5Input(const std::string file_name)
       : file_name(has_suffix(file_name, ".h5") ? file_name : file_name + ".h5")
   {
-#ifdef H5CPP
     path = this->file_name;
 
     if (!std::filesystem::exists(path))
@@ -25,10 +24,7 @@ namespace DiFfRG
     scalars = root.open_group("scalars");
     maps = root.open_group("maps");
     coords = root.open_group("coordinates");
-#endif
   }
 
-#ifdef H5CPP
   DiFfRG::hdf5::File &HDF5Input::get_file() { return h5_file; }
-#endif
 } // namespace DiFfRG

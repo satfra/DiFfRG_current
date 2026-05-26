@@ -9,9 +9,7 @@
 #include <deal.II/lac/vector_memory.h>
 #include <deal.II/numerics/data_out.h>
 
-#ifdef H5CPP
 #include <hdf5lib/hdf5.hh>
-#endif
 
 // standard library
 #include <exception>
@@ -86,6 +84,11 @@ namespace DiFfRG
     constexpr static uint safe_dim = dim == 0 ? 1 : dim;
     std::vector<DataOut<safe_dim>> data_outs;
     std::list<std::thread> output_threads;
+    // series number each worker thread is responsible for, kept in lockstep with output_threads so
+    // the main thread can clear() the corresponding DataOut once the worker has been joined. Clearing
+    // a DataOut frees its Kokkos-backed vectors, which (with deal.II's Kokkos host backend) must not
+    // happen on a worker thread concurrently with the main thread's own Kokkos work.
+    std::list<uint> output_thread_series;
     std::list<std::list<typename VectorMemory<VectorType>::Pointer>> attached_solutions;
 
     // serializes worker-thread access to time_series and the shared .pvd file

@@ -13,10 +13,6 @@ PacletObject[
                         { "DiFfRG`" , "DiFfRG.m" },
                         { "DiFfRG`CodeTools`", "CodeTools.m" }
                     }
-                },
-                {
-                    "Documentation",
-                    "Language" -> "English"
                 }
             }
     |>

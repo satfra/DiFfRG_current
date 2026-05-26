@@ -33,35 +33,60 @@ set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} ${BUNDLED_DIR})
 
 option(DiFfRG_DOCUMENTATION "Build documentation" ON)
 
-# check if Doxygen is installed
+# The documentation is a single Sphinx site bundling the C++ (Doxygen via
+# doxysphinx), Python (sphinx-autoapi) and Mathematica (generated from ::usage
+# strings) references. It is orchestrated by documentation/build.sh, which needs
+# Doxygen plus a Python 3.9–3.12 environment with the packages listed in
+# documentation/requirements.txt. We degrade gracefully: if that toolchain is
+# missing the project still configures and builds — only the docs are skipped.
 find_package(Doxygen)
-if(DiFfRG_DOCUMENTATION AND DOXYGEN_FOUND)
-  # set input and output files
-  set(DOXYGEN_IN ${CMAKE_CURRENT_SOURCE_DIR}/documentation/Doxyfile.in)
-  set(DOXYGEN_OUT ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile)
+find_program(SPHINX_BUILD_EXECUTABLE sphinx-build)
+find_program(DOXYSPHINX_EXECUTABLE doxysphinx)
 
-  # request to configure the file
-  configure_file(${DOXYGEN_IN} ${DOXYGEN_OUT} @ONLY)
-  message(STATUS "Documentation target configured")
+if(DiFfRG_DOCUMENTATION AND DOXYGEN_FOUND AND SPHINX_BUILD_EXECUTABLE
+   AND DOXYSPHINX_EXECUTABLE)
+  message(STATUS "Documentation target configured (Doxygen + doxysphinx + Sphinx)")
 
   add_custom_target(
     documentation ALL
-    COMMAND
-      bash -c
-      "${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT} &> ${CMAKE_CURRENT_BINARY_DIR}/doxygen.log"
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    COMMENT "Generating API documentation with Doxygen"
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/documentation/build.sh
+            ${CMAKE_CURRENT_BINARY_DIR}/documentation
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/documentation
+    COMMENT "Building unified documentation (C++ / Python / Mathematica)"
     VERBATIM)
   install(
-    DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/documentation
-    DESTINATION ${CMAKE_INSTALL_PREFIX}
-    MESSAGE_NEVER) # target directory
+    DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/documentation/html
+    DESTINATION ${CMAKE_INSTALL_PREFIX}/documentation
+    MESSAGE_NEVER)
   install(
     CODE "file(CREATE_LINK ${CMAKE_INSTALL_PREFIX}/documentation/html/index.html ${CMAKE_INSTALL_PREFIX}/Documentation.html SYMBOLIC)"
   )
 
-elseif(DiFfRG_DOCUMENTATION AND NOT DOXYGEN_FOUND)
-  message("Doxygen needs to be installed to generate the doxygen documentation")
+elseif(DiFfRG_DOCUMENTATION)
+  # Report exactly which tools are missing so the user knows what to supply.
+  set(_doc_missing "")
+  if(NOT DOXYGEN_FOUND)
+    list(APPEND _doc_missing "doxygen")
+  endif()
+  if(NOT SPHINX_BUILD_EXECUTABLE)
+    list(APPEND _doc_missing "sphinx-build")
+  endif()
+  if(NOT DOXYSPHINX_EXECUTABLE)
+    list(APPEND _doc_missing "doxysphinx")
+  endif()
+  string(REPLACE ";" ", " _doc_missing_str "${_doc_missing}")
+  message(WARNING
+    "The 'documentation' target was NOT created: missing ${_doc_missing_str}.\n"
+    "  * doxygen — install via your package manager (e.g. 'pacman -S doxygen graphviz').\n"
+    "  * sphinx-build / doxysphinx — come from the Python toolchain. doxysphinx requires\n"
+    "    Python 3.9-3.12 (NOT 3.13+), so create such an environment and install the deps:\n"
+    "        python3.12 -m venv ${CMAKE_CURRENT_SOURCE_DIR}/documentation/.venv-docs\n"
+    "        source ${CMAKE_CURRENT_SOURCE_DIR}/documentation/.venv-docs/bin/activate\n"
+    "        pip install -r ${CMAKE_CURRENT_SOURCE_DIR}/documentation/requirements.txt\n"
+    "    then re-run cmake with that environment ACTIVE so the tools are on PATH.\n"
+    "  Or skip cmake entirely and build the docs directly:\n"
+    "        bash ${CMAKE_CURRENT_SOURCE_DIR}/documentation/build.sh\n"
+    "  Configure with -DDiFfRG_DOCUMENTATION=OFF to silence this warning.")
 endif()
 
 if(DiFfRG_ONLY_DOCUMENTATION)

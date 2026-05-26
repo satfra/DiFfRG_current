@@ -1,7 +1,6 @@
+[![Tests](https://img.shields.io/endpoint?style=for-the-badge&url=https://gist.githubusercontent.com/satfra/336ebc0aaa7dc9a0e71ca01dd4361a12/raw/diffrg-tests.json)](https://github.com/satfra/DiFfRG_current/actions/workflows/ci.yml)
 [![arXiv](https://img.shields.io/badge/arXiv-2412.13043-b31b1b.svg?style=for-the-badge)](https://arxiv.org/abs/2412.13043)
-[![Doxygen](https://img.shields.io/badge/doxygen-2C4AA8?style=for-the-badge&logo=c%2B%2B&logoColor=white)](https://satfra.github.io/DiFfRG/cpp/index.html)
-[![Wolfram](https://img.shields.io/badge/wolfram_doc-cf1c10?style=for-the-badge&logo=wolfram)](https://satfra.github.io/DiFfRG/wolfram/html/guide/DiFfRG.html)
-[![Python](https://img.shields.io/badge/python_doc-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)](https://satfra.github.io/DiFfRG/python/index.html)
+[![Documentation](https://img.shields.io/badge/documentation-2C4AA8?style=for-the-badge&logo=readthedocs&logoColor=white)](https://satfra.github.io/DiFfRG_current/)
 
 <h3>[This is the development repository for DiFfRG. For the current stable version, please visit [the main repository](https://github.com/satfra/DiFfRG)</h3>
 
@@ -23,7 +22,7 @@ Both explicit and implicit time-stepping methods are available and allow thus fo
 
 We also include a set of tools for the evaluation of integrals and discretization of momentum dependencies.
 
-For an overview, please see the [accompanying paper](https://arxiv.org/abs/2412.13043), the ***[tutorial page](https://satfra.github.io/DiFfRG/cpp/TutorialTOC.html)*** in the [documentation](https://satfra.github.io/DiFfRG/cpp/index.html) and the examples in `Examples/`. 
+For an overview, please see the [accompanying paper](https://arxiv.org/abs/2412.13043), the ***[tutorials](https://satfra.github.io/DiFfRG/tutorials/index.html)*** in the [documentation](https://satfra.github.io/DiFfRG/) and the examples in `Examples/`. 
 
 This library has been developed within the [fQCD Collaboration](https://fQCD-Collaboration.github.io).
 
@@ -52,7 +51,8 @@ To compile and run this project, there are very few requirements which you can e
 - A compiler supporting at least the C++20 standard, including a Fortran compiler (e.g. `gfortran`). This project is only tested using the [GCC](https://gcc.gnu.org/) compiler suite, as well as with `AppleClang`, but in principle, ICC or standard Clang should also work.
 - LAPACK and BLAS in some form, e.g. [OpenBLAS](https://www.openblas.net/). Alternatively, pass `-DBUILD_OpenBLAS=ON` to have DiFfRG build OpenBLAS.
 - The GNU Scientific Library [GSL](https://www.gnu.org/software/gsl/).
-- [Python](https://www.python.org/) is required by the Boost build system and used for visualization.
+- [Python](https://www.python.org/) is used for visualization (and by the bundled Boost build system).
+- [Boost](https://www.boost.org/) (≥ 1.81), [TBB](https://github.com/uxlfoundation/oneTBB) (oneTBB ≥ 2021), [HDF5](https://www.hdfgroup.org/) (≥ 1.12) and [SUNDIALS](https://computing.llnl.gov/projects/sundials) (≥ 5.4) are each detected automatically and used if a viable version is present; otherwise DiFfRG builds a bundled copy. For each, pass `-D<LIB>_DIR=<prefix>` to use a specific install or `-DBUILD_<LIB>=ON` to force the bundled build (`<LIB>` ∈ `BOOST`, `TBB`, `HDF5`, `SUNDIALS`).
 - [Doxygen](https://www.doxygen.org/) and [graphviz](https://www.graphviz.org/download/) to build the documentation.
 
 The following requirements are optional:
@@ -164,10 +164,10 @@ Although a native install should be unproblematic in most cases, the setup with 
 
 Besides the manual setup described below, we recommend using [development containers](https://code.visualstudio.com/docs/devcontainers/containers) if you are using VSCode. An appropriate `.devcontainers` configuration can be adapted from the one found in the DiFfRG top level directory.
 
-The specific choice of container runtime environment is up to the user, however we provide a small build script to create a docker container for DiFfRG.
-To do this, you will need `docker`, `docker-buildx` and the [NVIDIA container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#) in case you wish to create a CUDA-compatible image.
+The specific choice of container runtime environment is up to the user, however we provide a small build script to create a Docker/OCI container for DiFfRG and run its tests through Singularity/Apptainer when available.
+To do this, you will need `docker`, `docker-buildx`, and `singularity` or `apptainer`. For CUDA-compatible image execution you also need the host NVIDIA driver available to Singularity/Apptainer.
 
-To build a docker image, you can run the script `build-container.sh` in the `containers/` folder, which will guide you through the process, i.e.
+To build a Docker image and test it through Singularity/Apptainer, you can run the script `build-container.sh` in the `containers/` folder, which will guide you through the process, i.e.
 ```bash
 $ cd containers
 $ bash build-container.sh
@@ -185,11 +185,11 @@ Afterwards, one proceeds with the above Rocky Linux setup.
 
 ## Getting started with simulating fRG flows
 
-For an overview, please see the ***[tutorial page](https://satfra.github.io/DiFfRG/cpp/TutorialTOC.html)*** in the [documentation](https://satfra.github.io/DiFfRG/cpp/index.html). A local documentation is also always built automatically when running the setup script, but can also be built manually by running
+For an overview, please see the ***[tutorials](https://satfra.github.io/DiFfRG/tutorials/index.html)*** in the [documentation](https://satfra.github.io/DiFfRG/). A local copy of the documentation is also built automatically when running the setup script, but can also be built manually by running
 ```bash
 $ make documentation
 ```
-inside the `DiFfRG_build` directory. You can find then a code reference in the top directory.
+inside the `DiFfRG_build` directory (this requires the Python documentation toolchain, see `DiFfRG/documentation/requirements.txt`). You can then find the rendered site in the install directory.
 
 All backend code is contained in the DiFfRG directory.
 

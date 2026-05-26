@@ -101,7 +101,7 @@ namespace DiFfRG
       assembler.reinit();
       assembler.reinit_vector(solution);
 
-      solution_trans.interpolate(previous_solution, solution);
+      solution_trans.interpolate(solution);
       constraints.distribute(solution);
 
       return true;

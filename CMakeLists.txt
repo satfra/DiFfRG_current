@@ -186,6 +186,29 @@ if(USE_CCACHE)
   endif()
 endif()
 
+# ##############################################################################
+# Native architecture optimization
+# ##############################################################################
+# Whether to optimize for the CPU of the build machine (-march=native). ON gives
+# the fastest binaries but they only run on CPUs with the same instruction set;
+# turn OFF for portable builds (e.g. CI images that must run on other hardware).
+option(NATIVE "Optimize for the build machine's CPU (-march=native). Disable for portable binaries." ON)
+diffrg_report_native(${NATIVE} "${CMAKE_CXX_COMPILER}")
+
+# Per-language flag fragments forwarded to the dependency ExternalProjects. Empty
+# when NATIVE=OFF, so the corresponding CMAKE_CACHE_ARGS entry simply vanishes.
+if(NATIVE)
+  set(_native_cxx_arg "-DCMAKE_CXX_FLAGS:STRING=-march=native")
+  set(_native_c_arg "-DCMAKE_C_FLAGS:STRING=-march=native")
+  set(_native_dealii_arg "-DDEAL_II_CXX_FLAGS:STRING=-march=native")
+  set(_native_petsc_flag "-march=native")
+else()
+  set(_native_cxx_arg "")
+  set(_native_c_arg "")
+  set(_native_dealii_arg "")
+  set(_native_petsc_flag "")
+endif()
+
 option(GPU "Enable/Disable GPU support" ON)
 
 if(GPU)
@@ -274,29 +297,430 @@ message("")
 
 include(ExternalProject)
 
+# ##############################################################################
+# Dependency selection: system vs bundled
+#
+# Boost, TBB, HDF5 and SUNDIALS can each be taken from the system instead of
+# being rebuilt. For every one of them: <LIB>_DIR set     -> use the install at
+# that prefix (FATAL if unusable) BUILD_<LIB>=ON    -> always build the bundled,
+# pinned copy otherwise (auto)  -> use a viable system install if found, else
+# build it The blocks below resolve, for each library, whether the bundled
+# ExternalProject is needed (_build_<lib>) and which location to hand to deal.II
+# / the DiFfRG library build.
+# ##############################################################################
+
+set(BOOST_DIR
+    ""
+    CACHE PATH "Use the Boost install at this prefix instead of building one")
+option(BUILD_BOOST
+       "Always build the bundled, pinned Boost (ignore any system Boost)" OFF)
+set(TBB_DIR
+    ""
+    CACHE PATH "Use the TBB install at this prefix instead of building one")
+option(BUILD_TBB "Always build the bundled oneTBB (ignore any system TBB)" OFF)
+set(HDF5_DIR
+    ""
+    CACHE PATH "Use the HDF5 install at this prefix instead of building one")
+option(BUILD_HDF5 "Always build the bundled HDF5 (ignore any system HDF5)" OFF)
+set(SUNDIALS_DIR
+    ""
+    CACHE PATH
+          "Use the SUNDIALS install at this prefix instead of building one")
+option(BUILD_SUNDIALS
+       "Always build the bundled SUNDIALS (ignore any system SUNDIALS)" OFF)
+
+set(DiFfRG_BOOST_MIN_VERSION 1.81)
+set(DiFfRG_TBB_MIN_VERSION 2021)
+set(DiFfRG_HDF5_MIN_VERSION 1.12.0)
+set(DiFfRG_SUNDIALS_MIN_VERSION 5.4.0) # deal.II's own SUNDIALS floor
+set(DiFfRG_SUNDIALS_KNOWN_GOOD_MAX 7.7) # newest version validated with bundled
+                                        # deal.II
+
+# ----------------------------------------------------------------------------
+# Boost — needed by both deal.II and the DiFfRG library. Use Boost's own
+# BoostConfig.cmake (config mode); the legacy FindBoost module is removed in
+# CMake >= 3.30 and deal.II 9.7 consumes a modern config-mode Boost fine.
+# ----------------------------------------------------------------------------
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 NEW)
+endif()
+set(_boost_components thread iostreams serialization system)
+set(_build_boost OFF)
+set(_boost_user_dir "${BOOST_DIR}")
+if(NOT "${_boost_user_dir}" STREQUAL "")
+  set(BOOST_ROOT "${_boost_user_dir}")
+  find_package(Boost ${DiFfRG_BOOST_MIN_VERSION} QUIET
+               COMPONENTS ${_boost_components})
+  if(NOT Boost_FOUND)
+    message(
+      FATAL_ERROR
+        "BOOST_DIR=${_boost_user_dir} does not provide a usable Boost >= ${DiFfRG_BOOST_MIN_VERSION}.\n"
+        "  Point it at a prefix containing BoostConfig.cmake, or use -DBUILD_BOOST=ON."
+    )
+  endif()
+  set(_boost_status
+      "  ${BoldGreen}[Boost] Using Boost ${Boost_VERSION} from BOOST_DIR=${_boost_user_dir}.${ColourReset}"
+  )
+elseif(BUILD_BOOST)
+  set(_build_boost ON)
+else()
+  find_package(Boost ${DiFfRG_BOOST_MIN_VERSION} QUIET
+               COMPONENTS ${_boost_components})
+  if(NOT Boost_FOUND)
+    set(_build_boost ON)
+  endif()
+endif()
+
+if(_build_boost)
+  set(_boost_root "${DEPEND_INSTALL_PREFIX}")
+  set(_boost_incdir "${DEPEND_INSTALL_PREFIX}/include")
+  set(_boost_libdir "${DEPEND_INSTALL_PREFIX}/lib")
+  set(_boost_extra_args "")
+  set(_boost_dep boost_dep)
+else()
+  # Config mode populates Boost_INCLUDE_DIRS and Boost_DIR but not the legacy
+  # Boost_LIBRARY_DIRS, so derive the install prefix and library dir ourselves.
+  list(GET Boost_INCLUDE_DIRS 0 _boost_incdir)
+  get_filename_component(_boost_root "${_boost_incdir}" DIRECTORY)
+  if(DEFINED Boost_LIBRARY_DIRS AND NOT "${Boost_LIBRARY_DIRS}" STREQUAL "")
+    list(GET Boost_LIBRARY_DIRS 0 _boost_libdir)
+  elseif(EXISTS "${_boost_root}/lib")
+    set(_boost_libdir "${_boost_root}/lib")
+  else()
+    set(_boost_libdir "${_boost_root}/lib64")
+  endif()
+  set(_boost_extra_args -DBoost_DIR:PATH=${Boost_DIR})
+  set(_boost_dep "")
+  set(_boost_status
+      "  ${BoldGreen}[Boost] Using system Boost ${Boost_VERSION} (${_boost_incdir}); skipping bundled build.${ColourReset}"
+  )
+endif()
+
+# ----------------------------------------------------------------------------
+# TBB — needed by both deal.II (path-based) and the DiFfRG library
+# (find_package(TBB) -> TBB::tbb). The bundled oneTBB is built inside
+# general_dep (see GENERAL_BUILD_TBB), not its own ExternalProject.
+# ----------------------------------------------------------------------------
+set(_build_tbb OFF)
+# find_package(TBB) overwrites TBB_DIR with the discovered config dir; capture
+# the user-given prefix first.
+set(_tbb_user_dir "${TBB_DIR}")
+if(NOT "${_tbb_user_dir}" STREQUAL "")
+  find_package(
+    TBB
+    ${DiFfRG_TBB_MIN_VERSION}
+    QUIET
+    CONFIG
+    PATHS
+    "${_tbb_user_dir}"
+    PATH_SUFFIXES
+    lib/cmake/TBB
+    lib64/cmake/TBB
+    cmake/TBB
+    NO_DEFAULT_PATH)
+  if(NOT TBB_FOUND)
+    message(
+      FATAL_ERROR
+        "TBB_DIR=${_tbb_user_dir} does not provide TBB >= ${DiFfRG_TBB_MIN_VERSION}.\n"
+        "  Point it at a prefix containing TBBConfig.cmake, or use -DBUILD_TBB=ON."
+    )
+  endif()
+  set(_tbb_status
+      "  ${BoldGreen}[TBB] Using TBB ${TBB_VERSION} from TBB_DIR=${_tbb_user_dir}.${ColourReset}"
+  )
+elseif(BUILD_TBB)
+  set(_build_tbb ON)
+else()
+  find_package(TBB ${DiFfRG_TBB_MIN_VERSION} QUIET CONFIG)
+  if(NOT TBB_FOUND)
+    set(_build_tbb ON)
+  endif()
+endif()
+
+if(_build_tbb)
+  set(_tbb_dir "${DEPEND_INSTALL_PREFIX}")
+else()
+  set(_tbb_dir "${TBB_DIR}") # the discovered TBBConfig.cmake directory
+  set(_tbb_status
+      "  ${BoldGreen}[TBB] Using system TBB ${TBB_VERSION} (${TBB_DIR}); skipping bundled build.${ColourReset}"
+  )
+endif()
+
+# ----------------------------------------------------------------------------
+# HDF5 — needed only by the DiFfRG library (deal.II is built with
+# DEAL_II_WITH_HDF5=OFF). DiFfRG only uses the HDF5 C API, so 1.12 is the floor.
+# ----------------------------------------------------------------------------
+set(_build_hdf5 OFF)
+set(_hdf5_user_dir "${HDF5_DIR}")
+# Do not pass the version to find_package: HDF5's config-version file uses a
+# same-major-version compatibility policy, so requesting 1.12 would reject a
+# newer 2.x install. Gate the version manually instead. Many distros (Fedora,
+# Debian, Ubuntu, ...) ship HDF5 without a CMake config package (only headers +
+# libs + the FindHDF5 module / pkg-config). So try config mode first (gives
+# imported targets; matches the bundled static build and Arch), then fall back
+# to module mode (FindHDF5) for those config-less installs.
+macro(_diffrg_find_hdf5)
+  find_package(HDF5 QUIET CONFIG COMPONENTS C ${ARGN})
+  if(NOT HDF5_FOUND OR HDF5_VERSION VERSION_LESS ${DiFfRG_HDF5_MIN_VERSION})
+    find_package(HDF5 QUIET MODULE COMPONENTS C)
+  endif()
+endmacro()
+
+if(NOT "${_hdf5_user_dir}" STREQUAL "")
+  set(HDF5_ROOT "${_hdf5_user_dir}")
+  _diffrg_find_hdf5(
+    PATHS
+    "${_hdf5_user_dir}"
+    PATH_SUFFIXES
+    lib/cmake/hdf5
+    lib64/cmake/hdf5
+    cmake/hdf5
+    share/cmake/hdf5)
+  if(NOT HDF5_FOUND OR HDF5_VERSION VERSION_LESS ${DiFfRG_HDF5_MIN_VERSION})
+    message(
+      FATAL_ERROR
+        "HDF5_DIR=${_hdf5_user_dir} does not provide a usable HDF5 >= ${DiFfRG_HDF5_MIN_VERSION} "
+        "(found '${HDF5_VERSION}').\n"
+        "  Point it at an HDF5 install prefix, or use -DBUILD_HDF5=ON.")
+  endif()
+  set(_hdf5_status
+      "  ${BoldGreen}[HDF5] Using HDF5 ${HDF5_VERSION} from HDF5_DIR=${_hdf5_user_dir}.${ColourReset}"
+  )
+elseif(BUILD_HDF5)
+  set(_build_hdf5 ON)
+else()
+  _diffrg_find_hdf5()
+  if(NOT HDF5_FOUND OR HDF5_VERSION VERSION_LESS ${DiFfRG_HDF5_MIN_VERSION})
+    set(_build_hdf5 ON)
+  endif()
+endif()
+
+if(_build_hdf5)
+  set(_hdf5_extra_args "")
+  set(_hdf5_dep hdf5_dep)
+else()
+  # Pass the config-package dir on if config mode found it; otherwise (module
+  # mode) pass the install prefix so the library build resolves the same HDF5.
+  if(HDF5_DIR AND NOT "${HDF5_DIR}" STREQUAL "HDF5_DIR-NOTFOUND")
+    set(_hdf5_extra_args -DHDF5_DIR:PATH=${HDF5_DIR})
+    set(_hdf5_loc "${HDF5_DIR}")
+  else()
+    list(GET HDF5_INCLUDE_DIRS 0 _hdf5_inc0)
+    get_filename_component(_hdf5_loc "${_hdf5_inc0}" DIRECTORY)
+    set(_hdf5_extra_args -DHDF5_ROOT:PATH=${_hdf5_loc})
+  endif()
+  set(_hdf5_dep "")
+  set(_hdf5_status
+      "  ${BoldGreen}[HDF5] Using system HDF5 ${HDF5_VERSION} (${_hdf5_loc}); skipping bundled build.${ColourReset}"
+  )
+endif()
+
+# ----------------------------------------------------------------------------
+# SUNDIALS — needed only by deal.II (DiFfRG links it transitively via
+# dealii::dealii). Replicate deal.II's own discovery: the
+# arkode/kinsol/nvecserial libraries plus version >= 5.4.0; otherwise build the
+# bundled copy.
+# ----------------------------------------------------------------------------
+set(_build_sundials OFF)
+set(_sundials_prefix "${DEPEND_INSTALL_PREFIX}")
+set(_sundials_dep "")
+set(_sun_hint "")
+set(_sun_explicit OFF)
+set(_sun_mpi_mismatch OFF)
+if(NOT "${SUNDIALS_DIR}" STREQUAL "")
+  set(_sun_hint "${SUNDIALS_DIR}")
+  set(_sun_explicit ON)
+elseif(BUILD_SUNDIALS)
+  set(_build_sundials ON)
+endif()
+
+if(NOT _build_sundials)
+  find_library(
+    _SUN_ARKODE
+    NAMES sundials_arkode
+    HINTS ${_sun_hint}
+    PATH_SUFFIXES lib lib64)
+  find_library(
+    _SUN_KINSOL
+    NAMES sundials_kinsol
+    HINTS ${_sun_hint}
+    PATH_SUFFIXES lib lib64)
+  find_library(
+    _SUN_NVEC
+    NAMES sundials_nvecserial
+    HINTS ${_sun_hint}
+    PATH_SUFFIXES lib lib64)
+  # The version macros live in sundials_config.h on most installs
+  # (sundials_version.h only declares the runtime accessors and #includes the
+  # config -- e.g. on Fedora it carries no macros), so locate the config header
+  # and read whichever of the two actually defines SUNDIALS_VERSION_MAJOR.
+  find_path(
+    _SUN_INC sundials/sundials_config.h
+    HINTS ${_sun_hint}
+    PATH_SUFFIXES include)
+  set(_sun_ok FALSE)
+  set(_sun_ver "")
+  set(_sun_reject_reason "")
+  if(_SUN_ARKODE
+     AND _SUN_KINSOL
+     AND _SUN_NVEC
+     AND _SUN_INC)
+    set(_sun_verhdr "")
+    foreach(_h sundials/sundials_config.h sundials/sundials_version.h)
+      if(EXISTS "${_SUN_INC}/${_h}")
+        file(STRINGS "${_SUN_INC}/${_h}" _sun_probe
+             REGEX "#define[ \t]+SUNDIALS_VERSION_MAJOR")
+        if(_sun_probe)
+          set(_sun_verhdr "${_SUN_INC}/${_h}")
+          break()
+        endif()
+      endif()
+    endforeach()
+    if(_sun_verhdr)
+      file(STRINGS "${_sun_verhdr}" _sun_mj
+           REGEX "#define[ \t]+SUNDIALS_VERSION_MAJOR")
+      file(STRINGS "${_sun_verhdr}" _sun_mn
+           REGEX "#define[ \t]+SUNDIALS_VERSION_MINOR")
+      file(STRINGS "${_sun_verhdr}" _sun_pt
+           REGEX "#define[ \t]+SUNDIALS_VERSION_PATCH")
+      string(REGEX REPLACE "^.*MAJOR[ \t]+([0-9]+).*" "\\1" _sun_mj
+                           "${_sun_mj}")
+      string(REGEX REPLACE "^.*MINOR[ \t]+([0-9]+).*" "\\1" _sun_mn
+                           "${_sun_mn}")
+      string(REGEX REPLACE "^.*PATCH[ \t]+([0-9]+).*" "\\1" _sun_pt
+                           "${_sun_pt}")
+      set(_sun_ver "${_sun_mj}.${_sun_mn}.${_sun_pt}")
+      # deal.II requires deal.II and SUNDIALS to agree on MPI support; otherwise
+      # it silently sets DEAL_II_WITH_SUNDIALS=OFF, which leaves the
+      # dealii::SUNDIALS namespace undefined and breaks our KINSOL/IDA wrappers
+      # at compile time. Probe the system SUNDIALS MPI setting
+      # (sundials_config.h) and require it to match the MPI option this build
+      # passes to deal.II.
+      set(_sun_mpi OFF)
+      if(EXISTS "${_SUN_INC}/sundials/sundials_config.h")
+        file(STRINGS "${_SUN_INC}/sundials/sundials_config.h" _sun_mpi_probe
+             REGEX "#define[ \t]+SUNDIALS_MPI_ENABLED[ \t]+1")
+        if(_sun_mpi_probe)
+          set(_sun_mpi ON)
+        endif()
+      endif()
+      if(MPI)
+        set(_sun_want_mpi ON)
+      else()
+        set(_sun_want_mpi OFF)
+      endif()
+      if(_sun_ver MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+         AND NOT _sun_ver VERSION_LESS ${DiFfRG_SUNDIALS_MIN_VERSION})
+        if(_sun_mpi STREQUAL _sun_want_mpi)
+          set(_sun_ok TRUE)
+        else()
+          set(_sun_mpi_mismatch ON)
+        endif()
+      endif()
+    endif()
+  endif()
+  if(_sun_ok)
+    if(_sun_explicit)
+      set(_sundials_prefix "${SUNDIALS_DIR}")
+    else()
+      get_filename_component(_sundials_prefix "${_SUN_INC}" DIRECTORY)
+    endif()
+    if(_sun_ver VERSION_GREATER ${DiFfRG_SUNDIALS_KNOWN_GOOD_MAX})
+      message(
+        WARNING
+          "Using system SUNDIALS ${_sun_ver}, newer than the last version "
+          "(${DiFfRG_SUNDIALS_KNOWN_GOOD_MAX}) validated with the bundled deal.II. "
+          "If the deal.II build fails, configure with -DBUILD_SUNDIALS=ON.")
+    endif()
+    set(_sundials_status
+        "  ${BoldGreen}[SUNDIALS] Using system SUNDIALS ${_sun_ver} (${_SUN_INC}); skipping bundled build.${ColourReset}"
+    )
+  elseif(_sun_mpi_mismatch)
+    # Found a usable SUNDIALS, but its MPI support does not match MPI=${MPI}.
+    if(_sun_explicit)
+      message(
+        FATAL_ERROR
+          "SUNDIALS_DIR=${SUNDIALS_DIR} provides SUNDIALS ${_sun_ver} built with "
+          "SUNDIALS_MPI_ENABLED=${_sun_mpi}, but DiFfRG is configured with MPI=${MPI}. "
+          "deal.II requires deal.II and SUNDIALS to agree on MPI support.\n"
+          "  Use -DBUILD_SUNDIALS=ON to build a matching bundled SUNDIALS, or point "
+          "SUNDIALS_DIR at a SUNDIALS whose MPI setting matches MPI=${MPI}.")
+    else()
+      set(_sundials_status
+          "  ${BoldYellow}[SUNDIALS] System SUNDIALS ${_sun_ver} (${_SUN_INC}) MPI setting (SUNDIALS_MPI_ENABLED=${_sun_mpi}) does not match MPI=${MPI}; building the bundled SUNDIALS instead. deal.II requires both to agree on MPI.${ColourReset}"
+      )
+      set(_build_sundials ON)
+    endif()
+  elseif(_sun_explicit)
+    if(NOT _sun_reject_reason)
+      set(_sun_reject_reason
+          "the required libraries (arkode, kinsol, nvecserial) or version header were not found"
+      )
+    endif()
+    message(
+      FATAL_ERROR
+        "SUNDIALS_DIR=${SUNDIALS_DIR} is not usable: ${_sun_reject_reason}.\n"
+        "  Use -DBUILD_SUNDIALS=ON to build the bundled SUNDIALS instead.")
+  else()
+    if(_sun_reject_reason)
+      set(_sundials_status
+          "  ${BoldYellow}[SUNDIALS] Ignoring system SUNDIALS (${_sun_reject_reason}); building the bundled copy.${ColourReset}"
+      )
+    endif()
+    set(_build_sundials ON)
+  endif()
+endif()
+
+if(_build_sundials)
+  set(_sundials_prefix "${DEPEND_INSTALL_PREFIX}")
+  set(_sundials_dep sundials_dep)
+endif()
+
+# deal.II's FindSUNDIALS, when handed an explicit SUNDIALS_DIR, searches only
+# <DIR>/lib and <DIR>/lib64 -- it misses Debian/Ubuntu multiarch paths such as
+# /usr/lib/x86_64-linux-gnu, so it finds the headers but not the libraries and
+# then *silently* disables SUNDIALS (it is auto/optional). DiFfRG, however,
+# requires it (SUNDIALS::KINSOL/IDA), so that failure only surfaces later when
+# kinsol.cc fails to compile. Therefore: only hand deal.II the hint for a
+# bundled build or an explicit -DSUNDIALS_DIR (both have a plain lib/); for an
+# auto-detected system install, omit the hint and let deal.II's standard,
+# multiarch-aware search locate the libraries.
+if(_build_sundials OR _sun_explicit)
+  set(_dealii_sundials_arg "-DSUNDIALS_DIR:STRING=${_sundials_prefix}")
+else()
+  set(_dealii_sundials_arg "")
+endif()
+
 message("${BoldCyan}[1/8] Configuring HDF5...${ColourReset}")
-ExternalProject_Add(
-  hdf5_dep
-  LOG_CONFIGURE ON
-  LOG_OUTPUT_ON_FAILURE ON
-  BUILD_COMMAND cmake -E echo "Skipping build step for hdf5."
-  INSTALL_COMMAND cmake -E echo "Skipping install step for hdf5."
-  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/hdf5
-  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/hdf5
-  INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  # Propagate DEPEND_INSTALL_PREFIX to the dependencies
-  CMAKE_CACHE_ARGS
-    -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
-    -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
-    -DCMAKE_CXX_FLAGS:STRING=-march=native
-    -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
-    -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-    ${CCACHE_CMAKE_ARGS}
-    -DMPI:BOOL=${MPI})
+if(_build_hdf5)
+  ExternalProject_Add(
+    hdf5_dep
+    LOG_CONFIGURE ON
+    LOG_OUTPUT_ON_FAILURE ON
+    BUILD_COMMAND cmake -E echo "Skipping build step for hdf5."
+    INSTALL_COMMAND cmake -E echo "Skipping install step for hdf5."
+    PREFIX ${CMAKE_CURRENT_BINARY_DIR}/hdf5
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/hdf5
+    INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+    # Propagate DEPEND_INSTALL_PREFIX to the dependencies
+    CMAKE_CACHE_ARGS
+      -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
+      -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
+      ${_native_cxx_arg}
+      -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
+      -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+      ${CCACHE_CMAKE_ARGS}
+      -DMPI:BOOL=${MPI})
+else()
+  message(${_hdf5_status})
+endif()
 
 message(
   "${BoldCyan}[2/8] Configuring general dependencies (TBB, Eigen3, spdlog, ...)...${ColourReset}"
 )
+if(NOT _build_tbb)
+  message(${_tbb_status})
+endif()
 ExternalProject_Add(
   general_dep
   LOG_CONFIGURE ON
@@ -305,17 +729,18 @@ ExternalProject_Add(
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/general
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/general
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  DEPENDS hdf5_dep
+  DEPENDS ${_hdf5_dep}
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
   CMAKE_CACHE_ARGS
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
     -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
-    -DCMAKE_CXX_FLAGS:STRING=-march=native
+    ${_native_cxx_arg}
     -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
     -DCPM_SOURCE_CACHE:PATH=${CMAKE_CURRENT_BINARY_DIR}/cpm-cache
     ${CCACHE_CMAKE_ARGS}
     -DBUILD_OpenBLAS:BOOL=${BUILD_OpenBLAS}
+    -DGENERAL_BUILD_TBB:BOOL=${_build_tbb}
     -DCMAKE_PREFIX_PATH:PATH=${DEPEND_INSTALL_PREFIX}
     -DMPI:BOOL=${MPI})
 
@@ -329,24 +754,29 @@ if(BUILD_OpenBLAS)
 endif()
 
 message("${BoldCyan}[3/8] Configuring SUNDIALS...${ColourReset}")
-ExternalProject_Add(
-  sundials_dep
-  LOG_CONFIGURE ON
-  LOG_INSTALL ON
-  LOG_OUTPUT_ON_FAILURE ON
-  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/sundials
-  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/sundials
-  INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  # Propagate DEPEND_INSTALL_PREFIX to the dependencies
-  CMAKE_CACHE_ARGS
-    -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
-    -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
-    -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
-    -DCMAKE_CXX_FLAGS:STRING=-march=native
-    -DCMAKE_C_FLAGS:STRING=-march=native
-    -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-    ${CCACHE_CMAKE_ARGS}
-    -DMPI:BOOL=${MPI})
+if(_sundials_status)
+  message(${_sundials_status})
+endif()
+if(_build_sundials)
+  ExternalProject_Add(
+    sundials_dep
+    LOG_CONFIGURE ON
+    LOG_INSTALL ON
+    LOG_OUTPUT_ON_FAILURE ON
+    PREFIX ${CMAKE_CURRENT_BINARY_DIR}/sundials
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/sundials
+    INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+    # Propagate DEPEND_INSTALL_PREFIX to the dependencies
+    CMAKE_CACHE_ARGS
+      -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
+      -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
+      -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
+      ${_native_cxx_arg}
+      ${_native_c_arg}
+      -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+      ${CCACHE_CMAKE_ARGS}
+      -DMPI:BOOL=${MPI})
+endif()
 
 message("${BoldCyan}[4/8] Configuring autodiff...${ColourReset}")
 ExternalProject_Add(
@@ -359,31 +789,42 @@ ExternalProject_Add(
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
   DEPENDS general_dep
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
-  CMAKE_CACHE_ARGS -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
-                   -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-                   ${CCACHE_CMAKE_ARGS})
+  CMAKE_CACHE_ARGS
+    -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
+    -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX} ${CCACHE_CMAKE_ARGS})
 
 message("${BoldCyan}[5/8] Configuring Boost...${ColourReset}")
-ExternalProject_Add(
-  boost_dep
-  LOG_CONFIGURE ON
-  LOG_INSTALL ON
-  LOG_OUTPUT_ON_FAILURE ON
-  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/boost
-  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/boost
-  INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
-             -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
-             -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
-  # Propagate DEPEND_INSTALL_PREFIX to the dependencies
-  CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-                   -DCCACHE_PROGRAM:STRING=${CCACHE_PROGRAM})
+# Boost selection was resolved above; only register the bundled build if needed.
+if(_build_boost)
+  ExternalProject_Add(
+    boost_dep
+    LOG_CONFIGURE ON
+    LOG_INSTALL ON
+    LOG_OUTPUT_ON_FAILURE ON
+    PREFIX ${CMAKE_CURRENT_BINARY_DIR}/boost
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/boost
+    INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
+               -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
+               -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
+    # Propagate DEPEND_INSTALL_PREFIX to the dependencies
+    CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+                     -DCCACHE_PROGRAM:STRING=${CCACHE_PROGRAM})
+else()
+  message(${_boost_status})
+endif()
 
 # ##############################################################################
 # Kokkos
 # ##############################################################################
 
-if(NOT DEFINED Kokkos_ARCH)
+message("${BoldCyan}[6/8] Configuring Kokkos...${ColourReset}")
+
+# Kokkos_ARCH_NATIVE is Kokkos' *host* -march=native switch (cmake/kokkos_arch.cmake:
+# it adds -march=native -mtune=native to the host compiler), so it must follow the
+# NATIVE option -- otherwise the bundled Kokkos objects bake in the build machine's
+# ISA (e.g. AVX-512) and crash on lesser hardware. GPU archs come from Kokkos_ARCH_LIST.
+if(NATIVE AND NOT DEFINED Kokkos_ARCH)
   set(Kokkos_ARCH_NATIVE
       ON
       CACHE BOOL "Enable Kokkos native architecture")
@@ -395,7 +836,7 @@ endif()
 
 if(NOT DEFINED Kokkos_ARCH_LIST)
   message(
-    "  ${BoldYellow}Kokkos_ARCH_LIST not set. GPU architecture must be detectable when building Kokkos.${ColourReset}"
+    "  ${BoldYellow}[Kokkos] Kokkos_ARCH_LIST not set. GPU architecture must be detectable when building Kokkos.${ColourReset}"
   )
   set(Kokkos_ARCH_LIST "")
 else()
@@ -408,14 +849,13 @@ else()
   string(SUBSTRING "${Kokkos_ARCH_LIST}" 0 -1 Kokkos_ARCH_LIST)
 endif()
 
-message("${BoldCyan}[6/8] Configuring Kokkos...${ColourReset}")
 ExternalProject_Add(
   kokkos_dep
   LOG_CONFIGURE ON
   LOG_INSTALL ON
   LOG_OUTPUT_ON_FAILURE ON
   GIT_REPOSITORY https://github.com/kokkos/kokkos.git
-  GIT_TAG 5.0.1
+  GIT_TAG 5.1.1
   GIT_SHALLOW ON
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/kokkos
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
@@ -432,7 +872,11 @@ ExternalProject_Add(
     -DCMAKE_CUDA_COMPILER:STRING=${CMAKE_CUDA_COMPILER}
     -DKokkos_ENABLE_CUDA:BOOL=${HAVE_CUDA}
     -DKokkos_ENABLE_CUDA_CONSTEXPR:BOOL=${HAVE_CUDA}
-    -DKokkos_ENABLE_CUDA_RELOCATABLE_DEVICE_CODE:BOOL=${HAVE_CUDA}
+    -DKokkos_ENABLE_CUDA_RELOCATABLE_DEVICE_CODE:BOOL=OFF
+    # deal.II 9.7.1 uses the deprecated Kokkos::View<>::HostMirror alias, which
+    # Kokkos 5.x gates behind DEPRECATED_CODE_4. Re-enable it so the bundled
+    # deal.II compiles against Kokkos 5.1.1.
+    -DKokkos_ENABLE_DEPRECATED_CODE_4:BOOL=ON
     -DKokkos_ENABLE_HIP:BOOL=${HAVE_HIP}
     -DKokkos_ENABLE_OPENMP:BOOL=OFF
     -DKokkos_ENABLE_THREADS:BOOL=${HAVE_THREADS}
@@ -444,7 +888,6 @@ ExternalProject_Add(
 # ##############################################################################
 
 option(BUILD_PETSC "Build PETSc" OFF)
-option(PETSC_WITH_CLEAN "Force PETSc to clean its build and external packages before configure" OFF)
 
 if(BUILD_PETSC)
   # build PETSc
@@ -453,7 +896,7 @@ if(BUILD_PETSC)
     LOG_CONFIGURE ON
     LOG_INSTALL ON
     LOG_OUTPUT_ON_FAILURE ON
-    DEPENDS general_dep sundials_dep autodiff_dep kokkos_dep
+    DEPENDS general_dep # sundials_dep autodiff_dep kokkos_dep
     PREFIX ${CMAKE_CURRENT_BINARY_DIR}/petsc
     SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/petsc
     INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
@@ -463,20 +906,16 @@ if(BUILD_PETSC)
     # Propagate DEPEND_INSTALL_PREFIX to the dependencies
     CMAKE_CACHE_ARGS
       -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-      -DOpenBLAS_LIBRARY:STRING=${BLAS_LIBRARY_PATH}
-      -DPETSC_WITH_CLEAN:BOOL=${PETSC_WITH_CLEAN}
-      -DHAVE_MPI:BOOL=${MPI})
+      -DNATIVE:BOOL=${NATIVE}
+      -DOpenBLAS_LIBRARY:STRING=${BLAS_LIBRARY_PATH} -DHAVE_MPI:BOOL=${MPI})
   set(is_petsc_dep petsc_dep)
-  set(dealii_petsc_args
-      -DDEAL_II_WITH_PETSC:BOOL=ON -DPETSC_DIR:PATH=${DEPEND_INSTALL_PREFIX}
-      -DPETSC_ARCH:STRING=arch-linux-c-opt)
-else()
-  set(dealii_petsc_args -DDEAL_II_WITH_PETSC:BOOL=OFF)
 endif()
 
 # ##############################################################################
 # deal.II
 # ##############################################################################
+
+message("${BoldCyan}[7/8] Configuring deal.II...${ColourReset}")
 
 if(BUILD_OpenBLAS)
   set(dealii_lapack "-DLAPACK_LIBRARIES:STRING=${BLAS_LIBRARY_PATH}")
@@ -498,7 +937,9 @@ if(_half_cores LESS 1)
   set(_half_cores 1)
 endif()
 # Use the lesser of half cores, RAM-based limit, and hard cap
-set(DEALII_MAX_JOBS 16 CACHE STRING "Maximum parallel jobs for deal.II build")
+set(DEALII_MAX_JOBS
+    16
+    CACHE STRING "Maximum parallel jobs for deal.II build")
 set(_dealii_jobs ${_half_cores})
 if(_max_threads_by_ram LESS _dealii_jobs)
   set(_dealii_jobs ${_max_threads_by_ram})
@@ -507,7 +948,7 @@ if(_dealii_jobs GREATER ${DEALII_MAX_JOBS})
   set(_dealii_jobs ${DEALII_MAX_JOBS})
 endif()
 message(
-  "  deal.II build parallelism: ${_dealii_jobs} threads (${_total_ram_mb} MB RAM, ${_nproc} cores)"
+  "  ${BoldGreen}[deal.II] build parallelism: ${_dealii_jobs} threads (${_total_ram_mb} MB RAM, ${_nproc} cores).${ColourReset}"
 )
 
 option(DEVEL "Enable development mode (deal.II DebugRelease build)" OFF)
@@ -517,24 +958,25 @@ else()
   set(dealiiConfig "Release")
 endif()
 
-message("${BoldCyan}[7/8] Configuring deal.II...${ColourReset}")
-# build deal.II
-find_program(PATCH_EXECUTABLE patch REQUIRED)
-
 ExternalProject_Add(
   deal.II_dep
   LOG_CONFIGURE ON
   LOG_INSTALL ON
   LOG_OUTPUT_ON_FAILURE ON
   GIT_REPOSITORY https://github.com/dealii/dealii.git
-  GIT_TAG v9.4.2
+  GIT_TAG v9.7.1
   GIT_SHALLOW ON
+  # Patch deal.II 9.7.1 for clang-CUDA + Kokkos 5.x + Boost 1.9x (see
+  # patches/dealii-9.7.1-clang-cuda.patch and deal.II issue #18797). Idempotent:
+  # if already applied, the reverse --check succeeds so re-runs and re-clones
+  # are both safe. sh -c keeps it working on Linux and macOS.
+  PATCH_COMMAND
+    sh -c
+    "git apply --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-clang-cuda.patch' || git apply --reverse --check --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-clang-cuda.patch'"
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/deal.II
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+  DEPENDS general_dep ${_boost_dep} ${is_petsc_dep} ${_sundials_dep}
   BUILD_COMMAND cmake --build . -- -j${_dealii_jobs}
-  PATCH_COMMAND ${PATCH_EXECUTABLE} -p1 -i
-                ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/dealii_ida_max_num_steps.patch
-  DEPENDS general_dep boost_dep ${is_petsc_dep} sundials_dep
   CMAKE_CACHE_ARGS
     -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
     -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
@@ -542,31 +984,120 @@ ExternalProject_Add(
     -DCMAKE_BUILD_TYPE:STRING=${dealiiConfig}
     -DCMAKE_POLICY_VERSION_MINIMUM:STRING=3.5
     -DCMAKE_POLICY_DEFAULT_CMP0167:STRING=NEW
+    -DDEAL_II_UNITY_BUILD:BOOL=ON
     -DCMAKE_WARN_DEPRECATED:BOOL=OFF
-    -DDEAL_II_CXX_FLAGS:STRING=-march=native
+    ${_native_dealii_arg}
     -DDEAL_II_COMPONENT_EXAMPLES:BOOL=OFF
     -DDEAL_II_COMPONENT_DOCUMENTATION:BOOL=OFF
     -DDEAL_II_WITH_MPI:BOOL=${MPI}
-    -DDEAL_II_WITH_KOKKOS:BOOL=OFF
+    -DDEAL_II_WITH_KOKKOS:BOOL=ON
     -DDEAL_II_WITH_UMFPACK:BOOL=ON
     -DDEAL_II_WITH_TASKFLOW:BOOL=OFF
     ${dealii_lapack}
     -DDEAL_II_WITH_LAPACK:BOOL=ON
     -DDEAL_II_WITH_HDF5:BOOL=OFF
-    ${dealii_petsc_args}
-    -DCMAKE_CXX_STANDARD:STRING=17
+    -DDEAL_II_WITH_VTK:BOOL=OFF
+    -DPETSC_DIR:PATH=${DEPEND_INSTALL_PREFIX}
+    -DPETSC_ARCH:STRING=arch-linux-c-opt
+    -DCMAKE_CXX_STANDARD:STRING=20
     -DCMAKE_CXX_EXTENSIONS:BOOL=OFF
-    -DTBB_DIR:STRING=${DEPEND_INSTALL_PREFIX}
-    -DSUNDIALS_DIR:STRING=${DEPEND_INSTALL_PREFIX}
-    -DBOOST_DIR:STRING=${DEPEND_INSTALL_PREFIX}
-    -DBOOST_INCLUDEDIR:PATH=${DEPEND_INSTALL_PREFIX}/include
-    -DBOOST_LIBRARYDIR:PATH=${DEPEND_INSTALL_PREFIX}/lib
+    -DKOKKOS_DIR:STRING=${DEPEND_INSTALL_PREFIX}
+    -DTBB_DIR:STRING=${_tbb_dir}
+    # Required by DiFfRG -- force ON so an unusable SUNDIALS fails here at
+    # configure rather than silently disabling and breaking kinsol.cc later.
+    -DDEAL_II_WITH_SUNDIALS:BOOL=ON
+    ${_dealii_sundials_arg}
+    -DBOOST_ROOT:PATH=${_boost_root}
+    -DBOOST_DIR:STRING=${_boost_root}
+    -DBOOST_INCLUDEDIR:PATH=${_boost_incdir}
+    -DBOOST_LIBRARYDIR:PATH=${_boost_libdir}
+    ${_boost_extra_args}
     -DCMAKE_PREFIX_PATH:STRING=${DEPEND_INSTALL_PREFIX}
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
     ${CCACHE_CMAKE_ARGS})
 
 # create a directory necessary for using deal.II
 file(MAKE_DIRECTORY ${DEPEND_INSTALL_PREFIX}/include/deal.II/bundled)
+
+# ##############################################################################
+# Pin resolved dependencies for standalone library rebuilds
+# ##############################################################################
+#
+# Record exactly which Boost/TBB/HDF5 this superbuild resolved (system vs
+# bundled) into a small CMake snippet inside the bundle dir. A later standalone
+# library build (cd DiFfRG && cmake .. -DBUNDLED_DIR=...) and downstream
+# find_package(DiFfRG) consumers include it (see
+# DiFfRG/cmake/setup_build_system.cmake) so they reuse exactly these
+# dependencies instead of re-running find_package and possibly latching onto a
+# different system install or a stray copy in the bundle dir.
+#
+# Written at configure time (file(WRITE) creates missing parents) and
+# overwritten on every configure, so switching system<->bundled regenerates a
+# correct pin. Pinned hint variables are guarded with if(NOT DEFINED ...) so an
+# explicit -DBOOST_ROOT=/-DTBB_DIR=/-DHDF5_DIR= on the command line still wins.
+
+# Bundled Boost builds Boost itself, so its version is not yet known via
+# find_package; read it from the bundled source. For a system Boost we already
+# have Boost_VERSION.
+set(_pinned_boost_version "${Boost_VERSION}")
+if(_build_boost)
+  file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/boost/CMakeLists.txt"
+       _boost_ver_line REGEX "set\\(TRY_BOOST_VERSION")
+  if(_boost_ver_line)
+    string(REGEX REPLACE ".*\"([0-9]+\\.[0-9]+\\.[0-9]+)\".*" "\\1"
+                         _pinned_boost_version "${_boost_ver_line}")
+  endif()
+endif()
+
+set(_pin_content
+    "# Auto-generated by the DiFfRG superbuild -- do not edit.
+# Pins the Boost/TBB/HDF5 the superbuild resolved so a standalone library
+# rebuild given this bundle dir reuses exactly the same dependencies.
+# if(NOT DEFINED) guards let an explicit -DX= on the command line override.
+
+")
+
+# Boost: always pin BOOST_ROOT. For a system Boost also pin the exact
+# BoostConfig.cmake dir (Boost_DIR) -- with CMP0167 NEW, config-mode
+# find_package then resolves straight to it and ignores HINTS/CMAKE_PREFIX_PATH,
+# so a stray Boost in the bundle dir is never picked up.
+string(APPEND _pin_content
+       "if(NOT DEFINED BOOST_ROOT)\n  set(BOOST_ROOT \"${_boost_root}\")\nendif()\n")
+if(NOT _build_boost)
+  string(APPEND _pin_content
+         "if(NOT DEFINED Boost_DIR)\n  set(Boost_DIR \"${Boost_DIR}\")\nendif()\n")
+endif()
+string(APPEND _pin_content
+       "set(DiFfRG_PINNED_BOOST_VERSION \"${_pinned_boost_version}\")\n\n")
+
+# TBB: pin the config dir (bundled prefix or discovered TBBConfig.cmake dir).
+string(APPEND _pin_content
+       "if(NOT DEFINED TBB_DIR)\n  set(TBB_DIR \"${_tbb_dir}\")\nendif()\n")
+if(NOT _build_tbb)
+  string(APPEND _pin_content
+         "set(DiFfRG_PINNED_TBB_VERSION \"${TBB_VERSION}\")\n")
+endif()
+string(APPEND _pin_content "\n")
+
+# HDF5: only a system HDF5 needs pinning (bundled lives in BUNDLED_DIR and is
+# found by HINTS). Mirror the config-mode (HDF5_DIR) vs module-mode (HDF5_ROOT)
+# branch used above for the DiFfRG ExternalProject.
+if(NOT _build_hdf5)
+  if(HDF5_DIR AND NOT "${HDF5_DIR}" STREQUAL "HDF5_DIR-NOTFOUND")
+    string(APPEND _pin_content
+           "if(NOT DEFINED HDF5_DIR)\n  set(HDF5_DIR \"${HDF5_DIR}\")\nendif()\n")
+  else()
+    string(APPEND _pin_content
+           "if(NOT DEFINED HDF5_ROOT)\n  set(HDF5_ROOT \"${_hdf5_loc}\")\nendif()\n")
+  endif()
+  string(APPEND _pin_content
+         "set(DiFfRG_PINNED_HDF5_VERSION \"${HDF5_VERSION}\")\n")
+endif()
+
+file(WRITE "${DEPEND_INSTALL_PREFIX}/DiFfRG_bundled_config.cmake" "${_pin_content}")
+message(
+  "  ${BoldGreen}[pin] Recorded resolved dependencies in ${DEPEND_INSTALL_PREFIX}/DiFfRG_bundled_config.cmake${ColourReset}"
+)
 
 # ##############################################################################
 # DiFfRG
@@ -581,12 +1112,17 @@ ExternalProject_Add(
   SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/DiFfRG/
   INSTALL_DIR ${CMAKE_INSTALL_PREFIX}
-  DEPENDS general_dep boost_dep deal.II_dep kokkos_dep autodiff_dep
+  DEPENDS general_dep ${_boost_dep} deal.II_dep kokkos_dep autodiff_dep
   CMAKE_CACHE_ARGS
     -DMPI:BOOL=${MPI}
     -DHDF5:BOOL=ON
     -DBUNDLED_DIR:PATH=${DEPEND_INSTALL_PREFIX}
+    -DBOOST_ROOT:PATH=${_boost_root}
+    ${_boost_extra_args}
+    -DTBB_DIR:STRING=${_tbb_dir}
+    ${_hdf5_extra_args}
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
+    -DNATIVE:BOOL=${NATIVE}
     -DDiFfRG_TEST:BOOL=${DiFfRG_TEST}
     -DDiFfRG_DOCUMENTATION:BOOL=${DiFfRG_DOCUMENTATION}
     -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_INSTALL_PREFIX})

@@ -26,21 +26,28 @@ if("${CPM_SOURCE_CACHE}" STREQUAL "OFF" OR NOT DEFINED CPM_SOURCE_CACHE)
   set(CPM_SOURCE_CACHE $ENV{HOME}/.cache/CPM)
 endif()
 
-# oneTBB
-message(STATUS "Adding oneTBB...")
-cpmaddpackage(
-  NAME
-  oneTBB
-  VERSION
-  2022.1.0
-  OPTIONS
-  "CMAKE_CXX_STANDARD 20"
-  "CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE}"
-  "TBB_TEST OFF"
-  GITHUB_REPOSITORY
-  uxlfoundation/oneTBB
-  GIT_TAG
-  v2022.1.0)
+# oneTBB — skipped when the top-level build resolved a system TBB
+# (GENERAL_BUILD_TBB=OFF). Defaults ON so a standalone general_dep build still
+# produces TBB.
+option(GENERAL_BUILD_TBB "Build the bundled oneTBB" ON)
+if(GENERAL_BUILD_TBB)
+  message(STATUS "Adding oneTBB...")
+  cpmaddpackage(
+    NAME
+    oneTBB
+    VERSION
+    2022.1.0
+    OPTIONS
+    "CMAKE_CXX_STANDARD 20"
+    "CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE}"
+    "TBB_TEST OFF"
+    GITHUB_REPOSITORY
+    uxlfoundation/oneTBB
+    GIT_TAG
+    v2022.1.0)
+else()
+  message(STATUS "Skipping bundled oneTBB build (using system TBB).")
+endif()
 
 option(BUILD_OpenBLAS "Build OpenBLAS" ON)
 
