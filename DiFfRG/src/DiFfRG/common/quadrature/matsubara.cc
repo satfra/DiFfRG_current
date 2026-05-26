@@ -117,7 +117,7 @@ namespace DiFfRG
 
     // strategy: divide into two parts, one with linear and one with logarithmic scaling
     // the dividing point is somewhat above the typical energy scale
-    const long double div = 3 * abs(typical_E);
+    const long double div = 3 * std::abs(typical_E);
 
     // the nodes with a linear scale
     for (int i = 0; i < m_size / 3 * 2; ++i) {
@@ -127,7 +127,7 @@ namespace DiFfRG
 
     // the nodes with a logarithmic scale
     using std::log, std::exp, std::abs, std::min;
-    const long double extent = 1e11 * abs(typical_E);
+    const long double extent = 1e11 * std::abs(typical_E);
     const long double log_start = log(div);
     const long double log_ext = log(extent / div);
     for (int i = 0; i < m_size / 3; ++i) {

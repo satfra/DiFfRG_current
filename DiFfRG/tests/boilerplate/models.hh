@@ -400,5 +400,83 @@ namespace DiFfRG
       double solution(const Point<dim> & /*pos*/) const { return u_exact(t); }
       double variable_solution() const { return v_exact(t); }
     };
+
+    // A two-way coupled model in which the EXPLICIT variable only WEAKLY depends on the
+    // implicit (spatial) block: the FEM source still reads v at full strength (so serving v
+    // back to IDA matters), but v's own residual reads u scaled by a small eps. This mimics
+    // a regime where the expensive explicit sector is nearly autonomous w.r.t. the cheap
+    // implicit one. With weak arrow-1 coupling, the explicit trajectory is robust to small
+    // errors in the spatial data fed into it -- the failure mode that destabilises the
+    // single-buffer stagger (mode 1) -- so this isolates how the serving choice (predictor
+    // vs lookahead) affects the *implicit* accuracy.
+    //
+    // FEM:        du/dt = -K (u - v)            (source reads v via extractor[1], full K)
+    // variable:   dv/dt = +eps K (u - v)        (residual reads u via extractor[0], weak)
+    //
+    // With w = u - v:  dw/dt = -K(1+eps) w  =>  w(t) = w0 exp(-K(1+eps) t),  w0 = u0 - v0.
+    //   u(t) = u0 - (w0/(1+eps)) (1 - exp(-K(1+eps) t))
+    //   v(t) = v0 + (eps w0/(1+eps)) (1 - exp(-K(1+eps) t))
+    template <uint dim>
+    class ModelHybridWeakCoupling
+        : public def::AbstractModel<
+              ModelHybridWeakCoupling<dim>,
+              ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>, VariableDescriptor<Scalar<"v">>,
+                                  ExtractorDescriptor<Scalar<"u_eom">, Scalar<"v_eom">>>>,
+          public def::Time,                                  // this handles time
+          public def::NoNumFlux<ModelHybridWeakCoupling<dim>>,
+          public def::FlowBoundaries<ModelHybridWeakCoupling<dim>>,
+          public def::AD<ModelHybridWeakCoupling<dim>>
+    {
+    public:
+      static constexpr double K = 5.;
+      static constexpr double eps = 0.1; // weak dependence of the explicit variable on u
+      static constexpr double u0 = 1.;
+      static constexpr double v0 = 0.;
+
+      const PhysicalParameters prm;
+      ModelHybridWeakCoupling(PhysicalParameters prm) : prm(prm) {}
+
+      static double g(double tt) { return 1. - std::exp(-K * (1. + eps) * tt); }
+      static double u_exact(double tt) { return u0 - ((u0 - v0) / (1. + eps)) * g(tt); }
+      static double v_exact(double tt) { return v0 + (eps * (u0 - v0) / (1. + eps)) * g(tt); }
+
+      template <typename Vector> void initial_condition(const Point<dim> & /*pos*/, Vector &values) const
+      {
+        values[0] = u0;
+      }
+      template <typename Vector> void initial_condition_variables(Vector &values) const { values[0] = v0; }
+
+      // du/dt = -K (u - v);  residual convention is u_dot = -source, source = K (u - v).
+      template <typename NT, typename Solution>
+      void source(std::array<NT, 1> &s_i, const Point<dim> & /*p*/, const Solution &sol) const
+      {
+        const auto u = get<0>(sol)[0];
+        const auto v = get<"extractors">(sol)[1];
+        s_i[0] = K * (u - v);
+      }
+
+      template <int d, typename Vector> std::array<double, 1> EoM(const Point<d> &x, const Vector & /*u*/) const
+      {
+        return {{x[0] - 0.5}};
+      }
+
+      template <typename NT, typename Solution>
+      void extract(std::array<NT, 2> &extractors, const Point<dim> & /*x*/, const Solution &sol) const
+      {
+        extractors[0] = get<"fe_functions">(sol)[0];
+        extractors[1] = get<"variables">(sol)[0];
+      }
+
+      // dv/dt = +eps K (u - v);  residual convention is v_dot = -r_a.
+      template <typename Vector, typename Solution> void dt_variables(Vector &r_a, const Solution &sol) const
+      {
+        const auto u = get<"extractors">(sol)[0];
+        const auto v = get<"variables">(sol)[0];
+        r_a[0] = -eps * K * (u - v);
+      }
+
+      double solution(const Point<dim> & /*pos*/) const { return u_exact(t); }
+      double variable_solution() const { return v_exact(t); }
+    };
   } // namespace Testing
 } // namespace DiFfRG

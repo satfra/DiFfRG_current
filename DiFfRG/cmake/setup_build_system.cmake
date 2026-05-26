@@ -21,6 +21,14 @@ else()
   set(BASE_DIR ${DiFfRG_BASE_DIR})
 endif()
 
+# Whether to optimize for the build machine's CPU (-march=native). Defaults ON;
+# the superbuild forwards -DNATIVE=OFF for portable/CI builds. Kept in sync with
+# the top-level option so a standalone library build behaves identically.
+option(NATIVE "Optimize for the build machine's CPU (-march=native). Disable for portable binaries." ON)
+if(COMMAND diffrg_report_native)
+  diffrg_report_native(${NATIVE} "${CMAKE_CXX_COMPILER}")
+endif()
+
 # ##############################################################################
 # Validate BUNDLED_DIR
 # ##############################################################################
@@ -67,6 +75,31 @@ if(NOT EXISTS "${BUNDLED_DIR}")
 endif()
 
 set(CMAKE_PREFIX_PATH "${BUNDLED_DIR};${BUNDLED_DIR}/lib;${CMAKE_PREFIX_PATH}")
+
+# ##############################################################################
+# Pinned dependency configuration
+# ##############################################################################
+#
+# The superbuild records the Boost/TBB/HDF5 it resolved (system vs bundled) in
+# DiFfRG_bundled_config.cmake inside the bundle dir. Load it before the
+# find_package calls below so this build -- whether a standalone library rebuild
+# or a downstream find_package(DiFfRG) -- reuses exactly those dependencies
+# instead of re-resolving and possibly picking a different system install or a
+# stray copy. The pin uses if(NOT DEFINED) guards, so an explicit -DX= still
+# wins. It also records DiFfRG_PINNED_<X>_VERSION, checked after each find below.
+set(_diffrg_pin "${BUNDLED_DIR}/DiFfRG_bundled_config.cmake")
+if(EXISTS "${_diffrg_pin}")
+  message(STATUS "Loading pinned dependency configuration: ${_diffrg_pin}")
+  include("${_diffrg_pin}")
+endif()
+
+# The pin sets the upper-case BOOST_ROOT (the convention used by the superbuild
+# and deal.II). CMake >= 3.27 only honors upper-case <PKG>_ROOT when CMP0144 is
+# NEW; otherwise find_package ignores it and warns. Opt in here so BOOST_ROOT is
+# respected. Set before find_package(Boost) is invoked below.
+if(POLICY CMP0144)
+  cmake_policy(SET CMP0144 NEW)
+endif()
 
 link_directories(${BUNDLED_DIR}/lib/)
 link_directories(${BUNDLED_DIR}/lib64/)
@@ -154,15 +187,32 @@ diffrg_find_package(deal.II VERSION 9.4.2 HINTS ${BUNDLED_DIR})
 deal_ii_initialize_cached_variables()
 message(STATUS "Found deal.II in  ${deal.II_DIR}")
 
-# Find TBB
-diffrg_find_package(TBB VERSION 2022.0.0 HINTS ${BUNDLED_DIR})
+# Find TBB. TBB_DIR (set by the top-level build, or by the user) selects bundled
+# vs system; DiFfRG requires oneTBB >= 2021.
+diffrg_find_package(TBB VERSION 2021 HINTS ${BUNDLED_DIR})
 message(STATUS "Found TBB in ${TBB_DIR}")
+if(DEFINED DiFfRG_PINNED_TBB_VERSION
+   AND NOT TBB_VERSION VERSION_EQUAL DiFfRG_PINNED_TBB_VERSION)
+  message(
+    WARNING
+      "TBB version drift: the superbuild pinned ${DiFfRG_PINNED_TBB_VERSION} but this build "
+      "found ${TBB_VERSION} (${TBB_DIR}). The dependency changed since the bundle was built. "
+      "If you hit link/ABI errors, rebuild the bundled dependencies.")
+endif()
 
 # Find Kokkos
 diffrg_find_package(Kokkos HINTS ${BUNDLED_DIR})
 message(STATUS "Found Kokkos in ${Kokkos_DIR}")
 
-# Find Boost
+# Find Boost. find_package also honors BOOST_ROOT/Boost_DIR and standard system
+# paths, so a system Boost (selected via BOOST_DIR/BUILD_BOOST in the top-level
+# build) is picked up here when BUNDLED_DIR does not contain one. Use Boost's own
+# BoostConfig.cmake (config mode); the legacy FindBoost module is removed in
+# CMake >= 3.30. Boost has shipped BoostConfig.cmake since 1.70, and DiFfRG
+# requires >= 1.81, so config mode always applies.
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 NEW)
+endif()
 diffrg_find_package(
   Boost
   VERSION
@@ -179,6 +229,18 @@ message(STATUS "Boost version: ${Boost_VERSION}")
 message(STATUS "Boost include dir: ${Boost_INCLUDE_DIRS}")
 message(STATUS "Boost libraries: ${Boost_LIBRARIES}")
 include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
+# Boost is ABI-critical: a version divergence from what the superbuild pinned
+# (e.g. a system Boost upgraded in place after the bundle was built) is a hard
+# error rather than a warning.
+if(DEFINED DiFfRG_PINNED_BOOST_VERSION
+   AND NOT Boost_VERSION VERSION_EQUAL DiFfRG_PINNED_BOOST_VERSION)
+  message(
+    FATAL_ERROR
+      "Boost version mismatch: the superbuild pinned ${DiFfRG_PINNED_BOOST_VERSION} but this "
+      "build found ${Boost_VERSION} (${Boost_DIR}). The dependency changed since the bundle was "
+      "built (e.g. a system upgrade). Rebuild the bundled dependencies, or pass an explicit "
+      "-DBoost_DIR= / -DBOOST_ROOT= pointing at Boost ${DiFfRG_PINNED_BOOST_VERSION}.")
+endif()
 
 # Find Eigen3
 diffrg_find_package(Eigen3 VERSION 3.4.0 HINTS ${BUNDLED_DIR})
@@ -209,10 +271,57 @@ diffrg_find_package(autodiff VERSION 1.1.0 HINTS ${BUNDLED_DIR})
 # Find spdlog
 diffrg_find_package(spdlog VERSION 1.14.1 HINTS ${BUNDLED_DIR})
 
-# Find HDF5 (static, minimal)
-diffrg_find_package(HDF5 VERSION 2.0.0 HINTS ${BUNDLED_DIR})
+# Find HDF5. DiFfRG uses only the HDF5 C API, so 1.12 is the floor. Prefer config
+# mode so the imported targets are exported; HDF5_DIR (set by the top-level build,
+# or by the user) selects bundled vs system. Do not pass the version to
+# find_package: HDF5's config-version file uses a same-major-version policy, so
+# requesting 1.12 would reject a newer 2.x install; gate the version manually.
+# Config mode first (bundled static build + distros that ship a CMake config,
+# e.g. Arch); then module mode (FindHDF5) for config-less system installs
+# (Fedora/Debian/Ubuntu). HDF5_DIR/HDF5_ROOT are set by the top-level build.
+find_package(HDF5 CONFIG QUIET COMPONENTS C HINTS ${BUNDLED_DIR})
+if(NOT HDF5_FOUND OR HDF5_VERSION VERSION_LESS 1.12.0)
+  find_package(HDF5 MODULE QUIET COMPONENTS C)
+endif()
+if(NOT HDF5_FOUND OR HDF5_VERSION VERSION_LESS 1.12.0)
+  message(
+    FATAL_ERROR
+      "\n"
+      "======================================================================\n"
+      "  Required dependency not found: HDF5 >= 1.12 (found '${HDF5_VERSION}')\n"
+      "======================================================================\n"
+      "  CMake could not find an HDF5 (>= 1.12) config in BUNDLED_DIR=${BUNDLED_DIR}\n"
+      "  or via HDF5_DIR. Build the bundled dependencies, install a system HDF5,\n"
+      "  or pass -DHDF5_DIR=<prefix-with-hdf5-config.cmake>.\n"
+      "======================================================================\n")
+endif()
+message(STATUS "HDF5 version: ${HDF5_VERSION}")
 message(STATUS "HDF5 include dir: ${HDF5_INCLUDE_DIRS}")
-add_compile_definitions(H5CPP)
+# Resolve the HDF5 link target: the bundled static build exports hdf5-static;
+# system installs vary (hdf5-shared / hdf5::hdf5 / HDF5::HDF5), or only set vars.
+if(TARGET hdf5-static)
+  set(DiFfRG_HDF5_LIBRARIES hdf5-static)
+elseif(TARGET hdf5::hdf5-static)
+  set(DiFfRG_HDF5_LIBRARIES hdf5::hdf5-static)
+elseif(TARGET hdf5-shared)
+  set(DiFfRG_HDF5_LIBRARIES hdf5-shared)
+elseif(TARGET hdf5::hdf5)
+  set(DiFfRG_HDF5_LIBRARIES hdf5::hdf5)
+elseif(TARGET HDF5::HDF5)
+  set(DiFfRG_HDF5_LIBRARIES HDF5::HDF5)
+else()
+  set(DiFfRG_HDF5_LIBRARIES ${HDF5_C_LIBRARIES} ${HDF5_LIBRARIES})
+  include_directories(SYSTEM ${HDF5_INCLUDE_DIRS})
+endif()
+message(STATUS "HDF5 link target(s): ${DiFfRG_HDF5_LIBRARIES}")
+if(DEFINED DiFfRG_PINNED_HDF5_VERSION
+   AND NOT HDF5_VERSION VERSION_EQUAL DiFfRG_PINNED_HDF5_VERSION)
+  message(
+    WARNING
+      "HDF5 version drift: the superbuild pinned ${DiFfRG_PINNED_HDF5_VERSION} but this build "
+      "found ${HDF5_VERSION}. The dependency changed since the bundle was built. "
+      "If you hit link/ABI errors, rebuild the bundled dependencies.")
+endif()
 
 if(${DiFfRG_MPI})
   find_package(MPI REQUIRED)
@@ -303,14 +412,18 @@ message("")
 function(setup_dealii TARGET)
 
   if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_link_libraries(${TARGET} PUBLIC deal_II.g)
-    target_link_libraries(${TARGET} INTERFACE deal_II.g)
     set(_build "DEBUG")
-  elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
-    target_link_libraries(${TARGET} PUBLIC deal_II)
-    target_link_libraries(${TARGET} INTERFACE deal_II)
+  else()
     set(_build "RELEASE")
   endif()
+
+  # deal.II >= 9.7 renamed its imported targets; the pre-9.7 names deal_II /
+  # deal_II.g no longer exist. Link the config-aware umbrella target
+  # dealii::dealii, which (unlike DEAL_II_INCLUDE_DIRS) also propagates the
+  # include dirs of optional features such as UMFPACK/suitesparse.
+  target_link_libraries(${TARGET} PUBLIC dealii::dealii)
+  target_link_libraries(${TARGET} INTERFACE dealii::dealii)
+
   target_include_directories(${TARGET} SYSTEM PUBLIC ${DEAL_II_INCLUDE_DIRS})
 
   set(_cflags "${DEAL_II_CXX_FLAGS} ${DEAL_II_CXX_FLAGS_${_build}}")
@@ -354,8 +467,15 @@ function(setup_target TARGET)
   endif()
 
   if(NOT ${CMAKE_BUILD_TYPE} STREQUAL Debug)
+    # -march=native only when NATIVE is set (default ON); the fast-math flags are
+    # CPU-portable and always applied in non-Debug builds.
+    if(NATIVE)
+      set(_arch_flag -march=native)
+    else()
+      set(_arch_flag)
+    endif()
     target_compile_options(
-      ${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-march=native -ffast-math
+      ${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:${_arch_flag} -ffast-math
                        -ffp-contract=fast -fno-finite-math-only >)
     target_compile_options(${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:
                                             --use_fast_math>)

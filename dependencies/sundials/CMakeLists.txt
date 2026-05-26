@@ -30,7 +30,7 @@ cpmaddpackage(
   NAME
   sundials
   VERSION
-  6.7.0
+  7.7.0
   OPTIONS
   "ENABLE_MPI ${MPI}"
   "CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE}"
@@ -39,4 +39,4 @@ cpmaddpackage(
   GITHUB_REPOSITORY
   LLNL/sundials
   GIT_TAG
-  v6.7.0)
+  v7.7.0)

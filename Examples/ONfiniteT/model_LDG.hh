@@ -12,13 +12,14 @@ struct Parameters {
       Lambda = value.get_double("/physical/Lambda");
       N = value.get_double("/physical/N");
       T = value.get_double("/physical/T");
-      lambda = value.get_double("/physical/lambda");
-      m2 = value.get_double("/physical/m2");
+      lambda2 = value.get_double("/physical/lambda2");
+      lambda4 = value.get_double("/physical/lambda4");
+      lambda6 = value.get_double("/physical/lambda6");
     } catch (std::exception &e) {
       std::cout << "Error in reading parameters: " << e.what() << std::endl;
     }
   }
-  double Lambda, N, T, lambda, m2;
+  double Lambda, N, T, lambda2, lambda4, lambda6;
 };
 
 // As for components, we have one FE function (u) and no extractors or variables.
@@ -70,7 +71,7 @@ public:
   template <typename Vector> void initial_condition(const Point<dim> &pos, Vector &values) const
   {
     const auto &rho = pos[0];
-    values[idxf("u")] = prm.m2 + prm.lambda / 2. * rho;
+    values[idxf("u")] = prm.lambda2 + prm.lambda4 * rho + prm.lambda6 * powr<2>(rho);
   }
 
   void set_time(double t_)

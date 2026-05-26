@@ -17,16 +17,6 @@
 TEST_CASE("Test HDF5 output", "[output][hdf5]")
 {
   DiFfRG::Init();
-#ifndef H5CPP
-  HDF5Output hdf5_output(tmp.string(), hdf5FileName, json);
-
-  // Output should throw an error if H5CPP is not enabled
-  REQUIRE_THROWS_AS(hdf5_output.scalar("d", 42.0), std::runtime_error);
-  REQUIRE_THROWS_AS(hdf5_output.map("coords", DiFfRG::Coordinates1D<double>({0.0, 1.0})), std::runtime_error);
-  REQUIRE_NOTHROW(hdf5_output.flush());
-
-  exit(0);
-#endif
 
   using namespace dealii;
   using namespace DiFfRG;
@@ -288,7 +278,9 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
       std::vector<device::array<double, 1>> log_data(coord_size);
       log_dataset.read(log_data);
       for (size_t i = 0; i < coord_size; ++i) {
-        REQUIRE(log_data[i][0] == log_coords.forward(i));
+        // forward() is recomputed here rather than read back bit-for-bit, so allow a tiny
+        // (ULP-level) numerical difference instead of exact equality.
+        REQUIRE(is_close(log_data[i][0], log_coords.forward(i), 1e-14));
       }
 
       spdlog::get("log")->info("checking loglog coordinates...");
@@ -297,7 +289,9 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
       std::vector<device::array<double, 2>> loglog_data(coord_size * coord_size);
       loglog_dataset.read(loglog_data);
       for (size_t i = 0; i < loglog_coords.size(); ++i) {
-        REQUIRE(loglog_data[i] == loglog_coords.forward(loglog_coords.from_linear_index(i)));
+        const auto lc = loglog_coords.forward(loglog_coords.from_linear_index(i));
+        REQUIRE(is_close(loglog_data[i][0], lc[0], 1e-14));
+        REQUIRE(is_close(loglog_data[i][1], lc[1], 1e-14));
       }
 
       spdlog::get("log")->info("checking spline map...");

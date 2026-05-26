@@ -5,8 +5,6 @@
 #include <DiFfRG/common/polynomials.hh>
 #include <DiFfRG/physics/loop_integrals.hh>
 
-#include <boost/math/special_functions/zeta.hpp>
-
 #include <cmath>
 
 using namespace DiFfRG;
@@ -223,7 +221,7 @@ TEMPLATE_TEST_CASE_SIG("Test momentum integrals with matsubara sum",
   coeff_integrand[ds - 1] = 1.;
   square_poly *= Polynomial(coeff_integrand);
   const double reference_integral = S_ds(ds) * square_poly.integral(0., q_extent) / powr<ds>(2. * M_PI) *
-                                    (1. + 2. * boost::math::zeta(zeta_val)) * T_val;
+                                    (1. + 2. * std::riemann_zeta(zeta_val)) * T_val;
 
   const QGauss<1> x_quadrature(64);
   const QGauss<1> q0_quadrature(32);
@@ -275,7 +273,7 @@ TEMPLATE_TEST_CASE_SIG("Test momentum integrals with matsubara sum and angle",
   coeff_integrand[ds - 1] = 1.;
   square_poly *= Polynomial(coeff_integrand);
   const double reference_integral = S_ds(ds) / 2. * square_poly.integral(0., q_extent) / powr<ds>(2. * M_PI) *
-                                    cos_poly.integral(-1., 1.) * (1. + 2. * boost::math::zeta(zeta_val)) * T_val;
+                                    cos_poly.integral(-1., 1.) * (1. + 2. * std::riemann_zeta(zeta_val)) * T_val;
 
   const QGauss<1> x_quadrature(64);
   const QGauss<1> q0_quadrature(32);

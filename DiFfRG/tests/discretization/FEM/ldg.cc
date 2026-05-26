@@ -3,6 +3,7 @@
 
 #include <boilerplate/models.hh>
 
+#include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/FEM/ldg.hh>
@@ -18,6 +19,10 @@ TEST_CASE("Test LDG on Constant model", "[discretization][ldg]")
 {
   using namespace dealii;
   using namespace DiFfRG;
+
+  // Initialize Kokkos on the main thread so its finalize at exit also runs on the main thread;
+  // otherwise the lazy deal.II Kokkos init finalizes the Threads backend from a worker thread.
+  DiFfRG::Init();
 
   constexpr uint dim = 1;
   using Model = Testing::LDGModelConstant<dim>;
