@@ -8,14 +8,33 @@
 #include <DiFfRG/discretization/common/abstract_data.hh>
 #include <DiFfRG/discretization/data/data_output.hh>
 #include <DiFfRG/discretization/mesh/no_adaptivity.hh>
-#include <algorithm>
 #include <cmath>
-#include <limits>
 #include <optional>
 #include <unordered_map>
 
 namespace DiFfRG
 {
+  struct TimesteppingDiagnostics {
+    bool has_ida = false;
+    long int ida_steps = 0;
+    long int ida_error_test_failures = 0;
+    long int ida_nonlinear_convergence_failures = 0;
+    long int ida_step_solve_failures = 0;
+    long int ida_residual_evaluations = 0;
+    double ida_last_step_size = 0.;
+    double ida_current_step_size = 0.;
+
+    bool has_callback = false;
+    size_t nonfinite_solution_failures = 0;
+    size_t nonfinite_residual_failures = 0;
+    size_t residual_exceptions = 0;
+    size_t jacobian_failures = 0;
+    size_t linear_solver_failures = 0;
+
+    size_t nonfinite_failures() const { return nonfinite_solution_failures + nonfinite_residual_failures; }
+    bool empty() const { return !has_ida && !has_callback; }
+  };
+
   /**
    * @brief The abstract base class for all timestepping algorithms.
    * It provides a standard constructor which populates typical timestepping parameters from a given JSONValue object,
@@ -173,66 +192,65 @@ namespace DiFfRG
       size_t first_ms = 0;
       size_t last_ms = 0;
       double latest_t = 0.;
-      size_t calls = 0;
-      size_t calc_dt_calls = 0;
-      double calc_dt_sum_ms = 0.;
-      double calc_dt_min_ms = std::numeric_limits<double>::max();
-      double calc_dt_max_ms = 0.;
-      bool has_calc_dt = false;
+      bool has_entry = false;
+      TimesteppingDiagnostics diagnostics;
+      bool has_diagnostics = false;
 
-      void add(const double t, const size_t milliseconds, const double calc_dt_ms)
+      void add(const double t, const size_t milliseconds, const TimesteppingDiagnostics *latest_diagnostics)
       {
-        if (calls == 0) first_ms = milliseconds;
+        if (!has_entry) first_ms = milliseconds;
+        has_entry = true;
         last_ms = milliseconds;
         latest_t = t;
-        ++calls;
 
-        if (calc_dt_ms < 0.) return;
-        has_calc_dt = true;
-        ++calc_dt_calls;
-        calc_dt_sum_ms += calc_dt_ms;
-        calc_dt_min_ms = std::min(calc_dt_min_ms, calc_dt_ms);
-        calc_dt_max_ms = std::max(calc_dt_max_ms, calc_dt_ms);
+        if (latest_diagnostics != nullptr && !latest_diagnostics->empty()) {
+          diagnostics = *latest_diagnostics;
+          has_diagnostics = true;
+        }
       }
-
-      double mean_calc_dt_ms() const { return calc_dt_sum_ms / double(calc_dt_calls); }
-      double calc_dt_uncertainty_ms() const { return 0.5 * (calc_dt_max_ms - calc_dt_min_ms); }
     };
 
     mutable std::unordered_map<std::string, ConsoleOutStats> console_out_stats_by_category;
+    mutable std::unordered_map<std::string, TimesteppingDiagnostics> last_printed_diagnostics_by_category;
 
     static std::string console_out_category(const std::string &name) { return name.substr(0, name.find(" (")); }
 
-    static std::string format_uncertain_ms(const double mean_ms, const double uncertainty_ms)
+    static std::string format_diagnostics_delta(const size_t latest, const size_t previous)
     {
-      const double abs_uncertainty = std::abs(uncertainty_ms);
-      const bool has_uncertainty = abs_uncertainty > 0.;
-      int decimals = 0;
-      long rounded_uncertainty = 0;
+      std::stringstream stream;
+      stream << latest;
+      if (latest >= previous) stream << "(+" << latest - previous << ")";
+      return stream.str();
+    }
 
-      if (has_uncertainty) {
-        double exponent = std::floor(std::log10(abs_uncertainty));
-        double scale = std::pow(10., -exponent);
-        rounded_uncertainty = long(std::round(abs_uncertainty * scale));
-        if (rounded_uncertainty >= 10) {
-          exponent += 1.;
-          scale = std::pow(10., -exponent);
-          rounded_uncertainty = long(std::round(abs_uncertainty * scale));
-        }
-        decimals = std::max(0, int(-exponent));
-      } else if (std::abs(mean_ms) < 1.) {
-        decimals = 2;
-      } else if (std::abs(mean_ms) < 100.) {
-        decimals = 1;
-      }
+    static std::string format_diagnostics_delta(const long int latest, const long int previous)
+    {
+      std::stringstream stream;
+      stream << latest;
+      if (latest >= previous) stream << "(+" << latest - previous << ")";
+      return stream.str();
+    }
+
+    static std::string format_diagnostics(const TimesteppingDiagnostics &latest,
+                                          const TimesteppingDiagnostics *previous)
+    {
+      const TimesteppingDiagnostics zero;
+      const auto &prev = previous != nullptr ? *previous : zero;
 
       std::stringstream stream;
-      stream << std::fixed << std::setprecision(decimals) << mean_ms << "(" << rounded_uncertainty << ")ms";
+      stream << "accepted steps " << format_diagnostics_delta(latest.ida_steps, prev.ida_steps);
+      stream << ", precision rejects "
+             << format_diagnostics_delta(latest.ida_error_test_failures, prev.ida_error_test_failures);
+      stream << ", nonlinear failures " << format_diagnostics_delta(latest.ida_nonlinear_convergence_failures,
+                                                                     prev.ida_nonlinear_convergence_failures);
+      stream << ", accumulated step failures "
+             << format_diagnostics_delta(latest.ida_step_solve_failures, prev.ida_step_solve_failures);
+      stream << ", NaN/Inf callbacks " << format_diagnostics_delta(latest.nonfinite_failures(), prev.nonfinite_failures());
       return stream.str();
     }
 
     void print_console_out(const std::string &name, const double t, const size_t milliseconds,
-                           const std::optional<std::string> calc_dt = std::nullopt, const size_t calls = 0) const
+                           const std::optional<std::string> diagnostics = std::nullopt) const
     {
       if (name.size() > console_name_width) throw std::runtime_error("console_out: log label is too long: " + name);
 
@@ -244,14 +262,9 @@ namespace DiFfRG
         std::cout << " | k: " << std::setw(10) << std::left << std::setprecision(4) << std::scientific
                   << exp(-t) * Lambda;
       }
-      if (calc_dt.has_value()) {
-        std::cout << " | calc_dt: " << std::setw(11) << calc_dt.value();
-      }
-      if (calls > 0) {
-        std::cout << " | calls: " << std::setw(4) << calls;
-      }
       std::cout << " | calc_t: " << time_format_ms(milliseconds);
       std::cout << std::endl;
+      if (diagnostics.has_value()) std::cout << "  " << diagnostics.value() << std::endl;
       std::cout.flags(oldflags);
       std::cout.precision(oldprecision);
     }
@@ -262,33 +275,45 @@ namespace DiFfRG
      * @param t Current time.
      * @param name A tag prepended to the output.
      * @param verbosity_level The verbosity level of the output.
-     * @param calc_dt_ms If >= 0, the time in milliseconds it took to calculate the current timestep.
+     * @param diagnostics Optional timestepper diagnostics printed as a second line.
      */
     void console_out(const double t, const std::string name, const int verbosity_level,
-                     const double calc_dt_ms = -1.0) const
+                     const TimesteppingDiagnostics *diagnostics = nullptr) const
     {
       if (verbosity < verbosity_level) return;
 
       const size_t milliseconds =
           std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start_time)
               .count();
+      const std::string category = console_out_category(name);
       if (verbosity >= 4) {
-        const auto calc_dt =
-            calc_dt_ms >= 0.0 ? std::optional<std::string>(time_format_ms(size_t(calc_dt_ms))) : std::nullopt;
-        print_console_out(name, t, milliseconds, calc_dt);
+        const auto previous_it = last_printed_diagnostics_by_category.find(category);
+        const auto formatted_diagnostics =
+            diagnostics != nullptr && !diagnostics->empty()
+                ? std::optional<std::string>(
+                      format_diagnostics(*diagnostics, previous_it != last_printed_diagnostics_by_category.end()
+                                                           ? &previous_it->second
+                                                           : nullptr))
+                : std::nullopt;
+        print_console_out(name, t, milliseconds, formatted_diagnostics);
+        if (diagnostics != nullptr && !diagnostics->empty()) last_printed_diagnostics_by_category[category] = *diagnostics;
         return;
       }
 
-      const std::string category = console_out_category(name);
       auto &stats = console_out_stats_by_category[category];
-      stats.add(t, milliseconds, calc_dt_ms);
+      stats.add(t, milliseconds, diagnostics);
       if (milliseconds - stats.first_ms < 1000) return;
 
-      const auto calc_dt =
-          stats.has_calc_dt
-              ? std::optional<std::string>(format_uncertain_ms(stats.mean_calc_dt_ms(), stats.calc_dt_uncertainty_ms()))
+      const auto previous_it = last_printed_diagnostics_by_category.find(category);
+      const auto formatted_diagnostics =
+          stats.has_diagnostics
+              ? std::optional<std::string>(
+                    format_diagnostics(stats.diagnostics, previous_it != last_printed_diagnostics_by_category.end()
+                                                              ? &previous_it->second
+                                                              : nullptr))
               : std::nullopt;
-      print_console_out(category, stats.latest_t, stats.last_ms, calc_dt, stats.calls);
+      print_console_out(category, stats.latest_t, stats.last_ms, formatted_diagnostics);
+      if (stats.has_diagnostics) last_printed_diagnostics_by_category[category] = stats.diagnostics;
       stats = {};
     }
   };

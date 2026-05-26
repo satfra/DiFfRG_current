@@ -3,8 +3,6 @@
 #include <deal.II/lac/block_vector.h>
 #include <deal.II/sundials/ida.h>
 
-#include <fstream>
-
 // DiFfRG
 #include <DiFfRG/common/eigen.hh>
 #include <DiFfRG/common/types.hh>
@@ -13,6 +11,7 @@
 #include <DiFfRG/discretization/data/data_output.hh>
 #include <DiFfRG/timestepping/linear_solver/GMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/UMFPack.hh>
+#include <DiFfRG/timestepping/sundials_diagnostics.hh>
 #include <DiFfRG/timestepping/sundials_ida.hh>
 
 namespace DiFfRG
@@ -58,13 +57,7 @@ namespace DiFfRG
     uint stuck = 0;
     double stuck_t = 0.;
     uint failure_counter = 0;
-    // DIAG (Stage 2): split failure counters and per-callback bookkeeping
-    uint diag_res_input_nan = 0;
-    uint diag_res_output_nan = 0;
-    uint diag_jac_throw = 0;
-    uint diag_linsolver_throw = 0;
-    double diag_last_residual_norm = std::numeric_limits<double>::quiet_NaN();
-    double diag_last_y_norm = std::numeric_limits<double>::quiet_NaN();
+    IDACallbackDiagnostics callback_diagnostics;
 
     // Initialize initial condition
     VectorType y = initial_data;
@@ -111,8 +104,6 @@ namespace DiFfRG
 
     //  Calculate the residual of y_dot + F(y)
     time_stepper.residual = [&](const double t, const VectorType &y, const VectorType &y_dot, VectorType &res) -> int {
-      const auto now = std::chrono::high_resolution_clock::now();
-
       if (is_close(t, stuck_t))
         stuck++;
       else {
@@ -121,23 +112,17 @@ namespace DiFfRG
       }
 
       if (!is_close(t, 0.) && stuck > 100) {
-        std::cerr << "[DIAG] STUCK at t=" << t << " | res_in_nan=" << diag_res_input_nan
-                  << " res_out_nan=" << diag_res_output_nan << " jac_throw=" << diag_jac_throw
-                  << " linsolver_throw=" << diag_linsolver_throw
-                  << " | last_res_norm=" << diag_last_residual_norm << " last_y_norm=" << diag_last_y_norm
-                  << std::endl;
+        const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+        console_out(t, "implicit residual", 1, &current_diagnostics);
         throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
       }
       if (is_close(t, 0.) && stuck > 200)
         throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
       if (failure_counter > 200) throw std::runtime_error("timestep failure, at t = " + std::to_string(t));
       if (!std::isfinite(y.l1_norm())) {
-        diag_res_input_nan++;
-        std::cerr << "[DIAG] RES FAIL @ t=" << t << " : y has non-finite l1_norm=" << y.l1_norm()
-                  << " (failure_counter=" << failure_counter + 1 << ")" << std::endl;
+        callback_diagnostics.nonfinite_solution_failures++;
         return ++failure_counter;
       }
-      diag_last_y_norm = y.l1_norm();
 
       assembler->set_time(t);
 
@@ -146,53 +131,11 @@ namespace DiFfRG
       residual = &res;
 
       if (!std::isfinite(res.l1_norm())) {
-        diag_res_output_nan++;
-        // find first non-finite cell for diagnosis
-        std::size_t bad_idx = res.size();
-        for (std::size_t i = 0; i < res.size(); ++i)
-          if (!std::isfinite(res[i])) {
-            bad_idx = i;
-            break;
-          }
-        // On the very first failure, dump the FULL y profile to a file so we can
-        // see whether the checkerboard is at rho=0, rho_max, or both.
-        if (diag_res_output_nan == 1) {
-          std::ofstream f("DIAG_full_y_at_first_failure.txt");
-          f << "# t=" << t << " first_bad_cell=" << bad_idx << " n=" << y.size() << "\n";
-          f << "# cell  y               y_dot           res\n";
-          for (std::size_t i = 0; i < y.size(); ++i)
-            f << i << "  " << y[i] << "  " << y_dot[i] << "  " << res[i] << "\n";
-          f.close();
-          std::cerr << "[DIAG] Wrote full y profile to DIAG_full_y_at_first_failure.txt"
-                    << std::endl;
-        }
-        if (diag_res_output_nan <= 3) {
-          std::cerr << "[DIAG] RES FAIL @ t=" << t << " first_bad=" << bad_idx << "\n  y nearby: ";
-          for (std::size_t i = (bad_idx >= 5 ? bad_idx - 5 : 0);
-               i < std::min<std::size_t>(y.size(), bad_idx + 6); ++i)
-            std::cerr << "y[" << i << "]=" << y[i] << " ";
-          std::cerr << "\n  y_dot nearby: ";
-          for (std::size_t i = (bad_idx >= 5 ? bad_idx - 5 : 0);
-               i < std::min<std::size_t>(y_dot.size(), bad_idx + 6); ++i)
-            std::cerr << "y_dot[" << i << "]=" << y_dot[i] << " ";
-          std::cerr << "\n  res nearby: ";
-          for (std::size_t i = (bad_idx >= 5 ? bad_idx - 5 : 0);
-               i < std::min<std::size_t>(res.size(), bad_idx + 6); ++i)
-            std::cerr << "res[" << i << "]=" << res[i] << " ";
-          std::cerr << std::endl;
-        } else {
-          std::cerr << "[DIAG] RES FAIL @ t=" << t << " first_bad=" << bad_idx
-                    << " y[bad]=" << y[bad_idx] << " y_dot[bad]=" << y_dot[bad_idx]
-                    << " (fc=" << failure_counter + 1 << ")" << std::endl;
-        }
+        callback_diagnostics.nonfinite_residual_failures++;
         return ++failure_counter;
       }
-      diag_last_residual_norm = res.l1_norm();
-
-      const auto ms_passed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-              .count();
-      console_out(t, "implicit residual", 1, ms_passed);
+      const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+      console_out(t, "implicit residual", 1, &current_diagnostics);
 
       failure_counter = 0;
       return 0;
@@ -205,28 +148,19 @@ namespace DiFfRG
       assembler->set_time(t);
 
       try {
-        auto now = std::chrono::high_resolution_clock::now();
-
         jacobian = 0;
         assembler->jacobian(jacobian, y, 1., y_dot, alpha, 1.);
         linSolver.init(jacobian);
 
-        const auto ms_passed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-                .count();
-        console_out(t, "jacobian construction", 2, ms_passed);
-        now = std::chrono::high_resolution_clock::now();
+        const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+        console_out(t, "jacobian construction", 2, &current_diagnostics);
 
         if (linSolver.invert()) {
-          const auto ms_passed =
-              std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-                  .count();
-          console_out(t, "jacobian inversion", 3, ms_passed);
+          const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+          console_out(t, "jacobian inversion", 3, &current_diagnostics);
         }
       } catch (std::exception &e) {
-        diag_jac_throw++;
-        std::cerr << "[DIAG] JAC FAIL @ t=" << t << " : " << e.what()
-                  << " (failure_counter=" << failure_counter + 1 << ")" << std::endl;
+        callback_diagnostics.jacobian_failures++;
         return ++failure_counter;
       }
 
@@ -237,15 +171,13 @@ namespace DiFfRG
     // Solve the linear system J dst = src
     time_stepper.solve_with_jacobian = [&](const VectorType &src, VectorType &dst, const double tol) -> int {
       try {
-        const auto now = std::chrono::high_resolution_clock::now();
         const auto sol_iterations = linSolver.solve(src, dst, tol);
         if (sol_iterations >= 0) {
-          const auto ms_passed =
-              std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-                  .count();
-          console_out(stuck_t, "linear solver (" + std::to_string(sol_iterations) + " it)", 2, ms_passed);
+          const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+          console_out(stuck_t, "linear solver (" + std::to_string(sol_iterations) + " it)", 2, &current_diagnostics);
         }
       } catch (std::exception &) {
+        callback_diagnostics.linear_solver_failures++;
         return ++failure_counter;
       }
       return 0;
@@ -292,6 +224,7 @@ namespace DiFfRG
     uint stuck = 0;
     double stuck_t = 0.;
     uint failure_counter = 0;
+    IDACallbackDiagnostics callback_diagnostics;
 
     // Initialize initial condition
     BlockVectorType y = initial_data;
@@ -347,8 +280,6 @@ namespace DiFfRG
     //  Calculate the residual of y_dot + F(y)
     time_stepper.residual = [&](const double t, const BlockVectorType &y, const BlockVectorType &y_dot,
                                 BlockVectorType &res) -> int {
-      const auto now = std::chrono::high_resolution_clock::now();
-
       if (is_close(t, stuck_t, impl.minimal_dt))
         stuck++;
       else {
@@ -365,8 +296,7 @@ namespace DiFfRG
         throw std::runtime_error("timestep failure, at t = " + std::to_string(t));
       }
       if (!std::isfinite(y.l1_norm())) {
-        if (!std::isfinite(y.block(0).l1_norm())) std::cerr << "residual: y0 is not finite" << std::endl;
-        if (!std::isfinite(y.block(1).l1_norm())) std::cerr << "residual: y1 is not finite" << std::endl;
+        callback_diagnostics.nonfinite_solution_failures++;
         return ++failure_counter;
       }
 
@@ -378,20 +308,18 @@ namespace DiFfRG
         res.block(1) += y_dot.block(1);
         residual = &res;
       } catch (std::exception &e) {
+        callback_diagnostics.residual_exceptions++;
         std::cerr << e.what() << std::endl;
         return ++failure_counter;
       }
 
       if (!std::isfinite(res.l1_norm())) {
-        if (!std::isfinite(res.block(0).l1_norm())) std::cerr << "residual: res0 is not finite" << std::endl;
-        if (!std::isfinite(res.block(1).l1_norm())) std::cerr << "residual: res1 is not finite" << std::endl;
+        callback_diagnostics.nonfinite_residual_failures++;
         return ++failure_counter;
       }
 
-      const auto ms_passed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-              .count();
-      console_out(t, "implicit residual", 1, ms_passed);
+      const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+      console_out(t, "implicit residual", 1, &current_diagnostics);
 
       failure_counter = 0;
       return 0;
@@ -402,8 +330,6 @@ namespace DiFfRG
       if (failure_counter > 200) throw std::runtime_error("timestep failure at jacobian");
 
       try {
-        auto now = std::chrono::high_resolution_clock::now();
-
         spatial_jacobian = 0;
         variable_jacobian = 0;
         assembler->set_time(t);
@@ -414,28 +340,24 @@ namespace DiFfRG
 
         linSolver.init(spatial_jacobian);
 
-        auto ms_passed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-                .count();
-        console_out(t, "jacobian construction", 2, ms_passed);
-        now = std::chrono::high_resolution_clock::now();
+        const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+        console_out(t, "jacobian construction", 2, &current_diagnostics);
 
         linSolver.invert();
         variable_jacobian_inverse.invert(variable_jacobian);
-        ms_passed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-                .count();
-        console_out(t, "jacobian inversion", 3, ms_passed);
+        const auto current_diagnostics_after_inversion = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+        console_out(t, "jacobian inversion", 3, &current_diagnostics_after_inversion);
 
         if (!std::isfinite(spatial_jacobian.frobenius_norm())) {
-          std::cerr << "spatial_jacobian is not finite" << std::endl;
+          callback_diagnostics.jacobian_failures++;
           return ++failure_counter;
         }
         if (!std::isfinite(variable_jacobian.frobenius_norm())) {
-          std::cerr << "variable_jacobian is not finite" << std::endl;
+          callback_diagnostics.jacobian_failures++;
           return ++failure_counter;
         }
       } catch (std::exception &e) {
+        callback_diagnostics.jacobian_failures++;
         std::cerr << e.what() << std::endl;
         return ++failure_counter;
       }
@@ -447,19 +369,16 @@ namespace DiFfRG
     // Solve the linear system J dst = src
     time_stepper.solve_with_jacobian = [&](const BlockVectorType &src, BlockVectorType &dst, const double tol) -> int {
       try {
-        const auto now = std::chrono::high_resolution_clock::now();
-
         const auto sol_iterations = linSolver.solve(src.block(0), dst.block(0), tol);
         variable_jacobian_inverse.vmult(dst.block(1), src.block(1));
 
-        const auto ms_passed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-                .count();
+        const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
         if (sol_iterations >= 0)
-          console_out(stuck_t, "linear solver (" + std::to_string(sol_iterations) + " it)", 2, ms_passed);
+          console_out(stuck_t, "linear solver (" + std::to_string(sol_iterations) + " it)", 2, &current_diagnostics);
         else
-          console_out(stuck_t, "linear solver", 2, ms_passed);
+          console_out(stuck_t, "linear solver", 2, &current_diagnostics);
       } catch (std::exception &) {
+        callback_diagnostics.linear_solver_failures++;
         return ++failure_counter;
       }
       return 0;
@@ -500,6 +419,7 @@ namespace DiFfRG
     uint stuck = 0;
     double stuck_t = 0.;
     uint failure_counter = 0;
+    IDACallbackDiagnostics callback_diagnostics;
 
     // Initialize initial condition
     VectorType y = initial_data;
@@ -524,8 +444,6 @@ namespace DiFfRG
 
     //  Calculate the residual of y_dot + F(y)
     time_stepper.residual = [&](const double t, const VectorType &y, const VectorType &y_dot, VectorType &res) -> int {
-      const auto now = std::chrono::high_resolution_clock::now();
-
       if (is_close(t, stuck_t, impl.minimal_dt))
         stuck++;
       else {
@@ -542,7 +460,7 @@ namespace DiFfRG
         throw std::runtime_error("timestep failure, at t = " + std::to_string(t));
       }
       if (!std::isfinite(y.l1_norm())) {
-        std::cerr << "vector is not finite" << std::endl;
+        callback_diagnostics.nonfinite_solution_failures++;
         return ++failure_counter;
       }
 
@@ -552,19 +470,18 @@ namespace DiFfRG
         assembler->residual_variables(res, y, Vector<double>());
         res += y_dot;
       } catch (std::exception &e) {
+        callback_diagnostics.residual_exceptions++;
         std::cerr << e.what() << std::endl;
         return ++failure_counter;
       }
 
       if (!std::isfinite(res.l1_norm())) {
-        std::cerr << "residual is not finite" << std::endl;
+        callback_diagnostics.nonfinite_residual_failures++;
         return ++failure_counter;
       }
 
-      const auto ms_passed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-              .count();
-      console_out(t, "implicit residual", 1, ms_passed);
+      const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+      console_out(t, "implicit residual", 1, &current_diagnostics);
 
       failure_counter = 0;
       return 0;
@@ -573,8 +490,6 @@ namespace DiFfRG
     time_stepper.setup_jacobian = [&](const double t, const VectorType &y, const VectorType & /*y_dot*/,
                                       const double alpha) -> int {
       if (failure_counter > 200) throw std::runtime_error("timestep failure at jacobian");
-
-      const auto now = std::chrono::high_resolution_clock::now();
 
       try {
         variable_jacobian = 0;
@@ -586,18 +501,17 @@ namespace DiFfRG
         variable_jacobian_inverse.invert(variable_jacobian);
 
         if (!std::isfinite(variable_jacobian.frobenius_norm())) {
-          std::cerr << "variable_jacobian is not finite" << std::endl;
+          callback_diagnostics.jacobian_failures++;
           return ++failure_counter;
         }
       } catch (std::exception &e) {
+        callback_diagnostics.jacobian_failures++;
         std::cerr << e.what() << std::endl;
         return ++failure_counter;
       }
 
-      const auto ms_passed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-              .count();
-      console_out(t, "jacobian", 2, ms_passed);
+      const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+      console_out(t, "jacobian", 2, &current_diagnostics);
 
       failure_counter = 0;
       return 0;
@@ -608,6 +522,7 @@ namespace DiFfRG
       try {
         variable_jacobian_inverse.vmult(dst, src);
       } catch (std::exception &) {
+        callback_diagnostics.linear_solver_failures++;
         return ++failure_counter;
       }
       return 0;

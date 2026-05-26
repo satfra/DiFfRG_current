@@ -43,47 +43,29 @@ namespace DiFfRG
 
     // all functions for assembly of the problem and linear solving
     newton.residual = [&](VectorType &res, const VectorType &u) {
-      const auto now = std::chrono::high_resolution_clock::now();
-
       res = 0;
       assembler->residual(res, u, tc.get_dt(), 1);
       assembler->mass(res, old_solution, -1.);
 
-      const auto ms_passed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-              .count();
-      console_out(tc.get_t(), "implicit residual", 1, ms_passed);
+      console_out(tc.get_t(), "implicit residual", 1);
     };
 
     newton.update_jacobian = [&](const VectorType &u) {
-      auto now = std::chrono::high_resolution_clock::now();
-
       jacobian = 0;
       assembler->jacobian(jacobian, u, tc.get_dt(), 1);
       linSolver.init(jacobian);
 
-      const auto ms_passed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-              .count();
-      console_out(tc.get_t(), "jacobian construction", 2, ms_passed);
-      now = std::chrono::high_resolution_clock::now();
+      console_out(tc.get_t(), "jacobian construction", 2);
 
       if (linSolver.invert()) {
-        const auto ms_passed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-                .count();
-        console_out(tc.get_t(), "jacobian inversion", 3, ms_passed);
+        console_out(tc.get_t(), "jacobian inversion", 3);
       }
     };
 
     newton.lin_solve = [&](VectorType &Du, const VectorType &res) {
-      const auto now = std::chrono::high_resolution_clock::now();
       const auto sol_iterations = linSolver.solve(res, Du, std::min(impl.abs_tol, impl.rel_tol * res.l2_norm()));
       if (sol_iterations >= 0) {
-        const auto ms_passed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-                .count();
-        console_out(tc.get_t(), "linear solver (" + std::to_string(sol_iterations) + " it)", 2, ms_passed);
+        console_out(tc.get_t(), "linear solver (" + std::to_string(sol_iterations) + " it)", 2);
       }
     };
 

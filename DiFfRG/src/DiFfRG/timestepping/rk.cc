@@ -104,18 +104,13 @@ namespace DiFfRG
     while (time.is_at_end() == false) {
       explicit_runge_kutta.evolve_one_time_step(
           [&](const double t, const VectorType &y) {
-            const auto now = std::chrono::high_resolution_clock::now();
-
             typename VectorMemory<VectorType>::Pointer f(mem);
             f->reinit(y);
             assembler->set_time(t);
             assembler->residual_variables(*f, y, Vector<double>());
             *f *= -1.;
 
-            const auto ms_passed =
-                std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-                    .count();
-            console_out(t, "explicit residual", 1, ms_passed);
+            console_out(t, "explicit residual", 1);
 
             return *f;
           },
