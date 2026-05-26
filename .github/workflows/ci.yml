@@ -17,6 +17,8 @@ permissions:
 env:
   DIFFRG_DEPS_REPOSITORY: ghcr.io/satfra/diffrg-deps
   DIFFRG_DEPS_STABLE_TAG: ubuntu24.04
+  DIFFRG_BUILD_JOBS: 4
+  DIFFRG_TEST_JOBS: 4
 
 jobs:
   deps-image:
@@ -167,7 +169,7 @@ jobs:
                 -DDiFfRG_TEST=ON \
                 -DDiFfRG_DOCUMENTATION=OFF \
                 -DNATIVE=OFF
-              cmake --build DiFfRG/bin -j "$(nproc)"
+              cmake --build DiFfRG/bin -j "${{ env.DIFFRG_BUILD_JOBS }}"
             '
 
       # Runs only when the build succeeded (default fail-fast). Uses `set +e` so a
@@ -181,7 +183,7 @@ jobs:
             -b "${GITHUB_WORKSPACE}:/work" \
             -w /work \
             "${{ steps.deps.outputs.sif }}" \
-            bash -lc 'ctest --test-dir DiFfRG/bin -j "$(nproc)" --output-on-failure' | tee "${RUNNER_TEMP}/ctest.log"
+            bash -lc 'ctest --test-dir DiFfRG/bin -j "${{ env.DIFFRG_TEST_JOBS }}" --output-on-failure' | tee "${RUNNER_TEMP}/ctest.log"
           summary=$(grep -Eo '[0-9]+ tests failed out of [0-9]+' "${RUNNER_TEMP}/ctest.log" | tail -1)
           failed=$(echo "$summary" | awk '{print $1}')
           total=$(echo "$summary" | awk '{print $NF}')
