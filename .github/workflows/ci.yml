@@ -1,9 +1,8 @@
 name: CI
 
-# Build the DiFfRG library and run the test suite against the pre-built
-# dependency image (ghcr.io/satfra/diffrg-deps), so the slow superbuild
-# (deal.II, Kokkos, ...) is not repeated on every run. Refresh that image with
-# containers/ci/build-and-push.sh when the bundled dependencies change.
+# Build DiFfRG against the stable dependency image by default. If dependency
+# inputs change, build a commit-specific image first and test against that exact
+# tag before promoting it to the stable tag on main.
 
 on:
   push:
@@ -11,14 +10,120 @@ on:
       - main
   pull_request:
 
+permissions:
+  contents: read
+  packages: write
+
+env:
+  DIFFRG_DEPS_REPOSITORY: ghcr.io/satfra/diffrg-deps
+  DIFFRG_DEPS_STABLE_TAG: ubuntu24.04
+
 jobs:
+  deps-image:
+    name: Select dependency image
+    runs-on: ubuntu-latest
+    outputs:
+      image_ref: ${{ steps.select.outputs.image_ref }}
+      docker_ref: ${{ steps.select.outputs.docker_ref }}
+      rebuilt: ${{ steps.select.outputs.rebuilt }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect dependency image changes
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git fetch --no-tags origin "${{ github.base_ref }}"
+            changed="$(git diff --name-only FETCH_HEAD...HEAD)"
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            before="${{ github.event.before }}"
+            if [[ -z "${before}" || "${before}" =~ ^0+$ ]]; then
+              if git rev-parse HEAD^ >/dev/null 2>&1; then
+                changed="$(git diff --name-only HEAD^ HEAD)"
+              else
+                changed="$(git ls-tree -r --name-only HEAD)"
+              fi
+            else
+              changed="$(git diff --name-only "${before}" HEAD)"
+            fi
+          else
+            changed=""
+          fi
+
+          printf '%s\n' "${changed}"
+          if printf '%s\n' "${changed}" | grep -Eq '^(CMakeLists\.txt|dependencies/|patches/|containers/ci/)'; then
+            rebuild=true
+          else
+            rebuild=false
+          fi
+
+          echo "rebuild=${rebuild}" >> "${GITHUB_OUTPUT}"
+          echo "Changed dependency/image inputs: ${rebuild}" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Reject fork dependency image changes
+        if: steps.detect.outputs.rebuild == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        shell: bash
+        run: |
+          echo "::error::This pull request changes dependency image inputs, but fork PRs cannot push test images to GHCR. Re-run from a branch in this repository or update the dependency image manually."
+          exit 1
+
+      - name: Log in to GHCR
+        if: steps.detect.outputs.rebuild == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        if: steps.detect.outputs.rebuild == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build dependency image
+        if: steps.detect.outputs.rebuild == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: containers/ci/ubuntu24.04-deps.Dockerfile
+          push: true
+          build-args: |
+            threads=4
+          tags: ${{ env.DIFFRG_DEPS_REPOSITORY }}:ci-${{ github.sha }}
+
+      - name: Select image
+        id: select
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          stable="${DIFFRG_DEPS_REPOSITORY}:${DIFFRG_DEPS_STABLE_TAG}"
+          ci="${DIFFRG_DEPS_REPOSITORY}:ci-${GITHUB_SHA}"
+          if [[ "${{ steps.detect.outputs.rebuild }}" == "true" ]]; then
+            docker_ref="${ci}"
+          else
+            docker_ref="${stable}"
+          fi
+
+          echo "docker_ref=${docker_ref}" >> "${GITHUB_OUTPUT}"
+          echo "image_ref=docker://${docker_ref}" >> "${GITHUB_OUTPUT}"
+          echo "rebuilt=${{ steps.detect.outputs.rebuild }}" >> "${GITHUB_OUTPUT}"
+          echo "Using dependency image: docker://${docker_ref}" >> "${GITHUB_STEP_SUMMARY}"
+
   build-and-test:
-    name: Build library + run tests (CPU, Singularity)
+    name: Build and test
+    needs: deps-image
     runs-on: [self-hosted, linux, x64]
     env:
-      DIFFRG_DEPS_IMAGE: docker://ghcr.io/satfra/diffrg-deps:ubuntu24.04
+      DIFFRG_DEPS_IMAGE: ${{ needs.deps-image.outputs.image_ref }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Pull dependency image
         id: deps
@@ -35,12 +140,18 @@ jobs:
             echo "Neither singularity nor apptainer was found on PATH." >&2
             exit 127
           fi
-          sif="${RUNNER_TEMP}/diffrg-deps-ubuntu24.04.sif"
+          sif="${RUNNER_TEMP}/diffrg-deps.sif"
+          echo "Pulling ${DIFFRG_DEPS_IMAGE}"
           "${singularity_bin}" pull --force "${sif}" "${DIFFRG_DEPS_IMAGE}"
           echo "sif=${sif}" >> "$GITHUB_OUTPUT"
-          "${singularity_bin}" exec --cleanenv "${sif}" bash -lc 'test -r "${DiFfRG_BUNDLED_DIR:-/opt/diffrg/bundled}"'
 
-      - name: Build DiFfRG library
+          bundle_dir="$("${singularity_bin}" exec --cleanenv "${sif}" bash -lc 'printf "%s" "${DiFfRG_BUNDLED_DIR:-/opt/diffrg/bundled}"')"
+          if ! "${singularity_bin}" exec --cleanenv "${sif}" bash -lc 'test -r "${DiFfRG_BUNDLED_DIR:-/opt/diffrg/bundled}"'; then
+            echo "::error::Dependency image ${DIFFRG_DEPS_IMAGE} does not expose a readable dependency bundle at ${bundle_dir}."
+            exit 1
+          fi
+
+      - name: Build DiFfRG
         id: build
         run: |
           set -euo pipefail
@@ -71,7 +182,6 @@ jobs:
             -w /work \
             "${{ steps.deps.outputs.sif }}" \
             bash -lc 'ctest --test-dir DiFfRG/bin -j "$(nproc)" --output-on-failure' | tee "${RUNNER_TEMP}/ctest.log"
-          # ctest always prints: "<P>% tests passed, <F> tests failed out of <T>"
           summary=$(grep -Eo '[0-9]+ tests failed out of [0-9]+' "${RUNNER_TEMP}/ctest.log" | tail -1)
           failed=$(echo "$summary" | awk '{print $1}')
           total=$(echo "$summary" | awk '{print $NF}')
@@ -129,3 +239,28 @@ jobs:
             echo "${{ steps.tests.outputs.failed }} test(s) failed."
             exit 1
           fi
+
+  promote-deps-image:
+    name: Promote dependency image
+    needs: [deps-image, build-and-test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.deps-image.outputs.rebuilt == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Promote tested dependency image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            -t "${DIFFRG_DEPS_REPOSITORY}:${DIFFRG_DEPS_STABLE_TAG}" \
+            -t "${DIFFRG_DEPS_REPOSITORY}:${DIFFRG_DEPS_STABLE_TAG}-${GITHUB_RUN_NUMBER}" \
+            "${{ needs.deps-image.outputs.docker_ref }}"

@@ -1,49 +1,43 @@
 name: Build dependency image
 
-# Manual (workflow_dispatch only) refresh of the pre-built DiFfRG dependency
-# image consumed by ci.yml. This runs the full superbuild (deal.II dominates,
-# possibly ~3 h on GitHub-hosted runners -- within the 6 h job limit), so the
-# primary path is to run containers/ci/build-and-push.sh locally; this workflow
-# is a backup for when a maintainer prefers to offload it to Actions.
+# Manual fallback for rebuilding the stable dependency image outside the main CI
+# dependency chain.
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - CMakeLists.txt
-      - dependencies/**
-      - patches/**
-      - containers/ci/**
-      - .github/workflows/build-ci-images.yml
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag under ghcr.io/satfra/diffrg-deps (moving tag consumed by CI)"
-        default: ubuntu24.04
+        description: "Tag to publish"
         required: true
+        default: "ubuntu24.04"
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: satfra/diffrg-deps
 
 jobs:
   build-deps-image:
-    name: Build & push dependency image
+    name: Build dependency image
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Buildx
+      - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build & push CPU dependency image
+      - name: Build and push CPU dependency image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -52,5 +46,5 @@ jobs:
           build-args: |
             threads=4
           tags: |
-            ghcr.io/satfra/diffrg-deps:${{ github.event_name == 'workflow_dispatch' && inputs.tag || 'ubuntu24.04' }}
-            ghcr.io/satfra/diffrg-deps:${{ github.event_name == 'workflow_dispatch' && inputs.tag || 'ubuntu24.04' }}-${{ github.run_number }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.tag }}-${{ github.run_number }}
