@@ -1,5 +1,6 @@
 #include "DiFfRG/discretization/FV/assembler/KurganovTadmor.hh"
 #include "DiFfRG/discretization/FV/discretization.hh"
+#include "DiFfRG/timestepping/linear_solver/ScaledGMRES.hh"
 #include "kt_regression_helpers.hh"
 
 #include <DiFfRG/common/json.hh>
@@ -21,6 +22,7 @@
 #include <iostream>
 #include <limits>
 #include <numbers>
+#include <petscsnes.h>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -83,7 +85,7 @@ namespace
   using FirstOrderJacobianAssembler =
       FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor, FV::KurganovTadmor::MaxEigenvalueWaveSpeed,
                                     JacobianReconstructor>;
-  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, GMRES>;
+  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, ScaledGMRES>;
   using ExplicitTimeStepper = TimeStepperBoostRK54<VectorType, SparseMatrixType, dim>;
 
   double grid_spacing() { return delta_sigma; }
