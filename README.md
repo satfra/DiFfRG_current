@@ -164,10 +164,10 @@ Although a native install should be unproblematic in most cases, the setup with 
 
 Besides the manual setup described below, we recommend using [development containers](https://code.visualstudio.com/docs/devcontainers/containers) if you are using VSCode. An appropriate `.devcontainers` configuration can be adapted from the one found in the DiFfRG top level directory.
 
-The specific choice of container runtime environment is up to the user, however we provide a small build script to create a docker container for DiFfRG.
-To do this, you will need `docker`, `docker-buildx` and the [NVIDIA container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#) in case you wish to create a CUDA-compatible image.
+The specific choice of container runtime environment is up to the user, however we provide a small build script to create a Docker/OCI container for DiFfRG and run its tests through Singularity/Apptainer when available.
+To do this, you will need `docker`, `docker-buildx`, and `singularity` or `apptainer`. For CUDA-compatible image execution you also need the host NVIDIA driver available to Singularity/Apptainer.
 
-To build a docker image, you can run the script `build-container.sh` in the `containers/` folder, which will guide you through the process, i.e.
+To build a Docker image and test it through Singularity/Apptainer, you can run the script `build-container.sh` in the `containers/` folder, which will guide you through the process, i.e.
 ```bash
 $ cd containers
 $ bash build-container.sh

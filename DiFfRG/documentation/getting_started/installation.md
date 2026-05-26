@@ -60,10 +60,10 @@ If using Windows, instead of running the project directly, it is recommended to 
 
 Although a native install should be unproblematic in most cases, the setup with CUDA functionality may be daunting. Especially on high-performance clusters, and also depending on the packages available for  chosen distribution, it may be much easier to work with the framework inside a container.
 
-The specific choice of runtime environment is up to the user, however we provide a small build script to create docker container in which DiFfRG will be built.
-To do this, you will need `docker`, `docker-buildx` and the [NVIDIA container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#) in case you wish to create a CUDA-compatible image.
+The specific choice of runtime environment is up to the user, however we provide a small build script to create a Docker/OCI container in which DiFfRG will be built and then tested through Singularity/Apptainer when available.
+To do this, you will need `docker`, `docker-buildx`, and `singularity` or `apptainer`. For CUDA-compatible image execution you also need the host NVIDIA driver available to Singularity/Apptainer.
 
-To build a docker image, you can run the script `build-container.sh` in the `containers/` folder:
+To build a Docker image and test it through Singularity/Apptainer, you can run the script `build-container.sh` in the `containers/` folder:
 ```bash
 $ cd containers
 $ bash build-container.sh

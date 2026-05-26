@@ -22,8 +22,9 @@ COPY . /DiFfRG
 
 # Superbuild (deps + library), then compile the test suite in the library
 # sub-build. The install prefix is left at the default ($HOME/.local/share/DiFfRG,
-# i.e. /root/.local/share/DiFfRG here). ctest is run separately
-# (containers/test_all.sh) so its output lands in its own log. GPU/MPI off.
+# i.e. /root/.local/share/DiFfRG here). ctest is run separately through
+# Singularity (containers/test_all.sh) so its output lands in its own log.
+# GPU/MPI off.
 RUN cmake -S /DiFfRG -B /build \
         -DCMAKE_BUILD_TYPE=Release \
         -DGPU=OFF -DMPI=OFF -DDiFfRG_DOCUMENTATION=OFF \

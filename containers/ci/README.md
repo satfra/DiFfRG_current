@@ -1,15 +1,18 @@
 # CI dependency images
 
-CI for DiFfRG is split in two so that the expensive part runs rarely:
+CI for DiFfRG keeps the expensive dependency superbuild out of the regular
+library test path:
 
 1. **Dependency image** (this directory) — bakes the bundled superbuild
    dependencies (deal.II, Kokkos, autodiff, GSL, Eigen, spdlog, rapidcsv, …) into
-   the default install prefix `/root/.local/share/DiFfRG/bundled` (exposed as
-   `$DiFfRG_BUNDLED_DIR`). Built **rarely**, locally, and pushed to GHCR.
+   `/opt/diffrg/bundled` (exposed as `$DiFfRG_BUNDLED_DIR`). The stable image is
+   built rarely and pushed to GHCR as a Docker/OCI image.
 2. **Library build + tests** (`.github/workflows/ci.yml`) — on every push to a main
-   branch and every pull request, builds *only* the DiFfRG library against that
-   pre-built tree (`-DBUNDLED_DIR=$DiFfRG_BUNDLED_DIR`) and runs `ctest`. Minutes,
-   not hours, because the superbuild is already cached in the image.
+   branch and every pull request, selects a dependency image, pulls it with
+   Singularity, builds *only* the DiFfRG library against the pre-built tree
+   (`-DBUNDLED_DIR=$DiFfRG_BUNDLED_DIR`), and runs `ctest`. Library-only changes
+   use `docker://ghcr.io/satfra/diffrg-deps:ubuntu24.04`; dependency-image
+   changes first build and test a commit-specific image.
 
 This contrasts with `containers/Base/` and `containers/CUDA/`, which rebuild
 *everything* from scratch and are driven by `containers/test_all.sh` /
@@ -19,26 +22,36 @@ This contrasts with `containers/Base/` and `containers/CUDA/`, which rebuild
 
 | File | Purpose |
 |------|---------|
-| `ubuntu24.04-deps.Dockerfile` | CPU (GPU=OFF) dependency image. Multi-stage: builds the deps-only ExternalProject targets, then ships only the installed tree + toolchain. Consumed by `ci.yml`. |
+| `ubuntu24.04-deps.Dockerfile` | CPU (GPU=OFF) dependency image. Multi-stage: builds the deps-only ExternalProject targets, then ships only the installed tree + toolchain. Consumed by `ci.yml` through Singularity. |
 | `ubuntu24.04-cuda-deps.Dockerfile` | CUDA (GPU=ON) dependency image, for **manual** GPU testing. Not used by automated CI (hosted runners have no GPU). |
-| `build-and-push.sh` | Build a dependency image, smoke-test it (full library build + ctest inside the image), and push to GHCR. |
+| `build-and-push.sh` | Build a dependency image, smoke-test it through Singularity (full library build + ctest), and push to GHCR. |
 
 ## Registry
 
 Images live under **`ghcr.io/satfra/diffrg-deps`**, tagged:
 
-- `ubuntu24.04` — moving tag consumed by `ci.yml` (and `ubuntu24.04-cuda` for the CUDA image).
-- `ubuntu24.04-<YYYYMMDD>` — immutable dated record of each build.
+- `ubuntu24.04` — stable moving tag consumed by `ci.yml` when dependency inputs
+  did not change.
+- `ci-<sha>` — commit-specific image built by `ci.yml` when dependency inputs
+  change; this exact image is tested before promotion.
+- `ubuntu24.04-<run_number>` — immutable record produced when CI promotes a
+  tested `ci-<sha>` image on `main`.
+- `ubuntu24.04-<YYYYMMDD>` — immutable dated record produced by the local
+  `build-and-push.sh` script.
+- `ubuntu24.04-cuda` — manual CUDA dependency image.
 
 Make the GHCR package **public** (its contents are all open-source dependencies)
-so `ci.yml` can pull it with no credentials. If you keep it private instead, add a
-`credentials:` block to the `container:` in `ci.yml` (see the comment there).
+so `ci.yml` can pull it with no credentials. If you keep it private instead,
+`ci.yml` passes `SINGULARITY_DOCKER_USERNAME` / `SINGULARITY_DOCKER_PASSWORD`
+from the GitHub actor and token for the `singularity pull`.
 
 ## Refreshing the image
 
-Refresh whenever the bundled dependencies change — i.e. edits to `dependencies/**`
-or the top-level `CMakeLists.txt` (dep versions, build flags). Library-only changes
-do **not** require a refresh; `ci.yml` rebuilds the library from source every run.
+CI detects dependency-image inputs (`CMakeLists.txt`, `dependencies/**`,
+`patches/**`, and `containers/ci/**`). If one of these paths changes, `ci.yml`
+builds `ci-<sha>`, tests against that exact image, and promotes it to
+`ubuntu24.04` after a successful push to `main`. Library-only changes do **not**
+refresh the dependency image; `ci.yml` rebuilds the library from source every run.
 
 ### Locally (primary path)
 
@@ -62,9 +75,11 @@ The first push of a new package is private by default — open it in the GitHub 
 
 ### Via GitHub Actions (backup)
 
-The `Build dependency image` workflow (`.github/workflows/build-ci-images.yml`) does
-the same on a `workflow_dispatch` trigger. Note hosted runners are slow (2–4 cores),
-so the superbuild can take ~3 h; the local script is the recommended path.
+The `Build dependency image` workflow (`.github/workflows/build-ci-images.yml`)
+is a manual `workflow_dispatch` fallback. It builds and pushes the requested
+stable tag directly, outside the main CI dependency chain. The normal automated
+path is the `deps-image` job in `ci.yml`, because that makes the test job depend
+on the exact image that was just built.
 
 ## Test-count badge (README)
 
@@ -91,11 +106,15 @@ so it needs no extra tooling.
 
 ## Verifying the CI path locally
 
-Reproduce exactly what `ci.yml` does, against a pulled (or locally built) image:
+Reproduce exactly what `ci.yml` does, against the pushed image:
 
 ```bash
-docker run --rm -v "$(pwd):/src" ghcr.io/satfra/diffrg-deps:ubuntu24.04 bash -c '
-  cmake -S /src/DiFfRG -B /tmp/bin -DBUNDLED_DIR="$DiFfRG_BUNDLED_DIR" \
+containers/singularity-run.sh \
+  -b "$(pwd):/src" \
+  -w /tmp \
+  docker://ghcr.io/satfra/diffrg-deps:ubuntu24.04 \
+  bash -lc '
+  cmake -S /src/DiFfRG -B /tmp/bin -DBUNDLED_DIR="${DiFfRG_BUNDLED_DIR:-/opt/diffrg/bundled}" \
     -DCMAKE_BUILD_TYPE=Release -DDiFfRG_TEST=ON -DDiFfRG_DOCUMENTATION=OFF
   cmake --build /tmp/bin -j4 && ctest --test-dir /tmp/bin --output-on-failure'
 ```
