@@ -16,6 +16,7 @@
 #include <DiFfRG/discretization/data/data_output.hh>
 #include <DiFfRG/timestepping/linear_solver/GMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/UMFPack.hh>
+#include <DiFfRG/timestepping/sundials_diagnostics.hh>
 #include <DiFfRG/timestepping/sundials_ida_boost_rk.hh>
 
 namespace DiFfRG
@@ -88,8 +89,6 @@ namespace DiFfRG
     auto variable_stepper = make_controlled<error_stepper_type>(expl.abs_tol, expl.rel_tol);
 
     auto get_variable_residual = [&](const Eigen::VectorXd &x, Eigen::VectorXd &dxdt, const double t) {
-      const auto now = std::chrono::high_resolution_clock::now();
-
       eigen_to_dealii(x, variable_y_dealii);
 
       variable_dy_dealii = 0;
@@ -113,10 +112,7 @@ namespace DiFfRG
       dealii_to_eigen(variable_dy_dealii, dxdt);
       dxdt *= -1;
 
-      const auto ms_passed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-              .count();
-      console_out(t, "explicit residual", 1, ms_passed);
+      console_out(t, "explicit residual", 1);
     };
 
     Eigen::VectorXd variable_sol;
@@ -332,9 +328,12 @@ namespace DiFfRG
     uint stuck = 0;
     double stuck_t = 0.;
     uint failure_counter = 0;
+    IDACallbackDiagnostics callback_diagnostics;
 
     // Pointer to current residual for monitoring
-    VectorType *residual;
+    VectorType residual_placeholder = spatial_y;
+    residual_placeholder *= 0.;
+    VectorType *residual = &residual_placeholder;
 
     // Tells SUNDIALS to do an internal reset, e.g. if we do local refinement
     time_stepper.solver_should_restart = [&](const double t, VectorType &sol, VectorType &sol_dot) -> bool {
@@ -375,8 +374,6 @@ namespace DiFfRG
 
     //  Calculate the residual of y_dot + F(y)
     time_stepper.residual = [&](const double t, const VectorType &y, const VectorType &y_dot, VectorType &res) -> int {
-      const auto now = std::chrono::high_resolution_clock::now();
-
       if (is_close(t, stuck_t, impl.minimal_dt * 1e-1))
         stuck++;
       else {
@@ -393,31 +390,31 @@ namespace DiFfRG
         throw std::runtime_error("timestep failure, at t = " + std::to_string(t));
       }
       if (!std::isfinite(y.l1_norm())) {
-        std::cerr << "residual: spatial solution is not finite!" << std::endl;
+        callback_diagnostics.nonfinite_solution_failures++;
         return ++failure_counter;
       }
 
       try {
         res = 0;
         assembler->set_time(t);
-        console_out(t, "requesting variables", 2);
+        const auto request_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+        console_out(t, "requesting variables", 2, &request_diagnostics);
         request_variables(variable_y, y, t);
         assembler->residual(res, y, 1., y_dot, 1., variable_y);
         residual = &res;
       } catch (std::exception &e) {
+        callback_diagnostics.residual_exceptions++;
         std::cerr << e.what() << std::endl;
         return ++failure_counter;
       }
 
       if (!std::isfinite(res.l1_norm())) {
-        std::cerr << "residual: spatial residual is not finite!" << std::endl;
+        callback_diagnostics.nonfinite_residual_failures++;
         return ++failure_counter;
       }
 
-      const auto ms_passed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-              .count();
-      console_out(t, "implicit residual", 1, ms_passed);
+      const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+      console_out(t, "implicit residual", 1, &current_diagnostics);
 
       failure_counter = 0;
       return 0;
@@ -428,28 +425,23 @@ namespace DiFfRG
       if (failure_counter > 200) throw std::runtime_error("timestep failure at jacobian");
 
       try {
-        auto now = std::chrono::high_resolution_clock::now();
-
         spatial_jacobian = 0;
         assembler->set_time(t);
-        console_out(t, "requesting variables", 2);
+        const auto request_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+        console_out(t, "requesting variables", 2, &request_diagnostics);
         request_variables(variable_y, y, t);
         assembler->jacobian(spatial_jacobian, y, 1., y_dot, alpha, 1., variable_y);
         linSolver.init(spatial_jacobian);
 
-        const auto ms_passed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-                .count();
-        console_out(t, "jacobian construction", 2, ms_passed);
-        now = std::chrono::high_resolution_clock::now();
+        const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+        console_out(t, "jacobian construction", 2, &current_diagnostics);
 
         if (linSolver.invert()) {
-          const auto ms_passed =
-              std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-                  .count();
-          console_out(t, "jacobian inversion", 3, ms_passed);
+          const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+          console_out(t, "jacobian inversion", 3, &current_diagnostics);
         }
       } catch (std::exception &e) {
+        callback_diagnostics.jacobian_failures++;
         std::cerr << e.what() << std::endl;
         return ++failure_counter;
       }
@@ -461,15 +453,13 @@ namespace DiFfRG
     // Solve the linear system J dst = src
     time_stepper.solve_with_jacobian = [&](const VectorType &src, VectorType &dst, const double tol) -> int {
       try {
-        const auto now = std::chrono::high_resolution_clock::now();
         const auto sol_iterations = linSolver.solve(src, dst, tol);
         if (sol_iterations >= 0) {
-          const auto ms_passed =
-              std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-                  .count();
-          console_out(stuck_t, "linear solver (" + std::to_string(sol_iterations) + " it)", 2, ms_passed);
+          const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+          console_out(stuck_t, "linear solver (" + std::to_string(sol_iterations) + " it)", 2, &current_diagnostics);
         }
       } catch (std::exception &) {
+        callback_diagnostics.linear_solver_failures++;
         return ++failure_counter;
       }
       return 0;

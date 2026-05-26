@@ -88,8 +88,6 @@ namespace DiFfRG
     double stuck_t = 0.;
     uint stuck = 0;
     auto residual = [&](const Eigen::VectorXd &x, Eigen::VectorXd &dxdt, const double t) {
-      const auto now = std::chrono::high_resolution_clock::now();
-
       if (is_close(t, stuck_t, expl.minimal_dt / 100.))
         stuck++;
       else {
@@ -111,10 +109,7 @@ namespace DiFfRG
 
       dealii_to_eigen(dy_dealii, dxdt);
 
-      const auto ms_passed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-              .count();
-      console_out(t, "explicit residual", 1, ms_passed);
+      console_out(t, "explicit residual", 1);
     };
 
     // Initialize initial condition
@@ -194,8 +189,6 @@ namespace DiFfRG
     double stuck_t = 0.;
     uint stuck = 0;
     auto residual = [&](const Eigen::VectorXd &x, Eigen::VectorXd &dxdt, const double t) {
-      const auto now = std::chrono::high_resolution_clock::now();
-
       if (is_close(t, stuck_t, expl.minimal_dt / 100.))
         stuck++;
       else {
@@ -218,10 +211,7 @@ namespace DiFfRG
 
       dealii_to_eigen(dy_dealii, dxdt);
 
-      const auto ms_passed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-              .count();
-      console_out(t, "explicit residual", 1, ms_passed);
+      console_out(t, "explicit residual", 1);
     };
 
     // Initialize initial condition
@@ -299,8 +289,6 @@ namespace DiFfRG
     double stuck_t = 0.;
     uint stuck = 0;
     auto residual = [&](const Eigen::VectorXd &x, Eigen::VectorXd &dxdt, const double t) {
-      const auto now = std::chrono::high_resolution_clock::now();
-
       if (is_close(t, stuck_t, expl.minimal_dt / 100.))
         stuck++;
       else {
@@ -322,10 +310,7 @@ namespace DiFfRG
       dealii_to_eigen(dy_dealii, dxdt);
       dxdt *= -1;
 
-      const auto ms_passed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-              .count();
-      console_out(t, "explicit residual", 1, ms_passed);
+      console_out(t, "explicit residual", 1);
     };
 
     using namespace boost::numeric::odeint;
