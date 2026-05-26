@@ -22,7 +22,6 @@
 #include <iostream>
 #include <limits>
 #include <numbers>
-#include <petscsnes.h>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
