@@ -3,6 +3,7 @@
 ## Getting Started
 - [Installation](#Installation)
 - [Models](#Models)
+- [Scaled Linear Solvers](#ScaledLinearSolvers)
 
 ## Tutorials
 - [Tutorial 1: Creating an Application](#tut1)
