@@ -279,6 +279,7 @@ diffrg_find_package(spdlog VERSION 1.14.1 HINTS ${BUNDLED_DIR})
 # Config mode first (bundled static build + distros that ship a CMake config,
 # e.g. Arch); then module mode (FindHDF5) for config-less system installs
 # (Fedora/Debian/Ubuntu). HDF5_DIR/HDF5_ROOT are set by the top-level build.
+option(HDF5 "Enable HDF5 support" ON)
 find_package(HDF5 CONFIG QUIET COMPONENTS C HINTS ${BUNDLED_DIR})
 if(NOT HDF5_FOUND OR HDF5_VERSION VERSION_LESS 1.12.0)
   find_package(HDF5 MODULE QUIET COMPONENTS C)
@@ -489,4 +490,8 @@ function(setup_target TARGET)
   # Workaround: deal.II's tensor.h uses assert() without including <cassert>.
   target_compile_options(
     ${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-include cassert>)
+
+  if(HDF5)
+    target_compile_definitions(${TARGET} PUBLIC H5CPP)
+  endif()
 endfunction()
