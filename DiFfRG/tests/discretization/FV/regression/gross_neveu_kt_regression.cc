@@ -484,7 +484,7 @@ namespace
 } // namespace
 
 TEMPLATE_TEST_CASE_METHOD(GrossNeveuFlowFixture, "KT Gross-Neveu mean-field regressions match reference flows",
-                          "[FV][KT][GrossNeveu][MF][regression]", FlowMF_T00625_Mu06, FlowMF_T00125_Mu06,
+                          "[FV][KT][GrossNeveu][MF][regression][slow]", FlowMF_T00625_Mu06, FlowMF_T00125_Mu06,
                           FlowMF_T01_Mu01)
 {
   kt_regression::ensure_logger();
@@ -495,7 +495,7 @@ TEMPLATE_TEST_CASE_METHOD(GrossNeveuFlowFixture, "KT Gross-Neveu mean-field regr
 }
 
 TEMPLATE_TEST_CASE_METHOD(GrossNeveuFlowFixture, "KT Gross-Neveu finite-N regressions match reference flows",
-                          "[FV][KT][GrossNeveu][regression]", FlowN16_T00625_Mu06, FlowN2_T00625_Mu06,
+                          "[FV][KT][GrossNeveu][regression][slow]", FlowN16_T00625_Mu06, FlowN2_T00625_Mu06,
                           FlowN2_T00125_Mu06, FlowN2_T01_Mu01)
 {
   kt_regression::ensure_logger();
