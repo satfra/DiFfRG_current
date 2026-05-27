@@ -478,7 +478,7 @@ namespace
 } // namespace
 
 TEST_CASE("QM sigma Litim diffusion loop matches analytic finite-T result near pole",
-          "[FV][KT][QuarkMeson][regression][litim-sigma-loop]")
+          "[FV][KT][QuarkMeson][regression][slow][litim-sigma-loop]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -519,7 +519,7 @@ TEST_CASE("QM sigma Litim diffusion loop matches analytic finite-T result near p
 }
 
 TEST_CASE("QM initial cell averages reconstruct diffusion second derivative on interior faces",
-          "[FV][KT][QuarkMeson][regression][diffusion-reconstruction]")
+          "[FV][KT][QuarkMeson][regression][slow][diffusion-reconstruction]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -598,7 +598,7 @@ TEST_CASE("QM initial cell averages reconstruct diffusion second derivative on i
 }
 
 TEST_CASE("QM initialized flow state satisfies the explicit-breaking origin constraint",
-          "[FV][KT][QuarkMeson][regression][origin-constraint]")
+          "[FV][KT][QuarkMeson][regression][slow][origin-constraint]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -620,7 +620,7 @@ TEST_CASE("QM initialized flow state satisfies the explicit-breaking origin cons
 }
 
 TEST_CASE("KT quark-meson LPA Litim flow reaches final time with exact TVD Jacobian",
-          "[FV][KT][QuarkMeson][regression][2601.23005]")
+          "[FV][KT][QuarkMeson][regression][slow][2601.23005]")
 {
   kt_regression::ensure_logger();
 
@@ -632,7 +632,7 @@ TEST_CASE("KT quark-meson LPA Litim flow reaches final time with exact TVD Jacob
 }
 
 TEST_CASE("KT quark-meson LPA Litim flow reaches final time with first-order Jacobian",
-          "[FV][KT][QuarkMeson][regression][2601.23005][first-order-jacobian]")
+          "[FV][KT][QuarkMeson][regression][slow][2601.23005][first-order-jacobian]")
 {
   kt_regression::ensure_logger();
 
@@ -644,7 +644,7 @@ TEST_CASE("KT quark-meson LPA Litim flow reaches final time with first-order Jac
 }
 
 TEST_CASE("KT quark-meson explicit RK exposes non-finite derivative near problematic region",
-          "[FV][KT][QuarkMeson][regression][2601.23005][explicit-rk][diagnostic]")
+          "[FV][KT][QuarkMeson][regression][slow][2601.23005][explicit-rk][diagnostic]")
 {
   kt_regression::ensure_logger();
 

@@ -110,7 +110,7 @@ namespace
 // ============================================================================
 
 TEST_CASE("CG-vs-KT: CG on KT-Example uniform grid + default tolerance",
-          "[cg-vs-kt][cg-uniform-loose-tol]")
+          "[cg-vs-kt][slow][cg-uniform-loose-tol]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -126,7 +126,7 @@ TEST_CASE("CG-vs-KT: CG on KT-Example uniform grid + default tolerance",
 // ============================================================================
 
 TEST_CASE("CG-vs-KT: CG on KT-Example uniform grid + tight tolerance",
-          "[cg-vs-kt][cg-uniform-tight-tol]")
+          "[cg-vs-kt][slow][cg-uniform-tight-tol]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -146,7 +146,7 @@ TEST_CASE("CG-vs-KT: CG on KT-Example uniform grid + tight tolerance",
 // ============================================================================
 
 TEST_CASE("CG-vs-KT: KT on CG-Example adaptive non-uniform grid",
-          "[cg-vs-kt][kt-adaptive-grid][!shouldfail]")
+          "[cg-vs-kt][slow][kt-adaptive-grid][!shouldfail]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -163,7 +163,7 @@ TEST_CASE("CG-vs-KT: KT on CG-Example adaptive non-uniform grid",
 // ============================================================================
 
 TEST_CASE("CG-vs-KT: KT on 4×-finer uniform ρ-grid (600 cells × [0, 0.015])",
-          "[cg-vs-kt][kt-uniform-4x-finer][!shouldfail]")
+          "[cg-vs-kt][slow][kt-uniform-4x-finer][!shouldfail]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -180,7 +180,7 @@ TEST_CASE("CG-vs-KT: KT on 4×-finer uniform ρ-grid (600 cells × [0, 0.015])",
 // ============================================================================
 
 TEST_CASE("CG-vs-KT: CG on CG-Example adaptive non-uniform grid",
-          "[cg-vs-kt][cg-adaptive-grid]")
+          "[cg-vs-kt][slow][cg-adaptive-grid]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -199,7 +199,7 @@ TEST_CASE("CG-vs-KT: CG on CG-Example adaptive non-uniform grid",
 // ============================================================================
 
 TEST_CASE("CG-vs-KT: KT-ρ large-N all-pion (purely hyperbolic, no diffusion flux)",
-          "[cg-vs-kt][kt-largeN]")
+          "[cg-vs-kt][slow][kt-largeN]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -207,7 +207,7 @@ TEST_CASE("CG-vs-KT: KT-ρ large-N all-pion (purely hyperbolic, no diffusion flu
 }
 
 TEST_CASE("CG-vs-KT: CG-ρ large-N all-pion (reference)",
-          "[cg-vs-kt][cg-largeN]")
+          "[cg-vs-kt][slow][cg-largeN]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -234,7 +234,7 @@ TEST_CASE("CG-vs-KT: CG-ρ large-N all-pion (reference)",
 // ============================================================================
 
 TEST_CASE("CG-vs-KT: KT-ρ uniform grid, VanAlbada limiter + ZeroDeriv (both kinks off)",
-          "[cg-vs-kt][kt-vanalbada-zerod][!shouldfail]")
+          "[cg-vs-kt][slow][kt-vanalbada-zerod][!shouldfail]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -276,7 +276,7 @@ TEST_CASE("CG-vs-KT: KT-ρ uniform grid, VanAlbada limiter + ZeroDeriv (both kin
 // ============================================================================
 
 TEST_CASE("CG-vs-KT: KT-ρ uniform grid, Central limiter + ZeroWaveSpeed (a_half=0 in RESIDUAL)",
-          "[cg-vs-kt][kt-no-dissipation][!shouldfail]")
+          "[cg-vs-kt][slow][kt-no-dissipation][!shouldfail]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -304,7 +304,7 @@ TEST_CASE("CG-vs-KT: KT-ρ uniform grid, Central limiter + ZeroWaveSpeed (a_half
 }
 
 TEST_CASE("CG-vs-KT: KT-ρ uniform grid, Central limiter + ZeroDeriv (both kinks off, NOT TVD)",
-          "[cg-vs-kt][kt-central-zerod][!shouldfail]")
+          "[cg-vs-kt][slow][kt-central-zerod][!shouldfail]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
