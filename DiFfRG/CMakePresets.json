@@ -13,7 +13,8 @@
       "cacheVariables": {
         "CMAKE_INSTALL_PREFIX": "${sourceParentDir}/local_install",
         "BUNDLED_DIR": "${sourceParentDir}/local_install/bundled",
-        "DiFfRG_TEST": "ON"
+        "DiFfRG_TEST": "ON",
+        "HDF5": "ON"
       }
     },
     {
