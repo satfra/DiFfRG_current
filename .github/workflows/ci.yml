@@ -218,7 +218,7 @@ jobs:
           ctest_status=${PIPESTATUS[0]}
           set -e
 
-          summary=$(grep -Eo '[0-9]+ tests failed out of [0-9]+' "${RUNNER_TEMP}/ctest.log" | tail -1)
+          summary=$(grep -Eo '[0-9]+ tests failed out of [0-9]+' "${RUNNER_TEMP}/ctest.log" | tail -1 || true)
           if [[ -n "${summary}" ]]; then
             failed=$(echo "$summary" | awk '{print $1}')
             total=$(echo "$summary" | awk '{print $NF}')
