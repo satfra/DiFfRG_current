@@ -55,7 +55,6 @@ generatesSecondOrderComplexAD[] :=
                 <|"Name" -> "mpi2", "Type" -> "DiFfRG::complex<double>", "Const" -> True, "AD" -> True|>
             },
             "AD" -> True,
-            "ADOrders" -> {1, 2},
             "ConstantReturnType" -> "complex<double>"
         ];
 
@@ -67,17 +66,22 @@ generatesSecondOrderComplexAD[] :=
             containsAll[
                 header,
                 {
+                    "Integrator_p2<3, cxreal, pion_kernel<Regulator>, DiFfRG::TBB_exec> integrator_AD;",
                     "Integrator_p2<3, cxReal<2, double>, pion_kernel<Regulator>, DiFfRG::TBB_exec> integrator_AD2;",
+                    "void get(cxreal &dest, const double &k, const double &T, const cxreal &mpi2);",
                     "void get(cxReal<2, double> &dest, const double &k, const double &T, const cxReal<2, double> &mpi2);"
                 }
             ] &&
             containsAll[
                 adGet,
                 {
+                    "void pion_integrator::get(cxreal &dest, const double &k, const double &T, const cxreal &mpi2)",
+                    "integrator_AD.get(dest, k, T, mpi2);",
                     "void pion_integrator::get(cxReal<2, double> &dest, const double &k, const double &T, const cxReal<2, double> &mpi2)",
                     "integrator_AD2.get(dest, k, T, mpi2);"
                 }
             ] &&
+            StringContainsQ[constructor, "integrator_AD(quadrature_provider, json)"] &&
             StringContainsQ[constructor, "integrator_AD2(quadrature_provider, json)"];
 
         DeleteDirectory[tmp, DeleteContents -> True];
@@ -90,7 +94,7 @@ If[Length@PacletFind["FunKit"] > 0 && formAvailableQ[],
     AppendTo[
         tests,
         TestCreate[
-            generatesSecondOrderComplexAD[],
+            Quiet[generatesSecondOrderComplexAD[], OptionValue::nodef],
             True,
             TestID -> "MakeKernel emits second-order complex AD get wrapper"
         ]
