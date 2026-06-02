@@ -27,8 +27,6 @@ MakeKernel::InvalidKey = "The key \"`1`\" is invalid: `2`";
 
 MakeKernel::exportFailed = "Export of sources.m to `1` failed.";
 
-MakeKernel::InvalidADOrders = "ADOrders must be Automatic or a duplicate-free list of supported AD orders. Supported orders are: `1`.";
-
 Begin["`Private`"]
 
 Needs["DiFfRG`CodeTools`Utils`"]
@@ -41,9 +39,11 @@ Needs["DiFfRG`CodeTools`TemplateParameterGeneration`"]
 
 Needs["DiFfRG`CodeTools`Regulator`"]
 
-$ADReplacementsByOrder = <|1 -> {"double" -> "autodiff::real", "DiFfRG::complex<double>" -> "cxreal"}, 2 -> {"double" -> "autodiff::Real<2, double>", "DiFfRG::complex<double>" -> "cxReal<2, double>"}|>;
+$ADReplacements = {"double" -> "autodiff::real", "DiFfRG::complex<double>" -> "cxreal"};
 
-$ADReplacements = $ADReplacementsByOrder[1];
+$AD2Replacements = {"double" -> "autodiff::Real<2, double>", "DiFfRG::complex<double>" -> "cxReal<2, double>"};
+
+$ADSpecializations = {<|"Suffix" -> "AD", "Replacements" -> $ADReplacements|>, <|"Suffix" -> "AD2", "Replacements" -> $AD2Replacements|>};
 
 $PredefRegFunc = {"RB", "RF", "RBdot", "RFdot", "dq2RB", "dq2RF"};
 
@@ -64,7 +64,7 @@ CheckKey[kernel_Association, name_String, test_, msg_String] :=
 
 KernelSpecQ[spec_Association] :=
     Module[{validKeys, validKeyTypes},
-        validKeys = CheckKey[spec, "Name", StringQ[#] && StringLength[#] > 0&, "Cannot be empty"] && CheckKey[spec, "Integrator", StringQ[#] && StringLength[#] > 0&, "Cannot be empty"] && CheckKey[spec, "d", IntegerQ[#] && # >= 0&, "Must be an Integer >= 0"] && CheckKey[spec, "AD", BooleanQ, "Must be a Boolean"] && CheckKey[spec, "ADOrders", validADOrdersQ, "Must be Automatic or a duplicate-free list of supported AD orders"] && CheckKey[spec, "Device", MemberQ[{"Threads", "TBB", "GPU"}, #]&, "Must be Threads, TBB or GPU."] && CheckKey[spec, "Type", StringQ[#] && StringLength[#] > 0&, "Cannot be empty"];
+        validKeys = CheckKey[spec, "Name", StringQ[#] && StringLength[#] > 0&, "Cannot be empty"] && CheckKey[spec, "Integrator", StringQ[#] && StringLength[#] > 0&, "Cannot be empty"] && CheckKey[spec, "d", IntegerQ[#] && # >= 0&, "Must be an Integer >= 0"] && CheckKey[spec, "AD", BooleanQ, "Must be a Boolean"] && CheckKey[spec, "Device", MemberQ[{"Threads", "TBB", "GPU"}, #]&, "Must be Threads, TBB or GPU."] && CheckKey[spec, "Type", StringQ[#] && StringLength[#] > 0&, "Cannot be empty"];
         Return[validKeys];
     ];
 
@@ -73,34 +73,7 @@ GetStandardKernelDefinitions[] :=
 
 (* Internal functions added here with Internal`*::usage *)
 
-Options[MakeKernel] = {"Coordinates" -> {}, "CoordinateArguments" -> {}, "IntegrationVariables" -> {}, "KernelDefinitions" -> $StandardKernelDefinitions, "Regulator" -> "DiFfRG::PolynomialExpRegulator", "RegulatorOpts" -> {"", ""}, "KernelBody" -> "", "KernelReturnType" -> "auto", "ConstantBody" -> "", "ConstantReturnType" -> "auto", "Parameters" -> {}, "Name" -> "", "d" -> -1, "Integrator" -> "", "AD" -> False, "ADOrders" -> Automatic, "ctype" -> "double", "Device" -> "TBB", "Type" -> "double", "KernelReturnTransform" -> Identity, "ConstantReturnTransform" -> Identity};
-
-validADOrdersQ[Automatic] :=
-    True;
-
-validADOrdersQ[orders_List] :=
-    DuplicateFreeQ[orders] && AllTrue[orders, IntegerQ[#] && KeyExistsQ[$ADReplacementsByOrder, #]&];
-
-validADOrdersQ[_] :=
-    False;
-
-getADOrders[spec_Association] :=
-    Module[{orders},
-        If[Not @ spec["AD"],
-            Return[{}]
-        ];
-        orders =
-            If[spec["ADOrders"] === Automatic,
-                {1}
-                ,
-                spec["ADOrders"]
-            ];
-        If[Not @ validADOrdersQ[orders],
-            Message[MakeKernel::InvalidADOrders, Keys[$ADReplacementsByOrder]];
-            Abort[]
-        ];
-        orders
-    ];
+Options[MakeKernel] = {"Coordinates" -> {}, "CoordinateArguments" -> {}, "IntegrationVariables" -> {}, "KernelDefinitions" -> $StandardKernelDefinitions, "Regulator" -> "DiFfRG::PolynomialExpRegulator", "RegulatorOpts" -> {"", ""}, "KernelBody" -> "", "KernelReturnType" -> "auto", "KernelReturnTransform" -> Identity, "ConstantBody" -> "", "ConstantReturnType" -> "auto", "ConstantReturnTransform" -> Identity, "Parameters" -> {}, "Name" -> "", "d" -> -1, "Integrator" -> "", "AD" -> False, "ctype" -> "double", "Device" -> "TBB", "Type" -> "double"};
 
 MakeKernel[__] :=
     (
@@ -112,7 +85,7 @@ MakeKernel[kernelExpr_, OptionsPattern[]] :=
     MakeKernel @@ (Join[{kernelExpr, 0}, Thread[Rule @@ {#, OptionValue[MakeKernel, #]}]& @ Keys[Options[MakeKernel]]]);
 
 MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
-    Module[{expr, const, exec, kernel, constant, kernelClass, kernelHeader, integratorHeader, integratorCpp, integratorTemplateParams, tparams = <|"Name" -> "...t", "Type" -> "auto&&", "Reference" -> False, "Const" -> False|>, kernelDefs = OptionValue["KernelDefinitions"], coordinates = OptionValue["Coordinates"], getArgs = OptionValue["CoordinateArguments"], intVariables = OptionValue["IntegrationVariables"], preArguments, regulator, params, adOrders, adSpecs, explParamAD, arguments, outputPath, sources, returnType, returnTypePointer, spec, parameters, parametersKernel},
+    Module[{expr, const, exec, kernel, constant, kernelClass, kernelHeader, integratorHeader, integratorCpp, integratorTemplateParams, tparams = <|"Name" -> "...t", "Type" -> "auto&&", "Reference" -> False, "Const" -> False|>, kernelDefs = OptionValue["KernelDefinitions"], coordinates = OptionValue["Coordinates"], getArgs = OptionValue["CoordinateArguments"], intVariables = OptionValue["IntegrationVariables"], preArguments, regulator, params, adSpecs, explParamAD, arguments, outputPath, sources, returnType, returnTypePointer, spec, parameters, parametersKernel},
         spec = Association @@ Thread[Rule @@ {#, OptionValue[MakeKernel, #]}]& @ Keys[Options[MakeKernel]];
         If[Not @ KernelSpecQ[spec],
             Message[MakeKernel::InvalidSpec];
@@ -133,12 +106,10 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
             Map[
                 Which[
                     #["AD"] === True,
-                        Merge[{#, <|"Type" -> "auto"|>}, Last]
-                    ,
+                        Merge[{#, <|"Type" -> "auto"|>}, Last],
                     KeyFreeQ[#, "Type"],
                         Message[MakeKernel::MissingType, #["Name"]];
-                        Merge[{#, <|"Type" -> "auto"|>}, Last]
-                    ,
+                        Merge[{#, <|"Type" -> "auto"|>}, Last],
                     True,
                         #
                 ]&
@@ -175,29 +146,29 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
         integratorTemplateParams = StringRiffle[integratorTemplateParams, ", "];
         returnType = spec["ctype"];
         returnTypePointer = StringTemplate["`1`*"][returnType];
-        adOrders = getADOrders[spec];
         adSpecs =
-            Map[
-                <|
-                    "Order" -> #
-                    ,
-                    "Suffix" ->
-                        If[# === 1,
-                            "AD"
+            If[spec["AD"],
+                Map[
+                    Merge[
+                        {
+                            #
                             ,
-                            "AD" <> ToString[#]
-                        ]
+                            <|
+                                "IntegratorTemplateParams" -> StringRiffle[TemplateParameterGeneration[spec, #["Replacements"]], ", "]
+                                ,
+                                "ReturnType" -> spec["ctype"] /. #["Replacements"]
+                                ,
+                                "Params" -> Last @ processParameters[params, #["Replacements"]]
+                            |>
+                        }
+                        ,
+                        Last
+                    ]&
                     ,
-                    "Replacements" -> $ADReplacementsByOrder[#]
-                    ,
-                    "IntegratorTemplateParams" -> StringRiffle[TemplateParameterGeneration[spec, $ADReplacementsByOrder[#]], ", "]
-                    ,
-                    "ReturnType" -> spec["ctype"] /. $ADReplacementsByOrder[#]
-                    ,
-                    "Params" -> Last @ processParameters[params, $ADReplacementsByOrder[#]]
-                |>&
+                    $ADSpecializations
+                ]
                 ,
-                adOrders
+                {}
             ];
         (* Now, we create the header which holds the class with the integrators and the map/get methods *)
         integratorHeader =
@@ -213,7 +184,13 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
                             ,
                             "MembersPublic" ->
                                 Join[
-                                    {FunKit`MakeCppFunction["Name" -> StringTemplate["`Name`_integrator"][spec], "Parameters" -> {<|"Type" -> "DiFfRG::QuadratureProvider", "Reference" -> True, "Const" -> False, "Name" -> "quadrature_provider"|>, <|"Type" -> "DiFfRG::JSONValue", "Reference" -> True, "Const" -> True, "Name" -> "json"|>}, "Body" -> None, "Return" -> ""], getRegulator[OptionValue["Regulator"], OptionValue["RegulatorOpts"]], StringTemplate["`1`<`2`> integrator;"][spec["Integrator"], integratorTemplateParams]}
+                                    {
+                                        FunKit`MakeCppFunction["Name" -> StringTemplate["`Name`_integrator"][spec], "Parameters" -> {<|"Type" -> "DiFfRG::QuadratureProvider", "Reference" -> True, "Const" -> False, "Name" -> "quadrature_provider"|>, <|"Type" -> "DiFfRG::JSONValue", "Reference" -> True, "Const" -> True, "Name" -> "json"|>}, "Body" -> None, "Return" -> ""]
+                                        ,
+                                        getRegulator[OptionValue["Regulator"], OptionValue["RegulatorOpts"]]
+                                        ,
+                                        StringTemplate["`1`<`2`> integrator;"][spec["Integrator"], integratorTemplateParams]
+                                    }
                                     ,
                                     Map[StringTemplate["`1`<`2`> integrator_`3`;"][spec["Integrator"], #["IntegratorTemplateParams"], #["Suffix"]]&, adSpecs]
                                     ,
@@ -235,7 +212,11 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
                                         ]
                                     ]
                                     ,
-                                    {FunKit`MakeCppFunction["Name" -> "get", "Return" -> "void", "Body" -> None, "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> returnType, "Reference" -> True, "Const" -> False|>}, getArgs, params]], FunKit`MakeCppFunction["Name" -> "get", "Return" -> "void", "Body" -> "device::apply([&](const auto...t){get(dest, " <> preArguments <> "t...);}, args);", "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> "IT", "Reference" -> True, "Const" -> False|>}, getArgs, {<|"Name" -> "args", "Type" -> "device::tuple<T...>", "Reference" -> True, "Const" -> True|>}], "Templates" -> {"IT", "...T"}]}
+                                    {
+                                        FunKit`MakeCppFunction["Name" -> "get", "Return" -> "void", "Body" -> None, "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> returnType, "Reference" -> True, "Const" -> False|>}, getArgs, params]]
+                                        ,
+                                        FunKit`MakeCppFunction["Name" -> "get", "Return" -> "void", "Body" -> "device::apply([&](const auto...t){get(dest, " <> preArguments <> "t...);}, args);", "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> "IT", "Reference" -> True, "Const" -> False|>}, getArgs, {<|"Name" -> "args", "Type" -> "device::tuple<T...>", "Reference" -> True, "Const" -> True|>}], "Templates" -> {"IT", "...T"}]
+                                    }
                                     ,
                                     Map[FunKit`MakeCppFunction["Name" -> "get", "Return" -> "void", "Body" -> None, "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> #["ReturnType"], "Reference" -> True, "Const" -> False|>}, getArgs, #["Params"]]]&, adSpecs]
                                 ]
