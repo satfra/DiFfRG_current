@@ -223,7 +223,7 @@ namespace DiFfRG
       NT p, qn, sig, un;
       std::vector<NT> u(size - 1);
 
-      if (lower_y1 > 0.99e99)
+      if (!std::isfinite(lower_y1) || lower_y1 >= std::numeric_limits<ctype>::max() / 2)
         host_coeffs(sidx, 0) = u[0] = 0.0;
       else {
         host_coeffs(sidx, 0) = -0.5;
@@ -236,7 +236,7 @@ namespace DiFfRG
         u[i] = (host_values(sidx, i + 1) - host_values(sidx, i)) - (host_values(sidx, i) - host_values(sidx, i - 1));
         u[i] = (6.0 * u[i] / 2. - sig * u[i - 1]) / p;
       }
-      if (upper_y1 > 0.99e99)
+      if (!std::isfinite(upper_y1) || upper_y1 >= std::numeric_limits<ctype>::max() / 2)
         qn = un = 0.0;
       else {
         qn = 0.5;
