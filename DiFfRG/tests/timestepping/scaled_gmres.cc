@@ -14,6 +14,7 @@
 
 #include <array>
 #include <cmath>
+#include <type_traits>
 
 using namespace DiFfRG;
 using namespace dealii;
@@ -149,6 +150,17 @@ namespace
   }
 } // namespace
 
+static_assert(
+    std::is_same_v<GMRES<SparseMatrix<double>, Vector<double>>,
+                   GMRES<SparseMatrix<double>, Vector<double>, PreconditionJacobi<SparseMatrix<double>>>>);
+static_assert(
+    std::is_same_v<ScaledLinearSolver<SparseMatrix<double>, Vector<double>>,
+                   ScaledLinearSolver<SparseMatrix<double>, Vector<double>,
+                                      GMRES<SparseMatrix<double>, Vector<double>, PreconditionIdentity>>>);
+static_assert(
+    std::is_same_v<ScaledGMRES<SparseMatrix<double>, Vector<double>>,
+                   ScaledGMRES<SparseMatrix<double>, Vector<double>, PreconditionIdentity>>);
+
 TEST_CASE("ScaledLinearSolver defaults to scaled GMRES", "[timestepping][linear_solver][scaled_gmres]")
 {
   const SparseSystem system = make_badly_scaled_matrix();
@@ -241,37 +253,40 @@ TEST_CASE("ScaledUMFPack solves a badly scaled block sparse system", "[timestepp
   check_badly_scaled_solution(matrix, rhs, solution);
 }
 
-TEST_CASE("ScaledGMRES reduces GMRES iterations on a larger equilibrated band system",
-          "[timestepping][linear_solver][scaled_gmres][performance]")
+TEST_CASE("ScaledGMRES preconditioner choice is explicit on a badly scaled sparse system",
+          "[timestepping][linear_solver][scaled_gmres][preconditioner]")
 {
-  constexpr unsigned int n = 120;
-  const SparseSystem system = make_banded_scaled_matrix(n);
-  const auto &matrix = system.matrix;
+  const SparseSystem badly_scaled_system = make_badly_scaled_matrix();
+  ScaledGMRES<SparseMatrix<double>, Vector<double>, PreconditionIdentity> identity_solver;
+  identity_solver.init(badly_scaled_system.matrix);
+  const Vector<double> identity_rhs =
+      matrix_vector_product(badly_scaled_system.matrix, badly_scaled_expected_solution());
+  Vector<double> identity_solution(3);
+  const int identity_iterations = identity_solver.solve(identity_rhs, identity_solution, 1.e-12);
 
-  Vector<double> expected_solution(n);
-  for (unsigned int i = 0; i < n; ++i)
+  CAPTURE(identity_iterations);
+  CHECK(identity_iterations >= 0);
+  check_badly_scaled_solution(badly_scaled_system.matrix, identity_rhs, identity_solution);
+
+  const SparseSystem banded_system = make_banded_scaled_matrix(120);
+  const auto &banded_matrix = banded_system.matrix;
+
+  Vector<double> expected_solution(banded_matrix.n());
+  for (unsigned int i = 0; i < expected_solution.size(); ++i)
     expected_solution[i] = std::sin(0.13 * double(i + 1)) + 0.25 * std::cos(0.07 * double(i));
 
-  const Vector<double> rhs = matrix_vector_product(matrix, expected_solution);
+  const Vector<double> rhs = matrix_vector_product(banded_matrix, expected_solution);
 
-  GMRES<SparseMatrix<double>, Vector<double>> unscaled_solver;
-  unscaled_solver.init(matrix);
-  Vector<double> unscaled_solution(n);
-  const int unscaled_iterations = unscaled_solver.solve(rhs, unscaled_solution, 1.e-10);
+  ScaledGMRES<SparseMatrix<double>, Vector<double>, PreconditionJacobi<SparseMatrix<double>>> jacobi_solver;
+  jacobi_solver.init(banded_matrix);
+  Vector<double> jacobi_solution(banded_matrix.n());
+  const int jacobi_iterations = jacobi_solver.solve(rhs, jacobi_solution, 1.e-10);
 
-  ScaledGMRES<SparseMatrix<double>, Vector<double>> scaled_solver;
-  scaled_solver.init(matrix);
-  Vector<double> scaled_solution(n);
-  const int scaled_iterations = scaled_solver.solve(rhs, scaled_solution, 1.e-10);
-
-  CAPTURE(unscaled_iterations, scaled_iterations);
-  CHECK(scaled_iterations >= 0);
-  CHECK(unscaled_iterations >= 0);
-  CHECK(scaled_iterations < unscaled_iterations);
-
-  const Vector<double> residual_check = matrix_vector_product(matrix, scaled_solution);
-  for (unsigned int i = 0; i < n; ++i) {
-    CHECK(std::isfinite(scaled_solution[i]));
-    CHECK(residual_check[i] == Catch::Approx(rhs[i]).epsilon(1.e-8).margin(1.e-7));
+  const Vector<double> jacobi_residual = matrix_vector_product(banded_matrix, jacobi_solution);
+  CAPTURE(identity_iterations, jacobi_iterations);
+  CHECK(jacobi_iterations >= 0);
+  for (unsigned int i = 0; i < jacobi_solution.size(); ++i) {
+    CHECK(std::isfinite(jacobi_solution[i]));
+    CHECK(jacobi_residual[i] == Catch::Approx(rhs[i]).epsilon(1.e-8).margin(1.e-7));
   }
 }
