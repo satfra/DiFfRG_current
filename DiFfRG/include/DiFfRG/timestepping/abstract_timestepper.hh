@@ -48,6 +48,7 @@ namespace DiFfRG
    * - /timestepping/implicit/abs_tol: The absolute tolerance for an implicit timestepping algorithm.
    * - /timestepping/implicit/rel_tol: The relative tolerance for an implicit timestepping algorithm.
    * - /timestepping/implicit/max_steps: The maximal number of internal SUNDIALS steps between outputs.
+   * - /timestepping/implicit/max_non_linear_iterations: The maximal number of nonlinear IDA iterations.
    * - /timestepping/explicit/dt: The timestep size for an explicit timestepping algorithm.
    * - /timestepping/explicit/minimal_dt: The minimal timestep size for an explicit timestepping algorithm.
    * - /timestepping/explicit/maximal_dt: The maximal timestep size for an explicit timestepping algorithm.
@@ -101,6 +102,11 @@ namespace DiFfRG
       impl.abs_tol = json.get_double("/timestepping/implicit/abs_tol");
       impl.rel_tol = json.get_double("/timestepping/implicit/rel_tol");
       impl.max_steps = json.get_uint("/timestepping/implicit/max_steps", 1000000);
+      impl.max_non_linear_iterations = json.get_uint("/timestepping/implicit/max_non_linear_iterations", 10);
+      impl.ida_callback_trace = json.get_bool("/timestepping/implicit/ida_callback_trace", false);
+      impl.ida_callback_trace_min_t = json.get_double("/timestepping/implicit/ida_callback_trace_min_t", 0.0);
+      impl.ida_callback_trace_max_lines = json.get_uint("/timestepping/implicit/ida_callback_trace_max_lines", 200);
+      impl.ida_callback_trace_successes = json.get_bool("/timestepping/implicit/ida_callback_trace_successes", false);
 
       expl.dt = json.get_double("/timestepping/explicit/dt");
       expl.minimal_dt = json.get_double("/timestepping/explicit/minimal_dt");
@@ -176,6 +182,11 @@ namespace DiFfRG
       double abs_tol;
       double rel_tol;
       uint max_steps;
+      uint max_non_linear_iterations;
+      bool ida_callback_trace;
+      double ida_callback_trace_min_t;
+      uint ida_callback_trace_max_lines;
+      bool ida_callback_trace_successes;
     } impl;
 
     struct ExplicitParameters {

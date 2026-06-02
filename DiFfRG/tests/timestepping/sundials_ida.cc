@@ -58,7 +58,7 @@ TEST_CASE("Test SUNDIALS IDA with CG constant model", "[timestepping][constant][
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = CG::Assembler<Discretization, Model>;
   using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
-  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_sundials_ida_constant_dg", 1e-9));
+  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_sundials_ida_constant_cg", 1e-9));
 }
 TEST_CASE("Test SUNDIALS IDA with CG exponential model", "[timestepping][exponential][sundials_ida][fem]")
 {
@@ -70,7 +70,7 @@ TEST_CASE("Test SUNDIALS IDA with CG exponential model", "[timestepping][exponen
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = CG::Assembler<Discretization, Model>;
   using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
-  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_sundials_ida_exponential_dg", 1e-9));
+  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_sundials_ida_exponential_cg", 1e-9));
 }
 TEST_CASE("Test SUNDIALS IDA with CG Burgers model", "[timestepping][Burgers][sundials_ida][fem]")
 {
@@ -82,7 +82,7 @@ TEST_CASE("Test SUNDIALS IDA with CG Burgers model", "[timestepping][Burgers][su
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = CG::Assembler<Discretization, Model>;
   using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
-  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_sundials_ida_burgers_dg", 1e-9));
+  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_sundials_ida_burgers_cg", 1e-9));
 }
 
 TEST_CASE("Test SUNDIALS IDA with KT Burgers model", "[timestepping][Burgers][sundials_ida][kt]")

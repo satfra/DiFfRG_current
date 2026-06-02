@@ -1,6 +1,6 @@
 #include "DiFfRG/discretization/FV/assembler/KurganovTadmor.hh"
 #include "DiFfRG/discretization/FV/discretization.hh"
-#include "DiFfRG/timestepping/linear_solver/ScaledGMRES.hh"
+#include "DiFfRG/timestepping/linear_solver/UMFPack.hh"
 #include "kt_regression_helpers.hh"
 
 #include <DiFfRG/common/json.hh>
@@ -18,10 +18,8 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
-#include <iomanip>
 #include <iostream>
 #include <limits>
-#include <numbers>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -34,26 +32,55 @@ namespace
   using std::get;
 
   constexpr uint dim = 1;
-  constexpr double lambda_uv = 0.6;
-  constexpr double k_ir = 1.0e-3;
-  const double final_time = std::log(lambda_uv / k_ir);
+  constexpr double k_ir = 5.0e-2;
   constexpr double sigma_min = 0.0;
   constexpr double sigma_max_over_lambda = 1.5;
-  constexpr double sigma_max = sigma_max_over_lambda * lambda_uv;
-  constexpr double delta_sigma = 1.0e-3; // N = (sigma_max - sigma_min)/delta_sigma = 900 cells
-  constexpr std::size_t n_cells = static_cast<std::size_t>((sigma_max - sigma_min) / delta_sigma + 0.5);
+  constexpr double delta_sigma = 1.0e-3;
   constexpr double grid_tol = 1.0e-12;
 
-  struct PaperLitimParameters {
+  struct PaperSharedParameters {
     static constexpr double Nc = 3.0;
     static constexpr double Nf = 2.0;
     static constexpr double T = 1.0e-4;
     static constexpr double muq = 0.0;
     static constexpr double hPhi = 3.41;
-    static constexpr double m2Phi = -0.03006;
-    static constexpr double lambdaPhi = 19.260;
     static constexpr double cSigma = 0.001695;
   };
+
+  struct PaperVacuumTargets {
+    static constexpr double sigma = 0.093;
+    static constexpr double mPion = 0.135;
+    static constexpr double mSigma = 0.575;
+    static constexpr double mQuark = 0.317;
+  };
+
+  template <typename Regulator_, int LambdaMilliGeV, int M2PhiMicroGeV2, int LambdaPhiMilli> struct PaperCase {
+    using Regulator = Regulator_;
+    static constexpr double lambda_uv = static_cast<double>(LambdaMilliGeV) / 1000.0;
+    static constexpr double m2Phi = static_cast<double>(M2PhiMicroGeV2) / 100000.0;
+    static constexpr double lambdaPhi = static_cast<double>(LambdaPhiMilli) / 1000.0;
+
+    static double final_time() { return std::log(lambda_uv / k_ir); }
+
+    static std::size_t n_cells()
+    {
+      return static_cast<std::size_t>((sigma_max_over_lambda * lambda_uv - sigma_min) / delta_sigma + 0.5);
+    }
+
+    static std::string label() { return "Litim Lambda=" + std::to_string(lambda_uv); }
+
+    static std::string output_prefix()
+    {
+      std::string prefix = "quark_meson_kt_regression_litim_";
+      prefix += std::to_string(LambdaMilliGeV);
+      return prefix;
+    }
+  };
+
+  using LitimLambda06 = PaperCase<LitimRegulator<>, 600, -3006, 19260>;
+  using LitimLambda08 = PaperCase<LitimRegulator<>, 800, 19183, 15697>;
+  using LitimLambda10 = PaperCase<LitimRegulator<>, 1000, 52987, 11230>;
+  using LitimLambda12 = PaperCase<LitimRegulator<>, 1200, 98611, 6561>;
 
   template <typename Model> class ConstrainExplicitBreakingOrigin
   {
@@ -65,7 +92,7 @@ namespace
       if (!candidate.has_value()) return;
 
       constraints.add_line(*candidate);
-      constraints.set_inhomogeneity(*candidate, -PaperLitimParameters::cSigma);
+      constraints.set_inhomogeneity(*candidate, -PaperSharedParameters::cSigma);
     }
   };
 
@@ -77,52 +104,16 @@ namespace
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
-  using JacobianReconstructor = def::FirstOrderReconstructor<dim, double>;
   template <typename Model>
   using ExactJacobianAssembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor>;
-  template <typename Model>
-  using FirstOrderJacobianAssembler =
-      FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor, FV::KurganovTadmor::MaxEigenvalueWaveSpeed,
-                                    JacobianReconstructor>;
-  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, ScaledGMRES>;
-  using ExplicitTimeStepper = TimeStepperBoostRK54<VectorType, SparseMatrixType, dim>;
+  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
 
   double grid_spacing() { return delta_sigma; }
 
-  double stable_coth(const double x)
+  template <typename Case> double initial_potential(const double sigma)
   {
-    if (std::abs(x) < 1.0e-4) return 1.0 / x + x / 3.0 - x * x * x / 45.0;
-    return 1.0 / std::tanh(x);
-  }
-
-  double analytic_sigma_litim_loop(const double k, const double m2_sigma, const double T)
-  {
-    const double energy = std::sqrt(k * k + m2_sigma);
-    const double thermal_factor = stable_coth(energy / (2.0 * T));
-    return std::pow(k, 5) * thermal_factor / (12.0 * std::numbers::pi * std::numbers::pi * energy);
-  }
-
-  double relative_error(const double value, const double reference)
-  {
-    const double scale = std::max({1.0, std::abs(value), std::abs(reference)});
-    return std::abs(value - reference) / scale;
-  }
-
-  double initial_potential(const double sigma)
-  {
-    return 0.5 * PaperLitimParameters::m2Phi * sigma * sigma +
-           0.25 * PaperLitimParameters::lambdaPhi * std::pow(sigma, 4) - PaperLitimParameters::cSigma * sigma;
-  }
-
-  double initial_potential_second_derivative(const double sigma)
-  {
-    return PaperLitimParameters::m2Phi + 3.0 * PaperLitimParameters::lambdaPhi * sigma * sigma;
-  }
-
-  double finite_volume_second_derivative_at_face(const double face_sigma)
-  {
-    return initial_potential_second_derivative(face_sigma) +
-           0.5 * PaperLitimParameters::lambdaPhi * grid_spacing() * grid_spacing();
+    return 0.5 * Case::m2Phi * sigma * sigma + 0.25 * Case::lambdaPhi * std::pow(sigma, 4) -
+           PaperSharedParameters::cSigma * sigma;
   }
 
   void log_bad_bosonic_mass_argument(const char *label, const double x, const double k, const double m2)
@@ -250,15 +241,15 @@ namespace
     mutable Integrator_p2<3, autodiff::Real<2, double>, Kernel, TBB_exec> integrator_ad2;
   };
 
-  class QuarkMesonLitimFlows
+  template <typename Case> class QuarkMesonFlows
   {
   public:
-    using Regulator = LitimRegulator<>;
+    using Regulator = typename Case::Regulator;
     using PionIntegrator = IntegratorWrapper<QMPionKernel<Regulator>>;
     using SigmaIntegrator = IntegratorWrapper<QMSigmaKernel<Regulator>>;
     using QuarkIntegrator = IntegratorWrapper<QMQuarkKernel<Regulator>>;
 
-    explicit QuarkMesonLitimFlows(const JSONValue &json)
+    explicit QuarkMesonFlows(const JSONValue &json)
         : quadrature_provider(json), pion(quadrature_provider, json), sigma(quadrature_provider, json),
           quark(quadrature_provider, json)
     {
@@ -284,35 +275,35 @@ namespace
     QuarkIntegrator quark;
   };
 
-  class QuarkMesonKTModel : public def::AbstractModel<QuarkMesonKTModel, Components>,
+  template <typename Case>
+  class QuarkMesonKTModel : public def::AbstractModel<QuarkMesonKTModel<Case>, Components>,
                             public def::fRG,
-                            public def::OriginShiftedOddLinearExtrapolationBoundaries<QuarkMesonKTModel>,
-                            public ConstrainExplicitBreakingOrigin<QuarkMesonKTModel>,
-                            public def::AD<QuarkMesonKTModel>
+                            public def::OriginShiftedOddLinearExtrapolationBoundaries<QuarkMesonKTModel<Case>>,
+                            public ConstrainExplicitBreakingOrigin<QuarkMesonKTModel<Case>>,
+                            public def::AD<QuarkMesonKTModel<Case>>
   {
   public:
     explicit QuarkMesonKTModel(const JSONValue &json) : def::fRG(json), flows(json)
     {
-      flows.set_k(Lambda);
-      flows.set_T(PaperLitimParameters::T);
+      flows.set_k(this->Lambda);
+      flows.set_T(PaperSharedParameters::T);
     }
 
     template <typename Vector> void initial_condition(const Point<dim> &x, Vector &values) const
     {
-      values[0] = PaperLitimParameters::m2Phi * x[0] + PaperLitimParameters::lambdaPhi * std::pow(x[0], 3) -
-                  PaperLitimParameters::cSigma;
+      values[0] = Case::m2Phi * x[0] + Case::lambdaPhi * std::pow(x[0], 3) - PaperSharedParameters::cSigma;
     }
 
     template <typename NT, std::size_t n_components> std::array<NT, n_components> origin_odd_reflection_values() const
     {
       static_assert(n_components == 1, "QuarkMesonKTModel expects one FE function.");
-      return {NT(-PaperLitimParameters::cSigma)};
+      return {NT(-PaperSharedParameters::cSigma)};
     }
 
     void set_time(const double t_)
     {
-      t = t_;
-      k = std::exp(-t) * Lambda;
+      this->t = t_;
+      k = std::exp(-this->t) * this->Lambda;
       flows.set_k(k);
     }
 
@@ -327,13 +318,13 @@ namespace
       const NT u = fe_functions[0];
       const double sigma_value = x[0];
       const NT sigma_nt = NT(sigma_value);
-      const NT m2_pion = (u + NT(PaperLitimParameters::cSigma)) / sigma_nt;
+      const NT m2_pion = (u + NT(PaperSharedParameters::cSigma)) / sigma_nt;
       if constexpr (std::is_same_v<std::decay_t<NT>, double>)
         log_bad_bosonic_mass_argument("pion", sigma_value, k, m2_pion);
 
       NT pion_loop{};
-      flows.pion.get(pion_loop, k, PaperLitimParameters::Nc, PaperLitimParameters::Nf, PaperLitimParameters::T,
-                     PaperLitimParameters::muq, PaperLitimParameters::hPhi, m2_pion);
+      flows.pion.get(pion_loop, k, PaperSharedParameters::Nc, PaperSharedParameters::Nf, PaperSharedParameters::T,
+                     PaperSharedParameters::muq, PaperSharedParameters::hPhi, m2_pion);
 
       F_i[0][0] = pion_loop;
     }
@@ -350,12 +341,11 @@ namespace
       if constexpr (std::is_same_v<std::decay_t<NT>, double>) log_bad_bosonic_mass_argument("sigma", x[0], k, m2_sigma);
 
       NT sigma_loop{};
-      flows.sigma.get(sigma_loop, k, PaperLitimParameters::Nc, PaperLitimParameters::Nf, PaperLitimParameters::T,
-                      PaperLitimParameters::muq, PaperLitimParameters::hPhi, m2_sigma);
+      flows.sigma.get(sigma_loop, k, PaperSharedParameters::Nc, PaperSharedParameters::Nf, PaperSharedParameters::T,
+                      PaperSharedParameters::muq, PaperSharedParameters::hPhi, m2_sigma);
       // KT residual sums the fluxes: (H + D)·n. The diffusion flux is the physical flux
       // with the same sign as the advection flux (conservation-law / CG convention). The
-      // sigma loop ∝ +1/√(k²+m²_σ) is a decreasing function of m²_σ = ∂_σ u, i.e.
-      // ∂F_diff/∂(∂_σ u) < 0 — the forward-diffusion sign under (H + D).
+      // sigma loop is a decreasing function of m²_σ = ∂_σ u, i.e. ∂F_diff/∂(∂_σ u) < 0.
       F_i[0][0] = sigma_loop;
     }
 
@@ -369,22 +359,24 @@ namespace
       NT source_right{};
       NT source_left{};
       constexpr double source_dx = 1.0e-5;
-      flows.quark.get(source_right, k, PaperLitimParameters::Nc, PaperLitimParameters::Nf, PaperLitimParameters::T,
-                      PaperLitimParameters::muq, PaperLitimParameters::hPhi, sigma_value + NT(source_dx));
-      flows.quark.get(source_left, k, PaperLitimParameters::Nc, PaperLitimParameters::Nf, PaperLitimParameters::T,
-                      PaperLitimParameters::muq, PaperLitimParameters::hPhi, sigma_value - NT(source_dx));
+      flows.quark.get(source_right, k, PaperSharedParameters::Nc, PaperSharedParameters::Nf, PaperSharedParameters::T,
+                      PaperSharedParameters::muq, PaperSharedParameters::hPhi, sigma_value + NT(source_dx));
+      flows.quark.get(source_left, k, PaperSharedParameters::Nc, PaperSharedParameters::Nf, PaperSharedParameters::T,
+                      PaperSharedParameters::muq, PaperSharedParameters::hPhi, sigma_value - NT(source_dx));
       s_i[0] = (source_right - source_left) / NT(2.0 * source_dx);
     }
 
   private:
-    mutable QuarkMesonLitimFlows flows;
+    double k = Case::lambda_uv;
+    mutable QuarkMesonFlows<Case> flows;
   };
 
+  template <typename Case>
   JSONValue make_json(const double final_time, const double output_dt = 2.0e-2, const double explicit_dt = 1.0e-8,
                       const double explicit_abs_tol = 1.0e-14, const double explicit_rel_tol = 1.0e-14)
   {
     return json::value(
-        {{"physical", {{"Lambda", lambda_uv}, {"cSigma", PaperLitimParameters::cSigma}}},
+        {{"physical", {{"Lambda", Case::lambda_uv}, {"cSigma", PaperSharedParameters::cSigma}}},
          {"integration", {{"x_order", 100}, {"x_extent_tolerance", 1.0e-4}, {"jacobian_quadrature_factor", 0.5}}},
          {"discretization",
           {{"fe_order", 0},
@@ -410,7 +402,11 @@ namespace
              {"maximal_dt", 1.0e-5},
              {"abs_tol", 1.0e-12},
              {"rel_tol", 1.0e-12},
-             {"max_steps", 20000000}}}}},
+             {"max_steps", 20000000},
+             {"ida_callback_trace", std::is_same_v<Case, LitimLambda12>},
+             {"ida_callback_trace_min_t", 3.0},
+             {"ida_callback_trace_max_lines", 1200},
+             {"ida_callback_trace_successes", true}}}}},
          {"output",
           {{"verbosity", 1},
            {"vtk", false},
@@ -419,12 +415,13 @@ namespace
            {"fv_residual_contribution_diagnostics", true}}}});
   }
 
-  Config::ConfigurationMesh<1> make_mesh_config()
+  template <typename Case> Config::ConfigurationMesh<1> make_mesh_config()
   {
-    const Config::GridAxis sigma_axis(sigma_min, grid_spacing(), sigma_max);
+    const Config::GridAxis sigma_axis(sigma_min, grid_spacing(), sigma_max_over_lambda * Case::lambda_uv);
     return Config::ConfigurationMesh<1>(0u, std::vector<Config::GridAxis>{sigma_axis});
   }
 
+  template <typename Case>
   void initialize_exact_cell_averages(FV::FlowingVariables<Discretization> &state,
                                       const std::vector<Point<dim>> &support_points)
   {
@@ -433,19 +430,19 @@ namespace
     const double delta = grid_spacing();
     for (unsigned int i = 0; i < u.size(); ++i) {
       const double sigma = support_points[i][0];
-      const double right = initial_potential(sigma + 0.5 * delta);
-      const double left = initial_potential(sigma - 0.5 * delta);
+      const double right = initial_potential<Case>(sigma + 0.5 * delta);
+      const double left = initial_potential<Case>(sigma - 0.5 * delta);
       u[i] = (right - left) / delta;
     }
   }
 
-  template <typename AssemblerType, typename TimeStepperType = ImplicitTimeStepper>
+  template <typename Case, typename AssemblerType, typename TimeStepperType = ImplicitTimeStepper>
   kt_regression::SampledProfile run_flow(const double final_time, const JSONValue &json,
-                                         const std::string &output_prefix = "quark_meson_kt_regression")
+                                         const std::string &output_prefix = Case::output_prefix())
   {
     kt_regression::ensure_diffrg_initialized();
-    QuarkMesonKTModel model(json);
-    Mesh mesh(make_mesh_config());
+    QuarkMesonKTModel<Case> model(json);
+    Mesh mesh(make_mesh_config<Case>());
     Discretization discretization(mesh, json);
     AssemblerType assembler(discretization, model, json);
 
@@ -459,8 +456,8 @@ namespace
     state.interpolate(model);
 
     const auto &support_points = discretization.get_support_points();
-    REQUIRE(support_points.size() == n_cells);
-    initialize_exact_cell_averages(state, support_points);
+    REQUIRE(support_points.size() == Case::n_cells());
+    initialize_exact_cell_averages<Case>(state, support_points);
     discretization.get_constraints().distribute(state.spatial_data());
 
     time_stepper.run(&state, 0.0, final_time);
@@ -468,192 +465,128 @@ namespace
     return kt_regression::sample_sorted_profile(state, discretization, grid_tol);
   }
 
-  template <typename AssemblerType, typename TimeStepperType = ImplicitTimeStepper>
+  template <typename Case, typename AssemblerType, typename TimeStepperType = ImplicitTimeStepper>
   kt_regression::SampledProfile run_flow(const double final_time)
   {
-    const JSONValue json = make_json(final_time);
-    return run_flow<AssemblerType, TimeStepperType>(final_time, json);
+    const JSONValue json = make_json<Case>(final_time);
+    return run_flow<Case, AssemblerType, TimeStepperType>(final_time, json);
+  }
+
+  std::size_t lower_bracketing_index(const kt_regression::SampledProfile &profile, const double x)
+  {
+    const auto upper = std::upper_bound(profile.x.begin(), profile.x.end(), x);
+    if (upper == profile.x.begin() || upper == profile.x.end()) throw std::runtime_error("x outside sampled profile");
+    return static_cast<std::size_t>(std::distance(profile.x.begin(), upper) - 1);
+  }
+
+  double interpolate_profile(const kt_regression::SampledProfile &profile, const double x)
+  {
+    const std::size_t lower = lower_bracketing_index(profile, x);
+    const double x0 = profile.x[lower];
+    const double x1 = profile.x[lower + 1];
+    const double y0 = profile.y[lower];
+    const double y1 = profile.y[lower + 1];
+    return y0 + (x - x0) * (y1 - y0) / (x1 - x0);
+  }
+
+  double central_profile_slope(const kt_regression::SampledProfile &profile, const double x)
+  {
+    const auto nearest = std::lower_bound(profile.x.begin(), profile.x.end(), x);
+    if (nearest == profile.x.begin() || nearest + 1 == profile.x.end())
+      throw std::runtime_error("x outside central-difference stencil");
+
+    const std::size_t center = static_cast<std::size_t>(std::distance(profile.x.begin(), nearest));
+    const std::size_t left = center - 1;
+    const std::size_t right = center + 1;
+    return (profile.y[right] - profile.y[left]) / (profile.x[right] - profile.x[left]);
+  }
+
+  double profile_zero_near(const kt_regression::SampledProfile &profile, const double x)
+  {
+    if (profile.x.size() < 2) throw std::runtime_error("profile too small for zero search");
+
+    double best_zero = std::numeric_limits<double>::quiet_NaN();
+    double best_distance = std::numeric_limits<double>::infinity();
+
+    for (std::size_t i = 0; i + 1 < profile.x.size(); ++i) {
+      const double x0 = profile.x[i];
+      const double x1 = profile.x[i + 1];
+      const double y0 = profile.y[i];
+      const double y1 = profile.y[i + 1];
+
+      if (y0 == 0.0) {
+        const double distance = std::abs(x0 - x);
+        if (distance < best_distance) {
+          best_zero = x0;
+          best_distance = distance;
+        }
+      }
+
+      if ((y0 < 0.0 && y1 > 0.0) || (y0 > 0.0 && y1 < 0.0)) {
+        const double zero = x0 - y0 * (x1 - x0) / (y1 - y0);
+        const double distance = std::abs(zero - x);
+        if (distance < best_distance) {
+          best_zero = zero;
+          best_distance = distance;
+        }
+      }
+    }
+
+    if (!std::isfinite(best_zero)) throw std::runtime_error("profile has no zero crossing");
+    return best_zero;
+  }
+
+  template <typename Case> void check_case()
+  {
+    kt_regression::ensure_logger();
+
+    using Model = QuarkMesonKTModel<Case>;
+    const auto exact_profile = run_flow<Case, ExactJacobianAssembler<Model>>(Case::final_time());
+    REQUIRE(exact_profile.x.size() == Case::n_cells());
+
+    for (const double value : exact_profile.y)
+      REQUIRE(std::isfinite(value));
+
+    const double u_at_sigma_vac = interpolate_profile(exact_profile, PaperVacuumTargets::sigma);
+    const double pion_mass_at_paper_sigma =
+        std::sqrt((u_at_sigma_vac + PaperSharedParameters::cSigma) / PaperVacuumTargets::sigma);
+    const double numerical_sigma_vac = profile_zero_near(exact_profile, PaperVacuumTargets::sigma);
+    const double u_at_numerical_sigma_vac = interpolate_profile(exact_profile, numerical_sigma_vac);
+    const double pion_mass =
+        std::sqrt((u_at_numerical_sigma_vac + PaperSharedParameters::cSigma) / numerical_sigma_vac);
+    const double sigma_mass = std::sqrt(central_profile_slope(exact_profile, numerical_sigma_vac));
+    const double quark_mass = PaperSharedParameters::hPhi * PaperVacuumTargets::sigma;
+
+    CAPTURE(Case::label(), u_at_sigma_vac, pion_mass_at_paper_sigma, numerical_sigma_vac,
+            u_at_numerical_sigma_vac, pion_mass, sigma_mass, quark_mass);
+    CHECK(u_at_sigma_vac == Catch::Approx(0.0).margin(5.0e-4));
+    CHECK(pion_mass == Catch::Approx(PaperVacuumTargets::mPion).margin(2.0e-3));
+    CHECK(sigma_mass == Catch::Approx(PaperVacuumTargets::mSigma).margin(2.0e-2));
+    CHECK(quark_mass == Catch::Approx(PaperVacuumTargets::mQuark).margin(1.0e-3));
   }
 
 } // namespace
 
-TEST_CASE("QM sigma Litim diffusion loop matches analytic finite-T result near pole",
-          "[FV][KT][QuarkMeson][regression][slow][litim-sigma-loop]")
+TEST_CASE("KT quark-meson LPA Litim Lambda 0.6 flow reaches final time with exact TVD Jacobian",
+          "[FV][KT][QuarkMeson][regression][slow][2601.23005][litim][lambda-0.6]")
 {
-  kt_regression::ensure_logger();
-  kt_regression::ensure_diffrg_initialized();
-
-  constexpr double t_problem = 0.00172622;
-  const double k = lambda_uv * std::exp(-t_problem);
-  const JSONValue json = make_json(t_problem);
-  QuarkMesonLitimFlows flows(json);
-  flows.set_k(k);
-  flows.set_T(PaperLitimParameters::T);
-
-  const std::array<double, 4> eps_values = {1.0e-2, 1.0e-4, 1.0e-6, 1.0e-8};
-
-  double max_relative_error = 0.0;
-  std::clog << "[QM sigma Litim loop] eps,m2_sigma,numeric,analytic,abs_error,rel_error\n";
-  for (const double eps : eps_values) {
-    const double m2_sigma = -k * k + eps;
-    double numeric = 0.0;
-    flows.sigma.get(numeric, k, PaperLitimParameters::Nc, PaperLitimParameters::Nf, PaperLitimParameters::T,
-                    PaperLitimParameters::muq, PaperLitimParameters::hPhi, m2_sigma);
-
-    const double analytic = analytic_sigma_litim_loop(k, m2_sigma, PaperLitimParameters::T);
-    const double abs_error = std::abs(numeric - analytic);
-    const double rel_error = relative_error(numeric, analytic);
-    max_relative_error = std::max(max_relative_error, rel_error);
-
-    std::clog << std::scientific << std::setprecision(16) << "[QM sigma Litim loop] " << eps << ',' << m2_sigma << ','
-              << numeric << ',' << analytic << ',' << abs_error << ',' << rel_error << '\n';
-
-    CAPTURE(eps, m2_sigma, numeric, analytic, abs_error, rel_error);
-    REQUIRE(std::isfinite(numeric));
-    REQUIRE(std::isfinite(analytic));
-    CHECK(rel_error < 1.0e-5);
-  }
-
-  CAPTURE(max_relative_error);
-  CHECK(max_relative_error < 1.0e-5);
+  check_case<LitimLambda06>();
 }
 
-TEST_CASE("QM initial cell averages reconstruct diffusion second derivative on interior faces",
-          "[FV][KT][QuarkMeson][regression][slow][diffusion-reconstruction]")
+TEST_CASE("KT quark-meson LPA Litim Lambda 0.8 flow reaches final time with exact TVD Jacobian",
+          "[FV][KT][QuarkMeson][regression][slow][2601.23005][litim][lambda-0.8]")
 {
-  kt_regression::ensure_logger();
-  kt_regression::ensure_diffrg_initialized();
-
-  const JSONValue json = make_json(0.0);
-  QuarkMesonKTModel model(json);
-  Mesh mesh(make_mesh_config());
-  Discretization discretization(mesh, json);
-  FV::FlowingVariables<Discretization> state(discretization);
-  state.interpolate(model);
-
-  const auto &support_points = discretization.get_support_points();
-  REQUIRE(support_points.size() == n_cells);
-  initialize_exact_cell_averages(state, support_points);
-
-  const auto &cell_averages = state.spatial_data();
-  REQUIRE(cell_averages.size() == support_points.size());
-
-  double max_side_mismatch = 0.0;
-  double max_fv_error = 0.0;
-  double max_pointwise_offset_error = 0.0;
-  std::size_t checked_faces = 0;
-
-  for (std::size_t upper_cell = 2; upper_cell + 1 < support_points.size(); ++upper_cell) {
-    const std::size_t lower_cell = upper_cell - 1;
-    const Point<dim> face(0.5 * (support_points[lower_cell][0] + support_points[upper_cell][0]));
-    const double face_sigma = face[0];
-
-    const std::array<Point<dim>, 2> lower_neighbors = {support_points[lower_cell - 1], support_points[upper_cell]};
-    const std::array<std::array<double, 1>, 2> lower_neighbor_values = {
-        std::array<double, 1>{cell_averages[lower_cell - 1]}, std::array<double, 1>{cell_averages[upper_cell]}};
-    const std::array<double, 1> lower_value = {cell_averages[lower_cell]};
-    const auto lower_gradient = Reconstructor::template compute_gradient_at_point<1>(
-        support_points[lower_cell], face, lower_value, lower_neighbors, lower_neighbor_values);
-
-    const std::array<Point<dim>, 2> upper_neighbors = {support_points[lower_cell], support_points[upper_cell + 1]};
-    const std::array<std::array<double, 1>, 2> upper_neighbor_values = {
-        std::array<double, 1>{cell_averages[lower_cell]}, std::array<double, 1>{cell_averages[upper_cell + 1]}};
-    const std::array<double, 1> upper_value = {cell_averages[upper_cell]};
-    const auto upper_gradient = Reconstructor::template compute_gradient_at_point<1>(
-        support_points[upper_cell], face, upper_value, upper_neighbors, upper_neighbor_values);
-
-    const double reconstructed_lower = lower_gradient[0][0];
-    const double reconstructed_upper = upper_gradient[0][0];
-    const double expected_from_cell_averages = (cell_averages[upper_cell] - cell_averages[lower_cell]) /
-                                               (support_points[upper_cell][0] - support_points[lower_cell][0]);
-    const double expected_fv = finite_volume_second_derivative_at_face(face_sigma);
-    const double expected_pointwise = initial_potential_second_derivative(face_sigma);
-    const double expected_pointwise_offset = 0.5 * PaperLitimParameters::lambdaPhi * grid_spacing() * grid_spacing();
-
-    const double side_mismatch = std::abs(reconstructed_lower - reconstructed_upper);
-    const double fv_error =
-        std::max(std::abs(reconstructed_lower - expected_fv), std::abs(reconstructed_upper - expected_fv));
-    const double pointwise_offset_error =
-        std::abs((reconstructed_lower - expected_pointwise) - expected_pointwise_offset);
-
-    max_side_mismatch = std::max(max_side_mismatch, side_mismatch);
-    max_fv_error = std::max(max_fv_error, fv_error);
-    max_pointwise_offset_error = std::max(max_pointwise_offset_error, pointwise_offset_error);
-    ++checked_faces;
-
-    CAPTURE(upper_cell, face_sigma, reconstructed_lower, reconstructed_upper, expected_from_cell_averages, expected_fv,
-            expected_pointwise);
-    CHECK(reconstructed_lower == Catch::Approx(expected_from_cell_averages).margin(1.0e-12));
-    CHECK(reconstructed_upper == Catch::Approx(expected_from_cell_averages).margin(1.0e-12));
-    CHECK(reconstructed_lower == Catch::Approx(expected_fv).margin(2.0e-9));
-    CHECK(reconstructed_upper == Catch::Approx(expected_fv).margin(2.0e-9));
-    CHECK(reconstructed_lower - expected_pointwise == Catch::Approx(expected_pointwise_offset).margin(2.0e-9));
-  }
-
-  CAPTURE(checked_faces, max_side_mismatch, max_fv_error, max_pointwise_offset_error);
-  CHECK(checked_faces == n_cells - 3);
-  CHECK(max_side_mismatch < 1.0e-12);
-  CHECK(max_fv_error < 2.0e-9);
-  CHECK(max_pointwise_offset_error < 2.0e-9);
+  check_case<LitimLambda08>();
 }
 
-TEST_CASE("QM initialized flow state satisfies the explicit-breaking origin constraint",
-          "[FV][KT][QuarkMeson][regression][slow][origin-constraint]")
+TEST_CASE("KT quark-meson LPA Litim Lambda 1.0 flow reaches final time with exact TVD Jacobian",
+          "[FV][KT][QuarkMeson][regression][slow][2601.23005][litim][lambda-1.0]")
 {
-  kt_regression::ensure_logger();
-  kt_regression::ensure_diffrg_initialized();
-
-  const JSONValue json = make_json(0.0);
-  QuarkMesonKTModel model(json);
-  Mesh mesh(make_mesh_config());
-  Discretization discretization(mesh, json);
-  [[maybe_unused]] ExactJacobianAssembler<QuarkMesonKTModel> assembler(discretization, model, json);
-  FV::FlowingVariables<Discretization> state(discretization);
-  state.interpolate(model);
-
-  const auto &support_points = discretization.get_support_points();
-  REQUIRE(support_points.size() == n_cells);
-  initialize_exact_cell_averages(state, support_points);
-  discretization.get_constraints().distribute(state.spatial_data());
-
-  CHECK(state.spatial_data()[0] == Catch::Approx(-PaperLitimParameters::cSigma).margin(1.0e-14));
+  check_case<LitimLambda10>();
 }
 
-TEST_CASE("KT quark-meson LPA Litim flow reaches final time with exact TVD Jacobian",
-          "[FV][KT][QuarkMeson][regression][slow][2601.23005]")
+TEST_CASE("KT quark-meson LPA Litim Lambda 1.2 flow reaches final time with exact TVD Jacobian",
+          "[FV][KT][QuarkMeson][regression][slow][2601.23005][litim][lambda-1.2]")
 {
-  kt_regression::ensure_logger();
-
-  const auto exact_profile = run_flow<ExactJacobianAssembler<QuarkMesonKTModel>>(final_time);
-  REQUIRE(exact_profile.x.size() == n_cells);
-
-  for (const double value : exact_profile.y)
-    REQUIRE(std::isfinite(value));
-}
-
-TEST_CASE("KT quark-meson LPA Litim flow reaches final time with first-order Jacobian",
-          "[FV][KT][QuarkMeson][regression][slow][2601.23005][first-order-jacobian]")
-{
-  kt_regression::ensure_logger();
-
-  const auto first_order_profile = run_flow<FirstOrderJacobianAssembler<QuarkMesonKTModel>>(final_time);
-  REQUIRE(first_order_profile.x.size() == n_cells);
-
-  for (const double value : first_order_profile.y)
-    REQUIRE(std::isfinite(value));
-}
-
-TEST_CASE("KT quark-meson explicit RK exposes non-finite derivative near problematic region",
-          "[FV][KT][QuarkMeson][regression][slow][2601.23005][explicit-rk][diagnostic]")
-{
-  kt_regression::ensure_logger();
-
-  constexpr double t_problem = 0.00172622;
-  constexpr double output_dt = 1.0e-5;
-  constexpr double explicit_final_time = t_problem + output_dt;
-  const JSONValue json = make_json(explicit_final_time, output_dt, 1.0e-8, 1.0e-10, 1.0e-10);
-
-  REQUIRE_THROWS_WITH((run_flow<ExactJacobianAssembler<QuarkMesonKTModel>, ExplicitTimeStepper>(
-                          explicit_final_time, json, "quark_meson_kt_explicit_regression")),
-                      Catch::Matchers::ContainsSubstring("dy is not finite"));
+  check_case<LitimLambda12>();
 }
