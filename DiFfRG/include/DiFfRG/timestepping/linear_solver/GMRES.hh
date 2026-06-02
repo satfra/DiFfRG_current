@@ -4,6 +4,9 @@
 #include <deal.II/lac/precondition.h>
 #include <deal.II/lac/solver_gmres.h>
 
+// standard library
+#include <type_traits>
+
 // DiFfRG
 #include <DiFfRG/timestepping/linear_solver/abstract_linear_solver.hh>
 
@@ -19,7 +22,10 @@ namespace DiFfRG
     void init(const SparseMatrixType &matrix)
     {
       this->matrix = &matrix;
-      preconditioner.initialize(matrix, 1.0);
+      if constexpr (std::is_same_v<PreconditionerType, dealii::PreconditionIdentity>)
+        preconditioner.initialize(matrix, dealii::PreconditionIdentity::AdditionalData{});
+      else
+        preconditioner.initialize(matrix, 1.0);
     }
 
     bool invert() { return false; }

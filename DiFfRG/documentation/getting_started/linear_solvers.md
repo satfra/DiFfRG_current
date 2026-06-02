@@ -28,7 +28,7 @@ scaled direct solver.
 The aliases expand to the generic wrapper with the corresponding inner solver:
 ```Cpp
 template <typename SparseMatrixType, typename VectorType,
-          typename PreconditionerType = dealii::PreconditionJacobi<SparseMatrixType>>
+          typename PreconditionerType = dealii::PreconditionIdentity>
 using ScaledGMRES =
     ScaledLinearSolver<SparseMatrixType, VectorType,
                        GMRES<SparseMatrixType, VectorType, PreconditionerType>>;
@@ -37,6 +37,14 @@ template <typename SparseMatrixType, typename VectorType>
 using ScaledUMFPack =
     ScaledLinearSolver<SparseMatrixType, VectorType,
                        UMFPack<SparseMatrixType, VectorType>>;
+```
+
+`ScaledGMRES` uses identity preconditioning by default because the row and
+column equilibration already rescales the linear system. Jacobi preconditioning
+remains available explicitly:
+```Cpp
+ScaledGMRES<SparseMatrix<double>, Vector<double>,
+            dealii::PreconditionJacobi<SparseMatrix<double>>>
 ```
 
 ## How the scaling works
