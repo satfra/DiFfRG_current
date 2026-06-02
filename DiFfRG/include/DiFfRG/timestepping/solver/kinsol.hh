@@ -2,13 +2,21 @@
 
 // standard library
 #include <functional>
+#include <memory>
+#include <vector>
 
 // external libraries
-#include <deal.II/sundials/kinsol.h>
+#include <deal.II/base/config.h>
 
 namespace DiFfRG
 {
   using namespace dealii;
+
+  namespace sundials
+  {
+    template <typename VectorType> class KINSOL;
+  }
+
   /**
    * @brief A newton solver, using local error estimates for each vector component.
    *
@@ -21,6 +29,7 @@ namespace DiFfRG
 
     KINSOL(double abstol_ = 1e-10, double reltol_ = 1e-6, double assemble_threshold_ = 0., unsigned int max_steps_ = 21,
            unsigned int n_stepsize_iterations_ = 21);
+    ~KINSOL();
 
     /**
      * @brief Should it be necessary, one can force a recalculation of the jacobian hereby.
@@ -105,6 +114,6 @@ namespace DiFfRG
      */
     bool check();
 
-    std::shared_ptr<SUNDIALS::KINSOL<VectorType>> kinsol;
+    std::unique_ptr<sundials::KINSOL<VectorType>> kinsol;
   };
 } // namespace DiFfRG

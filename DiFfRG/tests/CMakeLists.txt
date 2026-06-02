@@ -13,14 +13,14 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(Catch2)
 list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/contrib)
 
-# When building in-tree (as a subdirectory of the library), the DiFfRG target
-# already exists. Only call find_package for out-of-tree builds.
-if(NOT TARGET DiFfRG)
+# When building in-tree (as a subdirectory of the library), the DiFfRG::DiFfRG
+# alias already exists. Only call find_package for out-of-tree or top-level
+# forwarding builds.
+if(NOT TARGET DiFfRG::DiFfRG)
   find_package(DiFfRG HINTS ${CMAKE_PREFIX_PATH})
-else()
-  if(NOT TARGET DiFfRG::DiFfRG_boost_json)
-    add_library(DiFfRG::DiFfRG_boost_json ALIAS DiFfRG_boost_json)
-  endif()
+endif()
+if(TARGET DiFfRG_boost_json AND NOT TARGET DiFfRG::DiFfRG_boost_json)
+  add_library(DiFfRG::DiFfRG_boost_json ALIAS DiFfRG_boost_json)
 endif()
 
 function(setup_test SOURCE)

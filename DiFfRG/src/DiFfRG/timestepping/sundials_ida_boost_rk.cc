@@ -3,7 +3,6 @@
 #include <boost/numeric/odeint/external/eigen/eigen.hpp>
 #include <deal.II/base/timer.h>
 #include <deal.II/lac/block_vector.h>
-#include <deal.II/sundials/ida.h>
 #include <algorithm>
 #include <cstddef>
 #include <limits>
@@ -16,6 +15,7 @@
 #include <DiFfRG/discretization/data/data_output.hh>
 #include <DiFfRG/timestepping/linear_solver/GMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/UMFPack.hh>
+#include <DiFfRG/timestepping/sundials/ida.hh>
 #include <DiFfRG/timestepping/sundials_ida_boost_rk.hh>
 
 namespace DiFfRG
@@ -55,9 +55,9 @@ namespace DiFfRG
     const uint n_FE_dofs = initial_data.block(0).size();
 
     // Create a SUNDIALS IDA object with the right settings for spatial data
-    typename SUNDIALS::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
-                                                                1e6, 0, impl.abs_tol, impl.rel_tol);
-    typename SUNDIALS::IDA<VectorType> time_stepper(ida_data);
+    typename sundials::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
+                                                                1000000, 0, impl.abs_tol, impl.rel_tol);
+    typename sundials::IDA<VectorType> time_stepper(ida_data);
 
     // Initialize initial condition
     VectorType spatial_y = initial_data.block(0);
@@ -333,8 +333,8 @@ namespace DiFfRG
     double stuck_t = 0.;
     uint failure_counter = 0;
 
-    // Pointer to current residual for monitoring
-    VectorType *residual;
+    VectorType latest_residual;
+    assembler->reinit_vector(latest_residual);
 
     // Tells SUNDIALS to do an internal reset, e.g. if we do local refinement
     time_stepper.solver_should_restart = [&](const double t, VectorType &sol, VectorType &sol_dot) -> bool {
@@ -366,7 +366,7 @@ namespace DiFfRG
 
         commit_variables(variable_y, sol, t);
         assembler->set_time(t);
-        assembler->attach_data_output(*data_out, sol, variable_y, sol_dot, (*residual));
+        assembler->attach_data_output(*data_out, sol, variable_y, sol_dot, latest_residual);
         data_out->flush(t);
 
         last_save = t;
@@ -403,7 +403,7 @@ namespace DiFfRG
         console_out(t, "requesting variables", 2);
         request_variables(variable_y, y, t);
         assembler->residual(res, y, 1., y_dot, 1., variable_y);
-        residual = &res;
+        latest_residual = res;
       } catch (std::exception &e) {
         std::cerr << e.what() << std::endl;
         return ++failure_counter;

@@ -5,6 +5,7 @@
 #include <deal.II/lac/block_vector.h>
 
 // DiFfRG
+#include <DiFfRG/timestepping/sundials/kinsol.hh>
 #include <DiFfRG/timestepping/solver/kinsol.hh>
 
 namespace DiFfRG
@@ -16,8 +17,8 @@ namespace DiFfRG
       : abstol(abstol_), reltol(reltol_), assemble_threshold(assemble_threshold_), max_steps(max_steps_),
         n_stepsize_iterations(n_stepsize_iterations_), ignore_nonconv(false)
   {
-    typename SUNDIALS::KINSOL<VectorType>::AdditionalData add_data;
-    add_data.strategy = SUNDIALS::KINSOL<VectorType>::AdditionalData::SolutionStrategy::linesearch;
+    typename sundials::KINSOL<VectorType>::AdditionalData add_data;
+    add_data.strategy = sundials::KINSOL<VectorType>::AdditionalData::SolutionStrategy::linesearch;
     add_data.function_tolerance = abstol;
     add_data.maximum_non_linear_iterations = max_steps;
     add_data.no_init_setup = true;
@@ -26,8 +27,10 @@ namespace DiFfRG
     // clamp the step and fail with KIN_MXNEWT_5X_EXCEEDED. Disable the bound (a large value) so the
     // full Newton step is taken; globalization is still provided by the line search itself.
     add_data.maximum_newton_step = 1e10;
-    kinsol = std::make_shared<SUNDIALS::KINSOL<VectorType>>(add_data);
+    kinsol = std::make_unique<sundials::KINSOL<VectorType>>(add_data);
   }
+
+  template <typename VectorType_> KINSOL<VectorType_>::~KINSOL() = default;
 
   template <typename VectorType_> void KINSOL<VectorType_>::reinit(const VectorType &u) { update_jacobian(u); }
 
@@ -68,16 +71,14 @@ namespace DiFfRG
       return rms <= max(abstol, reltol * it_rms);
     };
 
-    // SUNDIALS' linesearch strategy can report KIN_LINESEARCH_NONCONV (-5) or KIN_MAXITER_REACHED
-    // (-7) when Newton has effectively already reached the solution (e.g. a linear system solved in
-    // a single step, or a solve started from an already-converged iterate): the step becomes too
-    // small for the line search to make further progress. deal.II turns the negative return code
-    // into an exception. We accept the iterate when its residual confirms convergence (or when the
-    // user opted into ignore_nonconv) and re-throw genuine failures.
+    // SUNDIALS' linesearch strategy can report negative solve returns when Newton has effectively
+    // already reached the solution. The direct wrapper reports those returns as SolveFailure; callback
+    // exceptions still propagate. We accept the iterate only when its residual confirms convergence
+    // or when the user opted into ignore_nonconv.
     auto robust_solve = [&](VectorType &it) {
       try {
         kinsol->solve(it);
-      } catch (const dealii::ExceptionBase &) {
+      } catch (const sundials::SolveFailure &) {
         if (!ignore_nonconv && !residual_converged(it)) throw;
       }
     };
