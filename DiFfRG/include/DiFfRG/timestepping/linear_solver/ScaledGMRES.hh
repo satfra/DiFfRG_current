@@ -17,7 +17,7 @@
 namespace DiFfRG
 {
   template <typename SparseMatrixType, typename VectorType,
-            typename InnerSolver = GMRES<SparseMatrixType, VectorType>>
+            typename InnerSolver = GMRES<SparseMatrixType, VectorType, dealii::PreconditionIdentity>>
   class ScaledLinearSolver : public AbstractLinearSolver<SparseMatrixType, VectorType>
   {
   public:
@@ -102,7 +102,7 @@ namespace DiFfRG
   };
 
   template <typename SparseMatrixType, typename VectorType,
-            typename PreconditionerType = dealii::PreconditionJacobi<SparseMatrixType>>
+            typename PreconditionerType = dealii::PreconditionIdentity>
   using ScaledGMRES =
       ScaledLinearSolver<SparseMatrixType, VectorType, GMRES<SparseMatrixType, VectorType, PreconditionerType>>;
 
