@@ -4,15 +4,15 @@
     "Nc": 3.0,
     "Nf": 2.0,
     "T": 0.1,
-    "muq": 0.00,
-    "m2Phi": 0.0,
+    "muq": 0.1,
+    "m2Phi": 0.1,
     "lambdaPhi": 70.0,
     "hPhi": 6.5,
     "cSigma": 0.0025
   },
   "integration": {
-    "x_quadrature_order": 32,
-    "angle_quadrature_order": 8,
+    "x_order": 32,
+    "cos1_order": 8,
     "x0_quadrature_order": 16,
     "x0_summands": 8,
     "q0_quadrature_order": 16,
@@ -35,7 +35,7 @@
     "EoM_max_iter": 200,
 
     "grid": {
-      "x_grid": "0:1e-4:7e-3, 7e-3:5e-4:9e-3, 9e-3:1e-3:1.1e-2",
+      "x_grid": "0:1e-4:7e-3, 7e-3:5e-4:9e-3, 9e-3:5e-4:1.4e-2",
       "y_grid": "0:0.1:1",
       "z_grid": "0:0.1:1",
       "refine": 0
