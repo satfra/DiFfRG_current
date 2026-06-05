@@ -28,8 +28,8 @@
 #include <iostream>
 #include <limits>
 #include <optional>
-#include <sstream>
 #include <spdlog/spdlog.h>
+#include <sstream>
 #include <tbb/tbb.h>
 
 #include <DiFfRG/common/utils.hh>
@@ -743,6 +743,8 @@ namespace DiFfRG
               mapping(discretization.get_mapping()), triangulation(discretization.get_triangulation()), json(json),
               fe(discretization.get_fe()), threads(json.get_uint("/discretization/threads")),
               batch_size(json.get_uint("/discretization/batch_size")),
+              EoM_cell(*(dof_handler.active_cell_iterators().end())),
+              old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
               EoM_abs_tol(json.get_double("/discretization/EoM_abs_tol")),
               EoM_max_iter(json.get_uint("/discretization/EoM_max_iter")),
               quadrature(1 + json.get_uint("/discretization/overintegration")),
@@ -772,8 +774,8 @@ namespace DiFfRG
         }
 
         virtual void attach_data_output(DataOutput<dim, VectorType> &data_out, const VectorType &solution,
-                                        const VectorType & /* variables*/, const VectorType &dt_solution = VectorType(),
-                                        const VectorType &residual = VectorType())
+                                        const VectorType &variables, const VectorType &dt_solution = VectorType(),
+                                        const VectorType &residual = VectorType()) override
         {
           const auto fe_function_names = Components::FEFunction_Descriptor::get_names_vector();
           std::vector<std::string> fe_function_names_residual;
@@ -791,7 +793,8 @@ namespace DiFfRG
 #ifdef H5CPP
           if (json.get_bool("/output/hdf5", true) && json.get_bool("/output/fv_reconstruction_diagnostics", false)) {
             if constexpr (dim != 1) {
-              throw std::runtime_error("FV reconstruction diagnostics are currently implemented for 1D KT models only.");
+              throw std::runtime_error(
+                  "FV reconstruction diagnostics are currently implemented for 1D KT models only.");
             } else {
               diagnostics::write_reconstruction_maps<Assembler>(data_out, dof_handler, model, solution);
             }
@@ -808,7 +811,7 @@ namespace DiFfRG
           }
 #endif
 
-          // readouts(data_out, solution, variables);
+          readouts(data_out, solution, variables);
         }
 
         virtual void reinit() override
@@ -868,13 +871,148 @@ namespace DiFfRG
           // model.template jacobian_variables<0>(jacobian, fv_tie(variables));
         };
 
-        void readouts(DataOutput<dim, VectorType> &data_out, const VectorType &, const VectorType &variables) const
+        struct ReadoutSolution {
+          std::array<NumberType, n_components> values{};
+          GradientType gradients{};
+          std::array<Tensor<2, dim, NumberType>, n_components> hessians{};
+        };
+
+        void readouts(DataOutput<dim, VectorType> &data_out, const VectorType &solution_global,
+                      const VectorType &variables) const
         {
           auto helper = [&](auto EoMfun, auto outputter) {
-            (void)EoMfun;
-            outputter(data_out, dealii::Point<0>(), fv_tie(variables));
+            auto EoM_cell = this->EoM_cell;
+            const auto EoM = get_fv_readout_point(EoM_cell, solution_global, EoMfun);
+            this->EoM_cell = EoM_cell;
+
+            auto solution = reconstruct_readout_solution(EoM_cell, solution_global, EoM);
+
+            std::array<NumberType, Components::count_extractors()> extracted_data{{}};
+            outputter(data_out, EoM,
+                      e_tie(solution.values, solution.gradients, solution.hessians, extracted_data, variables));
           };
-          model.template readouts_multiple<0>(helper, data_out);
+          model.readouts_multiple(helper, data_out);
+        }
+
+        ReadoutSolution reconstruct_readout_solution(const Iterator &cell, const VectorType &solution_global,
+                                                     const Point &x) const
+        {
+          std::vector<types::global_dof_index> scratch_dof_indices(n_components);
+          CellStencilData stencil;
+          fill_cell_stencil(cell, solution_global, model, scratch_dof_indices, stencil);
+
+          const auto gradients = Reconstructor::template compute_gradient<n_components>(
+              stencil.cell.x, stencil.cell.u, stencil.neighbors.x, stencil.neighbors.u);
+
+          ReadoutSolution solution;
+          solution.values = internal::reconstruct_u(stencil.cell.u, stencil.cell.x, x, gradients);
+          solution.gradients = Reconstructor::template compute_gradient_at_point<n_components>(
+              stencil.cell.x, x, stencil.cell.u, stencil.neighbors.x, stencil.neighbors.u);
+          return solution;
+        }
+
+        Iterator fallback_readout_cell() const
+        {
+          auto best_cell = dof_handler.begin_active();
+          double best_distance = std::numeric_limits<double>::max();
+          for (auto cell = dof_handler.begin_active(); cell != dof_handler.end(); ++cell) {
+            const auto distance = cell->center().distance(Point());
+            if (distance < best_distance) {
+              best_distance = distance;
+              best_cell = cell;
+            }
+          }
+          return best_cell;
+        }
+
+        template <typename EoMFUN> Point get_fv_readout_point(Iterator &EoM_cell, const VectorType &solution_global,
+                                                             const EoMFUN &EoMfun) const
+        {
+          if constexpr (dim == 1) {
+            const auto end_cell = dof_handler.active_cell_iterators().end();
+            if (EoM_max_iter == 0) {
+              EoM_cell = fallback_readout_cell();
+              return EoM_cell->center();
+            }
+
+            auto evaluate = [&](const Iterator &cell, const Point &x) {
+              const auto solution = reconstruct_readout_solution(cell, solution_global, x);
+              return EoMfun(x, solution.values)[0];
+            };
+
+            auto find_in_cell = [&](const Iterator &cell, Point &EoM, double &EoM_value) {
+              Point left = cell->face(0)->center();
+              Point right = cell->face(1)->center();
+              if (right[0] < left[0]) std::swap(left, right);
+
+              double left_value = evaluate(cell, left);
+              double right_value = evaluate(cell, right);
+              if (std::abs(left_value) <= EoM_abs_tol) {
+                EoM = left;
+                EoM_value = left_value;
+                return true;
+              }
+              if (std::abs(right_value) <= EoM_abs_tol) {
+                EoM = right;
+                EoM_value = right_value;
+                return true;
+              }
+              if (left_value * right_value > 0.) return false;
+
+              Point mid = (left + right) / 2.;
+              double mid_value = evaluate(cell, mid);
+              for (uint iteration = 0; iteration < EoM_max_iter; ++iteration) {
+                if (std::abs(mid_value) <= EoM_abs_tol) {
+                  EoM = mid;
+                  EoM_value = mid_value;
+                  return true;
+                }
+
+                if (left_value * mid_value <= 0.) {
+                  right = mid;
+                  right_value = mid_value;
+                } else {
+                  left = mid;
+                  left_value = mid_value;
+                }
+
+                mid = (left + right) / 2.;
+                mid_value = evaluate(cell, mid);
+              }
+
+              EoM = mid;
+              EoM_value = mid_value;
+              return true;
+            };
+
+            Point EoM;
+            double EoM_value = 0.;
+            if (EoM_cell != end_cell && find_in_cell(EoM_cell, EoM, EoM_value)) return EoM;
+
+            Iterator best_cell = fallback_readout_cell();
+            Point best_point = best_cell->center();
+            double best_value = std::abs(evaluate(best_cell, best_point));
+            for (auto cell = dof_handler.begin_active(); cell != dof_handler.end(); ++cell) {
+              if (find_in_cell(cell, EoM, EoM_value)) {
+                EoM_cell = cell;
+                return EoM;
+              }
+
+              const auto center = cell->center();
+              const auto center_value = std::abs(evaluate(cell, center));
+              if (center_value < best_value) {
+                best_cell = cell;
+                best_point = center;
+                best_value = center_value;
+              }
+            }
+
+            EoM_cell = best_cell;
+            return best_point;
+          } else {
+            EoM_cell = fallback_readout_cell();
+            return EoM_cell->center();
+          }
         }
 
         virtual void mass(VectorType &mass, const VectorType &solution_global, const VectorType &solution_global_dot,
@@ -1062,8 +1200,7 @@ namespace DiFfRG
                 ghost_stencil.cell.x, x_q, ghost_stencil.cell.u, ghost_stencil.neighbors.x, ghost_stencil.neighbors.u);
             const auto u_minus =
                 internal::reconstruct_u(physical_stencil.cell.u, physical_stencil.cell.x, x_q, u_grad_cell);
-            const auto u_plus =
-                internal::reconstruct_u(ghost_stencil.cell.u, ghost_stencil.cell.x, x_q, u_grad_ghost);
+            const auto u_plus = internal::reconstruct_u(ghost_stencil.cell.u, ghost_stencil.cell.x, x_q, u_grad_ghost);
 
             const auto [F_plus, F_minus, a_half] =
                 internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(u_plus, u_minus, x_q, model);
@@ -1096,8 +1233,8 @@ namespace DiFfRG
                                 copy_data, flags, boundary_worker, face_worker, threads, batch_size);
 
           for (types::global_dof_index i = 0; i < diagnostics.total.size(); ++i) {
-            diagnostics.total[i] = diagnostics.advection[i] + diagnostics.diffusion[i] + diagnostics.source[i] +
-                                   diagnostics.mass[i];
+            diagnostics.total[i] =
+                diagnostics.advection[i] + diagnostics.diffusion[i] + diagnostics.source[i] + diagnostics.mass[i];
           }
 
           diagnostics.has_residual = residual_reference.size() == diagnostics.total.size();
@@ -1943,8 +2080,8 @@ namespace DiFfRG
         uint threads;
         const uint batch_size;
 
-        mutable typename Triangulation<dim>::cell_iterator EoM_cell;
-        typename Triangulation<dim>::cell_iterator old_EoM_cell;
+        mutable Iterator EoM_cell;
+        Iterator old_EoM_cell;
         const double EoM_abs_tol;
         const uint EoM_max_iter;
 
