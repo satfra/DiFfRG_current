@@ -40,6 +40,52 @@ static void ensure_logger()
   }
 }
 
+class SourceOnlyModel
+    : public def::AbstractModel<SourceOnlyModel, ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>>>,
+      public def::Time,
+      public def::LLFFlux<SourceOnlyModel>,
+      public def::FlowBoundaries<SourceOnlyModel>,
+      public def::FVDefaultBoundaries<SourceOnlyModel>,
+      public def::AD<SourceOnlyModel>
+{
+public:
+  template <typename Vector> void initial_condition(const Point<1> &pos, Vector &values) const
+  {
+    values[0] = 1.0 + 0.25 * pos[0];
+  }
+
+  std::array<double, 1> solution(const Point<1> &pos) const { return {1.0 + 0.25 * pos[0]}; }
+
+  template <typename NT, typename Solution>
+  void KurganovTadmor_advection_flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/,
+                                     const Solution & /*sol*/) const
+  {
+    F_i[0][0] = 0.0;
+  }
+
+  template <typename NT, typename Solution>
+  void flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution & /*sol*/) const
+  {
+    F_i[0][0] = 0.0;
+  }
+
+  template <typename NT, typename Solution>
+  void source(std::array<NT, 1> &s_i, const Point<1> &pos, const Solution & /*sol*/) const
+  {
+    s_i[0] = 0.5 + pos[0];
+  }
+
+  template <int mdim, typename NT, size_t n_components>
+  bool apply_boundary_stencil(def::BoundaryStencilValues<mdim, NT, n_components> &u_stencil,
+                              def::BoundaryStencilPoints<mdim> &x_stencil, const Point<mdim> &x_face) const
+  {
+    static_assert(mdim == 1);
+    Testing::fill_face_ghost_solution_boundary_stencil(u_stencil, x_stencil, x_face,
+                                                       [this](const Point<1> &pos) { return solution(pos); });
+    return true;
+  }
+};
+
 /**
  * Compares the analytic Jacobian from the KT assembler against a central-difference
  * finite-difference Jacobian of residual(). Detects missing terms in jacobian() —
@@ -182,6 +228,46 @@ TEST_CASE("KT Jacobian matches FD Jacobian for pure advection Burgers model", "[
     }
   }
   REQUIRE(pass);
+}
+
+TEST_CASE("KT Jacobian for x-dependent source-only model is diagonal", "[FV][KT]")
+{
+  using Model = SourceOnlyModel;
+  using NumberType = double;
+  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<1>>;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  const JSONValue json = make_json();
+
+  Model model;
+  RectangularMesh<1> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+  const VectorType &sol = state.spatial_data();
+  const int n_dofs = static_cast<int>(sol.size());
+
+  VectorType sol_dot(n_dofs);
+  VectorType residual(n_dofs);
+  assembler.residual(residual, sol, 1.0, sol_dot, 0.0);
+
+  bool has_nonzero_source_residual = false;
+  for (int i = 0; i < n_dofs; ++i)
+    has_nonzero_source_residual = has_nonzero_source_residual || std::abs(residual[i]) > 1e-12;
+  REQUIRE(has_nonzero_source_residual);
+
+  const SparsityPattern &sp = assembler.get_sparsity_pattern_jacobian();
+  SparseMatrix<NumberType> jacobian(sp);
+  assembler.jacobian(jacobian, sol, 1.0, sol_dot, 0.0, 0.0);
+
+  for (int i = 0; i < n_dofs; ++i)
+    for (int j = 0; j < n_dofs; ++j)
+      CHECK(jacobian.el(i, j) == Catch::Approx(0.0).margin(1e-12));
 }
 
 TEST_CASE("KT first-order Jacobian strategy does not use reconstruction-neighbor columns", "[FV][KT]")
