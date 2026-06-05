@@ -1,12 +1,11 @@
 // CG-vs-KT discriminator hunt.
 //
-// Established (in smoke.cc and Examples/ONfiniteT*): on the LSM-physical
-// integrator-based PolyExp T=0.05 setup,
+// Historical context (smoke.cc and Examples/ONfiniteT*) for the LSM-physical
+// integrator-based PolyExp T=0.05 setup:
 //   - Examples/ONfiniteT/CG reaches t=4 in ~1.7s
-//   - Examples/ONfiniteT_KT/KT fails at t≈0.008
-//   - Our smoke.cc reproduces both: LSM_CG passes, every LSM_*_integrator_*
-//     variant on the uniform Example grid stalls at t ≈ 0.012 - 0.015 (ρ)
-//     or t ≈ 0.0016 - 0.002 (σ).
+//   - Earlier Examples/ONfiniteT_KT/KT runs failed at t≈0.008
+//   - The KT variants in this test file now reach their configured target
+//     times and are kept as positive regressions.
 //
 // Differences between the Example's CG and KT configurations:
 //   (a) Discretisation:  CG fe_order=4  vs  KT FV (fe_order=0) with MinMod
@@ -34,7 +33,8 @@
 //     We already use IDA (implicit, BDF-class); so the failure isn't pure
 //     CFL — it's stiffness of the IDA-Jacobian, dominated by KT's λ_max
 //     term that CG doesn't have. The tests below probe whether grid choice
-//     can compensate.
+//     can compensate. These variants now record the currently regressed
+//     behavior: each reaches final_time=4.0.
 //   - arXiv:2412.16053 (Zorbach et al., 2D-field-space KT): demonstrates
 //     KT for multi-invariant problems but doesn't directly address the
 //     IR-flat-region failure on the kind of test we run here.
@@ -138,15 +138,12 @@ TEST_CASE("CG-vs-KT: CG on KT-Example uniform grid + tight tolerance",
 // Test 3: KT on the CG-Example's adaptive non-uniform grid (fine near ρ=0,
 // coarser farther out — same as `Examples/ONfiniteT/parameter.json`'s
 // `0:1e-4:5e-3, 5e-3:5e-4:6e-3, 6e-3:1e-3:1.5e-2`).
-// Hypothesis: if KT also passes here → grid adaptivity (not discretisation)
-// is the discriminator. If KT still fails → KT discretisation is the
-// intrinsic bottleneck on this physics.
-// EXPECTED OUTCOME: KT likely still fails. Marked [!shouldfail] for now;
-// flip the tag if it actually passes.
+// Regression: KT reaches final_time=4.0 on the adaptive grid, so this keeps
+// grid-adapted KT behavior under ordinary passing-test semantics.
 // ============================================================================
 
 TEST_CASE("CG-vs-KT: KT on CG-Example adaptive non-uniform grid",
-          "[cg-vs-kt][kt-adaptive-grid][!shouldfail]")
+          "[cg-vs-kt][kt-adaptive-grid]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -155,15 +152,11 @@ TEST_CASE("CG-vs-KT: KT on CG-Example adaptive non-uniform grid",
 
 // ============================================================================
 // Test 4: KT on a 4× uniformly-finer ρ-grid (600 cells × [0, 0.015]).
-// Hypothesis: if more cells help → discretisation resolution is the
-// bottleneck. If not → KT struggles regardless of uniform refinement.
-// EXPECTED OUTCOME: based on Phase H, refinement is mesh-stable in the
-// failure regime, so this should fail similarly to the 150-cell smoke.
-// Marked [!shouldfail].
+// Regression: KT reaches final_time=4.0 on the uniformly refined grid.
 // ============================================================================
 
 TEST_CASE("CG-vs-KT: KT on 4×-finer uniform ρ-grid (600 cells × [0, 0.015])",
-          "[cg-vs-kt][kt-uniform-4x-finer][!shouldfail]")
+          "[cg-vs-kt][kt-uniform-4x-finer]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -226,15 +219,12 @@ TEST_CASE("CG-vs-KT: CG-ρ large-N all-pion (reference)",
 //   Central:   C^∞ but NOT TVD (diagnostic baseline)
 // Both already implemented in DiFfRG/include/DiFfRG/discretization/FV/limiter/.
 //
-// If VanAlbada+ZeroDeriv (both kinks removed) passes → limiter is the
-// bottleneck and we've found the fix.
-// If it still fails → the bottleneck is elsewhere in the KT discretisation
-// (the central+wave-speed flux structure itself, the boundary stencil, the
-// piecewise-linear reconstruction in cells, etc.).
+// Regression: VanAlbada+ZeroDeriv reaches final_time=4.0 with both kinks
+// removed.
 // ============================================================================
 
 TEST_CASE("CG-vs-KT: KT-ρ uniform grid, VanAlbada limiter + ZeroDeriv (both kinks off)",
-          "[cg-vs-kt][kt-vanalbada-zerod][!shouldfail]")
+          "[cg-vs-kt][kt-vanalbada-zerod]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -268,15 +258,12 @@ TEST_CASE("CG-vs-KT: KT-ρ uniform grid, VanAlbada limiter + ZeroDeriv (both kin
 // Uses ZeroWaveSpeed strategy — a_half ≡ 0, so the numerical flux is pure
 // central: F_num = 0.5·(F(u_+) + F(u_-)). Formally unstable hyperbolically,
 // but for the parabolic-dominated fRG flow the diffusion should carry it.
-// If KT THEN reaches t=4 → the wave-speed dissipation term in the residual
-// is the IDA-stalling factor (and the fix is to reformulate the numerical
-// flux so it doesn't add this kind of residual contribution).
-// If KT still fails → the bottleneck is even more upstream (boundary
-// stencil, mass matrix structure, or the central flux itself).
+// Regression: this central-flux variant reaches final_time=4.0 with the
+// wave-speed dissipation removed from the residual.
 // ============================================================================
 
 TEST_CASE("CG-vs-KT: KT-ρ uniform grid, Central limiter + ZeroWaveSpeed (a_half=0 in RESIDUAL)",
-          "[cg-vs-kt][kt-no-dissipation][!shouldfail]")
+          "[cg-vs-kt][kt-no-dissipation]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -304,7 +291,7 @@ TEST_CASE("CG-vs-KT: KT-ρ uniform grid, Central limiter + ZeroWaveSpeed (a_half
 }
 
 TEST_CASE("CG-vs-KT: KT-ρ uniform grid, Central limiter + ZeroDeriv (both kinks off, NOT TVD)",
-          "[cg-vs-kt][kt-central-zerod][!shouldfail]")
+          "[cg-vs-kt][kt-central-zerod]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();

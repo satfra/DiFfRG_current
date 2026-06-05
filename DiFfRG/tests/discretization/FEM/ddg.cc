@@ -119,7 +119,7 @@ TEST_CASE("Test dDG on Constant model", "[discretization][dg]")
     inverse_mass_matrix.solve(dst);
     REQUIRE(vector_is_close(dst, src, random_value));
   }
-  SECTION("Test jacobian mass", "[mass][jacobian][!shouldfail]")
+  SECTION("Test jacobian mass", "[mass][jacobian]")
   {
     dst_mat = 0;
     assembler.jacobian_mass(dst_mat, src, src, 1., 0.);
