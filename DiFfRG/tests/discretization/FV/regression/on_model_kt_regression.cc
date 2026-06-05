@@ -721,7 +721,7 @@ namespace
 } // namespace
 
 TEMPLATE_TEST_CASE_METHOD(ONFlowFixture, "KT O(N) regressions match arXiv 2108.02504 flow snapshots",
-                          "[FV][KT][ON][regression][slow]", ScenarioI_ON1, ScenarioI_ON3, ScenarioI_ON10, ScenarioI_ON100,
+                          "[FV][KT][ON][regression]", ScenarioI_ON1, ScenarioI_ON3, ScenarioI_ON10, ScenarioI_ON100,
                           ScenarioII_ON4, ScenarioIII_ON4, ScenarioIV_ON3)
 {
   kt_regression::ensure_logger();
@@ -730,7 +730,7 @@ TEMPLATE_TEST_CASE_METHOD(ONFlowFixture, "KT O(N) regressions match arXiv 2108.0
 }
 
 TEST_CASE("KT O(N) symmetric default-boundary full-domain run matches the reference on sigma >= 0 - ScenarioI_ON3",
-          "[FV][KT][ON][regression][slow][symmetric-default-boundary][diagnostic]")
+          "[FV][KT][ON][regression][symmetric-default-boundary][diagnostic]")
 {
   kt_regression::ensure_logger();
 
@@ -778,7 +778,7 @@ TEST_CASE("KT O(N) symmetric default-boundary full-domain run matches the refere
 }
 
 TEST_CASE("KT O(N) half-domain origin-constrained diagnostic solve reaches final time - ScenarioI_ON3",
-          "[FV][KT][ON][regression][slow][origin-constrained][diagnostic]")
+          "[FV][KT][ON][regression][origin-constrained][diagnostic]")
 {
   kt_regression::ensure_logger();
 
@@ -790,7 +790,7 @@ TEST_CASE("KT O(N) half-domain origin-constrained diagnostic solve reaches final
 }
 
 TEST_CASE("KT O(N) half-domain run matches the symmetric full-domain run on sigma >= 0 - ScenarioI_ON3",
-          "[FV][KT][ON][regression][slow][symmetric-default-boundary][diagnostic]")
+          "[FV][KT][ON][regression][symmetric-default-boundary][diagnostic]")
 {
   kt_regression::ensure_logger();
 
