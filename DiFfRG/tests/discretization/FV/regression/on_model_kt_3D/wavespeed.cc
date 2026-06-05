@@ -27,21 +27,21 @@ namespace
 
 // --- σ-coords, PolyExp T=0.05 -----------------------------------------------
 
-TEST_CASE("wavespeed σ-PolyExp ZeroDeriv", "[wavespeed][slow][sigma][polyexp][ws-zerod][!shouldfail]")
+TEST_CASE("wavespeed σ-PolyExp ZeroDeriv", "[wavespeed][sigma][polyexp][ws-zerod][!shouldfail]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
   run_flow_to_time_ws<LSM_sigma_integrator_PolyExp, ZeroDeriv>(default_sigma_grid(), final_time);
 }
 
-TEST_CASE("wavespeed σ-PolyExp AD (Real<2> H)", "[wavespeed][slow][sigma][polyexp][ws-ad][!shouldfail]")
+TEST_CASE("wavespeed σ-PolyExp AD (Real<2> H)", "[wavespeed][sigma][polyexp][ws-ad][!shouldfail]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
   run_flow_to_time_ws<LSM_sigma_integrator_PolyExp, FullAD>(default_sigma_grid(), final_time);
 }
 
-TEST_CASE("wavespeed σ-PolyExp FD (Real<1> + central-FD H)", "[wavespeed][slow][sigma][polyexp][ws-fd][!shouldfail]")
+TEST_CASE("wavespeed σ-PolyExp FD (Real<1> + central-FD H)", "[wavespeed][sigma][polyexp][ws-fd][!shouldfail]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -50,21 +50,21 @@ TEST_CASE("wavespeed σ-PolyExp FD (Real<1> + central-FD H)", "[wavespeed][slow]
 
 // --- σ-coords, Litim T=0 ----------------------------------------------------
 
-TEST_CASE("wavespeed σ-Litim ZeroDeriv", "[wavespeed][slow][sigma][litim][ws-zerod][!shouldfail]")
+TEST_CASE("wavespeed σ-Litim ZeroDeriv", "[wavespeed][sigma][litim][ws-zerod][!shouldfail]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
   run_flow_to_time_ws<LSM_sigma_integrator_Litim, ZeroDeriv>(default_sigma_grid(), final_time);
 }
 
-TEST_CASE("wavespeed σ-Litim AD (Real<2> H)", "[wavespeed][slow][sigma][litim][ws-ad][!shouldfail]")
+TEST_CASE("wavespeed σ-Litim AD (Real<2> H)", "[wavespeed][sigma][litim][ws-ad][!shouldfail]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
   run_flow_to_time_ws<LSM_sigma_integrator_Litim, FullAD>(default_sigma_grid(), final_time);
 }
 
-TEST_CASE("wavespeed σ-Litim FD (Real<1> + central-FD H)", "[wavespeed][slow][sigma][litim][ws-fd][!shouldfail]")
+TEST_CASE("wavespeed σ-Litim FD (Real<1> + central-FD H)", "[wavespeed][sigma][litim][ws-fd][!shouldfail]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -73,21 +73,21 @@ TEST_CASE("wavespeed σ-Litim FD (Real<1> + central-FD H)", "[wavespeed][slow][s
 
 // --- ρ-coords, PolyExp T=0.05 -----------------------------------------------
 
-TEST_CASE("wavespeed ρ-PolyExp ZeroDeriv", "[wavespeed][slow][rho][polyexp][ws-zerod][!shouldfail]")
+TEST_CASE("wavespeed ρ-PolyExp ZeroDeriv", "[wavespeed][rho][polyexp][ws-zerod][!shouldfail]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
   run_flow_to_time_ws<LSM_rho_integrator_PolyExp, ZeroDeriv>(default_rho_grid(), final_time);
 }
 
-TEST_CASE("wavespeed ρ-PolyExp AD (Real<2> H)", "[wavespeed][slow][rho][polyexp][ws-ad][!shouldfail]")
+TEST_CASE("wavespeed ρ-PolyExp AD (Real<2> H)", "[wavespeed][rho][polyexp][ws-ad][!shouldfail]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
   run_flow_to_time_ws<LSM_rho_integrator_PolyExp, FullAD>(default_rho_grid(), final_time);
 }
 
-TEST_CASE("wavespeed ρ-PolyExp FD (Real<1> + central-FD H)", "[wavespeed][slow][rho][polyexp][ws-fd][!shouldfail]")
+TEST_CASE("wavespeed ρ-PolyExp FD (Real<1> + central-FD H)", "[wavespeed][rho][polyexp][ws-fd][!shouldfail]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -96,21 +96,21 @@ TEST_CASE("wavespeed ρ-PolyExp FD (Real<1> + central-FD H)", "[wavespeed][slow]
 
 // --- ρ-coords, Litim T=0 ----------------------------------------------------
 
-TEST_CASE("wavespeed ρ-Litim ZeroDeriv", "[wavespeed][slow][rho][litim][ws-zerod][!shouldfail]")
+TEST_CASE("wavespeed ρ-Litim ZeroDeriv", "[wavespeed][rho][litim][ws-zerod][!shouldfail]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
   run_flow_to_time_ws<LSM_rho_integrator_Litim, ZeroDeriv>(default_rho_grid(), final_time);
 }
 
-TEST_CASE("wavespeed ρ-Litim AD (Real<2> H)", "[wavespeed][slow][rho][litim][ws-ad][!shouldfail]")
+TEST_CASE("wavespeed ρ-Litim AD (Real<2> H)", "[wavespeed][rho][litim][ws-ad][!shouldfail]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
   run_flow_to_time_ws<LSM_rho_integrator_Litim, FullAD>(default_rho_grid(), final_time);
 }
 
-TEST_CASE("wavespeed ρ-Litim FD (Real<1> + central-FD H)", "[wavespeed][slow][rho][litim][ws-fd][!shouldfail]")
+TEST_CASE("wavespeed ρ-Litim FD (Real<1> + central-FD H)", "[wavespeed][rho][litim][ws-fd][!shouldfail]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();

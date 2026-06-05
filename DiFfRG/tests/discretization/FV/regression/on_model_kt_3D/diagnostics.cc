@@ -68,7 +68,7 @@ namespace
 // ============================================================================
 
 TEST_CASE("integrator AD-vs-FD diagnostic - Litim T=0",
-          "[diag][slow][ad-vs-fd][litim-T0]")
+          "[diag][ad-vs-fd][litim-T0]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -99,7 +99,7 @@ TEST_CASE("integrator AD-vs-FD diagnostic - Litim T=0",
 }
 
 TEST_CASE("integrator AD-vs-FD diagnostic - PolyExp T=0.05",
-          "[diag][slow][ad-vs-fd][polyexp]")
+          "[diag][ad-vs-fd][polyexp]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -147,7 +147,7 @@ TEST_CASE("integrator AD-vs-FD diagnostic - PolyExp T=0.05",
 // ============================================================================
 
 TEST_CASE("integrator finite-T verification - Litim regulator V_pion sweep over T",
-          "[diag][slow][finite-T][litim-finiteT]")
+          "[diag][finite-T][litim-finiteT]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();

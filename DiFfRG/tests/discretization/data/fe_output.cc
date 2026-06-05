@@ -114,7 +114,7 @@ TEST_CASE("Test FE output on Constant model", "[output][cg]")
 // time_series and on the shared .pvd path, which manifests as undefined behaviour and as
 // std::terminate via an uncaught exception escaping the worker thread. This test rapidly
 // flushes many times at the default async buffer size so the race is reliably triggered.
-TEST_CASE("FEOutput async flush is thread-safe under repeated flushes", "[output][cg][regression][slow]")
+TEST_CASE("FEOutput async flush is thread-safe under repeated flushes", "[output][cg][regression]")
 {
   DiFfRG::Init();
 
