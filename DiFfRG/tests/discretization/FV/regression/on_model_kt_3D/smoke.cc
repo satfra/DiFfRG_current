@@ -1,10 +1,8 @@
 // Smoke tests: one TEST_CASE per (model × coordinate × flux-source) variant.
 // Each runs the LSM physical-scale setup (Λ=0.65, m²=-0.1, λ=71.6, N=2,
-// T=0.05) from t=0 to t=final_time=4.0 on the Example grid. The KT
-// variants are currently expected to fail (the time-stepper gets stuck
-// well before t=4) — these are marked `[!shouldfail]` to document the
-// current state. The CG variant passes (matches Examples/ONfiniteT
-// behaviour). Remove `[!shouldfail]` tags when KT is fixed to reach t=4.
+// T=0.05) from t=0 to their configured target time on the Example grid.
+// The rho-coordinate KT variants now reach final_time=4.0 and are kept as
+// ordinary positive regressions alongside the CG reference.
 
 #include "kt_3D_runners.hh"
 
@@ -44,14 +42,14 @@ TEST_CASE("LSM σ-coords integrator PolyExp T=0.05 reaches t=3.6",
 // --- ρ-coords --------------------------------------------------------------
 
 TEST_CASE("LSM ρ-coords analytic Litim T=0 reaches final time",
-          "[smoke][lsm-physical][rho][analytic][!shouldfail]")
+          "[smoke][lsm-physical][rho][analytic]")
 {
   kt_regression::ensure_logger();
   run_flow_to_time<LSM_rho_analytic>(default_rho_grid(), final_time, uthreads);
 }
 
 TEST_CASE("LSM ρ-coords integrator Litim T=0 reaches final time",
-          "[smoke][lsm-physical][rho][integrator-litim][!shouldfail]")
+          "[smoke][lsm-physical][rho][integrator-litim]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -59,7 +57,7 @@ TEST_CASE("LSM ρ-coords integrator Litim T=0 reaches final time",
 }
 
 TEST_CASE("LSM ρ-coords integrator PolyExp T=0.05 reaches final time",
-          "[smoke][lsm-physical][rho][integrator-polyexp][!shouldfail]")
+          "[smoke][lsm-physical][rho][integrator-polyexp]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
