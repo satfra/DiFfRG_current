@@ -52,22 +52,15 @@ set(DiFfRG_SOURCES
 
 add_library(DiFfRG STATIC ${DiFfRG_SOURCES})
 
-target_link_libraries(DiFfRG PUBLIC DiFfRG_boost_json)
+target_link_libraries(DiFfRG PRIVATE DiFfRG_boost_json)
 
 setup_target(DiFfRG)
 
-# DiFfRG_HDF5_LIBRARIES is resolved by find_package(HDF5) in
-# setup_build_system.cmake (the bundled static build exports hdf5-static; a
-# system HDF5 may export hdf5-shared / hdf5::hdf5 / HDF5::HDF5 instead).
-target_link_libraries(DiFfRG PUBLIC ${DiFfRG_HDF5_LIBRARIES})
 target_include_directories(DiFfRG PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
     $<INSTALL_INTERFACE:include>)
 message(STATUS "HDF5 (static) support enabled")
 
-target_include_directories(
-  DiFfRG INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
-                   $<INSTALL_INTERFACE:include>)
 add_library(DiFfRG::DiFfRG ALIAS DiFfRG)
 set_property(TARGET DiFfRG PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS ON)
 

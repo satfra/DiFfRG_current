@@ -100,10 +100,12 @@ endif()
 if(POLICY CMP0144)
   cmake_policy(SET CMP0144 NEW)
 endif()
-
-link_directories(${BUNDLED_DIR}/lib/)
-link_directories(${BUNDLED_DIR}/lib64/)
-include_directories(SYSTEM ${BUNDLED_DIR}/include)
+if(POLICY CMP0156)
+  cmake_policy(SET CMP0156 NEW)
+endif()
+if(POLICY CMP0179)
+  cmake_policy(SET CMP0179 NEW)
+endif()
 
 message(STATUS "DiFfRG include directory: ${BASE_DIR}/include")
 message(STATUS "DiFfRG bundle directory: ${BUNDLED_DIR}")
@@ -182,6 +184,12 @@ endmacro()
 # Direct external dependencies
 # ##############################################################################
 
+if(APPLE)
+  include(CheckLinkerFlag)
+  check_linker_flag(CXX "LINKER:-no_warn_duplicate_libraries"
+                    DiFfRG_LINKER_SUPPORTS_NO_WARN_DUPLICATE_LIBRARIES)
+endif()
+
 # Find deal.II
 diffrg_find_package(deal.II VERSION 9.4.2 HINTS ${BUNDLED_DIR})
 deal_ii_initialize_cached_variables()
@@ -228,7 +236,6 @@ diffrg_find_package(
 message(STATUS "Boost version: ${Boost_VERSION}")
 message(STATUS "Boost include dir: ${Boost_INCLUDE_DIRS}")
 message(STATUS "Boost libraries: ${Boost_LIBRARIES}")
-include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 # Boost is ABI-critical: a version divergence from what the superbuild pinned
 # (e.g. a system Boost upgraded in place after the bundle was built) is a hard
 # error rather than a warning.
@@ -244,6 +251,11 @@ endif()
 
 # Find Eigen3
 diffrg_find_package(Eigen3 VERSION 3.4.0 HINTS ${BUNDLED_DIR})
+if(TARGET Eigen3::Eigen)
+  set(DiFfRG_EIGEN_TARGET Eigen3::Eigen)
+else()
+  set(DiFfRG_EIGEN_TARGET Eigen3)
+endif()
 
 # Find GSL (system dependency)
 find_package(GSL QUIET)
@@ -298,6 +310,7 @@ if(NOT HDF5_FOUND OR HDF5_VERSION VERSION_LESS 1.12.0)
 endif()
 message(STATUS "HDF5 version: ${HDF5_VERSION}")
 message(STATUS "HDF5 include dir: ${HDF5_INCLUDE_DIRS}")
+
 # Resolve the HDF5 link target: the bundled static build exports hdf5-static;
 # system installs vary (hdf5-shared / hdf5::hdf5 / HDF5::HDF5), or only set vars.
 if(TARGET hdf5-static)
@@ -312,7 +325,7 @@ elseif(TARGET HDF5::HDF5)
   set(DiFfRG_HDF5_LIBRARIES HDF5::HDF5)
 else()
   set(DiFfRG_HDF5_LIBRARIES ${HDF5_C_LIBRARIES} ${HDF5_LIBRARIES})
-  include_directories(SYSTEM ${HDF5_INCLUDE_DIRS})
+  set(DiFfRG_HDF5_INCLUDE_DIRS ${HDF5_INCLUDE_DIRS})
 endif()
 message(STATUS "HDF5 link target(s): ${DiFfRG_HDF5_LIBRARIES}")
 if(DEFINED DiFfRG_PINNED_HDF5_VERSION
@@ -423,7 +436,6 @@ function(setup_dealii TARGET)
   # dealii::dealii, which (unlike DEAL_II_INCLUDE_DIRS) also propagates the
   # include dirs of optional features such as UMFPACK/suitesparse.
   target_link_libraries(${TARGET} PUBLIC dealii::dealii)
-  target_link_libraries(${TARGET} INTERFACE dealii::dealii)
 
   target_include_directories(${TARGET} SYSTEM PUBLIC ${DEAL_II_INCLUDE_DIRS})
 
@@ -446,20 +458,25 @@ function(setup_target TARGET)
   # Check if the target is DiFfRG
   if(${TARGET} STREQUAL "DiFfRG")
     target_include_directories(${TARGET} PRIVATE ${autodiff_SOURCE_DIR})
-  else()
-    target_link_libraries(${TARGET} PUBLIC autodiff::autodiff)
   endif()
 
   # Do not warn about missing braces
   target_compile_options(${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:
                                           -Wno-missing-braces>)
 
+  target_include_directories(${TARGET} SYSTEM PUBLIC ${BUNDLED_DIR}/include)
+  target_link_libraries(${TARGET} PUBLIC autodiff::autodiff)
   target_link_libraries(${TARGET} PUBLIC GSL::gsl)
-  target_link_libraries(${TARGET} PUBLIC Eigen3)
+  target_link_libraries(${TARGET} PUBLIC ${DiFfRG_EIGEN_TARGET})
   target_link_libraries(${TARGET} PUBLIC spdlog::spdlog)
   target_link_libraries(${TARGET} PUBLIC ${Boost_LIBRARIES})
   target_link_libraries(${TARGET} PUBLIC TBB::tbb)
-  target_link_libraries(${TARGET} PUBLIC Kokkos::kokkos)
+  # deal.II's exported target already carries the concrete Kokkos archives.
+  # Keep Kokkos discovered above, but do not add the same archives a second time.
+  target_link_libraries(${TARGET} PUBLIC ${DiFfRG_HDF5_LIBRARIES})
+  if(DiFfRG_HDF5_INCLUDE_DIRS)
+    target_include_directories(${TARGET} SYSTEM PUBLIC ${DiFfRG_HDF5_INCLUDE_DIRS})
+  endif()
   # target_link_libraries(${TARGET} PUBLIC petsc)
 
   if(${DiFfRG_MPI})
@@ -493,5 +510,10 @@ function(setup_target TARGET)
 
   if(HDF5)
     target_compile_definitions(${TARGET} PUBLIC H5CPP)
+  endif()
+
+  if(DiFfRG_LINKER_SUPPORTS_NO_WARN_DUPLICATE_LIBRARIES)
+    target_link_options(${TARGET} PUBLIC
+                        "LINKER:-no_warn_duplicate_libraries")
   endif()
 endfunction()

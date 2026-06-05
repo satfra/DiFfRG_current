@@ -104,8 +104,6 @@ include(${CMAKE_SOURCE_DIR}/cmake/setup_build_system.cmake)
 # DiFfRG library and models
 # ##############################################################################
 
-include_directories(include)
-
 add_subdirectory(include)
 add_subdirectory(src)
 
