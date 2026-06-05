@@ -8,7 +8,9 @@
 #include <DiFfRG/discretization/common/abstract_data.hh>
 #include <DiFfRG/discretization/data/data_output.hh>
 #include <DiFfRG/discretization/mesh/no_adaptivity.hh>
+#include <algorithm>
 #include <cmath>
+#include <iomanip>
 #include <optional>
 #include <unordered_map>
 
@@ -21,8 +23,16 @@ namespace DiFfRG
     long int ida_nonlinear_convergence_failures = 0;
     long int ida_step_solve_failures = 0;
     long int ida_residual_evaluations = 0;
+    long int ida_nonlinear_iterations = 0;
     double ida_last_step_size = 0.;
     double ida_current_step_size = 0.;
+    double ida_current_time = 0.;
+    bool has_ida_step_iteration_stats = false;
+    double ida_min_step_size = 0.;
+    double ida_average_step_size = 0.;
+    long int ida_step_size_samples = 0;
+    double ida_average_nonlinear_iterations_per_step = 0.;
+    long int ida_max_nonlinear_iterations_per_step = 0;
 
     bool has_callback = false;
     size_t nonfinite_solution_failures = 0;
@@ -199,6 +209,71 @@ namespace DiFfRG
 
     static constexpr size_t console_name_width = 21;
 
+    struct IDAAcceptedStepStats {
+      long int last_steps = 0;
+      long int last_nonlinear_iterations = 0;
+      double last_time = 0.;
+      long int observed_steps = 0;
+      long int observed_nonlinear_iterations = 0;
+      long int max_nonlinear_iterations_per_step = 0;
+      bool initialized = false;
+
+      void add(TimesteppingDiagnostics &diagnostics)
+      {
+        if (!diagnostics.has_ida) return;
+
+        if (!initialized) {
+          initialized = true;
+        }
+
+        const long int step_delta = diagnostics.ida_steps - last_steps;
+        const long int nonlinear_delta = diagnostics.ida_nonlinear_iterations - last_nonlinear_iterations;
+
+        if (step_delta < 0 || nonlinear_delta < 0) {
+          last_steps = diagnostics.ida_steps;
+          last_nonlinear_iterations = diagnostics.ida_nonlinear_iterations;
+          last_time = diagnostics.ida_current_time;
+          return;
+        }
+
+        const bool has_new_accepted_steps = step_delta > 0;
+        if (has_new_accepted_steps) {
+          observed_steps += step_delta;
+          observed_nonlinear_iterations += nonlinear_delta;
+
+          const long int per_step_delta =
+              step_delta == 1 ? nonlinear_delta : (nonlinear_delta + step_delta - 1) / step_delta;
+          max_nonlinear_iterations_per_step =
+              std::max(max_nonlinear_iterations_per_step, per_step_delta);
+
+          if (diagnostics.ida_last_step_size > 0. && std::isfinite(diagnostics.ida_last_step_size)) {
+            diagnostics.ida_min_step_size = diagnostics.ida_last_step_size;
+          }
+          if (diagnostics.ida_current_time >= last_time && std::isfinite(diagnostics.ida_current_time)) {
+            diagnostics.ida_average_step_size =
+                (diagnostics.ida_current_time - last_time) / static_cast<double>(step_delta);
+            diagnostics.ida_step_size_samples = step_delta;
+          }
+        }
+
+        last_steps = diagnostics.ida_steps;
+        last_nonlinear_iterations = diagnostics.ida_nonlinear_iterations;
+        last_time = diagnostics.ida_current_time;
+
+        if (observed_steps > 0) {
+          diagnostics.has_ida_step_iteration_stats = true;
+          diagnostics.ida_average_nonlinear_iterations_per_step =
+              static_cast<double>(observed_nonlinear_iterations) / static_cast<double>(observed_steps);
+          diagnostics.ida_max_nonlinear_iterations_per_step = max_nonlinear_iterations_per_step;
+        }
+        if (!has_new_accepted_steps) {
+          diagnostics.ida_min_step_size = 0.;
+          diagnostics.ida_average_step_size = 0.;
+          diagnostics.ida_step_size_samples = 0;
+        }
+      }
+    };
+
     struct ConsoleOutStats {
       size_t first_ms = 0;
       size_t last_ms = 0;
@@ -206,6 +281,8 @@ namespace DiFfRG
       bool has_entry = false;
       TimesteppingDiagnostics diagnostics;
       bool has_diagnostics = false;
+      double step_size_sum = 0.;
+      long int step_size_samples = 0;
 
       void add(const double t, const size_t milliseconds, const TimesteppingDiagnostics *latest_diagnostics)
       {
@@ -215,7 +292,28 @@ namespace DiFfRG
         latest_t = t;
 
         if (latest_diagnostics != nullptr && !latest_diagnostics->empty()) {
+          const bool had_step_stats = has_diagnostics && diagnostics.has_ida_step_iteration_stats;
+          const double previous_min_step_size = diagnostics.ida_min_step_size;
+          const double previous_step_size_sum = step_size_sum;
+          const long int previous_step_size_samples = step_size_samples;
           diagnostics = *latest_diagnostics;
+          if (had_step_stats && previous_min_step_size > 0. && diagnostics.has_ida_step_iteration_stats) {
+            if (diagnostics.ida_min_step_size > 0.)
+              diagnostics.ida_min_step_size = std::min(previous_min_step_size, diagnostics.ida_min_step_size);
+            else
+              diagnostics.ida_min_step_size = previous_min_step_size;
+          }
+          if (previous_step_size_samples > 0) {
+            step_size_sum = previous_step_size_sum;
+            step_size_samples = previous_step_size_samples;
+          }
+          if (latest_diagnostics->ida_average_step_size > 0. && latest_diagnostics->ida_step_size_samples > 0) {
+            step_size_sum +=
+                latest_diagnostics->ida_average_step_size * static_cast<double>(latest_diagnostics->ida_step_size_samples);
+            step_size_samples += latest_diagnostics->ida_step_size_samples;
+          }
+          if (step_size_samples > 0)
+            diagnostics.ida_average_step_size = step_size_sum / static_cast<double>(step_size_samples);
           has_diagnostics = true;
         }
       }
@@ -223,6 +321,7 @@ namespace DiFfRG
 
     mutable std::unordered_map<std::string, ConsoleOutStats> console_out_stats_by_category;
     mutable std::unordered_map<std::string, TimesteppingDiagnostics> last_printed_diagnostics_by_category;
+    mutable IDAAcceptedStepStats ida_accepted_step_stats;
 
     static std::string console_out_category(const std::string &name) { return name.substr(0, name.find(" (")); }
 
@@ -242,6 +341,13 @@ namespace DiFfRG
       return stream.str();
     }
 
+    static std::string format_scientific(const double value)
+    {
+      std::stringstream stream;
+      stream << std::scientific << value;
+      return stream.str();
+    }
+
     static std::string format_diagnostics(const TimesteppingDiagnostics &latest,
                                           const TimesteppingDiagnostics *previous)
     {
@@ -254,6 +360,14 @@ namespace DiFfRG
              << format_diagnostics_delta(latest.ida_error_test_failures, prev.ida_error_test_failures);
       stream << ", nonlinear failures " << format_diagnostics_delta(latest.ida_nonlinear_convergence_failures,
                                                                      prev.ida_nonlinear_convergence_failures);
+      if (latest.has_ida_step_iteration_stats) {
+        if (latest.ida_min_step_size > 0.) stream << ", min step width " << format_scientific(latest.ida_min_step_size);
+        if (latest.ida_average_step_size > 0.)
+          stream << ", avg step width " << format_scientific(latest.ida_average_step_size);
+        stream << ", nonlinear it/step avg "
+               << format_scientific(latest.ida_average_nonlinear_iterations_per_step);
+        stream << ", max " << latest.ida_max_nonlinear_iterations_per_step;
+      }
       stream << ", accumulated step failures "
              << format_diagnostics_delta(latest.ida_step_solve_failures, prev.ida_step_solve_failures);
       stream << ", NaN/Inf callbacks " << format_diagnostics_delta(latest.nonfinite_failures(), prev.nonfinite_failures());
@@ -297,6 +411,12 @@ namespace DiFfRG
           std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start_time)
               .count();
       const std::string category = console_out_category(name);
+      std::optional<TimesteppingDiagnostics> diagnostics_with_stats;
+      if (diagnostics != nullptr) {
+        diagnostics_with_stats = *diagnostics;
+        ida_accepted_step_stats.add(*diagnostics_with_stats);
+        diagnostics = &*diagnostics_with_stats;
+      }
       if (verbosity >= 4) {
         const auto previous_it = last_printed_diagnostics_by_category.find(category);
         const auto formatted_diagnostics =

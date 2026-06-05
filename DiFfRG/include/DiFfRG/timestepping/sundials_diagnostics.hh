@@ -34,8 +34,10 @@ namespace DiFfRG
       diagnostics.ida_nonlinear_convergence_failures = ida.num_nonlinear_convergence_failures;
       diagnostics.ida_step_solve_failures = ida.num_step_solve_failures;
       diagnostics.ida_residual_evaluations = ida.num_residual_evaluations;
+      diagnostics.ida_nonlinear_iterations = ida.num_nonlinear_iterations;
       diagnostics.ida_last_step_size = ida.last_step_size;
       diagnostics.ida_current_step_size = ida.current_step_size;
+      diagnostics.ida_current_time = ida.current_time;
     }
 
     diagnostics.has_callback = callbacks.has_failures();

@@ -399,7 +399,7 @@ namespace
            {"implicit",
             {{"dt", 1.0e-9},
              {"minimal_dt", 1.0e-15},
-             {"maximal_dt", 1.0e-5},
+             {"maximal_dt", 1.0e-0},
              {"abs_tol", 1.0e-12},
              {"rel_tol", 1.0e-12},
              {"max_steps", 20000000},
@@ -557,8 +557,8 @@ namespace
     const double sigma_mass = std::sqrt(central_profile_slope(exact_profile, numerical_sigma_vac));
     const double quark_mass = PaperSharedParameters::hPhi * PaperVacuumTargets::sigma;
 
-    CAPTURE(Case::label(), u_at_sigma_vac, pion_mass_at_paper_sigma, numerical_sigma_vac,
-            u_at_numerical_sigma_vac, pion_mass, sigma_mass, quark_mass);
+    CAPTURE(Case::label(), u_at_sigma_vac, pion_mass_at_paper_sigma, numerical_sigma_vac, u_at_numerical_sigma_vac,
+            pion_mass, sigma_mass, quark_mass);
     CHECK(u_at_sigma_vac == Catch::Approx(0.0).margin(5.0e-4));
     CHECK(pion_mass == Catch::Approx(PaperVacuumTargets::mPion).margin(2.0e-3));
     CHECK(sigma_mass == Catch::Approx(PaperVacuumTargets::mSigma).margin(2.0e-2));

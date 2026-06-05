@@ -82,7 +82,7 @@ namespace DiFfRG
 
         const auto diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
         std::ostringstream stream;
-        stream << std::setprecision(16);
+        stream << std::scientific << std::setprecision(16);
         stream << "[IDA TRACE] phase=" << phase << " outcome=" << outcome << " call=" << call_index
                << " same_t=" << same_t_index
                << " hint=" << (same_t_index == 0 ? "first-trial-candidate" : "repeat-corrector-candidate")
@@ -92,6 +92,7 @@ namespace DiFfRG
         if (diagnostics.has_ida) {
           stream << " ida_steps=" << diagnostics.ida_steps << " residual_evals=" << diagnostics.ida_residual_evaluations
                  << " precision_rejects=" << diagnostics.ida_error_test_failures
+                 << " nonlinear_iterations=" << diagnostics.ida_nonlinear_iterations
                  << " nonlinear_failures=" << diagnostics.ida_nonlinear_convergence_failures
                  << " step_solve_failures=" << diagnostics.ida_step_solve_failures
                  << " last_h=" << diagnostics.ida_last_step_size << " current_h=" << diagnostics.ida_current_step_size;
