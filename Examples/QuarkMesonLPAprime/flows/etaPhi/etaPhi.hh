@@ -4,19 +4,19 @@
 #include "DiFfRG/physics/physics.hh"
 #include "DiFfRG/physics/interpolation.hh"
 
-namespace DiFfRG { template<typename> class V_kernel;
+namespace DiFfRG { template<typename> class etaPhi_kernel;
 
-class V_integrator
+class etaPhi_integrator
 {
-public:   V_integrator(DiFfRG::QuadratureProvider& quadrature_provider, const DiFfRG::JSONValue& json)
+public:   etaPhi_integrator(DiFfRG::QuadratureProvider& quadrature_provider, const DiFfRG::JSONValue& json)
 ;
 
 
 using Regulator = DiFfRG::PolynomialExpRegulator<>;
 
-Integrator_p2<3, double, V_kernel<Regulator>, DiFfRG::TBB_exec> integrator;
+Integrator_fT_p2_1ang<4, double, etaPhi_kernel<Regulator>, DiFfRG::TBB_exec> integrator;
 
-Integrator_p2<3, autodiff::real, V_kernel<Regulator>, DiFfRG::TBB_exec> integrator_AD;
+Integrator_fT_p2_1ang<4, autodiff::real, etaPhi_kernel<Regulator>, DiFfRG::TBB_exec> integrator_AD;
 
  void get(double& dest, const double& k, const double& p, const double& p0f, const double& Nf, const double& Nc, const double& T, const double& muq, const double& etaQ, const double& etaPhi, const double& hPhi, const double& d1V, const double& d2V, const double& d3V, const double& rhoPhi)
 ;
@@ -31,4 +31,4 @@ device::apply([&](const auto...t){get(dest, t...);}, args);
 ;private: DiFfRG::QuadratureProvider& quadrature_provider;
 };
 }
-using DiFfRG::V_integrator;
+using DiFfRG::etaPhi_integrator;
