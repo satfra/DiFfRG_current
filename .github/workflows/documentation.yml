@@ -7,8 +7,8 @@ on:
 jobs:
   # Build job
   build:
-    #runs-on: ubuntu-latest
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
+    #runs-on: [self-hosted, Linux, X64]
     # The dependency image already bakes doxygen, graphviz and python3, so the
     # docs toolchain is installed inside this ephemeral container -- never on the
     # self-hosted node. The docs build is robust to the doxygen version
@@ -43,8 +43,7 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    #runs-on: ubuntu-latest
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     needs: build
     steps:
         - name: Deploy to GitHub Pages
