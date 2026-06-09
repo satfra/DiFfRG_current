@@ -27,7 +27,8 @@ namespace DiFfRG
    * source term. We will henceforth call the first equation a **DAE** (differential algebraic equation) and the second
    * equation an **ODE** (ordinary differential equation).
    *
-   * For more information, please also refer to the [guide](#HowTo) and the documentation of DiFfRG::def::AbstractModel.
+   * For more information, please also refer to the Numerical Models guide in the documentation and the documentation
+   * of DiFfRG::def::AbstractModel.
    *
    * The second equation is used in all residual and jacobian functions which do not take the time derivative as an
    * explicit argument, while the first equation is used in all other methods.

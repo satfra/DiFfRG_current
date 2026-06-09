@@ -70,6 +70,9 @@ html[data-mode="dark"] {
   --fragment-linenumber-color: #cccccc;
   --fragment-linenumber-background: #35393c;
   --fragment-linenumber-border: #1f1f1f;
+
+  --section-code-background: rgba(255, 255, 255, 0.08);
+  --section-code-border: rgba(255, 255, 255, 0.18);
 }
 
 /*
@@ -86,4 +89,20 @@ html[data-mode="dark"] {
 html[data-theme="dark"] :target,
 html[data-mode="dark"] :target {
   background-color: rgba(25, 130, 210, 0.18);
+}
+
+/*
+ * Footer logo.
+ *
+ * pydata gives every content image a white backdrop in dark mode
+ * (`[data-theme=dark] .bd-content img { background-color: #fff }`) so that the
+ * dark line-art class diagrams stay legible. That backdrop looks wrong behind
+ * the doxygen.svg footer logo (whose text is already light), so drop it just
+ * for the footer logo and let it sit on the dark footer.
+ */
+html[data-theme="dark"] .doxygen-content img.footer,
+html[data-mode="dark"] .doxygen-content img.footer {
+  background-color: transparent;
+  border-radius: 0;
+  padding: 0;
 }

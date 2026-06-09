@@ -56,3 +56,15 @@ CLI flags (`-sd`, `-si`, `-sb`, `-ss`) can override any JSON parameter at runtim
 - **Kokkos execution spaces** (`GPU_exec`, `TBB_exec`, `Threads_exec`) abstract the CPU/GPU backend.
 - **C++20 concepts** constrain template parameters with clear diagnostics.
 - **Automatic differentiation** computes Jacobians without hand-coded derivatives.
+
+## Parallelization (Kokkos)
+
+DiFfRG uses [Kokkos](https://kokkos.org/) as a performance-portability layer, so the same kernel code runs on different backends selected through *execution spaces*:
+
+- `TBB_exec` — CPU parallelization via [oneTBB](https://github.com/uxlfoundation/oneTBB).
+- `Threads_exec` — CPU parallelization via Kokkos' native C++ threads backend.
+- `GPU_exec` — GPU execution via Kokkos' CUDA (NVIDIA) or HIP (AMD) backend.
+
+The GPU backend is enabled at configure time with `-DGPU=ON` (the default; see the [installation](installation.md) page). Whether a particular computation runs on the CPU or the GPU is chosen per execution space: the **FEM assemblers always run on the CPU (`TBB_exec`)**, because they interact with deal.II's data structures, while the **momentum-space integrators can target the GPU** for a large speedup on fully momentum-dependent flows. The integrator's execution space is fixed when its kernel is generated (the `"Device"` option of `MakeKernel`, see [Tutorial 3](../tutorials/tut3.md)); `TBB` is the default and is required when an integrator is called from within an assembler.
+
+Because the backend is abstracted, models and generated kernels are written once (using the `KOKKOS_FORCEINLINE_FUNCTION` markers in the generated code) and compile for whichever backend is enabled.
