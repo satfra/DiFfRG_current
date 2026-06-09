@@ -1,8 +1,4 @@
-#include <DiFfRG/common/configuration_helper.hh>
-#include <DiFfRG/common/utils.hh>
-#include <DiFfRG/discretization/FEM/cg.hh>
-#include <DiFfRG/discretization/discretization.hh>
-#include <DiFfRG/timestepping/timestepping.hh>
+#include <DiFfRG/DiFfRG.hh>
 
 #include "model.hh"
 
@@ -10,8 +6,9 @@ using namespace DiFfRG;
 
 int main(int argc, char *argv[])
 {
+  // Initialize DiFfRG and thus the MPI and Kokkos environments
+  const auto config_helper = DiFfRG::Init(argc, argv).get_configuration_helper();
   // get all needed parameters and parse from the CLI
-  ConfigurationHelper config_helper(argc, argv);
   const auto json = config_helper.get_json();
 
   // Choices for types

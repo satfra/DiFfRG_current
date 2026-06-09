@@ -13,7 +13,7 @@ The framework spans three languages, each documented under its own tab above:
 :gutter: 3
 
 :::{grid-item-card} C++ Library
-:link: cpp
+:link: doxygen/DiFfRG/html/index
 :link-type: doc
 The core library: models, discretizations, assemblers, timesteppers and
 momentum-space integrators. Full API reference rendered by Doxygen.
@@ -44,7 +44,7 @@ and the [tutorials](tutorials/index.md).
 
 Getting Started <getting_started/index>
 Tutorials <tutorials/index>
-C++ API <cpp>
+C++ API <doxygen/DiFfRG/html/index>
 Python API <python>
 Mathematica API <_generated_mathematica/index>
 ```

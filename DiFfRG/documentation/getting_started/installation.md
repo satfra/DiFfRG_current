@@ -13,7 +13,7 @@ To compile and run this project, there are very few requirements which you can e
 
 The following requirements are optional:
 - [ParaView](https://www.paraview.org/), a program to visualize and post-process the vtk data saved by DiFfRG when treating FEM discretizations.
-- [CUDA](https://developer.nvidia.com/cuda-toolkit) for integration routines on the GPU, which gives a huge speedup for the calculation of fully momentum dependent flow equations (10 - 100x). In case you wish to use CUDA, make sure you have a compiler available on your system compatible with your version of `nvcc`, e.g. `g++`<=13.2 for CUDA 12.5
+- A GPU backend for the momentum integration routines, which gives a large speedup for fully momentum-dependent flow equations (10 - 100x). DiFfRG uses [Kokkos](https://kokkos.org/) to abstract the parallel backend, so GPU support is enabled through Kokkos' CUDA (NVIDIA) or HIP (AMD) backends. For the CUDA backend you need a working [CUDA toolkit](https://developer.nvidia.com/cuda-toolkit) together with a host compiler compatible with your `nvcc` version (e.g. `g++` <= 13.2 for CUDA 12.5). GPU support is controlled by the `-DGPU` CMake option (see below).
 
 All other requirements are bundled and automatically built with DiFfRG.
 
@@ -104,6 +104,39 @@ $ cmake --build ./ -- -j8
 ```
 
 By default, the library will install itself to `$HOME/.local/share/DiFfRG`, but you can control the destination by pointing `CMAKE_INSTALL_PREFIX` to a directory of your choice.
+
+This top-level build is a *superbuild*: it builds the bundled dependencies (deal.II, Kokkos, and any of Boost/TBB/HDF5/SUNDIALS not found on the system) into `${CMAKE_INSTALL_PREFIX}/bundled` and then builds and installs the DiFfRG library itself.
+
+### Build options
+
+The most important options to pass to the top-level `cmake` invocation are:
+
+- `-DGPU=ON/OFF` — GPU support via the Kokkos CUDA/HIP backend (default `ON`).
+- `-DMPI=ON/OFF` — MPI support (default `OFF`).
+- `-DNATIVE=ON/OFF` — optimize for the build machine's CPU (`-march=native`). Disable for portable binaries (default `ON`).
+- `-DDiFfRG_TEST=ON` — build the test suite (default `OFF`).
+- `-DDiFfRG_DOCUMENTATION=ON` — build this documentation (default `ON`).
+- `-DBUILD_PETSC=ON` / `-DBUILD_OpenBLAS=ON` — additionally build PETSc / OpenBLAS (default `OFF`).
+
+Boost, TBB, HDF5 and SUNDIALS are taken from the system when a viable version is found, and otherwise built from the bundled, pinned sources. For each library `<LIB>` ∈ {`BOOST`, `TBB`, `HDF5`, `SUNDIALS`} you can override this:
+
+- `-D<LIB>_DIR=<prefix>` — use the install at this prefix (a fatal error is raised if it is not usable).
+- `-DBUILD_<LIB>=ON` — always build the bundled, pinned copy, ignoring any system install.
+
+The minimum supported versions are Boost ≥ 1.81, oneTBB ≥ 2021, HDF5 ≥ 1.12 and SUNDIALS ≥ 5.4.
+
+### Rebuilding the library only
+
+Once the dependencies have been installed by a full build, you usually do not want to rebuild them when working on DiFfRG itself. You can then configure directly from the `DiFfRG/` subfolder, pointing CMake at the already-installed bundled dependencies via `BUNDLED_DIR`:
+
+```bash
+$ cd DiFfRG
+$ mkdir build && cd build
+$ cmake .. -DBUNDLED_DIR=$HOME/.local/share/DiFfRG/bundled/ -DCMAKE_BUILD_TYPE=Release
+$ cmake --build ./ -- -j8
+```
+
+Note the `/bundled/` suffix: `BUNDLED_DIR` points at the directory the superbuild installed the dependencies into, which defaults to `${CMAKE_INSTALL_PREFIX}/bundled`.
 
 ### Verifying your installation
 

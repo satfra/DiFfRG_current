@@ -226,7 +226,7 @@ $ paraview output.pvd
 
 ## Drawing a phase diagram
 
-Of course, we can now start to modify parameters. Either you can just edit `parameters.json`, write a new JSON file, or you can use the overwriting syntax.
+Of course, we can now start to modify parameters. Either you can just edit `parameter.json`, write a new JSON file, or you can use the overwriting syntax.
 As an example, consider you want to run a simulation at muq = 0.25, T = 0.1, Nc = 4 and name it `simulation4`. This can be achieved by the command
 ```bash
 $ ./tut2 -sd /physical/muq=0.25 -sd /physical/T=0.1 -sd /physical/Nc=4.0 -ss /output/name=simulation4

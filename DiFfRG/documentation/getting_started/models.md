@@ -193,65 +193,61 @@ Underlying the assemblers are the actual discretizations, which are implemented 
 Putting everything together, we can write a straightforward main function to run the flow equations:
 
 ```cpp
-using namespace dealii;
+#include <DiFfRG/DiFfRG.hh>
+
 using namespace DiFfRG;
+
+// Make choices for types: the model, its discretization, the assembler and the timestepper
+using Model = MyModel;
+constexpr uint dim = Model::dim;
+using Discretization = CG::Discretization<Model::Components, double, RectangularMesh<dim>>;
+using VectorType = typename Discretization::VectorType;
+using SparseMatrixType = typename Discretization::SparseMatrixType;
+using Assembler = CG::Assembler<Discretization, Model>;
+using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
 
 int main(int argc, char *argv[])
 {
-  // declare/get all needed parameters and parse from the CLI
-  ConfigurationHelper config_helper(argc, argv);
-  // declare all parameters that are going to be read from the config file
-  declare_discretization_parameters(config_helper.get_parameter_handler());
-  declare_timestepping_parameters(config_helper.get_parameter_handler());
-  declare_physics_parameters(config_helper.get_parameter_handler());
-  // parse the config file and the CLI parameters
-  config_helper.parse();
-  // read the parameters into data structures
-  DiscretizationParameters d_prm = get_discretization_parameters(config_helper.get_parameter_handler());
-  TimesteppingParameters t_prm = get_timestepping_parameters(config_helper.get_parameter_handler());
-  PhysicalParameters p_prm = get_physical_parameters(config_helper.get_parameter_handler());
-
-  // Make choices for types: The model, its discretization, the assembler and the timestepper
-  using Model = MyModel;
-  using NumberType = double;
-  constexpr uint dim = 1;
-  using Discretization = DG::Discretization<Model::Components, NumberType, Mesh<dim>>;
-  using VectorType = typename Discretization::VectorType;
-  using Assembler = DG::Assembler<Discretization, Model>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, dim>;
+  // Initialize DiFfRG (MPI + Kokkos) and read the parameter file / CLI overrides
+  const auto config_helper = DiFfRG::Init(argc, argv).get_configuration_helper();
+  const auto json = config_helper.get_json();
 
   // Define the objects needed to run the simulation
-  Model model(p_prm);
-  Mesh<dim> mesh(d_prm);
-  Discretization discretization(mesh, d_prm);
-  Assembler assembler(discretization, model, d_prm.overintegration, d_prm.threads, d_prm.batch_size);
-  DataOutput<dim> data_out(discretization.get_dof_handler(), config_helper.get_top_folder(), config_helper.get_output_name(), config_helper.get_output_folder(),
-                           d_prm.output_subdivisions);
-  MeshAdaptor mesh_adaptor(assembler, d_prm);
-  TimeStepper time_stepper(&assembler, data_out, &mesh_adaptor, t_prm);
+  Model model(json);
+  RectangularMesh<dim> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+  DataOutput<dim, VectorType> data_out(json);
+  HAdaptivity mesh_adaptor(assembler, json);
+  TimeStepper time_stepper(json, &assembler, &data_out, &mesh_adaptor);
 
   // Set up the initial condition
-  FlowingVariables initial_condition(discretization);
+  FE::FlowingVariables initial_condition(discretization);
   initial_condition.interpolate(model);
 
   // Start the timestepping
   Timer timer;
-  time_stepper.run(initial_condition.spatial_data(), 0., t_prm.final_time);
+  time_stepper.run(&initial_condition, 0., json.get_double("/timestepping/final_time"));
 
   // Print a bit of exit information to the logger.
-  deallog << "Program finished." << std::endl;
+  assembler.log("log");
+  spdlog::get("log")->info("Simulation finished after " + time_format(timer.wall_time()));
   return 0;
 }
 ```
 
-Here we have chosen a `dDG` discretization, which is a discontinuous Galerkin discretization with a direct discontinuous Galerkin assembler. The timestepper is the SUNDIALS IDA solver, which is the recommended solver for most cases.
-For the `dDG` discretization it is also necessary to supply a numerical flux, which can be done by modifying the numerical model as follows:
+Every object is constructed from the parsed `json` configuration, so all parameters
+(grid, FE order, tolerances, output, physics) are read from `parameter.json`. The
+timestepper is the SUNDIALS IDA solver, which is the recommended solver for most cases.
+If you use a discontinuous Galerkin discretization (`DG`/`dDG`/`LDG`) it is also
+necessary to supply a numerical flux, which can be done by modifying the numerical model
+as follows:
 ```cpp
-class MyModel : public def::AbstractModel<MyModel>,
+class MyModel : public def::AbstractModel<MyModel, Components>,
                 public def::fRG,                    // this handles the fRG time
-                public def::LLFFlux<largeN>,        // use a LLF numflux
-                public def::FlowBoundaries<largeN>, // use Inflow/Outflow boundaries
-                public def::AD<largeN>              // define all jacobians per AD
+                public def::LLFFlux<MyModel>,        // use a LLF numflux
+                public def::FlowBoundaries<MyModel>, // use Inflow/Outflow boundaries
+                public def::AD<MyModel>              // define all jacobians per AD
 {
   ...
 };
@@ -259,3 +255,41 @@ class MyModel : public def::AbstractModel<MyModel>,
 Here, the local Lax-Friedrichs flux has been used for the numerical fluxes and the boundaries have been defined to be inflow-/outflow. We have also chosen to use the autodiff functionality for the calculation of the jacobians.
 
 ## Other variables
+
+Besides FE functions, a model can carry **variables** $v_a$ and **extractors** $e_b$. These are degrees of freedom that do **not** live on the field-space discretization — they are plain values (or arrays of values) evolved alongside (or instead of) the FE functions. They are the natural representation for momentum-dependent truncations, where the flowing objects are dressing functions and couplings tabulated on a momentum grid rather than on the FEM field grid.
+
+Variables and extractors are declared in the `ComponentDescriptor` next to the FE functions, using either a `Scalar<"name">` (a single value) or a grid-valued `FunctionND<"name", sizes...>`:
+
+```cpp
+using namespace DiFfRG;
+
+static constexpr uint p_grid_size = 96;
+using VariableDesc  = VariableDescriptor<Scalar<"m2">, FunctionND<"ZA", p_grid_size>>;
+using ExtractorDesc = ExtractorDescriptor<Scalar<"observable">>;
+// A pure variable system has an empty FEFunctionDescriptor<>:
+using Components = ComponentDescriptor<FEFunctionDescriptor<>, VariableDesc, ExtractorDesc>;
+
+constexpr auto idxv = VariableDesc{};   // idxv("ZA") + i indexes grid point i of ZA
+```
+
+The difference between the two: **variables** are evolved in RG time by their own flow equation, while **extractors** are auxiliary quantities computed from the current state and made available to the FE-function flux/source methods (useful for coupling a FEM sector to global quantities).
+
+A model implements the following methods (from `DiFfRG::def::AbstractModel`, default to no-ops):
+
+- The initial condition of the variables,
+```cpp
+template <typename Vector> void initial_condition_variables(Vector &v_a) const;
+```
+- The flow of the variables $\partial_t v_a$,
+```cpp
+template <typename Vector, typename Solution> void dt_variables(Vector &r_a, const Solution &sol) const;
+```
+where `r_a` is the residual to fill and `sol` is a named tuple from which the current variables are obtained via `get<"variables">(sol)`.
+- The extractors, filled from the current solution,
+```cpp
+template <int dim, typename Vector, typename Solutions> void extract(Vector &e_b, const Point<dim> &x, const Solutions &sol) const;
+```
+
+A system that consists of variables only (no FE functions) is assembled by `DiFfRG::Variables::Assembler` (spatial dimension `0`) and carried by `DiFfRG::FlowingVariables`; when FE functions are also present the two sectors are coupled and the FEM assembler handles both. Momentum grids are represented by coordinate systems (e.g. `DiFfRG::LogarithmicCoordinates1D`) and evaluated through interpolators (e.g. `DiFfRG::SplineInterpolator1D`); the flow kernels are generated as grid `map` integrators.
+
+For a complete, worked momentum-dependent example, see [Tutorial 4](../tutorials/tut4.md).
