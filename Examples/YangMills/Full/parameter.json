@@ -1,19 +1,15 @@
 {
   "tuning": {
-    "tune_STI": false,
-    "STI_tol": 1e-4,
-    "STI_step_size": 1e-2,
-    "STI_scale": 10.0,
-
     "tune_m2A": false,
-    "lower_m2A": -150.0,
-    "upper_m2A": -80.0,
-    "m2A_tol": 1e-9
+    "lower_m2A": -95.0,
+    "upper_m2A": -88.0,
+    "m2A_tol": 1e-2
   },
   "physical": {
     "Lambda": 100.0,
     "Nc": 3.0,
-    "m2A": -104.45,
+    "_comment_m2A": "Gluon mass parameter, tuned to the scaling regime (angle-resolved S0/S1/SPhi vertices + angle-resolved ZA4tadpole). The scaling separatrix sits at m2A_init ~= -91.9: as m2A approaches it from above the IR gluon mass tunes through 0 and the ghost dressing is driven toward the scaling solution -- Zc(0) drops from ~0.91 (massive branch) to ~0.53 at m2A=-91.9 (below the SP value 0.577), then crosses to the Higgs branch (diverges) for m2A<=-91.92. m2A=-91.85 lands just on the scaling side (IR m2A ~ +0.01, Zc(0) ~ 0.75, robust); push toward -91.9 for the deepest ghost enhancement. The flow is numerically stable on the massive side (the collinear singularity is confined to one grid corner by the S0/S1/SPhi gridding).",
+    "m2A": -91.9,
 
     "alphaA4": 0.1085,
     "alphaA3": 0.105,
@@ -21,28 +17,19 @@
 
     "tilt_A4": 0.000,
     "tilt_A3": -0.01,
-    "tilt_Acbc": 0.0
+    "tilt_Acbc": 0.0,
+
+    "eta_iter_max": 20,
+    "eta_tol": 1e-3
   },
   "integration": {
-    "x_quadrature_order": 32,
-    "angle_quadrature_order": 8,
-    "x0_quadrature_order": 16,
-    "x0_summands": 8,
-    "q0_quadrature_order": 16,
-    "q0_summands": 8,
-    "x_extent_tolerance": 1E-3,
-    "x0_extent_tolerance": 1E-3,
-    "q0_extent_tolerance": 1E-3,
-    "jacobian_quadrature_factor": 5E-1,
+    "x_order": 32,
+    "cos1_order": 8,
+    "cos2_order": 8,
+    "phi_order": 8,
 
-    "rel_tol": 1e-3,
-    "abs_tol": 1e-12,
-    "max_eval": 10000,
-    "minn": 512,
-    "minm": 16,
-
-    "cudablocks": 128,
-    "cudathreadsperblock": 64
+    "x_extent_tolerance": 1e-4,
+    "jacobian_quadrature_factor": 5E-1
   },
   "discretization": {
     "p_grid_min": 1e-4,
@@ -69,7 +56,7 @@
     }
   },
   "timestepping": {
-    "final_time": 13.0,
+    "final_time": 16.0,
     "output_dt": 2e-1,
     "explicit": {
       "dt": 2e-1,
@@ -87,7 +74,6 @@
     }
   },
   "output": {
-    "live_plot": false,
     "verbosity": 1,
     "folder": "./",
     "name": "output"
