@@ -199,11 +199,11 @@ The run flows from the UV cutoff $\Lambda$ to the IR and writes `output.h5`, con
 
 ## Towards full momentum dependence
 
-The SP truncation keeps only the external-momentum dependence of the vertices. A **fully momentum-dependent** truncation additionally resolves the internal angles, so a vertex becomes a function of a momentum and one or more angles. The infrastructure scales up directly:
+The SP truncation keeps only the external-momentum dependence of the vertices. A **fully momentum-dependent** truncation additionally resolves the angle between the external legs, so a three-point vertex becomes a function of two momenta and the enclosed angle, `(|p1|, |p2|, cos(p1,p2))`. The infrastructure scales up directly:
 
-- **Coordinates** become a product grid, e.g. `CoordinatePackND<LogarithmicCoordinates1D<float>, LinearCoordinates1D<float>, LinearCoordinates1D<float>>` (one momentum, two angles).
-- **Variables** become multi-dimensional, e.g. `FunctionND<"ZA3", p_grid_size, S1_size, SPhi_size>`.
-- **Interpolators** become `TexLinearInterpolator3D<double, Coordinates3D>`.
-- **Kernels** use multi-angle integrators — `Integrator_p2_4D_2ang` / `_3ang`, which SP already uses for its vertices — generated with the same `MakeKernel` options, just with a multi-dimensional `"Coordinates"` list.
+- **Coordinates** become a product grid, `LogLogLinCoordinates` (= `CoordinatePackND<LogarithmicCoordinates1D<double>, LogarithmicCoordinates1D<double>, LinearCoordinates1D<double>>`): two logarithmic momentum axes and one linear angle axis.
+- **Variables** become multi-dimensional, e.g. `FunctionND<"ZA3", vertex_grid_size>` with `vertex_grid_size = vertex_p_grid_size * vertex_p_grid_size * n_angles` laid out row-major over `(p1, p2, cos)`.
+- **Interpolators** become `LinearInterpolatorND<double, LogLogLinCoordinates, GPU_memory>`.
+- **Kernels** use multi-angle integrators — `Integrator_p2_4D_2ang` / `_3ang` — generated with the same `MakeKernel` options, plus `"Coordinates" -> {"LogLogLinCoordinates"}`, `"CoordinateArguments" -> {"p1","p2","cosp1p2"}`, and a `"KernelBody" -> DeclareAnglesP34Dpqr[l1,p1,p2]` that declares the loop–external cosines in terms of the integration angles. In the model, the residual is filled with `flow_equations.ZA3.map(&residual[idxv("ZA3")], coordinates3D, arguments)`, exactly the same `.map` call as the 1D dressings but over the 3D coordinate pack.
 
-The angle-resolved Yang-Mills example lives in `Examples/YangMills/Full`. Note that its flow code currently predates the FunKit/Kokkos toolchain (it uses the legacy generation format) and must be regenerated with the workflow shown here and in [Tutorial 3](tut3.md) before it builds against the current library.
+The angle-resolved Yang-Mills example lives in `Examples/YangMills/Full` and is the worked reference for this: `Yang-Mills.m`/`Yang-Mills.nb` generate the six kernels (`ZA`, `Zc`, `ZA3`, `ZAcbc`, `ZA4tadpole`, `ZA4SP`) and `model.hh` wires them with the `.map` pattern. Like SP, it must be tuned in the initial gluon mass `m2A` — too negative lands on the Higgs branch (the flow diverges), too small on the massive branch, and the scaling regime lies in between; set `/tuning/tune_m2A` to bisect onto it.
