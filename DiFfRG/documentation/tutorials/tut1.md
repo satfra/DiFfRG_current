@@ -6,22 +6,22 @@ You can find the full code as described here also in `Tutorials/tut1`.
 
 ## File structure
 
-We will start by creating a new directory in the `Applications` directory just below the `DiFfRG` top directory. This directory will contain all the files necessary for the simulation.
+We will start by creating a new directory in the `Tutorials` directory just below the `DiFfRG` top directory (the full code for this tutorial also lives in `Tutorials/tut1`). This directory will contain all the files necessary for the simulation.
 
 ```bash
-$ cd Applications
+$ cd Tutorials
 $ mkdir tut1
 $ cd tut1
 $ touch CMakeLists.txt
 $ touch tut1.cc
 $ touch model.hh
-$ touch parameters.json
+$ touch parameter.json
 ```
 
 - The `CMakeLists.txt` file is used to tell CMake how to build the project.
 - The `tut1.cc` file contains the main function of the simulation and the most general structure of the simulation.
 - In the `model.hh` file we will define the numerical model, i.e. the set of differential equations that we want to solve.
-- The `parameters.json` file will contain the parameters for the simulation.
+- The `parameter.json` file will contain the parameters for the simulation.
 
 ## CMake setup
 
@@ -29,20 +29,29 @@ The `CMakeLists.txt` file is the first thing we need to set up. [CMake](https://
 
 In our case, we need to tell CMake about our new simulation and about the `DiFfRG` library. In practice, our `CMakeLists.txt` file looks as in the following:
 ```cmake
-cmake_minimum_required(VERSION 3.26.4)
+cmake_minimum_required(VERSION 3.27.0)
 
 project(tut1)
 ```
 In the above, we first request a minimum version of `CMake` and then declare our project.
 ```cmake
-find_package(DiFfRG REQUIRED HINTS $ENV{HOME}/.local/share/DiFfRG)
+find_package(DiFfRG REQUIRED HINTS $ENV{HOME}/.local/share/DiFfRG/)
 ```
-Afterwards, we request `CMake` to find the `DiFfRG` package. We point it at the default install path here, which is `$HOME/.local/share/DiFfRG`, but depending on where you installed `DiFfRG`, you will have to change this.
-```
+Afterwards, we request `CMake` to find the `DiFfRG` package. We point it at the default install path here, which is `$HOME/.local/share/DiFfRG/`, but depending on where you installed `DiFfRG`, you will have to change this.
+```cmake
 add_executable(tut1 tut1.cc)
-setup_application(tut1)
+target_link_libraries(tut1 PRIVATE DiFfRG::DiFfRG)
 ```
-Finally, we register an executable with `CMake` (called tut1) and use the `setup_application` function, which is a part of `DiFfRG`. It sets up all dependencies necessary for a `DiFfRG`-application, sets header paths and links it against the `DiFfRG` library.
+Finally, we register an executable with `CMake` (called tut1) and link it against the imported `DiFfRG::DiFfRG` target. This is a CMake [interface target](https://cmake.org/cmake/help/latest/manual/cmake-buildsystem.7.html#imported-targets): linking against it transitively pulls in all include paths, compiler flags and dependencies a `DiFfRG`-application needs (deal.II, Kokkos, Boost, SUNDIALS, ...). The underlying setup logic lives in `DiFfRG/cmake/setup_build_system.cmake` and is applied automatically when the package is found.
+
+Optionally, we also create a symlink to our parameter file in the build directory so that the executable finds it when run from there:
+```cmake
+execute_process(
+  COMMAND
+    ${CMAKE_COMMAND} "-E" "create_symlink"
+    "${CMAKE_CURRENT_SOURCE_DIR}/parameter.json"
+    "${CMAKE_CURRENT_BINARY_DIR}/parameter.json")
+```
 
 With this set up, we can immediately create our build directory and test the build system. To that end, create a new directory and enter it,
 ```bash
@@ -50,10 +59,10 @@ $ mkdir build
 $ cd build
 ```
 Then, invoke cmake,
+```bash
+$ cmake -DCMAKE_BUILD_TYPE=Release ..
 ```
-$ cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS='-O3 -march=native -ffast-math -fno-finite-math-only' ..
-```
-Here, we tell CMake to create an optimized "Release" build and propagate some further optimization flags to the compiler. The last argument to the `cmake` command, `..`, tells it where the source files can be found. In this case, it finds the `CMakeLists.txt` we just created in the parent directory and uses it to set up the build system.
+Here, we tell CMake to create an optimized "Release" build. The last argument to the `cmake` command, `..`, tells it where the source files can be found. In this case, it finds the `CMakeLists.txt` we just created in the parent directory and uses it to set up the build system. `DiFfRG` already compiles its applications with a set of sensible optimization flags, so no further `CMAKE_CXX_FLAGS` are required.
 
 At this point you could already invoke the build system by running
 ```bash
@@ -66,10 +75,7 @@ which will build the whole project using 8 cores. However, doing this will at th
 Now we are ready to set up the main structure of the program in `tut1.cc`.
 
 ```cpp
-#include <DiFfRG/common/configuration_helper.hh>
-#include <DiFfRG/common/utils.hh>
-#include <DiFfRG/discretization/discretization.hh>
-#include <DiFfRG/timestepping/timestepping.hh>
+#include <DiFfRG/DiFfRG.hh>
 
 #include "model.hh"
 
@@ -78,19 +84,22 @@ using namespace DiFfRG;
 int main(int argc, char *argv[])
 {
 ```
-The includes in the first few rows are parts of the `DiFfRG` and we will use them in a moment to set up the simulation. Next, we include the `model.hh` file, where we will set up the actual system of equations to solve.
+The first include, `DiFfRG/DiFfRG.hh`, is the umbrella header of the library: it pulls in the discretizations, assemblers, timesteppers and common utilities we will use in a moment. Next, we include the `model.hh` file, where we will set up the actual system of equations to solve.
 
 All relevant classes and functions are in the `DiFfRG` master namespace, so for convenience we just import all symbols from this namespace into our code by `using namespace DiFfRG;`.
 
-The actual program logic starts with the entry point, the `main` function. The first thing to do in the `main` function is to read the parameter file `parameters.json` we created earlier:
+The actual program logic starts with the entry point, the `main` function. The very first thing to do is to initialize `DiFfRG` and read the parameter file `parameter.json` we created earlier:
 ```cpp
+  // Initialize DiFfRG and thus the MPI and Kokkos environments
+  const auto config_helper = DiFfRG::Init(argc, argv).get_configuration_helper();
   // get all needed parameters and parse from the CLI
-  ConfigurationHelper config_helper(argc, argv);
   const auto json = config_helper.get_json();
 ```
-The `ConfigurationHelper` class automatically chooses the correct parameter file; if the executable is invoked with the `-p` parameter, i.e. `./tut1 -p parameters.json`, the argument of `-p` is chosen as the parameter file. Otherwise, `ConfigurationHelper` will try to open a file called `parameters.json` in the current working directory. The parameters have to be specified in the [JSON](https://www.json.org/json-en.html) format.
+`DiFfRG::Init(argc, argv)` sets up the runtime environment - in particular it initializes [Kokkos](https://kokkos.org/) (which provides the CPU/GPU parallelization) and, if enabled, MPI. It must be called once at the start of `main` before any `DiFfRG` object is constructed, and the returned object owns these environments for the lifetime of the program. From it we obtain a `ConfigurationHelper`.
 
-In order for this class to parse the flags and arguments passed from the command line, we need to construct the object with the `argc, argv` parameters, which hold this information.
+The `ConfigurationHelper` class automatically chooses the correct parameter file; if the executable is invoked with the `-p` parameter, i.e. `./tut1 -p parameter.json`, the argument of `-p` is chosen as the parameter file. Otherwise, `ConfigurationHelper` will try to open a file called `parameter.json` in the current working directory. The parameters have to be specified in the [JSON](https://www.json.org/json-en.html) format.
+
+The `argc, argv` parameters are forwarded so that command line flags and arguments can be parsed.
 Afterwards, we load the entire parameter structure into the `json` variable, which has the same structure as the original json file.
 
 After setting up the configuration, we choose the algorithms used in our simulation. To do so, we make some convenient type aliases with the chosen class types:
@@ -292,7 +301,7 @@ The `flux` method implements the actual equation. If we don't specify anything e
 
 so that our choice of $F_i(u) = \frac12 u^2$ exactly implements Burgers' equation.
 
-## parameters.json
+## parameter.json
 
 The parameter file contains usually user-defined quantities in a "physical" subsection and further paramters for the backend:
 
