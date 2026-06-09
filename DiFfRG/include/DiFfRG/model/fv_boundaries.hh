@@ -71,6 +71,49 @@ namespace DiFfRG
     };
 
     /**
+     * @brief FV boundary strategy for rho-coordinate models with an even lower-boundary symmetry.
+     *
+     * The lower boundary face is the symmetry plane at rho = 0. The first physical cell remains a free
+     * cell-centered unknown; only the two ghost cells are filled by even reflection. The upper boundary
+     * keeps the affine extrapolation used by FVDefaultBoundaries.
+     */
+    template <typename Model> class RhoSymmetricLinearExtrapolationBoundaries
+    {
+    public:
+      template <int dim, typename NumberType, size_t n_components>
+      bool apply_boundary_stencil(BoundaryStencilValues<dim, NumberType, n_components> &u_stencil,
+                                  BoundaryStencilPoints<dim> &x_stencil, const Point<dim> &x_face) const
+      {
+        static_assert(dim == 1,
+                      "RhoSymmetricLinearExtrapolationBoundaries currently supports only 1D FV domains.");
+
+        using namespace BoundaryStencilIndex;
+        const bool lower_boundary = x_face[0] <= x_stencil[physical_cell][0];
+        const double delta = lower_boundary ? (x_stencil[upper_inner][0] - x_stencil[physical_cell][0])
+                                            : (x_stencil[physical_cell][0] - x_stencil[lower_inner][0]);
+
+        if (lower_boundary) {
+          x_stencil[lower_inner][0] = x_stencil[physical_cell][0] - delta;
+          x_stencil[lower_outer][0] = x_stencil[physical_cell][0] - 2.0 * delta;
+          for (size_t c = 0; c < n_components; ++c) {
+            u_stencil[lower_inner][c] = u_stencil[physical_cell][c];
+            u_stencil[lower_outer][c] = u_stencil[upper_inner][c];
+          }
+          return true;
+        }
+
+        x_stencil[upper_inner][0] = x_stencil[physical_cell][0] + delta;
+        x_stencil[upper_outer][0] = x_stencil[physical_cell][0] + 2.0 * delta;
+        for (size_t c = 0; c < n_components; ++c) {
+          u_stencil[upper_inner][c] = NumberType(2.0) * u_stencil[physical_cell][c] - u_stencil[lower_inner][c];
+          u_stencil[upper_outer][c] =
+              NumberType(3.0) * u_stencil[physical_cell][c] - NumberType(2.0) * u_stencil[lower_inner][c];
+        }
+        return true;
+      }
+    };
+
+    /**
      * @brief FV boundary strategy using odd reflection at the origin and linear extrapolation at the outer boundary.
      *
      * Within the current face-based FV implementation this uses:
