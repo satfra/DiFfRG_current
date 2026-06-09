@@ -43,7 +43,7 @@ constexpr auto idxf = FEFunctionDesc{};
  */
 class ON_finiteT_KT : public def::AbstractModel<ON_finiteT_KT, Components>,
                      public def::fRG,
-                     public def::FVDefaultBoundaries<ON_finiteT_KT>,
+                     public def::RhoSymmetricLinearExtrapolationBoundaries<ON_finiteT_KT>,
                      public def::AD<ON_finiteT_KT>
 {
 public:
