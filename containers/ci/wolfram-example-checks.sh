@@ -6,7 +6,6 @@ set -euo pipefail
 workspace="${WORKSPACE:-/work}"
 log_dir="${DIFFRG_WOLFRAM_LOG_DIR:-${workspace}/.ci/logs/wolfram}"
 summary_file="${DIFFRG_WOLFRAM_SUMMARY:-${workspace}/.ci/logs/wolfram-summary.md}"
-expected_failures="${EXPECTED_WOLFRAM_FAILURES:-ONfiniteT FourFermi QuarkMesonLPAprime}"
 required_examples="${REQUIRED_WOLFRAM_EXAMPLES:-}"
 timeout_seconds="${WOLFRAM_TIMEOUT:-1800}"
 
@@ -20,14 +19,6 @@ examples=(
 
 mkdir -p "${log_dir}" "$(dirname "${summary_file}")"
 export PATH="${PREPEND_PATH:-}:/usr/local/bin:/usr/bin:/bin:/opt/Wolfram/WolframEngine/Executables:/opt/Wolfram/Wolfram/Executables:${PATH:-}"
-
-is_expected_failure() {
-  local name="$1"
-  case " ${expected_failures} " in
-    *" ${name} "*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
 
 is_required() {
   local name="$1"
@@ -53,26 +44,50 @@ run_wolfram() {
 preflight_log="${log_dir}/preflight.log"
 set +e
 (
+  echo "PATH: ${PATH}"
+  echo "PREPEND_PATH: ${PREPEND_PATH:-}"
+  echo "PWD: $(pwd)"
+  echo "HOME: ${HOME:-}"
+  echo
   echo "wolframscript path: $(command -v wolframscript || true)"
+  if command -v wolframscript >/dev/null 2>&1; then
+    ls -l "$(command -v wolframscript)" || true
+  fi
+  echo
+  echo "wolframscript version:"
   wolframscript -code '$VersionNumber'
   version_status=$?
+  echo "wolframscript version exit: ${version_status}"
+  echo
+  echo "FunKit preflight:"
   wolframscript -code 'If[Length[PacletFind["FunKit"]] > 0, Print["FunKit found"]; Exit[0], Print["FunKit missing"]; Exit[2]]'
   funkit_status=$?
+  echo "FunKit preflight exit: ${funkit_status}"
+  echo
+  echo "tform preflight:"
   if command -v tform >/dev/null 2>&1; then
+    echo "tform path: $(command -v tform)"
+    ls -l "$(command -v tform)" || true
     tform -v
     tform_status=$?
   else
     echo "tform missing"
     tform_status=127
   fi
+  echo "tform preflight exit: ${tform_status}"
   exit $((version_status || funkit_status || tform_status))
 ) > "${preflight_log}" 2>&1
 preflight_status=$?
 set -e
 
 if [[ ${preflight_status} -eq 0 ]]; then
+  echo "Wolfram preflight passed."
   echo "| preflight | passed | \`${preflight_log#${workspace}/}\` | |" >> "${summary_file}"
 else
+  echo "Wolfram preflight failed with exit ${preflight_status}."
+  echo "---- ${preflight_log#${workspace}/} ----"
+  cat "${preflight_log}"
+  echo "---- end ${preflight_log#${workspace}/} ----"
   echo "| preflight | failed | \`${preflight_log#${workspace}/}\` | Wolfram/FunKit/tform not fully available inside container |" >> "${summary_file}"
   echo >> "${summary_file}"
   echo "Preflight failed; generator execution skipped." >> "${summary_file}"
@@ -103,20 +118,10 @@ for item in "${examples[@]}"; do
   set -e
 
   if [[ ${status} -eq 0 ]]; then
-    note=""
-    if is_expected_failure "${name}"; then
-      note="was listed as expected failure"
-    fi
-    echo "| ${name} | passed | \`${log#${workspace}/}\` | ${note} |" >> "${summary_file}"
+    echo "| ${name} | passed | \`${log#${workspace}/}\` | |" >> "${summary_file}"
   else
-    if is_required "${name}"; then
-      echo "| ${name} | failed | \`${log#${workspace}/}\` | required, exit ${status} |" >> "${summary_file}"
-      required_failures=$((required_failures + 1))
-    elif is_expected_failure "${name}"; then
-      echo "| ${name} | expected failure | \`${log#${workspace}/}\` | exit ${status} |" >> "${summary_file}"
-    else
-      echo "| ${name} | advisory failure | \`${log#${workspace}/}\` | exit ${status} |" >> "${summary_file}"
-    fi
+    echo "| ${name} | failed | \`${log#${workspace}/}\` | exit ${status} |" >> "${summary_file}"
+    required_failures=$((required_failures + 1))
   fi
 done
 
@@ -126,7 +131,8 @@ git -C "${workspace}" diff -- 'Examples/**/flows/**' > "${diff_log}"
 diff_status=$?
 set -e
 if [[ ${diff_status} -eq 0 && -s "${diff_log}" ]]; then
-  echo "| generated-flow diff | advisory failure | \`${diff_log#${workspace}/}\` | generated files changed |" >> "${summary_file}"
+  echo "| generated-flow diff | failed | \`${diff_log#${workspace}/}\` | generated files changed |" >> "${summary_file}"
+  required_failures=$((required_failures + 1))
 else
   rm -f "${diff_log}"
   echo "| generated-flow diff | passed | | no generated flow drift |" >> "${summary_file}"

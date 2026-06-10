@@ -93,7 +93,6 @@ done
   echo
 } >> "${summary_file}"
 
-expected="${EXPECTED_WOLFRAM_FAILURES:-ONfiniteT FourFermi QuarkMesonLPAprime}"
 required="${REQUIRED_WOLFRAM_EXAMPLES:-}"
 wolfram_timeout="${WOLFRAM_TIMEOUT:-1800}"
 run_regressions="${RUN_EXAMPLE_REGRESSIONS:-1}"
@@ -102,14 +101,12 @@ required_regressions="${REQUIRED_EXAMPLE_REGRESSIONS:-}"
 example_regressions="${EXAMPLE_REGRESSIONS:-}"
 
 env \
-  SINGULARITYENV_EXPECTED_WOLFRAM_FAILURES="${expected}" \
   SINGULARITYENV_REQUIRED_WOLFRAM_EXAMPLES="${required}" \
   SINGULARITYENV_WOLFRAM_TIMEOUT="${wolfram_timeout}" \
   SINGULARITYENV_RUN_EXAMPLE_REGRESSIONS="${run_regressions}" \
   SINGULARITYENV_UPDATE_BASELINES="${update_baselines}" \
   SINGULARITYENV_REQUIRED_EXAMPLE_REGRESSIONS="${required_regressions}" \
   SINGULARITYENV_EXAMPLE_REGRESSIONS="${example_regressions}" \
-  APPTAINERENV_EXPECTED_WOLFRAM_FAILURES="${expected}" \
   APPTAINERENV_REQUIRED_WOLFRAM_EXAMPLES="${required}" \
   APPTAINERENV_WOLFRAM_TIMEOUT="${wolfram_timeout}" \
   APPTAINERENV_RUN_EXAMPLE_REGRESSIONS="${run_regressions}" \
@@ -127,8 +124,14 @@ env \
     wolfram_status=0
     bash containers/ci/wolfram-example-checks.sh || wolfram_status=$?
     if [[ ${wolfram_status} -eq 75 ]]; then
-      echo "Wolfram preflight failed; skipping rebuild/run/baseline regression layer."
-      exit 0
+      echo "Wolfram preflight failed; cannot run generators or baseline regressions."
+      if [[ -f .ci/logs/wolfram/preflight.log ]]; then
+        echo
+        echo "---- .ci/logs/wolfram/preflight.log ----"
+        cat .ci/logs/wolfram/preflight.log
+        echo "---- end preflight.log ----"
+      fi
+      exit 1
     fi
     if [[ ${wolfram_status} -ne 0 ]]; then
       exit "${wolfram_status}"
