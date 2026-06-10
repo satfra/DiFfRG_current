@@ -29,7 +29,7 @@ RUN apt-get -y update && apt-get -y install --no-install-recommends \
         git cmake build-essential gfortran \
         libopenblas-dev libgsl-dev \
         libboost-all-dev libtbb-dev libhdf5-dev libsundials-dev \
-        doxygen graphviz python3 patch ca-certificates \
+        doxygen graphviz python3 patch ca-certificates form \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
@@ -73,7 +73,8 @@ RUN apt-get -y update && apt-get -y install --no-install-recommends \
         git cmake build-essential gfortran \
         libopenblas-dev libgsl-dev \
         libboost-all-dev libtbb-dev libhdf5-dev libsundials-dev \
-        doxygen graphviz python3 patch ca-certificates \
+        doxygen graphviz python3 patch ca-certificates form \
+    && test -x /usr/bin/tform \
     && rm -rf /var/lib/apt/lists/*
 
 # Keep the dependency bundle outside /root so Singularity/Apptainer execution as
