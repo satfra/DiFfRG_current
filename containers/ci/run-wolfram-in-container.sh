@@ -112,6 +112,11 @@ done
   echo
 } >> "${summary_file}"
 
+echo "Bound host paths for Wolfram container:"
+for bind in "${binds[@]}"; do
+  echo "- ${bind}"
+done
+
 required="${REQUIRED_WOLFRAM_EXAMPLES:-}"
 wolfram_timeout="${WOLFRAM_TIMEOUT:-1800}"
 run_regressions="${RUN_EXAMPLE_REGRESSIONS:-1}"
@@ -140,6 +145,13 @@ env \
   "${image}" \
   bash -lc '
     set -euo pipefail
+    export PREPEND_PATH="/host-bin/wolfram-bin"
+    export REQUIRED_WOLFRAM_EXAMPLES="'"${required}"'"
+    export WOLFRAM_TIMEOUT="'"${wolfram_timeout}"'"
+    export RUN_EXAMPLE_REGRESSIONS="'"${run_regressions}"'"
+    export UPDATE_BASELINES="'"${update_baselines}"'"
+    export REQUIRED_EXAMPLE_REGRESSIONS="'"${required_regressions}"'"
+    export EXAMPLE_REGRESSIONS="'"${example_regressions}"'"
     wolfram_status=0
     bash containers/ci/wolfram-example-checks.sh || wolfram_status=$?
     if [[ ${wolfram_status} -eq 75 ]]; then
