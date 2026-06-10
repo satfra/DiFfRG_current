@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Build all current Examples against an installed DiFfRG prefix inside the CI
-# dependency container. This is intentionally report-oriented: legacy examples
-# can be listed as expected failures without changing their sources.
+# dependency container.
 set -euo pipefail
 
 workspace="${WORKSPACE:-/work}"
@@ -12,7 +11,6 @@ examples_build_root="${DIFFRG_EXAMPLES_BUILD_ROOT:-${workspace}/.ci/examples}"
 log_dir="${DIFFRG_EXAMPLES_LOG_DIR:-${workspace}/.ci/logs/examples}"
 summary_file="${DIFFRG_EXAMPLES_SUMMARY:-${workspace}/.ci/logs/examples-summary.md}"
 bundle_dir="${DiFfRG_BUNDLED_DIR:-/opt/diffrg/bundled}"
-expected_failures="${EXPECTED_EXAMPLE_FAILURES:-FourFermi}"
 
 examples=(
   "ONfiniteT:Examples/ONfiniteT"
@@ -23,14 +21,6 @@ examples=(
 )
 
 mkdir -p "${install_prefix}" "${library_build_dir}" "${examples_build_root}" "${log_dir}" "$(dirname "${summary_file}")"
-
-is_expected_failure() {
-  local name="$1"
-  case " ${expected_failures} " in
-    *" ${name} "*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
 
 {
   echo "## Example builds"
@@ -94,18 +84,10 @@ for item in "${examples[@]}"; do
 
   log_link="${log#${workspace}/}"
   if [[ ${status} -eq 0 ]]; then
-    if is_expected_failure "${name}"; then
-      echo "| ${name} | passed | \`${log_link}\` | was listed as expected failure |" >> "${summary_file}"
-    else
-      echo "| ${name} | passed | \`${log_link}\` | |" >> "${summary_file}"
-    fi
+    echo "| ${name} | passed | \`${log_link}\` | |" >> "${summary_file}"
   else
-    if is_expected_failure "${name}"; then
-      echo "| ${name} | expected failure | \`${log_link}\` | exit ${status} |" >> "${summary_file}"
-    else
-      echo "| ${name} | failed | \`${log_link}\` | exit ${status} |" >> "${summary_file}"
-      unexpected_failures=$((unexpected_failures + 1))
-    fi
+    echo "| ${name} | failed | \`${log_link}\` | exit ${status} |" >> "${summary_file}"
+    unexpected_failures=$((unexpected_failures + 1))
   fi
 done
 

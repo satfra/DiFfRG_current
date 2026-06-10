@@ -256,7 +256,6 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     env:
       DIFFRG_DEPS_IMAGE: ${{ needs.deps-image.outputs.image_ref }}
-      EXPECTED_EXAMPLE_FAILURES: FourFermi
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -285,9 +284,7 @@ jobs:
         run: |
           set -euo pipefail
           env \
-            SINGULARITYENV_EXPECTED_EXAMPLE_FAILURES="${EXPECTED_EXAMPLE_FAILURES}" \
             SINGULARITYENV_DIFFRG_BUILD_JOBS="${DIFFRG_EXAMPLE_JOBS}" \
-            APPTAINERENV_EXPECTED_EXAMPLE_FAILURES="${EXPECTED_EXAMPLE_FAILURES}" \
             APPTAINERENV_DIFFRG_BUILD_JOBS="${DIFFRG_EXAMPLE_JOBS}" \
             bash containers/singularity-run.sh \
             -b "${GITHUB_WORKSPACE}:/work" \
@@ -314,10 +311,8 @@ jobs:
     name: Wolfram Examples in container
     needs: deps-image
     runs-on: [self-hosted, linux, x64]
-    continue-on-error: true
     env:
       DIFFRG_DEPS_IMAGE: ${{ needs.deps-image.outputs.image_ref }}
-      EXPECTED_WOLFRAM_FAILURES: ONfiniteT FourFermi QuarkMesonLPAprime
       REQUIRED_WOLFRAM_EXAMPLES: ""
       RUN_EXAMPLE_REGRESSIONS: 1
       UPDATE_BASELINES: ${{ inputs.update_baselines && '1' || '0' }}
