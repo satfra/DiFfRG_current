@@ -18,7 +18,11 @@ examples=(
 )
 
 mkdir -p "${log_dir}" "$(dirname "${summary_file}")"
-export PATH="${PREPEND_PATH:-}:/usr/local/bin:/usr/bin:/bin:/opt/Wolfram/WolframEngine/Executables:/opt/Wolfram/Wolfram/Executables:${PATH:-}"
+path_prefix="${PREPEND_PATH:-}"
+if [[ -d /host-bin/wolfram-bin ]]; then
+  path_prefix="/host-bin/wolfram-bin${path_prefix:+:${path_prefix}}"
+fi
+export PATH="${path_prefix}:/usr/local/bin:/usr/bin:/bin:/opt/Wolfram/WolframEngine/Executables:/opt/Wolfram/Wolfram/Executables:${PATH:-}"
 
 is_required() {
   local name="$1"
