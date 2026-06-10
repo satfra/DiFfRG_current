@@ -50,6 +50,25 @@ add_bind_path() {
   add_bind_dir "${source_path}" "${dest_path:-${source_path}}"
 }
 
+add_bind_resolved_path() {
+  local path="$1"
+  [[ -n "${path}" ]] || return 0
+
+  local resolved
+  resolved="$(readlink -f "${path}" 2>/dev/null || true)"
+  add_bind_path "${resolved}"
+}
+
+add_bind_referenced_execs() {
+  local path="$1"
+  [[ -n "${path}" && -f "${path}" ]] || return 0
+
+  local referenced_path
+  while IFS= read -r referenced_path; do
+    add_bind_path "${referenced_path}"
+  done < <(grep -Eo '/[^[:space:]"'\'']+/wolframscript' "${path}" 2>/dev/null || true)
+}
+
 wolframscript_path="$(command -v wolframscript || true)"
 if [[ -z "${wolframscript_path}" ]]; then
   {
@@ -61,14 +80,14 @@ if [[ -z "${wolframscript_path}" ]]; then
 fi
 
 add_bind_path "${wolframscript_path}" /host-bin/wolfram-bin
-
-tform_path="$(command -v tform || true)"
-if [[ -n "${tform_path}" ]]; then
-  add_bind_path "${tform_path}" /host-bin/tform-bin
-fi
+add_bind_resolved_path "${wolframscript_path}"
+add_bind_referenced_execs "${wolframscript_path}"
 
 for candidate in \
   "${WOLFRAMSCRIPT_KERNELPATH:-}" \
+  /home/software/mathematica \
+  /home/software/Mathematica \
+  /home/software/Wolfram \
   /usr/local/Wolfram \
   /opt/Wolfram \
   /Applications/Wolfram.app \
@@ -113,8 +132,8 @@ env \
   APPTAINERENV_UPDATE_BASELINES="${update_baselines}" \
   APPTAINERENV_REQUIRED_EXAMPLE_REGRESSIONS="${required_regressions}" \
   APPTAINERENV_EXAMPLE_REGRESSIONS="${example_regressions}" \
-  SINGULARITYENV_PREPEND_PATH="/host-bin/wolfram-bin:/host-bin/tform-bin" \
-  APPTAINERENV_PREPEND_PATH="/host-bin/wolfram-bin:/host-bin/tform-bin" \
+  SINGULARITYENV_PREPEND_PATH="/host-bin/wolfram-bin" \
+  APPTAINERENV_PREPEND_PATH="/host-bin/wolfram-bin" \
   bash containers/singularity-run.sh \
   "${bind_args[@]}" \
   -w /work \
@@ -125,12 +144,6 @@ env \
     bash containers/ci/wolfram-example-checks.sh || wolfram_status=$?
     if [[ ${wolfram_status} -eq 75 ]]; then
       echo "Wolfram preflight failed; cannot run generators or baseline regressions."
-      if [[ -f .ci/logs/wolfram/preflight.log ]]; then
-        echo
-        echo "---- .ci/logs/wolfram/preflight.log ----"
-        cat .ci/logs/wolfram/preflight.log
-        echo "---- end preflight.log ----"
-      fi
       exit 1
     fi
     if [[ ${wolfram_status} -ne 0 ]]; then
