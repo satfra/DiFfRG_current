@@ -13,6 +13,15 @@ library test path:
    (`-DBUNDLED_DIR=$DiFfRG_BUNDLED_DIR`), and runs `ctest`. Library-only changes
    use `docker://ghcr.io/satfra/diffrg-deps:ubuntu24.04`; dependency-image
    changes first build and test a commit-specific image.
+3. **Example and Wolfram probes** (`.github/workflows/ci.yml`) — additional jobs
+   reuse the same dependency image through Singularity. The example job installs
+   DiFfRG into `.ci/diffrg-install` and builds every current `Examples/*` CMake
+   project, while allowing explicitly listed legacy examples to remain
+   report-only. The Wolfram job bind-mounts the host `wolframscript`/FORM setup
+   into the container and reports generator status plus generated-flow drift
+   without baking licensed Wolfram files into the public image. If Wolfram
+   preflight passes, the job then rebuilds the examples and compares selected
+   short-run outputs against committed baselines.
 
 This contrasts with `containers/Base/` and `containers/CUDA/`, which rebuild
 *everything* from scratch and are driven by `containers/test_all.sh` /
@@ -25,6 +34,11 @@ This contrasts with `containers/Base/` and `containers/CUDA/`, which rebuild
 | `ubuntu24.04-deps.Dockerfile` | CPU (GPU=OFF) dependency image. Multi-stage: builds the deps-only ExternalProject targets, then ships only the installed tree + toolchain. Consumed by `ci.yml` through Singularity. |
 | `ubuntu24.04-cuda-deps.Dockerfile` | CUDA (GPU=ON) dependency image, for **manual** GPU testing. Not used by automated CI (hosted runners have no GPU). |
 | `build-and-push.sh` | Build a dependency image, smoke-test it through Singularity (full library build + ctest), and push to GHCR. |
+| `build-examples.sh` | Runs inside the dependency image, installs DiFfRG into `.ci/diffrg-install`, and builds the current example CMake projects with per-example logs. |
+| `run-wolfram-in-container.sh` | Host-side wrapper that bind-mounts available Wolfram/Form paths and runs Wolfram checks inside the dependency image. |
+| `wolfram-example-checks.sh` | Runs inside the dependency image and records Wolfram preflight, generator, and generated-flow-drift results. |
+| `run-example-regressions.sh` | Runs selected built examples with short CI overrides and compares text outputs against `Examples/ci_baselines/`. |
+| `compare-example-baseline.py` | Normalizes and compares or updates small text baselines for example regression outputs. |
 
 ## Registry
 
