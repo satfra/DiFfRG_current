@@ -131,12 +131,21 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     env:
       DIFFRG_DEPS_IMAGE: ${{ needs.deps-image.outputs.image_ref }}
-      SINGULARITY_CACHEDIR: ${{ runner.temp }}/singularity-cache
-      APPTAINER_CACHEDIR: ${{ runner.temp }}/apptainer-cache
-      SINGULARITY_RUN_CACHE: ${{ runner.temp }}/singularity-run-cache
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Configure container cache dirs
+        run: |
+          {
+            echo "SINGULARITY_CACHEDIR=${RUNNER_TEMP}/singularity-cache"
+            echo "APPTAINER_CACHEDIR=${RUNNER_TEMP}/apptainer-cache"
+            echo "SINGULARITY_RUN_CACHE=${RUNNER_TEMP}/singularity-run-cache"
+          } >> "$GITHUB_ENV"
+          mkdir -p \
+            "${RUNNER_TEMP}/singularity-cache" \
+            "${RUNNER_TEMP}/apptainer-cache" \
+            "${RUNNER_TEMP}/singularity-run-cache"
 
       - name: Pull dependency image
         id: deps
@@ -264,12 +273,21 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     env:
       DIFFRG_DEPS_IMAGE: ${{ needs.deps-image.outputs.image_ref }}
-      SINGULARITY_CACHEDIR: ${{ runner.temp }}/singularity-cache
-      APPTAINER_CACHEDIR: ${{ runner.temp }}/apptainer-cache
-      SINGULARITY_RUN_CACHE: ${{ runner.temp }}/singularity-run-cache
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Configure container cache dirs
+        run: |
+          {
+            echo "SINGULARITY_CACHEDIR=${RUNNER_TEMP}/singularity-cache"
+            echo "APPTAINER_CACHEDIR=${RUNNER_TEMP}/apptainer-cache"
+            echo "SINGULARITY_RUN_CACHE=${RUNNER_TEMP}/singularity-run-cache"
+          } >> "$GITHUB_ENV"
+          mkdir -p \
+            "${RUNNER_TEMP}/singularity-cache" \
+            "${RUNNER_TEMP}/apptainer-cache" \
+            "${RUNNER_TEMP}/singularity-run-cache"
 
       - name: Pull dependency image
         id: deps
@@ -329,9 +347,6 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     env:
       DIFFRG_DEPS_IMAGE: ${{ needs.deps-image.outputs.image_ref }}
-      SINGULARITY_CACHEDIR: ${{ runner.temp }}/singularity-cache
-      APPTAINER_CACHEDIR: ${{ runner.temp }}/apptainer-cache
-      SINGULARITY_RUN_CACHE: ${{ runner.temp }}/singularity-run-cache
       REQUIRED_WOLFRAM_EXAMPLES: ""
       RUN_EXAMPLE_REGRESSIONS: 1
       UPDATE_BASELINES: ${{ inputs.update_baselines && '1' || '0' }}
@@ -341,6 +356,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Configure container cache dirs
+        run: |
+          {
+            echo "SINGULARITY_CACHEDIR=${RUNNER_TEMP}/singularity-cache"
+            echo "APPTAINER_CACHEDIR=${RUNNER_TEMP}/apptainer-cache"
+            echo "SINGULARITY_RUN_CACHE=${RUNNER_TEMP}/singularity-run-cache"
+          } >> "$GITHUB_ENV"
+          mkdir -p \
+            "${RUNNER_TEMP}/singularity-cache" \
+            "${RUNNER_TEMP}/apptainer-cache" \
+            "${RUNNER_TEMP}/singularity-run-cache"
 
       - name: Pull dependency image
         id: deps
