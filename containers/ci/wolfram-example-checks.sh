@@ -58,6 +58,29 @@ set +e
     ls -l "$(command -v wolframscript)" || true
   fi
   echo
+  echo "Wolfram installation probes:"
+  for candidate in \
+    /home/software \
+    /home/software/mathematica \
+    /home/software/mathematica/Executables \
+    /home/software/mathematica/Executables/wolframscript \
+    /home/software/mathematica/Executables/WolframKernel \
+    /home/software/mathematica/Executables/MathKernel \
+    /home/software/mathematica/SystemFiles/Kernel/Binaries/Linux-x86-64 \
+    /home/software/mathematica/SystemFiles/Kernel/Binaries/Linux-x86-64/WolframKernel \
+    /home/software/mathematica/SystemFiles/Kernel/Binaries/Linux-x86-64/MathKernel
+  do
+    if [[ -e "${candidate}" ]]; then
+      ls -ld "${candidate}" || true
+      if [[ -f "${candidate}" ]]; then
+        file "${candidate}" || true
+        ldd "${candidate}" || true
+      fi
+    else
+      echo "missing: ${candidate}"
+    fi
+  done
+  echo
   echo "wolframscript version:"
   wolframscript -code '$VersionNumber'
   version_status=$?
