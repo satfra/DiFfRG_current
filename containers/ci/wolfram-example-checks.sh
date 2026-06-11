@@ -11,10 +11,10 @@ timeout_seconds="${WOLFRAM_TIMEOUT:-1800}"
 
 examples=(
   "ONfiniteT:Examples/ONfiniteT:ON.nb"
-  "QuarkMesonLPAprime:Examples/QuarkMesonLPAprime:QuarkMesonLPAprime.m"
-  "YangMills_SP:Examples/YangMills/SP:Yang-Mills.m"
-  "YangMills_Full:Examples/YangMills/Full:Yang-Mills.m"
-  "FourFermi:Examples/FourFermi:Four-Fermion.m"
+  "QuarkMesonLPAprime:Examples/QuarkMesonLPAprime:QuarkMesonLPAprime.nb"
+  "YangMills_SP:Examples/YangMills/SP:Yang-Mills.nb"
+  "YangMills_Full:Examples/YangMills/Full:Yang-Mills.nb"
+  "FourFermi:Examples/FourFermi:Four-Fermion.nb"
 )
 
 mkdir -p "${log_dir}" "$(dirname "${summary_file}")"
@@ -135,9 +135,15 @@ for item in "${examples[@]}"; do
   if [[ "${entry}" == *.m ]]; then
     run_wolfram -code 'AppendTo[$Path, "/work/DiFfRG/Mathematica"]; SetDirectory["'"${example_dir}"'"]; Get["'"${entry}"'"]' > "${log}" 2>&1
     status=$?
+  elif [[ "${entry}" == *.nb ]]; then
+    (
+      cd "${example_dir}"
+      run_wolfram -script "${entry}"
+    ) > "${log}" 2>&1
+    status=$?
   else
     {
-      echo "No plain-text .m generator is available for ${name}; notebook execution is intentionally not attempted by default."
+      echo "Unsupported Wolfram generator entry point for ${name}."
       echo "Entry point: ${relpath}/${entry}"
     } > "${log}"
     status=125
