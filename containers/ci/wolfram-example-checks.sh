@@ -147,6 +147,10 @@ for item in "${examples[@]}"; do
   if [[ ${status} -eq 0 ]]; then
     echo "| ${name} | passed | \`${log#${workspace}/}\` | |" >> "${summary_file}"
   else
+    echo "Wolfram generator ${name} failed with exit ${status}."
+    echo "---- ${log#${workspace}/} ----"
+    cat "${log}"
+    echo "---- end ${log#${workspace}/} ----"
     echo "| ${name} | failed | \`${log#${workspace}/}\` | exit ${status} |" >> "${summary_file}"
     required_failures=$((required_failures + 1))
   fi
@@ -166,6 +170,9 @@ else
 fi
 
 if [[ ${required_failures} -ne 0 ]]; then
+  echo "---- ${summary_file#${workspace}/} ----"
+  cat "${summary_file}"
+  echo "---- end ${summary_file#${workspace}/} ----"
   echo "${required_failures} required Wolfram generator(s) failed." >&2
   exit 1
 fi
