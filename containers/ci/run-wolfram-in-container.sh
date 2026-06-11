@@ -85,6 +85,7 @@ add_bind_referenced_execs "${wolframscript_path}"
 
 for candidate in \
   "${WOLFRAMSCRIPT_KERNELPATH:-}" \
+  /home/software \
   /home/software/mathematica \
   /home/software/Mathematica \
   /home/software/Wolfram \
@@ -97,6 +98,7 @@ for candidate in \
   "${HOME}/.WolframEngine"
 do
   add_bind_path "${candidate}"
+  add_bind_resolved_path "${candidate}"
 done
 
 bind_args=()
