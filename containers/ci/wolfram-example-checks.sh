@@ -87,7 +87,7 @@ set +e
   echo "wolframscript version exit: ${version_status}"
   echo
   echo "FunKit preflight:"
-  wolframscript -code 'If[Length[PacletFind["FunKit"]] > 0, Print["FunKit found"]; Exit[0], Print["FunKit missing"]; Exit[2]]'
+  wolframscript -code 'Quiet[If[$VersionNumber >= 14.0, PacletDataRebuild[], PacletManager`RebuildPacletData[]]]; Print["PacletFind FunKit: ", PacletFind["FunKit"]]; Print["FindFile FunKit: ", FindFile["FunKit`"]]; Print["FindFile FormTracer: ", FindFile["FormTracer`"]]; If[Length[PacletFind["FunKit"]] > 0, Print["FunKit found"]; Exit[0], Print["FunKit missing"]; Exit[2]]'
   funkit_status=$?
   echo "FunKit preflight exit: ${funkit_status}"
   echo
