@@ -131,6 +131,9 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     env:
       DIFFRG_DEPS_IMAGE: ${{ needs.deps-image.outputs.image_ref }}
+      SINGULARITY_CACHEDIR: ${{ runner.temp }}/singularity-cache
+      APPTAINER_CACHEDIR: ${{ runner.temp }}/apptainer-cache
+      SINGULARITY_RUN_CACHE: ${{ runner.temp }}/singularity-run-cache
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -236,6 +239,11 @@ jobs:
           message: ${{ steps.badge.outputs.message }}
           color: ${{ steps.badge.outputs.color }}
 
+      - name: Clean container caches
+        if: always()
+        run: |
+          rm -rf "${SINGULARITY_CACHEDIR}" "${APPTAINER_CACHEDIR}" "${SINGULARITY_RUN_CACHE}"
+
       # Reflect build/test failures in the job conclusion (the test step swallows
       # ctest's exit code on purpose; the build step's failure is preserved here too).
       - name: Fail the job if the build or any test failed
@@ -256,6 +264,9 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     env:
       DIFFRG_DEPS_IMAGE: ${{ needs.deps-image.outputs.image_ref }}
+      SINGULARITY_CACHEDIR: ${{ runner.temp }}/singularity-cache
+      APPTAINER_CACHEDIR: ${{ runner.temp }}/apptainer-cache
+      SINGULARITY_RUN_CACHE: ${{ runner.temp }}/singularity-run-cache
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -307,12 +318,20 @@ jobs:
           path: .ci/logs/examples/**
           if-no-files-found: ignore
 
+      - name: Clean container caches
+        if: always()
+        run: |
+          rm -rf "${SINGULARITY_CACHEDIR}" "${APPTAINER_CACHEDIR}" "${SINGULARITY_RUN_CACHE}"
+
   wolfram-examples:
     name: Wolfram Examples in container
     needs: deps-image
     runs-on: [self-hosted, linux, x64]
     env:
       DIFFRG_DEPS_IMAGE: ${{ needs.deps-image.outputs.image_ref }}
+      SINGULARITY_CACHEDIR: ${{ runner.temp }}/singularity-cache
+      APPTAINER_CACHEDIR: ${{ runner.temp }}/apptainer-cache
+      SINGULARITY_RUN_CACHE: ${{ runner.temp }}/singularity-run-cache
       REQUIRED_WOLFRAM_EXAMPLES: ""
       RUN_EXAMPLE_REGRESSIONS: 1
       UPDATE_BASELINES: ${{ inputs.update_baselines && '1' || '0' }}
@@ -377,6 +396,11 @@ jobs:
           name: example-ci-baselines
           path: Examples/ci_baselines/**
           if-no-files-found: error
+
+      - name: Clean container caches
+        if: always()
+        run: |
+          rm -rf "${SINGULARITY_CACHEDIR}" "${APPTAINER_CACHEDIR}" "${SINGULARITY_RUN_CACHE}"
 
   promote-deps-image:
     name: Promote dependency image
