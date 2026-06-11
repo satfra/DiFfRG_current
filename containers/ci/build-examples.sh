@@ -86,6 +86,10 @@ for item in "${examples[@]}"; do
   if [[ ${status} -eq 0 ]]; then
     echo "| ${name} | passed | \`${log_link}\` | |" >> "${summary_file}"
   else
+    echo "Example build ${name} failed with exit ${status}."
+    echo "---- ${log_link} ----"
+    cat "${log}"
+    echo "---- end ${log_link} ----"
     echo "| ${name} | failed | \`${log_link}\` | exit ${status} |" >> "${summary_file}"
     unexpected_failures=$((unexpected_failures + 1))
   fi
@@ -95,6 +99,9 @@ echo >> "${summary_file}"
 echo "DiFfRG install log: \`${library_log#${workspace}/}\`" >> "${summary_file}"
 
 if [[ ${unexpected_failures} -ne 0 ]]; then
+  echo "---- ${summary_file#${workspace}/} ----"
+  cat "${summary_file}"
+  echo "---- end ${summary_file#${workspace}/} ----"
   echo "${unexpected_failures} unexpected example build(s) failed." >&2
   exit 1
 fi
