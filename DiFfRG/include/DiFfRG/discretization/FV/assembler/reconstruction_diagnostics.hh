@@ -39,6 +39,7 @@ namespace diagnostics
 
         template <typename AssemblerType>
         void write_reconstruction_maps(
+            const AssemblerType &assembler,
             DataOutput<AssemblerType::dim, typename AssemblerType::VectorType> &data_out,
             const dealii::DoFHandler<AssemblerType::dim> &dof_handler,
             const typename AssemblerType::Model &model, const typename AssemblerType::VectorType &solution)
@@ -60,12 +61,11 @@ namespace diagnostics
           };
 
           std::vector<CellRecord> cells;
-          std::vector<dealii::types::global_dof_index> scratch_dof_indices(n_components);
 
           for (auto cell = dof_handler.begin_active(); cell != dof_handler.end(); ++cell) {
             CellRecord record;
             record.cell = cell;
-            AssemblerType::fill_cell_stencil(cell, solution, model, scratch_dof_indices, record.stencil);
+            assembler.fill_cell_stencil(cell, solution, record.stencil);
             const auto grad = Reconstructor::template compute_gradient<n_components>(
                 record.stencil.cell.x, record.stencil.cell.u, record.stencil.neighbors.x, record.stencil.neighbors.u);
             for (size_t c = 0; c < n_components; ++c) {
@@ -187,43 +187,27 @@ namespace diagnostics
           auto reconstruct_boundary = [&](const CellRecord &cell, const unsigned int face_no) {
             const auto x_q = cell.cell->face(face_no)->center();
             auto boundary_stencil =
-                AssemblerType::template build_boundary_stencil_1d<NumberType>(cell.cell, face_no, solution,
-                                                                               scratch_dof_indices);
-            const bool boundary_supported =
-                model.apply_boundary_stencil(boundary_stencil.u, boundary_stencil.x, dealii::Point<1>(x_q[0]));
-            AssertThrow(boundary_supported,
-                        dealii::ExcMessage("KT boundary stencil was rejected by the model boundary policy."));
-
-            const auto physical_stencil = internal::make_boundary_side_stencil_1d<NumberType, n_components>(
-                boundary_stencil, internal::BoundaryStencilIndex::physical_cell,
-                internal::BoundaryStencilIndex::lower_inner, internal::BoundaryStencilIndex::upper_inner);
-            const auto ghost_stencil =
-                internal::make_ghost_boundary_side_stencil_1d<NumberType, n_components>(boundary_stencil);
-
-            const auto grad_physical = Reconstructor::template compute_gradient<n_components>(
-                physical_stencil.cell.x, physical_stencil.cell.u, physical_stencil.neighbors.x,
-                physical_stencil.neighbors.u);
-            const auto grad_ghost = Reconstructor::template compute_gradient<n_components>(
-                ghost_stencil.cell.x, ghost_stencil.cell.u, ghost_stencil.neighbors.x, ghost_stencil.neighbors.u);
-            const auto grad_physical_face = Reconstructor::template compute_gradient_at_point<n_components>(
-                physical_stencil.cell.x, x_q, physical_stencil.cell.u, physical_stencil.neighbors.x,
-                physical_stencil.neighbors.u);
-            const auto grad_ghost_face = Reconstructor::template compute_gradient_at_point<n_components>(
-                ghost_stencil.cell.x, x_q, ghost_stencil.cell.u, ghost_stencil.neighbors.x, ghost_stencil.neighbors.u);
-            const auto u_physical =
-                internal::reconstruct_u(physical_stencil.cell.u, physical_stencil.cell.x, x_q, grad_physical);
-            const auto u_ghost = internal::reconstruct_u(ghost_stencil.cell.u, ghost_stencil.cell.x, x_q, grad_ghost);
+                assembler.template build_boundary_stencil_1d_from_cache<NumberType>(cell.cell, face_no, solution);
+            const auto reconstruction =
+                internal::compute_boundary_face_reconstruction_state<Reconstructor>(
+                    boundary_stencil, x_q, model);
 
             if (face_no == 0) {
-              const auto fluxes =
-                  compute_flux_values(u_physical, u_ghost, grad_physical_face, grad_ghost_face, x_q);
-              append_face(x_q[0], as_value(u_ghost), as_value(u_physical), as_gradient_value(grad_ghost_face),
-                          as_gradient_value(grad_physical_face), fluxes.advection, fluxes.diffusion, fluxes.total);
+              const auto fluxes = compute_flux_values(reconstruction.u_minus, reconstruction.u_plus,
+                                                       reconstruction.face_grad_minus,
+                                                       reconstruction.face_grad_plus, x_q);
+              append_face(x_q[0], as_value(reconstruction.u_plus), as_value(reconstruction.u_minus),
+                          as_gradient_value(reconstruction.face_grad_plus),
+                          as_gradient_value(reconstruction.face_grad_minus), fluxes.advection, fluxes.diffusion,
+                          fluxes.total);
             } else {
-              const auto fluxes =
-                  compute_flux_values(u_ghost, u_physical, grad_ghost_face, grad_physical_face, x_q);
-              append_face(x_q[0], as_value(u_physical), as_value(u_ghost), as_gradient_value(grad_physical_face),
-                          as_gradient_value(grad_ghost_face), fluxes.advection, fluxes.diffusion, fluxes.total);
+              const auto fluxes = compute_flux_values(reconstruction.u_plus, reconstruction.u_minus,
+                                                       reconstruction.face_grad_plus,
+                                                       reconstruction.face_grad_minus, x_q);
+              append_face(x_q[0], as_value(reconstruction.u_minus), as_value(reconstruction.u_plus),
+                          as_gradient_value(reconstruction.face_grad_minus),
+                          as_gradient_value(reconstruction.face_grad_plus), fluxes.advection, fluxes.diffusion,
+                          fluxes.total);
             }
           };
 
@@ -233,19 +217,15 @@ namespace diagnostics
             const auto &lower = cells[i - 1];
             const auto &upper = cells[i];
             const auto x_q = lower.cell->face(1)->center();
-            const auto grad_lower = Reconstructor::template compute_gradient<n_components>(
-                lower.stencil.cell.x, lower.stencil.cell.u, lower.stencil.neighbors.x, lower.stencil.neighbors.u);
-            const auto grad_upper = Reconstructor::template compute_gradient<n_components>(
-                upper.stencil.cell.x, upper.stencil.cell.u, upper.stencil.neighbors.x, upper.stencil.neighbors.u);
-            const auto grad_lower_face = Reconstructor::template compute_gradient_at_point<n_components>(
-                lower.stencil.cell.x, x_q, lower.stencil.cell.u, lower.stencil.neighbors.x, lower.stencil.neighbors.u);
-            const auto grad_upper_face = Reconstructor::template compute_gradient_at_point<n_components>(
-                upper.stencil.cell.x, x_q, upper.stencil.cell.u, upper.stencil.neighbors.x, upper.stencil.neighbors.u);
-            const auto u_minus = internal::reconstruct_u(lower.stencil.cell.u, lower.stencil.cell.x, x_q, grad_lower);
-            const auto u_plus = internal::reconstruct_u(upper.stencil.cell.u, upper.stencil.cell.x, x_q, grad_upper);
-            const auto fluxes = compute_flux_values(u_plus, u_minus, grad_upper_face, grad_lower_face, x_q);
-            append_face(x_q[0], as_value(u_minus), as_value(u_plus), as_gradient_value(grad_lower_face),
-                        as_gradient_value(grad_upper_face), fluxes.advection, fluxes.diffusion, fluxes.total);
+            const auto reconstruction =
+                internal::compute_interior_face_reconstruction_state<Reconstructor>(lower.stencil, upper.stencil, x_q);
+            const auto fluxes = compute_flux_values(reconstruction.u_plus, reconstruction.u_minus,
+                                                    reconstruction.face_grad_plus,
+                                                    reconstruction.face_grad_minus, x_q);
+            append_face(x_q[0], as_value(reconstruction.u_minus), as_value(reconstruction.u_plus),
+                        as_gradient_value(reconstruction.face_grad_minus),
+                        as_gradient_value(reconstruction.face_grad_plus), fluxes.advection, fluxes.diffusion,
+                        fluxes.total);
           }
 
           if (!cells.empty()) reconstruct_boundary(cells.back(), 1);

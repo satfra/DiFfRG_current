@@ -107,21 +107,25 @@ namespace
       const DiFfRG::def::BoundaryStencilValues<1, NumberType, 1> &u_stencil,
       const std::array<std::array<types::global_dof_index, 1>, 5> &dof_stencil, const Point<1> &x_face)
   {
-    using namespace DiFfRG::FV::KurganovTadmor::internal::BoundaryStencilIndex;
+    constexpr int dim = 1;
+    using BoundaryIndex = DiFfRG::FV::KurganovTadmor::internal::BoundaryStencilIndex<dim>;
     using ReconstructorNumber =
-        DiFfRG::def::TVDReconstructor<1, DiFfRG::def::MinModLimiter, NumberType>;
+        DiFfRG::def::TVDReconstructor<dim, DiFfRG::def::MinModLimiter, NumberType>;
 
-    KT::internal::BoundaryStencilData1D<NumberType, 1> boundary_stencil{};
+    KT::internal::BoundaryStencilData<dim, NumberType, 1> boundary_stencil{};
     boundary_stencil.x = x_stencil;
     boundary_stencil.u = u_stencil;
     boundary_stencil.dof_indices = dof_stencil;
-    boundary_stencil.lower_boundary = KT::internal::is_lower_boundary_stencil<NumberType, 1>(x_stencil, x_face);
-    boundary_stencil.ghost_center = boundary_stencil.lower_boundary ? lower_inner : upper_inner;
-    boundary_stencil.ghost_left = boundary_stencil.lower_boundary ? lower_outer : physical_cell;
-    boundary_stencil.ghost_right = boundary_stencil.lower_boundary ? physical_cell : upper_outer;
+    boundary_stencil.lower_boundary = KT::internal::is_lower_boundary_stencil<dim, NumberType, 1>(x_stencil, x_face);
+    boundary_stencil.ghost_center =
+        boundary_stencil.lower_boundary ? BoundaryIndex::lower_inner : BoundaryIndex::upper_inner;
+    boundary_stencil.ghost_left =
+        boundary_stencil.lower_boundary ? BoundaryIndex::lower_outer : BoundaryIndex::physical_cell;
+    boundary_stencil.ghost_right =
+        boundary_stencil.lower_boundary ? BoundaryIndex::physical_cell : BoundaryIndex::upper_outer;
     const auto physical_stencil =
-        KT::internal::make_physical_boundary_side_stencil_1d<NumberType, 1>(boundary_stencil);
-    const auto ghost_stencil = KT::internal::make_ghost_boundary_side_stencil_1d<NumberType, 1>(boundary_stencil);
+        KT::internal::make_physical_boundary_side_stencil_1d<dim, NumberType, 1>(boundary_stencil);
+    const auto ghost_stencil = KT::internal::make_ghost_boundary_side_stencil_1d<dim, NumberType, 1>(boundary_stencil);
 
     const auto u_grad_physical = ReconstructorNumber::template compute_gradient<1>(
         physical_stencil.cell.x, physical_stencil.cell.u, physical_stencil.neighbors.x, physical_stencil.neighbors.u);
