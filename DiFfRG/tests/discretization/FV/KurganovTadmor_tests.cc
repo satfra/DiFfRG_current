@@ -353,6 +353,91 @@ TEST_CASE("KT FV residual contribution diagnostics reconstruct assembled residua
 #endif
 }
 
+TEST_CASE("KT reconstruction cache recomputes cell stencil values per solution", "[FV][KT][cache]")
+{
+  using Model = ResidualContributionModel;
+  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<1>>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  auto json = make_fv_residual_contribution_diagnostics_json();
+  Model model;
+  DiFfRG::RectangularMesh<1> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  VectorType first(discretization.get_dof_handler().n_dofs());
+  VectorType second(first.size());
+  for (unsigned int i = 0; i < first.size(); ++i) {
+    first[i] = 1.0 + 0.1 * static_cast<double>(i);
+    second[i] = 2.0 + 0.3 * static_cast<double>(i);
+  }
+
+  auto cell = discretization.get_dof_handler().begin_active();
+  ++cell;
+  REQUIRE(cell != discretization.get_dof_handler().end());
+
+  typename Assembler::CellStencilData first_stencil;
+  typename Assembler::CellStencilData second_stencil;
+  assembler.fill_cell_stencil(cell, first, first_stencil);
+  assembler.fill_cell_stencil(cell, second, second_stencil);
+
+  CHECK(first_stencil.cell.x == second_stencil.cell.x);
+  CHECK(first_stencil.cell.dof_indices == second_stencil.cell.dof_indices);
+  CHECK(first_stencil.cell.u[0] == Catch::Approx(first[first_stencil.cell.dof_indices[0]]));
+  CHECK(second_stencil.cell.u[0] == Catch::Approx(second[second_stencil.cell.dof_indices[0]]));
+  CHECK(first_stencil.cell.u[0] != Catch::Approx(second_stencil.cell.u[0]));
+
+  for (const auto face_index : cell->face_indices()) {
+    CHECK(first_stencil.neighbors.x[face_index] == second_stencil.neighbors.x[face_index]);
+    CHECK(first_stencil.neighbors.dof_indices[face_index] == second_stencil.neighbors.dof_indices[face_index]);
+    const auto neighbor_dof = first_stencil.neighbors.dof_indices[face_index][0];
+    CHECK(first_stencil.neighbors.u[face_index][0] == Catch::Approx(first[neighbor_dof]));
+    CHECK(second_stencil.neighbors.u[face_index][0] == Catch::Approx(second[neighbor_dof]));
+    CHECK(first_stencil.neighbors.u[face_index][0] != Catch::Approx(second_stencil.neighbors.u[face_index][0]));
+  }
+}
+
+TEST_CASE("KT boundary stencil cache recomputes values per solution", "[FV][KT][cache]")
+{
+  using Model = ResidualContributionModel;
+  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<1>>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+  using BoundaryIndex = DiFfRG::FV::KurganovTadmor::internal::BoundaryStencilIndex<1>;
+
+  ensure_logger();
+
+  auto json = make_fv_residual_contribution_diagnostics_json();
+  Model model;
+  DiFfRG::RectangularMesh<1> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  VectorType first(discretization.get_dof_handler().n_dofs());
+  VectorType second(first.size());
+  for (unsigned int i = 0; i < first.size(); ++i) {
+    first[i] = 1.0 + 0.2 * static_cast<double>(i);
+    second[i] = 3.0 + 0.4 * static_cast<double>(i);
+  }
+
+  const auto cell = discretization.get_dof_handler().begin_active();
+  const auto first_boundary = assembler.template build_boundary_stencil_1d_from_cache<NumberType>(cell, 0, first);
+  const auto second_boundary = assembler.template build_boundary_stencil_1d_from_cache<NumberType>(cell, 0, second);
+
+  for (const auto stencil_index :
+       {BoundaryIndex::physical_cell, BoundaryIndex::upper_inner, BoundaryIndex::upper_outer}) {
+    CHECK(first_boundary.x[stencil_index] == second_boundary.x[stencil_index]);
+    CHECK(first_boundary.dof_indices[stencil_index] == second_boundary.dof_indices[stencil_index]);
+    const auto dof = first_boundary.dof_indices[stencil_index][0];
+    CHECK(first_boundary.u[stencil_index][0] == Catch::Approx(first[dof]));
+    CHECK(second_boundary.u[stencil_index][0] == Catch::Approx(second[dof]));
+    CHECK(first_boundary.u[stencil_index][0] != Catch::Approx(second_boundary.u[stencil_index][0]));
+  }
+}
+
 TEST_CASE("u_plus u_minus compoutation", "[FV][KT]")
 {
   const int dim = 1;
