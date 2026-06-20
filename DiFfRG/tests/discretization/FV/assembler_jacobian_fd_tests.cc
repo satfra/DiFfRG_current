@@ -333,3 +333,49 @@ TEST_CASE("KT first-order Jacobian strategy does not use reconstruction-neighbor
       (sp.exists(row, row + 1) && std::abs(jacobian.el(row, row + 1)) > 1e-12);
   CHECK(has_immediate_neighbor_contribution);
 }
+
+TEST_CASE("KT TVD Jacobian strategy keeps reconstruction-neighbor columns", "[FV][KT]")
+{
+  using Model = Testing::ModelBurgersKT<1>;
+  using NumberType = double;
+  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<1>>;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  Testing::PhysicalParameters p_prm;
+  p_prm.initial_x0[0] = 0.0;
+  p_prm.initial_x1[0] = 1.0;
+  const JSONValue json = make_json();
+
+  Model model(p_prm);
+  RectangularMesh<1> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+  VectorType sol = state.spatial_data();
+  const int n_dofs = static_cast<int>(sol.size());
+  REQUIRE(n_dofs > 5);
+
+  for (int i = 0; i < n_dofs; ++i)
+    sol[i] = 1.0 + 0.2 * static_cast<double>(i) - 0.01 * static_cast<double>(i * i);
+
+  VectorType sol_dot(n_dofs);
+  const SparsityPattern &sp = assembler.get_sparsity_pattern_jacobian();
+  SparseMatrix<NumberType> jacobian(sp);
+  assembler.jacobian(jacobian, sol, 1.0, sol_dot, 0.0, 0.0);
+
+  const int row = n_dofs / 2;
+  REQUIRE(row >= 2);
+  REQUIRE(row + 2 < n_dofs);
+
+  CHECK(sp.exists(row, row - 2));
+  CHECK(sp.exists(row, row + 2));
+
+  const bool has_reconstruction_neighbor_contribution =
+      std::abs(jacobian.el(row, row - 2)) > 1e-12 || std::abs(jacobian.el(row, row + 2)) > 1e-12;
+  CHECK(has_reconstruction_neighbor_contribution);
+}
