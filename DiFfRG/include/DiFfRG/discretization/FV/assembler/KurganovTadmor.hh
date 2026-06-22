@@ -864,6 +864,8 @@ namespace DiFfRG
           Scratch scratch_data(quadrature);
           CopyData copy_data;
 
+          const auto reconstruction_cache = build_solution_reconstruction_cache<Reconstructor>(solution_global);
+
           const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
             const auto &cell_geometry = get_cell_topology(cell);
             constexpr uint n_dofs = n_components;
@@ -887,9 +889,11 @@ namespace DiFfRG
             }
           };
 
-          const auto face_worker = [&](const Iterator &cell, const unsigned int &f, const unsigned int & /*sf*/,
-                                       const Iterator &ncell, const unsigned int & /*nf*/, const unsigned int & /*nsf*/,
-                                       Scratch &scratch_data, CopyData &copy_data) {
+          const auto face_worker = [&](const Iterator &cell, const unsigned int &f,
+                                       [[maybe_unused]] const unsigned int &sf, const Iterator &ncell,
+                                       [[maybe_unused]] const unsigned int &nf,
+                                       [[maybe_unused]] const unsigned int &nsf, [[maybe_unused]] Scratch &scratch_data,
+                                       CopyData &copy_data) {
             const auto x_q = cell->face(f)->center();
             const auto n_face = face_normal_from_cell(cell, f);
             const auto JxW = face_jxw(cell, f);
@@ -898,10 +902,9 @@ namespace DiFfRG
             auto &copy_data_face = copy_data.next_face_data();
             copy_data_face.reinit(n_face_dofs);
 
-            const auto reconstruction =
-                compute_interior_face_reconstruction_from_cache(cell, ncell, solution_global, x_q, scratch_data);
-            const auto &cell_stencil = scratch_data.cell_stencil;
-            const auto &ncell_stencil = scratch_data.ncell_stencil;
+            const auto &reconstruction = get_cached_face_reconstruction(reconstruction_cache, cell, f);
+            const auto &cell_stencil = reconstruction_cache.cell_stencils[cell->active_cell_index()];
+            const auto &ncell_stencil = reconstruction_cache.cell_stencils[ncell->active_cell_index()];
             const auto &cell_data = cell_stencil.cell;
             const auto &ncell_data = ncell_stencil.cell;
 
@@ -927,8 +930,8 @@ namespace DiFfRG
             }
           };
 
-          const auto boundary_worker = [&](const Iterator &cell, const unsigned int &face_no, Scratch &scratch_data,
-                                           CopyData &copy_data) {
+          const auto boundary_worker = [&](const Iterator &cell, const unsigned int &face_no,
+                                           [[maybe_unused]] Scratch &scratch_data, CopyData &copy_data) {
             const uint n_face_dofs = n_components;
 
             auto &copy_data_face = copy_data.next_face_data();
@@ -938,9 +941,8 @@ namespace DiFfRG
             const auto JxW = face_jxw(cell, face_no);
             const auto n_bnd = face_normal_from_cell(cell, face_no);
 
-            const auto reconstruction =
-                compute_boundary_face_reconstruction_from_cache(cell, face_no, solution_global, x_q);
-            const auto &cell_data = get_cell_topology(cell).stencil.cell;
+            const auto &reconstruction = get_cached_face_reconstruction(reconstruction_cache, cell, face_no);
+            const auto &cell_data = reconstruction_cache.cell_stencils[cell->active_cell_index()].cell;
 
             static_assert(dim == 1, "KT boundary-face assembly currently requires one-dimensional boundary stencils.");
 
@@ -997,6 +999,8 @@ namespace DiFfRG
         using CellStencilData = internal::CellStencilData<dim, NumberType, n_components>;
         using CellTopologyData = internal::CellTopologyData<dim, n_components>;
         using CellStencilTopologyData = internal::CellStencilTopologyData<dim, n_components>;
+        using FaceReconstructionState = internal::FaceReconstructionState<dim, NumberType, n_components>;
+        using SolutionReconstructionCache = internal::SolutionReconstructionCache<dim, NumberType, n_components>;
         template <typename NT> using CellStencilDataT = internal::CellStencilData<dim, NT, n_components>;
 
         static void fill_cell_data(const Iterator &cell, const VectorType &solution_global,
@@ -1185,6 +1189,74 @@ namespace DiFfRG
           }
         }
 
+        unsigned int find_neighbor_face(const Iterator &cell, const Iterator &neighbor) const
+        {
+          for (const auto neighbor_face_index : neighbor->face_indices()) {
+            if (neighbor->at_boundary(neighbor_face_index)) continue;
+            if (neighbor->neighbor(neighbor_face_index) == cell) return neighbor_face_index;
+          }
+          AssertThrow(false, ExcMessage("Could not find reciprocal KT neighbor face."));
+          return 0;
+        }
+
+        template <def::HasReconstructor ActiveReconstructor>
+        SolutionReconstructionCache build_solution_reconstruction_cache(const VectorType &solution_global) const
+        {
+          SolutionReconstructionCache cache;
+          cache.cell_stencils.resize(triangulation.n_active_cells());
+          cache.face_reconstructions.resize(triangulation.n_active_cells());
+          cache.face_reconstruction_valid.resize(triangulation.n_active_cells());
+          for (auto &valid_faces : cache.face_reconstruction_valid)
+            valid_faces.fill(false);
+
+          for (const auto &cell : dof_handler.active_cell_iterators())
+            fill_cell_stencil(cell, solution_global, cache.cell_stencils[cell->active_cell_index()]);
+
+          for (const auto &cell : dof_handler.active_cell_iterators()) {
+            const auto cell_index = cell->active_cell_index();
+            for (const auto face_index : cell->face_indices()) {
+              if (cache.face_reconstruction_valid[cell_index][face_index]) continue;
+
+              const auto x_q = cell->face(face_index)->center();
+              if (cell->at_boundary(face_index)) {
+                auto boundary_stencil =
+                    build_boundary_stencil_1d_from_cache<NumberType>(cell, face_index, solution_global);
+                cache.face_reconstructions[cell_index][face_index] =
+                    internal::compute_boundary_face_reconstruction_state<ActiveReconstructor>(
+                        boundary_stencil, x_q, model);
+                cache.face_reconstruction_valid[cell_index][face_index] = true;
+                continue;
+              }
+
+              const auto neighbor = cell->neighbor(face_index);
+              const auto neighbor_index = neighbor->active_cell_index();
+              const auto neighbor_face_index = find_neighbor_face(cell, neighbor);
+
+              const auto state = internal::compute_interior_face_reconstruction_state<ActiveReconstructor>(
+                  cache.cell_stencils[cell_index], cache.cell_stencils[neighbor_index], x_q);
+              cache.face_reconstructions[cell_index][face_index] = state;
+              cache.face_reconstruction_valid[cell_index][face_index] = true;
+              cache.face_reconstructions[neighbor_index][neighbor_face_index] =
+                  internal::reverse_face_reconstruction(state);
+              cache.face_reconstruction_valid[neighbor_index][neighbor_face_index] = true;
+            }
+          }
+
+          return cache;
+        }
+
+        const FaceReconstructionState &
+        get_cached_face_reconstruction(const SolutionReconstructionCache &cache, const Iterator &cell,
+                                       const unsigned int face_index) const
+        {
+          const auto cell_index = cell->active_cell_index();
+          AssertIndexRange(cell_index, cache.face_reconstructions.size());
+          AssertIndexRange(face_index, n_faces);
+          AssertThrow(cache.face_reconstruction_valid[cell_index][face_index],
+                      ExcMessage("KT face reconstruction cache entry was not initialized."));
+          return cache.face_reconstructions[cell_index][face_index];
+        }
+
         auto compute_interior_face_reconstruction_from_cache(const Iterator &cell, const Iterator &ncell,
                                                              const VectorType &solution_global, const Point &x_q,
                                                              Scratch &scratch_data) const
@@ -1284,6 +1356,9 @@ namespace DiFfRG
           Scratch scratch_data(quadrature);
           CopyData copy_data;
 
+          Timer timer;
+          const auto reconstruction_cache = build_solution_reconstruction_cache<Reconstructor>(solution_global);
+
           const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
             const auto &cell_geometry = get_cell_topology(cell);
             constexpr uint n_dofs = n_components;
@@ -1309,11 +1384,12 @@ namespace DiFfRG
             }
           };
 
-          const auto face_worker = [&](const Iterator &cell, const unsigned int &f, const unsigned int &sf,
-                                       const Iterator &ncell, const unsigned int &nf, const unsigned int &nsf,
-                                       Scratch &scratch_data, CopyData &copy_data) {
-            const int q_face_index = 0; // only one quadrature point per face for FV (constant FE)
-            (void)q_face_index;
+          const auto face_worker = [&](const Iterator &cell, const unsigned int &f,
+                                       [[maybe_unused]] const unsigned int &sf, const Iterator &ncell,
+                                       [[maybe_unused]] const unsigned int &nf,
+                                       [[maybe_unused]] const unsigned int &nsf, [[maybe_unused]] Scratch &scratch_data,
+                                       CopyData &copy_data) {
+            [[maybe_unused]] const int q_face_index = 0; // only one quadrature point per face for FV (constant FE)
             const auto x_q = cell->face(f)->center();
             const auto n_face = face_normal_from_cell(cell, f);
             const auto JxW = face_jxw(cell, f);
@@ -1322,10 +1398,9 @@ namespace DiFfRG
             auto &copy_data_face = copy_data.next_face_data();
             copy_data_face.reinit(n_face_dofs);
 
-            const auto reconstruction =
-                compute_interior_face_reconstruction_from_cache(cell, ncell, solution_global, x_q, scratch_data);
-            const auto &cell_stencil = scratch_data.cell_stencil;
-            const auto &ncell_stencil = scratch_data.ncell_stencil;
+            const auto &reconstruction = get_cached_face_reconstruction(reconstruction_cache, cell, f);
+            const auto &cell_stencil = reconstruction_cache.cell_stencils[cell->active_cell_index()];
+            const auto &ncell_stencil = reconstruction_cache.cell_stencils[ncell->active_cell_index()];
             const auto &cell_data = cell_stencil.cell;
             const auto &ncell_data = ncell_stencil.cell;
 
@@ -1355,22 +1430,20 @@ namespace DiFfRG
             }
           };
 
-          const auto boundary_worker = [&](const Iterator &cell, const unsigned int &face_no, Scratch &scratch_data,
-                                           CopyData &copy_data) {
+          const auto boundary_worker = [&](const Iterator &cell, const unsigned int &face_no,
+                                           [[maybe_unused]] Scratch &scratch_data, CopyData &copy_data) {
             const uint n_face_dofs = n_components;
 
             auto &copy_data_face = copy_data.next_face_data();
             copy_data_face.reinit(n_face_dofs);
 
-            const int q_face_index = 0; // only one quadrature point per face for FV
-            (void)q_face_index;
+            [[maybe_unused]] const int q_face_index = 0; // only one quadrature point per face for FV
             const auto x_q = cell->face(face_no)->center();
             const auto JxW = face_jxw(cell, face_no);
             const auto n_bnd = face_normal_from_cell(cell, face_no);
 
-            const auto reconstruction =
-                compute_boundary_face_reconstruction_from_cache(cell, face_no, solution_global, x_q);
-            const auto &cell_data = get_cell_topology(cell).stencil.cell;
+            const auto &reconstruction = get_cached_face_reconstruction(reconstruction_cache, cell, face_no);
+            const auto &cell_data = reconstruction_cache.cell_stencils[cell->active_cell_index()].cell;
 
             static_assert(dim == 1, "KT boundary-face assembly currently requires one-dimensional boundary stencils.");
 
@@ -1402,8 +1475,6 @@ namespace DiFfRG
 
           MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells | MeshWorker::assemble_boundary_faces |
                                             MeshWorker::assemble_own_interior_faces_once;
-
-          Timer timer;
 
           MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
                                 copy_data, flags, boundary_worker, face_worker, threads, batch_size);
@@ -1467,6 +1538,8 @@ namespace DiFfRG
           using Iterator = typename DoFHandler<dim>::active_cell_iterator;
           using CopyData = internal::CopyData_J<NumberType, dim>;
           const auto &constraints = discretization.get_constraints();
+          Timer timer;
+          const auto reconstruction_cache = build_solution_reconstruction_cache<JacobianReconstructor>(solution_global);
 
           const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
             const auto &cell_geometry = get_cell_topology(cell);
@@ -1500,19 +1573,19 @@ namespace DiFfRG
               }
             }
           };
-          const auto face_worker = [&](const Iterator &cell, const unsigned int &f, const unsigned int &sf,
-                                       const Iterator &ncell, const unsigned int &nf, const unsigned int &nsf,
+          const auto face_worker = [&](const Iterator &cell, const unsigned int &f,
+                                       [[maybe_unused]] const unsigned int &sf, const Iterator &ncell,
+                                       [[maybe_unused]] const unsigned int &nf,
+                                       [[maybe_unused]] const unsigned int &nsf,
                                        Scratch &scratch_data, CopyData &copy_data) {
-            const int q_face_index = 0;
-            (void)q_face_index;
+            [[maybe_unused]] const int q_face_index = 0;
             const auto x_q = cell->face(f)->center();
             const auto JxW = face_jxw(cell, f);
             const auto n_face = face_normal_from_cell(cell, f);
 
-            const auto reconstruction = compute_interior_jacobian_face_reconstruction_from_cache(
-                cell, ncell, solution_global, x_q, scratch_data);
-            const auto &cell_stencil = scratch_data.cell_stencil;
-            const auto &ncell_stencil = scratch_data.ncell_stencil;
+            const auto &reconstruction = get_cached_face_reconstruction(reconstruction_cache, cell, f);
+            const auto &cell_stencil = reconstruction_cache.cell_stencils[cell->active_cell_index()];
+            const auto &ncell_stencil = reconstruction_cache.cell_stencils[ncell->active_cell_index()];
             const auto &cell_neighbors = cell_stencil.neighbors;
             const auto &ncell_neighbors = ncell_stencil.neighbors;
             const auto &cell_data = cell_stencil.cell;
@@ -1597,13 +1670,11 @@ namespace DiFfRG
 
           const auto boundary_worker = [&](const Iterator &cell, const unsigned int &face_no, Scratch &scratch_data,
                                            CopyData &copy_data) {
-            const int q_face_index = 0;
-            (void)q_face_index;
+            [[maybe_unused]] const int q_face_index = 0;
             const auto x_q = cell->face(face_no)->center();
             const auto JxW = face_jxw(cell, face_no);
             const auto n_face = face_normal_from_cell(cell, face_no);
 
-            const auto &cell_data = get_cell_topology(cell).stencil.cell;
             auto &copy_data_face = copy_data.next_face_data();
             const auto &face_dependencies = get_cell_topology(cell).face_jacobian_dependencies[face_no];
             copy_data_face.reinit(face_dependencies.to_dofs, face_dependencies.from_dofs);
@@ -1612,9 +1683,7 @@ namespace DiFfRG
             const auto boundary_stencil =
                 build_boundary_stencil_1d_from_cache<NumberType>(cell, face_no, solution_global);
 
-            const auto reconstruction =
-                internal::compute_boundary_face_reconstruction_state<JacobianReconstructor>(
-                    boundary_stencil, x_q, model);
+            const auto &reconstruction = get_cached_face_reconstruction(reconstruction_cache, cell, face_no);
 
             // Precompute reconstructed state and face-gradient derivatives for each dependency dof.
             const uint n_from = size(copy_data_face.from_dofs);
@@ -1717,7 +1786,6 @@ namespace DiFfRG
           MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells | MeshWorker::assemble_boundary_faces |
                                             MeshWorker::assemble_own_interior_faces_once;
 
-          Timer timer;
           MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
                                 copy_data, flags, boundary_worker, face_worker, threads, batch_size);
           timings_jacobian.push_back(timer.wall_time());

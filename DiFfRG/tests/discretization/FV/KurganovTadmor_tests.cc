@@ -6,8 +6,8 @@
 #include <DiFfRG/common/json.hh>
 #include <DiFfRG/discretization/data/data_output.hh>
 #include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
-#include <boilerplate/kt_models.hh>
 #include <autodiff/forward/real.hpp>
+#include <boilerplate/kt_models.hh>
 #include <chrono>
 #include <cstddef>
 #include <deal.II/base/numbers.h>
@@ -49,13 +49,12 @@ public:
   }
 };
 
-class ResidualContributionModel
-    : public DiFfRG::def::AbstractModel<ResidualContributionModel, Components>,
-      public DiFfRG::def::Time,
-      public DiFfRG::def::LLFFlux<ResidualContributionModel>,
-      public DiFfRG::def::FlowBoundaries<ResidualContributionModel>,
-      public DiFfRG::def::FVDefaultBoundaries<ResidualContributionModel>,
-      public DiFfRG::def::AD<ResidualContributionModel>
+class ResidualContributionModel : public DiFfRG::def::AbstractModel<ResidualContributionModel, Components>,
+                                  public DiFfRG::def::Time,
+                                  public DiFfRG::def::LLFFlux<ResidualContributionModel>,
+                                  public DiFfRG::def::FlowBoundaries<ResidualContributionModel>,
+                                  public DiFfRG::def::FVDefaultBoundaries<ResidualContributionModel>,
+                                  public DiFfRG::def::AD<ResidualContributionModel>
 {
 public:
   template <typename Vector> void initial_condition(const Point<1> &pos, Vector &values) const
@@ -137,8 +136,7 @@ static DiFfRG::JSONValue make_fv_residual_contribution_diagnostics_json()
 static std::filesystem::path make_unique_test_directory(const std::string &prefix)
 {
   const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
-  auto path =
-      std::filesystem::temp_directory_path() / (prefix + "_" + std::to_string(static_cast<long long>(nonce)));
+  auto path = std::filesystem::temp_directory_path() / (prefix + "_" + std::to_string(static_cast<long long>(nonce)));
   std::filesystem::create_directories(path);
   return path;
 }
@@ -149,6 +147,32 @@ static void ensure_logger()
     auto log = spdlog::stdout_color_mt("log");
     log->set_pattern("log: [%v]");
   } catch (const spdlog::spdlog_ex &) {
+  }
+}
+
+template <typename State> static void check_face_reconstruction_state_1d(const State &actual, const State &expected)
+{
+  REQUIRE(actual.u_minus.size() == expected.u_minus.size());
+  for (std::size_t c = 0; c < actual.u_minus.size(); ++c) {
+    CHECK(actual.u_minus[c] == Catch::Approx(expected.u_minus[c]).margin(1e-14));
+    CHECK(actual.u_plus[c] == Catch::Approx(expected.u_plus[c]).margin(1e-14));
+    CHECK(actual.center_grad_minus[c][0] == Catch::Approx(expected.center_grad_minus[c][0]).margin(1e-14));
+    CHECK(actual.center_grad_plus[c][0] == Catch::Approx(expected.center_grad_plus[c][0]).margin(1e-14));
+    CHECK(actual.face_grad_minus[c][0] == Catch::Approx(expected.face_grad_minus[c][0]).margin(1e-14));
+    CHECK(actual.face_grad_plus[c][0] == Catch::Approx(expected.face_grad_plus[c][0]).margin(1e-14));
+  }
+}
+
+template <typename State> static void check_face_reconstruction_state_reversed_1d(const State &left, const State &right)
+{
+  REQUIRE(left.u_minus.size() == right.u_minus.size());
+  for (std::size_t c = 0; c < left.u_minus.size(); ++c) {
+    CHECK(left.u_minus[c] == Catch::Approx(right.u_plus[c]).margin(1e-14));
+    CHECK(left.u_plus[c] == Catch::Approx(right.u_minus[c]).margin(1e-14));
+    CHECK(left.center_grad_minus[c][0] == Catch::Approx(right.center_grad_plus[c][0]).margin(1e-14));
+    CHECK(left.center_grad_plus[c][0] == Catch::Approx(right.center_grad_minus[c][0]).margin(1e-14));
+    CHECK(left.face_grad_minus[c][0] == Catch::Approx(right.face_grad_plus[c][0]).margin(1e-14));
+    CHECK(left.face_grad_plus[c][0] == Catch::Approx(right.face_grad_minus[c][0]).margin(1e-14));
   }
 }
 
@@ -379,10 +403,14 @@ TEST_CASE("KT reconstruction cache recomputes cell stencil values per solution",
   ++cell;
   REQUIRE(cell != discretization.get_dof_handler().end());
 
-  typename Assembler::CellStencilData first_stencil;
-  typename Assembler::CellStencilData second_stencil;
-  assembler.fill_cell_stencil(cell, first, first_stencil);
-  assembler.fill_cell_stencil(cell, second, second_stencil);
+  const auto first_cache =
+      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(first);
+  const auto second_cache =
+      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(second);
+
+  const auto cell_index = cell->active_cell_index();
+  const auto &first_stencil = first_cache.cell_stencils[cell_index];
+  const auto &second_stencil = second_cache.cell_stencils[cell_index];
 
   CHECK(first_stencil.cell.x == second_stencil.cell.x);
   CHECK(first_stencil.cell.dof_indices == second_stencil.cell.dof_indices);
@@ -398,6 +426,130 @@ TEST_CASE("KT reconstruction cache recomputes cell stencil values per solution",
     CHECK(second_stencil.neighbors.u[face_index][0] == Catch::Approx(second[neighbor_dof]));
     CHECK(first_stencil.neighbors.u[face_index][0] != Catch::Approx(second_stencil.neighbors.u[face_index][0]));
   }
+
+  const auto face_index = 1U;
+  REQUIRE(first_cache.face_reconstruction_valid[cell_index][face_index]);
+  REQUIRE(second_cache.face_reconstruction_valid[cell_index][face_index]);
+  const auto &first_reconstruction = assembler.get_cached_face_reconstruction(first_cache, cell, face_index);
+  const auto &second_reconstruction = assembler.get_cached_face_reconstruction(second_cache, cell, face_index);
+  CHECK(first_reconstruction.u_minus[0] != Catch::Approx(second_reconstruction.u_minus[0]));
+  CHECK(first_reconstruction.u_plus[0] != Catch::Approx(second_reconstruction.u_plus[0]));
+}
+
+TEST_CASE("KT solution reconstruction cache stores reversed interior face orientations", "[FV][KT][cache]")
+{
+  using Model = ResidualContributionModel;
+  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<1>>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  auto json = make_fv_residual_contribution_diagnostics_json();
+  Model model;
+  DiFfRG::RectangularMesh<1> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  VectorType solution(discretization.get_dof_handler().n_dofs());
+  for (unsigned int i = 0; i < solution.size(); ++i)
+    solution[i] = 1.0 + 0.13 * static_cast<double>(i) + 0.04 * static_cast<double>(i * i);
+
+  auto cell = discretization.get_dof_handler().begin_active();
+  ++cell;
+  REQUIRE(cell != discretization.get_dof_handler().end());
+
+  const auto face_index = 1U;
+  REQUIRE(!cell->at_boundary(face_index));
+  const auto neighbor = cell->neighbor(face_index);
+  const auto neighbor_face_index = assembler.find_neighbor_face(cell, neighbor);
+
+  const auto cache =
+      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution);
+  REQUIRE(cache.face_reconstruction_valid[cell->active_cell_index()][face_index]);
+  REQUIRE(cache.face_reconstruction_valid[neighbor->active_cell_index()][neighbor_face_index]);
+
+  const auto &cell_state = assembler.get_cached_face_reconstruction(cache, cell, face_index);
+  const auto &neighbor_state = assembler.get_cached_face_reconstruction(cache, neighbor, neighbor_face_index);
+  check_face_reconstruction_state_reversed_1d(cell_state, neighbor_state);
+}
+
+TEST_CASE("KT solution reconstruction cache matches direct interior reconstruction", "[FV][KT][cache]")
+{
+  using Model = ResidualContributionModel;
+  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<1>>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  auto json = make_fv_residual_contribution_diagnostics_json();
+  Model model;
+  DiFfRG::RectangularMesh<1> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  VectorType solution(discretization.get_dof_handler().n_dofs());
+  for (unsigned int i = 0; i < solution.size(); ++i)
+    solution[i] = 0.7 + 0.21 * static_cast<double>(i) - 0.02 * static_cast<double>(i * i);
+
+  auto cell = discretization.get_dof_handler().begin_active();
+  ++cell;
+  REQUIRE(cell != discretization.get_dof_handler().end());
+
+  const auto face_index = 1U;
+  REQUIRE(!cell->at_boundary(face_index));
+  const auto neighbor = cell->neighbor(face_index);
+  const auto x_q = cell->face(face_index)->center();
+
+  const auto cache =
+      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution);
+  const auto &cached = assembler.get_cached_face_reconstruction(cache, cell, face_index);
+
+  typename Assembler::CellStencilData cell_stencil;
+  typename Assembler::CellStencilData neighbor_stencil;
+  assembler.fill_cell_stencil(cell, solution, cell_stencil);
+  assembler.fill_cell_stencil(neighbor, solution, neighbor_stencil);
+  const auto expected = KT::internal::compute_interior_face_reconstruction_state<typename Assembler::Reconstructor>(
+      cell_stencil, neighbor_stencil, x_q);
+
+  check_face_reconstruction_state_1d(cached, expected);
+}
+
+TEST_CASE("KT solution reconstruction cache matches direct boundary reconstruction", "[FV][KT][cache]")
+{
+  using Model = ResidualContributionModel;
+  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<1>>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  auto json = make_fv_residual_contribution_diagnostics_json();
+  Model model;
+  DiFfRG::RectangularMesh<1> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  VectorType solution(discretization.get_dof_handler().n_dofs());
+  for (unsigned int i = 0; i < solution.size(); ++i)
+    solution[i] = 0.4 + 0.17 * static_cast<double>(i) + 0.03 * static_cast<double>(i * i);
+
+  const auto cell = discretization.get_dof_handler().begin_active();
+  const auto face_index = 0U;
+  REQUIRE(cell->at_boundary(face_index));
+  const auto x_q = cell->face(face_index)->center();
+
+  const auto cache =
+      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution);
+  const auto &cached = assembler.get_cached_face_reconstruction(cache, cell, face_index);
+
+  const auto boundary_stencil =
+      assembler.template build_boundary_stencil_1d_from_cache<NumberType>(cell, face_index, solution);
+  const auto expected = KT::internal::compute_boundary_face_reconstruction_state<typename Assembler::Reconstructor>(
+      boundary_stencil, x_q, model);
+
+  check_face_reconstruction_state_1d(cached, expected);
 }
 
 TEST_CASE("KT boundary stencil cache recomputes values per solution", "[FV][KT][cache]")

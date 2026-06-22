@@ -11,6 +11,7 @@
 #include <deal.II/base/numbers.h>
 #include <deal.II/base/point.h>
 #include <deal.II/base/types.h>
+#include <vector>
 
 namespace DiFfRG
 {
@@ -51,6 +52,20 @@ namespace DiFfRG
           GradientType<dim, NumberType, n_components> face_grad_plus{};
         };
 
+        template <int dim, typename NumberType, size_t n_components>
+        FaceReconstructionState<dim, NumberType, n_components>
+        reverse_face_reconstruction(const FaceReconstructionState<dim, NumberType, n_components> &state)
+        {
+          FaceReconstructionState<dim, NumberType, n_components> reversed{};
+          reversed.u_minus = state.u_plus;
+          reversed.u_plus = state.u_minus;
+          reversed.center_grad_minus = state.center_grad_plus;
+          reversed.center_grad_plus = state.center_grad_minus;
+          reversed.face_grad_minus = state.face_grad_plus;
+          reversed.face_grad_plus = state.face_grad_minus;
+          return reversed;
+        }
+
         template <int dim, typename NumberType, size_t n_components> struct CellData {
           dealii::Point<dim> x;
           std::array<NumberType, n_components> u;
@@ -81,6 +96,14 @@ namespace DiFfRG
           NeighborData<dim, NumberType, n_components> neighbors;
           std::array<dealii::types::boundary_id, n_faces> boundary_ids;
           std::array<dealii::Point<dim>, n_faces> face_centers;
+        };
+
+        template <int dim, typename NumberType, size_t n_components> struct SolutionReconstructionCache {
+          static constexpr size_t n_faces = 2 * dim;
+          std::vector<CellStencilData<dim, NumberType, n_components>> cell_stencils;
+          std::vector<std::array<FaceReconstructionState<dim, NumberType, n_components>, n_faces>>
+              face_reconstructions;
+          std::vector<std::array<bool, n_faces>> face_reconstruction_valid;
         };
 
         template <int dim, size_t n_components> struct CellStencilTopologyData {
