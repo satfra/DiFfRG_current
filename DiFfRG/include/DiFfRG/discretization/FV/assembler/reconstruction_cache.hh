@@ -72,7 +72,7 @@ namespace DiFfRG
           std::array<dealii::types::global_dof_index, n_components> dof_indices;
         };
 
-        template <int dim, size_t n_components> struct CellTopologyData {
+        template <int dim, size_t n_components> struct CellGeometryDofs {
           dealii::Point<dim> x;
           std::array<dealii::types::global_dof_index, n_components> dof_indices;
         };
@@ -108,7 +108,7 @@ namespace DiFfRG
 
         template <int dim, size_t n_components> struct CellStencilTopologyData {
           static constexpr size_t n_faces = 2 * dim;
-          CellTopologyData<dim, n_components> cell;
+          CellGeometryDofs<dim, n_components> cell;
           NeighborTopologyData<dim, n_components> neighbors;
           std::array<dealii::types::boundary_id, n_faces> boundary_ids;
           std::array<dealii::Point<dim>, n_faces> face_centers;
@@ -130,7 +130,7 @@ namespace DiFfRG
         }
 
         template <int dim, typename NumberType, size_t n_components, typename VectorType>
-        void fill_cell_data_from_topology(const CellTopologyData<dim, n_components> &topology,
+        void fill_cell_data_from_topology(const CellGeometryDofs<dim, n_components> &topology,
                                           const VectorType &solution_global,
                                           CellData<dim, NumberType, n_components> &data)
         {
