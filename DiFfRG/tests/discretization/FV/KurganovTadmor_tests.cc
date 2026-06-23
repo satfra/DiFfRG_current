@@ -8,15 +8,21 @@
 #include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
 #include <autodiff/forward/real.hpp>
 #include <boilerplate/kt_models.hh>
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <deal.II/base/numbers.h>
 #include <deal.II/lac/vector.h>
 #include <deal.II/meshworker/mesh_loop.h>
 #include <filesystem>
+#include <limits>
+#include <oneapi/tbb/blocked_range.h>
 #include <oneapi/tbb/parallel_for_each.h>
+#include <oneapi/tbb/parallel_reduce.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
+#include <utility>
 #include <vector>
 
 // #include <petscvec.h>
@@ -28,6 +34,12 @@ namespace KT = DiFfRG::FV::KurganovTadmor;
 using WaveSpeedStrategy = DiFfRG::FV::KurganovTadmor::MaxEigenvalueWaveSpeed;
 using KT::internal::compute_numerical_flux;
 using KT::internal::reconstruct_u;
+
+template <typename Assembler, typename Vector>
+concept CanMakeAssemblyContextViewFromTemporaryCache = requires(const Assembler &assembler, const Vector &solution) {
+  assembler.make_assembly_context_view(
+      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution));
+};
 
 struct CopyData {
 };
@@ -101,6 +113,118 @@ public:
                                                                [this](const Point<1> &pos) { return solution(pos); });
     return true;
   }
+};
+
+class FaceHookProbeModel : public DiFfRG::def::AbstractModel<FaceHookProbeModel, Components>,
+                           public DiFfRG::def::Time,
+                           public DiFfRG::def::LLFFlux<FaceHookProbeModel>,
+                           public DiFfRG::def::FlowBoundaries<FaceHookProbeModel>,
+                           public DiFfRG::def::FVDefaultBoundaries<FaceHookProbeModel>,
+                           public DiFfRG::def::AD<FaceHookProbeModel>
+{
+public:
+  template <typename Vector> void initial_condition(const Point<1> &pos, Vector &values) const
+  {
+    values[0] = 1.0 + 0.5 * pos[0];
+  }
+
+  std::array<double, 1> solution(const Point<1> &pos) const { return {1.0 + 0.5 * pos[0]}; }
+
+  template <KT::HasAssemblyContextView Context>
+  void fv_kt_pre_assembly(const KT::AssemblyStage stage, const Context &context)
+  {
+    ++hook_calls;
+    hook_stage = stage;
+    hook_face_count = 0;
+    hook_cell_count = 0;
+    saw_boundary_face = false;
+    saw_interior_face = false;
+    hook_ready = false;
+
+    hook_min_u_plus = std::numeric_limits<double>::infinity();
+    for (const auto face : context.faces()) {
+      ++hook_face_count;
+      saw_boundary_face = saw_boundary_face || face.at_boundary();
+      saw_interior_face = saw_interior_face || !face.at_boundary();
+      const auto &reconstruction = face.reconstruction();
+      last_u_minus = reconstruction.u_minus[0];
+      last_u_plus = reconstruction.u_plus[0];
+      last_grad_minus = reconstruction.face_grad_minus[0][0];
+      last_grad_plus = reconstruction.face_grad_plus[0][0];
+      hook_min_u_plus = std::min(hook_min_u_plus, static_cast<double>(reconstruction.u_plus[0]));
+    }
+
+    const auto &faces = context.faces();
+    hook_parallel_min_u_plus = tbb::parallel_reduce(
+        tbb::blocked_range<std::size_t>(0, faces.size()), std::numeric_limits<double>::infinity(),
+        [&](const tbb::blocked_range<std::size_t> &range, double local_min) {
+          for (std::size_t i = range.begin(); i != range.end(); ++i) {
+            const auto face = faces[i];
+            local_min = std::min(local_min, static_cast<double>(face.reconstruction().u_plus[0]));
+          }
+          return local_min;
+        },
+        [](const double left, const double right) { return std::min(left, right); });
+
+    hook_min_cell_u = std::numeric_limits<double>::infinity();
+    const auto &cells = context.cells();
+    for (std::size_t i = 0; i < cells.size(); ++i) {
+      const auto cell = cells[i];
+      ++hook_cell_count;
+      last_cell_u = cell.stencil().cell.u[0];
+      last_cell_point = cell.point()[0];
+      hook_min_cell_u = std::min(hook_min_cell_u, static_cast<double>(cell.stencil().cell.u[0]));
+    }
+
+    hook_flux_scale = hook_min_u_plus;
+    hook_ready = true;
+  }
+
+  template <typename NT, typename Solution>
+  void KurganovTadmor_advection_flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/,
+                                     const Solution & /*sol*/) const
+  {
+    F_i[0][0] = 0.0;
+  }
+
+  template <typename NT, typename Solution>
+  void flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution &sol) const
+  {
+    const auto &du = get<"fe_derivatives">(sol);
+    ++flux_calls;
+    flux_saw_hook_state = flux_saw_hook_state || hook_ready;
+    F_i[0][0] = NT(hook_flux_scale) * du[0][0];
+  }
+
+  template <int mdim, typename NT, size_t n_components>
+  bool apply_boundary_stencil(DiFfRG::def::BoundaryStencilValues<mdim, NT, n_components> &u_stencil,
+                              DiFfRG::def::BoundaryStencilPoints<mdim> &x_stencil, const Point<mdim> &x_face) const
+  {
+    static_assert(mdim == 1);
+    DiFfRG::Testing::fill_face_ghost_solution_boundary_stencil(u_stencil, x_stencil, x_face,
+                                                               [this](const Point<1> &pos) { return solution(pos); });
+    return true;
+  }
+
+  int hook_calls = 0;
+  KT::AssemblyStage hook_stage = KT::AssemblyStage::diagnostics;
+  unsigned int hook_face_count = 0;
+  unsigned int hook_cell_count = 0;
+  bool saw_boundary_face = false;
+  bool saw_interior_face = false;
+  bool hook_ready = false;
+  double hook_min_u_plus = std::numeric_limits<double>::infinity();
+  double hook_parallel_min_u_plus = std::numeric_limits<double>::infinity();
+  double hook_min_cell_u = std::numeric_limits<double>::infinity();
+  double hook_flux_scale = -1.0;
+  double last_u_minus = std::numeric_limits<double>::quiet_NaN();
+  double last_u_plus = std::numeric_limits<double>::quiet_NaN();
+  double last_grad_minus = std::numeric_limits<double>::quiet_NaN();
+  double last_grad_plus = std::numeric_limits<double>::quiet_NaN();
+  double last_cell_u = std::numeric_limits<double>::quiet_NaN();
+  double last_cell_point = std::numeric_limits<double>::quiet_NaN();
+  mutable int flux_calls = 0;
+  mutable bool flux_saw_hook_state = false;
 };
 
 static DiFfRG::JSONValue make_fv_reconstruction_diagnostics_json()
@@ -588,6 +712,57 @@ TEST_CASE("KT boundary stencil cache recomputes values per solution", "[FV][KT][
     CHECK(second_boundary.u[stencil_index][0] == Catch::Approx(second[dof]));
     CHECK(first_boundary.u[stencil_index][0] != Catch::Approx(second_boundary.u[stencil_index][0]));
   }
+}
+
+TEST_CASE("KT face hook exposes cached reconstruction before residual flux", "[FV][KT][hook]")
+{
+  using Model = FaceHookProbeModel;
+  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<1>>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  auto json = make_fv_residual_contribution_diagnostics_json();
+  Model model;
+  DiFfRG::RectangularMesh<1> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  DiFfRG::FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+  const VectorType &solution = state.spatial_data();
+
+  const auto cache =
+      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution);
+  const auto context = assembler.make_assembly_context_view(cache);
+  STATIC_REQUIRE(KT::HasAssemblyContextView<decltype(context)>);
+  STATIC_REQUIRE(!CanMakeAssemblyContextViewFromTemporaryCache<Assembler, VectorType>);
+
+  VectorType residual(solution.size());
+  VectorType solution_dot(solution.size());
+  residual = 0.;
+  solution_dot = 0.;
+
+  assembler.residual(residual, solution, 1., solution_dot, 0.);
+
+  CHECK(model.hook_calls == 1);
+  CHECK(model.hook_stage == KT::AssemblyStage::residual);
+  CHECK(model.hook_face_count == solution.size() + 1);
+  CHECK(model.hook_cell_count == solution.size());
+  CHECK(model.saw_boundary_face);
+  CHECK(model.saw_interior_face);
+  CHECK(std::isfinite(model.hook_min_u_plus));
+  CHECK(model.hook_parallel_min_u_plus == Catch::Approx(model.hook_min_u_plus).margin(1e-14));
+  CHECK(std::isfinite(model.hook_min_cell_u));
+  CHECK(std::isfinite(model.last_u_minus));
+  CHECK(std::isfinite(model.last_u_plus));
+  CHECK(std::isfinite(model.last_grad_minus));
+  CHECK(std::isfinite(model.last_grad_plus));
+  CHECK(std::isfinite(model.last_cell_u));
+  CHECK(std::isfinite(model.last_cell_point));
+  CHECK(model.flux_calls > 0);
+  CHECK(model.flux_saw_hook_state);
 }
 
 TEST_CASE("u_plus u_minus compoutation", "[FV][KT]")

@@ -40,6 +40,7 @@
 
 #include <DiFfRG/discretization/FV/assembler/flux_jacobian_hessian.hh>
 #include <DiFfRG/discretization/FV/assembler/flux_ties.hh>
+#include <DiFfRG/discretization/FV/assembler/assembly_context.hh>
 #include <DiFfRG/discretization/FV/assembler/reconstruction_cache.hh>
 #include <DiFfRG/discretization/FV/wave_speed/abstract_wave_speed.hh>
 #include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed.hh>
@@ -865,6 +866,8 @@ namespace DiFfRG
           CopyData copy_data;
 
           const auto reconstruction_cache = build_solution_reconstruction_cache<Reconstructor>(solution_global);
+          const auto assembly_context = make_assembly_context_view(reconstruction_cache);
+          run_fv_kt_pre_assembly_hook(AssemblyStage::diagnostics, assembly_context);
 
           const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
             const auto &cell_geometry = get_cell_topology(cell);
@@ -997,11 +1000,41 @@ namespace DiFfRG
         using CellData = internal::CellData<dim, NumberType, n_components>;
         using NeighborData = internal::NeighborData<dim, NumberType, n_components>;
         using CellStencilData = internal::CellStencilData<dim, NumberType, n_components>;
-        using CellTopologyData = internal::CellTopologyData<dim, n_components>;
+        using CellGeometryDofs = internal::CellGeometryDofs<dim, n_components>;
         using CellStencilTopologyData = internal::CellStencilTopologyData<dim, n_components>;
         using FaceReconstructionState = internal::FaceReconstructionState<dim, NumberType, n_components>;
         using SolutionReconstructionCache = internal::SolutionReconstructionCache<dim, NumberType, n_components>;
         template <typename NT> using CellStencilDataT = internal::CellStencilData<dim, NT, n_components>;
+
+        struct AssemblyFaceGeometryProvider {
+          dealii::Tensor<1, dim> normal(const Iterator &cell, const unsigned int face_index) const
+          {
+            return Assembler::face_normal_from_cell(cell, face_index);
+          }
+
+          double jxw(const Iterator &cell, const unsigned int face_index) const
+          {
+            return Assembler::face_jxw(cell, face_index);
+          }
+        };
+
+        auto make_assembly_context_view(const SolutionReconstructionCache &cache) const
+        {
+          using FaceRange =
+              FaceAssemblyViewRange<dim, NumberType, n_components, Iterator, AssemblyFaceGeometryProvider>;
+          using CellRange = CellAssemblyViewRange<dim, NumberType, n_components, Iterator>;
+          return AssemblyContextView<FaceRange, CellRange>(
+              FaceRange(dof_handler.begin_active(), dof_handler.end(), cache, AssemblyFaceGeometryProvider{}),
+              CellRange(dof_handler.begin_active(), dof_handler.end(), cache));
+        }
+
+        auto make_assembly_context_view(SolutionReconstructionCache &&cache) const = delete;
+
+        template <HasAssemblyContextView Context>
+        void run_fv_kt_pre_assembly_hook(const AssemblyStage stage, const Context &context)
+        {
+          dispatch_fv_kt_pre_assembly(model, stage, context);
+        }
 
         static void fill_cell_data(const Iterator &cell, const VectorType &solution_global,
                                    std::vector<types::global_dof_index> &scratch_dof_indices, CellData &data)
@@ -1116,7 +1149,7 @@ namespace DiFfRG
           return boundary_stencil;
         }
 
-        void fill_cell_data_from_topology(const CellTopologyData &topology, const VectorType &solution_global,
+        void fill_cell_data_from_topology(const CellGeometryDofs &topology, const VectorType &solution_global,
                                           CellData &data) const
         {
           internal::fill_cell_data_from_topology<dim, NumberType, n_components>(topology, solution_global, data);
@@ -1358,6 +1391,8 @@ namespace DiFfRG
 
           Timer timer;
           const auto reconstruction_cache = build_solution_reconstruction_cache<Reconstructor>(solution_global);
+          const auto assembly_context = make_assembly_context_view(reconstruction_cache);
+          run_fv_kt_pre_assembly_hook(AssemblyStage::residual, assembly_context);
 
           const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
             const auto &cell_geometry = get_cell_topology(cell);
@@ -1540,6 +1575,8 @@ namespace DiFfRG
           const auto &constraints = discretization.get_constraints();
           Timer timer;
           const auto reconstruction_cache = build_solution_reconstruction_cache<JacobianReconstructor>(solution_global);
+          const auto assembly_context = make_assembly_context_view(reconstruction_cache);
+          run_fv_kt_pre_assembly_hook(AssemblyStage::jacobian, assembly_context);
 
           const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
             const auto &cell_geometry = get_cell_topology(cell);
