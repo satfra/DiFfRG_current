@@ -9,7 +9,9 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 
 using namespace DiFfRG;
 using namespace dealii;
@@ -27,6 +29,21 @@ static JSONValue make_json()
          {"EoM_abs_tol", 1e-10},
          {"EoM_max_iter", 0},
          {"grid", {{"x_grid", "0:0.1:1"}, {"y_grid", "0:0.1:1"}, {"z_grid", "0:0.1:1"}, {"refine", 0}}}}},
+       {"output", {{"verbosity", 0}}}});
+}
+
+static JSONValue make_json_2d()
+{
+  return json::value(
+      {{"physical", {{"Lambda", 1.}}},
+       {"discretization",
+        {{"fe_order", 0},
+         {"threads", 1},
+         {"batch_size", 64},
+         {"overintegration", 0},
+         {"EoM_abs_tol", 1e-10},
+         {"EoM_max_iter", 0},
+         {"grid", {{"x_grid", "0:0.25:1"}, {"y_grid", "0:0.25:1"}, {"z_grid", "0:1:1"}, {"refine", 0}}}}},
        {"output", {{"verbosity", 0}}}});
 }
 
@@ -83,6 +100,42 @@ public:
     Testing::fill_face_ghost_solution_boundary_stencil(u_stencil, x_stencil, x_face,
                                                        [this](const Point<1> &pos) { return solution(pos); });
     return true;
+  }
+};
+
+class DiffusiveAffineBoundary2DModel
+    : public def::AbstractModel<DiffusiveAffineBoundary2DModel,
+                                ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>>>,
+      public def::Time,
+      public def::LLFFlux<DiffusiveAffineBoundary2DModel>,
+      public def::FlowBoundaries<DiffusiveAffineBoundary2DModel>,
+      public def::FVDefaultBoundaries<DiffusiveAffineBoundary2DModel>,
+      public def::AD<DiffusiveAffineBoundary2DModel>
+{
+public:
+  template <typename Vector> void initial_condition(const Point<2> &pos, Vector &values) const
+  {
+    values[0] = 1.0 + 0.2 * pos[0] + 0.35 * pos[1];
+  }
+
+  template <typename NT, typename Solution>
+  void KurganovTadmor_advection_flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/,
+                                     const Solution & /*sol*/) const
+  {
+    F_i[0] = Tensor<1, 2, NT>();
+  }
+
+  template <typename NT, typename Solution>
+  void flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/, const Solution &sol) const
+  {
+    const auto &fe_derivatives = get<1>(sol);
+    F_i[0] = -2.5 * fe_derivatives[0];
+  }
+
+  template <typename NT, typename Solution>
+  void source(std::array<NT, 1> &s_i, const Point<2> & /*pos*/, const Solution & /*sol*/) const
+  {
+    s_i[0] = NT(0.0);
   }
 };
 
@@ -378,4 +431,151 @@ TEST_CASE("KT TVD Jacobian strategy keeps reconstruction-neighbor columns", "[FV
   const bool has_reconstruction_neighbor_contribution =
       std::abs(jacobian.el(row, row - 2)) > 1e-12 || std::abs(jacobian.el(row, row + 2)) > 1e-12;
   CHECK(has_reconstruction_neighbor_contribution);
+}
+
+TEST_CASE("KT 2D Jacobian matches FD Jacobian for diagonal Burgers model", "[FV][KT][2d]")
+{
+  using Model = Testing::ModelBurgers2DKT;
+  using NumberType = double;
+  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<2>>;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  Testing::PhysicalParameters p_prm;
+  p_prm.initial_x0[0] = 1.0;
+  p_prm.initial_x1[0] = 0.2;
+  p_prm.initial_x2[0] = 0.35;
+  const JSONValue json = make_json_2d();
+
+  Model model(p_prm);
+  RectangularMesh<2> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+  VectorType sol = state.spatial_data();
+  const int n_dofs = static_cast<int>(sol.size());
+  REQUIRE(n_dofs > 4);
+
+  for (int i = 0; i < n_dofs; ++i)
+    sol[i] = 1.0 + 0.03 * static_cast<double>(i) + 0.002 * static_cast<double>(i * i);
+
+  VectorType sol_dot(n_dofs);
+
+  const SparsityPattern &sp = assembler.get_sparsity_pattern_jacobian();
+  SparseMatrix<NumberType> J_analytic(sp);
+  assembler.jacobian(J_analytic, sol, 1.0, sol_dot, 0.0, 0.0);
+
+  const double eps = 1e-7;
+  std::vector<std::vector<double>> J_fd(n_dofs, std::vector<double>(n_dofs, 0.0));
+  for (int j = 0; j < n_dofs; ++j) {
+    VectorType u_p = sol, u_m = sol;
+    u_p[j] += eps;
+    u_m[j] -= eps;
+
+    VectorType r_p(n_dofs), r_m(n_dofs);
+    assembler.residual(r_p, u_p, 1.0, sol_dot, 0.0);
+    assembler.residual(r_m, u_m, 1.0, sol_dot, 0.0);
+
+    for (int i = 0; i < n_dofs; ++i)
+      J_fd[i][j] = (r_p[i] - r_m[i]) / (2.0 * eps);
+  }
+
+  const double tol = 2e-4;
+  bool pass = true;
+  for (int i = 0; i < n_dofs; ++i) {
+    for (int j = 0; j < n_dofs; ++j) {
+      const double analytic = J_analytic.el(i, j);
+      const double fd = J_fd[i][j];
+      const double err = std::abs(analytic - fd);
+      const double scale = std::max(1.0, std::abs(fd));
+      if (err > tol * scale) {
+        std::cout << "2D Jacobian mismatch at [" << i << "," << j << "]: "
+                  << "analytic=" << analytic << "  fd=" << fd << "  rel_err=" << err / scale << "\n";
+        pass = false;
+      }
+    }
+  }
+  REQUIRE(pass);
+}
+
+TEST_CASE("KT 2D boundary Jacobian matches FD for affine ghost diffusion", "[FV][KT][2d]")
+{
+  using Model = DiffusiveAffineBoundary2DModel;
+  using NumberType = double;
+  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<2>>;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  const JSONValue json = make_json_2d();
+  Model model;
+  RectangularMesh<2> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+  VectorType sol = state.spatial_data();
+  const int n_dofs = static_cast<int>(sol.size());
+  REQUIRE(n_dofs > 4);
+
+  for (int i = 0; i < n_dofs; ++i)
+    sol[i] = 0.7 + 0.19 * static_cast<double>(i) + 0.003 * static_cast<double>(i * i);
+
+  VectorType sol_dot(n_dofs);
+  sol_dot = 0.0;
+
+  const SparsityPattern &sp = assembler.get_sparsity_pattern_jacobian();
+  SparseMatrix<NumberType> J_analytic(sp);
+  assembler.jacobian(J_analytic, sol, 1.0, sol_dot, 0.0, 0.0);
+
+  const auto &support_points = discretization.get_support_points();
+  REQUIRE(static_cast<int>(support_points.size()) == n_dofs);
+  double x_min = std::numeric_limits<double>::infinity();
+  double x_max = -std::numeric_limits<double>::infinity();
+  double y_min = std::numeric_limits<double>::infinity();
+  double y_max = -std::numeric_limits<double>::infinity();
+  for (const auto &point : support_points) {
+    x_min = std::min(x_min, point[0]);
+    x_max = std::max(x_max, point[0]);
+    y_min = std::min(y_min, point[1]);
+    y_max = std::max(y_max, point[1]);
+  }
+  const auto is_boundary_dof = [&](const int dof) {
+    const auto &point = support_points[static_cast<std::size_t>(dof)];
+    return std::abs(point[0] - x_min) < 1.0e-12 || std::abs(point[0] - x_max) < 1.0e-12 ||
+           std::abs(point[1] - y_min) < 1.0e-12 || std::abs(point[1] - y_max) < 1.0e-12;
+  };
+
+  const double eps = 1e-7;
+  bool pass = true;
+  for (int j = 0; j < n_dofs; ++j) {
+    VectorType u_p = sol, u_m = sol;
+    u_p[j] += eps;
+    u_m[j] -= eps;
+
+    VectorType r_p(n_dofs), r_m(n_dofs);
+    assembler.residual(r_p, u_p, 1.0, sol_dot, 0.0);
+    assembler.residual(r_m, u_m, 1.0, sol_dot, 0.0);
+
+    for (int i = 0; i < n_dofs; ++i) {
+      if (!is_boundary_dof(i) && !is_boundary_dof(j)) continue;
+
+      const double analytic = sp.exists(i, j) ? J_analytic.el(i, j) : 0.0;
+      const double fd = (r_p[i] - r_m[i]) / (2.0 * eps);
+      const double err = std::abs(analytic - fd);
+      const double scale = std::max(1.0, std::abs(fd));
+      if (err > 2.0e-4 * scale) {
+        std::cout << "2D boundary Jacobian mismatch at [" << i << "," << j << "]: "
+                  << "analytic=" << analytic << "  fd=" << fd << "  rel_err=" << err / scale << "\n";
+        pass = false;
+      }
+    }
+  }
+  REQUIRE(pass);
 }

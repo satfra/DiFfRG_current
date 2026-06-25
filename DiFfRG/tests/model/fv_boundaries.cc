@@ -124,8 +124,8 @@ namespace
     boundary_stencil.ghost_right =
         boundary_stencil.lower_boundary ? BoundaryIndex::physical_cell : BoundaryIndex::upper_outer;
     const auto physical_stencil =
-        KT::internal::make_physical_boundary_side_stencil_1d<dim, NumberType, 1>(boundary_stencil);
-    const auto ghost_stencil = KT::internal::make_ghost_boundary_side_stencil_1d<dim, NumberType, 1>(boundary_stencil);
+        KT::internal::make_physical_boundary_side_stencil<dim, NumberType, 1>(boundary_stencil);
+    const auto ghost_stencil = KT::internal::make_ghost_boundary_side_stencil<dim, NumberType, 1>(boundary_stencil);
 
     const auto u_grad_physical = ReconstructorNumber::template compute_gradient<1>(
         physical_stencil.cell.x, physical_stencil.cell.u, physical_stencil.neighbors.x, physical_stencil.neighbors.u);
@@ -500,6 +500,51 @@ TEST_CASE("FVDefaultBoundaries applies affine two-ghost-cell stencils", "[Model]
     CHECK_THAT(x_stencil[4][0], Catch::Matchers::WithinAbs(11.5, tolerance));
     CHECK_THAT(u_stencil[3][0], Catch::Matchers::WithinAbs(7.0, tolerance));
     CHECK_THAT(u_stencil[4][0], Catch::Matchers::WithinAbs(9.0, tolerance));
+  }
+}
+
+TEST_CASE("FVDefaultBoundaries applies affine two-ghost-cell stencils in 2D", "[Model][FV][Boundaries]")
+{
+  using namespace DiFfRG;
+
+  DummyModelDefault model;
+
+  SECTION("lower y boundary extrapolates along y and preserves x")
+  {
+    def::BoundaryStencilValues<2, double, 2> u_stencil{
+        {{{11.0, 21.0}}, {{12.0, 22.0}}, {{1.0, 4.0}}, {{2.0, 6.0}}, {{4.0, 10.0}}, {{0.0, 0.0}}, {{0.0, 0.0}}}};
+    def::BoundaryStencilPoints<2> x_stencil{{Point<2>(8.0, 8.0), Point<2>(9.0, 9.0), Point<2>(3.0, 0.5),
+                                             Point<2>(3.0, 1.5), Point<2>(3.0, 2.5), Point<2>(), Point<2>()}};
+
+    REQUIRE(model.apply_boundary_stencil(u_stencil, x_stencil, Point<2>(3.0, 0.0)));
+
+    CHECK_THAT(x_stencil[0][0], Catch::Matchers::WithinAbs(3.0, tolerance));
+    CHECK_THAT(x_stencil[1][0], Catch::Matchers::WithinAbs(3.0, tolerance));
+    CHECK_THAT(x_stencil[0][1], Catch::Matchers::WithinAbs(-1.5, tolerance));
+    CHECK_THAT(x_stencil[1][1], Catch::Matchers::WithinAbs(-0.5, tolerance));
+    CHECK_THAT(u_stencil[0][0], Catch::Matchers::WithinAbs(-1.0, tolerance));
+    CHECK_THAT(u_stencil[1][0], Catch::Matchers::WithinAbs(0.0, tolerance));
+    CHECK_THAT(u_stencil[0][1], Catch::Matchers::WithinAbs(0.0, tolerance));
+    CHECK_THAT(u_stencil[1][1], Catch::Matchers::WithinAbs(2.0, tolerance));
+  }
+
+  SECTION("upper x boundary extrapolates along x and preserves y")
+  {
+    def::BoundaryStencilValues<2, double, 2> u_stencil{
+        {{{1.0, 4.0}}, {{3.0, 8.0}}, {{5.0, 12.0}}, {{17.0, 18.0}}, {{19.0, 20.0}}, {{0.0, 0.0}}, {{0.0, 0.0}}}};
+    def::BoundaryStencilPoints<2> x_stencil{{Point<2>(7.5, 2.0), Point<2>(8.5, 2.0), Point<2>(9.5, 2.0),
+                                             Point<2>(20.0, 21.0), Point<2>(21.0, 22.0), Point<2>(), Point<2>()}};
+
+    REQUIRE(model.apply_boundary_stencil(u_stencil, x_stencil, Point<2>(10.0, 2.0)));
+
+    CHECK_THAT(x_stencil[3][0], Catch::Matchers::WithinAbs(10.5, tolerance));
+    CHECK_THAT(x_stencil[4][0], Catch::Matchers::WithinAbs(11.5, tolerance));
+    CHECK_THAT(x_stencil[3][1], Catch::Matchers::WithinAbs(2.0, tolerance));
+    CHECK_THAT(x_stencil[4][1], Catch::Matchers::WithinAbs(2.0, tolerance));
+    CHECK_THAT(u_stencil[3][0], Catch::Matchers::WithinAbs(7.0, tolerance));
+    CHECK_THAT(u_stencil[4][0], Catch::Matchers::WithinAbs(9.0, tolerance));
+    CHECK_THAT(u_stencil[3][1], Catch::Matchers::WithinAbs(16.0, tolerance));
+    CHECK_THAT(u_stencil[4][1], Catch::Matchers::WithinAbs(20.0, tolerance));
   }
 }
 

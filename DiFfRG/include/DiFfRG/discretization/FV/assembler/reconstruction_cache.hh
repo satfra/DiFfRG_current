@@ -4,6 +4,7 @@
 
 #include <DiFfRG/discretization/common/types.hh>
 #include <DiFfRG/discretization/FV/reconstructor/abstract_reconstructor.hh>
+#include <DiFfRG/model/fv_boundaries.hh>
 
 #include <array>
 #include <autodiff/forward/real/real.hpp>
@@ -25,12 +26,10 @@ namespace DiFfRG
         using GradientType = def::GradientType<dim, NumberType, n_components>;
 
         template <int dim> struct BoundaryStencilIndex {
-          static_assert(dim == 1, "Paper-style boundary stencil indices currently support only dim=1.");
+          static_assert(dim == 1, "Boundary stencil indices currently support only dim=1.");
         };
 
-        template <int dim>
-          requires(dim == 1)
-        struct BoundaryStencilIndex<dim> {
+        template <> struct BoundaryStencilIndex<1> {
           static constexpr size_t lower_outer = 0;
           static constexpr size_t lower_inner = 1;
           static constexpr size_t physical_cell = 2;
@@ -177,7 +176,7 @@ namespace DiFfRG
         }
 
         template <int dim, typename NumberType, size_t n_components>
-        bool is_lower_boundary_stencil(const std::array<dealii::Point<dim>, 5> &x_stencil,
+        bool is_lower_boundary_stencil(const std::array<dealii::Point<dim>, 2 * dim + 3> &x_stencil,
                                        const dealii::Point<dim> &x_face)
         {
           static_assert(dim == 1, "Paper-style boundary stencil orientation currently supports only dim=1.");
@@ -186,46 +185,37 @@ namespace DiFfRG
         }
 
         template <int dim, typename NumberType, size_t n_components> struct BoundaryStencilData {
-          static_assert(dim == 1, "Paper-style boundary stencil data currently supports only dim=1.");
-        };
-
-        template <int dim, typename NumberType, size_t n_components>
-          requires(dim == 1)
-        struct BoundaryStencilData<dim, NumberType, n_components> {
-          std::array<dealii::Point<dim>, 5> x{};
-          std::array<std::array<NumberType, n_components>, 5> u{};
-          std::array<std::array<dealii::types::global_dof_index, n_components>, 5> dof_indices{};
+          static constexpr size_t stencil_size = 2 * dim + 3;
+          std::array<dealii::Point<dim>, stencil_size> x{};
+          std::array<std::array<NumberType, n_components>, stencil_size> u{};
+          std::array<std::array<dealii::types::global_dof_index, n_components>, stencil_size> dof_indices{};
           bool lower_boundary = true;
-          size_t ghost_center = BoundaryStencilIndex<dim>::lower_inner;
-          size_t ghost_left = BoundaryStencilIndex<dim>::lower_outer;
-          size_t ghost_right = BoundaryStencilIndex<dim>::physical_cell;
+          unsigned int cell_face = 0;
+          size_t ghost_center = def::BoundaryStencilIndex::lower_inner;
+          size_t ghost_left = def::BoundaryStencilIndex::lower_outer;
+          size_t ghost_right = def::BoundaryStencilIndex::physical_cell;
         };
 
         template <int dim, size_t n_components> struct BoundaryStencilTopologyData {
-          static_assert(dim == 1, "Paper-style boundary stencil topology currently supports only dim=1.");
-        };
-
-        template <int dim, size_t n_components>
-          requires(dim == 1)
-        struct BoundaryStencilTopologyData<dim, n_components> {
-          std::array<dealii::Point<dim>, 5> x{};
-          std::array<std::array<dealii::types::global_dof_index, n_components>, 5> dof_indices{};
+          static constexpr size_t stencil_size = 2 * dim + 3;
+          std::array<dealii::Point<dim>, stencil_size> x{};
+          std::array<std::array<dealii::types::global_dof_index, n_components>, stencil_size> dof_indices{};
           bool lower_boundary = true;
-          size_t ghost_center = BoundaryStencilIndex<dim>::lower_inner;
-          size_t ghost_left = BoundaryStencilIndex<dim>::lower_outer;
-          size_t ghost_right = BoundaryStencilIndex<dim>::physical_cell;
+          unsigned int cell_face = 0;
+          size_t ghost_center = def::BoundaryStencilIndex::lower_inner;
+          size_t ghost_left = def::BoundaryStencilIndex::lower_outer;
+          size_t ghost_right = def::BoundaryStencilIndex::physical_cell;
         };
 
         template <typename BoundaryNumberType, int dim, size_t n_components, typename VectorType>
         BoundaryStencilData<dim, BoundaryNumberType, n_components> fill_boundary_stencil_from_topology(
             const BoundaryStencilTopologyData<dim, n_components> &topology, const VectorType &solution_global)
         {
-          static_assert(dim == 1, "Paper-style boundary stencil data currently supports only dim=1.");
-
           BoundaryStencilData<dim, BoundaryNumberType, n_components> boundary_stencil{};
           boundary_stencil.x = topology.x;
           boundary_stencil.dof_indices = topology.dof_indices;
           boundary_stencil.lower_boundary = topology.lower_boundary;
+          boundary_stencil.cell_face = topology.cell_face;
           boundary_stencil.ghost_center = topology.ghost_center;
           boundary_stencil.ghost_left = topology.ghost_left;
           boundary_stencil.ghost_right = topology.ghost_right;
@@ -242,8 +232,8 @@ namespace DiFfRG
 
         template <int dim, typename NumberType, size_t n_components>
         CellStencilData<dim, NumberType, n_components>
-        make_boundary_side_stencil_1d(const BoundaryStencilData<dim, NumberType, n_components> &boundary_stencil,
-                                      const size_t center_index, const size_t left_index, const size_t right_index)
+        make_boundary_side_stencil(const BoundaryStencilData<dim, NumberType, n_components> &boundary_stencil,
+                                   const size_t center_index, const size_t left_index, const size_t right_index)
         {
           static_assert(dim == 1, "Paper-style boundary side stencils currently support only dim=1.");
 
@@ -265,23 +255,23 @@ namespace DiFfRG
 
         template <int dim, typename NumberType, size_t n_components>
         CellStencilData<dim, NumberType, n_components>
-        make_physical_boundary_side_stencil_1d(const BoundaryStencilData<dim, NumberType, n_components> &boundary_stencil)
+        make_physical_boundary_side_stencil(const BoundaryStencilData<dim, NumberType, n_components> &boundary_stencil)
         {
           static_assert(dim == 1, "Paper-style physical boundary side stencils currently support only dim=1.");
 
-          return make_boundary_side_stencil_1d<dim>(boundary_stencil, BoundaryStencilIndex<dim>::physical_cell,
-                                                    BoundaryStencilIndex<dim>::lower_inner,
-                                                    BoundaryStencilIndex<dim>::upper_inner);
+          return make_boundary_side_stencil<dim>(boundary_stencil, BoundaryStencilIndex<dim>::physical_cell,
+                                                 BoundaryStencilIndex<dim>::lower_inner,
+                                                 BoundaryStencilIndex<dim>::upper_inner);
         }
 
         template <int dim, typename NumberType, size_t n_components>
         CellStencilData<dim, NumberType, n_components>
-        make_ghost_boundary_side_stencil_1d(const BoundaryStencilData<dim, NumberType, n_components> &boundary_stencil)
+        make_ghost_boundary_side_stencil(const BoundaryStencilData<dim, NumberType, n_components> &boundary_stencil)
         {
           static_assert(dim == 1, "Paper-style ghost boundary side stencils currently support only dim=1.");
 
-          return make_boundary_side_stencil_1d<dim>(boundary_stencil, boundary_stencil.ghost_center,
-                                               boundary_stencil.ghost_left, boundary_stencil.ghost_right);
+          return make_boundary_side_stencil<dim>(boundary_stencil, boundary_stencil.ghost_center,
+                                                 boundary_stencil.ghost_left, boundary_stencil.ghost_right);
         }
 
         template <def::HasReconstructor Reconstructor, int dim, typename Model, typename NumberType, size_t n_components>
@@ -294,10 +284,10 @@ namespace DiFfRG
           const bool boundary_supported = model.apply_boundary_stencil(boundary_stencil.u, boundary_stencil.x, x_q);
           AssertThrow(boundary_supported, dealii::ExcMessage("KT boundary stencil was rejected by the model boundary policy."));
 
-          const auto physical_stencil = make_boundary_side_stencil_1d<dim, NumberType, n_components>(
+          const auto physical_stencil = make_boundary_side_stencil<dim, NumberType, n_components>(
               boundary_stencil, BoundaryStencilIndex<dim>::physical_cell, BoundaryStencilIndex<dim>::lower_inner,
               BoundaryStencilIndex<dim>::upper_inner);
-          const auto ghost_stencil = make_ghost_boundary_side_stencil_1d<dim, NumberType, n_components>(boundary_stencil);
+          const auto ghost_stencil = make_ghost_boundary_side_stencil<dim, NumberType, n_components>(boundary_stencil);
           return compute_interior_face_reconstruction_state<Reconstructor>(physical_stencil, ghost_stencil, x_q);
         }
 

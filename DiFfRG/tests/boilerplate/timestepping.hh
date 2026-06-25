@@ -29,6 +29,7 @@ bool run(std::string test_name, double expected_precision)
   Testing::PhysicalParameters p_prm;
   p_prm.initial_x0[0] = 0.;
   p_prm.initial_x1[0] = 1.;
+  p_prm.initial_x2[0] = 0.5;
 
   JSONValue json = json::value(
       {{"physical", {{"Lambda", 1.}}},

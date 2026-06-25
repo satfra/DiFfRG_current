@@ -300,6 +300,105 @@ template <typename State> static void check_face_reconstruction_state_reversed_1
   }
 }
 
+template <int dim, typename State>
+static void check_face_reconstruction_state(const State &actual, const State &expected)
+{
+  REQUIRE(actual.u_minus.size() == expected.u_minus.size());
+  for (std::size_t c = 0; c < actual.u_minus.size(); ++c) {
+    CHECK(actual.u_minus[c] == Catch::Approx(expected.u_minus[c]).margin(1e-14));
+    CHECK(actual.u_plus[c] == Catch::Approx(expected.u_plus[c]).margin(1e-14));
+    for (unsigned int d = 0; d < dim; ++d) {
+      CHECK(actual.center_grad_minus[c][d] == Catch::Approx(expected.center_grad_minus[c][d]).margin(1e-14));
+      CHECK(actual.center_grad_plus[c][d] == Catch::Approx(expected.center_grad_plus[c][d]).margin(1e-14));
+      CHECK(actual.face_grad_minus[c][d] == Catch::Approx(expected.face_grad_minus[c][d]).margin(1e-14));
+      CHECK(actual.face_grad_plus[c][d] == Catch::Approx(expected.face_grad_plus[c][d]).margin(1e-14));
+    }
+  }
+}
+
+template <int dim, typename State>
+static void check_face_reconstruction_state_reversed(const State &left, const State &right)
+{
+  REQUIRE(left.u_minus.size() == right.u_minus.size());
+  for (std::size_t c = 0; c < left.u_minus.size(); ++c) {
+    CHECK(left.u_minus[c] == Catch::Approx(right.u_plus[c]).margin(1e-14));
+    CHECK(left.u_plus[c] == Catch::Approx(right.u_minus[c]).margin(1e-14));
+    for (unsigned int d = 0; d < dim; ++d) {
+      CHECK(left.center_grad_minus[c][d] == Catch::Approx(right.center_grad_plus[c][d]).margin(1e-14));
+      CHECK(left.center_grad_plus[c][d] == Catch::Approx(right.center_grad_minus[c][d]).margin(1e-14));
+      CHECK(left.face_grad_minus[c][d] == Catch::Approx(right.face_grad_plus[c][d]).margin(1e-14));
+      CHECK(left.face_grad_plus[c][d] == Catch::Approx(right.face_grad_minus[c][d]).margin(1e-14));
+    }
+  }
+}
+
+static DiFfRG::JSONValue make_2d_kt_json()
+{
+  return DiFfRG::json::value(
+      {{"physical", {{"Lambda", 1.}}},
+       {"discretization",
+        {{"fe_order", 0},
+         {"threads", 1},
+         {"batch_size", 8},
+         {"overintegration", 0},
+         {"output_subdivisions", 1},
+         {"EoM_abs_tol", 1e-10},
+         {"EoM_max_iter", 0},
+         {"grid", {{"x_grid", "0:0.25:1"}, {"y_grid", "0:0.25:1"}, {"z_grid", "0:1:1"}, {"refine", 0}}}}},
+       {"output", {{"verbosity", 0}, {"vtk", false}, {"hdf5", false}}}});
+}
+
+template <typename DoFHandler>
+static typename DoFHandler::active_cell_iterator find_2d_interior_cell(DoFHandler &dof_handler)
+{
+  for (auto cell = dof_handler.begin_active(); cell != dof_handler.end(); ++cell) {
+    bool interior = true;
+    for (const auto face_index : cell->face_indices())
+      interior = interior && !cell->at_boundary(face_index);
+    if (interior) return cell;
+  }
+  return typename DoFHandler::active_cell_iterator(dof_handler.end());
+}
+
+template <typename DoFHandler>
+static typename DoFHandler::active_cell_iterator find_2d_boundary_cell(DoFHandler &dof_handler,
+                                                                       const unsigned int face_index)
+{
+  for (auto cell = dof_handler.begin_active(); cell != dof_handler.end(); ++cell) {
+    if (!cell->at_boundary(face_index)) continue;
+
+    const auto interior_face = GeometryInfo<2>::opposite_face[face_index];
+    if (cell->at_boundary(interior_face)) continue;
+    const auto first_interior = cell->neighbor(interior_face);
+    if (first_interior->at_boundary(interior_face)) continue;
+    return cell;
+  }
+  return typename DoFHandler::active_cell_iterator(dof_handler.end());
+}
+
+template <typename DoFHandler>
+static typename DoFHandler::active_cell_iterator find_2d_non_corner_boundary_cell(DoFHandler &dof_handler,
+                                                                                  const unsigned int face_index)
+{
+  for (auto cell = dof_handler.begin_active(); cell != dof_handler.end(); ++cell) {
+    if (!cell->at_boundary(face_index)) continue;
+
+    bool on_other_boundary = false;
+    for (const auto other_face_index : cell->face_indices()) {
+      if (other_face_index == face_index) continue;
+      on_other_boundary = on_other_boundary || cell->at_boundary(other_face_index);
+    }
+    if (on_other_boundary) continue;
+
+    const auto interior_face = GeometryInfo<2>::opposite_face[face_index];
+    if (cell->at_boundary(interior_face)) continue;
+    const auto first_interior = cell->neighbor(interior_face);
+    if (first_interior->at_boundary(interior_face)) continue;
+    return cell;
+  }
+  return typename DoFHandler::active_cell_iterator(dof_handler.end());
+}
+
 TEST_CASE("KT FV reconstruction diagnostics write expected HDF5 maps", "[FV][KT][hdf5]")
 {
 #ifndef H5CPP
@@ -669,7 +768,7 @@ TEST_CASE("KT solution reconstruction cache matches direct boundary reconstructi
   const auto &cached = assembler.get_cached_face_reconstruction(cache, cell, face_index);
 
   const auto boundary_stencil =
-      assembler.template build_boundary_stencil_1d_from_cache<NumberType>(cell, face_index, solution);
+      assembler.template build_boundary_stencil_from_cache<NumberType>(cell, face_index, solution);
   const auto expected = KT::internal::compute_boundary_face_reconstruction_state<typename Assembler::Reconstructor>(
       boundary_stencil, x_q, model);
 
@@ -700,8 +799,8 @@ TEST_CASE("KT boundary stencil cache recomputes values per solution", "[FV][KT][
   }
 
   const auto cell = discretization.get_dof_handler().begin_active();
-  const auto first_boundary = assembler.template build_boundary_stencil_1d_from_cache<NumberType>(cell, 0, first);
-  const auto second_boundary = assembler.template build_boundary_stencil_1d_from_cache<NumberType>(cell, 0, second);
+  const auto first_boundary = assembler.template build_boundary_stencil_from_cache<NumberType>(cell, 0, first);
+  const auto second_boundary = assembler.template build_boundary_stencil_from_cache<NumberType>(cell, 0, second);
 
   for (const auto stencil_index :
        {BoundaryIndex::physical_cell, BoundaryIndex::upper_inner, BoundaryIndex::upper_outer}) {
@@ -711,6 +810,301 @@ TEST_CASE("KT boundary stencil cache recomputes values per solution", "[FV][KT][
     CHECK(first_boundary.u[stencil_index][0] == Catch::Approx(first[dof]));
     CHECK(second_boundary.u[stencil_index][0] == Catch::Approx(second[dof]));
     CHECK(first_boundary.u[stencil_index][0] != Catch::Approx(second_boundary.u[stencil_index][0]));
+  }
+}
+
+TEST_CASE("KT 2D topology cache stores four face neighbours for an interior cell", "[FV][KT][cache][2d]")
+{
+  using Model = DiFfRG::Testing::ModelBurgers2DKT;
+  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<2>>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+
+  ensure_logger();
+
+  auto json = make_2d_kt_json();
+  DiFfRG::Testing::PhysicalParameters prm;
+  prm.initial_x0[0] = 1.0;
+  prm.initial_x1[0] = 0.25;
+  prm.initial_x2[0] = 0.5;
+
+  Model model(prm);
+  DiFfRG::RectangularMesh<2> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  auto cell = find_2d_interior_cell(discretization.get_dof_handler());
+  REQUIRE(cell != discretization.get_dof_handler().end());
+
+  typename Assembler::CellStencilData stencil;
+  typename Discretization::VectorType solution(discretization.get_dof_handler().n_dofs());
+  for (unsigned int i = 0; i < solution.size(); ++i)
+    solution[i] = 1.0 + 0.2 * static_cast<double>(i);
+  assembler.fill_cell_stencil(cell, solution, stencil);
+
+  CHECK(stencil.cell.x == cell->center());
+  for (const auto face_index : cell->face_indices()) {
+    CAPTURE(face_index);
+    REQUIRE(!cell->at_boundary(face_index));
+    CHECK(stencil.face_centers[face_index] == cell->face(face_index)->center());
+    CHECK(stencil.neighbors.x[face_index] == cell->neighbor(face_index)->center());
+    CHECK(stencil.neighbors.dof_indices[face_index][0] != dealii::numbers::invalid_dof_index);
+    CHECK(stencil.neighbors.u[face_index][0] ==
+          Catch::Approx(solution[stencil.neighbors.dof_indices[face_index][0]]));
+  }
+}
+
+TEST_CASE("KT 2D boundary stencil cache stores two interior cells behind boundary faces", "[FV][KT][cache][2d]")
+{
+  using Model = DiFfRG::Testing::ModelBurgers2DKT;
+  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<2>>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using namespace DiFfRG::def::BoundaryStencilIndex;
+
+  ensure_logger();
+
+  auto json = make_2d_kt_json();
+  DiFfRG::Testing::PhysicalParameters prm;
+  prm.initial_x0[0] = 1.0;
+  prm.initial_x1[0] = 0.25;
+  prm.initial_x2[0] = 0.5;
+
+  Model model(prm);
+  DiFfRG::RectangularMesh<2> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  typename Discretization::VectorType solution(discretization.get_dof_handler().n_dofs());
+  for (unsigned int i = 0; i < solution.size(); ++i)
+    solution[i] = 1.0 + 0.2 * static_cast<double>(i);
+
+  for (const auto face_index : {0U, 1U, 2U, 3U}) {
+    CAPTURE(face_index);
+    auto cell = find_2d_boundary_cell(discretization.get_dof_handler(), face_index);
+    REQUIRE(cell != discretization.get_dof_handler().end());
+
+    const auto interior_face = GeometryInfo<2>::opposite_face[face_index];
+    const auto first_interior = cell->neighbor(interior_face);
+    const auto second_interior = first_interior->neighbor(interior_face);
+
+    const auto boundary_stencil = assembler.template build_boundary_stencil_from_cache<NumberType>(
+        cell, face_index, solution);
+
+    CHECK(boundary_stencil.cell_face == face_index);
+    CHECK(boundary_stencil.lower_boundary == (face_index % 2 == 0));
+    CHECK(boundary_stencil.x[physical_cell] == cell->center());
+    CHECK(boundary_stencil.dof_indices[physical_cell][0] != dealii::numbers::invalid_dof_index);
+    CHECK(boundary_stencil.u[physical_cell][0] ==
+          Catch::Approx(solution[boundary_stencil.dof_indices[physical_cell][0]]));
+
+    const auto first_index =
+        boundary_stencil.lower_boundary ? upper_inner : lower_inner;
+    const auto second_index =
+        boundary_stencil.lower_boundary ? upper_outer : lower_outer;
+    CHECK(boundary_stencil.x[first_index] == first_interior->center());
+    CHECK(boundary_stencil.x[second_index] == second_interior->center());
+    CHECK(boundary_stencil.dof_indices[first_index][0] != dealii::numbers::invalid_dof_index);
+    CHECK(boundary_stencil.dof_indices[second_index][0] != dealii::numbers::invalid_dof_index);
+    CHECK(boundary_stencil.u[first_index][0] == Catch::Approx(solution[boundary_stencil.dof_indices[first_index][0]]));
+    CHECK(boundary_stencil.u[second_index][0] == Catch::Approx(solution[boundary_stencil.dof_indices[second_index][0]]));
+  }
+}
+
+TEST_CASE("KT 2D solution reconstruction cache recomputes values per solution", "[FV][KT][cache][2d]")
+{
+  using Model = DiFfRG::Testing::ModelBurgers2DKT;
+  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<2>>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  auto json = make_2d_kt_json();
+  DiFfRG::Testing::PhysicalParameters prm;
+  prm.initial_x0[0] = 1.0;
+  prm.initial_x1[0] = 0.25;
+  prm.initial_x2[0] = 0.5;
+
+  Model model(prm);
+  DiFfRG::RectangularMesh<2> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  VectorType first(discretization.get_dof_handler().n_dofs());
+  VectorType second(first.size());
+  for (unsigned int i = 0; i < first.size(); ++i) {
+    first[i] = 1.0 + 0.1 * static_cast<double>(i);
+    second[i] = 2.0 + 0.3 * static_cast<double>(i);
+  }
+
+  auto cell = find_2d_interior_cell(discretization.get_dof_handler());
+  REQUIRE(cell != discretization.get_dof_handler().end());
+
+  const auto first_cache =
+      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(first);
+  const auto second_cache =
+      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(second);
+
+  const auto cell_index = cell->active_cell_index();
+  const auto &first_stencil = first_cache.cell_stencils[cell_index];
+  const auto &second_stencil = second_cache.cell_stencils[cell_index];
+
+  CHECK(first_stencil.cell.x == second_stencil.cell.x);
+  CHECK(first_stencil.cell.dof_indices == second_stencil.cell.dof_indices);
+  CHECK(first_stencil.cell.u[0] == Catch::Approx(first[first_stencil.cell.dof_indices[0]]));
+  CHECK(second_stencil.cell.u[0] == Catch::Approx(second[second_stencil.cell.dof_indices[0]]));
+  CHECK(first_stencil.cell.u[0] != Catch::Approx(second_stencil.cell.u[0]));
+
+  for (const auto face_index : cell->face_indices()) {
+    REQUIRE(first_cache.face_reconstruction_valid[cell_index][face_index]);
+    REQUIRE(second_cache.face_reconstruction_valid[cell_index][face_index]);
+    const auto &first_reconstruction = assembler.get_cached_face_reconstruction(first_cache, cell, face_index);
+    const auto &second_reconstruction = assembler.get_cached_face_reconstruction(second_cache, cell, face_index);
+    CHECK(first_reconstruction.u_minus[0] != Catch::Approx(second_reconstruction.u_minus[0]));
+  }
+}
+
+TEST_CASE("KT 2D solution reconstruction cache matches direct interior reconstruction", "[FV][KT][cache][2d]")
+{
+  using Model = DiFfRG::Testing::ModelBurgers2DKT;
+  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<2>>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  auto json = make_2d_kt_json();
+  DiFfRG::Testing::PhysicalParameters prm;
+  prm.initial_x0[0] = 1.0;
+  prm.initial_x1[0] = 0.25;
+  prm.initial_x2[0] = 0.5;
+
+  Model model(prm);
+  DiFfRG::RectangularMesh<2> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  VectorType solution(discretization.get_dof_handler().n_dofs());
+  for (unsigned int i = 0; i < solution.size(); ++i)
+    solution[i] = 0.7 + 0.21 * static_cast<double>(i) - 0.02 * static_cast<double>(i * i);
+
+  auto cell = find_2d_interior_cell(discretization.get_dof_handler());
+  REQUIRE(cell != discretization.get_dof_handler().end());
+
+  const auto cache =
+      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution);
+
+  for (const auto face_index : {1U, 3U}) {
+    CAPTURE(face_index);
+    REQUIRE(!cell->at_boundary(face_index));
+    const auto neighbor = cell->neighbor(face_index);
+    const auto x_q = cell->face(face_index)->center();
+    const auto &cached = assembler.get_cached_face_reconstruction(cache, cell, face_index);
+
+    typename Assembler::CellStencilData cell_stencil;
+    typename Assembler::CellStencilData neighbor_stencil;
+    assembler.fill_cell_stencil(cell, solution, cell_stencil);
+    assembler.fill_cell_stencil(neighbor, solution, neighbor_stencil);
+    const auto expected = KT::internal::compute_interior_face_reconstruction_state<typename Assembler::Reconstructor>(
+        cell_stencil, neighbor_stencil, x_q);
+
+    check_face_reconstruction_state<2>(cached, expected);
+  }
+}
+
+TEST_CASE("KT 2D boundary reconstruction cache reconstructs affine ghost side", "[FV][KT][cache][2d]")
+{
+  using Model = DiFfRG::Testing::ModelBurgers2DKT;
+  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<2>>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  auto json = make_2d_kt_json();
+  DiFfRG::Testing::PhysicalParameters prm;
+  prm.initial_x0[0] = 1.0;
+  prm.initial_x1[0] = 0.25;
+  prm.initial_x2[0] = 0.5;
+
+  Model model(prm);
+  DiFfRG::RectangularMesh<2> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  VectorType solution(discretization.get_dof_handler().n_dofs());
+  const auto &support_points = discretization.get_support_points();
+  REQUIRE(support_points.size() == solution.size());
+  for (unsigned int i = 0; i < solution.size(); ++i)
+    solution[i] = model.solution(support_points[i])[0];
+
+  const auto cache =
+      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution);
+
+  const auto check_boundary_face = [&](const auto &cell, const unsigned int face_index) {
+    CAPTURE(face_index, cell->center());
+    REQUIRE(cell != discretization.get_dof_handler().end());
+    REQUIRE(cell->at_boundary(face_index));
+
+    const auto x_q = cell->face(face_index)->center();
+    const auto &cached = assembler.get_cached_face_reconstruction(cache, cell, face_index);
+    const double expected_value = model.solution(x_q)[0];
+    constexpr double tolerance = 1.0e-12;
+
+    CHECK(cached.u_minus[0] == Catch::Approx(expected_value).margin(tolerance));
+    CHECK(cached.u_plus[0] == Catch::Approx(expected_value).margin(tolerance));
+    CHECK(cached.face_grad_minus[0][0] == Catch::Approx(prm.initial_x1[0]).margin(tolerance));
+    CHECK(cached.face_grad_minus[0][1] == Catch::Approx(prm.initial_x2[0]).margin(tolerance));
+    CHECK(cached.face_grad_plus[0][0] == Catch::Approx(prm.initial_x1[0]).margin(tolerance));
+    CHECK(cached.face_grad_plus[0][1] == Catch::Approx(prm.initial_x2[0]).margin(tolerance));
+  };
+
+  auto side_cell = find_2d_non_corner_boundary_cell(discretization.get_dof_handler(), 0U);
+  check_boundary_face(side_cell, 0U);
+
+  auto corner_cell = find_2d_boundary_cell(discretization.get_dof_handler(), 2U);
+  REQUIRE(corner_cell != discretization.get_dof_handler().end());
+  REQUIRE((corner_cell->at_boundary(0U) || corner_cell->at_boundary(1U)));
+  check_boundary_face(corner_cell, 2U);
+}
+
+TEST_CASE("KT 2D solution reconstruction cache stores reversed interior face orientations", "[FV][KT][cache][2d]")
+{
+  using Model = DiFfRG::Testing::ModelBurgers2DKT;
+  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<2>>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  auto json = make_2d_kt_json();
+  DiFfRG::Testing::PhysicalParameters prm;
+  prm.initial_x0[0] = 1.0;
+  prm.initial_x1[0] = 0.25;
+  prm.initial_x2[0] = 0.5;
+
+  Model model(prm);
+  DiFfRG::RectangularMesh<2> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  VectorType solution(discretization.get_dof_handler().n_dofs());
+  for (unsigned int i = 0; i < solution.size(); ++i)
+    solution[i] = 1.0 + 0.13 * static_cast<double>(i) + 0.04 * static_cast<double>(i * i);
+
+  auto cell = find_2d_interior_cell(discretization.get_dof_handler());
+  REQUIRE(cell != discretization.get_dof_handler().end());
+
+  const auto cache =
+      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution);
+
+  for (const auto face_index : {1U, 3U}) {
+    CAPTURE(face_index);
+    REQUIRE(!cell->at_boundary(face_index));
+    const auto neighbor = cell->neighbor(face_index);
+    const auto neighbor_face_index = assembler.find_neighbor_face(cell, neighbor);
+    const auto &cell_state = assembler.get_cached_face_reconstruction(cache, cell, face_index);
+    const auto &neighbor_state = assembler.get_cached_face_reconstruction(cache, neighbor, neighbor_face_index);
+    check_face_reconstruction_state_reversed<2>(cell_state, neighbor_state);
   }
 }
 

@@ -187,7 +187,7 @@ namespace diagnostics
           auto reconstruct_boundary = [&](const CellRecord &cell, const unsigned int face_no) {
             const auto x_q = cell.cell->face(face_no)->center();
             auto boundary_stencil =
-                assembler.template build_boundary_stencil_1d_from_cache<NumberType>(cell.cell, face_no, solution);
+                assembler.template build_boundary_stencil_from_cache<NumberType>(cell.cell, face_no, solution);
             const auto reconstruction =
                 internal::compute_boundary_face_reconstruction_state<Reconstructor>(
                     boundary_stencil, x_q, model);
