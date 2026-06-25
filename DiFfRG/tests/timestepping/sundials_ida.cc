@@ -98,6 +98,19 @@ TEST_CASE("Test SUNDIALS IDA with KT Burgers model", "[timestepping][Burgers][su
   REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_sundials_ida_burgers_kt", 1e-9));
 }
 
+TEST_CASE("Test SUNDIALS IDA with 2D KT Burgers model", "[timestepping][Burgers][sundials_ida][kt][2d]")
+{
+  constexpr uint dim = 2;
+  using Model = Testing::ModelBurgers2DKT;
+  using NumberType = double;
+  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<dim>>;
+  using VectorType = typename Discretization::VectorType;
+  using SparseMatrixType = typename Discretization::SparseMatrixType;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
+  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_sundials_ida_burgers_2d_kt", 2e-3));
+}
+
 TEST_CASE("Test SUNDIALS IDA with KT viscous Burgers traveling wave",
           "[timestepping][Burgers][sundials_ida][kt][traveling_wave]")
 {
