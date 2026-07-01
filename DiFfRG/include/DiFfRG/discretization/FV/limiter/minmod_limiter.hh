@@ -6,6 +6,10 @@
 // standard library
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+
+// autodiff
+#include <autodiff/forward/real/real.hpp>
 
 namespace DiFfRG
 {
@@ -30,6 +34,21 @@ namespace DiFfRG
      */
     class MinModLimiter
     {
+      template <typename NumberType> static NumberType abs_with_zero_tie_derivative(const NumberType &value)
+      {
+        using std::abs;
+        return abs(value);
+      }
+
+      template <size_t order, typename NumberType>
+      static autodiff::Real<order, NumberType>
+      abs_with_zero_tie_derivative(const autodiff::Real<order, NumberType> &value)
+      {
+        using std::abs;
+        if (std::abs(value.val()) < 1.0e-8) return autodiff::Real<order, NumberType>(0.0);
+        return abs(value);
+      }
+
     public:
       template <typename NumberType> static NumberType slope_limit(const NumberType &du_1, const NumberType &du_2)
       {
@@ -37,7 +56,7 @@ namespace DiFfRG
         // AD follows the active branch away from ties without introducing a std::min discontinuity.
         using std::abs;
         const auto a1 = abs(du_1), a2 = abs(du_2);
-        const auto min_a = NumberType(0.5) * (a1 + a2 - abs(a1 - a2));
+        const auto min_a = NumberType(0.5) * (a1 + a2 - abs_with_zero_tie_derivative(a1 - a2));
         return NumberType(0.5) * (limiter_utils::sgn(du_1) + limiter_utils::sgn(du_2)) * min_a;
       }
     };

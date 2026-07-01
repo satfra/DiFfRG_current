@@ -51,20 +51,53 @@ namespace
 	    }
 	  };
 
-  template <std::size_t n_components>
-  DiFfRG::def::BoundaryStencilValues<1, autodiff::Real<1, double>, n_components>
-  make_tagged_stencil(const DiFfRG::def::BoundaryStencilValues<1, double, n_components> &u_stencil,
-                      const std::array<std::array<types::global_dof_index, n_components>, 5> &dof_stencil,
+  template <int dim> struct TaggedBoundaryStencilFactory;
+
+  template <> struct TaggedBoundaryStencilFactory<1>
+  {
+    template <std::size_t n_components>
+    static DiFfRG::def::BoundaryStencilValues<1, autodiff::Real<1, double>, n_components>
+    make(const DiFfRG::def::BoundaryStencilValues<1, double, n_components> &u_stencil,
+         const std::array<std::array<types::global_dof_index, n_components>, 5> &dof_stencil,
+         const types::global_dof_index dof_j)
+    {
+      DiFfRG::def::BoundaryStencilValues<1, autodiff::Real<1, double>, n_components> result{};
+      for (std::size_t i = 0; i < 5; ++i) {
+        for (std::size_t c = 0; c < n_components; ++c) {
+          result[i][c] = autodiff::Real<1, double>(u_stencil[i][c]);
+          if (dof_stencil[i][c] == dof_j) autodiff::detail::seed<1>(result[i][c], 1.0);
+        }
+      }
+      return result;
+    }
+  };
+
+  template <> struct TaggedBoundaryStencilFactory<2>
+  {
+    template <std::size_t n_components>
+    static DiFfRG::def::BoundaryStencilValues<2, autodiff::Real<1, double>, n_components>
+    make(const DiFfRG::def::BoundaryStencilValues<2, double, n_components> &u_stencil,
+         const std::array<std::array<types::global_dof_index, n_components>, 7> &dof_stencil,
+         const types::global_dof_index dof_j)
+    {
+      DiFfRG::def::BoundaryStencilValues<2, autodiff::Real<1, double>, n_components> result{};
+      for (std::size_t i = 0; i < 7; ++i) {
+        for (std::size_t c = 0; c < n_components; ++c) {
+          result[i][c] = autodiff::Real<1, double>(u_stencil[i][c]);
+          if (dof_stencil[i][c] == dof_j) autodiff::detail::seed<1>(result[i][c], 1.0);
+        }
+      }
+      return result;
+    }
+  };
+
+  template <int dim, std::size_t n_components>
+  DiFfRG::def::BoundaryStencilValues<dim, autodiff::Real<1, double>, n_components>
+  make_tagged_stencil(const DiFfRG::def::BoundaryStencilValues<dim, double, n_components> &u_stencil,
+                      const std::array<std::array<types::global_dof_index, n_components>, 2 * dim + 3> &dof_stencil,
                       const types::global_dof_index dof_j)
   {
-    DiFfRG::def::BoundaryStencilValues<1, autodiff::Real<1, double>, n_components> result{};
-    for (std::size_t i = 0; i < 5; ++i) {
-      for (std::size_t c = 0; c < n_components; ++c) {
-        result[i][c] = autodiff::Real<1, double>(u_stencil[i][c]);
-        if (dof_stencil[i][c] == dof_j) autodiff::detail::seed<1>(result[i][c], 1.0);
-      }
-    }
-    return result;
+    return TaggedBoundaryStencilFactory<dim>::template make<n_components>(u_stencil, dof_stencil, dof_j);
   }
 
   struct ReconstructionSummary1D {
@@ -192,7 +225,7 @@ namespace
     result.grad_u_minus = scalar_value(reconstruction.grad_u_minus);
 
     for (std::size_t derivative_index = 0; derivative_index < 3; ++derivative_index) {
-      auto tagged_stencil = make_tagged_stencil(raw_u_stencil, dof_stencil, 10 + derivative_index);
+      auto tagged_stencil = make_tagged_stencil<1>(raw_u_stencil, dof_stencil, 10 + derivative_index);
       auto tagged_points = raw_x_stencil;
       REQUIRE(model.apply_boundary_stencil(tagged_stencil, tagged_points, Point<1>(0.0)));
       const auto tagged_reconstruction = compute_boundary_trace(tagged_points, tagged_stencil, dof_stencil, Point<1>(0.0));
@@ -229,7 +262,7 @@ namespace
 	    result.grad_u_minus = scalar_value(reconstruction.grad_u_minus);
 
 	    for (std::size_t derivative_index = 0; derivative_index < 3; ++derivative_index) {
-	      auto tagged_stencil = make_tagged_stencil(raw_u_stencil, dof_stencil, 10 + derivative_index);
+	      auto tagged_stencil = make_tagged_stencil<1>(raw_u_stencil, dof_stencil, 10 + derivative_index);
 	      auto tagged_points = raw_x_stencil;
 	      REQUIRE(model.apply_boundary_stencil(tagged_stencil, tagged_points, Point<1>(0.0)));
 	      const auto tagged_reconstruction = compute_boundary_trace(tagged_points, tagged_stencil, dof_stencil, Point<1>(0.0));
@@ -266,7 +299,7 @@ namespace
     result.grad_u_minus = scalar_value(reconstruction.grad_u_minus);
 
     for (std::size_t derivative_index = 0; derivative_index < 3; ++derivative_index) {
-      auto tagged_stencil = make_tagged_stencil(raw_u_stencil, dof_stencil, 10 + derivative_index);
+      auto tagged_stencil = make_tagged_stencil<1>(raw_u_stencil, dof_stencil, 10 + derivative_index);
       auto tagged_points = raw_x_stencil;
       REQUIRE(model.apply_boundary_stencil(tagged_stencil, tagged_points, Point<1>(0.0)));
       const auto tagged_reconstruction = compute_boundary_trace(tagged_points, tagged_stencil, dof_stencil, Point<1>(0.0));
@@ -429,7 +462,7 @@ namespace
     result.grad_u_minus = scalar_value(reconstruction.grad_u_minus);
 
     for (std::size_t derivative_index = 0; derivative_index < 3; ++derivative_index) {
-      auto tagged_stencil = make_tagged_stencil(raw_u_stencil, dof_stencil, 20 + derivative_index);
+      auto tagged_stencil = make_tagged_stencil<1>(raw_u_stencil, dof_stencil, 20 + derivative_index);
       auto tagged_points = raw_x_stencil;
       REQUIRE(model.apply_boundary_stencil(tagged_stencil, tagged_points, Point<1>(10.0)));
       const auto tagged_reconstruction = compute_boundary_trace(tagged_points, tagged_stencil, dof_stencil, Point<1>(10.0));
@@ -563,7 +596,7 @@ TEST_CASE("FVDefaultBoundaries preserves affine stencil derivatives under AD con
         {{{numbers::invalid_dof_index}}, {{numbers::invalid_dof_index}}, {{10}}, {{11}}, {{12}}}};
 
     {
-      auto tagged_stencil = make_tagged_stencil(u_stencil, dof_stencil, 10);
+      auto tagged_stencil = make_tagged_stencil<1>(u_stencil, dof_stencil, 10);
       auto conditioned_points = x_stencil;
       REQUIRE(model.apply_boundary_stencil(tagged_stencil, conditioned_points, Point<1>(0.0)));
       CHECK_THAT(derivative(tagged_stencil[1][0]), Catch::Matchers::WithinAbs(2.0, tolerance));
@@ -571,7 +604,7 @@ TEST_CASE("FVDefaultBoundaries preserves affine stencil derivatives under AD con
     }
 
     {
-      auto tagged_stencil = make_tagged_stencil(u_stencil, dof_stencil, 11);
+      auto tagged_stencil = make_tagged_stencil<1>(u_stencil, dof_stencil, 11);
       auto conditioned_points = x_stencil;
       REQUIRE(model.apply_boundary_stencil(tagged_stencil, conditioned_points, Point<1>(0.0)));
       CHECK_THAT(derivative(tagged_stencil[1][0]), Catch::Matchers::WithinAbs(-1.0, tolerance));
@@ -587,7 +620,7 @@ TEST_CASE("FVDefaultBoundaries preserves affine stencil derivatives under AD con
         {{{20}}, {{21}}, {{22}}, {{numbers::invalid_dof_index}}, {{numbers::invalid_dof_index}}}};
 
     {
-      auto tagged_stencil = make_tagged_stencil(u_stencil, dof_stencil, 22);
+      auto tagged_stencil = make_tagged_stencil<1>(u_stencil, dof_stencil, 22);
       auto conditioned_points = x_stencil;
       REQUIRE(model.apply_boundary_stencil(tagged_stencil, conditioned_points, Point<1>(10.0)));
       CHECK_THAT(derivative(tagged_stencil[3][0]), Catch::Matchers::WithinAbs(2.0, tolerance));
@@ -595,7 +628,7 @@ TEST_CASE("FVDefaultBoundaries preserves affine stencil derivatives under AD con
     }
 
     {
-      auto tagged_stencil = make_tagged_stencil(u_stencil, dof_stencil, 21);
+      auto tagged_stencil = make_tagged_stencil<1>(u_stencil, dof_stencil, 21);
       auto conditioned_points = x_stencil;
       REQUIRE(model.apply_boundary_stencil(tagged_stencil, conditioned_points, Point<1>(10.0)));
       CHECK_THAT(derivative(tagged_stencil[3][0]), Catch::Matchers::WithinAbs(-1.0, tolerance));
@@ -654,7 +687,7 @@ TEST_CASE("RhoSymmetricLinearExtrapolationBoundaries preserves free physical-cel
         {{{numbers::invalid_dof_index}}, {{numbers::invalid_dof_index}}, {{10}}, {{11}}, {{12}}}};
 
     {
-      auto tagged_stencil = make_tagged_stencil(u_stencil, dof_stencil, 10);
+      auto tagged_stencil = make_tagged_stencil<1>(u_stencil, dof_stencil, 10);
       auto conditioned_points = x_stencil;
       REQUIRE(model.apply_boundary_stencil(tagged_stencil, conditioned_points, Point<1>(0.0)));
       CHECK_THAT(derivative(tagged_stencil[1][0]), Catch::Matchers::WithinAbs(1.0, tolerance));
@@ -663,7 +696,7 @@ TEST_CASE("RhoSymmetricLinearExtrapolationBoundaries preserves free physical-cel
     }
 
     {
-      auto tagged_stencil = make_tagged_stencil(u_stencil, dof_stencil, 11);
+      auto tagged_stencil = make_tagged_stencil<1>(u_stencil, dof_stencil, 11);
       auto conditioned_points = x_stencil;
       REQUIRE(model.apply_boundary_stencil(tagged_stencil, conditioned_points, Point<1>(0.0)));
       CHECK_THAT(derivative(tagged_stencil[1][0]), Catch::Matchers::WithinAbs(0.0, tolerance));
@@ -680,7 +713,7 @@ TEST_CASE("RhoSymmetricLinearExtrapolationBoundaries preserves free physical-cel
         {{{20}}, {{21}}, {{22}}, {{numbers::invalid_dof_index}}, {{numbers::invalid_dof_index}}}};
 
     {
-      auto tagged_stencil = make_tagged_stencil(u_stencil, dof_stencil, 22);
+      auto tagged_stencil = make_tagged_stencil<1>(u_stencil, dof_stencil, 22);
       auto conditioned_points = x_stencil;
       REQUIRE(model.apply_boundary_stencil(tagged_stencil, conditioned_points, Point<1>(10.0)));
       CHECK_THAT(derivative(tagged_stencil[3][0]), Catch::Matchers::WithinAbs(2.0, tolerance));
@@ -688,7 +721,7 @@ TEST_CASE("RhoSymmetricLinearExtrapolationBoundaries preserves free physical-cel
     }
 
     {
-      auto tagged_stencil = make_tagged_stencil(u_stencil, dof_stencil, 21);
+      auto tagged_stencil = make_tagged_stencil<1>(u_stencil, dof_stencil, 21);
       auto conditioned_points = x_stencil;
       REQUIRE(model.apply_boundary_stencil(tagged_stencil, conditioned_points, Point<1>(10.0)));
       CHECK_THAT(derivative(tagged_stencil[3][0]), Catch::Matchers::WithinAbs(-1.0, tolerance));
@@ -755,6 +788,88 @@ TEST_CASE("OriginOddLinearExtrapolationBoundaries applies the paper-style two-gh
   }
 }
 
+TEST_CASE("OriginOddLinearExtrapolationBoundaries applies paper-style lower-axis stencils in 2D",
+          "[Model][FV][Boundaries][2d]")
+{
+  using namespace DiFfRG;
+  using namespace def::BoundaryStencilIndex;
+
+  DummyModelOriginOddLinearExtrapolation model;
+
+  // The five named stencil slots form a 1D line along the active boundary normal,
+  // embedded in 2D. For lower-x, y is fixed; for lower-y, x is fixed. The lower
+  // ghost coordinates start as placeholders and must be overwritten by the helper.
+  SECTION("lower-x boundary zeroes the normal component and mirrors the tangential component evenly")
+  {
+    def::BoundaryStencilValues<2, double, 2> u_stencil{
+        {{{11.0, 21.0}}, {{12.0, 22.0}}, {{5.0, 7.0}}, {{2.0, 13.0}}, {{4.0, 17.0}}, {{0.0, 0.0}}, {{0.0, 0.0}}}};
+    def::BoundaryStencilPoints<2> x_stencil{{Point<2>(8.0, 8.0), Point<2>(9.0, 9.0), Point<2>(0.5, 3.0),
+                                             Point<2>(1.5, 3.0), Point<2>(2.5, 3.0), Point<2>(), Point<2>()}};
+
+    REQUIRE(model.apply_boundary_stencil(u_stencil, x_stencil, Point<2>(0.0, 3.0)));
+
+    CHECK_THAT(x_stencil[lower_inner][0], Catch::Matchers::WithinAbs(-0.5, tolerance));
+    CHECK_THAT(x_stencil[lower_outer][0], Catch::Matchers::WithinAbs(-1.5, tolerance));
+    CHECK_THAT(x_stencil[lower_inner][1], Catch::Matchers::WithinAbs(3.0, tolerance));
+    CHECK_THAT(x_stencil[lower_outer][1], Catch::Matchers::WithinAbs(3.0, tolerance));
+    CHECK_THAT(u_stencil[physical_cell][0], Catch::Matchers::WithinAbs(0.0, tolerance));
+    CHECK_THAT(u_stencil[lower_inner][0], Catch::Matchers::WithinAbs(-2.0, tolerance));
+    CHECK_THAT(u_stencil[lower_outer][0], Catch::Matchers::WithinAbs(-4.0, tolerance));
+    CHECK_THAT(u_stencil[physical_cell][1], Catch::Matchers::WithinAbs(7.0, tolerance));
+    CHECK_THAT(u_stencil[lower_inner][1], Catch::Matchers::WithinAbs(7.0, tolerance));
+    CHECK_THAT(u_stencil[lower_outer][1], Catch::Matchers::WithinAbs(13.0, tolerance));
+  }
+
+  SECTION("lower-y boundary zeroes the normal component and mirrors the tangential component evenly")
+  {
+    def::BoundaryStencilValues<2, double, 2> u_stencil{
+        {{{11.0, 21.0}}, {{12.0, 22.0}}, {{5.0, 7.0}}, {{2.0, 13.0}}, {{4.0, 17.0}}, {{0.0, 0.0}}, {{0.0, 0.0}}}};
+    def::BoundaryStencilPoints<2> x_stencil{{Point<2>(8.0, 8.0), Point<2>(9.0, 9.0), Point<2>(3.0, 0.5),
+                                             Point<2>(3.0, 1.5), Point<2>(3.0, 2.5), Point<2>(), Point<2>()}};
+
+    REQUIRE(model.apply_boundary_stencil(u_stencil, x_stencil, Point<2>(3.0, 0.0)));
+
+    CHECK_THAT(x_stencil[lower_inner][0], Catch::Matchers::WithinAbs(3.0, tolerance));
+    CHECK_THAT(x_stencil[lower_outer][0], Catch::Matchers::WithinAbs(3.0, tolerance));
+    CHECK_THAT(x_stencil[lower_inner][1], Catch::Matchers::WithinAbs(-0.5, tolerance));
+    CHECK_THAT(x_stencil[lower_outer][1], Catch::Matchers::WithinAbs(-1.5, tolerance));
+    CHECK_THAT(u_stencil[physical_cell][0], Catch::Matchers::WithinAbs(5.0, tolerance));
+    CHECK_THAT(u_stencil[lower_inner][0], Catch::Matchers::WithinAbs(5.0, tolerance));
+    CHECK_THAT(u_stencil[lower_outer][0], Catch::Matchers::WithinAbs(2.0, tolerance));
+    CHECK_THAT(u_stencil[physical_cell][1], Catch::Matchers::WithinAbs(0.0, tolerance));
+    CHECK_THAT(u_stencil[lower_inner][1], Catch::Matchers::WithinAbs(-13.0, tolerance));
+    CHECK_THAT(u_stencil[lower_outer][1], Catch::Matchers::WithinAbs(-17.0, tolerance));
+  }
+}
+
+TEST_CASE("OriginOddLinearExtrapolationBoundaries keeps affine upper-boundary fallback in 2D",
+          "[Model][FV][Boundaries][2d]")
+{
+  using namespace DiFfRG;
+  using namespace def::BoundaryStencilIndex;
+
+  DummyModelOriginOddLinearExtrapolation model;
+
+  // The five named stencil slots form a 1D line along the active boundary normal,
+  // embedded in 2D. At an upper-x boundary the upper slots are ghost positions,
+  // while the lower slots and physical cell are the interior data.
+  def::BoundaryStencilValues<2, double, 2> u_stencil{
+      {{{1.0, 3.0}}, {{4.0, 9.0}}, {{7.0, 15.0}}, {{17.0, 18.0}}, {{19.0, 20.0}}, {{0.0, 0.0}}, {{0.0, 0.0}}}};
+  def::BoundaryStencilPoints<2> x_stencil{{Point<2>(7.5, 2.0), Point<2>(8.5, 2.0), Point<2>(9.5, 2.0),
+                                           Point<2>(20.0, 21.0), Point<2>(21.0, 22.0), Point<2>(), Point<2>()}};
+
+  REQUIRE(model.apply_boundary_stencil(u_stencil, x_stencil, Point<2>(10.0, 2.0)));
+
+  CHECK_THAT(x_stencil[upper_inner][0], Catch::Matchers::WithinAbs(10.5, tolerance));
+  CHECK_THAT(x_stencil[upper_outer][0], Catch::Matchers::WithinAbs(11.5, tolerance));
+  CHECK_THAT(x_stencil[upper_inner][1], Catch::Matchers::WithinAbs(2.0, tolerance));
+  CHECK_THAT(x_stencil[upper_outer][1], Catch::Matchers::WithinAbs(2.0, tolerance));
+  CHECK_THAT(u_stencil[upper_inner][0], Catch::Matchers::WithinAbs(10.0, tolerance));
+  CHECK_THAT(u_stencil[upper_outer][0], Catch::Matchers::WithinAbs(13.0, tolerance));
+  CHECK_THAT(u_stencil[upper_inner][1], Catch::Matchers::WithinAbs(21.0, tolerance));
+  CHECK_THAT(u_stencil[upper_outer][1], Catch::Matchers::WithinAbs(27.0, tolerance));
+}
+
 	TEST_CASE("OriginOddLinearExtrapolationBoundaries preserves stencil derivatives under AD conditioning",
 	          "[Model][FV][Boundaries]")
 {
@@ -770,7 +885,7 @@ TEST_CASE("OriginOddLinearExtrapolationBoundaries applies the paper-style two-gh
         {{{numbers::invalid_dof_index}}, {{numbers::invalid_dof_index}}, {{10}}, {{11}}, {{12}}}};
 
     {
-      auto tagged_stencil = make_tagged_stencil(u_stencil, dof_stencil, 11);
+      auto tagged_stencil = make_tagged_stencil<1>(u_stencil, dof_stencil, 11);
       auto conditioned_points = x_stencil;
       REQUIRE(model.apply_boundary_stencil(tagged_stencil, conditioned_points, Point<1>(0.0)));
       CHECK_THAT(derivative(tagged_stencil[1][0]), Catch::Matchers::WithinAbs(-1.0, tolerance));
@@ -779,7 +894,7 @@ TEST_CASE("OriginOddLinearExtrapolationBoundaries applies the paper-style two-gh
     }
 
     {
-      auto tagged_stencil = make_tagged_stencil(u_stencil, dof_stencil, 12);
+      auto tagged_stencil = make_tagged_stencil<1>(u_stencil, dof_stencil, 12);
       auto conditioned_points = x_stencil;
       REQUIRE(model.apply_boundary_stencil(tagged_stencil, conditioned_points, Point<1>(0.0)));
       CHECK_THAT(derivative(tagged_stencil[1][0]), Catch::Matchers::WithinAbs(0.0, tolerance));
@@ -788,7 +903,7 @@ TEST_CASE("OriginOddLinearExtrapolationBoundaries applies the paper-style two-gh
     }
 
     {
-      auto tagged_stencil = make_tagged_stencil(u_stencil, dof_stencil, 10);
+      auto tagged_stencil = make_tagged_stencil<1>(u_stencil, dof_stencil, 10);
       auto conditioned_points = x_stencil;
       REQUIRE(model.apply_boundary_stencil(tagged_stencil, conditioned_points, Point<1>(0.0)));
       CHECK_THAT(derivative(tagged_stencil[2][0]), Catch::Matchers::WithinAbs(0.0, tolerance));
@@ -803,7 +918,7 @@ TEST_CASE("OriginOddLinearExtrapolationBoundaries applies the paper-style two-gh
         {{{20}}, {{21}}, {{22}}, {{numbers::invalid_dof_index}}, {{numbers::invalid_dof_index}}}};
 
     {
-      auto tagged_stencil = make_tagged_stencil(u_stencil, dof_stencil, 22);
+      auto tagged_stencil = make_tagged_stencil<1>(u_stencil, dof_stencil, 22);
       auto conditioned_points = x_stencil;
       REQUIRE(model.apply_boundary_stencil(tagged_stencil, conditioned_points, Point<1>(10.0)));
       CHECK_THAT(derivative(tagged_stencil[3][0]), Catch::Matchers::WithinAbs(2.0, tolerance));
@@ -811,7 +926,7 @@ TEST_CASE("OriginOddLinearExtrapolationBoundaries applies the paper-style two-gh
     }
 
     {
-      auto tagged_stencil = make_tagged_stencil(u_stencil, dof_stencil, 21);
+      auto tagged_stencil = make_tagged_stencil<1>(u_stencil, dof_stencil, 21);
       auto conditioned_points = x_stencil;
       REQUIRE(model.apply_boundary_stencil(tagged_stencil, conditioned_points, Point<1>(10.0)));
       CHECK_THAT(derivative(tagged_stencil[3][0]), Catch::Matchers::WithinAbs(-1.0, tolerance));
@@ -819,6 +934,117 @@ TEST_CASE("OriginOddLinearExtrapolationBoundaries applies the paper-style two-gh
     }
 	  }
 	}
+
+TEST_CASE("OriginOddLinearExtrapolationBoundaries preserves lower-axis 2D derivatives under AD conditioning",
+          "[Model][FV][Boundaries][2d]")
+{
+  using namespace DiFfRG;
+  using namespace def::BoundaryStencilIndex;
+
+  DummyModelOriginOddLinearExtrapolation model;
+
+  def::BoundaryStencilValues<2, double, 2> u_stencil{
+      {{{11.0, 21.0}}, {{12.0, 22.0}}, {{5.0, 7.0}}, {{2.0, 13.0}}, {{4.0, 17.0}}, {{0.0, 0.0}}, {{0.0, 0.0}}}};
+  const std::array<std::array<types::global_dof_index, 2>, 7> dof_stencil{
+      {{{numbers::invalid_dof_index, numbers::invalid_dof_index}},
+       {{numbers::invalid_dof_index, numbers::invalid_dof_index}},
+       {{20, 21}},
+       {{22, 23}},
+       {{24, 25}},
+       {{numbers::invalid_dof_index, numbers::invalid_dof_index}},
+       {{numbers::invalid_dof_index, numbers::invalid_dof_index}}}};
+
+  const auto check_lower_axis_derivatives = [&](const char *axis_name, const def::BoundaryStencilPoints<2> &x_stencil,
+                                                const Point<2> &x_face, const unsigned int normal_component,
+                                                const unsigned int tangential_component) {
+    INFO(axis_name);
+
+    const auto condition_for_dof = [&](const types::global_dof_index dof_j) {
+      auto tagged_stencil = make_tagged_stencil<2>(u_stencil, dof_stencil, dof_j);
+      auto conditioned_points = x_stencil;
+      REQUIRE(model.apply_boundary_stencil(tagged_stencil, conditioned_points, x_face));
+      return tagged_stencil;
+    };
+
+    {
+      const auto tagged_stencil = condition_for_dof(dof_stencil[upper_inner][normal_component]);
+      CHECK_THAT(derivative(tagged_stencil[lower_inner][normal_component]),
+                 Catch::Matchers::WithinAbs(-1.0, tolerance));
+      CHECK_THAT(derivative(tagged_stencil[lower_outer][normal_component]),
+                 Catch::Matchers::WithinAbs(0.0, tolerance));
+      CHECK_THAT(derivative(tagged_stencil[physical_cell][normal_component]),
+                 Catch::Matchers::WithinAbs(0.0, tolerance));
+      CHECK_THAT(derivative(tagged_stencil[lower_inner][tangential_component]),
+                 Catch::Matchers::WithinAbs(0.0, tolerance));
+    }
+
+    {
+      const auto tagged_stencil = condition_for_dof(dof_stencil[upper_outer][normal_component]);
+      CHECK_THAT(derivative(tagged_stencil[lower_inner][normal_component]),
+                 Catch::Matchers::WithinAbs(0.0, tolerance));
+      CHECK_THAT(derivative(tagged_stencil[lower_outer][normal_component]),
+                 Catch::Matchers::WithinAbs(-1.0, tolerance));
+      CHECK_THAT(derivative(tagged_stencil[physical_cell][normal_component]),
+                 Catch::Matchers::WithinAbs(0.0, tolerance));
+      CHECK_THAT(derivative(tagged_stencil[lower_outer][tangential_component]),
+                 Catch::Matchers::WithinAbs(0.0, tolerance));
+    }
+
+    {
+      const auto tagged_stencil = condition_for_dof(dof_stencil[physical_cell][normal_component]);
+      CHECK_THAT(derivative(tagged_stencil[physical_cell][normal_component]),
+                 Catch::Matchers::WithinAbs(0.0, tolerance));
+      CHECK_THAT(derivative(tagged_stencil[lower_inner][normal_component]),
+                 Catch::Matchers::WithinAbs(0.0, tolerance));
+      CHECK_THAT(derivative(tagged_stencil[lower_outer][normal_component]),
+                 Catch::Matchers::WithinAbs(0.0, tolerance));
+    }
+
+    {
+      const auto tagged_stencil = condition_for_dof(dof_stencil[physical_cell][tangential_component]);
+      CHECK_THAT(derivative(tagged_stencil[physical_cell][tangential_component]),
+                 Catch::Matchers::WithinAbs(1.0, tolerance));
+      CHECK_THAT(derivative(tagged_stencil[lower_inner][tangential_component]),
+                 Catch::Matchers::WithinAbs(1.0, tolerance));
+      CHECK_THAT(derivative(tagged_stencil[lower_outer][tangential_component]),
+                 Catch::Matchers::WithinAbs(0.0, tolerance));
+      CHECK_THAT(derivative(tagged_stencil[lower_inner][normal_component]),
+                 Catch::Matchers::WithinAbs(0.0, tolerance));
+    }
+
+    {
+      const auto tagged_stencil = condition_for_dof(dof_stencil[upper_inner][tangential_component]);
+      CHECK_THAT(derivative(tagged_stencil[physical_cell][tangential_component]),
+                 Catch::Matchers::WithinAbs(0.0, tolerance));
+      CHECK_THAT(derivative(tagged_stencil[lower_inner][tangential_component]),
+                 Catch::Matchers::WithinAbs(0.0, tolerance));
+      CHECK_THAT(derivative(tagged_stencil[lower_outer][tangential_component]),
+                 Catch::Matchers::WithinAbs(1.0, tolerance));
+      CHECK_THAT(derivative(tagged_stencil[lower_outer][normal_component]),
+                 Catch::Matchers::WithinAbs(0.0, tolerance));
+    }
+
+    {
+      const auto tagged_stencil = condition_for_dof(dof_stencil[upper_outer][tangential_component]);
+      CHECK_THAT(derivative(tagged_stencil[physical_cell][tangential_component]),
+                 Catch::Matchers::WithinAbs(0.0, tolerance));
+      CHECK_THAT(derivative(tagged_stencil[lower_inner][tangential_component]),
+                 Catch::Matchers::WithinAbs(0.0, tolerance));
+      CHECK_THAT(derivative(tagged_stencil[lower_outer][tangential_component]),
+                 Catch::Matchers::WithinAbs(0.0, tolerance));
+    }
+  };
+
+  const def::BoundaryStencilPoints<2> lower_x_stencil{{Point<2>(8.0, 8.0), Point<2>(9.0, 9.0),
+                                                       Point<2>(0.5, 3.0), Point<2>(1.5, 3.0),
+                                                       Point<2>(2.5, 3.0), Point<2>(), Point<2>()}};
+  const def::BoundaryStencilPoints<2> lower_y_stencil{{Point<2>(8.0, 8.0), Point<2>(9.0, 9.0),
+                                                       Point<2>(3.0, 0.5), Point<2>(3.0, 1.5),
+                                                       Point<2>(3.0, 2.5), Point<2>(), Point<2>()}};
+
+  check_lower_axis_derivatives("lower-x", lower_x_stencil, Point<2>(0.0, 3.0), 0, 1);
+  check_lower_axis_derivatives("lower-y", lower_y_stencil, Point<2>(3.0, 0.0), 1, 0);
+}
 
 	TEST_CASE("OriginShiftedOddLinearExtrapolationBoundaries applies a shifted origin stencil",
 	          "[Model][FV][Boundaries]")
@@ -871,7 +1097,7 @@ TEST_CASE("OriginOddLinearExtrapolationBoundaries applies the paper-style two-gh
 	        {{{numbers::invalid_dof_index}}, {{numbers::invalid_dof_index}}, {{10}}, {{11}}, {{12}}}};
 
 	    {
-	      auto tagged_stencil = make_tagged_stencil(u_stencil, dof_stencil, 11);
+	      auto tagged_stencil = make_tagged_stencil<1>(u_stencil, dof_stencil, 11);
 	      auto conditioned_points = x_stencil;
 	      REQUIRE(model.apply_boundary_stencil(tagged_stencil, conditioned_points, Point<1>(0.0)));
 	      CHECK_THAT(derivative(tagged_stencil[1][0]), Catch::Matchers::WithinAbs(-1.0, tolerance));
@@ -880,7 +1106,7 @@ TEST_CASE("OriginOddLinearExtrapolationBoundaries applies the paper-style two-gh
 	    }
 
 	    {
-	      auto tagged_stencil = make_tagged_stencil(u_stencil, dof_stencil, 12);
+	      auto tagged_stencil = make_tagged_stencil<1>(u_stencil, dof_stencil, 12);
 	      auto conditioned_points = x_stencil;
 	      REQUIRE(model.apply_boundary_stencil(tagged_stencil, conditioned_points, Point<1>(0.0)));
 	      CHECK_THAT(derivative(tagged_stencil[1][0]), Catch::Matchers::WithinAbs(0.0, tolerance));
@@ -889,7 +1115,7 @@ TEST_CASE("OriginOddLinearExtrapolationBoundaries applies the paper-style two-gh
 	    }
 
 	    {
-	      auto tagged_stencil = make_tagged_stencil(u_stencil, dof_stencil, 10);
+	      auto tagged_stencil = make_tagged_stencil<1>(u_stencil, dof_stencil, 10);
 	      auto conditioned_points = x_stencil;
 	      REQUIRE(model.apply_boundary_stencil(tagged_stencil, conditioned_points, Point<1>(0.0)));
 	      CHECK_THAT(derivative(tagged_stencil[2][0]), Catch::Matchers::WithinAbs(0.0, tolerance));
