@@ -152,15 +152,43 @@ namespace DiFfRG
                                   const std::array<dealii::Point<dim>, n_faces> &x_n,
                                   const std::array<std::array<ADNumberType, n_components>, n_faces> &u_n)
       {
-        // Evaluate gradient reconstruction with AD types
-        const auto u_grad_AD = TVDReconstructor<dim, Limiter, ADNumberType>::template compute_gradient<n_components>(
-            center_pos, u_center, x_n, u_n);
+        double scale = 1.0;
+        for (size_t c = 0; c < n_components; ++c)
+          if (std::abs(autodiff::derivative(u_center[c])) > 1.0e-14)
+            scale = std::max(scale, std::abs(static_cast<NumberType>(u_center[c].val())));
+        for (size_t face = 0; face < n_faces; ++face)
+          for (size_t c = 0; c < n_components; ++c)
+            if (std::abs(autodiff::derivative(u_n[face][c])) > 1.0e-14)
+              scale = std::max(scale, std::abs(static_cast<NumberType>(u_n[face][c].val())));
 
-        // Extract per-component gradient derivatives
+        const NumberType eps = NumberType(1.0e-8) * scale;
+        std::array<NumberType, n_components> u_center_plus{}, u_center_minus{};
+        std::array<std::array<NumberType, n_components>, n_faces> u_n_plus{}, u_n_minus{};
+
+        for (size_t c = 0; c < n_components; ++c) {
+          const NumberType value = static_cast<NumberType>(u_center[c].val());
+          const NumberType direction = autodiff::derivative(u_center[c]);
+          u_center_plus[c] = value + eps * direction;
+          u_center_minus[c] = value - eps * direction;
+        }
+        for (size_t face = 0; face < n_faces; ++face) {
+          for (size_t c = 0; c < n_components; ++c) {
+            const NumberType value = static_cast<NumberType>(u_n[face][c].val());
+            const NumberType direction = autodiff::derivative(u_n[face][c]);
+            u_n_plus[face][c] = value + eps * direction;
+            u_n_minus[face][c] = value - eps * direction;
+          }
+        }
+
+        const auto u_grad_plus =
+            compute_gradient<n_components>(center_pos, u_center_plus, x_n, u_n_plus);
+        const auto u_grad_minus =
+            compute_gradient<n_components>(center_pos, u_center_minus, x_n, u_n_minus);
+
         GradientType<dim, NumberType, n_components> result{};
         for (size_t c = 0; c < n_components; ++c)
           for (int d = 0; d < dim; ++d)
-            result[c][d] = autodiff::derivative(u_grad_AD[c][d]);
+            result[c][d] = (u_grad_plus[c][d] - u_grad_minus[c][d]) / (NumberType(2.0) * eps);
 
         return result;
       }
@@ -172,14 +200,43 @@ namespace DiFfRG
                                            const std::array<dealii::Point<dim>, n_faces> &x_n,
                                            const std::array<std::array<ADNumberType, n_components>, n_faces> &u_n)
       {
-        const auto u_grad_AD =
-            TVDReconstructor<dim, Limiter, ADNumberType>::template compute_gradient_at_point<n_components>(
-                center_pos, x, u_center, x_n, u_n);
+        double scale = 1.0;
+        for (size_t c = 0; c < n_components; ++c)
+          if (std::abs(autodiff::derivative(u_center[c])) > 1.0e-14)
+            scale = std::max(scale, std::abs(static_cast<NumberType>(u_center[c].val())));
+        for (size_t face = 0; face < n_faces; ++face)
+          for (size_t c = 0; c < n_components; ++c)
+            if (std::abs(autodiff::derivative(u_n[face][c])) > 1.0e-14)
+              scale = std::max(scale, std::abs(static_cast<NumberType>(u_n[face][c].val())));
+
+        const NumberType eps = NumberType(1.0e-8) * scale;
+        std::array<NumberType, n_components> u_center_plus{}, u_center_minus{};
+        std::array<std::array<NumberType, n_components>, n_faces> u_n_plus{}, u_n_minus{};
+
+        for (size_t c = 0; c < n_components; ++c) {
+          const NumberType value = static_cast<NumberType>(u_center[c].val());
+          const NumberType direction = autodiff::derivative(u_center[c]);
+          u_center_plus[c] = value + eps * direction;
+          u_center_minus[c] = value - eps * direction;
+        }
+        for (size_t face = 0; face < n_faces; ++face) {
+          for (size_t c = 0; c < n_components; ++c) {
+            const NumberType value = static_cast<NumberType>(u_n[face][c].val());
+            const NumberType direction = autodiff::derivative(u_n[face][c]);
+            u_n_plus[face][c] = value + eps * direction;
+            u_n_minus[face][c] = value - eps * direction;
+          }
+        }
+
+        const auto u_grad_plus =
+            compute_gradient_at_point<n_components>(center_pos, x, u_center_plus, x_n, u_n_plus);
+        const auto u_grad_minus =
+            compute_gradient_at_point<n_components>(center_pos, x, u_center_minus, x_n, u_n_minus);
 
         GradientType<dim, NumberType, n_components> result{};
         for (size_t c = 0; c < n_components; ++c)
           for (int d = 0; d < dim; ++d)
-            result[c][d] = autodiff::derivative(u_grad_AD[c][d]);
+            result[c][d] = (u_grad_plus[c][d] - u_grad_minus[c][d]) / (NumberType(2.0) * eps);
 
         return result;
       }
