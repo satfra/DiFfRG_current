@@ -227,6 +227,135 @@ public:
   mutable bool flux_saw_hook_state = false;
 };
 
+class NamedSlotAffineBoundary2DModel
+    : public DiFfRG::def::AbstractModel<NamedSlotAffineBoundary2DModel, Components>,
+      public DiFfRG::def::Time,
+      public DiFfRG::def::LLFFlux<NamedSlotAffineBoundary2DModel>,
+      public DiFfRG::def::FlowBoundaries<NamedSlotAffineBoundary2DModel>,
+      public DiFfRG::def::FVDefaultBoundaries<NamedSlotAffineBoundary2DModel>,
+      public DiFfRG::def::AD<NamedSlotAffineBoundary2DModel>
+{
+public:
+  static constexpr double offset = 1.25;
+  static constexpr double x_slope = 0.35;
+  static constexpr double y_slope = -0.2;
+
+  template <typename Vector> void initial_condition(const Point<2> &pos, Vector &values) const
+  {
+    values[0] = solution(pos)[0];
+  }
+
+  std::array<double, 1> solution(const Point<2> &pos) const
+  {
+    return {offset + x_slope * pos[0] + y_slope * pos[1]};
+  }
+
+  template <typename NT, typename Solution>
+  void KurganovTadmor_advection_flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/,
+                                     const Solution & /*sol*/) const
+  {
+    F_i[0] = Tensor<1, 2, NT>();
+  }
+
+  template <typename NT, typename Solution>
+  void flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/, const Solution & /*sol*/) const
+  {
+    F_i[0] = Tensor<1, 2, NT>();
+  }
+
+  template <typename NT, typename Solution>
+  void source(std::array<NT, 1> &s_i, const Point<2> & /*pos*/, const Solution & /*sol*/) const
+  {
+    s_i[0] = NT(0.0);
+  }
+};
+
+class NonAffineTangentialGhostBoundary2DModel
+    : public DiFfRG::def::AbstractModel<NonAffineTangentialGhostBoundary2DModel, Components>,
+      public DiFfRG::def::Time,
+      public DiFfRG::def::LLFFlux<NonAffineTangentialGhostBoundary2DModel>,
+      public DiFfRG::def::FlowBoundaries<NonAffineTangentialGhostBoundary2DModel>,
+      public DiFfRG::def::AD<NonAffineTangentialGhostBoundary2DModel>
+{
+public:
+  static constexpr double offset = 1.0;
+  static constexpr double x_slope = 0.5;
+  static constexpr double y_slope = -0.25;
+  static constexpr double lower_shift = 3.0;
+  static constexpr double upper_shift = -2.0;
+  static constexpr double tangential_shift_slope = 0.75;
+
+  template <typename Vector> void initial_condition(const Point<2> &pos, Vector &values) const
+  {
+    values[0] = solution(pos)[0];
+  }
+
+  std::array<double, 1> solution(const Point<2> &pos) const
+  {
+    return {offset + x_slope * pos[0] + y_slope * pos[1]};
+  }
+
+  template <typename NT, typename Solution>
+  void KurganovTadmor_advection_flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/,
+                                     const Solution & /*sol*/) const
+  {
+    F_i[0] = Tensor<1, 2, NT>();
+  }
+
+  template <typename NT, typename Solution>
+  void flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/, const Solution & /*sol*/) const
+  {
+    F_i[0] = Tensor<1, 2, NT>();
+  }
+
+  template <typename NT, typename Solution>
+  void source(std::array<NT, 1> &s_i, const Point<2> & /*pos*/, const Solution & /*sol*/) const
+  {
+    s_i[0] = NT(0.0);
+  }
+
+  template <int mdim, typename NT, size_t n_components>
+  bool apply_boundary_stencil(DiFfRG::def::BoundaryStencilValues<mdim, NT, n_components> &u_stencil,
+                              DiFfRG::def::BoundaryStencilPoints<mdim> &x_stencil,
+                              const Point<mdim> &x_face) const
+  {
+    static_assert(mdim == 2);
+    static_assert(n_components == 1);
+    using namespace DiFfRG::def::BoundaryStencilIndex;
+
+    unsigned int axis = 0;
+    const double distance_0 = std::abs(x_face[0] - x_stencil[physical_cell][0]);
+    const double distance_1 = std::abs(x_face[1] - x_stencil[physical_cell][1]);
+    if (distance_1 > distance_0) axis = 1;
+
+    const bool lower_boundary = x_face[axis] <= x_stencil[physical_cell][axis];
+    const double delta = lower_boundary ? (x_stencil[upper_inner][axis] - x_stencil[physical_cell][axis])
+                                        : (x_stencil[physical_cell][axis] - x_stencil[lower_inner][axis]);
+    const unsigned int tangential_axis = 1U - axis;
+    const NT shift = (lower_boundary ? NT(lower_shift) : NT(upper_shift)) +
+                     NT(tangential_shift_slope) * NT(x_stencil[physical_cell][tangential_axis]);
+    if (lower_boundary) {
+      x_stencil[lower_inner] = x_stencil[physical_cell];
+      x_stencil[lower_outer] = x_stencil[physical_cell];
+      x_stencil[lower_inner][axis] = x_stencil[physical_cell][axis] - delta;
+      x_stencil[lower_outer][axis] = x_stencil[physical_cell][axis] - 2.0 * delta;
+      u_stencil[lower_inner][0] = NT(2.0) * u_stencil[physical_cell][0] - u_stencil[upper_inner][0] + shift;
+      u_stencil[lower_outer][0] =
+          NT(3.0) * u_stencil[physical_cell][0] - NT(2.0) * u_stencil[upper_inner][0] + NT(2.0) * shift;
+      return true;
+    }
+
+    x_stencil[upper_inner] = x_stencil[physical_cell];
+    x_stencil[upper_outer] = x_stencil[physical_cell];
+    x_stencil[upper_inner][axis] = x_stencil[physical_cell][axis] + delta;
+    x_stencil[upper_outer][axis] = x_stencil[physical_cell][axis] + 2.0 * delta;
+    u_stencil[upper_inner][0] = NT(2.0) * u_stencil[physical_cell][0] - u_stencil[lower_inner][0] + shift;
+    u_stencil[upper_outer][0] =
+        NT(3.0) * u_stencil[physical_cell][0] - NT(2.0) * u_stencil[lower_inner][0] + NT(2.0) * shift;
+    return true;
+  }
+};
+
 static DiFfRG::JSONValue make_fv_reconstruction_diagnostics_json()
 {
   return DiFfRG::json::value(
@@ -332,7 +461,7 @@ static void check_face_reconstruction_state_reversed(const State &left, const St
   }
 }
 
-static DiFfRG::JSONValue make_2d_kt_json()
+static DiFfRG::JSONValue make_kt_boundary_json()
 {
   return DiFfRG::json::value(
       {{"physical", {{"Lambda", 1.}}},
@@ -770,7 +899,7 @@ TEST_CASE("KT solution reconstruction cache matches direct boundary reconstructi
   const auto boundary_stencil =
       assembler.template build_boundary_stencil_from_cache<NumberType>(cell, face_index, solution);
   const auto expected = KT::internal::compute_boundary_face_reconstruction_state<typename Assembler::Reconstructor>(
-      boundary_stencil, x_q, model);
+      boundary_stencil, cache.cell_stencils[cell->active_cell_index()], x_q, model);
 
   check_face_reconstruction_state_1d(cached, expected);
 }
@@ -821,7 +950,7 @@ TEST_CASE("KT 2D topology cache stores four face neighbours for an interior cell
 
   ensure_logger();
 
-  auto json = make_2d_kt_json();
+  auto json = make_kt_boundary_json();
   DiFfRG::Testing::PhysicalParameters prm;
   prm.initial_x0[0] = 1.0;
   prm.initial_x1[0] = 0.25;
@@ -862,7 +991,7 @@ TEST_CASE("KT 2D boundary stencil cache stores two interior cells behind boundar
 
   ensure_logger();
 
-  auto json = make_2d_kt_json();
+  auto json = make_kt_boundary_json();
   DiFfRG::Testing::PhysicalParameters prm;
   prm.initial_x0[0] = 1.0;
   prm.initial_x1[0] = 0.25;
@@ -918,7 +1047,7 @@ TEST_CASE("KT 2D solution reconstruction cache recomputes values per solution", 
 
   ensure_logger();
 
-  auto json = make_2d_kt_json();
+  auto json = make_kt_boundary_json();
   DiFfRG::Testing::PhysicalParameters prm;
   prm.initial_x0[0] = 1.0;
   prm.initial_x1[0] = 0.25;
@@ -972,7 +1101,7 @@ TEST_CASE("KT 2D solution reconstruction cache matches direct interior reconstru
 
   ensure_logger();
 
-  auto json = make_2d_kt_json();
+  auto json = make_kt_boundary_json();
   DiFfRG::Testing::PhysicalParameters prm;
   prm.initial_x0[0] = 1.0;
   prm.initial_x1[0] = 0.25;
@@ -1020,7 +1149,7 @@ TEST_CASE("KT 2D boundary reconstruction cache reconstructs affine ghost side", 
 
   ensure_logger();
 
-  auto json = make_2d_kt_json();
+  auto json = make_kt_boundary_json();
   DiFfRG::Testing::PhysicalParameters prm;
   prm.initial_x0[0] = 1.0;
   prm.initial_x1[0] = 0.25;
@@ -1067,6 +1196,94 @@ TEST_CASE("KT 2D boundary reconstruction cache reconstructs affine ghost side", 
   check_boundary_face(corner_cell, 2U);
 }
 
+TEST_CASE("KT 2D boundary reconstruction cache derives tangential ghost side from named slots",
+          "[FV][KT][cache][2d]")
+{
+  using Model = NamedSlotAffineBoundary2DModel;
+  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<2>>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  auto json = make_kt_boundary_json();
+  Model model;
+  DiFfRG::RectangularMesh<2> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  VectorType solution(discretization.get_dof_handler().n_dofs());
+  const auto &support_points = discretization.get_support_points();
+  REQUIRE(support_points.size() == solution.size());
+  for (unsigned int i = 0; i < solution.size(); ++i)
+    solution[i] = model.solution(support_points[i])[0];
+
+  const auto cache =
+      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution);
+
+  for (const auto face_index : {0U, 1U, 2U, 3U}) {
+    CAPTURE(face_index);
+    const auto cell = find_2d_non_corner_boundary_cell(discretization.get_dof_handler(), face_index);
+    REQUIRE(cell != discretization.get_dof_handler().end());
+    REQUIRE(cell->at_boundary(face_index));
+
+    const auto x_q = cell->face(face_index)->center();
+    const auto &cached = assembler.get_cached_face_reconstruction(cache, cell, face_index);
+    constexpr double tolerance = 1.0e-12;
+
+    CHECK(cached.u_minus[0] == Catch::Approx(model.solution(x_q)[0]).margin(tolerance));
+    CHECK(cached.u_plus[0] == Catch::Approx(model.solution(x_q)[0]).margin(tolerance));
+    CHECK(cached.face_grad_minus[0][0] == Catch::Approx(Model::x_slope).margin(tolerance));
+    CHECK(cached.face_grad_minus[0][1] == Catch::Approx(Model::y_slope).margin(tolerance));
+    CHECK(cached.face_grad_plus[0][0] == Catch::Approx(Model::x_slope).margin(tolerance));
+    CHECK(cached.face_grad_plus[0][1] == Catch::Approx(Model::y_slope).margin(tolerance));
+  }
+}
+
+TEST_CASE("KT 2D boundary reconstruction cache uses model-owned tangential ghost neighbours",
+          "[FV][KT][cache][2d]")
+{
+  using Model = NonAffineTangentialGhostBoundary2DModel;
+  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<2>>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  auto json = make_kt_boundary_json();
+  Model model;
+  DiFfRG::RectangularMesh<2> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  VectorType solution(discretization.get_dof_handler().n_dofs());
+  const auto &support_points = discretization.get_support_points();
+  REQUIRE(support_points.size() == solution.size());
+  for (unsigned int i = 0; i < solution.size(); ++i)
+    solution[i] = model.solution(support_points[i])[0];
+
+  const auto cache =
+      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution);
+
+  for (const auto face_index : {0U, 1U, 2U, 3U}) {
+    CAPTURE(face_index);
+    const auto cell = find_2d_non_corner_boundary_cell(discretization.get_dof_handler(), face_index);
+    REQUIRE(cell != discretization.get_dof_handler().end());
+    REQUIRE(cell->at_boundary(face_index));
+
+    const auto &cached = assembler.get_cached_face_reconstruction(cache, cell, face_index);
+    const unsigned int normal_axis = face_index / 2;
+    const unsigned int tangential_axis = 1U - normal_axis;
+    const double base_tangential_slope =
+        tangential_axis == 0 ? Model::x_slope : Model::y_slope;
+    constexpr double tolerance = 1.0e-12;
+
+    CHECK(cached.face_grad_minus[0][tangential_axis] == Catch::Approx(base_tangential_slope).margin(tolerance));
+    CHECK(cached.face_grad_plus[0][tangential_axis] ==
+          Catch::Approx(base_tangential_slope + Model::tangential_shift_slope).margin(tolerance));
+  }
+}
+
 TEST_CASE("KT 2D solution reconstruction cache stores reversed interior face orientations", "[FV][KT][cache][2d]")
 {
   using Model = DiFfRG::Testing::ModelBurgers2DKT;
@@ -1076,7 +1293,7 @@ TEST_CASE("KT 2D solution reconstruction cache stores reversed interior face ori
 
   ensure_logger();
 
-  auto json = make_2d_kt_json();
+  auto json = make_kt_boundary_json();
   DiFfRG::Testing::PhysicalParameters prm;
   prm.initial_x0[0] = 1.0;
   prm.initial_x1[0] = 0.25;

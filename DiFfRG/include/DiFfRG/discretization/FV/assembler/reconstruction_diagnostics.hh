@@ -190,7 +190,7 @@ namespace diagnostics
                 assembler.template build_boundary_stencil_from_cache<NumberType>(cell.cell, face_no, solution);
             const auto reconstruction =
                 internal::compute_boundary_face_reconstruction_state<Reconstructor>(
-                    boundary_stencil, x_q, model);
+                    boundary_stencil, cell.stencil, x_q, model);
 
             if (face_no == 0) {
               const auto fluxes = compute_flux_values(reconstruction.u_minus, reconstruction.u_plus,

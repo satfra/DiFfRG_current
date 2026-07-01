@@ -507,7 +507,8 @@ namespace DiFfRG
         };
         struct CellTopologyCacheEntry {
           internal::CellStencilTopologyData<dim, n_components> stencil;
-          std::array<internal::BoundaryStencilTopologyData<dim, n_components>, n_faces> boundary_stencils{};
+          std::array<internal::BoundaryReconstructionStencilTopologyData<dim, n_components>, n_faces>
+              boundary_stencils{};
           std::array<FaceJacobianDependencyCacheEntry, n_faces> face_jacobian_dependencies{};
           std::vector<Point> quadrature_points;
           std::vector<NumberType> jxw;
@@ -628,9 +629,8 @@ namespace DiFfRG
           //   sparsity_pattern_jacobian.copy_from(dsp);
           // }
 
-          constexpr uint stencil = JacobianReconstructor::jacobian_stencil_radius;
-          build_sparsity(sparsity_pattern_jacobian, dof_handler, dof_handler, stencil, true);
           rebuild_cell_topology_cache();
+          build_cached_jacobian_sparsity(sparsity_pattern_jacobian);
 
           timings_reinit.push_back(timer.wall_time());
         }
@@ -947,23 +947,19 @@ namespace DiFfRG
             const auto &reconstruction = get_cached_face_reconstruction(reconstruction_cache, cell, face_no);
             const auto &cell_data = reconstruction_cache.cell_stencils[cell->active_cell_index()].cell;
 
-            if constexpr (dim == 1) {
-              const auto [F_plus, F_minus, a_half] =
-                  internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(reconstruction.u_plus, reconstruction.u_minus,
-                                                                          x_q, model);
-              const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, reconstruction.u_plus,
-                                                              reconstruction.u_minus);
-              const auto D = internal::compute_diffusion_flux(reconstruction.u_plus, reconstruction.u_minus,
-                                                              reconstruction.face_grad_plus,
-                                                              reconstruction.face_grad_minus, x_q, model);
+            const auto [F_plus, F_minus, a_half] =
+                internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(reconstruction.u_plus, reconstruction.u_minus,
+                                                                        x_q, model);
+            const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, reconstruction.u_plus,
+                                                            reconstruction.u_minus);
+            const auto D = internal::compute_diffusion_flux(reconstruction.u_plus, reconstruction.u_minus,
+                                                            reconstruction.face_grad_plus,
+                                                            reconstruction.face_grad_minus, x_q, model);
 
-              for (uint component_i = 0; component_i < n_components; ++component_i) {
-                copy_data_face.joint_dof_indices[component_i] = cell_data.dof_indices[component_i];
-                copy_data_face.advection(component_i) += JxW * scalar_product(H[component_i], n_bnd);
-                copy_data_face.diffusion(component_i) -= JxW * scalar_product(D[component_i], n_bnd);
-              }
-            } else {
-              AssertThrow(false, ExcMessage("KT boundary-face assembly currently requires one-dimensional boundary stencils."));
+            for (uint component_i = 0; component_i < n_components; ++component_i) {
+              copy_data_face.joint_dof_indices[component_i] = cell_data.dof_indices[component_i];
+              copy_data_face.advection(component_i) += JxW * scalar_product(H[component_i], n_bnd);
+              copy_data_face.diffusion(component_i) -= JxW * scalar_product(D[component_i], n_bnd);
             }
           };
 
@@ -1163,7 +1159,7 @@ namespace DiFfRG
         build_boundary_stencil_from_cache_impl(const Iterator &cell, const unsigned int boundary_face_no,
                                                const VectorType &solution_global) const
         {
-          const auto &topology = get_cell_topology(cell).boundary_stencils[boundary_face_no];
+          const auto &topology = get_cell_topology(cell).boundary_stencils[boundary_face_no].primary;
           return internal::fill_boundary_stencil_from_topology<BoundaryNumberType, boundary_dim, n_components>(
               topology, solution_global);
         }
@@ -1175,6 +1171,16 @@ namespace DiFfRG
         {
           return build_boundary_stencil_from_cache_impl<dim, BoundaryNumberType>(cell, boundary_face_no,
                                                                                  solution_global);
+        }
+
+        template <typename BoundaryNumberType>
+        internal::BoundaryReconstructionStencilData<dim, BoundaryNumberType, n_components>
+        build_boundary_reconstruction_stencil_from_cache(const Iterator &cell, const unsigned int boundary_face_no,
+                                                         const VectorType &solution_global) const
+        {
+          const auto &topology = get_cell_topology(cell).boundary_stencils[boundary_face_no];
+          return internal::fill_boundary_reconstruction_stencil_from_topology<BoundaryNumberType, dim, n_components>(
+              topology, solution_global);
         }
 
         void fill_cell_stencil(const Iterator &cell, const VectorType &solution_global, CellStencilData &stencil) const
@@ -1190,30 +1196,44 @@ namespace DiFfRG
             neighbor_u = {};
 
           for (const auto face_index : cell->face_indices()) {
-            if (cell->at_boundary(face_index)) {
-              if constexpr (dim == 1) {
-                auto boundary_stencil =
-                    build_boundary_stencil_from_cache<NumberType>(cell, face_index, solution_global);
-                const bool boundary_supported =
-                    model.apply_boundary_stencil(boundary_stencil.u, boundary_stencil.x,
-                                                 topology.face_centers[face_index]);
-                AssertThrow(
-                    boundary_supported,
-                    ExcMessage("KT boundary stencil was rejected while populating a boundary-adjacent cell stencil."));
-
-                stencil.neighbors.x[face_index] = boundary_stencil.x[boundary_stencil.ghost_center];
-                stencil.neighbors.u[face_index] = boundary_stencil.u[boundary_stencil.ghost_center];
-                stencil.neighbors.dof_indices[face_index] =
-                    boundary_stencil.dof_indices[boundary_stencil.ghost_center];
-              }
-              continue;
-            }
+            if (cell->at_boundary(face_index)) continue;
 
             for (unsigned int i = 0; i < n_components; ++i) {
               const auto dof = topology.neighbors.dof_indices[face_index][i];
               stencil.neighbors.u[face_index][i] = solution_global(dof);
             }
           }
+
+          for (const auto face_index : cell->face_indices()) {
+            if (!cell->at_boundary(face_index)) continue;
+
+            auto boundary_stencil =
+                build_boundary_stencil_from_cache<NumberType>(cell, face_index, solution_global);
+            internal::populate_boundary_neighbor_from_model_stencil(boundary_stencil, stencil, face_index,
+                                                                    topology.face_centers[face_index], model);
+          }
+        }
+
+        CellStencilDataT<autodiff::Real<1, NumberType>>
+        tag_cell_stencil_dofs_from_cache(const Iterator &cell, const CellStencilData &cell_stencil,
+                                         const VectorType &solution_global,
+                                         const types::global_dof_index dof_j) const
+        {
+          auto tagged_stencil =
+              internal::tag_cell_stencil_dofs<dim, NumberType, n_components>(cell_stencil, dof_j);
+
+          for (const auto face_index : cell->face_indices()) {
+            if (!cell->at_boundary(face_index)) continue;
+
+            const auto boundary_stencil =
+                build_boundary_stencil_from_cache<NumberType>(cell, face_index, solution_global);
+            auto tagged_boundary_stencil =
+                internal::tag_boundary_stencil_dofs<dim, NumberType, n_components>(boundary_stencil, dof_j);
+            internal::populate_boundary_neighbor_from_model_stencil(
+                tagged_boundary_stencil, tagged_stencil, face_index, cell_stencil.face_centers[face_index], model);
+          }
+
+          return tagged_stencil;
         }
 
         unsigned int find_neighbor_face(const Iterator &cell, const Iterator &neighbor) const
@@ -1246,14 +1266,12 @@ namespace DiFfRG
 
               const auto x_q = cell->face(face_index)->center();
               if (cell->at_boundary(face_index)) {
-                if constexpr (dim == 1) {
-                  auto boundary_stencil =
-                      build_boundary_stencil_from_cache<NumberType>(cell, face_index, solution_global);
-                  cache.face_reconstructions[cell_index][face_index] =
-                      internal::compute_boundary_face_reconstruction_state<ActiveReconstructor>(
-                          boundary_stencil, x_q, model);
-                  cache.face_reconstruction_valid[cell_index][face_index] = true;
-                }
+                auto boundary_stencil =
+                    build_boundary_reconstruction_stencil_from_cache<NumberType>(cell, face_index, solution_global);
+                cache.face_reconstructions[cell_index][face_index] =
+                    internal::compute_boundary_face_reconstruction_state<ActiveReconstructor>(
+                        boundary_stencil, cache.cell_stencils[cell_index], x_q, model);
+                cache.face_reconstruction_valid[cell_index][face_index] = true;
                 continue;
               }
 
@@ -1299,9 +1317,12 @@ namespace DiFfRG
         auto compute_boundary_face_reconstruction_from_cache(const Iterator &cell, const unsigned int face_no,
                                                              const VectorType &solution_global, const Point &x_q) const
         {
-          auto boundary_stencil = build_boundary_stencil_from_cache<NumberType>(cell, face_no, solution_global);
+          auto boundary_stencil = build_boundary_reconstruction_stencil_from_cache<NumberType>(cell, face_no,
+                                                                                              solution_global);
+          CellStencilData cell_stencil;
+          fill_cell_stencil(cell, solution_global, cell_stencil);
           return internal::compute_boundary_face_reconstruction_state<Reconstructor>(
-              boundary_stencil, x_q, model);
+              boundary_stencil, cell_stencil, x_q, model);
         }
 
         auto compute_interior_jacobian_face_reconstruction_from_cache(const Iterator &cell, const Iterator &ncell,
@@ -1319,9 +1340,12 @@ namespace DiFfRG
                                                                       const VectorType &solution_global,
                                                                       const Point &x_q) const
         {
-          auto boundary_stencil = build_boundary_stencil_from_cache<NumberType>(cell, face_no, solution_global);
+          auto boundary_stencil = build_boundary_reconstruction_stencil_from_cache<NumberType>(cell, face_no,
+                                                                                              solution_global);
+          CellStencilData cell_stencil;
+          fill_cell_stencil(cell, solution_global, cell_stencil);
           return internal::compute_boundary_face_reconstruction_state<JacobianReconstructor>(
-              boundary_stencil, x_q, model);
+              boundary_stencil, cell_stencil, x_q, model);
         }
 
         void fill_constant_quadrature_values(const Iterator &cell, const VectorType &solution_global,
@@ -1476,24 +1500,20 @@ namespace DiFfRG
             const auto &reconstruction = get_cached_face_reconstruction(reconstruction_cache, cell, face_no);
             const auto &cell_data = reconstruction_cache.cell_stencils[cell->active_cell_index()].cell;
 
-            if constexpr (dim == 1) {
-              const auto [F_plus, F_minus, a_half] =
-                  internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(reconstruction.u_plus, reconstruction.u_minus,
-                                                                          x_q, model);
-              const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, reconstruction.u_plus,
-                                                              reconstruction.u_minus);
+            const auto [F_plus, F_minus, a_half] =
+                internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(reconstruction.u_plus, reconstruction.u_minus,
+                                                                        x_q, model);
+            const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, reconstruction.u_plus,
+                                                            reconstruction.u_minus);
 
-              const auto D_bnd = internal::compute_diffusion_flux(reconstruction.u_plus, reconstruction.u_minus,
-                                                                  reconstruction.face_grad_plus,
-                                                                  reconstruction.face_grad_minus, x_q, model);
+            const auto D_bnd = internal::compute_diffusion_flux(reconstruction.u_plus, reconstruction.u_minus,
+                                                                reconstruction.face_grad_plus,
+                                                                reconstruction.face_grad_minus, x_q, model);
 
-              for (uint component_i = 0; component_i < n_components; ++component_i) {
-                copy_data_face.joint_dof_indices[component_i] = cell_data.dof_indices[component_i];
-                copy_data_face.cell_residual(component_i) +=
-                    weight * JxW * (scalar_product(H[component_i], n_bnd) + scalar_product(D_bnd[component_i], n_bnd));
-              }
-            } else {
-              AssertThrow(false, ExcMessage("KT boundary-face assembly currently requires one-dimensional boundary stencils."));
+            for (uint component_i = 0; component_i < n_components; ++component_i) {
+              copy_data_face.joint_dof_indices[component_i] = cell_data.dof_indices[component_i];
+              copy_data_face.cell_residual(component_i) +=
+                  weight * JxW * (scalar_product(H[component_i], n_bnd) + scalar_product(D_bnd[component_i], n_bnd));
             }
           };
 
@@ -1643,26 +1663,30 @@ namespace DiFfRG
 
               // face_no=0: d(u⁻)/d(u_j) — reconstruction from cell side
               {
-                auto u_center_tagged = internal::tag_cell_dofs(cell_data, dof_j);
-                auto u_n_tagged = internal::make_tagged_neighbors(cell_neighbors, dof_j);
+                const auto cell_stencil_tagged =
+                    tag_cell_stencil_dofs_from_cache(cell, cell_stencil, solution_global, dof_j);
                 reconstructed_deriv[0][j].u =
                     internal::reconstruct_u_derivative<JacobianReconstructor, dim, NumberType, n_components>(
-                        u_center_tagged.u, cell_data.x, x_q, cell_neighbors.x, u_n_tagged.u);
+                        cell_stencil_tagged.cell.u, cell_data.x, x_q, cell_neighbors.x,
+                        cell_stencil_tagged.neighbors.u);
                 reconstructed_deriv[0][j].grad =
                     JacobianReconstructor::template compute_gradient_at_point_derivative<n_components>(
-                        cell_data.x, x_q, u_center_tagged.u, cell_neighbors.x, u_n_tagged.u);
+                        cell_data.x, x_q, cell_stencil_tagged.cell.u, cell_neighbors.x,
+                        cell_stencil_tagged.neighbors.u);
               }
 
               // face_no=1: d(u⁺)/d(u_j) — reconstruction from neighbor side
               {
-                auto u_center_tagged = internal::tag_cell_dofs(ncell_data, dof_j);
-                auto u_n_tagged = internal::make_tagged_neighbors(ncell_neighbors, dof_j);
+                const auto ncell_stencil_tagged =
+                    tag_cell_stencil_dofs_from_cache(ncell, ncell_stencil, solution_global, dof_j);
                 reconstructed_deriv[1][j].u =
                     internal::reconstruct_u_derivative<JacobianReconstructor, dim, NumberType, n_components>(
-                        u_center_tagged.u, ncell_data.x, x_q, ncell_neighbors.x, u_n_tagged.u);
+                        ncell_stencil_tagged.cell.u, ncell_data.x, x_q, ncell_neighbors.x,
+                        ncell_stencil_tagged.neighbors.u);
                 reconstructed_deriv[1][j].grad =
                     JacobianReconstructor::template compute_gradient_at_point_derivative<n_components>(
-                        ncell_data.x, x_q, u_center_tagged.u, ncell_neighbors.x, u_n_tagged.u);
+                        ncell_data.x, x_q, ncell_stencil_tagged.cell.u, ncell_neighbors.x,
+                        ncell_stencil_tagged.neighbors.u);
               }
             }
 
@@ -1714,98 +1738,82 @@ namespace DiFfRG
             const auto &face_dependencies = get_cell_topology(cell).face_jacobian_dependencies[face_no];
             copy_data_face.reinit(face_dependencies.to_dofs, face_dependencies.from_dofs);
 
-            if constexpr (dim == 1) {
-              const auto boundary_stencil =
-                  build_boundary_stencil_from_cache<NumberType>(cell, face_no, solution_global);
+            const auto boundary_stencil =
+                build_boundary_reconstruction_stencil_from_cache<NumberType>(cell, face_no, solution_global);
+            const auto &cell_stencil = reconstruction_cache.cell_stencils[cell->active_cell_index()];
+            const auto &reconstruction = get_cached_face_reconstruction(reconstruction_cache, cell, face_no);
 
-              const auto &reconstruction = get_cached_face_reconstruction(reconstruction_cache, cell, face_no);
+            // Precompute reconstructed state and face-gradient derivatives for each dependency dof.
+            const uint n_from = size(copy_data_face.from_dofs);
+            for (auto &derivatives : scratch_data.reconstructed_derivatives) {
+              if (derivatives.capacity() < n_from) derivatives.reserve(n_from);
+              derivatives.resize(n_from);
+            }
+            auto &reconstructed_deriv = scratch_data.reconstructed_derivatives;
 
-              // Precompute reconstructed state and face-gradient derivatives for each dependency dof.
-              const uint n_from = size(copy_data_face.from_dofs);
-              for (auto &derivatives : scratch_data.reconstructed_derivatives) {
-                if (derivatives.capacity() < n_from) derivatives.reserve(n_from);
-                derivatives.resize(n_from);
-              }
-              auto &reconstructed_deriv = scratch_data.reconstructed_derivatives;
+            for (uint j = 0; j < size(copy_data_face.from_dofs); ++j) {
+              const auto dof_j = copy_data_face.from_dofs[j];
+              const auto boundary_stencil_ad =
+                  internal::tag_boundary_reconstruction_stencil_dofs<dim, NumberType, n_components>(boundary_stencil,
+                                                                                                    dof_j);
+              const auto cell_stencil_ad =
+                  tag_cell_stencil_dofs_from_cache(cell, cell_stencil, solution_global, dof_j);
+              const auto [physical_stencil_ad, ghost_stencil_ad] =
+                  internal::make_model_boundary_reconstruction_side_stencils(boundary_stencil_ad, cell_stencil_ad, x_q,
+                                                                             model);
+              reconstructed_deriv[0][j].u =
+                  internal::reconstruct_u_derivative<JacobianReconstructor, dim, NumberType, n_components>(
+                      physical_stencil_ad.cell.u, physical_stencil_ad.cell.x, x_q, physical_stencil_ad.neighbors.x,
+                      physical_stencil_ad.neighbors.u);
+              reconstructed_deriv[1][j].u =
+                  internal::reconstruct_u_derivative<JacobianReconstructor, dim, NumberType, n_components>(
+                      ghost_stencil_ad.cell.u, ghost_stencil_ad.cell.x, x_q, ghost_stencil_ad.neighbors.x,
+                      ghost_stencil_ad.neighbors.u);
+              reconstructed_deriv[0][j].grad =
+                  JacobianReconstructor::template compute_gradient_at_point_derivative<n_components>(
+                      physical_stencil_ad.cell.x, x_q, physical_stencil_ad.cell.u, physical_stencil_ad.neighbors.x,
+                      physical_stencil_ad.neighbors.u);
+              reconstructed_deriv[1][j].grad =
+                  JacobianReconstructor::template compute_gradient_at_point_derivative<n_components>(
+                      ghost_stencil_ad.cell.x, x_q, ghost_stencil_ad.cell.u, ghost_stencil_ad.neighbors.x,
+                      ghost_stencil_ad.neighbors.u);
+            }
 
+            // Compute numerical flux Jacobian
+            const auto j_numflux =
+                internal::compute_kt_numflux_jacobian<WaveSpeedStrategy, Model, NumberType, dim, n_components>(
+                    reconstruction.u_plus, reconstruction.u_minus, x_q, model);
+            const auto j_diffusion = internal::compute_diffusion_flux_jacobian<Model, NumberType, dim, n_components>(
+                reconstruction.u_plus, reconstruction.u_minus, reconstruction.face_grad_plus,
+                reconstruction.face_grad_minus, x_q, model);
+
+            // Chain-rule assembly (same pattern as interior face_worker)
+            for (uint i = 0; i < size(copy_data_face.to_dofs); ++i) {
+              const auto component_i = i;
               for (uint j = 0; j < size(copy_data_face.from_dofs); ++j) {
-                const auto dof_j = copy_data_face.from_dofs[j];
-                auto u_stencil_tagged = internal::make_tagged_physical_boundary_stencil<NumberType, n_components>(
-                    boundary_stencil.u, boundary_stencil.dof_indices, dof_j);
-                internal::BoundaryStencilData<dim, autodiff::Real<1, NumberType>, n_components> boundary_stencil_ad{};
-                boundary_stencil_ad.x = boundary_stencil.x;
-                boundary_stencil_ad.u = u_stencil_tagged;
-                boundary_stencil_ad.dof_indices = boundary_stencil.dof_indices;
-                boundary_stencil_ad.lower_boundary = boundary_stencil.lower_boundary;
-                boundary_stencil_ad.ghost_center = boundary_stencil.ghost_center;
-                boundary_stencil_ad.ghost_left = boundary_stencil.ghost_left;
-                boundary_stencil_ad.ghost_right = boundary_stencil.ghost_right;
-                const bool boundary_supported_ad =
-                    model.apply_boundary_stencil(boundary_stencil_ad.u, boundary_stencil_ad.x, x_q);
-                AssertThrow(boundary_supported_ad,
-                            ExcMessage("KT boundary stencil was rejected during AD reconstruction tracing."));
-                const auto physical_stencil_ad =
-                    internal::make_physical_boundary_side_stencil<dim, autodiff::Real<1, NumberType>, n_components>(
-                        boundary_stencil_ad);
-                const auto ghost_stencil_ad =
-                    internal::make_ghost_boundary_side_stencil<dim, autodiff::Real<1, NumberType>, n_components>(
-                        boundary_stencil_ad);
-                reconstructed_deriv[0][j].u =
-                    internal::reconstruct_u_derivative<JacobianReconstructor, dim, NumberType, n_components>(
-                        physical_stencil_ad.cell.u, physical_stencil_ad.cell.x, x_q, physical_stencil_ad.neighbors.x,
-                        physical_stencil_ad.neighbors.u);
-                reconstructed_deriv[1][j].u =
-                    internal::reconstruct_u_derivative<JacobianReconstructor, dim, NumberType, n_components>(
-                        ghost_stencil_ad.cell.u, ghost_stencil_ad.cell.x, x_q, ghost_stencil_ad.neighbors.x,
-                        ghost_stencil_ad.neighbors.u);
-                reconstructed_deriv[0][j].grad =
-                    JacobianReconstructor::template compute_gradient_at_point_derivative<n_components>(
-                        physical_stencil_ad.cell.x, x_q, physical_stencil_ad.cell.u, physical_stencil_ad.neighbors.x,
-                        physical_stencil_ad.neighbors.u);
-                reconstructed_deriv[1][j].grad =
-                    JacobianReconstructor::template compute_gradient_at_point_derivative<n_components>(
-                        ghost_stencil_ad.cell.x, x_q, ghost_stencil_ad.cell.u, ghost_stencil_ad.neighbors.x,
-                        ghost_stencil_ad.neighbors.u);
-              }
+                NumberType diffusion_contribution{};
+                for (size_t face_no = 0; face_no < 2; ++face_no) {
+                  NumberType advection_contribution{};
+                  for (size_t c = 0; c < n_components; ++c) {
+                    advection_contribution += scalar_product(j_numflux[face_no](component_i, c), n_face) *
+                                              reconstructed_deriv[face_no][j].u[c];
 
-              // Compute numerical flux Jacobian
-              const auto j_numflux =
-                  internal::compute_kt_numflux_jacobian<WaveSpeedStrategy, Model, NumberType, dim, n_components>(
-                      reconstruction.u_plus, reconstruction.u_minus, x_q, model);
-              const auto j_diffusion = internal::compute_diffusion_flux_jacobian<Model, NumberType, dim, n_components>(
-                  reconstruction.u_plus, reconstruction.u_minus, reconstruction.face_grad_plus,
-                  reconstruction.face_grad_minus, x_q, model);
-
-              // Chain-rule assembly (same pattern as interior face_worker)
-              for (uint i = 0; i < size(copy_data_face.to_dofs); ++i) {
-                const auto component_i = i;
-                for (uint j = 0; j < size(copy_data_face.from_dofs); ++j) {
-                  NumberType diffusion_contribution{};
-                  for (size_t face_no = 0; face_no < 2; ++face_no) {
-                    NumberType advection_contribution{};
-                    for (size_t c = 0; c < n_components; ++c) {
-                      advection_contribution += scalar_product(j_numflux[face_no](component_i, c), n_face) *
-                                                reconstructed_deriv[face_no][j].u[c];
-
-                      diffusion_contribution += scalar_product(j_diffusion.u[face_no](component_i, c), n_face) *
-                                                reconstructed_deriv[face_no][j].u[c];
-                      for (size_t d_in = 0; d_in < dim; ++d_in)
-                        for (size_t d_out = 0; d_out < dim; ++d_out)
-                          diffusion_contribution += j_diffusion.grad[face_no](component_i, c)[d_out][d_in] *
-                                                    n_face[d_out] * reconstructed_deriv[face_no][j].grad[c][d_in];
-                    }
-                    copy_data_face.cell_jacobian(i, j) += weight * JxW * advection_contribution;
+                    diffusion_contribution += scalar_product(j_diffusion.u[face_no](component_i, c), n_face) *
+                                              reconstructed_deriv[face_no][j].u[c];
+                    for (size_t d_in = 0; d_in < dim; ++d_in)
+                      for (size_t d_out = 0; d_out < dim; ++d_out)
+                        diffusion_contribution += j_diffusion.grad[face_no](component_i, c)[d_out][d_in] *
+                                                  n_face[d_out] * reconstructed_deriv[face_no][j].grad[c][d_in];
                   }
-
-                  // Boundary faces use the same residual sign convention: [[phi_i]] *
-                  // ((H + D) · n). diffusion_contribution already contains both the
-                  // interior-side and ghost-side chain-rule pieces, so we add it
-                  // once after the face_no sum.
-                  copy_data_face.cell_jacobian(i, j) += weight * JxW * diffusion_contribution;
+                  copy_data_face.cell_jacobian(i, j) += weight * JxW * advection_contribution;
                 }
+
+                // Boundary faces use the same residual sign convention: [[phi_i]] *
+                // ((H + D) · n). diffusion_contribution already contains both the
+                // interior-side and ghost-side chain-rule pieces, so we add it
+                // once after the face_no sum.
+                copy_data_face.cell_jacobian(i, j) += weight * JxW * diffusion_contribution;
               }
-            } else {
-              AssertThrow(false, ExcMessage("KT boundary-face Jacobians currently require one-dimensional boundary stencils."));
             }
           };
 
@@ -1840,6 +1848,13 @@ namespace DiFfRG
           target.insert(target.end(), source.begin(), source.end());
         }
 
+        template <typename DoFContainer>
+        static void append_valid_dofs(std::vector<types::global_dof_index> &target, const DoFContainer &source)
+        {
+          for (const auto dof : source)
+            if (dof != numbers::invalid_dof_index) target.push_back(dof);
+        }
+
         static void sort_unique_dofs(std::vector<types::global_dof_index> &dofs)
         {
           std::sort(dofs.begin(), dofs.end());
@@ -1867,6 +1882,28 @@ namespace DiFfRG
           append_recursive(append_recursive, root_cell, 2);
         }
 
+        void append_boundary_reconstruction_dofs(std::vector<types::global_dof_index> &from_dofs,
+                                                 const unsigned int cell_index,
+                                                 const unsigned int face_index) const
+        {
+          const auto append_boundary_stencil_dofs =
+              [&](const internal::BoundaryStencilTopologyData<dim, n_components> &topology) {
+                for (const auto &dofs : topology.dof_indices)
+                  append_valid_dofs(from_dofs, dofs);
+              };
+
+          const auto &topology = cell_topology_cache[cell_index].boundary_stencils[face_index];
+          append_boundary_stencil_dofs(topology.primary);
+          for (size_t face = 0; face < topology.tangential_ghost_neighbor_valid.size(); ++face) {
+            if (topology.tangential_ghost_neighbor_valid[face])
+              append_boundary_stencil_dofs(topology.tangential_ghost_neighbors[face]);
+            if (topology.corner_tangential_stencil_valid[face]) {
+              for (const auto &corner_stencil : topology.corner_tangential_stencils[face])
+                append_boundary_stencil_dofs(corner_stencil);
+            }
+          }
+        }
+
         void build_face_jacobian_dependency_cache(const Iterator &cell, const unsigned int face_index,
                                                   FaceJacobianDependencyCacheEntry &dependencies) const
         {
@@ -1878,6 +1915,8 @@ namespace DiFfRG
             append_dofs(dependencies.to_dofs, cell_topology.neighbors.dof_indices[face_index]);
 
           dependencies.from_dofs = dependencies.to_dofs;
+          if (cell->at_boundary(face_index))
+            append_boundary_reconstruction_dofs(dependencies.from_dofs, cell->active_cell_index(), face_index);
           if constexpr (JacobianReconstructor::jacobian_stencil_radius > 1) {
             append_reconstruction_neighbor_dofs(dependencies.from_dofs, cell);
             if (!cell->at_boundary(face_index))
@@ -1942,6 +1981,77 @@ namespace DiFfRG
           sparsity_pattern.copy_from(dsp);
         }
 
+        void build_cached_jacobian_sparsity(SparsityPattern &sparsity_pattern) const
+        {
+          DynamicSparsityPattern dsp(dof_handler.n_dofs(), dof_handler.n_dofs());
+          for (const auto &cell : dof_handler.active_cell_iterators()) {
+            const auto &topology = get_cell_topology(cell);
+            const auto &cell_dofs = topology.stencil.cell.dof_indices;
+            for (const auto row : cell_dofs)
+              for (const auto column : cell_dofs)
+                dsp.add(row, column);
+
+            for (const auto face_index : cell->face_indices()) {
+              const auto &dependencies = topology.face_jacobian_dependencies[face_index];
+              for (const auto row : dependencies.to_dofs)
+                for (const auto column : dependencies.from_dofs)
+                  if (row != numbers::invalid_dof_index && column != numbers::invalid_dof_index)
+                    dsp.add(row, column);
+            }
+          }
+          sparsity_pattern.copy_from(dsp);
+        }
+
+        void fill_boundary_topology(internal::BoundaryStencilTopologyData<dim, n_components> &boundary_topology,
+                                    const Iterator &cell, const unsigned int boundary_face_no,
+                                    std::vector<types::global_dof_index> &dof_indices) const
+        {
+          using namespace def::BoundaryStencilIndex;
+          boundary_topology.lower_boundary = boundary_face_no % 2 == 0;
+          boundary_topology.cell_face = boundary_face_no;
+          boundary_topology.face_center = cell->face(boundary_face_no)->center();
+          boundary_topology.ghost_center = boundary_topology.lower_boundary ? lower_inner : upper_inner;
+          boundary_topology.ghost_left = boundary_topology.lower_boundary ? lower_outer : physical_cell;
+          boundary_topology.ghost_right = boundary_topology.lower_boundary ? physical_cell : upper_outer;
+          for (auto &dofs : boundary_topology.dof_indices)
+            dofs.fill(numbers::invalid_dof_index);
+
+          cell->get_dof_indices(dof_indices);
+          boundary_topology.x[physical_cell] = cell->center();
+          for (uint i = 0; i < n_components; ++i)
+            boundary_topology.dof_indices[physical_cell][i] = dof_indices[i];
+
+          const auto interior_face = GeometryInfo<dim>::opposite_face[boundary_face_no];
+          AssertThrow(!cell->at_boundary(interior_face),
+                      ExcMessage("KT boundary stencil requires at least two interior cells behind the boundary face."));
+
+          auto neighbor = cell->neighbor(interior_face);
+          std::array<types::global_dof_index, n_components> first_interior_dofs{};
+          neighbor->get_dof_indices(dof_indices);
+          for (uint i = 0; i < n_components; ++i)
+            first_interior_dofs[i] = dof_indices[i];
+
+          AssertThrow(!neighbor->at_boundary(interior_face),
+                      ExcMessage("KT boundary stencil requires a second interior cell behind the boundary face."));
+          auto next_neighbor = neighbor->neighbor(interior_face);
+          std::array<types::global_dof_index, n_components> second_interior_dofs{};
+          next_neighbor->get_dof_indices(dof_indices);
+          for (uint i = 0; i < n_components; ++i)
+            second_interior_dofs[i] = dof_indices[i];
+
+          if (boundary_topology.lower_boundary) {
+            boundary_topology.x[upper_inner] = neighbor->center();
+            boundary_topology.x[upper_outer] = next_neighbor->center();
+            boundary_topology.dof_indices[upper_inner] = first_interior_dofs;
+            boundary_topology.dof_indices[upper_outer] = second_interior_dofs;
+          } else {
+            boundary_topology.x[lower_inner] = neighbor->center();
+            boundary_topology.x[lower_outer] = next_neighbor->center();
+            boundary_topology.dof_indices[lower_inner] = first_interior_dofs;
+            boundary_topology.dof_indices[lower_outer] = second_interior_dofs;
+          }
+        }
+
         void rebuild_cell_topology_cache()
         {
           FEValues<dim> fe_values(mapping, fe, quadrature, update_quadrature_points | update_JxW_values);
@@ -1957,9 +2067,19 @@ namespace DiFfRG
             stencil_topology.face_centers = {};
             for (auto &neighbor_dofs : stencil_topology.neighbors.dof_indices)
               neighbor_dofs.fill(numbers::invalid_dof_index);
-            for (auto &boundary_topology : cache_entry.boundary_stencils)
-              for (auto &dofs : boundary_topology.dof_indices)
+            for (auto &boundary_reconstruction_topology : cache_entry.boundary_stencils) {
+              boundary_reconstruction_topology.tangential_ghost_neighbor_valid.fill(false);
+              boundary_reconstruction_topology.corner_tangential_stencil_valid.fill(false);
+              for (auto &dofs : boundary_reconstruction_topology.primary.dof_indices)
                 dofs.fill(numbers::invalid_dof_index);
+              for (auto &topology : boundary_reconstruction_topology.tangential_ghost_neighbors)
+                for (auto &dofs : topology.dof_indices)
+                  dofs.fill(numbers::invalid_dof_index);
+              for (auto &corner_stencils : boundary_reconstruction_topology.corner_tangential_stencils)
+                for (auto &topology : corner_stencils)
+                  for (auto &dofs : topology.dof_indices)
+                    dofs.fill(numbers::invalid_dof_index);
+            }
 
             fe_values.reinit(cell);
             cell->get_dof_indices(dof_indices);
@@ -1974,48 +2094,42 @@ namespace DiFfRG
               stencil_topology.face_centers[face_index] = face->center();
               if (cell->at_boundary(face_index)) {
                 stencil_topology.boundary_ids[face_index] = face->boundary_id();
-                using namespace def::BoundaryStencilIndex;
-                auto &boundary_topology = cache_entry.boundary_stencils[face_index];
-                boundary_topology.lower_boundary = face_index % 2 == 0;
-                boundary_topology.cell_face = face_index;
-                boundary_topology.ghost_center =
-                    boundary_topology.lower_boundary ? lower_inner : upper_inner;
-                boundary_topology.ghost_left =
-                    boundary_topology.lower_boundary ? lower_outer : physical_cell;
-                boundary_topology.ghost_right =
-                    boundary_topology.lower_boundary ? physical_cell : upper_outer;
-                boundary_topology.x[physical_cell] = stencil_topology.cell.x;
-                boundary_topology.dof_indices[physical_cell] = stencil_topology.cell.dof_indices;
+                stencil_topology.neighbors.x[face_index] = face->center();
+                auto &boundary_reconstruction_topology = cache_entry.boundary_stencils[face_index];
+                fill_boundary_topology(boundary_reconstruction_topology.primary, cell, face_index, dof_indices);
 
-                const auto interior_face = GeometryInfo<dim>::opposite_face[face_index];
-                AssertThrow(!cell->at_boundary(interior_face),
-                            ExcMessage(
-                                "KT boundary stencil requires at least two interior cells behind the boundary face."));
+                if constexpr (dim == 2) {
+                  const unsigned int normal_axis = face_index / 2;
+                  const unsigned int tangential_axis = 1U - normal_axis;
+                  const unsigned int tangential_minus = 2 * tangential_axis;
+                  const unsigned int tangential_plus = tangential_minus + 1;
+                  const auto interior_face = GeometryInfo<dim>::opposite_face[face_index];
+                  auto normal_neighbor = cell->neighbor(interior_face);
+                  auto second_normal_neighbor = normal_neighbor->neighbor(interior_face);
 
-                auto neighbor = cell->neighbor(interior_face);
-                std::array<types::global_dof_index, n_components> first_interior_dofs{};
-                neighbor->get_dof_indices(dof_indices);
-                for (uint i = 0; i < n_components; ++i)
-                  first_interior_dofs[i] = dof_indices[i];
+                  for (const auto tangential_face : {tangential_minus, tangential_plus}) {
+                    if (!cell->at_boundary(tangential_face)) {
+                      const auto tangential_neighbor = cell->neighbor(tangential_face);
+                      if (tangential_neighbor->at_boundary(face_index)) {
+                        fill_boundary_topology(
+                            boundary_reconstruction_topology.tangential_ghost_neighbors[tangential_face],
+                            tangential_neighbor, face_index, dof_indices);
+                        boundary_reconstruction_topology.tangential_ghost_neighbor_valid[tangential_face] = true;
+                      }
+                      continue;
+                    }
 
-                AssertThrow(!neighbor->at_boundary(interior_face),
-                            ExcMessage("KT boundary stencil requires a second interior cell behind the boundary face."));
-                auto next_neighbor = neighbor->neighbor(interior_face);
-                std::array<types::global_dof_index, n_components> second_interior_dofs{};
-                next_neighbor->get_dof_indices(dof_indices);
-                for (uint i = 0; i < n_components; ++i)
-                  second_interior_dofs[i] = dof_indices[i];
-
-                if (boundary_topology.lower_boundary) {
-                  boundary_topology.x[upper_inner] = neighbor->center();
-                  boundary_topology.x[upper_outer] = next_neighbor->center();
-                  boundary_topology.dof_indices[upper_inner] = first_interior_dofs;
-                  boundary_topology.dof_indices[upper_outer] = second_interior_dofs;
-                } else {
-                  boundary_topology.x[lower_inner] = neighbor->center();
-                  boundary_topology.x[lower_outer] = next_neighbor->center();
-                  boundary_topology.dof_indices[lower_inner] = first_interior_dofs;
-                  boundary_topology.dof_indices[lower_outer] = second_interior_dofs;
+                    fill_boundary_topology(
+                        boundary_reconstruction_topology.corner_tangential_stencils[tangential_face][0], cell,
+                        tangential_face, dof_indices);
+                    fill_boundary_topology(
+                        boundary_reconstruction_topology.corner_tangential_stencils[tangential_face][1],
+                        normal_neighbor, tangential_face, dof_indices);
+                    fill_boundary_topology(
+                        boundary_reconstruction_topology.corner_tangential_stencils[tangential_face][2],
+                        second_normal_neighbor, tangential_face, dof_indices);
+                    boundary_reconstruction_topology.corner_tangential_stencil_valid[tangential_face] = true;
+                  }
                 }
                 continue;
               }

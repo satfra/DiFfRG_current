@@ -139,6 +139,81 @@ public:
   }
 };
 
+class DiffusiveNonAffineTangentialBoundary2DModel
+    : public def::AbstractModel<DiffusiveNonAffineTangentialBoundary2DModel,
+                                ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>>>,
+      public def::Time,
+      public def::LLFFlux<DiffusiveNonAffineTangentialBoundary2DModel>,
+      public def::FlowBoundaries<DiffusiveNonAffineTangentialBoundary2DModel>,
+      public def::AD<DiffusiveNonAffineTangentialBoundary2DModel>
+{
+public:
+  template <typename Vector> void initial_condition(const Point<2> &pos, Vector &values) const
+  {
+    values[0] = 1.0 + 0.2 * pos[0] + 0.35 * pos[1];
+  }
+
+  template <typename NT, typename Solution>
+  void KurganovTadmor_advection_flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/,
+                                     const Solution & /*sol*/) const
+  {
+    F_i[0] = Tensor<1, 2, NT>();
+  }
+
+  template <typename NT, typename Solution>
+  void flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/, const Solution &sol) const
+  {
+    const auto &fe_derivatives = get<1>(sol);
+    F_i[0] = -2.5 * fe_derivatives[0];
+  }
+
+  template <typename NT, typename Solution>
+  void source(std::array<NT, 1> &s_i, const Point<2> & /*pos*/, const Solution & /*sol*/) const
+  {
+    s_i[0] = NT(0.0);
+  }
+
+  template <int mdim, typename NT, size_t n_components>
+  bool apply_boundary_stencil(def::BoundaryStencilValues<mdim, NT, n_components> &u_stencil,
+                              def::BoundaryStencilPoints<mdim> &x_stencil, const Point<mdim> &x_face) const
+  {
+    static_assert(mdim == 2);
+    static_assert(n_components == 1);
+    using namespace def::BoundaryStencilIndex;
+
+    unsigned int axis = 0;
+    if (std::abs(x_face[1] - x_stencil[physical_cell][1]) >
+        std::abs(x_face[0] - x_stencil[physical_cell][0]))
+      axis = 1;
+
+    const bool lower_boundary = x_face[axis] <= x_stencil[physical_cell][axis];
+    const double delta = lower_boundary ? (x_stencil[upper_inner][axis] - x_stencil[physical_cell][axis])
+                                        : (x_stencil[physical_cell][axis] - x_stencil[lower_inner][axis]);
+    const unsigned int tangential_axis = 1U - axis;
+    const NT shift = (lower_boundary ? NT(3.0) : NT(-2.0)) + NT(0.75) * NT(x_stencil[physical_cell][tangential_axis]);
+
+    if (lower_boundary) {
+      x_stencil[lower_inner] = x_stencil[physical_cell];
+      x_stencil[lower_outer] = x_stencil[physical_cell];
+      x_stencil[lower_inner][axis] = x_stencil[physical_cell][axis] - delta;
+      x_stencil[lower_outer][axis] = x_stencil[physical_cell][axis] - 2.0 * delta;
+      u_stencil[lower_inner][0] = NT(2.0) * u_stencil[physical_cell][0] - u_stencil[upper_inner][0] + shift;
+      u_stencil[lower_outer][0] =
+          NT(3.0) * u_stencil[physical_cell][0] - NT(2.0) * u_stencil[upper_inner][0] + NT(2.0) * shift;
+      return true;
+    }
+
+    x_stencil[upper_inner] = x_stencil[physical_cell];
+    x_stencil[upper_outer] = x_stencil[physical_cell];
+    x_stencil[upper_inner][axis] = x_stencil[physical_cell][axis] + delta;
+    x_stencil[upper_outer][axis] = x_stencil[physical_cell][axis] + 2.0 * delta;
+    u_stencil[upper_inner][0] = NT(2.0) * u_stencil[physical_cell][0] - u_stencil[lower_inner][0] + shift;
+    u_stencil[upper_outer][0] =
+        NT(3.0) * u_stencil[physical_cell][0] - NT(2.0) * u_stencil[lower_inner][0] + NT(2.0) * shift;
+    return true;
+  }
+};
+
 /**
  * Compares the analytic Jacobian from the KT assembler against a central-difference
  * finite-difference Jacobian of residual(). Detects missing terms in jacobian() —
@@ -577,5 +652,92 @@ TEST_CASE("KT 2D boundary Jacobian matches FD for affine ghost diffusion", "[FV]
       }
     }
   }
+  REQUIRE(pass);
+}
+
+TEST_CASE("KT 2D boundary Jacobian uses model-owned tangential ghost derivatives", "[FV][KT][2d]")
+{
+  using Model = DiffusiveNonAffineTangentialBoundary2DModel;
+  using NumberType = double;
+  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<2>>;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  const JSONValue json = make_json_2d();
+  Model model;
+  RectangularMesh<2> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+  VectorType sol = state.spatial_data();
+  const int n_dofs = static_cast<int>(sol.size());
+  REQUIRE(n_dofs > 4);
+
+  for (int i = 0; i < n_dofs; ++i)
+    sol[i] = 0.7 + 0.19 * static_cast<double>(i) + 0.003 * static_cast<double>(i * i);
+
+  VectorType sol_dot(n_dofs);
+  sol_dot = 0.0;
+
+  const SparsityPattern &sp = assembler.get_sparsity_pattern_jacobian();
+  SparseMatrix<NumberType> J_analytic(sp);
+  assembler.jacobian(J_analytic, sol, 1.0, sol_dot, 0.0, 0.0);
+
+  const auto &support_points = discretization.get_support_points();
+  REQUIRE(static_cast<int>(support_points.size()) == n_dofs);
+  double x_min = std::numeric_limits<double>::infinity();
+  double x_max = -std::numeric_limits<double>::infinity();
+  double y_min = std::numeric_limits<double>::infinity();
+  double y_max = -std::numeric_limits<double>::infinity();
+  for (const auto &point : support_points) {
+    x_min = std::min(x_min, point[0]);
+    x_max = std::max(x_max, point[0]);
+    y_min = std::min(y_min, point[1]);
+    y_max = std::max(y_max, point[1]);
+  }
+  const auto is_boundary_dof = [&](const int dof) {
+    const auto &point = support_points[static_cast<std::size_t>(dof)];
+    return std::abs(point[0] - x_min) < 1.0e-12 || std::abs(point[0] - x_max) < 1.0e-12 ||
+           std::abs(point[1] - y_min) < 1.0e-12 || std::abs(point[1] - y_max) < 1.0e-12;
+  };
+
+  const double eps = 1e-7;
+  bool pass = true;
+  int missing_sparsity_mismatches = 0;
+  for (int j = 0; j < n_dofs; ++j) {
+    VectorType u_p = sol, u_m = sol;
+    u_p[j] += eps;
+    u_m[j] -= eps;
+
+    VectorType r_p(n_dofs), r_m(n_dofs);
+    assembler.residual(r_p, u_p, 1.0, sol_dot, 0.0);
+    assembler.residual(r_m, u_m, 1.0, sol_dot, 0.0);
+
+    for (int i = 0; i < n_dofs; ++i) {
+      if (!is_boundary_dof(i) && !is_boundary_dof(j)) continue;
+
+      const bool in_sparsity = sp.exists(i, j);
+      const double analytic = in_sparsity ? J_analytic.el(i, j) : 0.0;
+      const double fd = (r_p[i] - r_m[i]) / (2.0 * eps);
+      const double err = std::abs(analytic - fd);
+      const double scale = std::max(1.0, std::abs(fd));
+      if (err > 2.0e-4 * scale) {
+        if (!in_sparsity) ++missing_sparsity_mismatches;
+        std::cout << "2D non-affine boundary Jacobian mismatch at [" << i << "," << j << "]: "
+                  << "row=(" << support_points[static_cast<std::size_t>(i)][0] << ", "
+                  << support_points[static_cast<std::size_t>(i)][1] << ") "
+                  << "column=(" << support_points[static_cast<std::size_t>(j)][0] << ", "
+                  << support_points[static_cast<std::size_t>(j)][1] << ") "
+                  << "in_sparsity=" << in_sparsity << " analytic=" << analytic << "  fd=" << fd
+                  << "  rel_err=" << err / scale << "\n";
+        pass = false;
+      }
+    }
+  }
+  CHECK(missing_sparsity_mismatches == 0);
   REQUIRE(pass);
 }
