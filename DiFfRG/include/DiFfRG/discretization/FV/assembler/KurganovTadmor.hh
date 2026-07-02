@@ -372,11 +372,13 @@ namespace DiFfRG
                                const std::array<NumberType, n_components> &u_minus,
                                const GradientType<dim, NumberType, n_components> &grad_u_plus,
                                const GradientType<dim, NumberType, n_components> &grad_u_minus,
+                               const ThirdDerivativeType<dim, NumberType, n_components> &third_derivatives_plus,
+                               const ThirdDerivativeType<dim, NumberType, n_components> &third_derivatives_minus,
                                const dealii::Point<dim> &x_q, const Model &model)
         {
           std::array<dealii::Tensor<1, dim, NumberType>, n_components> D_minus{}, D_plus{};
-          model.flux(D_minus, x_q, flux_tie(u_minus, grad_u_minus));
-          model.flux(D_plus, x_q, flux_tie(u_plus, grad_u_plus));
+          model.flux(D_minus, x_q, flux_tie(u_minus, grad_u_minus, third_derivatives_minus));
+          model.flux(D_plus, x_q, flux_tie(u_plus, grad_u_plus, third_derivatives_plus));
 
           std::array<dealii::Tensor<1, dim, NumberType>, n_components> D{};
           for (size_t c = 0; c < n_components; ++c)
@@ -387,6 +389,8 @@ namespace DiFfRG
         template <int dim, typename NumberType, size_t n_components> struct DiffusionFluxJacobianData {
           std::array<SimpleMatrix<dealii::Tensor<1, dim, NumberType>, n_components>, 2> u{};
           std::array<SimpleMatrix<dealii::Tensor<1, dim, dealii::Tensor<1, dim, NumberType>>, n_components>, 2> grad{};
+          std::array<SimpleMatrix<dealii::Tensor<1, dim, dealii::Tensor<3, dim, NumberType>>, n_components>, 2>
+              third_derivatives{};
         };
 
         template <typename Model, typename NumberType, int dim, size_t n_components>
@@ -395,6 +399,8 @@ namespace DiFfRG
                                         const std::array<NumberType, n_components> &u_minus,
                                         const GradientType<dim, NumberType, n_components> &grad_u_plus,
                                         const GradientType<dim, NumberType, n_components> &grad_u_minus,
+                                        const ThirdDerivativeType<dim, NumberType, n_components> &third_derivatives_plus,
+                                        const ThirdDerivativeType<dim, NumberType, n_components> &third_derivatives_minus,
                                         const dealii::Point<dim> &x_q, const Model &model)
         {
           using ADNumberType = autodiff::Real<1, NumberType>;
@@ -403,6 +409,8 @@ namespace DiFfRG
 
           std::array<ADNumberType, n_components> u_plus_AD{}, u_minus_AD{};
           std::array<dealii::Tensor<1, dim, ADNumberType>, n_components> grad_u_plus_AD{}, grad_u_minus_AD{};
+          ThirdDerivativeType<dim, ADNumberType, n_components> third_derivatives_plus_AD{},
+              third_derivatives_minus_AD{};
           for (size_t c = 0; c < n_components; ++c) {
             u_plus_AD[c] = ADNumberType(u_plus[c]);
             u_minus_AD[c] = ADNumberType(u_minus[c]);
@@ -410,20 +418,29 @@ namespace DiFfRG
               grad_u_plus_AD[c][d] = ADNumberType(grad_u_plus[c][d]);
               grad_u_minus_AD[c][d] = ADNumberType(grad_u_minus[c][d]);
             }
+            for (size_t d0 = 0; d0 < dim; ++d0)
+              for (size_t d1 = 0; d1 < dim; ++d1)
+                for (size_t d2 = 0; d2 < dim; ++d2) {
+                  third_derivatives_plus_AD[c][d0][d1][d2] =
+                      ADNumberType(third_derivatives_plus[c][d0][d1][d2]);
+                  third_derivatives_minus_AD[c][d0][d1][d2] =
+                      ADNumberType(third_derivatives_minus[c][d0][d1][d2]);
+                }
           }
 
           std::array<dealii::Tensor<1, dim, ADNumberType>, n_components> D_minus_AD{}, D_plus_AD{};
 
           for (size_t c = 0; c < n_components; ++c) {
             seed(u_minus_AD[c]);
-            model.flux(D_minus_AD, x_q, flux_tie(u_minus_AD, grad_u_minus_AD));
+            model.flux(D_minus_AD, x_q,
+                       flux_tie(u_minus_AD, grad_u_minus_AD, third_derivatives_minus_AD));
             for (size_t i = 0; i < n_components; ++i)
               for (size_t d = 0; d < dim; ++d)
                 result.u[0](i, c)[d] = NumberType(0.5) * derivative(D_minus_AD[i][d]);
             unseed(u_minus_AD[c]);
 
             seed(u_plus_AD[c]);
-            model.flux(D_plus_AD, x_q, flux_tie(u_plus_AD, grad_u_plus_AD));
+            model.flux(D_plus_AD, x_q, flux_tie(u_plus_AD, grad_u_plus_AD, third_derivatives_plus_AD));
             for (size_t i = 0; i < n_components; ++i)
               for (size_t d = 0; d < dim; ++d)
                 result.u[1](i, c)[d] = NumberType(0.5) * derivative(D_plus_AD[i][d]);
@@ -431,19 +448,42 @@ namespace DiFfRG
 
             for (size_t d_in = 0; d_in < dim; ++d_in) {
               seed(grad_u_minus_AD[c][d_in]);
-              model.flux(D_minus_AD, x_q, flux_tie(u_minus_AD, grad_u_minus_AD));
+              model.flux(D_minus_AD, x_q,
+                         flux_tie(u_minus_AD, grad_u_minus_AD, third_derivatives_minus_AD));
               for (size_t i = 0; i < n_components; ++i)
                 for (size_t d_out = 0; d_out < dim; ++d_out)
                   result.grad[0](i, c)[d_out][d_in] = NumberType(0.5) * derivative(D_minus_AD[i][d_out]);
               unseed(grad_u_minus_AD[c][d_in]);
 
               seed(grad_u_plus_AD[c][d_in]);
-              model.flux(D_plus_AD, x_q, flux_tie(u_plus_AD, grad_u_plus_AD));
+              model.flux(D_plus_AD, x_q, flux_tie(u_plus_AD, grad_u_plus_AD, third_derivatives_plus_AD));
               for (size_t i = 0; i < n_components; ++i)
                 for (size_t d_out = 0; d_out < dim; ++d_out)
                   result.grad[1](i, c)[d_out][d_in] = NumberType(0.5) * derivative(D_plus_AD[i][d_out]);
               unseed(grad_u_plus_AD[c][d_in]);
             }
+
+            for (size_t d0 = 0; d0 < dim; ++d0)
+              for (size_t d1 = 0; d1 < dim; ++d1)
+                for (size_t d2 = 0; d2 < dim; ++d2) {
+                  seed(third_derivatives_minus_AD[c][d0][d1][d2]);
+                  model.flux(D_minus_AD, x_q,
+                             flux_tie(u_minus_AD, grad_u_minus_AD, third_derivatives_minus_AD));
+                  for (size_t i = 0; i < n_components; ++i)
+                    for (size_t d_out = 0; d_out < dim; ++d_out)
+                      result.third_derivatives[0](i, c)[d_out][d0][d1][d2] =
+                          NumberType(0.5) * derivative(D_minus_AD[i][d_out]);
+                  unseed(third_derivatives_minus_AD[c][d0][d1][d2]);
+
+                  seed(third_derivatives_plus_AD[c][d0][d1][d2]);
+                  model.flux(D_plus_AD, x_q,
+                             flux_tie(u_plus_AD, grad_u_plus_AD, third_derivatives_plus_AD));
+                  for (size_t i = 0; i < n_components; ++i)
+                    for (size_t d_out = 0; d_out < dim; ++d_out)
+                      result.third_derivatives[1](i, c)[d_out][d0][d1][d2] =
+                          NumberType(0.5) * derivative(D_plus_AD[i][d_out]);
+                  unseed(third_derivatives_plus_AD[c][d0][d1][d2]);
+                }
           }
 
           return result;
@@ -918,7 +958,9 @@ namespace DiFfRG
                                                             reconstruction.u_minus);
             const auto D = internal::compute_diffusion_flux(reconstruction.u_plus, reconstruction.u_minus,
                                                             reconstruction.face_grad_plus,
-                                                            reconstruction.face_grad_minus, x_q, model);
+                                                            reconstruction.face_grad_minus,
+                                                            reconstruction.third_derivatives_plus,
+                                                            reconstruction.third_derivatives_minus, x_q, model);
 
             for (uint component_i = 0; component_i < n_components; ++component_i) {
               copy_data_face.joint_dof_indices[component_i] = cell_data.dof_indices[component_i];
@@ -956,7 +998,9 @@ namespace DiFfRG
                                                             reconstruction.u_minus);
             const auto D = internal::compute_diffusion_flux(reconstruction.u_plus, reconstruction.u_minus,
                                                             reconstruction.face_grad_plus,
-                                                            reconstruction.face_grad_minus, x_q, model);
+                                                            reconstruction.face_grad_minus,
+                                                            reconstruction.third_derivatives_plus,
+                                                            reconstruction.third_derivatives_minus, x_q, model);
 
             for (uint component_i = 0; component_i < n_components; ++component_i) {
               copy_data_face.joint_dof_indices[component_i] = cell_data.dof_indices[component_i];
@@ -1446,7 +1490,9 @@ namespace DiFfRG
                                                             reconstruction.u_minus);
             const auto D = internal::compute_diffusion_flux(reconstruction.u_plus, reconstruction.u_minus,
                                                             reconstruction.face_grad_plus,
-                                                            reconstruction.face_grad_minus, x_q, model);
+                                                            reconstruction.face_grad_minus,
+                                                            reconstruction.third_derivatives_plus,
+                                                            reconstruction.third_derivatives_minus, x_q, model);
 
             // Sign convention: the face flux is (H + D)·n, i.e. the advection numerical
             // flux H (from KurganovTadmor_advection_flux) and the diffusion flux D (from
@@ -1490,7 +1536,9 @@ namespace DiFfRG
 
             const auto D_bnd = internal::compute_diffusion_flux(reconstruction.u_plus, reconstruction.u_minus,
                                                                 reconstruction.face_grad_plus,
-                                                                reconstruction.face_grad_minus, x_q, model);
+                                                                reconstruction.face_grad_minus,
+                                                                reconstruction.third_derivatives_plus,
+                                                                reconstruction.third_derivatives_minus, x_q, model);
 
             for (uint component_i = 0; component_i < n_components; ++component_i) {
               copy_data_face.joint_dof_indices[component_i] = cell_data.dof_indices[component_i];
@@ -1666,6 +1714,23 @@ namespace DiFfRG
                     JacobianReconstructor::template compute_gradient_at_point_derivative<n_components>(
                         ncell_data.x, x_q, u_center_tagged.u, ncell_neighbors.x, u_n_tagged.u);
               }
+
+              if constexpr (dim == 1) {
+                using AD = autodiff::Real<1, NumberType>;
+                CellStencilDataT<AD> cell_stencil_ad{};
+                CellStencilDataT<AD> ncell_stencil_ad{};
+                cell_stencil_ad.cell = internal::tag_cell_dofs(cell_data, dof_j);
+                cell_stencil_ad.neighbors = internal::make_tagged_neighbors(cell_neighbors, dof_j);
+                ncell_stencil_ad.cell = internal::tag_cell_dofs(ncell_data, dof_j);
+                ncell_stencil_ad.neighbors = internal::make_tagged_neighbors(ncell_neighbors, dof_j);
+                const auto third_derivative_stencil_ad =
+                    internal::make_interior_third_derivative_stencil(cell_stencil_ad, ncell_stencil_ad, x_q);
+                const auto third_derivatives =
+                    JacobianReconstructor::template compute_third_derivatives_at_face_derivative<n_components>(
+                        third_derivative_stencil_ad.x, third_derivative_stencil_ad.u);
+                reconstructed_deriv[0][j].third_derivatives = third_derivatives;
+                reconstructed_deriv[1][j].third_derivatives = third_derivatives;
+              }
             }
 
             const auto j_numflux =
@@ -1673,7 +1738,8 @@ namespace DiFfRG
                     reconstruction.u_plus, reconstruction.u_minus, x_q, model);
             const auto j_diffusion = internal::compute_diffusion_flux_jacobian<Model, NumberType, dim, n_components>(
                 reconstruction.u_plus, reconstruction.u_minus, reconstruction.face_grad_plus,
-                reconstruction.face_grad_minus, x_q, model);
+                reconstruction.face_grad_minus, reconstruction.third_derivatives_plus,
+                reconstruction.third_derivatives_minus, x_q, model);
 
             for (uint i = 0; i < size(copy_data_face.to_dofs); ++i) {
               const bool cell_side_i = i < n_components;
@@ -1693,6 +1759,13 @@ namespace DiFfRG
                       for (size_t d_out = 0; d_out < dim; ++d_out)
                         diffusion_contribution += j_diffusion.grad[face_no](component_i, c)[d_out][d_in] *
                                                   n_face[d_out] * reconstructed_deriv[face_no][j].grad[c][d_in];
+                    for (size_t d0 = 0; d0 < dim; ++d0)
+                      for (size_t d1 = 0; d1 < dim; ++d1)
+                        for (size_t d2 = 0; d2 < dim; ++d2)
+                          for (size_t d_out = 0; d_out < dim; ++d_out)
+                            diffusion_contribution +=
+                                j_diffusion.third_derivatives[face_no](component_i, c)[d_out][d0][d1][d2] *
+                                n_face[d_out] * reconstructed_deriv[face_no][j].third_derivatives[c][d0][d1][d2];
                   }
                   copy_data_face.cell_jacobian(i, j) += weight * JxW * jump_i * advection_contribution;
                 }
@@ -1768,6 +1841,13 @@ namespace DiFfRG
                   JacobianReconstructor::template compute_gradient_at_point_derivative<n_components>(
                       ghost_stencil_ad.cell.x, x_q, ghost_stencil_ad.cell.u, ghost_stencil_ad.neighbors.x,
                       ghost_stencil_ad.neighbors.u);
+              const auto third_derivative_stencil_ad =
+                  internal::make_boundary_third_derivative_stencil(boundary_stencil_ad);
+              const auto third_derivatives =
+                  JacobianReconstructor::template compute_third_derivatives_at_face_derivative<n_components>(
+                      third_derivative_stencil_ad.x, third_derivative_stencil_ad.u);
+              reconstructed_deriv[0][j].third_derivatives = third_derivatives;
+              reconstructed_deriv[1][j].third_derivatives = third_derivatives;
             }
 
             // Compute numerical flux Jacobian
@@ -1776,7 +1856,8 @@ namespace DiFfRG
                     reconstruction.u_plus, reconstruction.u_minus, x_q, model);
             const auto j_diffusion = internal::compute_diffusion_flux_jacobian<Model, NumberType, dim, n_components>(
                 reconstruction.u_plus, reconstruction.u_minus, reconstruction.face_grad_plus,
-                reconstruction.face_grad_minus, x_q, model);
+                reconstruction.face_grad_minus, reconstruction.third_derivatives_plus,
+                reconstruction.third_derivatives_minus, x_q, model);
 
             // Chain-rule assembly (same pattern as interior face_worker)
             for (uint i = 0; i < size(copy_data_face.to_dofs); ++i) {
@@ -1795,6 +1876,13 @@ namespace DiFfRG
                       for (size_t d_out = 0; d_out < dim; ++d_out)
                         diffusion_contribution += j_diffusion.grad[face_no](component_i, c)[d_out][d_in] *
                                                   n_face[d_out] * reconstructed_deriv[face_no][j].grad[c][d_in];
+                    for (size_t d0 = 0; d0 < dim; ++d0)
+                      for (size_t d1 = 0; d1 < dim; ++d1)
+                        for (size_t d2 = 0; d2 < dim; ++d2)
+                          for (size_t d_out = 0; d_out < dim; ++d_out)
+                            diffusion_contribution +=
+                                j_diffusion.third_derivatives[face_no](component_i, c)[d_out][d0][d1][d2] *
+                                n_face[d_out] * reconstructed_deriv[face_no][j].third_derivatives[c][d0][d1][d2];
                   }
                   copy_data_face.cell_jacobian(i, j) += weight * JxW * advection_contribution;
                 }
