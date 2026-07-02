@@ -9,6 +9,7 @@
 #include <cmath>
 #include <limits>
 #include <optional>
+#include <vector>
 
 // DiFfRG
 #include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
@@ -379,6 +380,11 @@ namespace DiFfRG
        * Boundary-only constraints should use `apply_boundary_affine_constraints(constraints, context)` and inspect
        * `context.template boundary<"u">()`. Constraints that may need interior support points should use
        * `apply_affine_constraints(constraints, context)` and inspect `context.template support<"u">()`.
+       *
+       * The origin helpers use `x[0]` as their signed origin coordinate in one-dimensional domains. In
+       * multidimensional domains, models using these helpers must provide
+       * `Model::OriginConstraintCoordinate<component_name>::signed_coordinate(point)` to define the zero level set
+       * that should be constrained for each named component.
        */
       template <typename Constraints, typename Context>
       void affine_constraints(Constraints &constraints, const Context &context) const
@@ -399,42 +405,83 @@ namespace DiFfRG
 
     namespace internal
     {
-      template <FixedString component_name, typename Context>
-      std::optional<types::global_dof_index> select_origin_candidate([[maybe_unused]] const Context &context,
-                                                                     const auto &view)
+      template <typename> inline constexpr bool dependent_false_v = false;
+
+      template <FixedString component_name, typename Model, int dim>
+      double origin_constraint_coordinate(const Point<dim> &point)
+      {
+        if constexpr (dim == 1) {
+          return point[0];
+        } else {
+          if constexpr (requires {
+                          Model::template OriginConstraintCoordinate<component_name>::signed_coordinate(point);
+                        }) {
+            return Model::template OriginConstraintCoordinate<component_name>::signed_coordinate(point);
+          } else {
+            static_assert(dependent_false_v<Model>,
+                          "Multidimensional origin affine-constraint helpers require Model::"
+                          "OriginConstraintCoordinate<component_name>::signed_coordinate(point).");
+            return 0.0;
+          }
+        }
+      }
+
+      template <FixedString component_name, typename Model, typename Context>
+      std::vector<types::global_dof_index> select_origin_candidates([[maybe_unused]] const Context &context,
+                                                                    const auto &view)
       {
         constexpr int dim = Context::dimension;
-        static_assert(dim == 1, "Origin affine-constraint helpers currently support only one-dimensional domains.");
+        static_assert(dim == 1 || dim == 2,
+                      "Origin affine-constraint helpers currently support only one- and two-dimensional domains.");
         static_assert(Context::template component_size<component_name>() == 1,
                       "Origin affine-constraint helpers require a scalar FE-function component.");
 
-        std::optional<types::global_dof_index> best_dof;
-        double best_abs_x = std::numeric_limits<double>::infinity();
-        bool best_is_negative = true;
+        double best_abs_coordinate = std::numeric_limits<double>::infinity();
+        bool has_non_negative_best = false;
 
         for (uint i = 0; i < view.dofs.n_elements(); ++i) {
-          const auto dof = view.dofs.nth_index_in_set(i);
-          const double x = view.points[i][0];
-          const double abs_x = std::abs(x);
-          const bool is_negative = x < 0.0;
-
-          const bool is_better = !best_dof.has_value() || abs_x < best_abs_x ||
-                                 (abs_x == best_abs_x &&
-                                  (is_negative < best_is_negative ||
-                                   (is_negative == best_is_negative && dof < *best_dof)));
-          if (!is_better) continue;
-
-          best_dof = dof;
-          best_abs_x = abs_x;
-          best_is_negative = is_negative;
+          const double coordinate = origin_constraint_coordinate<component_name, Model>(view.points[i]);
+          const double abs_coordinate = std::abs(coordinate);
+          if (abs_coordinate < best_abs_coordinate) {
+            best_abs_coordinate = abs_coordinate;
+            has_non_negative_best = coordinate >= 0.0;
+          } else if (abs_coordinate == best_abs_coordinate && coordinate >= 0.0) {
+            has_non_negative_best = true;
+          }
         }
 
-        return best_dof;
+        std::vector<types::global_dof_index> candidates;
+        for (uint i = 0; i < view.dofs.n_elements(); ++i) {
+          const double coordinate = origin_constraint_coordinate<component_name, Model>(view.points[i]);
+          const double abs_coordinate = std::abs(coordinate);
+          if (abs_coordinate != best_abs_coordinate) continue;
+          if ((coordinate >= 0.0) != has_non_negative_best) continue;
+          candidates.push_back(view.dofs.nth_index_in_set(i));
+        }
+
+        return candidates;
+      }
+
+      template <FixedString component_name, typename Context>
+      std::optional<types::global_dof_index> select_origin_candidate(const Context &context, const auto &view)
+      {
+        constexpr int dim = Context::dimension;
+        static_assert(dim == 1, "select_origin_candidate supports only one-dimensional domains; use "
+                                "select_origin_candidates for multi-dimensional domains.");
+
+        const auto candidates = select_origin_candidates<component_name, void>(context, view);
+        if (candidates.empty()) return std::nullopt;
+        return candidates.front();
       }
     } // namespace internal
 
     /**
-     * @brief Constrain the boundary dof of a named scalar FE-function component nearest the origin to zero.
+     * @brief Constrain the boundary dofs of a named scalar FE-function component nearest its origin coordinate to zero.
+     *
+     * In one dimension, the origin coordinate is `x[0]`. In multidimensional domains, `Model` must provide an
+     * `OriginConstraintCoordinate<component_name>` policy whose `signed_coordinate(point)` method defines the zero
+     * level set. All boundary dofs on the nearest discrete zero level set are constrained, with symmetric ties
+     * resolved toward the non-negative side.
      */
     template <FixedString component_name, typename Model> class ConstrainOriginBoundaryPointToZero
     {
@@ -442,19 +489,22 @@ namespace DiFfRG
       template <typename Constraints, typename Context>
       void apply_boundary_affine_constraints(Constraints &constraints, const Context &context) const
       {
-        const auto candidate =
-            internal::select_origin_candidate<component_name>(context, context.template boundary<component_name>());
-        if (!candidate.has_value()) return;
-
-        constraints.add_line(*candidate);
-        constraints.set_inhomogeneity(*candidate, 0.0);
+        const auto candidates =
+            internal::select_origin_candidates<component_name, Model>(context,
+                                                                      context.template boundary<component_name>());
+        for (const auto dof : candidates) {
+          constraints.add_line(dof);
+          constraints.set_inhomogeneity(dof, 0.0);
+        }
       }
     };
 
     /**
-     * @brief Constrain the support dof of a named scalar FE-function component nearest the origin to zero.
+     * @brief Constrain the support dofs of a named scalar FE-function component nearest its origin coordinate to zero.
      *
      * This is useful for cell-centered DG0/FV layouts where `sigma = 0` is not itself a boundary support point.
+     * In multidimensional domains, `Model::OriginConstraintCoordinate<component_name>::signed_coordinate(point)`
+     * defines the zero level set to constrain.
      */
     template <FixedString component_name, typename Model> class ConstrainOriginSupportPointToZero
     {
@@ -462,12 +512,13 @@ namespace DiFfRG
       template <typename Constraints, typename Context>
       void apply_affine_constraints(Constraints &constraints, const Context &context) const
       {
-        const auto candidate =
-            internal::select_origin_candidate<component_name>(context, context.template support<component_name>());
-        if (!candidate.has_value()) return;
-
-        constraints.add_line(*candidate);
-        constraints.set_inhomogeneity(*candidate, 0.0);
+        const auto candidates =
+            internal::select_origin_candidates<component_name, Model>(context,
+                                                                      context.template support<component_name>());
+        for (const auto dof : candidates) {
+          constraints.add_line(dof);
+          constraints.set_inhomogeneity(dof, 0.0);
+        }
       }
     };
 
