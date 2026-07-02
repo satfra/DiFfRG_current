@@ -135,6 +135,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Configure container cache dirs
+        run: |
+          {
+            echo "SINGULARITY_CACHEDIR=${RUNNER_TEMP}/singularity-cache"
+            echo "APPTAINER_CACHEDIR=${RUNNER_TEMP}/apptainer-cache"
+            echo "SINGULARITY_RUN_CACHE=${RUNNER_TEMP}/singularity-run-cache"
+          } >> "$GITHUB_ENV"
+          mkdir -p \
+            "${RUNNER_TEMP}/singularity-cache" \
+            "${RUNNER_TEMP}/apptainer-cache" \
+            "${RUNNER_TEMP}/singularity-run-cache"
+
       - name: Pull dependency image
         id: deps
         env:
@@ -236,6 +248,11 @@ jobs:
           message: ${{ steps.badge.outputs.message }}
           color: ${{ steps.badge.outputs.color }}
 
+      - name: Clean container caches
+        if: always()
+        run: |
+          rm -rf "${SINGULARITY_CACHEDIR}" "${APPTAINER_CACHEDIR}" "${SINGULARITY_RUN_CACHE}"
+
       # Reflect build/test failures in the job conclusion (the test step swallows
       # ctest's exit code on purpose; the build step's failure is preserved here too).
       - name: Fail the job if the build or any test failed
@@ -259,6 +276,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Configure container cache dirs
+        run: |
+          {
+            echo "SINGULARITY_CACHEDIR=${RUNNER_TEMP}/singularity-cache"
+            echo "APPTAINER_CACHEDIR=${RUNNER_TEMP}/apptainer-cache"
+            echo "SINGULARITY_RUN_CACHE=${RUNNER_TEMP}/singularity-run-cache"
+          } >> "$GITHUB_ENV"
+          mkdir -p \
+            "${RUNNER_TEMP}/singularity-cache" \
+            "${RUNNER_TEMP}/apptainer-cache" \
+            "${RUNNER_TEMP}/singularity-run-cache"
 
       - name: Pull dependency image
         id: deps
@@ -307,6 +336,11 @@ jobs:
           path: .ci/logs/examples/**
           if-no-files-found: ignore
 
+      - name: Clean container caches
+        if: always()
+        run: |
+          rm -rf "${SINGULARITY_CACHEDIR}" "${APPTAINER_CACHEDIR}" "${SINGULARITY_RUN_CACHE}"
+
   wolfram-examples:
     name: Wolfram Examples in container
     needs: deps-image
@@ -322,6 +356,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Configure container cache dirs
+        run: |
+          {
+            echo "SINGULARITY_CACHEDIR=${RUNNER_TEMP}/singularity-cache"
+            echo "APPTAINER_CACHEDIR=${RUNNER_TEMP}/apptainer-cache"
+            echo "SINGULARITY_RUN_CACHE=${RUNNER_TEMP}/singularity-run-cache"
+          } >> "$GITHUB_ENV"
+          mkdir -p \
+            "${RUNNER_TEMP}/singularity-cache" \
+            "${RUNNER_TEMP}/apptainer-cache" \
+            "${RUNNER_TEMP}/singularity-run-cache"
 
       - name: Pull dependency image
         id: deps
@@ -377,6 +423,11 @@ jobs:
           name: example-ci-baselines
           path: Examples/ci_baselines/**
           if-no-files-found: error
+
+      - name: Clean container caches
+        if: always()
+        run: |
+          rm -rf "${SINGULARITY_CACHEDIR}" "${APPTAINER_CACHEDIR}" "${SINGULARITY_RUN_CACHE}"
 
   promote-deps-image:
     name: Promote dependency image
