@@ -12,60 +12,83 @@ install(
   MESSAGE_NEVER)
 
 # ##############################################################################
-# Install the Mathematica package
+# Install the Mathematica package (optional)
 # ##############################################################################
+#
+# The Mathematica/Wolfram Language package is an OPTIONAL component: it is only
+# used for symbolic derivation and C++ code generation of flow equations, which
+# is irrelevant to building and using the compiled library. Machines without a
+# Wolfram installation MUST still configure and install cleanly.
+#
+# Detection is a cheap, network-free find_program() probe. Everything the
+# install needs — a Wolfram binary that can run get_wolfram_app_dir.m to report
+# the user application directory ($UserBaseDirectory/Applications) — is obtained
+# directly from that binary. We deliberately do NOT download CPM.cmake or
+# WolframResearch/LibraryLinkUtilities (previously pulled in only for its
+# FindWolframLanguage module): that made the install require network access even
+# on machines that have Wolfram, and fail outright on machines that do not.
 
-# download CPM.cmake
-file(
-  DOWNLOAD
-  https://github.com/cpm-cmake/CPM.cmake/releases/download/v0.40.8/CPM.cmake
-  ${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake
-  EXPECTED_HASH
-    SHA256=78ba32abdf798bc616bab7c73aac32a17bbd7b06ad9e26a6add69de8f3ae4791)
-include(${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake)
-if("${CPM_SOURCE_CACHE}" STREQUAL "OFF" OR NOT DEFINED CPM_SOURCE_CACHE)
-  set(CPM_SOURCE_CACHE $ENV{HOME}/.cache/CPM)
+# Honor explicit user hints (cache or env) before probing PATH / default dirs.
+set(_WOLFRAM_HINTS "")
+if(DEFINED WolframLanguage_ROOT)
+  list(APPEND _WOLFRAM_HINTS "${WolframLanguage_ROOT}")
+endif()
+if(DEFINED WolframLanguage_INSTALL_DIR)
+  list(APPEND _WOLFRAM_HINTS "${WolframLanguage_INSTALL_DIR}")
+endif()
+if(DEFINED ENV{MATHEMATICA_HOME})
+  list(APPEND _WOLFRAM_HINTS "$ENV{MATHEMATICA_HOME}")
 endif()
 
-# Get codeparser
-cpmaddpackage(
-  NAME
-  LibraryLinkUtilities
-  GITHUB_REPOSITORY
-  WolframResearch/LibraryLinkUtilities
-  GIT_TAG
-  v3.2.0
-  DOWNLOAD_ONLY
-  True)
-list(APPEND CMAKE_MODULE_PATH ${LibraryLinkUtilities_SOURCE_DIR}/cmake)
+# wolframscript is preferred (it is the canonical script runner), but a bare
+# kernel (wolfram / WolframKernel / math) also accepts "-script" and is enough.
+find_program(
+  WOLFRAM_EXE
+  NAMES wolframscript wolfram WolframKernel math MathKernel
+  HINTS ${_WOLFRAM_HINTS}
+  PATH_SUFFIXES Executables MacOS Contents/MacOS)
 
-find_package(WolframLanguage 12.0 COMPONENTS wolframscript)
-
-if(${WolframLanguage_FOUND})
-  message(STATUS "Wolfram Language found: ${WolframLanguage_VERSION}")
+if(NOT WOLFRAM_EXE)
   message(
-    STATUS "WolframScript executable: ${WolframLanguage_wolframscript_EXE}")
+    STATUS
+      "Wolfram Language / Mathematica not found — skipping the (optional) "
+      "Mathematica package install. Symbolic flow-equation code generation will "
+      "be unavailable; the compiled library is unaffected. Set "
+      "WolframLanguage_ROOT or MATHEMATICA_HOME to enable it.")
+  return()
+endif()
 
-  # get the application directory
-  execute_process(
-    COMMAND ${WolframLanguage_wolframscript_EXE} -script
-            ${CMAKE_CURRENT_SOURCE_DIR}/cmake/get_wolfram_app_dir.m
-    OUTPUT_VARIABLE WOLFRAM_APP_DIR
-    OUTPUT_STRIP_TRAILING_WHITESPACE)
-  message(STATUS "Wolfram Language application directory: ${WOLFRAM_APP_DIR}")
+message(STATUS "Wolfram binary detected: ${WOLFRAM_EXE}")
 
-  # install the Mathematica package
-  install(
-    DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/Mathematica/DiFfRG
-    MESSAGE_NEVER
-    DESTINATION ${WOLFRAM_APP_DIR}
-    FILES_MATCHING
-    PATTERN "*.m"
-    PATTERN "*.wl"
-    PATTERN "*.mx"
-    PATTERN "*.nb")
-else()
+# Ask the interpreter for its user application directory. All candidate binaries
+# accept "-script <file>". Capture the exit status so a broken/unlicensed
+# install degrades to a warning instead of aborting the whole install.
+execute_process(
+  COMMAND ${WOLFRAM_EXE} -script
+          ${CMAKE_CURRENT_SOURCE_DIR}/cmake/get_wolfram_app_dir.m
+  OUTPUT_VARIABLE WOLFRAM_APP_DIR
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  RESULT_VARIABLE WOLFRAM_APP_DIR_RESULT
+  ERROR_QUIET)
+
+if(NOT WOLFRAM_APP_DIR_RESULT EQUAL 0 OR WOLFRAM_APP_DIR STREQUAL "")
   message(
     WARNING
-      "Wolfram Language not found. Skipping install of Mathematica package.")
+      "Wolfram binary '${WOLFRAM_EXE}' could not report its application "
+      "directory (exit code ${WOLFRAM_APP_DIR_RESULT}). Skipping install of the "
+      "Mathematica package.")
+  return()
 endif()
+
+message(STATUS "Wolfram Language application directory: ${WOLFRAM_APP_DIR}")
+
+# install the Mathematica package
+install(
+  DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/Mathematica/DiFfRG
+  MESSAGE_NEVER
+  DESTINATION ${WOLFRAM_APP_DIR}
+  FILES_MATCHING
+  PATTERN "*.m"
+  PATTERN "*.wl"
+  PATTERN "*.mx"
+  PATTERN "*.nb")

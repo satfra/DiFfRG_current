@@ -432,7 +432,28 @@ function(setup_dealii TARGET)
   string(REPLACE "-std=c++20" "" _cflags ${_cflags})
   string(REPLACE "-O2" "" _cflags ${_cflags})
   separate_arguments(_cflags)
-  target_compile_options(${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:${_cflags}>)
+  # deal.II built through nvcc/nvcc_wrapper (the GCC + CUDA path) emits repeated
+  # "-Xcudafe <code>" pairs. Added as plain compile options these get
+  # de-duplicated by CMake, which collapses the identical -Xcudafe tokens and
+  # orphans the trailing --diag_suppress=NNN, so the host compiler receives them
+  # raw and errors out. Fuse each "-Xcudafe <arg>" into a single SHELL: fragment
+  # so the pair stays intact and is exempt from de-duplication. No-op on the
+  # clang-CUDA path, which emits no -Xcudafe.
+  set(_cxx_opts "")
+  set(_pending_xcudafe FALSE)
+  foreach(_tok IN LISTS _cflags)
+    if(_tok STREQUAL "")
+      continue()
+    elseif(_pending_xcudafe)
+      list(APPEND _cxx_opts "SHELL:-Xcudafe ${_tok}")
+      set(_pending_xcudafe FALSE)
+    elseif(_tok STREQUAL "-Xcudafe")
+      set(_pending_xcudafe TRUE)
+    else()
+      list(APPEND _cxx_opts "${_tok}")
+    endif()
+  endforeach()
+  target_compile_options(${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:${_cxx_opts}>)
 
   set(_lflags "${DEAL_II_LINKER_FLAGS} ${DEAL_II_LINKER_FLAGS_${_build}}")
   separate_arguments(_lflags)
