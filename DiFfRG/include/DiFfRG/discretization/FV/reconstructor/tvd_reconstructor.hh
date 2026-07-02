@@ -183,6 +183,47 @@ namespace DiFfRG
 
         return result;
       }
+
+      template <int n_components>
+      static ThirdDerivativeType<dim, NumberType, n_components> compute_third_derivatives_at_face(
+          const std::array<dealii::Point<dim>, 4> &x_stencil,
+          const std::array<std::array<NumberType, n_components>, 4> &u_stencil)
+      {
+        ThirdDerivativeType<dim, NumberType, n_components> result{};
+        if constexpr (dim == 1) {
+          const auto x0 = x_stencil[0][0];
+          const auto x1 = x_stencil[1][0];
+          const auto x2 = x_stencil[2][0];
+          const auto x3 = x_stencil[3][0];
+          for (size_t c = 0; c < n_components; ++c) {
+            const auto f01 = (u_stencil[1][c] - u_stencil[0][c]) / (x1 - x0);
+            const auto f12 = (u_stencil[2][c] - u_stencil[1][c]) / (x2 - x1);
+            const auto f23 = (u_stencil[3][c] - u_stencil[2][c]) / (x3 - x2);
+            const auto f012 = (f12 - f01) / (x2 - x0);
+            const auto f123 = (f23 - f12) / (x3 - x1);
+            result[c][0][0][0] = NumberType(6.) * (f123 - f012) / (x3 - x0);
+          }
+        }
+        return result;
+      }
+
+      template <int n_components>
+      static ThirdDerivativeType<dim, NumberType, n_components> compute_third_derivatives_at_face_derivative(
+          const std::array<dealii::Point<dim>, 4> &x_stencil,
+          const std::array<std::array<ADNumberType, n_components>, 4> &u_stencil)
+      {
+        const auto third_derivatives_AD =
+            TVDReconstructor<dim, Limiter, ADNumberType>::template compute_third_derivatives_at_face<n_components>(
+                x_stencil, u_stencil);
+
+        ThirdDerivativeType<dim, NumberType, n_components> result{};
+        for (size_t c = 0; c < n_components; ++c)
+          for (int d0 = 0; d0 < dim; ++d0)
+            for (int d1 = 0; d1 < dim; ++d1)
+              for (int d2 = 0; d2 < dim; ++d2)
+                result[c][d0][d1][d2] = autodiff::derivative(third_derivatives_AD[c][d0][d1][d2]);
+        return result;
+      }
     };
 
     // Verify the default instantiation satisfies the concept.

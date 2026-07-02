@@ -57,6 +57,22 @@ namespace DiFfRG
       {
         return {};
       }
+
+      template <int n_components>
+      static ThirdDerivativeType<dim, NumberType, n_components> compute_third_derivatives_at_face(
+          [[maybe_unused]] const std::array<dealii::Point<dim>, 4> &x_stencil,
+          [[maybe_unused]] const std::array<std::array<NumberType, n_components>, 4> &u_stencil)
+      {
+        return {};
+      }
+
+      template <int n_components>
+      static ThirdDerivativeType<dim, NumberType, n_components> compute_third_derivatives_at_face_derivative(
+          [[maybe_unused]] const std::array<dealii::Point<dim>, 4> &x_stencil,
+          [[maybe_unused]] const std::array<std::array<ADNumberType, n_components>, 4> &u_stencil)
+      {
+        return {};
+      }
     };
 
     static_assert(HasReconstructor<FirstOrderReconstructor<1, double>>);

@@ -168,12 +168,14 @@ namespace diagnostics
           };
 
           auto compute_flux_values = [&](const auto &u_plus, const auto &u_minus, const auto &grad_plus,
-                                         const auto &grad_minus, const auto &x_q) {
+                                         const auto &grad_minus, const auto &third_derivatives_plus,
+                                         const auto &third_derivatives_minus, const auto &x_q) {
             const auto [F_plus, F_minus, a_half] =
                 internal::compute_kt_flux_and_speeds<typename AssemblerType::WaveSpeedStrategy>(u_plus, u_minus, x_q,
                                                                                                 model);
             const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, u_plus, u_minus);
-            const auto D = internal::compute_diffusion_flux(u_plus, u_minus, grad_plus, grad_minus, x_q, model);
+            const auto D = internal::compute_diffusion_flux(u_plus, u_minus, grad_plus, grad_minus,
+                                                            third_derivatives_plus, third_derivatives_minus, x_q, model);
 
             FluxValues result;
             for (size_t c = 0; c < n_components; ++c) {
@@ -195,7 +197,9 @@ namespace diagnostics
             if (face_no == 0) {
               const auto fluxes = compute_flux_values(reconstruction.u_minus, reconstruction.u_plus,
                                                        reconstruction.face_grad_minus,
-                                                       reconstruction.face_grad_plus, x_q);
+                                                       reconstruction.face_grad_plus,
+                                                       reconstruction.third_derivatives_minus,
+                                                       reconstruction.third_derivatives_plus, x_q);
               append_face(x_q[0], as_value(reconstruction.u_plus), as_value(reconstruction.u_minus),
                           as_gradient_value(reconstruction.face_grad_plus),
                           as_gradient_value(reconstruction.face_grad_minus), fluxes.advection, fluxes.diffusion,
@@ -203,7 +207,9 @@ namespace diagnostics
             } else {
               const auto fluxes = compute_flux_values(reconstruction.u_plus, reconstruction.u_minus,
                                                        reconstruction.face_grad_plus,
-                                                       reconstruction.face_grad_minus, x_q);
+                                                       reconstruction.face_grad_minus,
+                                                       reconstruction.third_derivatives_plus,
+                                                       reconstruction.third_derivatives_minus, x_q);
               append_face(x_q[0], as_value(reconstruction.u_minus), as_value(reconstruction.u_plus),
                           as_gradient_value(reconstruction.face_grad_minus),
                           as_gradient_value(reconstruction.face_grad_plus), fluxes.advection, fluxes.diffusion,
@@ -221,7 +227,9 @@ namespace diagnostics
                 internal::compute_interior_face_reconstruction_state<Reconstructor>(lower.stencil, upper.stencil, x_q);
             const auto fluxes = compute_flux_values(reconstruction.u_plus, reconstruction.u_minus,
                                                     reconstruction.face_grad_plus,
-                                                    reconstruction.face_grad_minus, x_q);
+                                                    reconstruction.face_grad_minus,
+                                                    reconstruction.third_derivatives_plus,
+                                                    reconstruction.third_derivatives_minus, x_q);
             append_face(x_q[0], as_value(reconstruction.u_minus), as_value(reconstruction.u_plus),
                         as_gradient_value(reconstruction.face_grad_minus),
                         as_gradient_value(reconstruction.face_grad_plus), fluxes.advection, fluxes.diffusion,

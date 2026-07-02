@@ -524,6 +524,54 @@ TEST_CASE("TVD gradient derivative in 1D, one component", "[FV][reconstructor]")
   }
 }
 
+TEST_CASE("TVD third derivative at a 1D face uses non-uniform divided differences", "[FV][reconstructor]")
+{
+  constexpr int dim = 1;
+  constexpr int n_components = 1;
+  using Reconstructor = TVDReconstructorImpl<dim>;
+
+  const std::array<Point<dim>, 4> x = {Point<dim>(-0.7), Point<dim>(0.0), Point<dim>(0.4), Point<dim>(1.3)};
+  std::array<std::array<NumberType, n_components>, 4> u{};
+  for (size_t i = 0; i < x.size(); ++i)
+    u[i][0] = 2.0 + 0.5 * x[i][0] - 0.25 * x[i][0] * x[i][0] + 3.0 * x[i][0] * x[i][0] * x[i][0];
+
+  const auto third_derivatives = Reconstructor::compute_third_derivatives_at_face<n_components>(x, u);
+  CHECK(third_derivatives[0][0][0][0] == Catch::Approx(18.0).margin(1e-12));
+}
+
+TEST_CASE("TVD third derivative AD trace matches finite differences", "[FV][reconstructor]")
+{
+  using AD = autodiff::Real<1, NumberType>;
+  constexpr int dim = 1;
+  constexpr int n_components = 1;
+  using Reconstructor = TVDReconstructorImpl<dim>;
+
+  const std::array<Point<dim>, 4> x = {Point<dim>(-0.3), Point<dim>(0.2), Point<dim>(0.9), Point<dim>(1.7)};
+  std::array<std::array<AD, n_components>, 4> u{};
+  for (size_t i = 0; i < x.size(); ++i)
+    u[i][0] = AD(1.0 + x[i][0] + 0.4 * x[i][0] * x[i][0]);
+
+  seed(u[2][0]);
+  const auto derivative = Reconstructor::compute_third_derivatives_at_face_derivative<n_components>(x, u);
+  unseed(u[2][0]);
+
+  constexpr double eps = 1e-7;
+  std::array<std::array<NumberType, n_components>, 4> u_plus{};
+  std::array<std::array<NumberType, n_components>, 4> u_minus{};
+  for (size_t i = 0; i < x.size(); ++i) {
+    u_plus[i][0] = u[i][0].val();
+    u_minus[i][0] = u[i][0].val();
+  }
+  u_plus[2][0] += eps;
+  u_minus[2][0] -= eps;
+
+  const auto third_plus = Reconstructor::compute_third_derivatives_at_face<n_components>(x, u_plus);
+  const auto third_minus = Reconstructor::compute_third_derivatives_at_face<n_components>(x, u_minus);
+  const auto fd = (third_plus[0][0][0][0] - third_minus[0][0][0][0]) / (2.0 * eps);
+
+  CHECK(derivative[0][0][0][0] == Catch::Approx(fd).epsilon(1e-8));
+}
+
 // ──────────────────────────────────────────────────────────────────────
 // compute_gradient_derivative — 1D, two components
 // ──────────────────────────────────────────────────────────────────────

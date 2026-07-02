@@ -23,6 +23,12 @@ namespace DiFfRG
      */
     template <int dim, typename NumberType, size_t n_components>
     using GradientType = std::array<dealii::Tensor<1, dim, NumberType>, n_components>;
+
+    /**
+     * @brief Per-component third spatial derivative type.
+     */
+    template <int dim, typename NumberType, size_t n_components>
+    using ThirdDerivativeType = std::array<dealii::Tensor<3, dim, NumberType>, n_components>;
     /**
      * @brief Concept that any gradient-reconstruction strategy must satisfy.
      */
@@ -101,6 +107,34 @@ namespace DiFfRG
           {
             T::template compute_gradient_at_point_derivative<2>(center, x, u_center, x_n, u_n)
           } -> std::same_as<GradientType<T::dim, double, 2>>;
+        } &&
+        // ---- compute_third_derivatives_at_face (n_components=1) ----
+        requires(const std::array<dealii::Point<T::dim>, 4> &x_stencil,
+                 const std::array<std::array<double, 1>, 4> &u_stencil) {
+          {
+            T::template compute_third_derivatives_at_face<1>(x_stencil, u_stencil)
+          } -> std::same_as<ThirdDerivativeType<T::dim, double, 1>>;
+        } &&
+        // ---- compute_third_derivatives_at_face (n_components=2) ----
+        requires(const std::array<dealii::Point<T::dim>, 4> &x_stencil,
+                 const std::array<std::array<double, 2>, 4> &u_stencil) {
+          {
+            T::template compute_third_derivatives_at_face<2>(x_stencil, u_stencil)
+          } -> std::same_as<ThirdDerivativeType<T::dim, double, 2>>;
+        } &&
+        // ---- compute_third_derivatives_at_face_derivative (n_components=1) ----
+        requires(const std::array<dealii::Point<T::dim>, 4> &x_stencil,
+                 const std::array<std::array<autodiff::Real<1, double>, 1>, 4> &u_stencil) {
+          {
+            T::template compute_third_derivatives_at_face_derivative<1>(x_stencil, u_stencil)
+          } -> std::same_as<ThirdDerivativeType<T::dim, double, 1>>;
+        } &&
+        // ---- compute_third_derivatives_at_face_derivative (n_components=2) ----
+        requires(const std::array<dealii::Point<T::dim>, 4> &x_stencil,
+                 const std::array<std::array<autodiff::Real<1, double>, 2>, 4> &u_stencil) {
+          {
+            T::template compute_third_derivatives_at_face_derivative<2>(x_stencil, u_stencil)
+          } -> std::same_as<ThirdDerivativeType<T::dim, double, 2>>;
         };
 
   } // namespace def
