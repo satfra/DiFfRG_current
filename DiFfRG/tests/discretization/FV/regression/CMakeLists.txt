@@ -5,5 +5,5 @@
 setup_test(gross_neveu_kt_regression.cc)
 setup_test(on_model_kt_regression.cc)
 add_subdirectory(on_model_kt_3D)
+add_subdirectory(o2_model_kt_2D)
 setup_test(quark_meson_kt_regression.cc)
-setup_test(zero_dim_2d_kt_regression.cc)

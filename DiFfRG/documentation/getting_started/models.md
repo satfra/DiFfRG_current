@@ -242,13 +242,48 @@ class MyModel : public def::AbstractModel<MyModel, Components>,
 ```
 
 Both helpers do the following:
-1. inspect the selected view of the FE function `"u"` and choose the representative nearest to `x=0`,
+1. inspect the selected view of the FE function `"u"` and choose the representative nearest to the origin coordinate,
 2. break symmetric ties by preferring the non-negative side,
-3. constrain the selected dof to `0`.
+3. constrain the selected dof or dofs to `0`.
 
 Use `ConstrainOriginBoundaryPointToZero` for dofs sitting on boundary faces. Use
 `ConstrainOriginSupportPointToZero` for FV and DG0-like layouts where the representative nearest the origin can be an
 interior or cell-centered support point.
+
+In one-dimensional domains, the origin coordinate is simply `x[0]`. In multidimensional domains, the model must define
+what “origin” means for each constrained component by providing an `OriginConstraintCoordinate` policy. The helper then
+selects the nearest discrete zero level set of that signed coordinate and constrains all dofs on that selected level set.
+
+For example, in a two-field `O(2)`-style model where `"u"` is odd across `phi_1 = 0` and `"v"` is odd across
+`phi_2 = 0`, write:
+```Cpp
+class O2Model : public def::AbstractModel<O2Model, Components>,
+                ...
+{
+public:
+  template <FixedString component_name> struct OriginConstraintCoordinate;
+
+  template <typename Constraints, typename Context>
+  void apply_affine_constraints(Constraints &constraints, const Context &context) const
+  {
+    def::ConstrainOriginSupportPointToZero<"u", O2Model>{}.apply_affine_constraints(constraints, context);
+    def::ConstrainOriginSupportPointToZero<"v", O2Model>{}.apply_affine_constraints(constraints, context);
+  }
+};
+
+template <> struct O2Model::OriginConstraintCoordinate<"u"> {
+  static double signed_coordinate(const Point<2> &point) { return point[0]; }
+};
+
+template <> struct O2Model::OriginConstraintCoordinate<"v"> {
+  static double signed_coordinate(const Point<2> &point) { return point[1]; }
+};
+```
+
+Here `signed_coordinate(point) == 0` defines the constraint manifold. This is intentionally model-owned: it avoids
+assuming that component order determines geometry. A descriptor order such as
+`FEFunctionDescriptor<Scalar<"v">, Scalar<"u">>` still works as long as the policies above define the intended
+coordinates.
 
 ### Manual example: constrain several components differently
 
@@ -300,7 +335,8 @@ is component `1`.
 ### Reusing helpers for several named FE functions
 
 If several FE functions should receive the same type of origin constraint, it is usually cleaner to wrap the provided
-single-component helper into a small mixin:
+single-component helper into a small mixin. In multidimensional domains, the model still has to provide the
+`OriginConstraintCoordinate` policy for each constrained component.
 ```Cpp
 template <typename Model>
 class ConstrainUAndVAtOrigin
