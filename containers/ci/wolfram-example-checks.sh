@@ -11,14 +11,18 @@ timeout_seconds="${WOLFRAM_TIMEOUT:-1800}"
 
 examples=(
   "ONfiniteT:Examples/ONfiniteT:ON.nb"
-  "QuarkMesonLPAprime:Examples/QuarkMesonLPAprime:QuarkMesonLPAprime.m"
-  "YangMills_SP:Examples/YangMills/SP:Yang-Mills.m"
-  "YangMills_Full:Examples/YangMills/Full:Yang-Mills.m"
-  "FourFermi:Examples/FourFermi:Four-Fermion.m"
+  "QuarkMesonLPAprime:Examples/QuarkMesonLPAprime:QuarkMesonLPAprime.nb"
+  "YangMills_SP:Examples/YangMills/SP:Yang-Mills.nb"
+  "YangMills_Full:Examples/YangMills/Full:Yang-Mills.nb"
+  "FourFermi:Examples/FourFermi:Four-Fermion.nb"
 )
 
 mkdir -p "${log_dir}" "$(dirname "${summary_file}")"
-export PATH="${PREPEND_PATH:-}:/usr/local/bin:/usr/bin:/bin:/opt/Wolfram/WolframEngine/Executables:/opt/Wolfram/Wolfram/Executables:${PATH:-}"
+path_prefix="${PREPEND_PATH:-}"
+if [[ -d /host-bin/wolfram-bin ]]; then
+  path_prefix="/host-bin/wolfram-bin${path_prefix:+:${path_prefix}}"
+fi
+export PATH="${path_prefix}:/usr/local/bin:/usr/bin:/bin:/opt/Wolfram/WolframEngine/Executables:/opt/Wolfram/Wolfram/Executables:${PATH:-}"
 
 is_required() {
   local name="$1"
@@ -54,13 +58,36 @@ set +e
     ls -l "$(command -v wolframscript)" || true
   fi
   echo
+  echo "Wolfram installation probes:"
+  for candidate in \
+    /home/software \
+    /home/software/mathematica \
+    /home/software/mathematica/Executables \
+    /home/software/mathematica/Executables/wolframscript \
+    /home/software/mathematica/Executables/WolframKernel \
+    /home/software/mathematica/Executables/MathKernel \
+    /home/software/mathematica/SystemFiles/Kernel/Binaries/Linux-x86-64 \
+    /home/software/mathematica/SystemFiles/Kernel/Binaries/Linux-x86-64/WolframKernel \
+    /home/software/mathematica/SystemFiles/Kernel/Binaries/Linux-x86-64/MathKernel
+  do
+    if [[ -e "${candidate}" ]]; then
+      ls -ld "${candidate}" || true
+      if [[ -f "${candidate}" ]]; then
+        file "${candidate}" || true
+        ldd "${candidate}" || true
+      fi
+    else
+      echo "missing: ${candidate}"
+    fi
+  done
+  echo
   echo "wolframscript version:"
   wolframscript -code '$VersionNumber'
   version_status=$?
   echo "wolframscript version exit: ${version_status}"
   echo
   echo "FunKit preflight:"
-  wolframscript -code 'If[Length[PacletFind["FunKit"]] > 0, Print["FunKit found"]; Exit[0], Print["FunKit missing"]; Exit[2]]'
+  wolframscript -code 'Quiet[If[$VersionNumber >= 14.0, PacletDataRebuild[], PacletManager`RebuildPacletData[]]]; Print["PacletFind FunKit: ", PacletFind["FunKit"]]; Print["FindFile FunKit: ", FindFile["FunKit`"]]; Print["FindFile FormTracer: ", FindFile["FormTracer`"]]; If[Length[PacletFind["FunKit"]] > 0, Print["FunKit found"]; Exit[0], Print["FunKit missing"]; Exit[2]]'
   funkit_status=$?
   echo "FunKit preflight exit: ${funkit_status}"
   echo
@@ -108,9 +135,15 @@ for item in "${examples[@]}"; do
   if [[ "${entry}" == *.m ]]; then
     run_wolfram -code 'AppendTo[$Path, "/work/DiFfRG/Mathematica"]; SetDirectory["'"${example_dir}"'"]; Get["'"${entry}"'"]' > "${log}" 2>&1
     status=$?
+  elif [[ "${entry}" == *.nb ]]; then
+    (
+      cd "${example_dir}"
+      run_wolfram -script "${entry}"
+    ) > "${log}" 2>&1
+    status=$?
   else
     {
-      echo "No plain-text .m generator is available for ${name}; notebook execution is intentionally not attempted by default."
+      echo "Unsupported Wolfram generator entry point for ${name}."
       echo "Entry point: ${relpath}/${entry}"
     } > "${log}"
     status=125
@@ -120,6 +153,10 @@ for item in "${examples[@]}"; do
   if [[ ${status} -eq 0 ]]; then
     echo "| ${name} | passed | \`${log#${workspace}/}\` | |" >> "${summary_file}"
   else
+    echo "Wolfram generator ${name} failed with exit ${status}."
+    echo "---- ${log#${workspace}/} ----"
+    cat "${log}"
+    echo "---- end ${log#${workspace}/} ----"
     echo "| ${name} | failed | \`${log#${workspace}/}\` | exit ${status} |" >> "${summary_file}"
     required_failures=$((required_failures + 1))
   fi
@@ -139,6 +176,9 @@ else
 fi
 
 if [[ ${required_failures} -ne 0 ]]; then
+  echo "---- ${summary_file#${workspace}/} ----"
+  cat "${summary_file}"
+  echo "---- end ${summary_file#${workspace}/} ----"
   echo "${required_failures} required Wolfram generator(s) failed." >&2
   exit 1
 fi
