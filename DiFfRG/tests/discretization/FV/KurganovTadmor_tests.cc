@@ -227,6 +227,61 @@ public:
   mutable bool flux_saw_hook_state = false;
 };
 
+class ThirdDerivativeFluxProbeModel : public DiFfRG::def::AbstractModel<ThirdDerivativeFluxProbeModel, Components>,
+                                      public DiFfRG::def::Time,
+                                      public DiFfRG::def::LLFFlux<ThirdDerivativeFluxProbeModel>,
+                                      public DiFfRG::def::FlowBoundaries<ThirdDerivativeFluxProbeModel>,
+                                      public DiFfRG::def::FVDefaultBoundaries<ThirdDerivativeFluxProbeModel>,
+                                      public DiFfRG::def::AD<ThirdDerivativeFluxProbeModel>
+{
+public:
+  template <typename Vector> void initial_condition(const Point<1> &pos, Vector &values) const
+  {
+    values[0] = solution(pos)[0];
+  }
+
+  std::array<double, 1> solution(const Point<1> &pos) const
+  {
+    const double x = pos[0];
+    return {1.0 + 0.5 * x - 0.25 * x * x + x * x * x};
+  }
+
+  template <typename NT, typename Solution>
+  void KurganovTadmor_advection_flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/,
+                                     const Solution & /*sol*/) const
+  {
+    F_i[0][0] = 0.0;
+  }
+
+  template <typename NT, typename Solution>
+  void flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution &sol) const
+  {
+    const auto &third_derivatives = get<"fe_third_derivatives">(sol);
+    const auto third = third_derivatives[0][0][0][0];
+    saw_third_derivative = true;
+    min_third_derivative = std::min(min_third_derivative, static_cast<double>(third));
+    max_third_derivative = std::max(max_third_derivative, static_cast<double>(third));
+    saw_exact_cubic_third_derivative =
+        saw_exact_cubic_third_derivative || std::abs(static_cast<double>(third) - 6.0) < 1e-10;
+    F_i[0][0] = third;
+  }
+
+  template <int mdim, typename NT, size_t n_components>
+  bool apply_boundary_stencil(DiFfRG::def::BoundaryStencilValues<mdim, NT, n_components> &u_stencil,
+                              DiFfRG::def::BoundaryStencilPoints<mdim> &x_stencil, const Point<mdim> &x_face) const
+  {
+    static_assert(mdim == 1);
+    DiFfRG::Testing::fill_face_ghost_solution_boundary_stencil(u_stencil, x_stencil, x_face,
+                                                               [this](const Point<1> &pos) { return solution(pos); });
+    return true;
+  }
+
+  mutable bool saw_third_derivative = false;
+  mutable bool saw_exact_cubic_third_derivative = false;
+  mutable double min_third_derivative = std::numeric_limits<double>::infinity();
+  mutable double max_third_derivative = -std::numeric_limits<double>::infinity();
+};
+
 static DiFfRG::JSONValue make_fv_reconstruction_diagnostics_json()
 {
   return DiFfRG::json::value(
@@ -763,6 +818,38 @@ TEST_CASE("KT face hook exposes cached reconstruction before residual flux", "[F
   CHECK(std::isfinite(model.last_cell_point));
   CHECK(model.flux_calls > 0);
   CHECK(model.flux_saw_hook_state);
+}
+
+TEST_CASE("KT diffusion flux receives reconstructed third derivatives", "[FV][KT]")
+{
+  using Model = ThirdDerivativeFluxProbeModel;
+  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<1>>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  auto json = make_fv_residual_contribution_diagnostics_json();
+  Model model;
+  DiFfRG::RectangularMesh<1> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  DiFfRG::FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+  const VectorType &solution = state.spatial_data();
+
+  VectorType residual(solution.size());
+  VectorType solution_dot(solution.size());
+  residual = 0.;
+  solution_dot = 0.;
+
+  assembler.residual(residual, solution, 1., solution_dot, 0.);
+
+  CHECK(model.saw_third_derivative);
+  CHECK(model.saw_exact_cubic_third_derivative);
+  CHECK(std::isfinite(model.min_third_derivative));
+  CHECK(std::isfinite(model.max_third_derivative));
 }
 
 TEST_CASE("u_plus u_minus compoutation", "[FV][KT]")

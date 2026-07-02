@@ -5,6 +5,7 @@
 #include <DiFfRG/discretization/common/types.hh>
 #include <DiFfRG/discretization/FV/reconstructor/abstract_reconstructor.hh>
 
+#include <algorithm>
 #include <array>
 #include <autodiff/forward/real/real.hpp>
 #include <cstddef>
@@ -24,6 +25,11 @@ namespace DiFfRG
         template <int dim, typename NumberType, size_t n_components>
         using GradientType = def::GradientType<dim, NumberType, n_components>;
 
+        template <int dim, typename NumberType, size_t n_components>
+        using ThirdDerivativeType = def::ThirdDerivativeType<dim, NumberType, n_components>;
+
+        template <int dim, typename NumberType, size_t n_components> struct BoundaryStencilData;
+
         template <int dim> struct BoundaryStencilIndex {
           static_assert(dim == 1, "Paper-style boundary stencil indices currently support only dim=1.");
         };
@@ -41,6 +47,7 @@ namespace DiFfRG
         template <int dim, typename NumberType, size_t n_components> struct ReconstructionDerivativeData {
           std::array<NumberType, n_components> u{};
           GradientType<dim, NumberType, n_components> grad{};
+          ThirdDerivativeType<dim, NumberType, n_components> third_derivatives{};
         };
 
         template <int dim, typename NumberType, size_t n_components> struct FaceReconstructionState {
@@ -50,6 +57,8 @@ namespace DiFfRG
           GradientType<dim, NumberType, n_components> center_grad_plus{};
           GradientType<dim, NumberType, n_components> face_grad_minus{};
           GradientType<dim, NumberType, n_components> face_grad_plus{};
+          ThirdDerivativeType<dim, NumberType, n_components> third_derivatives_minus{};
+          ThirdDerivativeType<dim, NumberType, n_components> third_derivatives_plus{};
         };
 
         template <int dim, typename NumberType, size_t n_components>
@@ -63,6 +72,8 @@ namespace DiFfRG
           reversed.center_grad_plus = state.center_grad_minus;
           reversed.face_grad_minus = state.face_grad_plus;
           reversed.face_grad_plus = state.face_grad_minus;
+          reversed.third_derivatives_minus = state.third_derivatives_plus;
+          reversed.third_derivatives_plus = state.third_derivatives_minus;
           return reversed;
         }
 
@@ -129,6 +140,79 @@ namespace DiFfRG
           return result;
         }
 
+        template <int dim, typename NumberType, size_t n_components> struct FourPointStencil {
+          std::array<dealii::Point<dim>, 4> x{};
+          std::array<std::array<NumberType, n_components>, 4> u{};
+        };
+
+        template <int dim, typename NumberType, size_t n_components>
+        void sort_four_point_stencil(FourPointStencil<dim, NumberType, n_components> &stencil)
+        {
+          static_assert(dim == 1, "Third-derivative FV stencils currently support only dim=1.");
+
+          std::array<size_t, 4> order = {0, 1, 2, 3};
+          std::sort(order.begin(), order.end(),
+                    [&](const size_t left, const size_t right) { return stencil.x[left][0] < stencil.x[right][0]; });
+
+          auto x_sorted = stencil.x;
+          auto u_sorted = stencil.u;
+          for (size_t i = 0; i < order.size(); ++i) {
+            x_sorted[i] = stencil.x[order[i]];
+            u_sorted[i] = stencil.u[order[i]];
+          }
+          stencil.x = x_sorted;
+          stencil.u = u_sorted;
+        }
+
+        template <int dim, typename NumberType, size_t n_components>
+        FourPointStencil<dim, NumberType, n_components> make_interior_third_derivative_stencil(
+            const CellStencilData<dim, NumberType, n_components> &minus_stencil,
+            const CellStencilData<dim, NumberType, n_components> &plus_stencil, const dealii::Point<dim> &x_q)
+        {
+          static_assert(dim == 1, "Third-derivative FV stencils currently support only dim=1.");
+
+          auto outer_face = [&](const CellStencilData<dim, NumberType, n_components> &stencil) {
+            return stencil.cell.x[0] < x_q[0] ? 0U : 1U;
+          };
+
+          FourPointStencil<dim, NumberType, n_components> result{};
+          const auto minus_outer = outer_face(minus_stencil);
+          const auto plus_outer = outer_face(plus_stencil);
+          result.x = {minus_stencil.neighbors.x[minus_outer], minus_stencil.cell.x, plus_stencil.cell.x,
+                      plus_stencil.neighbors.x[plus_outer]};
+          result.u = {minus_stencil.neighbors.u[minus_outer], minus_stencil.cell.u, plus_stencil.cell.u,
+                      plus_stencil.neighbors.u[plus_outer]};
+          sort_four_point_stencil(result);
+          return result;
+        }
+
+        template <int dim, typename NumberType, size_t n_components>
+        FourPointStencil<dim, NumberType, n_components> make_boundary_third_derivative_stencil(
+            const BoundaryStencilData<dim, NumberType, n_components> &boundary_stencil)
+        {
+          static_assert(dim == 1, "Third-derivative boundary stencils currently support only dim=1.");
+
+          using BoundaryIndex = BoundaryStencilIndex<dim>;
+          FourPointStencil<dim, NumberType, n_components> result{};
+          if (boundary_stencil.lower_boundary) {
+            result.x = {boundary_stencil.x[BoundaryIndex::lower_outer], boundary_stencil.x[BoundaryIndex::lower_inner],
+                        boundary_stencil.x[BoundaryIndex::physical_cell],
+                        boundary_stencil.x[BoundaryIndex::upper_inner]};
+            result.u = {boundary_stencil.u[BoundaryIndex::lower_outer], boundary_stencil.u[BoundaryIndex::lower_inner],
+                        boundary_stencil.u[BoundaryIndex::physical_cell],
+                        boundary_stencil.u[BoundaryIndex::upper_inner]};
+          } else {
+            result.x = {boundary_stencil.x[BoundaryIndex::lower_inner],
+                        boundary_stencil.x[BoundaryIndex::physical_cell],
+                        boundary_stencil.x[BoundaryIndex::upper_inner], boundary_stencil.x[BoundaryIndex::upper_outer]};
+            result.u = {boundary_stencil.u[BoundaryIndex::lower_inner],
+                        boundary_stencil.u[BoundaryIndex::physical_cell],
+                        boundary_stencil.u[BoundaryIndex::upper_inner], boundary_stencil.u[BoundaryIndex::upper_outer]};
+          }
+          sort_four_point_stencil(result);
+          return result;
+        }
+
         template <int dim, typename NumberType, size_t n_components, typename VectorType>
         void fill_cell_data_from_topology(const CellGeometryDofs<dim, n_components> &topology,
                                           const VectorType &solution_global,
@@ -156,6 +240,14 @@ namespace DiFfRG
               plus_stencil.cell.x, x_q, plus_stencil.cell.u, plus_stencil.neighbors.x, plus_stencil.neighbors.u);
           state.u_minus = reconstruct_u(minus_stencil.cell.u, minus_stencil.cell.x, x_q, state.center_grad_minus);
           state.u_plus = reconstruct_u(plus_stencil.cell.u, plus_stencil.cell.x, x_q, state.center_grad_plus);
+          if constexpr (dim == 1) {
+            const auto third_derivative_stencil =
+                make_interior_third_derivative_stencil(minus_stencil, plus_stencil, x_q);
+            const auto third_derivatives = Reconstructor::template compute_third_derivatives_at_face<n_components>(
+                third_derivative_stencil.x, third_derivative_stencil.u);
+            state.third_derivatives_minus = third_derivatives;
+            state.third_derivatives_plus = third_derivatives;
+          }
           return state;
         }
 
@@ -298,7 +390,13 @@ namespace DiFfRG
               boundary_stencil, BoundaryStencilIndex<dim>::physical_cell, BoundaryStencilIndex<dim>::lower_inner,
               BoundaryStencilIndex<dim>::upper_inner);
           const auto ghost_stencil = make_ghost_boundary_side_stencil_1d<dim, NumberType, n_components>(boundary_stencil);
-          return compute_interior_face_reconstruction_state<Reconstructor>(physical_stencil, ghost_stencil, x_q);
+          auto state = compute_interior_face_reconstruction_state<Reconstructor>(physical_stencil, ghost_stencil, x_q);
+          const auto third_derivative_stencil = make_boundary_third_derivative_stencil(boundary_stencil);
+          const auto third_derivatives = Reconstructor::template compute_third_derivatives_at_face<n_components>(
+              third_derivative_stencil.x, third_derivative_stencil.u);
+          state.third_derivatives_minus = third_derivatives;
+          state.third_derivatives_plus = third_derivatives;
+          return state;
         }
 
         template <int dim, typename NumberType, size_t n_components>
