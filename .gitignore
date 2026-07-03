@@ -1,5 +1,7 @@
 bin*/
 build*/
+!dependencies/boost/boost_1_81_0/tools/build/
+!dependencies/boost/boost_1_81_0/tools/build/**
 local_install/
 CMakeUserPresets.json
 .idea/
