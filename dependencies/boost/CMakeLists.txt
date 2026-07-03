@@ -87,9 +87,12 @@ add_custom_target(
   build_boost_b2
   COMMAND
     bash -c
-    "echo 'Building Boost...'; CC=\"${BOOST_CC_ENV}\" CXX=\"${BOOST_CXX_ENV}\" ./b2 --build-dir='${CMAKE_CURRENT_BINARY_DIR}/boost-build' \
+    "echo 'Installing Boost headers...' && \
+     CC=\"${BOOST_CC_ENV}\" CXX=\"${BOOST_CXX_ENV}\" ./b2 headers \
+        > '${CMAKE_CURRENT_BINARY_DIR}/04_headers.log' 2>&1 && \
+     echo 'Building Boost...' && \
+     CC=\"${BOOST_CC_ENV}\" CXX=\"${BOOST_CXX_ENV}\" ./b2 --build-dir='${CMAKE_CURRENT_BINARY_DIR}/boost-build' \
         --prefix='${CMAKE_INSTALL_PREFIX}' \
-        --with-headers \
         --with-iostreams \
         --with-json \
         --with-math \
