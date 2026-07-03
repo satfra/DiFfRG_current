@@ -212,12 +212,11 @@ endif()
 diffrg_find_package(Kokkos HINTS ${BUNDLED_DIR})
 message(STATUS "Found Kokkos in ${Kokkos_DIR}")
 
-# Find Boost. find_package also honors BOOST_ROOT/Boost_DIR and standard system
-# paths, so a system Boost (selected via BOOST_DIR/BUILD_BOOST in the top-level
-# build) is picked up here when BUNDLED_DIR does not contain one. Use Boost's own
-# BoostConfig.cmake (config mode); the legacy FindBoost module is removed in
-# CMake >= 3.30. Boost has shipped BoostConfig.cmake since 1.70, and DiFfRG
-# requires >= 1.81, so config mode always applies.
+# Find Boost. The top-level superbuild pins BOOST_ROOT to the bundled Boost it
+# built from the vendored source tree. Use Boost's own BoostConfig.cmake (config
+# mode); the legacy FindBoost module is removed in CMake >= 3.30. Boost has
+# shipped BoostConfig.cmake since 1.70, and DiFfRG requires >= 1.81, so config
+# mode always applies.
 if(POLICY CMP0167)
   cmake_policy(SET CMP0167 NEW)
 endif()

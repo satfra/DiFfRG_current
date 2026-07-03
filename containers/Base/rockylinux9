@@ -7,9 +7,8 @@ ARG threads=4
 
 # Rocky 9's default GCC (11) lacks full C++20; use gcc-toolset-12. openblas-devel
 # lives in the (disabled-by-default) devel repo; EPEL provides sundials-devel.
-# cmake from AppStream is >= 3.26. Rocky's Boost (1.75) is older than DiFfRG's
-# floor (1.81), so Boost falls back to the bundled build -- a deliberate test of
-# that path; TBB/HDF5/SUNDIALS are auto-detected.
+# cmake from AppStream is >= 3.26. Boost is always built from the vendored
+# source tree; TBB/HDF5/SUNDIALS are auto-detected.
 RUN dnf -y install epel-release \
     && dnf -y --enablerepo=devel install \
         gcc-toolset-12 cmake git \
