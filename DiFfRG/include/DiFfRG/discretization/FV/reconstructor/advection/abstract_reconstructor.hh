@@ -1,28 +1,20 @@
 #pragma once
 
+#include <DiFfRG/discretization/FV/reconstructor/types.hh>
+
 // deal.II
 #include <deal.II/base/point.h>
-#include <deal.II/base/tensor.h>
 
 // autodiff
 #include <autodiff/forward/real/real.hpp>
 
-// standard library
 #include <array>
 #include <concepts>
-#include <cstddef>
 
 namespace DiFfRG
 {
   namespace def
   {
-    template <int dim> inline constexpr std::size_t n_faces = 2 * dim;
-
-    /**
-     * @brief Per-component gradient type: one Tensor<1,dim> per solution component.
-     */
-    template <int dim, typename NumberType, size_t n_components>
-    using GradientType = std::array<dealii::Tensor<1, dim, NumberType>, n_components>;
     /**
      * @brief Concept that any gradient-reconstruction strategy must satisfy.
      */

@@ -1,7 +1,7 @@
 #pragma once
 
 // DiFfRG
-#include <DiFfRG/discretization/FV/reconstructor/abstract_reconstructor.hh>
+#include <DiFfRG/discretization/FV/reconstructor/advection/abstract_reconstructor.hh>
 
 namespace DiFfRG
 {
