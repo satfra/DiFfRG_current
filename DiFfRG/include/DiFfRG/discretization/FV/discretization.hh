@@ -36,6 +36,7 @@ namespace DiFfRG
       using SparseMatrixType = SparseMatrix<NumberType>;
       using Mesh = Mesh_;
       static constexpr uint dim = Mesh::dim;
+      static constexpr bool is_fv_discretization = true;
 
       Discretization(Mesh &mesh, const JSONValue &json)
           : mesh(mesh), json(json),
