@@ -421,21 +421,6 @@ namespace
     return Config::ConfigurationMesh<1>(0u, std::vector<Config::GridAxis>{sigma_axis});
   }
 
-  template <typename Case>
-  void initialize_exact_cell_averages(FV::FlowingVariables<Discretization> &state,
-                                      const std::vector<Point<dim>> &support_points)
-  {
-    auto &u = state.spatial_data();
-    REQUIRE(u.size() == support_points.size());
-    const double delta = grid_spacing();
-    for (unsigned int i = 0; i < u.size(); ++i) {
-      const double sigma = support_points[i][0];
-      const double right = initial_potential<Case>(sigma + 0.5 * delta);
-      const double left = initial_potential<Case>(sigma - 0.5 * delta);
-      u[i] = (right - left) / delta;
-    }
-  }
-
   template <typename Case, typename AssemblerType, typename TimeStepperType = ImplicitTimeStepper>
   kt_regression::SampledProfile run_flow(const double final_time, const JSONValue &json,
                                          const std::string &output_prefix = Case::output_prefix())
@@ -457,7 +442,6 @@ namespace
 
     const auto &support_points = discretization.get_support_points();
     REQUIRE(support_points.size() == Case::n_cells());
-    initialize_exact_cell_averages<Case>(state, support_points);
     discretization.get_constraints().distribute(state.spatial_data());
 
     time_stepper.run(&state, 0.0, final_time);
