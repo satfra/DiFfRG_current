@@ -7,6 +7,7 @@
 #include <memory>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
+#include <type_traits>
 
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
@@ -18,6 +19,20 @@
 //--------------------------------------------
 // Helper functions
 //--------------------------------------------
+
+template <typename Discretization, typename = void> struct UsesFVFlowingVariables : std::false_type {
+};
+
+template <typename Discretization>
+struct UsesFVFlowingVariables<Discretization, std::void_t<decltype(Discretization::is_fv_discretization)>>
+    : std::bool_constant<Discretization::is_fv_discretization> {
+};
+
+template <typename Discretization>
+using FlowingVariablesFor =
+    std::conditional_t<UsesFVFlowingVariables<Discretization>::value,
+                       DiFfRG::FV::FlowingVariables<Discretization>,
+                       DiFfRG::FE::FlowingVariables<Discretization>>;
 
 template <typename Model, typename Discretization, typename Assembler, typename TimeStepper, bool expl = false,
           bool adapt = false>
@@ -102,7 +117,7 @@ bool run(std::string test_name, double expected_precision)
   TimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 
   // Set up the initial condition
-  FE::FlowingVariables initial_condition(discretization);
+  FlowingVariablesFor<Discretization> initial_condition(discretization);
   initial_condition.interpolate(model);
 
   // Now we start the timestepping
