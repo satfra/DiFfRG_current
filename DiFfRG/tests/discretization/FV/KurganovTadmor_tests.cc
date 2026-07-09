@@ -32,13 +32,14 @@ using VectorType = dealii::Vector<NumberType>;
 using namespace dealii;
 namespace KT = DiFfRG::FV::KurganovTadmor;
 using WaveSpeedStrategy = DiFfRG::FV::KurganovTadmor::MaxEigenvalueWaveSpeed;
+using KT::internal::compute_diffusion_flux;
+using KT::internal::compute_diffusion_flux_jacobian;
 using KT::internal::compute_numerical_flux;
 using KT::internal::reconstruct_u;
 
-template <typename Assembler, typename Vector>
-concept CanMakeAssemblyContextViewFromTemporaryCache = requires(const Assembler &assembler, const Vector &solution) {
-  assembler.make_assembly_context_view(
-      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution));
+template <typename Assembler>
+concept CanMakeAssemblyContextViewFromTemporaryCache = requires(const Assembler &assembler) {
+  assembler.make_assembly_context_view(typename Assembler::SolutionReconstructionCache{});
 };
 
 struct CopyData {
@@ -58,6 +59,18 @@ public:
   {
     auto u = get<"fe_functions">(sol);
     F_i[idxf("u")][0] = u[0] * u[0] / 2.0 + x[0];
+  }
+};
+
+class NonlinearDiffusionProbeModel
+{
+public:
+  template <typename NT, typename Solution>
+  void flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/, const Solution &sol) const
+  {
+    const auto &du = get<"fe_derivatives">(sol);
+    F_i[0][0] = du[0][1] * du[0][1];
+    F_i[0][1] = NT(0.0);
   }
 };
 
@@ -413,6 +426,12 @@ template <typename State> static void check_face_reconstruction_state_1d(const S
     CHECK(actual.center_grad_plus[c][0] == Catch::Approx(expected.center_grad_plus[c][0]).margin(1e-14));
     CHECK(actual.face_grad_minus[c][0] == Catch::Approx(expected.face_grad_minus[c][0]).margin(1e-14));
     CHECK(actual.face_grad_plus[c][0] == Catch::Approx(expected.face_grad_plus[c][0]).margin(1e-14));
+    CHECK(actual.diffusion_u_minus[c] == Catch::Approx(expected.diffusion_u_minus[c]).margin(1e-14));
+    CHECK(actual.diffusion_u_plus[c] == Catch::Approx(expected.diffusion_u_plus[c]).margin(1e-14));
+    CHECK(actual.diffusion_grad_minus[c][0] == Catch::Approx(expected.diffusion_grad_minus[c][0]).margin(1e-14));
+    CHECK(actual.diffusion_grad_plus[c][0] == Catch::Approx(expected.diffusion_grad_plus[c][0]).margin(1e-14));
+    CHECK(actual.diffusion_u[c] == Catch::Approx(expected.diffusion_u[c]).margin(1e-14));
+    CHECK(actual.diffusion_grad[c][0] == Catch::Approx(expected.diffusion_grad[c][0]).margin(1e-14));
   }
 }
 
@@ -426,6 +445,12 @@ template <typename State> static void check_face_reconstruction_state_reversed_1
     CHECK(left.center_grad_plus[c][0] == Catch::Approx(right.center_grad_minus[c][0]).margin(1e-14));
     CHECK(left.face_grad_minus[c][0] == Catch::Approx(right.face_grad_plus[c][0]).margin(1e-14));
     CHECK(left.face_grad_plus[c][0] == Catch::Approx(right.face_grad_minus[c][0]).margin(1e-14));
+    CHECK(left.diffusion_u_minus[c] == Catch::Approx(right.diffusion_u_plus[c]).margin(1e-14));
+    CHECK(left.diffusion_u_plus[c] == Catch::Approx(right.diffusion_u_minus[c]).margin(1e-14));
+    CHECK(left.diffusion_grad_minus[c][0] == Catch::Approx(right.diffusion_grad_plus[c][0]).margin(1e-14));
+    CHECK(left.diffusion_grad_plus[c][0] == Catch::Approx(right.diffusion_grad_minus[c][0]).margin(1e-14));
+    CHECK(left.diffusion_u[c] == Catch::Approx(right.diffusion_u[c]).margin(1e-14));
+    CHECK(left.diffusion_grad[c][0] == Catch::Approx(right.diffusion_grad[c][0]).margin(1e-14));
   }
 }
 
@@ -441,7 +466,13 @@ static void check_face_reconstruction_state(const State &actual, const State &ex
       CHECK(actual.center_grad_plus[c][d] == Catch::Approx(expected.center_grad_plus[c][d]).margin(1e-14));
       CHECK(actual.face_grad_minus[c][d] == Catch::Approx(expected.face_grad_minus[c][d]).margin(1e-14));
       CHECK(actual.face_grad_plus[c][d] == Catch::Approx(expected.face_grad_plus[c][d]).margin(1e-14));
+      CHECK(actual.diffusion_grad_minus[c][d] == Catch::Approx(expected.diffusion_grad_minus[c][d]).margin(1e-14));
+      CHECK(actual.diffusion_grad_plus[c][d] == Catch::Approx(expected.diffusion_grad_plus[c][d]).margin(1e-14));
+      CHECK(actual.diffusion_grad[c][d] == Catch::Approx(expected.diffusion_grad[c][d]).margin(1e-14));
     }
+    CHECK(actual.diffusion_u_minus[c] == Catch::Approx(expected.diffusion_u_minus[c]).margin(1e-14));
+    CHECK(actual.diffusion_u_plus[c] == Catch::Approx(expected.diffusion_u_plus[c]).margin(1e-14));
+    CHECK(actual.diffusion_u[c] == Catch::Approx(expected.diffusion_u[c]).margin(1e-14));
   }
 }
 
@@ -457,8 +488,133 @@ static void check_face_reconstruction_state_reversed(const State &left, const St
       CHECK(left.center_grad_plus[c][d] == Catch::Approx(right.center_grad_minus[c][d]).margin(1e-14));
       CHECK(left.face_grad_minus[c][d] == Catch::Approx(right.face_grad_plus[c][d]).margin(1e-14));
       CHECK(left.face_grad_plus[c][d] == Catch::Approx(right.face_grad_minus[c][d]).margin(1e-14));
+      CHECK(left.diffusion_grad_minus[c][d] == Catch::Approx(right.diffusion_grad_plus[c][d]).margin(1e-14));
+      CHECK(left.diffusion_grad_plus[c][d] == Catch::Approx(right.diffusion_grad_minus[c][d]).margin(1e-14));
+      CHECK(left.diffusion_grad[c][d] == Catch::Approx(right.diffusion_grad[c][d]).margin(1e-14));
+    }
+    CHECK(left.diffusion_u_minus[c] == Catch::Approx(right.diffusion_u_plus[c]).margin(1e-14));
+    CHECK(left.diffusion_u_plus[c] == Catch::Approx(right.diffusion_u_minus[c]).margin(1e-14));
+    CHECK(left.diffusion_u[c] == Catch::Approx(right.diffusion_u[c]).margin(1e-14));
+  }
+}
+
+template <typename NT>
+static std::pair<KT::internal::CellStencilData<2, NT, 1>, KT::internal::CellStencilData<2, NT, 1>>
+make_diffusion_probe_stencils()
+{
+  using Stencil = KT::internal::CellStencilData<2, NT, 1>;
+  Stencil minus{};
+  Stencil plus{};
+  minus.boundary_ids.fill(dealii::numbers::invalid_boundary_id);
+  plus.boundary_ids.fill(dealii::numbers::invalid_boundary_id);
+  for (auto &dofs : minus.neighbors.dof_indices)
+    dofs.fill(dealii::numbers::invalid_dof_index);
+  for (auto &dofs : plus.neighbors.dof_indices)
+    dofs.fill(dealii::numbers::invalid_dof_index);
+  minus.cell.dof_indices.fill(dealii::numbers::invalid_dof_index);
+  plus.cell.dof_indices.fill(dealii::numbers::invalid_dof_index);
+
+  minus.cell.x = Point<2>(0.0, 0.0);
+  minus.cell.u = {NT(0.0)};
+  minus.neighbors.x = {Point<2>(-1.0, 0.0), Point<2>(1.0, 0.0), Point<2>(0.0, -1.0), Point<2>(0.0, 1.0)};
+  minus.neighbors.u = {{{NT(-1.0)}, {NT(3.0)}, {NT(1.0)}, {NT(2.0)}}};
+
+  plus.cell.x = Point<2>(1.0, 0.0);
+  plus.cell.u = {NT(3.0)};
+  plus.neighbors.x = {Point<2>(0.0, 0.0), Point<2>(2.0, 0.0), Point<2>(1.0, -1.0), Point<2>(1.0, 1.0)};
+  plus.neighbors.u = {{{NT(0.0)}, {NT(6.0)}, {NT(4.0)}, {NT(6.0)}}};
+
+  return {minus, plus};
+}
+
+TEST_CASE("KT diffusion face gradient is separate from MinMod advective face gradients", "[FV][KT][diffusion][2d]")
+{
+  using Reconstructor = DiFfRG::def::TVDReconstructor<2, DiFfRG::def::MinModLimiter, double>;
+  const auto [minus, plus] = make_diffusion_probe_stencils<double>();
+
+  const Point<2> x_q(0.5, 0.0);
+  const auto state = KT::internal::compute_interior_face_reconstruction_state<Reconstructor>(minus, plus, x_q);
+  const auto d = plus.cell.x - minus.cell.x;
+
+  CHECK(state.face_grad_minus[0][1] == Catch::Approx(0.0).margin(1.0e-14));
+  CHECK(state.face_grad_plus[0][1] == Catch::Approx(0.0).margin(1.0e-14));
+  CHECK(state.diffusion_u_minus[0] == Catch::Approx(0.0).margin(1.0e-14));
+  CHECK(state.diffusion_u_plus[0] == Catch::Approx(3.0).margin(1.0e-14));
+  CHECK(state.diffusion_u[0] == Catch::Approx(1.5).margin(1.0e-14));
+  CHECK(state.diffusion_grad_minus[0][0] == Catch::Approx(3.0).margin(1.0e-14));
+  CHECK(state.diffusion_grad_plus[0][0] == Catch::Approx(3.0).margin(1.0e-14));
+  CHECK(state.diffusion_grad_minus[0][1] == Catch::Approx(0.5).margin(1.0e-14));
+  CHECK(state.diffusion_grad_plus[0][1] == Catch::Approx(1.0).margin(1.0e-14));
+  CHECK(state.diffusion_grad[0][0] == Catch::Approx(3.0).margin(1.0e-14));
+  CHECK(state.diffusion_grad[0][1] == Catch::Approx(0.75).margin(1.0e-14));
+  CHECK(dealii::scalar_product(state.diffusion_grad_minus[0], d) ==
+        Catch::Approx(plus.cell.u[0] - minus.cell.u[0]).margin(1.0e-14));
+  CHECK(dealii::scalar_product(state.diffusion_grad_plus[0], d) ==
+        Catch::Approx(plus.cell.u[0] - minus.cell.u[0]).margin(1.0e-14));
+}
+
+TEST_CASE("Corrected weighted least-squares diffusion reconstructor preserves AD derivatives",
+          "[FV][KT][diffusion][AD][2d]")
+{
+  using AD = autodiff::Real<1, double>;
+  using Reconstructor = DiFfRG::def::CorrectedWeightedLeastSquaresDiffusionReconstructor<2, double>;
+  using ADReconstructor = DiFfRG::def::CorrectedWeightedLeastSquaresDiffusionReconstructor<2, AD>;
+
+  auto [minus_ad, plus_ad] = make_diffusion_probe_stencils<AD>();
+  seed(minus_ad.neighbors.u[3][0]);
+  const auto ad_state = ADReconstructor::template compute_face_state<1>(minus_ad, plus_ad);
+  const auto derivatives = Reconstructor::template extract_derivatives<1>(ad_state);
+  unseed(minus_ad.neighbors.u[3][0]);
+
+  constexpr double eps = 1.0e-6;
+  auto [minus_plus, plus_plus] = make_diffusion_probe_stencils<double>();
+  auto [minus_minus, plus_minus] = make_diffusion_probe_stencils<double>();
+  minus_plus.neighbors.u[3][0] += eps;
+  minus_minus.neighbors.u[3][0] -= eps;
+  const auto state_plus = Reconstructor::template compute_face_state<1>(minus_plus, plus_plus);
+  const auto state_minus = Reconstructor::template compute_face_state<1>(minus_minus, plus_minus);
+
+  const auto side_u = [](const auto &state, const size_t side) {
+    return side == 0 ? state.u_minus[0] : state.u_plus[0];
+  };
+  const auto side_grad = [](const auto &state, const size_t side, const size_t axis) {
+    return side == 0 ? state.grad_minus[0][axis] : state.grad_plus[0][axis];
+  };
+  const auto finite_difference = [eps](const double plus, const double minus) {
+    return (plus - minus) / (2.0 * eps);
+  };
+
+  for (size_t side = 0; side < 2; ++side) {
+    CHECK(derivatives[side].u[0] ==
+          Catch::Approx(finite_difference(side_u(state_plus, side), side_u(state_minus, side))).margin(1.0e-8));
+    for (size_t axis = 0; axis < 2; ++axis) {
+      CHECK(derivatives[side].grad[0][axis] ==
+            Catch::Approx(finite_difference(side_grad(state_plus, side, axis),
+                                            side_grad(state_minus, side, axis)))
+                .margin(1.0e-8));
     }
   }
+}
+
+TEST_CASE("KT diffusion flux averages nonlinear side fluxes", "[FV][KT][diffusion][2d]")
+{
+  using Gradient = KT::internal::GradientType<2, double, 1>;
+  const NonlinearDiffusionProbeModel model;
+  std::array<double, 1> u_minus{{0.0}};
+  std::array<double, 1> u_plus{{3.0}};
+  Gradient grad_minus{};
+  Gradient grad_plus{};
+  grad_minus[0][1] = 0.5;
+  grad_plus[0][1] = 1.0;
+
+  const auto D = compute_diffusion_flux<NonlinearDiffusionProbeModel, double, 2, 1>(
+      u_minus, u_plus, grad_minus, grad_plus, Point<2>(), model);
+  CHECK(D[0][0] == Catch::Approx(0.625).margin(1.0e-14));
+
+  const auto J = compute_diffusion_flux_jacobian<NonlinearDiffusionProbeModel, double, 2, 1>(
+      u_minus, u_plus, grad_minus, grad_plus, Point<2>(), model);
+  CHECK(J.grad[0](0, 0)[0][1] == Catch::Approx(0.5).margin(1.0e-14));
+  CHECK(J.grad[1](0, 0)[0][1] == Catch::Approx(1.0).margin(1.0e-14));
 }
 
 static DiFfRG::JSONValue make_kt_boundary_json()
@@ -755,10 +911,10 @@ TEST_CASE("KT reconstruction cache recomputes cell stencil values per solution",
   ++cell;
   REQUIRE(cell != discretization.get_dof_handler().end());
 
-  const auto first_cache =
-      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(first);
-  const auto second_cache =
-      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(second);
+  typename Assembler::SolutionReconstructionCache first_cache;
+  assembler.template rebuild_solution_reconstruction_cache<typename Assembler::Reconstructor>(first, first_cache);
+  typename Assembler::SolutionReconstructionCache second_cache;
+  assembler.template rebuild_solution_reconstruction_cache<typename Assembler::Reconstructor>(second, second_cache);
 
   const auto cell_index = cell->active_cell_index();
   const auto &first_stencil = first_cache.cell_stencils[cell_index];
@@ -816,8 +972,8 @@ TEST_CASE("KT solution reconstruction cache stores reversed interior face orient
   const auto neighbor = cell->neighbor(face_index);
   const auto neighbor_face_index = assembler.find_neighbor_face(cell, neighbor);
 
-  const auto cache =
-      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution);
+  typename Assembler::SolutionReconstructionCache cache;
+  assembler.template rebuild_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution, cache);
   REQUIRE(cache.face_reconstruction_valid[cell->active_cell_index()][face_index]);
   REQUIRE(cache.face_reconstruction_valid[neighbor->active_cell_index()][neighbor_face_index]);
 
@@ -854,8 +1010,8 @@ TEST_CASE("KT solution reconstruction cache matches direct interior reconstructi
   const auto neighbor = cell->neighbor(face_index);
   const auto x_q = cell->face(face_index)->center();
 
-  const auto cache =
-      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution);
+  typename Assembler::SolutionReconstructionCache cache;
+  assembler.template rebuild_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution, cache);
   const auto &cached = assembler.get_cached_face_reconstruction(cache, cell, face_index);
 
   typename Assembler::CellStencilData cell_stencil;
@@ -892,8 +1048,8 @@ TEST_CASE("KT solution reconstruction cache matches direct boundary reconstructi
   REQUIRE(cell->at_boundary(face_index));
   const auto x_q = cell->face(face_index)->center();
 
-  const auto cache =
-      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution);
+  typename Assembler::SolutionReconstructionCache cache;
+  assembler.template rebuild_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution, cache);
   const auto &cached = assembler.get_cached_face_reconstruction(cache, cell, face_index);
 
   const auto boundary_stencil =
@@ -1068,10 +1224,10 @@ TEST_CASE("KT 2D solution reconstruction cache recomputes values per solution", 
   auto cell = find_2d_interior_cell(discretization.get_dof_handler());
   REQUIRE(cell != discretization.get_dof_handler().end());
 
-  const auto first_cache =
-      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(first);
-  const auto second_cache =
-      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(second);
+  typename Assembler::SolutionReconstructionCache first_cache;
+  assembler.template rebuild_solution_reconstruction_cache<typename Assembler::Reconstructor>(first, first_cache);
+  typename Assembler::SolutionReconstructionCache second_cache;
+  assembler.template rebuild_solution_reconstruction_cache<typename Assembler::Reconstructor>(second, second_cache);
 
   const auto cell_index = cell->active_cell_index();
   const auto &first_stencil = first_cache.cell_stencils[cell_index];
@@ -1119,8 +1275,8 @@ TEST_CASE("KT 2D solution reconstruction cache matches direct interior reconstru
   auto cell = find_2d_interior_cell(discretization.get_dof_handler());
   REQUIRE(cell != discretization.get_dof_handler().end());
 
-  const auto cache =
-      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution);
+  typename Assembler::SolutionReconstructionCache cache;
+  assembler.template rebuild_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution, cache);
 
   for (const auto face_index : {1U, 3U}) {
     CAPTURE(face_index);
@@ -1166,8 +1322,8 @@ TEST_CASE("KT 2D boundary reconstruction cache reconstructs affine ghost side", 
   for (unsigned int i = 0; i < solution.size(); ++i)
     solution[i] = model.solution(support_points[i])[0];
 
-  const auto cache =
-      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution);
+  typename Assembler::SolutionReconstructionCache cache;
+  assembler.template rebuild_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution, cache);
 
   const auto check_boundary_face = [&](const auto &cell, const unsigned int face_index) {
     CAPTURE(face_index, cell->center());
@@ -1218,8 +1374,8 @@ TEST_CASE("KT 2D boundary reconstruction cache derives tangential ghost side fro
   for (unsigned int i = 0; i < solution.size(); ++i)
     solution[i] = model.solution(support_points[i])[0];
 
-  const auto cache =
-      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution);
+  typename Assembler::SolutionReconstructionCache cache;
+  assembler.template rebuild_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution, cache);
 
   for (const auto face_index : {0U, 1U, 2U, 3U}) {
     CAPTURE(face_index);
@@ -1262,8 +1418,8 @@ TEST_CASE("KT 2D boundary reconstruction cache uses model-owned tangential ghost
   for (unsigned int i = 0; i < solution.size(); ++i)
     solution[i] = model.solution(support_points[i])[0];
 
-  const auto cache =
-      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution);
+  typename Assembler::SolutionReconstructionCache cache;
+  assembler.template rebuild_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution, cache);
 
   for (const auto face_index : {0U, 1U, 2U, 3U}) {
     CAPTURE(face_index);
@@ -1311,8 +1467,8 @@ TEST_CASE("KT 2D solution reconstruction cache stores reversed interior face ori
   auto cell = find_2d_interior_cell(discretization.get_dof_handler());
   REQUIRE(cell != discretization.get_dof_handler().end());
 
-  const auto cache =
-      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution);
+  typename Assembler::SolutionReconstructionCache cache;
+  assembler.template rebuild_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution, cache);
 
   for (const auto face_index : {1U, 3U}) {
     CAPTURE(face_index);
@@ -1344,11 +1500,11 @@ TEST_CASE("KT face hook exposes cached reconstruction before residual flux", "[F
   state.interpolate(model);
   const VectorType &solution = state.spatial_data();
 
-  const auto cache =
-      assembler.template build_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution);
+  typename Assembler::SolutionReconstructionCache cache;
+  assembler.template rebuild_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution, cache);
   const auto context = assembler.make_assembly_context_view(cache);
   STATIC_REQUIRE(KT::HasAssemblyContextView<decltype(context)>);
-  STATIC_REQUIRE(!CanMakeAssemblyContextViewFromTemporaryCache<Assembler, VectorType>);
+  STATIC_REQUIRE(!CanMakeAssemblyContextViewFromTemporaryCache<Assembler>);
 
   VectorType residual(solution.size());
   VectorType solution_dot(solution.size());

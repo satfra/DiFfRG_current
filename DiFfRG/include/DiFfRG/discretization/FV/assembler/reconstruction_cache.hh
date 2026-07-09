@@ -3,7 +3,8 @@
 #include "DiFfRG/common/math.hh"
 
 #include <DiFfRG/discretization/common/types.hh>
-#include <DiFfRG/discretization/FV/reconstructor/abstract_reconstructor.hh>
+#include <DiFfRG/discretization/FV/reconstructor/advection/abstract_reconstructor.hh>
+#include <DiFfRG/discretization/FV/reconstructor/diffusion/corrected_weighted_least_squares_reconstructor.hh>
 #include <DiFfRG/model/fv_boundaries.hh>
 
 #include <array>
@@ -12,6 +13,7 @@
 #include <cstddef>
 #include <deal.II/base/numbers.h>
 #include <deal.II/base/point.h>
+#include <deal.II/base/tensor.h>
 #include <deal.II/base/types.h>
 #include <utility>
 #include <vector>
@@ -27,6 +29,11 @@ namespace DiFfRG
         template <int dim, typename NumberType, size_t n_components>
         using GradientType = def::GradientType<dim, NumberType, n_components>;
 
+        using def::ReconstructionDerivativeData;
+
+        template <int dim, typename NumberType, size_t n_components>
+        using DiffusionFaceState = def::DiffusionFaceState<dim, NumberType, n_components>;
+
         template <int dim> struct BoundaryStencilIndex {
           static_assert(dim == 1, "Boundary stencil indices currently support only dim=1.");
         };
@@ -39,11 +46,6 @@ namespace DiFfRG
           static constexpr size_t upper_outer = 4;
         };
 
-        template <int dim, typename NumberType, size_t n_components> struct ReconstructionDerivativeData {
-          std::array<NumberType, n_components> u{};
-          GradientType<dim, NumberType, n_components> grad{};
-        };
-
         template <int dim, typename NumberType, size_t n_components> struct FaceReconstructionState {
           std::array<NumberType, n_components> u_minus{};
           std::array<NumberType, n_components> u_plus{};
@@ -51,6 +53,12 @@ namespace DiFfRG
           GradientType<dim, NumberType, n_components> center_grad_plus{};
           GradientType<dim, NumberType, n_components> face_grad_minus{};
           GradientType<dim, NumberType, n_components> face_grad_plus{};
+          std::array<NumberType, n_components> diffusion_u_minus{};
+          std::array<NumberType, n_components> diffusion_u_plus{};
+          GradientType<dim, NumberType, n_components> diffusion_grad_minus{};
+          GradientType<dim, NumberType, n_components> diffusion_grad_plus{};
+          std::array<NumberType, n_components> diffusion_u{};
+          GradientType<dim, NumberType, n_components> diffusion_grad{};
         };
 
         template <int dim, typename NumberType, size_t n_components>
@@ -64,6 +72,12 @@ namespace DiFfRG
           reversed.center_grad_plus = state.center_grad_minus;
           reversed.face_grad_minus = state.face_grad_plus;
           reversed.face_grad_plus = state.face_grad_minus;
+          reversed.diffusion_u_minus = state.diffusion_u_plus;
+          reversed.diffusion_u_plus = state.diffusion_u_minus;
+          reversed.diffusion_grad_minus = state.diffusion_grad_plus;
+          reversed.diffusion_grad_plus = state.diffusion_grad_minus;
+          reversed.diffusion_u = state.diffusion_u;
+          reversed.diffusion_grad = state.diffusion_grad;
           return reversed;
         }
 
@@ -105,6 +119,7 @@ namespace DiFfRG
           std::vector<std::array<FaceReconstructionState<dim, NumberType, n_components>, n_faces>>
               face_reconstructions;
           std::vector<std::array<bool, n_faces>> face_reconstruction_valid;
+          bool topology_initialized = false;
         };
 
         template <int dim, size_t n_components> struct CellStencilTopologyData {
@@ -130,6 +145,26 @@ namespace DiFfRG
           return result;
         }
 
+        template <int dim, typename NumberType, size_t n_components>
+        DiffusionFaceState<dim, NumberType, n_components> compute_diffusion_face_state(
+            const CellStencilData<dim, NumberType, n_components> &minus_stencil,
+            const CellStencilData<dim, NumberType, n_components> &plus_stencil)
+        {
+          using DiffusionReconstructor =
+              def::CorrectedWeightedLeastSquaresDiffusionReconstructor<dim, NumberType>;
+          return DiffusionReconstructor::template compute_face_state<n_components>(minus_stencil, plus_stencil);
+        }
+
+        template <int dim, typename NumberType, size_t n_components>
+        std::array<ReconstructionDerivativeData<dim, NumberType, n_components>, 2>
+        extract_diffusion_face_derivatives(
+            const DiffusionFaceState<dim, autodiff::Real<1, NumberType>, n_components> &state)
+        {
+          using DiffusionReconstructor =
+              def::CorrectedWeightedLeastSquaresDiffusionReconstructor<dim, NumberType>;
+          return DiffusionReconstructor::template extract_derivatives<n_components>(state);
+        }
+
         template <int dim, typename NumberType, size_t n_components, typename VectorType>
         void fill_cell_data_from_topology(const CellGeometryDofs<dim, n_components> &topology,
                                           const VectorType &solution_global,
@@ -141,7 +176,9 @@ namespace DiFfRG
             data.u[i] = solution_global(topology.dof_indices[i]);
         }
 
-        template <def::HasReconstructor Reconstructor, int dim, typename NumberType, size_t n_components>
+        template <def::HasReconstructor Reconstructor, int dim, typename NumberType, size_t n_components,
+                  typename DiffusionReconstructor =
+                      def::CorrectedWeightedLeastSquaresDiffusionReconstructor<dim, NumberType>>
         FaceReconstructionState<dim, NumberType, n_components> compute_interior_face_reconstruction_state(
             const CellStencilData<dim, NumberType, n_components> &minus_stencil,
             const CellStencilData<dim, NumberType, n_components> &plus_stencil, const dealii::Point<dim> &x_q)
@@ -157,6 +194,14 @@ namespace DiFfRG
               plus_stencil.cell.x, x_q, plus_stencil.cell.u, plus_stencil.neighbors.x, plus_stencil.neighbors.u);
           state.u_minus = reconstruct_u(minus_stencil.cell.u, minus_stencil.cell.x, x_q, state.center_grad_minus);
           state.u_plus = reconstruct_u(plus_stencil.cell.u, plus_stencil.cell.x, x_q, state.center_grad_plus);
+          const auto diffusion_state =
+              DiffusionReconstructor::template compute_face_state<n_components>(minus_stencil, plus_stencil);
+          state.diffusion_u_minus = diffusion_state.u_minus;
+          state.diffusion_u_plus = diffusion_state.u_plus;
+          state.diffusion_grad_minus = diffusion_state.grad_minus;
+          state.diffusion_grad_plus = diffusion_state.grad_plus;
+          state.diffusion_u = diffusion_state.u;
+          state.diffusion_grad = diffusion_state.grad;
           return state;
         }
 
