@@ -552,21 +552,6 @@ namespace
     return Config::ConfigurationMesh<1>(0u, std::vector<Config::GridAxis>{sigma_axis});
   }
 
-  void initialize_exact_cell_averages(FV::FlowingVariables<Discretization> &state,
-                                      const std::vector<Point<dim>> &support_points, const FlowCase &flow_case,
-                                      const GridSettings &grid_settings)
-  {
-    auto &u = state.spatial_data();
-    REQUIRE(u.size() == support_points.size());
-    const double delta = grid_spacing(grid_settings);
-    for (unsigned int i = 0; i < u.size(); ++i) {
-      const double sigma = support_points[i][0];
-      const double right = scenario_potential(flow_case.scenario, sigma + 0.5 * delta);
-      const double left = scenario_potential(flow_case.scenario, sigma - 0.5 * delta);
-      u[i] = (right - left) / delta;
-    }
-  }
-
   SimulationResult sample_state(const FV::FlowingVariables<Discretization> &state, const Discretization &discretization)
   {
     const SampledProfile sampled_u = kt_regression::sample_sorted_profile(state, discretization, grid_tol);
@@ -623,8 +608,6 @@ namespace
       REQUIRE(initial_support_points[i] ==
               Catch::Approx(grid_settings.sigma_min + static_cast<double>(i) * delta).margin(grid_tol));
 
-    initialize_exact_cell_averages(state, support_points, flow_case, grid_settings);
-
     std::vector<SimulationResult> snapshots;
     snapshots.reserve(times_to_sample.size());
     double current_time = 0.0;
@@ -667,7 +650,6 @@ namespace
 
     const auto &support_points = discretization.get_support_points();
     REQUIRE(support_points.size() == grid_settings.cells);
-    initialize_exact_cell_averages(state, support_points, flow_case, grid_settings);
 
     time_stepper.run(&state, 0.0, target_time);
   }
