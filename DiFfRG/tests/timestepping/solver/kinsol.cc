@@ -6,6 +6,7 @@
 #include <deal.II/lac/vector.h>
 
 #include <array>
+#include <stdexcept>
 
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/timestepping/solver/kinsol.hh>
@@ -57,6 +58,19 @@ TEST_CASE("Test KINSOL with nonlinear system", "[nonlinear]")
   x0 = VectorType{-1., 1.};
   x_solution = VectorType{-std::sqrt((1. + std::sqrt(5)) / 2.), (-1. + std::sqrt(5)) / 2.};
   REQUIRE(nonlinear_test(f, df, x0, x_solution) == true);
+}
+
+TEST_CASE("Test KINSOL propagates callback exceptions despite ignore_nonconv", "[exceptions]")
+{
+  DiFfRG::KINSOL<VectorType> newton(1e-14, 1e-12, 5e-1, 11, 21);
+  newton.set_ignore_nonconv(true);
+
+  newton.residual = [](VectorType &res, const VectorType &) { res = 1.; };
+  newton.update_jacobian = [](const VectorType &) {};
+  newton.lin_solve = [](VectorType &, const VectorType &) { throw std::runtime_error("linear solve failed"); };
+
+  VectorType x(2);
+  REQUIRE_THROWS_AS(newton(x), std::runtime_error);
 }
 
 //--------------------------------------------

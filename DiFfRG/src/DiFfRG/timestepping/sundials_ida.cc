@@ -1,7 +1,6 @@
 // external libraries
 #include <deal.II/base/timer.h>
 #include <deal.II/lac/block_vector.h>
-#include <deal.II/sundials/ida.h>
 
 // DiFfRG
 #include <DiFfRG/common/eigen.hh>
@@ -11,6 +10,7 @@
 #include <DiFfRG/discretization/data/data_output.hh>
 #include <DiFfRG/timestepping/linear_solver/GMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/UMFPack.hh>
+#include <DiFfRG/timestepping/sundials/ida.hh>
 #include <DiFfRG/timestepping/sundials_ida.hh>
 
 namespace DiFfRG
@@ -48,9 +48,9 @@ namespace DiFfRG
     LinearSolver<SparseMatrixType, VectorType> linSolver;
 
     // Create a SUNDIALS IDA object with the right settings
-    typename SUNDIALS::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
-                                                                1e6, 0, impl.abs_tol, impl.rel_tol);
-    typename SUNDIALS::IDA<VectorType> time_stepper(ida_data);
+    typename sundials::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
+                                                                1000000, 0, impl.abs_tol, impl.rel_tol);
+    typename sundials::IDA<VectorType> time_stepper(ida_data);
 
     // Define some variables for monitoring
     uint stuck = 0;
@@ -62,8 +62,8 @@ namespace DiFfRG
     VectorType y_dot = initial_data;
     y_dot *= 0.;
 
-    // Pointer to current residual for monitoring
-    VectorType *residual;
+    VectorType latest_residual;
+    assembler->reinit_vector(latest_residual);
 
     // Tells SUNDIALS to do an internal reset, e.g. if we do local refinement
     time_stepper.solver_should_restart = [&](const double t, VectorType &sol, VectorType &sol_dot) -> bool {
@@ -86,7 +86,7 @@ namespace DiFfRG
                                    unsigned int /*step_number*/) {
       if (!is_close(last_save, t, 1e-10)) {
         assembler->set_time(t);
-        assembler->attach_data_output(*data_out, sol, Vector<double>(), sol_dot, (*residual));
+        assembler->attach_data_output(*data_out, sol, Vector<double>(), sol_dot, latest_residual);
         data_out->flush(t);
 
         last_save = t;
@@ -115,7 +115,7 @@ namespace DiFfRG
 
       res = 0;
       assembler->residual(res, y, 1., y_dot, 1.);
-      residual = &res;
+      latest_residual = res;
 
       if (!std::isfinite(res.l1_norm())) return ++failure_counter;
 
@@ -198,10 +198,10 @@ namespace DiFfRG
                                                                                      const double t_stop)
   {
     if (initial_data.n_blocks() != 2)
-      throw std::runtime_error("TimeStepperSUNDIALS_ARKode_vars::run: y must have two blocks!");
+      throw std::runtime_error("TimeStepperSUNDIALS_IDA::run: y must have two blocks!");
     if (initial_data.block(1).size() == 0)
       throw std::runtime_error(
-          "TimeStepperSUNDIALS_ARKode_vars::run: y contains no variables, use a different timestepper!");
+          "TimeStepperSUNDIALS_IDA::run: y contains no variables, use a different timestepper!");
     // Start by setting up all needed matrices, i.e. jacobian, inverse of jacobian and the mass matrix (with two
     // sparsity patterns)
     SparseMatrixType spatial_jacobian(assembler->get_sparsity_pattern_jacobian());
@@ -212,9 +212,9 @@ namespace DiFfRG
     FullMatrix<NumberType> variable_jacobian_inverse(n_vars);
 
     // Create a SUNDIALS IDA object with the right settings
-    typename SUNDIALS::IDA<BlockVectorType>::AdditionalData ida_data(
+    typename sundials::IDA<BlockVectorType>::AdditionalData ida_data(
         t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5, 20, 0, impl.abs_tol, impl.rel_tol);
-    typename SUNDIALS::IDA<BlockVectorType> time_stepper(ida_data);
+    typename sundials::IDA<BlockVectorType> time_stepper(ida_data);
 
     // Define some variables for monitoring
     uint stuck = 0;
@@ -226,8 +226,11 @@ namespace DiFfRG
     BlockVectorType y_dot = initial_data;
     y_dot *= 0.;
 
-    // Pointer to current residual for monitoring
-    BlockVectorType *residual;
+    BlockVectorType latest_residual;
+    latest_residual.reinit(2);
+    assembler->reinit_vector(latest_residual.block(0));
+    latest_residual.block(1).reinit(n_vars);
+    latest_residual.collect_sizes();
 
     // Tells SUNDIALS to do an internal reset, e.g. if we do local refinement
     time_stepper.solver_should_restart = [&](const double t, BlockVectorType &sol, BlockVectorType &sol_dot) -> bool {
@@ -261,7 +264,7 @@ namespace DiFfRG
                                    unsigned int /*step_number*/) {
       if (!is_close(last_save, t, 1e-10)) {
         assembler->set_time(t);
-        assembler->attach_data_output(*data_out, sol.block(0), sol.block(1), sol_dot.block(0), (*residual).block(0));
+        assembler->attach_data_output(*data_out, sol.block(0), sol.block(1), sol_dot.block(0), latest_residual.block(0));
         data_out->flush(t);
 
         last_save = t;
@@ -300,7 +303,7 @@ namespace DiFfRG
         assembler->residual_variables(res.block(1), y.block(1), y.block(0));
         assembler->residual(res.block(0), y.block(0), 1., y_dot.block(0), 1., y.block(1));
         res.block(1) += y_dot.block(1);
-        residual = &res;
+        latest_residual = res;
       } catch (std::exception &e) {
         std::cerr << e.what() << std::endl;
         return ++failure_counter;
@@ -416,9 +419,9 @@ namespace DiFfRG
     FullMatrix<NumberType> variable_jacobian_inverse(n_vars);
 
     // Create a SUNDIALS IDA object with the right settings
-    typename SUNDIALS::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
+    typename sundials::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
                                                                 20, 0, impl.abs_tol, impl.rel_tol);
-    typename SUNDIALS::IDA<VectorType> time_stepper(ida_data);
+    typename sundials::IDA<VectorType> time_stepper(ida_data);
 
     // Define some variables for monitoring
     uint stuck = 0;

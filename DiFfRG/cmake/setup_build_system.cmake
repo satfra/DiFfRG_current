@@ -204,6 +204,20 @@ endif()
 diffrg_find_package(Kokkos HINTS ${BUNDLED_DIR})
 message(STATUS "Found Kokkos in ${Kokkos_DIR}")
 
+# Find SUNDIALS directly. DiFfRG uses the C API for IDA/KINSOL and no longer
+# relies on deal.II's optional SUNDIALS wrappers.
+diffrg_find_package(
+  SUNDIALS
+  VERSION
+  7.7.0
+  HINTS
+  ${BUNDLED_DIR}
+  COMPONENTS
+  ida
+  kinsol
+  nvecserial)
+message(STATUS "Found SUNDIALS in ${SUNDIALS_DIR}")
+
 # Find Boost. find_package also honors BOOST_ROOT/Boost_DIR and standard system
 # paths, so a system Boost (selected via BOOST_DIR/BUILD_BOOST in the top-level
 # build) is picked up here when BUNDLED_DIR does not contain one. Use Boost's own
@@ -389,6 +403,7 @@ endfunction()
 _diffrg_summary_row("deal.II"  "${deal.II_VERSION}"  "${deal.II_DIR}")
 _diffrg_summary_row("TBB"      "${TBB_VERSION}"      "${TBB_DIR}")
 _diffrg_summary_row("Kokkos"   "${Kokkos_VERSION}"   "${Kokkos_DIR}")
+_diffrg_summary_row("SUNDIALS" "${SUNDIALS_VERSION}" "${SUNDIALS_DIR}")
 _diffrg_summary_row("Boost"    "${Boost_VERSION}"    "${_boost_path}")
 _diffrg_summary_row("Eigen3"   "${Eigen3_VERSION}"   "${Eigen3_DIR}")
 _diffrg_summary_row("GSL"      "${GSL_VERSION}"      "${GSL_INCLUDE_DIRS}")
@@ -480,6 +495,7 @@ function(setup_target TARGET)
   target_link_libraries(${TARGET} PUBLIC ${Boost_LIBRARIES})
   target_link_libraries(${TARGET} PUBLIC TBB::tbb)
   target_link_libraries(${TARGET} PUBLIC Kokkos::kokkos)
+  target_link_libraries(${TARGET} PUBLIC SUNDIALS::ida SUNDIALS::kinsol SUNDIALS::nvecserial)
   # target_link_libraries(${TARGET} PUBLIC petsc)
 
   if(${DiFfRG_MPI})

@@ -4,3 +4,4 @@
 
 setup_test(newton.cc)
 setup_test(kinsol.cc)
+setup_test(sundials_direct.cc)

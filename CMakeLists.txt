@@ -332,7 +332,7 @@ option(BUILD_SUNDIALS
 set(DiFfRG_BOOST_MIN_VERSION 1.81)
 set(DiFfRG_TBB_MIN_VERSION 2021)
 set(DiFfRG_HDF5_MIN_VERSION 1.12.0)
-set(DiFfRG_SUNDIALS_MIN_VERSION 5.4.0) # deal.II's own SUNDIALS floor
+set(DiFfRG_SUNDIALS_MIN_VERSION 7.7.0) # direct SUNDIALS API target
 set(DiFfRG_SUNDIALS_KNOWN_GOOD_MAX 7.7) # newest version validated with bundled
                                         # deal.II
 
@@ -516,10 +516,8 @@ else()
 endif()
 
 # ----------------------------------------------------------------------------
-# SUNDIALS — needed only by deal.II (DiFfRG links it transitively via
-# dealii::dealii). Replicate deal.II's own discovery: the
-# arkode/kinsol/nvecserial libraries plus version >= 5.4.0; otherwise build the
-# bundled copy.
+# SUNDIALS — DiFfRG links directly to IDA/KINSOL. Require the direct solver
+# libraries plus version >= 7.7.0; otherwise build the bundled copy.
 # ----------------------------------------------------------------------------
 set(_build_sundials OFF)
 set(_sundials_prefix "${DEPEND_INSTALL_PREFIX}")
@@ -536,8 +534,8 @@ endif()
 
 if(NOT _build_sundials)
   find_library(
-    _SUN_ARKODE
-    NAMES sundials_arkode
+    _SUN_IDA
+    NAMES sundials_ida
     HINTS ${_sun_hint}
     PATH_SUFFIXES lib lib64)
   find_library(
@@ -561,7 +559,7 @@ if(NOT _build_sundials)
   set(_sun_ok FALSE)
   set(_sun_ver "")
   set(_sun_reject_reason "")
-  if(_SUN_ARKODE
+  if(_SUN_IDA
      AND _SUN_KINSOL
      AND _SUN_NVEC
      AND _SUN_INC)
@@ -590,12 +588,9 @@ if(NOT _build_sundials)
       string(REGEX REPLACE "^.*PATCH[ \t]+([0-9]+).*" "\\1" _sun_pt
                            "${_sun_pt}")
       set(_sun_ver "${_sun_mj}.${_sun_mn}.${_sun_pt}")
-      # deal.II requires deal.II and SUNDIALS to agree on MPI support; otherwise
-      # it silently sets DEAL_II_WITH_SUNDIALS=OFF, which leaves the
-      # dealii::SUNDIALS namespace undefined and breaks our KINSOL/IDA wrappers
-      # at compile time. Probe the system SUNDIALS MPI setting
-      # (sundials_config.h) and require it to match the MPI option this build
-      # passes to deal.II.
+      # Probe the system SUNDIALS MPI setting (sundials_config.h) and require
+      # it to match this build's MPI option. The direct wrapper implemented in
+      # DiFfRG currently supports the serial N_Vector path only.
       set(_sun_mpi OFF)
       if(EXISTS "${_SUN_INC}/sundials/sundials_config.h")
         file(STRINGS "${_SUN_INC}/sundials/sundials_config.h" _sun_mpi_probe
@@ -629,8 +624,8 @@ if(NOT _build_sundials)
       message(
         WARNING
           "Using system SUNDIALS ${_sun_ver}, newer than the last version "
-          "(${DiFfRG_SUNDIALS_KNOWN_GOOD_MAX}) validated with the bundled deal.II. "
-          "If the deal.II build fails, configure with -DBUILD_SUNDIALS=ON.")
+          "(${DiFfRG_SUNDIALS_KNOWN_GOOD_MAX}) validated with DiFfRG's direct SUNDIALS interface. "
+          "If the DiFfRG build fails, configure with -DBUILD_SUNDIALS=ON.")
     endif()
     set(_sundials_status
         "  ${BoldGreen}[SUNDIALS] Using system SUNDIALS ${_sun_ver} (${_SUN_INC}); skipping bundled build.${ColourReset}"
@@ -642,19 +637,19 @@ if(NOT _build_sundials)
         FATAL_ERROR
           "SUNDIALS_DIR=${SUNDIALS_DIR} provides SUNDIALS ${_sun_ver} built with "
           "SUNDIALS_MPI_ENABLED=${_sun_mpi}, but DiFfRG is configured with MPI=${MPI}. "
-          "deal.II requires deal.II and SUNDIALS to agree on MPI support.\n"
+          "The direct SUNDIALS wrapper currently requires matching MPI support.\n"
           "  Use -DBUILD_SUNDIALS=ON to build a matching bundled SUNDIALS, or point "
           "SUNDIALS_DIR at a SUNDIALS whose MPI setting matches MPI=${MPI}.")
     else()
       set(_sundials_status
-          "  ${BoldYellow}[SUNDIALS] System SUNDIALS ${_sun_ver} (${_SUN_INC}) MPI setting (SUNDIALS_MPI_ENABLED=${_sun_mpi}) does not match MPI=${MPI}; building the bundled SUNDIALS instead. deal.II requires both to agree on MPI.${ColourReset}"
+          "  ${BoldYellow}[SUNDIALS] System SUNDIALS ${_sun_ver} (${_SUN_INC}) MPI setting (SUNDIALS_MPI_ENABLED=${_sun_mpi}) does not match MPI=${MPI}; building the bundled SUNDIALS instead.${ColourReset}"
       )
       set(_build_sundials ON)
     endif()
   elseif(_sun_explicit)
     if(NOT _sun_reject_reason)
       set(_sun_reject_reason
-          "the required libraries (arkode, kinsol, nvecserial) or version header were not found"
+          "the required libraries (ida, kinsol, nvecserial) or version header were not found"
       )
     endif()
     message(
@@ -674,21 +669,6 @@ endif()
 if(_build_sundials)
   set(_sundials_prefix "${DEPEND_INSTALL_PREFIX}")
   set(_sundials_dep sundials_dep)
-endif()
-
-# deal.II's FindSUNDIALS, when handed an explicit SUNDIALS_DIR, searches only
-# <DIR>/lib and <DIR>/lib64 -- it misses Debian/Ubuntu multiarch paths such as
-# /usr/lib/x86_64-linux-gnu, so it finds the headers but not the libraries and
-# then *silently* disables SUNDIALS (it is auto/optional). DiFfRG, however,
-# requires it (SUNDIALS::KINSOL/IDA), so that failure only surfaces later when
-# kinsol.cc fails to compile. Therefore: only hand deal.II the hint for a
-# bundled build or an explicit -DSUNDIALS_DIR (both have a plain lib/); for an
-# auto-detected system install, omit the hint and let deal.II's standard,
-# multiarch-aware search locate the libraries.
-if(_build_sundials OR _sun_explicit)
-  set(_dealii_sundials_arg "-DSUNDIALS_DIR:STRING=${_sundials_prefix}")
-else()
-  set(_dealii_sundials_arg "")
 endif()
 
 message("${BoldCyan}[1/8] Configuring HDF5...${ColourReset}")
@@ -1053,10 +1033,7 @@ ExternalProject_Add(
     -DCMAKE_CXX_EXTENSIONS:BOOL=OFF
     -DKOKKOS_DIR:STRING=${DEPEND_INSTALL_PREFIX}
     -DTBB_DIR:STRING=${_tbb_dir}
-    # Required by DiFfRG -- force ON so an unusable SUNDIALS fails here at
-    # configure rather than silently disabling and breaking kinsol.cc later.
-    -DDEAL_II_WITH_SUNDIALS:BOOL=ON
-    ${_dealii_sundials_arg}
+    -DDEAL_II_WITH_SUNDIALS:BOOL=OFF
     -DBOOST_ROOT:PATH=${_boost_root}
     -DBOOST_DIR:STRING=${_boost_root}
     -DBOOST_INCLUDEDIR:PATH=${_boost_incdir}
