@@ -92,13 +92,15 @@ namespace DiFfRG
     double stuck_t = 0.;
     uint stuck = 0;
     auto residual = [&](const Eigen::VectorXd &x, Eigen::VectorXd &dxdt, const double t) {
-      if (is_close(t, stuck_t, expl.minimal_dt / 100.))
-        stuck++;
-      else {
-        stuck = 0;
-        stuck_t = t;
+      if (expl.detect_stuck) {
+        if (is_close(t, stuck_t, expl.minimal_dt / 100.))
+          stuck++;
+        else {
+          stuck = 0;
+          stuck_t = t;
+        }
+        if (stuck > 50) throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
       }
-      if (stuck > 50) throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
 
       eigen_to_dealii(x, y_dealii);
 
@@ -185,13 +187,15 @@ namespace DiFfRG
     double stuck_t = 0.;
     uint stuck = 0;
     auto residual = [&](const Eigen::VectorXd &x, Eigen::VectorXd &dxdt, const double t) {
-      if (is_close(t, stuck_t, expl.minimal_dt / 100.))
-        stuck++;
-      else {
-        stuck = 0;
-        stuck_t = t;
+      if (expl.detect_stuck) {
+        if (is_close(t, stuck_t, expl.minimal_dt / 100.))
+          stuck++;
+        else {
+          stuck = 0;
+          stuck_t = t;
+        }
+        if (stuck > 50) throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
       }
-      if (stuck > 50) throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
 
       eigen_to_dealii(x, y_dealii);
 
@@ -277,13 +281,15 @@ namespace DiFfRG
     double stuck_t = 0.;
     uint stuck = 0;
     auto residual = [&](const Eigen::VectorXd &x, Eigen::VectorXd &dxdt, const double t) {
-      if (is_close(t, stuck_t, expl.minimal_dt / 100.))
-        stuck++;
-      else {
-        stuck = 0;
-        stuck_t = t;
+      if (expl.detect_stuck) {
+        if (is_close(t, stuck_t, expl.minimal_dt / 100.))
+          stuck++;
+        else {
+          stuck = 0;
+          stuck_t = t;
+        }
+        if (stuck > 50) throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
       }
-      if (stuck > 50) throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
 
       eigen_to_dealii(x, y_dealii);
 

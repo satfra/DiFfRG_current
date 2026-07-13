@@ -1,6 +1,6 @@
 --- a/include/deal.II/sundials/ida.h
 +++ b/include/deal.II/sundials/ida.h
-@@ -611,6 +611,24 @@
+@@ -611,6 +611,28 @@
       */
      ~IDA();
  
@@ -22,6 +22,10 @@
 +    Statistics
 +    get_statistics() const;
 +
++    bool
++    get_error_test_vectors(VectorType &estimated_local_errors,
++                           VectorType &error_weights) const;
++
      /**
       * Integrate differential-algebraic equations. This function returns the
       * final number of computed steps.
@@ -35,7 +39,7 @@
  
  DEAL_II_NAMESPACE_OPEN
  
-@@ -165,6 +166,41 @@
+@@ -165,6 +166,66 @@
  #  endif
    }
  
@@ -72,6 +76,31 @@
 +    statistics.valid = statistics.valid && status >= 0;
 +
 +    return statistics;
++  }
++
++  template <typename VectorType>
++  bool
++  IDA<VectorType>::get_error_test_vectors(VectorType &estimated_local_errors,
++                                          VectorType &error_weights) const
++  {
++    if (ida_mem == nullptr)
++      return false;
++
++#  if DEAL_II_SUNDIALS_VERSION_GTE(6, 0, 0)
++    auto estimated_local_errors_view =
++      internal::make_nvector_view(estimated_local_errors, ida_ctx);
++    auto error_weights_view = internal::make_nvector_view(error_weights, ida_ctx);
++#  else
++    auto estimated_local_errors_view =
++      internal::make_nvector_view(estimated_local_errors);
++    auto error_weights_view = internal::make_nvector_view(error_weights);
++#  endif
++
++    int status = IDAGetEstLocalErrors(ida_mem, estimated_local_errors_view);
++    if (status < 0)
++      return false;
++    status = IDAGetErrWeights(ida_mem, error_weights_view);
++    return status >= 0;
 +  }
 +
  
