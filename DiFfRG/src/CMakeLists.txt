@@ -45,7 +45,6 @@ set(DiFfRG_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/trbdf2.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/integration/abstract_integrator.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/integration/distribution.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/physics/flow_equations.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/quadrature/matsubara.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/quadrature/quadrature_provider.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/quadrature/quadrature.cc)

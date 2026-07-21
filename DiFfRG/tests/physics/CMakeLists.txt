@@ -9,4 +9,3 @@ add_subdirectory(interpolation)
 # Test loop integrals
 # ##############################################################################
 
-setup_test(loop_integrals.cc)

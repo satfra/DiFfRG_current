@@ -118,8 +118,21 @@ TEMPLATE_TEST_CASE_SIG("Test momentum + 1 angle integrals", "[integration][quadr
       std::vector<ctype> coeff_integrand(dim, 0.);
       coeff_integrand[dim - 1] = 1.;
       int_poly *= Polynomial(coeff_integrand);
-      const NT reference_integral = constant + S_d(dim) / 2. * int_poly.integral(0., q_extent) / powr<dim>(2. * M_PI) *
-                                                   cos_poly.integral(-1., 1.);
+
+      // The polar angle carries the zonal measure (1-c^2)^{(dim-3)/2} dc (supplied by the Gauss-Jacobi
+      // quadrature), so the angular reference uses the zonal moments mu_k = \int_{-1}^1 (1-c^2)^{(dim-3)/2} c^k dc,
+      // not the plain Legendre integral. mu_k = 0 for odd k, and mu_{2m} = B(m+1/2,(dim-1)/2).
+      using std::tgamma;
+      auto zonal_moment = [&](int kk) -> double {
+        if (kk % 2 == 1) return 0.;
+        const int m = kk / 2;
+        return tgamma(m + 0.5) * tgamma((dim - 1) / 2.) / tgamma(m + dim / 2.);
+      };
+      double angular = 0.;
+      for (int kk = 0; kk < 4; ++kk)
+        angular += (double)cos_poly[kk] * zonal_moment(kk);
+      const NT reference_integral =
+          constant + S_d_prec<ctype>(dim - 1) * int_poly.integral(0., q_extent) / powr<dim>(2. * M_PI) * angular;
 
       integrator.set_k(k);
 

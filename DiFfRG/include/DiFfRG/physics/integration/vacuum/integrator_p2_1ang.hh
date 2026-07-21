@@ -16,9 +16,11 @@ namespace DiFfRG
     public:
       using ctype = typename get_type::ctype<NT>;
 
-      static constexpr ctype int_prefactor = S_d_prec<ctype>(dim)         // solid nd angle
-                                             / powr<dim>(2 * (ctype)M_PI) // fourier factor
-                                             * (1 / (ctype)2);            // divide the cos integral out
+      // The polar angle (loop vs. external momentum) of a 2-point loop in d dims carries the zonal
+      // measure (1-c^2)^{(d-3)/2} dc, supplied by the Gauss-Jacobi(alpha=beta=(d-3)/2) angular
+      // quadrature (see the class below). The remaining (d-2)-sphere gives S_{d-2} = S_d_prec(dim-1).
+      static constexpr ctype int_prefactor = S_d_prec<ctype>(dim - 1)     // remaining solid angle after the polar angle
+                                             / powr<dim>(2 * (ctype)M_PI); // fourier factor
 
       template <typename... T>
       static KOKKOS_FORCEINLINE_FUNCTION NT kernel(const ctype q, const ctype cos, const T &...t)
@@ -43,12 +45,14 @@ namespace DiFfRG
   } // namespace internal
 
   /**
-   * @brief Integrator_p2_1ang integrates a kernel \f$K(p,\cos,\ldots)\f$ depending on the radial momentum \f$p\f$ and a
-   * single angle on \f$[0,\pi]\f$ as
+   * @brief Integrator_p2_1ang integrates a kernel \f$K(p,\cos,\ldots)\f$ depending on the radial momentum \f$p\f$ and the
+   * cosine of the single polar angle between the loop and external momentum as
    * $$
-   * \frac{S_d}{2(2\pi)^{d}}\,\int_0^\pi d\cos\,\int_0^\infty dp^2 p^{d-2} K(p,\cos\ldots)
+   * \frac{S_{d-1}}{(2\pi)^{d}}\,\int_{-1}^1 dc\,(1-c^2)^{\frac{d-3}{2}}\,\int_0^\infty dp\, p^{d-1} K(p,c,\ldots)
    * $$
-   * where \f$S_d\f$ is the solid angle in \f$d\f$ dimensions.
+   * in \f$d\f$ dimensions, where \f$S_{d-1}\f$ is the solid angle of the \f$(d-2)\f$-sphere remaining after the polar
+   * angle is singled out. The zonal measure \f$(1-c^2)^{(d-3)/2}\f$ is supplied exactly by a Gauss-Jacobi angular
+   * quadrature, so it does not appear in the kernel.
    *
    * @tparam dim dimension of the momentum space, i.e. $d$ in the above equation
    * @tparam NT numerical type of the result
@@ -60,6 +64,18 @@ namespace DiFfRG
       : public QuadratureIntegrator<2, NT, internal::Transform_p2_1ang<dim, NT, KERNEL>, ExecutionSpace>
   {
     using Base = QuadratureIntegrator<2, NT, internal::Transform_p2_1ang<dim, NT, KERNEL>, ExecutionSpace>;
+
+    // Gauss-Jacobi quadrature on [-1,1] with weight (1-c^2)^{(d-3)/2} for the polar angle.
+    // Dimension-agnostic: reduces to Chebyshev-1 (d=2), Legendre (d=3), Chebyshev-2 (d=4), ...
+    static QuadratureType polar_quadrature()
+    {
+      QuadratureType t(QuadratureType::jacobi);
+      t.a = static_cast<double>(-1);
+      t.b = static_cast<double>(1);
+      t.alpha = (static_cast<double>(dim) - 3.) / 2.;
+      t.beta = t.alpha;
+      return t;
+    }
 
   public:
     /**
@@ -80,8 +96,8 @@ namespace DiFfRG
 
     Integrator_p2_1ang(QuadratureProvider &quadrature_provider, const std::array<size_t, 2> grid_size,
                        ctype x_extent = 2.)
-        : Base(quadrature_provider, grid_size, {0, -1.}, {std::sqrt(x_extent), 1.},
-               {QuadratureType::legendre, QuadratureType::legendre}),
+        : Base(quadrature_provider, grid_size, {0, 0.}, {std::sqrt(x_extent), 1.},
+               {QuadratureType(QuadratureType::legendre), polar_quadrature()}),
           x_extent(x_extent), k(1.)
     {
     }
@@ -89,13 +105,13 @@ namespace DiFfRG
     void set_x_extent(ctype x_extent)
     {
       this->x_extent = x_extent;
-      Base::set_grid_extents({0, -1.}, {std::sqrt(x_extent) * k, 1.});
+      Base::set_grid_extents({0, 0.}, {std::sqrt(x_extent) * k, 1.});
     }
 
     void set_k(ctype k)
     {
       this->k = k;
-      Base::set_grid_extents({0, -1.}, {std::sqrt(x_extent) * k, 1.});
+      Base::set_grid_extents({0, 0.}, {std::sqrt(x_extent) * k, 1.});
     }
 
   private:

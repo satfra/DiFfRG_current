@@ -14,9 +14,12 @@ namespace DiFfRG
       static constexpr int sdim = dim - 1; // spatial dimension
       using ctype = typename get_type::ctype<NT>;
 
-      static constexpr ctype int_prefactor = S_d_prec<ctype>(sdim)         // solid nd angle
-                                             / powr<sdim>(2 * (ctype)M_PI) // fourier factor
-                                             * (1 / (ctype)2);             // divide the cos integral out
+      // The polar angle (spatial loop vs. external momentum) of a 2-point loop lives in the sdim
+      // spatial dimensions and carries the zonal measure (1-c^2)^{(sdim-3)/2} dc, supplied by the
+      // Gauss-Jacobi(alpha=beta=(sdim-3)/2) angular quadrature (see the class below). The remaining
+      // (sdim-2)-sphere gives S_{sdim-1} = S_d_prec(sdim-1).
+      static constexpr ctype int_prefactor = S_d_prec<ctype>(sdim - 1)     // remaining solid angle after the polar angle
+                                             / powr<sdim>(2 * (ctype)M_PI); // fourier factor
 
       template <typename... T>
       static KOKKOS_FORCEINLINE_FUNCTION NT kernel(const ctype q, const ctype cos, const ctype q0, const T &...t)
@@ -44,6 +47,20 @@ namespace DiFfRG
   {
     using Base = QuadratureIntegrator_fT<3, NT, internal::Transform_fT_p2_1ang<dim, NT, KERNEL>, ExecutionSpace>;
 
+    static constexpr int sdim = dim - 1; // spatial dimension
+
+    // Gauss-Jacobi quadrature on [-1,1] with weight (1-c^2)^{(sdim-3)/2} for the spatial polar angle.
+    // Dimension-agnostic: reduces to Chebyshev-1 (sdim=2), Legendre (sdim=3), Chebyshev-2 (sdim=4), ...
+    static QuadratureType polar_quadrature()
+    {
+      QuadratureType t(QuadratureType::jacobi);
+      t.a = static_cast<double>(-1);
+      t.b = static_cast<double>(1);
+      t.alpha = (static_cast<double>(sdim) - 3.) / 2.;
+      t.beta = t.alpha;
+      return t;
+    }
+
   public:
     /**
      * @brief Numerical type to be used for integration tasks e.g. the argument or possible jacobians.
@@ -60,8 +77,8 @@ namespace DiFfRG
 
     Integrator_fT_p2_1ang(QuadratureProvider &quadrature_provider, const std::array<size_t, 2> grid_size,
                           ctype x_extent = 2., ctype T = 1, ctype typical_E = 1)
-        : Base(quadrature_provider, grid_size, {0, -1.}, {std::sqrt(x_extent), 1.},
-               {QuadratureType::legendre, QuadratureType::legendre}, T, typical_E),
+        : Base(quadrature_provider, grid_size, {0, 0.}, {std::sqrt(x_extent), 1.},
+               {QuadratureType(QuadratureType::legendre), polar_quadrature()}, T, typical_E),
           x_extent(x_extent), k(1.)
     {
     }
@@ -69,13 +86,13 @@ namespace DiFfRG
     void set_x_extent(ctype x_extent)
     {
       this->x_extent = x_extent;
-      Base::set_grid_extents({0, -1.}, {std::sqrt(x_extent) * k, 1.});
+      Base::set_grid_extents({0, 0.}, {std::sqrt(x_extent) * k, 1.});
     }
 
     void set_k(ctype k)
     {
       this->k = k;
-      Base::set_grid_extents({0, -1.}, {std::sqrt(x_extent) * k, 1.});
+      Base::set_grid_extents({0, 0.}, {std::sqrt(x_extent) * k, 1.});
       Base::set_typical_E(k); // update typical energy
     }
 
