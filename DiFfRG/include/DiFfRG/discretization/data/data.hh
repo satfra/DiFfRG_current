@@ -3,8 +3,8 @@
 // external libraries
 #include <deal.II/base/function.h>
 #include <deal.II/base/quadrature_lib.h>
-#include <deal.II/fe/fe_values.h>
 #include <deal.II/dofs/dof_handler.h>
+#include <deal.II/fe/fe_values.h>
 #include <deal.II/lac/vector.h>
 
 // DiFfRG
@@ -213,7 +213,7 @@ namespace DiFfRG
           const auto &fe = discretization.get_fe();
           const unsigned int n_components = fe.n_components();
 
-          QGauss<dim> quadrature(15);
+          QGauss<dim> quadrature(2);
           FEValues<dim> fe_values(discretization.get_mapping(), fe, quadrature,
                                   update_quadrature_points | update_JxW_values);
 

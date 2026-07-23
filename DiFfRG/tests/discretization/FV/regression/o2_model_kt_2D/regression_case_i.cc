@@ -5,6 +5,7 @@
 #include "DiFfRG/timestepping/timestepping.hh"
 
 #include <DiFfRG/common/json.hh>
+#include <DiFfRG/discretization/data/data.hh>
 #include <DiFfRG/discretization/data/data_output.hh>
 #include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
 #include <DiFfRG/model/model.hh>
@@ -36,6 +37,7 @@ namespace
   constexpr double phi_min = -10.0;
   constexpr double phi_max = 10.0;
   constexpr std::size_t default_n_cells_per_direction = 400;
+  constexpr std::size_t quarter_domain_n_cells_per_direction = 200;
   constexpr double default_final_time = 60.0;
   constexpr double gamma_reference = 0.295702274;
   constexpr double gamma_tolerance = 5.0e-3;
@@ -60,16 +62,17 @@ namespace
 
   double theta(const bool condition) { return condition ? 1.0 : 0.0; }
 
-  class O2_Model_VI_B_I : public def::AbstractModel<O2_Model_VI_B_I, Components>,
-                          public def::fRG,
-                          public def::LLFFlux<O2_Model_VI_B_I>,
-                          public def::FlowBoundaries<O2_Model_VI_B_I>,
-                          public def::FVDefaultBoundaries<O2_Model_VI_B_I>,
-                          public def::AD<O2_Model_VI_B_I>
+  template <template <typename> class BoundaryPolicy>
+  class O2_Model_VI_B_I_Base : public def::AbstractModel<O2_Model_VI_B_I_Base<BoundaryPolicy>, Components>,
+                               public def::fRG,
+                               public def::LLFFlux<O2_Model_VI_B_I_Base<BoundaryPolicy>>,
+                               public def::FlowBoundaries<O2_Model_VI_B_I_Base<BoundaryPolicy>>,
+                               public BoundaryPolicy<O2_Model_VI_B_I_Base<BoundaryPolicy>>,
+                               public def::AD<O2_Model_VI_B_I_Base<BoundaryPolicy>>
   {
   public:
-    O2_Model_VI_B_I() : def::fRG(1.0) {}
-    explicit O2_Model_VI_B_I(const JSONValue &json) : def::fRG(json) {}
+    O2_Model_VI_B_I_Base() : def::fRG(1.0) {}
+    explicit O2_Model_VI_B_I_Base(const JSONValue &json) : def::fRG(json) {}
 
     template <typename Vector> void initial_condition(const Point<dim> &pos, Vector &values) const
     {
@@ -123,29 +126,48 @@ namespace
     }
   };
 
-  using O2Assembler = FV::KurganovTadmor::Assembler<Discretization, O2_Model_VI_B_I, Reconstructor>;
+  using O2_Model_VI_B_I = O2_Model_VI_B_I_Base<def::FVDefaultBoundaries>;
+  using O2_Model_VI_B_I_OriginCentered = O2_Model_VI_B_I_Base<def::OriginOddLinearExtrapolationBoundaries>;
+
+  template <typename Model> using O2Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor>;
 
   struct GammaRunParameters {
     std::size_t n_cells_per_direction = default_n_cells_per_direction;
     double final_time = default_final_time;
     bool retain_output = true;
+    bool write_output = true;
   };
 
-  double cell_width(const GammaRunParameters &params)
+  struct SquareGrid {
+    std::size_t n_cells_per_direction = 0;
+    double edge_min = 0.0;
+    double edge_max = 0.0;
+    double cell_width = 0.0;
+    double center_min = 0.0;
+  };
+
+  SquareGrid full_domain_grid(const GammaRunParameters &params)
   {
-    return (phi_max - phi_min) / static_cast<double>(params.n_cells_per_direction);
+    const double width = (phi_max - phi_min) / static_cast<double>(params.n_cells_per_direction);
+    return {params.n_cells_per_direction, phi_min, phi_max, width, phi_min + 0.5 * width};
   }
 
-  double center_min(const GammaRunParameters &params) { return phi_min + 0.5 * cell_width(params); }
-
-  std::string grid_axis_expression(const GammaRunParameters &params)
+  SquareGrid origin_centered_quarter_domain_grid()
   {
-    return std::to_string(phi_min) + ":" + std::to_string(cell_width(params)) + ":" + std::to_string(phi_max);
+    const double width = (phi_max - phi_min) / static_cast<double>(default_n_cells_per_direction);
+    const double edge_min = -0.5 * width;
+    const double edge_max = edge_min + static_cast<double>(quarter_domain_n_cells_per_direction) * width;
+    return {quarter_domain_n_cells_per_direction, edge_min, edge_max, width, 0.0};
   }
 
-  JSONValue make_run_json(const GammaRunParameters &params)
+  std::string grid_axis_expression(const SquareGrid &grid)
   {
-    const std::string phi_grid = grid_axis_expression(params);
+    return std::to_string(grid.edge_min) + ":" + std::to_string(grid.cell_width) + ":" + std::to_string(grid.edge_max);
+  }
+
+  JSONValue make_run_json(const GammaRunParameters &params, const SquareGrid &grid)
+  {
+    const std::string phi_grid = grid_axis_expression(grid);
     return json::value(
         {{"physical", {{"Lambda", 1.0e12}}},
          {"discretization",
@@ -170,12 +192,12 @@ namespace
              {"abs_tol", 1.0e-12},
              {"rel_tol", 1.0e-10},
              {"max_steps", 5000000}}}}},
-         {"output", {{"verbosity", 3}, {"vtk", true}, {"hdf5", true}}}});
+         {"output", {{"verbosity", 3}, {"vtk", params.write_output}, {"hdf5", params.write_output}}}});
   }
 
-  Config::ConfigurationMesh<dim> make_mesh_config(const GammaRunParameters &params)
+  Config::ConfigurationMesh<dim> make_mesh_config(const SquareGrid &grid)
   {
-    const std::vector<Config::GridAxis> phi_axis{Config::GridAxis(phi_min, cell_width(params), phi_max)};
+    const std::vector<Config::GridAxis> phi_axis{Config::GridAxis(grid.edge_min, grid.cell_width, grid.edge_max)};
     return Config::ConfigurationMesh<dim>(0u, phi_axis, phi_axis);
   }
 
@@ -193,41 +215,41 @@ namespace
     }
   };
 
-  std::size_t coordinate_index(const double x, const GammaRunParameters &params)
+  std::size_t coordinate_index(const double x, const SquareGrid &grid)
   {
-    const double width = cell_width(params);
-    const double floating_index = (x - center_min(params)) / width;
+    const double floating_index = (x - grid.center_min) / grid.cell_width;
     const auto index = static_cast<long>(std::llround(floating_index));
-    if (index < 0 || index >= static_cast<long>(params.n_cells_per_direction))
+    if (index < 0 || index >= static_cast<long>(grid.n_cells_per_direction))
       throw std::runtime_error("Sampled support point lies outside the expected O(2) Gamma grid.");
-    const double expected = center_min(params) + static_cast<double>(index) * width;
+    const double expected = grid.center_min + static_cast<double>(index) * grid.cell_width;
     if (std::abs(x - expected) > point_tolerance)
       throw std::runtime_error("Sampled support point does not lie on the expected uniform grid.");
     return static_cast<std::size_t>(index);
   }
 
   SampledGrid sample_final_grid(const FV::FlowingVariables<Discretization> &state, const Discretization &discretization,
-                                const GammaRunParameters &params)
+                                const SquareGrid &grid_parameters)
   {
     const auto &dof_handler = discretization.get_dof_handler();
     const auto &fe = discretization.get_fe();
     const auto &solution = state.spatial_data();
 
-    if (dof_handler.get_triangulation().n_active_cells() != params.n_cells_per_direction * params.n_cells_per_direction)
+    if (dof_handler.get_triangulation().n_active_cells() !=
+        grid_parameters.n_cells_per_direction * grid_parameters.n_cells_per_direction)
       throw std::runtime_error("The O(2) Gamma regression does not have the expected number of active FV cells.");
 
     SampledGrid grid;
-    grid.n_cells_per_direction = params.n_cells_per_direction;
-    grid.cell_width = cell_width(params);
-    const std::size_t n_grid_points = params.n_cells_per_direction * params.n_cells_per_direction;
+    grid.n_cells_per_direction = grid_parameters.n_cells_per_direction;
+    grid.cell_width = grid_parameters.cell_width;
+    const std::size_t n_grid_points = grid_parameters.n_cells_per_direction * grid_parameters.n_cells_per_direction;
     grid.u.assign(n_grid_points, std::numeric_limits<double>::quiet_NaN());
     grid.v.assign(n_grid_points, std::numeric_limits<double>::quiet_NaN());
 
     std::vector<types::global_dof_index> dof_indices(fe.dofs_per_cell);
     for (auto cell = dof_handler.begin_active(); cell != dof_handler.end(); ++cell) {
       cell->get_dof_indices(dof_indices);
-      const std::size_t ix = coordinate_index(cell->center()[0], params);
-      const std::size_t iy = coordinate_index(cell->center()[1], params);
+      const std::size_t ix = coordinate_index(cell->center()[0], grid_parameters);
+      const std::size_t iy = coordinate_index(cell->center()[1], grid_parameters);
       const std::size_t i = grid.index(ix, iy);
 
       for (unsigned int local_dof = 0; local_dof < fe.dofs_per_cell; ++local_dof) {
@@ -269,18 +291,31 @@ namespace
     const auto v = [&](const std::size_t ix, const std::size_t iy) { return grid.value(grid.v, ix, iy); };
 
     Gamma2 gamma;
-    gamma.gamma_11 =
-        0.5 * ((u(upper, lower) - u(lower, lower)) / grid.cell_width +
-               (u(upper, upper) - u(lower, upper)) / grid.cell_width);
-    gamma.gamma_22 =
-        0.5 * ((v(lower, upper) - v(lower, lower)) / grid.cell_width +
-               (v(upper, upper) - v(upper, lower)) / grid.cell_width);
-    gamma.gamma_12_from_u =
-        0.5 * ((u(lower, upper) - u(lower, lower)) / grid.cell_width +
-               (u(upper, upper) - u(upper, lower)) / grid.cell_width);
-    gamma.gamma_12_from_v =
-        0.5 * ((v(upper, lower) - v(lower, lower)) / grid.cell_width +
-               (v(upper, upper) - v(lower, upper)) / grid.cell_width);
+    gamma.gamma_11 = 0.5 * ((u(upper, lower) - u(lower, lower)) / grid.cell_width +
+                            (u(upper, upper) - u(lower, upper)) / grid.cell_width);
+    gamma.gamma_22 = 0.5 * ((v(lower, upper) - v(lower, lower)) / grid.cell_width +
+                            (v(upper, upper) - v(upper, lower)) / grid.cell_width);
+    gamma.gamma_12_from_u = 0.5 * ((u(lower, upper) - u(lower, lower)) / grid.cell_width +
+                                   (u(upper, upper) - u(upper, lower)) / grid.cell_width);
+    gamma.gamma_12_from_v = 0.5 * ((v(upper, lower) - v(lower, lower)) / grid.cell_width +
+                                   (v(upper, upper) - v(lower, upper)) / grid.cell_width);
+    gamma.gamma_12 = 0.5 * (gamma.gamma_12_from_u + gamma.gamma_12_from_v);
+    return gamma;
+  }
+
+  Gamma2 extract_origin_centered_gamma2(const SampledGrid &grid)
+  {
+    if (grid.n_cells_per_direction < 2)
+      throw std::runtime_error("Origin-centered Gamma extraction expects at least two cells per direction.");
+
+    const auto u = [&](const std::size_t ix, const std::size_t iy) { return grid.value(grid.u, ix, iy); };
+    const auto v = [&](const std::size_t ix, const std::size_t iy) { return grid.value(grid.v, ix, iy); };
+
+    Gamma2 gamma;
+    gamma.gamma_11 = (u(1, 0) - u(0, 0)) / grid.cell_width;
+    gamma.gamma_22 = (v(0, 1) - v(0, 0)) / grid.cell_width;
+    gamma.gamma_12_from_u = (u(0, 1) - u(0, 0)) / grid.cell_width;
+    gamma.gamma_12_from_v = (v(1, 0) - v(0, 0)) / grid.cell_width;
     gamma.gamma_12 = 0.5 * (gamma.gamma_12_from_u + gamma.gamma_12_from_v);
     return gamma;
   }
@@ -308,15 +343,16 @@ namespace
   {
     kt_regression::ensure_logger();
 
-    const JSONValue json = make_run_json(params);
+    const SquareGrid grid = full_domain_grid(params);
+    const JSONValue json = make_run_json(params, grid);
     O2_Model_VI_B_I model(json);
-    Mesh mesh(make_mesh_config(params));
+    Mesh mesh(make_mesh_config(grid));
     Discretization discretization(mesh, json);
-    O2Assembler assembler(discretization, model, json);
+    O2Assembler<O2_Model_VI_B_I> assembler(discretization, model, json);
 
     kt_regression::TemporaryDirectory tmp_dir("o2_model_kt_2D_case_i_regression", !params.retain_output);
-    std::clog << "[O2 DIAG] " << (params.retain_output ? "retaining" : "using temporary")
-              << " output directory " << tmp_dir.path << '\n';
+    std::clog << "[O2 DIAG] " << (params.retain_output ? "retaining" : "using temporary") << " output directory "
+              << tmp_dir.path << '\n';
     DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), "o2_model_kt_2D_case_i_regression", "output", json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
@@ -326,7 +362,37 @@ namespace
     discretization.get_constraints().distribute(state.spatial_data());
 
     time_stepper.run(&state, 0.0, params.final_time);
-    return extract_origin_gamma2(sample_final_grid(state, discretization, params));
+    return extract_origin_gamma2(sample_final_grid(state, discretization, grid));
+  }
+
+  Gamma2 run_o2_vi_b_i_origin_centered_quarter_domain_regression()
+  {
+    kt_regression::ensure_logger();
+
+    const GammaRunParameters params{.n_cells_per_direction = quarter_domain_n_cells_per_direction,
+                                    .final_time = default_final_time,
+                                    .retain_output = false,
+                                    .write_output = false};
+    const SquareGrid grid = origin_centered_quarter_domain_grid();
+    const JSONValue json = make_run_json(params, grid);
+    O2_Model_VI_B_I_OriginCentered model(json);
+    Mesh mesh(make_mesh_config(grid));
+    Discretization discretization(mesh, json);
+    O2Assembler<O2_Model_VI_B_I_OriginCentered> assembler(discretization, model, json);
+
+    kt_regression::TemporaryDirectory tmp_dir("o2_model_kt_2D_case_i_origin_centered_quarter_domain");
+    std::clog << "[O2 DIAG] using temporary output directory " << tmp_dir.path << '\n';
+    DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), "o2_model_kt_2D_case_i_origin_centered_quarter_domain",
+                                         "output", json);
+    auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
+    ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+
+    FV::FlowingVariables<Discretization> state(discretization);
+    state.interpolate(model);
+    discretization.get_constraints().distribute(state.spatial_data());
+
+    time_stepper.run(&state, 0.0, params.final_time);
+    return extract_origin_centered_gamma2(sample_final_grid(state, discretization, grid));
   }
 } // namespace
 
@@ -401,8 +467,7 @@ TEST_CASE("O2 Model VI_B_I run extracts Gamma2 at the origin", "[2d][FV][KT][O2]
   CHECK_THAT(gamma.gamma_12, Catch::Matchers::WithinAbs(0.0, gamma_tolerance));
 }
 
-TEST_CASE("O2 Model VI_B_I coarse 40x40 run extracts Gamma2 at the origin",
-          "[2d][FV][KT][O2][VI_B_I][coarse]")
+TEST_CASE("O2 Model VI_B_I coarse 40x40 run extracts Gamma2 at the origin", "[2d][FV][KT][O2][VI_B_I][coarse]")
 {
   const Gamma2 gamma = run_o2_vi_b_i_gamma_regression(
       {.n_cells_per_direction = 40, .final_time = default_final_time, .retain_output = false});
@@ -415,6 +480,35 @@ TEST_CASE("O2 Model VI_B_I coarse 40x40 run extracts Gamma2 at the origin",
   REQUIRE(std::isfinite(gamma.gamma_12_from_v));
   REQUIRE(std::isfinite(gamma.gamma_12));
 
+  CHECK_THAT(gamma.gamma_11 - gamma.gamma_22, Catch::Matchers::WithinAbs(0.0, gamma_tolerance));
+  CHECK_THAT(gamma.gamma_12_from_u, Catch::Matchers::WithinAbs(0.0, gamma_tolerance));
+  CHECK_THAT(gamma.gamma_12_from_v, Catch::Matchers::WithinAbs(0.0, gamma_tolerance));
+  CHECK_THAT(gamma.gamma_12, Catch::Matchers::WithinAbs(0.0, gamma_tolerance));
+}
+
+TEST_CASE("O2 Model VI_B_I origin-centered quarter-domain run extracts Gamma2 at the origin",
+          "[2d][FV][KT][O2][VI_B_I][quarter-domain][slow]")
+{
+  const Gamma2 gamma = run_o2_vi_b_i_origin_centered_quarter_domain_regression();
+  log_gamma2("200x200 origin-centered quarter-domain", gamma);
+  log_gamma2_reference_comparison("200x200 origin-centered quarter-domain", gamma);
+
+  const double extracted_gamma = extracted_gamma2(gamma);
+  const double absolute_error = std::abs(extracted_gamma - gamma_reference);
+  const double relative_error = absolute_error / std::abs(gamma_reference);
+
+  CAPTURE(gamma.gamma_11, gamma.gamma_22, gamma.gamma_12_from_u, gamma.gamma_12_from_v, gamma.gamma_12, extracted_gamma,
+          absolute_error, relative_error);
+  REQUIRE(std::isfinite(gamma.gamma_11));
+  REQUIRE(std::isfinite(gamma.gamma_22));
+  REQUIRE(std::isfinite(gamma.gamma_12_from_u));
+  REQUIRE(std::isfinite(gamma.gamma_12_from_v));
+  REQUIRE(std::isfinite(gamma.gamma_12));
+  REQUIRE(std::isfinite(extracted_gamma));
+
+  CHECK_THAT(gamma.gamma_11, Catch::Matchers::WithinAbs(gamma_reference, gamma_tolerance));
+  CHECK_THAT(gamma.gamma_22, Catch::Matchers::WithinAbs(gamma_reference, gamma_tolerance));
+  CHECK_THAT(extracted_gamma, Catch::Matchers::WithinAbs(gamma_reference, gamma_tolerance));
   CHECK_THAT(gamma.gamma_11 - gamma.gamma_22, Catch::Matchers::WithinAbs(0.0, gamma_tolerance));
   CHECK_THAT(gamma.gamma_12_from_u, Catch::Matchers::WithinAbs(0.0, gamma_tolerance));
   CHECK_THAT(gamma.gamma_12_from_v, Catch::Matchers::WithinAbs(0.0, gamma_tolerance));

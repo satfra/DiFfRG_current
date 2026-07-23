@@ -49,6 +49,10 @@ using FEFunctionDesc = DiFfRG::FEFunctionDescriptor<DiFfRG::Scalar<"u">>;
 using Components = DiFfRG::ComponentDescriptor<FEFunctionDesc>;
 constexpr auto idxf = FEFunctionDesc{};
 
+using CurlFreeFEFunctionDesc =
+    DiFfRG::FEFunctionDescriptor<DiFfRG::Scalar<"u">, DiFfRG::Scalar<"v">>;
+using CurlFreeComponents = DiFfRG::ComponentDescriptor<CurlFreeFEFunctionDesc>;
+
 class TestModel : public DiFfRG::def::AbstractModel<TestModel, Components>
 {
 public:
@@ -280,6 +284,53 @@ public:
   void source(std::array<NT, 1> &s_i, const Point<2> & /*pos*/, const Solution & /*sol*/) const
   {
     s_i[0] = NT(0.0);
+  }
+};
+
+class OriginOddCurlFreeBoundary2DModel
+    : public DiFfRG::def::AbstractModel<OriginOddCurlFreeBoundary2DModel, CurlFreeComponents>,
+      public DiFfRG::def::Time,
+      public DiFfRG::def::LLFFlux<OriginOddCurlFreeBoundary2DModel>,
+      public DiFfRG::def::FlowBoundaries<OriginOddCurlFreeBoundary2DModel>,
+      public DiFfRG::def::OriginOddLinearExtrapolationBoundaries<OriginOddCurlFreeBoundary2DModel>,
+      public DiFfRG::def::AD<OriginOddCurlFreeBoundary2DModel>
+{
+public:
+  static constexpr double x_slope = 0.75;
+  static constexpr double y_slope = -0.5;
+
+  template <typename Vector> void initial_condition(const Point<2> &pos, Vector &values) const
+  {
+    const auto values_at_pos = solution(pos);
+    values[0] = values_at_pos[0];
+    values[1] = values_at_pos[1];
+  }
+
+  std::array<double, 2> solution(const Point<2> &pos) const
+  {
+    return {x_slope * pos[0], y_slope * pos[1]};
+  }
+
+  template <typename NT, typename Solution>
+  void KurganovTadmor_advection_flux(std::array<Tensor<1, 2, NT>, 2> &F_i, const Point<2> & /*pos*/,
+                                     const Solution & /*sol*/) const
+  {
+    for (auto &flux_i : F_i)
+      flux_i = Tensor<1, 2, NT>();
+  }
+
+  template <typename NT, typename Solution>
+  void flux(std::array<Tensor<1, 2, NT>, 2> &F_i, const Point<2> & /*pos*/, const Solution & /*sol*/) const
+  {
+    for (auto &flux_i : F_i)
+      flux_i = Tensor<1, 2, NT>();
+  }
+
+  template <typename NT, typename Solution>
+  void source(std::array<NT, 2> &s_i, const Point<2> & /*pos*/, const Solution & /*sol*/) const
+  {
+    for (auto &source_i : s_i)
+      source_i = NT(0.0);
   }
 };
 
@@ -1437,6 +1488,64 @@ TEST_CASE("KT 2D boundary reconstruction cache uses model-owned tangential ghost
     CHECK(cached.face_grad_minus[0][tangential_axis] == Catch::Approx(base_tangential_slope).margin(tolerance));
     CHECK(cached.face_grad_plus[0][tangential_axis] ==
           Catch::Approx(base_tangential_slope + Model::tangential_shift_slope).margin(tolerance));
+  }
+}
+
+TEST_CASE("KT origin-odd boundary reconstruction remains curl-free", "[FV][KT][cache][boundary][2d]")
+{
+  using Model = OriginOddCurlFreeBoundary2DModel;
+  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<2>>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  auto json = make_kt_boundary_json();
+  json.set_string("/discretization/grid/x_grid", "-0.125:0.25:0.875");
+  json.set_string("/discretization/grid/y_grid", "-0.125:0.25:0.875");
+
+  Model model;
+  const DiFfRG::Config::ConfigurationMesh<2> mesh_config(json);
+  DiFfRG::RectangularMesh<2> mesh(mesh_config);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  DiFfRG::FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+  const VectorType &solution = state.spatial_data();
+
+  typename Assembler::SolutionReconstructionCache cache;
+  assembler.template rebuild_solution_reconstruction_cache<typename Assembler::Reconstructor>(solution, cache);
+
+  const auto check_gradient = [](const auto &gradient) {
+    constexpr double tolerance = 1.0e-12;
+    CHECK(gradient[0][0] == Catch::Approx(Model::x_slope).margin(tolerance));
+    CHECK(gradient[1][1] == Catch::Approx(Model::y_slope).margin(tolerance));
+    CHECK(gradient[0][1] == Catch::Approx(0.0).margin(tolerance));
+    CHECK(gradient[1][0] == Catch::Approx(0.0).margin(tolerance));
+    const double curl = gradient[1][0] - gradient[0][1];
+    CHECK(curl == Catch::Approx(0.0).margin(tolerance));
+  };
+
+  for (const auto face_index : {0U, 2U}) {
+    CAPTURE(face_index);
+    const auto cell = find_2d_non_corner_boundary_cell(discretization.get_dof_handler(), face_index);
+    REQUIRE(cell != discretization.get_dof_handler().end());
+
+    const auto x_q = cell->face(face_index)->center();
+    const auto expected = model.solution(x_q);
+    const auto &reconstruction = assembler.get_cached_face_reconstruction(cache, cell, face_index);
+
+    for (std::size_t component = 0; component < expected.size(); ++component) {
+      CHECK(reconstruction.u_minus[component] == Catch::Approx(expected[component]).margin(1.0e-12));
+      CHECK(reconstruction.u_plus[component] == Catch::Approx(expected[component]).margin(1.0e-12));
+    }
+
+    check_gradient(reconstruction.face_grad_minus);
+    check_gradient(reconstruction.face_grad_plus);
+    check_gradient(reconstruction.diffusion_grad_minus);
+    check_gradient(reconstruction.diffusion_grad_plus);
+    check_gradient(reconstruction.diffusion_grad);
   }
 }
 

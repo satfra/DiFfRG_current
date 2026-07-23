@@ -20,6 +20,7 @@
 #include <iomanip>
 #include <limits>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <tuple>
@@ -71,12 +72,15 @@ namespace
   {
   public:
     ZeroDim2DKTCaseVModel() : def::fRG(1.0) {}
-    explicit ZeroDim2DKTCaseVModel(const JSONValue &json) : def::fRG(json) {}
+    explicit ZeroDim2DKTCaseVModel(const JSONValue &json, const double interaction_strength = 1.0)
+        : def::fRG(json), interaction_strength(interaction_strength)
+    {
+    }
     double current_k() const { return k; }
 
     template <typename Vector> void initial_condition(const Point<dim> &pos, Vector &values) const
     {
-      const auto field = eq93_gradient(pos);
+      const auto field = homotopy_gradient(pos, interaction_strength);
       values[0] = field[0];
       values[1] = field[1];
     }
@@ -99,6 +103,15 @@ namespace
 
       return {2.0 * (d_polynomial_d_phi_1 * modulation - polynomial * phase_sine * phase_gradient_factor * phi_1),
               2.0 * (d_polynomial_d_phi_2 * modulation - polynomial * phase_sine * phase_gradient_factor * phi_2)};
+    }
+
+    static std::array<double, n_components> homotopy_gradient(const Point<dim> &pos, const double interaction_strength)
+    {
+      const std::array<double, n_components> gaussian_gradient{{2.0 * pos[0], 2.0 * pos[1]}};
+      const auto case_v_gradient = eq93_gradient(pos);
+
+      return {(1.0 - interaction_strength) * gaussian_gradient[0] + interaction_strength * case_v_gradient[0],
+              (1.0 - interaction_strength) * gaussian_gradient[1] + interaction_strength * case_v_gradient[1]};
     }
 
     template <typename NT, typename Solution>
@@ -138,6 +151,9 @@ namespace
       for (auto &source_i : s_i)
         source_i = NT(0.0);
     }
+
+  private:
+    double interaction_strength = 1.0;
   };
 
   using CaseVAssembler = FV::KurganovTadmor::Assembler<Discretization, ZeroDim2DKTCaseVModel, Reconstructor>;
@@ -145,6 +161,8 @@ namespace
   struct GammaRunParameters {
     std::size_t n_cells_per_direction = default_n_cells_per_direction;
     double final_time = default_final_time;
+    double interaction_strength = 1.0;
+    bool detect_stuck = false;
     bool retain_output = true;
     bool inspect_reconstruction = false;
     bool inspect_ida_error_dofs = false;
@@ -193,7 +211,7 @@ namespace
              {"maximal_dt", 1.0},
              {"abs_tol", 1.0e-12},
              {"rel_tol", 1.0e-12},
-             {"detect_stuck", false}}},
+             {"detect_stuck", params.detect_stuck}}},
            {"implicit",
             {{"dt", 1.0e-3},
              {"minimal_dt", 0.0e-14},
@@ -716,7 +734,7 @@ namespace
     kt_regression::ensure_logger();
 
     const JSONValue json = make_run_json(params);
-    ZeroDim2DKTCaseVModel model(json);
+    ZeroDim2DKTCaseVModel model(json, params.interaction_strength);
     Mesh mesh(make_mesh_config(params));
     Discretization discretization(mesh, json);
     CaseVAssembler assembler(discretization, model, json);
@@ -748,10 +766,23 @@ namespace
         }
         time_stepper.run(&state, 0.0, params.final_time);
       }
+    } catch (const std::exception &error) {
+      if (params.inspect_reconstruction)
+        log_case_v_reconstruction_diagnostics("failure", model, discretization, assembler, state.spatial_data(),
+                                              params);
+      std::ostringstream message;
+      message << std::setprecision(std::numeric_limits<double>::max_digits10)
+              << "Case V homotopy integration failed for g=" << params.interaction_strength
+              << " at t=" << model.get_time() << " with k=" << model.current_k() << ": " << error.what();
+      throw std::runtime_error(message.str());
     } catch (...) {
       if (params.inspect_reconstruction)
         log_case_v_reconstruction_diagnostics("failure", model, discretization, assembler, state.spatial_data(),
                                               params);
+      std::clog << std::setprecision(std::numeric_limits<double>::max_digits10)
+                << "[CASE V DIAG] homotopy integration failed for g=" << params.interaction_strength
+                << " at t=" << model.get_time() << " with k=" << model.current_k()
+                << " due to a non-standard exception\n";
       throw;
     }
     return extract_case_v_observables(sample_final_grid(state, discretization, params));
@@ -816,6 +847,80 @@ TEST_CASE("Zero-dimensional KT Case V exposes Eq. 93 initial condition and diago
     CHECK(source_i == 0.0);
 }
 
+TEST_CASE("Zero-dimensional KT Case V homotopy connects the Gaussian and Eq. 93 gradients",
+          "[2d][FV][KT][paper][case_v][homotopy]")
+{
+  const Point<dim> interior(1.0, 0.5);
+  const Point<dim> exterior(4.0, -1.0);
+  const Point<dim> boundary(3.0, 0.0);
+  const std::array<double, 6> interaction_strengths{{0.0, 0.125, 0.25, 0.5, 0.75, 1.0}};
+
+  const std::array<double, n_components> gaussian_interior{{2.0 * interior[0], 2.0 * interior[1]}};
+  const std::array<double, n_components> gaussian_exterior{{2.0 * exterior[0], 2.0 * exterior[1]}};
+  const auto case_v_interior = ZeroDim2DKTCaseVModel::eq93_gradient(interior);
+
+  for (const double strength : interaction_strengths) {
+    DYNAMIC_SECTION("g=" << strength)
+    {
+      const auto interior_gradient = ZeroDim2DKTCaseVModel::homotopy_gradient(interior, strength);
+      const auto exterior_gradient = ZeroDim2DKTCaseVModel::homotopy_gradient(exterior, strength);
+      const auto boundary_gradient = ZeroDim2DKTCaseVModel::homotopy_gradient(boundary, strength);
+
+      for (std::size_t component = 0; component < n_components; ++component) {
+        const double expected_interior =
+            (1.0 - strength) * gaussian_interior[component] + strength * case_v_interior[component];
+        CHECK_THAT(interior_gradient[component], Catch::Matchers::WithinAbs(expected_interior, 1.0e-14));
+        CHECK_THAT(exterior_gradient[component], Catch::Matchers::WithinAbs(gaussian_exterior[component], 1.0e-14));
+      }
+
+      CHECK_THAT(6.0 - boundary_gradient[0], Catch::Matchers::WithinAbs(6.0 * strength, 1.0e-12));
+      CHECK_THAT(boundary_gradient[1], Catch::Matchers::WithinAbs(0.0, 1.0e-14));
+    }
+  }
+
+  CHECK(ZeroDim2DKTCaseVModel::homotopy_gradient(interior, 0.0) == gaussian_interior);
+  CHECK(ZeroDim2DKTCaseVModel::homotopy_gradient(interior, 1.0) == case_v_interior);
+}
+
+TEST_CASE("Zero-dimensional KT Case V 40x40 homotopy sweep reaches t=60", "[2d][FV][KT][paper][case_v][homotopy][slow]")
+{
+  const std::array<double, 6> interaction_strengths{{0.0, 0.125, 0.25, 0.5, 0.75, 1.0}};
+
+  for (const double strength : interaction_strengths) {
+    DYNAMIC_SECTION("g=" << strength)
+    {
+      CAPTURE(strength);
+      const CaseVObservables observables = run_case_v_regression({.n_cells_per_direction = 40,
+                                                                  .final_time = default_final_time,
+                                                                  .interaction_strength = strength,
+                                                                  .detect_stuck = true,
+                                                                  .retain_output = false,
+                                                                  .inspect_reconstruction = true,
+                                                                  .inspect_ida_error_dofs = false,
+                                                                  .ida_error_dof_top_n = 8,
+                                                                  .time_stepper = GammaTimeStepper::RK45});
+      log_observables("40x40 homotopy g=" + std::to_string(strength), observables);
+
+      REQUIRE(std::isfinite(observables.minimum[0]));
+      REQUIRE(std::isfinite(observables.minimum[1]));
+      REQUIRE(std::isfinite(observables.gamma.gamma_11));
+      REQUIRE(std::isfinite(observables.gamma.gamma_12));
+      REQUIRE(std::isfinite(observables.gamma.gamma_21));
+      REQUIRE(std::isfinite(observables.gamma.gamma_22));
+      REQUIRE(std::isfinite(observables.gamma.determinant()));
+
+      if (strength == 0.0) {
+        CHECK_THAT(observables.minimum[0], Catch::Matchers::WithinAbs(0.0, 1.0e-8));
+        CHECK_THAT(observables.minimum[1], Catch::Matchers::WithinAbs(0.0, 1.0e-8));
+        CHECK_THAT(observables.gamma.gamma_11, Catch::Matchers::WithinAbs(2.0, 1.0e-8));
+        CHECK_THAT(observables.gamma.gamma_12, Catch::Matchers::WithinAbs(0.0, 1.0e-8));
+        CHECK_THAT(observables.gamma.gamma_21, Catch::Matchers::WithinAbs(0.0, 1.0e-8));
+        CHECK_THAT(observables.gamma.gamma_22, Catch::Matchers::WithinAbs(2.0, 1.0e-8));
+      }
+    }
+  }
+}
+
 TEST_CASE("Zero-dimensional KT Case V run matches non-O2 reference observables", "[2d][FV][KT][paper][case_v][slow]")
 {
   const CaseVObservables observables = run_case_v_regression({.time_stepper = GammaTimeStepper::RK45});
@@ -843,6 +948,36 @@ TEST_CASE("Zero-dimensional KT Case V run matches non-O2 reference observables",
              Catch::Matchers::WithinAbs(reference_gamma_22, full_gamma_tolerance(reference_gamma_22)));
   CHECK_THAT(observables.gamma.gamma_12 - observables.gamma.gamma_21,
              Catch::Matchers::WithinAbs(0.0, full_offdiagonal_symmetry_tolerance));
+}
+
+TEST_CASE("Zero-dimensional KT Case V 200x200 diagnostic run reaches t=60",
+          "[2d][FV][KT][paper][case_v][200x200][diagnostic][slow]")
+{
+  const CaseVObservables observables = run_case_v_regression({.n_cells_per_direction = 200,
+                                                              .final_time = default_final_time,
+                                                              .detect_stuck = true,
+                                                              .retain_output = true,
+                                                              .inspect_reconstruction = true,
+                                                              .inspect_ida_error_dofs = false,
+                                                              .ida_error_dof_top_n = 8,
+                                                              .time_stepper = GammaTimeStepper::RK45});
+  log_observables("200x200", observables);
+
+  CAPTURE(observables.minimum[0], observables.minimum[1], observables.gamma.gamma_11, observables.gamma.gamma_12,
+          observables.gamma.gamma_21, observables.gamma.gamma_22, observables.gamma.determinant());
+  REQUIRE(std::isfinite(observables.minimum[0]));
+  REQUIRE(std::isfinite(observables.minimum[1]));
+  REQUIRE(std::isfinite(observables.gamma.gamma_11));
+  REQUIRE(std::isfinite(observables.gamma.gamma_12));
+  REQUIRE(std::isfinite(observables.gamma.gamma_21));
+  REQUIRE(std::isfinite(observables.gamma.gamma_22));
+  REQUIRE(std::isfinite(observables.gamma.determinant()));
+
+  CHECK(observables.gamma.gamma_11 > 0.0);
+  CHECK(observables.gamma.gamma_22 > 0.0);
+  CHECK(observables.gamma.gamma_12 < 0.0);
+  CHECK(observables.gamma.gamma_21 < 0.0);
+  CHECK(observables.gamma.determinant() > 0.0);
 }
 
 TEST_CASE("Zero-dimensional KT Case V coarse 40x40 run extracts non-O2 observables",
