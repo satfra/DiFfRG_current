@@ -31,8 +31,8 @@ namespace DiFfRG
                                                const dealii::Point<dim> &x_q, const Model &model)
         {
           using ADNumberType = autodiff::Real<2, NumberType>;
-          using autodiff::detail::seed;
           using autodiff::detail::derivative;
+          using autodiff::detail::seed;
 
           auto unseed = [](ADNumberType &x) { seed<1>(x, NumberType(0)); };
 
@@ -50,7 +50,7 @@ namespace DiFfRG
           model.KurganovTadmor_advection_flux(F_AD, x_q, advection_flux_tie(u_AD));
           for (size_t i = 0; i < n_components; ++i)
             for (size_t d = 0; d < dim; ++d)
-              F[i][d] = autodiff::detail::val(F_AD[i][d]);
+              F[i][d] = F_AD[i][d].val();
 
           // Pass 1: Compute Jacobian columns and diagonal Hessian entries H[j][j].
           // Seed one variable at a time.
@@ -80,8 +80,7 @@ namespace DiFfRG
 
               for (size_t d = 0; d < dim; ++d)
                 for (size_t i = 0; i < n_components; ++i) {
-                  const NumberType cross =
-                      (derivative<2>(F_AD[i][d]) - H[d][i][j][j] - H[d][i][c][c]) / NumberType(2);
+                  const NumberType cross = (derivative<2>(F_AD[i][d]) - H[d][i][j][j] - H[d][i][c][c]) / NumberType(2);
                   H[d][i][j][c] = H[d][i][c][j] = cross;
                 }
 
@@ -95,8 +94,8 @@ namespace DiFfRG
 
         // Forward declaration; defined below.
         template <typename Model, typename NumberType, int dim, size_t n_components>
-        auto compute_flux_jacobian_only(const std::array<NumberType, n_components> &u,
-                                        const dealii::Point<dim> &x_q, const Model &model);
+        auto compute_flux_jacobian_only(const std::array<NumberType, n_components> &u, const dealii::Point<dim> &x_q,
+                                        const Model &model);
 
         /// LDG-style alternative to compute_flux_jacobian_and_hessian: extracts J via
         /// first-order forward-mode AD and computes H by central finite differences on
@@ -113,8 +112,7 @@ namespace DiFfRG
                                                   const dealii::Point<dim> &x_q, const Model &model)
         {
           // 1. F and J at the centre point via Real<1>.
-          auto [F, J, _H_dummy] =
-              compute_flux_jacobian_only<Model, NumberType, dim, n_components>(u, x_q, model);
+          auto [F, J, _H_dummy] = compute_flux_jacobian_only<Model, NumberType, dim, n_components>(u, x_q, model);
 
           // 2. Central FD per component to fill H[d][i][j][k] = ∂J[d][i][j]/∂u[k].
           HessianTensor<NumberType, dim, n_components> H{};
@@ -122,8 +120,7 @@ namespace DiFfRG
             // Step size: max(1e-6 · |u_k|, 1e-10). Matches LDG's choice for
             // well-scaled solution components; small enough to capture local curvature,
             // large enough to stay above ~ulp(J) noise after the cancellation in (J+ - J-).
-            const NumberType eps =
-                std::max(NumberType(1.0e-6) * std::abs(u[k]), NumberType(1.0e-10));
+            const NumberType eps = std::max(NumberType(1.0e-6) * std::abs(u[k]), NumberType(1.0e-10));
 
             auto u_plus_eps = u;
             u_plus_eps[k] += eps;
@@ -159,8 +156,8 @@ namespace DiFfRG
         /// from a Real<1> chain. When the strategy does not need H, switching to this
         /// Real<1>-only path both halves the AD work and produces a noticeably cleaner J.
         template <typename Model, typename NumberType, int dim, size_t n_components>
-        auto compute_flux_jacobian_only(const std::array<NumberType, n_components> &u,
-                                        const dealii::Point<dim> &x_q, const Model &model)
+        auto compute_flux_jacobian_only(const std::array<NumberType, n_components> &u, const dealii::Point<dim> &x_q,
+                                        const Model &model)
         {
           using ADNumberType = autodiff::Real<1, NumberType>;
           using autodiff::detail::seed;
@@ -173,7 +170,7 @@ namespace DiFfRG
 
           std::array<dealii::Tensor<1, dim, NumberType>, n_components> F{};
           std::array<JacobianMatrix<NumberType, n_components>, dim> J{};
-          HessianTensor<NumberType, dim, n_components> H{};  // zero — strategy does not use it
+          HessianTensor<NumberType, dim, n_components> H{}; // zero — strategy does not use it
 
           std::array<dealii::Tensor<1, dim, ADNumberType>, n_components> F_AD{};
 

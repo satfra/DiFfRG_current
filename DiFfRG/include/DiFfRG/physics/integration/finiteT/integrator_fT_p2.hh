@@ -30,7 +30,7 @@ namespace DiFfRG
 
       template <typename... T> static KOKKOS_FORCEINLINE_FUNCTION NT constant(const T &...t)
       {
-        return KERNEL::constant(t...);
+        return NT(KERNEL::constant(t...));
       }
     };
 

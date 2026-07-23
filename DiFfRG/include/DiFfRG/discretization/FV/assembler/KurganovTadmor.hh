@@ -37,6 +37,7 @@
 #include <DiFfRG/discretization/FV/reconstructor/advection/tvd_reconstructor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
+#include <DiFfRG/discretization/common/eom.hh>
 
 #include <DiFfRG/discretization/FV/assembler/flux_jacobian_hessian.hh>
 #include <DiFfRG/discretization/FV/assembler/flux_ties.hh>
@@ -67,7 +68,7 @@ namespace DiFfRG
         template <int dim, typename NumberType, size_t n_components> struct ScratchData {
           using QuadratureValue = std::array<NumberType, n_components>;
 
-          ScratchData(const Quadrature<dim> &quadrature)
+          ScratchData(const dealii::Quadrature<dim> &quadrature)
               : cell_dof_indices(n_components), ncell_dof_indices(n_components), solution_values(quadrature.size()),
                 solution_dot_values(quadrature.size())
           {
@@ -809,8 +810,8 @@ namespace DiFfRG
             EoM_cell = best_cell;
             return best_point;
           } else {
-            EoM_cell = fallback_readout_cell();
-            return EoM_cell->center();
+            return get_EoM_point(EoM_cell, solution_global, dof_handler, mapping, EoMfun,
+                                 [](const auto &point, const auto &) { return point; }, EoM_abs_tol, EoM_max_iter);
           }
         }
 
