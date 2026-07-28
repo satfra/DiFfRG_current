@@ -161,7 +161,7 @@ namespace
   };
 
   template <int dim, template <typename, typename, typename> typename DiscretizationTemplate, typename Model>
-  Point<dim> reconstruct_minimum_with_model(const Model &model, const int fe_order)
+  auto reconstruct_with_potential_with_model(const Model &model, const int fe_order)
   {
     using NumberType = double;
     using Discretization = DiscretizationTemplate<typename Model::Components, NumberType, RectangularMesh<dim>>;
@@ -181,10 +181,16 @@ namespace
     const auto &mapping = discretization.get_mapping();
 
     auto EoM_cell = dof_handler.begin_active();
-    return get_EoM_point(
+    return get_EoM_point_with_potential(
         EoM_cell, src, dof_handler, mapping, [&](const auto &p, const auto &values) { return model.EoM(p, values); },
         [&](const auto &p, const auto &) { return p; }, json.get_double("/discretization/EoM_abs_tol"),
         json.get_uint("/discretization/EoM_max_iter"));
+  }
+
+  template <int dim, template <typename, typename, typename> typename DiscretizationTemplate, typename Model>
+  Point<dim> reconstruct_minimum_with_model(const Model &model, const int fe_order)
+  {
+    return reconstruct_with_potential_with_model<dim, DiscretizationTemplate>(model, fe_order).point;
   }
 
   template <int dim, template <typename, typename, typename> typename DiscretizationTemplate>
@@ -244,6 +250,66 @@ TEST_CASE("CG EoM potential reconstruction finds 3D affine minima", "[discretiza
   const auto EoM = reconstruct_minimum<dim, CG::Discretization>(prm, fe_order);
 
   REQUIRE(distance(EoM, expected) < 1.1e-1);
+}
+
+TEST_CASE("Detailed EoM reconstruction owns the scalar potential and its gauge",
+          "[discretization][EoM][potential]")
+{
+  setup_logger();
+
+  const auto check_result = []<int dim>() {
+    const Point<dim> expected = []() {
+      if constexpr (dim == 1)
+        return Point<dim>(0.4);
+      else if constexpr (dim == 2)
+        return Point<dim>(0.4, 0.6);
+      else
+        return Point<dim>(0.4, 0.6, 0.8);
+    }();
+
+    using Model = Testing::ModelConstant<dim, dim>;
+    using Discretization = CG::Discretization<typename Model::Components, double, RectangularMesh<dim>>;
+
+    auto json = make_json(2);
+    Model model(parameters_with_minimum(expected));
+    RectangularMesh<dim> mesh(json);
+    Discretization discretization(mesh, json);
+    FE::FlowingVariables initial_condition(discretization);
+    initial_condition.interpolate(model);
+
+    const auto &dof_handler = discretization.get_dof_handler();
+    auto EoM_cell = dof_handler.begin_active();
+    const auto result = get_EoM_point_with_potential(
+        EoM_cell, initial_condition.spatial_data(), dof_handler, discretization.get_mapping(),
+        [&](const auto &p, const auto &values) { return model.EoM(p, values); },
+        [&](const auto &p, const auto &) { return p; }, 1e-12, 100);
+
+    REQUIRE(distance(result.point, expected) < 1.1e-1);
+    REQUIRE(result.potential.has_value());
+    const auto &potential = result.potential.value();
+    REQUIRE(potential.finite_element != nullptr);
+    REQUIRE(potential.dof_handler != nullptr);
+    REQUIRE(potential.values.size() == potential.dof_handler->n_dofs());
+    REQUIRE(potential.finite_element->n_components() == 1);
+    REQUIRE(distance(potential.minimum, result.point) < 1e-12);
+
+    const auto support_points =
+        DoFTools::map_dofs_to_support_points(MappingQ1<dim>(), *potential.dof_handler);
+    auto gauge_dof = support_points.begin()->first;
+    double gauge_distance = support_points.begin()->second.distance(Point<dim>());
+    for (const auto &[dof, point] : support_points) {
+      const double current_distance = point.distance(Point<dim>());
+      if (current_distance < gauge_distance) {
+        gauge_distance = current_distance;
+        gauge_dof = dof;
+      }
+    }
+    CHECK(potential.values[gauge_dof] == Catch::Approx(0.).margin(1e-12));
+  };
+
+  check_result.template operator()<1>();
+  check_result.template operator()<2>();
+  check_result.template operator()<3>();
 }
 
 TEST_CASE("CG EoM potential reconstruction handles a 1D stitched polynomial minimum",
@@ -314,10 +380,11 @@ TEST_CASE("EoM max-iteration zero keeps the origin bypass", "[discretization][Eo
   initial_condition.interpolate(model);
 
   auto EoM_cell = discretization.get_dof_handler().begin_active();
-  const auto EoM = get_EoM_point(
+  const auto result = get_EoM_point_with_potential(
       EoM_cell, initial_condition.spatial_data(), discretization.get_dof_handler(), discretization.get_mapping(),
       [&](const auto &p, const auto &values) { return model.EoM(p, values); },
       [&](const auto &p, const auto &) { return p; }, 1e-12, 0);
 
-  REQUIRE(distance(EoM, Point<dim>(0., 0.)) < 1e-12);
+  REQUIRE(distance(result.point, Point<dim>(0., 0.)) < 1e-12);
+  REQUIRE_FALSE(result.potential.has_value());
 }

@@ -16,6 +16,8 @@
 #include <deal.II/lac/vector.h>
 #include <deal.II/meshworker/mesh_loop.h>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <limits>
 #include <oneapi/tbb/blocked_range.h>
 #include <oneapi/tbb/parallel_for_each.h>
@@ -450,6 +452,17 @@ static DiFfRG::JSONValue make_fv_residual_contribution_diagnostics_json()
   return json;
 }
 
+static DiFfRG::JSONValue make_fv_eom_potential_output_json()
+{
+  auto json = make_fv_reconstruction_diagnostics_json();
+  json.set_uint("/discretization/EoM_max_iter", 100);
+  json.set_string("/discretization/grid/x_grid", "0:0.1:1");
+  json.set_bool("/output/vtk", true);
+  json.set_bool("/output/hdf5", false);
+  json.set_bool("/output/fv_reconstruction_diagnostics", false);
+  return json;
+}
+
 static std::filesystem::path make_unique_test_directory(const std::string &prefix)
 {
   const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
@@ -465,6 +478,12 @@ static void ensure_logger()
     log->set_pattern("log: [%v]");
   } catch (const spdlog::spdlog_ex &) {
   }
+}
+
+static std::string read_text_file(const std::filesystem::path &path)
+{
+  std::ifstream input(path);
+  return std::string(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
 }
 
 template <typename State> static void check_face_reconstruction_state_1d(const State &actual, const State &expected)
@@ -844,6 +863,61 @@ TEST_CASE("KT FV reconstruction diagnostics write expected HDF5 maps", "[FV][KT]
 
   std::filesystem::remove_all(output_dir);
 #endif
+}
+
+TEST_CASE("KT 1D FV readouts use EoM potential reconstruction and write a time series",
+          "[FV][KT][EoM][output]")
+{
+  using Model = DiFfRG::Testing::ModelBurgersKT<1>;
+  using Discretization =
+      DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<1>>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  auto json = make_fv_eom_potential_output_json();
+  DiFfRG::Testing::PhysicalParameters prm;
+  prm.initial_x0[0] = -1.0;
+  prm.initial_x1[0] = 2.5;
+
+  Model model(prm);
+  DiFfRG::RectangularMesh<1> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  DiFfRG::FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+
+  const auto output_dir = make_unique_test_directory("kt_fv_eom_potential");
+  const std::string output_name = "kt_eom";
+  {
+    DiFfRG::DataOutput<1, VectorType> data_out(output_dir.string(), output_name, "output", json);
+    assembler.attach_data_output(data_out, state.spatial_data(), VectorType());
+    data_out.flush(0.25);
+    assembler.attach_data_output(data_out, state.spatial_data(), VectorType());
+    data_out.flush(0.5);
+  }
+
+  const auto main_pvd = output_dir / (output_name + ".pvd");
+  const auto potential_pvd = output_dir / (output_name + "_potential.pvd");
+  const auto potential_vtu_0 = output_dir / "output" / (output_name + "_potential_000000.vtu");
+  const auto potential_vtu_1 = output_dir / "output" / (output_name + "_potential_000001.vtu");
+
+  REQUIRE(std::filesystem::exists(main_pvd));
+  REQUIRE(std::filesystem::exists(potential_pvd));
+  REQUIRE(std::filesystem::exists(potential_vtu_0));
+  REQUIRE(std::filesystem::exists(potential_vtu_1));
+
+  const auto pvd_contents = read_text_file(potential_pvd);
+  CHECK(pvd_contents.find("timestep=\"0.25\"") != std::string::npos);
+  CHECK(pvd_contents.find("timestep=\"0.5\"") != std::string::npos);
+  CHECK(pvd_contents.find("kt_eom_potential_000000.vtu") != std::string::npos);
+  CHECK(pvd_contents.find("kt_eom_potential_000001.vtu") != std::string::npos);
+  CHECK(read_text_file(potential_vtu_0).find("Name=\"potential\"") != std::string::npos);
+  CHECK(read_text_file(potential_vtu_1).find("Name=\"potential\"") != std::string::npos);
+
+  std::filesystem::remove_all(output_dir);
 }
 
 TEST_CASE("KT FV residual contribution diagnostics reconstruct assembled residual", "[FV][KT][hdf5]")

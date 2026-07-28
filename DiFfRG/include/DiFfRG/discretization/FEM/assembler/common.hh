@@ -154,9 +154,10 @@ namespace DiFfRG
     {
       auto helper = [&](auto EoMfun, auto outputter) {
         auto EoM_cell = this->EoM_cell;
-        auto EoM = get_EoM_point(
+        auto EoM_result = get_EoM_point_with_potential(
             EoM_cell, solution_global, dof_handler, mapping, EoMfun, [&](const auto &p, const auto &) { return p; },
             EoM_abs_tol, EoM_max_iter);
+        const auto EoM = EoM_result.point;
         auto EoM_unit = mapping.transform_real_to_unit_cell(EoM_cell, EoM);
 
         Vector<typename VectorType::value_type> values(dof_handler.get_fe().n_components());
@@ -182,6 +183,7 @@ namespace DiFfRG
         const auto &extracted_data = __extracted_data;
 
         outputter(data_out, EoM, e_tie(solution[0], solution_grad[0], solution_hess[0], extracted_data, variables));
+        data_out.attach_eom_potential(std::move(EoM_result));
       };
       model.readouts_multiple(helper, data_out);
     }
