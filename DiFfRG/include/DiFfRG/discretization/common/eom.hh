@@ -26,11 +26,39 @@
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace DiFfRG
 {
+  /**
+   * @brief An owning scalar potential reconstructed from a model EoM vector field.
+   *
+   * The finite element and DoFHandler are retained alongside the potential vector so the
+   * reconstruction can be attached to delayed finite-element output safely.
+   */
+  template <int dim, typename NumberType> struct ReconstructedEoMPotential {
+    dealii::Point<dim> minimum;
+    std::unique_ptr<dealii::FiniteElement<dim>> finite_element;
+    std::unique_ptr<dealii::DoFHandler<dim>> dof_handler;
+    dealii::Vector<NumberType> values;
+  };
+
+  template <typename NumberType> struct ReconstructedEoMPotential<0, NumberType> {
+    dealii::Point<0> minimum;
+    dealii::Vector<NumberType> values;
+  };
+
+  /**
+   * @brief Result of finding an EoM point, optionally including its reconstructed potential.
+   */
+  template <int dim, typename NumberType> struct EoMResult {
+    dealii::Point<dim> point;
+    std::optional<ReconstructedEoMPotential<dim, NumberType>> potential;
+  };
+
   namespace internal
   {
     using namespace dealii;
@@ -376,57 +404,89 @@ namespace DiFfRG
     }
 
     template <int dim, typename VectorType, typename EoMFUN>
-    dealii::Point<dim> reconstruct_potential_minimum(typename dealii::DoFHandler<dim>::cell_iterator &EoM_cell,
-                                                     const VectorType &sol,
-                                                     const dealii::DoFHandler<dim> &solution_dof_handler,
-                                                     const dealii::Mapping<dim> &mapping, const EoMFUN &get_EoM)
+    ReconstructedEoMPotential<dim, typename VectorType::value_type>
+    reconstruct_potential(typename dealii::DoFHandler<dim>::cell_iterator &EoM_cell, const VectorType &sol,
+                          const dealii::DoFHandler<dim> &solution_dof_handler, const dealii::Mapping<dim> &mapping,
+                          const EoMFUN &get_EoM)
     {
       using NumberType = typename VectorType::value_type;
 
       auto origin_cell = EoM_cell;
       const auto origin = get_origin(solution_dof_handler, origin_cell);
 
-      const auto potential_fe = make_potential_fe<dim>(solution_dof_handler.get_fe());
+      auto potential_fe = make_potential_fe<dim>(solution_dof_handler.get_fe());
 
-      DoFHandler<dim> potential_dof_handler(solution_dof_handler.get_triangulation());
-      potential_dof_handler.distribute_dofs(*potential_fe);
+      auto potential_dof_handler =
+          std::make_unique<DoFHandler<dim>>(solution_dof_handler.get_triangulation());
+      potential_dof_handler->distribute_dofs(*potential_fe);
 
       AffineConstraints<NumberType> constraints;
-      DoFTools::make_hanging_node_constraints(potential_dof_handler, constraints);
-      const auto gauge_dof = select_gauge_dof(potential_dof_handler, constraints, mapping, origin);
+      DoFTools::make_hanging_node_constraints(*potential_dof_handler, constraints);
+      const auto gauge_dof = select_gauge_dof(*potential_dof_handler, constraints, mapping, origin);
       constraints.add_line(gauge_dof);
       constraints.set_inhomogeneity(gauge_dof, 0.);
       constraints.close();
 
-      DynamicSparsityPattern dsp(potential_dof_handler.n_dofs());
-      DoFTools::make_flux_sparsity_pattern(potential_dof_handler, dsp, constraints,
+      DynamicSparsityPattern dsp(potential_dof_handler->n_dofs());
+      DoFTools::make_flux_sparsity_pattern(*potential_dof_handler, dsp, constraints,
                                            /*keep_constrained_dofs = */ true);
 
       SparsityPattern sparsity_pattern;
       sparsity_pattern.copy_from(dsp);
       SparseMatrix<NumberType> matrix(sparsity_pattern);
-      Vector<NumberType> rhs(potential_dof_handler.n_dofs());
+      Vector<NumberType> rhs(potential_dof_handler->n_dofs());
 
       const uint quadrature_order = std::max<uint>(potential_fe->degree + 2, 2);
       QGauss<dim> quadrature(quadrature_order);
       QGauss<dim - 1> face_quadrature(quadrature_order);
 
-      assemble_potential_system(sol, solution_dof_handler, potential_dof_handler, *potential_fe, mapping, get_EoM,
+      assemble_potential_system(sol, solution_dof_handler, *potential_dof_handler, *potential_fe, mapping, get_EoM,
                                 quadrature, face_quadrature, constraints, matrix, rhs);
 
       SparseDirectUMFPACK solver;
       solver.initialize(matrix);
 
-      Vector<NumberType> potential(potential_dof_handler.n_dofs());
+      Vector<NumberType> potential(potential_dof_handler->n_dofs());
       solver.vmult(potential, rhs);
       constraints.distribute(potential);
 
-      const auto minimum = find_potential_minimum(potential_dof_handler, *potential_fe, mapping, potential, quadrature);
+      const auto minimum =
+          find_potential_minimum(*potential_dof_handler, *potential_fe, mapping, potential, quadrature);
       EoM_cell = GridTools::find_active_cell_around_point(solution_dof_handler, minimum.point);
-      return minimum.point;
+      return {.minimum = minimum.point,
+              .finite_element = std::move(potential_fe),
+              .dof_handler = std::move(potential_dof_handler),
+              .values = std::move(potential)};
     }
 
   } // namespace internal
+
+  /**
+   * @brief Reconstruct a potential whose gradient approximates the model EoM vector field and return a discrete
+   * minimum of that potential.
+   */
+  template <int dim, typename VectorType, typename EoMFUN, typename EoMPFUN>
+  EoMResult<dim, typename VectorType::value_type> get_EoM_point_with_potential(
+      typename dealii::DoFHandler<dim>::cell_iterator &EoM_cell, const VectorType &sol,
+      const dealii::DoFHandler<dim> &dof_handler, const dealii::Mapping<dim> &mapping, const EoMFUN &get_EoM,
+      const EoMPFUN &EoM_postprocess = [](const auto &p, [[maybe_unused]] const auto &values) { return p; },
+      [[maybe_unused]] const double EoM_abs_tol = 1e-5, const uint max_iter = 100)
+  {
+    if (max_iter == 0) return {.point = internal::get_origin(dof_handler, EoM_cell), .potential = std::nullopt};
+
+    auto potential = internal::reconstruct_potential(EoM_cell, sol, dof_handler, mapping, get_EoM);
+    auto EoM = potential.minimum;
+
+    dealii::Vector<typename VectorType::value_type> values(dof_handler.get_fe().n_components());
+    dealii::Functions::FEFieldFunction<dim, VectorType> fe_function(dof_handler, sol, mapping);
+    fe_function.set_active_cell(EoM_cell);
+    fe_function.vector_value(EoM, values);
+
+    EoM = EoM_postprocess(EoM, values);
+    EoM_cell = dealii::GridTools::find_active_cell_around_point(dof_handler, EoM);
+
+    return {.point = EoM, .potential = std::move(potential)};
+  }
 
   /**
    * @brief Reconstruct a potential whose gradient approximates the model EoM vector field and return a discrete
@@ -437,20 +497,10 @@ namespace DiFfRG
       typename dealii::DoFHandler<dim>::cell_iterator &EoM_cell, const VectorType &sol,
       const dealii::DoFHandler<dim> &dof_handler, const dealii::Mapping<dim> &mapping, const EoMFUN &get_EoM,
       const EoMPFUN &EoM_postprocess = [](const auto &p, [[maybe_unused]] const auto &values) { return p; },
-      [[maybe_unused]] const double EoM_abs_tol = 1e-5, const uint max_iter = 100)
+      const double EoM_abs_tol = 1e-5, const uint max_iter = 100)
   {
-    if (max_iter == 0) return internal::get_origin(dof_handler, EoM_cell);
-
-    auto EoM = internal::reconstruct_potential_minimum(EoM_cell, sol, dof_handler, mapping, get_EoM);
-
-    Vector<typename VectorType::value_type> values(dof_handler.get_fe().n_components());
-    Functions::FEFieldFunction<dim, VectorType> fe_function(dof_handler, sol, mapping);
-    fe_function.set_active_cell(EoM_cell);
-    fe_function.vector_value(EoM, values);
-
-    EoM = EoM_postprocess(EoM, values);
-    EoM_cell = GridTools::find_active_cell_around_point(dof_handler, EoM);
-
-    return EoM;
+    return get_EoM_point_with_potential(EoM_cell, sol, dof_handler, mapping, get_EoM, EoM_postprocess, EoM_abs_tol,
+                                        max_iter)
+        .point;
   }
 } // namespace DiFfRG

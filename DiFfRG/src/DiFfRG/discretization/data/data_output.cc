@@ -19,6 +19,7 @@ namespace DiFfRG
                                           const JSONValue &json)
       : json(json), top_folder(make_folder(top_folder)), output_name(output_name),
         output_folder(make_folder(output_folder)), Lambda(-1.), fe_out(top_folder, output_name, output_folder, json),
+        potential_fe_out(top_folder, output_name + "_potential", output_folder, json),
         use_hdf5(json.get_bool("/output/hdf5", true)), filename_h5(output_name + ".h5")
   {
     if (use_hdf5) {
@@ -42,6 +43,20 @@ namespace DiFfRG
   template <uint dim, typename VectorType> FEOutput<dim, VectorType> &DataOutput<dim, VectorType>::fe_output()
   {
     return fe_out;
+  }
+
+  template <uint dim, typename VectorType>
+  void DataOutput<dim, VectorType>::attach_eom_potential(EoMResult<dim, typename VectorType::value_type> result)
+  {
+    if constexpr (dim > 0) {
+      if (!result.potential.has_value()) return;
+
+      auto &potential = result.potential.value();
+      const std::string name =
+          pending_eom_potentials.empty() ? "potential" : "potential_" + std::to_string(pending_eom_potentials.size());
+      potential_fe_out.attach(*potential.dof_handler, potential.values, name);
+      pending_eom_potentials.push_back(std::move(potential));
+    }
   }
 
   template <uint dim, typename VectorType> CsvOutput &DataOutput<dim, VectorType>::csv(const std::string &name)
@@ -85,6 +100,10 @@ namespace DiFfRG
 
     if constexpr (dim > 0) {
       fe_out.flush(time);
+      if (!pending_eom_potentials.empty()) {
+        potential_fe_out.flush(time);
+        pending_eom_potentials.clear();
+      }
     }
     for (auto &csv : csv_files)
       csv.second.flush(time);

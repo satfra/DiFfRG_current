@@ -683,7 +683,10 @@ namespace DiFfRG
         {
           auto helper = [&](auto EoMfun, auto outputter) {
             auto EoM_cell = this->EoM_cell;
-            const auto EoM = get_fv_readout_point(EoM_cell, solution_global, EoMfun);
+            auto EoM_result = get_EoM_point_with_potential(
+                EoM_cell, solution_global, dof_handler, mapping, EoMfun,
+                [](const auto &point, const auto &) { return point; }, EoM_abs_tol, EoM_max_iter);
+            const auto EoM = EoM_result.point;
             this->EoM_cell = EoM_cell;
 
             auto solution = reconstruct_readout_solution(EoM_cell, solution_global, EoM);
@@ -691,6 +694,7 @@ namespace DiFfRG
             std::array<NumberType, Components::count_extractors()> extracted_data{{}};
             outputter(data_out, EoM,
                       e_tie(solution.values, solution.gradients, solution.hessians, extracted_data, variables));
+            data_out.attach_eom_potential(std::move(EoM_result));
           };
           model.readouts_multiple(helper, data_out);
         }
@@ -709,110 +713,6 @@ namespace DiFfRG
           solution.gradients = Reconstructor::template compute_gradient_at_point<n_components>(
               stencil.cell.x, x, stencil.cell.u, stencil.neighbors.x, stencil.neighbors.u);
           return solution;
-        }
-
-        Iterator fallback_readout_cell() const
-        {
-          auto best_cell = dof_handler.begin_active();
-          double best_distance = std::numeric_limits<double>::max();
-          for (auto cell = dof_handler.begin_active(); cell != dof_handler.end(); ++cell) {
-            const auto distance = cell->center().distance(Point());
-            if (distance < best_distance) {
-              best_distance = distance;
-              best_cell = cell;
-            }
-          }
-          return best_cell;
-        }
-
-        template <typename EoMFUN> Point get_fv_readout_point(Iterator &EoM_cell, const VectorType &solution_global,
-                                                             const EoMFUN &EoMfun) const
-        {
-          if constexpr (dim == 1) {
-            const auto end_cell = dof_handler.active_cell_iterators().end();
-            if (EoM_max_iter == 0) {
-              EoM_cell = fallback_readout_cell();
-              return EoM_cell->center();
-            }
-
-            auto evaluate = [&](const Iterator &cell, const Point &x) {
-              const auto solution = reconstruct_readout_solution(cell, solution_global, x);
-              return EoMfun(x, solution.values)[0];
-            };
-
-            auto find_in_cell = [&](const Iterator &cell, Point &EoM, double &EoM_value) {
-              Point left = cell->face(0)->center();
-              Point right = cell->face(1)->center();
-              if (right[0] < left[0]) std::swap(left, right);
-
-              double left_value = evaluate(cell, left);
-              double right_value = evaluate(cell, right);
-              if (std::abs(left_value) <= EoM_abs_tol) {
-                EoM = left;
-                EoM_value = left_value;
-                return true;
-              }
-              if (std::abs(right_value) <= EoM_abs_tol) {
-                EoM = right;
-                EoM_value = right_value;
-                return true;
-              }
-              if (left_value * right_value > 0.) return false;
-
-              Point mid = (left + right) / 2.;
-              double mid_value = evaluate(cell, mid);
-              for (uint iteration = 0; iteration < EoM_max_iter; ++iteration) {
-                if (std::abs(mid_value) <= EoM_abs_tol) {
-                  EoM = mid;
-                  EoM_value = mid_value;
-                  return true;
-                }
-
-                if (left_value * mid_value <= 0.) {
-                  right = mid;
-                  right_value = mid_value;
-                } else {
-                  left = mid;
-                  left_value = mid_value;
-                }
-
-                mid = (left + right) / 2.;
-                mid_value = evaluate(cell, mid);
-              }
-
-              EoM = mid;
-              EoM_value = mid_value;
-              return true;
-            };
-
-            Point EoM;
-            double EoM_value = 0.;
-            if (EoM_cell != end_cell && find_in_cell(EoM_cell, EoM, EoM_value)) return EoM;
-
-            Iterator best_cell = fallback_readout_cell();
-            Point best_point = best_cell->center();
-            double best_value = std::abs(evaluate(best_cell, best_point));
-            for (auto cell = dof_handler.begin_active(); cell != dof_handler.end(); ++cell) {
-              if (find_in_cell(cell, EoM, EoM_value)) {
-                EoM_cell = cell;
-                return EoM;
-              }
-
-              const auto center = cell->center();
-              const auto center_value = std::abs(evaluate(cell, center));
-              if (center_value < best_value) {
-                best_cell = cell;
-                best_point = center;
-                best_value = center_value;
-              }
-            }
-
-            EoM_cell = best_cell;
-            return best_point;
-          } else {
-            return get_EoM_point(EoM_cell, solution_global, dof_handler, mapping, EoMfun,
-                                 [](const auto &point, const auto &) { return point; }, EoM_abs_tol, EoM_max_iter);
-          }
         }
 
         virtual void mass(VectorType &mass, const VectorType &solution_global, const VectorType &solution_global_dot,
