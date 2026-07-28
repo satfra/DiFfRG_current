@@ -1,6 +1,7 @@
 #pragma once
 
 // DiFfRG
+#include <DiFfRG/discretization/common/eom.hh>
 #include <DiFfRG/discretization/data/csv_output.hh>
 #include <DiFfRG/discretization/data/fe_output.hh>
 #include <DiFfRG/discretization/data/hdf5_output.hh>
@@ -36,6 +37,13 @@ namespace DiFfRG
      * @brief Returns a reference to the FEOutput object used to write FEM functions to .vtu files and .pvd time series.
      */
     FEOutput<dim, VectorType> &fe_output();
+
+    /**
+     * @brief Attach an EoM potential to the separate potential VTU/PVD series.
+     *
+     * The reconstruction owns its finite element and DoFHandler and is retained until flush().
+     */
+    void attach_eom_potential(EoMResult<dim, typename VectorType::value_type> result);
 
     /**
      * @brief Returns a reference to the CsvOutput object associated with the given name, which is used to write scalar
@@ -94,6 +102,8 @@ namespace DiFfRG
     std::vector<double> k_values;
 
     FEOutput<dim, VectorType> fe_out;
+    std::vector<ReconstructedEoMPotential<dim, typename VectorType::value_type>> pending_eom_potentials;
+    FEOutput<dim, dealii::Vector<typename VectorType::value_type>> potential_fe_out;
     std::map<std::string, CsvOutput> csv_files;
 
     bool use_hdf5;
