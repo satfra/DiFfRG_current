@@ -1,6 +1,7 @@
 #pragma once
 #include "DiFfRG/common/math.hh"
 #include <DiFfRG/common/utils.hh>
+#include <cmath>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -63,9 +64,29 @@ namespace DiFfRG
        * Return a vector of uniform step widths covering [min, max].
        * If the configured step fits the interval (within is_close) it is used;
        * otherwise the count is increased by one and the width is adjusted.
+       *
+       * If @p origin_cell_centered is true, choose the smallest cell count whose adjusted width is less than the
+       * configured width and which permits the first final cell to be centered on the origin after @p refinement
+       * levels of global refinement. The range must start at zero in that case.
        */
-      std::vector<double> get_stepwiths() const
+      std::vector<double> get_stepwiths(const bool origin_cell_centered = false, const uint refinement = 0) const
       {
+        if (origin_cell_centered) {
+          if (!is_close(min, 0.0))
+            throw std::invalid_argument(
+                "Origin-centered rectangular meshes require every configured axis to start at zero.");
+
+          const double refinement_factor = std::ldexp(1.0, refinement);
+          auto steps = static_cast<uint>((max - min) / step);
+          double local_step;
+          do {
+            ++steps;
+            local_step = max / (static_cast<double>(steps) - 0.5 / refinement_factor);
+          } while (!(local_step < step));
+
+          return std::vector<double>(steps, local_step);
+        }
+
         double local_step = step;
         auto steps = static_cast<uint>((max - min) / local_step);
         if (!is_close((min + local_step * steps), max)) {
@@ -78,7 +99,7 @@ namespace DiFfRG
     private:
       void validate()
       {
-        bool condition = (min < max) && (step <= (max - min));
+        bool condition = (min < max) && (0.0 < step) && (step <= (max - min));
         if (!condition) {
           throw std::runtime_error(std::format(
               "invalid range: min={}, step={}, max={} (require min < max and 0 < step <= max-min)", min, step, max));
@@ -105,6 +126,12 @@ namespace DiFfRG
     template <int dim> class ConfigurationMesh
     {
     public:
+      struct TriangulationData {
+        dealii::Point<dim, double> lower_left;
+        dealii::Point<dim, double> upper_right;
+        std::vector<std::vector<double>> step_sizes = std::vector<std::vector<double>>(dim);
+      };
+
       ConfigurationMesh() = delete;
 
       template <typename... Grids> ConfigurationMesh(unsigned int refinement, Grids... grids_args) : refine(refinement)
@@ -163,34 +190,42 @@ namespace DiFfRG
         return json_str;
       }
 
-      inline std::vector<std::vector<double>> get_step_withs_for_triangulation() const
+      /**
+       * Return mutually consistent bounds and step widths for triangulation construction.
+       *
+       * If @p origin_cell_centered is true, the first final cell is centered on the origin along every axis.
+       * All configured axes must start at zero in that case.
+       */
+      inline TriangulationData get_triangulation_data(const bool origin_cell_centered = false) const
       {
-        std::vector<std::vector<double>> step_sizes(dim);
+        TriangulationData data;
         for (int i = 0; i < dim; ++i) {
-          for (const auto &sub_grid_axis : grids[i]) {
-            internal::append_range(step_sizes[i], sub_grid_axis.get_stepwiths());
+          data.lower_left[i] = grids[i].front().min;
+          data.upper_right[i] = grids[i].back().max;
+          for (std::size_t subrange = 0; subrange < grids[i].size(); ++subrange) {
+            const bool center_first_subrange = origin_cell_centered && subrange == 0;
+            internal::append_range(data.step_sizes[i], grids[i][subrange].get_stepwiths(center_first_subrange, refine));
           }
         }
-        return step_sizes;
+
+        if (!origin_cell_centered) return data;
+
+        const double refinement_factor = std::ldexp(1.0, refine);
+        for (int axis = 0; axis < dim; ++axis) {
+          data.lower_left[axis] = -data.step_sizes[axis].front() / (2.0 * refinement_factor);
+        }
+
+        return data;
       }
 
-      inline dealii::Point<dim, double> get_lower_left() const
+      inline std::vector<std::vector<double>> get_step_withs_for_triangulation() const
       {
-        dealii::Point<dim, double> lower_left;
-        for (int i = 0; i < dim; ++i) {
-          lower_left[i] = grids[i][0].min;
-        }
-        return lower_left;
+        return get_triangulation_data().step_sizes;
       }
 
-      inline dealii::Point<dim, double> get_upper_right() const
-      {
-        dealii::Point<dim, double> upper_right;
-        for (int i = 0; i < dim; ++i) {
-          upper_right[i] = grids[i].back().max;
-        }
-        return upper_right;
-      }
+      inline dealii::Point<dim, double> get_lower_left() const { return get_triangulation_data().lower_left; }
+
+      inline dealii::Point<dim, double> get_upper_right() const { return get_triangulation_data().upper_right; }
 
       std::array<std::vector<GridAxis>, dim> grids;
       uint refine;
