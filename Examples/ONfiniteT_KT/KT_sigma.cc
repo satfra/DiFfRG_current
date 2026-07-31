@@ -6,7 +6,7 @@
 #include <DiFfRG/discretization/FV/discretization.hh>
 #include <DiFfRG/discretization/FV/limiter/minmod_limiter.hh>
 #include <DiFfRG/discretization/FV/reconstructor/tvd_reconstructor.hh>
-#include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed_zero_deriv.hh>
+#include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed.hh>
 #include <DiFfRG/model/fv_boundaries.hh>
 
 #include <tbb/global_control.h>
@@ -20,7 +20,7 @@ using Discretization = FV::Discretization<Model::Components, double, Rectangular
 using VectorType = typename Discretization::VectorType;
 using SparseMatrixType = typename Discretization::SparseMatrixType;
 using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
-using WaveSpeed = FV::KurganovTadmor::MaxEigenvalueWaveSpeedZeroDeriv;
+using WaveSpeed = FV::KurganovTadmor::MaxEigenvalueWaveSpeed;
 using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor, WaveSpeed>;
 using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
 

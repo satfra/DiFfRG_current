@@ -45,7 +45,6 @@
 #include <DiFfRG/discretization/FV/assembler/reconstruction_cache.hh>
 #include <DiFfRG/discretization/FV/wave_speed/abstract_wave_speed.hh>
 #include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed.hh>
-#include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed_zero_deriv.hh>
 #include <DiFfRG/discretization/common/types.hh>
 #include <tuple>
 #include <utility>
@@ -241,17 +240,24 @@ namespace DiFfRG
         template <typename WaveSpeedStrategy, typename Model, typename NumberType, int dim, size_t n_components>
         KTFluxData<dim, NumberType, n_components>
         compute_kt_flux_and_speeds(const std::array<NumberType, n_components> &u_plus,
-                                   const std::array<NumberType, n_components> &u_minus, const dealii::Point<dim> &x_q,
-                                   const Model &model)
+                                   const std::array<NumberType, n_components> &u_minus,
+                                   const GradientType<dim, NumberType, n_components> &grad_u_plus,
+                                   const GradientType<dim, NumberType, n_components> &grad_u_minus,
+                                   const dealii::Point<dim> &x_q, const Model &model)
         {
           using ADNumberType = autodiff::Real<1, NumberType>;
 
           KTFluxData<dim, NumberType, n_components> result{};
 
           std::array<ADNumberType, n_components> u_plus_AD{}, u_minus_AD{};
+          GradientType<dim, ADNumberType, n_components> grad_u_plus_AD{}, grad_u_minus_AD{};
           for (size_t i = 0; i < n_components; ++i) {
             u_plus_AD[i] = ADNumberType(u_plus[i]);
             u_minus_AD[i] = ADNumberType(u_minus[i]);
+            for (size_t d = 0; d < dim; ++d) {
+              grad_u_plus_AD[i][d] = ADNumberType(grad_u_plus[i][d]);
+              grad_u_minus_AD[i][d] = ADNumberType(grad_u_minus[i][d]);
+            }
           }
 
           std::array<dealii::Tensor<1, dim, ADNumberType>, n_components> F_AD_plus{}, F_AD_minus{};
@@ -262,8 +268,10 @@ namespace DiFfRG
             seed(u_plus_AD[j]);
             seed(u_minus_AD[j]);
 
-            model.KurganovTadmor_advection_flux(F_AD_plus, x_q, advection_flux_tie(u_plus_AD));
-            model.KurganovTadmor_advection_flux(F_AD_minus, x_q, advection_flux_tie(u_minus_AD));
+            F_AD_plus = {};
+            F_AD_minus = {};
+            model.KurganovTadmor_advection_flux(F_AD_plus, x_q, flux_tie(u_plus_AD, grad_u_plus_AD));
+            model.KurganovTadmor_advection_flux(F_AD_minus, x_q, flux_tie(u_minus_AD, grad_u_minus_AD));
 
             for (size_t d = 0; d < dim; ++d) {
               for (size_t i = 0; i < n_components; ++i) {
@@ -289,6 +297,17 @@ namespace DiFfRG
 
           return result;
         }
+
+        template <typename WaveSpeedStrategy, typename Model, typename NumberType, int dim, size_t n_components>
+        KTFluxData<dim, NumberType, n_components>
+        compute_kt_flux_and_speeds(const std::array<NumberType, n_components> &u_plus,
+                                   const std::array<NumberType, n_components> &u_minus, const dealii::Point<dim> &x_q,
+                                   const Model &model)
+        {
+          const GradientType<dim, NumberType, n_components> zero_grad{};
+          return compute_kt_flux_and_speeds<WaveSpeedStrategy>(u_plus, u_minus, zero_grad, zero_grad, x_q, model);
+        }
+
         template <int dim, typename NumberType, size_t n_components>
         std::array<dealii::Tensor<1, dim, NumberType>, n_components>
         compute_numerical_flux(const std::array<dealii::Tensor<1, dim, NumberType>, n_components> &F_plus,
@@ -308,42 +327,37 @@ namespace DiFfRG
 
       namespace internal
       {
+        template <int dim, typename NumberType, size_t n_components> struct KTNumFluxJacobianData {
+          std::array<SimpleMatrix<dealii::Tensor<1, dim, NumberType>, n_components>, 2> u{};
+          std::array<SimpleMatrix<dealii::Tensor<1, dim, dealii::Tensor<1, dim, NumberType>>, n_components>, 2>
+              grad{};
+        };
+
         template <typename WaveSpeedStrategy, typename Model, typename NumberType, int dim, size_t n_components>
-        std::array<SimpleMatrix<dealii::Tensor<1, dim, NumberType>, n_components>, 2>
+        KTNumFluxJacobianData<dim, NumberType, n_components>
         compute_kt_numflux_jacobian(const std::array<NumberType, n_components> &u_plus,
-                                    const std::array<NumberType, n_components> &u_minus, const dealii::Point<dim> &x_q,
-                                    const Model &model)
+                                    const std::array<NumberType, n_components> &u_minus,
+                                    const GradientType<dim, NumberType, n_components> &grad_u_plus,
+                                    const GradientType<dim, NumberType, n_components> &grad_u_minus,
+                                    const dealii::Point<dim> &x_q, const Model &model)
         {
-          // 1. Compute flux Jacobians J (and Hessian H, if the wave-speed strategy
-          // needs it) via either Real<2>-AD, Real<1>-AD + FD, or Real<1>-AD only,
-          // depending on the strategy's `needs_hessian` and `hessian_via_fd` traits.
-          //
-          //   needs_hessian   hessian_via_fd   path used
-          //   ------------    --------------   ---------
-          //   false           (ignored)        compute_flux_jacobian_only          (Real<1>, H=0)
-          //   true            false            compute_flux_jacobian_and_hessian   (Real<2>)
-          //   true            true             compute_flux_jacobian_and_hessian_fd(Real<1> + central FD)
-          auto compute_FJH = [&](const std::array<NumberType, n_components> &u) {
-            if constexpr (!WaveSpeedStrategy::needs_hessian)
-              return compute_flux_jacobian_only<Model, NumberType, dim, n_components>(u, x_q, model);
-            else if constexpr (WaveSpeedStrategy::hessian_via_fd)
-              return compute_flux_jacobian_and_hessian_fd<Model, NumberType, dim, n_components>(u, x_q, model);
-            else
-              return compute_flux_jacobian_and_hessian<Model, NumberType, dim, n_components>(u, x_q, model);
-          };
-          auto [F_plus, J_plus, H_plus] = compute_FJH(u_plus);
-          auto [F_minus, J_minus, H_minus] = compute_FJH(u_minus);
+          // 1. Compute the physical flux, its value/gradient Jacobians, and the second derivatives needed for da.
+          const auto plus =
+              compute_flux_derivatives_ad<Model, NumberType, dim, n_components>(u_plus, grad_u_plus, x_q, model);
+          const auto minus =
+              compute_flux_derivatives_ad<Model, NumberType, dim, n_components>(u_minus, grad_u_minus, x_q, model);
 
           // 2. Compute a_half (max local wave speed per dimension) via the strategy
-          const auto a = WaveSpeedStrategy::template compute_speeds<NumberType, dim, n_components>(J_plus, J_minus);
+          const auto a =
+              WaveSpeedStrategy::template compute_speeds<NumberType, dim, n_components>(plus.J, minus.J);
 
-          // 3. Compute da_half / du_plus and da_half / du_minus for the selected wave-speed branch.
+          // 3. Differentiate the selected physical wave speed with the AD flux Hessian.
           const auto [da_plus, da_minus] =
               WaveSpeedStrategy::template compute_selected_speed_derivatives<NumberType, dim, n_components>(
-                  J_plus, J_minus, H_plus, H_minus);
+                  plus.J, minus.J, plus.H, minus.H);
 
           // 4. Assemble j_numflux
-          std::array<SimpleMatrix<dealii::Tensor<1, dim, NumberType>, n_components>, 2> j_numflux{};
+          KTNumFluxJacobianData<dim, NumberType, n_components> j_numflux{};
 
           for (size_t d = 0; d < dim; ++d) {
             for (size_t i = 0; i < n_components; ++i) {
@@ -352,14 +366,34 @@ namespace DiFfRG
                 const NumberType delta_ic = (i == c) ? NumberType(1) : NumberType(0);
 
                 // dH_i^d / du_minus_c
-                j_numflux[0](i, c)[d] = NumberType(0.5) * J_minus[d][i][c] + NumberType(0.5) * a[d] * delta_ic -
-                                        NumberType(0.5) * du_i * da_minus[d][c];
+                j_numflux.u[0](i, c)[d] = NumberType(0.5) * minus.J[d][i][c] +
+                                          NumberType(0.5) * a[d] * delta_ic -
+                                          NumberType(0.5) * du_i * da_minus[d][c];
 
                 // dH_i^d / du_plus_c
-                j_numflux[1](i, c)[d] = NumberType(0.5) * J_plus[d][i][c] - NumberType(0.5) * a[d] * delta_ic -
-                                        NumberType(0.5) * du_i * da_plus[d][c];
+                j_numflux.u[1](i, c)[d] = NumberType(0.5) * plus.J[d][i][c] -
+                                          NumberType(0.5) * a[d] * delta_ic -
+                                          NumberType(0.5) * du_i * da_plus[d][c];
               }
             }
+          }
+
+          for (size_t d_in = 0; d_in < dim; ++d_in) {
+            const auto [da_grad_plus, da_grad_minus] =
+                WaveSpeedStrategy::template compute_selected_speed_derivatives<NumberType, dim, n_components>(
+                    plus.J, minus.J, plus.mixed_H[d_in], minus.mixed_H[d_in]);
+            for (size_t d_out = 0; d_out < dim; ++d_out)
+              for (size_t i = 0; i < n_components; ++i) {
+                const NumberType du_i = u_plus[i] - u_minus[i];
+                for (size_t c = 0; c < n_components; ++c) {
+                  j_numflux.grad[0](i, c)[d_out][d_in] =
+                      NumberType(0.5) * minus.grad_J[i][c][d_out][d_in] -
+                      NumberType(0.5) * du_i * da_grad_minus[d_out][c];
+                  j_numflux.grad[1](i, c)[d_out][d_in] =
+                      NumberType(0.5) * plus.grad_J[i][c][d_out][d_in] -
+                      NumberType(0.5) * du_i * da_grad_plus[d_out][c];
+                }
+              }
           }
 
           return j_numflux;
@@ -422,6 +456,7 @@ namespace DiFfRG
 
           for (size_t c = 0; c < n_components; ++c) {
             seed(u_minus_AD[c]);
+            D_AD = {};
             model.flux(D_AD, x_q, flux_tie(u_minus_AD, grad_u_minus_AD));
             for (size_t i = 0; i < n_components; ++i)
               for (size_t d = 0; d < dim; ++d)
@@ -429,6 +464,7 @@ namespace DiFfRG
             unseed(u_minus_AD[c]);
 
             seed(u_plus_AD[c]);
+            D_AD = {};
             model.flux(D_AD, x_q, flux_tie(u_plus_AD, grad_u_plus_AD));
             for (size_t i = 0; i < n_components; ++i)
               for (size_t d = 0; d < dim; ++d)
@@ -437,6 +473,7 @@ namespace DiFfRG
 
             for (size_t d_in = 0; d_in < dim; ++d_in) {
               seed(grad_u_minus_AD[c][d_in]);
+              D_AD = {};
               model.flux(D_AD, x_q, flux_tie(u_minus_AD, grad_u_minus_AD));
               for (size_t i = 0; i < n_components; ++i)
                 for (size_t d_out = 0; d_out < dim; ++d_out)
@@ -444,6 +481,7 @@ namespace DiFfRG
               unseed(grad_u_minus_AD[c][d_in]);
 
               seed(grad_u_plus_AD[c][d_in]);
+              D_AD = {};
               model.flux(D_AD, x_q, flux_tie(u_plus_AD, grad_u_plus_AD));
               for (size_t i = 0; i < n_components; ++i)
                 for (size_t d_out = 0; d_out < dim; ++d_out)
@@ -831,7 +869,8 @@ namespace DiFfRG
 
             const auto [F_plus, F_minus, a_half] =
                 internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(reconstruction.u_plus, reconstruction.u_minus,
-                                                                        x_q, model);
+                                                                        reconstruction.face_grad_plus,
+                                                                        reconstruction.face_grad_minus, x_q, model);
             const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, reconstruction.u_plus,
                                                             reconstruction.u_minus);
             const auto D = internal::compute_diffusion_flux(
@@ -867,7 +906,8 @@ namespace DiFfRG
 
             const auto [F_plus, F_minus, a_half] =
                 internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(reconstruction.u_plus, reconstruction.u_minus,
-                                                                        x_q, model);
+                                                                        reconstruction.face_grad_plus,
+                                                                        reconstruction.face_grad_minus, x_q, model);
             const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, reconstruction.u_plus,
                                                             reconstruction.u_minus);
             const auto D = internal::compute_diffusion_flux(
@@ -1453,7 +1493,8 @@ namespace DiFfRG
 
             const auto [F_plus, F_minus, a_half] =
                 internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(reconstruction.u_plus, reconstruction.u_minus,
-                                                                        x_q, model);
+                                                                        reconstruction.face_grad_plus,
+                                                                        reconstruction.face_grad_minus, x_q, model);
             const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, reconstruction.u_plus,
                                                             reconstruction.u_minus);
             const auto D = internal::compute_diffusion_flux(
@@ -1494,7 +1535,8 @@ namespace DiFfRG
 
             const auto [F_plus, F_minus, a_half] =
                 internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(reconstruction.u_plus, reconstruction.u_minus,
-                                                                        x_q, model);
+                                                                        reconstruction.face_grad_plus,
+                                                                        reconstruction.face_grad_minus, x_q, model);
             const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, reconstruction.u_plus,
                                                             reconstruction.u_minus);
 
@@ -1697,7 +1739,8 @@ namespace DiFfRG
 
             const auto j_numflux =
                 internal::compute_kt_numflux_jacobian<WaveSpeedStrategy, Model, NumberType, dim, n_components>(
-                    reconstruction.u_plus, reconstruction.u_minus, x_q, model);
+                    reconstruction.u_plus, reconstruction.u_minus, reconstruction.face_grad_plus,
+                    reconstruction.face_grad_minus, x_q, model);
             const auto j_diffusion = internal::compute_diffusion_flux_jacobian<Model, NumberType, dim, n_components>(
                 reconstruction.diffusion_u_minus, reconstruction.diffusion_u_plus, reconstruction.diffusion_grad_minus,
                 reconstruction.diffusion_grad_plus, x_q, model);
@@ -1711,8 +1754,13 @@ namespace DiFfRG
                 for (size_t face_no = 0; face_no < 2; ++face_no) {
                   NumberType advection_contribution{};
                   for (size_t c = 0; c < n_components; ++c) {
-                    advection_contribution += scalar_product(j_numflux[face_no](component_i, c), n_face) *
+                    advection_contribution += scalar_product(j_numflux.u[face_no](component_i, c), n_face) *
                                               reconstructed_deriv[face_no][j].u[c];
+                    for (size_t d_in = 0; d_in < dim; ++d_in)
+                      for (size_t d_out = 0; d_out < dim; ++d_out)
+                        advection_contribution += j_numflux.grad[face_no](component_i, c)[d_out][d_in] *
+                                                  n_face[d_out] *
+                                                  reconstructed_deriv[face_no][j].grad[c][d_in];
                   }
                   copy_data_face.cell_jacobian(i, j) += weight * JxW * jump_i * advection_contribution;
                 }
@@ -1803,7 +1851,8 @@ namespace DiFfRG
             // Compute numerical flux Jacobian
             const auto j_numflux =
                 internal::compute_kt_numflux_jacobian<WaveSpeedStrategy, Model, NumberType, dim, n_components>(
-                    reconstruction.u_plus, reconstruction.u_minus, x_q, model);
+                    reconstruction.u_plus, reconstruction.u_minus, reconstruction.face_grad_plus,
+                    reconstruction.face_grad_minus, x_q, model);
             const auto j_diffusion = internal::compute_diffusion_flux_jacobian<Model, NumberType, dim, n_components>(
                 reconstruction.diffusion_u_minus, reconstruction.diffusion_u_plus, reconstruction.diffusion_grad_minus,
                 reconstruction.diffusion_grad_plus, x_q, model);
@@ -1816,8 +1865,13 @@ namespace DiFfRG
                 for (size_t face_no = 0; face_no < 2; ++face_no) {
                   NumberType advection_contribution{};
                   for (size_t c = 0; c < n_components; ++c) {
-                    advection_contribution += scalar_product(j_numflux[face_no](component_i, c), n_face) *
+                    advection_contribution += scalar_product(j_numflux.u[face_no](component_i, c), n_face) *
                                               reconstructed_deriv[face_no][j].u[c];
+                    for (size_t d_in = 0; d_in < dim; ++d_in)
+                      for (size_t d_out = 0; d_out < dim; ++d_out)
+                        advection_contribution += j_numflux.grad[face_no](component_i, c)[d_out][d_in] *
+                                                  n_face[d_out] *
+                                                  reconstructed_deriv[face_no][j].grad[c][d_in];
                   }
                   copy_data_face.cell_jacobian(i, j) += weight * JxW * advection_contribution;
                 }

@@ -18,7 +18,6 @@
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/discretization/FV/limiter/minmod_limiter.hh>
 #include <DiFfRG/discretization/FV/reconstructor/advection/tvd_reconstructor.hh>
-#include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed_zero_deriv.hh>
 #include <DiFfRG/model/model.hh>
 
 #include "../kt_regression_helpers.hh"
@@ -51,7 +50,7 @@ namespace on_kt_3D
 
   template <typename Model>
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor,
-                                                  FV::KurganovTadmor::MaxEigenvalueWaveSpeedZeroDeriv>;
+                                                  FV::KurganovTadmor::MaxEigenvalueWaveSpeed>;
   using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
 
   // --- LSM physical-scale parameters -----------------------------------------

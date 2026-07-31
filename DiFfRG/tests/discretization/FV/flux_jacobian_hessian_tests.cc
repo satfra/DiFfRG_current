@@ -310,3 +310,40 @@ TEST_CASE("Coupled 2-component 1D: Hessian matches finite differences", "[FV][fl
       }
   }
 }
+
+
+// Gradient-dependent scalar flux:
+// F(u,g) = u^2/2 + 3*u*g + 5*g^2/2.
+class GradientFluxModel : public DiFfRG::def::AbstractModel<GradientFluxModel, Components1>
+{
+public:
+  template <int dim, typename NT, typename Solutions, size_t n>
+  static void KurganovTadmor_advection_flux(std::array<Tensor<1, dim, NT>, n> &F, const Point<dim> & /*x*/,
+                                            const Solutions &sol)
+  {
+    const auto u = get<"fe_functions">(sol);
+    const auto grad_u = get<"fe_derivatives">(sol);
+    // Model callbacks commonly accumulate several diagrams.
+    F[0][0] += u[0] * u[0] / NT(2) + NT(3) * u[0] * grad_u[0][0] +
+               NT(5) * grad_u[0][0] * grad_u[0][0] / NT(2);
+  }
+};
+
+TEST_CASE("Flux AD extracts state, gradient, and mixed derivatives", "[FV][flux_jacobian_hessian]")
+{
+  constexpr int dim = 1;
+  constexpr size_t nc = 1;
+  const std::array<NumberType, nc> u = {2.0};
+  std::array<Tensor<1, dim, NumberType>, nc> grad_u{};
+  grad_u[0][0] = 4.0;
+
+  const auto result =
+      KT::internal::compute_flux_derivatives_ad<GradientFluxModel, NumberType, dim, nc>(
+          u, grad_u, Point<dim>(), GradientFluxModel{});
+
+  CHECK(result.F[0][0] == Catch::Approx(66.0));
+  CHECK(result.J[0][0][0] == Catch::Approx(14.0));
+  CHECK(result.H[0][0][0][0] == Catch::Approx(1.0));
+  CHECK(result.grad_J[0][0][0][0] == Catch::Approx(26.0));
+  CHECK(result.mixed_H[0][0][0][0][0] == Catch::Approx(3.0));
+}
