@@ -5,7 +5,7 @@
 // exception machinery) if the time-stepper can't reach the target.
 //
 // Four variants:
-//   run_flow_to_time<Model>         : default Assembler (MinMod + ZeroDeriv)
+//   run_flow_to_time<Model>         : default Assembler (MinMod + differentiated max-eigenvalue speed)
 //   run_flow_to_time_ws<Model, WS>  : explicit WaveSpeedStrategy override
 //   run_flow_to_time_cg<Model>      : CG discretisation (fe_order >= 1)
 //   run_flow_to_time_tol<Model, ...>: solver-tolerance override
@@ -20,7 +20,7 @@
 
 namespace on_kt_3D
 {
-  // Default-strategy runner: MinMod limiter, MaxEigenvalueWaveSpeedZeroDeriv.
+  // Default-strategy runner: MinMod limiter, MaxEigenvalueWaveSpeed.
   // Used by every smoke and diagnostic test that doesn't sweep KT internals.
   template <typename ModelType>
   void run_flow_to_time(const GridSettings &grid, const double target_time, const int threads = 1)
@@ -45,10 +45,8 @@ namespace on_kt_3D
     time_stepper.run(&state, 0.0, target_time);
   }
 
-  // Wave-speed-strategy-parameterised runner. Lets tests sweep
-  // MaxEigenvalueWaveSpeedZeroDeriv (Real<1>, H=0) vs MaxEigenvalueWaveSpeed
-  // (Real<2> AD H) vs MaxEigenvalueWaveSpeedFD (Real<1> + central-FD H) on
-  // identical physics.
+  // Wave-speed-strategy-parameterised runner for deliberately different
+  // physical speed definitions. Derivatives of the standard speed are AD-backed.
   template <typename ModelType, typename WaveSpeedStrategy>
   void run_flow_to_time_ws(const GridSettings &grid, const double target_time, const int threads = 1)
   {
@@ -77,7 +75,7 @@ namespace on_kt_3D
   // Solver-tolerance-parameterised runner. Used by the Example-settings
   // comparison tests (abs_tol = 1e-16, rel_tol = 1e-4 vs default abs/rel = 1e-7).
   template <typename ModelType,
-            typename WaveSpeedStrategy = FV::KurganovTadmor::MaxEigenvalueWaveSpeedZeroDeriv>
+            typename WaveSpeedStrategy = FV::KurganovTadmor::MaxEigenvalueWaveSpeed>
   void run_flow_to_time_tol(const GridSettings &grid, const double target_time, const double abs_tol,
                             const double rel_tol, const int threads = 1)
   {
@@ -136,7 +134,7 @@ namespace on_kt_3D
   // failure on the Example's uniform grid is grid-related (vs. an intrinsic
   // KT-discretisation issue).
   template <typename ModelType,
-            typename WaveSpeedStrategy = FV::KurganovTadmor::MaxEigenvalueWaveSpeedZeroDeriv>
+            typename WaveSpeedStrategy = FV::KurganovTadmor::MaxEigenvalueWaveSpeed>
   void run_flow_to_time_kt_adaptive(const std::vector<GridSubrange> &subranges, const double target_time,
                                     const int threads = 1, const double abs_tol = 1.0e-7,
                                     const double rel_tol = 1.0e-7)

@@ -66,7 +66,7 @@ namespace
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, class HeatDiffusion2DModel, Reconstructor,
-                                                  FV::KurganovTadmor::MaxEigenvalueWaveSpeedZeroDeriv>;
+                                                  FV::KurganovTadmor::MaxEigenvalueWaveSpeed>;
   using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
 
   class GaussianHeatKernel2D

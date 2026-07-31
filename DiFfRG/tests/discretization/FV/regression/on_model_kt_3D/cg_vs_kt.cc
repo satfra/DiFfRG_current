@@ -59,26 +59,12 @@ namespace
   // central flux). For our parabolic-dominated fRG flow that should still
   // be tractable — the diffusion piece dominates the dissipation anyway.
   struct ZeroWaveSpeed {
-    static constexpr bool needs_hessian = false;
-    static constexpr bool hessian_via_fd = false;
-
     template <typename NT, int d, size_t n_c>
     static std::array<NT, d>
     compute_speeds(const std::array<DiFfRG::FV::KurganovTadmor::internal::JacobianMatrix<NT, n_c>, d> & /*J_plus*/,
                    const std::array<DiFfRG::FV::KurganovTadmor::internal::JacobianMatrix<NT, n_c>, d> & /*J_minus*/)
     {
       return std::array<NT, d>{};  // zero-initialized
-    }
-
-    template <typename NT, int d, size_t n_c>
-    static std::pair<std::array<std::array<NT, n_c>, d>, std::array<std::array<NT, n_c>, d>>
-    compute_speed_derivatives(
-        [[maybe_unused]] const std::array<DiFfRG::FV::KurganovTadmor::internal::JacobianMatrix<NT, n_c>, d> &J_plus,
-        [[maybe_unused]] const std::array<DiFfRG::FV::KurganovTadmor::internal::JacobianMatrix<NT, n_c>, d> &J_minus,
-        [[maybe_unused]] const DiFfRG::FV::KurganovTadmor::internal::HessianTensor<NT, d, n_c> &H_plus,
-        [[maybe_unused]] const DiFfRG::FV::KurganovTadmor::internal::HessianTensor<NT, d, n_c> &H_minus)
-    {
-      return {};
     }
 
     template <typename NT, int d, size_t n_c>
@@ -208,32 +194,31 @@ TEST_CASE("CG-vs-KT: CG-ρ large-N all-pion (reference)",
 }
 
 // ============================================================================
-// Tests 6-7: BOTH kinks removed (limiter + wave-speed).
+// Tests 6-7: limiter-kink diagnostics.
 //
 // Default file-level Reconstructor is MinMod, which is C^0 but NOT C^1 in u
-// (sign-change AND magnitude-tie kinks per cell-face). MinMod + ZeroDeriv
-// removes the WAVE-SPEED max-kink from J but NOT the limiter kink in the
-// reconstruction u_plus = u_center + 0.5·MinMod(slope_L, slope_R)·dx.
-// To remove the limiter kink too, swap to a smoother limiter:
+// (sign-change AND magnitude-tie kinks per cell-face). The smooth-limiter
+// variants below isolate the limiter kink while retaining the full speed derivative.
+// The reconstruction is u_plus = u_center + 0.5·limiter(slope_L, slope_R)·dx.
+// Swap MinMod for a smoother limiter:
 //   VanAlbada: C^1 TVD modulo the (rarely-crossed) sign-change boundary
 //   Central:   C^∞ but NOT TVD (diagnostic baseline)
 // Both already implemented in DiFfRG/include/DiFfRG/discretization/FV/limiter/.
 //
-// Regression: VanAlbada+ZeroDeriv reaches final_time=4.0 with both kinks
-// removed.
+// Regression: VanAlbada reaches final_time=4.0 with a smooth limiter.
 // ============================================================================
 
-TEST_CASE("CG-vs-KT: KT-ρ uniform grid, VanAlbada limiter + ZeroDeriv (both kinks off)",
-          "[cg-vs-kt][kt-vanalbada-zerod]")
+TEST_CASE("CG-vs-KT: KT-ρ uniform grid, VanAlbada limiter + differentiated wave speed",
+          "[cg-vs-kt][kt-vanalbada]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
 
-  // Custom limiter + ZeroDeriv requires a one-off run with explicit Assembler.
+  // Custom limiter requires a one-off run with explicit Assembler.
   // We can't go through run_flow_to_time (which uses the file-level MinMod).
   using ReconstructorVA = def::TVDReconstructor<dim, def::VanAlbadaLimiter, double>;
   using AssemblerVA = FV::KurganovTadmor::Assembler<Discretization, LSM_rho_integrator_PolyExp, ReconstructorVA,
-                                                    FV::KurganovTadmor::MaxEigenvalueWaveSpeedZeroDeriv>;
+                                                    FV::KurganovTadmor::MaxEigenvalueWaveSpeed>;
 
   const auto grid = default_rho_grid();
   const JSONValue json = make_json(/*threads=*/uthreads);
@@ -290,15 +275,15 @@ TEST_CASE("CG-vs-KT: KT-ρ uniform grid, Central limiter + ZeroWaveSpeed (a_half
   time_stepper.run(&state, 0.0, final_time);
 }
 
-TEST_CASE("CG-vs-KT: KT-ρ uniform grid, Central limiter + ZeroDeriv (both kinks off, NOT TVD)",
-          "[cg-vs-kt][kt-central-zerod]")
+TEST_CASE("CG-vs-KT: KT-ρ uniform grid, Central limiter + differentiated wave speed (NOT TVD)",
+          "[cg-vs-kt][kt-central]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
 
   using ReconstructorC = def::TVDReconstructor<dim, def::CentralLimiter, double>;
   using AssemblerC = FV::KurganovTadmor::Assembler<Discretization, LSM_rho_integrator_PolyExp, ReconstructorC,
-                                                   FV::KurganovTadmor::MaxEigenvalueWaveSpeedZeroDeriv>;
+                                                   FV::KurganovTadmor::MaxEigenvalueWaveSpeed>;
 
   const auto grid = default_rho_grid();
   const JSONValue json = make_json(/*threads=*/uthreads);

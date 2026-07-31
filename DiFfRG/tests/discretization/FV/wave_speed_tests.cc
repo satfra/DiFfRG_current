@@ -1,6 +1,5 @@
 #include <DiFfRG/discretization/FV/wave_speed/abstract_wave_speed.hh>
 #include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed.hh>
-#include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed_zero_deriv.hh>
 
 #include <DiFfRG/discretization/FV/assembler/KurganovTadmor.hh>
 #include <DiFfRG/model/model.hh>
@@ -17,7 +16,6 @@ using NumberType = double;
 using namespace dealii;
 namespace KT = DiFfRG::FV::KurganovTadmor;
 using KT::MaxEigenvalueWaveSpeed;
-using KT::MaxEigenvalueWaveSpeedZeroDeriv;
 
 template <typename NT, size_t nc> using JacobianMatrix = KT::internal::JacobianMatrix<NT, nc>;
 template <typename NT, int dim, size_t nc> using HessianTensor = KT::internal::HessianTensor<NT, dim, nc>;
@@ -27,7 +25,6 @@ template <typename NT, int dim, size_t nc> using HessianTensor = KT::internal::H
 // ---------------------------------------------------------------------------
 
 static_assert(DiFfRG::def::HasWaveSpeed<MaxEigenvalueWaveSpeed>);
-static_assert(DiFfRG::def::HasWaveSpeed<MaxEigenvalueWaveSpeedZeroDeriv>);
 
 // ---------------------------------------------------------------------------
 // Test models from boilerplate/models.hh
@@ -364,52 +361,4 @@ TEST_CASE("compute_speed_derivatives 1D 2-component — asymmetric plus/minus FD
     const NumberType da_fd = (a_minus_fwd - a_minus_bwd) / (2.0 * eps);
     CHECK(da_minus[0][c] == Catch::Approx(da_fd).epsilon(1e-4));
   }
-}
-
-// ===========================================================================
-// MaxEigenvalueWaveSpeedZeroDeriv
-// ===========================================================================
-
-TEST_CASE("ZeroDeriv compute_speeds matches MaxEigenvalueWaveSpeed", "[FV][wave_speed]")
-{
-  constexpr int dim = 1;
-  constexpr size_t nc = 2;
-
-  std::array<JacobianMatrix<NumberType, nc>, dim> J_plus{}, J_minus{};
-  J_plus[0] = {{{3.0, 0.5}, {0.0, 1.0}}};
-  J_minus[0] = {{{2.0, 0.0}, {1.0, 4.0}}};
-
-  const auto a_full = MaxEigenvalueWaveSpeed::compute_speeds<NumberType, dim, nc>(J_plus, J_minus);
-  const auto a_zero = MaxEigenvalueWaveSpeedZeroDeriv::compute_speeds<NumberType, dim, nc>(J_plus, J_minus);
-
-  CHECK(a_zero[0] == Catch::Approx(a_full[0]));
-}
-
-TEST_CASE("ZeroDeriv compute_speed_derivatives returns all zeros", "[FV][wave_speed]")
-{
-  constexpr int dim = 1;
-  constexpr size_t nc = 2;
-
-  std::array<JacobianMatrix<NumberType, nc>, dim> J_plus{}, J_minus{};
-  J_plus[0] = {{{3.0, 0.5}, {0.0, 1.0}}};
-  J_minus[0] = {{{2.0, 0.0}, {1.0, 4.0}}};
-
-  HessianTensor<NumberType, dim, nc> H_plus{}, H_minus{};
-  // Fill with nonzero values to ensure they are ignored
-  for (size_t d = 0; d < dim; ++d)
-    for (size_t i = 0; i < nc; ++i)
-      for (size_t j = 0; j < nc; ++j)
-        for (size_t c = 0; c < nc; ++c) {
-          H_plus[d][i][j][c] = 1.0;
-          H_minus[d][i][j][c] = 1.0;
-        }
-
-  const auto [da_plus, da_minus] =
-      MaxEigenvalueWaveSpeedZeroDeriv::compute_speed_derivatives<NumberType, dim, nc>(J_plus, J_minus, H_plus, H_minus);
-
-  for (size_t d = 0; d < dim; ++d)
-    for (size_t c = 0; c < nc; ++c) {
-      CHECK(da_plus[d][c] == Catch::Approx(0.0));
-      CHECK(da_minus[d][c] == Catch::Approx(0.0));
-    }
 }
