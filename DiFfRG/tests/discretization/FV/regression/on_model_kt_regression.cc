@@ -1,8 +1,6 @@
 #include "DiFfRG/discretization/FV/assembler/KurganovTadmor.hh"
 #include "DiFfRG/discretization/FV/discretization.hh"
 #include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed.hh>
-#include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed_fd.hh>
-#include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed_zero_deriv.hh>
 // CG comparison test (same physics as KT but with continuous Galerkin
 // discretisation). See ON_CG_LSM_Model below.
 #include "DiFfRG/timestepping/timestepping.hh"
@@ -57,7 +55,7 @@ namespace
 
   template <typename Model>
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor,
-                                                  FV::KurganovTadmor::MaxEigenvalueWaveSpeedZeroDeriv>;
+                                                  FV::KurganovTadmor::MaxEigenvalueWaveSpeed>;
   using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
 
   struct GridSettings {

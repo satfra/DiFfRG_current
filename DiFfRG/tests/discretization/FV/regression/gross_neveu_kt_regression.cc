@@ -1,5 +1,4 @@
 #include "DiFfRG/discretization/FV/assembler/KurganovTadmor.hh"
-#include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed_zero_deriv.hh>
 #include "DiFfRG/discretization/FV/discretization.hh"
 #include "kt_regression_helpers.hh"
 

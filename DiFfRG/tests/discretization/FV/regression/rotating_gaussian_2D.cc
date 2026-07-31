@@ -67,7 +67,7 @@ namespace
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, class RotatingGaussian2DModel, Reconstructor,
-                                                  FV::KurganovTadmor::MaxEigenvalueWaveSpeedZeroDeriv>;
+                                                  FV::KurganovTadmor::MaxEigenvalueWaveSpeed>;
   using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
 
   template <typename NT> Tensor<1, dim, NT> solid_body_velocity(const Point<dim> &point)

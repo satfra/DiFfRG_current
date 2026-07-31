@@ -200,9 +200,16 @@ public:
   }
 
   template <typename NT, typename Solution>
-  void KurganovTadmor_advection_flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/,
-                                     const Solution & /*sol*/) const
+  void KurganovTadmor_advection_flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> &pos,
+                                     const Solution &sol) const
   {
+    const auto &du = get<"fe_derivatives">(sol);
+    const double gradient = static_cast<double>(autodiff::detail::val(du[0][0]));
+    kt_flux_gradients_match = kt_flux_gradients_match && std::abs(gradient - 0.5) < 1.0e-12;
+    if (std::abs(pos[0]) < 1.0e-12 || std::abs(pos[0] - 1.0) < 1.0e-12)
+      kt_flux_saw_boundary_gradient = true;
+    else
+      kt_flux_saw_interior_gradient = true;
     F_i[0][0] = 0.0;
   }
 
@@ -244,6 +251,9 @@ public:
   double last_cell_point = std::numeric_limits<double>::quiet_NaN();
   mutable int flux_calls = 0;
   mutable bool flux_saw_hook_state = false;
+  mutable bool kt_flux_gradients_match = true;
+  mutable bool kt_flux_saw_boundary_gradient = false;
+  mutable bool kt_flux_saw_interior_gradient = false;
 };
 
 class NamedSlotAffineBoundary2DModel
@@ -1713,6 +1723,9 @@ TEST_CASE("KT face hook exposes cached reconstruction before residual flux", "[F
   CHECK(std::isfinite(model.last_cell_point));
   CHECK(model.flux_calls > 0);
   CHECK(model.flux_saw_hook_state);
+  CHECK(model.kt_flux_gradients_match);
+  CHECK(model.kt_flux_saw_boundary_gradient);
+  CHECK(model.kt_flux_saw_interior_gradient);
 }
 
 TEST_CASE("u_plus u_minus compoutation", "[FV][KT]")

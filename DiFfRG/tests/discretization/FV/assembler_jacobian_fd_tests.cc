@@ -103,6 +103,62 @@ public:
   }
 };
 
+class GradientDependentKTModel
+    : public def::AbstractModel<GradientDependentKTModel,
+                                ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>>>,
+      public def::Time,
+      public def::LLFFlux<GradientDependentKTModel>,
+      public def::FlowBoundaries<GradientDependentKTModel>,
+      public def::FVDefaultBoundaries<GradientDependentKTModel>,
+      public def::AD<GradientDependentKTModel>
+{
+public:
+  static constexpr double kt_diffusion = 0.4;
+  static constexpr double separate_diffusion = 0.7;
+
+  template <typename Vector> void initial_condition(const Point<1> &pos, Vector &values) const
+  {
+    values[0] = solution(pos)[0];
+  }
+
+  std::array<double, 1> solution(const Point<1> &pos) const
+  {
+    return {1.0 + 0.2 * pos[0] + 0.03 * pos[0] * pos[0]};
+  }
+
+  template <typename NT, typename Solution>
+  void KurganovTadmor_advection_flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/,
+                                     const Solution &sol) const
+  {
+    const auto &u = get<"fe_functions">(sol);
+    const auto &grad_u = get<"fe_derivatives">(sol);
+    F_i[0][0] += NT(0.5) * u[0] * u[0] - NT(kt_diffusion) * u[0] * grad_u[0][0];
+  }
+
+  template <typename NT, typename Solution>
+  void flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution &sol) const
+  {
+    const auto &grad_u = get<"fe_derivatives">(sol);
+    F_i[0][0] += -NT(separate_diffusion) * grad_u[0][0];
+  }
+
+  template <typename NT, typename Solution>
+  void source(std::array<NT, 1> &s_i, const Point<1> & /*pos*/, const Solution & /*sol*/) const
+  {
+    s_i[0] = NT(0);
+  }
+
+  template <int mdim, typename NT, size_t n_components>
+  bool apply_boundary_stencil(def::BoundaryStencilValues<mdim, NT, n_components> &u_stencil,
+                              def::BoundaryStencilPoints<mdim> &x_stencil, const Point<mdim> &x_face) const
+  {
+    static_assert(mdim == 1);
+    Testing::fill_face_ghost_solution_boundary_stencil(u_stencil, x_stencil, x_face,
+                                                       [this](const Point<1> &pos) { return solution(pos); });
+    return true;
+  }
+};
+
 class DiffusiveAffineBoundary2DModel
     : public def::AbstractModel<DiffusiveAffineBoundary2DModel,
                                 ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>>>,
@@ -351,6 +407,68 @@ TEST_CASE("KT Jacobian matches FD Jacobian for pure advection Burgers model", "[
       if (err > tol * scale) {
         std::cout << "Jacobian mismatch at [" << i << "," << j << "]: "
                   << "analytic=" << analytic << "  fd=" << fd << "  rel_err=" << err / scale << "\n";
+        pass = false;
+      }
+    }
+  }
+  REQUIRE(pass);
+}
+
+TEST_CASE("KT gradient-dependent flux and separate diffusion Jacobian match FD", "[FV][KT][gradient]")
+{
+  using Model = GradientDependentKTModel;
+  using NumberType = double;
+  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<1>>;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  const JSONValue json = make_json();
+  Model model;
+  RectangularMesh<1> mesh(json);
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+  VectorType sol = state.spatial_data();
+  const int n_dofs = static_cast<int>(sol.size());
+  REQUIRE(n_dofs > 5);
+
+  // Exercise nonconstant reconstructed states and gradients while keeping dF/du away from the |lambda| kink.
+  for (int i = 0; i < n_dofs; ++i)
+    sol[i] = 1.1 + 0.025 * static_cast<double>(i) + 0.001 * static_cast<double>(i * i);
+
+  VectorType sol_dot(n_dofs);
+  sol_dot = 0.0;
+
+  const SparsityPattern &sp = assembler.get_sparsity_pattern_jacobian();
+  SparseMatrix<NumberType> analytic(sp);
+  assembler.jacobian(analytic, sol, 1.0, sol_dot, 0.0, 0.0);
+
+  const double eps = 1.0e-7;
+  const double tolerance = 3.0e-4;
+  bool pass = true;
+  for (int j = 0; j < n_dofs; ++j) {
+    VectorType u_plus = sol;
+    VectorType u_minus = sol;
+    u_plus[j] += eps;
+    u_minus[j] -= eps;
+
+    VectorType residual_plus(n_dofs);
+    VectorType residual_minus(n_dofs);
+    assembler.residual(residual_plus, u_plus, 1.0, sol_dot, 0.0);
+    assembler.residual(residual_minus, u_minus, 1.0, sol_dot, 0.0);
+
+    for (int i = 0; i < n_dofs; ++i) {
+      const double fd = (residual_plus[i] - residual_minus[i]) / (2.0 * eps);
+      const double actual = sp.exists(i, j) ? analytic.el(i, j) : 0.0;
+      const double scale = std::max(1.0, std::abs(fd));
+      if (std::abs(actual - fd) > tolerance * scale) {
+        std::cout << "Gradient-dependent KT Jacobian mismatch at [" << i << "," << j
+                  << "]: analytic=" << actual << " fd=" << fd
+                  << " rel_err=" << std::abs(actual - fd) / scale << "\n";
         pass = false;
       }
     }

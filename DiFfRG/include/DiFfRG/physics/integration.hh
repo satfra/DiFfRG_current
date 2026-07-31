@@ -25,6 +25,9 @@ namespace DiFfRG
   template <typename T>
   concept has_integrator_AD = requires(T t) { t.integrator_AD; };
 
+  template <typename T>
+  concept has_integrator_AD2 = requires(T t) { t.integrator_AD2; };
+
   // ----------------------------------------------------
   // Setting scale k
   // ----------------------------------------------------
@@ -44,18 +47,11 @@ namespace DiFfRG
   {
     // do nothing
   }
-  template <typename Int>
-    requires DiFfRG::has_integrator_AD<Int>
-  void all_set_k(Int &integrator, const double k)
+  template <typename Int> void all_set_k(Int &integrator, const double k)
   {
     invoke_set_k(integrator.integrator, k);
-    invoke_set_k(integrator.integrator_AD, k);
-  }
-  template <typename Int>
-    requires(!DiFfRG::has_integrator_AD<Int>)
-  void all_set_k(Int &integrator, const double k)
-  {
-    invoke_set_k(integrator.integrator, k);
+    if constexpr (DiFfRG::has_integrator_AD<Int>) invoke_set_k(integrator.integrator_AD, k);
+    if constexpr (DiFfRG::has_integrator_AD2<Int>) invoke_set_k(integrator.integrator_AD2, k);
   }
 
   // ----------------------------------------------------
@@ -77,18 +73,11 @@ namespace DiFfRG
   {
     // do nothing
   }
-  template <typename Int>
-    requires DiFfRG::has_integrator_AD<Int>
-  void all_set_T(Int &integrator, const double T)
+  template <typename Int> void all_set_T(Int &integrator, const double T)
   {
     invoke_set_T(integrator.integrator, T);
-    invoke_set_T(integrator.integrator_AD, T);
-  }
-  template <typename Int>
-    requires(!DiFfRG::has_integrator_AD<Int>)
-  void all_set_T(Int &integrator, const double T)
-  {
-    invoke_set_T(integrator.integrator, T);
+    if constexpr (DiFfRG::has_integrator_AD<Int>) invoke_set_T(integrator.integrator_AD, T);
+    if constexpr (DiFfRG::has_integrator_AD2<Int>) invoke_set_T(integrator.integrator_AD2, T);
   }
 
   // ----------------------------------------------------
@@ -110,18 +99,11 @@ namespace DiFfRG
   {
     // do nothing
   }
-  template <typename Int>
-    requires DiFfRG::has_integrator_AD<Int>
-  void all_set_typical_E(Int &integrator, const double typical_E)
+  template <typename Int> void all_set_typical_E(Int &integrator, const double typical_E)
   {
     invoke_set_typical_E(integrator.integrator, typical_E);
-    invoke_set_typical_E(integrator.integrator_AD, typical_E);
-  }
-  template <typename Int>
-    requires(!DiFfRG::has_integrator_AD<Int>)
-  void all_set_typical_E(Int &integrator, const double typical_E)
-  {
-    invoke_set_typical_E(integrator.integrator, typical_E);
+    if constexpr (DiFfRG::has_integrator_AD<Int>) invoke_set_typical_E(integrator.integrator_AD, typical_E);
+    if constexpr (DiFfRG::has_integrator_AD2<Int>) invoke_set_typical_E(integrator.integrator_AD2, typical_E);
   }
 
   // ----------------------------------------------------
@@ -143,17 +125,10 @@ namespace DiFfRG
   {
     // do nothing
   }
-  template <typename Int>
-    requires DiFfRG::has_integrator_AD<Int>
-  void all_set_x_extent(Int &integrator, const double x_extent)
+  template <typename Int> void all_set_x_extent(Int &integrator, const double x_extent)
   {
     invoke_set_x_extent(integrator.integrator, x_extent);
-    invoke_set_x_extent(integrator.integrator_AD, x_extent);
-  }
-  template <typename Int>
-    requires(!DiFfRG::has_integrator_AD<Int>)
-  void all_set_x_extent(Int &integrator, const double x_extent)
-  {
-    invoke_set_x_extent(integrator.integrator, x_extent);
+    if constexpr (DiFfRG::has_integrator_AD<Int>) invoke_set_x_extent(integrator.integrator_AD, x_extent);
+    if constexpr (DiFfRG::has_integrator_AD2<Int>) invoke_set_x_extent(integrator.integrator_AD2, x_extent);
   }
 } // namespace DiFfRG
