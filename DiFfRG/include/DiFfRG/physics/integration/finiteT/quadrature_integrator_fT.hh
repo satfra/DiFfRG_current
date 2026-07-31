@@ -99,6 +99,8 @@ namespace DiFfRG
       grid_size[dim - 1] = matsubara_nodes.size();
     }
 
+    size_t get_matsubara_size() const { return matsubara_nodes.size(); }
+
     template <typename... T> void get(NT &dest, const T &...t) const
     {
       // create an execution space
@@ -163,10 +165,9 @@ namespace DiFfRG
                       // positive and negative Matsubara frequencies
                       msum = KERNEL::kernel(posargs..., xt, iargs...) + KERNEL::kernel(posargs..., -xt, iargs...);
                     update +=
-                        weight *
-                        (wt * msum
-                            // The zero mode (once per matsubara sum)
-                            + (idx[dim - 1] != 0 ? NT{} : m_T * KERNEL::kernel(posargs..., (ctype)0, iargs...)));
+                        weight * (wt * msum
+                                  // The zero mode (once per matsubara sum)
+                                  + (idx[dim - 1] != 0 ? NT{} : m_T * KERNEL::kernel(posargs..., (ctype)0, iargs...)));
                   },
                   x);
             },
@@ -245,8 +246,8 @@ namespace DiFfRG
                     subview() =
                         weight *
                         (wt * msum
-                            // The zero mode (once per matsubara sum)
-                            + (idx[1 + dim - 1] != 0 ? NT{} : m_T * KERNEL::kernel(posargs..., (ctype)0, iargs...)));
+                         // The zero mode (once per matsubara sum)
+                         + (idx[1 + dim - 1] != 0 ? NT{} : m_T * KERNEL::kernel(posargs..., (ctype)0, iargs...)));
                   },
                   x);
             },
@@ -463,10 +464,9 @@ namespace DiFfRG
                       // positive and negative Matsubara frequencies
                       msum = KERNEL::kernel(posargs..., xt, iargs...) + KERNEL::kernel(posargs..., -xt, iargs...);
                     update +=
-                        weight *
-                        (wt * msum
-                            // The zero mode (once per matsubara sum)
-                            + (idx[dim - 1] != 0 ? NT{} : m_T * KERNEL::kernel(posargs..., (ctype)0, iargs...)));
+                        weight * (wt * msum
+                                  // The zero mode (once per matsubara sum)
+                                  + (idx[dim - 1] != 0 ? NT{} : m_T * KERNEL::kernel(posargs..., (ctype)0, iargs...)));
                   },
                   x);
             },
