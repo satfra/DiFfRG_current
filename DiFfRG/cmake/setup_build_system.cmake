@@ -195,6 +195,43 @@ diffrg_find_package(deal.II VERSION 9.4.2 HINTS ${BUNDLED_DIR})
 deal_ii_initialize_cached_variables()
 message(STATUS "Found deal.II in  ${deal.II_DIR}")
 
+# ----------------------------------------------------------------------------
+# Drop deal.II's optimization level from its imported target
+# ----------------------------------------------------------------------------
+# dealii::dealii carries deal.II's build flags in INTERFACE_COMPILE_OPTIONS,
+# including a per-config optimization level (e.g. "$<$<CONFIG:Release>:-O2;
+# -funroll-loops;...>"). Every target that links it therefore receives that -O
+# *in addition to* the one CMake itself puts in CMAKE_CXX_FLAGS_<CONFIG>
+# (-O3 -DNDEBUG for Release), so the compile line ends up with two -O flags.
+#
+# CMake de-duplicates the other repeated deal.II flags against the copy that
+# setup_dealii() adds by hand, but not the -O: setup_dealii() strips it from its
+# copy (see there), leaving the interface's -O as the sole survivor. On the GCC +
+# CUDA path -- where Kokkos routes compilation through nvcc_wrapper -- nvcc then
+# warns ("you have set multiple optimization flags ... only the last is used")
+# and silently keeps the *last* one, downgrading Release objects to deal.II's
+# -O2 instead of CMake's -O3.
+#
+# Strip the optimization level here, once, so CMAKE_CXX_FLAGS_<CONFIG> is the
+# single source of truth for it. Everything else deal.II exports is kept.
+#
+# The property is a ";"-list that also contains generator expressions, so an -O
+# token may be glued to a genex head ("$<$<CONFIG:Release>>:-O2"). Delete the
+# tokens textually, then collapse the separators they leave behind -- an empty
+# list entry would otherwise reach the compiler as an empty argument.
+get_target_property(_dealii_iface_opts dealii::dealii INTERFACE_COMPILE_OPTIONS)
+if(_dealii_iface_opts)
+  string(REGEX REPLACE "^-O[0-9a-zA-Z]+;" "" _dealii_iface_opts
+                       "${_dealii_iface_opts}")
+  string(REGEX REPLACE "([:;])-O[0-9a-zA-Z]+" "\\1" _dealii_iface_opts
+                       "${_dealii_iface_opts}")
+  string(REPLACE ":;" ":" _dealii_iface_opts "${_dealii_iface_opts}")
+  string(REPLACE ";;" ";" _dealii_iface_opts "${_dealii_iface_opts}")
+  string(REPLACE ";>" ">" _dealii_iface_opts "${_dealii_iface_opts}")
+  set_target_properties(dealii::dealii PROPERTIES INTERFACE_COMPILE_OPTIONS
+                                                  "${_dealii_iface_opts}")
+endif()
+
 # Find TBB. TBB_DIR (set by the top-level build, or by the user) selects bundled
 # vs system; DiFfRG requires oneTBB >= 2021.
 diffrg_find_package(TBB VERSION 2021 HINTS ${BUNDLED_DIR})
@@ -212,11 +249,12 @@ endif()
 diffrg_find_package(Kokkos HINTS ${BUNDLED_DIR})
 message(STATUS "Found Kokkos in ${Kokkos_DIR}")
 
-# Find Boost. The top-level superbuild pins BOOST_ROOT to the bundled Boost it
-# built from the vendored source tree. Use Boost's own BoostConfig.cmake (config
-# mode); the legacy FindBoost module is removed in CMake >= 3.30. Boost has
-# shipped BoostConfig.cmake since 1.70, and DiFfRG requires >= 1.81, so config
-# mode always applies.
+# Find Boost. find_package also honors BOOST_ROOT/Boost_DIR and standard system
+# paths, so a system Boost (selected via BOOST_DIR/BUILD_BOOST in the top-level
+# build) is picked up here when BUNDLED_DIR does not contain one. Use Boost's own
+# BoostConfig.cmake (config mode); the legacy FindBoost module is removed in
+# CMake >= 3.30. Boost has shipped BoostConfig.cmake since 1.70, and DiFfRG
+# requires >= 1.81, so config mode always applies.
 if(POLICY CMP0167)
   cmake_policy(SET CMP0167 NEW)
 endif()
@@ -439,12 +477,38 @@ function(setup_dealii TARGET)
   target_include_directories(${TARGET} SYSTEM PUBLIC ${DEAL_II_INCLUDE_DIRS})
 
   set(_cflags "${DEAL_II_CXX_FLAGS} ${DEAL_II_CXX_FLAGS_${_build}}")
-  # remove c++20 flag and O2 flag - CMake adds them automatically and we thus
-  # avoid the nvcc_wrapper warnings
+  # Remove the c++20 and the optimization flag: CMake adds the standard itself
+  # and CMAKE_CXX_FLAGS_<CONFIG> is the single source of truth for the -O level
+  # (the same reason dealii::dealii's INTERFACE_COMPILE_OPTIONS is sanitized
+  # after find_package(deal.II) above). Keeping either here would put two -O
+  # flags on the compile line, which makes nvcc_wrapper warn and silently keep
+  # the last one. The leading space lets the regex match a flag in first
+  # position too.
   string(REPLACE "-std=c++20" "" _cflags ${_cflags})
-  string(REPLACE "-O2" "" _cflags ${_cflags})
+  string(REGEX REPLACE " -O[0-9a-zA-Z]+" "" _cflags " ${_cflags}")
   separate_arguments(_cflags)
-  target_compile_options(${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:${_cflags}>)
+  # deal.II built through nvcc/nvcc_wrapper (the GCC + CUDA path) emits repeated
+  # "-Xcudafe <code>" pairs. Added as plain compile options these get
+  # de-duplicated by CMake, which collapses the identical -Xcudafe tokens and
+  # orphans the trailing --diag_suppress=NNN, so the host compiler receives them
+  # raw and errors out. Fuse each "-Xcudafe <arg>" into a single SHELL: fragment
+  # so the pair stays intact and is exempt from de-duplication. No-op on the
+  # clang-CUDA path, which emits no -Xcudafe.
+  set(_cxx_opts "")
+  set(_pending_xcudafe FALSE)
+  foreach(_tok IN LISTS _cflags)
+    if(_tok STREQUAL "")
+      continue()
+    elseif(_pending_xcudafe)
+      list(APPEND _cxx_opts "SHELL:-Xcudafe ${_tok}")
+      set(_pending_xcudafe FALSE)
+    elseif(_tok STREQUAL "-Xcudafe")
+      set(_pending_xcudafe TRUE)
+    else()
+      list(APPEND _cxx_opts "${_tok}")
+    endif()
+  endforeach()
+  target_compile_options(${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:${_cxx_opts}>)
 
   set(_lflags "${DEAL_II_LINKER_FLAGS} ${DEAL_II_LINKER_FLAGS_${_build}}")
   separate_arguments(_lflags)
