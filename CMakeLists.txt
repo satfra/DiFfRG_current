@@ -300,33 +300,24 @@ include(ExternalProject)
 # ##############################################################################
 # Dependency selection: system vs bundled
 #
-# TBB, HDF5 and SUNDIALS can each be taken from the system instead of being
-# rebuilt. For every one of them: <LIB>_DIR set     -> use the install at that
-# prefix (FATAL if unusable) BUILD_<LIB>=ON    -> always build the bundled,
+# Boost, TBB, HDF5 and SUNDIALS can each be taken from the system instead of
+# being rebuilt. For every one of them: <LIB>_DIR set     -> use the install at
+# that prefix (FATAL if unusable) BUILD_<LIB>=ON    -> always build the bundled,
 # pinned copy otherwise (auto)  -> use a viable system install if found, else
-# build it. Boost is always built from the vendored, pinned source tree. The
-# blocks below resolve, for each library, whether the bundled ExternalProject is
-# needed (_build_<lib>) and which location to hand to deal.II / the DiFfRG
-# library build.
+# build it The blocks below resolve, for each library, whether the bundled
+# ExternalProject is needed (_build_<lib>) and which location to hand to deal.II
+# / the DiFfRG library build.
+#
+# Note for Boost specifically: the bundled build compiles the vendored source
+# tree in dependencies/boost/boost_1_81_0 and never downloads anything, so the
+# fallback path stays usable on offline / cluster machines.
 # ##############################################################################
 
-if(DEFINED BOOST_DIR AND NOT "${BOOST_DIR}" STREQUAL "")
-  message(
-    FATAL_ERROR
-      "BOOST_DIR has been removed. Boost is always built from "
-      "dependencies/boost/boost_1_81_0 into the bundled dependency prefix.")
-endif()
-unset(BOOST_DIR CACHE)
-unset(BOOST_DIR)
-if(DEFINED BUILD_BOOST AND BUILD_BOOST)
-  message(
-    FATAL_ERROR
-      "BUILD_BOOST has been removed. Boost is always built from "
-      "dependencies/boost/boost_1_81_0 into the bundled dependency prefix.")
-endif()
-unset(BUILD_BOOST CACHE)
-unset(BUILD_BOOST)
-
+set(BOOST_DIR
+    ""
+    CACHE PATH "Use the Boost install at this prefix instead of building one")
+option(BUILD_BOOST
+       "Always build the bundled, pinned Boost (ignore any system Boost)" OFF)
 set(TBB_DIR
     ""
     CACHE PATH "Use the TBB install at this prefix instead of building one")
@@ -350,22 +341,88 @@ set(DiFfRG_SUNDIALS_KNOWN_GOOD_MAX 7.7) # newest version validated with bundled
                                         # deal.II
 
 # ----------------------------------------------------------------------------
-# Boost — needed by both deal.II and the DiFfRG library. Always build the
-# vendored, pinned Boost tree so cluster builds do not depend on system Boost.
+# Boost — needed by both deal.II and the DiFfRG library. Use Boost's own
+# BoostConfig.cmake (config mode); the legacy FindBoost module is removed in
+# CMake >= 3.30 and deal.II 9.7 consumes a modern config-mode Boost fine.
+#
+# When the bundled build is selected, it compiles the vendored source tree
+# (dependencies/boost/boost_1_81_0) — no network access is involved.
 # ----------------------------------------------------------------------------
-set(_boost_vendor_source
-    "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/boost/boost_1_81_0")
-if(NOT EXISTS "${_boost_vendor_source}/bootstrap.sh"
-   OR NOT EXISTS "${_boost_vendor_source}/boost/version.hpp")
-  message(
-    FATAL_ERROR
-      "Vendored Boost source is missing. Expected ${_boost_vendor_source} to "
-      "contain bootstrap.sh and boost/version.hpp.")
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 NEW)
 endif()
-set(_boost_root "${DEPEND_INSTALL_PREFIX}")
-set(_boost_incdir "${DEPEND_INSTALL_PREFIX}/include")
-set(_boost_libdir "${DEPEND_INSTALL_PREFIX}/lib")
-set(_boost_dep boost_dep)
+set(_boost_components thread iostreams serialization system)
+set(_build_boost OFF)
+set(_boost_user_dir "${BOOST_DIR}")
+if(NOT "${_boost_user_dir}" STREQUAL "")
+  set(BOOST_ROOT "${_boost_user_dir}")
+  # BOOST_ROOT is only a *hint*: in config mode find_package would still fall
+  # back to CMAKE_SYSTEM_PREFIX_PATH, so an unusable BOOST_DIR would silently
+  # resolve to some other system Boost instead of failing. Restrict the search
+  # to the requested prefix so BOOST_DIR is authoritative, as documented.
+  find_package(Boost ${DiFfRG_BOOST_MIN_VERSION} QUIET
+               COMPONENTS ${_boost_components}
+               PATHS "${_boost_user_dir}" NO_DEFAULT_PATH)
+  if(NOT Boost_FOUND)
+    message(
+      FATAL_ERROR
+        "BOOST_DIR=${_boost_user_dir} does not provide a usable Boost >= ${DiFfRG_BOOST_MIN_VERSION}.\n"
+        "  Point it at a prefix containing BoostConfig.cmake, or use -DBUILD_BOOST=ON."
+    )
+  endif()
+  set(_boost_status
+      "  ${BoldGreen}[Boost] Using Boost ${Boost_VERSION} from BOOST_DIR=${_boost_user_dir}.${ColourReset}"
+  )
+elseif(BUILD_BOOST)
+  set(_build_boost ON)
+else()
+  find_package(Boost ${DiFfRG_BOOST_MIN_VERSION} QUIET
+               COMPONENTS ${_boost_components})
+  if(NOT Boost_FOUND)
+    set(_build_boost ON)
+  endif()
+endif()
+
+if(_build_boost)
+  # The bundled build needs the vendored source tree to be present and complete.
+  set(_boost_vendor_source
+      "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/boost/boost_1_81_0")
+  if(NOT EXISTS "${_boost_vendor_source}/bootstrap.sh"
+     OR NOT EXISTS "${_boost_vendor_source}/boost/version.hpp")
+    message(
+      FATAL_ERROR
+        "No usable system Boost >= ${DiFfRG_BOOST_MIN_VERSION} was found and the "
+        "vendored Boost source is missing. Expected ${_boost_vendor_source} to "
+        "contain bootstrap.sh and boost/version.hpp.\n"
+        "  Install Boost and point -DBOOST_DIR=<prefix> at it, or restore the "
+        "vendored tree.")
+  endif()
+  set(_boost_root "${DEPEND_INSTALL_PREFIX}")
+  set(_boost_incdir "${DEPEND_INSTALL_PREFIX}/include")
+  set(_boost_libdir "${DEPEND_INSTALL_PREFIX}/lib")
+  set(_boost_extra_args "")
+  set(_boost_dep boost_dep)
+else()
+  # Config mode populates Boost_INCLUDE_DIRS and Boost_DIR but not the legacy
+  # Boost_LIBRARY_DIRS, so derive the install prefix and library dir ourselves.
+  list(GET Boost_INCLUDE_DIRS 0 _boost_incdir)
+  get_filename_component(_boost_root "${_boost_incdir}" DIRECTORY)
+  if(DEFINED Boost_LIBRARY_DIRS AND NOT "${Boost_LIBRARY_DIRS}" STREQUAL "")
+    list(GET Boost_LIBRARY_DIRS 0 _boost_libdir)
+  elseif(EXISTS "${_boost_root}/lib")
+    set(_boost_libdir "${_boost_root}/lib")
+  else()
+    set(_boost_libdir "${_boost_root}/lib64")
+  endif()
+  set(_boost_extra_args -DBoost_DIR:PATH=${Boost_DIR})
+  set(_boost_dep "")
+  # Do not clobber the more specific message set by the BOOST_DIR branch above.
+  if(NOT DEFINED _boost_status)
+    set(_boost_status
+        "  ${BoldGreen}[Boost] Using system Boost ${Boost_VERSION} (${_boost_incdir}); skipping bundled build.${ColourReset}"
+    )
+  endif()
+endif()
 
 # ----------------------------------------------------------------------------
 # TBB — needed by both deal.II (path-based) and the DiFfRG library
@@ -765,20 +822,26 @@ ExternalProject_Add(
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX} ${CCACHE_CMAKE_ARGS})
 
 message("${BoldCyan}[5/8] Configuring Boost...${ColourReset}")
-ExternalProject_Add(
-  boost_dep
-  LOG_CONFIGURE ON
-  LOG_INSTALL ON
-  LOG_OUTPUT_ON_FAILURE ON
-  PREFIX ${CMAKE_CURRENT_BINARY_DIR}/boost
-  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/boost
-  INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
-             -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
-             -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
-  # Propagate DEPEND_INSTALL_PREFIX to the dependencies
-  CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-                   -DCCACHE_PROGRAM:STRING=${CCACHE_PROGRAM})
+# Boost selection was resolved above; only register the bundled build if needed.
+# The bundled build compiles the vendored source tree in dependencies/boost.
+if(_build_boost)
+  ExternalProject_Add(
+    boost_dep
+    LOG_CONFIGURE ON
+    LOG_INSTALL ON
+    LOG_OUTPUT_ON_FAILURE ON
+    PREFIX ${CMAKE_CURRENT_BINARY_DIR}/boost
+    SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/boost
+    INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
+    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
+               -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
+               -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
+    # Propagate DEPEND_INSTALL_PREFIX to the dependencies
+    CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+                     -DCCACHE_PROGRAM:STRING=${CCACHE_PROGRAM})
+else()
+  message(${_boost_status})
+endif()
 
 # ##############################################################################
 # Kokkos
@@ -832,7 +895,12 @@ ExternalProject_Add(
     -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
     -DCMAKE_CXX_STANDARD:STRING=20
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
-    -DBUILD_SHARED_LIBS:BOOL=OFF
+    # Build Kokkos as a SHARED library. As a static archive it gets linked into BOTH the
+    # consuming executable AND libdeal_II.so, so Kokkos' global state (cuda_devices, the
+    # per-device constantMem* caches, ...) is constructed and destroyed TWICE at process exit
+    # -> "corrupted size vs. prev_size" / "double free" in __cxa_finalize. A single shared
+    # libkokkoscore.so gives one copy of that state across all consumers.
+    -DBUILD_SHARED_LIBS:BOOL=ON
     -DKokkos_ARCH_NATIVE:BOOL=${Kokkos_ARCH_NATIVE}
     ${Kokkos_ARCH_LIST}
     -DCMAKE_CUDA_COMPILER:STRING=${CMAKE_CUDA_COMPILER}
@@ -924,6 +992,49 @@ else()
   set(dealiiConfig "Release")
 endif()
 
+# ############################################################################
+# deal.II <-> Kokkos compiler reconciliation
+# ############################################################################
+# deal.II consumes the bundled Kokkos via find_package() and inherits its
+# INTERFACE_COMPILE_OPTIONS. When Kokkos' CUDA backend runs on the *nvcc*
+# toolchain (i.e. the host compiler is GCC, which is not CUDA-aware), Kokkos
+# bakes nvcc-only flags (-arch=sm_89, -extended-lambda, -expt-relaxed-constexpr,
+# ...) into those options. Plain g++ rejects them and deal.II's compiler-flag
+# sanity check (DEAL_II_HAVE_USABLE_FLAGS_*) aborts configuration.
+#
+# Kokkos ships nvcc_wrapper for exactly this case: it forwards the nvcc flags to
+# nvcc while delegating host compilation to a chosen host compiler. So when GCC
+# is paired with a CUDA-enabled Kokkos, route deal.II through nvcc_wrapper.
+#
+# nvcc_wrapper must be told to use *our* GCC; left to itself it falls back to the
+# bare `g++` on PATH (typically the newest system GCC), whose libstdc++ headers
+# nvcc cannot parse. Its only selector that survives CMake's internal
+# try_compile probes -- the working-compiler check and deal.II's feature tests
+# all run before any *_CXX_FLAGS we set take effect -- is the
+# NVCC_WRAPPER_DEFAULT_COMPILER environment variable (this is also how Kokkos
+# drives nvcc_wrapper internally). Bake it into a tiny shim used as the compiler
+# so every invocation, probes and build alike, delegates to the configured GCC.
+# The clang-CUDA path needs none of this (clang is itself CUDA-aware), hence the
+# GNU guard.
+set(_dealii_cxx_compiler "${CMAKE_CXX_COMPILER}")
+if(HAVE_CUDA AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  set(_nvcc_wrapper_shim "${CMAKE_CURRENT_BINARY_DIR}/dealii_nvcc_wrapper.sh")
+  file(
+    WRITE "${_nvcc_wrapper_shim}"
+    "#!/bin/sh\n"
+    "# Generated by DiFfRG: pin nvcc_wrapper's host compiler to the configured GCC.\n"
+    "export NVCC_WRAPPER_DEFAULT_COMPILER=\"${CMAKE_CXX_COMPILER}\"\n"
+    "exec \"${DEPEND_INSTALL_PREFIX}/bin/nvcc_wrapper\" \"$@\"\n")
+  file(CHMOD "${_nvcc_wrapper_shim}"
+       PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ
+                   GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+  set(_dealii_cxx_compiler "${_nvcc_wrapper_shim}")
+  message(
+    STATUS
+    "${BoldYellow}[deal.II] GCC host compiler with a CUDA-enabled Kokkos: routing deal.II through nvcc_wrapper (host compiler ${CMAKE_CXX_COMPILER}).${ColourReset}"
+  )
+endif()
+
 ExternalProject_Add(
   deal.II_dep
   LOG_CONFIGURE ON
@@ -934,20 +1045,24 @@ ExternalProject_Add(
   GIT_SHALLOW ON
   # Patch deal.II 9.7.1 for DiFfRG's IDA diagnostics/max-step handling and for
   # clang-CUDA + Kokkos 5.x + Boost 1.9x (see deal.II issue #18797). Idempotent:
-  # if already applied, the reverse --check succeeds so re-runs and re-clones
-  # are both safe. sh -c keeps it working on Linux and macOS.
+  # check-reverse first (silently) so an already-patched tree is detected without
+  # the forward apply spewing "patch does not apply" errors on every re-run/
+  # re-clone. If neither reverse-check nor forward-apply succeeds the tree is in a
+  # *partially* applied state -- an existing build/ patched by an older revision of
+  # the patch file -- so restore the touched files to pristine and apply cleanly.
+  # sh -c keeps it working on Linux and macOS.
   PATCH_COMMAND
     sh -c
-    "git apply --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/dependencies/dealii_ida_max_num_steps.patch' || git apply --reverse --check --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/dependencies/dealii_ida_max_num_steps.patch'"
+    "git apply --reverse --check --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/dependencies/dealii_ida_max_num_steps.patch' 2>/dev/null && echo 'deal.II IDA patch already applied' || git apply --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/dependencies/dealii_ida_max_num_steps.patch' 2>/dev/null || ( echo 'deal.II IDA patch stale -- restoring and re-applying' && git checkout -- include/deal.II/sundials/ida.h source/sundials/ida.cc && git apply --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/dependencies/dealii_ida_max_num_steps.patch' )"
     COMMAND
     sh -c
-    "git apply --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-clang-cuda.patch' || git apply --reverse --check --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-clang-cuda.patch'"
+    "git apply --reverse --check --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-clang-cuda.patch' 2>/dev/null && echo 'deal.II patch already applied' || git apply --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-clang-cuda.patch'"
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/deal.II
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
-  DEPENDS general_dep ${_boost_dep} ${is_petsc_dep} ${_sundials_dep}
+  DEPENDS general_dep kokkos_dep ${_boost_dep} ${is_petsc_dep} ${_sundials_dep}
   BUILD_COMMAND cmake --build . -- -j${_dealii_jobs}
   CMAKE_CACHE_ARGS
-    -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
+    -DCMAKE_CXX_COMPILER:STRING=${_dealii_cxx_compiler}
     -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
     -DCMAKE_Fortran_COMPILER:STRING=${CMAKE_Fortran_COMPILER}
     -DCMAKE_BUILD_TYPE:STRING=${dealiiConfig}
@@ -980,6 +1095,7 @@ ExternalProject_Add(
     -DBOOST_DIR:STRING=${_boost_root}
     -DBOOST_INCLUDEDIR:PATH=${_boost_incdir}
     -DBOOST_LIBRARYDIR:PATH=${_boost_libdir}
+    ${_boost_extra_args}
     -DCMAKE_PREFIX_PATH:STRING=${DEPEND_INSTALL_PREFIX}
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
     ${CCACHE_CMAKE_ARGS})
@@ -991,26 +1107,34 @@ file(MAKE_DIRECTORY ${DEPEND_INSTALL_PREFIX}/include/deal.II/bundled)
 # Pin resolved dependencies for standalone library rebuilds
 # ##############################################################################
 #
-# Record exactly which Boost/TBB/HDF5 this superbuild resolved into a small
-# CMake snippet inside the bundle dir. A later standalone library build
-# (cd DiFfRG && cmake .. -DBUNDLED_DIR=...) and downstream find_package(DiFfRG)
-# consumers include it (see DiFfRG/cmake/setup_build_system.cmake) so they reuse
-# exactly these dependencies instead of re-running find_package and possibly
-# latching onto a different system install or a stray copy in the bundle dir.
+# Record exactly which Boost/TBB/HDF5 this superbuild resolved (system vs
+# bundled) into a small CMake snippet inside the bundle dir. A later standalone
+# library build (cd DiFfRG && cmake .. -DBUNDLED_DIR=...) and downstream
+# find_package(DiFfRG) consumers include it (see
+# DiFfRG/cmake/setup_build_system.cmake) so they reuse exactly these
+# dependencies instead of re-running find_package and possibly latching onto a
+# different system install or a stray copy in the bundle dir.
 #
 # Written at configure time (file(WRITE) creates missing parents) and
 # overwritten on every configure, so switching system<->bundled regenerates a
 # correct pin. Pinned hint variables are guarded with if(NOT DEFINED ...) so an
 # explicit -DBOOST_ROOT=/-DTBB_DIR=/-DHDF5_DIR= on the command line still wins.
 
-# Boost is always built, so read its version from the vendored wrapper.
-file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/boost/CMakeLists.txt"
-     _boost_ver_line REGEX "set\\(TRY_BOOST_VERSION")
-if(_boost_ver_line)
-  string(REGEX REPLACE ".*\"([0-9]+\\.[0-9]+\\.[0-9]+)\".*" "\\1"
-                       _pinned_boost_version "${_boost_ver_line}")
-else()
-  message(FATAL_ERROR "Could not read TRY_BOOST_VERSION from dependencies/boost/CMakeLists.txt")
+# A bundled Boost build compiles Boost itself, so its version is not yet known
+# via find_package; read it from the vendored wrapper. For a system Boost we
+# already have Boost_VERSION.
+set(_pinned_boost_version "${Boost_VERSION}")
+if(_build_boost)
+  file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/boost/CMakeLists.txt"
+       _boost_ver_line REGEX "set\\(TRY_BOOST_VERSION")
+  if(_boost_ver_line)
+    string(REGEX REPLACE ".*\"([0-9]+\\.[0-9]+\\.[0-9]+)\".*" "\\1"
+                         _pinned_boost_version "${_boost_ver_line}")
+  else()
+    message(
+      FATAL_ERROR
+        "Could not read TRY_BOOST_VERSION from dependencies/boost/CMakeLists.txt")
+  endif()
 endif()
 
 set(_pin_content
@@ -1021,9 +1145,16 @@ set(_pin_content
 
 ")
 
-# Boost: always pin BOOST_ROOT to the bundled install prefix.
+# Boost: always pin BOOST_ROOT. For a system Boost also pin the exact
+# BoostConfig.cmake dir (Boost_DIR) -- with CMP0167 NEW, config-mode
+# find_package then resolves straight to it and ignores HINTS/CMAKE_PREFIX_PATH,
+# so a stray Boost in the bundle dir is never picked up.
 string(APPEND _pin_content
        "if(NOT DEFINED BOOST_ROOT)\n  set(BOOST_ROOT \"${_boost_root}\")\nendif()\n")
+if(NOT _build_boost)
+  string(APPEND _pin_content
+         "if(NOT DEFINED Boost_DIR)\n  set(Boost_DIR \"${Boost_DIR}\")\nendif()\n")
+endif()
 string(APPEND _pin_content
        "set(DiFfRG_PINNED_BOOST_VERSION \"${_pinned_boost_version}\")\n\n")
 
@@ -1075,6 +1206,7 @@ ExternalProject_Add(
     -DHDF5:BOOL=ON
     -DBUNDLED_DIR:PATH=${DEPEND_INSTALL_PREFIX}
     -DBOOST_ROOT:PATH=${_boost_root}
+    ${_boost_extra_args}
     -DTBB_DIR:STRING=${_tbb_dir}
     ${_hdf5_extra_args}
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
