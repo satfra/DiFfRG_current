@@ -2,11 +2,29 @@
 
 // DiFfRG
 #include <DiFfRG/common/types.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 
 namespace DiFfRG
 {
   using namespace dealii;
+
+  template <unsigned int dim, typename VectorType> class DataOutput;
+
+  namespace internal
+  {
+    template <typename... Args> constexpr void validate_readout_helper_arity()
+    {
+      static_assert(sizeof...(Args) == 3,
+                    "The readout helper now requires a stable readout ID: helper(id, EoM, outputter)");
+    }
+
+    template <typename String> constexpr void reject_named_assembler_log()
+    {
+      static_assert(!std::is_same_v<String, String>,
+                    "assembler.log(name) was removed. Construct the assembler with output.log_port() and call log() "
+                    "instead");
+    }
+  } // namespace internal
 
   /**
    * @brief This is the general assembler interface for any kind of discretization.
@@ -42,18 +60,20 @@ namespace DiFfRG
     using NumberType = typename get_type::NumberType<VectorType>;
 
     /**
-     * @brief Attach any data output to the DataOutput object provided. This can be used to extract additional data from
-     * the solution and write it to the output file. This includes both derivatives and other spatial functions, as well
-     * as single values that can be appended to the .csv file.
+     * @brief Contribute the assembler's fields and model readouts to one scoped output frame.
      *
-     * @param data_out The DataOutput object to attach the data to
+     * @param data_out The current output frame
      * @param solution The spatial solution vector
      * @param variables The additional variables vector
      */
-    virtual void attach_data_output(DataOutput<dim, VectorType> &data_out, const VectorType &solution,
+    virtual void attach_data_output(OutputFrame<dim, VectorType> &data_out, const VectorType &solution,
                                     const VectorType &variables = VectorType(),
                                     const VectorType &dt_solution = VectorType(),
                                     const VectorType &residual = VectorType()) = 0;
+
+    [[deprecated("Override attach_data_output(OutputFrame<dim, VectorType>&, ...) instead")]] virtual void
+    attach_data_output(DataOutput<dim, VectorType> &, const VectorType &, const VectorType & = VectorType(),
+                       const VectorType & = VectorType(), const VectorType & = VectorType()) = delete;
 
     /**
      * @brief Reinitialize the assembler. This is necessary if the mesh has changed, e.g. after a mesh refinement.

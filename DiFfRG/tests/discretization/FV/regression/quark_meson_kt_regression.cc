@@ -384,7 +384,6 @@ namespace
            {"batch_size", 32},
            {"overintegration", 0},
            {"output_subdivisions", 1},
-           {"output_buffer_size", 1},
            {"EoM_abs_tol", 1.0e-10},
            {"EoM_max_iter", 0}}},
          {"timestepping",
@@ -407,12 +406,7 @@ namespace
              {"ida_callback_trace_min_t", 3.0},
              {"ida_callback_trace_max_lines", 1200},
              {"ida_callback_trace_successes", true}}}}},
-         {"output",
-          {{"verbosity", 1},
-           {"vtk", false},
-           {"hdf5", true},
-           {"fv_reconstruction_diagnostics", true},
-           {"fv_residual_contribution_diagnostics", true}}}});
+         {"output", {{"verbosity", 1}, {"vtk", false}, {"hdf5", true}}}});
   }
 
   template <typename Case> Config::ConfigurationMesh<1> make_mesh_config()
@@ -428,12 +422,12 @@ namespace
     kt_regression::ensure_diffrg_initialized();
     QuarkMesonKTModel<Case> model(json);
     Mesh mesh(make_mesh_config<Case>());
-    Discretization discretization(mesh, json);
-    AssemblerType assembler(discretization, model, json);
+    Discretization discretization(mesh, json, DiFfRG::LogPort{});
+    AssemblerType assembler(discretization, model, json, DiFfRG::LogPort{});
 
-    kt_regression::TemporaryDirectory tmp_dir(output_prefix, false);
-    std::clog << "[QM DIAG] retaining output directory " << tmp_dir.path << '\n';
-    DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), output_prefix, "output", json);
+    auto data_out_path = OutputPath::temporary(TemporaryRetention::keep, output_prefix, "output");
+    std::clog << "[QM DIAG] retaining output directory " << data_out_path.root() << '\n';
+    OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     TimeStepperType time_stepper(json, &assembler, &data_out, adaptor.get());
 

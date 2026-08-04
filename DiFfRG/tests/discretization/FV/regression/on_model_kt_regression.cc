@@ -54,8 +54,8 @@ namespace
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
 
   template <typename Model>
-  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor,
-                                                  FV::KurganovTadmor::MaxEigenvalueWaveSpeed>;
+  using Assembler =
+      FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor, FV::KurganovTadmor::MaxEigenvalueWaveSpeed>;
   using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
 
   struct GridSettings {
@@ -456,7 +456,6 @@ namespace
            {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
-           {"output_buffer_size", 1},
            {"EoM_abs_tol", 1e-10},
            {"EoM_max_iter", 0}}},
          {"timestepping",
@@ -581,11 +580,12 @@ namespace
     const JSONValue json = make_json(flow_case, threads);
     ModelType model(json, flow_case, grid_settings);
     Mesh mesh(make_mesh_config(grid_settings));
-    Discretization discretization(mesh, json);
-    Assembler<ModelType> assembler(discretization, model, json);
+    Discretization discretization(mesh, json, DiFfRG::LogPort{});
+    Assembler<ModelType> assembler(discretization, model, json, DiFfRG::LogPort{});
 
-    kt_regression::TemporaryDirectory tmp_dir("on_model_kt_regression");
-    DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), "on_model_kt_regression", "output", json);
+    auto data_out_path =
+        OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_model_kt_regression", "output");
+    OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 
@@ -635,11 +635,12 @@ namespace
     const JSONValue json = make_json(flow_case, threads);
     ModelType model(json, flow_case, grid_settings);
     Mesh mesh(make_mesh_config(grid_settings));
-    Discretization discretization(mesh, json);
-    Assembler<ModelType> assembler(discretization, model, json);
+    Discretization discretization(mesh, json, DiFfRG::LogPort{});
+    Assembler<ModelType> assembler(discretization, model, json, DiFfRG::LogPort{});
 
-    kt_regression::TemporaryDirectory tmp_dir("on_model_kt_regression");
-    DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), "on_model_kt_regression", "output", json);
+    auto data_out_path =
+        OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_model_kt_regression", "output");
+    OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 

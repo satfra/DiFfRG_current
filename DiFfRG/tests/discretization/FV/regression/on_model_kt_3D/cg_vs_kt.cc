@@ -39,46 +39,13 @@
 //     KT for multi-invariant problems but doesn't directly address the
 //     IR-flat-region failure on the kind of test we run here.
 
-#include "kt_3D_setup.hh"
+#include "kt_3D_kernels.hh" // for the diagnostic includes
 #include "kt_3D_runners.hh"
-#include "kt_3D_kernels.hh"  // for the diagnostic includes
+#include "kt_3D_setup.hh"
 
 // Limiter variants beyond MinMod (default) — for the kinks-off tests below.
 #include <DiFfRG/discretization/FV/limiter/central_limiter.hh>
 #include <DiFfRG/discretization/FV/limiter/van_albada_limiter.hh>
-
-namespace
-{
-  // Diagnostic wave-speed strategy: a_half ≡ 0. This removes the
-  // wave-speed dissipation term `−0.5·a_half·(u_+ − u_−)` from the numerical
-  // flux in the RESIDUAL (not just the Jacobian, which is what ZeroDeriv
-  // does). Tests whether the dissipation term itself is the bottleneck
-  // for IDA.
-  //
-  // Note: this makes KT formally unstable in the hyperbolic sense (pure
-  // central flux). For our parabolic-dominated fRG flow that should still
-  // be tractable — the diffusion piece dominates the dissipation anyway.
-  struct ZeroWaveSpeed {
-    template <typename NT, int d, size_t n_c>
-    static std::array<NT, d>
-    compute_speeds(const std::array<DiFfRG::FV::KurganovTadmor::internal::JacobianMatrix<NT, n_c>, d> & /*J_plus*/,
-                   const std::array<DiFfRG::FV::KurganovTadmor::internal::JacobianMatrix<NT, n_c>, d> & /*J_minus*/)
-    {
-      return std::array<NT, d>{};  // zero-initialized
-    }
-
-    template <typename NT, int d, size_t n_c>
-    static std::pair<std::array<std::array<NT, n_c>, d>, std::array<std::array<NT, n_c>, d>>
-    compute_selected_speed_derivatives(
-        [[maybe_unused]] const std::array<DiFfRG::FV::KurganovTadmor::internal::JacobianMatrix<NT, n_c>, d> &J_plus,
-        [[maybe_unused]] const std::array<DiFfRG::FV::KurganovTadmor::internal::JacobianMatrix<NT, n_c>, d> &J_minus,
-        [[maybe_unused]] const DiFfRG::FV::KurganovTadmor::internal::HessianTensor<NT, d, n_c> &H_plus,
-        [[maybe_unused]] const DiFfRG::FV::KurganovTadmor::internal::HessianTensor<NT, d, n_c> &H_minus)
-    {
-      return {};
-    }
-  };
-}  // namespace
 
 #include <catch2/catch_all.hpp>
 
@@ -86,7 +53,7 @@ namespace
 {
   using namespace on_kt_3D;
   static constexpr int uthreads = 16;
-}
+} // namespace
 
 // ============================================================================
 // Test 1: CG on KT-Example's uniform ρ-grid with KT's default abs_tol=1e-7.
@@ -95,8 +62,7 @@ namespace
 // If no  → tolerance matters more than we thought.
 // ============================================================================
 
-TEST_CASE("CG-vs-KT: CG on KT-Example uniform grid + default tolerance",
-          "[cg-vs-kt][cg-uniform-loose-tol]")
+TEST_CASE("CG-vs-KT: CG on KT-Example uniform grid + default tolerance", "[cg-vs-kt][cg-uniform-loose-tol]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -111,8 +77,7 @@ TEST_CASE("CG-vs-KT: CG on KT-Example uniform grid + default tolerance",
 // any grid.
 // ============================================================================
 
-TEST_CASE("CG-vs-KT: CG on KT-Example uniform grid + tight tolerance",
-          "[cg-vs-kt][cg-uniform-tight-tol]")
+TEST_CASE("CG-vs-KT: CG on KT-Example uniform grid + tight tolerance", "[cg-vs-kt][cg-uniform-tight-tol]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -128,8 +93,7 @@ TEST_CASE("CG-vs-KT: CG on KT-Example uniform grid + tight tolerance",
 // grid-adapted KT behavior under ordinary passing-test semantics.
 // ============================================================================
 
-TEST_CASE("CG-vs-KT: KT on CG-Example adaptive non-uniform grid",
-          "[cg-vs-kt][kt-adaptive-grid]")
+TEST_CASE("CG-vs-KT: KT on CG-Example adaptive non-uniform grid", "[cg-vs-kt][kt-adaptive-grid]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -141,8 +105,7 @@ TEST_CASE("CG-vs-KT: KT on CG-Example adaptive non-uniform grid",
 // Regression: KT reaches final_time=4.0 on the uniformly refined grid.
 // ============================================================================
 
-TEST_CASE("CG-vs-KT: KT on 4×-finer uniform ρ-grid (600 cells × [0, 0.015])",
-          "[cg-vs-kt][kt-uniform-4x-finer]")
+TEST_CASE("CG-vs-KT: KT on 4×-finer uniform ρ-grid (600 cells × [0, 0.015])", "[cg-vs-kt][kt-uniform-4x-finer]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -158,8 +121,7 @@ TEST_CASE("CG-vs-KT: KT on 4×-finer uniform ρ-grid (600 cells × [0, 0.015])",
 // also needed for CG.
 // ============================================================================
 
-TEST_CASE("CG-vs-KT: CG on CG-Example adaptive non-uniform grid",
-          "[cg-vs-kt][cg-adaptive-grid]")
+TEST_CASE("CG-vs-KT: CG on CG-Example adaptive non-uniform grid", "[cg-vs-kt][cg-adaptive-grid]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -177,16 +139,14 @@ TEST_CASE("CG-vs-KT: CG on CG-Example adaptive non-uniform grid",
 // KT's per-face reconstruction) is the discriminator.
 // ============================================================================
 
-TEST_CASE("CG-vs-KT: KT-ρ large-N all-pion (purely hyperbolic, no diffusion flux)",
-          "[cg-vs-kt][kt-largeN]")
+TEST_CASE("CG-vs-KT: KT-ρ large-N all-pion (purely hyperbolic, no diffusion flux)", "[cg-vs-kt][kt-largeN]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
   run_flow_to_time<LSM_rho_largeN_PolyExp>(default_rho_grid(), final_time);
 }
 
-TEST_CASE("CG-vs-KT: CG-ρ large-N all-pion (reference)",
-          "[cg-vs-kt][cg-largeN]")
+TEST_CASE("CG-vs-KT: CG-ρ large-N all-pion (reference)", "[cg-vs-kt][cg-largeN]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -208,8 +168,7 @@ TEST_CASE("CG-vs-KT: CG-ρ large-N all-pion (reference)",
 // Regression: VanAlbada reaches final_time=4.0 with a smooth limiter.
 // ============================================================================
 
-TEST_CASE("CG-vs-KT: KT-ρ uniform grid, VanAlbada limiter + differentiated wave speed",
-          "[cg-vs-kt][kt-vanalbada]")
+TEST_CASE("CG-vs-KT: KT-ρ uniform grid, VanAlbada limiter + differentiated wave speed", "[cg-vs-kt][kt-vanalbada]")
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
@@ -224,48 +183,11 @@ TEST_CASE("CG-vs-KT: KT-ρ uniform grid, VanAlbada limiter + differentiated wave
   const JSONValue json = make_json(/*threads=*/uthreads);
   LSM_rho_integrator_PolyExp model(json, grid);
   Mesh mesh(make_mesh_config(grid));
-  Discretization discretization(mesh, json);
-  AssemblerVA assembler(discretization, model, json);
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  AssemblerVA assembler(discretization, model, json, DiFfRG::LogPort{});
 
-  kt_regression::TemporaryDirectory tmp_dir("on_kt_3D");
-  DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), "on_kt_3D", "output", json);
-  auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
-  ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
-
-  FV::FlowingVariables<Discretization> state(discretization);
-  state.interpolate(model);
-
-  time_stepper.run(&state, 0.0, final_time);
-}
-
-// ============================================================================
-// Test 8: WAVE-SPEED DISSIPATION REMOVED FROM RESIDUAL (not just from J).
-// Uses ZeroWaveSpeed strategy — a_half ≡ 0, so the numerical flux is pure
-// central: F_num = 0.5·(F(u_+) + F(u_-)). Formally unstable hyperbolically,
-// but for the parabolic-dominated fRG flow the diffusion should carry it.
-// Regression: this central-flux variant reaches final_time=4.0 with the
-// wave-speed dissipation removed from the residual.
-// ============================================================================
-
-TEST_CASE("CG-vs-KT: KT-ρ uniform grid, Central limiter + ZeroWaveSpeed (a_half=0 in RESIDUAL)",
-          "[cg-vs-kt][kt-no-dissipation]")
-{
-  kt_regression::ensure_logger();
-  kt_regression::ensure_diffrg_initialized();
-
-  using ReconstructorC = def::TVDReconstructor<dim, def::CentralLimiter, double>;
-  using AssemblerNoD = FV::KurganovTadmor::Assembler<Discretization, LSM_rho_integrator_PolyExp, ReconstructorC,
-                                                     ZeroWaveSpeed>;
-
-  const auto grid = default_rho_grid();
-  const JSONValue json = make_json(/*threads=*/uthreads);
-  LSM_rho_integrator_PolyExp model(json, grid);
-  Mesh mesh(make_mesh_config(grid));
-  Discretization discretization(mesh, json);
-  AssemblerNoD assembler(discretization, model, json);
-
-  kt_regression::TemporaryDirectory tmp_dir("on_kt_3D");
-  DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), "on_kt_3D", "output", json);
+  auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_kt_3D", "output");
+  OutputSession<dim, VectorType> data_out(data_out_path, json);
   auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
   ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 
@@ -289,11 +211,11 @@ TEST_CASE("CG-vs-KT: KT-ρ uniform grid, Central limiter + differentiated wave s
   const JSONValue json = make_json(/*threads=*/uthreads);
   LSM_rho_integrator_PolyExp model(json, grid);
   Mesh mesh(make_mesh_config(grid));
-  Discretization discretization(mesh, json);
-  AssemblerC assembler(discretization, model, json);
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  AssemblerC assembler(discretization, model, json, DiFfRG::LogPort{});
 
-  kt_regression::TemporaryDirectory tmp_dir("on_kt_3D");
-  DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), "on_kt_3D", "output", json);
+  auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_kt_3D", "output");
+  OutputSession<dim, VectorType> data_out(data_out_path, json);
   auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
   ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 

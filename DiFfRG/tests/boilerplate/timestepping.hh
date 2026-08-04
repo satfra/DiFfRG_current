@@ -101,10 +101,11 @@ bool run(std::string test_name, double expected_precision)
 
   // Define the objects needed to run the simulation
   Model model(p_prm);
-  RectangularMesh<dim> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
-  DataOutput<dim, VectorType> data_out("./", test_name, test_name + '/', json);
+  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, test_name, test_name);
+  OutputSession<dim, VectorType> data_out(data_out_path, json);
 
   const int n_components = Model::Components::count_fe_functions(0);
 

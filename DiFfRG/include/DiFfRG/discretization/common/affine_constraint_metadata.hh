@@ -73,6 +73,21 @@ namespace DiFfRG
 
   namespace internal
   {
+    template <typename> inline constexpr bool accepts_affine_constraint_context = false;
+
+    template <typename Model, typename Constraints, typename Context>
+    void apply_model_affine_constraints(Model &model, Constraints &constraints, const Context &context)
+    {
+      if constexpr (requires { model.affine_constraints(constraints, context); }) {
+        model.affine_constraints(constraints, context);
+      } else {
+        static_assert(accepts_affine_constraint_context<Model>,
+                      "The three-argument affine_constraints callback was removed. Implement "
+                      "apply_boundary_affine_constraints(constraints, context) or "
+                      "apply_affine_constraints(constraints, context) using AffineConstraintContext instead");
+      }
+    }
+
     template <int dim> struct AffineConstraintMetadata {
       std::vector<dealii::IndexSet> component_boundary_dofs;
       std::vector<std::vector<dealii::Point<dim>>> component_boundary_points;

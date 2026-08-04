@@ -10,7 +10,7 @@
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/common/abstract_data.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/timestepping/abstract_timestepper.hh>
 
 namespace DiFfRG

@@ -22,7 +22,7 @@
 #include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/common/eom.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 
 namespace DiFfRG
 {
@@ -62,8 +62,16 @@ namespace DiFfRG
     using Components = typename Discretization::Components;
     static constexpr uint dim = Discretization::dim;
 
-    FEMAssembler(Discretization &discretization, Model &model, const JSONValue &json)
-        : discretization(discretization), model(model), fe(discretization.get_fe()),
+    [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] FEMAssembler(
+        Discretization &discretization, Model &model,
+        DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, JSONValue> json)
+        : FEMAssembler(discretization, model, json.value(),
+                       DiFfRG::internal::legacy_default_log_port<Discretization>())
+    {
+    }
+
+    FEMAssembler(Discretization &discretization, Model &model, const JSONValue &json, LogPort log_port)
+        : discretization(discretization), model(model), log_port(std::move(log_port)), fe(discretization.get_fe()),
           dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
           threads(json.get_uint("/discretization/threads")), batch_size(json.get_uint("/discretization/batch_size")),
           EoM_cell(*(dof_handler.active_cell_iterators().end())),
@@ -72,7 +80,7 @@ namespace DiFfRG
           EoM_max_iter(json.get_uint("/discretization/EoM_max_iter"))
     {
       if (this->threads == 0) this->threads = dealii::MultithreadInfo::n_threads() / 2;
-      spdlog::get("log")->info("FEM: Using {} threads for assembly.", threads);
+      log_port.info("FEM: Using {} threads for assembly.", threads);
     }
 
     virtual IndexSet get_differential_indices() const override
@@ -81,9 +89,9 @@ namespace DiFfRG
       return DoFTools::extract_dofs(dof_handler, component_mask);
     }
 
-    virtual void attach_data_output(DataOutput<dim, VectorType> &data_out, const VectorType &solution,
-                                    const VectorType &variables, const VectorType &dt_solution = VectorType(),
-                                    const VectorType &residual = VectorType()) override
+    virtual void attach_data_output(OutputFrame<dim, VectorType> &data_out, const VectorType &solution,
+                                const VectorType &variables, const VectorType &dt_solution = VectorType(),
+                                const VectorType &residual = VectorType()) override
     {
       const auto fe_function_names = Components::FEFunction_Descriptor::get_names_vector();
       std::vector<std::string> fe_function_names_residual;
@@ -95,7 +103,7 @@ namespace DiFfRG
       for (const auto &name : fe_function_names)
         fe_function_names_dot.push_back(name + "_dot");
 
-      auto &fe_out = data_out.fe_output();
+      auto fe_out = data_out.fields();
       fe_out.attach(dof_handler, solution, fe_function_names);
       if (dt_solution.size() > 0) fe_out.attach(dof_handler, dt_solution, fe_function_names_dot);
       if (residual.size() > 0) fe_out.attach(dof_handler, residual, fe_function_names_residual);
@@ -114,7 +122,7 @@ namespace DiFfRG
       auto &constraints = discretization.get_constraints();
       constraints.clear();
       DoFTools::make_hanging_node_constraints(dof_handler, constraints);
-      model.affine_constraints(constraints, context);
+      internal::apply_model_affine_constraints(model, constraints, context);
       constraints.close();
     }
 
@@ -149,10 +157,13 @@ namespace DiFfRG
       timings_variable_jacobian.push_back(timer.wall_time());
     };
 
-    void readouts(DataOutput<dim, VectorType> &data_out, const VectorType &solution_global,
+    void readouts(OutputFrame<dim, VectorType> &data_out, const VectorType &solution_global,
                   const VectorType &variables) const
     {
-      auto helper = [&](auto EoMfun, auto outputter) {
+      auto helper = [&](auto &&...args) {
+        if constexpr (sizeof...(args) == 3) {
+          auto &&[id, EoMfun, outputter] = std::forward_as_tuple(std::forward<decltype(args)>(args)...);
+        data_out.register_readout(id);
         auto EoM_cell = this->EoM_cell;
         auto EoM_result = get_EoM_point_with_potential(
             EoM_cell, solution_global, dof_handler, mapping, EoMfun, [&](const auto &p, const auto &) { return p; },
@@ -184,6 +195,9 @@ namespace DiFfRG
 
         outputter(data_out, EoM, e_tie(solution[0], solution_grad[0], solution_hess[0], extracted_data, variables));
         data_out.attach_eom_potential(std::move(EoM_result));
+        } else {
+          internal::validate_readout_helper_arity<decltype(args)...>();
+        }
       };
       model.readouts_multiple(helper, data_out);
     }
@@ -259,7 +273,6 @@ namespace DiFfRG
 
       const uint n_dofs = fe_v.get_fe().n_dofs_per_cell();
       if (new_cell) {
-        // spdlog::get("log")->info("FEM: Rebuilding the jacobian sparsity pattern");
         extractor_dof_indices.resize(n_dofs);
         EoM_cell->get_dof_indices(extractor_dof_indices);
         rebuild_jacobian_sparsity();
@@ -327,6 +340,7 @@ namespace DiFfRG
   protected:
     Discretization &discretization;
     Model &model;
+    LogPort log_port;
     const FiniteElement<dim> &fe;
     const DoFHandler<dim> &dof_handler;
     const Mapping<dim> &mapping;
