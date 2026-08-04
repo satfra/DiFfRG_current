@@ -23,9 +23,8 @@ ARG threads=4
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Toolchain (cmake 3.28, gcc 13 -> C++20) + the system dependencies DiFfRG can
-# consume directly: GSL and LAPACK/BLAS are required. Boost is always built from
-# the vendored source tree; TBB/HDF5/SUNDIALS are used when new enough,
-# otherwise bundled copies are built.
+# consume directly: GSL and LAPACK/BLAS are required; Boost/TBB/HDF5/SUNDIALS are
+# auto-detected and used when new enough, otherwise the bundled copies are built.
 RUN apt-get -y update && apt-get -y install --no-install-recommends \
         git cmake build-essential gfortran \
         libopenblas-dev libgsl-dev \
@@ -68,7 +67,8 @@ LABEL org.opencontainers.image.description="DiFfRG bundled dependencies (Ubuntu 
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Same toolchain + system libraries: needed at CI time to build the DiFfRG library
-# against the bundled tree (compiler, cmake, and runtime/link dependencies).
+# against the bundled tree (compiler, cmake, and the system Boost/TBB/HDF5/SUNDIALS
+# that the standalone build resolves from standard paths).
 RUN apt-get -y update && apt-get -y install --no-install-recommends \
         git cmake build-essential gfortran \
         libopenblas-dev libgsl-dev \

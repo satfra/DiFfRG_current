@@ -7,8 +7,8 @@ ARG threads=4
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Toolchain (cmake 3.31, gcc 14 -> C++20) + system dependencies. GSL and
-# LAPACK/BLAS are required. Boost is always built from the vendored source tree;
-# TBB/HDF5/SUNDIALS are used when new enough, otherwise bundled copies are built.
+# LAPACK/BLAS are required; Boost/TBB/HDF5/SUNDIALS are auto-detected and used
+# when new enough, otherwise the bundled copies are built.
 RUN apt-get -y update && apt-get -y install --no-install-recommends \
         git cmake build-essential gfortran \
         libopenblas-dev libgsl-dev \
