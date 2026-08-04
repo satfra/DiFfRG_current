@@ -1813,17 +1813,17 @@ namespace DiFfRG
           data_out.register_readout(id);
           auto EoM_cell = this->EoM_cell;
           auto EoM_result = get_EoM_point_with_potential(
-              EoM_cell, solution_global, dof_handler, mapping, EoMfun, [&](const auto &p, const auto &) { return p; },
-              EoM_abs_tol, EoM_max_iter);
+              EoM_cell, solution_global, this->dof_handler, this->mapping, EoMfun,
+              [&](const auto &p, const auto &) { return p; }, this->EoM_abs_tol, this->EoM_max_iter);
           const auto EoM = EoM_result.point;
-          auto EoM_unit = mapping.transform_real_to_unit_cell(EoM_cell, EoM);
+          auto EoM_unit = this->mapping.transform_real_to_unit_cell(EoM_cell, EoM);
 
           using t_Iterator = typename Triangulation<dim>::active_cell_iterator;
 
           std::vector<std::shared_ptr<FEValues<dim>>> fe_v;
           for (uint k = 0; k < Components::count_fe_subsystems(); ++k) {
             fe_v.emplace_back(std::make_shared<FEValues<dim>>(
-                mapping, discretization.get_fe(k), EoM_unit,
+                this->mapping, this->discretization.get_fe(k), EoM_unit,
                 update_values | update_gradients | update_quadrature_points | update_JxW_values | update_hessians));
 
             auto cell = dof_handler_list[k]->begin_active();
