@@ -1,6 +1,6 @@
 #include <DiFfRG/discretization/FV/limiter/minmod_limiter.hh>
-#include <DiFfRG/discretization/FV/reconstructor/abstract_reconstructor.hh>
-#include <DiFfRG/discretization/FV/reconstructor/tvd_reconstructor.hh>
+#include <DiFfRG/discretization/FV/reconstructor/advection/abstract_reconstructor.hh>
+#include <DiFfRG/discretization/FV/reconstructor/advection/tvd_reconstructor.hh>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>

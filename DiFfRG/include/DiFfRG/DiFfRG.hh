@@ -47,8 +47,9 @@
  *    \ref DiFfRG::TimeStepperTRBDF2 "TRBDF2") steppers are also provided. The solution is
  *    held in \ref DiFfRG::AbstractFlowingVariables "AbstractFlowingVariables"
  *    (\ref DiFfRG::FE::FlowingVariables "FE::FlowingVariables").
- * -# **Output.** Results are written through \ref DiFfRG::DataOutput "DataOutput" (CSV /
- *    HDF5 / VTK), and the mesh can be refined adaptively with \ref DiFfRG::HAdaptivity
+ * -# **Output.** Results are written through run-owned \ref DiFfRG::OutputSession
+ *    "OutputSession" instances and scoped \ref DiFfRG::OutputFrame "OutputFrame" events
+ *    (CSV / HDF5 / VTK), and the mesh can be refined adaptively with \ref DiFfRG::HAdaptivity
  *    "HAdaptivity".
  *
  * \section mainpage_integration Momentum-space integration

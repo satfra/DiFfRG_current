@@ -12,8 +12,10 @@
 
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/common/run_logger.hh>
 #include <DiFfRG/discretization/FV/assembler/KurganovTadmor.hh>
-#include <DiFfRG/discretization/discretization.hh>
+#include <DiFfRG/discretization/data/data.hh>
+// #include <DiFfRG/discretization/discretization.hh>
 
 namespace DiFfRG
 {
@@ -36,9 +38,16 @@ namespace DiFfRG
       using SparseMatrixType = SparseMatrix<NumberType>;
       using Mesh = Mesh_;
       static constexpr uint dim = Mesh::dim;
+      static constexpr bool is_fv_discretization = true;
 
-      Discretization(Mesh &mesh, const JSONValue &json)
-          : mesh(mesh), json(json),
+      [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Discretization(
+          Mesh &mesh, DiFfRG::internal::LegacyDefaultLogPortArgument<Mesh, JSONValue> json)
+          : Discretization(mesh, json.value(), DiFfRG::internal::legacy_default_log_port<Mesh>())
+      {
+      }
+
+      Discretization(Mesh &mesh, const JSONValue &json, LogPort log_port)
+          : mesh(mesh), json(json), log_port(std::move(log_port)),
             fe(std::make_shared<FESystem<dim>>(FE_DGQ<dim>(0), Components::count_fe_functions(0))),
             dof_handler(mesh.get_triangulation())
       {
@@ -105,8 +114,8 @@ namespace DiFfRG
       {
         dof_handler.distribute_dofs(*fe);
 
-        spdlog::get("log")->info("FV: Number of active cells: {}", mesh.get_triangulation().n_active_cells());
-        spdlog::get("log")->info("FV: Number of degrees of freedom: {}", dof_handler.n_dofs());
+        log_port.info("FV: Number of active cells: {}", mesh.get_triangulation().n_active_cells());
+        log_port.info("FV: Number of degrees of freedom: {}", dof_handler.n_dofs());
 
         constraints.clear();
         DoFTools::make_hanging_node_constraints(dof_handler, constraints);
@@ -118,6 +127,7 @@ namespace DiFfRG
 
       Mesh &mesh;
       JSONValue json;
+      LogPort log_port;
 
       std::shared_ptr<FESystem<dim>> fe;
       DoFHandler<dim> dof_handler;

@@ -3,18 +3,20 @@
 #include <deal.II/lac/block_vector.h>
 #include <deal.II/sundials/ida.h>
 
+#include <algorithm>
 #include <cmath>
 #include <iomanip>
 #include <iostream>
 #include <limits>
 #include <sstream>
+#include <vector>
 
 // DiFfRG
 #include <DiFfRG/common/eigen.hh>
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/timestepping/linear_solver/GMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/ScaledGMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/UMFPack.hh>
@@ -113,6 +115,103 @@ namespace DiFfRG
                static_cast<const VectorType *>(nullptr), detail);
       }
     };
+
+    template <typename VectorType> class IDAErrorDofMonitor
+    {
+    public:
+      IDAErrorDofMonitor(const bool enabled, const uint top_n, const double Lambda)
+          : enabled(enabled), top_n(top_n), Lambda(Lambda)
+      {
+      }
+
+      template <typename IDAType, typename Callback>
+      void observe(const double t, const IDAType &time_stepper, const TimesteppingDiagnostics &diagnostics,
+                   const VectorType &solution, const Callback &callback)
+      {
+        if (!diagnostics.has_ida) return;
+
+        const long int previous_error_test_failures = initialized ? last_error_test_failures : 0;
+        initialized = true;
+        const long int reject_delta = diagnostics.ida_error_test_failures - previous_error_test_failures;
+        last_error_test_failures = diagnostics.ida_error_test_failures;
+        if (!enabled || reject_delta <= 0) return;
+
+        if constexpr (requires(const IDAType &ida, VectorType &errors, VectorType &weights) {
+                        ida.get_error_test_vectors(errors, weights);
+                      }) {
+          estimated_local_errors.reinit(solution);
+          error_weights.reinit(solution);
+
+          if (!time_stepper.get_error_test_vectors(estimated_local_errors, error_weights)) {
+            std::clog << "[IDA ERROR DOF DIAG] precision rejects +" << reject_delta << " at t=" << t
+                      << ": failed to query IDA local-error vectors\n";
+            return;
+          }
+
+          IDAErrorDofDiagnostics report;
+          report.t = t;
+          report.k = Lambda > 0. ? std::exp(-t) * Lambda : std::numeric_limits<double>::quiet_NaN();
+          report.reject_delta = reject_delta;
+          report.total_rejects = diagnostics.ida_error_test_failures;
+          report.ida_steps = diagnostics.ida_steps;
+          report.ida_last_step_size = diagnostics.ida_last_step_size;
+          report.ida_current_step_size = diagnostics.ida_current_step_size;
+          report.ida_current_time = diagnostics.ida_current_time;
+
+          const std::size_t n_dofs = solution.size();
+          report.top_dofs.reserve(std::min<std::size_t>(top_n, n_dofs));
+          double weighted_error_norm_squared = 0.;
+          std::vector<IDAErrorDofRecord> records;
+          records.reserve(n_dofs);
+          for (std::size_t i = 0; i < n_dofs; ++i) {
+            const double estimated_local_error = static_cast<double>(estimated_local_errors[i]);
+            const double error_weight = static_cast<double>(error_weights[i]);
+            const double contribution = std::abs(estimated_local_error * error_weight);
+            weighted_error_norm_squared += contribution * contribution;
+            records.push_back({static_cast<types::global_dof_index>(i), static_cast<double>(solution[i]),
+                               estimated_local_error, error_weight, contribution});
+          }
+
+          if (n_dofs > 0) report.wrms = std::sqrt(weighted_error_norm_squared / static_cast<double>(n_dofs));
+          const std::size_t report_count = std::min<std::size_t>(top_n, records.size());
+          std::partial_sort(records.begin(), records.begin() + report_count, records.end(),
+                            [](const auto &a, const auto &b) { return a.contribution > b.contribution; });
+          report.top_dofs.insert(report.top_dofs.end(), records.begin(), records.begin() + report_count);
+
+          if (callback) {
+            callback(report);
+          } else {
+            log_generic_report(report);
+          }
+        } else {
+          std::clog << "[IDA ERROR DOF DIAG] precision rejects +" << reject_delta << " at t=" << t
+                    << ": IDA local-error vectors are not available in this build\n";
+        }
+      }
+
+    private:
+      bool enabled = false;
+      uint top_n = 0;
+      double Lambda = -1.;
+      bool initialized = false;
+      long int last_error_test_failures = 0;
+      VectorType estimated_local_errors;
+      VectorType error_weights;
+
+      static void log_generic_report(const IDAErrorDofDiagnostics &report)
+      {
+        std::clog << std::setprecision(17) << "[IDA ERROR DOF DIAG] precision rejects +" << report.reject_delta
+                  << " at t=" << report.t << ", k=" << report.k << ", total_rejects=" << report.total_rejects
+                  << ", ida_steps=" << report.ida_steps << ", last_h=" << report.ida_last_step_size
+                  << ", current_h=" << report.ida_current_step_size << ", wrms=" << report.wrms << '\n';
+        for (std::size_t rank = 0; rank < report.top_dofs.size(); ++rank) {
+          const auto &record = report.top_dofs[rank];
+          std::clog << std::setprecision(17) << "[IDA ERROR DOF DIAG] rank=" << rank << " dof=" << record.dof
+                    << " y=" << record.value << " ele=" << record.estimated_local_error
+                    << " ewt=" << record.error_weight << " abs_ele_ewt=" << record.contribution << '\n';
+        }
+      }
+    };
   } // namespace
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
@@ -147,7 +246,8 @@ namespace DiFfRG
 
     // Create a SUNDIALS IDA object with the right settings
     typename SUNDIALS::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
-                                                                impl.max_non_linear_iterations, 0, impl.abs_tol, impl.rel_tol);
+                                                                impl.max_non_linear_iterations, 0, impl.abs_tol,
+                                                                impl.rel_tol);
     typename SUNDIALS::IDA<VectorType> time_stepper(ida_data);
 
     // Define some variables for monitoring
@@ -157,6 +257,9 @@ namespace DiFfRG
     IDACallbackDiagnostics callback_diagnostics;
     IDACallbackTrace callback_trace(impl.ida_callback_trace, impl.ida_callback_trace_min_t,
                                     impl.ida_callback_trace_max_lines, impl.ida_callback_trace_successes, this->Lambda);
+    IDAErrorDofMonitor<VectorType> error_dof_monitor(impl.ida_error_dof_diagnostics,
+                                                     impl.ida_error_dof_diagnostics_top_n, this->Lambda);
+    bool output_after_failure = false;
 
     // Initialize initial condition
     VectorType y = initial_data;
@@ -194,10 +297,15 @@ namespace DiFfRG
                                    unsigned int /*step_number*/) {
       if (!is_close(last_save, t, 1e-10)) {
         assembler->set_time(t);
-        assembler->attach_data_output(*data_out, sol, Vector<double>(), sol_dot, (*residual));
-        data_out->flush(t);
+        data_out->write_frame(t, [&](auto &frame) {
+          assembler->attach_data_output(frame, sol, Vector<double>(), sol_dot, (*residual));
+        });
 
         last_save = t;
+      }
+      if (!output_after_failure && !is_close(t, 0.)) {
+        const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+        error_dof_monitor.observe(t, time_stepper, current_diagnostics, sol, ida_error_dof_callback);
       }
     };
 
@@ -343,12 +451,14 @@ namespace DiFfRG
     try {
       time_stepper.solve_dae(y, y_dot);
     } catch (const std::exception &e) {
-      spdlog::get("log")->error("Timestepping failed: {}", e.what());
+      this->log.error("Timestepping failed: {}", e.what());
+      output_after_failure = true;
       time_stepper.output_step(stuck_t, y, y_dot, 0);
       throw;
     }
 
     initial_data = y;
+    this->drain_output();
   }
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
@@ -372,8 +482,9 @@ namespace DiFfRG
     FullMatrix<NumberType> variable_jacobian_inverse(n_vars);
 
     // Create a SUNDIALS IDA object with the right settings
-    typename SUNDIALS::IDA<BlockVectorType>::AdditionalData ida_data(
-        t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5, impl.max_non_linear_iterations, 0, impl.abs_tol, impl.rel_tol);
+    typename SUNDIALS::IDA<BlockVectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt,
+                                                                     impl.minimal_dt, 5, impl.max_non_linear_iterations,
+                                                                     0, impl.abs_tol, impl.rel_tol);
     typename SUNDIALS::IDA<BlockVectorType> time_stepper(ida_data);
 
     // Define some variables for monitoring
@@ -428,8 +539,9 @@ namespace DiFfRG
                                    unsigned int /*step_number*/) {
       if (!is_close(last_save, t, 1e-10)) {
         assembler->set_time(t);
-        assembler->attach_data_output(*data_out, sol.block(0), sol.block(1), sol_dot.block(0), (*residual).block(0));
-        data_out->flush(t);
+        data_out->write_frame(t, [&](auto &frame) {
+          assembler->attach_data_output(frame, sol.block(0), sol.block(1), sol_dot.block(0), (*residual).block(0));
+        });
 
         last_save = t;
       }
@@ -530,7 +642,8 @@ namespace DiFfRG
 
         linSolver.invert();
         variable_jacobian_inverse.invert(variable_jacobian);
-        const auto current_diagnostics_after_inversion = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+        const auto current_diagnostics_after_inversion =
+            make_timestepping_diagnostics(time_stepper, callback_diagnostics);
         console_out(t, "jacobian inversion", 3, &current_diagnostics_after_inversion);
 
         if (!std::isfinite(spatial_jacobian.frobenius_norm())) {
@@ -604,12 +717,13 @@ namespace DiFfRG
     try {
       time_stepper.solve_dae(y, y_dot);
     } catch (const std::exception &e) {
-      spdlog::get("log")->error("Timestepping failed: {}", e.what());
+      this->log.error("Timestepping failed: {}", e.what());
       time_stepper.output_step(stuck_t, y, y_dot, 0);
       throw;
     }
 
     initial_data = y;
+    this->drain_output();
   }
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
@@ -628,7 +742,8 @@ namespace DiFfRG
 
     // Create a SUNDIALS IDA object with the right settings
     typename SUNDIALS::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
-                                                                impl.max_non_linear_iterations, 0, impl.abs_tol, impl.rel_tol);
+                                                                impl.max_non_linear_iterations, 0, impl.abs_tol,
+                                                                impl.rel_tol);
     typename SUNDIALS::IDA<VectorType> time_stepper(ida_data);
 
     // Define some variables for monitoring
@@ -638,6 +753,9 @@ namespace DiFfRG
     IDACallbackDiagnostics callback_diagnostics;
     IDACallbackTrace callback_trace(impl.ida_callback_trace, impl.ida_callback_trace_min_t,
                                     impl.ida_callback_trace_max_lines, impl.ida_callback_trace_successes, this->Lambda);
+    IDAErrorDofMonitor<VectorType> error_dof_monitor(impl.ida_error_dof_diagnostics,
+                                                     impl.ida_error_dof_diagnostics_top_n, this->Lambda);
+    bool output_after_failure = false;
 
     // Initialize initial condition
     VectorType y = initial_data;
@@ -653,10 +771,14 @@ namespace DiFfRG
                                    uint /*step_number*/) {
       if (!is_close(last_save, t, 1e-10)) {
         assembler->set_time(t);
-        assembler->attach_data_output(*data_out, Vector<double>(), sol);
-        data_out->flush(t);
+        data_out->write_frame(t,
+                              [&](auto &frame) { assembler->attach_data_output(frame, Vector<double>(), sol); });
 
         last_save = t;
+      }
+      if (!output_after_failure && !is_close(t, 0.)) {
+        const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+        error_dof_monitor.observe(t, time_stepper, current_diagnostics, sol, ida_error_dof_callback);
       }
     };
 
@@ -805,12 +927,14 @@ namespace DiFfRG
     try {
       time_stepper.solve_dae(y, y_dot);
     } catch (const std::exception &e) {
-      spdlog::get("log")->error("Timestepping failed: {}", e.what());
+      this->log.error("Timestepping failed: {}", e.what());
+      output_after_failure = true;
       time_stepper.output_step(stuck_t, y, y_dot, 0);
       throw;
     }
 
     initial_data = y;
+    this->drain_output();
   }
 } // namespace DiFfRG
 

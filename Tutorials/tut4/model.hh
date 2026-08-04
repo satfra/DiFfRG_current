@@ -164,7 +164,7 @@ public:
       throw std::runtime_error("Diverging result: Zc(0) = " + std::to_string(Zc[0]));
     }
 
-    auto &hdf = output.hdf5();
+    auto hdf = output.hdf5();
     hdf.map("ZA", coordinates1D, &(variables.data()[idxv("ZA")]));
     hdf.map("Zc", coordinates1D, &(variables.data()[idxv("Zc")]));
 

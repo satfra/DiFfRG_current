@@ -60,6 +60,18 @@ TEST_CASE("Test implicit euler with KT Burgers model", "[timestepping][Burgers][
   using TimeStepper = TimeStepperImplicitEuler<VectorType, SparseMatrixType, dim, UMFPack>;
   REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_implicit_euler_burgers_kt", 5e-2));
 }
+TEST_CASE("Test implicit euler with 2D KT Burgers model", "[timestepping][Burgers][implicit_euler][kt][2d]")
+{
+  constexpr uint dim = 2;
+  using Model = Testing::ModelBurgers2DKT;
+  using NumberType = double;
+  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<dim>>;
+  using VectorType = typename Discretization::VectorType;
+  using SparseMatrixType = typename Discretization::SparseMatrixType;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using TimeStepper = TimeStepperImplicitEuler<VectorType, SparseMatrixType, dim, UMFPack>;
+  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_implicit_euler_burgers_2d_kt", 6e-2));
+}
 TEST_CASE("Test implicit euler with KT viscous Burgers traveling wave",
           "[timestepping][Burgers][implicit_euler][kt][traveling_wave]")
 {

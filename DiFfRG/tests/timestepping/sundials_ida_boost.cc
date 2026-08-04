@@ -90,10 +90,11 @@ bool run_hybrid(const std::string &test_name, double expected_precision, double 
 
   Testing::PhysicalParameters p_prm = {};
   Model model(p_prm);
-  RectangularMesh<dim> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
-  DataOutput<dim, VectorType> data_out("./", test_name, test_name + '/', json);
+  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, test_name, test_name);
+  OutputSession<dim, VectorType> data_out(data_out_path, json);
   HAdaptivity mesh_adaptor(assembler, json);
   TimeStepper time_stepper(json, &assembler, &data_out, &mesh_adaptor);
 

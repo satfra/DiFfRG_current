@@ -2,7 +2,7 @@
 
 // DiFfRG
 #include <DiFfRG/discretization/FV/limiter/minmod_limiter.hh>
-#include <DiFfRG/discretization/FV/reconstructor/tvd_reconstructor.hh>
+#include <DiFfRG/discretization/FV/reconstructor/advection/tvd_reconstructor.hh>
 
 #include <boilerplate/models.hh>
 
@@ -93,6 +93,56 @@ namespace DiFfRG
         static_assert(mdim == 1, "KT boundary stencils in boilerplate models are currently one-dimensional.");
         fill_face_ghost_solution_boundary_stencil(u_stencil, x_stencil, x_face,
                                                   [this](const Point<1> &pos) { return solution(pos); });
+        return true;
+      }
+    };
+
+    class ModelBurgers2DKT
+        : public def::AbstractModel<ModelBurgers2DKT, ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>>>,
+          public def::Time,
+          public def::LLFFlux<ModelBurgers2DKT>,
+          public def::FlowBoundaries<ModelBurgers2DKT>,
+          public def::AD<ModelBurgers2DKT>
+    {
+    protected:
+      const PhysicalParameters prm;
+
+    public:
+      static constexpr uint dim = 2;
+      ModelBurgers2DKT(PhysicalParameters prm) : prm(prm) {}
+
+      double denominator() const { return 1.0 + (prm.initial_x1[0] + prm.initial_x2[0]) * t; }
+
+      template <typename Vector> void initial_condition(const Point<2> &pos, Vector &values) const
+      {
+        values[0] = prm.initial_x0[0] + prm.initial_x1[0] * pos[0] + prm.initial_x2[0] * pos[1];
+      }
+
+      std::array<double, 1> solution(const Point<2> &pos) const
+      {
+        return {(prm.initial_x0[0] + prm.initial_x1[0] * pos[0] + prm.initial_x2[0] * pos[1]) / denominator()};
+      }
+
+      template <typename NT, typename Solution>
+      void KurganovTadmor_advection_flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/,
+                                         const Solution &sol) const
+      {
+        const auto &fe_functions = get<0>(sol);
+        const auto flux = 0.5 * powr<2>(fe_functions[0]);
+        F_i[0][0] = flux;
+        F_i[0][1] = flux;
+      }
+
+      template <int mdim, typename NumberType, size_t n_components>
+      bool apply_boundary_stencil(def::BoundaryStencilValues<mdim, NumberType, n_components> &u_stencil,
+                                  def::BoundaryStencilPoints<mdim> &x_stencil,
+                                  [[maybe_unused]] const Point<mdim> &x_face) const
+      {
+        static_assert(mdim == 2, "ModelBurgers2DKT boundary stencils are two-dimensional.");
+        for (size_t i = 0; i < x_stencil.size(); ++i)
+          u_stencil[i][0] = (NumberType(prm.initial_x0[0]) + NumberType(prm.initial_x1[0]) * x_stencil[i][0] +
+                             NumberType(prm.initial_x2[0]) * x_stencil[i][1]) /
+                            NumberType(denominator());
         return true;
       }
     };

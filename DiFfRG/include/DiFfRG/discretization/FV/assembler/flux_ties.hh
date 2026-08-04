@@ -18,6 +18,11 @@ namespace DiFfRG
 
         template <typename... T> auto flux_tie(T &&...t)
         {
+          return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "fe_derivatives">>(std::tie(t...));
+        }
+
+        template <typename... T> auto diffusion_flux_tie(T &&...t)
+        {
           return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "fe_derivatives", "fe_third_derivatives">>(
               std::tie(t...));
         }

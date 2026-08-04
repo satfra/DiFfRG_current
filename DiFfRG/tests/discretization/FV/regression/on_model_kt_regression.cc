@@ -1,8 +1,6 @@
 #include "DiFfRG/discretization/FV/assembler/KurganovTadmor.hh"
 #include "DiFfRG/discretization/FV/discretization.hh"
 #include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed.hh>
-#include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed_fd.hh>
-#include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed_zero_deriv.hh>
 // CG comparison test (same physics as KT but with continuous Galerkin
 // discretisation). See ON_CG_LSM_Model below.
 #include "DiFfRG/timestepping/timestepping.hh"
@@ -56,8 +54,8 @@ namespace
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
 
   template <typename Model>
-  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor,
-                                                  FV::KurganovTadmor::MaxEigenvalueWaveSpeedZeroDeriv>;
+  using Assembler =
+      FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor, FV::KurganovTadmor::MaxEigenvalueWaveSpeed>;
   using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
 
   struct GridSettings {
@@ -458,7 +456,6 @@ namespace
            {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
-           {"output_buffer_size", 1},
            {"EoM_abs_tol", 1e-10},
            {"EoM_max_iter", 0}}},
          {"timestepping",
@@ -552,21 +549,6 @@ namespace
     return Config::ConfigurationMesh<1>(0u, std::vector<Config::GridAxis>{sigma_axis});
   }
 
-  void initialize_exact_cell_averages(FV::FlowingVariables<Discretization> &state,
-                                      const std::vector<Point<dim>> &support_points, const FlowCase &flow_case,
-                                      const GridSettings &grid_settings)
-  {
-    auto &u = state.spatial_data();
-    REQUIRE(u.size() == support_points.size());
-    const double delta = grid_spacing(grid_settings);
-    for (unsigned int i = 0; i < u.size(); ++i) {
-      const double sigma = support_points[i][0];
-      const double right = scenario_potential(flow_case.scenario, sigma + 0.5 * delta);
-      const double left = scenario_potential(flow_case.scenario, sigma - 0.5 * delta);
-      u[i] = (right - left) / delta;
-    }
-  }
-
   SimulationResult sample_state(const FV::FlowingVariables<Discretization> &state, const Discretization &discretization)
   {
     const SampledProfile sampled_u = kt_regression::sample_sorted_profile(state, discretization, grid_tol);
@@ -598,11 +580,12 @@ namespace
     const JSONValue json = make_json(flow_case, threads);
     ModelType model(json, flow_case, grid_settings);
     Mesh mesh(make_mesh_config(grid_settings));
-    Discretization discretization(mesh, json);
-    Assembler<ModelType> assembler(discretization, model, json);
+    Discretization discretization(mesh, json, DiFfRG::LogPort{});
+    Assembler<ModelType> assembler(discretization, model, json, DiFfRG::LogPort{});
 
-    kt_regression::TemporaryDirectory tmp_dir("on_model_kt_regression");
-    DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), "on_model_kt_regression", "output", json);
+    auto data_out_path =
+        OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_model_kt_regression", "output");
+    OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 
@@ -622,8 +605,6 @@ namespace
     for (std::size_t i = 0; i < initial_support_points.size(); ++i)
       REQUIRE(initial_support_points[i] ==
               Catch::Approx(grid_settings.sigma_min + static_cast<double>(i) * delta).margin(grid_tol));
-
-    initialize_exact_cell_averages(state, support_points, flow_case, grid_settings);
 
     std::vector<SimulationResult> snapshots;
     snapshots.reserve(times_to_sample.size());
@@ -654,11 +635,12 @@ namespace
     const JSONValue json = make_json(flow_case, threads);
     ModelType model(json, flow_case, grid_settings);
     Mesh mesh(make_mesh_config(grid_settings));
-    Discretization discretization(mesh, json);
-    Assembler<ModelType> assembler(discretization, model, json);
+    Discretization discretization(mesh, json, DiFfRG::LogPort{});
+    Assembler<ModelType> assembler(discretization, model, json, DiFfRG::LogPort{});
 
-    kt_regression::TemporaryDirectory tmp_dir("on_model_kt_regression");
-    DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), "on_model_kt_regression", "output", json);
+    auto data_out_path =
+        OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_model_kt_regression", "output");
+    OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 
@@ -667,7 +649,6 @@ namespace
 
     const auto &support_points = discretization.get_support_points();
     REQUIRE(support_points.size() == grid_settings.cells);
-    initialize_exact_cell_averages(state, support_points, flow_case, grid_settings);
 
     time_stepper.run(&state, 0.0, target_time);
   }

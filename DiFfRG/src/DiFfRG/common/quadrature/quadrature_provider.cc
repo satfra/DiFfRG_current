@@ -3,9 +3,7 @@
 #include <DiFfRG/common/quadrature/quadrature_provider.hh>
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/common/utils.hh>
-
-// external
-#include <spdlog/spdlog.h>
+#include <DiFfRG/common/mpi.hh>
 
 namespace DiFfRG
 {
@@ -56,9 +54,8 @@ namespace DiFfRG
       new_it->second.reinit(T_it->first, E, 2, min_matsubara_size, max_matsubara_size, vacuum_quad_size, matsubara_precision_factor);
 
       if (verbosity >= 0)
-        spdlog::get("QuadratureProvider")
-            ->info("Created MatsubaraQuadrature<double> with T = {:.4} and E = {:.4} and size = {}", T_it->first, E,
-                   new_it->second.size());
+        log.info("Created MatsubaraQuadrature<double> with T = {:.4} and E = {:.4} and size = {}", T_it->first, E,
+                 new_it->second.size());
 
       return new_it;
     }
@@ -107,9 +104,8 @@ namespace DiFfRG
       new_it->second.reinit(T_it->first, E, 2, min_matsubara_size, max_matsubara_size, vacuum_quad_size, matsubara_precision_factor);
 
       if (verbosity >= 0)
-        spdlog::get("QuadratureProvider")
-            ->info("Created MatsubaraQuadrature<float> with T = {:.4} and E = {:.4} and size = {}", T_it->first, E,
-                   new_it->second.size());
+        log.info("Created MatsubaraQuadrature<float> with T = {:.4} and E = {:.4} and size = {}", T_it->first, E,
+                 new_it->second.size());
 
       return new_it;
     }
@@ -164,8 +160,7 @@ namespace DiFfRG
       new_it->second.reinit(order, type_it->first);
 
       if (verbosity >= 0)
-        spdlog::get("QuadratureProvider")
-            ->info("Created Quadrature<double> with order = {0} and type = {1}", order, (uint)type_it->first.kind);
+        log.info("Created Quadrature<double> with order = {0} and type = {1}", order, (uint)type_it->first.kind);
 
       return new_it;
     }
@@ -198,8 +193,7 @@ namespace DiFfRG
       new_it->second.reinit(order, type_it->first);
 
       if (verbosity >= 0)
-        spdlog::get("QuadratureProvider")
-            ->info("Created Quadrature<float> with order = {0} and type = {1}", order, (uint)type_it->first.kind);
+        log.info("Created Quadrature<float> with order = {0} and type = {1}", order, (uint)type_it->first.kind);
 
       return new_it;
     }
@@ -216,21 +210,17 @@ namespace DiFfRG
     quadrature_storage.set_verbosity(verbosity);
   }
 
-  QuadratureProvider::QuadratureProvider(const JSONValue &json)
+  QuadratureProvider::QuadratureProvider(const JSONValue &json, LogPort log)
   {
     if (!DiFfRG::Init::is_initialized()) throw std::runtime_error("QuadratureProvider: DiFfRG is not initialized.");
 
     verbosity = json.get_int("/output/verbosity", 0);
-    std::string folder = json.get_string("/output/folder", "./");
-    std::string output_name = json.get_string("/output/name", "output");
-
-    // create a spdlog logger for the quadrature provider
-    build_logger("QuadratureProvider", folder + output_name + "_quadrature.log");
-
-    if (verbosity >= 0) spdlog::get("QuadratureProvider")->info("QuadratureProvider: Initialized quadrature provider.");
+    if (verbosity >= 0) log.info("QuadratureProvider: Initialized quadrature provider.");
 
     matsubara_storage.set_verbosity(verbosity);
+    matsubara_storage.set_log_port(log);
     quadrature_storage.set_verbosity(verbosity);
+    quadrature_storage.set_log_port(log);
 
     const int vacuum_quad_size = json.get_uint("/integration/vacuum_quad_size", 64);
     matsubara_storage.set_vacuum_quad_size(vacuum_quad_size);

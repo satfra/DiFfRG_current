@@ -21,10 +21,12 @@ int main(int argc, char *argv[])
 
   // Define the objects needed to run the simulation
   Model model(json);
-  RectangularMesh<dim> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
-  DataOutput<dim, VectorType> data_out(json);
+  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  OutputPath output_path(json);
+  OutputSession<dim, VectorType> data_out(output_path, json);
+  const auto log = data_out.log_port();
+  Discretization discretization(mesh, json, log);
+  Assembler assembler(discretization, model, json, log);
   HAdaptivity mesh_adaptor(assembler, json);
   TimeStepper time_stepper(json, &assembler, &data_out, &mesh_adaptor);
 
@@ -37,11 +39,11 @@ int main(int argc, char *argv[])
   try {
     time_stepper.run(&initial_condition, 0., json.get_double("/timestepping/final_time"));
   } catch (std::exception &e) {
-    spdlog::get("log")->error("Simulation finished with exception {}", e.what());
+    log.error("Simulation finished with exception {}", e.what());
     return -1;
   }
   auto time = timer.wall_time();
-  assembler.log("log");
-  spdlog::get("log")->info("Simulation finished after " + time_format(time));
+  assembler.log();
+  log.info("Simulation finished after " + time_format(time));
   return 0;
 }

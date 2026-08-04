@@ -142,6 +142,61 @@ TEST_CASE("Mesh Configuration exists", "[MeshConfiguration]")
   }
 }
 
+TEST_CASE("Mesh Configuration computes origin-centered triangulation data", "[MeshConfiguration][origin-centered]")
+{
+  using Catch::Matchers::WithinAbs;
+
+  SECTION("keeps default triangulation data unchanged")
+  {
+    const std::vector<GridAxis> x_grid{GridAxis(0.0, 0.1, 5.0)};
+    const ConfigurationMesh<1> mesh_config(0u, x_grid);
+    const auto data = mesh_config.get_triangulation_data();
+
+    CHECK(data.lower_left == mesh_config.get_lower_left());
+    CHECK(data.upper_right == mesh_config.get_upper_right());
+    CHECK(data.step_sizes == mesh_config.get_step_withs_for_triangulation());
+  }
+
+  SECTION("adjusts bounds and first subrange widths coherently")
+  {
+    const std::vector<GridAxis> x_grid{GridAxis(0.0, 0.1, 5.0)};
+    const ConfigurationMesh<1> mesh_config(0u, x_grid);
+    const auto data = mesh_config.get_triangulation_data(true);
+
+    constexpr double expected_width = 5.0 / 50.5;
+    REQUIRE(data.step_sizes[0].size() == 51);
+    CHECK_THAT(data.lower_left[0], WithinAbs(-0.5 * expected_width, 1.0e-12));
+    CHECK_THAT(data.upper_right[0], WithinAbs(5.0, 1.0e-12));
+    for (const double width : data.step_sizes[0])
+      CHECK_THAT(width, WithinAbs(expected_width, 1.0e-12));
+  }
+
+  SECTION("accounts for refinement and preserves later subranges")
+  {
+    const std::vector<GridAxis> x_grid{GridAxis(0.0, 0.25, 1.0), GridAxis(1.0, 0.5, 2.0)};
+    const ConfigurationMesh<1> mesh_config(1u, x_grid);
+    const auto data = mesh_config.get_triangulation_data(true);
+
+    constexpr double expected_first_width = 1.0 / 4.75;
+    REQUIRE(data.step_sizes[0].size() == 7);
+    CHECK_THAT(data.lower_left[0], WithinAbs(-expected_first_width / 4.0, 1.0e-12));
+    CHECK_THAT(data.upper_right[0], WithinAbs(2.0, 1.0e-12));
+    for (std::size_t i = 0; i < 5; ++i)
+      CHECK_THAT(data.step_sizes[0][i], WithinAbs(expected_first_width, 1.0e-12));
+    for (std::size_t i = 5; i < 7; ++i)
+      CHECK_THAT(data.step_sizes[0][i], WithinAbs(0.5, 1.0e-12));
+  }
+
+  SECTION("rejects axes not starting at zero")
+  {
+    const std::vector<GridAxis> x_grid{GridAxis(0.1, 0.1, 1.0)};
+    const ConfigurationMesh<1> mesh_config(0u, x_grid);
+
+    CHECK_THROWS_WITH(mesh_config.get_triangulation_data(true),
+                      "Origin-centered rectangular meshes require every configured axis to start at zero.");
+  }
+}
+
 TEST_CASE("GridAxis tests", "[MeshConfiguration]")
 {
   SECTION("parses range_string \"0:0.1:1\" correctly")
@@ -180,12 +235,37 @@ TEST_CASE("GridAxis tests", "[MeshConfiguration]")
     REQUIRE(size(grid_axis.get_stepwiths()) == 1);
     REQUIRE(grid_axis.get_stepwiths() == std::vector<double>{2.0});
   }
+
+  SECTION("chooses the smallest origin-centered cell count with a smaller step width")
+  {
+    const GridAxis grid_axis(0.0, 0.3, 5.0);
+    const auto step_widths = grid_axis.get_stepwiths(true);
+
+    constexpr double expected_width = 5.0 / 17.5;
+    REQUIRE(step_widths.size() == 18);
+    CHECK_THAT(step_widths.front(), Catch::Matchers::WithinAbs(expected_width, 1.0e-12));
+    CHECK(step_widths.front() < grid_axis.step);
+    CHECK_FALSE(5.0 / 16.5 < grid_axis.step);
+  }
+
+  SECTION("accounts for global refinement when choosing the smallest origin-centered cell count")
+  {
+    const GridAxis grid_axis(0.0, 0.3, 5.0);
+    const auto step_widths = grid_axis.get_stepwiths(true, 1u);
+
+    constexpr double expected_width = 5.0 / 16.75;
+    REQUIRE(step_widths.size() == 17);
+    CHECK_THAT(step_widths.front(), Catch::Matchers::WithinAbs(expected_width, 1.0e-12));
+    CHECK(step_widths.front() < grid_axis.step);
+  }
 }
 
 TEST_CASE("throws when range is invalid", "[MeshConfiguration]")
 {
   CHECK_THROWS(GridAxis("0.1:0.01:0.0"));
   CHECK_THROWS(GridAxis("0.1:2.0:1.0"));
+  CHECK_THROWS(GridAxis("0.0:0.0:1.0"));
+  CHECK_THROWS(GridAxis("0.0:-0.1:1.0"));
 }
 
 TEST_CASE("parses default JSON grid configuration", "[MeshConfiguration]")

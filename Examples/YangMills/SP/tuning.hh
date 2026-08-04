@@ -1,52 +1,52 @@
 #pragma once
 
 #include <DiFfRG/common/minimization.hh>
+#include <DiFfRG/common/mpi.hh>
 #include <DiFfRG/common/root_finding.hh>
+#include <DiFfRG/common/run_logger.hh>
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/discretization/data/output_path.hh>
+#include <DiFfRG/discretization/data/output_settings.hh>
 
 #include <filesystem>
 
 template <typename FUN>
-double tune_m2A(JSONValue &json, const std::string top_folder, const std::string output_name, const FUN &run,
-                double hint_m2A = 0.0, double hint_delta = -1.0, double tol_override = -1.0)
+double tune_m2A(JSONValue &json, const OutputPath &output_path, const FUN &run, double hint_m2A = 0.0,
+                double hint_delta = -1.0, double tol_override = -1.0)
 {
   const double tol = tol_override > 0 ? tol_override : json.get_double("/tuning/m2A_tol");
   const uint precision = (uint)std::max(-std::log10(tol), 11.) + 1;
 
   double lower_m2A, upper_m2A;
 
-  auto logger = build_logger("m2Alog", top_folder + output_name + "_m2A_tuning/" + "tuning.log");
+  const auto tuning_path = output_path.child(output_path.run_name() + "_m2A_tuning", "tuning");
+  RunLogger tuning_logger(tuning_path, OutputSettings(json), MPI::rank(MPI_COMM_WORLD) == 0);
+  const auto log = tuning_logger.port();
+  std::filesystem::path last_sim_folder;
+  const auto run_at = [&](const double value) {
+    std::stringstream name;
+    name << std::scientific << std::setprecision(precision) << "m2A_" << value;
+    auto trial_path = tuning_path.child(name.str(), output_path.run_name(), output_path.field_directory());
+    last_sim_folder = trial_path.root();
+    return run(json, trial_path, log);
+  };
 
   if (hint_delta > 0) {
     // Warm-start: use hint as center with narrow bracket
     lower_m2A = hint_m2A - hint_delta;
     upper_m2A = hint_m2A + hint_delta;
-    spdlog::get("m2Alog")->info("Warm-start m2A bracket: [{:.12e}, {:.12e}]", lower_m2A, upper_m2A);
+    log.info("Warm-start m2A bracket: [{:.12e}, {:.12e}]", lower_m2A, upper_m2A);
 
     // Validate bracket: test both endpoints
     json.set_double("/physical/m2A", lower_m2A);
-    {
-      std::stringstream ss;
-      ss << top_folder << output_name << "_m2A_tuning/";
-      ss << std::scientific << std::setprecision(precision);
-      ss << "m2A_" << lower_m2A;
-      json.set_string("/output/folder", ss.str());
-    }
-    const bool lower_result = run(json, "m2Alog");
+    const bool lower_result = run_at(lower_m2A);
 
     json.set_double("/physical/m2A", upper_m2A);
-    {
-      std::stringstream ss;
-      ss << top_folder << output_name << "_m2A_tuning/";
-      ss << std::scientific << std::setprecision(precision);
-      ss << "m2A_" << upper_m2A;
-      json.set_string("/output/folder", ss.str());
-    }
-    const bool upper_result = run(json, "m2Alog");
+    const bool upper_result = run_at(upper_m2A);
 
     if (lower_result == upper_result) {
       // Bracket doesn't straddle root — expand up to 5x, then fall back
-      spdlog::get("m2Alog")->info("Warm-start bracket invalid, expanding...");
+      log.info("Warm-start bracket invalid, expanding...");
       bool found = false;
       for (int attempt = 0; attempt < 5; ++attempt) {
         hint_delta *= 2.0;
@@ -55,31 +55,21 @@ double tune_m2A(JSONValue &json, const std::string top_folder, const std::string
         if (lower_result) {
           // Both succeeded — need lower to fail, so expand downward
           json.set_double("/physical/m2A", lower_m2A);
-          std::stringstream ss;
-          ss << top_folder << output_name << "_m2A_tuning/";
-          ss << std::scientific << std::setprecision(precision);
-          ss << "m2A_" << lower_m2A;
-          json.set_string("/output/folder", ss.str());
-          if (!run(json, "m2Alog")) {
+          if (!run_at(lower_m2A)) {
             found = true;
             break;
           }
         } else {
           // Both failed — need upper to succeed, so expand upward
           json.set_double("/physical/m2A", upper_m2A);
-          std::stringstream ss;
-          ss << top_folder << output_name << "_m2A_tuning/";
-          ss << std::scientific << std::setprecision(precision);
-          ss << "m2A_" << upper_m2A;
-          json.set_string("/output/folder", ss.str());
-          if (run(json, "m2Alog")) {
+          if (run_at(upper_m2A)) {
             found = true;
             break;
           }
         }
       }
       if (!found) {
-        spdlog::get("m2Alog")->warn("Warm-start expansion failed, falling back to cold-start");
+        log.warn("Warm-start expansion failed, falling back to cold-start");
         hint_delta = -1.0;
       }
     }
@@ -98,16 +88,11 @@ double tune_m2A(JSONValue &json, const std::string top_folder, const std::string
     bool bounds_ok = false;
     int bound_iter = 0;
     while (!bounds_ok && bound_iter++ < max_bound_iter) {
-      std::stringstream ss;
-      ss << top_folder << output_name << "_m2A_tuning/";
-      ss << std::scientific << std::setprecision(precision);
-      ss << "m2A_" << lower_m2A;
-      json.set_string("/output/folder", ss.str());
       json.set_double("/physical/m2A", lower_m2A);
 
-      spdlog::get("m2Alog")->info("Testing lower bound for m2A: {:.12e}", lower_m2A);
+      log.info("Testing lower bound for m2A: {:.12e}", lower_m2A);
 
-      if (run(json, "m2Alog"))
+      if (run_at(lower_m2A))
         lower_m2A -= 0.1 * std::abs(init_m2A);
       else
         // The lower bound is too low, but that's fine, the tuning will take
@@ -122,16 +107,11 @@ double tune_m2A(JSONValue &json, const std::string top_folder, const std::string
     bounds_ok = false;
     bound_iter = 0;
     while (!bounds_ok && bound_iter++ < max_bound_iter) {
-      std::stringstream ss;
-      ss << top_folder << output_name << "_m2A_tuning/";
-      ss << std::scientific << std::setprecision(precision);
-      ss << "m2A_" << upper_m2A;
-      json.set_string("/output/folder", ss.str());
       json.set_double("/physical/m2A", upper_m2A);
 
-      spdlog::get("m2Alog")->info("Testing upper bound for m2A: {:.12e}", upper_m2A);
+      log.info("Testing upper bound for m2A: {:.12e}", upper_m2A);
 
-      if (!run(json, "m2Alog")) {
+      if (!run_at(upper_m2A)) {
         // The upper bound is too low, so we double it and try again.
         lower_m2A = upper_m2A;
         upper_m2A += 0.1 * std::abs(init_m2A);
@@ -144,40 +124,34 @@ double tune_m2A(JSONValue &json, const std::string top_folder, const std::string
                                " iterations");
   }
 
-  spdlog::get("m2Alog")->info("Lower bound for m2A: {:.12e}", lower_m2A);
-  spdlog::get("m2Alog")->info("Upper bound for m2A: {:.12e}", upper_m2A);
+  log.info("Lower bound for m2A: {:.12e}", lower_m2A);
+  log.info("Upper bound for m2A: {:.12e}", upper_m2A);
 
   BisectionRootFinder search(
       [&](const double x) -> bool {
-        std::stringstream ss;
-        ss << top_folder << output_name << "_m2A_tuning/";
-        ss << std::scientific << std::setprecision(precision);
-        ss << "m2A_" << x;
-        json.set_string("/output/folder", ss.str());
         json.set_double("/physical/m2A", x);
 
-        spdlog::get("m2Alog")->info("Tuning step {} with m2A = {:.12e}", search.get_iter(), x);
+        log.info("Tuning step {} with m2A = {:.12e}", search.get_iter(), x);
 
-        return run(json, "m2Alog");
+        return run_at(x);
       },
       tol, 100);
   search.set_bounds(lower_m2A, upper_m2A);
   const double m2A = search.search();
   const int tuning_steps = search.get_iter();
 
-  const std::string last_sim_folder = json.get_string("/output/folder");
-  std::filesystem::copy(last_sim_folder, top_folder,
-                        std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing);
+  output_path.copy_tree_from(last_sim_folder);
 
-  spdlog::get("m2Alog")->info("m2A Tuning finished after {} steps, m2A = {:.12e}({:.12e})", tuning_steps, m2A, tol);
+  log.info("m2A Tuning finished after {} steps, m2A = {:.12e}({:.12e})", tuning_steps, m2A, tol);
   spdlog::drop("m2Alog");
   return m2A;
 }
 
-template <typename FUN>
-void tune_STI(JSONValue &json, const std::string top_folder, const std::string output_name, const FUN &run)
+template <typename FUN> void tune_STI(JSONValue &json, const OutputPath &output_path, const FUN &run)
 {
-  auto logger = build_logger("STIlog", top_folder + output_name + "_STI_tuning/tuning.log");
+  const auto tuning_path = output_path.child(output_path.run_name() + "_STI_tuning", "tuning");
+  RunLogger tuning_logger(tuning_path, OutputSettings(json), MPI::rank(MPI_COMM_WORLD) == 0);
+  const auto log = tuning_logger.port();
 
   const double original_final_time = json.get_double("/timestepping/final_time");
 
@@ -193,12 +167,11 @@ void tune_STI(JSONValue &json, const std::string top_folder, const std::string o
   json.set_uint("/integration/cos2_order", std::max(1u, (uint)(original_cos2_order * STI_quadrature_factor)));
   json.set_uint("/integration/phi_order", std::max(1u, (uint)(original_phi_order * STI_quadrature_factor)));
 
-  spdlog::get("STIlog")->info("Quadrature reduction factor: {:.2f} (x: {} -> {}, cos1: {} -> {}, cos2: "
-                              "{} -> {}, phi: {} -> {})",
-                              STI_quadrature_factor, original_x_order, json.get_uint("/integration/x_order"),
-                              original_cos1_order, json.get_uint("/integration/cos1_order"), original_cos2_order,
-                              json.get_uint("/integration/cos2_order"), original_phi_order,
-                              json.get_uint("/integration/phi_order"));
+  log.info("Quadrature reduction factor: {:.2f} (x: {} -> {}, cos1: {} -> {}, cos2: "
+           "{} -> {}, phi: {} -> {})",
+           STI_quadrature_factor, original_x_order, json.get_uint("/integration/x_order"), original_cos1_order,
+           json.get_uint("/integration/cos1_order"), original_cos2_order, json.get_uint("/integration/cos2_order"),
+           original_phi_order, json.get_uint("/integration/phi_order"));
 
   uint counter = 0;
   double last_m2A = 0.0;
@@ -206,29 +179,27 @@ void tune_STI(JSONValue &json, const std::string top_folder, const std::string o
   std::vector<std::array<double, 2>> x_values;
   GSLSimplexMinimizer<2> minimizer(
       [&](const std::array<double, 2> &x) -> double {
-        std::stringstream ss;
-        ss << top_folder << output_name << "_STI_tuning/step_" << counter << "/";
-        json.set_string("/output/folder", ss.str());
+        auto step_path =
+            tuning_path.child("step_" + std::to_string(counter), output_path.run_name(), output_path.field_directory());
 
         json.set_double("/physical/alphaA3", x[0]);
         json.set_double("/physical/alphaA4", x[1]);
 
         x_values.push_back(x);
 
-        spdlog::get("STIlog")->info("STI tuning step {}:\n    alphaAcbc = {:.8e},\n    alphaA3 = "
-                                    "{:.8e},\n    alphaA4 = {:.8e}",
-                                    counter, json.get_double("/physical/alphaAcbc"), x[0], x[1]);
+        log.info("STI tuning step {}:\n    alphaAcbc = {:.8e},\n    alphaA3 = "
+                 "{:.8e},\n    alphaA4 = {:.8e}",
+                 counter, json.get_double("/physical/alphaAcbc"), x[0], x[1]);
 
         // Use shorter flow during STI search
         json.set_double("/timestepping/final_time", json.get_double("/tuning/STI_flow_final_time"));
 
-        last_m2A =
-            tune_m2A(json, ss.str(), output_name, run, last_m2A, warm_delta, json.get_double("/tuning/m2A_tol_coarse"));
+        last_m2A = tune_m2A(json, step_path, run, last_m2A, warm_delta, json.get_double("/tuning/m2A_tol_coarse"));
         // Enable warm-starting for subsequent calls
         warm_delta = json.get_double("/tuning/m2A_warm_start_delta");
         counter++;
 
-        HDF5Input hdf5_input(ss.str() + "/" + output_name + ".h5");
+        HDF5Input hdf5_input(step_path.run_file(".h5").string());
         const auto ZA3 = hdf5_input.load_map("ZA3");
         const auto ZA4 = hdf5_input.load_map("ZA4");
         const auto ZAcbc = hdf5_input.load_map("ZAcbc");
@@ -275,7 +246,7 @@ void tune_STI(JSONValue &json, const std::string top_folder, const std::string o
                       std::abs(alphaA4_high - alphaAcbc_high)});
         const double diff = 0.7 * powr<2>(diff_low) + 0.3 * powr<2>(diff_high);
 
-        spdlog::get("STIlog")->info("distance = {:.8e}", diff);
+        log.info("distance = {:.8e}", diff);
         return diff;
       },
       json.get_double("/tuning/STI_tol"), 1000);
@@ -286,9 +257,9 @@ void tune_STI(JSONValue &json, const std::string top_folder, const std::string o
   const std::array<double, 2> minimum = minimizer.minimize();
 
   // Final refinement: run one full-quality flow with optimal couplings
-  spdlog::get("STIlog")->info("Running final refinement with optimal couplings:\n"
-                              "    alphaA3 = {:.8e},\n    alphaA4 = {:.8e}",
-                              minimum[0], minimum[1]);
+  log.info("Running final refinement with optimal couplings:\n"
+           "    alphaA3 = {:.8e},\n    alphaA4 = {:.8e}",
+           minimum[0], minimum[1]);
 
   json.set_double("/physical/alphaA3", minimum[0]);
   json.set_double("/physical/alphaA4", minimum[1]);
@@ -300,15 +271,12 @@ void tune_STI(JSONValue &json, const std::string top_folder, const std::string o
   json.set_uint("/integration/cos2_order", original_cos2_order);
   json.set_uint("/integration/phi_order", original_phi_order);
 
-  std::stringstream ss_final;
-  ss_final << top_folder << output_name << "_STI_tuning/final/";
-  tune_m2A(json, ss_final.str(), output_name, run, last_m2A, warm_delta);
+  auto final_path = tuning_path.child("final", output_path.run_name(), output_path.field_directory());
+  tune_m2A(json, final_path, run, last_m2A, warm_delta);
 
-  std::filesystem::copy(ss_final.str(), top_folder,
-                        std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing);
+  output_path.copy_tree_from(final_path.root());
 
-  spdlog::get("STIlog")->info("Optimal STI couplings:\n    alphaA3 = {:.8e},\n    alphaA4 = {:.8e}", minimum[0],
-                              minimum[1]);
-  spdlog::get("STIlog")->info("STI Tuning finished after {} steps", counter);
+  log.info("Optimal STI couplings:\n    alphaA3 = {:.8e},\n    alphaA4 = {:.8e}", minimum[0], minimum[1]);
+  log.info("STI Tuning finished after {} steps", counter);
   spdlog::drop("STIlog");
 }

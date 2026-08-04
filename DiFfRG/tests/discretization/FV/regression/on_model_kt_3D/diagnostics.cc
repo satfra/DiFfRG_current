@@ -1,6 +1,6 @@
 // Diagnostic tests: integrator-value verification, finite-T sweep, and
 // Example-settings comparison. These are correctness checks (expected to
-// pass), not stiffness experiments (which live in smoke.cc / wavespeed.cc).
+// pass), not stiffness experiments (which live in smoke.cc).
 
 // IMPORTANT include order: setup.hh + runners.hh (KurganovTadmor.hh) BEFORE
 // kernels.hh (DiFfRG/physics/integration.hh — see comment in kt_3D_models.hh).
