@@ -3,6 +3,8 @@
 #include <fstream>
 
 #include <DiFfRG/common/configuration_helper.hh>
+#include <DiFfRG/common/utils.hh>
+#include <DiFfRG/discretization/data/output_path.hh>
 
 using namespace DiFfRG;
 
@@ -46,4 +48,21 @@ TEST_CASE("Test configuration helper", "[config][common]")
     REQUIRE(config.get_json().get_int("/i") == 9);
     REQUIRE(config.get_json().get_bool("/j") == true);
   }
+}
+
+TEST_CASE("Legacy configuration output getters forward to OutputPath", "[config][common][migration]")
+{
+  const auto root = std::filesystem::absolute("configuration-helper-output").lexically_normal();
+  const JSONValue json(json::value{
+      {"output", {{"folder", root.string()}, {"name", "run"}, {"field_directory", "fields"}}}});
+  const ConfigurationHelper config(json);
+  const OutputPath output_path(json);
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  CHECK(config.get_log_file() == output_path.run_file(".log").filename().string());
+  CHECK(config.get_output_name() == output_path.run_name());
+  CHECK(config.get_output_folder() == make_folder(output_path.field_directory().generic_string()));
+  CHECK(config.get_top_folder() == make_folder(output_path.root().generic_string()));
+#pragma GCC diagnostic pop
 }

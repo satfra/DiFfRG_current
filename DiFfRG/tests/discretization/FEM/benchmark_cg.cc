@@ -23,9 +23,9 @@ template <typename Model> void run_benchmarks(const std::string &label, const JS
   Testing::PhysicalParameters p_prm = {/*x0_initial = */ {0., 0., 0.}, /*x1_initial = */ {3.14, 2.72, 1.41}};
 
   Model model(p_prm);
-  RectangularMesh<dim> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
+  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
   FE::FlowingVariables initial_condition(discretization);
   initial_condition.interpolate(model);

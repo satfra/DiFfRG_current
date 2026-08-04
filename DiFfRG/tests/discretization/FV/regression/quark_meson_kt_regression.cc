@@ -384,7 +384,6 @@ namespace
            {"batch_size", 32},
            {"overintegration", 0},
            {"output_subdivisions", 1},
-           {"output_buffer_size", 1},
            {"EoM_abs_tol", 1.0e-10},
            {"EoM_max_iter", 0}}},
          {"timestepping",
@@ -407,33 +406,13 @@ namespace
              {"ida_callback_trace_min_t", 3.0},
              {"ida_callback_trace_max_lines", 1200},
              {"ida_callback_trace_successes", true}}}}},
-         {"output",
-          {{"verbosity", 1},
-           {"vtk", false},
-           {"hdf5", true},
-           {"fv_reconstruction_diagnostics", true},
-           {"fv_residual_contribution_diagnostics", true}}}});
+         {"output", {{"verbosity", 1}, {"vtk", false}, {"hdf5", true}}}});
   }
 
   template <typename Case> Config::ConfigurationMesh<1> make_mesh_config()
   {
     const Config::GridAxis sigma_axis(sigma_min, grid_spacing(), sigma_max_over_lambda * Case::lambda_uv);
     return Config::ConfigurationMesh<1>(0u, std::vector<Config::GridAxis>{sigma_axis});
-  }
-
-  template <typename Case>
-  void initialize_exact_cell_averages(FV::FlowingVariables<Discretization> &state,
-                                      const std::vector<Point<dim>> &support_points)
-  {
-    auto &u = state.spatial_data();
-    REQUIRE(u.size() == support_points.size());
-    const double delta = grid_spacing();
-    for (unsigned int i = 0; i < u.size(); ++i) {
-      const double sigma = support_points[i][0];
-      const double right = initial_potential<Case>(sigma + 0.5 * delta);
-      const double left = initial_potential<Case>(sigma - 0.5 * delta);
-      u[i] = (right - left) / delta;
-    }
   }
 
   template <typename Case, typename AssemblerType, typename TimeStepperType = ImplicitTimeStepper>
@@ -443,12 +422,12 @@ namespace
     kt_regression::ensure_diffrg_initialized();
     QuarkMesonKTModel<Case> model(json);
     Mesh mesh(make_mesh_config<Case>());
-    Discretization discretization(mesh, json);
-    AssemblerType assembler(discretization, model, json);
+    Discretization discretization(mesh, json, DiFfRG::LogPort{});
+    AssemblerType assembler(discretization, model, json, DiFfRG::LogPort{});
 
-    kt_regression::TemporaryDirectory tmp_dir(output_prefix, false);
-    std::clog << "[QM DIAG] retaining output directory " << tmp_dir.path << '\n';
-    DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), output_prefix, "output", json);
+    auto data_out_path = OutputPath::temporary(TemporaryRetention::keep, output_prefix, "output");
+    std::clog << "[QM DIAG] retaining output directory " << data_out_path.root() << '\n';
+    OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     TimeStepperType time_stepper(json, &assembler, &data_out, adaptor.get());
 
@@ -457,7 +436,6 @@ namespace
 
     const auto &support_points = discretization.get_support_points();
     REQUIRE(support_points.size() == Case::n_cells());
-    initialize_exact_cell_averages<Case>(state, support_points);
     discretization.get_constraints().distribute(state.spatial_data());
 
     time_stepper.run(&state, 0.0, final_time);

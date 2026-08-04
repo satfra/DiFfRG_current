@@ -7,6 +7,7 @@
 #include <memory>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
+#include <type_traits>
 
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
@@ -19,6 +20,20 @@
 // Helper functions
 //--------------------------------------------
 
+template <typename Discretization, typename = void> struct UsesFVFlowingVariables : std::false_type {
+};
+
+template <typename Discretization>
+struct UsesFVFlowingVariables<Discretization, std::void_t<decltype(Discretization::is_fv_discretization)>>
+    : std::bool_constant<Discretization::is_fv_discretization> {
+};
+
+template <typename Discretization>
+using FlowingVariablesFor =
+    std::conditional_t<UsesFVFlowingVariables<Discretization>::value,
+                       DiFfRG::FV::FlowingVariables<Discretization>,
+                       DiFfRG::FE::FlowingVariables<Discretization>>;
+
 template <typename Model, typename Discretization, typename Assembler, typename TimeStepper, bool expl = false,
           bool adapt = false>
 bool run(std::string test_name, double expected_precision)
@@ -29,6 +44,7 @@ bool run(std::string test_name, double expected_precision)
   Testing::PhysicalParameters p_prm;
   p_prm.initial_x0[0] = 0.;
   p_prm.initial_x1[0] = 1.;
+  p_prm.initial_x2[0] = 0.5;
 
   JSONValue json = json::value(
       {{"physical", {{"Lambda", 1.}}},
@@ -85,10 +101,11 @@ bool run(std::string test_name, double expected_precision)
 
   // Define the objects needed to run the simulation
   Model model(p_prm);
-  RectangularMesh<dim> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
-  DataOutput<dim, VectorType> data_out("./", test_name, test_name + '/', json);
+  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, test_name, test_name);
+  OutputSession<dim, VectorType> data_out(data_out_path, json);
 
   const int n_components = Model::Components::count_fe_functions(0);
 
@@ -101,7 +118,7 @@ bool run(std::string test_name, double expected_precision)
   TimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 
   // Set up the initial condition
-  FE::FlowingVariables initial_condition(discretization);
+  FlowingVariablesFor<Discretization> initial_condition(discretization);
   initial_condition.interpolate(model);
 
   // Now we start the timestepping

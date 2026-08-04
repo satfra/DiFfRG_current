@@ -6,16 +6,40 @@
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/common/abstract_data.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/discretization/mesh/no_adaptivity.hh>
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <iomanip>
+#include <limits>
 #include <optional>
 #include <unordered_map>
+#include <vector>
 
 namespace DiFfRG
 {
+  struct IDAErrorDofRecord {
+    types::global_dof_index dof = dealii::numbers::invalid_dof_index;
+    double value = 0.;
+    double estimated_local_error = 0.;
+    double error_weight = 0.;
+    double contribution = 0.;
+  };
+
+  struct IDAErrorDofDiagnostics {
+    double t = 0.;
+    double k = std::numeric_limits<double>::quiet_NaN();
+    long int reject_delta = 0;
+    long int total_rejects = 0;
+    long int ida_steps = 0;
+    double ida_last_step_size = 0.;
+    double ida_current_step_size = 0.;
+    double ida_current_time = 0.;
+    double wrms = 0.;
+    std::vector<IDAErrorDofRecord> top_dofs;
+  };
+
   struct TimesteppingDiagnostics {
     bool has_ida = false;
     long int ida_steps = 0;
@@ -64,6 +88,7 @@ namespace DiFfRG
    * - /timestepping/explicit/maximal_dt: The maximal timestep size for an explicit timestepping algorithm.
    * - /timestepping/explicit/abs_tol: The absolute tolerance for an explicit timestepping algorithm.
    * - /timestepping/explicit/rel_tol: The relative tolerance for an explicit timestepping algorithm.
+   * - /timestepping/explicit/detect_stuck: Whether repeated-time callback detection is enabled.
    *
    * Additionally, the following parameters are being used:
    * - /output/verbosity: The verbosity level of the output.
@@ -99,8 +124,9 @@ namespace DiFfRG
      * @param adaptor
      */
     AbstractTimestepper(const JSONValue &json, AbstractAssembler<VectorType, SparseMatrixType, dim> *assembler,
-                        DataOutput<dim, VectorType> *data_out = nullptr, AbstractAdaptor<VectorType> *adaptor = nullptr)
+                        OutputSession<dim, VectorType> *data_out, AbstractAdaptor<VectorType> *adaptor = nullptr)
         : json(json), assembler(assembler), data_out(data_out), adaptor(adaptor),
+          log(data_out ? data_out->log_port() : LogPort{}),
           start_time(std::chrono::high_resolution_clock::now())
     {
       verbosity = json.get_int("/output/verbosity");
@@ -117,12 +143,15 @@ namespace DiFfRG
       impl.ida_callback_trace_min_t = json.get_double("/timestepping/implicit/ida_callback_trace_min_t", 0.0);
       impl.ida_callback_trace_max_lines = json.get_uint("/timestepping/implicit/ida_callback_trace_max_lines", 200);
       impl.ida_callback_trace_successes = json.get_bool("/timestepping/implicit/ida_callback_trace_successes", false);
+      impl.ida_error_dof_diagnostics = json.get_bool("/timestepping/implicit/ida_error_dof_diagnostics", false);
+      impl.ida_error_dof_diagnostics_top_n = json.get_uint("/timestepping/implicit/ida_error_dof_diagnostics_top_n", 8);
 
       expl.dt = json.get_double("/timestepping/explicit/dt");
       expl.minimal_dt = json.get_double("/timestepping/explicit/minimal_dt");
       expl.maximal_dt = json.get_double("/timestepping/explicit/maximal_dt");
       expl.abs_tol = json.get_double("/timestepping/explicit/abs_tol");
       expl.rel_tol = json.get_double("/timestepping/explicit/rel_tol");
+      expl.detect_stuck = json.get_bool("/timestepping/explicit/detect_stuck", true);
 
       try {
         Lambda = json.get_double("/physical/Lambda");
@@ -132,17 +161,14 @@ namespace DiFfRG
     }
 
     /**
-     * @brief Utility function to obtain a DataOutput object. If no DataOutput object is provided, a default one is
-     * created.
+     * @brief Obtain the run-owned output session supplied by the application.
      *
-     * @return DataOutput<dim, VectorType>* A pointer to the DataOutput object.
+     * @return OutputSession<dim, VectorType>* The active output session.
      */
-    DataOutput<dim, VectorType> *get_data_out()
+    OutputSession<dim, VectorType> *get_data_out()
     {
-      if (data_out == nullptr) {
-        data_out_default = std::make_shared<DataOutput<dim, VectorType>>(json);
-        return data_out_default.get();
-      }
+      if (data_out == nullptr)
+        throw std::invalid_argument("AbstractTimestepper: an OutputSession must be supplied explicitly.");
       return data_out;
     }
 
@@ -161,6 +187,11 @@ namespace DiFfRG
       return adaptor;
     }
 
+    void drain_output()
+    {
+      if (data_out) data_out->drain();
+    }
+
     /**
      * @brief Any derived class must implement this method to run the timestepping algorithm.
      *
@@ -174,14 +205,13 @@ namespace DiFfRG
   protected:
     const JSONValue json;
     AbstractAssembler<VectorType, SparseMatrixType, dim> *assembler;
-    DataOutput<dim, VectorType> *data_out;
+    OutputSession<dim, VectorType> *data_out;
     AbstractAdaptor<VectorType> *adaptor;
+    LogPort log;
 
     const std::chrono::time_point<std::chrono::high_resolution_clock> start_time;
 
     std::shared_ptr<NoAdaptivity<VectorType>> adaptor_default;
-    std::shared_ptr<DataOutput<dim, VectorType>> data_out_default;
-
     double Lambda;
     int verbosity;
     double output_dt;
@@ -197,6 +227,8 @@ namespace DiFfRG
       double ida_callback_trace_min_t;
       uint ida_callback_trace_max_lines;
       bool ida_callback_trace_successes;
+      bool ida_error_dof_diagnostics;
+      uint ida_error_dof_diagnostics_top_n;
     } impl;
 
     struct ExplicitParameters {
@@ -205,6 +237,7 @@ namespace DiFfRG
       double maximal_dt;
       double abs_tol;
       double rel_tol;
+      bool detect_stuck;
     } expl;
 
     static constexpr size_t console_name_width = 21;
@@ -243,8 +276,7 @@ namespace DiFfRG
 
           const long int per_step_delta =
               step_delta == 1 ? nonlinear_delta : (nonlinear_delta + step_delta - 1) / step_delta;
-          max_nonlinear_iterations_per_step =
-              std::max(max_nonlinear_iterations_per_step, per_step_delta);
+          max_nonlinear_iterations_per_step = std::max(max_nonlinear_iterations_per_step, per_step_delta);
 
           if (diagnostics.ida_last_step_size > 0. && std::isfinite(diagnostics.ida_last_step_size)) {
             diagnostics.ida_min_step_size = diagnostics.ida_last_step_size;
@@ -308,8 +340,8 @@ namespace DiFfRG
             step_size_samples = previous_step_size_samples;
           }
           if (latest_diagnostics->ida_average_step_size > 0. && latest_diagnostics->ida_step_size_samples > 0) {
-            step_size_sum +=
-                latest_diagnostics->ida_average_step_size * static_cast<double>(latest_diagnostics->ida_step_size_samples);
+            step_size_sum += latest_diagnostics->ida_average_step_size *
+                             static_cast<double>(latest_diagnostics->ida_step_size_samples);
             step_size_samples += latest_diagnostics->ida_step_size_samples;
           }
           if (step_size_samples > 0)
@@ -358,19 +390,20 @@ namespace DiFfRG
       stream << "accepted steps " << format_diagnostics_delta(latest.ida_steps, prev.ida_steps);
       stream << ", precision rejects "
              << format_diagnostics_delta(latest.ida_error_test_failures, prev.ida_error_test_failures);
-      stream << ", nonlinear failures " << format_diagnostics_delta(latest.ida_nonlinear_convergence_failures,
-                                                                     prev.ida_nonlinear_convergence_failures);
+      stream << ", nonlinear failures "
+             << format_diagnostics_delta(latest.ida_nonlinear_convergence_failures,
+                                         prev.ida_nonlinear_convergence_failures);
       if (latest.has_ida_step_iteration_stats) {
         if (latest.ida_min_step_size > 0.) stream << ", min step width " << format_scientific(latest.ida_min_step_size);
         if (latest.ida_average_step_size > 0.)
           stream << ", avg step width " << format_scientific(latest.ida_average_step_size);
-        stream << ", nonlinear it/step avg "
-               << format_scientific(latest.ida_average_nonlinear_iterations_per_step);
+        stream << ", nonlinear it/step avg " << format_scientific(latest.ida_average_nonlinear_iterations_per_step);
         stream << ", max " << latest.ida_max_nonlinear_iterations_per_step;
       }
       stream << ", accumulated step failures "
              << format_diagnostics_delta(latest.ida_step_solve_failures, prev.ida_step_solve_failures);
-      stream << ", NaN/Inf callbacks " << format_diagnostics_delta(latest.nonfinite_failures(), prev.nonfinite_failures());
+      stream << ", NaN/Inf callbacks "
+             << format_diagnostics_delta(latest.nonfinite_failures(), prev.nonfinite_failures());
       return stream.str();
     }
 
@@ -382,9 +415,12 @@ namespace DiFfRG
       const std::ios_base::fmtflags oldflags = std::cout.flags();
       const std::streamsize oldprecision = std::cout.precision();
       std::cout << "[" << std::setw(console_name_width) << std::left << name << "]";
-      std::cout << " t: " << std::setw(10) << std::left << std::setprecision(4) << std::scientific << t;
+      constexpr auto console_time_precision = std::numeric_limits<double>::max_digits10;
+      std::cout << " t: " << std::setw(24) << std::left << std::setprecision(console_time_precision)
+                << std::scientific << t;
       if (Lambda > 0.0) {
-        std::cout << " | k: " << std::setw(10) << std::left << std::setprecision(4) << std::scientific
+        std::cout << " | k: " << std::setw(24) << std::left << std::setprecision(console_time_precision)
+                  << std::scientific
                   << exp(-t) * Lambda;
       }
       std::cout << " | calc_t: " << time_format_ms(milliseconds);
@@ -421,13 +457,13 @@ namespace DiFfRG
         const auto previous_it = last_printed_diagnostics_by_category.find(category);
         const auto formatted_diagnostics =
             diagnostics != nullptr && !diagnostics->empty()
-                ? std::optional<std::string>(
-                      format_diagnostics(*diagnostics, previous_it != last_printed_diagnostics_by_category.end()
-                                                           ? &previous_it->second
-                                                           : nullptr))
+                ? std::optional<std::string>(format_diagnostics(
+                      *diagnostics,
+                      previous_it != last_printed_diagnostics_by_category.end() ? &previous_it->second : nullptr))
                 : std::nullopt;
         print_console_out(name, t, milliseconds, formatted_diagnostics);
-        if (diagnostics != nullptr && !diagnostics->empty()) last_printed_diagnostics_by_category[category] = *diagnostics;
+        if (diagnostics != nullptr && !diagnostics->empty())
+          last_printed_diagnostics_by_category[category] = *diagnostics;
         return;
       }
 
@@ -438,10 +474,9 @@ namespace DiFfRG
       const auto previous_it = last_printed_diagnostics_by_category.find(category);
       const auto formatted_diagnostics =
           stats.has_diagnostics
-              ? std::optional<std::string>(
-                    format_diagnostics(stats.diagnostics, previous_it != last_printed_diagnostics_by_category.end()
-                                                              ? &previous_it->second
-                                                              : nullptr))
+              ? std::optional<std::string>(format_diagnostics(
+                    stats.diagnostics,
+                    previous_it != last_printed_diagnostics_by_category.end() ? &previous_it->second : nullptr))
               : std::nullopt;
       print_console_out(category, stats.latest_t, stats.last_ms, formatted_diagnostics);
       if (stats.has_diagnostics) last_printed_diagnostics_by_category[category] = stats.diagnostics;

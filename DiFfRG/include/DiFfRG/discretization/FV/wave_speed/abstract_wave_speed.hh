@@ -16,8 +16,8 @@ namespace DiFfRG
      *
      * A wave-speed class must provide:
      * - `compute_speeds`:  given plus/minus Jacobians, return per-dimension wave speeds.
-     * - `compute_selected_speed_derivatives`: return the speed derivatives for the
-     *   side that actually selected the max wave speed in each dimension.
+     * - `compute_selected_speed_derivatives`: return the differentiated speed for the
+     *   side selected by the maximum spectral radius.
      *
      * New wave-speed strategies only need to satisfy this concept:
      * @code
@@ -73,27 +73,6 @@ namespace DiFfRG
                  const FV::KurganovTadmor::internal::HessianTensor<double, 2, 2> &H2_minus) {
           {
             T::template compute_selected_speed_derivatives<double, 2, 2>(J2_plus, J2_minus, H2_plus, H2_minus)
-          } -> std::same_as<std::pair<std::array<std::array<double, 2>, 2>, std::array<std::array<double, 2>, 2>>>;
-        };
-
-    template <typename T>
-    concept HasRawWaveSpeedDerivatives =
-        // ---- compute_speed_derivatives (dim=1, n_components=1) ----
-        requires(const std::array<FV::KurganovTadmor::internal::JacobianMatrix<double, 1>, 1> &J1_plus,
-                 const std::array<FV::KurganovTadmor::internal::JacobianMatrix<double, 1>, 1> &J1_minus,
-                 const FV::KurganovTadmor::internal::HessianTensor<double, 1, 1> &H1_plus,
-                 const FV::KurganovTadmor::internal::HessianTensor<double, 1, 1> &H1_minus) {
-          {
-            T::template compute_speed_derivatives<double, 1, 1>(J1_plus, J1_minus, H1_plus, H1_minus)
-          } -> std::same_as<std::pair<std::array<std::array<double, 1>, 1>, std::array<std::array<double, 1>, 1>>>;
-        } &&
-        // ---- compute_speed_derivatives (dim=2, n_components=2) ----
-        requires(const std::array<FV::KurganovTadmor::internal::JacobianMatrix<double, 2>, 2> &J2_plus,
-                 const std::array<FV::KurganovTadmor::internal::JacobianMatrix<double, 2>, 2> &J2_minus,
-                 const FV::KurganovTadmor::internal::HessianTensor<double, 2, 2> &H2_plus,
-                 const FV::KurganovTadmor::internal::HessianTensor<double, 2, 2> &H2_minus) {
-          {
-            T::template compute_speed_derivatives<double, 2, 2>(J2_plus, J2_minus, H2_plus, H2_minus)
           } -> std::same_as<std::pair<std::array<std::array<double, 2>, 2>, std::array<std::array<double, 2>, 2>>>;
         };
 

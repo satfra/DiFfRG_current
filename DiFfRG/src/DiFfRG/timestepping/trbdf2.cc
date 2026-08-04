@@ -6,7 +6,7 @@
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/timestepping/linear_solver/GMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/UMFPack.hh>
 #include <DiFfRG/timestepping/solver/kinsol.hh>
@@ -42,13 +42,7 @@ namespace DiFfRG
   void TimeStepperTRBDF2<VectorType, SparseMatrixType, dim, LinearSolver>::run(
       AbstractFlowingVariables<NumberType> *initial_condition, double start, double stop)
   {
-    std::shared_ptr<DataOutput<dim, VectorType>> data_out_expl;
-    DataOutput<dim, VectorType> *data_out = nullptr;
-    if (this->data_out == nullptr) {
-      data_out_expl = std::make_shared<DataOutput<dim, VectorType>>(json);
-      data_out = data_out_expl.get();
-    } else
-      data_out = this->data_out;
+    OutputSession<dim, VectorType> *data_out = this->get_data_out();
 
     const double gamma = 2. - std::sqrt(2.);
 
@@ -136,8 +130,7 @@ namespace DiFfRG
     // saving and stepping helper functions
     auto save_data = [&](double t) {
       assembler->set_time(t);
-      assembler->attach_data_output(*data_out, u_n);
-      data_out->flush(t);
+      data_out->write_frame(t, [&](auto &frame) { assembler->attach_data_output(frame, u_n); });
     };
     auto dt_step = [&](double /*t*/, double /*dt*/) {
       u_npgamma = u_n;
@@ -148,7 +141,7 @@ namespace DiFfRG
     };
 
     // the actual time loop
-    save_data(0.);
+    save_data(start);
     while (!tc.finished()) {
       if ((*adaptor)(tc.get_t(), u_n)) {
         u_np1 = u_n;
@@ -162,6 +155,7 @@ namespace DiFfRG
     }
 
     initial_condition->spatial_data() = u_n;
+    this->drain_output();
   }
 
 } // namespace DiFfRG

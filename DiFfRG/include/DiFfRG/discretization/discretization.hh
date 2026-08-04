@@ -10,7 +10,9 @@
 
 #include <DiFfRG/discretization/data/csv_output.hh>
 #include <DiFfRG/discretization/data/data.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_path.hh>
+#include <DiFfRG/discretization/data/output_settings.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/discretization/data/hdf5_input.hh>
 #include <DiFfRG/discretization/data/hdf5_output.hh>
 
