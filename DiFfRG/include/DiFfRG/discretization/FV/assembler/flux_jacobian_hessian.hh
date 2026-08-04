@@ -24,179 +24,142 @@ namespace DiFfRG
         using HessianTensor =
             std::array<std::array<std::array<std::array<NumberType, n_components>, n_components>, n_components>, dim>;
 
-        /// Compute the Jacobian and full Hessian of the advection flux at a given state u
-        /// using second-order forward-mode autodiff with the polarization identity for off-diagonal entries.
+        /**
+         * @brief Derivative of every flux component/direction with respect to every component/direction of grad(u).
+         *
+         * Indexed as [flux_component][gradient_component][flux_direction][gradient_direction].
+         */
+        template <typename NumberType, int dim, size_t n_components>
+        using FluxGradientJacobian =
+            std::array<std::array<dealii::Tensor<2, dim, NumberType>, n_components>, n_components>;
+
+        template <typename NumberType, int dim, size_t n_components>
+        using MixedHessianTensor = std::array<HessianTensor<NumberType, dim, n_components>, dim>;
+
+        template <typename NumberType, int dim, size_t n_components> struct FluxDerivativeData {
+          std::array<dealii::Tensor<1, dim, NumberType>, n_components> F{};
+          std::array<JacobianMatrix<NumberType, n_components>, dim> J{};
+          HessianTensor<NumberType, dim, n_components> H{};
+          FluxGradientJacobian<NumberType, dim, n_components> grad_J{};
+          MixedHessianTensor<NumberType, dim, n_components> mixed_H{};
+        };
+
+        /**
+         * @brief Compute F, dF/du, d2F/du2, dF/dgrad(u), and d2F/(du dgrad(u)) with second-order forward AD.
+         *
+         * The gradient is held fixed while extracting dF/du. The Hessian and mixed derivatives are used by the
+         * wave-speed strategy to differentiate the physical KT speed.
+         */
+        template <typename Model, typename NumberType, int dim, size_t n_components>
+        FluxDerivativeData<NumberType, dim, n_components>
+        compute_flux_derivatives_ad(const std::array<NumberType, n_components> &u,
+                                    const std::array<dealii::Tensor<1, dim, NumberType>, n_components> &grad_u,
+                                    const dealii::Point<dim> &x_q, const Model &model)
+        {
+          using ADNumberType = autodiff::Real<2, NumberType>;
+          using autodiff::detail::derivative;
+          using autodiff::detail::seed;
+
+          auto unseed = [](ADNumberType &x) { seed<1>(x, NumberType(0)); };
+
+          std::array<ADNumberType, n_components> u_AD{};
+          std::array<dealii::Tensor<1, dim, ADNumberType>, n_components> grad_u_AD{};
+          for (size_t c = 0; c < n_components; ++c) {
+            u_AD[c] = ADNumberType(u[c]);
+            for (size_t d = 0; d < dim; ++d)
+              grad_u_AD[c][d] = ADNumberType(grad_u[c][d]);
+          }
+
+          FluxDerivativeData<NumberType, dim, n_components> result{};
+          FluxGradientJacobian<NumberType, dim, n_components> grad_diagonal_H{};
+          std::array<dealii::Tensor<1, dim, ADNumberType>, n_components> F_AD{};
+
+          model.KurganovTadmor_advection_flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD));
+          for (size_t i = 0; i < n_components; ++i)
+            for (size_t d_out = 0; d_out < dim; ++d_out)
+              result.F[i][d_out] = F_AD[i][d_out].val();
+
+          // Diagonal u passes provide J and the diagonal u-Hessian.
+          for (size_t j = 0; j < n_components; ++j) {
+            seed<1>(u_AD[j], NumberType(1));
+            F_AD = {};
+            model.KurganovTadmor_advection_flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD));
+            for (size_t i = 0; i < n_components; ++i)
+              for (size_t d_out = 0; d_out < dim; ++d_out) {
+                result.J[d_out][i][j] = derivative<1>(F_AD[i][d_out]);
+                result.H[d_out][i][j][j] = derivative<2>(F_AD[i][d_out]);
+              }
+            unseed(u_AD[j]);
+          }
+
+          // Off-diagonal u-Hessian entries via polarization.
+          for (size_t j = 0; j < n_components; ++j)
+            for (size_t c = j + 1; c < n_components; ++c) {
+              seed<1>(u_AD[j], NumberType(1));
+              seed<1>(u_AD[c], NumberType(1));
+              F_AD = {};
+              model.KurganovTadmor_advection_flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD));
+              for (size_t i = 0; i < n_components; ++i)
+                for (size_t d_out = 0; d_out < dim; ++d_out) {
+                  const NumberType cross =
+                      (derivative<2>(F_AD[i][d_out]) - result.H[d_out][i][j][j] -
+                       result.H[d_out][i][c][c]) /
+                      NumberType(2);
+                  result.H[d_out][i][j][c] = result.H[d_out][i][c][j] = cross;
+                }
+              unseed(u_AD[j]);
+              unseed(u_AD[c]);
+            }
+
+          // Gradient diagonal passes provide dF/dgrad(u) and the diagonal terms used by mixed polarization.
+          for (size_t c = 0; c < n_components; ++c)
+            for (size_t d_in = 0; d_in < dim; ++d_in) {
+              seed<1>(grad_u_AD[c][d_in], NumberType(1));
+              F_AD = {};
+              model.KurganovTadmor_advection_flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD));
+              for (size_t i = 0; i < n_components; ++i)
+                for (size_t d_out = 0; d_out < dim; ++d_out) {
+                  result.grad_J[i][c][d_out][d_in] = derivative<1>(F_AD[i][d_out]);
+                  grad_diagonal_H[i][c][d_out][d_in] = derivative<2>(F_AD[i][d_out]);
+                }
+              unseed(grad_u_AD[c][d_in]);
+            }
+
+          // Mixed d2F/(du_j dgrad(u_c)_d_in) entries via polarization.
+          for (size_t j = 0; j < n_components; ++j)
+            for (size_t c = 0; c < n_components; ++c)
+              for (size_t d_in = 0; d_in < dim; ++d_in) {
+                seed<1>(u_AD[j], NumberType(1));
+                seed<1>(grad_u_AD[c][d_in], NumberType(1));
+                F_AD = {};
+                model.KurganovTadmor_advection_flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD));
+                for (size_t i = 0; i < n_components; ++i)
+                  for (size_t d_out = 0; d_out < dim; ++d_out)
+                    result.mixed_H[d_in][d_out][i][j][c] =
+                        (derivative<2>(F_AD[i][d_out]) - result.H[d_out][i][j][j] -
+                         grad_diagonal_H[i][c][d_out][d_in]) /
+                        NumberType(2);
+                unseed(u_AD[j]);
+                unseed(grad_u_AD[c][d_in]);
+              }
+
+          return result;
+        }
+
+        /**
+         * @brief Backward-compatible state-only view of the full AD derivative extraction.
+         *
+         * This is intentionally not a second derivative strategy: it calls
+         * compute_flux_derivatives_ad with a zero gradient and returns its F/J/H subset.
+         */
         template <typename Model, typename NumberType, int dim, size_t n_components>
         auto compute_flux_jacobian_and_hessian(const std::array<NumberType, n_components> &u,
                                                const dealii::Point<dim> &x_q, const Model &model)
         {
-          using ADNumberType = autodiff::Real<2, NumberType>;
-          using autodiff::detail::seed;
-          using autodiff::detail::derivative;
-
-          auto unseed = [](ADNumberType &x) { seed<1>(x, NumberType(0)); };
-
-          std::array<ADNumberType, n_components> u_AD{};
-          for (size_t i = 0; i < n_components; ++i)
-            u_AD[i] = ADNumberType(u[i]);
-
-          std::array<dealii::Tensor<1, dim, NumberType>, n_components> F{};
-          std::array<JacobianMatrix<NumberType, n_components>, dim> J{};
-          HessianTensor<NumberType, dim, n_components> H{};
-
-          std::array<dealii::Tensor<1, dim, ADNumberType>, n_components> F_AD{};
-
-          // Pass 0: Evaluate the flux with clean (unseeded) AD variables to get the plain flux values.
-          model.KurganovTadmor_advection_flux(F_AD, x_q, advection_flux_tie(u_AD));
-          for (size_t i = 0; i < n_components; ++i)
-            for (size_t d = 0; d < dim; ++d)
-              F[i][d] = autodiff::detail::val(F_AD[i][d]);
-
-          // Pass 1: Compute Jacobian columns and diagonal Hessian entries H[j][j].
-          // Seed one variable at a time.
-          for (size_t j = 0; j < n_components; ++j) {
-            seed<1>(u_AD[j], NumberType(1));
-
-            model.KurganovTadmor_advection_flux(F_AD, x_q, advection_flux_tie(u_AD));
-
-            for (size_t d = 0; d < dim; ++d)
-              for (size_t i = 0; i < n_components; ++i) {
-                J[d][i][j] = derivative<1>(F_AD[i][d]);
-                H[d][i][j][j] = derivative<2>(F_AD[i][d]);
-              }
-
-            unseed(u_AD[j]);
-          }
-
-          // Pass 2: Compute off-diagonal Hessian entries (c > j) via the polarization identity:
-          //   H[j][c] = (d²F/(e_j+e_c)² - H[j][j] - H[c][c]) / 2,  H[c][j] = H[j][c]
-          // All diagonal entries H[j][j] and H[c][c] are available from pass 1.
-          for (size_t j = 0; j < n_components; ++j) {
-            for (size_t c = j + 1; c < n_components; ++c) {
-              seed<1>(u_AD[j], NumberType(1));
-              seed<1>(u_AD[c], NumberType(1));
-
-              model.KurganovTadmor_advection_flux(F_AD, x_q, advection_flux_tie(u_AD));
-
-              for (size_t d = 0; d < dim; ++d)
-                for (size_t i = 0; i < n_components; ++i) {
-                  const NumberType cross =
-                      (derivative<2>(F_AD[i][d]) - H[d][i][j][j] - H[d][i][c][c]) / NumberType(2);
-                  H[d][i][j][c] = H[d][i][c][j] = cross;
-                }
-
-              unseed(u_AD[j]);
-              unseed(u_AD[c]);
-            }
-          }
-
-          return std::make_tuple(F, J, H);
-        }
-
-        // Forward declaration; defined below.
-        template <typename Model, typename NumberType, int dim, size_t n_components>
-        auto compute_flux_jacobian_only(const std::array<NumberType, n_components> &u,
-                                        const dealii::Point<dim> &x_q, const Model &model);
-
-        /// LDG-style alternative to compute_flux_jacobian_and_hessian: extracts J via
-        /// first-order forward-mode AD and computes H by central finite differences on
-        /// J(u ± ε·e_k) — avoiding any Real<2, double> AD seeding through the
-        /// (potentially noisy) integrator chain. Returns (F, J, H_fd).
-        ///
-        /// Cost: 1 (F+J at u) + 2·n_components (F+J at u±ε·e_k for each component) calls
-        /// to compute_flux_jacobian_only. For scalar n_components=1 that's 3 evaluations
-        /// vs compute_flux_jacobian_and_hessian's 2 — roughly 1.5× the work, but with a
-        /// much cleaner H because the FD step uses a derived (rather than seeded)
-        /// numerical derivative on the well-conditioned Real<1> J.
-        template <typename Model, typename NumberType, int dim, size_t n_components>
-        auto compute_flux_jacobian_and_hessian_fd(const std::array<NumberType, n_components> &u,
-                                                  const dealii::Point<dim> &x_q, const Model &model)
-        {
-          // 1. F and J at the centre point via Real<1>.
-          auto [F, J, _H_dummy] =
-              compute_flux_jacobian_only<Model, NumberType, dim, n_components>(u, x_q, model);
-
-          // 2. Central FD per component to fill H[d][i][j][k] = ∂J[d][i][j]/∂u[k].
-          HessianTensor<NumberType, dim, n_components> H{};
-          for (size_t k = 0; k < n_components; ++k) {
-            // Step size: max(1e-6 · |u_k|, 1e-10). Matches LDG's choice for
-            // well-scaled solution components; small enough to capture local curvature,
-            // large enough to stay above ~ulp(J) noise after the cancellation in (J+ - J-).
-            const NumberType eps =
-                std::max(NumberType(1.0e-6) * std::abs(u[k]), NumberType(1.0e-10));
-
-            auto u_plus_eps = u;
-            u_plus_eps[k] += eps;
-            auto u_minus_eps = u;
-            u_minus_eps[k] -= eps;
-
-            auto [F_p, J_p, _Hp] =
-                compute_flux_jacobian_only<Model, NumberType, dim, n_components>(u_plus_eps, x_q, model);
-            auto [F_m, J_m, _Hm] =
-                compute_flux_jacobian_only<Model, NumberType, dim, n_components>(u_minus_eps, x_q, model);
-
-            const NumberType inv_2eps = NumberType(1) / (NumberType(2) * eps);
-            for (size_t d = 0; d < dim; ++d)
-              for (size_t i = 0; i < n_components; ++i)
-                for (size_t j = 0; j < n_components; ++j)
-                  H[d][i][j][k] = (J_p[d][i][j] - J_m[d][i][j]) * inv_2eps;
-          }
-
-          return std::make_tuple(F, J, H);
-        }
-
-        /// Compute only the Jacobian (no Hessian) of the advection flux at a given state u
-        /// using first-order forward-mode autodiff. Companion to
-        /// compute_flux_jacobian_and_hessian, used when the wave-speed strategy does NOT
-        /// need the Hessian (see WaveSpeedStrategy::needs_hessian). Returns a zero-filled
-        /// H as the third tuple element so the calling code's structured binding still
-        /// works unchanged.
-        ///
-        /// Rationale: Real<2, double> AD propagates (val, ε, ε²) triples through every
-        /// operation. The ε² bookkeeping is sensitive to roundoff in operations like
-        /// 1/sqrt(...) — and that noise contaminates the ε coefficient too. The J
-        /// extracted from a Real<2> chain is therefore measurably noisier than the J
-        /// from a Real<1> chain. When the strategy does not need H, switching to this
-        /// Real<1>-only path both halves the AD work and produces a noticeably cleaner J.
-        template <typename Model, typename NumberType, int dim, size_t n_components>
-        auto compute_flux_jacobian_only(const std::array<NumberType, n_components> &u,
-                                        const dealii::Point<dim> &x_q, const Model &model)
-        {
-          using ADNumberType = autodiff::Real<1, NumberType>;
-          using autodiff::detail::seed;
-
-          auto unseed = [](ADNumberType &x) { seed<1>(x, NumberType(0)); };
-
-          std::array<ADNumberType, n_components> u_AD{};
-          for (size_t i = 0; i < n_components; ++i)
-            u_AD[i] = ADNumberType(u[i]);
-
-          std::array<dealii::Tensor<1, dim, NumberType>, n_components> F{};
-          std::array<JacobianMatrix<NumberType, n_components>, dim> J{};
-          HessianTensor<NumberType, dim, n_components> H{};  // zero — strategy does not use it
-
-          std::array<dealii::Tensor<1, dim, ADNumberType>, n_components> F_AD{};
-
-          // Pass 0: extract F values with clean (unseeded) AD variables.
-          model.KurganovTadmor_advection_flux(F_AD, x_q, advection_flux_tie(u_AD));
-          for (size_t i = 0; i < n_components; ++i)
-            for (size_t d = 0; d < dim; ++d)
-              F[i][d] = autodiff::detail::val(F_AD[i][d]);
-
-          // Pass 1: extract Jacobian columns one variable at a time.
-          for (size_t j = 0; j < n_components; ++j) {
-            seed<1>(u_AD[j], NumberType(1));
-
-            model.KurganovTadmor_advection_flux(F_AD, x_q, advection_flux_tie(u_AD));
-
-            for (size_t d = 0; d < dim; ++d)
-              for (size_t i = 0; i < n_components; ++i)
-                J[d][i][j] = autodiff::derivative<1>(F_AD[i][d]);
-
-            unseed(u_AD[j]);
-          }
-
-          return std::make_tuple(F, J, H);
+          const std::array<dealii::Tensor<1, dim, NumberType>, n_components> grad_u{};
+          const auto derivatives =
+              compute_flux_derivatives_ad<Model, NumberType, dim, n_components>(u, grad_u, x_q, model);
+          return std::make_tuple(derivatives.F, derivatives.J, derivatives.H);
         }
 
       } // namespace internal

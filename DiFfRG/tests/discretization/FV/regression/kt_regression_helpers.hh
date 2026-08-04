@@ -7,9 +7,7 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
-#include <cstdint>
 #include <filesystem>
 #include <iomanip>
 #include <limits>
@@ -17,7 +15,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -35,10 +32,7 @@ namespace kt_regression
   // Ensure DiFfRG (MPI/Kokkos/TBB) is initialized exactly once. Required by
   // tests that construct a QuadratureProvider directly (i.e. tests that use
   // the integrator-based fluxes rather than a closed-form expression).
-  inline void ensure_diffrg_initialized()
-  {
-    static const DiFfRG::Init diffrg_init;
-  }
+  inline void ensure_diffrg_initialized() { static const DiFfRG::Init diffrg_init; }
 
   inline double json_number_to_double(const DiFfRG::json::value &value)
   {
@@ -59,8 +53,8 @@ namespace kt_regression
 
   inline std::optional<std::string> compare_profiles(const std::string &name, const std::vector<double> &x_values,
                                                      const std::vector<double> &simulated,
-                                                     const std::vector<double> &reference,
-                                                     const double abs_tolerance, const double rel_tolerance)
+                                                     const std::vector<double> &reference, const double abs_tolerance,
+                                                     const double rel_tolerance)
   {
     if (x_values.size() != simulated.size() || x_values.size() != reference.size())
       return std::string("Size mismatch while comparing ") + name + ".";
@@ -74,9 +68,9 @@ namespace kt_regression
     for (std::size_t i = 0; i < simulated.size(); ++i) {
       const double abs_error = std::abs(simulated[i] - reference[i]);
       const double reference_magnitude = std::abs(reference[i]);
-      const double rel_error =
-          reference_magnitude == 0.0 ? (abs_error == 0.0 ? 0.0 : std::numeric_limits<double>::infinity())
-                                     : abs_error / reference_magnitude;
+      const double rel_error = reference_magnitude == 0.0
+                                   ? (abs_error == 0.0 ? 0.0 : std::numeric_limits<double>::infinity())
+                                   : abs_error / reference_magnitude;
       max_abs_error = std::max(max_abs_error, abs_error);
       max_rel_error = std::max(max_rel_error, rel_error);
 
@@ -97,26 +91,6 @@ namespace kt_regression
              << ", max_rel_error=" << max_rel_error;
     return mismatch.str();
   }
-
-  struct TemporaryDirectory {
-    explicit TemporaryDirectory(const std::string &prefix, const bool cleanup = true) : cleanup(cleanup)
-    {
-      const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
-      path = std::filesystem::temp_directory_path() /
-             (prefix + "_" + std::to_string(static_cast<std::int64_t>(nonce)));
-      std::filesystem::create_directories(path);
-    }
-
-    ~TemporaryDirectory()
-    {
-      if (!cleanup) return;
-      std::error_code ec;
-      std::filesystem::remove_all(path, ec);
-    }
-
-    std::filesystem::path path;
-    bool cleanup;
-  };
 
   struct SampledProfile {
     std::vector<double> x;

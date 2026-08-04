@@ -2,13 +2,19 @@
 
 // external libraries
 #include <deal.II/base/function.h>
+#include <deal.II/base/quadrature_lib.h>
 #include <deal.II/dofs/dof_handler.h>
+#include <deal.II/fe/fe_values.h>
 #include <deal.II/lac/vector.h>
 
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/common/abstract_data.hh>
 #include <deal.II/numerics/vector_tools.h>
+
+#include <algorithm>
+#include <functional>
+#include <vector>
 
 namespace DiFfRG
 {
@@ -168,7 +174,112 @@ namespace DiFfRG
 
   namespace FV
   {
-    template <typename Discretization> using FlowingVariables = DiFfRG::FE::FlowingVariables<Discretization>;
+    /**
+     * @brief A class to set up cell-averaged initial data for finite-volume systems.
+     *
+     * FV unknowns represent cell averages. Unlike FE::FlowingVariables, this class
+     * integrates the model's pointwise initial condition over each active cell.
+     */
+    template <typename Discretization>
+    class FlowingVariables : public AbstractFlowingVariables<typename Discretization::NumberType>
+    {
+    public:
+      using NumberType = typename Discretization::NumberType;
+      using Components = typename Discretization::Components;
+      static constexpr uint dim = Discretization::dim;
+
+      /**
+       * @brief Construct a new Flowing Variables object
+       *
+       * @param discretization The spatial discretization to use
+       */
+      FlowingVariables(const Discretization &discretization)
+          : discretization(discretization), dof_handler(discretization.get_dof_handler())
+      {
+      }
+
+      /**
+       * @brief Initializes FV data with cell averages of the model initial condition.
+       *
+       * @param model The model to initialize from. Must provide
+       * initial_condition(const Point<dim> &, Vector<NumberType> &).
+       */
+      template <typename Model> void interpolate(const Model &model)
+      {
+        auto block_structure = discretization.get_block_structure();
+        m_data = (block_structure);
+
+        if constexpr (Model::Components::count_fe_functions() > 0) {
+          const auto &fe = discretization.get_fe();
+          const unsigned int n_components = fe.n_components();
+
+          QGauss<dim> quadrature(2);
+          FEValues<dim> fe_values(discretization.get_mapping(), fe, quadrature,
+                                  update_quadrature_points | update_JxW_values);
+
+          std::vector<types::global_dof_index> dof_indices(fe.dofs_per_cell);
+          Vector<NumberType> values(n_components);
+          std::vector<NumberType> averaged_values(n_components);
+
+          for (const auto &cell : dof_handler.active_cell_iterators()) {
+            fe_values.reinit(cell);
+            cell->get_dof_indices(dof_indices);
+            std::fill(averaged_values.begin(), averaged_values.end(), NumberType(0.0));
+
+            NumberType cell_measure = 0.0;
+            for (unsigned int q = 0; q < quadrature.size(); ++q) {
+              values = 0.0;
+              model.initial_condition(fe_values.quadrature_point(q), values);
+
+              const NumberType weight = fe_values.JxW(q);
+              cell_measure += weight;
+              for (unsigned int c = 0; c < n_components; ++c)
+                averaged_values[c] += weight * values[c];
+            }
+
+            AssertThrow(cell_measure > NumberType(0.0),
+                        ExcMessage("Cannot initialize FV cell average on a cell with non-positive measure."));
+            for (auto &value : averaged_values)
+              value /= cell_measure;
+
+            for (unsigned int local_dof = 0; local_dof < fe.dofs_per_cell; ++local_dof) {
+              const auto component = fe.system_to_component_index(local_dof).first;
+              m_data.block(0)[dof_indices[local_dof]] = averaged_values[component];
+            }
+          }
+        }
+        if (m_data.n_blocks() > 1) model.initial_condition_variables(m_data.block(1));
+      }
+
+      /**
+       * @brief Obtain the data vector holding both spatial (block 0) and variable (block 1) data.
+       *
+       * @return BlockVector<NumberType>& The data vector.
+       */
+      virtual BlockVector<NumberType> &data() override { return m_data; }
+      virtual const BlockVector<NumberType> &data() const override { return m_data; }
+
+      /**
+       * @brief Obtain the spatial data vector.
+       *
+       * @return Vector<NumberType>& The spatial data vector.
+       */
+      virtual Vector<NumberType> &spatial_data() override { return m_data.block(0); }
+      virtual const Vector<NumberType> &spatial_data() const override { return m_data.block(0); }
+
+      /**
+       * @brief Obtain the variable data vector.
+       *
+       * @return Vector<NumberType>& The variable data vector.
+       */
+      virtual Vector<NumberType> &variable_data() override { return m_data.block(1); }
+      virtual const Vector<NumberType> &variable_data() const override { return m_data.block(1); }
+
+    private:
+      const Discretization &discretization;
+      const DoFHandler<dim> &dof_handler;
+      BlockVector<NumberType> m_data;
+    };
   } // namespace FV
 
 } // namespace DiFfRG

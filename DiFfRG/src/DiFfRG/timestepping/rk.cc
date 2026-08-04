@@ -9,7 +9,7 @@
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/timestepping/rk.hh>
 
 namespace DiFfRG
@@ -67,8 +67,8 @@ namespace DiFfRG
       if (!is_close(last_save, t, 1e-10)) {
         assembler->set_time(t);
 
-        assembler->attach_data_output(*data_out, Vector<double>(), sol);
-        data_out->flush(t);
+        data_out->write_frame(t,
+                              [&](auto &frame) { assembler->attach_data_output(frame, Vector<double>(), sol); });
 
         last_save = t;
       }
@@ -127,6 +127,7 @@ namespace DiFfRG
     }
 
     initial_data = y;
+    this->drain_output();
   }
 } // namespace DiFfRG
 

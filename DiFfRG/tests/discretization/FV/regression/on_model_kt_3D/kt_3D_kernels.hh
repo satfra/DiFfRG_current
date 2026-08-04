@@ -132,7 +132,7 @@ namespace on_kt_3D
   // --- Integrator wrapper ----------------------------------------------------
   //
   // Owns the three NT specialisations of Integrator_p2<3>. The Real<2, double>
-  // variant is required because KT's compute_flux_jacobian_and_hessian seeds
+  // variant is required because KT's AD flux-derivative extraction seeds
   // second-order AD for the wave-speed Hessian.
 
   template <typename Kernel> class IntegratorWrapper

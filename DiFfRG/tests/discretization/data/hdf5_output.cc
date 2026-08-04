@@ -40,7 +40,6 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
          {"batch_size", 64},
          {"overintegration", 0},
          {"output_subdivisions", 2},
-         {"output_buffer_size", 10},
 
          {"EoM_abs_tol", 1e-10},
          {"EoM_max_iter", 0},
@@ -69,13 +68,14 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
     // nothing, the logger is already set up
   }
 
-  std::filesystem::path tmp{std::filesystem::temp_directory_path()};
-  std::string hdf5FileName = "DiFfRG_test_hdf5_output.h5";
+  auto output_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "DiFfRG_test_hdf5_output");
+  const auto &tmp = output_path.root();
+  const std::string hdf5FileName = output_path.run_file(".h5").filename().string();
 
   SECTION("Scalars")
   {
     {
-      HDF5Output hdf5_output(tmp.string(), hdf5FileName, json);
+      HDF5Output hdf5_output(tmp.string(), hdf5FileName, OutputSettings(json).configuration_json);
 
       hdf5_output.scalar("d", 42.0);
       hdf5_output.scalar("i", 1);
@@ -207,10 +207,6 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
     REQUIRE(arr_data[1][0] == 9.0);
     REQUIRE(arr_data[1][1] == 8.0);
     REQUIRE(arr_data[1][2] == 7.0);
-
-    // Remove the file after the test
-    spdlog::get("log")->info("Cleanup.");
-    std::filesystem::remove(hdf5_file);
   }
 
   SECTION("maps")
@@ -238,7 +234,7 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
     {
       // Write the coordinates and interpolators very manually to files
       {
-        HDF5Output hdf5_output(tmp.string(), hdf5FileName, json);
+        HDF5Output hdf5_output(tmp.string(), hdf5FileName, OutputSettings(json).configuration_json);
 
         hdf5_output.map("log", log_coords);
         hdf5_output.map("log_w", log_coords_wrong);
@@ -343,14 +339,10 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
         REQUIRE(is_close(lin2d_direct_map_data[i],
                          device::apply([&](const auto &...x) { return lin2d(x...); }, llcoord), 1e-14));
       }
-
-      // Remove the file after the test
-      spdlog::get("log")->info("Cleanup.");
-      std::filesystem::remove(hdf5_file);
     }
     {
       spdlog::get("log")->info("checking convenience writing.");
-      HDF5Output hdf5_output(tmp.string(), hdf5FileName, json);
+      HDF5Output hdf5_output(tmp.string(), hdf5FileName, OutputSettings(json).configuration_json);
 
       REQUIRE_NOTHROW(hdf5_output.map("spline", spline));
       REQUIRE_NOTHROW(hdf5_output.map("lin2d", lin2d));
@@ -380,10 +372,6 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
       REQUIRE(lin2d_sub_group.has_dataset("data"));
 
       // Skip the explicit data verification here, we just wanted to know that the convenience method worked.
-
-      // Remove the file after the test
-      spdlog::get("log")->info("Cleanup.");
-      std::filesystem::remove(hdf5_file);
     }
   }
 }
