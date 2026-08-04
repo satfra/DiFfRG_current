@@ -133,6 +133,7 @@ namespace DiFfRG
     bool spatial_extrapolate = false;
 
     auto get_variable_residual = [&](const Eigen::VectorXd &x, Eigen::VectorXd &dxdt, const double t) {
+      CalcDtTimer calc_timer;
       eigen_to_dealii(x, variable_y_dealii);
 
       variable_dy_dealii = 0;
@@ -175,7 +176,7 @@ namespace DiFfRG
       dealii_to_eigen(variable_dy_dealii, dxdt);
       dxdt *= -1;
 
-      console_out(t, "explicit residual", 1);
+      console_out(t, "explicit residual", 1, nullptr, calc_timer.lap());
     };
 
     Eigen::VectorXd variable_sol;
@@ -680,6 +681,7 @@ namespace DiFfRG
 
     //  Calculate the residual of y_dot + F(y)
     time_stepper.residual = [&](const double t, const VectorType &y, const VectorType &y_dot, VectorType &res) -> int {
+      CalcDtTimer calc_timer;
       if (is_close(t, stuck_t, impl.minimal_dt * 1e-1))
         stuck++;
       else {
@@ -717,7 +719,7 @@ namespace DiFfRG
       }
 
       const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-      console_out(t, "implicit residual", 1, &current_diagnostics);
+      console_out(t, "implicit residual", 1, &current_diagnostics, calc_timer.lap());
 
       failure_counter = 0;
       return 0;
@@ -725,6 +727,7 @@ namespace DiFfRG
     // Calculate the jacobian d(y_dot + F(y))/dy + d(y_dot*alpha)/dy_dot
     time_stepper.setup_jacobian = [&](const double t, const VectorType &y, const VectorType &y_dot,
                                       const double alpha) -> int {
+      CalcDtTimer calc_timer;
       if (failure_counter > 200) throw std::runtime_error("timestep failure at jacobian");
 
       try {
@@ -737,11 +740,11 @@ namespace DiFfRG
         linSolver.init(spatial_jacobian);
 
         const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-        console_out(t, "jacobian construction", 2, &current_diagnostics);
+        console_out(t, "jacobian construction", 2, &current_diagnostics, calc_timer.lap());
 
         if (linSolver.invert()) {
           const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-          console_out(t, "jacobian inversion", 3, &current_diagnostics);
+          console_out(t, "jacobian inversion", 3, &current_diagnostics, calc_timer.lap());
         }
       } catch (std::exception &e) {
         callback_diagnostics.jacobian_failures++;
@@ -755,11 +758,13 @@ namespace DiFfRG
 
     // Solve the linear system J dst = src
     time_stepper.solve_with_jacobian = [&](const VectorType &src, VectorType &dst, const double tol) -> int {
+      CalcDtTimer calc_timer;
       try {
         const auto sol_iterations = linSolver.solve(src, dst, tol);
         if (sol_iterations >= 0) {
           const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-          console_out(stuck_t, "linear solver (" + std::to_string(sol_iterations) + " it)", 2, &current_diagnostics);
+          console_out(stuck_t, "linear solver (" + std::to_string(sol_iterations) + " it)", 2, &current_diagnostics,
+                      calc_timer.lap());
         }
       } catch (std::exception &) {
         callback_diagnostics.linear_solver_failures++;

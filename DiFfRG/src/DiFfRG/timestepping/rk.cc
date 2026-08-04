@@ -104,13 +104,15 @@ namespace DiFfRG
     while (time.is_at_end() == false) {
       explicit_runge_kutta.evolve_one_time_step(
           [&](const double t, const VectorType &y) {
+            CalcDtTimer calc_timer;
+
             typename VectorMemory<VectorType>::Pointer f(mem);
             f->reinit(y);
             assembler->set_time(t);
             assembler->residual_variables(*f, y, Vector<double>());
             *f *= -1.;
 
-            console_out(t, "explicit residual", 1);
+            console_out(t, "explicit residual", 1, nullptr, calc_timer.lap());
 
             return *f;
           },
