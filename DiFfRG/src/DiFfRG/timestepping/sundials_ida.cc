@@ -16,7 +16,7 @@
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/timestepping/linear_solver/GMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/ScaledGMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/UMFPack.hh>
@@ -297,8 +297,9 @@ namespace DiFfRG
                                    unsigned int /*step_number*/) {
       if (!is_close(last_save, t, 1e-10)) {
         assembler->set_time(t);
-        assembler->attach_data_output(*data_out, sol, Vector<double>(), sol_dot, (*residual));
-        data_out->flush(t);
+        data_out->write_frame(t, [&](auto &frame) {
+          assembler->attach_data_output(frame, sol, Vector<double>(), sol_dot, (*residual));
+        });
 
         last_save = t;
       }
@@ -450,13 +451,14 @@ namespace DiFfRG
     try {
       time_stepper.solve_dae(y, y_dot);
     } catch (const std::exception &e) {
-      spdlog::get("log")->error("Timestepping failed: {}", e.what());
+      this->log.error("Timestepping failed: {}", e.what());
       output_after_failure = true;
       time_stepper.output_step(stuck_t, y, y_dot, 0);
       throw;
     }
 
     initial_data = y;
+    this->drain_output();
   }
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
@@ -537,8 +539,9 @@ namespace DiFfRG
                                    unsigned int /*step_number*/) {
       if (!is_close(last_save, t, 1e-10)) {
         assembler->set_time(t);
-        assembler->attach_data_output(*data_out, sol.block(0), sol.block(1), sol_dot.block(0), (*residual).block(0));
-        data_out->flush(t);
+        data_out->write_frame(t, [&](auto &frame) {
+          assembler->attach_data_output(frame, sol.block(0), sol.block(1), sol_dot.block(0), (*residual).block(0));
+        });
 
         last_save = t;
       }
@@ -714,12 +717,13 @@ namespace DiFfRG
     try {
       time_stepper.solve_dae(y, y_dot);
     } catch (const std::exception &e) {
-      spdlog::get("log")->error("Timestepping failed: {}", e.what());
+      this->log.error("Timestepping failed: {}", e.what());
       time_stepper.output_step(stuck_t, y, y_dot, 0);
       throw;
     }
 
     initial_data = y;
+    this->drain_output();
   }
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
@@ -767,8 +771,8 @@ namespace DiFfRG
                                    uint /*step_number*/) {
       if (!is_close(last_save, t, 1e-10)) {
         assembler->set_time(t);
-        assembler->attach_data_output(*data_out, Vector<double>(), sol);
-        data_out->flush(t);
+        data_out->write_frame(t,
+                              [&](auto &frame) { assembler->attach_data_output(frame, Vector<double>(), sol); });
 
         last_save = t;
       }
@@ -923,13 +927,14 @@ namespace DiFfRG
     try {
       time_stepper.solve_dae(y, y_dot);
     } catch (const std::exception &e) {
-      spdlog::get("log")->error("Timestepping failed: {}", e.what());
+      this->log.error("Timestepping failed: {}", e.what());
       output_after_failure = true;
       time_stepper.output_step(stuck_t, y, y_dot, 0);
       throw;
     }
 
     initial_data = y;
+    this->drain_output();
   }
 } // namespace DiFfRG
 

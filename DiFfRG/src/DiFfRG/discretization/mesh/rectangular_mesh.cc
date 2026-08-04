@@ -1,10 +1,8 @@
 // standard library
 #include "DiFfRG/discretization/mesh/configuration_mesh.hh"
-#include <fstream>
 
 // external libraries
 #include <deal.II/grid/grid_generator.h>
-#include <deal.II/grid/grid_out.h>
 #include <deal.II/grid/grid_refinement.h>
 
 // DiFfRG
@@ -48,12 +46,6 @@ namespace DiFfRG
                                                       triangulation_data.lower_left, triangulation_data.upper_right);
 
     triangulation.refine_global(mesh_config.refine);
-
-    if constexpr (dim == 2) {
-      std::ofstream out("grid.svg");
-      dealii::GridOut grid_out;
-      grid_out.write_svg(triangulation, out);
-    }
   }
 
   template class RectangularMesh<1>;

@@ -143,9 +143,12 @@ Note that the TimeStepper takes an additional argument, where we can choose the 
   // Define the objects needed to run the simulation
   Model model(json);
   RectangularMesh<dim> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
-  TimeStepper time_stepper(json, &assembler);
+  OutputPath output_path(json);
+  OutputSession<dim, VectorType> output(output_path, OutputSettings(json));
+  const auto log = output.log_port();
+  Discretization discretization(mesh, json, log);
+  Assembler assembler(discretization, model, json, log);
+  TimeStepper time_stepper(json, &assembler, &output);
 ```
 We now use the types we defined above to construct objects of all the classes described above.
 
@@ -162,7 +165,7 @@ and use it to run the time-stepper from RG-time 0 to the final RG-time, which we
   try {
     time_stepper.run(&initial_condition, 0., json.get_double("/timestepping/final_time"));
   } catch (std::exception &e) {
-    spdlog::get("log")->error("Simulation finished with exception {}", e.what());
+    log.error("Simulation finished with exception {}", e.what());
     return -1;
   }
   auto time = timer.wall_time();
@@ -184,8 +187,8 @@ Furthermore, we recorded the time the simulation took using the `dealii::Timer` 
 We finish the program by printing a bit of information to the log file, in particular the performance and utilization of the `Assembler`.
 ```cpp
   // We print a bit of exit information.
-  assembler.log("log");
-  spdlog::get("log")->info("Simulation finished after " + time_format(time));
+  assembler.log();
+  log.info("Simulation finished after " + time_format(time));
   return 0;
 }
 ```

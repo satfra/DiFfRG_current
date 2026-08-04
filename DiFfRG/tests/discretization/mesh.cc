@@ -58,6 +58,32 @@ TEST_CASE("RectangularMesh default construction keeps configured geometry", "[di
     CHECK_THAT(width, WithinAbs(0.1, 1.0e-12));
 }
 
+TEST_CASE("Deprecated JSON RectangularMesh delegates to ConfigurationMesh", "[discretization][mesh][migration]")
+{
+  const DiFfRG::JSONValue json = DiFfRG::json::parse(R"({
+    "discretization": {
+      "grid": {
+        "x_grid": "0.0:0.25:1.0",
+        "y_grid": "0.0:0.5:2.0",
+        "z_grid": "0.0:1.0:1.0",
+        "refine": 0
+      }
+    }
+  })");
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  const RectangularMesh<2> legacy(json);
+#pragma GCC diagnostic pop
+  const RectangularMesh<2> current{ConfigurationMesh<2>(json)};
+
+  CHECK(legacy.get_triangulation().n_active_cells() == current.get_triangulation().n_active_cells());
+  auto legacy_cell = legacy.get_triangulation().begin_active();
+  auto current_cell = current.get_triangulation().begin_active();
+  for (; legacy_cell != legacy.get_triangulation().end(); ++legacy_cell, ++current_cell)
+    CHECK(legacy_cell->center().distance(current_cell->center()) == Catch::Approx(0.0));
+}
+
 TEST_CASE("RectangularMesh can center its first cell on the origin", "[discretization][mesh][origin-centered]")
 {
   const std::vector<GridAxis> x_grid{GridAxis(0.0, 0.1, 5.0)};

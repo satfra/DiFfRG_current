@@ -12,6 +12,7 @@
 
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/common/run_logger.hh>
 #include <DiFfRG/discretization/FEM/assembler/ldg.hh>
 #include <DiFfRG/discretization/discretization.hh>
 
@@ -37,7 +38,14 @@ namespace DiFfRG
       using Mesh = Mesh_;
       static constexpr uint dim = Mesh::dim;
 
-      Discretization(Mesh &mesh, const JSONValue &json) : mesh(mesh), json(json)
+      [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Discretization(
+          Mesh &mesh, DiFfRG::internal::LegacyDefaultLogPortArgument<Mesh, JSONValue> json)
+          : Discretization(mesh, json.value(), DiFfRG::internal::legacy_default_log_port<Mesh>())
+      {
+      }
+
+      Discretization(Mesh &mesh, const JSONValue &json, LogPort log_port)
+          : mesh(mesh), json(json), log_port(std::move(log_port))
       {
         static_assert(Components::count_fe_subsystems() > 1,
                       "LDG must have a defined submodel of the Model with index 1.");
@@ -99,7 +107,7 @@ namespace DiFfRG
     protected:
       void setup_dofs()
       {
-        spdlog::get("log")->info("FEM: Number of active cells: {}", mesh.get_triangulation().n_active_cells());
+        log_port.info("FEM: Number of active cells: {}", mesh.get_triangulation().n_active_cells());
 
         for (uint i = 0; i < Components::count_fe_subsystems(); ++i) {
           dof_handler[i]->distribute_dofs(*(fe[i]));
@@ -108,7 +116,7 @@ namespace DiFfRG
           DoFTools::make_hanging_node_constraints(*(dof_handler[i]), constraints[i]);
           constraints[i].close();
 
-          if (i == 0) spdlog::get("log")->info("FEM: Number of degrees of freedom: {}", dof_handler[0]->n_dofs());
+          if (i == 0) log_port.info("FEM: Number of degrees of freedom: {}", dof_handler[0]->n_dofs());
         }
 
         support_points.resize(dof_handler[0]->n_dofs());
@@ -117,6 +125,7 @@ namespace DiFfRG
 
       Mesh &mesh;
       JSONValue json;
+      LogPort log_port;
 
       std::vector<std::shared_ptr<FESystem<dim>>> fe;
       std::vector<std::shared_ptr<DoFHandler<dim>>> dof_handler;

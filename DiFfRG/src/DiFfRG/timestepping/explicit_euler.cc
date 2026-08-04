@@ -4,7 +4,7 @@
 // DiFfRG
 #include <DiFfRG/common/eigen.hh>
 #include <DiFfRG/common/types.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/timestepping/explicit_euler.hh>
 
 namespace DiFfRG
@@ -26,9 +26,7 @@ namespace DiFfRG
     VectorType old_solution = initial_condition->spatial_data();
     VectorType solution = initial_condition->spatial_data();
 
-    assembler->attach_data_output(*data_out, solution);
-
-    data_out->flush(start);
+    data_out->write_frame(start, [&](auto &frame) { assembler->attach_data_output(frame, solution); });
 
     double last_save = start;
     double t = start;
@@ -46,9 +44,7 @@ namespace DiFfRG
 
       t += expl.dt;
       if ((t - last_save + 1e-4 * expl.dt) >= output_dt) {
-        assembler->attach_data_output(*data_out, solution);
-
-        data_out->flush(t);
+        data_out->write_frame(t, [&](auto &frame) { assembler->attach_data_output(frame, solution); });
         last_save = t;
       }
       old_solution.swap(solution);
@@ -57,6 +53,7 @@ namespace DiFfRG
     }
 
     initial_condition->spatial_data() = solution;
+    this->drain_output();
   }
 } // namespace DiFfRG
 

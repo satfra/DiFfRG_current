@@ -2,6 +2,7 @@
 
 // DiFfRG
 #include <DiFfRG/common/math.hh>
+#include <DiFfRG/common/run_logger.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/physics/loop_integrals.hh>
 
@@ -26,7 +27,16 @@ namespace DiFfRG
      * @brief Print all deduced extents to the given spdlog.
      *
      */
-    void print_parameters(const std::string logname) const;
+    void print_parameters(LogPort log) const;
+    template <typename String>
+      requires std::convertible_to<String, std::string>
+    [[deprecated("Pass output.log_port() to print_parameters(LogPort) instead")]] void
+    print_parameters(String &&) const
+    {
+      static_assert(!std::is_same_v<String, String>,
+                    "print_parameters(string) was removed. Pass output.log_port() to print_parameters(LogPort) "
+                    "instead");
+    }
 
     template <typename NT, int d, typename FUN> NT integrate(const FUN &fun) const
     {
@@ -127,7 +137,16 @@ namespace DiFfRG
      * @brief Print all deduced extents to the given spdlog.
      *
      */
-    void print_parameters(const std::string logname) const;
+    void print_parameters(LogPort log) const;
+    template <typename String>
+      requires std::convertible_to<String, std::string>
+    [[deprecated("Pass output.log_port() to print_parameters(LogPort) instead")]] void
+    print_parameters(String &&) const
+    {
+      static_assert(!std::is_same_v<String, String>,
+                    "print_parameters(string) was removed. Pass output.log_port() to print_parameters(LogPort) "
+                    "instead");
+    }
 
     template <typename NT, int d, typename FUN> NT integrate(const FUN &fun) const
     {

@@ -170,8 +170,8 @@ namespace
     setup_logger();
 
     auto json = make_json(fe_order);
-    RectangularMesh<dim> mesh(json);
-    Discretization discretization(mesh, json);
+    RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+    Discretization discretization(mesh, json, DiFfRG::LogPort{});
 
     FE::FlowingVariables initial_condition(discretization);
     initial_condition.interpolate(model);
@@ -272,8 +272,8 @@ TEST_CASE("Detailed EoM reconstruction owns the scalar potential and its gauge",
 
     auto json = make_json(2);
     Model model(parameters_with_minimum(expected));
-    RectangularMesh<dim> mesh(json);
-    Discretization discretization(mesh, json);
+    RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+    Discretization discretization(mesh, json, DiFfRG::LogPort{});
     FE::FlowingVariables initial_condition(discretization);
     initial_condition.interpolate(model);
 
@@ -374,8 +374,8 @@ TEST_CASE("EoM max-iteration zero keeps the origin bypass", "[discretization][Eo
 
   auto json = make_json(1);
   Model model(parameters_with_boundary_minimum());
-  RectangularMesh<dim> mesh(json);
-  Discretization discretization(mesh, json);
+  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
   FE::FlowingVariables initial_condition(discretization);
   initial_condition.interpolate(model);
 

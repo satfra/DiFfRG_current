@@ -364,7 +364,7 @@ namespace DiFfRG
 
       template <typename FUN, typename DataOut> void readouts_multiple(FUN &helper, DataOut &) const
       {
-        helper([&](const auto &x, const auto &u_i) { return asImp().EoM(x, u_i); }, // chiral EoM
+        helper("primary", [&](const auto &x, const auto &u_i) { return asImp().EoM(x, u_i); }, // chiral EoM
                [&](auto &output, const auto &x, const auto &sol) { asImp().readouts(output, x, sol); });
       }
 

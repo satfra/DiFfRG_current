@@ -160,8 +160,8 @@ TEST_CASE("Affine-constraint metadata captures interior support points for scala
 
   auto json = make_json();
   ensure_logger();
-  RectangularMesh<dim> mesh(json);
-  Discretization discretization(mesh, json);
+  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
 
   const auto metadata = DiFfRG::internal::build_affine_constraint_metadata<Components, dim>(discretization);
 
@@ -185,8 +185,8 @@ TEST_CASE("Affine-constraint context exposes named component views", "[discretiz
 
   auto json = make_json();
   ensure_logger();
-  RectangularMesh<dim> mesh(json);
-  Discretization discretization(mesh, json);
+  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
 
   const auto metadata = DiFfRG::internal::build_affine_constraint_metadata<Components, dim>(discretization);
   const AffineConstraintContext<Components, dim> context(metadata);

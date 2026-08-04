@@ -15,9 +15,9 @@ namespace DiFfRG
   {
     namespace KurganovTadmor
     {
-      // The pre-assembly hook is called separately for diagnostics, residual, and jacobian assembly.
+      // The pre-assembly hook is called separately for residual and jacobian assembly.
       // A model must not assume one hook call per solver step or timestep.
-      enum class AssemblyStage { residual, jacobian, diagnostics };
+      enum class AssemblyStage { residual, jacobian };
 
       template <int dim_, typename NumberType_, std::size_t n_components_> class FaceAssemblyView
       {

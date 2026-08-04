@@ -56,8 +56,7 @@ namespace
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
-  template <typename Model>
-  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor>;
+  template <typename Model> using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor>;
   using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
 
   struct FlowCase {
@@ -76,8 +75,8 @@ namespace
     std::ostringstream description;
     description << std::setprecision(17);
     description << "flow=" << (flow_case.relative_path.empty() ? flow_case.filename : flow_case.relative_path)
-                << ", kind=" << (flow_case.is_mean_field ? "MF" : "finite-N")
-                << ", T=" << flow_case.temperature << ", mu=" << flow_case.chemical_potential << ", N=";
+                << ", kind=" << (flow_case.is_mean_field ? "MF" : "finite-N") << ", T=" << flow_case.temperature
+                << ", mu=" << flow_case.chemical_potential << ", N=";
     if (flow_case.is_mean_field)
       description << "MF";
     else
@@ -92,17 +91,23 @@ namespace
     return powr<-1>(temperature) * occupation * (1.0 - occupation);
   }
 
-  FlowCase make_flow_case(const std::string_view relative_path, const std::string_view filename, const bool is_mean_field,
-                          const double temperature, const double chemical_potential, const double n_flavors)
+  FlowCase make_flow_case(const std::string_view relative_path, const std::string_view filename,
+                          const bool is_mean_field, const double temperature, const double chemical_potential,
+                          const double n_flavors)
   {
     constexpr double regression_profile_abs_tol = 1.0e-6;
     constexpr double regression_profile_rel_tol = 1.0e-7;
-    return FlowCase{std::string(relative_path), std::string(filename), is_mean_field, temperature, chemical_potential,
-                    n_flavors, regression_profile_abs_tol, regression_profile_rel_tol};
+    return FlowCase{std::string(relative_path),
+                    std::string(filename),
+                    is_mean_field,
+                    temperature,
+                    chemical_potential,
+                    n_flavors,
+                    regression_profile_abs_tol,
+                    regression_profile_rel_tol};
   }
 
-  template <typename Derived>
-  struct GrossNeveuFlowDescriptor {
+  template <typename Derived> struct GrossNeveuFlowDescriptor {
     static FlowCase flow_case()
     {
       return make_flow_case(Derived::relative_path, Derived::filename, Derived::is_mean_field, Derived::temperature,
@@ -220,7 +225,9 @@ namespace
                                      public def::AD<Derived>
   {
   public:
-    GrossNeveuKTSourceOnlyBase(const JSONValue &json, const FlowCase &flow_case) : def::fRG(json), flow_case(flow_case) {}
+    GrossNeveuKTSourceOnlyBase(const JSONValue &json, const FlowCase &flow_case) : def::fRG(json), flow_case(flow_case)
+    {
+    }
 
     template <typename Vector> void initial_condition(const Point<dim> &x, Vector &values) const
     {
@@ -232,8 +239,7 @@ namespace
 
     template <int spatial_dim, typename FluxNumberType, typename Solutions, std::size_t n_fe_functions>
     void flux(std::array<Tensor<1, spatial_dim, FluxNumberType>, n_fe_functions> &F_i,
-              [[maybe_unused]] const Point<spatial_dim> &x,
-              [[maybe_unused]] const Solutions &sol) const
+              [[maybe_unused]] const Point<spatial_dim> &x, [[maybe_unused]] const Solutions &sol) const
     {
       static_assert(spatial_dim == dim, "GrossNeveuKTModel is one-dimensional.");
       static_assert(n_fe_functions == 1, "GrossNeveuKTModel expects a single FE function.");
@@ -295,8 +301,7 @@ namespace
 
       // KT residual sums the fluxes: (H + D)·n, so the diffusion flux is the physical
       // flux with the same sign as the advection flux (conservation-law / CG convention).
-      F_i[0][0] =
-          FluxNumberType(1.0 / (pi * flow_case.n_flavors)) * FluxNumberType(k3 / 2.0) * thermal_factor / E_b;
+      F_i[0][0] = FluxNumberType(1.0 / (pi * flow_case.n_flavors)) * FluxNumberType(k3 / 2.0) * thermal_factor / E_b;
     }
   };
 
@@ -310,7 +315,6 @@ namespace
            {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
-           {"output_buffer_size", 1},
            {"EoM_abs_tol", 1e-10},
            {"EoM_max_iter", 0}}},
          {"timestepping",
@@ -378,8 +382,8 @@ namespace
       REQUIRE(reference_u.x[i] == Catch::Approx(static_cast<double>(i) * delta_sigma).margin(grid_tol));
 
     const auto reconstructed_U = reconstruct_potential_from_u(reference_u.y);
-    if (const auto mismatch = kt_regression::compare_profiles("fixture U reconstruction", reference_U.x, reconstructed_U,
-                                                              reference_U.y, abs_tol, rel_tol))
+    if (const auto mismatch = kt_regression::compare_profiles("fixture U reconstruction", reference_U.x,
+                                                              reconstructed_U, reference_U.y, abs_tol, rel_tol))
       FAIL(*mismatch);
 
     return {reference_U, reference_u};
@@ -402,11 +406,12 @@ namespace
     const JSONValue json = make_json(flow_case);
     Model model(json, flow_case);
     Mesh mesh(make_mesh_config());
-    Discretization discretization(mesh, json);
-    Assembler<Model> assembler(discretization, model, json);
+    Discretization discretization(mesh, json, DiFfRG::LogPort{});
+    Assembler<Model> assembler(discretization, model, json, DiFfRG::LogPort{});
 
-    kt_regression::TemporaryDirectory tmp_dir("gross_neveu_kt_regression");
-    DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), "gross_neveu_kt_regression", "output", json);
+    auto data_out_path =
+        OutputPath::temporary(TemporaryRetention::remove_on_destruction, "gross_neveu_kt_regression", "output");
+    OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     Stepper time_stepper(json, &assembler, &data_out, adaptor.get());
 
@@ -447,8 +452,7 @@ namespace
       return run_flow_to_ir<GrossNeveuKTFluxModel, ImplicitTimeStepper>(flow_case);
   }
 
-  template <typename FlowParam>
-  struct GrossNeveuFlowFixture {
+  template <typename FlowParam> struct GrossNeveuFlowFixture {
     static FlowCase flow_case() { return FlowParam::flow_case(); }
 
     static std::filesystem::path expected_local_fixture_path() { return local_fixture_path(FlowParam::relative_path); }
@@ -468,14 +472,14 @@ namespace
       for (std::size_t i = 0; i < simulation.x.size(); ++i)
         REQUIRE(simulation.x[i] == Catch::Approx(reference_u.x[i]).margin(grid_tol));
 
-      if (const auto u_mismatch = kt_regression::compare_profiles("u(sigma)", simulation.x, simulation.u, reference_u.y,
-                                                                  current_flow.profile_abs_tol,
-                                                                  current_flow.profile_rel_tol))
+      if (const auto u_mismatch =
+              kt_regression::compare_profiles("u(sigma)", simulation.x, simulation.u, reference_u.y,
+                                              current_flow.profile_abs_tol, current_flow.profile_rel_tol))
         FAIL(*u_mismatch);
 
-      if (const auto U_mismatch = kt_regression::compare_profiles("U(sigma)", simulation.x, simulation.U, reference_U.y,
-                                                                  current_flow.profile_abs_tol,
-                                                                  current_flow.profile_rel_tol))
+      if (const auto U_mismatch =
+              kt_regression::compare_profiles("U(sigma)", simulation.x, simulation.U, reference_U.y,
+                                              current_flow.profile_abs_tol, current_flow.profile_rel_tol))
         FAIL(*U_mismatch);
     }
   };

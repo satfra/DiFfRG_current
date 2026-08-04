@@ -5,7 +5,7 @@
 #include "DiFfRG/timestepping/timestepping.hh"
 
 #include <DiFfRG/common/json.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
 #include <DiFfRG/model/model.hh>
 
@@ -198,7 +198,6 @@ namespace
            {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
-           {"output_buffer_size", 1},
            {"EoM_abs_tol", 1.0e-10},
            {"EoM_max_iter", 0},
            {"grid", {{"x_grid", phi_grid}, {"y_grid", phi_grid}, {"z_grid", "0:1:1"}, {"refine", 0}}}}},
@@ -736,13 +735,15 @@ namespace
     const JSONValue json = make_run_json(params);
     ZeroDim2DKTCaseVModel model(json, params.interaction_strength);
     Mesh mesh(make_mesh_config(params));
-    Discretization discretization(mesh, json);
-    CaseVAssembler assembler(discretization, model, json);
+    Discretization discretization(mesh, json, DiFfRG::LogPort{});
+    CaseVAssembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
-    kt_regression::TemporaryDirectory tmp_dir("zero_dim_2d_kt_case_v_regression", !params.retain_output);
+    auto data_out_path = OutputPath::temporary(params.retain_output ? TemporaryRetention::keep
+                                                                    : TemporaryRetention::remove_on_destruction,
+                                               "zero_dim_2d_kt_case_v_regression", "output");
     std::clog << "[CASE V DIAG] " << (params.retain_output ? "retaining" : "using temporary") << " output directory "
-              << tmp_dir.path << '\n';
-    DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), "zero_dim_2d_kt_case_v_regression", "output", json);
+              << data_out_path.root() << '\n';
+    OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
 
     FV::FlowingVariables<Discretization> state(discretization);

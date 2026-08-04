@@ -14,7 +14,7 @@
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/timestepping/linear_solver/GMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/UMFPack.hh>
 #include <DiFfRG/timestepping/sundials_diagnostics.hh>
@@ -671,8 +671,8 @@ namespace DiFfRG
       if (!is_close(last_save, t, 1e-10)) {
         assembler->set_time(t);
         commit_variables(variable_y, sol, t);
-        assembler->attach_data_output(*data_out, sol, variable_y, sol_dot, (*residual));
-        data_out->flush(t);
+        data_out->write_frame(
+            t, [&](auto &frame) { assembler->attach_data_output(frame, sol, variable_y, sol_dot, (*residual)); });
 
         last_save = t;
       }
@@ -772,13 +772,14 @@ namespace DiFfRG
     try {
       time_stepper.solve_dae(spatial_y, spatial_y_dot);
     } catch (const std::exception &e) {
-      spdlog::get("log")->error("Timestepping failed: {}", e.what());
+      this->log.error("Timestepping failed: {}", e.what());
       time_stepper.output_step(stuck_t, spatial_y, spatial_y_dot, 0);
       throw;
     }
 
     initial_data.block(0) = spatial_y;
     commit_variables(initial_data.block(1), spatial_y, t_stop);
+    this->drain_output();
   }
 } // namespace DiFfRG
 

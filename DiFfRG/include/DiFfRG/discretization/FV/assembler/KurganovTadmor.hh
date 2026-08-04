@@ -129,47 +129,6 @@ namespace DiFfRG
           }
         };
 
-        template <typename NumberType> struct CopyData_ResidualDiagnostics {
-          struct CopyDataFace_ResidualDiagnostics {
-            Vector<NumberType> advection;
-            Vector<NumberType> diffusion;
-            std::vector<types::global_dof_index> joint_dof_indices;
-
-            void reinit(const unsigned int n_face_dofs)
-            {
-              advection.reinit(n_face_dofs);
-              diffusion.reinit(n_face_dofs);
-              joint_dof_indices.resize(n_face_dofs);
-            }
-          };
-
-          Vector<NumberType> advection;
-          Vector<NumberType> diffusion;
-          Vector<NumberType> source;
-          Vector<NumberType> mass;
-          std::vector<types::global_dof_index> local_dof_indices;
-          std::vector<CopyDataFace_ResidualDiagnostics> face_data;
-          unsigned int active_face_count = 0;
-
-          template <class Iterator> void reinit(const Iterator &cell, uint dofs_per_cell)
-          {
-            advection.reinit(dofs_per_cell);
-            diffusion.reinit(dofs_per_cell);
-            source.reinit(dofs_per_cell);
-            mass.reinit(dofs_per_cell);
-            local_dof_indices.resize(dofs_per_cell);
-            if (face_data.size() != cell->n_faces()) face_data.resize(cell->n_faces());
-            active_face_count = 0;
-            cell->get_dof_indices(local_dof_indices);
-          }
-
-          CopyDataFace_ResidualDiagnostics &next_face_data()
-          {
-            AssertIndexRange(active_face_count, face_data.size());
-            return face_data[active_face_count++];
-          }
-        };
-
         // TODO fewer memory allocations
         template <typename NumberType, int dim> struct CopyData_J {
           using Iterator = typename DoFHandler<dim>::active_cell_iterator;
@@ -495,8 +454,6 @@ namespace DiFfRG
 
       } // namespace internal
 
-#include <DiFfRG/discretization/FV/assembler/reconstruction_diagnostics.hh>
-
       template <typename Discretization_, typename Model_,
                 def::HasReconstructor Reconstructor_ =
                     def::TVDReconstructor<Discretization_::dim, def::MinModLimiter, double>,
@@ -565,18 +522,17 @@ namespace DiFfRG
           std::vector<Point> quadrature_points;
           std::vector<NumberType> jxw;
         };
-        struct ResidualContributionDiagnostics {
-          VectorType advection;
-          VectorType diffusion;
-          VectorType source;
-          VectorType mass;
-          VectorType total;
-          VectorType total_minus_residual;
-          bool has_residual = false;
-        };
+        [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Assembler(
+            Discretization &discretization, Model &model,
+            DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, JSONValue> json)
+            : Assembler(discretization, model, json.value(),
+                        DiFfRG::internal::legacy_default_log_port<Discretization>())
+        {
+        }
 
-        Assembler(Discretization &discretization, Model &model, const JSONValue &json)
-            : discretization(discretization), model(model), dof_handler(discretization.get_dof_handler()),
+        Assembler(Discretization &discretization, Model &model, const JSONValue &json, LogPort log_port)
+            : discretization(discretization), model(model), log_port(std::move(log_port)),
+              dof_handler(discretization.get_dof_handler()),
               mapping(discretization.get_mapping()), triangulation(discretization.get_triangulation()), json(json),
               fe(discretization.get_fe()), threads(json.get_uint("/discretization/threads")),
               batch_size(json.get_uint("/discretization/batch_size")),
@@ -588,7 +544,7 @@ namespace DiFfRG
               quadrature_face(1 + json.get_uint("/discretization/overintegration"))
         {
           if (this->threads == 0) this->threads = dealii::MultithreadInfo::n_threads() / 2;
-          spdlog::get("log")->info("FV: Using {} threads for assembly.", threads);
+          log_port.info("FV: Using {} threads for assembly.", threads);
 
           AssertThrow(fe.dofs_per_cell == n_components,
                       ExcMessage("FV Kurganov-Tadmor assembler expects one dof per component."));
@@ -610,9 +566,9 @@ namespace DiFfRG
           return DoFTools::extract_dofs(dof_handler, component_mask);
         }
 
-        virtual void attach_data_output(DataOutput<dim, VectorType> &data_out, const VectorType &solution,
-                                        const VectorType &variables, const VectorType &dt_solution = VectorType(),
-                                        const VectorType &residual = VectorType()) override
+        virtual void attach_data_output(OutputFrame<dim, VectorType> &data_out, const VectorType &solution,
+                                    const VectorType &variables, const VectorType &dt_solution = VectorType(),
+                                    const VectorType &residual = VectorType()) override
         {
           const auto fe_function_names = Components::FEFunction_Descriptor::get_names_vector();
           std::vector<std::string> fe_function_names_residual;
@@ -622,31 +578,10 @@ namespace DiFfRG
           for (const auto &name : fe_function_names)
             fe_function_names_dot.push_back(name + "_dot");
 
-          auto &fe_out = data_out.fe_output();
+          auto fe_out = data_out.fields();
           fe_out.attach(dof_handler, solution, fe_function_names);
           if (dt_solution.size() > 0) fe_out.attach(dof_handler, dt_solution, fe_function_names_dot);
           if (residual.size() > 0) fe_out.attach(dof_handler, residual, fe_function_names_residual);
-
-#ifdef H5CPP
-          if (json.get_bool("/output/hdf5", true) && json.get_bool("/output/fv_reconstruction_diagnostics", false)) {
-            if constexpr (dim != 1) {
-              throw std::runtime_error(
-                  "FV reconstruction diagnostics are currently implemented for 1D KT models only.");
-            } else {
-              diagnostics::write_reconstruction_maps<Assembler>(*this, data_out, dof_handler, model, solution);
-            }
-          }
-          if (json.get_bool("/output/hdf5", true) &&
-              json.get_bool("/output/fv_residual_contribution_diagnostics", false)) {
-            if constexpr (dim != 1) {
-              throw std::runtime_error(
-                  "FV residual contribution diagnostics are currently implemented for 1D KT models only.");
-            } else {
-              const auto contributions = residual_contribution_diagnostics(solution, dt_solution, residual);
-              diagnostics::write_residual_contribution_maps<Assembler>(data_out, dof_handler, contributions);
-            }
-          }
-#endif
 
           readouts(data_out, solution, variables);
         }
@@ -661,7 +596,7 @@ namespace DiFfRG
           auto &constraints = discretization.get_constraints();
           constraints.clear();
           DoFTools::make_hanging_node_constraints(dof_handler, constraints);
-          model.affine_constraints(constraints, context);
+          DiFfRG::internal::apply_model_affine_constraints(model, constraints, context);
           constraints.close();
 
           // Mass sparsity pattern
@@ -716,10 +651,13 @@ namespace DiFfRG
           std::array<Tensor<2, dim, NumberType>, n_components> hessians{};
         };
 
-        void readouts(DataOutput<dim, VectorType> &data_out, const VectorType &solution_global,
+        void readouts(OutputFrame<dim, VectorType> &data_out, const VectorType &solution_global,
                       const VectorType &variables) const
         {
-          auto helper = [&](auto EoMfun, auto outputter) {
+          auto helper = [&](auto &&...args) {
+            if constexpr (sizeof...(args) == 3) {
+              auto &&[id, EoMfun, outputter] = std::forward_as_tuple(std::forward<decltype(args)>(args)...);
+            data_out.register_readout(id);
             auto EoM_cell = this->EoM_cell;
             auto EoM_result = get_EoM_point_with_potential(
                 EoM_cell, solution_global, dof_handler, mapping, EoMfun,
@@ -733,6 +671,9 @@ namespace DiFfRG
             outputter(data_out, EoM,
                       e_tie(solution.values, solution.gradients, solution.hessians, extracted_data, variables));
             data_out.attach_eom_potential(std::move(EoM_result));
+            } else {
+              DiFfRG::internal::validate_readout_helper_arity<decltype(args)...>();
+            }
           };
           model.readouts_multiple(helper, data_out);
         }
@@ -792,165 +733,6 @@ namespace DiFfRG
 
           MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
                                 copy_data, flags, nullptr, nullptr, threads, batch_size);
-        }
-
-        ResidualContributionDiagnostics
-        residual_contribution_diagnostics(const VectorType &solution_global, const VectorType &solution_global_dot,
-                                          const VectorType &residual_reference = VectorType())
-        {
-          using CopyData = internal::CopyData_ResidualDiagnostics<NumberType>;
-          const auto &constraints = discretization.get_constraints();
-
-          ResidualContributionDiagnostics diagnostics;
-          reinit_vector(diagnostics.advection);
-          reinit_vector(diagnostics.diffusion);
-          reinit_vector(diagnostics.source);
-          reinit_vector(diagnostics.mass);
-          reinit_vector(diagnostics.total);
-          reinit_vector(diagnostics.total_minus_residual);
-
-          VectorType zero_dot;
-          const VectorType *dot = &solution_global_dot;
-          if (solution_global_dot.size() == 0) {
-            reinit_vector(zero_dot);
-            zero_dot = 0.;
-            dot = &zero_dot;
-          }
-
-          Scratch scratch_data(quadrature);
-          CopyData copy_data;
-
-          SolutionReconstructionCache reconstruction_cache;
-          rebuild_solution_reconstruction_cache<Reconstructor>(solution_global, reconstruction_cache);
-          const auto assembly_context = make_assembly_context_view(reconstruction_cache);
-          run_fv_kt_pre_assembly_hook(AssemblyStage::diagnostics, assembly_context);
-
-          const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
-            const auto &cell_geometry = get_cell_topology(cell);
-            constexpr uint n_dofs = n_components;
-
-            copy_data.reinit(cell, n_dofs);
-
-            fill_constant_quadrature_values(cell, solution_global, *dot, scratch_data);
-
-            std::array<NumberType, n_components> mass{};
-            std::array<NumberType, n_components> source{};
-            for (size_t q_index = 0; q_index < cell_geometry.quadrature_points.size(); ++q_index) {
-              const auto &x_q = cell_geometry.quadrature_points[q_index];
-              model.mass(mass, x_q, scratch_data.solution_values[q_index], scratch_data.solution_dot_values[q_index]);
-              model.source(source, x_q, fv_tie(scratch_data.solution_values[q_index]));
-
-              for (uint i = 0; i < n_dofs; ++i) {
-                const auto component_i = local_component_of_dof[i];
-                copy_data.mass(i) += cell_geometry.jxw[q_index] * mass[component_i];
-                copy_data.source(i) += cell_geometry.jxw[q_index] * source[component_i];
-              }
-            }
-          };
-
-          const auto face_worker = [&](const Iterator &cell, const unsigned int &f,
-                                       [[maybe_unused]] const unsigned int &sf, const Iterator &ncell,
-                                       [[maybe_unused]] const unsigned int &nf,
-                                       [[maybe_unused]] const unsigned int &nsf, [[maybe_unused]] Scratch &scratch_data,
-                                       CopyData &copy_data) {
-            const auto x_q = cell->face(f)->center();
-            const auto n_face = face_normal_from_cell(cell, f);
-            const auto JxW = face_jxw(cell, f);
-            const uint n_face_dofs = 2 * n_components;
-
-            auto &copy_data_face = copy_data.next_face_data();
-            copy_data_face.reinit(n_face_dofs);
-
-            const auto &reconstruction = get_cached_face_reconstruction(reconstruction_cache, cell, f);
-            const auto &cell_stencil = reconstruction_cache.cell_stencils[cell->active_cell_index()];
-            const auto &ncell_stencil = reconstruction_cache.cell_stencils[ncell->active_cell_index()];
-            const auto &cell_data = cell_stencil.cell;
-            const auto &ncell_data = ncell_stencil.cell;
-
-            const auto [F_plus, F_minus, a_half] =
-                internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(reconstruction.u_plus, reconstruction.u_minus,
-                                                                        reconstruction.face_grad_plus,
-                                                                        reconstruction.face_grad_minus, x_q, model);
-            const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, reconstruction.u_plus,
-                                                            reconstruction.u_minus);
-            const auto D = internal::compute_diffusion_flux(
-                reconstruction.diffusion_u_minus, reconstruction.diffusion_u_plus, reconstruction.diffusion_grad_minus,
-                reconstruction.diffusion_grad_plus, x_q, model);
-
-            for (uint component_i = 0; component_i < n_components; ++component_i) {
-              copy_data_face.joint_dof_indices[component_i] = cell_data.dof_indices[component_i];
-              copy_data_face.joint_dof_indices[n_components + component_i] = ncell_data.dof_indices[component_i];
-
-              const auto advection_contribution = JxW * scalar_product(H[component_i], n_face);
-              const auto diffusion_contribution = -JxW * scalar_product(D[component_i], n_face);
-              copy_data_face.advection(component_i) += advection_contribution;
-              copy_data_face.diffusion(component_i) += diffusion_contribution;
-              copy_data_face.advection(n_components + component_i) -= advection_contribution;
-              copy_data_face.diffusion(n_components + component_i) -= diffusion_contribution;
-            }
-          };
-
-          const auto boundary_worker = [&](const Iterator &cell, const unsigned int &face_no,
-                                           [[maybe_unused]] Scratch &scratch_data, CopyData &copy_data) {
-            const uint n_face_dofs = n_components;
-
-            auto &copy_data_face = copy_data.next_face_data();
-            copy_data_face.reinit(n_face_dofs);
-
-            const auto x_q = cell->face(face_no)->center();
-            const auto JxW = face_jxw(cell, face_no);
-            const auto n_bnd = face_normal_from_cell(cell, face_no);
-
-            const auto &reconstruction = get_cached_face_reconstruction(reconstruction_cache, cell, face_no);
-            const auto &cell_data = reconstruction_cache.cell_stencils[cell->active_cell_index()].cell;
-
-            const auto [F_plus, F_minus, a_half] =
-                internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(reconstruction.u_plus, reconstruction.u_minus,
-                                                                        reconstruction.face_grad_plus,
-                                                                        reconstruction.face_grad_minus, x_q, model);
-            const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, reconstruction.u_plus,
-                                                            reconstruction.u_minus);
-            const auto D = internal::compute_diffusion_flux(
-                reconstruction.diffusion_u_minus, reconstruction.diffusion_u_plus, reconstruction.diffusion_grad_minus,
-                reconstruction.diffusion_grad_plus, x_q, model);
-
-            for (uint component_i = 0; component_i < n_components; ++component_i) {
-              copy_data_face.joint_dof_indices[component_i] = cell_data.dof_indices[component_i];
-              copy_data_face.advection(component_i) += JxW * scalar_product(H[component_i], n_bnd);
-              copy_data_face.diffusion(component_i) -= JxW * scalar_product(D[component_i], n_bnd);
-            }
-          };
-
-          const auto copier = [&](const CopyData &c) {
-            constraints.distribute_local_to_global(c.source, c.local_dof_indices, diagnostics.source);
-            constraints.distribute_local_to_global(c.mass, c.local_dof_indices, diagnostics.mass);
-            for (unsigned int face_index = 0; face_index < c.active_face_count; ++face_index) {
-              const auto &face_data = c.face_data[face_index];
-              constraints.distribute_local_to_global(face_data.advection, face_data.joint_dof_indices,
-                                                     diagnostics.advection);
-              constraints.distribute_local_to_global(face_data.diffusion, face_data.joint_dof_indices,
-                                                     diagnostics.diffusion);
-            }
-          };
-
-          MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells | MeshWorker::assemble_boundary_faces |
-                                            MeshWorker::assemble_own_interior_faces_once;
-
-          MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                                copy_data, flags, boundary_worker, face_worker, threads, batch_size);
-
-          for (types::global_dof_index i = 0; i < diagnostics.total.size(); ++i) {
-            diagnostics.total[i] =
-                diagnostics.advection[i] + diagnostics.diffusion[i] + diagnostics.source[i] + diagnostics.mass[i];
-          }
-
-          diagnostics.has_residual = residual_reference.size() == diagnostics.total.size();
-          if (diagnostics.has_residual) {
-            for (types::global_dof_index i = 0; i < diagnostics.total_minus_residual.size(); ++i)
-              diagnostics.total_minus_residual[i] = diagnostics.total[i] - residual_reference[i];
-          }
-
-          return diagnostics;
         }
 
         using CellData = internal::CellData<dim, NumberType, n_components>;
@@ -2232,7 +2014,14 @@ namespace DiFfRG
           return cell_topology_cache[cell_index];
         }
 
-        void log(const std::string logger)
+        template <typename String>
+          requires std::convertible_to<String, std::string>
+        [[deprecated("Construct the assembler with output.log_port() and call log() instead")]] void log(String &&)
+        {
+          DiFfRG::internal::reject_named_assembler_log<String>();
+        }
+
+        void log()
         {
           std::stringstream ss;
           ss << "FV Assembler: " << std::endl;
@@ -2241,7 +2030,7 @@ namespace DiFfRG
              << std::endl;
           ss << "        Jacobian: " << average_time_jacobian_assembly() * 1000 << "ms (" << num_jacobians() << ")"
              << std::endl;
-          spdlog::get(logger)->info(ss.str());
+          log_port.info(ss.str());
         }
 
         double average_time_reinit() const
@@ -2277,6 +2066,7 @@ namespace DiFfRG
       protected:
         Discretization &discretization;
         Model &model;
+        LogPort log_port;
         const DoFHandler<dim> &dof_handler;
         const Mapping<dim> &mapping;
         const Triangulation<dim> &triangulation;

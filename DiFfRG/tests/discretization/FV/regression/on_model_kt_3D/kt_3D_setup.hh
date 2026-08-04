@@ -163,7 +163,6 @@ namespace on_kt_3D
            {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
-           {"output_buffer_size", 1},
            {"EoM_abs_tol", 1.0e-10},
            {"EoM_max_iter", 0}}},
          {"timestepping",
