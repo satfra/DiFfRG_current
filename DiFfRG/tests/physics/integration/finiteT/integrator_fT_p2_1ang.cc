@@ -98,6 +98,62 @@ TEMPLATE_TEST_CASE_SIG("Test finite T momentum integrals with 1 angle", "[integr
         CHECK(rel_err < expected_precision);
       }
     };
+    SECTION("Random polynomials")
+    {
+      // sdim spatial dimensions: the polar angle carries the zonal measure (1-c^2)^{(sdim-3)/2} dc,
+      // supplied by the Gauss-Jacobi angular quadrature. This section exercises a non-trivial angular
+      // integrand and therefore validates the zonal weighting (the volume sections above are angle-flat).
+      constexpr int sdim = dim - 1;
+
+      const ctype val = GENERATE(take(1, random(0.1, 1.)));
+      integrator.set_typical_E(val);
+
+      const auto x_poly = Polynomial({
+          GENERATE(take(1, random(-1., 1.))), // q^0
+          GENERATE(take(1, random(-1., 1.))), // q^1
+          GENERATE(take(1, random(-1., 1.))), // q^2
+          GENERATE(take(1, random(-1., 1.)))  // q^3
+      });
+      const auto cos_poly = Polynomial({
+          GENERATE(take(1, random(1., 2.))),  // c^0 (kept away from zero so the angular reference stays well-scaled)
+          GENERATE(take(1, random(-1., 1.))), // c^1
+          GENERATE(take(1, random(-1., 1.))), // c^2
+          GENERATE(take(1, random(-1., 1.)))  // c^3
+      });
+
+      // zonal moments mu_k = \int_{-1}^1 (1-c^2)^{(sdim-3)/2} c^k dc; 0 for odd k, B(m+1/2,(sdim-1)/2) for k=2m.
+      using std::tgamma;
+      auto zonal_moment = [&](int kk) -> double {
+        if (kk % 2 == 1) return 0.;
+        const int m = kk / 2;
+        return tgamma(m + 0.5) * tgamma((sdim - 1) / 2.) / tgamma(m + sdim / 2.);
+      };
+      double angular = 0.;
+      for (int kk = 0; kk < 4; ++kk)
+        angular += (double)cos_poly[kk] * zonal_moment(kk);
+
+      auto int_poly = x_poly;
+      std::vector<ctype> coeff_integrand(sdim, 0.);
+      coeff_integrand[sdim - 1] = 1.;
+      int_poly *= Polynomial(coeff_integrand);
+
+      const NT reference_integral = S_d_prec<ctype>(sdim - 1) * int_poly.integral(0., q_extent) /
+                                    powr<sdim>(2. * M_PI) * angular // spatial part with zonal angular measure
+                                    / (std::tanh(val / (2. * T)) * 2. * val); // Matsubara sum
+
+      NT integral{};
+      integrator.get(integral, 0., x_poly[0], x_poly[1], x_poly[2], x_poly[3], cos_poly[0], cos_poly[1], cos_poly[2],
+                     cos_poly[3], powr<2>(val), 0., 1., 0.);
+
+      constexpr ctype expected_precision = 1e-8;
+      const ctype rel_err = t_abs(reference_integral - integral) / t_abs(reference_integral);
+      if (rel_err >= expected_precision) {
+        std::cerr << "reference: " << reference_integral << "| integral: " << integral
+                  << "| relative error: " << abs(reference_integral - integral) / abs(reference_integral)
+                  << "| dim: " << dim << std::endl;
+      }
+      CHECK(rel_err < expected_precision);
+    };
   };
 
   // Check on TBB

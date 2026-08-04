@@ -29,7 +29,7 @@ RUN apt-get -y update && apt-get -y install --no-install-recommends \
         git cmake build-essential gfortran \
         libopenblas-dev libgsl-dev \
         libboost-all-dev libtbb-dev libhdf5-dev libsundials-dev \
-        doxygen graphviz python3 patch ca-certificates \
+        doxygen graphviz python3 patch ca-certificates form unzip file \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
@@ -73,8 +73,18 @@ RUN apt-get -y update && apt-get -y install --no-install-recommends \
         git cmake build-essential gfortran \
         libopenblas-dev libgsl-dev \
         libboost-all-dev libtbb-dev libhdf5-dev libsundials-dev \
-        doxygen graphviz python3 patch ca-certificates \
+        doxygen graphviz python3 patch ca-certificates form unzip file \
+    && test -x /usr/bin/tform \
     && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 https://github.com/satfra/FunKit.git /tmp/FunKit \
+    && bash /tmp/FunKit/dependencies/install.sh /usr/share/Mathematica/Applications \
+    && mkdir -p /usr/share/Mathematica/Applications/FunKit \
+    && cp -a /tmp/FunKit/. /usr/share/Mathematica/Applications/FunKit/ \
+    && rm -rf /usr/share/Mathematica/Applications/FunKit/.git /tmp/FunKit \
+    && test -f /usr/share/Mathematica/Applications/FunKit/PacletInfo.m \
+    && test -f /usr/share/Mathematica/Applications/FunKit/FunKit.m \
+    && test -f /usr/share/Mathematica/Applications/FormTracer/FormTracer.m
 
 # Keep the dependency bundle outside /root so Singularity/Apptainer execution as
 # the host user can read it.

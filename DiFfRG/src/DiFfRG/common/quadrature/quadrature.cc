@@ -26,6 +26,9 @@ namespace DiFfRG
     } else if (kind == QuadratureKind::laguerre) {
       a = 0.;
       b = 1.;
+    } else if (kind == QuadratureKind::trapezoidal) {
+      a = 0.;
+      b = 1.;
     }
   }
 
@@ -46,6 +49,38 @@ namespace DiFfRG
   {
     this->order = order;
     this->_t = _t;
+
+    // The periodic trapezoidal rule is not a Gauss rule and is not provided by GSL: it uses equispaced
+    // nodes on [a,b) with equal weights and, for smooth periodic integrands (endpoints a and b identified,
+    // e.g. an azimuthal angle phi in [0,2pi)), converges spectrally. Fill nodes/weights directly.
+    if (_t.kind == QuadratureType::trapezoidal) {
+      const std::string name = "trapezoidal";
+      device_nodes = Kokkos::View<NT *, Kokkos::DefaultExecutionSpace::memory_space>(
+          "device_nodes_" + name + "_" + std::to_string(order), order);
+      device_weights = Kokkos::View<NT *, Kokkos::DefaultExecutionSpace::memory_space>(
+          "device_weights_" + name + "_" + std::to_string(order), order);
+
+      auto host_mirror_nodes = Kokkos::create_mirror_view(device_nodes);
+      auto host_mirror_weights = Kokkos::create_mirror_view(device_weights);
+
+      // x_i = a + (b-a) i/order, weight = (b-a)/order. The node at b is omitted (identified with a).
+      const double h = (_t.b - _t.a) / static_cast<double>(order);
+      for (size_t i = 0; i < order; ++i) {
+        host_mirror_nodes(i) = _t.a + h * static_cast<double>(i);
+        host_mirror_weights(i) = h;
+      }
+
+      Kokkos::deep_copy(device_nodes, host_mirror_nodes);
+      Kokkos::deep_copy(device_weights, host_mirror_weights);
+
+      host_nodes = Kokkos::View<NT *, Kokkos::DefaultHostExecutionSpace::memory_space>(
+          "host_nodes_" + name + "_" + std::to_string(order), order);
+      host_weights = Kokkos::View<NT *, Kokkos::DefaultHostExecutionSpace::memory_space>(
+          "host_weights_" + name + "_" + std::to_string(order), order);
+      Kokkos::deep_copy(host_nodes, host_mirror_nodes);
+      Kokkos::deep_copy(host_weights, host_mirror_weights);
+      return;
+    }
 
     gsl_integration_fixed_workspace *w;
     const gsl_integration_fixed_type *T;
