@@ -43,29 +43,33 @@ namespace DiFfRG
 
     // all functions for assembly of the problem and linear solving
     newton.residual = [&](VectorType &res, const VectorType &u) {
+      CalcDtTimer calc_timer;
       res = 0;
       assembler->residual(res, u, tc.get_dt(), 1);
       assembler->mass(res, old_solution, -1.);
 
-      console_out(tc.get_t(), "implicit residual", 1);
+      console_out(tc.get_t(), "implicit residual", 1, nullptr, calc_timer.lap());
     };
 
     newton.update_jacobian = [&](const VectorType &u) {
+      CalcDtTimer calc_timer;
       jacobian = 0;
       assembler->jacobian(jacobian, u, tc.get_dt(), 1);
       linSolver.init(jacobian);
 
-      console_out(tc.get_t(), "jacobian construction", 2);
+      console_out(tc.get_t(), "jacobian construction", 2, nullptr, calc_timer.lap());
 
       if (linSolver.invert()) {
-        console_out(tc.get_t(), "jacobian inversion", 3);
+        console_out(tc.get_t(), "jacobian inversion", 3, nullptr, calc_timer.lap());
       }
     };
 
     newton.lin_solve = [&](VectorType &Du, const VectorType &res) {
+      CalcDtTimer calc_timer;
       const auto sol_iterations = linSolver.solve(res, Du, std::min(impl.abs_tol, impl.rel_tol * res.l2_norm()));
       if (sol_iterations >= 0) {
-        console_out(tc.get_t(), "linear solver (" + std::to_string(sol_iterations) + " it)", 2);
+        console_out(tc.get_t(), "linear solver (" + std::to_string(sol_iterations) + " it)", 2, nullptr,
+                    calc_timer.lap());
       }
     };
 

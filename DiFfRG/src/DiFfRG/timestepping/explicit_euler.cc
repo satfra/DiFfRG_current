@@ -31,6 +31,7 @@ namespace DiFfRG
     double last_save = start;
     double t = start;
     while (t < stop) {
+      CalcDtTimer calc_timer;
       if ((*adaptor)(t, old_solution)) {
         solution = old_solution;
         inverse_mass_matrix.initialize(mass_matrix);
@@ -49,7 +50,7 @@ namespace DiFfRG
       }
       old_solution.swap(solution);
 
-      console_out(t, "explicit residual", 1);
+      console_out(t, "explicit residual", 1, nullptr, calc_timer.lap());
     }
 
     initial_condition->spatial_data() = solution;

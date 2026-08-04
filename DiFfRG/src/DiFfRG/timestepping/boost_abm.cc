@@ -88,6 +88,7 @@ namespace DiFfRG
     double stuck_t = 0.;
     uint stuck = 0;
     auto residual = [&](const Eigen::VectorXd &x, Eigen::VectorXd &dxdt, const double t) {
+      CalcDtTimer calc_timer;
       if (is_close(t, stuck_t, expl.minimal_dt / 100.))
         stuck++;
       else {
@@ -109,7 +110,7 @@ namespace DiFfRG
 
       dealii_to_eigen(dy_dealii, dxdt);
 
-      console_out(t, "explicit residual", 1);
+      console_out(t, "explicit residual", 1, nullptr, calc_timer.lap());
     };
 
     // Initialize initial condition
@@ -190,6 +191,7 @@ namespace DiFfRG
     double stuck_t = 0.;
     uint stuck = 0;
     auto residual = [&](const Eigen::VectorXd &x, Eigen::VectorXd &dxdt, const double t) {
+      CalcDtTimer calc_timer;
       if (is_close(t, stuck_t, expl.minimal_dt / 100.))
         stuck++;
       else {
@@ -212,7 +214,7 @@ namespace DiFfRG
 
       dealii_to_eigen(dy_dealii, dxdt);
 
-      console_out(t, "explicit residual", 1);
+      console_out(t, "explicit residual", 1, nullptr, calc_timer.lap());
     };
 
     // Initialize initial condition
@@ -291,6 +293,7 @@ namespace DiFfRG
     double stuck_t = 0.;
     uint stuck = 0;
     auto residual = [&](const Eigen::VectorXd &x, Eigen::VectorXd &dxdt, const double t) {
+      CalcDtTimer calc_timer;
       if (is_close(t, stuck_t, expl.minimal_dt / 100.))
         stuck++;
       else {
@@ -312,7 +315,7 @@ namespace DiFfRG
       dealii_to_eigen(dy_dealii, dxdt);
       dxdt *= -1;
 
-      console_out(t, "explicit residual", 1);
+      console_out(t, "explicit residual", 1, nullptr, calc_timer.lap());
     };
 
     using namespace boost::numeric::odeint;
