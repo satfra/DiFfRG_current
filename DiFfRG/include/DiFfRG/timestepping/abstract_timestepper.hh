@@ -9,6 +9,7 @@
 #include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/discretization/mesh/no_adaptivity.hh>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <iomanip>
@@ -25,6 +26,27 @@ namespace DiFfRG
     double estimated_local_error = 0.;
     double error_weight = 0.;
     double contribution = 0.;
+  };
+
+  /**
+   * @brief Stopwatch feeding the `calc_dt` console column.
+   *
+   * `lap()` returns the milliseconds elapsed since construction or the previous
+   * `lap()` and re-arms, so consecutive operations inside one callback
+   * (residual, jacobian construction, jacobian inversion, linear solve) each
+   * report their own duration rather than a cumulative total.
+   */
+  struct CalcDtTimer {
+    std::chrono::high_resolution_clock::time_point mark = std::chrono::high_resolution_clock::now();
+
+    double lap()
+    {
+      const auto now = std::chrono::high_resolution_clock::now();
+      const double ms =
+          double(std::chrono::duration_cast<std::chrono::milliseconds>(now - mark).count());
+      mark = now;
+      return ms;
+    }
   };
 
   struct IDAErrorDofDiagnostics {
@@ -315,18 +337,35 @@ namespace DiFfRG
       bool has_diagnostics = false;
       double step_size_sum = 0.;
       long int step_size_samples = 0;
-      // Number of console_out calls aggregated into the current window. Kept
-      // from the pre-merge console_out aggregation on main, which reported it
-      // alongside the (now removed) calc_dt timing.
+      // Number of console_out calls aggregated into the current window, reported
+      // alongside the calc_dt timing.
       size_t calls = 0;
 
-      void add(const double t, const size_t milliseconds, const TimesteppingDiagnostics *latest_diagnostics)
+      // Wall time spent in the measured operation (residual evaluation, jacobian
+      // construction/inversion, linear solve), aggregated over the window and
+      // reported as mean(uncertainty).
+      size_t calc_dt_calls = 0;
+      double calc_dt_sum_ms = 0.;
+      double calc_dt_min_ms = std::numeric_limits<double>::max();
+      double calc_dt_max_ms = 0.;
+      bool has_calc_dt = false;
+
+      void add(const double t, const size_t milliseconds, const TimesteppingDiagnostics *latest_diagnostics,
+               const double calc_dt_ms = -1.0)
       {
         if (!has_entry) first_ms = milliseconds;
         has_entry = true;
         last_ms = milliseconds;
         latest_t = t;
         ++calls;
+
+        if (calc_dt_ms >= 0.) {
+          has_calc_dt = true;
+          ++calc_dt_calls;
+          calc_dt_sum_ms += calc_dt_ms;
+          calc_dt_min_ms = std::min(calc_dt_min_ms, calc_dt_ms);
+          calc_dt_max_ms = std::max(calc_dt_max_ms, calc_dt_ms);
+        }
 
         if (latest_diagnostics != nullptr && !latest_diagnostics->empty()) {
           const bool had_step_stats = has_diagnostics && diagnostics.has_ida_step_iteration_stats;
@@ -354,6 +393,9 @@ namespace DiFfRG
           has_diagnostics = true;
         }
       }
+
+      double mean_calc_dt_ms() const { return calc_dt_sum_ms / double(calc_dt_calls); }
+      double calc_dt_uncertainty_ms() const { return 0.5 * (calc_dt_max_ms - calc_dt_min_ms); }
     };
 
     mutable std::unordered_map<std::string, ConsoleOutStats> console_out_stats_by_category;
@@ -361,6 +403,40 @@ namespace DiFfRG
     mutable IDAAcceptedStepStats ida_accepted_step_stats;
 
     static std::string console_out_category(const std::string &name) { return name.substr(0, name.find(" (")); }
+
+    /**
+     * @brief Render a mean with its uncertainty as e.g. "12.3(4)ms".
+     *
+     * The uncertainty is rounded to one significant digit and the mean is
+     * printed with matching precision.
+     */
+    static std::string format_uncertain_ms(const double mean_ms, const double uncertainty_ms)
+    {
+      const double abs_uncertainty = std::abs(uncertainty_ms);
+      const bool has_uncertainty = abs_uncertainty > 0.;
+      int decimals = 0;
+      long rounded_uncertainty = 0;
+
+      if (has_uncertainty) {
+        double exponent = std::floor(std::log10(abs_uncertainty));
+        double scale = std::pow(10., -exponent);
+        rounded_uncertainty = long(std::round(abs_uncertainty * scale));
+        if (rounded_uncertainty >= 10) {
+          exponent += 1.;
+          scale = std::pow(10., -exponent);
+          rounded_uncertainty = long(std::round(abs_uncertainty * scale));
+        }
+        decimals = std::max(0, int(-exponent));
+      } else if (std::abs(mean_ms) < 1.) {
+        decimals = 2;
+      } else if (std::abs(mean_ms) < 100.) {
+        decimals = 1;
+      }
+
+      std::stringstream stream;
+      stream << std::fixed << std::setprecision(decimals) << mean_ms << "(" << rounded_uncertainty << ")ms";
+      return stream.str();
+    }
 
     static std::string format_diagnostics_delta(const size_t latest, const size_t previous)
     {
@@ -413,8 +489,8 @@ namespace DiFfRG
     }
 
     void print_console_out(const std::string &name, const double t, const size_t milliseconds,
-                           const std::optional<std::string> diagnostics = std::nullopt,
-                           const size_t calls = 0) const
+                           const std::optional<std::string> diagnostics = std::nullopt, const size_t calls = 0,
+                           const std::optional<std::string> calc_dt = std::nullopt) const
     {
       if (name.size() > console_name_width) throw std::runtime_error("console_out: log label is too long: " + name);
 
@@ -428,6 +504,9 @@ namespace DiFfRG
         std::cout << " | k: " << std::setw(24) << std::left << std::setprecision(console_time_precision)
                   << std::scientific
                   << exp(-t) * Lambda;
+      }
+      if (calc_dt.has_value()) {
+        std::cout << " | calc_dt: " << std::setw(11) << calc_dt.value();
       }
       if (calls > 0) {
         std::cout << " | calls: " << std::setw(4) << calls;
@@ -446,9 +525,12 @@ namespace DiFfRG
      * @param name A tag prepended to the output.
      * @param verbosity_level The verbosity level of the output.
      * @param diagnostics Optional timestepper diagnostics printed as a second line.
+     * @param calc_dt_ms Wall time in milliseconds spent in the operation being reported. Negative
+     * values mean "not measured" and suppress the calc_dt column. At verbosity < 4 the value is
+     * aggregated over the reporting window and shown as mean(uncertainty).
      */
     void console_out(const double t, const std::string name, const int verbosity_level,
-                     const TimesteppingDiagnostics *diagnostics = nullptr) const
+                     const TimesteppingDiagnostics *diagnostics = nullptr, const double calc_dt_ms = -1.0) const
     {
       if (verbosity < verbosity_level) return;
 
@@ -470,14 +552,16 @@ namespace DiFfRG
                       *diagnostics,
                       previous_it != last_printed_diagnostics_by_category.end() ? &previous_it->second : nullptr))
                 : std::nullopt;
-        print_console_out(name, t, milliseconds, formatted_diagnostics);
+        const auto calc_dt =
+            calc_dt_ms >= 0.0 ? std::optional<std::string>(time_format_ms(size_t(calc_dt_ms))) : std::nullopt;
+        print_console_out(name, t, milliseconds, formatted_diagnostics, 0, calc_dt);
         if (diagnostics != nullptr && !diagnostics->empty())
           last_printed_diagnostics_by_category[category] = *diagnostics;
         return;
       }
 
       auto &stats = console_out_stats_by_category[category];
-      stats.add(t, milliseconds, diagnostics);
+      stats.add(t, milliseconds, diagnostics, calc_dt_ms);
       if (milliseconds - stats.first_ms < 1000) return;
 
       const auto previous_it = last_printed_diagnostics_by_category.find(category);
@@ -487,7 +571,11 @@ namespace DiFfRG
                     stats.diagnostics,
                     previous_it != last_printed_diagnostics_by_category.end() ? &previous_it->second : nullptr))
               : std::nullopt;
-      print_console_out(category, stats.latest_t, stats.last_ms, formatted_diagnostics, stats.calls);
+      const auto calc_dt =
+          stats.has_calc_dt
+              ? std::optional<std::string>(format_uncertain_ms(stats.mean_calc_dt_ms(), stats.calc_dt_uncertainty_ms()))
+              : std::nullopt;
+      print_console_out(category, stats.latest_t, stats.last_ms, formatted_diagnostics, stats.calls, calc_dt);
       if (stats.has_diagnostics) last_printed_diagnostics_by_category[category] = stats.diagnostics;
       stats = {};
     }
