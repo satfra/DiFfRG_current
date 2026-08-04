@@ -11,7 +11,7 @@ ARG threads=4
 ARG cuda_arch=AMPERE80
 
 # Rocky 9 needs gcc-toolset-12 for C++20; openblas-devel from the devel repo,
-# sundials-devel from EPEL. Boost is always built from the vendored source tree.
+# sundials-devel from EPEL. Boost (1.75) is below DiFfRG's 1.81 floor -> bundled.
 RUN dnf -y install epel-release \
     && dnf -y --enablerepo=devel install \
         gcc-toolset-12 cmake git \
