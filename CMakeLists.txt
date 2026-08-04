@@ -340,6 +340,18 @@ set(DiFfRG_SUNDIALS_MIN_VERSION 5.4.0) # deal.II's own SUNDIALS floor
 set(DiFfRG_SUNDIALS_KNOWN_GOOD_MAX 7.7) # newest version validated with bundled
                                         # deal.II
 
+# TBB_DIR/HDF5_DIR double as our "use this prefix" knobs and as CMake's own
+# config-mode result cache entries: a failed find_package(<Pkg> CONFIG)
+# overwrites them with "<Pkg>_DIR-NOTFOUND". On the next configure of the same
+# build directory that leftover would look like a user-supplied prefix and turn
+# auto-detection into a hard error, so strip it before reading the knob.
+macro(_diffrg_user_prefix out var)
+  set(${out} "${${var}}")
+  if("${${out}}" MATCHES "-NOTFOUND$")
+    set(${out} "")
+  endif()
+endmacro()
+
 # ----------------------------------------------------------------------------
 # Boost — needed by both deal.II and the DiFfRG library. Use Boost's own
 # BoostConfig.cmake (config mode); the legacy FindBoost module is removed in
@@ -430,9 +442,9 @@ endif()
 # general_dep (see GENERAL_BUILD_TBB), not its own ExternalProject.
 # ----------------------------------------------------------------------------
 set(_build_tbb OFF)
-# find_package(TBB) overwrites TBB_DIR with the discovered config dir; capture
-# the user-given prefix first.
-set(_tbb_user_dir "${TBB_DIR}")
+# find_package(TBB) overwrites TBB_DIR with the discovered config dir (or with
+# TBB_DIR-NOTFOUND); capture the user-given prefix first.
+_diffrg_user_prefix(_tbb_user_dir TBB_DIR)
 if(NOT "${_tbb_user_dir}" STREQUAL "")
   find_package(
     TBB
@@ -479,7 +491,7 @@ endif()
 # DEAL_II_WITH_HDF5=OFF). DiFfRG only uses the HDF5 C API, so 1.12 is the floor.
 # ----------------------------------------------------------------------------
 set(_build_hdf5 OFF)
-set(_hdf5_user_dir "${HDF5_DIR}")
+_diffrg_user_prefix(_hdf5_user_dir HDF5_DIR)
 # Do not pass the version to find_package: HDF5's config-version file uses a
 # same-major-version compatibility policy, so requesting 1.12 would reject a
 # newer 2.x install. Gate the version manually instead. Many distros (Fedora,

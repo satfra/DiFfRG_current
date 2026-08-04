@@ -13,6 +13,13 @@
 
 namespace DiFfRG
 {
+  // True iff the kernel declares `static constexpr bool matsubara_even = true`. Such a
+  // kernel was generated as the EVEN part in the Matsubara frequency, so the ±frequency
+  // sum kernel(+xt)+kernel(-xt) == 2*kernel(xt) and the kernel is evaluated only once.
+  // If the trait is absent or false, the integrator falls back to the explicit two-call
+  // form (always correct — an even kernel also satisfies kernel(xt)==kernel(-xt)).
+  template <class K> inline constexpr bool kernel_is_matsubara_even = requires { requires K::matsubara_even; };
+
   template <int dim, typename NT, typename KERNEL, typename ExecutionSpace>
     requires(dim > 0)
   class QuadratureIntegrator_fT : public AbstractIntegrator
@@ -92,6 +99,8 @@ namespace DiFfRG
       grid_size[dim - 1] = matsubara_nodes.size();
     }
 
+    size_t get_matsubara_size() const { return matsubara_nodes.size(); }
+
     template <typename... T> void get(NT &dest, const T &...t) const
     {
       // create an execution space
@@ -148,13 +157,17 @@ namespace DiFfRG
             [&](const auto &...iargs) {
               device::apply(
                   [&](const auto &...posargs) {
+                    NT msum;
+                    if constexpr (kernel_is_matsubara_even<KERNEL>)
+                      // even kernel: kernel(+xt)+kernel(-xt) == 2*kernel(xt) (one evaluation)
+                      msum = ctype(2) * KERNEL::kernel(posargs..., xt, iargs...);
+                    else
+                      // positive and negative Matsubara frequencies
+                      msum = KERNEL::kernel(posargs..., xt, iargs...) + KERNEL::kernel(posargs..., -xt, iargs...);
                     update +=
-                        weight *
-                        (
-                            // positive and negative Matsubara frequencies
-                            wt * (KERNEL::kernel(posargs..., xt, iargs...) + KERNEL::kernel(posargs..., -xt, iargs...))
-                            // The zero mode (once per matsubara sum)
-                            + (idx[dim - 1] != 0 ? NT{} : m_T * KERNEL::kernel(posargs..., (ctype)0, iargs...)));
+                        weight * (wt * msum
+                                  // The zero mode (once per matsubara sum)
+                                  + (idx[dim - 1] != 0 ? NT{} : m_T * KERNEL::kernel(posargs..., (ctype)0, iargs...)));
                   },
                   x);
             },
@@ -223,13 +236,18 @@ namespace DiFfRG
             [&](const auto &...iargs) {
               device::apply(
                   [&](const auto &...posargs) {
+                    NT msum;
+                    if constexpr (kernel_is_matsubara_even<KERNEL>)
+                      // even kernel: kernel(+xt)+kernel(-xt) == 2*kernel(xt) (one evaluation)
+                      msum = ctype(2) * KERNEL::kernel(posargs..., xt, iargs...);
+                    else
+                      // positive and negative Matsubara frequencies
+                      msum = KERNEL::kernel(posargs..., xt, iargs...) + KERNEL::kernel(posargs..., -xt, iargs...);
                     subview() =
                         weight *
-                        (
-                            // positive and negative Matsubara frequencies
-                            wt * (KERNEL::kernel(posargs..., xt, iargs...) + KERNEL::kernel(posargs..., -xt, iargs...))
-                            // The zero mode (once per matsubara sum)
-                            + (idx[1 + dim - 1] != 0 ? NT{} : m_T * KERNEL::kernel(posargs..., (ctype)0, iargs...)));
+                        (wt * msum
+                         // The zero mode (once per matsubara sum)
+                         + (idx[1 + dim - 1] != 0 ? NT{} : m_T * KERNEL::kernel(posargs..., (ctype)0, iargs...)));
                   },
                   x);
             },
@@ -241,8 +259,10 @@ namespace DiFfRG
 
       using TeamType = Kokkos::TeamPolicy<ExecutionSpace>::member_type;
       // reduction with vector lanes for warp-level parallelism
+      constexpr int vector_width = 32;
       Kokkos::parallel_for(
-          Kokkos::TeamPolicy(space, integral_view.size(), Kokkos::AUTO, 32), KOKKOS_CLASS_LAMBDA(const TeamType &team) {
+          Kokkos::TeamPolicy(space, integral_view.size(), Kokkos::AUTO, vector_width),
+          KOKKOS_CLASS_LAMBDA(const TeamType &team) {
             // get the current (continuous) index
             const uint k = team.league_rank();
 
@@ -257,22 +277,29 @@ namespace DiFfRG
             for (int d = 0; d < dim; ++d)
               total_elements *= grid_size[d];
 
+            // Pre-compute stride array for index decomposition (avoids modulo in the inner loop;
+            // matches the vacuum QuadratureIntegrator::map reduction)
+            device::array<size_t, dim> strides;
+            strides[dim - 1] = 1;
+            for (int d = dim - 2; d >= 0; --d)
+              strides[d] = strides[d + 1] * grid_size[d + 1];
+
             NT res{};
             Kokkos::parallel_reduce(
-                Kokkos::TeamThreadRange(team, (total_elements + 31) / 32),
+                Kokkos::TeamThreadRange(team, (total_elements + vector_width - 1) / vector_width),
                 [&](const size_t outer, NT &team_update) {
                   NT vec_sum{};
                   Kokkos::parallel_reduce(
-                      Kokkos::ThreadVectorRange(team, 32),
+                      Kokkos::ThreadVectorRange(team, vector_width),
                       [&](const size_t inner, NT &vec_update) {
-                        const size_t flat = outer * 32 + inner;
+                        const size_t flat = outer * vector_width + inner;
                         if (flat < total_elements) {
-                          // Convert flat index back to multi-dimensional
+                          // Convert flat index back to multi-dimensional using pre-computed strides
                           device::array<size_t, dim> ridx;
                           size_t remainder = flat;
-                          for (int d = dim - 1; d >= 0; --d) {
-                            ridx[d] = remainder % grid_size[d];
-                            remainder /= grid_size[d];
+                          for (int d = 0; d < dim; ++d) {
+                            ridx[d] = remainder / strides[d];
+                            remainder -= ridx[d] * strides[d];
                           }
                           device::apply([&](const auto &...iargs) { vec_update += cache(k, iargs...); }, ridx);
                         }
@@ -429,13 +456,17 @@ namespace DiFfRG
             [&](const auto &...iargs) {
               device::apply(
                   [&](const auto &...posargs) {
+                    NT msum;
+                    if constexpr (kernel_is_matsubara_even<KERNEL>)
+                      // even kernel: kernel(+xt)+kernel(-xt) == 2*kernel(xt) (one evaluation)
+                      msum = ctype(2) * KERNEL::kernel(posargs..., xt, iargs...);
+                    else
+                      // positive and negative Matsubara frequencies
+                      msum = KERNEL::kernel(posargs..., xt, iargs...) + KERNEL::kernel(posargs..., -xt, iargs...);
                     update +=
-                        weight *
-                        (
-                            // positive and negative Matsubara frequencies
-                            wt * (KERNEL::kernel(posargs..., xt, iargs...) + KERNEL::kernel(posargs..., -xt, iargs...))
-                            // The zero mode (once per matsubara sum)
-                            + (idx[dim - 1] != 0 ? NT{} : m_T * KERNEL::kernel(posargs..., (ctype)0, iargs...)));
+                        weight * (wt * msum
+                                  // The zero mode (once per matsubara sum)
+                                  + (idx[dim - 1] != 0 ? NT{} : m_T * KERNEL::kernel(posargs..., (ctype)0, iargs...)));
                   },
                   x);
             },

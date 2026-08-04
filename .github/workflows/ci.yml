@@ -18,6 +18,11 @@ on:
           - quick
           - slow
           - all
+      update_baselines:
+        description: "Refresh example regression baselines and upload them as an artifact"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -28,6 +33,7 @@ env:
   DIFFRG_DEPS_STABLE_TAG: ubuntu24.04
   DIFFRG_BUILD_JOBS: 8
   DIFFRG_TEST_JOBS: 8
+  DIFFRG_EXAMPLE_JOBS: 8
 
 jobs:
   deps-image:
@@ -135,6 +141,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Configure container cache dirs
+        run: |
+          {
+            echo "SINGULARITY_CACHEDIR=${RUNNER_TEMP}/singularity-cache"
+            echo "APPTAINER_CACHEDIR=${RUNNER_TEMP}/apptainer-cache"
+            echo "SINGULARITY_RUN_CACHE=${RUNNER_TEMP}/singularity-run-cache"
+          } >> "$GITHUB_ENV"
+          mkdir -p \
+            "${RUNNER_TEMP}/singularity-cache" \
+            "${RUNNER_TEMP}/apptainer-cache" \
+            "${RUNNER_TEMP}/singularity-run-cache"
 
       - name: Pull dependency image
         id: deps
@@ -268,6 +286,11 @@ jobs:
           message: ${{ steps.badge.outputs.message }}
           color: ${{ steps.badge.outputs.color }}
 
+      - name: Clean container caches
+        if: always()
+        run: |
+          rm -rf "${SINGULARITY_CACHEDIR}" "${APPTAINER_CACHEDIR}" "${SINGULARITY_RUN_CACHE}"
+
       # Reflect build/test failures in the job conclusion (the test step swallows
       # ctest's exit code on purpose; the build step's failure is preserved here too).
       - name: Fail the job if the build or any test failed
@@ -285,6 +308,168 @@ jobs:
             echo "${{ steps.tests.outputs.failed }} test(s) failed."
             exit 1
           fi
+
+  examples:
+    name: Build Examples
+    needs: deps-image
+    runs-on: [self-hosted, linux, x64]
+    env:
+      DIFFRG_DEPS_IMAGE: ${{ needs.deps-image.outputs.image_ref }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure container cache dirs
+        run: |
+          {
+            echo "SINGULARITY_CACHEDIR=${RUNNER_TEMP}/singularity-cache"
+            echo "APPTAINER_CACHEDIR=${RUNNER_TEMP}/apptainer-cache"
+            echo "SINGULARITY_RUN_CACHE=${RUNNER_TEMP}/singularity-run-cache"
+          } >> "$GITHUB_ENV"
+          mkdir -p \
+            "${RUNNER_TEMP}/singularity-cache" \
+            "${RUNNER_TEMP}/apptainer-cache" \
+            "${RUNNER_TEMP}/singularity-run-cache"
+
+      - name: Pull dependency image
+        id: deps
+        env:
+          SINGULARITY_DOCKER_USERNAME: ${{ github.actor }}
+          SINGULARITY_DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if command -v singularity >/dev/null 2>&1; then
+            singularity_bin=singularity
+          elif command -v apptainer >/dev/null 2>&1; then
+            singularity_bin=apptainer
+          else
+            echo "Neither singularity nor apptainer was found on PATH." >&2
+            exit 127
+          fi
+          sif="${RUNNER_TEMP}/diffrg-deps-examples.sif"
+          echo "Pulling ${DIFFRG_DEPS_IMAGE}"
+          "${singularity_bin}" pull --force "${sif}" "${DIFFRG_DEPS_IMAGE}"
+          echo "sif=${sif}" >> "$GITHUB_OUTPUT"
+
+      - name: Build all current Examples
+        run: |
+          set -euo pipefail
+          env \
+            SINGULARITYENV_DIFFRG_BUILD_JOBS="${DIFFRG_EXAMPLE_JOBS}" \
+            APPTAINERENV_DIFFRG_BUILD_JOBS="${DIFFRG_EXAMPLE_JOBS}" \
+            bash containers/singularity-run.sh \
+            -b "${GITHUB_WORKSPACE}:/work" \
+            -w /work \
+            "${{ steps.deps.outputs.sif }}" \
+            bash containers/ci/build-examples.sh
+
+      - name: Add example summary
+        if: always()
+        run: |
+          if [ -f .ci/logs/examples-summary.md ]; then
+            cat .ci/logs/examples-summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload example logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: example-build-logs
+          path: .ci/logs/examples/**
+          if-no-files-found: ignore
+
+      - name: Clean container caches
+        if: always()
+        run: |
+          rm -rf "${SINGULARITY_CACHEDIR}" "${APPTAINER_CACHEDIR}" "${SINGULARITY_RUN_CACHE}"
+
+  wolfram-examples:
+    name: Wolfram Examples in container
+    needs: deps-image
+    runs-on: [self-hosted, linux, x64]
+    env:
+      DIFFRG_DEPS_IMAGE: ${{ needs.deps-image.outputs.image_ref }}
+      REQUIRED_WOLFRAM_EXAMPLES: ""
+      RUN_EXAMPLE_REGRESSIONS: 1
+      UPDATE_BASELINES: ${{ inputs.update_baselines && '1' || '0' }}
+      EXAMPLE_REGRESSIONS: ${{ inputs.update_baselines && 'ONfiniteT QuarkMesonLPAprime YangMills_SP YangMills_Full' || '' }}
+      REQUIRED_EXAMPLE_REGRESSIONS: ""
+      WOLFRAM_TIMEOUT: 1800
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure container cache dirs
+        run: |
+          {
+            echo "SINGULARITY_CACHEDIR=${RUNNER_TEMP}/singularity-cache"
+            echo "APPTAINER_CACHEDIR=${RUNNER_TEMP}/apptainer-cache"
+            echo "SINGULARITY_RUN_CACHE=${RUNNER_TEMP}/singularity-run-cache"
+          } >> "$GITHUB_ENV"
+          mkdir -p \
+            "${RUNNER_TEMP}/singularity-cache" \
+            "${RUNNER_TEMP}/apptainer-cache" \
+            "${RUNNER_TEMP}/singularity-run-cache"
+
+      - name: Pull dependency image
+        id: deps
+        env:
+          SINGULARITY_DOCKER_USERNAME: ${{ github.actor }}
+          SINGULARITY_DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if command -v singularity >/dev/null 2>&1; then
+            singularity_bin=singularity
+          elif command -v apptainer >/dev/null 2>&1; then
+            singularity_bin=apptainer
+          else
+            echo "Neither singularity nor apptainer was found on PATH." >&2
+            exit 127
+          fi
+          sif="${RUNNER_TEMP}/diffrg-deps-wolfram.sif"
+          echo "Pulling ${DIFFRG_DEPS_IMAGE}"
+          "${singularity_bin}" pull --force "${sif}" "${DIFFRG_DEPS_IMAGE}"
+          echo "sif=${sif}" >> "$GITHUB_OUTPUT"
+
+      - name: Run Wolfram example generators inside dependency container
+        run: |
+          set -euo pipefail
+          bash containers/ci/run-wolfram-in-container.sh "${{ steps.deps.outputs.sif }}"
+
+      - name: Add Wolfram summary
+        if: always()
+        run: |
+          if [ -f .ci/logs/wolfram-summary.md ]; then
+            cat .ci/logs/wolfram-summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f .ci/logs/example-regressions-summary.md ]; then
+            cat .ci/logs/example-regressions-summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload Wolfram logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wolfram-example-logs
+          path: |
+            .ci/logs/wolfram/**
+            .ci/logs/example-regressions/**
+            .ci/run-results/**
+            Examples/ci_baselines/**
+          if-no-files-found: ignore
+
+      - name: Upload refreshed example baselines
+        if: ${{ always() && inputs.update_baselines }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: example-ci-baselines
+          path: Examples/ci_baselines/**
+          if-no-files-found: error
+
+      - name: Clean container caches
+        if: always()
+        run: |
+          rm -rf "${SINGULARITY_CACHEDIR}" "${APPTAINER_CACHEDIR}" "${SINGULARITY_RUN_CACHE}"
 
   promote-deps-image:
     name: Promote dependency image
