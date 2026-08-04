@@ -6,7 +6,7 @@
 #include "DiFfRG/timestepping/timestepping.hh"
 
 #include <DiFfRG/common/json.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
 #include <DiFfRG/model/model.hh>
 
@@ -170,7 +170,6 @@ namespace
            {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
-           {"output_buffer_size", 1},
            {"EoM_abs_tol", 1.0e-10},
            {"EoM_max_iter", 0},
            {"grid", {{"x_grid", axis}, {"y_grid", axis}, {"z_grid", "0:1:1"}, {"refine", 0}}}}},
@@ -390,12 +389,13 @@ namespace
     HeatDiffusion2DModel model;
     Mesh mesh(make_mesh_config(n_cells));
 
-    Discretization discretization(mesh, json);
-    Assembler assembler(discretization, model, json);
+    Discretization discretization(mesh, json, DiFfRG::LogPort{});
+    Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
     const std::string output_name = "heat_diffusion_2D_" + std::to_string(n_cells) + "x" + std::to_string(n_cells);
     const std::filesystem::path output_dir = artifact_root / output_name;
-    DataOutput<dim, VectorType> data_out(output_dir.string(), output_name, "output", json);
+    OutputPath data_out_path(output_dir.string(), output_name, "output");
+    OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     TimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 

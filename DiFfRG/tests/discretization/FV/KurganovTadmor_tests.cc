@@ -4,12 +4,11 @@
 #include "catch2/catch_approx.hpp"
 #include "catch2/catch_test_macros.hpp"
 #include <DiFfRG/common/json.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
+#include <algorithm>
 #include <autodiff/forward/real.hpp>
 #include <boilerplate/kt_models.hh>
-#include <algorithm>
-#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <deal.II/base/numbers.h>
@@ -51,8 +50,7 @@ using FEFunctionDesc = DiFfRG::FEFunctionDescriptor<DiFfRG::Scalar<"u">>;
 using Components = DiFfRG::ComponentDescriptor<FEFunctionDesc>;
 constexpr auto idxf = FEFunctionDesc{};
 
-using CurlFreeFEFunctionDesc =
-    DiFfRG::FEFunctionDescriptor<DiFfRG::Scalar<"u">, DiFfRG::Scalar<"v">>;
+using CurlFreeFEFunctionDesc = DiFfRG::FEFunctionDescriptor<DiFfRG::Scalar<"u">, DiFfRG::Scalar<"v">>;
 using CurlFreeComponents = DiFfRG::ComponentDescriptor<CurlFreeFEFunctionDesc>;
 
 class TestModel : public DiFfRG::def::AbstractModel<TestModel, Components>
@@ -233,7 +231,7 @@ public:
   }
 
   int hook_calls = 0;
-  KT::AssemblyStage hook_stage = KT::AssemblyStage::diagnostics;
+  KT::AssemblyStage hook_stage = KT::AssemblyStage::residual;
   unsigned int hook_face_count = 0;
   unsigned int hook_cell_count = 0;
   bool saw_boundary_face = false;
@@ -256,13 +254,12 @@ public:
   mutable bool kt_flux_saw_interior_gradient = false;
 };
 
-class NamedSlotAffineBoundary2DModel
-    : public DiFfRG::def::AbstractModel<NamedSlotAffineBoundary2DModel, Components>,
-      public DiFfRG::def::Time,
-      public DiFfRG::def::LLFFlux<NamedSlotAffineBoundary2DModel>,
-      public DiFfRG::def::FlowBoundaries<NamedSlotAffineBoundary2DModel>,
-      public DiFfRG::def::FVDefaultBoundaries<NamedSlotAffineBoundary2DModel>,
-      public DiFfRG::def::AD<NamedSlotAffineBoundary2DModel>
+class NamedSlotAffineBoundary2DModel : public DiFfRG::def::AbstractModel<NamedSlotAffineBoundary2DModel, Components>,
+                                       public DiFfRG::def::Time,
+                                       public DiFfRG::def::LLFFlux<NamedSlotAffineBoundary2DModel>,
+                                       public DiFfRG::def::FlowBoundaries<NamedSlotAffineBoundary2DModel>,
+                                       public DiFfRG::def::FVDefaultBoundaries<NamedSlotAffineBoundary2DModel>,
+                                       public DiFfRG::def::AD<NamedSlotAffineBoundary2DModel>
 {
 public:
   static constexpr double offset = 1.25;
@@ -274,10 +271,7 @@ public:
     values[0] = solution(pos)[0];
   }
 
-  std::array<double, 1> solution(const Point<2> &pos) const
-  {
-    return {offset + x_slope * pos[0] + y_slope * pos[1]};
-  }
+  std::array<double, 1> solution(const Point<2> &pos) const { return {offset + x_slope * pos[0] + y_slope * pos[1]}; }
 
   template <typename NT, typename Solution>
   void KurganovTadmor_advection_flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/,
@@ -318,10 +312,7 @@ public:
     values[1] = values_at_pos[1];
   }
 
-  std::array<double, 2> solution(const Point<2> &pos) const
-  {
-    return {x_slope * pos[0], y_slope * pos[1]};
-  }
+  std::array<double, 2> solution(const Point<2> &pos) const { return {x_slope * pos[0], y_slope * pos[1]}; }
 
   template <typename NT, typename Solution>
   void KurganovTadmor_advection_flux(std::array<Tensor<1, 2, NT>, 2> &F_i, const Point<2> & /*pos*/,
@@ -366,10 +357,7 @@ public:
     values[0] = solution(pos)[0];
   }
 
-  std::array<double, 1> solution(const Point<2> &pos) const
-  {
-    return {offset + x_slope * pos[0] + y_slope * pos[1]};
-  }
+  std::array<double, 1> solution(const Point<2> &pos) const { return {offset + x_slope * pos[0] + y_slope * pos[1]}; }
 
   template <typename NT, typename Solution>
   void KurganovTadmor_advection_flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/,
@@ -392,8 +380,7 @@ public:
 
   template <int mdim, typename NT, size_t n_components>
   bool apply_boundary_stencil(DiFfRG::def::BoundaryStencilValues<mdim, NT, n_components> &u_stencil,
-                              DiFfRG::def::BoundaryStencilPoints<mdim> &x_stencil,
-                              const Point<mdim> &x_face) const
+                              DiFfRG::def::BoundaryStencilPoints<mdim> &x_stencil, const Point<mdim> &x_face) const
   {
     static_assert(mdim == 2);
     static_assert(n_components == 1);
@@ -432,7 +419,7 @@ public:
   }
 };
 
-static DiFfRG::JSONValue make_fv_reconstruction_diagnostics_json()
+static DiFfRG::JSONValue make_fv_test_json()
 {
   return DiFfRG::json::value(
       {{"physical", {{"Lambda", 1.}}},
@@ -445,40 +432,17 @@ static DiFfRG::JSONValue make_fv_reconstruction_diagnostics_json()
          {"EoM_abs_tol", 1e-10},
          {"EoM_max_iter", 0},
          {"grid", {{"x_grid", "0:0.25:1"}, {"y_grid", "0:1:1"}, {"z_grid", "0:1:1"}, {"refine", 0}}}}},
-       {"output",
-        {{"verbosity", 0},
-         {"vtk", false},
-         {"hdf5", true},
-         {"fv_reconstruction_diagnostics", true},
-         {"fv_residual_contribution_diagnostics", false},
-         {"output_buffer_size", 1}}}});
-}
-
-static DiFfRG::JSONValue make_fv_residual_contribution_diagnostics_json()
-{
-  auto json = make_fv_reconstruction_diagnostics_json();
-  json.set_bool("/output/fv_reconstruction_diagnostics", false);
-  json.set_bool("/output/fv_residual_contribution_diagnostics", true);
-  return json;
+       {"output", {{"verbosity", 0}, {"vtk", false}, {"hdf5", true}}}});
 }
 
 static DiFfRG::JSONValue make_fv_eom_potential_output_json()
 {
-  auto json = make_fv_reconstruction_diagnostics_json();
+  auto json = make_fv_test_json();
   json.set_uint("/discretization/EoM_max_iter", 100);
   json.set_string("/discretization/grid/x_grid", "0:0.1:1");
   json.set_bool("/output/vtk", true);
   json.set_bool("/output/hdf5", false);
-  json.set_bool("/output/fv_reconstruction_diagnostics", false);
   return json;
-}
-
-static std::filesystem::path make_unique_test_directory(const std::string &prefix)
-{
-  const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
-  auto path = std::filesystem::temp_directory_path() / (prefix + "_" + std::to_string(static_cast<long long>(nonce)));
-  std::filesystem::create_directories(path);
-  return path;
 }
 
 static void ensure_logger()
@@ -660,17 +624,14 @@ TEST_CASE("Corrected weighted least-squares diffusion reconstructor preserves AD
   const auto side_grad = [](const auto &state, const size_t side, const size_t axis) {
     return side == 0 ? state.grad_minus[0][axis] : state.grad_plus[0][axis];
   };
-  const auto finite_difference = [eps](const double plus, const double minus) {
-    return (plus - minus) / (2.0 * eps);
-  };
+  const auto finite_difference = [eps](const double plus, const double minus) { return (plus - minus) / (2.0 * eps); };
 
   for (size_t side = 0; side < 2; ++side) {
     CHECK(derivatives[side].u[0] ==
           Catch::Approx(finite_difference(side_u(state_plus, side), side_u(state_minus, side))).margin(1.0e-8));
     for (size_t axis = 0; axis < 2; ++axis) {
       CHECK(derivatives[side].grad[0][axis] ==
-            Catch::Approx(finite_difference(side_grad(state_plus, side, axis),
-                                            side_grad(state_minus, side, axis)))
+            Catch::Approx(finite_difference(side_grad(state_plus, side, axis), side_grad(state_minus, side, axis)))
                 .margin(1.0e-8));
     }
   }
@@ -687,8 +648,8 @@ TEST_CASE("KT diffusion flux averages nonlinear side fluxes", "[FV][KT][diffusio
   grad_minus[0][1] = 0.5;
   grad_plus[0][1] = 1.0;
 
-  const auto D = compute_diffusion_flux<NonlinearDiffusionProbeModel, double, 2, 1>(
-      u_minus, u_plus, grad_minus, grad_plus, Point<2>(), model);
+  const auto D = compute_diffusion_flux<NonlinearDiffusionProbeModel, double, 2, 1>(u_minus, u_plus, grad_minus,
+                                                                                    grad_plus, Point<2>(), model);
   CHECK(D[0][0] == Catch::Approx(0.625).margin(1.0e-14));
 
   const auto J = compute_diffusion_flux_jacobian<NonlinearDiffusionProbeModel, double, 2, 1>(
@@ -764,123 +725,10 @@ static typename DoFHandler::active_cell_iterator find_2d_non_corner_boundary_cel
   return typename DoFHandler::active_cell_iterator(dof_handler.end());
 }
 
-TEST_CASE("KT FV reconstruction diagnostics write expected HDF5 maps", "[FV][KT][hdf5]")
+TEST_CASE("KT 1D FV readouts use EoM potential reconstruction and write a time series", "[FV][KT][EoM][output]")
 {
-#ifndef H5CPP
-  SUCCEED("HDF5 support is disabled.");
-#else
   using Model = DiFfRG::Testing::ModelBurgersKT<1>;
   using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<1>>;
-  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
-  using VectorType = typename Discretization::VectorType;
-
-  ensure_logger();
-
-  auto json = make_fv_reconstruction_diagnostics_json();
-  DiFfRG::Testing::PhysicalParameters prm;
-  prm.initial_x0[0] = 1.0;
-  prm.initial_x1[0] = 0.5;
-
-  Model model(prm);
-  DiFfRG::RectangularMesh<1> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
-
-  DiFfRG::FV::FlowingVariables<Discretization> state(discretization);
-  state.interpolate(model);
-  const VectorType &solution = state.spatial_data();
-  REQUIRE(solution.size() > 3);
-
-  const auto output_dir = make_unique_test_directory("kt_fv_reconstruction_diagnostics");
-  const std::string output_name = "kt_diag_unit";
-  DiFfRG::DataOutput<1, VectorType> data_out(output_dir.string(), output_name, "output", json);
-
-  assembler.attach_data_output(data_out, solution, VectorType());
-  data_out.flush(0.25);
-
-  const auto hdf5_file = output_dir / (output_name + "_fv_reconstruction_diagnostics.h5");
-  REQUIRE(std::filesystem::exists(hdf5_file));
-  REQUIRE(std::filesystem::is_regular_file(hdf5_file));
-
-  auto file = DiFfRG::hdf5::File::open(hdf5_file.string(), DiFfRG::hdf5::Access::ReadOnly);
-  auto root = file.root();
-  const auto configuration_json = root.read_attribute<std::string>("configuration_json");
-  CHECK(configuration_json.find("\"physical\"") != std::string::npos);
-  CHECK(configuration_json.find("\"Lambda\"") != std::string::npos);
-  REQUIRE(root.has_group("maps"));
-  REQUIRE(root.has_group("coordinates"));
-  auto maps = root.open_group("maps");
-
-  const auto read_map = [&](const std::string &name, const std::size_t expected_size) {
-    REQUIRE(maps.has_group(name));
-    auto map_group = maps.open_group(name);
-    REQUIRE(map_group.has_group("0"));
-    auto series_group = map_group.open_group("0");
-    REQUIRE(series_group.has_dataset("data"));
-    CHECK(series_group.read_attribute<double>("time") == Catch::Approx(0.25));
-    CHECK(series_group.read_attribute<int>("series_number") == 0);
-
-    auto dataset = series_group.open_dataset("data");
-    const auto extents = dataset.dataspace().extents();
-    REQUIRE(extents.size() == 1);
-    CHECK(extents[0] == expected_size);
-
-    std::vector<std::array<double, 1>> values(expected_size);
-    dataset.read(values);
-    REQUIRE(values.size() == expected_size);
-    for (const auto &value : values)
-      CHECK(std::isfinite(value[0]));
-    return values;
-  };
-
-  const std::size_t n_cells = solution.size();
-  const auto cell_u = read_map("cell_u", n_cells);
-  const auto cell_du_dx = read_map("cell_du_dx", n_cells);
-  const auto cell_u_constant = read_map("cell_u_constant", 2 * n_cells);
-  const auto cell_u_reconstruction = read_map("cell_u_reconstruction", 2 * n_cells);
-  const auto face_u_minus = read_map("face_u_minus", n_cells + 1);
-  const auto face_u_plus = read_map("face_u_plus", n_cells + 1);
-  const auto face_du_dx_minus = read_map("face_du_dx_minus", n_cells + 1);
-  const auto face_du_dx_plus = read_map("face_du_dx_plus", n_cells + 1);
-  const auto face_advection_flux = read_map("face_advection_flux", n_cells + 1);
-  const auto face_diffusion_flux = read_map("face_diffusion_flux", n_cells + 1);
-  const auto face_total_flux = read_map("face_total_flux", n_cells + 1);
-
-  const auto &support_points = discretization.get_support_points();
-  REQUIRE(support_points.size() == n_cells);
-  for (std::size_t i = 0; i < n_cells; ++i) {
-    const double x = support_points[i][0];
-    CHECK(cell_u[i][0] == Catch::Approx(1.0 + 0.5 * x).margin(1e-14));
-    CHECK(cell_du_dx[i][0] == Catch::Approx(0.5).margin(1e-14));
-    CHECK(cell_u_constant[2 * i][0] == Catch::Approx(cell_u[i][0]).margin(1e-14));
-    CHECK(cell_u_constant[2 * i + 1][0] == Catch::Approx(cell_u[i][0]).margin(1e-14));
-    CHECK(cell_u_reconstruction[2 * i][0] == Catch::Approx(1.0 + 0.5 * (0.25 * i)).margin(1e-14));
-    CHECK(cell_u_reconstruction[2 * i + 1][0] == Catch::Approx(1.0 + 0.5 * (0.25 * (i + 1))).margin(1e-14));
-  }
-
-  for (std::size_t i = 0; i < n_cells + 1; ++i) {
-    const double x_face = 0.25 * static_cast<double>(i);
-    const double expected_u = 1.0 + 0.5 * x_face;
-    const double expected_advection_flux = 0.5 * expected_u * expected_u;
-    CHECK(face_u_minus[i][0] == Catch::Approx(expected_u).margin(1e-14));
-    CHECK(face_u_plus[i][0] == Catch::Approx(expected_u).margin(1e-14));
-    CHECK(face_du_dx_minus[i][0] == Catch::Approx(0.5).margin(1e-14));
-    CHECK(face_du_dx_plus[i][0] == Catch::Approx(0.5).margin(1e-14));
-    CHECK(face_advection_flux[i][0] == Catch::Approx(expected_advection_flux).margin(1e-14));
-    CHECK(face_diffusion_flux[i][0] == Catch::Approx(0.0).margin(1e-14));
-    CHECK(face_total_flux[i][0] == Catch::Approx(expected_advection_flux).margin(1e-14));
-  }
-
-  std::filesystem::remove_all(output_dir);
-#endif
-}
-
-TEST_CASE("KT 1D FV readouts use EoM potential reconstruction and write a time series",
-          "[FV][KT][EoM][output]")
-{
-  using Model = DiFfRG::Testing::ModelBurgersKT<1>;
-  using Discretization =
-      DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<1>>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -892,21 +740,23 @@ TEST_CASE("KT 1D FV readouts use EoM potential reconstruction and write a time s
   prm.initial_x1[0] = 2.5;
 
   Model model(prm);
-  DiFfRG::RectangularMesh<1> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
+  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
   DiFfRG::FV::FlowingVariables<Discretization> state(discretization);
   state.interpolate(model);
 
-  const auto output_dir = make_unique_test_directory("kt_fv_eom_potential");
   const std::string output_name = "kt_eom";
+  auto data_out_path =
+      DiFfRG::OutputPath::temporary(DiFfRG::TemporaryRetention::remove_on_destruction, output_name, "output");
+  const auto output_dir = data_out_path.root();
   {
-    DiFfRG::DataOutput<1, VectorType> data_out(output_dir.string(), output_name, "output", json);
-    assembler.attach_data_output(data_out, state.spatial_data(), VectorType());
-    data_out.flush(0.25);
-    assembler.attach_data_output(data_out, state.spatial_data(), VectorType());
-    data_out.flush(0.5);
+    DiFfRG::OutputSession<1, VectorType> data_out(data_out_path, json);
+    data_out.write_frame(0.25,
+                         [&](auto &frame) { assembler.attach_data_output(frame, state.spatial_data(), VectorType()); });
+    data_out.write_frame(0.5,
+                         [&](auto &frame) { assembler.attach_data_output(frame, state.spatial_data(), VectorType()); });
   }
 
   const auto main_pvd = output_dir / (output_name + ".pvd");
@@ -926,98 +776,6 @@ TEST_CASE("KT 1D FV readouts use EoM potential reconstruction and write a time s
   CHECK(pvd_contents.find("kt_eom_potential_000001.vtu") != std::string::npos);
   CHECK(read_text_file(potential_vtu_0).find("Name=\"potential\"") != std::string::npos);
   CHECK(read_text_file(potential_vtu_1).find("Name=\"potential\"") != std::string::npos);
-
-  std::filesystem::remove_all(output_dir);
-}
-
-TEST_CASE("KT FV residual contribution diagnostics reconstruct assembled residual", "[FV][KT][hdf5]")
-{
-#ifndef H5CPP
-  SUCCEED("HDF5 support is disabled.");
-#else
-  using Model = ResidualContributionModel;
-  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<1>>;
-  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
-  using VectorType = typename Discretization::VectorType;
-
-  ensure_logger();
-
-  auto json = make_fv_residual_contribution_diagnostics_json();
-  Model model;
-  DiFfRG::RectangularMesh<1> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
-
-  DiFfRG::FV::FlowingVariables<Discretization> state(discretization);
-  state.interpolate(model);
-  const VectorType &solution = state.spatial_data();
-  REQUIRE(solution.size() > 3);
-
-  VectorType solution_dot(solution.size());
-  for (unsigned int i = 0; i < solution_dot.size(); ++i)
-    solution_dot[i] = 0.05 + 0.01 * static_cast<double>(i);
-
-  VectorType residual(solution.size());
-  residual = 0.;
-  assembler.residual(residual, solution, 1.0, solution_dot, 1.0);
-
-  const auto output_dir = make_unique_test_directory("kt_fv_residual_contribution_diagnostics");
-  const std::string output_name = "kt_residual_diag_unit";
-  DiFfRG::DataOutput<1, VectorType> data_out(output_dir.string(), output_name, "output", json);
-
-  assembler.attach_data_output(data_out, solution, VectorType(), solution_dot, residual);
-  data_out.flush(0.5);
-
-  const auto hdf5_file = output_dir / (output_name + "_fv_residual_contribution_diagnostics.h5");
-  REQUIRE(std::filesystem::exists(hdf5_file));
-  REQUIRE(std::filesystem::is_regular_file(hdf5_file));
-
-  auto file = DiFfRG::hdf5::File::open(hdf5_file.string(), DiFfRG::hdf5::Access::ReadOnly);
-  auto root = file.root();
-  REQUIRE(root.has_group("maps"));
-  auto maps = root.open_group("maps");
-
-  const auto read_map = [&](const std::string &name, const std::size_t expected_size) {
-    REQUIRE(maps.has_group(name));
-    auto map_group = maps.open_group(name);
-    REQUIRE(map_group.has_group("0"));
-    auto series_group = map_group.open_group("0");
-    REQUIRE(series_group.has_dataset("data"));
-    CHECK(series_group.read_attribute<double>("time") == Catch::Approx(0.5));
-    CHECK(series_group.read_attribute<int>("series_number") == 0);
-
-    auto dataset = series_group.open_dataset("data");
-    const auto extents = dataset.dataspace().extents();
-    REQUIRE(extents.size() == 1);
-    CHECK(extents[0] == expected_size);
-
-    std::vector<std::array<double, 1>> values(expected_size);
-    dataset.read(values);
-    for (const auto &value : values)
-      CHECK(std::isfinite(value[0]));
-    return values;
-  };
-
-  const std::size_t n_cells = solution.size();
-  const auto advection = read_map("cell_advection_contribution", n_cells);
-  const auto diffusion = read_map("cell_diffusion_contribution", n_cells);
-  const auto source = read_map("cell_source_contribution", n_cells);
-  const auto mass = read_map("cell_mass_contribution", n_cells);
-  const auto total = read_map("cell_total_residual", n_cells);
-  const auto total_minus_residual = read_map("cell_total_minus_residual", n_cells);
-
-  bool has_nonzero_split = false;
-  for (std::size_t i = 0; i < n_cells; ++i) {
-    const double reconstructed_total = advection[i][0] + diffusion[i][0] + source[i][0] + mass[i][0];
-    CHECK(total[i][0] == Catch::Approx(reconstructed_total).margin(1e-12));
-    CHECK(total_minus_residual[i][0] == Catch::Approx(0.0).margin(1e-12));
-    has_nonzero_split = has_nonzero_split || std::abs(advection[i][0]) > 0.0 || std::abs(diffusion[i][0]) > 0.0 ||
-                        std::abs(source[i][0]) > 0.0 || std::abs(mass[i][0]) > 0.0;
-  }
-  CHECK(has_nonzero_split);
-
-  std::filesystem::remove_all(output_dir);
-#endif
 }
 
 TEST_CASE("KT reconstruction cache recomputes cell stencil values per solution", "[FV][KT][cache]")
@@ -1029,11 +787,11 @@ TEST_CASE("KT reconstruction cache recomputes cell stencil values per solution",
 
   ensure_logger();
 
-  auto json = make_fv_residual_contribution_diagnostics_json();
+  auto json = make_fv_test_json();
   Model model;
-  DiFfRG::RectangularMesh<1> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
+  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
   VectorType first(discretization.get_dof_handler().n_dofs());
   VectorType second(first.size());
@@ -1088,11 +846,11 @@ TEST_CASE("KT solution reconstruction cache stores reversed interior face orient
 
   ensure_logger();
 
-  auto json = make_fv_residual_contribution_diagnostics_json();
+  auto json = make_fv_test_json();
   Model model;
-  DiFfRG::RectangularMesh<1> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
+  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
   VectorType solution(discretization.get_dof_handler().n_dofs());
   for (unsigned int i = 0; i < solution.size(); ++i)
@@ -1126,11 +884,11 @@ TEST_CASE("KT solution reconstruction cache matches direct interior reconstructi
 
   ensure_logger();
 
-  auto json = make_fv_residual_contribution_diagnostics_json();
+  auto json = make_fv_test_json();
   Model model;
-  DiFfRG::RectangularMesh<1> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
+  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
   VectorType solution(discretization.get_dof_handler().n_dofs());
   for (unsigned int i = 0; i < solution.size(); ++i)
@@ -1168,11 +926,11 @@ TEST_CASE("KT solution reconstruction cache matches direct boundary reconstructi
 
   ensure_logger();
 
-  auto json = make_fv_residual_contribution_diagnostics_json();
+  auto json = make_fv_test_json();
   Model model;
-  DiFfRG::RectangularMesh<1> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
+  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
   VectorType solution(discretization.get_dof_handler().n_dofs());
   for (unsigned int i = 0; i < solution.size(); ++i)
@@ -1205,11 +963,11 @@ TEST_CASE("KT boundary stencil cache recomputes values per solution", "[FV][KT][
 
   ensure_logger();
 
-  auto json = make_fv_residual_contribution_diagnostics_json();
+  auto json = make_fv_test_json();
   Model model;
-  DiFfRG::RectangularMesh<1> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
+  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
   VectorType first(discretization.get_dof_handler().n_dofs());
   VectorType second(first.size());
@@ -1248,9 +1006,9 @@ TEST_CASE("KT 2D topology cache stores four face neighbours for an interior cell
   prm.initial_x2[0] = 0.5;
 
   Model model(prm);
-  DiFfRG::RectangularMesh<2> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
+  DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
   auto cell = find_2d_interior_cell(discretization.get_dof_handler());
   REQUIRE(cell != discretization.get_dof_handler().end());
@@ -1268,8 +1026,7 @@ TEST_CASE("KT 2D topology cache stores four face neighbours for an interior cell
     CHECK(stencil.face_centers[face_index] == cell->face(face_index)->center());
     CHECK(stencil.neighbors.x[face_index] == cell->neighbor(face_index)->center());
     CHECK(stencil.neighbors.dof_indices[face_index][0] != dealii::numbers::invalid_dof_index);
-    CHECK(stencil.neighbors.u[face_index][0] ==
-          Catch::Approx(solution[stencil.neighbors.dof_indices[face_index][0]]));
+    CHECK(stencil.neighbors.u[face_index][0] == Catch::Approx(solution[stencil.neighbors.dof_indices[face_index][0]]));
   }
 }
 
@@ -1289,9 +1046,9 @@ TEST_CASE("KT 2D boundary stencil cache stores two interior cells behind boundar
   prm.initial_x2[0] = 0.5;
 
   Model model(prm);
-  DiFfRG::RectangularMesh<2> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
+  DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
   typename Discretization::VectorType solution(discretization.get_dof_handler().n_dofs());
   for (unsigned int i = 0; i < solution.size(); ++i)
@@ -1306,8 +1063,8 @@ TEST_CASE("KT 2D boundary stencil cache stores two interior cells behind boundar
     const auto first_interior = cell->neighbor(interior_face);
     const auto second_interior = first_interior->neighbor(interior_face);
 
-    const auto boundary_stencil = assembler.template build_boundary_stencil_from_cache<NumberType>(
-        cell, face_index, solution);
+    const auto boundary_stencil =
+        assembler.template build_boundary_stencil_from_cache<NumberType>(cell, face_index, solution);
 
     CHECK(boundary_stencil.cell_face == face_index);
     CHECK(boundary_stencil.lower_boundary == (face_index % 2 == 0));
@@ -1316,16 +1073,15 @@ TEST_CASE("KT 2D boundary stencil cache stores two interior cells behind boundar
     CHECK(boundary_stencil.u[physical_cell][0] ==
           Catch::Approx(solution[boundary_stencil.dof_indices[physical_cell][0]]));
 
-    const auto first_index =
-        boundary_stencil.lower_boundary ? upper_inner : lower_inner;
-    const auto second_index =
-        boundary_stencil.lower_boundary ? upper_outer : lower_outer;
+    const auto first_index = boundary_stencil.lower_boundary ? upper_inner : lower_inner;
+    const auto second_index = boundary_stencil.lower_boundary ? upper_outer : lower_outer;
     CHECK(boundary_stencil.x[first_index] == first_interior->center());
     CHECK(boundary_stencil.x[second_index] == second_interior->center());
     CHECK(boundary_stencil.dof_indices[first_index][0] != dealii::numbers::invalid_dof_index);
     CHECK(boundary_stencil.dof_indices[second_index][0] != dealii::numbers::invalid_dof_index);
     CHECK(boundary_stencil.u[first_index][0] == Catch::Approx(solution[boundary_stencil.dof_indices[first_index][0]]));
-    CHECK(boundary_stencil.u[second_index][0] == Catch::Approx(solution[boundary_stencil.dof_indices[second_index][0]]));
+    CHECK(boundary_stencil.u[second_index][0] ==
+          Catch::Approx(solution[boundary_stencil.dof_indices[second_index][0]]));
   }
 }
 
@@ -1345,9 +1101,9 @@ TEST_CASE("KT 2D solution reconstruction cache recomputes values per solution", 
   prm.initial_x2[0] = 0.5;
 
   Model model(prm);
-  DiFfRG::RectangularMesh<2> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
+  DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
   VectorType first(discretization.get_dof_handler().n_dofs());
   VectorType second(first.size());
@@ -1399,9 +1155,9 @@ TEST_CASE("KT 2D solution reconstruction cache matches direct interior reconstru
   prm.initial_x2[0] = 0.5;
 
   Model model(prm);
-  DiFfRG::RectangularMesh<2> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
+  DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
   VectorType solution(discretization.get_dof_handler().n_dofs());
   for (unsigned int i = 0; i < solution.size(); ++i)
@@ -1447,9 +1203,9 @@ TEST_CASE("KT 2D boundary reconstruction cache reconstructs affine ghost side", 
   prm.initial_x2[0] = 0.5;
 
   Model model(prm);
-  DiFfRG::RectangularMesh<2> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
+  DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
   VectorType solution(discretization.get_dof_handler().n_dofs());
   const auto &support_points = discretization.get_support_points();
@@ -1487,8 +1243,7 @@ TEST_CASE("KT 2D boundary reconstruction cache reconstructs affine ghost side", 
   check_boundary_face(corner_cell, 2U);
 }
 
-TEST_CASE("KT 2D boundary reconstruction cache derives tangential ghost side from named slots",
-          "[FV][KT][cache][2d]")
+TEST_CASE("KT 2D boundary reconstruction cache derives tangential ghost side from named slots", "[FV][KT][cache][2d]")
 {
   using Model = NamedSlotAffineBoundary2DModel;
   using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<2>>;
@@ -1499,9 +1254,9 @@ TEST_CASE("KT 2D boundary reconstruction cache derives tangential ghost side fro
 
   auto json = make_kt_boundary_json();
   Model model;
-  DiFfRG::RectangularMesh<2> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
+  DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
   VectorType solution(discretization.get_dof_handler().n_dofs());
   const auto &support_points = discretization.get_support_points();
@@ -1531,8 +1286,7 @@ TEST_CASE("KT 2D boundary reconstruction cache derives tangential ghost side fro
   }
 }
 
-TEST_CASE("KT 2D boundary reconstruction cache uses model-owned tangential ghost neighbours",
-          "[FV][KT][cache][2d]")
+TEST_CASE("KT 2D boundary reconstruction cache uses model-owned tangential ghost neighbours", "[FV][KT][cache][2d]")
 {
   using Model = NonAffineTangentialGhostBoundary2DModel;
   using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<2>>;
@@ -1543,9 +1297,9 @@ TEST_CASE("KT 2D boundary reconstruction cache uses model-owned tangential ghost
 
   auto json = make_kt_boundary_json();
   Model model;
-  DiFfRG::RectangularMesh<2> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
+  DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
   VectorType solution(discretization.get_dof_handler().n_dofs());
   const auto &support_points = discretization.get_support_points();
@@ -1565,8 +1319,7 @@ TEST_CASE("KT 2D boundary reconstruction cache uses model-owned tangential ghost
     const auto &cached = assembler.get_cached_face_reconstruction(cache, cell, face_index);
     const unsigned int normal_axis = face_index / 2;
     const unsigned int tangential_axis = 1U - normal_axis;
-    const double base_tangential_slope =
-        tangential_axis == 0 ? Model::x_slope : Model::y_slope;
+    const double base_tangential_slope = tangential_axis == 0 ? Model::x_slope : Model::y_slope;
     constexpr double tolerance = 1.0e-12;
 
     CHECK(cached.face_grad_minus[0][tangential_axis] == Catch::Approx(base_tangential_slope).margin(tolerance));
@@ -1591,8 +1344,8 @@ TEST_CASE("KT origin-odd boundary reconstruction remains curl-free", "[FV][KT][c
   Model model;
   const DiFfRG::Config::ConfigurationMesh<2> mesh_config(json);
   DiFfRG::RectangularMesh<2> mesh(mesh_config);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
   DiFfRG::FV::FlowingVariables<Discretization> state(discretization);
   state.interpolate(model);
@@ -1649,9 +1402,9 @@ TEST_CASE("KT 2D solution reconstruction cache stores reversed interior face ori
   prm.initial_x2[0] = 0.5;
 
   Model model(prm);
-  DiFfRG::RectangularMesh<2> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
+  DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
   VectorType solution(discretization.get_dof_handler().n_dofs());
   for (unsigned int i = 0; i < solution.size(); ++i)
@@ -1683,11 +1436,11 @@ TEST_CASE("KT face hook exposes cached reconstruction before residual flux", "[F
 
   ensure_logger();
 
-  auto json = make_fv_residual_contribution_diagnostics_json();
+  auto json = make_fv_test_json();
   Model model;
-  DiFfRG::RectangularMesh<1> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
+  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
   DiFfRG::FV::FlowingVariables<Discretization> state(discretization);
   state.interpolate(model);

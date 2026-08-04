@@ -21,7 +21,6 @@ TEST_CASE("Test HDF5 input", "[input][hdf5]")
   DiFfRG::Init();
 
   using namespace DiFfRG;
-  namespace fs = std::filesystem;
 
   // Setup JSON configuration for HDF5Output
   JSONValue json = json::value({{"physical", {}},
@@ -42,18 +41,16 @@ TEST_CASE("Test HDF5 input", "[input][hdf5]")
     // Logger already exists, continue
   }
 
-  fs::path tmp{std::filesystem::temp_directory_path()};
-  std::string hdf5FileName = "DiFfRG_test_hdf5_input.h5";
-  std::filesystem::path hdf5_file(tmp / hdf5FileName);
-
-  // Clean up any existing test file
-  if (std::filesystem::exists(hdf5_file)) std::filesystem::remove(hdf5_file);
+  auto output_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "DiFfRG_test_hdf5_input");
+  const auto &tmp = output_path.root();
+  const std::string hdf5FileName = output_path.run_file(".h5").filename().string();
+  const auto hdf5_file = output_path.run_file(".h5");
 
   SECTION("Test scalar loading")
   {
     // First, write test data using HDF5Output
     {
-      HDF5Output hdf5_output(tmp.string(), hdf5FileName, json);
+      HDF5Output hdf5_output(tmp.string(), hdf5FileName, OutputSettings(json).configuration_json);
 
       // Write various scalar types (only basic types that work reliably)
       hdf5_output.scalar("test_double", 42.5);
@@ -101,7 +98,7 @@ TEST_CASE("Test HDF5 input", "[input][hdf5]")
 
     // Write test data using HDF5Output
     {
-      HDF5Output hdf5_output(tmp.string(), hdf5FileName, json);
+      HDF5Output hdf5_output(tmp.string(), hdf5FileName, OutputSettings(json).configuration_json);
       hdf5_output.map("test_map", coords2d, test_data.data());
       hdf5_output.flush(1.0);
     }
@@ -157,7 +154,7 @@ TEST_CASE("Test HDF5 input", "[input][hdf5]")
     }
 
     {
-      HDF5Output hdf5_output(tmp.string(), hdf5FileName, json);
+      HDF5Output hdf5_output(tmp.string(), hdf5FileName, OutputSettings(json).configuration_json);
       hdf5_output.map("test_map_validation", coords2d, test_data.data());
       hdf5_output.flush(1.0);
     }
@@ -194,7 +191,7 @@ TEST_CASE("Test HDF5 input", "[input][hdf5]")
     std::vector<double> test_data(existing_coords1.size(), 1.0);
 
     {
-      HDF5Output hdf5_output(tmp.string(), hdf5FileName, json);
+      HDF5Output hdf5_output(tmp.string(), hdf5FileName, OutputSettings(json).configuration_json);
       hdf5_output.map("test_map_missing_coords", existing_coords1, test_data.data());
       hdf5_output.flush(1.0);
     }
@@ -219,7 +216,7 @@ TEST_CASE("Test HDF5 input", "[input][hdf5]")
     std::vector<double> test_data(coords2d.size(), 0.0);
 
     {
-      HDF5Output hdf5_output(tmp.string(), hdf5FileName, json);
+      HDF5Output hdf5_output(tmp.string(), hdf5FileName, OutputSettings(json).configuration_json);
       hdf5_output.map("test_map_coord", coords2d, test_data.data());
       hdf5_output.flush(1.0);
     }
@@ -238,7 +235,4 @@ TEST_CASE("Test HDF5 input", "[input][hdf5]")
       }
     }
   }
-
-  // Clean up test file
-  if (false && std::filesystem::exists(hdf5_file)) std::filesystem::remove(hdf5_file);
 }

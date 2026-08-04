@@ -22,12 +22,16 @@ set(DiFfRG_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/eigen.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/mpi.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/polynomials.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/run_logger.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/utils.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/csv_output.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/data_output.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/diagnostic_port.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/fe_output.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/hdf5_output.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/hdf5_input.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/output_path.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/output_settings.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/output_session.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/mesh/rectangular_mesh.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/model/model.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/solver/kinsol.cc

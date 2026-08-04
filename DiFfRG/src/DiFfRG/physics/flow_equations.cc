@@ -1,6 +1,3 @@
-// external libraries
-#include <spdlog/spdlog.h>
-
 // DiFfRG
 #include <DiFfRG/physics/flow_equations.hh>
 
@@ -28,7 +25,7 @@ namespace DiFfRG
     if (verbosity > 1) std::cout << "FlowEquations initialized" << std::endl;
   }
 
-  void FlowEquations::print_parameters(const std::string logname) const
+  void FlowEquations::print_parameters(const LogPort log) const
   {
     std::stringstream stream;
     stream << "FlowEquations:" << "\n"
@@ -37,7 +34,7 @@ namespace DiFfRG
            << std::setw(40) << "x_extent: " << std::setw(10) << x_extent << "\n"
            << std::setw(40) << "angle_quadrature_order: " << std::setw(10) << angle_quadrature_order << "\n"
            << std::setw(40) << "jac_angle_quadrature_order: " << std::setw(10) << jac_angle_quadrature_order;
-    spdlog::get(logname)->info(stream.str());
+    log.info(stream.str());
   }
 
   void FlowEquations::set_jacobian_quadrature_factor(const double jacobian_quadrature_factor)
@@ -141,7 +138,7 @@ namespace DiFfRG
     if (verbosity > 0) std::cout << "FlowEquationsFiniteT initialized" << std::endl;
   }
 
-  void FlowEquationsFiniteT::print_parameters(const std::string logname) const
+  void FlowEquationsFiniteT::print_parameters(const LogPort log) const
   {
     std::stringstream stream;
     stream << "FlowEquationsFiniteT:" << "\n"
@@ -157,7 +154,7 @@ namespace DiFfRG
            << std::setw(47) << std::setw(10) << "angle_quadrature_order: " << angle_quadrature_order << "\n"
            << std::setw(47) << std::setw(10) << "jac_angle_quadrature_order: " << jac_angle_quadrature_order << "\n"
            << std::setw(47) << std::setw(10) << "T: " << T;
-    spdlog::get(logname)->info(stream.str());
+    log.info(stream.str());
   }
 
   void FlowEquationsFiniteT::set_k(const double k) { this->k = k; }

@@ -5,7 +5,7 @@
 #include "DiFfRG/timestepping/timestepping.hh"
 
 #include <DiFfRG/common/json.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
 #include <DiFfRG/model/model.hh>
 
@@ -176,7 +176,6 @@ namespace
            {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
-           {"output_buffer_size", 1},
            {"EoM_abs_tol", 1.0e-10},
            {"EoM_max_iter", 200},
            {"grid", {{"x_grid", phi_grid}, {"y_grid", phi_grid}, {"z_grid", "0:1:1"}, {"refine", 0}}}}},
@@ -335,10 +334,11 @@ namespace
     const JSONValue json = make_run_json(params);
     GaussianModel model(json, scenario);
     Mesh mesh(make_mesh_config(params));
-    Discretization discretization(mesh, json);
-    GaussianAssembler assembler(discretization, model, json);
-    kt_regression::TemporaryDirectory tmp_dir("zero_dim_2d_kt_gaussian");
-    DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), "zero_dim_2d_kt_gaussian", "output", json);
+    Discretization discretization(mesh, json, DiFfRG::LogPort{});
+    GaussianAssembler assembler(discretization, model, json, DiFfRG::LogPort{});
+    auto data_out_path =
+        OutputPath::temporary(TemporaryRetention::remove_on_destruction, "zero_dim_2d_kt_gaussian", "output");
+    OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
     FV::FlowingVariables<Discretization> state(discretization);

@@ -6,7 +6,7 @@
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/common/abstract_data.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/discretization/mesh/no_adaptivity.hh>
 #include <algorithm>
 #include <cmath>
@@ -124,8 +124,9 @@ namespace DiFfRG
      * @param adaptor
      */
     AbstractTimestepper(const JSONValue &json, AbstractAssembler<VectorType, SparseMatrixType, dim> *assembler,
-                        DataOutput<dim, VectorType> *data_out = nullptr, AbstractAdaptor<VectorType> *adaptor = nullptr)
+                        OutputSession<dim, VectorType> *data_out, AbstractAdaptor<VectorType> *adaptor = nullptr)
         : json(json), assembler(assembler), data_out(data_out), adaptor(adaptor),
+          log(data_out ? data_out->log_port() : LogPort{}),
           start_time(std::chrono::high_resolution_clock::now())
     {
       verbosity = json.get_int("/output/verbosity");
@@ -160,17 +161,14 @@ namespace DiFfRG
     }
 
     /**
-     * @brief Utility function to obtain a DataOutput object. If no DataOutput object is provided, a default one is
-     * created.
+     * @brief Obtain the run-owned output session supplied by the application.
      *
-     * @return DataOutput<dim, VectorType>* A pointer to the DataOutput object.
+     * @return OutputSession<dim, VectorType>* The active output session.
      */
-    DataOutput<dim, VectorType> *get_data_out()
+    OutputSession<dim, VectorType> *get_data_out()
     {
-      if (data_out == nullptr) {
-        data_out_default = std::make_shared<DataOutput<dim, VectorType>>(json);
-        return data_out_default.get();
-      }
+      if (data_out == nullptr)
+        throw std::invalid_argument("AbstractTimestepper: an OutputSession must be supplied explicitly.");
       return data_out;
     }
 
@@ -189,6 +187,11 @@ namespace DiFfRG
       return adaptor;
     }
 
+    void drain_output()
+    {
+      if (data_out) data_out->drain();
+    }
+
     /**
      * @brief Any derived class must implement this method to run the timestepping algorithm.
      *
@@ -202,14 +205,13 @@ namespace DiFfRG
   protected:
     const JSONValue json;
     AbstractAssembler<VectorType, SparseMatrixType, dim> *assembler;
-    DataOutput<dim, VectorType> *data_out;
+    OutputSession<dim, VectorType> *data_out;
     AbstractAdaptor<VectorType> *adaptor;
+    LogPort log;
 
     const std::chrono::time_point<std::chrono::high_resolution_clock> start_time;
 
     std::shared_ptr<NoAdaptivity<VectorType>> adaptor_default;
-    std::shared_ptr<DataOutput<dim, VectorType>> data_out_default;
-
     double Lambda;
     int verbosity;
     double output_dt;

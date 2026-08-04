@@ -203,7 +203,7 @@ public:
     // sanity check: make sure 0 < Zc[0] < 1
     if (Zc[0] < 0 || Zc[0] > 1) throw std::runtime_error("Diverging result: Zc(0) = " + std::to_string(Zc[0]));
 
-    auto &hdf = output.hdf5();
+    auto hdf = output.hdf5();
     hdf.map("ZA", coordinates1D, &(variables.data()[idxv("ZA")]));
     hdf.map("Zc", coordinates1D, &(variables.data()[idxv("Zc")]));
     hdf.map("ZA4SP", coordinates1D, &(variables.data()[idxv("ZA4SP")]));

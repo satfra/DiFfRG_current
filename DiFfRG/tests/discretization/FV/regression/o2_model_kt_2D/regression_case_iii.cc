@@ -6,7 +6,7 @@
 
 #include <DiFfRG/common/json.hh>
 #include <DiFfRG/discretization/data/data.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
 #include <DiFfRG/model/model.hh>
 
@@ -165,7 +165,6 @@ namespace
            {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
-           {"output_buffer_size", 1},
            {"EoM_abs_tol", 1.0e-10},
            {"EoM_max_iter", 0},
            {"grid", {{"x_grid", phi_grid}, {"y_grid", phi_grid}, {"z_grid", "0:1:1"}, {"refine", 0}}}}},
@@ -336,13 +335,15 @@ namespace
     const JSONValue json = make_run_json(params, grid);
     O2_Model_VI_B_III model(json);
     Mesh mesh(make_mesh_config(grid));
-    Discretization discretization(mesh, json);
-    O2Assembler<O2_Model_VI_B_III> assembler(discretization, model, json);
+    Discretization discretization(mesh, json, DiFfRG::LogPort{});
+    O2Assembler<O2_Model_VI_B_III> assembler(discretization, model, json, DiFfRG::LogPort{});
 
-    kt_regression::TemporaryDirectory tmp_dir("o2_model_kt_2D_case_iii_regression", !params.retain_output);
+    auto data_out_path = OutputPath::temporary(params.retain_output ? TemporaryRetention::keep
+                                                                    : TemporaryRetention::remove_on_destruction,
+                                               "o2_model_kt_2D_case_iii_regression", "output");
     std::clog << "[O2 DIAG] " << (params.retain_output ? "retaining" : "using temporary") << " output directory "
-              << tmp_dir.path << '\n';
-    DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), "o2_model_kt_2D_case_iii_regression", "output", json);
+              << data_out_path.root() << '\n';
+    OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 
@@ -366,13 +367,13 @@ namespace
     const JSONValue json = make_run_json(params, grid);
     O2_Model_VI_B_III_OriginCentered model(json);
     Mesh mesh(make_mesh_config(grid));
-    Discretization discretization(mesh, json);
-    O2Assembler<O2_Model_VI_B_III_OriginCentered> assembler(discretization, model, json);
+    Discretization discretization(mesh, json, DiFfRG::LogPort{});
+    O2Assembler<O2_Model_VI_B_III_OriginCentered> assembler(discretization, model, json, DiFfRG::LogPort{});
 
-    kt_regression::TemporaryDirectory tmp_dir("o2_model_kt_2D_case_iii_origin_centered_quarter_domain");
-    std::clog << "[O2 DIAG] using temporary output directory " << tmp_dir.path << '\n';
-    DataOutput<dim, VectorType> data_out(tmp_dir.path.string(),
-                                         "o2_model_kt_2D_case_iii_origin_centered_quarter_domain", "output", json);
+    auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction,
+                                               "o2_model_kt_2D_case_iii_origin_centered_quarter_domain", "output");
+    std::clog << "[O2 DIAG] using temporary output directory " << data_out_path.root() << '\n';
+    OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 

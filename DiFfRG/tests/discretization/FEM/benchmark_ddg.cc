@@ -71,9 +71,9 @@ TEST_CASE("Benchmark dDG Constant", "[benchmark][ddg]")
   std::string label = "dDG p=" + std::to_string(fe_order);
 
   Model model(p_prm);
-  RectangularMesh<dim> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
+  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
   FE::FlowingVariables initial_condition(discretization);
   initial_condition.interpolate(model);

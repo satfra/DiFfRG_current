@@ -6,7 +6,7 @@
 #include "DiFfRG/timestepping/timestepping.hh"
 
 #include <DiFfRG/common/json.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
 #include <DiFfRG/model/model.hh>
 
@@ -130,7 +130,6 @@ namespace
            {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
-           {"output_buffer_size", 1},
            {"EoM_abs_tol", 1.0e-10},
            {"EoM_max_iter", 0},
            {"grid", {{"x_grid", axis}, {"y_grid", axis}, {"z_grid", "0:1:1"}, {"refine", 0}}}}},
@@ -138,11 +137,7 @@ namespace
           {{"final_time", final_time},
            {"output_dt", final_time},
            {"explicit",
-            {{"dt", 1.0e-3},
-             {"minimal_dt", 1.0e-8},
-             {"maximal_dt", 1.0e-3},
-             {"abs_tol", 1.0e-9},
-             {"rel_tol", 1.0e-9}}},
+            {{"dt", 1.0e-3}, {"minimal_dt", 1.0e-8}, {"maximal_dt", 1.0e-3}, {"abs_tol", 1.0e-9}, {"rel_tol", 1.0e-9}}},
            {"implicit",
             {{"dt", implicit_dt},
              {"minimal_dt", 1.0e-8},
@@ -174,12 +169,12 @@ namespace
   std::vector<double> row_major_cell_values(const Discretization &discretization, const VectorType &values,
                                             const unsigned int n_cells)
   {
-    std::vector<double> result(static_cast<std::size_t>(n_cells) * n_cells,
-                               std::numeric_limits<double>::quiet_NaN());
+    std::vector<double> result(static_cast<std::size_t>(n_cells) * n_cells, std::numeric_limits<double>::quiet_NaN());
     std::vector<unsigned int> counts(result.size(), 0);
 
     const auto &support_points = discretization.get_support_points();
-    if (support_points.size() != values.size()) throw std::runtime_error("Unexpected support-point/value size mismatch.");
+    if (support_points.size() != values.size())
+      throw std::runtime_error("Unexpected support-point/value size mismatch.");
 
     for (unsigned int dof = 0; dof < values.size(); ++dof) {
       const std::size_t row_major = row_major_cell_index(support_points[dof], n_cells);
@@ -202,11 +197,11 @@ namespace
     Burgers2DExample11Model model;
     Mesh mesh(make_mesh_config(n_cells));
 
-    Discretization discretization(mesh, json);
-    Assembler assembler(discretization, model, json);
+    Discretization discretization(mesh, json, DiFfRG::LogPort{});
+    Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
-    kt_regression::TemporaryDirectory tmp_dir(run_name);
-    DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), run_name, "output", json);
+    auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, run_name, "output");
+    OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     TimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 
@@ -279,8 +274,7 @@ namespace
         metrics.min = std::min(metrics.min, value);
         metrics.max = std::max(metrics.max, value);
 
-        const std::size_t reflected =
-            static_cast<std::size_t>(n_cells - 1 - y) * n_cells + (n_cells - 1 - x);
+        const std::size_t reflected = static_cast<std::size_t>(n_cells - 1 - y) * n_cells + (n_cells - 1 - x);
         metrics.antisymmetry = std::max(metrics.antisymmetry, std::abs(value + numerical[reflected]));
       }
     }
@@ -321,14 +315,12 @@ TEST_CASE("2D Burgers disk benchmark matches downsampled fine-grid run", "[2d][F
   const RegressionMetrics medium_metrics = compute_metrics(n_medium_cells, medium, downsampled_fine_medium);
 
   std::cout << std::scientific << std::setprecision(8)
-            << "2D Burgers 60x60 vs downsampled 240x240: L1=" << coarse_metrics.l1
-            << ", L2=" << coarse_metrics.l2 << ", Linf=" << coarse_metrics.linf
-            << ", mass=" << coarse_metrics.mass << ", min=" << coarse_metrics.min << ", max=" << coarse_metrics.max
-            << ", antisymmetry=" << coarse_metrics.antisymmetry << '\n'
-            << "2D Burgers 120x120 vs downsampled 240x240: L1=" << medium_metrics.l1
-            << ", L2=" << medium_metrics.l2 << ", Linf=" << medium_metrics.linf
-            << ", mass=" << medium_metrics.mass << ", min=" << medium_metrics.min << ", max=" << medium_metrics.max
-            << ", antisymmetry=" << medium_metrics.antisymmetry << '\n';
+            << "2D Burgers 60x60 vs downsampled 240x240: L1=" << coarse_metrics.l1 << ", L2=" << coarse_metrics.l2
+            << ", Linf=" << coarse_metrics.linf << ", mass=" << coarse_metrics.mass << ", min=" << coarse_metrics.min
+            << ", max=" << coarse_metrics.max << ", antisymmetry=" << coarse_metrics.antisymmetry << '\n'
+            << "2D Burgers 120x120 vs downsampled 240x240: L1=" << medium_metrics.l1 << ", L2=" << medium_metrics.l2
+            << ", Linf=" << medium_metrics.linf << ", mass=" << medium_metrics.mass << ", min=" << medium_metrics.min
+            << ", max=" << medium_metrics.max << ", antisymmetry=" << medium_metrics.antisymmetry << '\n';
 
   require_finite_metrics(coarse_metrics);
   require_finite_metrics(medium_metrics);

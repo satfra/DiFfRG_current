@@ -6,7 +6,7 @@
 #include "DiFfRG/timestepping/timestepping.hh"
 
 #include <DiFfRG/common/json.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
 #include <DiFfRG/model/model.hh>
 
@@ -118,7 +118,6 @@ namespace
            {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
-           {"output_buffer_size", 1},
            {"EoM_abs_tol", 1.0e-10},
            {"EoM_max_iter", 0},
            {"grid", {{"x_grid", "-2:0.025:2"}, {"y_grid", "-2:0.025:2"}, {"z_grid", "0:1:1"}, {"refine", 0}}}}},
@@ -211,11 +210,12 @@ namespace
     LinearAdvection2DModel model;
     Mesh mesh(make_mesh_config());
 
-    Discretization discretization(mesh, json);
-    Assembler assembler(discretization, model, json);
+    Discretization discretization(mesh, json, DiFfRG::LogPort{});
+    Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
-    kt_regression::TemporaryDirectory tmp_dir("linear_advection_2D_regression");
-    DataOutput<dim, VectorType> data_out(tmp_dir.path.string(), "linear_advection_2D", "output", json);
+    auto data_out_path =
+        OutputPath::temporary(TemporaryRetention::remove_on_destruction, "linear_advection_2D", "output");
+    OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     TimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 
@@ -232,9 +232,9 @@ TEST_CASE("2D linear advection compact pulse matches exact translated final stat
 {
   const ErrorMetrics error = run_linear_advection();
 
-  std::cout << std::scientific << std::setprecision(8) << "2D linear advection compact-pulse final errors: L1="
-            << error.l1
-            << ", L2=" << error.l2 << ", Linf=" << error.linf << '\n';
+  std::cout << std::scientific << std::setprecision(8)
+            << "2D linear advection compact-pulse final errors: L1=" << error.l1 << ", L2=" << error.l2
+            << ", Linf=" << error.linf << '\n';
 
   REQUIRE(std::isfinite(error.l1));
   REQUIRE(std::isfinite(error.l2));
