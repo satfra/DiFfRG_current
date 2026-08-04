@@ -3,6 +3,7 @@ build*/
 !dependencies/boost/boost_1_81_0/tools/build/
 !dependencies/boost/boost_1_81_0/tools/build/**
 local_install/
+.ci/
 CMakeUserPresets.json
 .idea/
 .zed/

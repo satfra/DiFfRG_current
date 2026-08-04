@@ -42,7 +42,7 @@ namespace DiFfRG
   }
 
   struct QuadratureType {
-    enum QuadratureKind { legendre, chebyshev, chebyshev2, laguerre, hermite, jacobi, count };
+    enum QuadratureKind { legendre, chebyshev, chebyshev2, laguerre, hermite, jacobi, trapezoidal, count };
     QuadratureKind kind;
     double a = 0., b = 1.;
     double alpha = 1., beta = 2.;

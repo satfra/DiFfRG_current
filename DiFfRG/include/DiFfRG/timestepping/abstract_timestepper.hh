@@ -315,6 +315,10 @@ namespace DiFfRG
       bool has_diagnostics = false;
       double step_size_sum = 0.;
       long int step_size_samples = 0;
+      // Number of console_out calls aggregated into the current window. Kept
+      // from the pre-merge console_out aggregation on main, which reported it
+      // alongside the (now removed) calc_dt timing.
+      size_t calls = 0;
 
       void add(const double t, const size_t milliseconds, const TimesteppingDiagnostics *latest_diagnostics)
       {
@@ -322,6 +326,7 @@ namespace DiFfRG
         has_entry = true;
         last_ms = milliseconds;
         latest_t = t;
+        ++calls;
 
         if (latest_diagnostics != nullptr && !latest_diagnostics->empty()) {
           const bool had_step_stats = has_diagnostics && diagnostics.has_ida_step_iteration_stats;
@@ -408,7 +413,8 @@ namespace DiFfRG
     }
 
     void print_console_out(const std::string &name, const double t, const size_t milliseconds,
-                           const std::optional<std::string> diagnostics = std::nullopt) const
+                           const std::optional<std::string> diagnostics = std::nullopt,
+                           const size_t calls = 0) const
     {
       if (name.size() > console_name_width) throw std::runtime_error("console_out: log label is too long: " + name);
 
@@ -422,6 +428,9 @@ namespace DiFfRG
         std::cout << " | k: " << std::setw(24) << std::left << std::setprecision(console_time_precision)
                   << std::scientific
                   << exp(-t) * Lambda;
+      }
+      if (calls > 0) {
+        std::cout << " | calls: " << std::setw(4) << calls;
       }
       std::cout << " | calc_t: " << time_format_ms(milliseconds);
       std::cout << std::endl;
@@ -478,7 +487,7 @@ namespace DiFfRG
                     stats.diagnostics,
                     previous_it != last_printed_diagnostics_by_category.end() ? &previous_it->second : nullptr))
               : std::nullopt;
-      print_console_out(category, stats.latest_t, stats.last_ms, formatted_diagnostics);
+      print_console_out(category, stats.latest_t, stats.last_ms, formatted_diagnostics, stats.calls);
       if (stats.has_diagnostics) last_printed_diagnostics_by_category[category] = stats.diagnostics;
       stats = {};
     }

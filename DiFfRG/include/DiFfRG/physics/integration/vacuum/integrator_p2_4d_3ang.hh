@@ -85,9 +85,11 @@ namespace DiFfRG
 
     Integrator_p2_4D_3ang(QuadratureProvider &quadrature_provider, const std::array<size_t, 4> grid_size,
                           ctype x_extent = 2.)
+        // The azimuthal angle phi in [0,2pi) has a smooth 2pi-periodic integrand; the periodic trapezoidal
+        // rule integrates it with spectral (exponential) accuracy, unlike Gauss-Legendre.
         : Base(quadrature_provider, grid_size, {0, 0, -1, 0}, {std::sqrt(x_extent), 1, 1, 2 * M_PI},
                {QuadratureType::legendre, QuadratureType::chebyshev2, QuadratureType::legendre,
-                QuadratureType::legendre}),
+                QuadratureType::trapezoidal}),
           x_extent(x_extent), k(1.)
     {
     }

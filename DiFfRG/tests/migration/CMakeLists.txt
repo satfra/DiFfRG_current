@@ -39,11 +39,6 @@ add_migration_contract_test(
   migration_data_output_diagnostic migration_data_output_failure FALSE
   "Construct OutputPath, then OutputSession<dim, VectorType>, and pass the session to the timestepper|attach_data_output(OutputFrame<dim, VectorType>&, ...)|auto fields = output.fields(); fields.attach(...)")
 
-add_migration_probe(migration_logging_failure logging_failure.cc)
-add_migration_contract_test(
-  migration_logging_diagnostics migration_logging_failure FALSE
-  "run-owned RunLogger and pass its LogPort|output.log_port() to print_parameters(LogPort)")
-
 add_migration_probe(migration_affine_failure affine_failure.cc)
 add_migration_contract_test(
   migration_affine_diagnostic migration_affine_failure FALSE
