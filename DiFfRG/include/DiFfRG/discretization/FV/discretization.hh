@@ -17,6 +17,9 @@
 #include <DiFfRG/discretization/data/data.hh>
 // #include <DiFfRG/discretization/discretization.hh>
 
+#include <iostream>
+#include <string>
+
 namespace DiFfRG
 {
   namespace FV
@@ -51,6 +54,7 @@ namespace DiFfRG
             fe(std::make_shared<FESystem<dim>>(FE_DGQ<dim>(0), Components::count_fe_functions(0))),
             dof_handler(mesh.get_triangulation())
       {
+        warn_on_ignored_fe_order();
         setup_dofs();
       }
 
@@ -110,6 +114,23 @@ namespace DiFfRG
       }
 
     protected:
+      /**
+       * @brief The finite volume discretization always works on cell averages, i.e. FE_DGQ(0), and never reads
+       * /discretization/fe_order. Warn the user if they set it to something nonzero, as it has no effect.
+       */
+      void warn_on_ignored_fe_order() const
+      {
+        const uint fe_order = json.get_uint("/discretization/fe_order", 0);
+        if (fe_order == 0) return;
+
+        const std::string message =
+            "FV: /discretization/fe_order = " + std::to_string(fe_order) +
+            " is ignored. The finite volume discretization always uses piecewise constants (fe_order = 0); "
+            "reconstruction order is set by the choice of reconstructor and limiter instead.";
+        std::cerr << "WARNING: " << message << std::endl;
+        log_port.warn("{}", message);
+      }
+
       void setup_dofs()
       {
         dof_handler.distribute_dofs(*fe);
