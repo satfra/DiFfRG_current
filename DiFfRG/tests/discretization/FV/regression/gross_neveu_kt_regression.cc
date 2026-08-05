@@ -238,8 +238,8 @@ namespace
     }
 
     template <int spatial_dim, typename FluxNumberType, typename Solutions, std::size_t n_fe_functions>
-    void flux(std::array<Tensor<1, spatial_dim, FluxNumberType>, n_fe_functions> &F_i,
-              [[maybe_unused]] const Point<spatial_dim> &x, [[maybe_unused]] const Solutions &sol) const
+    void diffusion_flux(std::array<Tensor<1, spatial_dim, FluxNumberType>, n_fe_functions> &F_i,
+                        [[maybe_unused]] const Point<spatial_dim> &x, [[maybe_unused]] const Solutions &sol) const
     {
       static_assert(spatial_dim == dim, "GrossNeveuKTModel is one-dimensional.");
       static_assert(n_fe_functions == 1, "GrossNeveuKTModel expects a single FE function.");
@@ -284,8 +284,8 @@ namespace
     using GrossNeveuKTSourceOnlyBase<GrossNeveuKTFluxModel>::GrossNeveuKTSourceOnlyBase;
 
     template <int spatial_dim, typename FluxNumberType, typename Solutions, std::size_t n_fe_functions>
-    void flux(std::array<Tensor<1, spatial_dim, FluxNumberType>, n_fe_functions> &F_i,
-              [[maybe_unused]] const Point<spatial_dim> &x, const Solutions &sol) const
+    void diffusion_flux(std::array<Tensor<1, spatial_dim, FluxNumberType>, n_fe_functions> &F_i,
+                        [[maybe_unused]] const Point<spatial_dim> &x, const Solutions &sol) const
     {
       static_assert(spatial_dim == dim, "GrossNeveuKTModel is one-dimensional.");
       static_assert(n_fe_functions == 1, "GrossNeveuKTModel expects a single FE function.");

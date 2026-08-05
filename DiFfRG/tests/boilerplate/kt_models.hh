@@ -79,8 +79,7 @@ namespace DiFfRG
       }
 
       template <typename NT, typename Solution>
-      void KurganovTadmor_advection_flux(std::array<Tensor<1, dim, NT>, 1> &F_i, const Point<dim> & /*pos*/,
-                                         const Solution &sol) const
+      void flux(std::array<Tensor<1, dim, NT>, 1> &F_i, const Point<dim> & /*pos*/, const Solution &sol) const
       {
         const auto &fe_functions = get<0>(sol);
         F_i[0][0] = 0.5 * powr<2>(fe_functions[0]);
@@ -124,8 +123,7 @@ namespace DiFfRG
       }
 
       template <typename NT, typename Solution>
-      void KurganovTadmor_advection_flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/,
-                                         const Solution &sol) const
+      void flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/, const Solution &sol) const
       {
         const auto &fe_functions = get<0>(sol);
         const auto flux = 0.5 * powr<2>(fe_functions[0]);
@@ -177,15 +175,14 @@ namespace DiFfRG
       }
 
       template <typename NT, typename Solution>
-      void KurganovTadmor_advection_flux(std::array<Tensor<1, dim, NT>, 1> &F_i, const Point<dim> & /*pos*/,
-                                         const Solution &sol) const
+      void flux(std::array<Tensor<1, dim, NT>, 1> &F_i, const Point<dim> & /*pos*/, const Solution &sol) const
       {
         const auto &fe_functions = get<0>(sol);
         F_i[0][0] = 0.5 * powr<2>(fe_functions[0]);
       }
 
       template <typename NT, typename Solution>
-      void flux(std::array<Tensor<1, dim, NT>, 1> &F_i, const Point<dim> & /*pos*/, const Solution &sol) const
+      void diffusion_flux(std::array<Tensor<1, dim, NT>, 1> &F_i, const Point<dim> & /*pos*/, const Solution &sol) const
       {
         const auto &fe_derivatives = get<1>(sol);
         // KT sums (H + D)·n: the diffusion flux is the physical conservation-law viscous
@@ -238,8 +235,7 @@ namespace DiFfRG
       }
 
       template <typename NT, typename Solution>
-      void KurganovTadmor_advection_flux(std::array<Tensor<1, dim, NT>, 2> &F_i, const Point<dim> & /*pos*/,
-                                         const Solution &sol) const
+      void flux(std::array<Tensor<1, dim, NT>, 2> &F_i, const Point<dim> & /*pos*/, const Solution &sol) const
       {
         const auto &fe_functions = get<0>(sol);
         F_i[0][0] = 0.5 * powr<2>(fe_functions[0]);
@@ -247,7 +243,7 @@ namespace DiFfRG
       }
 
       template <typename NT, typename Solution>
-      void flux(std::array<Tensor<1, dim, NT>, 2> &F_i, const Point<dim> & /*pos*/, const Solution &sol) const
+      void diffusion_flux(std::array<Tensor<1, dim, NT>, 2> &F_i, const Point<dim> & /*pos*/, const Solution &sol) const
       {
         const auto &fe_derivatives = get<1>(sol);
         // KT sums (H + D)·n: the diffusion flux is the physical conservation-law viscous

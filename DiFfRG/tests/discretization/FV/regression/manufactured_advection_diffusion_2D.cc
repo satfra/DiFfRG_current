@@ -90,8 +90,8 @@ namespace
     }
 
     template <typename NT, typename Solution>
-    void KurganovTadmor_advection_flux(std::array<Tensor<1, dim, NT>, n_components> &F_i,
-                                       [[maybe_unused]] const Point<dim> &pos, const Solution &sol) const
+    void flux(std::array<Tensor<1, dim, NT>, n_components> &F_i, [[maybe_unused]] const Point<dim> &pos,
+              const Solution &sol) const
     {
       const auto &fe_functions = get<0>(sol);
       for (std::size_t component = 0; component < n_components; ++component) {
@@ -101,8 +101,8 @@ namespace
     }
 
     template <typename NT, typename Solution>
-    void flux(std::array<Tensor<1, dim, NT>, n_components> &F_i, [[maybe_unused]] const Point<dim> &pos,
-              const Solution &sol) const
+    void diffusion_flux(std::array<Tensor<1, dim, NT>, n_components> &F_i, [[maybe_unused]] const Point<dim> &pos,
+                        const Solution &sol) const
     {
       const auto &fe_derivatives = get<1>(sol);
       for (std::size_t component = 0; component < n_components; ++component)

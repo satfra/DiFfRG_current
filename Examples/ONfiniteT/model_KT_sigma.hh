@@ -71,8 +71,7 @@ protected:
   }
 
 public:
-  ON_finiteT_KT_sigma(const JSONValue &json)
-      : def::fRG(json.get_double("/physical/Lambda")), prm(json), flow_equations(json)
+  ON_finiteT_KT_sigma(const JSONValue &json) : def::fRG(json.get_double("/physical/Lambda")), prm(json), flow_equations(json)
   {
     flow_equations.set_k(Lambda);
     flow_equations.set_T(prm.T);
@@ -115,9 +114,7 @@ public:
    * Depends on u only (no gradient). The u/sigma factor is guarded near sigma = 0
    * to avoid the 0/0 indeterminacy at the origin (mirrors on_model_kt_regression.cc:267-268).
    */
-  template <typename NT, typename Solution>
-  void KurganovTadmor_advection_flux(std::array<Tensor<1, dim, NT>, Components::count_fe_functions(0)> &F_i,
-                                     const Point<dim> &x, const Solution &sol) const
+  template <typename NT, typename Solution> void flux(std::array<Tensor<1, dim, NT>, Components::count_fe_functions(0)> &F_i, const Point<dim> &x, const Solution &sol) const
   {
     const auto &fe_functions = get<0>(sol);
     const NT u = fe_functions[idxf_sigma("u")];
@@ -135,8 +132,7 @@ public:
    * Depends only on the gradient — no geometric weighting, in contrast to the rho-form.
    */
   template <typename NT, typename Solution>
-  void flux(std::array<Tensor<1, dim, NT>, Components::count_fe_functions(0)> &F_i, const Point<dim> & /*x*/,
-            const Solution &sol) const
+  void diffusion_flux(std::array<Tensor<1, dim, NT>, Components::count_fe_functions(0)> &F_i, const Point<dim> & /*x*/, const Solution &sol) const
   {
     const auto &fe_derivatives = get<1>(sol);
     const NT m2Sigma = fe_derivatives[idxf_sigma("u")][0];

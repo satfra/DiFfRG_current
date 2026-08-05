@@ -9,10 +9,10 @@
 //
 // Models (see plan in /home/franz/.claude/plans/graceful-mapping-mist.md):
 //   LSM_sigma_analytic           σ   analytic Litim T=0  closed form k⁵/(12π²·sqrt(k²+m²))
-//   LSM_sigma_integrator_PolyExp σ   integrator PolyExp T=0.05 (matches Examples/ONfiniteT_KT)
+//   LSM_sigma_integrator_PolyExp σ   integrator PolyExp T=0.05 (matches Examples/ONfiniteT)
 //   LSM_sigma_integrator_Litim   σ   integrator Litim T=0
 //   LSM_rho_analytic             ρ   analytic Litim T=0
-//   LSM_rho_integrator_PolyExp   ρ   integrator PolyExp T=0.05 (matches Examples/ONfiniteT_KT)
+//   LSM_rho_integrator_PolyExp   ρ   integrator PolyExp T=0.05 (matches Examples/ONfiniteT)
 //   LSM_rho_integrator_Litim     ρ   integrator Litim T=0
 //   LSM_CG                       ρ   integrator PolyExp T=0.05 + CG (matches Examples/ONfiniteT)
 
@@ -48,8 +48,8 @@ namespace on_kt_3D
 
     // F_pion = (N-1) · k⁵ / (12π² · sqrt(k² + m²_pion))  with m²_pion = u/σ.
     template <int spatial_dim, typename NT, typename Solutions, std::size_t n_fe_functions>
-    void KurganovTadmor_advection_flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i,
-                                       const Point<spatial_dim> &x, const Solutions &sol) const
+    void flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i, const Point<spatial_dim> &x,
+              const Solutions &sol) const
     {
       static_assert(spatial_dim == dim, "LSM_sigma_analytic is one-dimensional.");
       static_assert(n_fe_functions == 1);
@@ -64,8 +64,8 @@ namespace on_kt_3D
 
     // F_sigma = k⁵ / (12π² · sqrt(k² + m²_sigma))  with m²_sigma = ∂u/∂σ.
     template <int spatial_dim, typename NT, typename Solutions, std::size_t n_fe_functions>
-    void flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i, const Point<spatial_dim> & /*x*/,
-              const Solutions &sol) const
+    void diffusion_flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i, const Point<spatial_dim> & /*x*/,
+                        const Solutions &sol) const
     {
       static_assert(spatial_dim == dim, "LSM_sigma_analytic is one-dimensional.");
       static_assert(n_fe_functions == 1);
@@ -98,8 +98,8 @@ namespace on_kt_3D
 
     // F_pion = (N-1) · k⁵ / (12π² · sqrt(k² + m²_pion))  with m²_pion = u (no 1/σ in ρ-form).
     template <int spatial_dim, typename NT, typename Solutions, std::size_t n_fe_functions>
-    void KurganovTadmor_advection_flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i,
-                                       const Point<spatial_dim> & /*x*/, const Solutions &sol) const
+    void flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i, const Point<spatial_dim> & /*x*/,
+              const Solutions &sol) const
     {
       static_assert(spatial_dim == dim, "LSM_rho_analytic is one-dimensional.");
       static_assert(n_fe_functions == 1);
@@ -112,8 +112,8 @@ namespace on_kt_3D
 
     // F_sigma = k⁵ / (12π² · sqrt(k² + m²_sigma))  with m²_sigma = m² + 2ρ·∂m²/∂ρ.
     template <int spatial_dim, typename NT, typename Solutions, std::size_t n_fe_functions>
-    void flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i, const Point<spatial_dim> &x,
-              const Solutions &sol) const
+    void diffusion_flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i, const Point<spatial_dim> &x,
+                        const Solutions &sol) const
     {
       static_assert(spatial_dim == dim, "LSM_rho_analytic is one-dimensional.");
       static_assert(n_fe_functions == 1);
@@ -128,7 +128,7 @@ namespace on_kt_3D
     }
   };
 
-  // --- σ-coord integrator, PolyExp + finite T (matches Examples/ONfiniteT_KT/model_sigma.hh) ---
+  // --- σ-coord integrator, PolyExp + finite T (matches Examples/ONfiniteT/model_KT_sigma.hh) ---
 
   template <typename FlowsType>
   class LSM_sigma_integrator_base : public def::AbstractModel<LSM_sigma_integrator_base<FlowsType>, Components>,
@@ -159,8 +159,8 @@ namespace on_kt_3D
     }
 
     template <int spatial_dim, typename NT, typename Solutions, std::size_t n_fe_functions>
-    void KurganovTadmor_advection_flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i,
-                                       const Point<spatial_dim> &x, const Solutions &sol) const
+    void flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i, const Point<spatial_dim> &x,
+              const Solutions &sol) const
     {
       static_assert(spatial_dim == dim);
       static_assert(n_fe_functions == 1);
@@ -174,8 +174,8 @@ namespace on_kt_3D
     }
 
     template <int spatial_dim, typename NT, typename Solutions, std::size_t n_fe_functions>
-    void flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i, const Point<spatial_dim> & /*x*/,
-              const Solutions &sol) const
+    void diffusion_flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i, const Point<spatial_dim> & /*x*/,
+                        const Solutions &sol) const
     {
       static_assert(spatial_dim == dim);
       static_assert(n_fe_functions == 1);
@@ -202,7 +202,7 @@ namespace on_kt_3D
   using LSM_sigma_integrator_PolyExp = LSM_sigma_integrator_base<PolyExpFlows>;
   using LSM_sigma_integrator_Litim = LSM_sigma_integrator_base<LitimT0Flows>;
 
-  // --- ρ-coord integrator (matches Examples/ONfiniteT_KT/model.hh) -----------
+  // --- ρ-coord integrator (matches Examples/ONfiniteT/model_KT.hh) -----------
 
   template <typename FlowsType>
   class LSM_rho_integrator_base : public def::AbstractModel<LSM_rho_integrator_base<FlowsType>, Components>,
@@ -232,8 +232,8 @@ namespace on_kt_3D
     }
 
     template <int spatial_dim, typename NT, typename Solutions, std::size_t n_fe_functions>
-    void KurganovTadmor_advection_flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i,
-                                       const Point<spatial_dim> & /*x*/, const Solutions &sol) const
+    void flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i, const Point<spatial_dim> & /*x*/,
+              const Solutions &sol) const
     {
       static_assert(spatial_dim == dim);
       static_assert(n_fe_functions == 1);
@@ -245,8 +245,8 @@ namespace on_kt_3D
     }
 
     template <int spatial_dim, typename NT, typename Solutions, std::size_t n_fe_functions>
-    void flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i, const Point<spatial_dim> &x,
-              const Solutions &sol) const
+    void diffusion_flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i, const Point<spatial_dim> &x,
+                        const Solutions &sol) const
     {
       static_assert(spatial_dim == dim);
       static_assert(n_fe_functions == 1);
@@ -315,8 +315,8 @@ namespace on_kt_3D
 
     // F_adv = N · V_pion(u)  (all N modes have m²_pion = u).
     template <int spatial_dim, typename NT, typename Solutions, std::size_t n_fe_functions>
-    void KurganovTadmor_advection_flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i,
-                                       const Point<spatial_dim> & /*x*/, const Solutions &sol) const
+    void flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i, const Point<spatial_dim> & /*x*/,
+              const Solutions &sol) const
     {
       static_assert(spatial_dim == dim);
       static_assert(n_fe_functions == 1);
@@ -329,8 +329,8 @@ namespace on_kt_3D
 
     // No derivative-dependent (diffusion) flux: purely hyperbolic PDE.
     template <int spatial_dim, typename NT, typename Solutions, std::size_t n_fe_functions>
-    void flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i, const Point<spatial_dim> & /*x*/,
-              const Solutions & /*sol*/) const
+    void diffusion_flux(std::array<Tensor<1, spatial_dim, NT>, n_fe_functions> &F_i, const Point<spatial_dim> & /*x*/,
+                        const Solutions & /*sol*/) const
     {
       static_assert(spatial_dim == dim);
       static_assert(n_fe_functions == 1);

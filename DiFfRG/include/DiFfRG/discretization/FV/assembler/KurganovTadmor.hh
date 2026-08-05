@@ -229,8 +229,8 @@ namespace DiFfRG
 
             F_AD_plus = {};
             F_AD_minus = {};
-            model.KurganovTadmor_advection_flux(F_AD_plus, x_q, flux_tie(u_plus_AD, grad_u_plus_AD));
-            model.KurganovTadmor_advection_flux(F_AD_minus, x_q, flux_tie(u_minus_AD, grad_u_minus_AD));
+            model.flux(F_AD_plus, x_q, flux_tie(u_plus_AD, grad_u_plus_AD));
+            model.flux(F_AD_minus, x_q, flux_tie(u_minus_AD, grad_u_minus_AD));
 
             for (size_t d = 0; d < dim; ++d) {
               for (size_t i = 0; i < n_components; ++i) {
@@ -375,8 +375,8 @@ namespace DiFfRG
           std::array<dealii::Tensor<1, dim, NumberType>, n_components> D_minus{};
           std::array<dealii::Tensor<1, dim, NumberType>, n_components> D_plus{};
           std::array<dealii::Tensor<1, dim, NumberType>, n_components> D{};
-          model.flux(D_minus, x_q, diffusion_flux_tie(u_minus, grad_u_minus, third_derivatives_minus));
-          model.flux(D_plus, x_q, diffusion_flux_tie(u_plus, grad_u_plus, third_derivatives_plus));
+          model.diffusion_flux(D_minus, x_q, diffusion_flux_tie(u_minus, grad_u_minus, third_derivatives_minus));
+          model.diffusion_flux(D_plus, x_q, diffusion_flux_tie(u_plus, grad_u_plus, third_derivatives_plus));
           for (size_t c = 0; c < n_components; ++c)
             D[c] = NumberType(0.5) * (D_minus[c] + D_plus[c]);
           return D;
@@ -433,8 +433,8 @@ namespace DiFfRG
           for (size_t c = 0; c < n_components; ++c) {
             seed(u_minus_AD[c]);
             D_AD = {};
-            model.flux(D_AD, x_q,
-                       diffusion_flux_tie(u_minus_AD, grad_u_minus_AD, third_derivatives_minus_AD));
+            model.diffusion_flux(D_AD, x_q,
+                                 diffusion_flux_tie(u_minus_AD, grad_u_minus_AD, third_derivatives_minus_AD));
             for (size_t i = 0; i < n_components; ++i)
               for (size_t d = 0; d < dim; ++d)
                 result.u[0](i, c)[d] = NumberType(0.5) * derivative(D_AD[i][d]);
@@ -442,7 +442,7 @@ namespace DiFfRG
 
             seed(u_plus_AD[c]);
             D_AD = {};
-            model.flux(D_AD, x_q, diffusion_flux_tie(u_plus_AD, grad_u_plus_AD, third_derivatives_plus_AD));
+            model.diffusion_flux(D_AD, x_q, diffusion_flux_tie(u_plus_AD, grad_u_plus_AD, third_derivatives_plus_AD));
             for (size_t i = 0; i < n_components; ++i)
               for (size_t d = 0; d < dim; ++d)
                 result.u[1](i, c)[d] = NumberType(0.5) * derivative(D_AD[i][d]);
@@ -451,8 +451,8 @@ namespace DiFfRG
             for (size_t d_in = 0; d_in < dim; ++d_in) {
               seed(grad_u_minus_AD[c][d_in]);
               D_AD = {};
-              model.flux(D_AD, x_q,
-                         diffusion_flux_tie(u_minus_AD, grad_u_minus_AD, third_derivatives_minus_AD));
+              model.diffusion_flux(D_AD, x_q,
+                                   diffusion_flux_tie(u_minus_AD, grad_u_minus_AD, third_derivatives_minus_AD));
               for (size_t i = 0; i < n_components; ++i)
                 for (size_t d_out = 0; d_out < dim; ++d_out)
                   result.grad[0](i, c)[d_out][d_in] = NumberType(0.5) * derivative(D_AD[i][d_out]);
@@ -460,7 +460,7 @@ namespace DiFfRG
 
               seed(grad_u_plus_AD[c][d_in]);
               D_AD = {};
-              model.flux(D_AD, x_q, diffusion_flux_tie(u_plus_AD, grad_u_plus_AD, third_derivatives_plus_AD));
+              model.diffusion_flux(D_AD, x_q, diffusion_flux_tie(u_plus_AD, grad_u_plus_AD, third_derivatives_plus_AD));
               for (size_t i = 0; i < n_components; ++i)
                 for (size_t d_out = 0; d_out < dim; ++d_out)
                   result.grad[1](i, c)[d_out][d_in] = NumberType(0.5) * derivative(D_AD[i][d_out]);
@@ -472,8 +472,8 @@ namespace DiFfRG
                 for (size_t d2 = 0; d2 < dim; ++d2) {
                   seed(third_derivatives_minus_AD[c][d0][d1][d2]);
                   D_AD = {};
-                  model.flux(D_AD, x_q,
-                             diffusion_flux_tie(u_minus_AD, grad_u_minus_AD, third_derivatives_minus_AD));
+                  model.diffusion_flux(D_AD, x_q,
+                                       diffusion_flux_tie(u_minus_AD, grad_u_minus_AD, third_derivatives_minus_AD));
                   for (size_t i = 0; i < n_components; ++i)
                     for (size_t d_out = 0; d_out < dim; ++d_out)
                       result.third_derivatives[0](i, c)[d_out][d0][d1][d2] =
@@ -482,8 +482,8 @@ namespace DiFfRG
 
                   seed(third_derivatives_plus_AD[c][d0][d1][d2]);
                   D_AD = {};
-                  model.flux(D_AD, x_q,
-                             diffusion_flux_tie(u_plus_AD, grad_u_plus_AD, third_derivatives_plus_AD));
+                  model.diffusion_flux(D_AD, x_q,
+                                       diffusion_flux_tie(u_plus_AD, grad_u_plus_AD, third_derivatives_plus_AD));
                   for (size_t i = 0; i < n_components; ++i)
                     for (size_t d_out = 0; d_out < dim; ++d_out)
                       result.third_derivatives[1](i, c)[d_out][d0][d1][d2] =
@@ -1419,8 +1419,8 @@ namespace DiFfRG
                 reconstruction.third_derivatives_plus, x_q, model);
 
             // Sign convention: the face flux is (H + D)·n, i.e. the advection numerical
-            // flux H (from KurganovTadmor_advection_flux) and the diffusion flux D (from
-            // flux()) are SUMMED. Both model methods therefore return the physical flux
+            // flux H (from flux()) and the diffusion flux D (from diffusion_flux())
+            // are SUMMED. Both model methods therefore return the physical flux
             // with the same sign — exactly the conservation-law convention used by CG /
             // LLFFlux (which sums all contributions into one flux F). A diffusion flux
             // f_diff must be a DECREASING function of the gradient (∂f_diff/∂(∂u) < 0)

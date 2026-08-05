@@ -4,6 +4,7 @@
 #include "DiFfRG/common/utils.hh"
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/math.hh>
+#include <DiFfRG/physics/interpolation/interpolation_stencil.hh>
 
 namespace DiFfRG
 {
@@ -16,6 +17,10 @@ namespace DiFfRG
   template <typename NT, typename Coordinates, typename DefaultMemorySpace = CPU_memory> class LinearInterpolator3D
   {
     static_assert(Coordinates::dim == 3, "LinearInterpolator3D requires 3D coordinates");
+
+    static constexpr bool periodic_x = is_periodic_axis_v<Coordinates, 0>;
+    static constexpr bool periodic_y = is_periodic_axis_v<Coordinates, 1>;
+    static constexpr bool periodic_z = is_periodic_axis_v<Coordinates, 2>;
 
   public:
     using memory_space = DefaultMemorySpace;
@@ -98,19 +103,15 @@ namespace DiFfRG
      */
     NT KOKKOS_FUNCTION operator()(const ctype &x, const ctype &y, const ctype &z) const
     {
-      using Kokkos::min, Kokkos::max;
-      auto [idx_x, idx_y, idx_z] = coordinates.backward(x, y, z);
-      idx_x = max(static_cast<decltype(idx_x)>(0), min(idx_x, static_cast<decltype(idx_x)>(sizes[0] - 1)));
-      idx_y = max(static_cast<decltype(idx_y)>(0), min(idx_y, static_cast<decltype(idx_y)>(sizes[1] - 1)));
-      idx_z = max(static_cast<decltype(idx_z)>(0), min(idx_z, static_cast<decltype(idx_z)>(sizes[2] - 1)));
+      const auto [idx_x, idx_y, idx_z] = coordinates.backward(x, y, z);
+      // Clamped [i, i+1] stencil on bounded axes, wrapping [i, (i+1) % n] on periodic ones
+      const auto sx = make_interpolation_stencil<periodic_x>(idx_x, sizes[0]);
+      const auto sy = make_interpolation_stencil<periodic_y>(idx_y, sizes[1]);
+      const auto sz = make_interpolation_stencil<periodic_z>(idx_z, sizes[2]);
 
-      // Lower index clamped to [0, sizes-2], upper = lower+1
-      const size_t x0 = min(size_t(Kokkos::floor(idx_x)), sizes[0] - 2);
-      const size_t y0 = min(size_t(Kokkos::floor(idx_y)), sizes[1] - 2);
-      const size_t z0 = min(size_t(Kokkos::floor(idx_z)), sizes[2] - 2);
-      const size_t x1 = x0 + 1;
-      const size_t y1 = y0 + 1;
-      const size_t z1 = z0 + 1;
+      const size_t x0 = sx.lower, x1 = sx.upper;
+      const size_t y0 = sy.lower, y1 = sy.upper;
+      const size_t z0 = sz.lower, z1 = sz.upper;
 
       const auto corner000 = device_data(x0, y0, z0);
       const auto corner010 = device_data(x0, y1, z0);
@@ -121,9 +122,9 @@ namespace DiFfRG
       const auto corner101 = device_data(x1, y0, z1);
       const auto corner111 = device_data(x1, y1, z1);
 
-      const auto tx = idx_x - x0;
-      const auto ty = idx_y - y0;
-      const auto tz = idx_z - z0;
+      const auto tx = sx.t;
+      const auto ty = sy.t;
+      const auto tz = sz.t;
 
       if constexpr (std::is_arithmetic_v<NT>)
         return Kokkos::fma(

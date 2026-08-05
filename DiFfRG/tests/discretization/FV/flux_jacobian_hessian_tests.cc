@@ -22,8 +22,7 @@ class BurgersModel : public DiFfRG::def::AbstractModel<BurgersModel, Components1
 {
 public:
   template <int dim, typename NT, typename Solutions, size_t n>
-  static void KurganovTadmor_advection_flux(std::array<Tensor<1, dim, NT>, n> &F, const Point<dim> & /*x*/,
-                                            const Solutions &sol)
+  static void flux(std::array<Tensor<1, dim, NT>, n> &F, const Point<dim> & /*x*/, const Solutions &sol)
   {
     const auto u = get<"fe_functions">(sol);
     F[0][0] = u[0] * u[0] / NT(2);
@@ -35,8 +34,7 @@ class CubicModel : public DiFfRG::def::AbstractModel<CubicModel, Components1>
 {
 public:
   template <int dim, typename NT, typename Solutions, size_t n>
-  static void KurganovTadmor_advection_flux(std::array<Tensor<1, dim, NT>, n> &F, const Point<dim> & /*x*/,
-                                            const Solutions &sol)
+  static void flux(std::array<Tensor<1, dim, NT>, n> &F, const Point<dim> & /*x*/, const Solutions &sol)
   {
     const auto u = get<"fe_functions">(sol);
     F[0][0] = u[0] * u[0] * u[0] / NT(3);
@@ -54,8 +52,7 @@ class CoupledModel : public DiFfRG::def::AbstractModel<CoupledModel, Components2
 {
 public:
   template <int dim, typename NT, typename Solutions, size_t n>
-  static void KurganovTadmor_advection_flux(std::array<Tensor<1, dim, NT>, n> &F, const Point<dim> & /*x*/,
-                                            const Solutions &sol)
+  static void flux(std::array<Tensor<1, dim, NT>, n> &F, const Point<dim> & /*x*/, const Solutions &sol)
   {
     const auto u = get<"fe_functions">(sol);
     F[0][0] = u[0] * u[1];       // F_1 = u1*u2
@@ -318,8 +315,7 @@ class GradientFluxModel : public DiFfRG::def::AbstractModel<GradientFluxModel, C
 {
 public:
   template <int dim, typename NT, typename Solutions, size_t n>
-  static void KurganovTadmor_advection_flux(std::array<Tensor<1, dim, NT>, n> &F, const Point<dim> & /*x*/,
-                                            const Solutions &sol)
+  static void flux(std::array<Tensor<1, dim, NT>, n> &F, const Point<dim> & /*x*/, const Solutions &sol)
   {
     const auto u = get<"fe_functions">(sol);
     const auto grad_u = get<"fe_derivatives">(sol);

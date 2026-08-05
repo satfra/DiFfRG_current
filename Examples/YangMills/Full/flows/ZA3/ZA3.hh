@@ -17,11 +17,11 @@ namespace DiFfRG
 
     Integrator_p2_4D_2ang<4, double, ZA3_kernel<Regulator>, DiFfRG::GPU_exec> integrator;
 
-    DiFfRG::GPU_exec map(double *dest, const LogLinLinCoordinates &coordinates, const double &k,
-                         const LinearInterpolatorND<double, LogLinLinCoordinates, GPU_memory> &ZA3,
-                         const LinearInterpolatorND<double, LogLinLinCoordinates, GPU_memory> &ZAcbc,
+    DiFfRG::GPU_exec map(double *dest, const LogLinLinPeriodicCoordinates &coordinates, const double &k,
+                         const LinearInterpolatorND<double, LogLinLinPeriodicCoordinates, GPU_memory> &ZA3,
+                         const LinearInterpolatorND<double, LogLinLinPeriodicCoordinates, GPU_memory> &ZAcbc,
                          const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZA4SP,
-                         const LinearInterpolatorND<double, LogLinLinCoordinates, GPU_memory> &ZA4tadpole,
+                         const LinearInterpolatorND<double, LogLinLinPeriodicCoordinates, GPU_memory> &ZA4tadpole,
                          const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &dtZc,
                          const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &Zc,
                          const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &dtZA,
@@ -33,10 +33,10 @@ namespace DiFfRG
     }
 
     void get(double &dest, const double &S0, const double &S1, const double &SPhi, const double &k,
-             const LinearInterpolatorND<double, LogLinLinCoordinates, GPU_memory> &ZA3,
-             const LinearInterpolatorND<double, LogLinLinCoordinates, GPU_memory> &ZAcbc,
+             const LinearInterpolatorND<double, LogLinLinPeriodicCoordinates, GPU_memory> &ZA3,
+             const LinearInterpolatorND<double, LogLinLinPeriodicCoordinates, GPU_memory> &ZAcbc,
              const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &ZA4SP,
-             const LinearInterpolatorND<double, LogLinLinCoordinates, GPU_memory> &ZA4tadpole,
+             const LinearInterpolatorND<double, LogLinLinPeriodicCoordinates, GPU_memory> &ZA4tadpole,
              const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &dtZc,
              const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &Zc,
              const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> &dtZA,

@@ -8,12 +8,14 @@ Reads the Yang-Mills output HDF5 file and produces three figures:
   3. The running couplings g_A3, g_A4, g_Acbc over momentum.
 
 The HDF5 layout has changed since the original Julia script: the three-point
-vertices (ZA3, ZAcbc, ZA4tadpole) are now angle-resolved 3-D grids over
-(|p1|, |p2|, cos(p1,p2)) on a coarse 8-point momentum grid, while ZA4 has been
-replaced by the 4-gluon symmetric-point dressing ZA4SP (1-D). For the coupling
-figure we evaluate the three-point vertices at the symmetric point (the diagonal
-|p1| = |p2| = p, at the angle closest to cos = -1/2) and interpolate the 96-point
-ZA / Zc dressings onto the coarse vertex grid.
+vertices (ZA3, ZAcbc, ZA4tadpole) are now angle-resolved 3-D grids over the
+symmetric triangle variables (S0, S1, SPhi) -- S0 the overall scale
+(logarithmic, 96 points), S1 the shape in [0, 1) (linear, 8 points) and SPhi a
+periodic angle on [-pi, pi) (linear, 6 points) -- while ZA4 has been replaced by
+the 4-gluon symmetric-point dressing ZA4SP (1-D). For the coupling figure we
+evaluate the three-point vertices at the symmetric point, which in this
+parametrisation is the whole S1 = 0 face (see symmetric_point_slice), and
+interpolate the ZA / Zc dressings onto the vertex momentum grid.
 """
 
 import shutil
@@ -147,34 +149,61 @@ fig2.savefig("dressings.pdf")
 # ----------------------------------------------------------------------------
 # Figure 3: running couplings at the symmetric point.
 #
-# The three-point vertices live on a 3-D grid (|p1|, |p2|, cos) of shape
-# (np, np, n_angles). The symmetric point is the diagonal |p1| = |p2| = p at the
-# angle closest to cos = -1/2. ZA / Zc (96-point grid) are interpolated onto the
-# coarse vertex momentum grid; ZA4SP is the 4-gluon symmetric point (1-D, 96).
+# The three-point vertices live on a 3-D grid (S0, S1, SPhi) of shape
+# (n_S0, n_S1, n_SPhi). ZA / Zc are interpolated onto the vertex momentum grid;
+# ZA4SP is the 4-gluon symmetric point (1-D, 96).
 # ----------------------------------------------------------------------------
-def symmetric_point_slice(maps, name):
-    """Diagonal |p1|=|p2|=p slice of a 3-point vertex at cos nearest -1/2.
+def symmetric_point_slice(maps, name, phi_index=0):
+    """S1 = 0 slice of a 3-point vertex, i.e. the symmetric point.
 
-    Returns (p, values) with p the symmetric-point momenta.
+    In the (S0, S1, SPhi) parametrisation the legs are
+
+        |p1|  = S0 sqrt(1 - S1 sin(SPhi))
+        |p2|  = S0 sqrt((2 + sqrt(3) S1 cos(SPhi) + S1 sin(SPhi)) / 2)
+        cos(p1,p2) = -(1 + sqrt(3) S1 cos(SPhi) - S1 sin(SPhi))
+                     / (2 sqrt((1 - S1 sin(SPhi))(2 + sqrt(3) S1 cos(SPhi) + S1 sin(SPhi))/2))
+
+    so at S1 = 0 they collapse to |p1| = |p2| = S0 and cos(p1,p2) = -1/2, i.e.
+    |p1| = |p2| = |p3| = S0 -- the symmetric point, for every SPhi. S1 = 0 is thus a
+    coordinate singularity: all SPhi grid points there describe the same kinematics and
+    are stored (and flowed) as separate degrees of freedom, so pick one rather than
+    averaging, and compare against the others via symmetric_point_spread().
+
+    Returns (p, values) with p = S0 the symmetric-point momenta.
     """
     entry = last_step(maps, name)
-    coords = entry["coordinates"]  # structured array, shape (np, np, n_angles)
-    data = entry["data"].reshape(coords.shape)  # C order: index (i*np + j)*na + l
+    coords = entry["coordinates"]  # structured array, shape (n_S0, n_S1, n_SPhi)
+    data = entry["data"].reshape(coords.shape)  # C order: index (i*n_S1 + j)*n_SPhi + l
 
-    cos_axis = coord_component(coords, 2)[0, 0, :]
-    l = int(np.argmin(np.abs(cos_axis + 0.5)))
+    S0 = coord_component(coords, 0)  # S0 varies along axis 0
+    return S0[:, 0, phi_index], data[:, 0, phi_index]
 
-    p1 = coord_component(coords, 0)  # |p1| varies along axis 0
-    n = data.shape[0]
-    diag = np.arange(n)
-    p = p1[diag, diag, l]
-    vals = data[diag, diag, l]
-    return p, vals
+
+def symmetric_point_spread(maps, name):
+    """Largest relative spread over SPhi on the S1 = 0 face.
+
+    All SPhi values are the same kinematic point there, so this is pure numerical drift
+    between degrees of freedom that should agree; a large value means the flow has pulled
+    them apart and the S1 = 0 slice is no longer well defined.
+    """
+    entry = last_step(maps, name)
+    face = entry["data"].reshape(entry["coordinates"].shape)[:, 0, :]
+    scale = np.max(np.abs(face), axis=1)
+    scale[scale == 0] = 1.0
+    return float(np.max(np.ptp(face, axis=1) / scale))
 
 
 # Symmetric-point momenta and vertex dressings.
 p3, dat_ZA3 = symmetric_point_slice(maps, "ZA3")
 p_cbc, dat_ZAcbc = symmetric_point_slice(maps, "ZAcbc")
+
+for _name in ("ZA3", "ZAcbc"):
+    _spread = symmetric_point_spread(maps, _name)
+    if _spread > 1e-3:
+        print(
+            f"warning: {_name} varies by {_spread:.2%} over SPhi at S1 = 0, "
+            "where all angles are the same kinematic point"
+        )
 
 
 # Interpolate the propagator dressings onto the vertex momentum grid. We
@@ -198,11 +227,9 @@ gA4 = (dat_ZA4SP / dat_ZA**2) / (4 * np.pi)
 gAcbc = (dat_ZAcbc**2 / (ZA_on_cbc * Zc_on_cbc**2)) / (4 * np.pi)
 
 fig3, ax3 = plt.subplots(figsize=(4, 3), dpi=300)
-ax3.plot(p3, gA3, label=r"$g_{A3}$", color=plt.cm.tab10(3), marker="o", ms=3)
+ax3.plot(p3, gA3, label=r"$g_{A3}$", color=plt.cm.tab10(3))
 ax3.plot(pGeV_ZA4, gA4, label=r"$g_{A4}$", color=plt.cm.tab10(1))
-ax3.plot(
-    p_cbc, gAcbc, label=r"$g_{A\bar{c}c}$", color=plt.cm.tab10(0), marker="o", ms=3
-)
+ax3.plot(p_cbc, gAcbc, label=r"$g_{A\bar{c}c}$", color=plt.cm.tab10(0))
 ax3.set_xlabel(r"$p\ \mathrm{[GeV]}$")
 ax3.set_xscale("log")
 ax3.set_yscale("log")

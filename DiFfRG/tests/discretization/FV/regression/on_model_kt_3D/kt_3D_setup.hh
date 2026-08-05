@@ -3,7 +3,7 @@
 // Common typedefs, parameter constants, grid helpers, and JSON-config builder
 // for the 3D-physics KT regression tests (linear sigma model at physical
 // scale: Lambda = 0.65, m² = -0.1, λ = 71.6, N = 2, T = 0.05 — matches
-// Examples/ONfiniteT_KT/parameter.json and Examples/ONfiniteT/parameter.json).
+// Examples/ONfiniteT/parameter_KT.json and Examples/ONfiniteT/parameter.json).
 //
 // The grid scale matches the CG Example: max_rho = 1.5e-2; the σ-coordinate
 // counterpart uses max_sigma = sqrt(2 · max_rho) so both discretisations
