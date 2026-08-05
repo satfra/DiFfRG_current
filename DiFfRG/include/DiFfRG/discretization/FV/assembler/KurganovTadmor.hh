@@ -507,6 +507,10 @@ namespace DiFfRG
                                                  typename Discretization_::SparseMatrixType, Discretization_::dim>
       {
       protected:
+        // Placeholder for the "extractors" slot of e_tie() when the extractors are being computed and so cannot
+        // be passed to themselves. Same trick as DiFfRG::FEMAssembler.
+        constexpr static int nothing = 0;
+
         template <typename... T> auto fv_tie(T &&...t)
         {
           return named_tuple<std::tuple<T &...>, StringSet<"fe_functions">>(std::tie(t...));
@@ -676,9 +680,18 @@ namespace DiFfRG
         }
         virtual const SparseMatrix<NumberType> &get_mass_matrix() const override { return mass_matrix; }
 
-        virtual void residual_variables(VectorType &residual, const VectorType &variables, const VectorType &) override
+        virtual void residual_variables(VectorType &residual, const VectorType &variables,
+                                        const VectorType &spatial_solution) override
         {
-          model.dt_variables(residual, fv_tie(variables));
+          // Mirrors DiFfRG::FEMAssembler::residual_variables: run the extractors at the EoM first, then hand
+          // dt_variables the v_tie(variables, extractors) tuple. Previously this passed fv_tie(variables), which
+          // both dropped the extractors and mislabelled the variables vector as "fe_functions", so any model
+          // whose Variables flow depends on its FE solution could not be assembled.
+          std::array<NumberType, Components::count_extractors()> __extracted_data{{}};
+          if constexpr (Components::count_extractors() > 0)
+            extract(__extracted_data, spatial_solution, variables, true, false, false);
+          const auto &extracted_data = __extracted_data;
+          model.dt_variables(residual, v_tie(variables, extracted_data));
         };
 
         virtual void jacobian_variables([[maybe_unused]] FullMatrix<NumberType> &jacobian,
@@ -721,8 +734,13 @@ namespace DiFfRG
           model.readouts_multiple(helper, data_out);
         }
 
+        /**
+         * @param with_hessians Also fill ReadoutSolution::hessians. Off by default and intended ONLY for the
+         * single EoM-point evaluation in extract(): it is a plain unlimited difference, not part of the
+         * scheme, and must not be wired into the flux path.
+         */
         ReadoutSolution reconstruct_readout_solution(const Iterator &cell, const VectorType &solution_global,
-                                                     const Point &x) const
+                                                     const Point &x, bool with_hessians = false) const
         {
           CellStencilData stencil;
           fill_cell_stencil(cell, solution_global, stencil);
@@ -734,7 +752,72 @@ namespace DiFfRG
           solution.values = internal::reconstruct_u(stencil.cell.u, stencil.cell.x, x, gradients);
           solution.gradients = Reconstructor::template compute_gradient_at_point<n_components>(
               stencil.cell.x, x, stencil.cell.u, stencil.neighbors.x, stencil.neighbors.u);
+
+          if (with_hessians) {
+            // Second derivative from the quadratic through the same three cell averages the gradient uses:
+            // with s measured from the cell centre and u(s) = u_C + a s + b s^2 through (dx_1, u_1), (0, u_C),
+            // (dx_2, u_2), one gets u'' = 2b = 2 (du_2 - du_1) / (dx_2 - dx_1), where du_i are exactly the
+            // one-sided slopes of compute_gradient. Being a quadratic fit, u'' is constant over the cell, so
+            // it does not matter that it is not evaluated at `x` itself.
+            //
+            // Deliberately UNLIMITED: the limiter exists to keep the reconstructed *slope* monotone for the
+            // scheme, and applying it to a curvature would bias it toward zero exactly where the potential is
+            // most curved. The price is that this is the noisiest quantity available near a steep front --
+            // acceptable because nothing in the flux consumes it.
+            //
+            // Only the diagonal d^2/dx_d^2 entries are filled: the 2*dim stencil has no corner neighbours, so
+            // mixed derivatives are not available (harmless for the 1D field-space this assembler targets).
+            for (uint c = 0; c < n_components; ++c)
+              for (int d = 0, i_n_1 = 0, i_n_2 = 1; d < dim; ++d, i_n_1 += 2, i_n_2 += 2) {
+                const auto dx_1 = stencil.neighbors.x[i_n_1][d] - stencil.cell.x[d];
+                const auto dx_2 = stencil.neighbors.x[i_n_2][d] - stencil.cell.x[d];
+                const auto du_1 = (stencil.neighbors.u[i_n_1][c] - stencil.cell.u[c]) / dx_1;
+                const auto du_2 = (stencil.neighbors.u[i_n_2][c] - stencil.cell.u[c]) / dx_2;
+                solution.hessians[c][d][d] = NumberType(2.) * (du_2 - du_1) / (dx_2 - dx_1);
+              }
+          }
           return solution;
+        }
+
+        /**
+         * @brief Evaluate the model's extractors at the EoM point.
+         *
+         * This is the FV counterpart of DiFfRG::FEMAssembler::extract, and exists for the same reason: it is the
+         * only bridge by which a model's FE (field-space) solution reaches its Variables. Models that couple the
+         * two -- e.g. an effective potential whose flux depends on momentum-dependent dressings which in turn flow
+         * with the potential's derivatives at the EoM -- cannot be assembled without it.
+         *
+         * The reconstruction is the same one readouts() uses: the EoM point is found from the cell-averaged
+         * solution, then values and gradients are reconstructed there by the Reconstructor. Hessians are
+         * additionally reconstructed here (and ONLY here -- see reconstruct_readout_solution): one extra
+         * three-point difference at a single point per step is free, whereas doing it per cell in the flux
+         * path would be neither cheap nor meaningful.
+         *
+         * @param data           Output: the extractor values.
+         * @param search_EoM     Re-locate the EoM point instead of reusing the cached one.
+         * @param set_EoM        Store the located point/cell as the new cache.
+         * @param postprocess    Apply the model's EoM_postprocess to the located point.
+         */
+        void extract(std::array<NumberType, Components::count_extractors()> &data, const VectorType &solution_global,
+                     const VectorType &variables, bool search_EoM, bool set_EoM, bool postprocess) const
+        {
+          auto EoM = this->EoM;
+          auto EoM_cell = this->EoM_cell;
+          if (search_EoM || EoM_cell == *(dof_handler.active_cell_iterators().end()))
+            EoM = get_EoM_point_with_potential(
+                      EoM_cell, solution_global, dof_handler, mapping,
+                      [&](const auto &p, const auto &values) { return model.EoM(p, values); },
+                      [&](const auto &p, const auto &values) { return postprocess ? model.EoM_postprocess(p, values) : p; },
+                      EoM_abs_tol, EoM_max_iter)
+                      .point;
+          if (set_EoM) {
+            this->EoM = EoM;
+            this->EoM_cell = EoM_cell;
+          }
+
+          auto solution = reconstruct_readout_solution(EoM_cell, solution_global, EoM, /*with_hessians=*/true);
+          model.extract(data, EoM,
+                        e_tie(solution.values, solution.gradients, solution.hessians, nothing, variables));
         }
 
         virtual void mass(VectorType &mass, const VectorType &solution_global, const VectorType &solution_global_dot,
@@ -1257,10 +1340,18 @@ namespace DiFfRG
 
         virtual void residual(VectorType &residual, const VectorType &solution_global, NumberType weight,
                               const VectorType &solution_global_dot, NumberType weight_mass,
-                              const VectorType & /* variables */ = VectorType()) override
+                              const VectorType &variables = VectorType()) override
         {
           using CopyData = internal::CopyData_R<NumberType>;
           const auto &constraints = discretization.get_constraints();
+
+          // Find the EoM and extract whatever data is needed for the model, as the FEM assemblers do. Beyond
+          // filling `extracted_data` this is what gives a model the chance to refresh whatever internal state its
+          // flux depends on (interpolators, self-consistently solved anomalous dimensions, ...) before the fluxes
+          // are evaluated. Models without extractors are unaffected.
+          std::array<NumberType, Components::count_extractors()> __extracted_data{{}};
+          if constexpr (Components::count_extractors() > 0)
+            extract(__extracted_data, solution_global, variables, true, false, true);
 
           Scratch scratch_data(quadrature);
           CopyData copy_data;
@@ -1447,11 +1538,20 @@ namespace DiFfRG
 
         virtual void jacobian(SparseMatrix<NumberType> &jacobian, const VectorType &solution_global, NumberType weight,
                               const VectorType &solution_global_dot, NumberType alpha, NumberType beta,
-                              const VectorType & /* variables */ = VectorType()) override
+                              const VectorType &variables = VectorType()) override
         {
           using Iterator = typename DoFHandler<dim>::active_cell_iterator;
           using CopyData = internal::CopyData_J<NumberType, dim>;
           const auto &constraints = discretization.get_constraints();
+
+          // See residual(): keep the model's extractor-driven state consistent with the point the jacobian is
+          // linearised about. The extractor jacobian contribution itself is not assembled here (the FV
+          // extractor_cell_jacobian blocks remain unused), so extractors are treated as frozen w.r.t. the FE
+          // solution within a Newton step -- fine for the IDA/explicit split where Variables are stepped
+          // explicitly, but it is why jacobian_variables below is still a no-op.
+          std::array<NumberType, Components::count_extractors()> __extracted_data{{}};
+          if constexpr (Components::count_extractors() > 0)
+            extract(__extracted_data, solution_global, variables, true, false, true);
           Timer timer;
           rebuild_solution_reconstruction_cache<JacobianReconstructor>(solution_global, jacobian_reconstruction_cache);
           const auto &reconstruction_cache = jacobian_reconstruction_cache;
@@ -2163,6 +2263,7 @@ namespace DiFfRG
         uint threads;
         const uint batch_size;
 
+        mutable Point EoM;
         mutable Iterator EoM_cell;
         Iterator old_EoM_cell;
         const double EoM_abs_tol;
