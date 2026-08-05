@@ -42,9 +42,9 @@ constexpr auto idxf = FEFunctionDesc{};
  * Field output (m^2 as a function of rho) is written via the standard FE/VTK output.
  */
 class ON_finiteT_KT : public def::AbstractModel<ON_finiteT_KT, Components>,
-                     public def::fRG,
-                     public def::RhoSymmetricLinearExtrapolationBoundaries<ON_finiteT_KT>,
-                     public def::AD<ON_finiteT_KT>
+                      public def::fRG,
+                      public def::RhoSymmetricLinearExtrapolationBoundaries<ON_finiteT_KT>,
+                      public def::AD<ON_finiteT_KT>
 {
 public:
   static constexpr uint dim = 1;
@@ -76,9 +76,7 @@ public:
   /**
    * @brief Hyperbolic advection flux: (N-1) * pion-loop. Depends on m^2 only.
    */
-  template <typename NT, typename Solution>
-  void KurganovTadmor_advection_flux(std::array<Tensor<1, dim, NT>, Components::count_fe_functions(0)> &F_i,
-                                     const Point<dim> & /*x*/, const Solution &sol) const
+  template <typename NT, typename Solution> void flux(std::array<Tensor<1, dim, NT>, Components::count_fe_functions(0)> &F_i, const Point<dim> & /*x*/, const Solution &sol) const
   {
     const auto &fe_functions = get<0>(sol);
     const auto m2Pi = fe_functions[idxf("m2")];
@@ -92,8 +90,7 @@ public:
    * @brief Parabolic/diffusion flux: sigma-loop. Uses m^2 and dm^2/drho via m^2_Sigma.
    */
   template <typename NT, typename Solution>
-  void flux(std::array<Tensor<1, dim, NT>, Components::count_fe_functions(0)> &F_i, const Point<dim> &x,
-            const Solution &sol) const
+  void diffusion_flux(std::array<Tensor<1, dim, NT>, Components::count_fe_functions(0)> &F_i, const Point<dim> &x, const Solution &sol) const
   {
     const auto rho = x[0];
     const auto &fe_functions = get<0>(sol);

@@ -74,14 +74,13 @@ public:
   std::array<double, 1> solution(const Point<1> &pos) const { return {1.0 + 0.25 * pos[0]}; }
 
   template <typename NT, typename Solution>
-  void KurganovTadmor_advection_flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/,
-                                     const Solution & /*sol*/) const
+  void flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution & /*sol*/) const
   {
     F_i[0][0] = 0.0;
   }
 
   template <typename NT, typename Solution>
-  void flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution & /*sol*/) const
+  void diffusion_flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution & /*sol*/) const
   {
     F_i[0][0] = 0.0;
   }
@@ -124,14 +123,13 @@ public:
   }
 
   template <typename NT, typename Solution>
-  void KurganovTadmor_advection_flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/,
-                                     const Solution & /*sol*/) const
+  void flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution & /*sol*/) const
   {
     F_i[0][0] = 0.0;
   }
 
   template <typename NT, typename Solution>
-  void flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution &sol) const
+  void diffusion_flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution &sol) const
   {
     const auto &third_derivatives = get<"fe_third_derivatives">(sol);
     F_i[0][0] = NT(0.05) * third_derivatives[0][0][0][0];
@@ -184,8 +182,7 @@ public:
   }
 
   template <typename NT, typename Solution>
-  void KurganovTadmor_advection_flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/,
-                                     const Solution &sol) const
+  void flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution &sol) const
   {
     const auto &u = get<"fe_functions">(sol);
     const auto &grad_u = get<"fe_derivatives">(sol);
@@ -193,7 +190,7 @@ public:
   }
 
   template <typename NT, typename Solution>
-  void flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution &sol) const
+  void diffusion_flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution &sol) const
   {
     const auto &grad_u = get<"fe_derivatives">(sol);
     F_i[0][0] += -NT(separate_diffusion) * grad_u[0][0];
@@ -232,14 +229,13 @@ public:
   }
 
   template <typename NT, typename Solution>
-  void KurganovTadmor_advection_flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/,
-                                     const Solution & /*sol*/) const
+  void flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/, const Solution & /*sol*/) const
   {
     F_i[0] = Tensor<1, 2, NT>();
   }
 
   template <typename NT, typename Solution>
-  void flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/, const Solution &sol) const
+  void diffusion_flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/, const Solution &sol) const
   {
     const auto &fe_derivatives = get<1>(sol);
     F_i[0] = -2.5 * fe_derivatives[0];
@@ -267,14 +263,13 @@ public:
   }
 
   template <typename NT, typename Solution>
-  void KurganovTadmor_advection_flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/,
-                                     const Solution & /*sol*/) const
+  void flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/, const Solution & /*sol*/) const
   {
     F_i[0] = Tensor<1, 2, NT>();
   }
 
   template <typename NT, typename Solution>
-  void flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/, const Solution &sol) const
+  void diffusion_flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/, const Solution &sol) const
   {
     const auto &fe_derivatives = get<1>(sol);
     F_i[0] = -2.5 * fe_derivatives[0];

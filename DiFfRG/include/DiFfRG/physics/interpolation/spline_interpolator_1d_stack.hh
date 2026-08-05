@@ -3,6 +3,7 @@
 // DiFfRG
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/math.hh>
+#include <DiFfRG/discretization/coordinates/coordinates.hh>
 #include <limits>
 
 namespace DiFfRG
@@ -16,6 +17,10 @@ namespace DiFfRG
   template <typename NT, typename Coordinates, typename DefaultMemorySpace = CPU_memory> class SplineInterpolator1DStack
   {
     static_assert(Coordinates::dim == 2, "SplineInterpolator1DStack requires 2D coordinates");
+    // The spline coefficients come from a non-cyclic tridiagonal solve with boundary conditions at the grid edges,
+    // which cannot close a periodic axis. Use LinearInterpolator2D there instead.
+    static_assert(!is_periodic_axis_v<Coordinates, 0> && !is_periodic_axis_v<Coordinates, 1>,
+                  "SplineInterpolator1DStack does not support periodic coordinates; use LinearInterpolator2D.");
 
   public:
     using memory_space = DefaultMemorySpace;

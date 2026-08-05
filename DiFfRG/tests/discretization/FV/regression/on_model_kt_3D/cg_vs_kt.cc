@@ -3,7 +3,7 @@
 // Historical context (smoke.cc and Examples/ONfiniteT*) for the LSM-physical
 // integrator-based PolyExp T=0.05 setup:
 //   - Examples/ONfiniteT/CG reaches t=4 in ~1.7s
-//   - Earlier Examples/ONfiniteT_KT/KT runs failed at t≈0.008
+//   - Earlier Examples/ONfiniteT/KT runs failed at t≈0.008
 //   - The KT variants in this test file now reach their configured target
 //     times and are kept as positive regressions.
 //

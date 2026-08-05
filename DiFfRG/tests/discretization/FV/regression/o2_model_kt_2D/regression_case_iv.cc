@@ -89,17 +89,16 @@ namespace
     }
 
     template <typename NT, typename Solution>
-    void KurganovTadmor_advection_flux(std::array<Tensor<1, dim, NT>, n_components> &F_i,
-                                       [[maybe_unused]] const Point<dim> &pos,
-                                       [[maybe_unused]] const Solution &sol) const
+    void flux(std::array<Tensor<1, dim, NT>, n_components> &F_i, [[maybe_unused]] const Point<dim> &pos,
+              [[maybe_unused]] const Solution &sol) const
     {
       for (auto &flux_i : F_i)
         flux_i = Tensor<1, dim, NT>();
     }
 
     template <typename NT, typename Solution>
-    void flux(std::array<Tensor<1, dim, NT>, n_components> &F_i, [[maybe_unused]] const Point<dim> &pos,
-              [[maybe_unused]] const Solution &sol) const
+    void diffusion_flux(std::array<Tensor<1, dim, NT>, n_components> &F_i, [[maybe_unused]] const Point<dim> &pos,
+                        [[maybe_unused]] const Solution &sol) const
     {
       for (auto &flux_i : F_i)
         flux_i = Tensor<1, dim, NT>();
@@ -450,7 +449,7 @@ TEST_CASE("O2 Model VI_B_IV exposes Eq. 92 nonanalytic initial condition and dia
   for (auto &flux_i : advection_flux)
     for (uint d = 0; d < dim; ++d)
       flux_i[d] = 1.0;
-  model.KurganovTadmor_advection_flux(advection_flux, point, solution);
+  model.flux(advection_flux, point, solution);
   for (const auto &flux_i : advection_flux)
     for (uint d = 0; d < dim; ++d)
       CHECK(flux_i[d] == 0.0);
@@ -459,7 +458,7 @@ TEST_CASE("O2 Model VI_B_IV exposes Eq. 92 nonanalytic initial condition and dia
   for (auto &flux_i : diffusion_flux)
     for (uint d = 0; d < dim; ++d)
       flux_i[d] = 1.0;
-  model.flux(diffusion_flux, point, solution);
+  model.diffusion_flux(diffusion_flux, point, solution);
   CHECK(diffusion_flux[0][0] == 0.5);
   CHECK(diffusion_flux[0][1] == 0.0);
   CHECK(diffusion_flux[1][0] == 0.0);

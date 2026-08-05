@@ -116,16 +116,15 @@ namespace
     double exact_solution(const Point<dim> &pos, const double time) const { return exact(pos, time); }
 
     template <typename NT, typename Solution>
-    void KurganovTadmor_advection_flux(std::array<Tensor<1, dim, NT>, n_components> &F_i,
-                                       [[maybe_unused]] const Point<dim> &pos,
-                                       [[maybe_unused]] const Solution &sol) const
+    void flux(std::array<Tensor<1, dim, NT>, n_components> &F_i, [[maybe_unused]] const Point<dim> &pos,
+              [[maybe_unused]] const Solution &sol) const
     {
       F_i[0] = Tensor<1, dim, NT>();
     }
 
     template <typename NT, typename Solution>
-    void flux(std::array<Tensor<1, dim, NT>, n_components> &F_i, [[maybe_unused]] const Point<dim> &pos,
-              const Solution &sol) const
+    void diffusion_flux(std::array<Tensor<1, dim, NT>, n_components> &F_i, [[maybe_unused]] const Point<dim> &pos,
+                        const Solution &sol) const
     {
       const auto &fe_derivatives = get<1>(sol);
       F_i[0] = -diffusivity * fe_derivatives[0];

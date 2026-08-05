@@ -74,7 +74,7 @@ namespace DiFfRG
           FluxGradientJacobian<NumberType, dim, n_components> grad_diagonal_H{};
           std::array<dealii::Tensor<1, dim, ADNumberType>, n_components> F_AD{};
 
-          model.KurganovTadmor_advection_flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD));
+          model.flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD));
           for (size_t i = 0; i < n_components; ++i)
             for (size_t d_out = 0; d_out < dim; ++d_out)
               result.F[i][d_out] = F_AD[i][d_out].val();
@@ -83,7 +83,7 @@ namespace DiFfRG
           for (size_t j = 0; j < n_components; ++j) {
             seed<1>(u_AD[j], NumberType(1));
             F_AD = {};
-            model.KurganovTadmor_advection_flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD));
+            model.flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD));
             for (size_t i = 0; i < n_components; ++i)
               for (size_t d_out = 0; d_out < dim; ++d_out) {
                 result.J[d_out][i][j] = derivative<1>(F_AD[i][d_out]);
@@ -98,7 +98,7 @@ namespace DiFfRG
               seed<1>(u_AD[j], NumberType(1));
               seed<1>(u_AD[c], NumberType(1));
               F_AD = {};
-              model.KurganovTadmor_advection_flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD));
+              model.flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD));
               for (size_t i = 0; i < n_components; ++i)
                 for (size_t d_out = 0; d_out < dim; ++d_out) {
                   const NumberType cross =
@@ -116,7 +116,7 @@ namespace DiFfRG
             for (size_t d_in = 0; d_in < dim; ++d_in) {
               seed<1>(grad_u_AD[c][d_in], NumberType(1));
               F_AD = {};
-              model.KurganovTadmor_advection_flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD));
+              model.flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD));
               for (size_t i = 0; i < n_components; ++i)
                 for (size_t d_out = 0; d_out < dim; ++d_out) {
                   result.grad_J[i][c][d_out][d_in] = derivative<1>(F_AD[i][d_out]);
@@ -132,7 +132,7 @@ namespace DiFfRG
                 seed<1>(u_AD[j], NumberType(1));
                 seed<1>(grad_u_AD[c][d_in], NumberType(1));
                 F_AD = {};
-                model.KurganovTadmor_advection_flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD));
+                model.flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD));
                 for (size_t i = 0; i < n_components; ++i)
                   for (size_t d_out = 0; d_out < dim; ++d_out)
                     result.mixed_H[d_in][d_out][i][j][c] =

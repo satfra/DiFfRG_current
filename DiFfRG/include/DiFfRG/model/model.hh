@@ -140,14 +140,21 @@ namespace DiFfRG
        *
        * @note The standard implementation of this method simply sets \f$F_i = 0\f$.
        *
+       * @note The meaning of this method depends on the discretization. For CG/DG/LDG it is the full flux of the
+       * conservation law. For the Kurganov Tadmor scheme it is the *advection* flux, i.e. the hyperbolic part which
+       * determines the numerical face flux and the wave speeds; the parabolic part is implemented separately in
+       * `diffusion_flux`. In the Kurganov Tadmor case the assembler evaluates this callback separately for the minus
+       * and plus face traces, and the derivatives are the face gradients produced by the active advection
+       * reconstructor; they are distinct from the corrected gradients handed to `diffusion_flux`.
+       *
        * @param F_i the resulting flux function \f$F_i\f$, with \f$N_f\f$ components.
        * This method should fill this argument with the desired structure of the flow equation.
        * @param x a d-dimensional dealii::Point<dim> representing field coordinates.
        * @param sol a `std::tuple<...>` which contains
        * 1. the array u_j
        * 2. the array of arrays \f$\partial_x u_j\f$
-       * 3. the array of arrays of arrays \f$\partial_x^2 u_j\f$
-       * 4. the array of extractors \f$e_b\f$
+       * 3. the array of arrays of arrays \f$\partial_x^2 u_j\f$ (CG/DG/LDG only)
+       * 4. the array of extractors \f$e_b\f$ (CG/DG/LDG only)
        */
       template <int dim, typename NumberType, typename Solutions, size_t n_fe_functions>
       void flux([[maybe_unused]] std::array<Tensor<1, dim, NumberType>, n_fe_functions> &F_i,
@@ -156,26 +163,32 @@ namespace DiFfRG
       }
 
       /**
-       * @brief If the Kurganov Tadmor Scheme is used, this is the implementation of the face flux.
-       * \f$F_i(u_j, \partial_x u_j, x)\f$
+       * @brief If the Kurganov Tadmor Scheme is used, this is the implementation of the diffusion (parabolic) part of
+       * the face flux. \f$D_i(u_j, \partial_x u_j, \partial_x^3 u_j, x)\f$
        *
-       * @remarks The assembler evaluates this callback separately for the minus and plus face traces. The derivatives
-       * are the face gradients produced by the active advection reconstructor; they are distinct from the corrected
-       * gradients used by the separate diffusion-flux path.
+       * @remarks The assembler evaluates this callback separately for the minus and plus face traces, using the
+       * corrected gradients of the diffusion reconstructor; these are distinct from the advection face gradients
+       * handed to `flux`. This method is never called by the CG/DG/LDG discretizations.
        *
-       * @note The standard implementation of this method simply sets \f$F_i = 0\f$.
+       * @note The standard implementation of this method simply sets \f$D_i = 0\f$.
        *
-       * @param F_i the resulting flux function \f$F_i\f$, with \f$N_f\f$ components.
+       * @note Sign convention: the face flux is \f$(H + D)\cdot n\f$, i.e. the advection numerical flux \f$H\f$ (built
+       * from `flux`) and the diffusion flux \f$D\f$ (from this method) are SUMMED. Both methods therefore return the
+       * physical flux with the same sign - exactly the conservation-law convention used by CG / LLFFlux. A diffusion
+       * flux \f$f_{diff}\f$ must be a DECREASING function of the gradient (\f$\partial f_{diff} / \partial (\partial
+       * u) < 0\f$) for forward diffusion, e.g. \f$f_{diff} = -\nu\, \partial u\f$ for the heat/viscous term.
+       *
+       * @param F_i the resulting diffusion flux \f$D_i\f$, with \f$N_f\f$ components.
        * This method should fill this argument with the desired structure of the flow equation.
        * @param x a d-dimensional dealii::Point<dim> representing field coordinates.
        * @param sol a `std::tuple<...>` which contains
        * 1. the array u_j
        * 2. the array of arrays \f$\partial_x u_j\f$
+       * 3. the array of arrays of arrays \f$\partial_x^3 u_j\f$
        */
       template <int dim, typename NumberType, typename Solutions, size_t n_fe_functions>
-      void KurganovTadmor_advection_flux([[maybe_unused]] std::array<Tensor<1, dim, NumberType>, n_fe_functions> &F_i,
-                                         [[maybe_unused]] const Point<dim> &x,
-                                         [[maybe_unused]] const Solutions &sol) const
+      void diffusion_flux([[maybe_unused]] std::array<Tensor<1, dim, NumberType>, n_fe_functions> &F_i,
+                          [[maybe_unused]] const Point<dim> &x, [[maybe_unused]] const Solutions &sol) const
       {
       }
 

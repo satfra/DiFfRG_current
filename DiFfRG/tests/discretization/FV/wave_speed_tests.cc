@@ -42,8 +42,7 @@ class SymCoupledModel : public DiFfRG::def::AbstractModel<SymCoupledModel, Compo
 {
 public:
   template <int dim, typename NT, typename Solutions, size_t n>
-  static void KurganovTadmor_advection_flux(std::array<Tensor<1, dim, NT>, n> &F, const Point<dim> & /*x*/,
-                                            const Solutions &sol)
+  static void flux(std::array<Tensor<1, dim, NT>, n> &F, const Point<dim> & /*x*/, const Solutions &sol)
   {
     const auto u = get<"fe_functions">(sol);
     F[0][0] = u[0] * u[0] / NT(2) + u[1]; // F_1 = u1^2/2 + u2
