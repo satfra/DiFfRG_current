@@ -45,21 +45,22 @@ namespace DiFfRG
       const double prefactor = S_d                    // angular integral
                                * powr<-d>(2. * M_PI); // fourier factors
 
-      const NT result = tbb::parallel_reduce(
-          tbb::blocked_range<int>(0, x_size), NT(0),
-          [&](const tbb::blocked_range<int> &r, NT running_total) -> NT {
-            const double q_max = std::sqrt(x_extent) * k;
-            for (int x_it = r.begin(); x_it < r.end(); x_it++) {
-              const double q = x_q_p[x_it][0] * q_max;
-              const double q_weight = x_q_w[x_it] * q_max;
-              const double q2 = powr<2>(q);
+      // Summed serially on purpose: tbb::parallel_reduce would make the summation order depend on
+      // work stealing, and the result of this integral is compared against a tolerance in
+      // optimize_x_extent(). A last-bit difference there can flip the convergence test and change
+      // x_extent - the upper limit of every subsequent momentum integral - by a factor of 1.15.
+      // The grids here are a few thousand points and this runs a handful of times at startup, so
+      // there is nothing to gain from parallelising it.
+      NT result(0);
+      const double q_max = std::sqrt(x_extent) * k;
+      for (int x_it = 0; x_it < x_size; x_it++) {
+        const double q = x_q_p[x_it][0] * q_max;
+        const double q_weight = x_q_w[x_it] * q_max;
+        const double q2 = powr<2>(q);
 
-              running_total += q_weight * prefactor * std::pow(q, d - 1) // integral over q in d dimensions
-                               * fun(q2);                                // integrand
-            }
-            return running_total;
-          },
-          [](const NT a, const NT b) { return a + b; });
+        result += q_weight * prefactor * std::pow(q, d - 1) // integral over q in d dimensions
+                  * fun(q2);                                // integrand
+      }
       return result;
     }
   } // namespace LoopIntegrals
