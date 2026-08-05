@@ -24,6 +24,37 @@ namespace DiFfRG
     { t.from_linear_index(size_t{}) } -> std::same_as<device::array<size_t, T::dim>>;
   };
 
+  namespace internal
+  {
+    template <typename T, typename = void> struct coord_periodic : std::false_type {
+    };
+    template <typename T>
+    struct coord_periodic<T, std::void_t<decltype(T::periodic)>> : std::bool_constant<T::periodic> {
+    };
+  } // namespace internal
+
+  /**
+   * @brief Whether a 1D coordinate class describes a periodic axis, i.e. one where the last grid point is followed
+   * again by the first one. Detected through a `static constexpr bool periodic` member, defaulting to false.
+   */
+  template <typename T> inline constexpr bool is_periodic_coordinate_v = internal::coord_periodic<T>::value;
+
+  namespace internal
+  {
+    template <typename C, size_t i, typename = void> struct axis_periodic : std::false_type {
+    };
+    template <typename C, size_t i>
+    struct axis_periodic<C, i, std::void_t<typename C::template coordinate_type<i>>>
+        : std::bool_constant<is_periodic_coordinate_v<typename C::template coordinate_type<i>>> {
+    };
+  } // namespace internal
+
+  /**
+   * @brief Whether axis i of a (possibly multi-dimensional) coordinate system is periodic. Falls back to false for
+   * coordinate systems which do not expose their axes as separate types, e.g. BosonicCoordinates1DFiniteT.
+   */
+  template <typename C, size_t i> inline constexpr bool is_periodic_axis_v = internal::axis_periodic<C, i>::value;
+
   /**
    * @brief Utility class for combining multiple coordinate systems into one
    *
@@ -85,6 +116,12 @@ namespace DiFfRG
     }
 
     template <size_t i> const auto &get_coordinates() const { return device::get<i>(coordinates); }
+
+    /**
+     * @brief The type of the i-th axis. Used e.g. to query per-axis periodicity, see is_periodic_axis_v.
+     */
+    template <size_t i>
+    using coordinate_type = typename device::tuple_element<i, device::tuple<Coordinates...>>::type;
 
     size_t KOKKOS_FORCEINLINE_FUNCTION size() const
     {
@@ -298,6 +335,100 @@ namespace DiFfRG
     NT a;
   };
 
+  /**
+   * @brief Linear coordinates on a periodic axis of period (stop - start).
+   *
+   * In contrast to LinearCoordinates1D, the endpoint is *excluded*: the grid points are
+   * start, start + a, ..., stop - a with a = (stop - start) / grid_extent, because stop and start describe the same
+   * physical point. For an angle this means one full plane of grid points less than the naive [start, stop] grid, and
+   * no duplicated, unconstrained degrees of freedom.
+   *
+   * backward() folds the returned fractional index into [0, grid_extent); interpolators aware of
+   * is_periodic_coordinate_v additionally wrap the upper stencil index around to 0.
+   */
+  template <typename NT = double>
+    requires std::is_floating_point_v<NT>
+  class LinearPeriodicCoordinates1D
+  {
+  public:
+    using ctype = NT;
+    static constexpr size_t dim = 1;
+    static constexpr bool periodic = true;
+
+    LinearPeriodicCoordinates1D(size_t grid_extent, double start, double stop)
+        : start(start), stop(stop), grid_extent(grid_extent), extent(static_cast<NT>(grid_extent))
+    {
+      if (grid_extent == 0) throw std::runtime_error("LinearPeriodicCoordinates1D: grid_extent must be > 0");
+      a = (stop - start) / NT(grid_extent);
+    }
+
+    template <typename NT2>
+    LinearPeriodicCoordinates1D(const LinearPeriodicCoordinates1D<NT2> &other)
+        : LinearPeriodicCoordinates1D(other.size(), other.start, other.stop)
+    {
+    }
+
+    device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(size_t i) const
+    {
+      return device::array<size_t, 1>{i};
+    }
+
+    /**
+     * @brief Transform from the grid to the physical space
+     *
+     * @param x grid coordinate
+     * @return NumberType physical coordinate
+     */
+    template <typename IT> NT KOKKOS_FORCEINLINE_FUNCTION forward(const IT &x) const { return start + a * x; }
+
+    template <typename IT> device::array<NT, 1> KOKKOS_FORCEINLINE_FUNCTION forward(const device::array<IT, 1> &x) const
+    {
+      return {forward(x[0])};
+    }
+
+    /**
+     * @brief Transform from the physical space to the grid, folded into [0, grid_extent)
+     *
+     * @param y physical coordinate
+     * @return double grid coordinate
+     */
+    NT KOKKOS_FORCEINLINE_FUNCTION backward(const NT &y) const
+    {
+      using Kokkos::floor;
+      // fmod would keep the sign of idx, so fold explicitly into [0, grid_extent)
+      NT idx = (y - start) / a;
+      idx -= floor(idx / extent) * extent;
+      // right at the seam the division can round such that the fold leaves idx just outside the interval
+      if (idx >= extent) idx -= extent;
+      if (idx < NT(0)) idx = NT(0);
+      return idx;
+    }
+
+    size_t KOKKOS_FORCEINLINE_FUNCTION size() const { return grid_extent; }
+
+    device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION sizes() const { return {grid_extent}; }
+
+    const NT start, stop;
+
+    template <typename NT2>
+    friend bool operator==(const LinearPeriodicCoordinates1D<NT> &lhs, const LinearPeriodicCoordinates1D<NT2> &rhs)
+    {
+      if constexpr (!std::is_same_v<NT, NT2>) return false; // Different types, cannot be equal
+      return lhs.start == rhs.start && lhs.stop == rhs.stop && lhs.grid_extent == rhs.grid_extent;
+    }
+
+    std::string to_string() const
+    {
+      return "LinearPeriodicCoordinates1D(" + std::to_string(grid_extent) + ", " + std::to_string(start) + ", " +
+             std::to_string(stop) + ")";
+    }
+
+  private:
+    const size_t grid_extent;
+    const NT extent;
+    NT a;
+  };
+
   template <typename NT = double>
     requires std::is_floating_point_v<NT>
   class LogarithmicCoordinates1D
@@ -439,4 +570,11 @@ namespace DiFfRG
       CoordinatePackND<LogarithmicCoordinates1D<double>, LinearCoordinates1D<double>, LinearCoordinates1D<double>>;
   using LinLinLinCoordinates =
       CoordinatePackND<LinearCoordinates1D<double>, LinearCoordinates1D<double>, LinearCoordinates1D<double>>;
+
+  // Periodic (angular) coordinates
+  using LinPeriodicCoordinates = LinearPeriodicCoordinates1D<double>;
+  using LogLinPeriodicCoordinates =
+      CoordinatePackND<LogarithmicCoordinates1D<double>, LinearPeriodicCoordinates1D<double>>;
+  using LogLinLinPeriodicCoordinates = CoordinatePackND<LogarithmicCoordinates1D<double>, LinearCoordinates1D<double>,
+                                                        LinearPeriodicCoordinates1D<double>>;
 } // namespace DiFfRG

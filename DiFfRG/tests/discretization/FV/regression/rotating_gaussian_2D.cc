@@ -131,8 +131,7 @@ namespace
     double exact_solution(const Point<dim> &pos, const double time) const { return exact(pos, time); }
 
     template <typename NT, typename Solution>
-    void KurganovTadmor_advection_flux(std::array<Tensor<1, dim, NT>, n_components> &F_i, const Point<dim> &pos,
-                                       const Solution &sol) const
+    void flux(std::array<Tensor<1, dim, NT>, n_components> &F_i, const Point<dim> &pos, const Solution &sol) const
     {
       const auto &u = get<0>(sol);
       const auto velocity = solid_body_velocity<NT>(pos);

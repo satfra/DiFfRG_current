@@ -2,6 +2,12 @@ set(ONFiniteTFlows_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/V/src/constructor.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/V/src/CT_get.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/V/src/AD_get.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/V_pion/src/constructor.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/V_pion/src/CT_get.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/V_pion/src/AD_get.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/V_sigma/src/constructor.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/V_sigma/src/CT_get.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/V_sigma/src/AD_get.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/flows.cc)
 
 add_library(ONFiniteTFlows STATIC ${ONFiniteTFlows_SOURCES})

@@ -11,7 +11,7 @@
 
 #include <tbb/global_control.h>
 
-#include "model_sigma.hh"
+#include "model_KT_sigma.hh"
 
 // Choices for types
 using Model = ON_finiteT_KT_sigma;
@@ -31,7 +31,7 @@ int main(int argc, char *argv[])
   tbb::global_control tbb_pin(tbb::global_control::max_allowed_parallelism, 1);
 
   // Initialize DiFfRG and thus the MPI and Kokkos environments.
-  const auto config_helper = DiFfRG::Init(argc, argv, "parameter_sigma.json").get_configuration_helper();
+  const auto config_helper = DiFfRG::Init(argc, argv, "parameter_KT_sigma.json").get_configuration_helper();
   const auto json = config_helper.get_json();
 
   // Define the objects needed to run the simulation
