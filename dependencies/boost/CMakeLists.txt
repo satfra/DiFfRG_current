@@ -7,8 +7,36 @@ set(CMAKE_BUILD_TYPE Release)
 
 set(TRY_BOOST_VERSION "1.81.0")
 set(TRY_BOOST_VERSION_NUMBER 108100)
-set(BOOST_VENDOR_SOURCE_DIR
-    "${CMAKE_CURRENT_SOURCE_DIR}/boost_1_81_0")
+
+# The Boost source ships as one tracked archive rather than an unpacked tree, so
+# a checkout costs one file instead of ~74 000 -- which matters both for `git
+# status` and for collaborators on slow (network / FUSE) filesystems. Nothing is
+# ever downloaded, so offline and firewalled cluster builds keep working.
+#
+# The archive is upstream boost_1_81_0.tar.gz -- sha256
+# 205666dea9f6a7cfed87c7a6dfbeb52a2c1b9de55712c9c1a87735d7181452b6, the digest
+# published on boost.org -- with documentation, tests and examples removed
+# (74 085 -> 19 498 files, 696 -> 183 MiB). Because it is no longer byte-
+# identical to upstream, the upstream digest cannot authenticate it; the recipe
+# below is deterministic instead, so anyone can regenerate the archive and get
+# the same sha256:
+#
+#   tar xf boost_1_81_0.tar.gz -C $W && cd $W/boost_1_81_0
+#   rm -rf doc more
+#   rm -rf libs/*/doc   libs/*/test   libs/*/example   libs/*/examples
+#   rm -rf libs/*/*/doc libs/*/*/test libs/*/*/example libs/*/*/examples
+#   rm -rf tools/*/doc  tools/*/test  tools/*/example  tools/*/examples
+#   cd $W && tar --sort=name --owner=0 --group=0 --numeric-owner -cf - \
+#     boost_1_81_0 | xz -9e -T1 > boost_1_81_0-diffrg-slim.tar.xz
+#
+# Only doc/test/example trees are dropped; boost/ headers, libs/*/src and every
+# libs/*/build Jamfile -- all b2 actually consumes -- are untouched.
+#
+# The archive's single top-level entry is boost_1_81_0/, so unpacking it in
+# ${CMAKE_CURRENT_BINARY_DIR} yields exactly ${BOOST_SOURCE_DIR}.
+set(BOOST_ARCHIVE "${CMAKE_CURRENT_SOURCE_DIR}/boost_1_81_0-diffrg-slim.tar.xz")
+set(BOOST_ARCHIVE_SHA256
+    "4d25259d2d81f0349e1944169f63b2d4abc6abe6c1337cb3a90a6269400afb96")
 set(BOOST_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/boost_1_81_0")
 set(BOOST_PREPARED_STAMP "${BOOST_SOURCE_DIR}/.diffrg_prepared")
 set(BOOST_PATCHED_STAMP "${BOOST_SOURCE_DIR}/.diffrg_patched")
@@ -19,25 +47,30 @@ if(PARALLEL_JOBS EQUAL 0)
   set(PARALLEL_JOBS 1)
 endif()
 
-if(NOT EXISTS "${BOOST_VENDOR_SOURCE_DIR}/bootstrap.sh"
-   OR NOT EXISTS "${BOOST_VENDOR_SOURCE_DIR}/boost/version.hpp")
+if(NOT EXISTS "${BOOST_ARCHIVE}")
   message(
     FATAL_ERROR
-      "Vendored Boost ${TRY_BOOST_VERSION} source is missing.\n"
-      "Expected ${BOOST_VENDOR_SOURCE_DIR} to contain bootstrap.sh and boost/version.hpp."
-  )
+      "Bundled Boost ${TRY_BOOST_VERSION} source archive is missing.\n"
+      "Expected ${BOOST_ARCHIVE}.\n"
+      "It is tracked in git -- restore it with\n"
+      "  git checkout -- dependencies/boost/boost_1_81_0-diffrg-slim.tar.xz\n"
+      "or use a system Boost instead via -DBOOST_DIR=<prefix>.")
 endif()
 
-file(STRINGS "${BOOST_VENDOR_SOURCE_DIR}/boost/version.hpp" _boost_version_line
-     REGEX "^#define BOOST_VERSION ")
-string(REGEX REPLACE ".*BOOST_VERSION[ \t]+([0-9]+).*" "\\1"
-                     _boost_version_number "${_boost_version_line}")
-if(NOT _boost_version_number STREQUAL "${TRY_BOOST_VERSION_NUMBER}")
+# The checksum is what pins the Boost version now: once the archive hashes
+# correctly the unpacked tree cannot be anything but Boost ${TRY_BOOST_VERSION}.
+# It also catches a truncated checkout, which would otherwise fail deep inside
+# tar with an unhelpful message. Costs ~0.05 s for 16 MiB.
+file(SHA256 "${BOOST_ARCHIVE}" _boost_archive_sha256)
+if(NOT _boost_archive_sha256 STREQUAL "${BOOST_ARCHIVE_SHA256}")
   message(
     FATAL_ERROR
-      "Vendored Boost version mismatch: expected ${TRY_BOOST_VERSION} "
-      "(${TRY_BOOST_VERSION_NUMBER}), found ${_boost_version_number} in "
-      "${BOOST_VENDOR_SOURCE_DIR}/boost/version.hpp.")
+      "Bundled Boost archive checksum mismatch:\n"
+      "  file     ${BOOST_ARCHIVE}\n"
+      "  expected ${BOOST_ARCHIVE_SHA256}\n"
+      "  found    ${_boost_archive_sha256}\n"
+      "Restore the tracked archive, or -- if you replaced it deliberately -- "
+      "update BOOST_ARCHIVE_SHA256 in this file.")
 endif()
 
 if(CCACHE_PROGRAM)
@@ -51,12 +84,20 @@ endif()
 add_custom_command(
   OUTPUT "${BOOST_PREPARED_STAMP}"
   COMMAND ${CMAKE_COMMAND} -E rm -rf "${BOOST_SOURCE_DIR}"
-  COMMAND ${CMAKE_COMMAND} -E copy_directory "${BOOST_VENDOR_SOURCE_DIR}"
-          "${BOOST_SOURCE_DIR}"
+  COMMAND ${CMAKE_COMMAND} -E tar xJf "${BOOST_ARCHIVE}"
+  # Layout assertion on the freshly unpacked tree. The archive checksum above
+  # already pins the version far more strongly; what this guards is the
+  # assumption everything below makes -- that the archive unpacks to a single
+  # boost_1_81_0/ in release layout. Runs before the stamp is written, so a
+  # failure stays dirty and is retried instead of being silently cached.
+  COMMAND
+    bash -c
+    "grep -qx '#define BOOST_VERSION ${TRY_BOOST_VERSION_NUMBER}' '${BOOST_SOURCE_DIR}/boost/version.hpp' \
+     || { echo 'Unpacked Boost is not ${TRY_BOOST_VERSION} (${TRY_BOOST_VERSION_NUMBER}), or the archive has an unexpected layout: ${BOOST_SOURCE_DIR}/boost/version.hpp' >&2; exit 1; }"
   COMMAND ${CMAKE_COMMAND} -E touch "${BOOST_PREPARED_STAMP}"
-  DEPENDS "${BOOST_VENDOR_SOURCE_DIR}/boost/version.hpp"
-          "${BOOST_VENDOR_SOURCE_DIR}/bootstrap.sh"
-  COMMENT "Preparing build-local Boost ${TRY_BOOST_VERSION} source copy"
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  DEPENDS "${BOOST_ARCHIVE}"
+  COMMENT "Unpacking bundled Boost ${TRY_BOOST_VERSION} into the build tree"
   VERBATIM)
 
 add_custom_command(

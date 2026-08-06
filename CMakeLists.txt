@@ -308,9 +308,10 @@ include(ExternalProject)
 # ExternalProject is needed (_build_<lib>) and which location to hand to deal.II
 # / the DiFfRG library build.
 #
-# Note for Boost specifically: the bundled build compiles the vendored source
-# tree in dependencies/boost/boost_1_81_0 and never downloads anything, so the
-# fallback path stays usable on offline / cluster machines.
+# Note for Boost specifically: the bundled build unpacks and compiles the source
+# archive tracked at dependencies/boost/boost_1_81_0-diffrg-slim.tar.xz and never
+# downloads anything, so the fallback path stays usable on offline / cluster
+# machines.
 # ##############################################################################
 
 set(BOOST_DIR
@@ -357,8 +358,9 @@ endmacro()
 # BoostConfig.cmake (config mode); the legacy FindBoost module is removed in
 # CMake >= 3.30 and deal.II 9.7 consumes a modern config-mode Boost fine.
 #
-# When the bundled build is selected, it compiles the vendored source tree
-# (dependencies/boost/boost_1_81_0) — no network access is involved.
+# When the bundled build is selected, it unpacks and compiles the tracked source
+# archive (dependencies/boost/boost_1_81_0-diffrg-slim.tar.xz) — no network
+# access is involved.
 # ----------------------------------------------------------------------------
 if(POLICY CMP0167)
   cmake_policy(SET CMP0167 NEW)
@@ -396,18 +398,20 @@ else()
 endif()
 
 if(_build_boost)
-  # The bundled build needs the vendored source tree to be present and complete.
-  set(_boost_vendor_source
-      "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/boost/boost_1_81_0")
-  if(NOT EXISTS "${_boost_vendor_source}/bootstrap.sh"
-     OR NOT EXISTS "${_boost_vendor_source}/boost/version.hpp")
+  # The bundled build needs the tracked Boost source archive. Its contents are
+  # hash-checked in dependencies/boost/CMakeLists.txt when boost_dep configures;
+  # here we only fail fast, at superbuild configure time, if it is absent.
+  set(_boost_archive
+      "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/boost/boost_1_81_0-diffrg-slim.tar.xz"
+  )
+  if(NOT EXISTS "${_boost_archive}")
     message(
       FATAL_ERROR
         "No usable system Boost >= ${DiFfRG_BOOST_MIN_VERSION} was found and the "
-        "vendored Boost source is missing. Expected ${_boost_vendor_source} to "
-        "contain bootstrap.sh and boost/version.hpp.\n"
+        "bundled Boost source archive is missing. Expected ${_boost_archive}.\n"
         "  Install Boost and point -DBOOST_DIR=<prefix> at it, or restore the "
-        "vendored tree.")
+        "archive with\n"
+        "    git checkout -- dependencies/boost/boost_1_81_0-diffrg-slim.tar.xz")
   endif()
   set(_boost_root "${DEPEND_INSTALL_PREFIX}")
   set(_boost_incdir "${DEPEND_INSTALL_PREFIX}/include")
@@ -835,7 +839,7 @@ ExternalProject_Add(
 
 message("${BoldCyan}[5/8] Configuring Boost...${ColourReset}")
 # Boost selection was resolved above; only register the bundled build if needed.
-# The bundled build compiles the vendored source tree in dependencies/boost.
+# The bundled build unpacks and compiles the source archive in dependencies/boost.
 if(_build_boost)
   ExternalProject_Add(
     boost_dep
@@ -1133,8 +1137,8 @@ file(MAKE_DIRECTORY ${DEPEND_INSTALL_PREFIX}/include/deal.II/bundled)
 # explicit -DBOOST_ROOT=/-DTBB_DIR=/-DHDF5_DIR= on the command line still wins.
 
 # A bundled Boost build compiles Boost itself, so its version is not yet known
-# via find_package; read it from the vendored wrapper. For a system Boost we
-# already have Boost_VERSION.
+# via find_package; read it from the bundled-Boost wrapper CMakeLists. For a
+# system Boost we already have Boost_VERSION.
 set(_pinned_boost_version "${Boost_VERSION}")
 if(_build_boost)
   file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/boost/CMakeLists.txt"
