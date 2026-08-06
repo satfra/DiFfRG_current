@@ -113,7 +113,10 @@ namespace DiFfRG
    * - /timestepping/explicit/detect_stuck: Whether repeated-time callback detection is enabled.
    *
    * Additionally, the following parameters are being used:
-   * - /output/verbosity: The verbosity level of the output.
+   * - /output/verbosity: The verbosity level of the output. At 0 nothing is printed, at 1 the progress lines for
+   * residual evaluations, at 2 additionally the jacobian/linear solver lines and the IDA step/failure diagnostics
+   * line, at 3 additionally jacobian inversion and output frames. From 4 upwards the per-second aggregation is
+   * disabled and every call is printed.
    * - /physical/Lambda: The RG scale parameter Lambda. If not present, no RG scale is given when console_out is called.
    *
    * The console_out method is used to print information about the current time, the calculation time and the current
@@ -263,6 +266,10 @@ namespace DiFfRG
     } expl;
 
     static constexpr size_t console_name_width = 21;
+
+    // Minimum /output/verbosity at which the IDA step/failure diagnostics line is printed below the
+    // progress line. Level 1 stays a plain one-line-per-second progress report.
+    static constexpr int diagnostics_verbosity_level = 2;
 
     struct IDAAcceptedStepStats {
       long int last_steps = 0;
@@ -524,7 +531,8 @@ namespace DiFfRG
      * @param t Current time.
      * @param name A tag prepended to the output.
      * @param verbosity_level The verbosity level of the output.
-     * @param diagnostics Optional timestepper diagnostics printed as a second line.
+     * @param diagnostics Optional timestepper diagnostics printed as a second line. Only printed from verbosity
+     * diagnostics_verbosity_level (2) upwards; below that the pointer is ignored and the progress line stays alone.
      * @param calc_dt_ms Wall time in milliseconds spent in the operation being reported. Negative
      * values mean "not measured" and suppress the calc_dt column. At verbosity < 4 the value is
      * aggregated over the reporting window and shown as mean(uncertainty).
@@ -533,6 +541,7 @@ namespace DiFfRG
                      const TimesteppingDiagnostics *diagnostics = nullptr, const double calc_dt_ms = -1.0) const
     {
       if (verbosity < verbosity_level) return;
+      if (verbosity < diagnostics_verbosity_level) diagnostics = nullptr;
 
       const size_t milliseconds =
           std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start_time)

@@ -397,7 +397,7 @@ For more information about timesteppers and their relationship with spontaneous 
 }
 ```
 The `output` section defines:
-- `verbosity` sets how much information is being written to console while running. If at 0, no information is written at all, whereas at 1 the system gives updates at every timestep.
+- `verbosity` sets how much information is being written to console while running. If at 0, no information is written at all, whereas at 1 the system gives updates at every timestep. From 2 upwards, the progress lines are accompanied by the solver diagnostics (accepted steps, precision rejects, step widths, ...) and by timings for the jacobian and the linear solver.
 - `folder` sets the base folder where data is stored. This is useful to not clutter your current directory ("./") with output, or if you run a large amount of simulations.
 - `name` sets the beginning of all filenames of the output, i.e. in this case all files created by the simulation start with "output".
 
