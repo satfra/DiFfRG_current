@@ -2,7 +2,7 @@
 
 #include <sstream>
 
-namespace DiFfRG
+namespace DiFfRG::Config
 {
   OutputSettings::OutputSettings(const JSONValue &json)
       : write_vtk(json.get_bool("/output/vtk", true)), write_hdf5(json.get_bool("/output/hdf5", true)),
@@ -17,4 +17,4 @@ namespace DiFfRG
     json.print(stream);
     configuration_log = stream.str();
   }
-} // namespace DiFfRG
+} // namespace DiFfRG::Config

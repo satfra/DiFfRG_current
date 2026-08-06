@@ -1,6 +1,8 @@
 #pragma once
 
 // external libraries
+#include <Eigen/Eigenvalues>
+
 #include <deal.II/base/point.h>
 #include <deal.II/base/quadrature_lib.h>
 #include <deal.II/dofs/dof_handler.h>
@@ -10,6 +12,7 @@
 #include <deal.II/fe/fe_q.h>
 #include <deal.II/fe/fe_values.h>
 #include <deal.II/grid/grid_tools.h>
+#include <deal.II/grid/grid_tools_geometry.h>
 #include <deal.II/lac/affine_constraints.h>
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
 #include <deal.II/lac/full_matrix.h>
@@ -19,6 +22,8 @@
 #include <deal.II/lac/vector.h>
 #include <deal.II/meshworker/mesh_loop.h>
 #include <deal.II/numerics/fe_field_function.h>
+
+#include <DiFfRG/discretization/common/eom_config.hh>
 
 // standard library
 #include <algorithm>
@@ -120,6 +125,53 @@ namespace DiFfRG
       return distance;
     }
 
+    template <int dim>
+    double face_normal_cell_width(const typename dealii::DoFHandler<dim>::active_cell_iterator &cell,
+                                  const uint face_no)
+    {
+      const double face_measure = cell->face(face_no)->measure();
+      if (!(face_measure > 0.) || !std::isfinite(face_measure))
+        throw std::runtime_error("EoM potential reconstruction encountered an invalid face measure.");
+
+      const double width = cell->measure() / face_measure;
+      if (!(width > 0.) || !std::isfinite(width))
+        throw std::runtime_error("EoM potential reconstruction encountered an invalid face-normal cell width.");
+      return width;
+    }
+
+    template <int dim> double minimum_face_normal_cell_width(const dealii::DoFHandler<dim> &dof_handler)
+    {
+      double minimum_width = std::numeric_limits<double>::max();
+      for (const auto &cell : dof_handler.active_cell_iterators())
+        for (uint face_no = 0; face_no < cell->n_faces(); ++face_no)
+          minimum_width = std::min(minimum_width, face_normal_cell_width<dim>(cell, face_no));
+
+      if (!(minimum_width < std::numeric_limits<double>::max()))
+        throw std::runtime_error("EoM potential reconstruction could not determine an initial cell width.");
+      return minimum_width;
+    }
+
+    template <int dim>
+    double resolve_potential_smoothing_length(const dealii::DoFHandler<dim> &dof_handler,
+                                              const double configured_length)
+    {
+      if (!std::isfinite(configured_length) || configured_length < -1. ||
+          (configured_length < 0. && configured_length != -1.))
+        throw std::invalid_argument(
+            "EoM_smoothing_length must be -1 (automatic), zero, or a positive physical length.");
+
+      if (configured_length == -1.) return 2. * minimum_face_normal_cell_width(dof_handler);
+      return configured_length;
+    }
+
+    template <int dim>
+    Config::EoMConfig resolve_eom_config(const dealii::DoFHandler<dim> &dof_handler, Config::EoMConfig config)
+    {
+      config.validate();
+      config.smoothing_length = resolve_potential_smoothing_length(dof_handler, config.smoothing_length);
+      return config;
+    }
+
     template <int dim, typename NumberType>
     dealii::types::global_dof_index select_gauge_dof(const dealii::DoFHandler<dim> &potential_dof_handler,
                                                      const dealii::AffineConstraints<NumberType> &constraints,
@@ -147,16 +199,9 @@ namespace DiFfRG
       return best_dof;
     }
 
-    template <int dim>
-    std::unique_ptr<dealii::FiniteElement<dim>> make_potential_fe(const dealii::FiniteElement<dim> &solution_fe)
+    template <int dim> std::unique_ptr<dealii::FiniteElement<dim>> make_potential_fe()
     {
-      const uint degree = solution_fe.degree;
-      const bool is_dg = !solution_fe.conforms(FiniteElementData<dim>::H1);
-
-      if (is_dg)
-        return std::make_unique<FE_DGQ<dim>>(degree);
-      else
-        return std::make_unique<FE_Q<dim>>(degree);
+      return std::make_unique<FE_Q<dim>>(2);
     }
 
     template <int dim, typename EoMValue> dealii::Tensor<1, dim> eom_to_tensor(const EoMValue &eom)
@@ -260,7 +305,7 @@ namespace DiFfRG
                                    const dealii::Quadrature<dim - 1> &face_quadrature,
                                    const dealii::AffineConstraints<typename VectorType::value_type> &constraints,
                                    dealii::SparseMatrix<typename VectorType::value_type> &matrix,
-                                   dealii::Vector<typename VectorType::value_type> &rhs)
+                                   dealii::Vector<typename VectorType::value_type> &rhs, const double smoothing_length)
     {
       using NumberType = typename VectorType::value_type;
       using Iterator = typename dealii::DoFHandler<dim>::active_cell_iterator;
@@ -327,8 +372,11 @@ namespace DiFfRG
         solution_fe_values_n.get_function_values(sol, solution_values_n);
 
         const double h_face = std::min(solution_cell->diameter(), solution_neighbor->diameter());
+        const double h_normal = std::min(face_normal_cell_width<dim>(solution_cell, face_no),
+                                         face_normal_cell_width<dim>(solution_neighbor, neighbor_face_no));
         const uint degree = potential_fe.degree;
         const double tau = 10. * (degree + 1.) * (degree + 1.) / h_face;
+        const double gradient_jump_weight = smoothing_length * smoothing_length / h_normal;
 
         for (const auto q : potential_fe_interface_values.quadrature_point_indices()) {
           const auto normal = potential_fe_interface_values.normal_vector(q);
@@ -340,16 +388,19 @@ namespace DiFfRG
           for (uint i = 0; i < n_interface_dofs; ++i) {
             const double jump_i = potential_view.jump_in_values(i, q);
             const Tensor<1, dim> average_grad_i = potential_view.average_of_gradients(i, q);
+            const double normal_gradient_jump_i = scalar_product(potential_view.jump_in_gradients(i, q), normal);
 
             face_data.rhs(i) += -potential_fe_interface_values.JxW(q) * rhs_flux * jump_i;
 
             for (uint j = 0; j < n_interface_dofs; ++j) {
               const double jump_j = potential_view.jump_in_values(j, q);
               const Tensor<1, dim> average_grad_j = potential_view.average_of_gradients(j, q);
+              const double normal_gradient_jump_j = scalar_product(potential_view.jump_in_gradients(j, q), normal);
 
-              face_data.matrix(i, j) += potential_fe_interface_values.JxW(q) *
-                                        (-scalar_product(average_grad_j, normal) * jump_i -
-                                         scalar_product(average_grad_i, normal) * jump_j + tau * jump_j * jump_i);
+              face_data.matrix(i, j) +=
+                  potential_fe_interface_values.JxW(q) *
+                  (-scalar_product(average_grad_j, normal) * jump_i - scalar_product(average_grad_i, normal) * jump_j +
+                   tau * jump_j * jump_i + gradient_jump_weight * normal_gradient_jump_i * normal_gradient_jump_j);
             }
           }
         }
@@ -369,11 +420,198 @@ namespace DiFfRG
       double value = std::numeric_limits<double>::max();
     };
 
+    template <int dim> struct LocalPotentialEvaluation {
+      double value = 0.;
+      dealii::Tensor<1, dim> gradient;
+      dealii::Tensor<2, dim> hessian;
+    };
+
+    template <int dim>
+    LocalPotentialEvaluation<dim> evaluate_local_potential(const dealii::FiniteElement<dim> &potential_fe,
+                                                           const std::vector<double> &local_values,
+                                                           const dealii::Point<dim> &point)
+    {
+      LocalPotentialEvaluation<dim> evaluation;
+      for (uint i = 0; i < potential_fe.n_dofs_per_cell(); ++i) {
+        evaluation.value += local_values[i] * potential_fe.shape_value(i, point);
+        evaluation.gradient += local_values[i] * potential_fe.shape_grad(i, point);
+        evaluation.hessian += local_values[i] * potential_fe.shape_grad_grad(i, point);
+      }
+      return evaluation;
+    }
+
+    template <int dim>
+    bool projected_newton_direction(const dealii::Tensor<2, dim> &hessian,
+                                    const dealii::Tensor<1, dim> &projected_gradient,
+                                    const std::array<bool, dim> &fixed, dealii::Tensor<1, dim> &direction)
+    {
+      std::array<uint, dim> free_indices{};
+      uint n_free = 0;
+      for (uint d = 0; d < dim; ++d)
+        if (!fixed[d]) free_indices[n_free++] = d;
+
+      if (n_free == 0) return false;
+
+      Eigen::MatrixXd reduced_hessian(n_free, n_free);
+      Eigen::VectorXd reduced_gradient(n_free);
+      double hessian_norm = 0.;
+      for (uint i = 0; i < n_free; ++i) {
+        reduced_gradient[i] = projected_gradient[free_indices[i]];
+        for (uint j = 0; j < n_free; ++j) {
+          reduced_hessian(i, j) = hessian[free_indices[i]][free_indices[j]];
+          hessian_norm = std::max(hessian_norm, std::abs(reduced_hessian(i, j)));
+        }
+      }
+      if (!reduced_hessian.allFinite() || !reduced_gradient.allFinite()) return false;
+
+      const double positivity_threshold = 100. * std::numeric_limits<double>::epsilon() * std::max(1., hessian_norm);
+      Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> solver(reduced_hessian);
+      if (solver.info() != Eigen::Success || !solver.eigenvalues().allFinite() ||
+          !(solver.eigenvalues().minCoeff() > positivity_threshold))
+        return false;
+
+      const Eigen::VectorXd reduced_direction =
+          -solver.eigenvectors() *
+          (solver.eigenvectors().transpose() * reduced_gradient).cwiseQuotient(solver.eigenvalues());
+      if (!reduced_direction.allFinite()) return false;
+
+      direction = {};
+      for (uint i = 0; i < n_free; ++i)
+        direction[free_indices[i]] = reduced_direction[i];
+      return true;
+    }
+
+    template <int dim, typename NumberType>
+    PotentialMinimum<dim, NumberType>
+    refine_cell_minimum(const typename dealii::DoFHandler<dim>::active_cell_iterator &cell,
+                        const dealii::FiniteElement<dim> &potential_fe, const dealii::Mapping<dim> &mapping,
+                        const dealii::Vector<NumberType> &potential, const dealii::Quadrature<dim> &quadrature,
+                        const Config::EoMConfig &config,
+                        const std::optional<dealii::Point<dim>> &initial_unit_point = std::nullopt)
+    {
+      std::vector<dealii::types::global_dof_index> local_dof_indices(potential_fe.n_dofs_per_cell());
+      cell->get_dof_indices(local_dof_indices);
+
+      std::vector<double> local_values(potential_fe.n_dofs_per_cell());
+      for (uint i = 0; i < potential_fe.n_dofs_per_cell(); ++i)
+        local_values[i] = (double)potential[local_dof_indices[i]];
+
+      dealii::Point<dim> sampled_point = quadrature.point(0);
+      auto sampled_evaluation = evaluate_local_potential(potential_fe, local_values, sampled_point);
+      const auto consider_seed = [&](const dealii::Point<dim> &candidate) {
+        const auto candidate_evaluation = evaluate_local_potential(potential_fe, local_values, candidate);
+        if (candidate_evaluation.value < sampled_evaluation.value) {
+          sampled_point = candidate;
+          sampled_evaluation = candidate_evaluation;
+        }
+      };
+
+      for (const auto &support_point : potential_fe.get_unit_support_points())
+        consider_seed(support_point);
+      for (const auto &quadrature_point : quadrature.get_points())
+        consider_seed(quadrature_point);
+
+      const double gradient_tolerance = std::max(config.abs_tol, 100. * std::numeric_limits<double>::epsilon());
+
+      const auto refine_from_seed = [&](dealii::Point<dim> point) {
+        auto evaluation = evaluate_local_potential(potential_fe, local_values, point);
+        for (uint iteration = 0; iteration < config.max_iter; ++iteration) {
+          std::array<bool, dim> fixed{};
+          dealii::Tensor<1, dim> projected_gradient;
+          double projected_gradient_norm = 0.;
+          for (uint d = 0; d < dim; ++d) {
+            const bool fixed_at_lower = point[d] <= config.bound_tolerance && evaluation.gradient[d] > 0.;
+            const bool fixed_at_upper = point[d] >= 1. - config.bound_tolerance && evaluation.gradient[d] < 0.;
+            fixed[d] = fixed_at_lower || fixed_at_upper;
+            projected_gradient[d] = fixed[d] ? 0. : evaluation.gradient[d];
+            const double extent = std::max(cell->extent_in_direction(d), std::numeric_limits<double>::epsilon());
+            projected_gradient_norm = std::max(projected_gradient_norm, std::abs(projected_gradient[d]) / extent);
+          }
+          if (projected_gradient_norm <= gradient_tolerance) break;
+
+          dealii::Tensor<1, dim> direction;
+          bool used_newton = projected_newton_direction<dim>(evaluation.hessian, projected_gradient, fixed, direction);
+          double directional_derivative = dealii::scalar_product(evaluation.gradient, direction);
+          if (!used_newton || !(directional_derivative < 0.) || !std::isfinite(directional_derivative)) {
+            direction = -projected_gradient;
+            directional_derivative = dealii::scalar_product(evaluation.gradient, direction);
+            used_newton = false;
+          }
+          if (!(directional_derivative < 0.) || !std::isfinite(directional_derivative)) break;
+
+          const auto try_step = [&](const dealii::Tensor<1, dim> &search_direction, const double search_derivative,
+                                    dealii::Point<dim> &accepted_point,
+                                    LocalPotentialEvaluation<dim> &accepted_evaluation) {
+            double alpha = 1.;
+            for (uint d = 0; d < dim; ++d) {
+              if (search_direction[d] > 0.)
+                alpha = std::min(alpha, (1. - point[d]) / search_direction[d]);
+              else if (search_direction[d] < 0.)
+                alpha = std::min(alpha, -point[d] / search_direction[d]);
+            }
+            if (!(alpha > 0.) || !std::isfinite(alpha)) return false;
+
+            for (uint backtrack = 0; backtrack < config.max_backtracks; ++backtrack) {
+              auto candidate = point;
+              for (uint d = 0; d < dim; ++d)
+                candidate[d] = std::clamp(point[d] + alpha * search_direction[d], 0., 1.);
+              const auto candidate_evaluation = evaluate_local_potential(potential_fe, local_values, candidate);
+              if (candidate_evaluation.value <=
+                  evaluation.value + config.armijo_coefficient * alpha * search_derivative) {
+                accepted_point = candidate;
+                accepted_evaluation = candidate_evaluation;
+                return true;
+              }
+              alpha *= 0.5;
+            }
+            return false;
+          };
+
+          dealii::Point<dim> next_point;
+          LocalPotentialEvaluation<dim> next_evaluation;
+          bool accepted = try_step(direction, directional_derivative, next_point, next_evaluation);
+          if (!accepted && used_newton) {
+            direction = -projected_gradient;
+            directional_derivative = dealii::scalar_product(evaluation.gradient, direction);
+            if (directional_derivative < 0.)
+              accepted = try_step(direction, directional_derivative, next_point, next_evaluation);
+          }
+          if (!accepted || !(next_evaluation.value < evaluation.value)) break;
+
+          point = next_point;
+          evaluation = next_evaluation;
+        }
+        return std::pair{point, evaluation};
+      };
+
+      auto [point, evaluation] = refine_from_seed(sampled_point);
+      if (initial_unit_point) {
+        auto warm_start = *initial_unit_point;
+        bool valid = true;
+        for (uint d = 0; d < dim; ++d) {
+          valid = valid && std::isfinite(warm_start[d]) && warm_start[d] >= -config.bound_tolerance &&
+                  warm_start[d] <= 1. + config.bound_tolerance;
+          warm_start[d] = std::clamp(warm_start[d], 0., 1.);
+        }
+        if (valid) {
+          auto [warm_point, warm_evaluation] = refine_from_seed(warm_start);
+          if (warm_evaluation.value < evaluation.value) {
+            point = warm_point;
+            evaluation = warm_evaluation;
+          }
+        }
+      }
+
+      return {.point = mapping.transform_unit_to_real_cell(cell, point), .value = evaluation.value};
+    }
+
     template <int dim, typename NumberType>
     PotentialMinimum<dim, NumberType>
     find_potential_minimum(const dealii::DoFHandler<dim> &potential_dof_handler,
                            const dealii::FiniteElement<dim> &potential_fe, const dealii::Mapping<dim> &mapping,
-                           const dealii::Vector<NumberType> &potential, const dealii::Quadrature<dim> &quadrature)
+                           const dealii::Vector<NumberType> &potential, const dealii::Quadrature<dim> &quadrature,
+                           const Config::EoMConfig &config,
+                           const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt)
     {
       PotentialMinimum<dim, NumberType> minimum;
 
@@ -400,6 +638,57 @@ namespace DiFfRG
         }
       }
 
+      const auto minimum_cell =
+          GridTools::find_active_cell_around_point(mapping, potential_dof_handler, minimum.point).first;
+      using CellIterator = typename dealii::DoFHandler<dim>::active_cell_iterator;
+      struct CandidateCell {
+        CellIterator cell;
+        std::optional<dealii::Point<dim>> initial_unit_point;
+      };
+      std::vector<CandidateCell> candidate_cells;
+      const auto add_candidate = [&](const CellIterator &cell,
+                                     const std::optional<dealii::Point<dim>> &initial_unit_point = std::nullopt) {
+        const auto candidate = std::find_if(candidate_cells.begin(), candidate_cells.end(),
+                                            [&](const auto &entry) { return entry.cell == cell; });
+        if (candidate == candidate_cells.end())
+          candidate_cells.push_back({cell, initial_unit_point});
+        else if (initial_unit_point)
+          candidate->initial_unit_point = initial_unit_point;
+      };
+      const auto add_cell_and_neighbors = [&](const CellIterator &cell) {
+        add_candidate(cell);
+        std::vector<CellIterator> active_neighbors;
+        GridTools::get_active_neighbors<dealii::DoFHandler<dim>>(cell, active_neighbors);
+        for (const auto &neighbor : active_neighbors)
+          add_candidate(neighbor);
+      };
+
+      add_cell_and_neighbors(minimum_cell);
+      if (initial_guess) {
+        bool finite = true;
+        for (uint d = 0; d < dim; ++d)
+          finite = finite && std::isfinite((*initial_guess)[d]);
+        const auto bounding_box = GridTools::compute_bounding_box(potential_dof_handler.get_triangulation());
+        if (finite && bounding_box.point_inside(*initial_guess)) {
+          try {
+            const auto initial_cell =
+                GridTools::find_active_cell_around_point(mapping, potential_dof_handler, *initial_guess).first;
+            if (initial_cell != potential_dof_handler.end()) {
+              add_cell_and_neighbors(initial_cell);
+              add_candidate(initial_cell, mapping.transform_real_to_unit_cell(initial_cell, *initial_guess));
+            }
+          } catch (const dealii::ExceptionBase &) {
+          }
+        }
+      }
+
+      for (const auto &candidate : candidate_cells) {
+        const auto &cell = candidate.cell;
+        const auto refined = refine_cell_minimum<dim, NumberType>(cell, potential_fe, mapping, potential, quadrature,
+                                                                  config, candidate.initial_unit_point);
+        if (refined.value < minimum.value) minimum = refined;
+      }
+
       return minimum;
     }
 
@@ -407,17 +696,18 @@ namespace DiFfRG
     ReconstructedEoMPotential<dim, typename VectorType::value_type>
     reconstruct_potential(typename dealii::DoFHandler<dim>::cell_iterator &EoM_cell, const VectorType &sol,
                           const dealii::DoFHandler<dim> &solution_dof_handler, const dealii::Mapping<dim> &mapping,
-                          const EoMFUN &get_EoM)
+                          const EoMFUN &get_EoM, const Config::EoMConfig &config,
+                          const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt)
     {
       using NumberType = typename VectorType::value_type;
 
       auto origin_cell = EoM_cell;
       const auto origin = get_origin(solution_dof_handler, origin_cell);
+      const double smoothing_length = resolve_potential_smoothing_length(solution_dof_handler, config.smoothing_length);
 
-      auto potential_fe = make_potential_fe<dim>(solution_dof_handler.get_fe());
+      auto potential_fe = make_potential_fe<dim>();
 
-      auto potential_dof_handler =
-          std::make_unique<DoFHandler<dim>>(solution_dof_handler.get_triangulation());
+      auto potential_dof_handler = std::make_unique<DoFHandler<dim>>(solution_dof_handler.get_triangulation());
       potential_dof_handler->distribute_dofs(*potential_fe);
 
       AffineConstraints<NumberType> constraints;
@@ -436,12 +726,13 @@ namespace DiFfRG
       SparseMatrix<NumberType> matrix(sparsity_pattern);
       Vector<NumberType> rhs(potential_dof_handler->n_dofs());
 
-      const uint quadrature_order = std::max<uint>(potential_fe->degree + 2, 2);
+      const uint quadrature_order =
+          std::max<uint>(std::max<uint>(solution_dof_handler.get_fe().degree, potential_fe->degree) + 2, 2);
       QGauss<dim> quadrature(quadrature_order);
       QGauss<dim - 1> face_quadrature(quadrature_order);
 
       assemble_potential_system(sol, solution_dof_handler, *potential_dof_handler, *potential_fe, mapping, get_EoM,
-                                quadrature, face_quadrature, constraints, matrix, rhs);
+                                quadrature, face_quadrature, constraints, matrix, rhs, smoothing_length);
 
       SparseDirectUMFPACK solver;
       solver.initialize(matrix);
@@ -450,8 +741,8 @@ namespace DiFfRG
       solver.vmult(potential, rhs);
       constraints.distribute(potential);
 
-      const auto minimum =
-          find_potential_minimum(*potential_dof_handler, *potential_fe, mapping, potential, quadrature);
+      const auto minimum = find_potential_minimum(*potential_dof_handler, *potential_fe, mapping, potential, quadrature,
+                                                  config, initial_guess);
       EoM_cell = GridTools::find_active_cell_around_point(solution_dof_handler, minimum.point);
       return {.minimum = minimum.point,
               .finite_element = std::move(potential_fe),
@@ -462,19 +753,21 @@ namespace DiFfRG
   } // namespace internal
 
   /**
-   * @brief Reconstruct a potential whose gradient approximates the model EoM vector field and return a discrete
-   * minimum of that potential.
+   * @brief Reconstruct a potential whose gradient approximates the model EoM vector field and return a sampled and
+   * locally refined minimum of that potential.
    */
   template <int dim, typename VectorType, typename EoMFUN, typename EoMPFUN>
-  EoMResult<dim, typename VectorType::value_type> get_EoM_point_with_potential(
-      typename dealii::DoFHandler<dim>::cell_iterator &EoM_cell, const VectorType &sol,
-      const dealii::DoFHandler<dim> &dof_handler, const dealii::Mapping<dim> &mapping, const EoMFUN &get_EoM,
-      const EoMPFUN &EoM_postprocess = [](const auto &p, [[maybe_unused]] const auto &values) { return p; },
-      [[maybe_unused]] const double EoM_abs_tol = 1e-5, const uint max_iter = 100)
+  EoMResult<dim, typename VectorType::value_type>
+  get_EoM_point_with_potential(typename dealii::DoFHandler<dim>::cell_iterator &EoM_cell, const VectorType &sol,
+                               const dealii::DoFHandler<dim> &dof_handler, const dealii::Mapping<dim> &mapping,
+                               const EoMFUN &get_EoM, const EoMPFUN &EoM_postprocess, const Config::EoMConfig &config,
+                               const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt)
   {
-    if (max_iter == 0) return {.point = internal::get_origin(dof_handler, EoM_cell), .potential = std::nullopt};
+    config.validate();
+    if (config.max_iter == 0) return {.point = internal::get_origin(dof_handler, EoM_cell), .potential = std::nullopt};
 
-    auto potential = internal::reconstruct_potential(EoM_cell, sol, dof_handler, mapping, get_EoM);
+    auto potential =
+        internal::reconstruct_potential(EoM_cell, sol, dof_handler, mapping, get_EoM, config, initial_guess);
     auto EoM = potential.minimum;
 
     dealii::Vector<typename VectorType::value_type> values(dof_handler.get_fe().n_components());
@@ -488,19 +781,49 @@ namespace DiFfRG
     return {.point = EoM, .potential = std::move(potential)};
   }
 
+  /** Compatibility overload accepting the historical scalar EoM settings. */
+  template <int dim, typename VectorType, typename EoMFUN, typename EoMPFUN>
+  EoMResult<dim, typename VectorType::value_type> get_EoM_point_with_potential(
+      typename dealii::DoFHandler<dim>::cell_iterator &EoM_cell, const VectorType &sol,
+      const dealii::DoFHandler<dim> &dof_handler, const dealii::Mapping<dim> &mapping, const EoMFUN &get_EoM,
+      const EoMPFUN &EoM_postprocess = [](const auto &p, [[maybe_unused]] const auto &values) { return p; },
+      const double EoM_abs_tol = Config::EoMConfig::default_abs_tol,
+      const uint max_iter = Config::EoMConfig::default_max_iter,
+      const double EoM_smoothing_length = Config::EoMConfig::default_smoothing_length,
+      const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt)
+  {
+    return get_EoM_point_with_potential(EoM_cell, sol, dof_handler, mapping, get_EoM, EoM_postprocess,
+                                        Config::EoMConfig(EoM_abs_tol, max_iter, EoM_smoothing_length), initial_guess);
+  }
+
   /**
-   * @brief Reconstruct a potential whose gradient approximates the model EoM vector field and return a discrete
-   * minimum of that potential.
+   * @brief Reconstruct a potential whose gradient approximates the model EoM vector field and return a sampled and
+   * locally refined minimum of that potential.
    */
+  template <int dim, typename VectorType, typename EoMFUN, typename EoMPFUN>
+  dealii::Point<dim> get_EoM_point(typename dealii::DoFHandler<dim>::cell_iterator &EoM_cell, const VectorType &sol,
+                                   const dealii::DoFHandler<dim> &dof_handler, const dealii::Mapping<dim> &mapping,
+                                   const EoMFUN &get_EoM, const EoMPFUN &EoM_postprocess,
+                                   const Config::EoMConfig &config,
+                                   const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt)
+  {
+    return get_EoM_point_with_potential(EoM_cell, sol, dof_handler, mapping, get_EoM, EoM_postprocess, config,
+                                        initial_guess)
+        .point;
+  }
+
+  /** Compatibility overload accepting the historical scalar EoM settings. */
   template <int dim, typename VectorType, typename EoMFUN, typename EoMPFUN>
   dealii::Point<dim> get_EoM_point(
       typename dealii::DoFHandler<dim>::cell_iterator &EoM_cell, const VectorType &sol,
       const dealii::DoFHandler<dim> &dof_handler, const dealii::Mapping<dim> &mapping, const EoMFUN &get_EoM,
       const EoMPFUN &EoM_postprocess = [](const auto &p, [[maybe_unused]] const auto &values) { return p; },
-      const double EoM_abs_tol = 1e-5, const uint max_iter = 100)
+      const double EoM_abs_tol = Config::EoMConfig::default_abs_tol,
+      const uint max_iter = Config::EoMConfig::default_max_iter,
+      const double EoM_smoothing_length = Config::EoMConfig::default_smoothing_length,
+      const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt)
   {
-    return get_EoM_point_with_potential(EoM_cell, sol, dof_handler, mapping, get_EoM, EoM_postprocess, EoM_abs_tol,
-                                        max_iter)
-        .point;
+    return get_EoM_point(EoM_cell, sol, dof_handler, mapping, get_EoM, EoM_postprocess,
+                         Config::EoMConfig(EoM_abs_tol, max_iter, EoM_smoothing_length), initial_guess);
   }
 } // namespace DiFfRG

@@ -41,13 +41,13 @@ namespace DiFfRG
      * @param output_folder Folder where the .vtu files will be saved. Should be relative to top_folder.
      * @param subdivisions Number of subdivisions of the cells in the .vtu files.
      */
-    FEOutput(std::string top_folder, std::string output_name, std::string output_folder, const OutputSettings &settings,
-             bool active = true);
-    [[deprecated("Use FEOutput(top_folder, output_name, output_folder, OutputSettings(json), active) instead")]]
+    FEOutput(std::string top_folder, std::string output_name, std::string output_folder,
+             const Config::OutputSettings &settings, bool active = true);
+    [[deprecated("Use FEOutput(top_folder, output_name, output_folder, Config::OutputSettings(json), active) instead")]]
     FEOutput(std::string top_folder, std::string output_name, std::string output_folder, const JSONValue &json,
              bool active = true)
-        : FEOutput(std::move(top_folder), std::move(output_name), std::move(output_folder), OutputSettings(json),
-                   active)
+        : FEOutput(std::move(top_folder), std::move(output_name), std::move(output_folder),
+                   Config::OutputSettings(json), active)
     {
     }
 
@@ -144,13 +144,13 @@ namespace DiFfRG
      * @param output_folder Folder where the .vtu files will be saved. Should be relative to top_folder.
      * @param subdivisions Number of subdivisions of the cells in the .vtu files.
      */
-    FEOutput(std::string top_folder, std::string output_name, std::string output_folder, const OutputSettings &settings,
-             bool active = true);
-    [[deprecated("Use FEOutput(top_folder, output_name, output_folder, OutputSettings(json), active) instead")]]
+    FEOutput(std::string top_folder, std::string output_name, std::string output_folder,
+             const Config::OutputSettings &settings, bool active = true);
+    [[deprecated("Use FEOutput(top_folder, output_name, output_folder, Config::OutputSettings(json), active) instead")]]
     FEOutput(std::string top_folder, std::string output_name, std::string output_folder, const JSONValue &json,
              bool active = true)
-        : FEOutput(std::move(top_folder), std::move(output_name), std::move(output_folder), OutputSettings(json),
-                   active)
+        : FEOutput(std::move(top_folder), std::move(output_name), std::move(output_folder),
+                   Config::OutputSettings(json), active)
     {
     }
     void drain() {}

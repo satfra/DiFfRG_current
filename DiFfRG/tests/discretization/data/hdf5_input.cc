@@ -50,7 +50,7 @@ TEST_CASE("Test HDF5 input", "[input][hdf5]")
   {
     // First, write test data using HDF5Output
     {
-      HDF5Output hdf5_output(tmp.string(), hdf5FileName, OutputSettings(json).configuration_json);
+      HDF5Output hdf5_output(tmp.string(), hdf5FileName, Config::OutputSettings(json).configuration_json);
 
       // Write various scalar types (only basic types that work reliably)
       hdf5_output.scalar("test_double", 42.5);
@@ -98,7 +98,7 @@ TEST_CASE("Test HDF5 input", "[input][hdf5]")
 
     // Write test data using HDF5Output
     {
-      HDF5Output hdf5_output(tmp.string(), hdf5FileName, OutputSettings(json).configuration_json);
+      HDF5Output hdf5_output(tmp.string(), hdf5FileName, Config::OutputSettings(json).configuration_json);
       hdf5_output.map("test_map", coords2d, test_data.data());
       hdf5_output.flush(1.0);
     }
@@ -154,7 +154,7 @@ TEST_CASE("Test HDF5 input", "[input][hdf5]")
     }
 
     {
-      HDF5Output hdf5_output(tmp.string(), hdf5FileName, OutputSettings(json).configuration_json);
+      HDF5Output hdf5_output(tmp.string(), hdf5FileName, Config::OutputSettings(json).configuration_json);
       hdf5_output.map("test_map_validation", coords2d, test_data.data());
       hdf5_output.flush(1.0);
     }
@@ -191,7 +191,7 @@ TEST_CASE("Test HDF5 input", "[input][hdf5]")
     std::vector<double> test_data(existing_coords1.size(), 1.0);
 
     {
-      HDF5Output hdf5_output(tmp.string(), hdf5FileName, OutputSettings(json).configuration_json);
+      HDF5Output hdf5_output(tmp.string(), hdf5FileName, Config::OutputSettings(json).configuration_json);
       hdf5_output.map("test_map_missing_coords", existing_coords1, test_data.data());
       hdf5_output.flush(1.0);
     }
@@ -216,7 +216,7 @@ TEST_CASE("Test HDF5 input", "[input][hdf5]")
     std::vector<double> test_data(coords2d.size(), 0.0);
 
     {
-      HDF5Output hdf5_output(tmp.string(), hdf5FileName, OutputSettings(json).configuration_json);
+      HDF5Output hdf5_output(tmp.string(), hdf5FileName, Config::OutputSettings(json).configuration_json);
       hdf5_output.map("test_map_coord", coords2d, test_data.data());
       hdf5_output.flush(1.0);
     }

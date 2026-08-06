@@ -96,9 +96,9 @@ TEST_CASE("Test FE output on Constant model", "[output][cg]")
 
   Timer timer;
   {
-    FEOutput<dim, VectorType> fe_output("./testing", "output_name", "other_folder", OutputSettings(json));
+    FEOutput<dim, VectorType> fe_output("./testing", "output_name", "other_folder", Config::OutputSettings(json));
 
-    HDF5Output hdf5_output("./testing/", "output_name.h5", OutputSettings(json).configuration_json);
+    HDF5Output hdf5_output("./testing/", "output_name.h5", Config::OutputSettings(json).configuration_json);
     auto root_group = hdf5_output.get_file().root();
     root_group.create_group("FE");
     fe_output.set_hdf5_output(&hdf5_output);
@@ -131,24 +131,24 @@ TEST_CASE("FEOutput async drain preserves reuse and publication order", "[output
   using Discretization = CG::Discretization<typename Model::Components, NumberType, RectangularMesh<dim>>;
   using VectorType = typename Discretization::VectorType;
 
-  JSONValue json = json::value(
-      {{"physical", {}},
-       {"discretization",
-        {{"fe_order", 3},
-         {"threads", 4},
-         {"batch_size", 64},
-         {"overintegration", 0},
-         {"output_subdivisions", 2},
-         {"EoM_abs_tol", 1e-10},
-         {"EoM_max_iter", 0},
-         {"grid", {{"x_grid", "0:0.05:1"}, {"y_grid", "0:0.1:1"}, {"z_grid", "0:0.1:1"}, {"refine", 0}}},
-         {"adaptivity",
-          {{"start_adapt_at", 0.},
-           {"adapt_dt", 1e-1},
-           {"level", 0},
-           {"refine_percent", 1e-1},
-           {"coarsen_percent", 5e-2}}}}},
-       {"output", {{"live_plot", false}, {"verbosity", 0}}}});
+  JSONValue json =
+      json::value({{"physical", {}},
+                   {"discretization",
+                    {{"fe_order", 3},
+                     {"threads", 4},
+                     {"batch_size", 64},
+                     {"overintegration", 0},
+                     {"output_subdivisions", 2},
+                     {"EoM_abs_tol", 1e-10},
+                     {"EoM_max_iter", 0},
+                     {"grid", {{"x_grid", "0:0.05:1"}, {"y_grid", "0:0.1:1"}, {"z_grid", "0:0.1:1"}, {"refine", 0}}},
+                     {"adaptivity",
+                      {{"start_adapt_at", 0.},
+                       {"adapt_dt", 1e-1},
+                       {"level", 0},
+                       {"refine_percent", 1e-1},
+                       {"coarsen_percent", 5e-2}}}}},
+                   {"output", {{"live_plot", false}, {"verbosity", 0}}}});
 
   Testing::PhysicalParameters p_prm = {/*x0_initial = */ 0., /*x1_initial = */ 1.};
 
@@ -172,8 +172,8 @@ TEST_CASE("FEOutput async drain preserves reuse and publication order", "[output
   const auto output_root = output_path.root();
 
   REQUIRE_NOTHROW([&]() {
-    FEOutput<dim, VectorType> fe_output(output_root.string(), "stress_output", "vtu", OutputSettings(json));
-    HDF5Output hdf5_output(output_root.string(), "stress_output.h5", OutputSettings(json).configuration_json);
+    FEOutput<dim, VectorType> fe_output(output_root.string(), "stress_output", "vtu", Config::OutputSettings(json));
+    HDF5Output hdf5_output(output_root.string(), "stress_output.h5", Config::OutputSettings(json).configuration_json);
     auto root_group = hdf5_output.get_file().root();
     root_group.create_group("FE");
     fe_output.set_hdf5_output(&hdf5_output);

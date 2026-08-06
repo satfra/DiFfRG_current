@@ -15,7 +15,7 @@
 namespace DiFfRG
 {
   template <uint dim, typename VectorType>
-  OutputSession<dim, VectorType>::OutputSession(const OutputPath &path, OutputSettings settings)
+  OutputSession<dim, VectorType>::OutputSession(const OutputPath &path, Config::OutputSettings settings)
       : output_path(path), settings(std::move(settings)), top_folder(make_folder(path.root().string())),
         output_name(path.run_name()), output_folder(make_folder(path.field_directory().generic_string())),
         active(MPI::rank(MPI_COMM_WORLD) == 0), run_logger(path, this->settings, active),

@@ -30,9 +30,9 @@ namespace DiFfRG
      */
     HDF5Output(const std::string top_folder, const std::string output_name,
                const std::string &configuration_json = "{}");
-    [[deprecated("Use HDF5Output(top_folder, output_name, OutputSettings(json).configuration_json) instead")]]
+    [[deprecated("Use HDF5Output(top_folder, output_name, Config::OutputSettings(json).configuration_json) instead")]]
     HDF5Output(const std::string top_folder, const std::string output_name, const JSONValue &json)
-        : HDF5Output(std::move(top_folder), std::move(output_name), OutputSettings(json).configuration_json)
+        : HDF5Output(std::move(top_folder), std::move(output_name), Config::OutputSettings(json).configuration_json)
     {
     }
 

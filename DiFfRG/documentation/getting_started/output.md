@@ -9,14 +9,14 @@ Applications may adapt their JSON configuration at the boundary:
 
 ```cpp
 OutputPath path(json);
-OutputSession<dim, VectorType> output(path, OutputSettings(json));
+OutputSession<dim, VectorType> output(path, Config::OutputSettings(json));
 ```
 
 Unit tests request an automatically cleaned system-temporary directory without constructing output JSON:
 
 ```cpp
 OutputPath path = OutputPath::temporary();
-OutputSession<dim, VectorType> output(path, OutputSettings{});
+OutputSession<dim, VectorType> output(path, Config::OutputSettings{});
 ```
 
 Use `OutputPath::temporary(TemporaryRetention::keep)` while debugging a test. `OutputPath` has no default constructor,
@@ -58,7 +58,7 @@ The same injection works for a model pre-assembly hook: store a `DiagnosticPort`
 coefficient when the hook computes it. The port is thread-safe and serializes a complete record atomically. It should
 not be used for high-volume field output; add that data to an `OutputFrame` instead.
 
-JSON is only an adapter for the typed `OutputSettings`. The corresponding JSON settings are:
+JSON is only an adapter for the typed `Config::OutputSettings`. The corresponding JSON settings are:
 
 ```json
 {
@@ -70,8 +70,8 @@ JSON is only an adapter for the typed `OutputSettings`. The corresponding JSON s
 ```
 
 Debugging and process-memory policy stay in C++ rather than simulation configuration. Set
-`OutputSettings::asynchronous` to `false` for synchronous field writes. The default pending-byte limit is 2 GiB and
-can be changed through `OutputSettings::max_pending_bytes` when constructing the session.
+`Config::OutputSettings::asynchronous` to `false` for synchronous field writes. The default pending-byte limit is 2
+GiB and can be changed through `Config::OutputSettings::max_pending_bytes` when constructing the session.
 
 Only MPI rank zero creates sinks. A full queue blocks the producer rather than dropping scientific data. At the end of
 each timestepper `run()`, the session drains pending writers and reports worker errors without closing, so the same

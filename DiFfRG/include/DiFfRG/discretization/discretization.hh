@@ -8,6 +8,8 @@
 
 #include <DiFfRG/discretization/variables/variables.hh>
 
+#include <DiFfRG/discretization/common/eom_config.hh>
+
 #include <DiFfRG/discretization/data/csv_output.hh>
 #include <DiFfRG/discretization/data/data.hh>
 #include <DiFfRG/discretization/data/output_path.hh>

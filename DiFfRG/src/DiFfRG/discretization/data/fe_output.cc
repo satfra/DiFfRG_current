@@ -21,7 +21,7 @@ namespace DiFfRG
 
   template <uint dim, typename VectorType>
   FEOutput<dim, VectorType>::FEOutput(std::string top_folder, std::string output_name, std::string output_folder,
-                                      const OutputSettings &settings, const bool active)
+                                      const Config::OutputSettings &settings, const bool active)
       : top_folder(make_folder(top_folder)), output_name(output_name), output_folder(make_folder(output_folder)),
         filename_pvd(output_name + ".pvd"), buffer_size([&]() {
           if (!settings.asynchronous) return 1u;
@@ -322,7 +322,7 @@ namespace DiFfRG
   }
 
   template <typename VectorType>
-  FEOutput<0, VectorType>::FEOutput(std::string, std::string, std::string, const OutputSettings &, bool)
+  FEOutput<0, VectorType>::FEOutput(std::string, std::string, std::string, const Config::OutputSettings &, bool)
   {
   }
 

@@ -159,8 +159,8 @@ namespace DiFfRG
   template <uint dim, typename VectorType> class OutputSession
   {
   public:
-    explicit OutputSession(const OutputPath &path, OutputSettings settings = {});
-    OutputSession(const OutputPath &path, const JSONValue &json) : OutputSession(path, OutputSettings(json)) {}
+    explicit OutputSession(const OutputPath &path, Config::OutputSettings settings = {});
+    OutputSession(const OutputPath &path, const JSONValue &json) : OutputSession(path, Config::OutputSettings(json)) {}
     ~OutputSession() noexcept;
 
     OutputSession(const OutputSession &) = delete;
@@ -211,7 +211,7 @@ namespace DiFfRG
     void rethrow_deferred_error();
 
     const OutputPath &output_path;
-    OutputSettings settings;
+    Config::OutputSettings settings;
     const std::string top_folder;
     const std::string output_name;
     const std::string output_folder;

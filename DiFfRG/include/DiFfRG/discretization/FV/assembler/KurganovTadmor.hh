@@ -39,9 +39,9 @@
 #include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
 #include <DiFfRG/discretization/common/eom.hh>
 
+#include <DiFfRG/discretization/FV/assembler/assembly_context.hh>
 #include <DiFfRG/discretization/FV/assembler/flux_jacobian_hessian.hh>
 #include <DiFfRG/discretization/FV/assembler/flux_ties.hh>
-#include <DiFfRG/discretization/FV/assembler/assembly_context.hh>
 #include <DiFfRG/discretization/FV/assembler/reconstruction_cache.hh>
 #include <DiFfRG/discretization/FV/wave_speed/abstract_wave_speed.hh>
 #include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed.hh>
@@ -86,8 +86,7 @@ namespace DiFfRG
           std::vector<QuadratureValue> solution_dot_values;
           std::array<std::vector<ReconstructionDerivativeData<dim, NumberType, n_components>>, 2>
               reconstructed_derivatives;
-          std::array<std::vector<ReconstructionDerivativeData<dim, NumberType, n_components>>, 2>
-              diffusion_derivatives;
+          std::array<std::vector<ReconstructionDerivativeData<dim, NumberType, n_components>>, 2> diffusion_derivatives;
           CellStencilData<dim, NumberType, n_components> cell_stencil;
           CellStencilData<dim, NumberType, n_components> ncell_stencil;
           CellStencilData<dim, NumberType, n_components> temporary_stencil;
@@ -288,8 +287,7 @@ namespace DiFfRG
       {
         template <int dim, typename NumberType, size_t n_components> struct KTNumFluxJacobianData {
           std::array<SimpleMatrix<dealii::Tensor<1, dim, NumberType>, n_components>, 2> u{};
-          std::array<SimpleMatrix<dealii::Tensor<1, dim, dealii::Tensor<1, dim, NumberType>>, n_components>, 2>
-              grad{};
+          std::array<SimpleMatrix<dealii::Tensor<1, dim, dealii::Tensor<1, dim, NumberType>>, n_components>, 2> grad{};
         };
 
         template <typename WaveSpeedStrategy, typename Model, typename NumberType, int dim, size_t n_components>
@@ -307,8 +305,7 @@ namespace DiFfRG
               compute_flux_derivatives_ad<Model, NumberType, dim, n_components>(u_minus, grad_u_minus, x_q, model);
 
           // 2. Compute a_half (max local wave speed per dimension) via the strategy
-          const auto a =
-              WaveSpeedStrategy::template compute_speeds<NumberType, dim, n_components>(plus.J, minus.J);
+          const auto a = WaveSpeedStrategy::template compute_speeds<NumberType, dim, n_components>(plus.J, minus.J);
 
           // 3. Differentiate the selected physical wave speed with the AD flux Hessian.
           const auto [da_plus, da_minus] =
@@ -325,13 +322,11 @@ namespace DiFfRG
                 const NumberType delta_ic = (i == c) ? NumberType(1) : NumberType(0);
 
                 // dH_i^d / du_minus_c
-                j_numflux.u[0](i, c)[d] = NumberType(0.5) * minus.J[d][i][c] +
-                                          NumberType(0.5) * a[d] * delta_ic -
+                j_numflux.u[0](i, c)[d] = NumberType(0.5) * minus.J[d][i][c] + NumberType(0.5) * a[d] * delta_ic -
                                           NumberType(0.5) * du_i * da_minus[d][c];
 
                 // dH_i^d / du_plus_c
-                j_numflux.u[1](i, c)[d] = NumberType(0.5) * plus.J[d][i][c] -
-                                          NumberType(0.5) * a[d] * delta_ic -
+                j_numflux.u[1](i, c)[d] = NumberType(0.5) * plus.J[d][i][c] - NumberType(0.5) * a[d] * delta_ic -
                                           NumberType(0.5) * du_i * da_plus[d][c];
               }
             }
@@ -345,12 +340,10 @@ namespace DiFfRG
               for (size_t i = 0; i < n_components; ++i) {
                 const NumberType du_i = u_plus[i] - u_minus[i];
                 for (size_t c = 0; c < n_components; ++c) {
-                  j_numflux.grad[0](i, c)[d_out][d_in] =
-                      NumberType(0.5) * minus.grad_J[i][c][d_out][d_in] -
-                      NumberType(0.5) * du_i * da_grad_minus[d_out][c];
-                  j_numflux.grad[1](i, c)[d_out][d_in] =
-                      NumberType(0.5) * plus.grad_J[i][c][d_out][d_in] -
-                      NumberType(0.5) * du_i * da_grad_plus[d_out][c];
+                  j_numflux.grad[0](i, c)[d_out][d_in] = NumberType(0.5) * minus.grad_J[i][c][d_out][d_in] -
+                                                         NumberType(0.5) * du_i * da_grad_minus[d_out][c];
+                  j_numflux.grad[1](i, c)[d_out][d_in] = NumberType(0.5) * plus.grad_J[i][c][d_out][d_in] -
+                                                         NumberType(0.5) * du_i * da_grad_plus[d_out][c];
                 }
               }
           }
@@ -384,22 +377,19 @@ namespace DiFfRG
 
         template <int dim, typename NumberType, size_t n_components> struct DiffusionFluxJacobianData {
           std::array<SimpleMatrix<dealii::Tensor<1, dim, NumberType>, n_components>, 2> u{};
-          std::array<SimpleMatrix<dealii::Tensor<1, dim, dealii::Tensor<1, dim, NumberType>>, n_components>, 2>
-              grad{};
-          std::array<
-              SimpleMatrix<dealii::Tensor<1, dim, dealii::Tensor<3, dim, NumberType>>, n_components>, 2>
+          std::array<SimpleMatrix<dealii::Tensor<1, dim, dealii::Tensor<1, dim, NumberType>>, n_components>, 2> grad{};
+          std::array<SimpleMatrix<dealii::Tensor<1, dim, dealii::Tensor<3, dim, NumberType>>, n_components>, 2>
               third_derivatives{};
         };
 
         template <typename Model, typename NumberType, int dim, size_t n_components>
-        DiffusionFluxJacobianData<dim, NumberType, n_components>
-        compute_diffusion_flux_jacobian(const std::array<NumberType, n_components> &u_minus,
-                                        const std::array<NumberType, n_components> &u_plus,
-                                        const GradientType<dim, NumberType, n_components> &grad_u_minus,
-                                        const GradientType<dim, NumberType, n_components> &grad_u_plus,
-                                        const ThirdDerivativeType<dim, NumberType, n_components> &third_derivatives_minus,
-                                        const ThirdDerivativeType<dim, NumberType, n_components> &third_derivatives_plus,
-                                        const dealii::Point<dim> &x_q, const Model &model)
+        DiffusionFluxJacobianData<dim, NumberType, n_components> compute_diffusion_flux_jacobian(
+            const std::array<NumberType, n_components> &u_minus, const std::array<NumberType, n_components> &u_plus,
+            const GradientType<dim, NumberType, n_components> &grad_u_minus,
+            const GradientType<dim, NumberType, n_components> &grad_u_plus,
+            const ThirdDerivativeType<dim, NumberType, n_components> &third_derivatives_minus,
+            const ThirdDerivativeType<dim, NumberType, n_components> &third_derivatives_plus,
+            const dealii::Point<dim> &x_q, const Model &model)
         {
           using ADNumberType = autodiff::Real<1, NumberType>;
 
@@ -421,10 +411,8 @@ namespace DiFfRG
             for (size_t d0 = 0; d0 < dim; ++d0)
               for (size_t d1 = 0; d1 < dim; ++d1)
                 for (size_t d2 = 0; d2 < dim; ++d2) {
-                  third_derivatives_minus_AD[c][d0][d1][d2] =
-                      ADNumberType(third_derivatives_minus[c][d0][d1][d2]);
-                  third_derivatives_plus_AD[c][d0][d1][d2] =
-                      ADNumberType(third_derivatives_plus[c][d0][d1][d2]);
+                  third_derivatives_minus_AD[c][d0][d1][d2] = ADNumberType(third_derivatives_minus[c][d0][d1][d2]);
+                  third_derivatives_plus_AD[c][d0][d1][d2] = ADNumberType(third_derivatives_plus[c][d0][d1][d2]);
                 }
           }
 
@@ -433,8 +421,7 @@ namespace DiFfRG
           for (size_t c = 0; c < n_components; ++c) {
             seed(u_minus_AD[c]);
             D_AD = {};
-            model.flux(D_AD, x_q,
-                       diffusion_flux_tie(u_minus_AD, grad_u_minus_AD, third_derivatives_minus_AD));
+            model.flux(D_AD, x_q, diffusion_flux_tie(u_minus_AD, grad_u_minus_AD, third_derivatives_minus_AD));
             for (size_t i = 0; i < n_components; ++i)
               for (size_t d = 0; d < dim; ++d)
                 result.u[0](i, c)[d] = NumberType(0.5) * derivative(D_AD[i][d]);
@@ -451,8 +438,7 @@ namespace DiFfRG
             for (size_t d_in = 0; d_in < dim; ++d_in) {
               seed(grad_u_minus_AD[c][d_in]);
               D_AD = {};
-              model.flux(D_AD, x_q,
-                         diffusion_flux_tie(u_minus_AD, grad_u_minus_AD, third_derivatives_minus_AD));
+              model.flux(D_AD, x_q, diffusion_flux_tie(u_minus_AD, grad_u_minus_AD, third_derivatives_minus_AD));
               for (size_t i = 0; i < n_components; ++i)
                 for (size_t d_out = 0; d_out < dim; ++d_out)
                   result.grad[0](i, c)[d_out][d_in] = NumberType(0.5) * derivative(D_AD[i][d_out]);
@@ -472,8 +458,7 @@ namespace DiFfRG
                 for (size_t d2 = 0; d2 < dim; ++d2) {
                   seed(third_derivatives_minus_AD[c][d0][d1][d2]);
                   D_AD = {};
-                  model.flux(D_AD, x_q,
-                             diffusion_flux_tie(u_minus_AD, grad_u_minus_AD, third_derivatives_minus_AD));
+                  model.flux(D_AD, x_q, diffusion_flux_tie(u_minus_AD, grad_u_minus_AD, third_derivatives_minus_AD));
                   for (size_t i = 0; i < n_components; ++i)
                     for (size_t d_out = 0; d_out < dim; ++d_out)
                       result.third_derivatives[0](i, c)[d_out][d0][d1][d2] =
@@ -482,8 +467,7 @@ namespace DiFfRG
 
                   seed(third_derivatives_plus_AD[c][d0][d1][d2]);
                   D_AD = {};
-                  model.flux(D_AD, x_q,
-                             diffusion_flux_tie(u_plus_AD, grad_u_plus_AD, third_derivatives_plus_AD));
+                  model.flux(D_AD, x_q, diffusion_flux_tie(u_plus_AD, grad_u_plus_AD, third_derivatives_plus_AD));
                   for (size_t i = 0; i < n_components; ++i)
                     for (size_t d_out = 0; d_out < dim; ++d_out)
                       result.third_derivatives[1](i, c)[d_out][d0][d1][d2] =
@@ -579,14 +563,13 @@ namespace DiFfRG
 
         Assembler(Discretization &discretization, Model &model, const JSONValue &json, LogPort log_port)
             : discretization(discretization), model(model), log_port(std::move(log_port)),
-              dof_handler(discretization.get_dof_handler()),
-              mapping(discretization.get_mapping()), triangulation(discretization.get_triangulation()), json(json),
-              fe(discretization.get_fe()), threads(json.get_uint("/discretization/threads")),
+              dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
+              triangulation(discretization.get_triangulation()), json(json), fe(discretization.get_fe()),
+              threads(json.get_uint("/discretization/threads")),
               batch_size(json.get_uint("/discretization/batch_size")),
               EoM_cell(*(dof_handler.active_cell_iterators().end())),
               old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
-              EoM_abs_tol(json.get_double("/discretization/EoM_abs_tol")),
-              EoM_max_iter(json.get_uint("/discretization/EoM_max_iter")),
+              EoM_config(DiFfRG::internal::resolve_eom_config(dof_handler, Config::EoMConfig(json))),
               quadrature(1 + json.get_uint("/discretization/overintegration")),
               quadrature_face(1 + json.get_uint("/discretization/overintegration"))
         {
@@ -614,8 +597,8 @@ namespace DiFfRG
         }
 
         virtual void attach_data_output(OutputFrame<dim, VectorType> &data_out, const VectorType &solution,
-                                    const VectorType &variables, const VectorType &dt_solution = VectorType(),
-                                    const VectorType &residual = VectorType()) override
+                                        const VectorType &variables, const VectorType &dt_solution = VectorType(),
+                                        const VectorType &residual = VectorType()) override
         {
           const auto fe_function_names = Components::FEFunction_Descriptor::get_names_vector();
           std::vector<std::string> fe_function_names_residual;
@@ -713,20 +696,21 @@ namespace DiFfRG
           auto helper = [&](auto &&...args) {
             if constexpr (sizeof...(args) == 3) {
               auto &&[id, EoMfun, outputter] = std::forward_as_tuple(std::forward<decltype(args)>(args)...);
-            data_out.register_readout(id);
-            auto EoM_cell = this->EoM_cell;
-            auto EoM_result = get_EoM_point_with_potential(
-                EoM_cell, solution_global, dof_handler, mapping, EoMfun,
-                [](const auto &point, const auto &) { return point; }, EoM_abs_tol, EoM_max_iter);
-            const auto EoM = EoM_result.point;
-            this->EoM_cell = EoM_cell;
+              data_out.register_readout(id);
+              auto EoM_cell = this->EoM_cell;
+              auto EoM_result = get_EoM_point_with_potential(
+                  EoM_cell, solution_global, dof_handler, mapping, EoMfun,
+                  [](const auto &point, const auto &) { return point; }, EoM_config, EoM_minimum_guess);
+              if (EoM_result.potential) EoM_minimum_guess = EoM_result.potential->minimum;
+              const auto EoM = EoM_result.point;
+              this->EoM_cell = EoM_cell;
 
-            auto solution = reconstruct_readout_solution(EoM_cell, solution_global, EoM);
+              auto solution = reconstruct_readout_solution(EoM_cell, solution_global, EoM);
 
-            std::array<NumberType, Components::count_extractors()> extracted_data{{}};
-            outputter(data_out, EoM,
-                      e_tie(solution.values, solution.gradients, solution.hessians, extracted_data, variables));
-            data_out.attach_eom_potential(std::move(EoM_result));
+              std::array<NumberType, Components::count_extractors()> extracted_data{{}};
+              outputter(data_out, EoM,
+                        e_tie(solution.values, solution.gradients, solution.hessians, extracted_data, variables));
+              data_out.attach_eom_potential(std::move(EoM_result));
             } else {
               DiFfRG::internal::validate_readout_helper_arity<decltype(args)...>();
             }
@@ -803,21 +787,22 @@ namespace DiFfRG
         {
           auto EoM = this->EoM;
           auto EoM_cell = this->EoM_cell;
-          if (search_EoM || EoM_cell == *(dof_handler.active_cell_iterators().end()))
-            EoM = get_EoM_point_with_potential(
-                      EoM_cell, solution_global, dof_handler, mapping,
-                      [&](const auto &p, const auto &values) { return model.EoM(p, values); },
-                      [&](const auto &p, const auto &values) { return postprocess ? model.EoM_postprocess(p, values) : p; },
-                      EoM_abs_tol, EoM_max_iter)
-                      .point;
+          if (search_EoM || EoM_cell == *(dof_handler.active_cell_iterators().end())) {
+            auto EoM_result = get_EoM_point_with_potential(
+                EoM_cell, solution_global, dof_handler, mapping,
+                [&](const auto &p, const auto &values) { return model.EoM(p, values); },
+                [&](const auto &p, const auto &values) { return postprocess ? model.EoM_postprocess(p, values) : p; },
+                EoM_config, EoM_minimum_guess);
+            EoM = EoM_result.point;
+            if (EoM_result.potential) EoM_minimum_guess = EoM_result.potential->minimum;
+          }
           if (set_EoM) {
             this->EoM = EoM;
             this->EoM_cell = EoM_cell;
           }
 
           auto solution = reconstruct_readout_solution(EoM_cell, solution_global, EoM, /*with_hessians=*/true);
-          model.extract(data, EoM,
-                        e_tie(solution.values, solution.gradients, solution.hessians, nothing, variables));
+          model.extract(data, EoM, e_tie(solution.values, solution.gradients, solution.hessians, nothing, variables));
         }
 
         virtual void mass(VectorType &mass, const VectorType &solution_global, const VectorType &solution_global_dot,
@@ -941,8 +926,8 @@ namespace DiFfRG
               if constexpr (dim == 1) {
                 auto boundary_stencil =
                     build_boundary_stencil<NumberType>(cell, face_index, solution_global, scratch_dof_indices);
-                const bool boundary_supported = model.apply_boundary_stencil(boundary_stencil.u, boundary_stencil.x,
-                                                                             face->center());
+                const bool boundary_supported =
+                    model.apply_boundary_stencil(boundary_stencil.u, boundary_stencil.x, face->center());
                 AssertThrow(
                     boundary_supported,
                     ExcMessage("KT boundary stencil was rejected while populating a boundary-adjacent cell stencil."));
@@ -1067,11 +1052,9 @@ namespace DiFfRG
 
         CellStencilDataT<autodiff::Real<1, NumberType>>
         tag_cell_stencil_dofs_from_cache(const Iterator &cell, const CellStencilData &cell_stencil,
-                                         const VectorType &solution_global,
-                                         const types::global_dof_index dof_j) const
+                                         const VectorType &solution_global, const types::global_dof_index dof_j) const
         {
-          auto tagged_stencil =
-              internal::tag_cell_stencil_dofs<dim, NumberType, n_components>(cell_stencil, dof_j);
+          auto tagged_stencil = internal::tag_cell_stencil_dofs<dim, NumberType, n_components>(cell_stencil, dof_j);
 
           for (const auto face_index : cell->face_indices()) {
             if (!is_physical_boundary_face(cell, face_index)) continue;
@@ -1080,8 +1063,8 @@ namespace DiFfRG
                 build_boundary_stencil_from_cache<NumberType>(cell, face_index, solution_global);
             auto tagged_boundary_stencil =
                 internal::tag_boundary_stencil_dofs<dim, NumberType, n_components>(boundary_stencil, dof_j);
-            internal::populate_boundary_neighbor_from_model_stencil(
-                tagged_boundary_stencil, tagged_stencil, face_index, cell_stencil.face_centers[face_index], model);
+            internal::populate_boundary_neighbor_from_model_stencil(tagged_boundary_stencil, tagged_stencil, face_index,
+                                                                    cell_stencil.face_centers[face_index], model);
           }
 
           return tagged_stencil;
@@ -1148,8 +1131,7 @@ namespace DiFfRG
             cache.cell_stencils.resize(n_active_cells);
             cache.topology_initialized = false;
           }
-          if (cache.face_reconstructions.size() != n_active_cells)
-            cache.face_reconstructions.resize(n_active_cells);
+          if (cache.face_reconstructions.size() != n_active_cells) cache.face_reconstructions.resize(n_active_cells);
           if (cache.face_reconstruction_valid.size() != n_active_cells)
             cache.face_reconstruction_valid.resize(n_active_cells);
           if (!cache.topology_initialized) initialize_solution_reconstruction_cache_topology(cache);
@@ -1231,9 +1213,9 @@ namespace DiFfRG
           }
         }
 
-        const FaceReconstructionState &
-        get_cached_face_reconstruction(const SolutionReconstructionCache &cache, const Iterator &cell,
-                                       const unsigned int face_index) const
+        const FaceReconstructionState &get_cached_face_reconstruction(const SolutionReconstructionCache &cache,
+                                                                      const Iterator &cell,
+                                                                      const unsigned int face_index) const
         {
           const auto cell_index = cell->active_cell_index();
           AssertIndexRange(cell_index, cache.face_reconstructions.size());
@@ -1250,18 +1232,18 @@ namespace DiFfRG
           fill_cell_stencil(cell, solution_global, scratch_data.cell_stencil);
           fill_cell_stencil(ncell, solution_global, scratch_data.ncell_stencil);
           return internal::compute_interior_face_reconstruction_state<Reconstructor>(scratch_data.cell_stencil,
-                                                                                    scratch_data.ncell_stencil, x_q);
+                                                                                     scratch_data.ncell_stencil, x_q);
         }
 
         auto compute_boundary_face_reconstruction_from_cache(const Iterator &cell, const unsigned int face_no,
                                                              const VectorType &solution_global, const Point &x_q) const
         {
-          auto boundary_stencil = build_boundary_reconstruction_stencil_from_cache<NumberType>(cell, face_no,
-                                                                                              solution_global);
+          auto boundary_stencil =
+              build_boundary_reconstruction_stencil_from_cache<NumberType>(cell, face_no, solution_global);
           CellStencilData cell_stencil;
           fill_cell_stencil(cell, solution_global, cell_stencil);
-          return internal::compute_boundary_face_reconstruction_state<Reconstructor>(
-              boundary_stencil, cell_stencil, x_q, model);
+          return internal::compute_boundary_face_reconstruction_state<Reconstructor>(boundary_stencil, cell_stencil,
+                                                                                     x_q, model);
         }
 
         auto compute_interior_jacobian_face_reconstruction_from_cache(const Iterator &cell, const Iterator &ncell,
@@ -1274,17 +1256,16 @@ namespace DiFfRG
               scratch_data.cell_stencil, scratch_data.ncell_stencil, x_q);
         }
 
-        auto compute_boundary_jacobian_face_reconstruction_from_cache(const Iterator &cell,
-                                                                      const unsigned int face_no,
+        auto compute_boundary_jacobian_face_reconstruction_from_cache(const Iterator &cell, const unsigned int face_no,
                                                                       const VectorType &solution_global,
                                                                       const Point &x_q) const
         {
-          auto boundary_stencil = build_boundary_reconstruction_stencil_from_cache<NumberType>(cell, face_no,
-                                                                                              solution_global);
+          auto boundary_stencil =
+              build_boundary_reconstruction_stencil_from_cache<NumberType>(cell, face_no, solution_global);
           CellStencilData cell_stencil;
           fill_cell_stencil(cell, solution_global, cell_stencil);
-          return internal::compute_boundary_face_reconstruction_state<JacobianReconstructor>(
-              boundary_stencil, cell_stencil, x_q, model);
+          return internal::compute_boundary_face_reconstruction_state<JacobianReconstructor>(boundary_stencil,
+                                                                                             cell_stencil, x_q, model);
         }
 
         void fill_constant_quadrature_values(const Iterator &cell, const VectorType &solution_global,
@@ -1407,10 +1388,9 @@ namespace DiFfRG
             const auto &cell_data = cell_stencil.cell;
             const auto &ncell_data = ncell_stencil.cell;
 
-            const auto [F_plus, F_minus, a_half] =
-                internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(reconstruction.u_plus, reconstruction.u_minus,
-                                                                        reconstruction.face_grad_plus,
-                                                                        reconstruction.face_grad_minus, x_q, model);
+            const auto [F_plus, F_minus, a_half] = internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(
+                reconstruction.u_plus, reconstruction.u_minus, reconstruction.face_grad_plus,
+                reconstruction.face_grad_minus, x_q, model);
             const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, reconstruction.u_plus,
                                                             reconstruction.u_minus);
             const auto D = internal::compute_diffusion_flux(
@@ -1450,10 +1430,9 @@ namespace DiFfRG
             const auto &reconstruction = get_cached_face_reconstruction(reconstruction_cache, cell, face_no);
             const auto &cell_data = reconstruction_cache.cell_stencils[cell->active_cell_index()].cell;
 
-            const auto [F_plus, F_minus, a_half] =
-                internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(reconstruction.u_plus, reconstruction.u_minus,
-                                                                        reconstruction.face_grad_plus,
-                                                                        reconstruction.face_grad_minus, x_q, model);
+            const auto [F_plus, F_minus, a_half] = internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(
+                reconstruction.u_plus, reconstruction.u_minus, reconstruction.face_grad_plus,
+                reconstruction.face_grad_minus, x_q, model);
             const auto H = internal::compute_numerical_flux(F_plus, F_minus, a_half, reconstruction.u_plus,
                                                             reconstruction.u_minus);
 
@@ -1593,8 +1572,8 @@ namespace DiFfRG
           const auto face_worker = [&](const Iterator &cell, const unsigned int &f,
                                        [[maybe_unused]] const unsigned int &sf, const Iterator &ncell,
                                        [[maybe_unused]] const unsigned int &nf,
-                                       [[maybe_unused]] const unsigned int &nsf,
-                                       Scratch &scratch_data, CopyData &copy_data) {
+                                       [[maybe_unused]] const unsigned int &nsf, Scratch &scratch_data,
+                                       CopyData &copy_data) {
             [[maybe_unused]] const int q_face_index = 0;
             const auto x_q = cell->face(f)->center();
             const auto JxW = face_jxw(cell, f);
@@ -1657,8 +1636,8 @@ namespace DiFfRG
               }
 
               if constexpr (dim == 1) {
-                const auto third_derivative_stencil_ad = internal::make_interior_third_derivative_stencil(
-                    cell_stencil_tagged, ncell_stencil_tagged, x_q);
+                const auto third_derivative_stencil_ad =
+                    internal::make_interior_third_derivative_stencil(cell_stencil_tagged, ncell_stencil_tagged, x_q);
                 const auto third_derivatives =
                     JacobianReconstructor::template compute_third_derivatives_at_face_derivative<n_components>(
                         third_derivative_stencil_ad.x, third_derivative_stencil_ad.u);
@@ -1696,8 +1675,7 @@ namespace DiFfRG
                                               reconstructed_deriv[face_no][j].u[c];
                     for (size_t d_in = 0; d_in < dim; ++d_in)
                       for (size_t d_out = 0; d_out < dim; ++d_out)
-                        advection_contribution += j_numflux.grad[face_no](component_i, c)[d_out][d_in] *
-                                                  n_face[d_out] *
+                        advection_contribution += j_numflux.grad[face_no](component_i, c)[d_out][d_in] * n_face[d_out] *
                                                   reconstructed_deriv[face_no][j].grad[c][d_in];
                   }
                   copy_data_face.cell_jacobian(i, j) += weight * JxW * jump_i * advection_contribution;
@@ -1705,9 +1683,8 @@ namespace DiFfRG
 
                 for (size_t face_no = 0; face_no < 2; ++face_no)
                   for (size_t c = 0; c < n_components; ++c) {
-                    diffusion_contribution +=
-                        scalar_product(j_diffusion.u[face_no](component_i, c), n_face) *
-                        diffusion_deriv[face_no][j].u[c];
+                    diffusion_contribution += scalar_product(j_diffusion.u[face_no](component_i, c), n_face) *
+                                              diffusion_deriv[face_no][j].u[c];
                     for (size_t d_in = 0; d_in < dim; ++d_in)
                       for (size_t d_out = 0; d_out < dim; ++d_out)
                         diffusion_contribution += j_diffusion.grad[face_no](component_i, c)[d_out][d_in] *
@@ -1718,8 +1695,7 @@ namespace DiFfRG
                           for (size_t d_out = 0; d_out < dim; ++d_out)
                             diffusion_contribution +=
                                 j_diffusion.third_derivatives[face_no](component_i, c)[d_out][d0][d1][d2] *
-                                n_face[d_out] *
-                                reconstructed_deriv[face_no][j].third_derivatives[c][d0][d1][d2];
+                                n_face[d_out] * reconstructed_deriv[face_no][j].third_derivatives[c][d0][d1][d2];
                   }
 
                 // The residual uses [[phi_i]] * ((H + D) · n). The diffusion
@@ -1764,8 +1740,7 @@ namespace DiFfRG
               const auto boundary_stencil_ad =
                   internal::tag_boundary_reconstruction_stencil_dofs<dim, NumberType, n_components>(boundary_stencil,
                                                                                                     dof_j);
-              const auto cell_stencil_ad =
-                  tag_cell_stencil_dofs_from_cache(cell, cell_stencil, solution_global, dof_j);
+              const auto cell_stencil_ad = tag_cell_stencil_dofs_from_cache(cell, cell_stencil, solution_global, dof_j);
               const auto [physical_stencil_ad, ghost_stencil_ad] =
                   internal::make_model_boundary_reconstruction_side_stencils(boundary_stencil_ad, cell_stencil_ad, x_q,
                                                                              model);
@@ -1788,8 +1763,8 @@ namespace DiFfRG
 
               if constexpr (dim == 1) {
                 auto third_derivative_boundary_stencil_ad = boundary_stencil_ad.primary;
-                internal::apply_boundary_reconstruction_stencil(third_derivative_boundary_stencil_ad,
-                                                                 cell_stencil_ad, model);
+                internal::apply_boundary_reconstruction_stencil(third_derivative_boundary_stencil_ad, cell_stencil_ad,
+                                                                model);
                 const auto third_derivative_stencil_ad =
                     internal::make_boundary_third_derivative_stencil(third_derivative_boundary_stencil_ad);
                 const auto third_derivatives =
@@ -1829,8 +1804,7 @@ namespace DiFfRG
                                               reconstructed_deriv[face_no][j].u[c];
                     for (size_t d_in = 0; d_in < dim; ++d_in)
                       for (size_t d_out = 0; d_out < dim; ++d_out)
-                        advection_contribution += j_numflux.grad[face_no](component_i, c)[d_out][d_in] *
-                                                  n_face[d_out] *
+                        advection_contribution += j_numflux.grad[face_no](component_i, c)[d_out][d_in] * n_face[d_out] *
                                                   reconstructed_deriv[face_no][j].grad[c][d_in];
                   }
                   copy_data_face.cell_jacobian(i, j) += weight * JxW * advection_contribution;
@@ -1838,9 +1812,8 @@ namespace DiFfRG
 
                 for (size_t face_no = 0; face_no < 2; ++face_no)
                   for (size_t c = 0; c < n_components; ++c) {
-                    diffusion_contribution +=
-                        scalar_product(j_diffusion.u[face_no](component_i, c), n_face) *
-                        diffusion_deriv[face_no][j].u[c];
+                    diffusion_contribution += scalar_product(j_diffusion.u[face_no](component_i, c), n_face) *
+                                              diffusion_deriv[face_no][j].u[c];
                     for (size_t d_in = 0; d_in < dim; ++d_in)
                       for (size_t d_out = 0; d_out < dim; ++d_out)
                         diffusion_contribution += j_diffusion.grad[face_no](component_i, c)[d_out][d_in] *
@@ -1851,8 +1824,7 @@ namespace DiFfRG
                           for (size_t d_out = 0; d_out < dim; ++d_out)
                             diffusion_contribution +=
                                 j_diffusion.third_derivatives[face_no](component_i, c)[d_out][d0][d1][d2] *
-                                n_face[d_out] *
-                                reconstructed_deriv[face_no][j].third_derivatives[c][d0][d1][d2];
+                                n_face[d_out] * reconstructed_deriv[face_no][j].third_derivatives[c][d0][d1][d2];
                   }
 
                 // Boundary diffusion uses the same ghost-stencil side labels as the
@@ -1912,8 +1884,7 @@ namespace DiFfRG
         {
           std::vector<types::global_dof_index> neighbor_dof_indices(fe.dofs_per_cell);
 
-          const auto append_recursive = [&](const auto &self, const Iterator &cell,
-                                            const unsigned int depth) -> void {
+          const auto append_recursive = [&](const auto &self, const Iterator &cell, const unsigned int depth) -> void {
             for (const auto face_index : cell->face_indices()) {
               if (is_physical_boundary_face(cell, face_index)) continue;
 
@@ -1929,8 +1900,7 @@ namespace DiFfRG
         }
 
         void append_boundary_reconstruction_dofs(std::vector<types::global_dof_index> &from_dofs,
-                                                 const unsigned int cell_index,
-                                                 const unsigned int face_index) const
+                                                 const unsigned int cell_index, const unsigned int face_index) const
         {
           const auto append_boundary_stencil_dofs =
               [&](const internal::BoundaryStencilTopologyData<dim, n_components> &topology) {
@@ -2041,8 +2011,7 @@ namespace DiFfRG
               const auto &dependencies = topology.face_jacobian_dependencies[face_index];
               for (const auto row : dependencies.to_dofs)
                 for (const auto column : dependencies.from_dofs)
-                  if (row != numbers::invalid_dof_index && column != numbers::invalid_dof_index)
-                    dsp.add(row, column);
+                  if (row != numbers::invalid_dof_index && column != numbers::invalid_dof_index) dsp.add(row, column);
             }
           }
           sparsity_pattern.copy_from(dsp);
@@ -2266,8 +2235,8 @@ namespace DiFfRG
         mutable Point EoM;
         mutable Iterator EoM_cell;
         Iterator old_EoM_cell;
-        const double EoM_abs_tol;
-        const uint EoM_max_iter;
+        const Config::EoMConfig EoM_config;
+        mutable std::optional<Point> EoM_minimum_guess;
 
         const QGauss<dim> quadrature;
         const QGauss<dim - 1> quadrature_face;

@@ -1,6 +1,7 @@
 // DiFfRG
 #include <DiFfRG/common/configuration_helper.hh>
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/discretization/common/eom_config.hh>
 #include <DiFfRG/discretization/data/output_path.hh>
 
 // standard library
@@ -187,8 +188,12 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
            {"overintegration", 0},
            {"output_subdivisions", 2},
 
-           {"EoM_abs_tol", 1e-12},
-           {"EoM_max_iter", 100},
+           {"EoM_abs_tol", Config::EoMConfig::default_abs_tol},
+           {"EoM_max_iter", Config::EoMConfig::default_max_iter},
+           {"EoM_smoothing_length", Config::EoMConfig::default_smoothing_length},
+           {"EoM_bound_tolerance", Config::EoMConfig::default_bound_tolerance},
+           {"EoM_armijo_coefficient", Config::EoMConfig::default_armijo_coefficient},
+           {"EoM_max_backtracks", Config::EoMConfig::default_max_backtracks},
 
            {"grid", {{"x_grid", "0:0.1:1"}, {"y_grid", "0:0.1:1"}, {"z_grid", "0:0.1:1"}, {"refine", 0}}},
            {"adaptivity",
@@ -236,7 +241,11 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
               << "    batch_size                    Batch size for GPU kernel launches\n"
               << "    overintegration               Extra quadrature points beyond FE order\n"
               << "    output_subdivisions           VTK output subdivisions per cell\n"
-              << "    EoM_abs_tol / EoM_max_iter    Equation-of-motion solver tolerance and iteration limit\n"
+              << "    EoM_abs_tol / EoM_max_iter    In-cell EoM minimizer tolerance and iteration limit\n"
+              << "    EoM_smoothing_length           Physical EoM-potential smoothing length (-1: automatic)\n"
+              << "    EoM_bound_tolerance            Reference-cell active-bound tolerance\n"
+              << "    EoM_armijo_coefficient         Armijo sufficient-decrease coefficient\n"
+              << "    EoM_max_backtracks             Maximum line-search backtracking steps\n"
               << "    grid/*                        Grid specification (format: \"start:step:stop\")\n"
               << "    adaptivity/*                  h-adaptive mesh refinement settings\n"
               << "  /timestepping      Time integration settings\n"
@@ -257,10 +266,7 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
     return OutputPath(json).run_file(".log").filename().string();
   }
   std::string ConfigurationHelper::get_parameter_file() const { return parameter_file; }
-  std::string ConfigurationHelper::get_output_name() const
-  {
-    return OutputPath(json).run_name();
-  }
+  std::string ConfigurationHelper::get_output_name() const { return OutputPath(json).run_name(); }
   std::string ConfigurationHelper::get_output_folder() const
   {
     return make_folder(OutputPath(json).field_directory().generic_string());
