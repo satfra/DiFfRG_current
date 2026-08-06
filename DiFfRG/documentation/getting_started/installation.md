@@ -125,6 +125,16 @@ Boost, TBB, HDF5 and SUNDIALS are taken from the system when a viable version is
 
 The minimum supported versions are Boost ≥ 1.81, oneTBB ≥ 2021, HDF5 ≥ 1.12 and SUNDIALS ≥ 5.4.
 
+The bundled Boost is built from the source archive tracked at `dependencies/boost/boost_1_81_0-diffrg-slim.tar.xz` (the upstream 1.81.0 release with documentation, tests and examples removed), so no network access is needed for it. It is unpacked into the build tree, which costs ~19 500 file writes per build tree. On a slow filesystem, do that once and reuse the result:
+
+```bash
+# once per machine
+cmake -S . -B build0 -DBUILD_BOOST=ON -DCMAKE_INSTALL_PREFIX=$HOME/opt/diffrg-deps
+cmake --build build0 --target boost_dep
+# every build thereafter — no unpacking, no Boost rebuild
+cmake -S . -B build -DBOOST_DIR=$HOME/opt/diffrg-deps/bundled
+```
+
 ### Rebuilding the library only
 
 Once the dependencies have been installed by a full build, you usually do not want to rebuild them when working on DiFfRG itself. You can then configure directly from the `DiFfRG/` subfolder, pointing CMake at the already-installed bundled dependencies via `BUNDLED_DIR`:
