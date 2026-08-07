@@ -1,19 +1,15 @@
-// external libraries
-#include <spdlog/sinks/basic_file_sink.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
-#include <spdlog/spdlog.h>
-
 // DiFfRG
 #include <DiFfRG/common/configuration_helper.hh>
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/discretization/common/eom_config.hh>
+#include <DiFfRG/discretization/data/output_path.hh>
 
 // standard library
+#include <filesystem>
 #include <fstream>
 
 namespace DiFfRG
 {
-  bool ConfigurationHelper::logger_initialized = false;
-
   ConfigurationHelper::ConfigurationHelper(int argc, char *argv[], const std::string parameter_file)
       : parsed(false), parameter_file(parameter_file)
   {
@@ -26,43 +22,9 @@ namespace DiFfRG
       print_usage_message();
       exit(1);
     }
-
-    create_folder(get_top_folder());
-    setup_logging();
   }
 
-  ConfigurationHelper::ConfigurationHelper(const JSONValue &json) : json(json), parsed(true)
-  {
-    create_folder(get_top_folder());
-    setup_logging();
-  }
-
-  void ConfigurationHelper::setup_logging()
-  {
-    if (!parsed) throw std::runtime_error("The ConfigurationHelper has to be parsed before the log can be created!");
-
-    if (!logger_initialized) {
-      spdlog::flush_every(std::chrono::seconds(1));
-
-      try {
-        auto console = spdlog::stdout_color_mt("console");
-        console->set_pattern("[%v]");
-      } catch (const spdlog::spdlog_ex &e) {
-        // nothing, the logger is already set up
-      }
-
-      try {
-        build_logger("log", get_top_folder() + get_log_file());
-      } catch (const spdlog::spdlog_ex &e) {
-        // nothing, the logger is already set up
-      }
-
-      logger_initialized = true;
-    }
-
-    auto jsonlog_filestream = std::ofstream(get_top_folder() + get_output_name() + ".log.json");
-    json.print(jsonlog_filestream);
-  }
+  ConfigurationHelper::ConfigurationHelper(const JSONValue &json) : json(json), parsed(true) {}
 
   ConfigurationHelper::ConfigurationHelper(const ConfigurationHelper &other)
   {
@@ -226,8 +188,12 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
            {"overintegration", 0},
            {"output_subdivisions", 2},
 
-           {"EoM_abs_tol", 1e-12},
-           {"EoM_max_iter", 100},
+           {"EoM_abs_tol", Config::EoMConfig::default_abs_tol},
+           {"EoM_max_iter", Config::EoMConfig::default_max_iter},
+           {"EoM_smoothing_length", Config::EoMConfig::default_smoothing_length},
+           {"EoM_bound_tolerance", Config::EoMConfig::default_bound_tolerance},
+           {"EoM_armijo_coefficient", Config::EoMConfig::default_armijo_coefficient},
+           {"EoM_max_backtracks", Config::EoMConfig::default_max_backtracks},
 
            {"grid", {{"x_grid", "0:0.1:1"}, {"y_grid", "0:0.1:1"}, {"z_grid", "0:0.1:1"}, {"refine", 0}}},
            {"adaptivity",
@@ -242,12 +208,22 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
            {"explicit",
             {{"dt", 1e-2}, {"minimal_dt", 1e-6}, {"maximal_dt", 1e-1}, {"abs_tol", 1e-4}, {"rel_tol", 1e-4}}},
            {"implicit",
-            {{"dt", 1e-4}, {"minimal_dt", 1e-6}, {"maximal_dt", 1e-1}, {"abs_tol", 1e-13}, {"rel_tol", 1e-7}}}}},
-         {"output", {{"verbosity", 0}, {"folder", "output/"}, {"name", "output"}}}});
+            {{"dt", 1e-4},
+             {"minimal_dt", 1e-6},
+             {"maximal_dt", 1e-1},
+             {"abs_tol", 1e-13},
+             {"rel_tol", 1e-7},
+             {"max_steps", 1000000}}}}},
+         {"output", {{"verbosity", 0}, {"folder", "output/"}, {"name", "output"}, {"max_pending_frames", 2}}}});
 
-    std::ofstream file(parameter_file);
-    json.print(file);
-    file.close();
+    const auto temporary = parameter_file + ".tmp";
+    {
+      std::ofstream file(temporary, std::ofstream::trunc);
+      if (!file) throw std::runtime_error("Could not create parameter file '" + parameter_file + "'.");
+      json.print(file);
+      if (!file) throw std::runtime_error("Failed while writing parameter file '" + parameter_file + "'.");
+    }
+    std::filesystem::rename(temporary, parameter_file);
 
     std::cout << "\nGenerated parameter file: " << parameter_file << "\n\n"
               << "Parameter sections:\n"
@@ -265,7 +241,11 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
               << "    batch_size                    Batch size for GPU kernel launches\n"
               << "    overintegration               Extra quadrature points beyond FE order\n"
               << "    output_subdivisions           VTK output subdivisions per cell\n"
-              << "    EoM_abs_tol / EoM_max_iter    Equation-of-motion solver tolerance and iteration limit\n"
+              << "    EoM_abs_tol / EoM_max_iter    In-cell EoM minimizer tolerance and iteration limit\n"
+              << "    EoM_smoothing_length           Physical EoM-potential smoothing length (-1: automatic)\n"
+              << "    EoM_bound_tolerance            Reference-cell active-bound tolerance\n"
+              << "    EoM_armijo_coefficient         Armijo sufficient-decrease coefficient\n"
+              << "    EoM_max_backtracks             Maximum line-search backtracking steps\n"
               << "    grid/*                        Grid specification (format: \"start:step:stop\")\n"
               << "    adaptivity/*                  h-adaptive mesh refinement settings\n"
               << "  /timestepping      Time integration settings\n"
@@ -277,30 +257,23 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
               << "    verbosity                     Log verbosity level (0 = minimal)\n"
               << "    folder                        Output directory\n"
               << "    name                          Base name for output files\n"
+              << "    max_pending_frames            Lossless output queue frame limit\n"
               << std::endl;
   }
 
   std::string ConfigurationHelper::get_log_file() const
   {
-    std::string log_file = get_output_name() + ".log";
-    return log_file;
+    return OutputPath(json).run_file(".log").filename().string();
   }
   std::string ConfigurationHelper::get_parameter_file() const { return parameter_file; }
-  std::string ConfigurationHelper::get_output_name() const
-  {
-    std::string output_name = json.get_string("/output/name");
-    return output_name;
-  }
+  std::string ConfigurationHelper::get_output_name() const { return OutputPath(json).run_name(); }
   std::string ConfigurationHelper::get_output_folder() const
   {
-    std::string output_folder = make_folder(get_output_name());
-    return output_folder;
+    return make_folder(OutputPath(json).field_directory().generic_string());
   }
   std::string ConfigurationHelper::get_top_folder() const
   {
-    std::string top_folder = json.get_string("/output/folder");
-    top_folder = make_folder(top_folder);
-    return top_folder;
+    return make_folder(OutputPath(json).root().generic_string());
   }
 
 } // namespace DiFfRG

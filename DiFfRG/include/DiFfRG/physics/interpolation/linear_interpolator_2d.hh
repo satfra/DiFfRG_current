@@ -3,6 +3,7 @@
 // DiFfRG
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/math.hh>
+#include <DiFfRG/physics/interpolation/interpolation_stencil.hh>
 
 namespace DiFfRG
 {
@@ -15,6 +16,9 @@ namespace DiFfRG
   template <typename NT, typename Coordinates, typename DefaultMemorySpace = CPU_memory> class LinearInterpolator2D
   {
     static_assert(Coordinates::dim == 2, "LinearInterpolator2D requires 2D coordinates");
+
+    static constexpr bool periodic_x = is_periodic_axis_v<Coordinates, 0>;
+    static constexpr bool periodic_y = is_periodic_axis_v<Coordinates, 1>;
 
   public:
     using memory_space = DefaultMemorySpace;
@@ -101,24 +105,21 @@ namespace DiFfRG
      */
     NT KOKKOS_FUNCTION operator()(const typename Coordinates::ctype x, const typename Coordinates::ctype y) const
     {
-      using Kokkos::min, Kokkos::max;
-      auto [idx_x, idx_y] = coordinates.backward(x, y);
-      idx_x = max(static_cast<decltype(idx_x)>(0), min(idx_x, static_cast<decltype(idx_x)>(sizes[0] - 1)));
-      idx_y = max(static_cast<decltype(idx_y)>(0), min(idx_y, static_cast<decltype(idx_y)>(sizes[1] - 1)));
+      const auto [idx_x, idx_y] = coordinates.backward(x, y);
+      // Clamped [i, i+1] stencil on bounded axes, wrapping [i, (i+1) % n] on periodic ones
+      const auto sx = make_interpolation_stencil<periodic_x>(idx_x, sizes[0]);
+      const auto sy = make_interpolation_stencil<periodic_y>(idx_y, sizes[1]);
 
-      // Lower index clamped to [0, sizes-2], upper = lower+1
-      const size_t x0 = min(size_t(Kokkos::floor(idx_x)), sizes[0] - 2);
-      const size_t y0 = min(size_t(Kokkos::floor(idx_y)), sizes[1] - 2);
-      const size_t x1 = x0 + 1;
-      const size_t y1 = y0 + 1;
+      const size_t x0 = sx.lower, x1 = sx.upper;
+      const size_t y0 = sy.lower, y1 = sy.upper;
 
       const auto corner00 = device_data(x0, y0);
       const auto corner01 = device_data(x0, y1);
       const auto corner10 = device_data(x1, y0);
       const auto corner11 = device_data(x1, y1);
 
-      const auto tx = idx_x - x0;
-      const auto ty = idx_y - y0;
+      const auto tx = sx.t;
+      const auto ty = sy.t;
 
       if constexpr (std::is_arithmetic_v<NT>)
         return Kokkos::fma(ty, Kokkos::fma(tx, corner11, Kokkos::fma(-tx, corner01, corner01)),

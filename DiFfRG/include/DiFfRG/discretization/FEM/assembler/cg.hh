@@ -174,8 +174,16 @@ namespace DiFfRG
       using Components = typename Discretization::Components;
       static constexpr uint dim = Discretization::dim;
 
-      Assembler(Discretization &discretization, Model &model, const JSONValue &json)
-          : Base(discretization, model, json),
+      [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Assembler(
+          Discretization &discretization, Model &model,
+          DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, JSONValue> json)
+          : Assembler(discretization, model, json.value(),
+                      DiFfRG::internal::legacy_default_log_port<Discretization>())
+      {
+      }
+
+      Assembler(Discretization &discretization, Model &model, const JSONValue &json, LogPort log_port)
+          : Base(discretization, model, json, std::move(log_port)),
             quadrature(fe.degree + 1 + json.get_uint("/discretization/overintegration")),
             quadrature_face(fe.degree + 1 + json.get_uint("/discretization/overintegration"))
       {
@@ -210,25 +218,13 @@ namespace DiFfRG
         }
         timings_reinit.push_back(timer.wall_time());
 
-        // Boundary dofs
-        std::vector<IndexSet> component_boundary_dofs(Components::count_fe_functions());
-        for (uint c = 0; c < Components::count_fe_functions(); ++c) {
-          ComponentMask component_mask(Components::count_fe_functions(), false);
-          component_mask.set(c, true);
-          component_boundary_dofs[c] = DoFTools::extract_boundary_dofs(dof_handler, component_mask);
-        }
-        std::vector<std::vector<Point<dim>>> component_boundary_points(Components::count_fe_functions());
-        for (uint c = 0; c < Components::count_fe_functions(); ++c) {
-          component_boundary_points[c].resize(component_boundary_dofs[c].n_elements());
-          for (uint i = 0; i < component_boundary_dofs[c].n_elements(); ++i)
-            component_boundary_points[c][i] =
-                discretization.get_support_point(component_boundary_dofs[c].nth_index_in_set(i));
-        }
+        const auto metadata = DiFfRG::internal::build_affine_constraint_metadata<Components, dim>(discretization);
+        const AffineConstraintContext<Components, dim> context(metadata);
 
         auto &constraints = discretization.get_constraints();
         constraints.clear();
         DoFTools::make_hanging_node_constraints(dof_handler, constraints);
-        model.affine_constraints(constraints, component_boundary_dofs, component_boundary_points);
+        DiFfRG::internal::apply_model_affine_constraints(model, constraints, context);
         constraints.close();
       }
 
@@ -761,7 +757,14 @@ namespace DiFfRG
         timings_jacobian.push_back(timer.wall_time());
       }
 
-      void log(const std::string logger)
+      template <typename String>
+        requires std::convertible_to<String, std::string>
+      [[deprecated("Construct the assembler with output.log_port() and call log() instead")]] void log(String &&)
+      {
+        DiFfRG::internal::reject_named_assembler_log<String>();
+      }
+
+      void log()
       {
         std::stringstream ss;
         ss << "CG Assembler: " << std::endl;
@@ -770,7 +773,7 @@ namespace DiFfRG
            << std::endl;
         ss << "        Jacobian: " << average_time_jacobian_assembly() * 1000 << "ms (" << num_jacobians() << ")"
            << std::endl;
-        spdlog::get(logger)->info(ss.str());
+        this->log_port.info(ss.str());
       }
 
       double average_time_reinit() const

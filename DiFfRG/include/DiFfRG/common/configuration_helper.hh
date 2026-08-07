@@ -50,16 +50,16 @@ namespace DiFfRG
      */
     const JSONValue &get_json() const;
 
-    std::string get_log_file() const;
+    [[deprecated("Use OutputPath(json).run_file(\".log\").filename().string() instead")]] std::string
+    get_log_file() const;
     std::string get_parameter_file() const;
-    std::string get_output_name() const;
-    std::string get_output_folder() const;
-    std::string get_top_folder() const;
+    [[deprecated("Use OutputPath(json).run_name() instead")]] std::string get_output_name() const;
+    [[deprecated("Use OutputPath(json).field_directory() instead")]] std::string get_output_folder() const;
+    [[deprecated("Use OutputPath(json).root() instead")]] std::string get_top_folder() const;
 
   private:
     void parse();
     void parse_cli();
-    void setup_logging();
     void print_usage_message();
     void generate_parameter_file();
 
@@ -72,6 +72,5 @@ namespace DiFfRG
 
     std::string parameter_file;
 
-    static bool logger_initialized;
   };
 } // namespace DiFfRG

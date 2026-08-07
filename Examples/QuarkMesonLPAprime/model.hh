@@ -279,6 +279,12 @@ public:
     return {{d1V - cSigma / (sigma + 1e-14)}};
   }
 
+  template <int dim, typename Vector>
+  std::array<double, 1> raw_potential_gradient(const Point<dim> &, const Vector &u_i) const
+  {
+    return {{u_i[idxf("u")]}};
+  }
+
   mutable double last_EoM = 0.;
   mutable bool lock_EoM = false;
 
@@ -319,7 +325,7 @@ public:
     const double mPion = m2Pion > 0. ? std::sqrt(m2Pion) : 0.;
     const double mSigma = m2Sigma > 0. ? std::sqrt(m2Sigma) : 0.;
 
-    auto &out_file = output.csv(filename);
+    auto out_file = output.table(filename);
     out_file.set_Lambda(Lambda);
 
     out_file.value("sigma [GeV]", sigma);
@@ -341,6 +347,7 @@ public:
   {
     // chiral EoM
     helper(
+        "chiral",
         [&](const auto &, const auto &u_i) {
           const auto d1V = u_i[idxf("u")];
           return std::array<double, 1>{{d1V}};
@@ -348,6 +355,7 @@ public:
         [&](auto &output, const auto &x, const auto &sol) { this->readouts(output, x, sol, "data_chiral.csv", 0); });
     // physical EoM
     helper(
+        "physical",
         [&](const auto &x, const auto &u_i) {
           const auto sigma = std::sqrt(2. * x[mesonic]);
           const auto d1V = u_i[idxf("u")];

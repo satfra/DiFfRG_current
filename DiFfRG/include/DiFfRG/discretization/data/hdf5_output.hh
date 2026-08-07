@@ -1,10 +1,10 @@
 #pragma once
 
 // DiFfRG
-#include <DiFfRG/common/json.hh>
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/data/hdf5.hh>
+#include <DiFfRG/discretization/data/output_settings.hh>
 #include <DiFfRG/physics/interpolation.hh>
 
 #include <filesystem>
@@ -28,7 +28,13 @@ namespace DiFfRG
      * @param output_name The name of the output file.
      * @param json The JSON object containing the parameters.
      */
-    HDF5Output(const std::string top_folder, const std::string output_name, const JSONValue &json);
+    HDF5Output(const std::string top_folder, const std::string output_name,
+               const std::string &configuration_json = "{}");
+    [[deprecated("Use HDF5Output(top_folder, output_name, Config::OutputSettings(json).configuration_json) instead")]]
+    HDF5Output(const std::string top_folder, const std::string output_name, const JSONValue &json)
+        : HDF5Output(std::move(top_folder), std::move(output_name), Config::OutputSettings(json).configuration_json)
+    {
+    }
 
     ~HDF5Output();
 
@@ -220,7 +226,6 @@ namespace DiFfRG
     void close_file();
 
   private:
-    [[maybe_unused]] const JSONValue &json;
     const std::string top_folder;
     const std::string output_name;
 

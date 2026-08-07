@@ -77,9 +77,9 @@ TEST_CASE("Test dDG on Constant model", "[discretization][dg]")
 
   // Define the objects needed to run the simulation
   Model model(p_prm);
-  RectangularMesh<dim> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
+  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
   // Set up the initial condition
   FE::FlowingVariables initial_condition(discretization);
@@ -119,7 +119,7 @@ TEST_CASE("Test dDG on Constant model", "[discretization][dg]")
     inverse_mass_matrix.solve(dst);
     REQUIRE(vector_is_close(dst, src, random_value));
   }
-  SECTION("Test jacobian mass", "[mass][jacobian][!shouldfail]")
+  SECTION("Test jacobian mass", "[mass][jacobian]")
   {
     dst_mat = 0;
     assembler.jacobian_mass(dst_mat, src, src, 1., 0.);

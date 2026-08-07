@@ -31,7 +31,7 @@ message(
 ${ColourReset}
 
 This is the main CMake file for DiFfRG.
-It will download and build all dependencies, including DiFfRG itself.
+It will configure and build all dependencies, including DiFfRG itself.
 ")
 
 # if the install prefix is not set, set DEPEND_INSTALL_PREFIX to the build
@@ -307,6 +307,10 @@ include(ExternalProject)
 # build it The blocks below resolve, for each library, whether the bundled
 # ExternalProject is needed (_build_<lib>) and which location to hand to deal.II
 # / the DiFfRG library build.
+#
+# Note for Boost specifically: the bundled build compiles the vendored source
+# tree in dependencies/boost/boost_1_81_0 and never downloads anything, so the
+# fallback path stays usable on offline / cluster machines.
 # ##############################################################################
 
 set(BOOST_DIR
@@ -352,6 +356,9 @@ endmacro()
 # Boost — needed by both deal.II and the DiFfRG library. Use Boost's own
 # BoostConfig.cmake (config mode); the legacy FindBoost module is removed in
 # CMake >= 3.30 and deal.II 9.7 consumes a modern config-mode Boost fine.
+#
+# When the bundled build is selected, it compiles the vendored source tree
+# (dependencies/boost/boost_1_81_0) — no network access is involved.
 # ----------------------------------------------------------------------------
 if(POLICY CMP0167)
   cmake_policy(SET CMP0167 NEW)
@@ -361,8 +368,13 @@ set(_build_boost OFF)
 set(_boost_user_dir "${BOOST_DIR}")
 if(NOT "${_boost_user_dir}" STREQUAL "")
   set(BOOST_ROOT "${_boost_user_dir}")
+  # BOOST_ROOT is only a *hint*: in config mode find_package would still fall
+  # back to CMAKE_SYSTEM_PREFIX_PATH, so an unusable BOOST_DIR would silently
+  # resolve to some other system Boost instead of failing. Restrict the search
+  # to the requested prefix so BOOST_DIR is authoritative, as documented.
   find_package(Boost ${DiFfRG_BOOST_MIN_VERSION} QUIET
-               COMPONENTS ${_boost_components})
+               COMPONENTS ${_boost_components}
+               PATHS "${_boost_user_dir}" NO_DEFAULT_PATH)
   if(NOT Boost_FOUND)
     message(
       FATAL_ERROR
@@ -384,6 +396,19 @@ else()
 endif()
 
 if(_build_boost)
+  # The bundled build needs the vendored source tree to be present and complete.
+  set(_boost_vendor_source
+      "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/boost/boost_1_81_0")
+  if(NOT EXISTS "${_boost_vendor_source}/bootstrap.sh"
+     OR NOT EXISTS "${_boost_vendor_source}/boost/version.hpp")
+    message(
+      FATAL_ERROR
+        "No usable system Boost >= ${DiFfRG_BOOST_MIN_VERSION} was found and the "
+        "vendored Boost source is missing. Expected ${_boost_vendor_source} to "
+        "contain bootstrap.sh and boost/version.hpp.\n"
+        "  Install Boost and point -DBOOST_DIR=<prefix> at it, or restore the "
+        "vendored tree.")
+  endif()
   set(_boost_root "${DEPEND_INSTALL_PREFIX}")
   set(_boost_incdir "${DEPEND_INSTALL_PREFIX}/include")
   set(_boost_libdir "${DEPEND_INSTALL_PREFIX}/lib")
@@ -403,9 +428,12 @@ else()
   endif()
   set(_boost_extra_args -DBoost_DIR:PATH=${Boost_DIR})
   set(_boost_dep "")
-  set(_boost_status
-      "  ${BoldGreen}[Boost] Using system Boost ${Boost_VERSION} (${_boost_incdir}); skipping bundled build.${ColourReset}"
-  )
+  # Do not clobber the more specific message set by the BOOST_DIR branch above.
+  if(NOT DEFINED _boost_status)
+    set(_boost_status
+        "  ${BoldGreen}[Boost] Using system Boost ${Boost_VERSION} (${_boost_incdir}); skipping bundled build.${ColourReset}"
+    )
+  endif()
 endif()
 
 # ----------------------------------------------------------------------------
@@ -807,6 +835,7 @@ ExternalProject_Add(
 
 message("${BoldCyan}[5/8] Configuring Boost...${ColourReset}")
 # Boost selection was resolved above; only register the bundled build if needed.
+# The bundled build compiles the vendored source tree in dependencies/boost.
 if(_build_boost)
   ExternalProject_Add(
     boost_dep
@@ -1026,13 +1055,18 @@ ExternalProject_Add(
   GIT_REPOSITORY https://github.com/dealii/dealii.git
   GIT_TAG v9.7.1
   GIT_SHALLOW ON
-  # Patch deal.II 9.7.1 for clang-CUDA + Kokkos 5.x + Boost 1.9x (see
-  # patches/dealii-9.7.1-clang-cuda.patch and deal.II issue #18797). Idempotent:
+  # Patch deal.II 9.7.1 for DiFfRG's IDA diagnostics/max-step handling and for
+  # clang-CUDA + Kokkos 5.x + Boost 1.9x (see deal.II issue #18797). Idempotent:
   # check-reverse first (silently) so an already-patched tree is detected without
   # the forward apply spewing "patch does not apply" errors on every re-run/
-  # re-clone; only forward-apply on a pristine tree. sh -c keeps it working on
-  # Linux and macOS.
+  # re-clone. If neither reverse-check nor forward-apply succeeds the tree is in a
+  # *partially* applied state -- an existing build/ patched by an older revision of
+  # the patch file -- so restore the touched files to pristine and apply cleanly.
+  # sh -c keeps it working on Linux and macOS.
   PATCH_COMMAND
+    sh -c
+    "git apply --reverse --check --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/dependencies/dealii_ida_max_num_steps.patch' 2>/dev/null && echo 'deal.II IDA patch already applied' || git apply --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/dependencies/dealii_ida_max_num_steps.patch' 2>/dev/null || ( echo 'deal.II IDA patch stale -- restoring and re-applying' && git checkout -- include/deal.II/sundials/ida.h source/sundials/ida.cc && git apply --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/dependencies/dealii_ida_max_num_steps.patch' )"
+    COMMAND
     sh -c
     "git apply --reverse --check --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-clang-cuda.patch' 2>/dev/null && echo 'deal.II patch already applied' || git apply --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-clang-cuda.patch'"
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/deal.II
@@ -1098,9 +1132,9 @@ file(MAKE_DIRECTORY ${DEPEND_INSTALL_PREFIX}/include/deal.II/bundled)
 # correct pin. Pinned hint variables are guarded with if(NOT DEFINED ...) so an
 # explicit -DBOOST_ROOT=/-DTBB_DIR=/-DHDF5_DIR= on the command line still wins.
 
-# Bundled Boost builds Boost itself, so its version is not yet known via
-# find_package; read it from the bundled source. For a system Boost we already
-# have Boost_VERSION.
+# A bundled Boost build compiles Boost itself, so its version is not yet known
+# via find_package; read it from the vendored wrapper. For a system Boost we
+# already have Boost_VERSION.
 set(_pinned_boost_version "${Boost_VERSION}")
 if(_build_boost)
   file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/boost/CMakeLists.txt"
@@ -1108,6 +1142,10 @@ if(_build_boost)
   if(_boost_ver_line)
     string(REGEX REPLACE ".*\"([0-9]+\\.[0-9]+\\.[0-9]+)\".*" "\\1"
                          _pinned_boost_version "${_boost_ver_line}")
+  else()
+    message(
+      FATAL_ERROR
+        "Could not read TRY_BOOST_VERSION from dependencies/boost/CMakeLists.txt")
   endif()
 endif()
 

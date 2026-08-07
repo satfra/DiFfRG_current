@@ -3,6 +3,7 @@
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/data/hdf5_output.hh>
+#include <DiFfRG/discretization/data/output_settings.hh>
 
 // external libraries
 #include <deal.II/dofs/dof_handler.h>
@@ -12,6 +13,7 @@
 #include <hdf5lib/hdf5.hh>
 
 // standard library
+#include <condition_variable>
 #include <exception>
 #include <list>
 #include <mutex>
@@ -39,10 +41,24 @@ namespace DiFfRG
      * @param output_folder Folder where the .vtu files will be saved. Should be relative to top_folder.
      * @param subdivisions Number of subdivisions of the cells in the .vtu files.
      */
-    FEOutput(std::string top_folder, std::string output_name, std::string output_folder, const JSONValue &json);
+    FEOutput(std::string top_folder, std::string output_name, std::string output_folder,
+             const Config::OutputSettings &settings, bool active = true);
+    [[deprecated("Use FEOutput(top_folder, output_name, output_folder, Config::OutputSettings(json), active) instead")]]
+    FEOutput(std::string top_folder, std::string output_name, std::string output_folder, const JSONValue &json,
+             bool active = true)
+        : FEOutput(std::move(top_folder), std::move(output_name), std::move(output_folder),
+                   Config::OutputSettings(json), active)
+    {
+    }
 
     FEOutput();
-    ~FEOutput();
+    ~FEOutput() noexcept;
+
+    /** Join pending writers and surface the first worker error without closing the output. */
+    void drain();
+
+    /** Drain pending writers, release terminal resources, and close the output. */
+    void finish();
 
     void set_hdf5_output(HDF5Output *output);
 
@@ -77,6 +93,7 @@ namespace DiFfRG
     const std::string output_folder;
     const std::string filename_pvd;
     const uint buffer_size;
+    const std::size_t max_pending_bytes;
 
     uint series_number, subdivisions;
     std::vector<std::pair<double, std::string>> time_series;
@@ -90,17 +107,25 @@ namespace DiFfRG
     // happen on a worker thread concurrently with the main thread's own Kokkos work.
     std::list<uint> output_thread_series;
     std::list<std::list<typename VectorMemory<VectorType>::Pointer>> attached_solutions;
+    std::list<std::size_t> attached_bytes;
+    std::size_t pending_bytes = 0;
 
     // serializes worker-thread access to time_series and the shared .pvd file
     std::mutex output_mutex;
+    std::condition_variable output_condition;
+    uint next_published_series = 0;
+    bool publication_failed = false;
     // captures any exception thrown inside a worker thread so it can be re-raised on the
     // main thread at the next flush() (or at destruction, if no other throw is unwinding)
     std::mutex exception_mutex;
     std::exception_ptr stored_exception;
+    bool finished = false;
 
     GrowingVectorMemory<VectorType> mem;
 
     void update_buffers();
+    void retire_oldest();
+    void reserve_bytes(std::size_t bytes);
 
     HDF5Output *hdf5_output = nullptr;
 
@@ -119,7 +144,17 @@ namespace DiFfRG
      * @param output_folder Folder where the .vtu files will be saved. Should be relative to top_folder.
      * @param subdivisions Number of subdivisions of the cells in the .vtu files.
      */
-    FEOutput(std::string top_folder, std::string output_name, std::string output_folder, const JSONValue &json);
+    FEOutput(std::string top_folder, std::string output_name, std::string output_folder,
+             const Config::OutputSettings &settings, bool active = true);
+    [[deprecated("Use FEOutput(top_folder, output_name, output_folder, Config::OutputSettings(json), active) instead")]]
+    FEOutput(std::string top_folder, std::string output_name, std::string output_folder, const JSONValue &json,
+             bool active = true)
+        : FEOutput(std::move(top_folder), std::move(output_name), std::move(output_folder),
+                   Config::OutputSettings(json), active)
+    {
+    }
+    void drain() {}
+    void finish() {}
   };
 
 } // namespace DiFfRG

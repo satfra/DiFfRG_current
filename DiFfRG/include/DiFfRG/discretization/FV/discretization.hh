@@ -12,8 +12,13 @@
 
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/common/run_logger.hh>
 #include <DiFfRG/discretization/FV/assembler/KurganovTadmor.hh>
-#include <DiFfRG/discretization/discretization.hh>
+#include <DiFfRG/discretization/data/data.hh>
+// #include <DiFfRG/discretization/discretization.hh>
+
+#include <iostream>
+#include <string>
 
 namespace DiFfRG
 {
@@ -36,12 +41,20 @@ namespace DiFfRG
       using SparseMatrixType = SparseMatrix<NumberType>;
       using Mesh = Mesh_;
       static constexpr uint dim = Mesh::dim;
+      static constexpr bool is_fv_discretization = true;
 
-      Discretization(Mesh &mesh, const JSONValue &json)
-          : mesh(mesh), json(json),
+      [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Discretization(
+          Mesh &mesh, DiFfRG::internal::LegacyDefaultLogPortArgument<Mesh, JSONValue> json)
+          : Discretization(mesh, json.value(), DiFfRG::internal::legacy_default_log_port<Mesh>())
+      {
+      }
+
+      Discretization(Mesh &mesh, const JSONValue &json, LogPort log_port)
+          : mesh(mesh), json(json), log_port(std::move(log_port)),
             fe(std::make_shared<FESystem<dim>>(FE_DGQ<dim>(0), Components::count_fe_functions(0))),
             dof_handler(mesh.get_triangulation())
       {
+        warn_on_ignored_fe_order();
         setup_dofs();
       }
 
@@ -101,12 +114,29 @@ namespace DiFfRG
       }
 
     protected:
+      /**
+       * @brief The finite volume discretization always works on cell averages, i.e. FE_DGQ(0), and never reads
+       * /discretization/fe_order. Warn the user if they set it to something nonzero, as it has no effect.
+       */
+      void warn_on_ignored_fe_order() const
+      {
+        const uint fe_order = json.get_uint("/discretization/fe_order", 0);
+        if (fe_order == 0) return;
+
+        const std::string message =
+            "FV: /discretization/fe_order = " + std::to_string(fe_order) +
+            " is ignored. The finite volume discretization always uses piecewise constants (fe_order = 0); "
+            "reconstruction order is set by the choice of reconstructor and limiter instead.";
+        std::cerr << "WARNING: " << message << std::endl;
+        log_port.warn("{}", message);
+      }
+
       void setup_dofs()
       {
         dof_handler.distribute_dofs(*fe);
 
-        spdlog::get("log")->info("FV: Number of active cells: {}", mesh.get_triangulation().n_active_cells());
-        spdlog::get("log")->info("FV: Number of degrees of freedom: {}", dof_handler.n_dofs());
+        log_port.info("FV: Number of active cells: {}", mesh.get_triangulation().n_active_cells());
+        log_port.info("FV: Number of degrees of freedom: {}", dof_handler.n_dofs());
 
         constraints.clear();
         DoFTools::make_hanging_node_constraints(dof_handler, constraints);
@@ -118,6 +148,7 @@ namespace DiFfRG
 
       Mesh &mesh;
       JSONValue json;
+      LogPort log_port;
 
       std::shared_ptr<FESystem<dim>> fe;
       DoFHandler<dim> dof_handler;

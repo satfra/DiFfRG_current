@@ -171,6 +171,209 @@ public:
 };
 ```
 
+## Affine constraints
+
+Sometimes a model should pin a few individual degrees of freedom directly, instead of expressing the condition through a
+flux or a boundary stencil. Typical examples are:
+- imposing `u(0)=0`,
+- fixing several FE functions at the origin,
+- selecting one representative in the presence of a zero mode.
+
+This is done through **affine constraints**.
+
+### When is this used?
+
+Before the assemblers rebuild sparsity patterns and operators, they ask the model whether some dofs should be removed
+from the linear algebra and prescribed to a fixed value. The model can then add lines to the deal.II
+`AffineConstraints` object.
+
+There are two model-side entry points:
+- `apply_boundary_affine_constraints(constraints, context)` for constraints on dofs sitting on boundary faces,
+- `apply_affine_constraints(constraints, context)` for constraints that may need any support dof, including interior
+  support points.
+
+The assemblers call the lower-level `affine_constraints(...)` hook with the context object. Models should usually
+implement one of the two `apply_*` hooks above or inherit one of the helper mixins.
+
+### What is `context`?
+
+The second argument of the `apply_*_affine_constraints(...)` hooks is a small helper object that exposes the dofs and
+support points of each FE function by its compile-time name.
+
+For example, if the model uses
+```Cpp
+using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">, Scalar<"v">>;
+using Components = ComponentDescriptor<FEFunctionDesc>;
+constexpr auto idxf = FEFunctionDesc{};
+```
+then inside one of the affine-constraint hooks you can write
+```Cpp
+const auto u_support = context.template support<"u">();
+const auto v_boundary = context.template boundary<"v">();
+```
+
+Each of these views has two members:
+- `.dofs`: the `IndexSet` of the selected FE function,
+- `.points`: the corresponding support points.
+
+These two are aligned: `view.points[i]` is the point belonging to `view.dofs.nth_index_in_set(i)`.
+
+There are two kinds of views:
+- `support<"...">()` returns **all** support dofs of that FE function,
+- `boundary<"...">()` returns only the **boundary** dofs of that FE function.
+
+Use the view that matches the condition: boundary-face constraints should inspect `boundary<"...">()`, while
+cell-centered or interior support-point constraints should inspect `support<"...">()`.
+
+### Smallest useful example: constrain one component
+
+For the common one-dimensional case `u(0)=0`, there are two ready-made helpers:
+```Cpp
+template <typename Model> using ConstrainBoundaryUAtOrigin = def::ConstrainOriginBoundaryPointToZero<"u", Model>;
+template <typename Model> using ConstrainSupportUAtOrigin = def::ConstrainOriginSupportPointToZero<"u", Model>;
+
+class MyModel : public def::AbstractModel<MyModel, Components>,
+                public ConstrainBoundaryUAtOrigin<MyModel>,
+                public def::fRG,
+                ...
+{
+  ...
+};
+```
+
+Both helpers do the following:
+1. inspect the selected view of the FE function `"u"` and choose the representative nearest to the origin coordinate,
+2. break symmetric ties by preferring the non-negative side,
+3. constrain the selected dof or dofs to `0`.
+
+Use `ConstrainOriginBoundaryPointToZero` for dofs sitting on boundary faces. Use
+`ConstrainOriginSupportPointToZero` for FV and DG0-like layouts where the representative nearest the origin can be an
+interior or cell-centered support point.
+
+In one-dimensional domains, the origin coordinate is simply `x[0]`. In multidimensional domains, the model must define
+what “origin” means for each constrained component by providing an `OriginConstraintCoordinate` policy. The helper then
+selects the nearest discrete zero level set of that signed coordinate and constrains all dofs on that selected level set.
+
+For example, in a two-field `O(2)`-style model where `"u"` is odd across `phi_1 = 0` and `"v"` is odd across
+`phi_2 = 0`, write:
+```Cpp
+class O2Model : public def::AbstractModel<O2Model, Components>,
+                ...
+{
+public:
+  template <FixedString component_name> struct OriginConstraintCoordinate;
+
+  template <typename Constraints, typename Context>
+  void apply_affine_constraints(Constraints &constraints, const Context &context) const
+  {
+    def::ConstrainOriginSupportPointToZero<"u", O2Model>{}.apply_affine_constraints(constraints, context);
+    def::ConstrainOriginSupportPointToZero<"v", O2Model>{}.apply_affine_constraints(constraints, context);
+  }
+};
+
+template <> struct O2Model::OriginConstraintCoordinate<"u"> {
+  static double signed_coordinate(const Point<2> &point) { return point[0]; }
+};
+
+template <> struct O2Model::OriginConstraintCoordinate<"v"> {
+  static double signed_coordinate(const Point<2> &point) { return point[1]; }
+};
+```
+
+Here `signed_coordinate(point) == 0` defines the constraint manifold. This is intentionally model-owned: it avoids
+assuming that component order determines geometry. A descriptor order such as
+`FEFunctionDescriptor<Scalar<"v">, Scalar<"u">>` still works as long as the policies above define the intended
+coordinates.
+
+### Manual example: constrain several components differently
+
+If different FE functions should be treated differently, write a custom
+`apply_affine_constraints(...)` method:
+```Cpp
+class MyModel : public def::AbstractModel<MyModel, Components>,
+                public def::fRG,
+                ...
+{
+public:
+  template <typename Constraints, typename Context>
+  void apply_affine_constraints(Constraints &constraints, const Context &context) const
+  {
+    const auto u = context.template support<"u">();
+
+    // Enforce u(0) = 0 using a support point.
+    for (uint i = 0; i < u.dofs.n_elements(); ++i) {
+      if (std::abs(u.points[i][0]) > 1.0e-12) continue;
+
+      const auto dof = u.dofs.nth_index_in_set(i);
+      constraints.add_line(dof);
+      constraints.set_inhomogeneity(dof, 0.0);
+      break;
+    }
+  }
+
+  template <typename Constraints, typename Context>
+  void apply_boundary_affine_constraints(Constraints &constraints, const Context &context) const
+  {
+    const auto v = context.template boundary<"v">();
+
+    // Enforce v(0) = 1 using a boundary dof.
+    for (uint i = 0; i < v.dofs.n_elements(); ++i) {
+      if (std::abs(v.points[i][0]) > 1.0e-12) continue;
+
+      const auto dof = v.dofs.nth_index_in_set(i);
+      constraints.add_line(dof);
+      constraints.set_inhomogeneity(dof, 1.0);
+      break;
+    }
+  }
+};
+```
+
+The important point is that the selection happens by **name**, not by guessing that `"u"` is component `0` and `"v"`
+is component `1`.
+
+### Reusing helpers for several named FE functions
+
+If several FE functions should receive the same type of origin constraint, it is usually cleaner to wrap the provided
+single-component helper into a small mixin. In multidimensional domains, the model still has to provide the
+`OriginConstraintCoordinate` policy for each constrained component.
+```Cpp
+template <typename Model>
+class ConstrainUAndVAtOrigin
+  : public def::ConstrainOriginSupportPointToZero<"u", Model>,
+    public def::ConstrainOriginSupportPointToZero<"v", Model>
+{
+public:
+  template <typename Constraints, typename Context>
+  void apply_affine_constraints(Constraints &constraints, const Context &context) const
+  {
+    def::ConstrainOriginSupportPointToZero<"u", Model>::apply_affine_constraints(constraints, context);
+    def::ConstrainOriginSupportPointToZero<"v", Model>::apply_affine_constraints(constraints, context);
+  }
+};
+```
+
+Then the model just inherits the wrapper:
+```Cpp
+class MyModel : public def::AbstractModel<MyModel, Components>,
+                public ConstrainUAndVAtOrigin<MyModel>,
+                ...
+{
+  ...
+};
+```
+
+This gives the same “strategy mixin” style as the FV boundary helpers.
+
+### When should this not be used?
+
+Affine constraints are for pinning a few specific dofs. They are usually **not** the right tool for:
+- full PDE boundary conditions that are already naturally expressed through numerical fluxes,
+- KT ghost-cell behavior, which belongs into the FV boundary stencil helpers,
+- conditions that should be applied to a whole face or through weak boundary terms.
+
+If the condition is really “pick this named dof and set it to a fixed value”, affine constraints are a good fit.
+
 ### Assemblers and discretizations
 
 The actual numerical calculation of the flow equations (rather, their weak form) is done by the so-called assemblers. These are responsible for the actual discretization of the flow equations on the finite element space. In DiFfRG, we provide a set of assemblers for different discretizations, which are all derived from the abstract assembler class DiFfRG::AbstractAssembler.
@@ -215,11 +418,13 @@ int main(int argc, char *argv[])
   // Define the objects needed to run the simulation
   Model model(json);
   RectangularMesh<dim> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
-  DataOutput<dim, VectorType> data_out(json);
+  OutputPath output_path(json);
+  OutputSession<dim, VectorType> output(output_path, Config::OutputSettings(json));
+  const auto log = output.log_port();
+  Discretization discretization(mesh, json, log);
+  Assembler assembler(discretization, model, json, log);
   HAdaptivity mesh_adaptor(assembler, json);
-  TimeStepper time_stepper(json, &assembler, &data_out, &mesh_adaptor);
+  TimeStepper time_stepper(json, &assembler, &output, &mesh_adaptor);
 
   // Set up the initial condition
   FE::FlowingVariables initial_condition(discretization);
@@ -230,8 +435,8 @@ int main(int argc, char *argv[])
   time_stepper.run(&initial_condition, 0., json.get_double("/timestepping/final_time"));
 
   // Print a bit of exit information to the logger.
-  assembler.log("log");
-  spdlog::get("log")->info("Simulation finished after " + time_format(timer.wall_time()));
+  assembler.log();
+  log.info("Simulation finished after " + time_format(timer.wall_time()));
   return 0;
 }
 ```
@@ -289,6 +494,31 @@ where `r_a` is the residual to fill and `sol` is a named tuple from which the cu
 ```cpp
 template <int dim, typename Vector, typename Solutions> void extract(Vector &e_b, const Point<dim> &x, const Solutions &sol) const;
 ```
+
+Spatial readouts and extractors also receive an experimental scalar raw-potential view under the provisional named
+entries `"potential"`, `"potential_gradient"`, and `"potential_hessian"`. These are the value, gradient, and
+element-local Hessian of one common scalar CG2 potential reconstructed from the model's unmodified potential gradient.
+The Hessian may jump across cell interfaces. These entry names may change while this interface is experimental. The
+value uses the gauge `potential(origin) == 0`; its derivatives do not depend on that gauge.
+
+By default, the raw gradient copies the first `dim` solution components, i.e. `{values[0], ..., values[dim - 1]}`;
+missing components are zero-filled. A model with a different component layout must override it independently:
+
+```cpp
+template <int dim, typename Vector>
+std::array<double, dim> raw_potential_gradient(const Point<dim> &, const Vector &values) const
+{
+  return {{values[idxf("u")]}}; // unmodified dU/drho, without the physical-EoM correction
+}
+```
+
+The readout-specific EoM callback reconstructs a separate scalar CG2 potential and selects the evaluation point. The
+raw-potential fields and extractors are then evaluated at that same point for CG, DG, dDG, LDG, and KT-FV. Existing
+`"fe_functions"`, `"fe_derivatives"`, and `"fe_hessians"` entries keep their assembler-specific meanings.
+
+Spatial output writes this common raw reconstruction to `<run>_potential.pvd` with field name `potential`. The
+separate potentials reconstructed from the readout-specific physical EoM callbacks are written to
+`<run>_eom_potential.pvd` with fields `eom_potential`, `eom_potential_1`, and so on.
 
 A system that consists of variables only (no FE functions) is assembled by `DiFfRG::Variables::Assembler` (spatial dimension `0`) and carried by `DiFfRG::FlowingVariables`; when FE functions are also present the two sectors are coupled and the FEM assembler handles both. Momentum grids are represented by coordinate systems (e.g. `DiFfRG::LogarithmicCoordinates1D`) and evaluated through interpolators (e.g. `DiFfRG::SplineInterpolator1D`); the flow kernels are generated as grid `map` integrators.
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DiFfRG/timestepping/linear_solver/GMRES.hh>
+#include <DiFfRG/timestepping/linear_solver/ScaledGMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/UMFPack.hh>
 
 #include <DiFfRG/timestepping/boost_abm.hh>

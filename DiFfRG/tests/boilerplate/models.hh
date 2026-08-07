@@ -1,6 +1,7 @@
 #pragma once
 
 // external libraries
+#include <array>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
@@ -72,7 +73,10 @@ namespace DiFfRG
           throw std::runtime_error("Only 1, 2, and 3 dimensions are supported.");
       }
 
-      double solution(const Point<dim> &pos) const { return prm.initial_x0[0] + prm.initial_x1[0] * pos[0]; }
+      std::array<double, 1> solution(const Point<dim> &pos) const
+      {
+        return {prm.initial_x0[0] + prm.initial_x1[0] * pos[0]};
+      }
     };
 
     template <uint dim>
@@ -93,7 +97,10 @@ namespace DiFfRG
       {
         values[0] = prm.initial_x0[0] + prm.initial_x1[0] * pos[0];
       }
-      double solution(const Point<dim> &pos) const { return prm.initial_x0[0] + prm.initial_x1[0] * pos[0]; }
+      std::array<double, 1> solution(const Point<dim> &pos) const
+      {
+        return prm.initial_x0[0] + prm.initial_x1[0] * pos[0];
+      }
       template <uint dependent, int mdim, typename NumberType, typename Solutions_s, typename Solutions_n>
       void ldg_numflux(std::array<Tensor<1, mdim, NumberType>, 1> &, const Tensor<1, mdim> &, const Point<mdim> &,
                        const Solutions_s &, const Solutions_n &) const
@@ -119,9 +126,9 @@ namespace DiFfRG
         values[0] = prm.initial_x0[0] + prm.initial_x1[0] * pos[0];
       }
 
-      double solution(const Point<dim> &pos) const
+      std::array<double, 1> solution(const Point<dim> &pos) const
       {
-        return std::exp(t) * (prm.initial_x0[0] + prm.initial_x1[0] * pos[0]);
+        return {std::exp(t) * (prm.initial_x0[0] + prm.initial_x1[0] * pos[0])};
       }
 
       template <typename NT, typename Solution>
@@ -151,9 +158,9 @@ namespace DiFfRG
         values[0] = prm.initial_x0[0] + prm.initial_x1[0] * pos[0];
       }
 
-      double solution(const Point<dim> &pos) const
+      std::array<double, 1> solution(const Point<dim> &pos) const
       {
-        return (prm.initial_x0[0] + prm.initial_x1[0] * pos[0]) / (prm.initial_x1[0] * t + 1.);
+        return {(prm.initial_x0[0] + prm.initial_x1[0] * pos[0]) / (prm.initial_x1[0] * t + 1.)};
       }
 
       template <typename NT, typename Solution>
@@ -189,10 +196,10 @@ namespace DiFfRG
               ModelHybridRollback<dim>,
               ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>, VariableDescriptor<Scalar<"v">>,
                                   ExtractorDescriptor<Scalar<"u_eom">>>>,
-          public def::Time,                                  // this handles time
-          public def::NoNumFlux<ModelHybridRollback<dim>>,   // pure source term, no spatial coupling
+          public def::Time,                                // this handles time
+          public def::NoNumFlux<ModelHybridRollback<dim>>, // pure source term, no spatial coupling
           public def::FlowBoundaries<ModelHybridRollback<dim>>,
-          public def::AD<ModelHybridRollback<dim>>           // define all jacobians per AD
+          public def::AD<ModelHybridRollback<dim>> // define all jacobians per AD
     {
     public:
       static constexpr double K = 30.;     // sharpness of the FEM transition
@@ -265,11 +272,10 @@ namespace DiFfRG
     // variable:   dv/dt = -u                  ->  v(t) = v0 + (u0/K) (exp(-K t) - 1)
     template <uint dim>
     class ModelHybridSmooth
-        : public def::AbstractModel<
-              ModelHybridSmooth<dim>,
-              ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>, VariableDescriptor<Scalar<"v">>,
-                                  ExtractorDescriptor<Scalar<"u_eom">>>>,
-          public def::Time,                                  // this handles time
+        : public def::AbstractModel<ModelHybridSmooth<dim>, ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>,
+                                                                                VariableDescriptor<Scalar<"v">>,
+                                                                                ExtractorDescriptor<Scalar<"u_eom">>>>,
+          public def::Time, // this handles time
           public def::NoNumFlux<ModelHybridSmooth<dim>>,
           public def::FlowBoundaries<ModelHybridSmooth<dim>>,
           public def::AD<ModelHybridSmooth<dim>>
@@ -340,7 +346,7 @@ namespace DiFfRG
               ModelHybridTwoWay<dim>,
               ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>, VariableDescriptor<Scalar<"v">>,
                                   ExtractorDescriptor<Scalar<"u_eom">, Scalar<"v_eom">>>>,
-          public def::Time,                                  // this handles time
+          public def::Time, // this handles time
           public def::NoNumFlux<ModelHybridTwoWay<dim>>,
           public def::FlowBoundaries<ModelHybridTwoWay<dim>>,
           public def::AD<ModelHybridTwoWay<dim>>
@@ -353,14 +359,8 @@ namespace DiFfRG
       const PhysicalParameters prm;
       ModelHybridTwoWay(PhysicalParameters prm) : prm(prm) {}
 
-      static double u_exact(double tt)
-      {
-        return 0.5 * (u0 + v0) + 0.5 * (u0 - v0) * std::exp(-2. * K * tt);
-      }
-      static double v_exact(double tt)
-      {
-        return 0.5 * (u0 + v0) - 0.5 * (u0 - v0) * std::exp(-2. * K * tt);
-      }
+      static double u_exact(double tt) { return 0.5 * (u0 + v0) + 0.5 * (u0 - v0) * std::exp(-2. * K * tt); }
+      static double v_exact(double tt) { return 0.5 * (u0 + v0) - 0.5 * (u0 - v0) * std::exp(-2. * K * tt); }
 
       template <typename Vector> void initial_condition(const Point<dim> & /*pos*/, Vector &values) const
       {

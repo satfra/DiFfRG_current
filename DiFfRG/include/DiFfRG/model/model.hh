@@ -5,9 +5,17 @@
 #include <deal.II/base/point.h>
 #include <deal.II/base/tensor.h>
 
+// standard library
+#include <cmath>
+#include <limits>
+#include <optional>
+#include <vector>
+
 // DiFfRG
+#include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
 #include <DiFfRG/model/ad.hh>
 #include <DiFfRG/model/component_descriptor.hh>
+#include <DiFfRG/model/fv_boundaries.hh>
 #include <DiFfRG/model/numflux.hh>
 
 namespace DiFfRG
@@ -89,13 +97,9 @@ namespace DiFfRG
        * @param dt_u_i the time derivative of the field values \f$\partial_t u_i(x)\f$ at the point `x`.
        */
       template <int dim, typename NumberType, typename Vector, typename Vector_dot, size_t n_fe_functions>
-      void mass(std::array<NumberType, n_fe_functions> &m_i, const Point<dim> &x, const Vector &u_i,
-                const Vector_dot &dt_u_i) const
+      void mass([[maybe_unused]] std::array<NumberType, n_fe_functions> &m_i, [[maybe_unused]] const Point<dim> &x,
+                [[maybe_unused]] const Vector &u_i, const Vector_dot &dt_u_i) const
       {
-        // Just to avoid warnings
-        (void)x;
-        (void)u_i;
-
         for (uint i = 0; i < n_fe_functions; ++i)
           m_i[i] = dt_u_i[i];
       }
@@ -115,11 +119,9 @@ namespace DiFfRG
        * @param x a d-dimensional dealii::Point<dim> representing field coordinates.
        */
       template <int dim, typename NumberType, size_t n_fe_functions>
-      void mass(std::array<std::array<NumberType, n_fe_functions>, n_fe_functions> &m_ij, const Point<dim> &x) const
+      void mass(std::array<std::array<NumberType, n_fe_functions>, n_fe_functions> &m_ij,
+                [[maybe_unused]] const Point<dim> &x) const
       {
-        // Just to avoid warnings
-        (void)x;
-
         for (uint i = 0; i < n_fe_functions; ++i)
           for (uint j = 0; j < n_fe_functions; ++j)
             m_ij[i][j] = 0.;
@@ -138,32 +140,65 @@ namespace DiFfRG
        *
        * @note The standard implementation of this method simply sets \f$F_i = 0\f$.
        *
+       * @note The meaning of this method depends on the discretization. For CG/DG/LDG it is the full flux of the
+       * conservation law. For the Kurganov Tadmor scheme it is the *advection* flux, i.e. the hyperbolic part which
+       * determines the numerical face flux and the wave speeds; the parabolic part is implemented separately in
+       * `diffusion_flux`. In the Kurganov Tadmor case the assembler evaluates this callback separately for the minus
+       * and plus face traces, and the derivatives are the face gradients produced by the active advection
+       * reconstructor; they are distinct from the corrected gradients handed to `diffusion_flux`.
+       *
        * @param F_i the resulting flux function \f$F_i\f$, with \f$N_f\f$ components.
        * This method should fill this argument with the desired structure of the flow equation.
        * @param x a d-dimensional dealii::Point<dim> representing field coordinates.
        * @param sol a `std::tuple<...>` which contains
        * 1. the array u_j
        * 2. the array of arrays \f$\partial_x u_j\f$
-       * 3. the array of arrays of arrays \f$\partial_x^2 u_j\f$
-       * 4. the array of extractors \f$e_b\f$
+       * 3. the array of arrays of arrays \f$\partial_x^2 u_j\f$ (CG/DG/LDG only)
+       * 4. the array of extractors \f$e_b\f$ (CG/DG/LDG only)
        */
       template <int dim, typename NumberType, typename Solutions, size_t n_fe_functions>
-      void flux(std::array<Tensor<1, dim, NumberType>, n_fe_functions> &F_i, const Point<dim> &x,
-                const Solutions &sol) const
+      void flux([[maybe_unused]] std::array<Tensor<1, dim, NumberType>, n_fe_functions> &F_i,
+                [[maybe_unused]] const Point<dim> &x, [[maybe_unused]] const Solutions &sol) const
       {
-        // Just to avoid warnings
-        (void)F_i;
-        (void)x;
-        (void)sol;
       }
 
       /**
-       * @brief The source function \f$s_i(u_j, \partial_x u_j, \partial_x^2 u_j, e_b, v_a, x)\f$ is implemented by this
-       * method.
+       * @brief If the Kurganov Tadmor Scheme is used, this is the implementation of the diffusion (parabolic) part of
+       * the face flux. \f$D_i(u_j, \partial_x u_j, \partial_x^3 u_j, x)\f$
        *
-       * @remarks Note, that the precise template structure is not important, the only important thing is that the types
-       * are consistent with the rest of the model. It is however necessary to leave at least the NumberType, Vector,
-       * and Vector_dot template parameters, as these can differ between calls (e.g. when doing automatic
+       * @remarks The assembler evaluates this callback separately for the minus and plus face traces, using the
+       * corrected gradients of the diffusion reconstructor; these are distinct from the advection face gradients
+       * handed to `flux`. This method is never called by the CG/DG/LDG discretizations.
+       *
+       * @note The standard implementation of this method simply sets \f$D_i = 0\f$.
+       *
+       * @note Sign convention: the face flux is \f$(H + D)\cdot n\f$, i.e. the advection numerical flux \f$H\f$ (built
+       * from `flux`) and the diffusion flux \f$D\f$ (from this method) are SUMMED. Both methods therefore return the
+       * physical flux with the same sign - exactly the conservation-law convention used by CG / LLFFlux. A diffusion
+       * flux \f$f_{diff}\f$ must be a DECREASING function of the gradient (\f$\partial f_{diff} / \partial (\partial
+       * u) < 0\f$) for forward diffusion, e.g. \f$f_{diff} = -\nu\, \partial u\f$ for the heat/viscous term.
+       *
+       * @param F_i the resulting diffusion flux \f$D_i\f$, with \f$N_f\f$ components.
+       * This method should fill this argument with the desired structure of the flow equation.
+       * @param x a d-dimensional dealii::Point<dim> representing field coordinates.
+       * @param sol a `std::tuple<...>` which contains
+       * 1. the array u_j
+       * 2. the array of arrays \f$\partial_x u_j\f$
+       * 3. the array of arrays of arrays \f$\partial_x^3 u_j\f$
+       */
+      template <int dim, typename NumberType, typename Solutions, size_t n_fe_functions>
+      void diffusion_flux([[maybe_unused]] std::array<Tensor<1, dim, NumberType>, n_fe_functions> &F_i,
+                          [[maybe_unused]] const Point<dim> &x, [[maybe_unused]] const Solutions &sol) const
+      {
+      }
+
+      /**
+       * @brief The source function \f$s_i(u_j, \partial_x u_j, \partial_x^2 u_j, e_b, v_a, x)\f$ is implemented by
+       * this method.
+       *
+       * @remarks Note, that the precise template structure is not important, the only important thing is that the
+       * types are consistent with the rest of the model. It is however necessary to leave at least the NumberType,
+       * Vector, and Vector_dot template parameters, as these can differ between calls (e.g. when doing automatic
        * differentiation).
        *
        * @note The standard implementation of this method simply sets \f$s_i = 0\f$.
@@ -178,12 +213,9 @@ namespace DiFfRG
        * 4. the array of extractors \f$e_b\f$
        */
       template <int dim, typename NumberType, typename Solutions, size_t n_fe_functions>
-      void source(std::array<NumberType, n_fe_functions> &s_i, const Point<dim> &x, const Solutions &sol) const
+      void source([[maybe_unused]] std::array<NumberType, n_fe_functions> &s_i, [[maybe_unused]] const Point<dim> &x,
+                  [[maybe_unused]] const Solutions &sol) const
       {
-        // Just to avoid warnings
-        (void)s_i;
-        (void)x;
-        (void)sol;
       }
 
       /**
@@ -234,17 +266,15 @@ namespace DiFfRG
        */
       //@{
 
-      template <typename Vector> void initial_condition_variables(Vector &v_a) const
+      template <typename Vector> void initial_condition_variables([[maybe_unused]] Vector &v_a) const
       {
         // Just to avoid warnings
-        (void)v_a;
       }
 
-      template <typename Vector, typename Solution> void dt_variables(Vector &r_a, const Solution &sol) const
+      template <typename Vector, typename Solution>
+      void dt_variables([[maybe_unused]] Vector &r_a, [[maybe_unused]] const Solution &sol) const
       {
         // Just to avoid warnings
-        (void)r_a;
-        (void)sol;
       }
 
       //@}
@@ -254,7 +284,8 @@ namespace DiFfRG
       //@{
 
       template <int dim, typename Vector, typename Solutions>
-      void extract(Vector &, const Point<dim> &, const Solutions &) const
+      void extract([[maybe_unused]] Vector &result, [[maybe_unused]] const Point<dim> &x,
+                   [[maybe_unused]] const Solutions &sol) const
       {
       }
 
@@ -287,12 +318,9 @@ namespace DiFfRG
        *
        */
       template <uint dependent, int dim, typename NumberType, typename Vector, size_t n_fe_functions_dep>
-      void ldg_flux(std::array<Tensor<1, dim, NumberType>, n_fe_functions_dep> &F, const Point<dim> &x,
-                    const Vector &u) const
+      void ldg_flux([[maybe_unused]] std::array<Tensor<1, dim, NumberType>, n_fe_functions_dep> &F,
+                    [[maybe_unused]] const Point<dim> &x, [[maybe_unused]] const Vector &u) const
       {
-        (void)F;
-        (void)x;
-        (void)u;
       }
 
       /**
@@ -318,40 +346,45 @@ namespace DiFfRG
        *
        */
       template <uint dependent, int dim, typename NumberType, typename Vector, size_t n_fe_functions_dep>
-      void ldg_source(std::array<NumberType, n_fe_functions_dep> &s, const Point<dim> &x, const Vector &u) const
+      void ldg_source([[maybe_unused]] std::array<NumberType, n_fe_functions_dep> &s,
+                      [[maybe_unused]] const Point<dim> &x, [[maybe_unused]] const Vector &u) const
       {
-        (void)s;
-        (void)x;
-        (void)u;
       }
 
-      //@}
-      /**
-       * @name Adaptive mesh refinement
-       */
-      //@{
-
       template <int dim, typename NumberType, typename Solutions_s, typename Solutions_n>
-      void face_indicator(std::array<NumberType, 2> & /*indicator*/, const Tensor<1, dim> & /*normal*/,
-                          const Point<dim> & /*p*/, const Solutions_s & /*sol_s*/, const Solutions_n & /*sol_n*/) const
+      void face_indicator([[maybe_unused]] std::array<NumberType, 2> &indicator,
+                          [[maybe_unused]] const Tensor<1, dim> &normal, [[maybe_unused]] const Point<dim> &p,
+                          [[maybe_unused]] const Solutions_s &sol_s, [[maybe_unused]] const Solutions_n &sol_n) const
       {
       }
 
       template <int dim, typename NumberType, typename Solution>
-      void cell_indicator(NumberType & /*indicator*/, const Point<dim> & /*p*/, const Solution & /*sol*/) const
+      void cell_indicator([[maybe_unused]] NumberType &indicator, [[maybe_unused]] const Point<dim> &p,
+                          [[maybe_unused]] const Solution &sol) const
       {
       }
-      //@}
-      /**
-       * @name Other
-       */
-      //@{
 
-      template <int dim, typename Vector> std::array<double, dim> EoM(const Point<dim> &x, const Vector &u) const
+      template <int dim, typename Vector>
+      std::array<double, dim> EoM([[maybe_unused]] const Point<dim> &x, const Vector &u) const
       {
-        // Just to avoid warnings
-        (void)x;
         return std::array<double, dim>{{u[0]}};
+      }
+
+      /**
+       * @brief The unmodified gradient of the scalar potential reconstructed for readouts and extractors.
+       *
+       * This is deliberately separate from the EoM callback supplied by readouts_multiple(): a physical EoM may
+       * contain explicit-breaking or other terms which are not part of the raw potential. By default, the first dim
+       * solution components are interpreted as the raw potential gradient; missing components are zero-filled. Models
+       * with a different component layout should override this method.
+       */
+      template <int dim, typename Vector>
+      std::array<double, dim> raw_potential_gradient([[maybe_unused]] const Point<dim> &x, const Vector &u) const
+      {
+        std::array<double, dim> gradient{};
+        for (uint d = 0; d < dim && d < u.size(); ++d)
+          gradient[d] = u[d];
+        return gradient;
       }
 
       template <int dim, typename Vector> Point<dim> EoM_postprocess(const Point<dim> &EoM, const Vector &) const
@@ -361,30 +394,164 @@ namespace DiFfRG
 
       template <typename FUN, typename DataOut> void readouts_multiple(FUN &helper, DataOut &) const
       {
-        helper([&](const auto &x, const auto &u_i) { return asImp().EoM(x, u_i); }, // chiral EoM
-               [&](auto &output, const auto &x, const auto &sol) { asImp().readouts(output, x, sol); });
+        helper(
+            "primary", [&](const auto &x, const auto &u_i) { return asImp().EoM(x, u_i); }, // chiral EoM
+            [&](auto &output, const auto &x, const auto &sol) { asImp().readouts(output, x, sol); });
       }
 
       template <int dim, typename DataOut, typename Solutions>
-      void readouts(DataOut &output, const Point<dim> &x, const Solutions &sol) const
+      void readouts([[maybe_unused]] DataOut &output, [[maybe_unused]] const Point<dim> &x,
+                    [[maybe_unused]] const Solutions &sol) const
       {
-        // Just to avoid warnings
-        (void)output;
-        (void)x;
-        (void)sol;
       }
 
-      template <int dim, typename Constraints>
-      void affine_constraints(Constraints &constraints, const std::vector<IndexSet> &component_boundary_dofs,
-                              const std::vector<std::vector<Point<dim>>> &component_boundary_points)
+      /**
+       * @brief Add affine constraints to the FE/DG system before sparsity patterns and operators are rebuilt.
+       *
+       * Boundary-only constraints should use `apply_boundary_affine_constraints(constraints, context)` and inspect
+       * `context.template boundary<"u">()`. Constraints that may need interior support points should use
+       * `apply_affine_constraints(constraints, context)` and inspect `context.template support<"u">()`.
+       *
+       * The origin helpers use `x[0]` as their signed origin coordinate in one-dimensional domains. In
+       * multidimensional domains, models using these helpers must provide
+       * `Model::OriginConstraintCoordinate<component_name>::signed_coordinate(point)` to define the zero level set
+       * that should be constrained for each named component.
+       */
+      template <typename Constraints, typename Context>
+      void affine_constraints(Constraints &constraints, const Context &context) const
       {
-        // Just to avoid warnings
-        (void)constraints;
-        (void)component_boundary_dofs;
-        (void)component_boundary_points;
+        if constexpr (requires(const Model &model, Constraints &constraint_matrix,
+                               const Context &affine_constraint_context) {
+                        model.apply_boundary_affine_constraints(constraint_matrix, affine_constraint_context);
+                      })
+          asImp().apply_boundary_affine_constraints(constraints, context);
+        if constexpr (requires(const Model &model, Constraints &constraint_matrix,
+                               const Context &affine_constraint_context) {
+                        model.apply_affine_constraints(constraint_matrix, affine_constraint_context);
+                      })
+          asImp().apply_affine_constraints(constraints, context);
+      }
+    };
+
+    namespace internal
+    {
+      template <typename> inline constexpr bool dependent_false_v = false;
+
+      template <FixedString component_name, typename Model, int dim>
+      double origin_constraint_coordinate(const Point<dim> &point)
+      {
+        if constexpr (dim == 1) {
+          return point[0];
+        } else {
+          if constexpr (requires {
+                          Model::template OriginConstraintCoordinate<component_name>::signed_coordinate(point);
+                        }) {
+            return Model::template OriginConstraintCoordinate<component_name>::signed_coordinate(point);
+          } else {
+            static_assert(dependent_false_v<Model>,
+                          "Multidimensional origin affine-constraint helpers require Model::"
+                          "OriginConstraintCoordinate<component_name>::signed_coordinate(point).");
+            return 0.0;
+          }
+        }
       }
 
-      //@}
+      template <FixedString component_name, typename Model, typename Context>
+      std::vector<types::global_dof_index> select_origin_candidates([[maybe_unused]] const Context &context,
+                                                                    const auto &view)
+      {
+        constexpr int dim = Context::dimension;
+        static_assert(dim == 1 || dim == 2,
+                      "Origin affine-constraint helpers currently support only one- and two-dimensional domains.");
+        static_assert(Context::template component_size<component_name>() == 1,
+                      "Origin affine-constraint helpers require a scalar FE-function component.");
+
+        double best_abs_coordinate = std::numeric_limits<double>::infinity();
+        bool has_non_negative_best = false;
+
+        for (uint i = 0; i < view.dofs.n_elements(); ++i) {
+          const double coordinate = origin_constraint_coordinate<component_name, Model>(view.points[i]);
+          const double abs_coordinate = std::abs(coordinate);
+          if (abs_coordinate < best_abs_coordinate) {
+            best_abs_coordinate = abs_coordinate;
+            has_non_negative_best = coordinate >= 0.0;
+          } else if (abs_coordinate == best_abs_coordinate && coordinate >= 0.0) {
+            has_non_negative_best = true;
+          }
+        }
+
+        std::vector<types::global_dof_index> candidates;
+        for (uint i = 0; i < view.dofs.n_elements(); ++i) {
+          const double coordinate = origin_constraint_coordinate<component_name, Model>(view.points[i]);
+          const double abs_coordinate = std::abs(coordinate);
+          if (abs_coordinate != best_abs_coordinate) continue;
+          if ((coordinate >= 0.0) != has_non_negative_best) continue;
+          candidates.push_back(view.dofs.nth_index_in_set(i));
+        }
+
+        return candidates;
+      }
+
+      template <FixedString component_name, typename Context>
+      std::optional<types::global_dof_index> select_origin_candidate(const Context &context, const auto &view)
+      {
+        constexpr int dim = Context::dimension;
+        static_assert(dim == 1, "select_origin_candidate supports only one-dimensional domains; use "
+                                "select_origin_candidates for multi-dimensional domains.");
+
+        const auto candidates = select_origin_candidates<component_name, void>(context, view);
+        if (candidates.empty()) return std::nullopt;
+        return candidates.front();
+      }
+    } // namespace internal
+
+    /**
+     * @brief Constrain the boundary dofs of a named scalar FE-function component nearest its origin coordinate to zero.
+     *
+     * In one dimension, the origin coordinate is `x[0]`. In multidimensional domains, `Model` must provide an
+     * `OriginConstraintCoordinate<component_name>` policy whose `signed_coordinate(point)` method defines the zero
+     * level set. All boundary dofs on the nearest discrete zero level set are constrained, with symmetric ties
+     * resolved toward the non-negative side.
+     */
+    template <FixedString component_name, typename Model> class ConstrainOriginBoundaryPointToZero
+    {
+    public:
+      template <typename Constraints, typename Context>
+      void apply_boundary_affine_constraints(Constraints &constraints, const Context &context) const
+      {
+        const auto candidates = internal::select_origin_candidates<component_name, Model>(
+            context, context.template boundary<component_name>());
+        for (const auto dof : candidates) {
+          constraints.add_line(dof);
+          constraints.set_inhomogeneity(dof, 0.0);
+        }
+      }
+    };
+
+    /**
+     * @brief Constrain the support dofs of a named scalar FE-function component nearest its origin coordinate to zero.
+     *
+     * This is useful for cell-centered DG0/FV layouts where `sigma = 0` is not itself a boundary support point.
+     * In multidimensional domains, `Model::OriginConstraintCoordinate<component_name>::signed_coordinate(point)`
+     * defines the zero level set to constrain.
+     */
+    template <FixedString component_name, typename Model> class ConstrainOriginSupportPointToZero
+    {
+    public:
+      template <typename Constraints, typename Context>
+      void apply_affine_constraints(Constraints &constraints, const Context &context) const
+      {
+        const auto candidates = internal::select_origin_candidates<component_name, Model>(
+            context, context.template support<component_name>());
+        for (const auto dof : candidates) {
+          constraints.add_line(dof);
+          constraints.set_inhomogeneity(dof, 0.0);
+        }
+      }
+    };
+
+    template <typename Model> class NoAffineConstraints
+    {
     };
 
     class Time

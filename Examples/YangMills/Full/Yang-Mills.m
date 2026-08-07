@@ -157,7 +157,7 @@ $Assumptions=k>0&&p>0&&p1>0&&p2>0&&l1>0&&q>0&&-1<cos1<1&&-1<cos2<1&&-1<cos3<1&&-
 
 (* ::Input::Initialization:: *)
 interpolatorType="SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory>";(* Spline (C^2) like the working SP example -- linear interpolation of the propagators injects kinks that block the deep-IR scaling trajectory *)
-interpolator3DType="LinearInterpolatorND<double, LogLinLinCoordinates, GPU_memory>";
+interpolator3DType="LinearInterpolatorND<double, LogLinLinPeriodicCoordinates, GPU_memory>";
 
 kernelParameterList={
 <|"Name"->"k","Type"->"double"|>,
@@ -278,7 +278,7 @@ MakeKernel[FlowAcbc,
 "Parameters"->kernelParameterList,
 "KernelBody"->S0S1SPhiDef,
 "IntegrationVariables"->{"l1","cos1","cos2"},
-"Coordinates"->{"LogLinLinCoordinates"},
+"Coordinates"->{"LogLinLinPeriodicCoordinates"},
 "CoordinateArguments"->{"S0","S1","SPhi"}]
 UpdateFlows["YangMillsFlows"]
 
@@ -301,7 +301,7 @@ MakeKernel[FlowA3,
 "Parameters"->kernelParameterList,
 "KernelBody"->S0S1SPhiDef,
 "IntegrationVariables"->{"l1","cos1","cos2"},
-"Coordinates"->{"LogLinLinCoordinates"},
+"Coordinates"->{"LogLinLinPeriodicCoordinates"},
 "CoordinateArguments"->{"S0","S1","SPhi"}]
 UpdateFlows["YangMillsFlows"]
 
@@ -326,7 +326,7 @@ MakeKernel[FlowA4t,
 "Parameters"->kernelParameterList,
 "KernelBody"->TadpoleDef,
 "IntegrationVariables"->{"l1","cos1","cos2"},
-"Coordinates"->{"LogLinLinCoordinates"},
+"Coordinates"->{"LogLinLinPeriodicCoordinates"},
 "CoordinateArguments"->{"S0","S1","SPhi"}]
 UpdateFlows["YangMillsFlows"]
 

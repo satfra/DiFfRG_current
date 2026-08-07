@@ -35,6 +35,20 @@ public:
   }
 };
 
+template <typename T> class ParameterizedPolynomialIntegrand
+{
+public:
+  using ctype = typename DiFfRG::get_type::ctype<T>;
+
+  static KOKKOS_INLINE_FUNCTION T kernel(const ctype q, const T m)
+  {
+    using DiFfRG::powr;
+    return m + m * m * q + m * m * m * powr<2>(q);
+  }
+
+  static KOKKOS_INLINE_FUNCTION T constant(const T /*m*/) { return {}; }
+};
+
 template <typename T, int inv> class PolyIntegrand<2, T, inv>
 {
 public:

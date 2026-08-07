@@ -14,6 +14,15 @@
 namespace DiFfRG
 {
   /**
+   * @brief Type trait: true iff T is any autodiff::Real<N, U> specialization.
+   * Allows generic handling of higher-order forward-mode AD types beyond
+   * autodiff::real (= autodiff::Real<1, double>).
+   */
+  template <typename T> struct is_autodiff_real : std::false_type {};
+  template <size_t N, typename U> struct is_autodiff_real<autodiff::Real<N, U>> : std::true_type {};
+  template <typename T> inline constexpr bool is_autodiff_real_v = is_autodiff_real<T>::value;
+
+  /**
    * @brief Finite-ness check for autodiff::real
    *
    * @param x Number to check
@@ -162,14 +171,14 @@ namespace DiFfRG
    * @return bool
    */
   template <typename T1, typename T2, typename T3>
-    requires(std::is_floating_point<T1>::value || std::is_same_v<T1, autodiff::real> || is_complex<T1>::value) &&
-            (std::is_floating_point<T2>::value || std::is_same_v<T2, autodiff::real> || is_complex<T2>::value) &&
+    requires(std::is_floating_point<T1>::value || is_autodiff_real_v<T1> || is_complex<T1>::value) &&
+            (std::is_floating_point<T2>::value || is_autodiff_real_v<T2> || is_complex<T2>::value) &&
             std::is_floating_point<T3>::value
   bool KOKKOS_INLINE_FUNCTION is_close(T1 a, T2 b, T3 eps_)
   {
     if constexpr (is_complex<T1>::value || is_complex<T2>::value) {
       return is_close(real(a), real(b), eps_) && is_close(imag(a), imag(b), eps_);
-    } else if constexpr (std::is_same_v<T1, autodiff::real> || std::is_same_v<T2, autodiff::real>)
+    } else if constexpr (is_autodiff_real_v<T1> || is_autodiff_real_v<T2>)
       return is_close((double)a, (double)b, (double)eps_);
     else {
       T1 diff = std::fabs(a - b);
@@ -186,13 +195,13 @@ namespace DiFfRG
    * @return bool
    */
   template <typename T1, typename T2>
-    requires(std::is_floating_point<T1>::value || std::is_same_v<T1, autodiff::real> || is_complex<T1>::value) &&
-            (std::is_floating_point<T2>::value || std::is_same_v<T2, autodiff::real> || is_complex<T1>::value)
+    requires(std::is_floating_point<T1>::value || is_autodiff_real_v<T1> || is_complex<T1>::value) &&
+            (std::is_floating_point<T2>::value || is_autodiff_real_v<T2> || is_complex<T2>::value)
   bool KOKKOS_INLINE_FUNCTION is_close(T1 a, T2 b)
   {
     if constexpr (is_complex<T1>::value || is_complex<T2>::value) {
       return is_close(real(a), real(b)) && is_close(imag(a), imag(b));
-    } else if constexpr (std::is_same_v<T1, autodiff::real> || std::is_same_v<T2, autodiff::real>) {
+    } else if constexpr (is_autodiff_real_v<T1> || is_autodiff_real_v<T2>) {
       constexpr auto eps_ = std::numeric_limits<double>::epsilon() * 10.;
       return is_close((double)a, (double)b, eps_);
     } else {

@@ -5,127 +5,94 @@ project(boost_dep NONE)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 set(CMAKE_BUILD_TYPE Release)
 
-# boost
 set(TRY_BOOST_VERSION "1.81.0")
+set(TRY_BOOST_VERSION_NUMBER 108100)
+set(BOOST_VENDOR_SOURCE_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/boost_1_81_0")
+set(BOOST_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/boost_1_81_0")
+set(BOOST_PREPARED_STAMP "${BOOST_SOURCE_DIR}/.diffrg_prepared")
+set(BOOST_PATCHED_STAMP "${BOOST_SOURCE_DIR}/.diffrg_patched")
+
 include(ProcessorCount)
 ProcessorCount(PARALLEL_JOBS)
-set(BOOST_SHA256
-    "205666dea9f6a7cfed87c7a6dfbeb52a2c1b9de55712c9c1a87735d7181452b6")
-set(BOOST_TARBALL_URLS
-    "https://archives.boost.io/release/${TRY_BOOST_VERSION}/source/boost_1_81_0.tar.gz"
-    "https://sourceforge.net/projects/boost/files/boost/${TRY_BOOST_VERSION}/boost_1_81_0.tar.gz/download"
-)
-
-# Cache the tarball outside the build tree so a fresh build/ dir does not
-# re-download it. Honors XDG_CACHE_HOME when set; falls back to $HOME/.cache
-# (which works on both Linux and macOS).
-if(DEFINED ENV{XDG_CACHE_HOME} AND NOT "$ENV{XDG_CACHE_HOME}" STREQUAL "")
-  set(_diffrg_cache_root "$ENV{XDG_CACHE_HOME}/DiFfRG")
-else()
-  set(_diffrg_cache_root "$ENV{HOME}/.cache/DiFfRG")
-endif()
-file(MAKE_DIRECTORY "${_diffrg_cache_root}")
-
-set(BOOST_TARBALL "${_diffrg_cache_root}/boost_1_81_0.tar.gz")
-set(BOOST_SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/boost_1_81_0")
-
-# Reject a cached tarball whose hash does not match — otherwise a prior
-# truncated / wrong download silently poisons every subsequent build.
-if(EXISTS ${BOOST_TARBALL})
-  file(SHA256 ${BOOST_TARBALL} _cached_sha256)
-  if(NOT _cached_sha256 STREQUAL ${BOOST_SHA256})
-    message(
-      STATUS
-        "Cached Boost tarball at ${BOOST_TARBALL} has wrong SHA256 (${_cached_sha256}); removing."
-    )
-    file(REMOVE ${BOOST_TARBALL})
-  endif()
+if(PARALLEL_JOBS EQUAL 0)
+  set(PARALLEL_JOBS 1)
 endif()
 
-if(NOT EXISTS ${BOOST_TARBALL})
-  set(_boost_download_ok FALSE)
-  foreach(_url IN LISTS BOOST_TARBALL_URLS)
-    message(STATUS "Downloading Boost ${TRY_BOOST_VERSION} from ${_url} ...")
-    file(
-      DOWNLOAD ${_url} ${BOOST_TARBALL}
-      EXPECTED_HASH SHA256=${BOOST_SHA256}
-      INACTIVITY_TIMEOUT 30
-      SHOW_PROGRESS
-      STATUS _download_status
-      LOG _download_log)
-    list(GET _download_status 0 _download_code)
-    if(_download_code EQUAL 0 AND EXISTS ${BOOST_TARBALL})
-      file(SHA256 ${BOOST_TARBALL} _downloaded_sha256)
-      if(_downloaded_sha256 STREQUAL ${BOOST_SHA256})
-        set(_boost_download_ok TRUE)
-        break()
-      endif()
-    endif()
-    file(REMOVE ${BOOST_TARBALL})
-    message(
-      WARNING
-        "Boost download from ${_url} failed or returned wrong content (${_download_status}); trying next mirror."
-    )
-  endforeach()
-  if(NOT _boost_download_ok)
-    message(
-      FATAL_ERROR
-        "All Boost tarball mirrors failed.\nLast download log:\n${_download_log}"
-    )
-  endif()
-endif()
-
-if(NOT EXISTS ${BOOST_SOURCE_DIR})
-  message(STATUS "Extracting Boost tarball...")
-  execute_process(
-    COMMAND ${CMAKE_COMMAND} -E tar xzf ${BOOST_TARBALL}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    RESULT_VARIABLE _extract_result)
-  if(NOT _extract_result EQUAL 0)
-    message(FATAL_ERROR "Boost tarball extraction failed.")
-  endif()
-endif()
-
-message(STATUS "Patching boost...")
-execute_process(
-  COMMAND
-    bash -c
-    "patch --forward ${BOOST_SOURCE_DIR}/libs/math/include/boost/math/cstdfloat/cstdfloat_limits.hpp < ${CMAKE_CURRENT_SOURCE_DIR}/cstdfloat_limits.hpp.diff"
-  OUTPUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/02_patch.log
-  ERROR_FILE ${CMAKE_CURRENT_BINARY_DIR}/02_patch.log
-  RESULT_VARIABLE _boost_patch_result)
-if(NOT _boost_patch_result EQUAL 0)
-  # patch --forward exits 1 if already applied; only warn, don't abort
+if(NOT EXISTS "${BOOST_VENDOR_SOURCE_DIR}/bootstrap.sh"
+   OR NOT EXISTS "${BOOST_VENDOR_SOURCE_DIR}/boost/version.hpp")
   message(
-    STATUS
-      "Boost patch returned non-zero (may already be applied). See log: ${CMAKE_CURRENT_BINARY_DIR}/02_patch.log"
+    FATAL_ERROR
+      "Vendored Boost ${TRY_BOOST_VERSION} source is missing.\n"
+      "Expected ${BOOST_VENDOR_SOURCE_DIR} to contain bootstrap.sh and boost/version.hpp."
   )
+endif()
+
+file(STRINGS "${BOOST_VENDOR_SOURCE_DIR}/boost/version.hpp" _boost_version_line
+     REGEX "^#define BOOST_VERSION ")
+string(REGEX REPLACE ".*BOOST_VERSION[ \t]+([0-9]+).*" "\\1"
+                     _boost_version_number "${_boost_version_line}")
+if(NOT _boost_version_number STREQUAL "${TRY_BOOST_VERSION_NUMBER}")
+  message(
+    FATAL_ERROR
+      "Vendored Boost version mismatch: expected ${TRY_BOOST_VERSION} "
+      "(${TRY_BOOST_VERSION_NUMBER}), found ${_boost_version_number} in "
+      "${BOOST_VENDOR_SOURCE_DIR}/boost/version.hpp.")
 endif()
 
 if(CCACHE_PROGRAM)
-  set(BOOST_COMPILER_ARGS
-      "CC='${CCACHE_PROGRAM} ${CMAKE_C_COMPILER}' CXX='${CCACHE_PROGRAM} ${CMAKE_CXX_COMPILER}'"
-  )
+  set(BOOST_CC_ENV "${CCACHE_PROGRAM} ${CMAKE_C_COMPILER}")
+  set(BOOST_CXX_ENV "${CCACHE_PROGRAM} ${CMAKE_CXX_COMPILER}")
 else()
-  set(BOOST_COMPILER_ARGS
-      "CC='${CMAKE_C_COMPILER}' CXX='${CMAKE_CXX_COMPILER}'")
+  set(BOOST_CC_ENV "${CMAKE_C_COMPILER}")
+  set(BOOST_CXX_ENV "${CMAKE_CXX_COMPILER}")
 endif()
+
+add_custom_command(
+  OUTPUT "${BOOST_PREPARED_STAMP}"
+  COMMAND ${CMAKE_COMMAND} -E rm -rf "${BOOST_SOURCE_DIR}"
+  COMMAND ${CMAKE_COMMAND} -E copy_directory "${BOOST_VENDOR_SOURCE_DIR}"
+          "${BOOST_SOURCE_DIR}"
+  COMMAND ${CMAKE_COMMAND} -E touch "${BOOST_PREPARED_STAMP}"
+  DEPENDS "${BOOST_VENDOR_SOURCE_DIR}/boost/version.hpp"
+          "${BOOST_VENDOR_SOURCE_DIR}/bootstrap.sh"
+  COMMENT "Preparing build-local Boost ${TRY_BOOST_VERSION} source copy"
+  VERBATIM)
+
+add_custom_command(
+  OUTPUT "${BOOST_PATCHED_STAMP}"
+  COMMAND
+    bash -c
+    "if grep -q '__GNUC__ < 14' '${BOOST_SOURCE_DIR}/boost/math/cstdfloat/cstdfloat_limits.hpp'; then \
+       echo 'Boost cstdfloat patch already applied.'; \
+     else \
+       patch --batch --forward '${BOOST_SOURCE_DIR}/boost/math/cstdfloat/cstdfloat_limits.hpp' < '${CMAKE_CURRENT_SOURCE_DIR}/cstdfloat_limits.hpp.diff'; \
+     fi"
+  COMMAND ${CMAKE_COMMAND} -E touch "${BOOST_PATCHED_STAMP}"
+  DEPENDS "${BOOST_PREPARED_STAMP}"
+          "${CMAKE_CURRENT_SOURCE_DIR}/cstdfloat_limits.hpp.diff"
+  COMMENT "Patching build-local Boost ${TRY_BOOST_VERSION} source copy"
+  VERBATIM)
 
 add_custom_target(
   build_boost_boostrap
   COMMAND
     bash -c
-    "${BOOST_COMPILER_ARGS} ./bootstrap.sh --prefix=${CMAKE_INSTALL_PREFIX} &> ${CMAKE_CURRENT_BINARY_DIR}/03_bootstrap.log"
-  WORKING_DIRECTORY ${BOOST_SOURCE_DIR}
+    "CC=\"${BOOST_CC_ENV}\" CXX=\"${BOOST_CXX_ENV}\" ./bootstrap.sh --prefix='${CMAKE_INSTALL_PREFIX}' > '${CMAKE_CURRENT_BINARY_DIR}/03_bootstrap.log' 2>&1"
+  WORKING_DIRECTORY "${BOOST_SOURCE_DIR}"
+  DEPENDS "${BOOST_PATCHED_STAMP}"
   VERBATIM)
 
 add_custom_target(
   build_boost_b2
   COMMAND
     bash -c
-    "echo 'Building Boost...'; ${BOOST_COMPILER_ARGS} ./b2 --build-dir=${CMAKE_CURRENT_BINARY_DIR}/boost-build \
-        --prefix=${CMAKE_INSTALL_PREFIX} \
-        --with-headers \
+    "echo 'Installing Boost headers...' && \
+     CC=\"${BOOST_CC_ENV}\" CXX=\"${BOOST_CXX_ENV}\" ./b2 headers \
+        > '${CMAKE_CURRENT_BINARY_DIR}/04_headers.log' 2>&1 && \
+     echo 'Building Boost...' && \
+     CC=\"${BOOST_CC_ENV}\" CXX=\"${BOOST_CXX_ENV}\" ./b2 --build-dir='${CMAKE_CURRENT_BINARY_DIR}/boost-build' \
+        --prefix='${CMAKE_INSTALL_PREFIX}' \
         --with-iostreams \
         --with-json \
         --with-math \
@@ -134,9 +101,9 @@ add_custom_target(
         --with-thread \
         -j ${PARALLEL_JOBS} \
         cxxflags=\"-fPIC -O3 -ffat-lto-objects -std=c++20\" \
-        install &> ${CMAKE_CURRENT_BINARY_DIR}/04_build.log"
+        install > '${CMAKE_CURRENT_BINARY_DIR}/04_build.log' 2>&1"
   VERBATIM
-  WORKING_DIRECTORY ${BOOST_SOURCE_DIR}
+  WORKING_DIRECTORY "${BOOST_SOURCE_DIR}"
   DEPENDS build_boost_boostrap)
 
 install(
@@ -166,5 +133,4 @@ install(
           "Boost installation did not produce ${CMAKE_INSTALL_PREFIX}/lib."
       )
     endif()
-  ]]
-)
+  ]])

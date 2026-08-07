@@ -52,7 +52,7 @@ To compile and run this project, there are very few requirements which you can e
 - LAPACK and BLAS in some form, e.g. [OpenBLAS](https://www.openblas.net/). Alternatively, pass `-DBUILD_OpenBLAS=ON` to have DiFfRG build OpenBLAS.
 - The GNU Scientific Library [GSL](https://www.gnu.org/software/gsl/).
 - [Python](https://www.python.org/) is used for visualization (and by the bundled Boost build system).
-- [Boost](https://www.boost.org/) (≥ 1.81), [TBB](https://github.com/uxlfoundation/oneTBB) (oneTBB ≥ 2021), [HDF5](https://www.hdfgroup.org/) (≥ 1.12) and [SUNDIALS](https://computing.llnl.gov/projects/sundials) (≥ 5.4) are each detected automatically and used if a viable version is present; otherwise DiFfRG builds a bundled copy. For each, pass `-D<LIB>_DIR=<prefix>` to use a specific install or `-DBUILD_<LIB>=ON` to force the bundled build (`<LIB>` ∈ `BOOST`, `TBB`, `HDF5`, `SUNDIALS`).
+- [Boost](https://www.boost.org/) (≥ 1.81), [TBB](https://github.com/uxlfoundation/oneTBB) (oneTBB ≥ 2021), [HDF5](https://www.hdfgroup.org/) (≥ 1.12) and [SUNDIALS](https://computing.llnl.gov/projects/sundials) (≥ 5.4) are each detected automatically and used if a viable version is present; otherwise DiFfRG builds a bundled copy. For each, pass `-D<LIB>_DIR=<prefix>` to use a specific install or `-DBUILD_<LIB>=ON` to force the bundled build (`<LIB>` ∈ `BOOST`, `TBB`, `HDF5`, `SUNDIALS`). The bundled Boost build compiles the Boost 1.81 source tree checked in under `dependencies/boost`, so it needs no network access.
 - [Doxygen](https://www.doxygen.org/) and [graphviz](https://www.graphviz.org/download/) to build the documentation.
 
 The following requirements are optional:
@@ -240,6 +240,7 @@ or from the CLI,
 ```bash
 $ ./my_simulation -si /output/verbosity=1
 ```
+Level 1 gives plain progress lines. From level 2 upwards these are accompanied by the solver diagnostics (accepted steps, precision rejects, nonlinear failures, step widths, ...) as well as jacobian and linear solver timings.
 
 
 ## Modifying parameters from the CLI
@@ -283,4 +284,6 @@ The following third-party libraries are utilised by DiFfRG. They are automatical
 - [spdlog](https://github.com/gabime/spdlog) for logging.
 - [Doxygen Awesome](https://github.com/jothepro/doxygen-awesome-css) for a modern doxygen theme.
 - [Boost](https://www.boost.org/) provides explicit time-stepping and various math algorithms.
-- [Eigen](https://eigen.tuxfamily.org/) for some linear-algebra related tasks.
+- [Eigen](https://eigen.tuxfamily.org/) for linear-algebra related tasks.
+- [HDF5](https://www.hdfgroup.org/solutions/hdf5/) for hierarchical data format storage and I/O operations.
+- [h5cpp](https://github.com/ess-dmsc/h5cpp) for C++ bindings to HDF5.

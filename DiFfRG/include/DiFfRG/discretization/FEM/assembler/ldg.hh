@@ -25,8 +25,9 @@
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
+#include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
 #include <DiFfRG/discretization/common/eom.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 
 namespace DiFfRG
 {
@@ -48,17 +49,24 @@ namespace DiFfRG
       using Components = typename Discretization::Components;
       static constexpr uint dim = Discretization::dim;
 
-      LDGAssemblerBase(Discretization &discretization, Model &model, const JSONValue &json)
-          : discretization(discretization), model(model), fe(discretization.get_fe()),
+      [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] LDGAssemblerBase(
+          Discretization &discretization, Model &model,
+          DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, JSONValue> json)
+          : LDGAssemblerBase(discretization, model, json.value(),
+                             DiFfRG::internal::legacy_default_log_port<Discretization>())
+      {
+      }
+
+      LDGAssemblerBase(Discretization &discretization, Model &model, const JSONValue &json, LogPort log_port)
+          : discretization(discretization), model(model), log_port(std::move(log_port)), fe(discretization.get_fe()),
             dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
             threads(json.get_uint("/discretization/threads")), batch_size(json.get_uint("/discretization/batch_size")),
             EoM_cell(*(dof_handler.active_cell_iterators().end())),
             old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
-            EoM_abs_tol(json.get_double("/discretization/EoM_abs_tol")),
-            EoM_max_iter(json.get_uint("/discretization/EoM_max_iter"))
+            EoM_config(DiFfRG::internal::resolve_eom_config(dof_handler, Config::EoMConfig(json)))
       {
         if (this->threads == 0) this->threads = dealii::MultithreadInfo::n_threads() / 2;
-        spdlog::get("log")->info("FEM: Using {} threads for assembly.", threads);
+        log_port.info("FEM: Using {} threads for assembly.", threads);
       }
 
       virtual IndexSet get_differential_indices() const override
@@ -72,25 +80,13 @@ namespace DiFfRG
 
       virtual void reinit() override
       {
-        // Boundary dofs
-        std::vector<IndexSet> component_boundary_dofs(Components::count_fe_functions());
-        for (uint c = 0; c < Components::count_fe_functions(); ++c) {
-          ComponentMask component_mask(Components::count_fe_functions(), false);
-          component_mask.set(c, true);
-          component_boundary_dofs[c] = DoFTools::extract_boundary_dofs(dof_handler, component_mask);
-        }
-        std::vector<std::vector<Point<dim>>> component_boundary_points(Components::count_fe_functions());
-        for (uint c = 0; c < Components::count_fe_functions(); ++c) {
-          component_boundary_points[c].resize(component_boundary_dofs[c].n_elements());
-          for (uint i = 0; i < component_boundary_dofs[c].n_elements(); ++i)
-            component_boundary_points[c][i] =
-                discretization.get_support_point(component_boundary_dofs[c].nth_index_in_set(i));
-        }
+        const auto metadata = DiFfRG::internal::build_affine_constraint_metadata<Components, dim>(discretization);
+        const AffineConstraintContext<Components, dim> context(metadata);
 
         auto &constraints = discretization.get_constraints();
         constraints.clear();
         DoFTools::make_hanging_node_constraints(dof_handler, constraints);
-        model.affine_constraints(constraints, component_boundary_dofs, component_boundary_points);
+        DiFfRG::internal::apply_model_affine_constraints(model, constraints, context);
         constraints.close();
       }
 
@@ -123,6 +119,7 @@ namespace DiFfRG
     protected:
       Discretization &discretization;
       Model &model;
+      LogPort log_port;
       const FiniteElement<dim> &fe;
       const DoFHandler<dim> &dof_handler;
       const Mapping<dim> &mapping;
@@ -132,9 +129,9 @@ namespace DiFfRG
 
       mutable typename DoFHandler<dim>::cell_iterator EoM_cell;
       typename DoFHandler<dim>::cell_iterator old_EoM_cell;
-      const double EoM_abs_tol;
-      const uint EoM_max_iter;
+      const Config::EoMConfig EoM_config;
       mutable Point<dim> EoM;
+      mutable std::optional<Point<dim>> EoM_minimum_guess;
       FullMatrix<NumberType> extractor_jacobian;
       FullMatrix<NumberType> extractor_jacobian_u;
       FullMatrix<NumberType> extractor_jacobian_du;
@@ -159,7 +156,7 @@ namespace DiFfRG
         using t_Iterator = typename Triangulation<dim>::active_cell_iterator;
 
         ScratchData(const Mapping<dim> &mapping, const vector<const DoFHandler<dim> *> &dofh,
-                    const Quadrature<dim> &quadrature, const Quadrature<dim - 1> &quadrature_face,
+                    const dealii::Quadrature<dim> &quadrature, const dealii::Quadrature<dim - 1> &quadrature_face,
                     const UpdateFlags update_flags = update_values | update_gradients | update_quadrature_points |
                                                      update_JxW_values,
                     const UpdateFlags interface_update_flags = update_values | update_gradients |
@@ -425,14 +422,17 @@ namespace DiFfRG
       template <typename... T> auto fe_more_conv(std::tuple<T &...> &t) const
       {
         if constexpr (stencil == 2)
-          return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "LDG1", "fe_derivatives", "fe_hessians",
-                                                           "extractors", "variables">>(t);
+          return named_tuple<std::tuple<T &...>,
+                             StringSet<"fe_functions", "LDG1", "fe_derivatives", "fe_hessians", "extractors",
+                                       "variables", "potential", "potential_gradient", "potential_hessian">>(t);
         else if constexpr (stencil == 3)
-          return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "LDG1", "LDG2", "fe_derivatives",
-                                                           "fe_hessians", "extractors", "variables">>(t);
+          return named_tuple<std::tuple<T &...>,
+                             StringSet<"fe_functions", "LDG1", "LDG2", "fe_derivatives", "fe_hessians", "extractors",
+                                       "variables", "potential", "potential_gradient", "potential_hessian">>(t);
         else if constexpr (stencil == 4)
           return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "LDG1", "LDG2", "LDG3", "fe_derivatives",
-                                                           "fe_hessians", "extractors", "variables">>(t);
+                                                           "fe_hessians", "extractors", "variables", "potential",
+                                                           "potential_gradient", "potential_hessian">>(t);
         else
           throw std::runtime_error("Only <= 3 LDG subsystems are supported.");
       }
@@ -450,8 +450,15 @@ namespace DiFfRG
       }
 
     public:
-      Assembler(Discretization &discretization, Model &model, const JSONValue &json)
-          : Base(discretization, model, json),
+      [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Assembler(
+          Discretization &discretization, Model &model,
+          DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, JSONValue> json)
+          : Assembler(discretization, model, json.value(), DiFfRG::internal::legacy_default_log_port<Discretization>())
+      {
+      }
+
+      Assembler(Discretization &discretization, Model &model, const JSONValue &json, LogPort log_port)
+          : Base(discretization, model, json, std::move(log_port)),
             quadrature(fe.degree + 1 + json.get_uint("/discretization/overintegration")),
             quadrature_face(fe.degree + 1 + json.get_uint("/discretization/overintegration")),
             dof_handler_list(discretization.get_dof_handler_list())
@@ -465,10 +472,10 @@ namespace DiFfRG
       /**
        * @brief Attach all intermediate (ldg) vectors to the data output
        *
-       * @param data_out A DataOutput to which we attach data
+       * @param data_out The scoped output frame
        * @param sol The current global solution
        */
-      virtual void attach_data_output(DataOutput<dim, VectorType> &data_out, const VectorType &solution,
+      virtual void attach_data_output(OutputFrame<dim, VectorType> &data_out, const VectorType &solution,
                                       const VectorType &variables, const VectorType &dt_solution = VectorType(),
                                       const VectorType &residual = VectorType()) override
       {
@@ -483,7 +490,7 @@ namespace DiFfRG
         for (const auto &name : fe_function_names)
           fe_function_names_dot.push_back(name + "_dot");
 
-        auto &fe_out = data_out.fe_output();
+        auto fe_out = data_out.fields();
         fe_out.attach(*dof_handler_list[0], solution, fe_function_names);
         if (dt_solution.size() > 0) fe_out.attach(dof_handler, dt_solution, fe_function_names_dot);
         if (residual.size() > 0) fe_out.attach(dof_handler, residual, fe_function_names_residual);
@@ -1268,7 +1275,14 @@ namespace DiFfRG
         timings_jacobian.push_back(timer.wall_time());
       }
 
-      void log(const std::string logger)
+      template <typename String>
+        requires std::convertible_to<String, std::string>
+      [[deprecated("Construct the assembler with output.log_port() and call log() instead")]] void log(String &&)
+      {
+        DiFfRG::internal::reject_named_assembler_log<String>();
+      }
+
+      void log()
       {
         std::stringstream ss;
         ss << "LDG Assembler: " << std::endl;
@@ -1277,7 +1291,7 @@ namespace DiFfRG
            << std::endl;
         ss << "        Jacobian: " << average_time_jacobian_assembly() * 1000 << "ms (" << num_jacobians() << ")"
            << std::endl;
-        spdlog::get(logger)->info(ss.str());
+        this->log_port.info(ss.str());
       }
 
       double average_time_reinit() const
@@ -1350,8 +1364,7 @@ namespace DiFfRG
       mutable array<bool, Components::count_fe_subsystems()> ldg_matrix_built;
       mutable array<bool, Components::count_fe_subsystems()> jacobian_tmp_built;
 
-      using Base::EoM_abs_tol;
-      using Base::EoM_max_iter;
+      using Base::EoM_config;
       using Base::extractor_dof_indices;
 
       void rebuild_ldg_vectors(const VectorType &sol) const
@@ -1788,62 +1801,85 @@ namespace DiFfRG
       constexpr static int nothing = 0;
       using Base::EoM;
       using Base::EoM_cell;
+      using Base::EoM_minimum_guess;
       using Base::extractor_jacobian_u;
       using Base::old_EoM_cell;
 
-      void readouts(DataOutput<dim, VectorType> &data_out, const VectorType &solution_global,
+      void readouts(OutputFrame<dim, VectorType> &data_out, const VectorType &solution_global,
                     const VectorType &variables) const
       {
-        auto helper = [&](auto EoMfun, auto outputter) {
-          auto EoM_cell = this->EoM_cell;
-          auto EoM = get_EoM_point(
-              EoM_cell, solution_global, dof_handler, mapping, EoMfun, [&](const auto &p, const auto &) { return p; },
-              EoM_abs_tol, EoM_max_iter);
-          auto EoM_unit = mapping.transform_real_to_unit_cell(EoM_cell, EoM);
+        auto raw_potential = reconstruct_raw_potential(
+            solution_global, dof_handler, mapping,
+            [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
+        auto helper = [&](auto &&...args) {
+          if constexpr (sizeof...(args) == 3) {
+            auto &&[id, EoMfun, outputter] = std::forward_as_tuple(std::forward<decltype(args)>(args)...);
+            data_out.register_readout(id);
+            auto EoM_cell = this->EoM_cell;
+            auto EoM_result = get_EoM_point_with_potential(
+                EoM_cell, solution_global, this->dof_handler, this->mapping, EoMfun,
+                [&](const auto &p, const auto &) { return p; }, this->EoM_config, this->EoM_minimum_guess);
+            if (EoM_result.potential) this->EoM_minimum_guess = EoM_result.potential->minimum;
+            const auto EoM = EoM_result.point;
+            auto EoM_unit = this->mapping.transform_real_to_unit_cell(EoM_cell, EoM);
 
-          using t_Iterator = typename Triangulation<dim>::active_cell_iterator;
+            using t_Iterator = typename Triangulation<dim>::active_cell_iterator;
 
-          std::vector<std::shared_ptr<FEValues<dim>>> fe_v;
-          for (uint k = 0; k < Components::count_fe_subsystems(); ++k) {
-            fe_v.emplace_back(std::make_shared<FEValues<dim>>(
-                mapping, discretization.get_fe(k), EoM_unit,
-                update_values | update_gradients | update_quadrature_points | update_JxW_values | update_hessians));
+            std::vector<std::shared_ptr<FEValues<dim>>> fe_v;
+            for (uint k = 0; k < Components::count_fe_subsystems(); ++k) {
+              fe_v.emplace_back(std::make_shared<FEValues<dim>>(
+                  this->mapping, this->discretization.get_fe(k), EoM_unit,
+                  update_values | update_gradients | update_quadrature_points | update_JxW_values | update_hessians));
 
-            auto cell = dof_handler_list[k]->begin_active();
-            cell->copy_from(*t_Iterator(EoM_cell));
-            fe_v[k]->reinit(cell);
+              auto cell = dof_handler_list[k]->begin_active();
+              cell->copy_from(*t_Iterator(EoM_cell));
+              fe_v[k]->reinit(cell);
+            }
+
+            std::vector<std::vector<Vector<NumberType>>> solutions;
+            for (uint k = 0; k < Components::count_fe_subsystems(); ++k) {
+              solutions.push_back({Vector<NumberType>(Components::count_fe_functions(k))});
+              if (k == 0)
+                fe_v[0]->get_function_values(solution_global, solutions[k]);
+              else
+                fe_v[k]->get_function_values(sol_vector[k], solutions[k]);
+            }
+            std::vector<Vector<NumberType>> solutions_vector;
+            for (uint k = 0; k < Components::count_fe_subsystems(); ++k)
+              solutions_vector.push_back(solutions[k][0]);
+
+            std::array<NumberType, Components::count_extractors()> __extracted_data{{}};
+            const auto &extracted_data = __extracted_data;
+
+            std::vector<std::vector<Tensor<1, dim, NumberType>>> solution_grad{
+                std::vector<Tensor<1, dim, NumberType>>(Components::count_fe_functions())};
+            std::vector<std::vector<Tensor<2, dim, NumberType>>> solution_hess{
+                std::vector<Tensor<2, dim, NumberType>>(Components::count_fe_functions())};
+            fe_v[0]->get_function_gradients(solution_global, solution_grad);
+            fe_v[0]->get_function_hessians(solution_global, solution_hess);
+
+            const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
+
+            if constexpr (Components::count_extractors() > 0) {
+              auto extractor_tuple =
+                  std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(solutions_vector),
+                                 std::tie(solution_grad[0], solution_hess[0], this->nothing, variables, potential.value,
+                                          potential.gradient, potential.hessian));
+              model.extract(__extracted_data, EoM, fe_more_conv(extractor_tuple));
+            }
+
+            auto solution_tuple = std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(solutions_vector),
+                                                 std::tie(solution_grad[0], solution_hess[0], extracted_data, variables,
+                                                          potential.value, potential.gradient, potential.hessian));
+
+            outputter(data_out, EoM, fe_more_conv(solution_tuple));
+            data_out.attach_eom_potential(std::move(EoM_result));
+          } else {
+            DiFfRG::internal::validate_readout_helper_arity<decltype(args)...>();
           }
-
-          std::vector<std::vector<Vector<NumberType>>> solutions;
-          for (uint k = 0; k < Components::count_fe_subsystems(); ++k) {
-            solutions.push_back({Vector<NumberType>(Components::count_fe_functions(k))});
-            if (k == 0)
-              fe_v[0]->get_function_values(solution_global, solutions[k]);
-            else
-              fe_v[k]->get_function_values(sol_vector[k], solutions[k]);
-          }
-          std::vector<Vector<NumberType>> solutions_vector;
-          for (uint k = 0; k < Components::count_fe_subsystems(); ++k)
-            solutions_vector.push_back(solutions[k][0]);
-
-          std::array<NumberType, Components::count_extractors()> __extracted_data{{}};
-          if constexpr (Components::count_extractors() > 0)
-            extract(__extracted_data, solution_global, variables, true, false, false);
-          const auto &extracted_data = __extracted_data;
-
-          std::vector<std::vector<Tensor<1, dim, NumberType>>> solution_grad{
-              std::vector<Tensor<1, dim, NumberType>>(Components::count_fe_functions())};
-          std::vector<std::vector<Tensor<2, dim, NumberType>>> solution_hess{
-              std::vector<Tensor<2, dim, NumberType>>(Components::count_fe_functions())};
-          fe_v[0]->get_function_gradients(solution_global, solution_grad);
-          fe_v[0]->get_function_hessians(solution_global, solution_hess);
-
-          auto solution_tuple = std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(solutions_vector),
-                                               std::tie(solution_grad[0], solution_hess[0], extracted_data, variables));
-
-          outputter(data_out, EoM, fe_more_conv(solution_tuple));
         };
         model.readouts_multiple(helper, data_out);
+        data_out.attach_raw_potential(std::move(raw_potential));
       }
 
       void extract(std::array<NumberType, Components::count_extractors()> &data, const VectorType &solution_global,
@@ -1851,12 +1887,15 @@ namespace DiFfRG
       {
         auto EoM = this->EoM;
         auto EoM_cell = this->EoM_cell;
-        if (search_EoM || EoM_cell == *(dof_handler.active_cell_iterators().end()))
-          EoM = get_EoM_point(
+        if (search_EoM || EoM_cell == *(dof_handler.active_cell_iterators().end())) {
+          auto EoM_result = get_EoM_point_with_potential(
               EoM_cell, solution_global, dof_handler, mapping,
               [&](const auto &p, const auto &values) { return model.EoM(p, values); },
               [&](const auto &p, const auto &values) { return postprocess ? model.EoM_postprocess(p, values) : p; },
-              EoM_abs_tol, EoM_max_iter);
+              EoM_config, EoM_minimum_guess);
+          EoM = EoM_result.point;
+          if (EoM_result.potential) EoM_minimum_guess = EoM_result.potential->minimum;
+        }
         if (set_EoM) {
           this->EoM = EoM;
           this->EoM_cell = EoM_cell;
@@ -1897,8 +1936,14 @@ namespace DiFfRG
         fe_v[0]->get_function_gradients(solution_global, solution_grad);
         fe_v[0]->get_function_hessians(solution_global, solution_hess);
 
+        const auto raw_potential = reconstruct_raw_potential(
+            solution_global, dof_handler, mapping,
+            [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
+        const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
+
         auto solution_tuple = std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(solutions_vector),
-                                             std::tie(solution_grad[0], solution_hess[0], this->nothing, variables));
+                                             std::tie(solution_grad[0], solution_hess[0], this->nothing, variables,
+                                                      potential.value, potential.gradient, potential.hessian));
 
         model.extract(data, EoM, fe_more_conv(solution_tuple));
       }
@@ -1911,11 +1956,13 @@ namespace DiFfRG
           extractor_jacobian_u =
               FullMatrix<NumberType>(Components::count_extractors(), Components::count_fe_functions());
 
-        EoM = get_EoM_point(
+        auto EoM_result = get_EoM_point_with_potential(
             EoM_cell, solution_global, dof_handler, mapping,
             [&](const auto &p, const auto &values) { return model.EoM(p, values); },
-            [&](const auto &p, const auto &values) { return model.EoM_postprocess(p, values); }, EoM_abs_tol,
-            EoM_max_iter);
+            [&](const auto &p, const auto &values) { return model.EoM_postprocess(p, values); }, EoM_config,
+            EoM_minimum_guess);
+        EoM = EoM_result.point;
+        if (EoM_result.potential) EoM_minimum_guess = EoM_result.potential->minimum;
         auto EoM_unit = mapping.transform_real_to_unit_cell(EoM_cell, EoM);
         bool new_cell = (old_EoM_cell != EoM_cell);
         old_EoM_cell = EoM_cell;
@@ -1935,7 +1982,6 @@ namespace DiFfRG
 
         const uint n_dofs = fe_v[0]->get_fe().n_dofs_per_cell();
         if (new_cell) {
-          // spdlog::get("log")->info("FEM: Rebuilding the jacobian sparsity pattern");
           extractor_dof_indices.resize(n_dofs);
           EoM_cell->get_dof_indices(extractor_dof_indices);
           rebuild_jacobian_sparsity();
@@ -1960,8 +2006,14 @@ namespace DiFfRG
         fe_v[0]->get_function_gradients(solution_global, solution_grad);
         fe_v[0]->get_function_hessians(solution_global, solution_hess);
 
+        const auto raw_potential = reconstruct_raw_potential(
+            solution_global, dof_handler, mapping,
+            [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
+        const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
+
         auto solution_tuple = std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(solutions_vector),
-                                             std::tie(solution_grad[0], solution_hess[0], this->nothing, variables));
+                                             std::tie(solution_grad[0], solution_hess[0], this->nothing, variables,
+                                                      potential.value, potential.gradient, potential.hessian));
 
         extractor_jacobian_u = 0;
         model.template jacobian_extractors<0>(extractor_jacobian_u, EoM, fe_more_conv(solution_tuple));

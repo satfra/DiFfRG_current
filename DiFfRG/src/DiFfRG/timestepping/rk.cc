@@ -9,7 +9,7 @@
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/timestepping/rk.hh>
 
 namespace DiFfRG
@@ -67,8 +67,8 @@ namespace DiFfRG
       if (!is_close(last_save, t, 1e-10)) {
         assembler->set_time(t);
 
-        assembler->attach_data_output(*data_out, Vector<double>(), sol);
-        data_out->flush(t);
+        data_out->write_frame(t,
+                              [&](auto &frame) { assembler->attach_data_output(frame, Vector<double>(), sol); });
 
         last_save = t;
       }
@@ -104,7 +104,7 @@ namespace DiFfRG
     while (time.is_at_end() == false) {
       explicit_runge_kutta.evolve_one_time_step(
           [&](const double t, const VectorType &y) {
-            const auto now = std::chrono::high_resolution_clock::now();
+            CalcDtTimer calc_timer;
 
             typename VectorMemory<VectorType>::Pointer f(mem);
             f->reinit(y);
@@ -112,10 +112,7 @@ namespace DiFfRG
             assembler->residual_variables(*f, y, Vector<double>());
             *f *= -1.;
 
-            const auto ms_passed =
-                std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-                    .count();
-            console_out(t, "explicit residual", 1, ms_passed);
+            console_out(t, "explicit residual", 1, nullptr, calc_timer.lap());
 
             return *f;
           },
@@ -132,6 +129,7 @@ namespace DiFfRG
     }
 
     initial_data = y;
+    this->drain_output();
   }
 } // namespace DiFfRG
 

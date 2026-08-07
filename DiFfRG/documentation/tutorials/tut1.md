@@ -143,9 +143,12 @@ Note that the TimeStepper takes an additional argument, where we can choose the 
   // Define the objects needed to run the simulation
   Model model(json);
   RectangularMesh<dim> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
-  TimeStepper time_stepper(json, &assembler);
+  OutputPath output_path(json);
+  OutputSession<dim, VectorType> output(output_path, Config::OutputSettings(json));
+  const auto log = output.log_port();
+  Discretization discretization(mesh, json, log);
+  Assembler assembler(discretization, model, json, log);
+  TimeStepper time_stepper(json, &assembler, &output);
 ```
 We now use the types we defined above to construct objects of all the classes described above.
 
@@ -162,7 +165,7 @@ and use it to run the time-stepper from RG-time 0 to the final RG-time, which we
   try {
     time_stepper.run(&initial_condition, 0., json.get_double("/timestepping/final_time"));
   } catch (std::exception &e) {
-    spdlog::get("log")->error("Simulation finished with exception {}", e.what());
+    log.error("Simulation finished with exception {}", e.what());
     return -1;
   }
   auto time = timer.wall_time();
@@ -184,8 +187,8 @@ Furthermore, we recorded the time the simulation took using the `dealii::Timer` 
 We finish the program by printing a bit of information to the log file, in particular the performance and utilization of the `Assembler`.
 ```cpp
   // We print a bit of exit information.
-  assembler.log("log");
-  spdlog::get("log")->info("Simulation finished after " + time_format(time));
+  assembler.log();
+  log.info("Simulation finished after " + time_format(time));
   return 0;
 }
 ```
@@ -326,6 +329,10 @@ These sections are just the parameters we also use in the numerical model, i.e. 
 
     "EoM_abs_tol": 1e-10,
     "EoM_max_iter": 100,
+    "EoM_smoothing_length": -1,
+    "EoM_bound_tolerance": 1e-12,
+    "EoM_armijo_coefficient": 1e-4,
+    "EoM_max_backtracks": 20,
 
     "grid": {
       "x_grid": "0:1e-2:1",
@@ -340,8 +347,15 @@ The discretization section configures the FEM setup of our simulation:
 - `batch_size` the assembly threads get batches of `batch_size` which they sequentially process. Playing around with `threads` and `batch_size` may give a small performance boost, but keeping `threads` around the number of physical cores and `batch_size` around 32-64 should be sufficient for almost optimal performance.
 - `overintegration` can be used to increase the order of the quadratures used in assembly when constructing the [weak form](https://en.wikipedia.org/wiki/Weak_formulation) of the PDE. It is seldom necessary to increase beyond 0.
 - `output_subdivisions` gives the precision with which the grids in the output data are written. This goes exponentially, so don't choose it too high.
-- `EoM_abs_tol` sets the absolute precision within which a specified equation of motion is solved. DiFfRG can be instructed to solve the EoM at every timestep and perform additional computations at this point.
-- `EoM_max_iter` sets the number of bisections used in determining the position of the EoM.
+- `EoM_abs_tol` sets the projected equation-of-motion/potential-gradient tolerance used to refine the EoM position within a cell. DiFfRG can be instructed to solve the EoM at every timestep and perform additional computations at this point.
+- `EoM_max_iter` sets the maximum number of in-cell minimizer iterations used in determining the position of the EoM.
+- `EoM_smoothing_length` controls damping of normal-gradient jumps in the reconstructed CG2 potential. A value of `-1` captures twice the smallest initial face-normal cell width as a fixed physical smoothing length, `0` disables smoothing, and a positive value sets the physical length explicitly. On a uniform mesh, the effective smoothing range in cells is approximately `EoM_smoothing_length / h`; a fixed physical length therefore spans more cells after refinement.
+- `EoM_bound_tolerance` determines when a reference-cell coordinate is treated as lying on an active lower or upper bound.
+- `EoM_armijo_coefficient` is the sufficient-decrease coefficient used by the Newton line search and must lie strictly between zero and one.
+- `EoM_max_backtracks` limits the number of line-search step halvings and must be positive.
+
+These three values are collected in `Config::EoMConfig`. JSON is the application-boundary adapter; the EoM reconstruction and assemblers consume the typed configuration. This mirrors `Config::ConfigurationMesh` and lets a future application-level configuration object forward only its EoM settings.
+
 - `x_grid` this works in a python-like slice syntax and sets the  used in a `RectangularMesh`. The parameter also supports locally different cell sizes: "0:1e-4:1e-2, 1e-2:1e-3:1" creates 100 cells between 0 and 1e-2, and 100 cells between 1e-2 and 1.
 - `y_grid` and `z_grid` work identically, but are only used in 2D / 3D simulations.
 - `refine` can be used to quickly increase the cell count by $2^\textrm{refine}$.
@@ -394,7 +408,7 @@ For more information about timesteppers and their relationship with spontaneous 
 }
 ```
 The `output` section defines:
-- `verbosity` sets how much information is being written to console while running. If at 0, no information is written at all, whereas at 1 the system gives updates at every timestep.
+- `verbosity` sets how much information is being written to console while running. If at 0, no information is written at all, whereas at 1 the system gives updates at every timestep. From 2 upwards, the progress lines are accompanied by the solver diagnostics (accepted steps, precision rejects, step widths, ...) and by timings for the jacobian and the linear solver.
 - `folder` sets the base folder where data is stored. This is useful to not clutter your current directory ("./") with output, or if you run a large amount of simulations.
 - `name` sets the beginning of all filenames of the output, i.e. in this case all files created by the simulation start with "output".
 
