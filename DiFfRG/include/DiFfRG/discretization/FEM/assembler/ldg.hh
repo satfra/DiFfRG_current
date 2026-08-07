@@ -422,14 +422,17 @@ namespace DiFfRG
       template <typename... T> auto fe_more_conv(std::tuple<T &...> &t) const
       {
         if constexpr (stencil == 2)
-          return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "LDG1", "fe_derivatives", "fe_hessians",
-                                                           "extractors", "variables">>(t);
+          return named_tuple<std::tuple<T &...>,
+                             StringSet<"fe_functions", "LDG1", "fe_derivatives", "fe_hessians", "extractors",
+                                       "variables", "potential", "potential_gradient", "potential_hessian">>(t);
         else if constexpr (stencil == 3)
-          return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "LDG1", "LDG2", "fe_derivatives",
-                                                           "fe_hessians", "extractors", "variables">>(t);
+          return named_tuple<std::tuple<T &...>,
+                             StringSet<"fe_functions", "LDG1", "LDG2", "fe_derivatives", "fe_hessians", "extractors",
+                                       "variables", "potential", "potential_gradient", "potential_hessian">>(t);
         else if constexpr (stencil == 4)
           return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "LDG1", "LDG2", "LDG3", "fe_derivatives",
-                                                           "fe_hessians", "extractors", "variables">>(t);
+                                                           "fe_hessians", "extractors", "variables", "potential",
+                                                           "potential_gradient", "potential_hessian">>(t);
         else
           throw std::runtime_error("Only <= 3 LDG subsystems are supported.");
       }
@@ -1805,6 +1808,9 @@ namespace DiFfRG
       void readouts(OutputFrame<dim, VectorType> &data_out, const VectorType &solution_global,
                     const VectorType &variables) const
       {
+        auto raw_potential = reconstruct_raw_potential(
+            solution_global, dof_handler, mapping,
+            [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
         auto helper = [&](auto &&...args) {
           if constexpr (sizeof...(args) == 3) {
             auto &&[id, EoMfun, outputter] = std::forward_as_tuple(std::forward<decltype(args)>(args)...);
@@ -1843,8 +1849,6 @@ namespace DiFfRG
               solutions_vector.push_back(solutions[k][0]);
 
             std::array<NumberType, Components::count_extractors()> __extracted_data{{}};
-            if constexpr (Components::count_extractors() > 0)
-              extract(__extracted_data, solution_global, variables, true, false, false);
             const auto &extracted_data = __extracted_data;
 
             std::vector<std::vector<Tensor<1, dim, NumberType>>> solution_grad{
@@ -1854,9 +1858,19 @@ namespace DiFfRG
             fe_v[0]->get_function_gradients(solution_global, solution_grad);
             fe_v[0]->get_function_hessians(solution_global, solution_hess);
 
-            auto solution_tuple =
-                std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(solutions_vector),
-                               std::tie(solution_grad[0], solution_hess[0], extracted_data, variables));
+            const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
+
+            if constexpr (Components::count_extractors() > 0) {
+              auto extractor_tuple =
+                  std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(solutions_vector),
+                                 std::tie(solution_grad[0], solution_hess[0], this->nothing, variables, potential.value,
+                                          potential.gradient, potential.hessian));
+              model.extract(__extracted_data, EoM, fe_more_conv(extractor_tuple));
+            }
+
+            auto solution_tuple = std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(solutions_vector),
+                                                 std::tie(solution_grad[0], solution_hess[0], extracted_data, variables,
+                                                          potential.value, potential.gradient, potential.hessian));
 
             outputter(data_out, EoM, fe_more_conv(solution_tuple));
             data_out.attach_eom_potential(std::move(EoM_result));
@@ -1865,6 +1879,7 @@ namespace DiFfRG
           }
         };
         model.readouts_multiple(helper, data_out);
+        data_out.attach_raw_potential(std::move(raw_potential));
       }
 
       void extract(std::array<NumberType, Components::count_extractors()> &data, const VectorType &solution_global,
@@ -1921,8 +1936,14 @@ namespace DiFfRG
         fe_v[0]->get_function_gradients(solution_global, solution_grad);
         fe_v[0]->get_function_hessians(solution_global, solution_hess);
 
+        const auto raw_potential = reconstruct_raw_potential(
+            solution_global, dof_handler, mapping,
+            [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
+        const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
+
         auto solution_tuple = std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(solutions_vector),
-                                             std::tie(solution_grad[0], solution_hess[0], this->nothing, variables));
+                                             std::tie(solution_grad[0], solution_hess[0], this->nothing, variables,
+                                                      potential.value, potential.gradient, potential.hessian));
 
         model.extract(data, EoM, fe_more_conv(solution_tuple));
       }
@@ -1985,8 +2006,14 @@ namespace DiFfRG
         fe_v[0]->get_function_gradients(solution_global, solution_grad);
         fe_v[0]->get_function_hessians(solution_global, solution_hess);
 
+        const auto raw_potential = reconstruct_raw_potential(
+            solution_global, dof_handler, mapping,
+            [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
+        const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
+
         auto solution_tuple = std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(solutions_vector),
-                                             std::tie(solution_grad[0], solution_hess[0], this->nothing, variables));
+                                             std::tie(solution_grad[0], solution_hess[0], this->nothing, variables,
+                                                      potential.value, potential.gradient, potential.hessian));
 
         extractor_jacobian_u = 0;
         model.template jacobian_extractors<0>(extractor_jacobian_u, EoM, fe_more_conv(solution_tuple));

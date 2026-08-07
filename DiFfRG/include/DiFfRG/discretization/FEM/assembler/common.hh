@@ -49,8 +49,8 @@ namespace DiFfRG
     template <typename... T> static constexpr auto e_tie(T &&...t)
     {
       return named_tuple<std::tuple<T &...>,
-                         StringSet<"fe_functions", "fe_derivatives", "fe_hessians", "extractors", "variables">>(
-          std::tie(t...));
+                         StringSet<"fe_functions", "fe_derivatives", "fe_hessians", "extractors", "variables",
+                                   "potential", "potential_gradient", "potential_hessian">>(std::tie(t...));
     }
 
   public:
@@ -158,6 +158,9 @@ namespace DiFfRG
     void readouts(OutputFrame<dim, VectorType> &data_out, const VectorType &solution_global,
                   const VectorType &variables) const
     {
+      auto raw_potential = reconstruct_raw_potential(
+          solution_global, dof_handler, mapping,
+          [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
       auto helper = [&](auto &&...args) {
         if constexpr (sizeof...(args) == 3) {
           auto &&[id, EoMfun, outputter] = std::forward_as_tuple(std::forward<decltype(args)>(args)...);
@@ -187,18 +190,25 @@ namespace DiFfRG
           fe_v.get_function_gradients(solution_global, solution_grad);
           fe_v.get_function_hessians(solution_global, solution_hess);
 
+          const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
+
           std::array<NumberType, Components::count_extractors()> __extracted_data{{}};
           if constexpr (Components::count_extractors() > 0)
-            extract(__extracted_data, solution_global, variables, true, false, false);
+            model.extract(__extracted_data, EoM,
+                          e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables, potential.value,
+                                potential.gradient, potential.hessian));
           const auto &extracted_data = __extracted_data;
 
-          outputter(data_out, EoM, e_tie(solution[0], solution_grad[0], solution_hess[0], extracted_data, variables));
+          outputter(data_out, EoM,
+                    e_tie(solution[0], solution_grad[0], solution_hess[0], extracted_data, variables, potential.value,
+                          potential.gradient, potential.hessian));
           data_out.attach_eom_potential(std::move(EoM_result));
         } else {
           internal::validate_readout_helper_arity<decltype(args)...>();
         }
       };
       model.readouts_multiple(helper, data_out);
+      data_out.attach_raw_potential(std::move(raw_potential));
     }
 
     void extract(std::array<NumberType, Components::count_extractors()> &data, const VectorType &solution_global,
@@ -238,7 +248,13 @@ namespace DiFfRG
       fe_v.get_function_gradients(solution_global, solution_grad);
       fe_v.get_function_hessians(solution_global, solution_hess);
 
-      model.extract(data, EoM, e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables));
+      const auto raw_potential = reconstruct_raw_potential(
+          solution_global, dof_handler, mapping,
+          [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
+      const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
+      model.extract(data, EoM,
+                    e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables, potential.value,
+                          potential.gradient, potential.hessian));
     }
 
     bool jacobian_extractors(FullMatrix<NumberType> &extractor_jacobian, const VectorType &solution_global,
@@ -291,15 +307,23 @@ namespace DiFfRG
       fe_v.get_function_gradients(solution_global, solution_grad);
       fe_v.get_function_hessians(solution_global, solution_hess);
 
+      const auto raw_potential = reconstruct_raw_potential(
+          solution_global, dof_handler, mapping,
+          [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
+      const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
+
       extractor_jacobian_u = 0;
       extractor_jacobian_du = 0;
       extractor_jacobian_ddu = 0;
       model.template jacobian_extractors<0>(extractor_jacobian_u, EoM,
-                                            e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables));
+                                            e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables,
+                                                  potential.value, potential.gradient, potential.hessian));
       model.template jacobian_extractors<1>(extractor_jacobian_du, EoM,
-                                            e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables));
+                                            e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables,
+                                                  potential.value, potential.gradient, potential.hessian));
       model.template jacobian_extractors<2>(extractor_jacobian_ddu, EoM,
-                                            e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables));
+                                            e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables,
+                                                  potential.value, potential.gradient, potential.hessian));
 
       if (extractor_jacobian.m() != Components::count_extractors() || extractor_jacobian.n() != n_dofs)
         extractor_jacobian = FullMatrix<NumberType>(Components::count_extractors(), n_dofs);

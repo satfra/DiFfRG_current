@@ -495,6 +495,31 @@ where `r_a` is the residual to fill and `sol` is a named tuple from which the cu
 template <int dim, typename Vector, typename Solutions> void extract(Vector &e_b, const Point<dim> &x, const Solutions &sol) const;
 ```
 
+Spatial readouts and extractors also receive an experimental scalar raw-potential view under the provisional named
+entries `"potential"`, `"potential_gradient"`, and `"potential_hessian"`. These are the value, gradient, and
+element-local Hessian of one common scalar CG2 potential reconstructed from the model's unmodified potential gradient.
+The Hessian may jump across cell interfaces. These entry names may change while this interface is experimental. The
+value uses the gauge `potential(origin) == 0`; its derivatives do not depend on that gauge.
+
+By default, the raw gradient copies the first `dim` solution components, i.e. `{values[0], ..., values[dim - 1]}`;
+missing components are zero-filled. A model with a different component layout must override it independently:
+
+```cpp
+template <int dim, typename Vector>
+std::array<double, dim> raw_potential_gradient(const Point<dim> &, const Vector &values) const
+{
+  return {{values[idxf("u")]}}; // unmodified dU/drho, without the physical-EoM correction
+}
+```
+
+The readout-specific EoM callback reconstructs a separate scalar CG2 potential and selects the evaluation point. The
+raw-potential fields and extractors are then evaluated at that same point for CG, DG, dDG, LDG, and KT-FV. Existing
+`"fe_functions"`, `"fe_derivatives"`, and `"fe_hessians"` entries keep their assembler-specific meanings.
+
+Spatial output writes this common raw reconstruction to `<run>_potential.pvd` with field name `potential`. The
+separate potentials reconstructed from the readout-specific physical EoM callbacks are written to
+`<run>_eom_potential.pvd` with fields `eom_potential`, `eom_potential_1`, and so on.
+
 A system that consists of variables only (no FE functions) is assembled by `DiFfRG::Variables::Assembler` (spatial dimension `0`) and carried by `DiFfRG::FlowingVariables`; when FE functions are also present the two sectors are coupled and the FEM assembler handles both. Momentum grids are represented by coordinate systems (e.g. `DiFfRG::LogarithmicCoordinates1D`) and evaluated through interpolators (e.g. `DiFfRG::SplineInterpolator1D`); the flow kernels are generated as grid `map` integrators.
 
 For a complete, worked momentum-dependent example, see [Tutorial 4](../tutorials/tut4.md).

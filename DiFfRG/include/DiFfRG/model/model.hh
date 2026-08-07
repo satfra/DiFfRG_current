@@ -357,6 +357,23 @@ namespace DiFfRG
         return std::array<double, dim>{{u[0]}};
       }
 
+      /**
+       * @brief The unmodified gradient of the scalar potential reconstructed for readouts and extractors.
+       *
+       * This is deliberately separate from the EoM callback supplied by readouts_multiple(): a physical EoM may
+       * contain explicit-breaking or other terms which are not part of the raw potential. By default, the first dim
+       * solution components are interpreted as the raw potential gradient; missing components are zero-filled. Models
+       * with a different component layout should override this method.
+       */
+      template <int dim, typename Vector>
+      std::array<double, dim> raw_potential_gradient([[maybe_unused]] const Point<dim> &x, const Vector &u) const
+      {
+        std::array<double, dim> gradient{};
+        for (uint d = 0; d < dim && d < u.size(); ++d)
+          gradient[d] = u[d];
+        return gradient;
+      }
+
       template <int dim, typename Vector> Point<dim> EoM_postprocess(const Point<dim> &EoM, const Vector &) const
       {
         return EoM;
@@ -364,8 +381,9 @@ namespace DiFfRG
 
       template <typename FUN, typename DataOut> void readouts_multiple(FUN &helper, DataOut &) const
       {
-        helper("primary", [&](const auto &x, const auto &u_i) { return asImp().EoM(x, u_i); }, // chiral EoM
-               [&](auto &output, const auto &x, const auto &sol) { asImp().readouts(output, x, sol); });
+        helper(
+            "primary", [&](const auto &x, const auto &u_i) { return asImp().EoM(x, u_i); }, // chiral EoM
+            [&](auto &output, const auto &x, const auto &sol) { asImp().readouts(output, x, sol); });
       }
 
       template <int dim, typename DataOut, typename Solutions>
@@ -400,7 +418,6 @@ namespace DiFfRG
                       })
           asImp().apply_affine_constraints(constraints, context);
       }
-
     };
 
     namespace internal
@@ -489,9 +506,8 @@ namespace DiFfRG
       template <typename Constraints, typename Context>
       void apply_boundary_affine_constraints(Constraints &constraints, const Context &context) const
       {
-        const auto candidates =
-            internal::select_origin_candidates<component_name, Model>(context,
-                                                                      context.template boundary<component_name>());
+        const auto candidates = internal::select_origin_candidates<component_name, Model>(
+            context, context.template boundary<component_name>());
         for (const auto dof : candidates) {
           constraints.add_line(dof);
           constraints.set_inhomogeneity(dof, 0.0);
@@ -512,9 +528,8 @@ namespace DiFfRG
       template <typename Constraints, typename Context>
       void apply_affine_constraints(Constraints &constraints, const Context &context) const
       {
-        const auto candidates =
-            internal::select_origin_candidates<component_name, Model>(context,
-                                                                      context.template support<component_name>());
+        const auto candidates = internal::select_origin_candidates<component_name, Model>(
+            context, context.template support<component_name>());
         for (const auto dof : candidates) {
           constraints.add_line(dof);
           constraints.set_inhomogeneity(dof, 0.0);

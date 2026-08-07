@@ -2,6 +2,7 @@
 
 // external libraries
 #include <Eigen/Eigenvalues>
+#include <Eigen/QR>
 
 #include <deal.II/base/point.h>
 #include <deal.II/base/quadrature_lib.h>
@@ -49,6 +50,29 @@ namespace DiFfRG
     std::unique_ptr<dealii::FiniteElement<dim>> finite_element;
     std::unique_ptr<dealii::DoFHandler<dim>> dof_handler;
     dealii::Vector<NumberType> values;
+  };
+
+  /**
+   * @brief An owning scalar potential reconstructed from a model-provided raw gradient.
+   *
+   * Its additive gauge is fixed at the mesh origin. Consequently, value differences and all derivatives are
+   * gauge-independent, while the absolute value uses the convention U(origin) = 0.
+   */
+  template <int dim, typename NumberType> struct ReconstructedRawPotential {
+    std::unique_ptr<dealii::FiniteElement<dim>> finite_element;
+    std::unique_ptr<dealii::DoFHandler<dim>> dof_handler;
+    dealii::Vector<NumberType> values;
+  };
+
+  template <typename NumberType> struct ReconstructedRawPotential<0, NumberType> {
+    dealii::Vector<NumberType> values;
+  };
+
+  /** @brief Value and first two derivatives of a reconstructed raw scalar potential at one point. */
+  template <int dim, typename NumberType> struct RawPotentialEvaluation {
+    NumberType value{};
+    dealii::Tensor<1, dim, NumberType> gradient;
+    dealii::Tensor<2, dim, NumberType> hessian;
   };
 
   template <typename NumberType> struct ReconstructedEoMPotential<0, NumberType> {
@@ -199,7 +223,12 @@ namespace DiFfRG
       return best_dof;
     }
 
-    template <int dim> std::unique_ptr<dealii::FiniteElement<dim>> make_potential_fe()
+    template <int dim> std::unique_ptr<dealii::FiniteElement<dim>> make_eom_potential_fe()
+    {
+      return std::make_unique<FE_Q<dim>>(2);
+    }
+
+    template <int dim> std::unique_ptr<dealii::FiniteElement<dim>> make_raw_potential_fe()
     {
       return std::make_unique<FE_Q<dim>>(2);
     }
@@ -210,6 +239,96 @@ namespace DiFfRG
       for (uint d = 0; d < dim; ++d)
         out[d] = eom[d];
       return out;
+    }
+
+    template <int dim, typename NumberType> struct DG0GradientModel {
+      dealii::Point<dim> center;
+      dealii::Tensor<1, dim, NumberType> value;
+      dealii::Tensor<2, dim, NumberType> jacobian;
+    };
+
+    template <int dim, typename VectorType, typename GradientFUN>
+    std::vector<DG0GradientModel<dim, typename VectorType::value_type>>
+    recover_dg0_gradient_models(const VectorType &sol, const dealii::DoFHandler<dim> &solution_dof_handler,
+                                const dealii::Mapping<dim> &mapping, const GradientFUN &get_gradient)
+    {
+      using NumberType = typename VectorType::value_type;
+      using Iterator = typename dealii::DoFHandler<dim>::active_cell_iterator;
+
+      const uint n_cells = solution_dof_handler.get_triangulation().n_active_cells();
+      std::vector<Iterator> cells(n_cells);
+      std::vector<DG0GradientModel<dim, NumberType>> models(n_cells);
+
+      dealii::QMidpoint<dim> midpoint;
+      dealii::FEValues<dim> values(mapping, solution_dof_handler.get_fe(), midpoint,
+                                   dealii::update_values | dealii::update_quadrature_points);
+      std::vector<dealii::Vector<NumberType>> solution_values(
+          1, dealii::Vector<NumberType>(solution_dof_handler.get_fe().n_components()));
+      for (const auto &cell : solution_dof_handler.active_cell_iterators()) {
+        const uint index = cell->active_cell_index();
+        cells[index] = cell;
+        values.reinit(cell);
+        values.get_function_values(sol, solution_values);
+        models[index].center = values.quadrature_point(0);
+        models[index].value = eom_to_tensor<dim>(get_gradient(models[index].center, solution_values[0]));
+      }
+
+      const uint target_patch_size = std::min<uint>(n_cells, 2 * (dim + 1));
+      for (uint cell_index = 0; cell_index < n_cells; ++cell_index) {
+        std::vector<uint> patch{cell_index};
+        std::vector<uint> frontier{cell_index};
+        std::vector<bool> seen(n_cells, false);
+        seen[cell_index] = true;
+
+        while (patch.size() < target_patch_size && !frontier.empty()) {
+          std::vector<uint> next_frontier;
+          for (const uint index : frontier) {
+            std::vector<Iterator> neighbors;
+            dealii::GridTools::get_active_neighbors<dealii::DoFHandler<dim>>(cells[index], neighbors);
+            for (const auto &neighbor : neighbors) {
+              const uint neighbor_index = neighbor->active_cell_index();
+              if (seen[neighbor_index]) continue;
+              seen[neighbor_index] = true;
+              patch.push_back(neighbor_index);
+              next_frontier.push_back(neighbor_index);
+            }
+          }
+          frontier = std::move(next_frontier);
+        }
+
+        if (patch.size() < dim + 1) continue;
+        const double scale = std::max(cells[cell_index]->diameter(), std::numeric_limits<double>::epsilon());
+        Eigen::MatrixXd design(patch.size(), dim + 1);
+        for (uint row = 0; row < patch.size(); ++row) {
+          design(row, 0) = 1.;
+          for (uint d = 0; d < dim; ++d)
+            design(row, d + 1) = (models[patch[row]].center[d] - models[cell_index].center[d]) / scale;
+        }
+
+        Eigen::ColPivHouseholderQR<Eigen::MatrixXd> qr(design);
+        if (qr.rank() < dim + 1) continue;
+        for (uint component = 0; component < dim; ++component) {
+          Eigen::VectorXd samples(patch.size());
+          for (uint row = 0; row < patch.size(); ++row)
+            samples[row] = models[patch[row]].value[component];
+          const Eigen::VectorXd coefficients = qr.solve(samples);
+          for (uint d = 0; d < dim; ++d)
+            models[cell_index].jacobian[component][d] = coefficients[d + 1] / scale;
+        }
+      }
+
+      return models;
+    }
+
+    template <int dim, typename NumberType>
+    dealii::Tensor<1, dim, NumberType> evaluate_dg0_gradient_model(const DG0GradientModel<dim, NumberType> &model,
+                                                                   const dealii::Point<dim> &point)
+    {
+      auto value = model.value;
+      for (uint component = 0; component < dim; ++component)
+        for (uint d = 0; d < dim; ++d)
+          value[component] += model.jacobian[component][d] * (point[d] - model.center[d]);
+      return value;
     }
 
     template <int dim, typename NumberType> struct PotentialAssemblyScratch {
@@ -313,6 +432,17 @@ namespace DiFfRG
       using Copy = PotentialAssemblyCopy<NumberType>;
 
       const FEValuesExtractors::Scalar scalar(0);
+      const bool recover_dg0_gradient = solution_dof_handler.get_fe().degree == 0;
+      const auto dg0_gradient_models = recover_dg0_gradient
+                                           ? recover_dg0_gradient_models(sol, solution_dof_handler, mapping, get_EoM)
+                                           : std::vector<DG0GradientModel<dim, NumberType>>{};
+
+      const auto evaluate_gradient = [&](const Iterator &cell, const dealii::Point<dim> &point,
+                                         const dealii::Vector<NumberType> &values) {
+        if (recover_dg0_gradient)
+          return evaluate_dg0_gradient_model(dg0_gradient_models[cell->active_cell_index()], point);
+        return eom_to_tensor<dim>(get_EoM(point, values));
+      };
 
       const auto cell_worker = [&](const Iterator &solution_cell, Scratch &scratch, Copy &copy) {
         const auto potential_cell = matching_dof_cell(potential_dof_handler, solution_cell);
@@ -325,8 +455,8 @@ namespace DiFfRG
         copy.reinit_cell(potential_cell, dofs_per_cell);
 
         for (const auto q : scratch.potential_fe_values.quadrature_point_indices()) {
-          const auto eom =
-              eom_to_tensor<dim>(get_EoM(scratch.potential_fe_values.quadrature_point(q), scratch.solution_values[q]));
+          const auto eom = evaluate_gradient(solution_cell, scratch.potential_fe_values.quadrature_point(q),
+                                             scratch.solution_values[q]);
 
           for (uint i = 0; i < dofs_per_cell; ++i) {
             const auto grad_i = scratch.potential_fe_values.shape_grad(i, q);
@@ -380,8 +510,8 @@ namespace DiFfRG
 
         for (const auto q : potential_fe_interface_values.quadrature_point_indices()) {
           const auto normal = potential_fe_interface_values.normal_vector(q);
-          const auto eom_s = eom_to_tensor<dim>(get_EoM(q_points[q], solution_values_s[q]));
-          const auto eom_n = eom_to_tensor<dim>(get_EoM(q_points[q], solution_values_n[q]));
+          const auto eom_s = evaluate_gradient(solution_cell, q_points[q], solution_values_s[q]);
+          const auto eom_n = evaluate_gradient(solution_neighbor, q_points[q], solution_values_n[q]);
           const auto average_eom = 0.5 * (eom_s + eom_n);
           const double rhs_flux = scalar_product(average_eom, normal);
 
@@ -692,20 +822,17 @@ namespace DiFfRG
       return minimum;
     }
 
-    template <int dim, typename VectorType, typename EoMFUN>
-    ReconstructedEoMPotential<dim, typename VectorType::value_type>
-    reconstruct_potential(typename dealii::DoFHandler<dim>::cell_iterator &EoM_cell, const VectorType &sol,
-                          const dealii::DoFHandler<dim> &solution_dof_handler, const dealii::Mapping<dim> &mapping,
-                          const EoMFUN &get_EoM, const Config::EoMConfig &config,
-                          const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt)
+    template <int dim, typename VectorType, typename GradientFUN>
+    ReconstructedRawPotential<dim, typename VectorType::value_type>
+    solve_potential(const VectorType &sol, const dealii::DoFHandler<dim> &solution_dof_handler,
+                    const dealii::Mapping<dim> &mapping, const GradientFUN &get_gradient,
+                    const Config::EoMConfig &config, std::unique_ptr<dealii::FiniteElement<dim>> potential_fe)
     {
       using NumberType = typename VectorType::value_type;
 
-      auto origin_cell = EoM_cell;
+      auto origin_cell = solution_dof_handler.begin_active();
       const auto origin = get_origin(solution_dof_handler, origin_cell);
       const double smoothing_length = resolve_potential_smoothing_length(solution_dof_handler, config.smoothing_length);
-
-      auto potential_fe = make_potential_fe<dim>();
 
       auto potential_dof_handler = std::make_unique<DoFHandler<dim>>(solution_dof_handler.get_triangulation());
       potential_dof_handler->distribute_dofs(*potential_fe);
@@ -731,7 +858,7 @@ namespace DiFfRG
       QGauss<dim> quadrature(quadrature_order);
       QGauss<dim - 1> face_quadrature(quadrature_order);
 
-      assemble_potential_system(sol, solution_dof_handler, *potential_dof_handler, *potential_fe, mapping, get_EoM,
+      assemble_potential_system(sol, solution_dof_handler, *potential_dof_handler, *potential_fe, mapping, get_gradient,
                                 quadrature, face_quadrature, constraints, matrix, rhs, smoothing_length);
 
       SparseDirectUMFPACK solver;
@@ -741,16 +868,74 @@ namespace DiFfRG
       solver.vmult(potential, rhs);
       constraints.distribute(potential);
 
-      const auto minimum = find_potential_minimum(*potential_dof_handler, *potential_fe, mapping, potential, quadrature,
-                                                  config, initial_guess);
-      EoM_cell = GridTools::find_active_cell_around_point(solution_dof_handler, minimum.point);
-      return {.minimum = minimum.point,
-              .finite_element = std::move(potential_fe),
+      return {.finite_element = std::move(potential_fe),
               .dof_handler = std::move(potential_dof_handler),
               .values = std::move(potential)};
     }
 
+    template <int dim, typename VectorType, typename EoMFUN>
+    ReconstructedEoMPotential<dim, typename VectorType::value_type>
+    reconstruct_potential(typename dealii::DoFHandler<dim>::cell_iterator &EoM_cell, const VectorType &sol,
+                          const dealii::DoFHandler<dim> &solution_dof_handler, const dealii::Mapping<dim> &mapping,
+                          const EoMFUN &get_EoM, const Config::EoMConfig &config,
+                          const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt)
+    {
+      auto potential =
+          solve_potential(sol, solution_dof_handler, mapping, get_EoM, config, make_eom_potential_fe<dim>());
+
+      const uint quadrature_order =
+          std::max<uint>(std::max<uint>(solution_dof_handler.get_fe().degree, potential.finite_element->degree) + 2, 2);
+      QGauss<dim> quadrature(quadrature_order);
+
+      const auto minimum = find_potential_minimum(*potential.dof_handler, *potential.finite_element, mapping,
+                                                  potential.values, quadrature, config, initial_guess);
+      EoM_cell = GridTools::find_active_cell_around_point(solution_dof_handler, minimum.point);
+      return {.minimum = minimum.point,
+              .finite_element = std::move(potential.finite_element),
+              .dof_handler = std::move(potential.dof_handler),
+              .values = std::move(potential.values)};
+    }
+
   } // namespace internal
+
+  /**
+   * @brief Reconstruct a scalar raw potential without locating its minimum.
+   *
+   * The supplied callback must return the unmodified gradient of the desired scalar potential. Unlike an EoM callback,
+   * it must not include explicit-breaking or other terms which should be absent from readouts and extractors.
+   */
+  template <int dim, typename VectorType, typename GradientFUN>
+  ReconstructedRawPotential<dim, typename VectorType::value_type>
+  reconstruct_raw_potential(const VectorType &sol, const dealii::DoFHandler<dim> &dof_handler,
+                            const dealii::Mapping<dim> &mapping, const GradientFUN &get_gradient,
+                            const Config::EoMConfig &config)
+  {
+    static_assert(dim > 0, "A raw spatial potential cannot be reconstructed in zero dimensions.");
+    config.validate();
+    return internal::solve_potential(sol, dof_handler, mapping, get_gradient, config,
+                                     internal::make_raw_potential_fe<dim>());
+  }
+
+  /** @brief Evaluate a reconstructed raw potential and its first two derivatives at a real-space point. */
+  template <int dim, typename NumberType>
+  RawPotentialEvaluation<dim, NumberType>
+  evaluate_raw_potential(const ReconstructedRawPotential<dim, NumberType> &potential,
+                         const dealii::Mapping<dim> &mapping, const dealii::Point<dim> &point)
+  {
+    const auto cell = dealii::GridTools::find_active_cell_around_point(mapping, *potential.dof_handler, point).first;
+    const auto unit_point = mapping.transform_real_to_unit_cell(cell, point);
+    dealii::FEValues<dim> fe_values(mapping, *potential.finite_element, unit_point,
+                                    dealii::update_values | dealii::update_gradients | dealii::update_hessians);
+    fe_values.reinit(cell);
+
+    std::vector<NumberType> values(1);
+    std::vector<dealii::Tensor<1, dim, NumberType>> gradients(1);
+    std::vector<dealii::Tensor<2, dim, NumberType>> hessians(1);
+    fe_values.get_function_values(potential.values, values);
+    fe_values.get_function_gradients(potential.values, gradients);
+    fe_values.get_function_hessians(potential.values, hessians);
+    return {.value = values[0], .gradient = gradients[0], .hessian = hessians[0]};
+  }
 
   /**
    * @brief Reconstruct a potential whose gradient approximates the model EoM vector field and return a sampled and

@@ -508,8 +508,8 @@ namespace DiFfRG
         template <typename... T> static constexpr auto e_tie(T &&...t)
         {
           return named_tuple<std::tuple<T &...>,
-                             StringSet<"fe_functions", "fe_derivatives", "fe_hessians", "extractors", "variables">>(
-              std::tie(t...));
+                             StringSet<"fe_functions", "fe_derivatives", "fe_hessians", "extractors", "variables",
+                                       "potential", "potential_gradient", "potential_hessian">>(std::tie(t...));
         }
 
       public:
@@ -693,6 +693,9 @@ namespace DiFfRG
         void readouts(OutputFrame<dim, VectorType> &data_out, const VectorType &solution_global,
                       const VectorType &variables) const
         {
+          auto raw_potential = reconstruct_raw_potential(
+              solution_global, dof_handler, mapping,
+              [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
           auto helper = [&](auto &&...args) {
             if constexpr (sizeof...(args) == 3) {
               auto &&[id, EoMfun, outputter] = std::forward_as_tuple(std::forward<decltype(args)>(args)...);
@@ -706,16 +709,27 @@ namespace DiFfRG
               this->EoM_cell = EoM_cell;
 
               auto solution = reconstruct_readout_solution(EoM_cell, solution_global, EoM);
+              const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
 
               std::array<NumberType, Components::count_extractors()> extracted_data{{}};
+              if constexpr (Components::count_extractors() > 0) {
+                const auto extractor_solution =
+                    reconstruct_readout_solution(EoM_cell, solution_global, EoM, /*with_hessians=*/true);
+                model.extract(extracted_data, EoM,
+                              e_tie(extractor_solution.values, extractor_solution.gradients,
+                                    extractor_solution.hessians, nothing, variables, potential.value,
+                                    potential.gradient, potential.hessian));
+              }
               outputter(data_out, EoM,
-                        e_tie(solution.values, solution.gradients, solution.hessians, extracted_data, variables));
+                        e_tie(solution.values, solution.gradients, solution.hessians, extracted_data, variables,
+                              potential.value, potential.gradient, potential.hessian));
               data_out.attach_eom_potential(std::move(EoM_result));
             } else {
               DiFfRG::internal::validate_readout_helper_arity<decltype(args)...>();
             }
           };
           model.readouts_multiple(helper, data_out);
+          data_out.attach_raw_potential(std::move(raw_potential));
         }
 
         /**
@@ -802,7 +816,13 @@ namespace DiFfRG
           }
 
           auto solution = reconstruct_readout_solution(EoM_cell, solution_global, EoM, /*with_hessians=*/true);
-          model.extract(data, EoM, e_tie(solution.values, solution.gradients, solution.hessians, nothing, variables));
+          const auto raw_potential = reconstruct_raw_potential(
+              solution_global, dof_handler, mapping,
+              [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
+          const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
+          model.extract(data, EoM,
+                        e_tie(solution.values, solution.gradients, solution.hessians, nothing, variables,
+                              potential.value, potential.gradient, potential.hessian));
         }
 
         virtual void mass(VectorType &mass, const VectorType &solution_global, const VectorType &solution_global_dot,
