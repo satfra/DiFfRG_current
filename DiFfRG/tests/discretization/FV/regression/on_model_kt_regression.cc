@@ -263,8 +263,8 @@ namespace
     }
 
     template <int spatial_dim, typename FluxNumberType, typename Solutions, std::size_t n_fe_functions>
-    void KurganovTadmor_advection_flux(std::array<Tensor<1, spatial_dim, FluxNumberType>, n_fe_functions> &F_i,
-                                       const Point<spatial_dim> &x, const Solutions &sol) const
+    void flux(std::array<Tensor<1, spatial_dim, FluxNumberType>, n_fe_functions> &F_i, const Point<spatial_dim> &x,
+              const Solutions &sol) const
     {
       static_assert(spatial_dim == dim, "ONKTModel is one-dimensional.");
       static_assert(n_fe_functions == 1, "ONKTModel expects a single FE function.");
@@ -283,8 +283,8 @@ namespace
     }
 
     template <int spatial_dim, typename FluxNumberType, typename Solutions, std::size_t n_fe_functions>
-    void flux(std::array<Tensor<1, spatial_dim, FluxNumberType>, n_fe_functions> &F_i, const Point<spatial_dim> &x,
-              const Solutions &sol) const
+    void diffusion_flux(std::array<Tensor<1, spatial_dim, FluxNumberType>, n_fe_functions> &F_i,
+                        const Point<spatial_dim> &x, const Solutions &sol) const
     {
       static_assert(spatial_dim == dim, "ONKTModel is one-dimensional.");
       static_assert(n_fe_functions == 1, "ONKTModel expects a single FE function.");

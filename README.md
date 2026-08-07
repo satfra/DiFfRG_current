@@ -240,6 +240,7 @@ or from the CLI,
 ```bash
 $ ./my_simulation -si /output/verbosity=1
 ```
+Level 1 gives plain progress lines. From level 2 upwards these are accompanied by the solver diagnostics (accepted steps, precision rejects, nonlinear failures, step widths, ...) as well as jacobian and linear solver timings.
 
 
 ## Modifying parameters from the CLI

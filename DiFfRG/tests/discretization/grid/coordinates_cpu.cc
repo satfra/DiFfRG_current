@@ -39,6 +39,45 @@ TEST_CASE("Test 1D Linear coordinates", "[1D][coordinates]")
   CHECK(is_close(grid[grid.size() - 1][0], p_stop, 1e-5f));
 }
 
+TEST_CASE("Test 1D Linear periodic coordinates", "[1D][coordinates][periodic]")
+{
+  const double p_start = GENERATE(take(3, random(-10., 10.)));
+  const double p_period = GENERATE(take(3, random(1., 100.)));
+  const int p_size = GENERATE(take(3, random(2, 100)));
+  const double p_stop = p_start + p_period;
+  const double dx = p_period / p_size;
+
+  LinearPeriodicCoordinates1D<double> coords(p_size, p_start, p_stop);
+
+  const auto grid = make_grid(coords);
+  REQUIRE(grid.size() == size_t(p_size));
+
+  // The endpoint is excluded: the grid runs start, start + dx, ..., stop - dx
+  CHECK(is_close(grid[0][0], p_start, 1e-10 * p_period));
+  for (uint i = 1; i < grid.size(); ++i)
+    CHECK(grid[i][0] > grid[i - 1][0]);
+  CHECK(is_close(grid[grid.size() - 1][0], p_stop - dx, 1e-10 * p_period));
+
+  // backward is the inverse of forward on the grid points
+  for (int i = 0; i < p_size; ++i)
+    CHECK(is_close(coords.backward(coords.forward(i)), double(i), 1e-8));
+
+  // and it folds everything else back into [0, p_size). Note that right at the seam the fold may land on either
+  // side of it, so compare indices as points on a circle of circumference p_size.
+  const auto circular_distance = [&](const double a, const double b) {
+    const double d = std::abs(a - b);
+    return std::min(d, double(p_size) - d);
+  };
+  CHECK(circular_distance(coords.backward(p_stop), 0.) < 1e-8);
+  CHECK(circular_distance(coords.backward(p_start - dx), double(p_size - 1)) < 1e-8);
+  CHECK(circular_distance(coords.backward(p_start + 3 * p_period + 2 * dx), 2.) < 1e-8);
+  for (const double y : {p_start - 7 * p_period, p_start + 11 * p_period, p_stop - 1e-12 * p_period}) {
+    const double idx = coords.backward(y);
+    CHECK(idx >= 0.);
+    CHECK(idx < double(p_size));
+  }
+}
+
 TEST_CASE("Test 2D CoordinatePackND with two LogarithmicCoordinates1D", "[2D][coordinates]")
 {
   const float p_start_1 = GENERATE(take(2, random(1e-6, 1e-1)));
