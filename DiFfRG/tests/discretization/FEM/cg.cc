@@ -25,7 +25,7 @@ TEST_CASE("Test CG on Constant model", "[discretization][dg]")
   using VectorType = typename Discretization::VectorType;
   using Assembler = CG::Assembler<Discretization, Model>;
 
-  JSONValue json = json::value(
+  ConfigTree json = json::value(
       {{"physical", {}},
        {"integration",
         {{"x_quadrature_order", 32},
@@ -40,7 +40,7 @@ TEST_CASE("Test CG on Constant model", "[discretization][dg]")
          {"jacobian_quadrature_factor", 0.5}}},
        {"discretization",
         {{"fe_order", GENERATE(1, 3, 5)},
-         {"threads", 8},
+         {"mesh_workers", 8},
          {"batch_size", 64},
          {"overintegration", 0},
          {"output_subdivisions", 2},

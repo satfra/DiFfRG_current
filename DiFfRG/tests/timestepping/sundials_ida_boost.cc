@@ -49,11 +49,11 @@ bool run_hybrid(const std::string &test_name, double expected_precision, double 
   using VectorType = typename Discretization::VectorType;
   using Assembler = CG::Assembler<Discretization, Model>;
 
-  JSONValue json = json::value(
+  ConfigTree json = json::value(
       {{"physical", {{"Lambda", 1.}}},
        {"discretization",
         {{"fe_order", 3},
-         {"threads", 4},
+         {"mesh_workers", 4},
          {"batch_size", 64},
          {"overintegration", 0},
          {"output_subdivisions", 2},

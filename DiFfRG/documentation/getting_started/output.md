@@ -64,10 +64,15 @@ JSON is only an adapter for the typed `OutputSettings`. The corresponding JSON s
 {
   "output": {
     "max_pending_frames": 2,
-    "log_queue_size": 8192
+    "log_queue_size": 8192,
+    "log_flush_interval": 10.0
   }
 }
 ```
+
+The run log is written by an asynchronous logger whose file sink is otherwise only flushed on shutdown, so a long run
+would show a log file lagging by a full stdio buffer and a killed job would lose its tail. `log_flush_interval` is the
+period in seconds at which the log file is flushed from a dedicated thread; set it to `0` to disable periodic flushing.
 
 Debugging and process-memory policy stay in C++ rather than simulation configuration. Set
 `OutputSettings::asynchronous` to `false` for synchronous field writes. The default pending-byte limit is 2 GiB and

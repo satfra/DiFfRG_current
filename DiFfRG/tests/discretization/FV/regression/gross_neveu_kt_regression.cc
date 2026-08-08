@@ -2,7 +2,7 @@
 #include "DiFfRG/discretization/FV/discretization.hh"
 #include "kt_regression_helpers.hh"
 
-#include <DiFfRG/common/json.hh>
+#include <DiFfRG/common/config_tree.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/discretization/discretization.hh>
 #include <DiFfRG/model/model.hh>
@@ -225,7 +225,7 @@ namespace
                                      public def::AD<Derived>
   {
   public:
-    GrossNeveuKTSourceOnlyBase(const JSONValue &json, const FlowCase &flow_case) : def::fRG(json), flow_case(flow_case)
+    GrossNeveuKTSourceOnlyBase(const ConfigTree &json, const FlowCase &flow_case) : def::fRG(json), flow_case(flow_case)
     {
     }
 
@@ -305,13 +305,13 @@ namespace
     }
   };
 
-  JSONValue make_json([[maybe_unused]] const FlowCase &flow_case)
+  ConfigTree make_json([[maybe_unused]] const FlowCase &flow_case)
   {
     return json::value(
         {{"physical", {{"Lambda", Lambda}}},
          {"discretization",
           {{"fe_order", 0},
-           {"threads", 8},
+           {"mesh_workers", 8},
            {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
@@ -358,7 +358,7 @@ namespace
   {
     const double expected_final_time = std::log(Lambda / k_ir);
 
-    const JSONValue fixture_json(fixture_path(flow_case).string());
+    const ConfigTree fixture_json(fixture_path(flow_case).string());
     json::value fixture_value = static_cast<json::value>(fixture_json);
     const auto &root = fixture_value.as_object();
     const auto &graphs = root.at("graphs").as_array();
@@ -403,7 +403,7 @@ namespace
 
   template <typename Model, typename Stepper> SimulationResult run_flow_to_ir(const FlowCase &flow_case)
   {
-    const JSONValue json = make_json(flow_case);
+    const ConfigTree json = make_json(flow_case);
     Model model(json, flow_case);
     Mesh mesh(make_mesh_config());
     Discretization discretization(mesh, json, DiFfRG::LogPort{});

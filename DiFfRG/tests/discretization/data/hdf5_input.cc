@@ -3,7 +3,7 @@
 
 #include <DiFfRG/common/complex_math.hh>
 #include <DiFfRG/common/init.hh>
-#include <DiFfRG/common/json.hh>
+#include <DiFfRG/common/config_tree.hh>
 #include <DiFfRG/discretization/data/hdf5_input.hh>
 #include <DiFfRG/discretization/data/hdf5_output.hh>
 #include <DiFfRG/discretization/discretization.hh>
@@ -23,11 +23,11 @@ TEST_CASE("Test HDF5 input", "[input][hdf5]")
   using namespace DiFfRG;
 
   // Setup JSON configuration for HDF5Output
-  JSONValue json = json::value({{"physical", {}},
+  ConfigTree json = json::value({{"physical", {}},
                                 {"integration", {{"x_quadrature_order", 32}, {"angle_quadrature_order", 8}}},
                                 {"discretization",
                                  {{"fe_order", 3},
-                                  {"threads", 8},
+                                  {"mesh_workers", 8},
                                   {"batch_size", 64},
                                   {"grid", {{"x_grid", "0:0.1:1"}, {"y_grid", "0:0.1:1"}}}}},
                                 {"timestepping", {{"final_time", 1.}, {"output_dt", 1e-1}}},

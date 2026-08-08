@@ -1,6 +1,6 @@
 #include "./flows.hh"
 
-ONFiniteTFlows::ONFiniteTFlows(const DiFfRG::JSONValue& json) : quadrature_provider(json), V(quadrature_provider, json), V_pion(quadrature_provider, json), V_sigma(quadrature_provider, json)
+ONFiniteTFlows::ONFiniteTFlows(const DiFfRG::ConfigTree& json) : quadrature_provider(json), V(quadrature_provider, json), V_pion(quadrature_provider, json), V_sigma(quadrature_provider, json)
 {}
 void ONFiniteTFlows::set_k(const double k)
 {

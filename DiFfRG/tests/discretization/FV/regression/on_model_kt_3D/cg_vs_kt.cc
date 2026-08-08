@@ -180,7 +180,7 @@ TEST_CASE("CG-vs-KT: KT-ρ uniform grid, VanAlbada limiter + differentiated wave
                                                     FV::KurganovTadmor::MaxEigenvalueWaveSpeed>;
 
   const auto grid = default_rho_grid();
-  const JSONValue json = make_json(/*threads=*/uthreads);
+  const ConfigTree json = make_json(/*threads=*/uthreads);
   LSM_rho_integrator_PolyExp model(json, grid);
   Mesh mesh(make_mesh_config(grid));
   Discretization discretization(mesh, json, DiFfRG::LogPort{});
@@ -208,7 +208,7 @@ TEST_CASE("CG-vs-KT: KT-ρ uniform grid, Central limiter + differentiated wave s
                                                    FV::KurganovTadmor::MaxEigenvalueWaveSpeed>;
 
   const auto grid = default_rho_grid();
-  const JSONValue json = make_json(/*threads=*/uthreads);
+  const ConfigTree json = make_json(/*threads=*/uthreads);
   LSM_rho_integrator_PolyExp model(json, grid);
   Mesh mesh(make_mesh_config(grid));
   Discretization discretization(mesh, json, DiFfRG::LogPort{});

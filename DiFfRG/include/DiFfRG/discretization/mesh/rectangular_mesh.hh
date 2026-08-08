@@ -30,21 +30,21 @@ namespace DiFfRG
 
     /**
      * @brief Construct a new RectangularMesh object.
-     * @param json JSONValue object containing the parameters for the mesh.
+     * @param json ConfigTree object containing the parameters for the mesh.
      */
     [[deprecated("Please use RectangularMesh(const Config::ConfigurationMesh<dim> &mesh_config) instead")]]
-    RectangularMesh(const JSONValue &json);
+    RectangularMesh(const ConfigTree &json);
 
     /**
      * @brief Construct a new RectangularMesh object from JSON configuration.
-     * @param json JSONValue object containing the parameters for the mesh.
+     * @param json ConfigTree object containing the parameters for the mesh.
      * @param options Options controlling rectangular mesh construction.
      *
      * All configured axes must start at zero when origin centering is enabled.
      */
     [[deprecated("Please use RectangularMesh(const Config::ConfigurationMesh<dim> &mesh_config, "
                  "RectangularMeshOptions options) instead")]]
-    RectangularMesh(const JSONValue &json, RectangularMeshOptions options);
+    RectangularMesh(const ConfigTree &json, RectangularMeshOptions options);
 
     RectangularMesh(const Config::ConfigurationMesh<dim> &mesh_config);
 

@@ -17,13 +17,13 @@ using namespace DiFfRG;
 using namespace dealii;
 
 // Helper: set up a minimal JSON config for the FV assembler and mesh
-static JSONValue make_json()
+static ConfigTree make_json()
 {
   return json::value(
       {{"physical", {{"Lambda", 1.}}},
        {"discretization",
         {{"fe_order", 0},
-         {"threads", 1},
+         {"mesh_workers", 1},
          {"batch_size", 64},
          {"overintegration", 0},
          {"EoM_abs_tol", 1e-10},
@@ -32,13 +32,13 @@ static JSONValue make_json()
        {"output", {{"verbosity", 0}}}});
 }
 
-static JSONValue make_json_2d()
+static ConfigTree make_json_2d()
 {
   return json::value(
       {{"physical", {{"Lambda", 1.}}},
        {"discretization",
         {{"fe_order", 0},
-         {"threads", 1},
+         {"mesh_workers", 1},
          {"batch_size", 64},
          {"overintegration", 0},
          {"EoM_abs_tol", 1e-10},
@@ -341,7 +341,7 @@ TEST_CASE("KT Jacobian matches FD Jacobian for traveling wave model (detects mis
   ensure_logger();
 
   Testing::PhysicalParameters p_prm;
-  const JSONValue json = make_json();
+  const ConfigTree json = make_json();
 
   Model model(p_prm);
   RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
@@ -409,7 +409,7 @@ TEST_CASE("KT Jacobian matches FD Jacobian for third-derivative diffusion model 
 
   ensure_logger();
 
-  const JSONValue json = make_json();
+  const ConfigTree json = make_json();
 
   Model model;
   RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
@@ -480,7 +480,7 @@ TEST_CASE("KT Jacobian matches FD Jacobian for pure advection Burgers model", "[
   Testing::PhysicalParameters p_prm;
   p_prm.initial_x0[0] = 0.0;
   p_prm.initial_x1[0] = 1.0;
-  const JSONValue json = make_json();
+  const ConfigTree json = make_json();
 
   Model model(p_prm);
   RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
@@ -540,7 +540,7 @@ TEST_CASE("KT gradient-dependent flux and separate diffusion Jacobian match FD",
 
   ensure_logger();
 
-  const JSONValue json = make_json();
+  const ConfigTree json = make_json();
   Model model;
   RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json, DiFfRG::LogPort{});
@@ -602,7 +602,7 @@ TEST_CASE("KT Jacobian for x-dependent source-only model is diagonal", "[FV][KT]
 
   ensure_logger();
 
-  const JSONValue json = make_json();
+  const ConfigTree json = make_json();
 
   Model model;
   RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
@@ -651,7 +651,7 @@ TEST_CASE("KT first-order Jacobian strategy does not use reconstruction-neighbor
   Testing::PhysicalParameters p_prm;
   p_prm.initial_x0[0] = 0.0;
   p_prm.initial_x1[0] = 1.0;
-  const JSONValue json = make_json();
+  const ConfigTree json = make_json();
 
   Model model(p_prm);
   RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
@@ -709,7 +709,7 @@ TEST_CASE("KT TVD Jacobian strategy keeps reconstruction-neighbor columns", "[FV
   Testing::PhysicalParameters p_prm;
   p_prm.initial_x0[0] = 0.0;
   p_prm.initial_x1[0] = 1.0;
-  const JSONValue json = make_json();
+  const ConfigTree json = make_json();
 
   Model model(p_prm);
   RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
@@ -756,7 +756,7 @@ TEST_CASE("KT 2D Jacobian matches FD Jacobian for diagonal Burgers model", "[FV]
   p_prm.initial_x0[0] = 1.0;
   p_prm.initial_x1[0] = 0.2;
   p_prm.initial_x2[0] = 0.35;
-  const JSONValue json = make_json_2d();
+  const ConfigTree json = make_json_2d();
 
   Model model(p_prm);
   RectangularMesh<2> mesh{Config::ConfigurationMesh<2>(json)};
@@ -821,7 +821,7 @@ TEST_CASE("KT 2D boundary Jacobian matches FD for affine ghost diffusion", "[FV]
 
   ensure_logger();
 
-  const JSONValue json = make_json_2d();
+  const ConfigTree json = make_json_2d();
   Model model;
   RectangularMesh<2> mesh{Config::ConfigurationMesh<2>(json)};
   Discretization discretization(mesh, json, DiFfRG::LogPort{});
@@ -899,7 +899,7 @@ TEST_CASE("KT 2D boundary Jacobian uses model-owned tangential ghost derivatives
 
   ensure_logger();
 
-  const JSONValue json = make_json_2d();
+  const ConfigTree json = make_json_2d();
   Model model;
   RectangularMesh<2> mesh{Config::ConfigurationMesh<2>(json)};
   Discretization discretization(mesh, json, DiFfRG::LogPort{});

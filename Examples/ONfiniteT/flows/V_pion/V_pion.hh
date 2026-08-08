@@ -9,7 +9,7 @@ namespace DiFfRG { template<typename> class V_pion_kernel;
   class V_pion_integrator
   {
     public:
-    V_pion_integrator(DiFfRG::QuadratureProvider& quadrature_provider, const DiFfRG::JSONValue& json)
+    V_pion_integrator(DiFfRG::QuadratureProvider& quadrature_provider, const DiFfRG::ConfigTree& json)
     ;
 
 

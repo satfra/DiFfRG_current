@@ -21,7 +21,7 @@ namespace
   using namespace dealii;
   using namespace DiFfRG;
 
-  JSONValue make_json(const int fe_order)
+  ConfigTree make_json(const int fe_order)
   {
     return json::value(
         {{"physical", {}},
@@ -38,7 +38,7 @@ namespace
            {"jacobian_quadrature_factor", 0.5}}},
          {"discretization",
           {{"fe_order", fe_order},
-           {"threads", 1},
+           {"mesh_workers", 1},
            {"batch_size", 16},
            {"overintegration", 0},
            {"output_subdivisions", 2},

@@ -72,7 +72,7 @@ TEST_CASE("integrator AD-vs-FD diagnostic - Litim T=0",
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
-  const JSONValue json = make_json(/*threads=*/1);
+  const ConfigTree json = make_json(/*threads=*/1);
   LitimT0Flows flows(json);
 
   const double Lambda = LSMPhysicalParameters::Lambda;
@@ -103,7 +103,7 @@ TEST_CASE("integrator AD-vs-FD diagnostic - PolyExp T=0.05",
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
-  const JSONValue json = make_json(/*threads=*/1);
+  const ConfigTree json = make_json(/*threads=*/1);
   PolyExpFlows flows(json);
 
   const double Lambda = LSMPhysicalParameters::Lambda;
@@ -151,7 +151,7 @@ TEST_CASE("integrator finite-T verification - Litim regulator V_pion sweep over 
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
-  const JSONValue json = make_json(/*threads=*/1);
+  const ConfigTree json = make_json(/*threads=*/1);
 
   // V_pion_kernel_polyexp with LitimRegulator gives the *finite-T Litim* kernel.
   DiFfRG::QuadratureProvider qp(json);

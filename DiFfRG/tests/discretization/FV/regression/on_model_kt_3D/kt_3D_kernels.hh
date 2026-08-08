@@ -140,7 +140,7 @@ namespace on_kt_3D
   public:
     using Regulator = typename Kernel::Regulator;
 
-    IntegratorWrapper(DiFfRG::QuadratureProvider &qp, const DiFfRG::JSONValue &json)
+    IntegratorWrapper(DiFfRG::QuadratureProvider &qp, const DiFfRG::ConfigTree &json)
         : integrator(qp, json), integrator_AD(qp, json), integrator_AD2(qp, json)
     {}
 
@@ -173,7 +173,7 @@ namespace on_kt_3D
   class PolyExpFlows
   {
   public:
-    PolyExpFlows(const DiFfRG::JSONValue &json)
+    PolyExpFlows(const DiFfRG::ConfigTree &json)
         : quadrature_provider(json), V_pion(quadrature_provider, json), V_sigma(quadrature_provider, json)
     {}
     void set_k(double k)
@@ -195,7 +195,7 @@ namespace on_kt_3D
   class LitimT0Flows
   {
   public:
-    LitimT0Flows(const DiFfRG::JSONValue &json)
+    LitimT0Flows(const DiFfRG::ConfigTree &json)
         : quadrature_provider(json), V_pion(quadrature_provider, json), V_sigma(quadrature_provider, json)
     {}
     void set_k(double k)

@@ -44,12 +44,12 @@ namespace DiFfRG
       static constexpr bool is_fv_discretization = true;
 
       [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Discretization(
-          Mesh &mesh, DiFfRG::internal::LegacyDefaultLogPortArgument<Mesh, JSONValue> json)
+          Mesh &mesh, DiFfRG::internal::LegacyDefaultLogPortArgument<Mesh, ConfigTree> json)
           : Discretization(mesh, json.value(), DiFfRG::internal::legacy_default_log_port<Mesh>())
       {
       }
 
-      Discretization(Mesh &mesh, const JSONValue &json, LogPort log_port)
+      Discretization(Mesh &mesh, const ConfigTree &json, LogPort log_port)
           : mesh(mesh), json(json), log_port(std::move(log_port)),
             fe(std::make_shared<FESystem<dim>>(FE_DGQ<dim>(0), Components::count_fe_functions(0))),
             dof_handler(mesh.get_triangulation())
@@ -147,7 +147,7 @@ namespace DiFfRG
       }
 
       Mesh &mesh;
-      JSONValue json;
+      ConfigTree json;
       LogPort log_port;
 
       std::shared_ptr<FESystem<dim>> fe;

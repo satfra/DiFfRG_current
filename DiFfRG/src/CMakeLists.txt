@@ -12,13 +12,25 @@ set_target_properties(DiFfRG_boost_json PROPERTIES
     CUDA_SEPARABLE_COMPILATION OFF)
 target_include_directories(DiFfRG_boost_json SYSTEM PRIVATE ${Boost_INCLUDE_DIRS})
 
+# toml_json.cc is the only translation unit that sees toml11, an 18k-line header-only
+# library. Like boost_json.cc it is kept out of the CUDA path: pushing it through
+# nvcc/nvcc_wrapper is slow and risks the same duplicate-symbol trouble.
+add_library(DiFfRG_toml STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/toml_json.cc)
+set_target_properties(DiFfRG_toml PROPERTIES
+    LANGUAGE CXX
+    LINKER_LANGUAGE CXX
+    CUDA_SEPARABLE_COMPILATION OFF)
+target_include_directories(DiFfRG_toml PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
+target_include_directories(DiFfRG_toml SYSTEM PRIVATE ${Boost_INCLUDE_DIRS})
+
 set(DiFfRG_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/configuration_helper.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/csv_reader.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/external_data_interpolator.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/init.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/interpolation.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/json.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/config_tree.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/eigen.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/mpi.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/polynomials.cc
@@ -56,6 +68,7 @@ set(DiFfRG_SOURCES
 add_library(DiFfRG STATIC ${DiFfRG_SOURCES})
 
 target_link_libraries(DiFfRG PRIVATE DiFfRG_boost_json)
+target_link_libraries(DiFfRG PRIVATE DiFfRG_toml)
 
 setup_target(DiFfRG)
 
@@ -69,6 +82,6 @@ set_property(TARGET DiFfRG PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS ON)
 
 include(GNUInstallDirs)
 install(
-  TARGETS DiFfRG DiFfRG_boost_json
+  TARGETS DiFfRG DiFfRG_boost_json DiFfRG_toml
   EXPORT DiFfRGTargets
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})

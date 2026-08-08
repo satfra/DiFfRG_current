@@ -34,7 +34,7 @@ TEST_CASE("Test FE output on Constant model", "[output][cg]")
   using VectorType = typename Discretization::VectorType;
   using Assembler = CG::Assembler<Discretization, Model>;
 
-  JSONValue json = json::value(
+  ConfigTree json = json::value(
       {{"physical", {}},
        {"integration",
         {{"x_quadrature_order", 32},
@@ -49,7 +49,7 @@ TEST_CASE("Test FE output on Constant model", "[output][cg]")
          {"jacobian_quadrature_factor", 0.5}}},
        {"discretization",
         {{"fe_order", 3},
-         {"threads", 8},
+         {"mesh_workers", 8},
          {"batch_size", 64},
          {"overintegration", 0},
          {"output_subdivisions", 2},
@@ -131,11 +131,11 @@ TEST_CASE("FEOutput async drain preserves reuse and publication order", "[output
   using Discretization = CG::Discretization<typename Model::Components, NumberType, RectangularMesh<dim>>;
   using VectorType = typename Discretization::VectorType;
 
-  JSONValue json = json::value(
+  ConfigTree json = json::value(
       {{"physical", {}},
        {"discretization",
         {{"fe_order", 3},
-         {"threads", 4},
+         {"mesh_workers", 4},
          {"batch_size", 64},
          {"overintegration", 0},
          {"output_subdivisions", 2},

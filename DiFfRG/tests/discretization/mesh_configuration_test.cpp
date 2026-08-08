@@ -1,6 +1,6 @@
 // Tests for Mesh Configuration
 
-#include "DiFfRG/common/json.hh"
+#include "DiFfRG/common/config_tree.hh"
 #include "catch2/catch_test_macros.hpp"
 #include "catch2/generators/catch_generators.hpp"
 #include "catch2/generators/catch_generators_adapters.hpp"
@@ -18,7 +18,7 @@ TEST_CASE("Mesh Configuration exists", "[MeshConfiguration]")
   {
 
     // triangulation.refine_global(json.get_uint("/discretization/grid/refine"));
-    DiFfRG::JSONValue json = DiFfRG::json::value({
+    DiFfRG::ConfigTree json = DiFfRG::json::value({
         {"discretization",
          {
              {"grid", {{"x_grid", "0:0.1:1"}, {"y_grid", "0:0.1:1,1:0.2:2"}, {"z_grid", "0:0.1:1"}}},
@@ -33,7 +33,7 @@ TEST_CASE("Mesh Configuration exists", "[MeshConfiguration]")
   SECTION("refine parameter works correctly")
   {
 
-    DiFfRG::JSONValue json_with_refine = DiFfRG::json::value({
+    DiFfRG::ConfigTree json_with_refine = DiFfRG::json::value({
         {"discretization",
          {
              {"grid", {{"x_grid", "0:0.1:1"}, {"refine", 1}}},
@@ -41,7 +41,7 @@ TEST_CASE("Mesh Configuration exists", "[MeshConfiguration]")
     });
     ConfigurationMesh<1> mesh_config_with_refine(json_with_refine);
     CHECK(mesh_config_with_refine.refine == 1);
-    DiFfRG::JSONValue json_without_refine = DiFfRG::json::value({
+    DiFfRG::ConfigTree json_without_refine = DiFfRG::json::value({
         {"discretization",
          {
              {"grid", {{"x_grid", "0:0.1:1"}}},
@@ -53,7 +53,7 @@ TEST_CASE("Mesh Configuration exists", "[MeshConfiguration]")
 
   SECTION("works only with x_axis")
   {
-    DiFfRG::JSONValue json = DiFfRG::json::value({
+    DiFfRG::ConfigTree json = DiFfRG::json::value({
         {"discretization",
          {
              {"grid", {{"x_grid", "0:0.1:1"}}},
@@ -64,7 +64,7 @@ TEST_CASE("Mesh Configuration exists", "[MeshConfiguration]")
   }
   SECTION("check range consistency")
   {
-    DiFfRG::JSONValue json = DiFfRG::json::value({
+    DiFfRG::ConfigTree json = DiFfRG::json::value({
         {"discretization",
          {
              {"grid", {{"x_grid", "0:0.1:1,1.1:0.2:2"}}},
@@ -74,7 +74,7 @@ TEST_CASE("Mesh Configuration exists", "[MeshConfiguration]")
   }
   SECTION("check a correct step size array")
   {
-    DiFfRG::JSONValue json = DiFfRG::json::value({
+    DiFfRG::ConfigTree json = DiFfRG::json::value({
         {"discretization",
          {
              {"grid", {{"x_grid", "0:0.5:1,1:0.6:2"}}},
@@ -86,7 +86,7 @@ TEST_CASE("Mesh Configuration exists", "[MeshConfiguration]")
   }
   SECTION("check a correct step size array in 2D")
   {
-    DiFfRG::JSONValue json = DiFfRG::json::value({
+    DiFfRG::ConfigTree json = DiFfRG::json::value({
         {"discretization",
          {
              {"grid", {{"x_grid", "0:0.5:1,1:0.6:2"}, {"y_grid", "0:1.0:2,2:1.0:4"}}},
@@ -100,7 +100,7 @@ TEST_CASE("Mesh Configuration exists", "[MeshConfiguration]")
   }
   SECTION("check a correct step size array in 3D")
   {
-    DiFfRG::JSONValue json = DiFfRG::json::value({
+    DiFfRG::ConfigTree json = DiFfRG::json::value({
         {"discretization",
          {
              {"grid", {{"x_grid", "0:0.5:1,1:0.6:2"}, {"y_grid", "0:1.0:2,2:1.0:4"}, {"z_grid", "0:2.0:2,2:2.0:4"}}},
@@ -118,7 +118,7 @@ TEST_CASE("Mesh Configuration exists", "[MeshConfiguration]")
   SECTION("Get lower_left and upper_right of grid in 3D", "[MeshConfiguration]")
   {
     using dealii::Point;
-    DiFfRG::JSONValue json = DiFfRG::json::value({
+    DiFfRG::ConfigTree json = DiFfRG::json::value({
         {"discretization",
          {
              {"grid",
@@ -129,7 +129,7 @@ TEST_CASE("Mesh Configuration exists", "[MeshConfiguration]")
     CHECK(mesh_config.get_lower_left() == Point<3, double>(0.0, 0.1, 0.2));
     CHECK(mesh_config.get_upper_right() == Point<3, double>(2.0, 4.0, 4.0));
 
-    DiFfRG::JSONValue json2 = DiFfRG::json::value({
+    DiFfRG::ConfigTree json2 = DiFfRG::json::value({
         {"discretization",
          {
              {"grid",
@@ -273,7 +273,7 @@ TEST_CASE("parses default JSON grid configuration", "[MeshConfiguration]")
   SECTION("get_defaults returns valid parseable JSON")
   {
     std::string default_json_str = ConfigurationMesh<3>::get_defaults();
-    DiFfRG::JSONValue default_json = DiFfRG::json::parse(default_json_str);
+    DiFfRG::ConfigTree default_json = DiFfRG::json::parse(default_json_str);
 
     // Parse the defaults into a ConfigurationMesh
     ConfigurationMesh<3> mesh_config(default_json);

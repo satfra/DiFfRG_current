@@ -21,7 +21,8 @@
   },
   "discretization": {
     "fe_order": 2,
-    "threads": 32,
+    "threads": 0,
+    "mesh_workers": 32,
     "batch_size": 8,
     "overintegration": 0,
     "output_subdivisions": 0,

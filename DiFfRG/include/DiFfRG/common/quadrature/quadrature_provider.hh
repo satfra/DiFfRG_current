@@ -1,7 +1,7 @@
 #pragma once
 
 // DiFfRG
-#include <DiFfRG/common/json.hh>
+#include <DiFfRG/common/config_tree.hh>
 #include <DiFfRG/common/quadrature/matsubara.hh>
 #include <DiFfRG/common/quadrature/quadrature.hh>
 #include <DiFfRG/common/run_logger.hh>
@@ -142,7 +142,7 @@ namespace DiFfRG
   {
   public:
     QuadratureProvider();
-    explicit QuadratureProvider(const JSONValue &json, LogPort log = {});
+    explicit QuadratureProvider(const ConfigTree &json, LogPort log = {});
 
     /**
      * @brief Get the quadrature points for a quadrature of size quadrature_size.

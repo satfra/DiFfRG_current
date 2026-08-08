@@ -4,7 +4,7 @@
 #include "DiFfRG/timestepping/linear_solver/ScaledGMRES.hh"
 #include "DiFfRG/timestepping/timestepping.hh"
 
-#include <DiFfRG/common/json.hh>
+#include <DiFfRG/common/config_tree.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
 #include <DiFfRG/model/model.hh>
@@ -81,7 +81,7 @@ namespace
   {
   public:
     explicit GaussianModel(const GaussianScenario &scenario) : def::fRG(1.0), scenario(scenario) {}
-    GaussianModel(const JSONValue &json, const GaussianScenario &scenario) : def::fRG(json), scenario(scenario) {}
+    GaussianModel(const ConfigTree &json, const GaussianScenario &scenario) : def::fRG(json), scenario(scenario) {}
 
     template <typename Vector> void initial_condition(const Point<dim> &pos, Vector &values) const
     {
@@ -164,14 +164,14 @@ namespace
     return std::to_string(phi_min) + ":" + std::to_string(cell_width(params)) + ":" + std::to_string(phi_max);
   }
 
-  JSONValue make_run_json(const RunParameters &params)
+  ConfigTree make_run_json(const RunParameters &params)
   {
     const std::string phi_grid = grid_axis_expression(params);
     return json::value(
         {{"physical", {{"Lambda", 1.0e12}}},
          {"discretization",
           {{"fe_order", 0},
-           {"threads", static_cast<std::int64_t>(dealii::MultithreadInfo::n_threads())},
+           {"mesh_workers", static_cast<std::int64_t>(dealii::MultithreadInfo::n_threads())},
            {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
@@ -330,7 +330,7 @@ namespace
   GaussianObservables run_gaussian_regression(const GaussianScenario &scenario, const RunParameters &params)
   {
     kt_regression::ensure_logger();
-    const JSONValue json = make_run_json(params);
+    const ConfigTree json = make_run_json(params);
     GaussianModel model(json, scenario);
     Mesh mesh(make_mesh_config(params));
     Discretization discretization(mesh, json, DiFfRG::LogPort{});

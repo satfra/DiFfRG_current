@@ -1,6 +1,6 @@
 #include "./flows.hh"
 
-YangMillsFlows::YangMillsFlows(const DiFfRG::JSONValue &json)
+YangMillsFlows::YangMillsFlows(const DiFfRG::ConfigTree &json)
     : quadrature_provider(json), ZA4(quadrature_provider, json)
 {
 }

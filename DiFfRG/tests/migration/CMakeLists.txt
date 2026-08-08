@@ -88,3 +88,8 @@ add_migration_probe(migration_explicit_log_port_constructor explicit_log_port_co
 add_clean_migration_contract_test(
   migration_explicit_log_port_constructor_clean migration_explicit_log_port_constructor
   "deprecated-declarations|warning: 'legacy_default_log_port")
+
+add_migration_probe(migration_json_value_alias json_value_alias.cc)
+add_migration_contract_test(
+  migration_json_value_alias_diagnostic migration_json_value_alias TRUE
+  "JSONValue was renamed. Use DiFfRG::ConfigTree instead")

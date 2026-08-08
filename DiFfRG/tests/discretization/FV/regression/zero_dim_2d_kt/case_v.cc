@@ -4,7 +4,7 @@
 #include "DiFfRG/timestepping/linear_solver/ScaledGMRES.hh"
 #include "DiFfRG/timestepping/timestepping.hh"
 
-#include <DiFfRG/common/json.hh>
+#include <DiFfRG/common/config_tree.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
 #include <DiFfRG/model/model.hh>
@@ -72,7 +72,7 @@ namespace
   {
   public:
     ZeroDim2DKTCaseVModel() : def::fRG(1.0) {}
-    explicit ZeroDim2DKTCaseVModel(const JSONValue &json, const double interaction_strength = 1.0)
+    explicit ZeroDim2DKTCaseVModel(const ConfigTree &json, const double interaction_strength = 1.0)
         : def::fRG(json), interaction_strength(interaction_strength)
     {
     }
@@ -186,14 +186,14 @@ namespace
     return std::to_string(phi_min) + ":" + std::to_string(cell_width(params)) + ":" + std::to_string(phi_max);
   }
 
-  JSONValue make_run_json(const GammaRunParameters &params)
+  ConfigTree make_run_json(const GammaRunParameters &params)
   {
     const std::string phi_grid = grid_axis_expression(params);
     return json::value(
         {{"physical", {{"Lambda", 1.0e12}}},
          {"discretization",
           {{"fe_order", 0},
-           {"threads", static_cast<std::int64_t>(dealii::MultithreadInfo::n_threads())},
+           {"mesh_workers", static_cast<std::int64_t>(dealii::MultithreadInfo::n_threads())},
            {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
@@ -731,7 +731,7 @@ namespace
   {
     kt_regression::ensure_logger();
 
-    const JSONValue json = make_run_json(params);
+    const ConfigTree json = make_run_json(params);
     ZeroDim2DKTCaseVModel model(json, params.interaction_strength);
     Mesh mesh(make_mesh_config(params));
     Discretization discretization(mesh, json, DiFfRG::LogPort{});

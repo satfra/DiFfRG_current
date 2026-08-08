@@ -6,7 +6,7 @@ using namespace DiFfRG;
 #include "flows/flows.hh"
 
 struct Parameters {
-  Parameters(const JSONValue &json)
+  Parameters(const ConfigTree &json)
   {
     try {
       Lambda = json.get_double("/physical/Lambda");
@@ -100,7 +100,7 @@ class YangMills : public def::AbstractModel<YangMills, Components>,
   mutable LinearInterpolatorND<double, Coordinates3D, GPU_memory> ZA3, ZAcbc, ZA4tadpole;
 
 public:
-  YangMills(const JSONValue &json)
+  YangMills(const ConfigTree &json)
       : def::fRG(json.get_double("/physical/Lambda")), prm(json),
         coordinates1D(p_grid_size, prm.p_grid_min, prm.p_grid_max, prm.p_grid_bias),
         S0_coordinates(S0_grid_size, prm.p_grid_min, prm.p_grid_max, prm.p_grid_bias),

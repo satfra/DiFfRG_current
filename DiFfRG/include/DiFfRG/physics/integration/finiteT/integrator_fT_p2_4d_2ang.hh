@@ -52,11 +52,11 @@ namespace DiFfRG
      */
     using execution_space = ExecutionSpace;
 
-    Integrator_fT_p2_4D_2ang(QuadratureProvider &quadrature_provider, const JSONValue &json)
+    Integrator_fT_p2_4D_2ang(QuadratureProvider &quadrature_provider, const ConfigTree &json)
       requires provides_regulator<KERNEL>
         : Integrator_fT_p2_4D_2ang(quadrature_provider,
                                    internal::make_int_grid<3, NT>(json, {"x_order", "cos1_order", "phi_order"}),
-                                   optimize_x_extent<typename KERNEL::Regulator>(json), json.get_double("T", 1.0))
+                                   optimize_x_extent<typename KERNEL::Regulator>(json), json.get_double("/physical/T", 1.0))
     {
     }
 

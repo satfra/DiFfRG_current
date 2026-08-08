@@ -3,7 +3,7 @@
 #include "DiFfRG/model/model.hh"
 #include "catch2/catch_approx.hpp"
 #include "catch2/catch_test_macros.hpp"
-#include <DiFfRG/common/json.hh>
+#include <DiFfRG/common/config_tree.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
 #include <algorithm>
@@ -467,13 +467,13 @@ public:
   }
 };
 
-static DiFfRG::JSONValue make_fv_test_json()
+static DiFfRG::ConfigTree make_fv_test_json()
 {
   return DiFfRG::json::value(
       {{"physical", {{"Lambda", 1.}}},
        {"discretization",
         {{"fe_order", 0},
-         {"threads", 1},
+         {"mesh_workers", 1},
          {"batch_size", 8},
          {"overintegration", 0},
          {"output_subdivisions", 1},
@@ -483,7 +483,7 @@ static DiFfRG::JSONValue make_fv_test_json()
        {"output", {{"verbosity", 0}, {"vtk", false}, {"hdf5", true}}}});
 }
 
-static DiFfRG::JSONValue make_fv_eom_potential_output_json()
+static DiFfRG::ConfigTree make_fv_eom_potential_output_json()
 {
   auto json = make_fv_test_json();
   json.set_uint("/discretization/EoM_max_iter", 100);
@@ -709,13 +709,13 @@ TEST_CASE("KT diffusion flux averages nonlinear side fluxes", "[FV][KT][diffusio
   CHECK(J.grad[1](0, 0)[0][1] == Catch::Approx(1.0).margin(1.0e-14));
 }
 
-static DiFfRG::JSONValue make_kt_boundary_json()
+static DiFfRG::ConfigTree make_kt_boundary_json()
 {
   return DiFfRG::json::value(
       {{"physical", {{"Lambda", 1.}}},
        {"discretization",
         {{"fe_order", 0},
-         {"threads", 1},
+         {"mesh_workers", 1},
          {"batch_size", 8},
          {"overintegration", 0},
          {"output_subdivisions", 1},

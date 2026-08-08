@@ -6,7 +6,7 @@ using namespace DiFfRG;
 #include "flows/flows.hh"
 
 struct ParametersSigma {
-  ParametersSigma(const JSONValue &value)
+  ParametersSigma(const ConfigTree &value)
   {
     try {
       Lambda = value.get_double("/physical/Lambda");
@@ -71,7 +71,7 @@ protected:
   }
 
 public:
-  ON_finiteT_KT_sigma(const JSONValue &json) : def::fRG(json.get_double("/physical/Lambda")), prm(json), flow_equations(json)
+  ON_finiteT_KT_sigma(const ConfigTree &json) : def::fRG(json.get_double("/physical/Lambda")), prm(json), flow_equations(json)
   {
     flow_equations.set_k(Lambda);
     flow_equations.set_T(prm.T);

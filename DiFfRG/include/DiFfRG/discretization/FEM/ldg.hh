@@ -39,18 +39,18 @@ namespace DiFfRG
       static constexpr uint dim = Mesh::dim;
 
       [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Discretization(
-          Mesh &mesh, DiFfRG::internal::LegacyDefaultLogPortArgument<Mesh, JSONValue> json)
+          Mesh &mesh, DiFfRG::internal::LegacyDefaultLogPortArgument<Mesh, ConfigTree> json)
           : Discretization(mesh, json.value(), DiFfRG::internal::legacy_default_log_port<Mesh>())
       {
       }
 
-      Discretization(Mesh &mesh, const JSONValue &json, LogPort log_port)
+      Discretization(Mesh &mesh, const ConfigTree &json, LogPort log_port)
           : mesh(mesh), json(json), log_port(std::move(log_port))
       {
         static_assert(Components::count_fe_subsystems() > 1,
                       "LDG must have a defined submodel of the Model with index 1.");
         for (uint i = 0; i < Components::count_fe_subsystems(); ++i) {
-          fe.emplace_back(std::make_shared<FESystem<dim>>(FE_DGQ<dim>(json.get_uint("/discretization/fe_order")),
+          fe.emplace_back(std::make_shared<FESystem<dim>>(FE_DGQ<dim>(json.get_uint_or_warn("/discretization/fe_order", 3)),
                                                           Components::count_fe_functions(i)));
           dof_handler.emplace_back(std::make_shared<DoFHandler<dim>>(mesh.get_triangulation()));
           constraints.emplace_back();
@@ -124,7 +124,7 @@ namespace DiFfRG
       }
 
       Mesh &mesh;
-      JSONValue json;
+      ConfigTree json;
       LogPort log_port;
 
       std::vector<std::shared_ptr<FESystem<dim>>> fe;

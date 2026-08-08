@@ -12,3 +12,11 @@ execute_process(
     ${CMAKE_COMMAND} "-E" "create_symlink"
     "${CMAKE_CURRENT_SOURCE_DIR}/parameter.json"
     "${CMAKE_CURRENT_BINARY_DIR}/parameter.json")
+
+# The equivalent TOML parameter file, so that `./tut1 -p parameter.toml` works from the
+# build directory too. parameter.json is still the default of the two.
+execute_process(
+  COMMAND
+    ${CMAKE_COMMAND} "-E" "create_symlink"
+    "${CMAKE_CURRENT_SOURCE_DIR}/parameter.toml"
+    "${CMAKE_CURRENT_BINARY_DIR}/parameter.toml")

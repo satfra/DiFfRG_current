@@ -71,9 +71,9 @@ namespace DiFfRG
   {
   }
 
-  OutputPath::OutputPath(const JSONValue &json)
-      : OutputPath(json.get_string("/output/folder"), json.get_string("/output/name"),
-                   json.get_string("/output/field_directory", json.get_string("/output/name")))
+  OutputPath::OutputPath(const ConfigTree &json)
+      : OutputPath(json.get_string("/output/folder", "./"), json.get_string("/output/name", "output"),
+                   json.get_string("/output/field_directory", json.get_string("/output/name", "output")))
   {
   }
 

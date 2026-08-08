@@ -11,7 +11,7 @@
 #include <filesystem>
 
 template <typename FUN>
-double tune_m2A(JSONValue &json, const OutputPath &output_path, const FUN &run, double hint_m2A = 0.0,
+double tune_m2A(ConfigTree &json, const OutputPath &output_path, const FUN &run, double hint_m2A = 0.0,
                 double hint_delta = -1.0, double tol_override = -1.0)
 {
   const double tol = tol_override > 0 ? tol_override : json.get_double("/tuning/m2A_tol");
@@ -147,7 +147,7 @@ double tune_m2A(JSONValue &json, const OutputPath &output_path, const FUN &run, 
   return m2A;
 }
 
-template <typename FUN> void tune_STI(JSONValue &json, const OutputPath &output_path, const FUN &run)
+template <typename FUN> void tune_STI(ConfigTree &json, const OutputPath &output_path, const FUN &run)
 {
   const auto tuning_path = output_path.child(output_path.run_name() + "_STI_tuning", "tuning");
   RunLogger tuning_logger(tuning_path, OutputSettings(json), MPI::rank(MPI_COMM_WORLD) == 0);

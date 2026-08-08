@@ -1,7 +1,7 @@
 #pragma once
 
 // external libraries
-#include "DiFfRG/common/json.hh"
+#include "DiFfRG/common/config_tree.hh"
 #include <deal.II/base/point.h>
 #include <deal.II/base/tensor.h>
 
@@ -563,11 +563,11 @@ namespace DiFfRG
       fRG(double Lambda);
 
       /**
-       * @brief Construct a new fRG object from a given JSONValue object
+       * @brief Construct a new fRG object from a given ConfigTree object
        *
        * @param json the JSON object containing the initial cutoff scale at "/physical/Lambda"
        */
-      fRG(const JSONValue &json);
+      fRG(const ConfigTree &json);
 
       /**
        * @brief Set the time of the fRG object, updating the cutoff scale and its powers

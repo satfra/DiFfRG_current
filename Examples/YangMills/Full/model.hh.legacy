@@ -9,7 +9,7 @@ using namespace dealii;
 using namespace DiFfRG;
 
 struct Parameters {
-  Parameters(const JSONValue &json)
+  Parameters(const ConfigTree &json)
   {
     try {
       Lambda = json.get_double("/physical/Lambda");
@@ -87,7 +87,7 @@ class YangMills : public def::AbstractModel<YangMills, Components>,
   mutable TexLinearInterpolator3D<double, Coordinates3D> ZAcbc, ZA3, ZA4tadpole;
 
 public:
-  YangMills(const JSONValue &json)
+  YangMills(const ConfigTree &json)
       : def::fRG(json.get_double("/physical/Lambda")), prm(json),
         coordinates1D(p_grid_size, prm.p_grid_min, prm.p_grid_max, prm.p_grid_bias),
         S1_coordinates(S1_size, 0.0, 0.9999), SPhi_coordinates(SPhi_size, 0.0, 2. * M_PI),

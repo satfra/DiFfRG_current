@@ -5,7 +5,7 @@
 #include "DiFfRG/discretization/mesh/no_adaptivity.hh"
 #include "DiFfRG/timestepping/timestepping.hh"
 
-#include <DiFfRG/common/json.hh>
+#include <DiFfRG/common/config_tree.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
 #include <DiFfRG/model/model.hh>
@@ -158,14 +158,14 @@ namespace
     return stream.str();
   }
 
-  JSONValue make_run_json(const unsigned int n_cells, const double dt)
+  ConfigTree make_run_json(const unsigned int n_cells, const double dt)
   {
     const auto axis = grid_axis_string(n_cells);
     return json::value(
         {{"physical", {{"Lambda", 1.0}}},
          {"discretization",
           {{"fe_order", 0},
-           {"threads", 1},
+           {"mesh_workers", 1},
            {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
@@ -384,7 +384,7 @@ namespace
     kt_regression::ensure_logger();
 
     const double dt = diffusion_timestep(n_cells);
-    const JSONValue json = make_run_json(n_cells, dt);
+    const ConfigTree json = make_run_json(n_cells, dt);
     HeatDiffusion2DModel model;
     Mesh mesh(make_mesh_config(n_cells));
 

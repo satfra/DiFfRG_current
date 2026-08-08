@@ -142,7 +142,7 @@ namespace DiFfRG
         grids = {grids_args...};
       }
 
-      ConfigurationMesh(const DiFfRG::JSONValue &json)
+      ConfigurationMesh(const DiFfRG::ConfigTree &json)
       {
         static_assert(dim >= 1 && dim <= 3, "ConfigurationMesh only supports dim = 1, 2, 3");
 
@@ -150,7 +150,7 @@ namespace DiFfRG
                                                        "/discretization/grid/z_grid"};
 
         for (int i = 0; i < dim; ++i) {
-          auto subranges = internal::string_to_substrings_array(json.get_string(grid_names[i]));
+          auto subranges = internal::string_to_substrings_array(json.get_string_or_warn(grid_names[i], "0:0.1:1"));
           for (const auto &subrange_str : subranges)
             grids[i].emplace_back(subrange_str);
           internal::check_ranges_consistency(grids[i]);

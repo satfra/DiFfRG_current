@@ -26,7 +26,7 @@ DiFfRG follows a **Model → Discretization → Assembler → TimeStepper → Ou
 ```
 DiFfRG/
 ├── include/DiFfRG/
-│   ├── common/          Math utilities, JSON config, quadrature, Kokkos wrappers
+│   ├── common/          Math utilities, JSON/TOML config, quadrature, Kokkos wrappers
 │   ├── discretization/  Assemblers (CG/DG/FV), mesh, coordinates, data output
 │   ├── model/           AbstractModel (CRTP), component descriptors, numerical fluxes
 │   ├── physics/         Integrators, interpolators, regulators, threshold functions
@@ -40,7 +40,7 @@ DiFfRG/
 
 ## Configuration
 
-Simulations are configured via a `parameter.json` file, which is read by `ConfigurationHelper`. Key sections:
+Simulations are configured via a `parameter.json` or `parameter.toml` file, which is read by `ConfigurationHelper` into a `ConfigTree`. Key sections:
 
 - `/physical/` — Physics parameters (temperature, couplings, etc.)
 - `/integration/` — Quadrature orders and tolerances for momentum integrals
@@ -48,7 +48,26 @@ Simulations are configured via a `parameter.json` file, which is read by `Config
 - `/timestepping/` — Final time, output interval, explicit/implicit solver tolerances
 - `/output/` — Output folder, name, verbosity
 
-CLI flags (`-sd`, `-si`, `-sb`, `-ss`) can override any JSON parameter at runtime.
+CLI flags (`-sd`, `-si`, `-sb`, `-ss`) can override any parameter at runtime.
+
+### File formats
+
+Both JSON and TOML are accepted; the format is chosen from the file extension, `.toml` (or `.tml`) being read as TOML and everything else as JSON. TOML allows comments and needs less punctuation, which makes it the friendlier choice for hand-written parameter files:
+
+```toml
+[physical]
+Lambda = 1.0
+T = 0.1        # in units of Lambda
+
+[discretization.grid]
+x_grid = "0:1e-2:1"
+```
+
+Nothing else changes with the format. Parameters are always addressed by the same path, both from C++ (`config.get_double("/physical/T")`) and on the command line (`-sd /physical/T=0.1`), and the configuration log written next to the output is always JSON.
+
+If no parameter file is given with `-p` and the default `parameter.json` does not exist, but `parameter.toml` does, the latter is used. A file named explicitly with `-p` is never substituted. `--generate-parameter-file` writes whichever format the parameter file name implies.
+
+`ConfigTree` was previously called `JSONValue`; that name still works as a deprecated alias.
 
 ## Key Design Patterns
 

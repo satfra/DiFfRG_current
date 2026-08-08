@@ -1,6 +1,6 @@
 #include <DiFfRG/DiFfRG.hh>
 
-void probe(const DiFfRG::JSONValue &json)
+void probe(const DiFfRG::ConfigTree &json)
 {
   DiFfRG::ConfigurationHelper config(json);
   (void)config.get_log_file();

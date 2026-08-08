@@ -1,7 +1,7 @@
 #pragma once
 
 // DiFfRG
-#include <DiFfRG/common/json.hh>
+#include <DiFfRG/common/config_tree.hh>
 
 // standard library
 #include <fstream>
@@ -30,7 +30,7 @@ namespace DiFfRG
     CsvOutput(const std::string top_folder, const std::string output_name);
     [[deprecated("Use CsvOutput(top_folder, output_name) instead")]] CsvOutput(const std::string top_folder,
                                                                                 const std::string output_name,
-                                                                                const JSONValue &json)
+                                                                                const ConfigTree &json)
         : CsvOutput(std::move(top_folder), std::move(output_name))
     {
       (void)json;
