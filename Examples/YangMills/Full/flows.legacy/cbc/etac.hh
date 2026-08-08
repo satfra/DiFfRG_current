@@ -13,7 +13,7 @@ namespace DiFfRG
     class etac_integrator
     {
     public:
-      etac_integrator(QuadratureProvider &quadrature_provider, std::array<uint, 2> grid_sizes, const double x_extent, const JSONValue &json);
+      etac_integrator(QuadratureProvider &quadrature_provider, std::array<uint, 2> grid_sizes, const double x_extent, const ConfigTree &json);
       etac_integrator(const etac_integrator &other);
       ~etac_integrator();
 
@@ -49,7 +49,7 @@ namespace DiFfRG
       std::array<uint, 2> jac_grid_sizes;
       const double x_extent;
       const double jacobian_quadrature_factor;
-      const JSONValue json;
+      const ConfigTree json;
 
       std::unique_ptr<DiFfRG::IntegratorAngleGPU<4, double, etac_kernel<__REGULATOR__>>> integrator;
     };

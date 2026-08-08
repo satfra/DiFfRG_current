@@ -11,7 +11,7 @@ using namespace dealii;
 using namespace DiFfRG;
 
 struct Parameters {
-  Parameters(const JSONValue &value)
+  Parameters(const ConfigTree &value)
   {
     try {
       Lambda = value.get_double("/physical/Lambda");
@@ -76,7 +76,7 @@ protected:
   // initialization
   // ----------------------------------------------------------------------------------------------------
 public:
-  QuarkMesonLPAprime(const JSONValue &json) : def::fRG(json.get_double("/physical/Lambda")), prm(json), flow_equations(json)
+  QuarkMesonLPAprime(const ConfigTree &json) : def::fRG(json.get_double("/physical/Lambda")), prm(json), flow_equations(json)
   {
     flow_equations.set_k(Lambda);
     //flow_equations.print_parameters("log");

@@ -14,7 +14,7 @@
 #include "DiFfRG/discretization/discretization.hh"
 #include "DiFfRG/timestepping/timestepping.hh"
 
-#include <DiFfRG/common/json.hh>
+#include <DiFfRG/common/config_tree.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/discretization/FV/limiter/minmod_limiter.hh>
 #include <DiFfRG/discretization/FV/reconstructor/advection/tvd_reconstructor.hh>
@@ -147,7 +147,7 @@ namespace on_kt_3D
   //   x_order = 32, x_extent_tolerance = 1e-3 (matches both Examples).
   //   final_time and Λ are pulled from LSMPhysicalParameters.
 
-  inline JSONValue make_json(const int threads = 1, const int fe_order = 0,
+  inline ConfigTree make_json(const int threads = 1, const int fe_order = 0,
                              const int x_order = 32, const double ida_abs_tol = 1.0e-7,
                              const double ida_rel_tol = 1.0e-7)
   {
@@ -159,7 +159,7 @@ namespace on_kt_3D
            {"jacobian_quadrature_factor", 0.5}}},
          {"discretization",
           {{"fe_order", fe_order},
-           {"threads", threads},
+           {"mesh_workers", threads},
            {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},

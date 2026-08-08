@@ -60,7 +60,7 @@ TEST_CASE("RectangularMesh default construction keeps configured geometry", "[di
 
 TEST_CASE("Deprecated JSON RectangularMesh delegates to ConfigurationMesh", "[discretization][mesh][migration]")
 {
-  const DiFfRG::JSONValue json = DiFfRG::json::parse(R"({
+  const DiFfRG::ConfigTree json = DiFfRG::json::parse(R"({
     "discretization": {
       "grid": {
         "x_grid": "0.0:0.25:1.0",
@@ -128,7 +128,7 @@ TEST_CASE("RectangularMesh centers the origin along every axis", "[discretizatio
 TEST_CASE("RectangularMesh centers the two-dimensional JSON grid on the origin",
           "[discretization][mesh][origin-centered]")
 {
-  const DiFfRG::JSONValue json = DiFfRG::json::parse(R"({
+  const DiFfRG::ConfigTree json = DiFfRG::json::parse(R"({
     "discretization": {
       "grid": {
         "x_grid": "0.0:1e-2:2e-1",

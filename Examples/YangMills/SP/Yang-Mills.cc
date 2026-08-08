@@ -10,7 +10,7 @@ using VectorType = Vector<double>;
 using Assembler = Variables::Assembler<Model>;
 using TimeStepper = TimeStepperBoostABM<VectorType, dealii::SparseMatrix<get_type::NumberType<VectorType>>, 0>;
 
-bool run(const JSONValue &json, const OutputPath &output_path, LogPort external_log = {})
+bool run(const ConfigTree &json, const OutputPath &output_path, LogPort external_log = {})
 {
   // Define the objects needed to run the simulation
   OutputSession<0, VectorType> data_out(output_path, json);

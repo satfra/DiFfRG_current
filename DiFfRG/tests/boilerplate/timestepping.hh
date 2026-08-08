@@ -46,7 +46,7 @@ bool run(std::string test_name, double expected_precision)
   p_prm.initial_x1[0] = 1.;
   p_prm.initial_x2[0] = 0.5;
 
-  JSONValue json = json::value(
+  ConfigTree json = json::value(
       {{"physical", {{"Lambda", 1.}}},
        {"integration",
         {{"x_quadrature_order", 32},
@@ -61,7 +61,7 @@ bool run(std::string test_name, double expected_precision)
          {"jacobian_quadrature_factor", 0.5}}},
        {"discretization",
         {{"fe_order", 3},
-         {"threads", 8},
+         {"mesh_workers", 8},
          {"batch_size", 64},
          {"overintegration", 0},
          {"output_subdivisions", 2},

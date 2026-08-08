@@ -64,23 +64,24 @@ namespace DiFfRG
 
     [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] FEMAssembler(
         Discretization &discretization, Model &model,
-        DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, JSONValue> json)
+        DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, ConfigTree> json)
         : FEMAssembler(discretization, model, json.value(),
                        DiFfRG::internal::legacy_default_log_port<Discretization>())
     {
     }
 
-    FEMAssembler(Discretization &discretization, Model &model, const JSONValue &json, LogPort log_port)
+    FEMAssembler(Discretization &discretization, Model &model, const ConfigTree &json, LogPort log_port)
         : discretization(discretization), model(model), log_port(std::move(log_port)), fe(discretization.get_fe()),
           dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
-          threads(json.get_uint("/discretization/threads")), batch_size(json.get_uint("/discretization/batch_size")),
+          mesh_workers(json.get_uint("/discretization/mesh_workers", 8)),
+          batch_size(json.get_uint("/discretization/batch_size", 16)),
           EoM_cell(*(dof_handler.active_cell_iterators().end())),
           old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
-          EoM_abs_tol(json.get_double("/discretization/EoM_abs_tol")),
-          EoM_max_iter(json.get_uint("/discretization/EoM_max_iter"))
+          EoM_abs_tol(json.get_double("/discretization/EoM_abs_tol", 1e-12)),
+          EoM_max_iter(json.get_uint("/discretization/EoM_max_iter", 100))
     {
-      if (this->threads == 0) this->threads = dealii::MultithreadInfo::n_threads() / 2;
-      log_port.info("FEM: Using {} threads for assembly.", threads);
+      if (this->mesh_workers == 0) this->mesh_workers = std::max(1u, dealii::MultithreadInfo::n_threads() / 2);
+      log_port.info("FEM: Using {} mesh workers for assembly.", mesh_workers);
     }
 
     virtual IndexSet get_differential_indices() const override
@@ -345,7 +346,9 @@ namespace DiFfRG
     const DoFHandler<dim> &dof_handler;
     const Mapping<dim> &mapping;
 
-    uint threads;
+    /// Number of cells kept in flight in the MeshWorker assembly pipeline (its queue length).
+    /// This is not a thread count - see /discretization/threads for that.
+    uint mesh_workers;
     uint batch_size;
 
     mutable typename DoFHandler<dim>::cell_iterator EoM_cell;

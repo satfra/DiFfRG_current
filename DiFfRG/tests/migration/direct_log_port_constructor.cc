@@ -32,7 +32,7 @@ namespace
 } // namespace
 
 void probe(FVDiscretization &fv_discretization, FVModel &fv_model, FEMDiscretization &fem_discretization,
-           FEMModel &fem_model, VariablesModel &variables_model, const DiFfRG::JSONValue &json)
+           FEMModel &fem_model, VariablesModel &variables_model, const DiFfRG::ConfigTree &json)
 {
   FVAssembler fv(fv_discretization, fv_model, json);
   FEMAssembler fem(fem_discretization, fem_model, json);

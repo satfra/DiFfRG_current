@@ -8,7 +8,7 @@ namespace DiFfRG { template<typename> class hPhi0_kernel;
 
 class hPhi0_integrator
 {
-public:   hPhi0_integrator(DiFfRG::QuadratureProvider& quadrature_provider, const DiFfRG::JSONValue& json)
+public:   hPhi0_integrator(DiFfRG::QuadratureProvider& quadrature_provider, const DiFfRG::ConfigTree& json)
 ;
 
 

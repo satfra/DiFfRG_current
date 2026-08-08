@@ -4,7 +4,7 @@
 #include "DiFfRG/timestepping/linear_solver/ScaledGMRES.hh"
 #include "DiFfRG/timestepping/timestepping.hh"
 
-#include <DiFfRG/common/json.hh>
+#include <DiFfRG/common/config_tree.hh>
 #include <DiFfRG/discretization/data/data.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
@@ -63,7 +63,7 @@ namespace
   {
   public:
     O2_Model_VI_B_IV_Base() : def::fRG(1.0) {}
-    explicit O2_Model_VI_B_IV_Base(const JSONValue &json) : def::fRG(json) {}
+    explicit O2_Model_VI_B_IV_Base(const ConfigTree &json) : def::fRG(json) {}
 
     template <typename Vector> void initial_condition(const Point<dim> &pos, Vector &values) const
     {
@@ -165,14 +165,14 @@ namespace
     return std::to_string(grid.edge_min) + ":" + std::to_string(grid.cell_width) + ":" + std::to_string(grid.edge_max);
   }
 
-  JSONValue make_run_json(const GammaRunParameters &params, const SquareGrid &grid)
+  ConfigTree make_run_json(const GammaRunParameters &params, const SquareGrid &grid)
   {
     const std::string phi_grid = grid_axis_expression(grid);
     return json::value(
         {{"physical", {{"Lambda", 1.0e12}}},
          {"discretization",
           {{"fe_order", 0},
-           {"threads", static_cast<std::int64_t>(dealii::MultithreadInfo::n_threads())},
+           {"mesh_workers", static_cast<std::int64_t>(dealii::MultithreadInfo::n_threads())},
            {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
@@ -343,7 +343,7 @@ namespace
     kt_regression::ensure_logger();
 
     const SquareGrid grid = full_domain_grid(params);
-    const JSONValue json = make_run_json(params, grid);
+    const ConfigTree json = make_run_json(params, grid);
     O2_Model_VI_B_IV model(json);
     Mesh mesh(make_mesh_config(grid));
     Discretization discretization(mesh, json, DiFfRG::LogPort{});
@@ -375,7 +375,7 @@ namespace
                                     .retain_output = false,
                                     .write_output = false};
     const SquareGrid grid = origin_centered_quarter_domain_grid();
-    const JSONValue json = make_run_json(params, grid);
+    const ConfigTree json = make_run_json(params, grid);
     O2_Model_VI_B_IV_OriginCentered model(json);
     Mesh mesh(make_mesh_config(grid));
     Discretization discretization(mesh, json, DiFfRG::LogPort{});

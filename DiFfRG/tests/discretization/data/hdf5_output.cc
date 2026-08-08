@@ -3,7 +3,7 @@
 
 #include <DiFfRG/common/complex_math.hh>
 #include <DiFfRG/common/init.hh>
-#include <DiFfRG/common/json.hh>
+#include <DiFfRG/common/config_tree.hh>
 #include <DiFfRG/discretization/discretization.hh>
 #include <DiFfRG/physics/interpolation.hh>
 
@@ -21,7 +21,7 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
   using namespace dealii;
   using namespace DiFfRG;
 
-  JSONValue json = json::value(
+  ConfigTree json = json::value(
       {{"physical", {}},
        {"integration",
         {{"x_quadrature_order", 32},
@@ -36,7 +36,7 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
          {"jacobian_quadrature_factor", 0.5}}},
        {"discretization",
         {{"fe_order", 3},
-         {"threads", 8},
+         {"mesh_workers", 8},
          {"batch_size", 64},
          {"overintegration", 0},
          {"output_subdivisions", 2},

@@ -106,7 +106,12 @@ namespace DiFfRG
     void finish();
 
   private:
+    /** Flushes the file sink on a timer, so that a run log stays readable while the job runs and survives a kill.
+     * Defined in the translation unit; held by shared_ptr so that RunLogger stays movable. */
+    struct PeriodicFlusher;
+
     std::shared_ptr<spdlog::details::thread_pool> thread_pool;
     std::shared_ptr<spdlog::logger> logger;
+    std::shared_ptr<PeriodicFlusher> flusher;
   };
 } // namespace DiFfRG

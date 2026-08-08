@@ -25,7 +25,7 @@ namespace on_kt_3D
   template <typename ModelType>
   void run_flow_to_time(const GridSettings &grid, const double target_time, const int threads = 1)
   {
-    const JSONValue json = make_json(threads);
+    const ConfigTree json = make_json(threads);
     ModelType model(json, grid);
     Mesh mesh(make_mesh_config(grid));
     Discretization discretization(mesh, json, DiFfRG::LogPort{});
@@ -52,7 +52,7 @@ namespace on_kt_3D
   {
     using AssemblerWS = FV::KurganovTadmor::Assembler<Discretization, ModelType, Reconstructor, WaveSpeedStrategy>;
 
-    const JSONValue json = make_json(threads);
+    const ConfigTree json = make_json(threads);
     ModelType model(json, grid);
     Mesh mesh(make_mesh_config(grid));
     Discretization discretization(mesh, json, DiFfRG::LogPort{});
@@ -80,7 +80,7 @@ namespace on_kt_3D
   {
     using AssemblerTol = FV::KurganovTadmor::Assembler<Discretization, ModelType, Reconstructor, WaveSpeedStrategy>;
 
-    const JSONValue json = make_json(threads, /*fe_order=*/0, /*x_order=*/32, abs_tol, rel_tol);
+    const ConfigTree json = make_json(threads, /*fe_order=*/0, /*x_order=*/32, abs_tol, rel_tol);
     ModelType model(json, grid);
     Mesh mesh(make_mesh_config(grid));
     Discretization discretization(mesh, json, DiFfRG::LogPort{});
@@ -111,7 +111,7 @@ namespace on_kt_3D
     using CGTimeStepper = TimeStepperSUNDIALS_IDA<typename CGDiscretization::VectorType,
                                                   typename CGDiscretization::SparseMatrixType, dim, UMFPack>;
 
-    const JSONValue json = make_json(threads, fe_order, /*x_order=*/32, abs_tol, rel_tol);
+    const ConfigTree json = make_json(threads, fe_order, /*x_order=*/32, abs_tol, rel_tol);
     ModelType model(json, grid);
     Mesh mesh(make_mesh_config(grid));
     CGDiscretization discretization(mesh, json, DiFfRG::LogPort{});
@@ -137,7 +137,7 @@ namespace on_kt_3D
   {
     using AssemblerAd = FV::KurganovTadmor::Assembler<Discretization, ModelType, Reconstructor, WaveSpeedStrategy>;
 
-    const JSONValue json = make_json(threads, /*fe_order=*/0, /*x_order=*/32, abs_tol, rel_tol);
+    const ConfigTree json = make_json(threads, /*fe_order=*/0, /*x_order=*/32, abs_tol, rel_tol);
     const std::size_t n_cells_in_grid = total_cells(subranges);
     GridSettings grid{n_cells_in_grid, subranges.front().min, subranges.back().max};
     ModelType model(json, grid);
@@ -168,7 +168,7 @@ namespace on_kt_3D
     using CGTimeStepper = TimeStepperSUNDIALS_IDA<typename CGDiscretization::VectorType,
                                                   typename CGDiscretization::SparseMatrixType, dim, UMFPack>;
 
-    const JSONValue json = make_json(threads, fe_order, /*x_order=*/32, abs_tol, rel_tol);
+    const ConfigTree json = make_json(threads, fe_order, /*x_order=*/32, abs_tol, rel_tol);
     const std::size_t n_cells_in_grid = total_cells(subranges);
     GridSettings grid{n_cells_in_grid, subranges.front().min, subranges.back().max};
     ModelType model(json, grid);

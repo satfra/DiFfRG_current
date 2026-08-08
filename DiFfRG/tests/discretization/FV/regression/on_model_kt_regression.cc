@@ -6,7 +6,7 @@
 #include "DiFfRG/timestepping/timestepping.hh"
 #include "kt_regression_helpers.hh"
 
-#include <DiFfRG/common/json.hh>
+#include <DiFfRG/common/config_tree.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/discretization/discretization.hh>
 #include <DiFfRG/model/model.hh>
@@ -249,7 +249,7 @@ namespace
                           public def::AD<Derived>
   {
   public:
-    ONKTModelCommon(const JSONValue &json, const FlowCase &flow_case, const GridSettings &grid_settings)
+    ONKTModelCommon(const ConfigTree &json, const FlowCase &flow_case, const GridSettings &grid_settings)
         : def::fRG(json), flow_case(flow_case), cell_width(grid_spacing(grid_settings))
     {
     }
@@ -446,13 +446,13 @@ namespace
       ONKTDiagnosticModel<def::OriginOddLinearExtrapolationBoundaries, ConstrainUAtOrigin>;
   using ONSymmetricDefaultBoundaryDiagnosticModel = ONKTDiagnosticModel<def::FVDefaultBoundaries, ConstrainUAtOrigin>;
 
-  JSONValue make_json(const FlowCase &flow_case, const int threads = 8)
+  ConfigTree make_json(const FlowCase &flow_case, const int threads = 8)
   {
     return json::value(
         {{"physical", {{"Lambda", flow_case.lambda}}},
          {"discretization",
           {{"fe_order", 0},
-           {"threads", threads},
+           {"mesh_workers", threads},
            {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
@@ -491,7 +491,7 @@ namespace
     const auto fixture = local_fixture_path(flow_case.relative_path);
     REQUIRE(std::filesystem::exists(fixture));
 
-    const JSONValue fixture_json(fixture.string());
+    const ConfigTree fixture_json(fixture.string());
     json::value fixture_value = static_cast<json::value>(fixture_json);
     const auto &root = fixture_value.as_array();
 
@@ -577,7 +577,7 @@ namespace
   run_flow_snapshots(const FlowCase &flow_case, const std::vector<double> &times_to_sample,
                      const GridSettings &grid_settings = default_grid_settings(), const int threads = 8)
   {
-    const JSONValue json = make_json(flow_case, threads);
+    const ConfigTree json = make_json(flow_case, threads);
     ModelType model(json, flow_case, grid_settings);
     Mesh mesh(make_mesh_config(grid_settings));
     Discretization discretization(mesh, json, DiFfRG::LogPort{});
@@ -632,7 +632,7 @@ namespace
   void run_flow_to_time(const FlowCase &flow_case, const double target_time,
                         const GridSettings &grid_settings = default_grid_settings(), const int threads = 8)
   {
-    const JSONValue json = make_json(flow_case, threads);
+    const ConfigTree json = make_json(flow_case, threads);
     ModelType model(json, flow_case, grid_settings);
     Mesh mesh(make_mesh_config(grid_settings));
     Discretization discretization(mesh, json, DiFfRG::LogPort{});

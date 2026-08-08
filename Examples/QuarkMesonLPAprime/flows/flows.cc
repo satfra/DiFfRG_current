@@ -1,6 +1,6 @@
 #include "./flows.hh"
 
-  LPA_QM_flows::LPA_QM_flows(const DiFfRG::JSONValue& json) : quadrature_provider(json), etaPhi(quadrature_provider, json), etaQ(quadrature_provider, json), hPhi0(quadrature_provider, json), V(quadrature_provider, json) 
+  LPA_QM_flows::LPA_QM_flows(const DiFfRG::ConfigTree& json) : quadrature_provider(json), etaPhi(quadrature_provider, json), etaQ(quadrature_provider, json), hPhi0(quadrature_provider, json), V(quadrature_provider, json) 
 {}
  void LPA_QM_flows::set_k(const double k)
 {

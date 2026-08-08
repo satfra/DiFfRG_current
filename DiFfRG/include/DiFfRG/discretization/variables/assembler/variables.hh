@@ -45,15 +45,16 @@ namespace DiFfRG
       static constexpr uint dim = 0;
 
       [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Assembler(
-          Model &model, DiFfRG::internal::LegacyDefaultLogPortArgument<Model, JSONValue> json)
+          Model &model, DiFfRG::internal::LegacyDefaultLogPortArgument<Model, ConfigTree> json)
           : Assembler(model, json.value(), DiFfRG::internal::legacy_default_log_port<Model>())
       {
       }
 
-      Assembler(Model &model, const JSONValue &json, LogPort log_port)
-          : model(model), log_port(std::move(log_port)), threads(json.get_uint("/discretization/threads"))
+      Assembler(Model &model, const ConfigTree &json, LogPort log_port)
+          : model(model), log_port(std::move(log_port)),
+            mesh_workers(json.get_uint("/discretization/mesh_workers", 8))
       {
-        if (threads == 0) threads = dealii::MultithreadInfo::n_threads() / 2;
+        if (mesh_workers == 0) mesh_workers = std::max(1u, dealii::MultithreadInfo::n_threads() / 2);
         static_assert(Components::count_fe_functions() == 0, "The pure variable assembler cannot handle FE functions!");
         reinit();
       }
@@ -174,7 +175,9 @@ namespace DiFfRG
       Model &model;
       LogPort log_port;
 
-      uint threads;
+      /// Number of cells kept in flight in the MeshWorker assembly pipeline (its queue length).
+      /// This is not a thread count - see /discretization/threads for that.
+      uint mesh_workers;
 
       SparsityPattern sparsity_pattern_mass;
       SparsityPattern sparsity_pattern_jacobian;

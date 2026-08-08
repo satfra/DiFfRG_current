@@ -37,7 +37,7 @@ namespace on_kt_3D
                              public def::AD<LSM_sigma_analytic>
   {
   public:
-    LSM_sigma_analytic(const JSONValue &json, const GridSettings & /*grid*/) : def::fRG(json) {}
+    LSM_sigma_analytic(const ConfigTree &json, const GridSettings & /*grid*/) : def::fRG(json) {}
 
     template <typename Vector> void initial_condition(const Point<dim> &x, Vector &values) const
     {
@@ -87,7 +87,7 @@ namespace on_kt_3D
                            public def::AD<LSM_rho_analytic>
   {
   public:
-    LSM_rho_analytic(const JSONValue &json, const GridSettings & /*grid*/) : def::fRG(json) {}
+    LSM_rho_analytic(const ConfigTree &json, const GridSettings & /*grid*/) : def::fRG(json) {}
 
     template <typename Vector> void initial_condition(const Point<dim> &x, Vector &values) const
     {
@@ -138,7 +138,7 @@ namespace on_kt_3D
                                     public def::AD<LSM_sigma_integrator_base<FlowsType>>
   {
   public:
-    LSM_sigma_integrator_base(const JSONValue &json, const GridSettings & /*grid*/)
+    LSM_sigma_integrator_base(const ConfigTree &json, const GridSettings & /*grid*/)
         : def::fRG(json), flows_(json), T_(integrator_T())
     {
       flows_.set_k(this->Lambda);
@@ -211,7 +211,7 @@ namespace on_kt_3D
                                   public def::AD<LSM_rho_integrator_base<FlowsType>>
   {
   public:
-    LSM_rho_integrator_base(const JSONValue &json, const GridSettings & /*grid*/)
+    LSM_rho_integrator_base(const ConfigTree &json, const GridSettings & /*grid*/)
         : def::fRG(json), flows_(json), T_(integrator_T())
     {
       flows_.set_k(this->Lambda);
@@ -293,7 +293,7 @@ namespace on_kt_3D
                               public def::AD<LSM_rho_largeN_base<FlowsType>>
   {
   public:
-    LSM_rho_largeN_base(const JSONValue &json, const GridSettings & /*grid*/)
+    LSM_rho_largeN_base(const ConfigTree &json, const GridSettings & /*grid*/)
         : def::fRG(json), flows_(json), T_(integrator_T())
     {
       flows_.set_k(this->Lambda);
@@ -358,7 +358,7 @@ namespace on_kt_3D
                         public def::AD<LSM_CG_largeN>
   {
   public:
-    LSM_CG_largeN(const JSONValue &json, const GridSettings & /*grid*/) : def::fRG(json), flows_(json)
+    LSM_CG_largeN(const ConfigTree &json, const GridSettings & /*grid*/) : def::fRG(json), flows_(json)
     {
       flows_.set_k(this->Lambda);
       flows_.set_T(LSMPhysicalParameters::T);
@@ -405,7 +405,7 @@ namespace on_kt_3D
                  public def::AD<LSM_CG>
   {
   public:
-    LSM_CG(const JSONValue &json, const GridSettings & /*grid*/) : def::fRG(json), flows_(json)
+    LSM_CG(const ConfigTree &json, const GridSettings & /*grid*/) : def::fRG(json), flows_(json)
     {
       flows_.set_k(this->Lambda);
       flows_.set_T(LSMPhysicalParameters::T);

@@ -51,23 +51,24 @@ namespace DiFfRG
 
       [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] LDGAssemblerBase(
           Discretization &discretization, Model &model,
-          DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, JSONValue> json)
+          DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, ConfigTree> json)
           : LDGAssemblerBase(discretization, model, json.value(),
                              DiFfRG::internal::legacy_default_log_port<Discretization>())
       {
       }
 
-      LDGAssemblerBase(Discretization &discretization, Model &model, const JSONValue &json, LogPort log_port)
+      LDGAssemblerBase(Discretization &discretization, Model &model, const ConfigTree &json, LogPort log_port)
           : discretization(discretization), model(model), log_port(std::move(log_port)), fe(discretization.get_fe()),
             dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
-            threads(json.get_uint("/discretization/threads")), batch_size(json.get_uint("/discretization/batch_size")),
+            mesh_workers(json.get_uint("/discretization/mesh_workers", 8)),
+            batch_size(json.get_uint("/discretization/batch_size", 16)),
             EoM_cell(*(dof_handler.active_cell_iterators().end())),
             old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
-            EoM_abs_tol(json.get_double("/discretization/EoM_abs_tol")),
-            EoM_max_iter(json.get_uint("/discretization/EoM_max_iter"))
+            EoM_abs_tol(json.get_double("/discretization/EoM_abs_tol", 1e-12)),
+            EoM_max_iter(json.get_uint("/discretization/EoM_max_iter", 100))
       {
-        if (this->threads == 0) this->threads = dealii::MultithreadInfo::n_threads() / 2;
-        log_port.info("FEM: Using {} threads for assembly.", threads);
+        if (this->mesh_workers == 0) this->mesh_workers = std::max(1u, dealii::MultithreadInfo::n_threads() / 2);
+        log_port.info("FEM: Using {} mesh workers for assembly.", mesh_workers);
       }
 
       virtual IndexSet get_differential_indices() const override
@@ -125,7 +126,9 @@ namespace DiFfRG
       const DoFHandler<dim> &dof_handler;
       const Mapping<dim> &mapping;
 
-      uint threads;
+      /// Number of cells kept in flight in the MeshWorker assembly pipeline (its queue length).
+      /// This is not a thread count - see /discretization/threads for that.
+      uint mesh_workers;
       uint batch_size;
 
       mutable typename DoFHandler<dim>::cell_iterator EoM_cell;
@@ -450,16 +453,16 @@ namespace DiFfRG
     public:
       [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Assembler(
           Discretization &discretization, Model &model,
-          DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, JSONValue> json)
+          DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, ConfigTree> json)
           : Assembler(discretization, model, json.value(),
                       DiFfRG::internal::legacy_default_log_port<Discretization>())
       {
       }
 
-      Assembler(Discretization &discretization, Model &model, const JSONValue &json, LogPort log_port)
+      Assembler(Discretization &discretization, Model &model, const ConfigTree &json, LogPort log_port)
           : Base(discretization, model, json, std::move(log_port)),
-            quadrature(fe.degree + 1 + json.get_uint("/discretization/overintegration")),
-            quadrature_face(fe.degree + 1 + json.get_uint("/discretization/overintegration")),
+            quadrature(fe.degree + 1 + json.get_uint("/discretization/overintegration", 0)),
+            quadrature_face(fe.degree + 1 + json.get_uint("/discretization/overintegration", 0)),
             dof_handler_list(discretization.get_dof_handler_list())
       {
         static_assert(Components::count_fe_subsystems() > 1, "LDG must have a submodel with index 1.");
@@ -562,14 +565,14 @@ namespace DiFfRG
 
         Base::reinit();
 
-        vector<std::thread> threads;
+        vector<std::thread> init_threads;
         for (uint i = 0; i < Components::count_fe_subsystems(); ++i)
-          threads.emplace_back(std::thread(init_mass, i));
+          init_threads.emplace_back(std::thread(init_mass, i));
         for (uint i = 0; i < Components::count_fe_subsystems(); ++i)
-          threads.emplace_back(std::thread(init_jacobian, i));
+          init_threads.emplace_back(std::thread(init_jacobian, i));
         for (uint i = 1; i < Components::count_fe_subsystems(); ++i)
-          threads.emplace_back(std::thread(init_ldg, i));
-        for (auto &t : threads)
+          init_threads.emplace_back(std::thread(init_ldg, i));
+        for (auto &t : init_threads)
           t.join();
 
         timings_reinit.push_back(timer.wall_time());
@@ -661,7 +664,7 @@ namespace DiFfRG
 
         rebuild_ldg_vectors(solution_global);
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, nullptr, face_worker, threads, batch_size);
+                              copy_data, assemble_flags, nullptr, face_worker, mesh_workers, batch_size);
       }
 
       virtual const BlockSparsityPattern &get_sparsity_pattern_jacobian() const override
@@ -723,7 +726,7 @@ namespace DiFfRG
         CopyData copy_data;
 
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, nullptr, nullptr, threads, batch_size);
+                              copy_data, assemble_flags, nullptr, nullptr, mesh_workers, batch_size);
       }
 
       /**
@@ -884,7 +887,7 @@ namespace DiFfRG
 
         rebuild_ldg_vectors(solution_global);
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, boundary_worker, face_worker, threads, batch_size);
+                              copy_data, assemble_flags, boundary_worker, face_worker, mesh_workers, batch_size);
 
         timings_residual.push_back(timer.wall_time());
       }
@@ -947,7 +950,7 @@ namespace DiFfRG
         CopyData copy_data;
 
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, nullptr, nullptr, threads, batch_size);
+                              copy_data, assemble_flags, nullptr, nullptr, mesh_workers, batch_size);
       }
 
       /**
@@ -1237,7 +1240,7 @@ namespace DiFfRG
         rebuild_ldg_vectors(solution_global);
 
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, boundary_worker, face_worker, threads, batch_size);
+                              copy_data, assemble_flags, boundary_worker, face_worker, mesh_workers, batch_size);
 
         if (exception) throw std::runtime_error("Infinity encountered in jacobian construction");
 
@@ -1333,7 +1336,7 @@ namespace DiFfRG
       QGauss<dim> quadrature;
       QGauss<dim - 1> quadrature_face;
       using Base::batch_size;
-      using Base::threads;
+      using Base::mesh_workers;
 
       std::vector<const DoFHandler<dim> *> dof_handler_list;
 
@@ -1526,7 +1529,7 @@ namespace DiFfRG
 
         ldg_vector_tmp = 0;
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, boundary_worker, face_worker, threads, batch_size);
+                              copy_data, assemble_flags, boundary_worker, face_worker, mesh_workers, batch_size);
 
         for (uint i = 0; i < Components::count_fe_functions(to); ++i)
           component_mass_matrix_inverse.vmult(ldg_vector.block(i), ldg_vector_tmp.block(i));
@@ -1679,7 +1682,7 @@ namespace DiFfRG
         ldg_jacobian_tmp = 0;
         ldg_jacobian = 0;
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, boundary_worker, face_worker, threads, batch_size);
+                              copy_data, assemble_flags, boundary_worker, face_worker, mesh_workers, batch_size);
         for (const auto &c : model.get_components().ldg_couplings(to, from))
           component_mass_matrix_inverse.mmult(ldg_jacobian.block(c[0], c[1]), ldg_jacobian_tmp.block(c[0], c[1]),
                                               Vector<NumberType>(), false);

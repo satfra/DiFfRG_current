@@ -9,8 +9,6 @@
 #include <DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed.hh>
 #include <DiFfRG/model/fv_boundaries.hh>
 
-#include <tbb/global_control.h>
-
 #include "model_KT_sigma.hh"
 
 // Choices for types
@@ -26,10 +24,6 @@ using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, U
 
 int main(int argc, char *argv[])
 {
-  // DIAGNOSTIC: pin the TBB pool used by the quadrature integrator. The JSON
-  // /discretization/threads only controls MeshWorker, not TBB.
-  tbb::global_control tbb_pin(tbb::global_control::max_allowed_parallelism, 1);
-
   // Initialize DiFfRG and thus the MPI and Kokkos environments.
   const auto config_helper = DiFfRG::Init(argc, argv, "parameter_KT_sigma.json").get_configuration_helper();
   const auto json = config_helper.get_json();

@@ -7,7 +7,7 @@ namespace DiFfRG
 {
   namespace Flows
   {
-    etac_integrator::etac_integrator(QuadratureProvider &quadrature_provider, std::array<uint, 2> grid_sizes, const double x_extent, const JSONValue &json)
+    etac_integrator::etac_integrator(QuadratureProvider &quadrature_provider, std::array<uint, 2> grid_sizes, const double x_extent, const ConfigTree &json)
         : quadrature_provider(quadrature_provider), grid_sizes(grid_sizes), x_extent(x_extent),
           jacobian_quadrature_factor(json.get_double("/integration/jacobian_quadrature_factor")), json(json)
     {

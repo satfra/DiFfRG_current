@@ -13,13 +13,13 @@ namespace DiFfRG
   using namespace dealii;
 
   template <uint dim>
-  RectangularMesh<dim>::RectangularMesh(const JSONValue &json)
+  RectangularMesh<dim>::RectangularMesh(const ConfigTree &json)
       : RectangularMesh<dim>(Config::ConfigurationMesh<dim>(json), RectangularMeshOptions{})
   {
   }
 
   template <uint dim>
-  RectangularMesh<dim>::RectangularMesh(const JSONValue &json, const RectangularMeshOptions options)
+  RectangularMesh<dim>::RectangularMesh(const ConfigTree &json, const RectangularMeshOptions options)
       : RectangularMesh<dim>(Config::ConfigurationMesh<dim>(json), options)
   {
   }

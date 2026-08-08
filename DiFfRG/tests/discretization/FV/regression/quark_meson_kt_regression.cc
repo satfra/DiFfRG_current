@@ -3,7 +3,7 @@
 #include "DiFfRG/timestepping/linear_solver/UMFPack.hh"
 #include "kt_regression_helpers.hh"
 
-#include <DiFfRG/common/json.hh>
+#include <DiFfRG/common/config_tree.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/discretization/discretization.hh>
 #include <DiFfRG/model/model.hh>
@@ -215,7 +215,7 @@ namespace
   template <typename Kernel> class IntegratorWrapper
   {
   public:
-    IntegratorWrapper(QuadratureProvider &quadrature_provider, const JSONValue &json)
+    IntegratorWrapper(QuadratureProvider &quadrature_provider, const ConfigTree &json)
         : integrator(quadrature_provider, json), integrator_ad(quadrature_provider, json),
           integrator_ad2(quadrature_provider, json)
     {
@@ -249,7 +249,7 @@ namespace
     using SigmaIntegrator = IntegratorWrapper<QMSigmaKernel<Regulator>>;
     using QuarkIntegrator = IntegratorWrapper<QMQuarkKernel<Regulator>>;
 
-    explicit QuarkMesonFlows(const JSONValue &json)
+    explicit QuarkMesonFlows(const ConfigTree &json)
         : quadrature_provider(json), pion(quadrature_provider, json), sigma(quadrature_provider, json),
           quark(quadrature_provider, json)
     {
@@ -283,7 +283,7 @@ namespace
                             public def::AD<QuarkMesonKTModel<Case>>
   {
   public:
-    explicit QuarkMesonKTModel(const JSONValue &json) : def::fRG(json), flows(json)
+    explicit QuarkMesonKTModel(const ConfigTree &json) : def::fRG(json), flows(json)
     {
       flows.set_k(this->Lambda);
       flows.set_T(PaperSharedParameters::T);
@@ -372,7 +372,7 @@ namespace
   };
 
   template <typename Case>
-  JSONValue make_json(const double final_time, const double output_dt = 2.0e-2, const double explicit_dt = 1.0e-8,
+  ConfigTree make_json(const double final_time, const double output_dt = 2.0e-2, const double explicit_dt = 1.0e-8,
                       const double explicit_abs_tol = 1.0e-14, const double explicit_rel_tol = 1.0e-14)
   {
     return json::value(
@@ -380,7 +380,7 @@ namespace
          {"integration", {{"x_order", 100}, {"x_extent_tolerance", 1.0e-4}, {"jacobian_quadrature_factor", 0.5}}},
          {"discretization",
           {{"fe_order", 0},
-           {"threads", 16},
+           {"mesh_workers", 16},
            {"batch_size", 32},
            {"overintegration", 0},
            {"output_subdivisions", 1},
@@ -416,7 +416,7 @@ namespace
   }
 
   template <typename Case, typename AssemblerType, typename TimeStepperType = ImplicitTimeStepper>
-  kt_regression::SampledProfile run_flow(const double final_time, const JSONValue &json,
+  kt_regression::SampledProfile run_flow(const double final_time, const ConfigTree &json,
                                          const std::string &output_prefix = Case::output_prefix())
   {
     kt_regression::ensure_diffrg_initialized();
@@ -446,7 +446,7 @@ namespace
   template <typename Case, typename AssemblerType, typename TimeStepperType = ImplicitTimeStepper>
   kt_regression::SampledProfile run_flow(const double final_time)
   {
-    const JSONValue json = make_json<Case>(final_time);
+    const ConfigTree json = make_json<Case>(final_time);
     return run_flow<Case, AssemblerType, TimeStepperType>(final_time, json);
   }
 

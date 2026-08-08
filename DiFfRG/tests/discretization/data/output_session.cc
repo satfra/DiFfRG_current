@@ -1,13 +1,15 @@
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 
-#include <DiFfRG/common/json.hh>
+#include <DiFfRG/common/config_tree.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
 
 #include <deal.II/lac/vector.h>
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <mutex>
 #include <set>
 #include <string>
@@ -28,7 +30,7 @@ namespace
     return settings;
   }
 
-  DiFfRG::JSONValue output_json(const std::filesystem::path &path)
+  DiFfRG::ConfigTree output_json(const std::filesystem::path &path)
   {
     return DiFfRG::json::value(
         {{"physical", {{"Lambda", 1.0}}},
@@ -125,6 +127,29 @@ TEST_CASE("OutputSession drain keeps the session writable until finish", "[outpu
   output.finish();
   CHECK_THROWS_WITH(output.write_frame(2.0, [](auto &) {}),
                     Catch::Matchers::ContainsSubstring("already been finished"));
+}
+
+TEST_CASE("Run log reaches disk while the session is alive", "[output][session][log]")
+{
+  auto path = DiFfRG::OutputPath::temporary();
+  const auto log_file = path.run_file(".log");
+
+  auto settings = output_settings();
+  settings.log_flush_interval = 0.1;
+
+  DiFfRG::OutputSession<0, dealii::Vector<double>> output(path, settings);
+  output.log_port().info("periodic flush marker");
+
+  // A single short line stays inside the file sink's stdio buffer, so this only passes if the flusher runs.
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  bool found = false;
+  while (!found && std::chrono::steady_clock::now() < deadline) {
+    std::ifstream stream(log_file);
+    std::string content((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+    found = content.find("periodic flush marker") != std::string::npos;
+    if (!found) std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+  CHECK(found);
 }
 
 TEST_CASE("OutputPath has explicit move-only ownership", "[output][path]")

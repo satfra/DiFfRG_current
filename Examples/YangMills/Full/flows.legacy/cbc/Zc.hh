@@ -13,7 +13,7 @@ namespace DiFfRG
     class Zc_integrator
     {
     public:
-      Zc_integrator(QuadratureProvider &quadrature_provider, std::array<uint, 2> grid_sizes, const double x_extent, const JSONValue &json);
+      Zc_integrator(QuadratureProvider &quadrature_provider, std::array<uint, 2> grid_sizes, const double x_extent, const ConfigTree &json);
       Zc_integrator(const Zc_integrator &other);
       ~Zc_integrator();
 
@@ -53,7 +53,7 @@ namespace DiFfRG
       std::array<uint, 2> jac_grid_sizes;
       const double x_extent;
       const double jacobian_quadrature_factor;
-      const JSONValue json;
+      const ConfigTree json;
 
       std::unique_ptr<DiFfRG::IntegratorAngleGPU<4, double, Zc_kernel<__REGULATOR__>>> integrator;
     };

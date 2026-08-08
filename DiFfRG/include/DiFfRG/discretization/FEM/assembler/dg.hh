@@ -179,16 +179,16 @@ namespace DiFfRG
 
       [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Assembler(
           Discretization &discretization, Model &model,
-          DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, JSONValue> json)
+          DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, ConfigTree> json)
           : Assembler(discretization, model, json.value(),
                       DiFfRG::internal::legacy_default_log_port<Discretization>())
       {
       }
 
-      Assembler(Discretization &discretization, Model &model, const JSONValue &json, LogPort log_port)
+      Assembler(Discretization &discretization, Model &model, const ConfigTree &json, LogPort log_port)
           : Base(discretization, model, json, std::move(log_port)),
-            quadrature(fe.degree + 1 + json.get_uint("/discretization/overintegration")),
-            quadrature_face(fe.degree + 1 + json.get_uint("/discretization/overintegration"))
+            quadrature(fe.degree + 1 + json.get_uint("/discretization/overintegration", 0)),
+            quadrature_face(fe.degree + 1 + json.get_uint("/discretization/overintegration", 0))
       {
         static_assert(Components::count_fe_subsystems() == 1, "A DG model cannot have multiple submodels!");
         reinit();
@@ -343,7 +343,7 @@ namespace DiFfRG
         MeshWorker::AssembleFlags assemble_flags = MeshWorker::assemble_own_cells;
 
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, nullptr, face_worker, threads, batch_size);
+                              copy_data, assemble_flags, nullptr, face_worker, mesh_workers, batch_size);
       }
 
       virtual void mass(VectorType &mass, const VectorType &solution_global, const VectorType &solution_global_dot,
@@ -393,7 +393,7 @@ namespace DiFfRG
         MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
 
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, flags, nullptr, nullptr, threads, batch_size);
+                              copy_data, flags, nullptr, nullptr, mesh_workers, batch_size);
       }
 
       virtual void residual(VectorType &residual, const VectorType &solution_global, NumberType weight,
@@ -543,7 +543,7 @@ namespace DiFfRG
 
         Timer timer;
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, flags, boundary_worker, face_worker, threads, batch_size);
+                              copy_data, flags, boundary_worker, face_worker, mesh_workers, batch_size);
         timings_residual.push_back(timer.wall_time());
       }
 
@@ -602,7 +602,7 @@ namespace DiFfRG
 
         Timer timer;
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, flags, nullptr, nullptr, threads, batch_size);
+                              copy_data, flags, nullptr, nullptr, mesh_workers, batch_size);
         timings_jacobian.push_back(timer.wall_time());
       }
 
@@ -832,7 +832,7 @@ namespace DiFfRG
 
         Timer timer;
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, flags, boundary_worker, face_worker, threads, batch_size);
+                              copy_data, flags, boundary_worker, face_worker, mesh_workers, batch_size);
         timings_jacobian.push_back(timer.wall_time());
       }
 
@@ -895,7 +895,7 @@ namespace DiFfRG
       QGauss<dim> quadrature;
       QGauss<dim - 1> quadrature_face;
       using Base::batch_size;
-      using Base::threads;
+      using Base::mesh_workers;
 
       SparsityPattern sparsity_pattern_mass;
       SparsityPattern sparsity_pattern_jacobian;

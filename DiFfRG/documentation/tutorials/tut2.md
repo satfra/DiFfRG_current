@@ -73,7 +73,7 @@ First things first, we include again everything we need and import all names fro
 Then, we set up a parameters struct.
 ```cpp
 struct Parameters {
-  Parameters(const JSONValue &value)
+  Parameters(const ConfigTree &value)
   {
     try {
       Nf = value.get_double("/physical/Nf");
@@ -127,7 +127,7 @@ private:
 public:
   static constexpr uint dim = 1;
 
-  Tut2(const JSONValue &json) : def::fRG(json.get_double("/physical/Lambda")), prm(json) {}
+  Tut2(const ConfigTree &json) : def::fRG(json.get_double("/physical/Lambda")), prm(json) {}
 
   template <typename Vector> void initial_condition(const Point<dim> &pos, Vector &values) const
   {
@@ -226,7 +226,7 @@ $ paraview output.pvd
 
 ## Drawing a phase diagram
 
-Of course, we can now start to modify parameters. Either you can just edit `parameter.json`, write a new JSON file, or you can use the overwriting syntax.
+Of course, we can now start to modify parameters. Either you can just edit `parameter.json`, write a new JSON or TOML file, or you can use the overwriting syntax.
 As an example, consider you want to run a simulation at muq = 0.25, T = 0.1, Nc = 4 and name it `simulation4`. This can be achieved by the command
 ```bash
 $ ./tut2 -sd /physical/muq=0.25 -sd /physical/T=0.1 -sd /physical/Nc=4.0 -ss /output/name=simulation4

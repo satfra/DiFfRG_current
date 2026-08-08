@@ -11,7 +11,7 @@ namespace DiFfRG
   class ZAcbc_integrator
   {
   public:
-    ZAcbc_integrator(DiFfRG::QuadratureProvider &quadrature_provider, const DiFfRG::JSONValue &json);
+    ZAcbc_integrator(DiFfRG::QuadratureProvider &quadrature_provider, const DiFfRG::ConfigTree &json);
 
     using Regulator = DiFfRG::PolynomialExpRegulator<>;
 

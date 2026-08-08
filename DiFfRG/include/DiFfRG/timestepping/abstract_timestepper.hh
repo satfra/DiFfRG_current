@@ -93,10 +93,10 @@ namespace DiFfRG
 
   /**
    * @brief The abstract base class for all timestepping algorithms.
-   * It provides a standard constructor which populates typical timestepping parameters from a given JSONValue object,
+   * It provides a standard constructor which populates typical timestepping parameters from a given ConfigTree object,
    * such as the timestep sizes, tolerances, verbosity, etc. that are used in the timestepping algorithms.
    *
-   * In the JSONValue object, a /timestepping/ section must be present with the following parameters:
+   * In the ConfigTree object, a /timestepping/ section must be present with the following parameters:
    * - /timestepping/output_dt: The output timestep size.
    * - /timestepping/implicit/dt: The timestep size for an implicit timestepping algorithm.
    * - /timestepping/implicit/minimal_dt: The minimal timestep size for an implicit timestepping algorithm.
@@ -143,25 +143,25 @@ namespace DiFfRG
     /**
      * @brief Construct a new Abstract Timestepper object
      *
-     * @param json The JSONValue object must contain a /timestepping/ section with all necessary parameters.
+     * @param json The ConfigTree object must contain a /timestepping/ section with all necessary parameters.
      * @param assembler
      * @param data_out
      * @param adaptor
      */
-    AbstractTimestepper(const JSONValue &json, AbstractAssembler<VectorType, SparseMatrixType, dim> *assembler,
+    AbstractTimestepper(const ConfigTree &json, AbstractAssembler<VectorType, SparseMatrixType, dim> *assembler,
                         OutputSession<dim, VectorType> *data_out, AbstractAdaptor<VectorType> *adaptor = nullptr)
         : json(json), assembler(assembler), data_out(data_out), adaptor(adaptor),
           log(data_out ? data_out->log_port() : LogPort{}),
           start_time(std::chrono::high_resolution_clock::now())
     {
-      verbosity = json.get_int("/output/verbosity");
-      output_dt = json.get_double("/timestepping/output_dt");
+      verbosity = json.get_int("/output/verbosity", 0);
+      output_dt = json.get_double("/timestepping/output_dt", 1e-1);
 
-      impl.dt = json.get_double("/timestepping/implicit/dt");
-      impl.minimal_dt = json.get_double("/timestepping/implicit/minimal_dt");
-      impl.maximal_dt = json.get_double("/timestepping/implicit/maximal_dt");
-      impl.abs_tol = json.get_double("/timestepping/implicit/abs_tol");
-      impl.rel_tol = json.get_double("/timestepping/implicit/rel_tol");
+      impl.dt = json.get_double("/timestepping/implicit/dt", 1e-4);
+      impl.minimal_dt = json.get_double("/timestepping/implicit/minimal_dt", 1e-6);
+      impl.maximal_dt = json.get_double("/timestepping/implicit/maximal_dt", 1e-1);
+      impl.abs_tol = json.get_double_or_warn("/timestepping/implicit/abs_tol", 1e-13);
+      impl.rel_tol = json.get_double_or_warn("/timestepping/implicit/rel_tol", 1e-7);
       impl.max_steps = json.get_uint("/timestepping/implicit/max_steps", 1000000);
       impl.max_non_linear_iterations = json.get_uint("/timestepping/implicit/max_non_linear_iterations", 10);
       impl.ida_callback_trace = json.get_bool("/timestepping/implicit/ida_callback_trace", false);
@@ -171,18 +171,16 @@ namespace DiFfRG
       impl.ida_error_dof_diagnostics = json.get_bool("/timestepping/implicit/ida_error_dof_diagnostics", false);
       impl.ida_error_dof_diagnostics_top_n = json.get_uint("/timestepping/implicit/ida_error_dof_diagnostics_top_n", 8);
 
-      expl.dt = json.get_double("/timestepping/explicit/dt");
-      expl.minimal_dt = json.get_double("/timestepping/explicit/minimal_dt");
-      expl.maximal_dt = json.get_double("/timestepping/explicit/maximal_dt");
-      expl.abs_tol = json.get_double("/timestepping/explicit/abs_tol");
-      expl.rel_tol = json.get_double("/timestepping/explicit/rel_tol");
+      expl.dt = json.get_double("/timestepping/explicit/dt", 1e-2);
+      expl.minimal_dt = json.get_double("/timestepping/explicit/minimal_dt", 1e-6);
+      expl.maximal_dt = json.get_double("/timestepping/explicit/maximal_dt", 1e-1);
+      expl.abs_tol = json.get_double_or_warn("/timestepping/explicit/abs_tol", 1e-4);
+      expl.rel_tol = json.get_double_or_warn("/timestepping/explicit/rel_tol", 1e-4);
       expl.detect_stuck = json.get_bool("/timestepping/explicit/detect_stuck", true);
 
-      try {
-        Lambda = json.get_double("/physical/Lambda");
-      } catch (std::exception &e) {
-        Lambda = -1.0;
-      }
+      // -1 marks "no cutoff scale given"; the timesteppers use it only to label output, so
+      // unlike def::fRG this must not warn - plenty of models have no /physical/Lambda at all.
+      Lambda = json.get_double("/physical/Lambda", -1.0);
     }
 
     /**
@@ -228,7 +226,7 @@ namespace DiFfRG
                      const double t_stop) = 0;
 
   protected:
-    const JSONValue json;
+    const ConfigTree json;
     AbstractAssembler<VectorType, SparseMatrixType, dim> *assembler;
     OutputSession<dim, VectorType> *data_out;
     AbstractAdaptor<VectorType> *adaptor;

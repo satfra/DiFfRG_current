@@ -14,7 +14,7 @@
 class YangMillsFlowEquations : public FlowEquations
 {
 public:
-  YangMillsFlowEquations(const JSONValue &json);
+  YangMillsFlowEquations(const ConfigTree &json);
 
 private:
   const std::array<uint, 1> grid_size_int;

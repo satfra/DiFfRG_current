@@ -8,6 +8,7 @@ add_subdirectory(quadrature)
 # Test
 # ##############################################################################
 
+setup_test(config_tree.cc)
 setup_test(configuration_helper.cc)
 setup_test(autodiff.cc)
 setup_test(complex_autodiff.cc)

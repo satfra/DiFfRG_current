@@ -215,7 +215,7 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
                             "MembersPublic" ->
                                 Join[
                                     {
-                                        FunKit`MakeCppFunction["Name" -> StringTemplate["`Name`_integrator"][spec], "Parameters" -> {<|"Type" -> "DiFfRG::QuadratureProvider", "Reference" -> True, "Const" -> False, "Name" -> "quadrature_provider"|>, <|"Type" -> "DiFfRG::JSONValue", "Reference" -> True, "Const" -> True, "Name" -> "json"|>}, "Body" -> None, "Return" -> ""]
+                                        FunKit`MakeCppFunction["Name" -> StringTemplate["`Name`_integrator"][spec], "Parameters" -> {<|"Type" -> "DiFfRG::QuadratureProvider", "Reference" -> True, "Const" -> False, "Name" -> "quadrature_provider"|>, <|"Type" -> "DiFfRG::ConfigTree", "Reference" -> True, "Const" -> True, "Name" -> "json"|>}, "Body" -> None, "Return" -> ""]
                                         ,
                                         getRegulator[OptionValue["Regulator"], OptionValue["RegulatorOpts"]]
                                         ,
@@ -280,7 +280,7 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
                             ,
                             "Body" -> ""
                             ,
-                            "Parameters" -> {<|"Type" -> "DiFfRG::QuadratureProvider", "Reference" -> True, "Const" -> False, "Name" -> "quadrature_provider"|>, <|"Type" -> "DiFfRG::JSONValue", "Reference" -> True, "Const" -> True, "Name" -> "json"|>}
+                            "Parameters" -> {<|"Type" -> "DiFfRG::QuadratureProvider", "Reference" -> True, "Const" -> False, "Name" -> "quadrature_provider"|>, <|"Type" -> "DiFfRG::ConfigTree", "Reference" -> True, "Const" -> True, "Name" -> "json"|>}
                             ,
                             "Return" -> ""
                         ]

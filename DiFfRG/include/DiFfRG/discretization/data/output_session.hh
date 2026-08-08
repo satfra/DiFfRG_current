@@ -160,7 +160,7 @@ namespace DiFfRG
   {
   public:
     explicit OutputSession(const OutputPath &path, OutputSettings settings = {});
-    OutputSession(const OutputPath &path, const JSONValue &json) : OutputSession(path, OutputSettings(json)) {}
+    OutputSession(const OutputPath &path, const ConfigTree &json) : OutputSession(path, OutputSettings(json)) {}
     ~OutputSession() noexcept;
 
     OutputSession(const OutputSession &) = delete;

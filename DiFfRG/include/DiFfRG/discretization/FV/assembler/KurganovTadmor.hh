@@ -571,27 +571,27 @@ namespace DiFfRG
         };
         [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Assembler(
             Discretization &discretization, Model &model,
-            DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, JSONValue> json)
+            DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, ConfigTree> json)
             : Assembler(discretization, model, json.value(),
                         DiFfRG::internal::legacy_default_log_port<Discretization>())
         {
         }
 
-        Assembler(Discretization &discretization, Model &model, const JSONValue &json, LogPort log_port)
+        Assembler(Discretization &discretization, Model &model, const ConfigTree &json, LogPort log_port)
             : discretization(discretization), model(model), log_port(std::move(log_port)),
               dof_handler(discretization.get_dof_handler()),
               mapping(discretization.get_mapping()), triangulation(discretization.get_triangulation()), json(json),
-              fe(discretization.get_fe()), threads(json.get_uint("/discretization/threads")),
-              batch_size(json.get_uint("/discretization/batch_size")),
+              fe(discretization.get_fe()), mesh_workers(json.get_uint("/discretization/mesh_workers", 8)),
+              batch_size(json.get_uint("/discretization/batch_size", 16)),
               EoM_cell(*(dof_handler.active_cell_iterators().end())),
               old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
-              EoM_abs_tol(json.get_double("/discretization/EoM_abs_tol")),
-              EoM_max_iter(json.get_uint("/discretization/EoM_max_iter")),
-              quadrature(1 + json.get_uint("/discretization/overintegration")),
-              quadrature_face(1 + json.get_uint("/discretization/overintegration"))
+              EoM_abs_tol(json.get_double("/discretization/EoM_abs_tol", 1e-12)),
+              EoM_max_iter(json.get_uint("/discretization/EoM_max_iter", 100)),
+              quadrature(1 + json.get_uint("/discretization/overintegration", 0)),
+              quadrature_face(1 + json.get_uint("/discretization/overintegration", 0))
         {
-          if (this->threads == 0) this->threads = dealii::MultithreadInfo::n_threads() / 2;
-          log_port.info("FV: Using {} threads for assembly.", threads);
+          if (this->mesh_workers == 0) this->mesh_workers = std::max(1u, dealii::MultithreadInfo::n_threads() / 2);
+          log_port.info("FV: Using {} mesh workers for assembly.", mesh_workers);
 
           AssertThrow(fe.dofs_per_cell == n_components,
                       ExcMessage("FV Kurganov-Tadmor assembler expects one dof per component."));
@@ -858,7 +858,7 @@ namespace DiFfRG
           MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
 
           MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                                copy_data, flags, nullptr, nullptr, threads, batch_size);
+                                copy_data, flags, nullptr, nullptr, mesh_workers, batch_size);
         }
 
         using CellData = internal::CellData<dim, NumberType, n_components>;
@@ -1482,7 +1482,7 @@ namespace DiFfRG
                                             MeshWorker::assemble_own_interior_faces_once;
 
           MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                                copy_data, flags, boundary_worker, face_worker, threads, batch_size);
+                                copy_data, flags, boundary_worker, face_worker, mesh_workers, batch_size);
           timings_residual.push_back(timer.wall_time());
         }
 
@@ -1532,7 +1532,7 @@ namespace DiFfRG
 
           Timer timer;
           MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                                copy_data, flags, nullptr, nullptr, threads, batch_size);
+                                copy_data, flags, nullptr, nullptr, mesh_workers, batch_size);
           timings_jacobian.push_back(timer.wall_time());
         }
 
@@ -1879,7 +1879,7 @@ namespace DiFfRG
                                             MeshWorker::assemble_own_interior_faces_once;
 
           MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                                copy_data, flags, boundary_worker, face_worker, threads, batch_size);
+                                copy_data, flags, boundary_worker, face_worker, mesh_workers, batch_size);
           timings_jacobian.push_back(timer.wall_time());
         }
 
@@ -2258,9 +2258,11 @@ namespace DiFfRG
         const Triangulation<dim> &triangulation;
         const FiniteElement<dim> &fe;
 
-        const JSONValue &json;
+        const ConfigTree &json;
 
-        uint threads;
+        /// Number of cells kept in flight in the MeshWorker assembly pipeline (its queue length).
+        /// This is not a thread count - see /discretization/threads for that.
+        uint mesh_workers;
         const uint batch_size;
 
         mutable Point EoM;

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DiFfRG/common/init.hh>
-#include <DiFfRG/common/json.hh>
+#include <DiFfRG/common/config_tree.hh>
 
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>

@@ -9,7 +9,7 @@
 
 class LPA_QM_flows
 {
-public:   LPA_QM_flows(const DiFfRG::JSONValue& json)
+public:   LPA_QM_flows(const DiFfRG::ConfigTree& json)
 ;
 
  void set_k(const double k)

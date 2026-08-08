@@ -1,6 +1,6 @@
 #include "flows.hh"
 
-FourFermiFlowEquations::FourFermiFlowEquations(const JSONValue &json)
+FourFermiFlowEquations::FourFermiFlowEquations(const ConfigTree &json)
     : FlowEquationsFiniteT(
           json, json.get_double("/physical/T"),
           [&](double q2) {

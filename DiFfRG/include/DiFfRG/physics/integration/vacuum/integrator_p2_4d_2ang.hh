@@ -75,7 +75,7 @@ namespace DiFfRG
      */
     using execution_space = ExecutionSpace;
 
-    Integrator_p2_4D_2ang(QuadratureProvider &quadrature_provider, const JSONValue &json)
+    Integrator_p2_4D_2ang(QuadratureProvider &quadrature_provider, const ConfigTree &json)
       requires provides_regulator<KERNEL>
         : Integrator_p2_4D_2ang(quadrature_provider,
                                 internal::make_int_grid<3, NT>(json, {"x_order", "cos1_order", "cos2_order"}),

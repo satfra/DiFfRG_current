@@ -210,7 +210,7 @@ namespace DiFfRG
     quadrature_storage.set_verbosity(verbosity);
   }
 
-  QuadratureProvider::QuadratureProvider(const JSONValue &json, LogPort log)
+  QuadratureProvider::QuadratureProvider(const ConfigTree &json, LogPort log)
   {
     if (!DiFfRG::Init::is_initialized()) throw std::runtime_error("QuadratureProvider: DiFfRG is not initialized.");
 

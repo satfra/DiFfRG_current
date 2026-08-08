@@ -14,7 +14,7 @@ namespace DiFfRG
     {
     public:
       ZA_integrator(QuadratureProvider &quadrature_provider, std::array<uint, 2> grid_sizes, const double x_extent,
-                    const JSONValue &json);
+                    const ConfigTree &json);
       ZA_integrator(const ZA_integrator &other);
       ~ZA_integrator();
 
@@ -69,7 +69,7 @@ namespace DiFfRG
       std::array<uint, 2> jac_grid_sizes;
       const double x_extent;
       const double jacobian_quadrature_factor;
-      const JSONValue json;
+      const ConfigTree json;
 
       std::unique_ptr<DiFfRG::IntegratorAngleGPU<4, double, ZA_kernel<__REGULATOR__>>> integrator;
     };

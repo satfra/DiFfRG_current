@@ -146,7 +146,7 @@ class MyModel : public def::AbstractModel<MyModel, Components>,
                 ...
 {
 public:
-  MyModel(const JSONValue& json) : def::fRG(json), prm(json) {}
+  MyModel(const ConfigTree& json) : def::fRG(json), prm(json) {}
 
   template <int dim, typename NumberType, typename Vector, typename Vector_dot>
   void mass(std::array<NumberType, Components::count_fe_functions()> &m_i, const Point<dim> &x, const Vector &u, const Vector_dot &u_dot) const
@@ -442,7 +442,8 @@ int main(int argc, char *argv[])
 ```
 
 Every object is constructed from the parsed `json` configuration, so all parameters
-(grid, FE order, tolerances, output, physics) are read from `parameter.json`. The
+(grid, FE order, tolerances, output, physics) are read from `parameter.json` (or
+`parameter.toml`; see [Project Structure](structure.md)). The
 timestepper is the SUNDIALS IDA solver, which is the recommended solver for most cases.
 If you use a discontinuous Galerkin discretization (`DG`/`dDG`/`LDG`) it is also
 necessary to supply a numerical flux, which can be done by modifying the numerical model

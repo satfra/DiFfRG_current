@@ -1,7 +1,7 @@
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 
-#include "DiFfRG/common/json.hh"
+#include "DiFfRG/common/config_tree.hh"
 #include "DiFfRG/discretization/FV/discretization.hh"
 #include "DiFfRG/discretization/mesh/rectangular_mesh.hh"
 #include "DiFfRG/model/model.hh"
@@ -43,11 +43,11 @@ TEST_CASE("FV FlowingVariables stores cell averages", "[FV][data]")
 {
   ensure_logger();
 
-  JSONValue json =
+  ConfigTree json =
       json::value({{"physical", {}},
                    {"discretization",
                     {{"fe_order", 0},
-                     {"threads", 1},
+                     {"mesh_workers", 1},
                      {"batch_size", 8},
                      {"overintegration", 0},
                      {"output_subdivisions", 1},
