@@ -94,7 +94,7 @@ namespace DiFfRG
   {
   public:
     RunLogger() = default;
-    RunLogger(const OutputPath &path, const OutputSettings &settings, bool active);
+    RunLogger(const OutputPath &path, const Config::OutputSettings &settings, bool active);
     ~RunLogger() noexcept;
 
     RunLogger(const RunLogger &) = delete;

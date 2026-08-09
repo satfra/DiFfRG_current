@@ -144,7 +144,7 @@ Note that the TimeStepper takes an additional argument, where we can choose the 
   Model model(json);
   RectangularMesh<dim> mesh(json);
   OutputPath output_path(json);
-  OutputSession<dim, VectorType> output(output_path, OutputSettings(json));
+  OutputSession<dim, VectorType> output(output_path, Config::OutputSettings(json));
   const auto log = output.log_port();
   Discretization discretization(mesh, json, log);
   Assembler assembler(discretization, model, json, log);
@@ -330,6 +330,10 @@ These sections are just the parameters we also use in the numerical model, i.e. 
 
     "EoM_abs_tol": 1e-10,
     "EoM_max_iter": 100,
+    "EoM_smoothing_length": -1,
+    "EoM_bound_tolerance": 1e-12,
+    "EoM_armijo_coefficient": 1e-4,
+    "EoM_max_backtracks": 20,
 
     "grid": {
       "x_grid": "0:1e-2:1",
@@ -345,8 +349,15 @@ The discretization section configures the FEM setup of our simulation:
 - `batch_size` the mesh workers get batches of `batch_size` cells which they sequentially process. Playing around with `mesh_workers` and `batch_size` may give a small performance boost, but keeping `mesh_workers` around the number of physical cores and `batch_size` around 32-64 should be sufficient for almost optimal performance.
 - `overintegration` can be used to increase the order of the quadratures used in assembly when constructing the [weak form](https://en.wikipedia.org/wiki/Weak_formulation) of the PDE. It is seldom necessary to increase beyond 0.
 - `output_subdivisions` gives the precision with which the grids in the output data are written. This goes exponentially, so don't choose it too high.
-- `EoM_abs_tol` sets the absolute precision within which a specified equation of motion is solved. DiFfRG can be instructed to solve the EoM at every timestep and perform additional computations at this point.
-- `EoM_max_iter` sets the number of bisections used in determining the position of the EoM.
+- `EoM_abs_tol` sets the projected equation-of-motion/potential-gradient tolerance used to refine the EoM position within a cell. DiFfRG can be instructed to solve the EoM at every timestep and perform additional computations at this point.
+- `EoM_max_iter` sets the maximum number of in-cell minimizer iterations used in determining the position of the EoM.
+- `EoM_smoothing_length` controls damping of normal-gradient jumps in the reconstructed CG2 potential. A value of `-1` captures twice the smallest initial face-normal cell width as a fixed physical smoothing length, `0` disables smoothing, and a positive value sets the physical length explicitly. On a uniform mesh, the effective smoothing range in cells is approximately `EoM_smoothing_length / h`; a fixed physical length therefore spans more cells after refinement.
+- `EoM_bound_tolerance` determines when a reference-cell coordinate is treated as lying on an active lower or upper bound.
+- `EoM_armijo_coefficient` is the sufficient-decrease coefficient used by the Newton line search and must lie strictly between zero and one.
+- `EoM_max_backtracks` limits the number of line-search step halvings and must be positive.
+
+These three values are collected in `Config::EoMConfig`. JSON is the application-boundary adapter; the EoM reconstruction and assemblers consume the typed configuration. This mirrors `Config::ConfigurationMesh` and lets a future application-level configuration object forward only its EoM settings.
+
 - `x_grid` this works in a python-like slice syntax and sets the  used in a `RectangularMesh`. The parameter also supports locally different cell sizes: "0:1e-4:1e-2, 1e-2:1e-3:1" creates 100 cells between 0 and 1e-2, and 100 cells between 1e-2 and 1.
 - `y_grid` and `z_grid` work identically, but are only used in 2D / 3D simulations.
 - `refine` can be used to quickly increase the cell count by $2^\textrm{refine}$.

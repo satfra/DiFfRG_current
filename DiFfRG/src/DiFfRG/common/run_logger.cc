@@ -59,7 +59,7 @@ namespace DiFfRG
     std::thread worker;
   };
 
-  RunLogger::RunLogger(const OutputPath &path, const OutputSettings &settings, const bool active)
+  RunLogger::RunLogger(const OutputPath &path, const Config::OutputSettings &settings, const bool active)
   {
     if (!active) return;
 

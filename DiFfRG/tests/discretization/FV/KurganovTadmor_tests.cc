@@ -698,9 +698,8 @@ TEST_CASE("KT diffusion flux averages nonlinear side fluxes", "[FV][KT][diffusio
   grad_minus[0][1] = 0.5;
   grad_plus[0][1] = 1.0;
 
-  const auto D = compute_diffusion_flux<NonlinearDiffusionProbeModel, double, 2, 1>(u_minus, u_plus, grad_minus,
-                                                                                    grad_plus, third_minus, third_plus,
-                                                                                    Point<2>(), model);
+  const auto D = compute_diffusion_flux<NonlinearDiffusionProbeModel, double, 2, 1>(
+      u_minus, u_plus, grad_minus, grad_plus, third_minus, third_plus, Point<2>(), model);
   CHECK(D[0][0] == Catch::Approx(0.625).margin(1.0e-14));
 
   const auto J = compute_diffusion_flux_jacobian<NonlinearDiffusionProbeModel, double, 2, 1>(
@@ -814,19 +813,37 @@ TEST_CASE("KT 1D FV readouts use EoM potential reconstruction and write a time s
   const auto potential_pvd = output_dir / (output_name + "_potential.pvd");
   const auto potential_vtu_0 = output_dir / "output" / (output_name + "_potential_000000.vtu");
   const auto potential_vtu_1 = output_dir / "output" / (output_name + "_potential_000001.vtu");
+  const auto eom_potential_pvd = output_dir / (output_name + "_eom_potential.pvd");
+  const auto eom_potential_vtu_0 = output_dir / "output" / (output_name + "_eom_potential_000000.vtu");
+  const auto eom_potential_vtu_1 = output_dir / "output" / (output_name + "_eom_potential_000001.vtu");
 
   REQUIRE(std::filesystem::exists(main_pvd));
   REQUIRE(std::filesystem::exists(potential_pvd));
   REQUIRE(std::filesystem::exists(potential_vtu_0));
   REQUIRE(std::filesystem::exists(potential_vtu_1));
+  REQUIRE(std::filesystem::exists(eom_potential_pvd));
+  REQUIRE(std::filesystem::exists(eom_potential_vtu_0));
+  REQUIRE(std::filesystem::exists(eom_potential_vtu_1));
 
   const auto pvd_contents = read_text_file(potential_pvd);
   CHECK(pvd_contents.find("timestep=\"0.25\"") != std::string::npos);
   CHECK(pvd_contents.find("timestep=\"0.5\"") != std::string::npos);
   CHECK(pvd_contents.find("kt_eom_potential_000000.vtu") != std::string::npos);
   CHECK(pvd_contents.find("kt_eom_potential_000001.vtu") != std::string::npos);
-  CHECK(read_text_file(potential_vtu_0).find("Name=\"potential\"") != std::string::npos);
-  CHECK(read_text_file(potential_vtu_1).find("Name=\"potential\"") != std::string::npos);
+  const auto potential_vtu_0_contents = read_text_file(potential_vtu_0);
+  const auto potential_vtu_1_contents = read_text_file(potential_vtu_1);
+  CHECK(potential_vtu_0_contents.find("Name=\"potential\"") != std::string::npos);
+  CHECK(potential_vtu_1_contents.find("Name=\"potential\"") != std::string::npos);
+  CHECK(potential_vtu_0_contents.find("potential_hessian") == std::string::npos);
+  CHECK(potential_vtu_1_contents.find("potential_hessian") == std::string::npos);
+
+  const auto eom_pvd_contents = read_text_file(eom_potential_pvd);
+  CHECK(eom_pvd_contents.find("timestep=\"0.25\"") != std::string::npos);
+  CHECK(eom_pvd_contents.find("timestep=\"0.5\"") != std::string::npos);
+  CHECK(eom_pvd_contents.find("kt_eom_eom_potential_000000.vtu") != std::string::npos);
+  CHECK(eom_pvd_contents.find("kt_eom_eom_potential_000001.vtu") != std::string::npos);
+  CHECK(read_text_file(eom_potential_vtu_0).find("Name=\"eom_potential\"") != std::string::npos);
+  CHECK(read_text_file(eom_potential_vtu_1).find("Name=\"eom_potential\"") != std::string::npos);
 }
 
 TEST_CASE("KT reconstruction cache recomputes cell stencil values per solution", "[FV][KT][cache]")
