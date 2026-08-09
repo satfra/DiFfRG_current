@@ -15,6 +15,7 @@
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_tools.h>
 #include <deal.II/fe/fe_values.h>
+#include <deal.II/grid/grid_tools.h>
 #include <deal.II/grid/tria_iterator_base.h>
 #include <deal.II/lac/full_matrix.h>
 #include <deal.II/lac/sparse_matrix.h>
@@ -534,6 +535,7 @@ namespace DiFfRG
         static constexpr uint n_faces = GeometryInfo<dim>::faces_per_cell;
         // using CacheData = internal::Cache_Data<NumberType, dim, n_components>;
         using GradientType = internal::GradientType<dim, NumberType, n_components>;
+        using ThirdDerivativeType = internal::ThirdDerivativeType<dim, NumberType, n_components>;
         using Iterator = typename DoFHandler<Discretization::dim>::active_cell_iterator;
         using Point = dealii::Point<dim>;
         using Scratch = internal::ScratchData<dim, NumberType, n_components>;
@@ -576,7 +578,8 @@ namespace DiFfRG
               EoM_abs_tol(config.get_double("/discretization/EoM_abs_tol", 1e-12)),
               EoM_max_iter(config.get_uint("/discretization/EoM_max_iter", 100)),
               quadrature(1 + config.get_uint("/discretization/overintegration", 0)),
-              quadrature_face(1 + config.get_uint("/discretization/overintegration", 0))
+              quadrature_face(1 + config.get_uint("/discretization/overintegration", 0)),
+              diagnose_flux_conditioning(config.get_bool("/discretization/diagnose_flux_conditioning", false))
         {
           if (this->mesh_workers == 0) this->mesh_workers = std::max(1u, dealii::MultithreadInfo::n_threads() / 2);
           log_port.info("FV: Using {} mesh workers for assembly.", mesh_workers);
@@ -1272,6 +1275,111 @@ namespace DiFfRG
                                                                                              cell_stencil, x_q, model);
         }
 
+        /**
+         * @brief One-shot conditioning check on the model's diffusion flux.
+         *
+         * The FV residual differences the diffusion flux between a cell's faces. Any part of
+         * the flux that does *not* depend on the gradient therefore cancels analytically —
+         * but not in floating point, where it leaves its round-off, |F|·eps, behind. When that
+         * gradient-independent baseline dwarfs the gradient-dependent part, the residual loses
+         * the corresponding number of digits, and an implicit solver asked for a tight
+         * tolerance will grind its step size down trying to resolve pure noise.
+         *
+         * This is the standard failure mode for fRG loop integrals at large RG scale: a flux
+         * c·k^n·g(k² + ∂u) carries an O(k^(n-1)) baseline, so the relative noise is ~eps·k²/Δ(∂u)
+         * and blows up as the UV cutoff grows.
+         *
+         * The fix belongs in the model, not here: return the flux with its zero-gradient value
+         * already subtracted, F - F|_{∂u = 0}, written in a cancellation-free form. Subtracting
+         * a gradient-independent constant leaves the residual unchanged (a constant flux has
+         * zero divergence and cancels on the ghost side of boundary faces too).
+         */
+        void probe_diffusion_flux_conditioning(const SolutionReconstructionCache &reconstruction_cache) const
+        {
+          // Probe the MODEL, not the current data. Using the solution's actual gradient fails
+          // whenever the flow starts from flat initial data: the local variation is then ~0 and
+          // every flux looks baseline-dominated. Instead perturb the gradient by a synthetic
+          // scale built from the solution magnitude and the domain size, which is what the
+          // gradient will grow to once the flow develops.
+          std::array<dealii::Tensor<1, dim, NumberType>, n_components> D_actual{};
+          std::array<dealii::Tensor<1, dim, NumberType>, n_components> D_baseline{};
+          const ThirdDerivativeType zero_third{};
+          const GradientType zero_grad{};
+
+          const double domain_size = std::max(GridTools::diameter(triangulation), 1e-300);
+          std::array<double, n_components> max_baseline{};
+          std::array<double, n_components> max_variation{};
+          double u_scale = 0.0;
+          unsigned int sampled = 0;
+
+          // First pass: the scale of the solution itself.
+          for (const auto &cell : dof_handler.active_cell_iterators()) {
+            if (sampled >= flux_conditioning_max_samples) break;
+            for (unsigned int f = 0; f < n_faces; ++f) {
+              if (cell->at_boundary(f)) continue;
+              const auto &reconstruction = get_cached_face_reconstruction(reconstruction_cache, cell, f);
+              for (size_t c = 0; c < n_components; ++c)
+                u_scale = std::max(u_scale, std::abs(static_cast<double>(reconstruction.diffusion_u_minus[c])));
+              ++sampled;
+              break;
+            }
+          }
+
+          // A unit fallback keeps the probe meaningful for a flow starting from u == 0.
+          const NumberType probe_gradient = static_cast<NumberType>(std::max(u_scale, 1.0) / domain_size);
+          GradientType probe_grad{};
+          for (size_t c = 0; c < n_components; ++c)
+            for (int d = 0; d < dim; ++d)
+              probe_grad[c][d] = probe_gradient;
+
+          sampled = 0;
+          for (const auto &cell : dof_handler.active_cell_iterators()) {
+            if (sampled >= flux_conditioning_max_samples) break;
+            for (unsigned int f = 0; f < n_faces; ++f) {
+              if (cell->at_boundary(f)) continue;
+              const auto x_q = cell->face(f)->center();
+              const auto &reconstruction = get_cached_face_reconstruction(reconstruction_cache, cell, f);
+              model.diffusion_flux(
+                  D_actual, x_q,
+                  internal::diffusion_flux_tie(reconstruction.diffusion_u_minus, probe_grad, zero_third));
+              model.diffusion_flux(
+                  D_baseline, x_q,
+                  internal::diffusion_flux_tie(reconstruction.diffusion_u_minus, zero_grad, zero_third));
+              for (size_t c = 0; c < n_components; ++c) {
+                max_baseline[c] = std::max(max_baseline[c], static_cast<double>(D_baseline[c].norm()));
+                max_variation[c] =
+                    std::max(max_variation[c], static_cast<double>((D_actual[c] - D_baseline[c]).norm()));
+              }
+              ++sampled;
+              break; // one face per cell is plenty
+            }
+          }
+
+          for (size_t c = 0; c < n_components; ++c) {
+            if (!(max_variation[c] > 0.0) || !std::isfinite(max_baseline[c])) continue;
+
+            const double relative_noise =
+                max_baseline[c] / max_variation[c] * std::numeric_limits<NumberType>::epsilon();
+            if (relative_noise <= flux_conditioning_warn_threshold) continue;
+
+            const auto message = spdlog::fmt_lib::format(
+                "FV/KT: the diffusion flux of component {} is dominated by a gradient-independent baseline: "
+                "max |F(du=0)| = {:.3e} over the mesh, but max |F - F(du=0)| = only {:.3e}. Differencing it "
+                "across faces leaves a relative round-off of {:.1e} in the residual, which caps the accuracy any "
+                "implicit solver can reach (and will crush its step size if the tolerance is tighter). Subtract "
+                "the zero-gradient value analytically inside diffusion_flux().",
+                c, max_baseline[c], max_variation[c], relative_noise);
+
+            // Deliberately not silenceable by an unattached LogPort: this only fires when the
+            // model is measurably losing digits, and it is precisely the kind of thing that
+            // must not disappear in a run that did not wire up a logger.
+            if (log_port)
+              log_port.warn("{}", message);
+            else
+              spdlog::warn("{}", message);
+          }
+        }
+
         void fill_constant_quadrature_values(const Iterator &cell, const VectorType &solution_global,
                                              const VectorType &solution_global_dot, Scratch &scratch_data) const
         {
@@ -1346,6 +1454,14 @@ namespace DiFfRG
           const auto &reconstruction_cache = residual_reconstruction_cache;
           const auto assembly_context = make_assembly_context_view(reconstruction_cache);
           run_fv_kt_pre_assembly_hook(AssemblyStage::residual, assembly_context);
+
+          // Runs on the first residual assembly only, outside the mesh loop, so it costs
+          // nothing on the hot path. The first assembly is also the most informative sample:
+          // for an fRG flow it happens at k = Lambda, where a flux baseline is largest.
+          if (diagnose_flux_conditioning && !flux_conditioning_probed) {
+            flux_conditioning_probed = true;
+            probe_diffusion_flux_conditioning(reconstruction_cache);
+          }
 
           const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
             const auto &cell_geometry = get_cell_topology(cell);
@@ -2259,6 +2375,21 @@ namespace DiFfRG
         std::vector<FaceReconstructionDescriptor> face_reconstruction_descriptors;
         SolutionReconstructionCache residual_reconstruction_cache;
         SolutionReconstructionCache jacobian_reconstruction_cache;
+
+        // Warn once per assembler when round-off from a gradient-independent flux baseline
+        // exceeds this fraction of the physical flux variation; see
+        // probe_diffusion_flux_conditioning(). 1e-9 sits comfortably below the tolerances any
+        // fRG flow is run at, so a warning always means real digits are being lost.
+        static constexpr double flux_conditioning_warn_threshold = 1e-9;
+        static constexpr unsigned int flux_conditioning_max_samples = 512;
+        // Opt-in ("/discretization/diagnose_flux_conditioning"). The baseline/variation ratio
+        // is a sound measure of digits lost in the flux difference, but on its own it cannot
+        // tell a harmful case from a harmless one: a model may be baseline-dominated in the
+        // deep UV while its diffusion term is still irrelevant to the flow, and pay nothing
+        // for it. Enable this when a KT flow is inexplicably slow or stalls at tight
+        // tolerances, and read the ratio as "digits available in the diffusion residual".
+        const bool diagnose_flux_conditioning;
+        mutable bool flux_conditioning_probed = false;
       };
     } // namespace KurganovTadmor
   } // namespace FV

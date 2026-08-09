@@ -291,17 +291,39 @@ namespace
       static_assert(n_fe_functions == 1, "GrossNeveuKTModel expects a single FE function.");
 
       const auto &fe_derivatives = get<1>(sol);
-      const FluxNumberType eb_argument = FluxNumberType(k2) + fe_derivatives[0][0];
+      const FluxNumberType m2_sigma = fe_derivatives[0][0];
 
       using std::sqrt;
 
-      const FluxNumberType E_b = sqrt(eb_argument);
-      const FluxNumberType thermal_factor =
-          flow_case.temperature == 0.0 ? FluxNumberType(1.0) : cothS(E_b, flow_case.temperature);
+      const FluxNumberType E_b = sqrt(FluxNumberType(k2) + m2_sigma);
+
+      // The physical flux is (k³/2) coth(E_b/2T) / E_b with E_b = sqrt(k² + ∂_σ u). Only its
+      // σ-derivative enters the residual, so we may subtract the σ-independent value at
+      // ∂_σ u = 0 (E_b = k). Doing that *analytically* is essential: the unsubtracted flux
+      // carries an O(k²/N) baseline (≈8·10⁸ at k = Λ = 1e5, N = 2) whose round-off,
+      // |F|·ε ≈ 2·10⁻⁷, swamps the O(10⁻⁴) physical flux difference between neighbouring
+      // faces. That noise floor is ~10⁶× above the IDA tolerances (1e-10) in the UV and is
+      // what forces the solver into tiny steps until k drops to ~1e4. Subtracting the
+      // baseline is exact for the residual (a constant flux has zero divergence, and it
+      // cancels on the ghost side of every boundary face too) and restores full precision.
+      //
+      //   1/E_b - 1/k     = -∂_σ u / (k E_b (k + E_b))        [written cancellation-free]
+      //   coth(E/2T) / E  = 1/E + (coth(E/2T) - 1) / E,  with coth(E/2T) - 1 = 2 n_B(E)
+      //
+      // The thermal remainder needs no special care: wherever the baseline is large
+      // (k >> T) coth(E/2T) is exactly 1.0 in double precision, so the remainder is
+      // exactly zero, and by the time it turns on, k — and with it the k³/2 prefactor —
+      // is small enough that its round-off is irrelevant.
+      const FluxNumberType vacuum_part = -m2_sigma / (FluxNumberType(k) * E_b * (FluxNumberType(k) + E_b));
+      FluxNumberType thermal_part(0.0);
+      if (flow_case.temperature > 0.0)
+        thermal_part = (cothS(E_b, flow_case.temperature) - 1.0) / E_b -
+                       FluxNumberType((cothS(k, flow_case.temperature) - 1.0) / k);
 
       // KT residual sums the fluxes: (H + D)·n, so the diffusion flux is the physical
       // flux with the same sign as the advection flux (conservation-law / CG convention).
-      F_i[0][0] = FluxNumberType(1.0 / (pi * flow_case.n_flavors)) * FluxNumberType(k3 / 2.0) * thermal_factor / E_b;
+      F_i[0][0] =
+          FluxNumberType(1.0 / (pi * flow_case.n_flavors)) * FluxNumberType(k3 / 2.0) * (vacuum_part + thermal_part);
     }
   };
 
