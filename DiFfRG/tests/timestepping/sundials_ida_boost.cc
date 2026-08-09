@@ -4,8 +4,12 @@
 #include <boilerplate/models.hh>
 
 #include "DiFfRG/discretization/mesh/h_adaptivity.hh"
+#include <algorithm>
+#include <fstream>
+#include <limits>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
+#include <sstream>
 
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/discretization.hh>
@@ -41,7 +45,7 @@ using namespace DiFfRG;
 template <typename Model, typename TimeStepper>
 bool run_hybrid(const std::string &test_name, double expected_precision, double cur_dt = 1e-3, double final_time = 1.0,
                 double output_dt = 5e-2, double impl_max_dt = 1e-1, double impl_rel_tol = 1e-6, int coupling_mode = 0,
-                double expl_max_dt = 1e-2)
+                double expl_max_dt = 1e-2, double expected_stepper_kind = std::numeric_limits<double>::quiet_NaN())
 {
   using namespace dealii;
   constexpr uint dim = 1;
@@ -114,6 +118,37 @@ bool run_hybrid(const std::string &test_name, double expected_precision, double 
   model.set_time(final_time);
   bool valid = true;
 
+  if (std::isfinite(expected_stepper_kind)) {
+    const auto table_path = data_out_path.root() / (data_out_path.run_name() + "_jacobian_diagnostics.csv");
+    std::ifstream table(table_path);
+    std::string header_line, data_line;
+    valid &= static_cast<bool>(std::getline(table, header_line));
+    valid &= static_cast<bool>(std::getline(table, data_line));
+
+    std::vector<std::string> columns;
+    std::istringstream header(header_line);
+    for (std::string column; std::getline(header, column, ',');)
+      columns.push_back(column);
+    const auto kind = std::find(columns.begin(), columns.end(), "stepper_kind");
+    const auto stage = std::find(columns.begin(), columns.end(), "stage");
+    valid &= kind != columns.end() && stage != columns.end();
+    if (kind != columns.end() && stage != columns.end()) {
+      const auto kind_index = static_cast<std::size_t>(std::distance(columns.begin(), kind));
+      const auto stage_index = static_cast<std::size_t>(std::distance(columns.begin(), stage));
+      do {
+        std::vector<double> values;
+        std::istringstream row(data_line);
+        for (std::string value; std::getline(row, value, ',');)
+          values.push_back(std::stod(value));
+        valid &= values.size() == columns.size();
+        if (values.size() == columns.size()) {
+          valid &= values[kind_index] == expected_stepper_kind;
+          valid &= values[stage_index] == static_cast<double>(ImplicitTimestepperStage::main);
+        }
+      } while (std::getline(table, data_line));
+    }
+  }
+
   // block 0: FEM solution
   const auto &support_points = discretization.get_support_points();
   for (uint i = 0; i < support_points.size(); ++i) {
@@ -147,7 +182,8 @@ TEST_CASE("Test SUNDIALS IDA + Boost ABM hybrid stepper", "[timestepping][sundia
   using VectorType = dealii::Vector<double>;
   using SparseMatrixType = dealii::SparseMatrix<double>;
   using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<VectorType, SparseMatrixType, 1, UMFPack>;
-  REQUIRE(run_hybrid<Model, TimeStepper>("test_sundials_ida_boost_abm", 1e-3));
+  REQUIRE(run_hybrid<Model, TimeStepper>("test_sundials_ida_boost_abm", 1e-3, 1e-3, 1., 5e-2, 1e-1, 1e-6, 0, 1e-2,
+                                         static_cast<double>(ImplicitTimestepperKind::ida_boost_abm)));
 }
 
 TEST_CASE("Test SUNDIALS IDA + Boost RK hybrid stepper", "[timestepping][sundials_ida_boost][rk]")
@@ -156,7 +192,8 @@ TEST_CASE("Test SUNDIALS IDA + Boost RK hybrid stepper", "[timestepping][sundial
   using VectorType = dealii::Vector<double>;
   using SparseMatrixType = dealii::SparseMatrix<double>;
   using TimeStepper = TimeStepperSUNDIALS_IDA_BoostRK<VectorType, SparseMatrixType, 1, UMFPack, 0>;
-  REQUIRE(run_hybrid<Model, TimeStepper>("test_sundials_ida_boost_rk", 1e-3));
+  REQUIRE(run_hybrid<Model, TimeStepper>("test_sundials_ida_boost_rk", 1e-3, 1e-3, 1., 5e-2, 1e-1, 1e-6, 0, 1e-2,
+                                         static_cast<double>(ImplicitTimestepperKind::ida_boost_rk)));
 }
 
 //--------------------------------------------

@@ -64,6 +64,7 @@ namespace DiFfRG
     // shared jacobian matrix and linear solver (TR and BDF2 stages are sequential, never simultaneous)
     SparseMatrixType jacobian(assembler->get_sparsity_pattern_jacobian());
     LinearSolver<SparseMatrixType, VectorType> linSolver;
+    const DiagnosticPort jacobian_diagnostic_port = data_out ? data_out->diagnostic_port() : DiagnosticPort{};
 
     // all functions for assembly of the problem and linear solving
     newton_TR.residual = [&](VectorType &res, const VectorType &u) {
@@ -80,15 +81,40 @@ namespace DiFfRG
     newton_TR.update_jacobian = [&](const VectorType &u) {
       const auto t = tc.get_t();
       const auto dt = tc.get_dt();
-      jacobian = 0;
+      const double residual_weight = gamma * dt / 2.;
+      const auto build_diagnostics = this->jacobian_diagnostics_state.make_build(
+          this->next_jacobian_build_id++, ImplicitTimestepperKind::trbdf2, ImplicitTimestepperStage::trapezoidal, dt,
+          1., 1., residual_weight);
+      JacobianMatrixDiagnostics matrix_diagnostics;
+      matrix_diagnostics.n_rows = jacobian.m();
+      JacobianFactorizationDiagnostics factorization_diagnostics;
+      bool diagnostics_recorded = false;
+      const auto record_diagnostics = [&]() {
+        if (diagnostics_recorded) return;
+        diagnostics_recorded = true;
+        record_jacobian_diagnostics(jacobian_diagnostic_port, "jacobian_diagnostics.csv", t + dt * gamma,
+                                    build_diagnostics, matrix_diagnostics, factorization_diagnostics);
+      };
 
-      assembler->set_time(t + dt * gamma);
-      assembler->jacobian(jacobian, u, gamma * dt / 2., 1.);
+      try {
+        jacobian = 0;
 
-      if (verbosity > 0) std::cout << "jacobian TR: " << std::endl;
+        assembler->set_time(t + dt * gamma);
+        assembler->jacobian(jacobian, u, residual_weight, 1.);
+        matrix_diagnostics = analyze_jacobian_matrix(jacobian);
 
-      linSolver.init(jacobian);
-      linSolver.invert();
+        if (verbosity > 0) std::cout << "jacobian TR: " << std::endl;
+
+        linSolver.init(jacobian);
+        factorize_with_diagnostics(linSolver, jacobian, factorization_diagnostics);
+        record_diagnostics();
+      } catch (...) {
+        if constexpr (decltype(linSolver)::performs_factorization)
+          if (std::isnan(factorization_diagnostics.factorization_success))
+            factorization_diagnostics.factorization_success = 0.;
+        record_diagnostics();
+        throw;
+      }
     };
     newton_TR.lin_solve = [&](VectorType &Du, const VectorType &res) {
       linSolver.solve(res, Du, std::min(impl.abs_tol, impl.rel_tol * res.l2_norm()));
@@ -112,15 +138,41 @@ namespace DiFfRG
     newton_BDF2.update_jacobian = [&](const VectorType &u) {
       const auto t = tc.get_t();
       const auto dt = tc.get_dt();
-      jacobian = 0;
+      const double mass_weight = 2. - gamma;
+      const double residual_weight = (1. - gamma) * dt;
+      const auto build_diagnostics = this->jacobian_diagnostics_state.make_build(
+          this->next_jacobian_build_id++, ImplicitTimestepperKind::trbdf2, ImplicitTimestepperStage::bdf2, dt,
+          mass_weight, mass_weight, residual_weight);
+      JacobianMatrixDiagnostics matrix_diagnostics;
+      matrix_diagnostics.n_rows = jacobian.m();
+      JacobianFactorizationDiagnostics factorization_diagnostics;
+      bool diagnostics_recorded = false;
+      const auto record_diagnostics = [&]() {
+        if (diagnostics_recorded) return;
+        diagnostics_recorded = true;
+        record_jacobian_diagnostics(jacobian_diagnostic_port, "jacobian_diagnostics.csv", t + dt, build_diagnostics,
+                                    matrix_diagnostics, factorization_diagnostics);
+      };
 
-      assembler->set_time(t + dt);
-      assembler->jacobian(jacobian, u, (1. - gamma) * dt, (2. - gamma));
+      try {
+        jacobian = 0;
 
-      if (verbosity > 0) std::cout << "jacobian BDF2: " << std::endl;
+        assembler->set_time(t + dt);
+        assembler->jacobian(jacobian, u, residual_weight, mass_weight);
+        matrix_diagnostics = analyze_jacobian_matrix(jacobian);
 
-      linSolver.init(jacobian);
-      linSolver.invert();
+        if (verbosity > 0) std::cout << "jacobian BDF2: " << std::endl;
+
+        linSolver.init(jacobian);
+        factorize_with_diagnostics(linSolver, jacobian, factorization_diagnostics);
+        record_diagnostics();
+      } catch (...) {
+        if constexpr (decltype(linSolver)::performs_factorization)
+          if (std::isnan(factorization_diagnostics.factorization_success))
+            factorization_diagnostics.factorization_success = 0.;
+        record_diagnostics();
+        throw;
+      }
     };
     newton_BDF2.lin_solve = [&](VectorType &Du, const VectorType &res) {
       linSolver.solve(res, Du, std::min(impl.abs_tol, impl.rel_tol * res.l2_norm()));
@@ -151,7 +203,10 @@ namespace DiFfRG
         newton_BDF2.reinit(u_n);
       }
       if (verbosity > 0) std::cout << "t = " << tc.get_t() << std::endl;
+      const double t_before_attempt = tc.get_t();
+      const double attempted_h = tc.get_dt();
       tc.advance(dt_step, save_data);
+      this->jacobian_diagnostics_state.finish_attempt(tc.get_t() > t_before_attempt, attempted_h);
     }
 
     initial_condition->spatial_data() = u_n;

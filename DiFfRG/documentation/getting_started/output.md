@@ -58,6 +58,31 @@ The same injection works for a model pre-assembly hook: store a `DiagnosticPort`
 coefficient when the hook computes it. The port is thread-safe and serializes a complete record atomically. It should
 not be used for high-volume field output; add that data to an `OutputFrame` instead.
 
+All implicit time steppers write one record per Jacobian callback to `<run>_jacobian_diagnostics.csv`. Runs with a
+separate dense variable Jacobian also write `<run>_variable_jacobian_diagnostics.csv`; both records use the same
+`jacobian_build_id`. The numeric `stepper_kind` values are `0=IDA`, `1=IDA+Boost RK`, `2=IDA+Boost ABM`, `3=implicit
+Euler`, and `4=TRBDF2`. The `stage` values are `0=main`, `1=TR`, and `2=BDF2`.
+
+For implicit Euler and TRBDF2, `step` counts accepted steps and `retry_index` counts rejected attempts at the same step.
+For IDA, `step` and `ida_step` both contain the native IDA step counter and `retry_index` is `NaN`; `ida_step` is `NaN`
+for other steppers. `current_h` is the attempted step size and `last_h` is the previous accepted step size. `alpha` and
+`beta` are the mass-Jacobian weights from the
+assembler interface, while `residual_weight` is the residual-Jacobian weight. For implicit Euler these are
+`alpha=beta=1` and `residual_weight=h`. For TRBDF2, the TR stage uses `alpha=beta=1` and
+`residual_weight=gamma*h/2`; the BDF2 stage uses `alpha=beta=2-gamma` and
+`residual_weight=(1-gamma)*h`, where `gamma=2-sqrt(2)`.
+
+Each record also contains matrix dimensions, actual nonzero count, entry and matrix norms, diagonal and row/column
+scale measures, and factorization diagnostics. `min_diagonal_dominance` is the minimum of
+`abs(diagonal) / sum(abs(off-diagonal))` over all rows. A diagonal-only nonzero row has infinite dominance, while an
+empty or zero row has zero dominance.
+
+`factorization_ms`, `factorization_success`, and `scaled_rcond_estimate` are populated for UMFPACK-based solvers. The
+condition estimate applies the same maximum-entry row/column equilibration used by `ScaledLinearSolver` and performs
+at most five estimator iterations after numeric factorization. Dense variable Jacobians report inversion time and
+success but leave the condition estimate as `NaN`. Iterative GMRES paths leave all three factorization fields as `NaN`;
+no eigenvalue computation is performed.
+
 JSON is only an adapter for the typed `Config::OutputSettings`. The corresponding JSON settings are:
 
 ```json

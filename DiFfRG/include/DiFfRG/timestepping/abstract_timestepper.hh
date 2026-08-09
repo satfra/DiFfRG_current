@@ -8,6 +8,7 @@
 #include <DiFfRG/discretization/common/abstract_data.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/discretization/mesh/no_adaptivity.hh>
+#include <DiFfRG/timestepping/jacobian_diagnostics.hh>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -405,6 +406,8 @@ namespace DiFfRG
     mutable std::unordered_map<std::string, ConsoleOutStats> console_out_stats_by_category;
     mutable std::unordered_map<std::string, TimesteppingDiagnostics> last_printed_diagnostics_by_category;
     mutable IDAAcceptedStepStats ida_accepted_step_stats;
+    std::size_t next_jacobian_build_id = 0;
+    TimestepperJacobianDiagnosticsState jacobian_diagnostics_state;
 
     static std::string console_out_category(const std::string &name) { return name.substr(0, name.find(" (")); }
 

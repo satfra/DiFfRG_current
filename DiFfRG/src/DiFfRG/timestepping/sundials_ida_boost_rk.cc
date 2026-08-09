@@ -1,11 +1,11 @@
 // external libraries
+#include <algorithm>
 #include <boost/numeric/odeint.hpp>
 #include <boost/numeric/odeint/external/eigen/eigen.hpp>
+#include <cstddef>
 #include <deal.II/base/timer.h>
 #include <deal.II/lac/block_vector.h>
 #include <deal.II/sundials/ida.h>
-#include <algorithm>
-#include <cstddef>
 #include <limits>
 
 // DiFfRG
@@ -53,11 +53,13 @@ namespace DiFfRG
     // sparsity patterns)
     SparseMatrixType spatial_jacobian(assembler->get_sparsity_pattern_jacobian());
     LinearSolver<SparseMatrixType, VectorType> linSolver;
+    const DiagnosticPort jacobian_diagnostic_port = data_out ? data_out->diagnostic_port() : DiagnosticPort{};
     const uint n_FE_dofs = initial_data.block(0).size();
 
     // Create a SUNDIALS IDA object with the right settings for spatial data
     typename SUNDIALS::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
-                                                                impl.max_non_linear_iterations, 0, impl.abs_tol, impl.rel_tol);
+                                                                impl.max_non_linear_iterations, 0, impl.abs_tol,
+                                                                impl.rel_tol);
     typename SUNDIALS::IDA<VectorType> time_stepper(ida_data);
 
     // Initialize initial condition
@@ -96,9 +98,8 @@ namespace DiFfRG
 
       // linearly interpolate the spatial solution across the current segment so the
       // coupling tracks the spatial trajectory instead of being pinned to one endpoint
-      double alpha = (spatial_hi_time > spatial_lo_time)
-                         ? (t - spatial_lo_time) / (spatial_hi_time - spatial_lo_time)
-                         : 1.;
+      double alpha =
+          (spatial_hi_time > spatial_lo_time) ? (t - spatial_lo_time) / (spatial_hi_time - spatial_lo_time) : 1.;
       alpha = std::clamp(alpha, 0., 1.);
       spatial_y_dealii = spatial_lo;
       spatial_y_dealii *= (1. - alpha);
@@ -281,8 +282,7 @@ namespace DiFfRG
         // IDA advanced -> the previous trial at `frontier` was accepted. spatial_hi
         // (saved from the last call at `frontier`) is the converged spatial state
         // there; commit the segment immediately.
-        if (frontier > t_committed && !is_close(frontier, t_committed))
-          commit_segment_to(spatial_hi, frontier);
+        if (frontier > t_committed && !is_close(frontier, t_committed)) commit_segment_to(spatial_hi, frontier);
         frontier = t;
         spatial_hi = spatial_y;
         spatial_hi_time = t;
@@ -315,8 +315,7 @@ namespace DiFfRG
         request_variables(variable_y, spatial_y, t);
         return;
       }
-      if (frontier > t_committed && !is_close(frontier, t_committed))
-        commit_segment_to(spatial_hi, frontier);
+      if (frontier > t_committed && !is_close(frontier, t_committed)) commit_segment_to(spatial_hi, frontier);
       if (t > t_committed && !is_close(t, t_committed)) {
         commit_segment_to(spatial_y, t);
         if (t > frontier) frontier = t;
@@ -427,6 +426,19 @@ namespace DiFfRG
       CalcDtTimer calc_timer;
       if (failure_counter > 200) throw std::runtime_error("timestep failure at jacobian");
 
+      const auto build_diagnostics = make_ida_jacobian_build_diagnostics(time_stepper, this->next_jacobian_build_id++,
+                                                                         alpha, ImplicitTimestepperKind::ida_boost_rk);
+      JacobianMatrixDiagnostics matrix_diagnostics;
+      matrix_diagnostics.n_rows = spatial_jacobian.m();
+      JacobianFactorizationDiagnostics factorization_diagnostics;
+      bool diagnostics_recorded = false;
+      const auto record_diagnostics = [&]() {
+        if (diagnostics_recorded) return;
+        diagnostics_recorded = true;
+        record_jacobian_diagnostics(jacobian_diagnostic_port, "jacobian_diagnostics.csv", t, build_diagnostics,
+                                    matrix_diagnostics, factorization_diagnostics);
+      };
+
       try {
         spatial_jacobian = 0;
         assembler->set_time(t);
@@ -434,16 +446,23 @@ namespace DiFfRG
         console_out(t, "requesting variables", 2, &request_diagnostics);
         request_variables(variable_y, y, t);
         assembler->jacobian(spatial_jacobian, y, 1., y_dot, alpha, 1., variable_y);
+        matrix_diagnostics = analyze_jacobian_matrix(spatial_jacobian);
         linSolver.init(spatial_jacobian);
 
         const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
         console_out(t, "jacobian construction", 2, &current_diagnostics, calc_timer.lap());
 
-        if (linSolver.invert()) {
+        factorize_with_diagnostics(linSolver, spatial_jacobian, factorization_diagnostics);
+        if (factorization_diagnostics.factorization_success == 1.) {
           const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
           console_out(t, "jacobian inversion", 3, &current_diagnostics, calc_timer.lap());
         }
+        record_diagnostics();
       } catch (std::exception &e) {
+        if constexpr (decltype(linSolver)::performs_factorization)
+          if (std::isnan(factorization_diagnostics.factorization_success))
+            factorization_diagnostics.factorization_success = 0.;
+        record_diagnostics();
         callback_diagnostics.jacobian_failures++;
         std::cerr << e.what() << std::endl;
         return ++failure_counter;

@@ -22,7 +22,9 @@ TEST_CASE("Test SUNDIALS IDA with DG constant model", "[timestepping][constant][
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = DG::Assembler<Discretization, Model>;
   using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
-  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_sundials_ida_constant_dg", 1e-9));
+  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_sundials_ida_constant_dg", 1e-9,
+                                                             "jacobian_diagnostics.csv",
+                                                             static_cast<double>(ImplicitTimestepperKind::ida), {0.}));
 }
 TEST_CASE("Test SUNDIALS IDA with DG exponential model", "[timestepping][exponential][sundials_ida][dg]")
 {

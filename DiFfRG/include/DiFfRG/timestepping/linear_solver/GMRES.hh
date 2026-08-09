@@ -17,6 +17,8 @@ namespace DiFfRG
   class GMRES : public AbstractLinearSolver<SparseMatrixType, VectorType>
   {
   public:
+    static constexpr bool performs_factorization = false;
+
     GMRES() : matrix(nullptr) {}
 
     void init(const SparseMatrixType &matrix)

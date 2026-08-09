@@ -10,9 +10,9 @@
 #include <deal.II/lac/precondition.h>
 
 // DiFfRG
-#include <DiFfRG/timestepping/linear_solver/abstract_linear_solver.hh>
 #include <DiFfRG/timestepping/linear_solver/GMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/UMFPack.hh>
+#include <DiFfRG/timestepping/linear_solver/abstract_linear_solver.hh>
 
 namespace DiFfRG
 {
@@ -21,6 +21,8 @@ namespace DiFfRG
   class ScaledLinearSolver : public AbstractLinearSolver<SparseMatrixType, VectorType>
   {
   public:
+    static constexpr bool performs_factorization = InnerSolver::performs_factorization;
+
     ScaledLinearSolver() = default;
 
     void init(const SparseMatrixType &matrix)
@@ -58,6 +60,12 @@ namespace DiFfRG
         dst[i] = col_scale[i] * scaled_dst[i];
 
       return solver_result;
+    }
+
+    double estimate_scaled_rcond(const SparseMatrixType &, const unsigned int max_iterations = 5) const
+      requires(InnerSolver::performs_factorization)
+    {
+      return inner_solver.estimate_rcond(scaled_matrix, max_iterations);
     }
 
   private:
@@ -101,8 +109,7 @@ namespace DiFfRG
     InnerSolver inner_solver;
   };
 
-  template <typename SparseMatrixType, typename VectorType,
-            typename PreconditionerType = dealii::PreconditionIdentity>
+  template <typename SparseMatrixType, typename VectorType, typename PreconditionerType = dealii::PreconditionIdentity>
   using ScaledGMRES =
       ScaledLinearSolver<SparseMatrixType, VectorType, GMRES<SparseMatrixType, VectorType, PreconditionerType>>;
 

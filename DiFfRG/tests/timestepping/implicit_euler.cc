@@ -22,7 +22,9 @@ TEST_CASE("Test implicit euler with DG constant model", "[timestepping][constant
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = DG::Assembler<Discretization, Model>;
   using TimeStepper = TimeStepperImplicitEuler<VectorType, SparseMatrixType, dim, UMFPack>;
-  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_implicit_euler_constant_dg", 5e-2));
+  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>(
+      "test_implicit_euler_constant_dg", 5e-2, "jacobian_diagnostics.csv",
+      static_cast<double>(ImplicitTimestepperKind::implicit_euler), {0.}));
 }
 TEST_CASE("Test implicit euler with DG exponential model", "[timestepping][exponential][explicit_euler][dg]")
 {
