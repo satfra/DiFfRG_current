@@ -162,8 +162,8 @@ namespace DiFfRG
       throw std::runtime_error("ConfigTree::get_uint error: " + std::string(e.what()) + "\n  At Key: " + key);
     }
     if (val < 0)
-      throw std::runtime_error("ConfigTree::get_uint: value at key '" + key + "' is negative (" +
-                               std::to_string(val) + ")");
+      throw std::runtime_error("ConfigTree::get_uint: value at key '" + key + "' is negative (" + std::to_string(val) +
+                               ")");
     return val;
   }
 

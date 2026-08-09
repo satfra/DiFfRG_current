@@ -42,8 +42,7 @@ namespace DiFfRG
     double lap()
     {
       const auto now = std::chrono::high_resolution_clock::now();
-      const double ms =
-          double(std::chrono::duration_cast<std::chrono::milliseconds>(now - mark).count());
+      const double ms = double(std::chrono::duration_cast<std::chrono::milliseconds>(now - mark).count());
       mark = now;
       return ms;
     }
@@ -143,44 +142,44 @@ namespace DiFfRG
     /**
      * @brief Construct a new Abstract Timestepper object
      *
-     * @param json The ConfigTree object must contain a /timestepping/ section with all necessary parameters.
+     * @param config The ConfigTree object must contain a /timestepping/ section with all necessary parameters.
      * @param assembler
      * @param data_out
      * @param adaptor
      */
-    AbstractTimestepper(const ConfigTree &json, AbstractAssembler<VectorType, SparseMatrixType, dim> *assembler,
+    AbstractTimestepper(const ConfigTree &config, AbstractAssembler<VectorType, SparseMatrixType, dim> *assembler,
                         OutputSession<dim, VectorType> *data_out, AbstractAdaptor<VectorType> *adaptor = nullptr)
-        : json(json), assembler(assembler), data_out(data_out), adaptor(adaptor),
-          log(data_out ? data_out->log_port() : LogPort{}),
-          start_time(std::chrono::high_resolution_clock::now())
+        : config(config), assembler(assembler), data_out(data_out), adaptor(adaptor),
+          log(data_out ? data_out->log_port() : LogPort{}), start_time(std::chrono::high_resolution_clock::now())
     {
-      verbosity = json.get_int("/output/verbosity", 0);
-      output_dt = json.get_double("/timestepping/output_dt", 1e-1);
+      verbosity = config.get_int("/output/verbosity", 0);
+      output_dt = config.get_double("/timestepping/output_dt", 1e-1);
 
-      impl.dt = json.get_double("/timestepping/implicit/dt", 1e-4);
-      impl.minimal_dt = json.get_double("/timestepping/implicit/minimal_dt", 1e-6);
-      impl.maximal_dt = json.get_double("/timestepping/implicit/maximal_dt", 1e-1);
-      impl.abs_tol = json.get_double_or_warn("/timestepping/implicit/abs_tol", 1e-13);
-      impl.rel_tol = json.get_double_or_warn("/timestepping/implicit/rel_tol", 1e-7);
-      impl.max_steps = json.get_uint("/timestepping/implicit/max_steps", 1000000);
-      impl.max_non_linear_iterations = json.get_uint("/timestepping/implicit/max_non_linear_iterations", 10);
-      impl.ida_callback_trace = json.get_bool("/timestepping/implicit/ida_callback_trace", false);
-      impl.ida_callback_trace_min_t = json.get_double("/timestepping/implicit/ida_callback_trace_min_t", 0.0);
-      impl.ida_callback_trace_max_lines = json.get_uint("/timestepping/implicit/ida_callback_trace_max_lines", 200);
-      impl.ida_callback_trace_successes = json.get_bool("/timestepping/implicit/ida_callback_trace_successes", false);
-      impl.ida_error_dof_diagnostics = json.get_bool("/timestepping/implicit/ida_error_dof_diagnostics", false);
-      impl.ida_error_dof_diagnostics_top_n = json.get_uint("/timestepping/implicit/ida_error_dof_diagnostics_top_n", 8);
+      impl.dt = config.get_double("/timestepping/implicit/dt", 1e-4);
+      impl.minimal_dt = config.get_double("/timestepping/implicit/minimal_dt", 1e-6);
+      impl.maximal_dt = config.get_double("/timestepping/implicit/maximal_dt", 1e-1);
+      impl.abs_tol = config.get_double_or_warn("/timestepping/implicit/abs_tol", 1e-13);
+      impl.rel_tol = config.get_double_or_warn("/timestepping/implicit/rel_tol", 1e-7);
+      impl.max_steps = config.get_uint("/timestepping/implicit/max_steps", 1000000);
+      impl.max_non_linear_iterations = config.get_uint("/timestepping/implicit/max_non_linear_iterations", 10);
+      impl.ida_callback_trace = config.get_bool("/timestepping/implicit/ida_callback_trace", false);
+      impl.ida_callback_trace_min_t = config.get_double("/timestepping/implicit/ida_callback_trace_min_t", 0.0);
+      impl.ida_callback_trace_max_lines = config.get_uint("/timestepping/implicit/ida_callback_trace_max_lines", 200);
+      impl.ida_callback_trace_successes = config.get_bool("/timestepping/implicit/ida_callback_trace_successes", false);
+      impl.ida_error_dof_diagnostics = config.get_bool("/timestepping/implicit/ida_error_dof_diagnostics", false);
+      impl.ida_error_dof_diagnostics_top_n =
+          config.get_uint("/timestepping/implicit/ida_error_dof_diagnostics_top_n", 8);
 
-      expl.dt = json.get_double("/timestepping/explicit/dt", 1e-2);
-      expl.minimal_dt = json.get_double("/timestepping/explicit/minimal_dt", 1e-6);
-      expl.maximal_dt = json.get_double("/timestepping/explicit/maximal_dt", 1e-1);
-      expl.abs_tol = json.get_double_or_warn("/timestepping/explicit/abs_tol", 1e-4);
-      expl.rel_tol = json.get_double_or_warn("/timestepping/explicit/rel_tol", 1e-4);
-      expl.detect_stuck = json.get_bool("/timestepping/explicit/detect_stuck", true);
+      expl.dt = config.get_double("/timestepping/explicit/dt", 1e-2);
+      expl.minimal_dt = config.get_double("/timestepping/explicit/minimal_dt", 1e-6);
+      expl.maximal_dt = config.get_double("/timestepping/explicit/maximal_dt", 1e-1);
+      expl.abs_tol = config.get_double_or_warn("/timestepping/explicit/abs_tol", 1e-4);
+      expl.rel_tol = config.get_double_or_warn("/timestepping/explicit/rel_tol", 1e-4);
+      expl.detect_stuck = config.get_bool("/timestepping/explicit/detect_stuck", true);
 
       // -1 marks "no cutoff scale given"; the timesteppers use it only to label output, so
       // unlike def::fRG this must not warn - plenty of models have no /physical/Lambda at all.
-      Lambda = json.get_double("/physical/Lambda", -1.0);
+      Lambda = config.get_double("/physical/Lambda", -1.0);
     }
 
     /**
@@ -226,7 +225,7 @@ namespace DiFfRG
                      const double t_stop) = 0;
 
   protected:
-    const ConfigTree json;
+    const ConfigTree config;
     AbstractAssembler<VectorType, SparseMatrixType, dim> *assembler;
     OutputSession<dim, VectorType> *data_out;
     AbstractAdaptor<VectorType> *adaptor;
@@ -503,12 +502,11 @@ namespace DiFfRG
       const std::streamsize oldprecision = std::cout.precision();
       std::cout << "[" << std::setw(console_name_width) << std::left << name << "]";
       constexpr auto console_time_precision = std::numeric_limits<double>::max_digits10;
-      std::cout << " t: " << std::setw(24) << std::left << std::setprecision(console_time_precision)
-                << std::scientific << t;
+      std::cout << " t: " << std::setw(24) << std::left << std::setprecision(console_time_precision) << std::scientific
+                << t;
       if (Lambda > 0.0) {
         std::cout << " | k: " << std::setw(24) << std::left << std::setprecision(console_time_precision)
-                  << std::scientific
-                  << exp(-t) * Lambda;
+                  << std::scientific << exp(-t) * Lambda;
       }
       if (calc_dt.has_value()) {
         std::cout << " | calc_dt: " << std::setw(11) << calc_dt.value();

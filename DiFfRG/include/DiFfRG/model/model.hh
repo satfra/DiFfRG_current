@@ -377,8 +377,9 @@ namespace DiFfRG
 
       template <typename FUN, typename DataOut> void readouts_multiple(FUN &helper, DataOut &) const
       {
-        helper("primary", [&](const auto &x, const auto &u_i) { return asImp().EoM(x, u_i); }, // chiral EoM
-               [&](auto &output, const auto &x, const auto &sol) { asImp().readouts(output, x, sol); });
+        helper(
+            "primary", [&](const auto &x, const auto &u_i) { return asImp().EoM(x, u_i); }, // chiral EoM
+            [&](auto &output, const auto &x, const auto &sol) { asImp().readouts(output, x, sol); });
       }
 
       template <int dim, typename DataOut, typename Solutions>
@@ -413,7 +414,6 @@ namespace DiFfRG
                       })
           asImp().apply_affine_constraints(constraints, context);
       }
-
     };
 
     namespace internal
@@ -502,9 +502,8 @@ namespace DiFfRG
       template <typename Constraints, typename Context>
       void apply_boundary_affine_constraints(Constraints &constraints, const Context &context) const
       {
-        const auto candidates =
-            internal::select_origin_candidates<component_name, Model>(context,
-                                                                      context.template boundary<component_name>());
+        const auto candidates = internal::select_origin_candidates<component_name, Model>(
+            context, context.template boundary<component_name>());
         for (const auto dof : candidates) {
           constraints.add_line(dof);
           constraints.set_inhomogeneity(dof, 0.0);
@@ -525,9 +524,8 @@ namespace DiFfRG
       template <typename Constraints, typename Context>
       void apply_affine_constraints(Constraints &constraints, const Context &context) const
       {
-        const auto candidates =
-            internal::select_origin_candidates<component_name, Model>(context,
-                                                                      context.template support<component_name>());
+        const auto candidates = internal::select_origin_candidates<component_name, Model>(
+            context, context.template support<component_name>());
         for (const auto dof : candidates) {
           constraints.add_line(dof);
           constraints.set_inhomogeneity(dof, 0.0);
@@ -565,9 +563,9 @@ namespace DiFfRG
       /**
        * @brief Construct a new fRG object from a given ConfigTree object
        *
-       * @param json the JSON object containing the initial cutoff scale at "/physical/Lambda"
+       * @param config the ConfigTree object containing the initial cutoff scale at "/physical/Lambda"
        */
-      fRG(const ConfigTree &json);
+      fRG(const ConfigTree &config);
 
       /**
        * @brief Set the time of the fRG object, updating the cutoff scale and its powers

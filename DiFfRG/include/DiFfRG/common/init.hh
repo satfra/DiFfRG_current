@@ -32,7 +32,7 @@ namespace DiFfRG
    *
    * Reads /discretization/threads, defaulting to 0 (all available cores).
    */
-  void set_thread_limit(const ConfigTree &json);
+  void set_thread_limit(const ConfigTree &config);
 
   class Init
   {

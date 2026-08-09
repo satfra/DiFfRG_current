@@ -23,9 +23,9 @@ namespace DiFfRG
      */
     using execution_space = ExecutionSpace;
 
-    Integrator_fT(QuadratureProvider &quadrature_provider, const ConfigTree &json)
+    Integrator_fT(QuadratureProvider &quadrature_provider, const ConfigTree &config)
       requires provides_regulator<KERNEL>
-        : Integrator_fT(quadrature_provider, json.get_double("/physical/T", 1.0))
+        : Integrator_fT(quadrature_provider, config.get_double("/physical/T", 1.0))
     {
     }
 

@@ -69,10 +69,10 @@ namespace DiFfRG
      */
     using execution_space = ExecutionSpace;
 
-    Integrator_p2(QuadratureProvider &quadrature_provider, const ConfigTree &json)
+    Integrator_p2(QuadratureProvider &quadrature_provider, const ConfigTree &config)
       requires provides_regulator<KERNEL>
-        : Integrator_p2(quadrature_provider, internal::make_int_grid<1, NT>(json, {"x_order"}),
-                        optimize_x_extent<typename KERNEL::Regulator>(json))
+        : Integrator_p2(quadrature_provider, internal::make_int_grid<1, NT>(config, {"x_order"}),
+                        optimize_x_extent<typename KERNEL::Regulator>(config))
     {
     }
 

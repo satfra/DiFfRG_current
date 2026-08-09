@@ -14,7 +14,7 @@ namespace DiFfRG
     inline static constexpr std::size_t default_max_pending_bytes = 2ull * 1024ull * 1024ull * 1024ull;
 
     OutputSettings() = default;
-    explicit OutputSettings(const ConfigTree &json);
+    explicit OutputSettings(const ConfigTree &config);
 
     bool asynchronous = true;
     bool write_vtk = true;

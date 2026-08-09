@@ -19,7 +19,7 @@
  *
  * -# **Entry point.** \ref DiFfRG::Init "Init" initializes the runtime (Kokkos, and MPI if
  *    enabled) and hands back a \ref DiFfRG::ConfigurationHelper "ConfigurationHelper" that
- *    parses the `parameter.json` file and command-line overrides.
+ *    parses the `parameter.json/toml` file and command-line overrides.
  * -# **Model.** The physics is defined by deriving from the CRTP base
  *    \ref DiFfRG::def::AbstractModel "def::AbstractModel", which fixes the mass, flux and
  *    source functions of the flow equations. Behaviour is composed from mixins:

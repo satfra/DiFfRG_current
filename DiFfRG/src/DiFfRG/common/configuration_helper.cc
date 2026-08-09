@@ -23,7 +23,7 @@ namespace DiFfRG
     }
   }
 
-  ConfigurationHelper::ConfigurationHelper(const ConfigTree &json) : json(json), parsed(true) {}
+  ConfigurationHelper::ConfigurationHelper(const ConfigTree &config) : config(config), parsed(true) {}
 
   ConfigurationHelper::ConfigurationHelper(const ConfigurationHelper &other)
   {
@@ -35,11 +35,11 @@ namespace DiFfRG
     cli_parameters = other.cli_parameters;
   }
 
-  ConfigTree &ConfigurationHelper::get_config() { return json; }
-  const ConfigTree &ConfigurationHelper::get_config() const { return json; }
+  ConfigTree &ConfigurationHelper::get_config() { return config; }
+  const ConfigTree &ConfigurationHelper::get_config() const { return config; }
 
-  ConfigTree &ConfigurationHelper::get_json() { return json; }
-  const ConfigTree &ConfigurationHelper::get_json() const { return json; }
+  ConfigTree &ConfigurationHelper::get_json() { return config; }
+  const ConfigTree &ConfigurationHelper::get_json() const { return config; }
 
   ConfigTree ConfigurationHelper::probe(int argc, char *argv[], const std::string parameter_file)
   {
@@ -55,7 +55,7 @@ namespace DiFfRG
       // application's own ConfigurationHelper will hit the same error and diagnose it properly.
       return ConfigTree();
     }
-    return helper.json;
+    return helper.config;
   }
 
   void ConfigurationHelper::parse()
@@ -81,7 +81,7 @@ namespace DiFfRG
         if (std::filesystem::exists(toml_alternative)) parameter_file = toml_alternative.string();
       }
       // parse parameter file and CLI, log it to file
-      json = ConfigTree(parameter_file);
+      config = ConfigTree(parameter_file);
 
       for (const auto &param : cli_parameters) {
         std::string path, value, buf;
@@ -93,13 +93,13 @@ namespace DiFfRG
 
         try {
           if (param.second == "double")
-            json().at_pointer(path) = std::stod(value);
+            config().at_pointer(path) = std::stod(value);
           else if (param.second == "bool")
-            json().at_pointer(path) = (value == "true");
+            config().at_pointer(path) = (value == "true");
           else if (param.second == "int")
-            json().at_pointer(path) = std::stoi(value);
+            config().at_pointer(path) = std::stoi(value);
           else if (param.second == "string")
-            json().at_pointer(path) = value;
+            config().at_pointer(path) = value;
         } catch (const std::exception &e) {
           throw std::runtime_error("Failed to parse CLI parameter '" + path + "=" + value + "' as " + param.second +
                                    ": " + e.what());
@@ -143,7 +143,7 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
   --help                      shows this text
   --generate-parameter-file   generates a parameter file with some default values, in the
                               format implied by the parameter file name (JSON or TOML)
-  -p                          specifiy a parameter file other than the standard parameter.json.
+  -p                          specifiy a parameter file other than the standard parameter.json/toml
                               Files ending in .toml are read as TOML, everything else as JSON.
                               If no parameter file is given and parameter.json is absent, but
                               parameter.toml is present, the latter is used.
@@ -212,7 +212,7 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
 
   void ConfigurationHelper::generate_parameter_file()
   {
-    ConfigTree json = json::value(
+    ConfigTree config = json::value(
         // json::object() rather than {}: an empty braced list is deduced as an array, so
         // the generated file used to contain "physical": [{}] instead of an empty section.
         {{"physical", json::object()},
@@ -225,7 +225,11 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
            {"cos2_order", 8},
            {"phi_order", 8},
            {"x_extent_tolerance", 1e-5},
-           {"jacobian_quadrature_factor", 0.5}}},
+           {"jacobian_quadrature_factor", 0.5},
+           {"vacuum_quad_size", 64},
+           {"matsubara_precision_factor", 1},
+           {"min_matsubara_size", 8},
+           {"max_matsubara_size", 128}}},
          {"discretization",
           {{"fe_order", 3},
            {"threads", 0},
@@ -248,7 +252,12 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
           {{"final_time", 1.},
            {"output_dt", 1e-1},
            {"explicit",
-            {{"dt", 1e-2}, {"minimal_dt", 1e-6}, {"maximal_dt", 1e-1}, {"abs_tol", 1e-4}, {"rel_tol", 1e-4}}},
+            {{"dt", 1e-2},
+             {"minimal_dt", 1e-6},
+             {"maximal_dt", 1e-1},
+             {"abs_tol", 1e-4},
+             {"rel_tol", 1e-4},
+             {"coupling_mode", 1}}},
            {"implicit",
             {{"dt", 1e-4},
              {"minimal_dt", 1e-6},
@@ -264,9 +273,9 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
       if (!file) throw std::runtime_error("Could not create parameter file '" + parameter_file + "'.");
       // Write in whichever format the requested file name implies.
       if (internal::has_toml_extension(parameter_file))
-        json.print_toml(file);
+        config.print_toml(file);
       else
-        json.print(file);
+        config.print(file);
       if (!file) throw std::runtime_error("Failed while writing parameter file '" + parameter_file + "'.");
     }
     std::filesystem::rename(temporary, parameter_file);
@@ -301,6 +310,7 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
               << "    output_dt                     Time interval between output snapshots\n"
               << "    explicit/*                    Explicit timestepper (dt, tolerances)\n"
               << "    implicit/*                    Implicit timestepper (dt, tolerances)\n"
+              << "    explicit/coupling_mode        0: Lag, 1: Stagger (default), 2: Predict\n"
               << "  /output            Output settings\n"
               << "    verbosity                     Log verbosity level (0 = minimal)\n"
               << "    folder                        Output directory\n"
@@ -311,20 +321,17 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
 
   std::string ConfigurationHelper::get_log_file() const
   {
-    return OutputPath(json).run_file(".log").filename().string();
+    return OutputPath(config).run_file(".log").filename().string();
   }
   std::string ConfigurationHelper::get_parameter_file() const { return parameter_file; }
-  std::string ConfigurationHelper::get_output_name() const
-  {
-    return OutputPath(json).run_name();
-  }
+  std::string ConfigurationHelper::get_output_name() const { return OutputPath(config).run_name(); }
   std::string ConfigurationHelper::get_output_folder() const
   {
-    return make_folder(OutputPath(json).field_directory().generic_string());
+    return make_folder(OutputPath(config).field_directory().generic_string());
   }
   std::string ConfigurationHelper::get_top_folder() const
   {
-    return make_folder(OutputPath(json).root().generic_string());
+    return make_folder(OutputPath(config).root().generic_string());
   }
 
 } // namespace DiFfRG

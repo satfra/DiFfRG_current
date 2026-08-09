@@ -1,12 +1,12 @@
 // external libraries
+#include <algorithm>
 #include <boost/numeric/odeint.hpp>
 #include <boost/numeric/odeint/external/eigen/eigen.hpp>
 #include <boost/numeric/odeint/stepper/adams_bashforth.hpp>
+#include <cstddef>
 #include <deal.II/base/timer.h>
 #include <deal.II/lac/block_vector.h>
 #include <deal.II/sundials/ida.h>
-#include <algorithm>
-#include <cstddef>
 #include <limits>
 
 // DiFfRG
@@ -58,7 +58,8 @@ namespace DiFfRG
 
     // Create a SUNDIALS IDA object with the right settings for spatial data
     typename SUNDIALS::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
-                                                                impl.max_non_linear_iterations, 0, impl.abs_tol, impl.rel_tol);
+                                                                impl.max_non_linear_iterations, 0, impl.abs_tol,
+                                                                impl.rel_tol);
     typename SUNDIALS::IDA<VectorType> time_stepper(ida_data);
 
     // Initialize initial condition
@@ -245,7 +246,7 @@ namespace DiFfRG
     //                        lookahead integration interpolated to the query time -- both
     //                        coupling arrows interpolated (best accuracy) at the cost of a
     //                        second set of explicit RHS evaluations.
-    const int coupling_mode = json.get_int("/timestepping/explicit/coupling_mode", 1);
+    const int coupling_mode = config.get_int("/timestepping/explicit/coupling_mode", 1);
     const bool mode_lag = (coupling_mode == 0);
     const bool mode_stagger = (coupling_mode == 1);
     const bool mode_predict = (coupling_mode == 2);
@@ -285,14 +286,14 @@ namespace DiFfRG
       if (dv_committed.size() > 0) {
         if (dv_prev_committed.size() != dv_committed.size()) dv_prev_committed.resize(dv_committed.size());
         dv_prev_committed = dv_committed;
-        t_prev_committed = t_committed;  // t_committed has just been updated by the caller
+        t_prev_committed = t_committed; // t_committed has just been updated by the caller
         have_prev_dv = true;
       }
       const std::size_t N = variable_buffer.size();
       if (N == 0) return;
       eigen_to_dealii(variable_buffer[N - 1], variable_y_dealii);
       variable_dy_dealii = 0;
-      spatial_y_dealii = spatial_lo;  // = accepted spatial at t_committed
+      spatial_y_dealii = spatial_lo; // = accepted spatial at t_committed
       assembler->set_time(t_committed);
       assembler->residual_variables(variable_dy_dealii, variable_y_dealii, spatial_y_dealii);
       if (dv_committed.size() != static_cast<Eigen::Index>(variable_dy_dealii.size()))
@@ -401,8 +402,7 @@ namespace DiFfRG
     // dt_implicit << dt_explicit the stencil would be only ~dt_implicit wide and
     // extrapolating half an explicit step would amplify wildly.
     auto maybe_push_checkpoint = [&](const double t, const dealii::Vector<double> &S) {
-      if (spatial_ckpt_times.empty() || t - spatial_ckpt_times.back() >= 0.5 * cur_dt - 1e-12)
-        push_checkpoint(t, S);
+      if (spatial_ckpt_times.empty() || t - spatial_ckpt_times.back() >= 0.5 * cur_dt - 1e-12) push_checkpoint(t, S);
     };
 
     // [PREDICT, mode 2] Serve v(t) to IDA from a forward LOOKAHEAD, CACHED per accepted
@@ -614,8 +614,7 @@ namespace DiFfRG
         assembler->set_time(t);
         return;
       }
-      if (frontier > t_committed && !is_close(frontier, t_committed))
-        commit_segment_to(spatial_hi, frontier);
+      if (frontier > t_committed && !is_close(frontier, t_committed)) commit_segment_to(spatial_hi, frontier);
       if (t > t_committed && !is_close(t, t_committed)) {
         commit_segment_to(spatial_y, t);
         if (t > frontier) frontier = t;

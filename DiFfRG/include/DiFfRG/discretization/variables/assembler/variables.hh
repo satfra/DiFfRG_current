@@ -45,14 +45,14 @@ namespace DiFfRG
       static constexpr uint dim = 0;
 
       [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Assembler(
-          Model &model, DiFfRG::internal::LegacyDefaultLogPortArgument<Model, ConfigTree> json)
-          : Assembler(model, json.value(), DiFfRG::internal::legacy_default_log_port<Model>())
+          Model &model, DiFfRG::internal::LegacyDefaultLogPortArgument<Model, ConfigTree> config)
+          : Assembler(model, config.value(), DiFfRG::internal::legacy_default_log_port<Model>())
       {
       }
 
-      Assembler(Model &model, const ConfigTree &json, LogPort log_port)
+      Assembler(Model &model, const ConfigTree &config, LogPort log_port)
           : model(model), log_port(std::move(log_port)),
-            mesh_workers(json.get_uint("/discretization/mesh_workers", 8))
+            mesh_workers(config.get_uint("/discretization/mesh_workers", 8))
       {
         if (mesh_workers == 0) mesh_workers = std::max(1u, dealii::MultithreadInfo::n_threads() / 2);
         static_assert(Components::count_fe_functions() == 0, "The pure variable assembler cannot handle FE functions!");
@@ -64,8 +64,8 @@ namespace DiFfRG
       virtual IndexSet get_differential_indices() const override { return IndexSet(); }
 
       virtual void attach_data_output(OutputFrame<dim, VectorType> &data_out, const VectorType &solution,
-                                  const VectorType &variables, const VectorType &dt_solution = VectorType(),
-                                  const VectorType &residual = VectorType()) override
+                                      const VectorType &variables, const VectorType &dt_solution = VectorType(),
+                                      const VectorType &residual = VectorType()) override
       {
         (void)dt_solution;
         (void)residual;

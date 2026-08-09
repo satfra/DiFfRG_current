@@ -136,7 +136,10 @@ namespace DiFfRG
     device::array<typename Coordinates::ctype, 2> KOKKOS_FUNCTION
     index(const typename Coordinates::ctype s, const typename Coordinates::ctype x) const
     {
-      return coordinates.backward(s, x);
+      // backward() returns device::array for CoordinatePackND but std::tuple<Idx, NT> for the
+      // combined finite-T systems; the structured binding normalises both onto what at() expects.
+      auto [sidx, xidx] = coordinates.backward(s, x);
+      return {{static_cast<typename Coordinates::ctype>(sidx), static_cast<typename Coordinates::ctype>(xidx)}};
     }
 
     /**

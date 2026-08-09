@@ -39,9 +39,9 @@ using namespace DiFfRG;
 //     breaks down and IDA reports recoverable residual errors.
 
 template <typename Model, typename TimeStepper>
-bool run_hybrid(const std::string &test_name, double expected_precision, double cur_dt = 1e-3,
-                double final_time = 1.0, double output_dt = 5e-2, double impl_max_dt = 1e-1,
-                double impl_rel_tol = 1e-6, int coupling_mode = 0, double expl_max_dt = 1e-2)
+bool run_hybrid(const std::string &test_name, double expected_precision, double cur_dt = 1e-3, double final_time = 1.0,
+                double output_dt = 5e-2, double impl_max_dt = 1e-1, double impl_rel_tol = 1e-6, int coupling_mode = 0,
+                double expl_max_dt = 1e-2)
 {
   using namespace dealii;
   constexpr uint dim = 1;
@@ -49,37 +49,40 @@ bool run_hybrid(const std::string &test_name, double expected_precision, double 
   using VectorType = typename Discretization::VectorType;
   using Assembler = CG::Assembler<Discretization, Model>;
 
-  ConfigTree json = json::value(
-      {{"physical", {{"Lambda", 1.}}},
-       {"discretization",
-        {{"fe_order", 3},
-         {"mesh_workers", 4},
-         {"batch_size", 64},
-         {"overintegration", 0},
-         {"output_subdivisions", 2},
-         {"EoM_abs_tol", 1e-12},
-         {"EoM_max_iter", 100},
-         {"grid", {{"x_grid", "0:0.05:1"}, {"y_grid", "0:0.1:1"}, {"z_grid", "0:0.1:1"}, {"refine", 0}}},
-         {"adaptivity",
-          {{"start_adapt_at", 0.},
-           {"adapt_dt", 1e-1},
-           {"level", 0},
-           {"refine_percent", 1e-1},
-           {"coarsen_percent", 5e-2}}}}},
-       {"timestepping",
-        {{"final_time", final_time},
-         {"output_dt", output_dt},
-         {"explicit",
-          {{"dt", cur_dt},
-           {"minimal_dt", 1e-7},
-           {"maximal_dt", expl_max_dt},
-           {"abs_tol", 1e-13},
-           {"rel_tol", 1e-10},
-           {"coupling_mode", coupling_mode}}},
-         {"implicit",
-          {{"dt", 1e-3}, {"minimal_dt", 1e-7}, {"maximal_dt", impl_max_dt}, {"abs_tol", 1e-10},
-           {"rel_tol", impl_rel_tol}}}}},
-       {"output", {{"verbosity", 0}, {"vtk", false}}}});
+  ConfigTree json =
+      json::value({{"physical", {{"Lambda", 1.}}},
+                   {"discretization",
+                    {{"fe_order", 3},
+                     {"mesh_workers", 4},
+                     {"batch_size", 64},
+                     {"overintegration", 0},
+                     {"output_subdivisions", 2},
+                     {"EoM_abs_tol", 1e-12},
+                     {"EoM_max_iter", 100},
+                     {"grid", {{"x_grid", "0:0.05:1"}, {"y_grid", "0:0.1:1"}, {"z_grid", "0:0.1:1"}, {"refine", 0}}},
+                     {"adaptivity",
+                      {{"start_adapt_at", 0.},
+                       {"adapt_dt", 1e-1},
+                       {"level", 0},
+                       {"refine_percent", 1e-1},
+                       {"coarsen_percent", 5e-2}}}}},
+                   {"timestepping",
+                    {{"final_time", final_time},
+                     {"output_dt", output_dt},
+                     {"explicit",
+                      {{"dt", cur_dt},
+                       {"minimal_dt", 1e-7},
+                       {"maximal_dt", expl_max_dt},
+                       {"abs_tol", 1e-13},
+                       {"rel_tol", 1e-10},
+                       {"coupling_mode", coupling_mode}}},
+                     {"implicit",
+                      {{"dt", 1e-3},
+                       {"minimal_dt", 1e-7},
+                       {"maximal_dt", impl_max_dt},
+                       {"abs_tol", 1e-10},
+                       {"rel_tol", impl_rel_tol}}}}},
+                   {"output", {{"verbosity", 0}, {"vtk", false}}}});
 
   try {
     auto log = spdlog::stdout_color_mt("log");
@@ -117,9 +120,8 @@ bool run_hybrid(const std::string &test_name, double expected_precision, double 
     const double is = initial_condition.data().block(0)[i];
     const double should = model.solution(support_points[i]);
     if (!is_close(is, should, expected_precision))
-      std::cout << test_name << " FEM u: is " << is << " should be " << should
-                << " (rel. error " << std::abs(is - should) / std::max(std::abs(should), 1e-30) << ")"
-                << std::endl;
+      std::cout << test_name << " FEM u: is " << is << " should be " << should << " (rel. error "
+                << std::abs(is - should) / std::max(std::abs(should), 1e-30) << ")" << std::endl;
     valid &= is_close(is, should, expected_precision);
   }
 
@@ -127,9 +129,8 @@ bool run_hybrid(const std::string &test_name, double expected_precision, double 
   const double v_is = initial_condition.data().block(1)[0];
   const double v_should = model.variable_solution();
   if (!is_close(v_is, v_should, expected_precision))
-    std::cout << test_name << " explicit variable v: is " << v_is << " should be " << v_should
-              << " (rel. error " << std::abs(v_is - v_should) / std::max(std::abs(v_should), 1e-30) << ")"
-              << std::endl;
+    std::cout << test_name << " explicit variable v: is " << v_is << " should be " << v_should << " (rel. error "
+              << std::abs(v_is - v_should) / std::max(std::abs(v_should), 1e-30) << ")" << std::endl;
   valid &= is_close(v_is, v_should, expected_precision);
 
   if (!valid) std::cerr << "Failed " << test_name << std::endl;
@@ -177,8 +178,8 @@ TEST_CASE("Hybrid ABM stepper retains accuracy on smooth problem at ~1 substep p
   using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<VectorType, SparseMatrixType, 1, UMFPack>;
   // explicit.dt = output_dt so each IDA trial step usually triggers exactly one ABM substep
   REQUIRE(run_hybrid<Model, TimeStepper>("test_diag_abm_smooth", /*tol=*/1e-3, /*cur_dt=*/5e-2,
-                                          /*final_time=*/1.0, /*output_dt=*/5e-2,
-                                          /*impl_max_dt=*/5e-2));
+                                         /*final_time=*/1.0, /*output_dt=*/5e-2,
+                                         /*impl_max_dt=*/5e-2));
 }
 
 TEST_CASE("Hybrid ABM cur_dt scan on smooth problem", "[timestepping][sundials_ida_boost][abm][scan]")
@@ -193,13 +194,12 @@ TEST_CASE("Hybrid ABM cur_dt scan on smooth problem", "[timestepping][sundials_i
   for (double cur_dt : {5e-2, 2.5e-2, 1.25e-2, 6.25e-3, 3.125e-3}) {
     const std::string tag = "test_scan_abm_dt_smooth_" + std::to_string(cur_dt);
     run_hybrid<Model, TimeStepper>(tag, /*tol=*/1e-30, /*cur_dt=*/cur_dt,
-                                    /*final_time=*/1.0, /*output_dt=*/5e-2,
-                                    /*impl_max_dt=*/5e-2);
+                                   /*final_time=*/1.0, /*output_dt=*/5e-2,
+                                   /*impl_max_dt=*/5e-2);
   }
 }
 
-TEST_CASE("Hybrid ABM cur_dt scan on two-way coupled problem",
-          "[timestepping][sundials_ida_boost][abm][scan]")
+TEST_CASE("Hybrid ABM cur_dt scan on two-way coupled problem", "[timestepping][sundials_ida_boost][abm][scan]")
 {
   using Model = Testing::ModelHybridTwoWay<1>;
   using VectorType = dealii::Vector<double>;
@@ -208,8 +208,8 @@ TEST_CASE("Hybrid ABM cur_dt scan on two-way coupled problem",
   for (double cur_dt : {2e-2, 1e-2, 5e-3, 2.5e-3, 1.25e-3}) {
     const std::string tag = "test_scan_abm_dt_twoway_" + std::to_string(cur_dt);
     run_hybrid<Model, TimeStepper>(tag, /*tol=*/1e-30, /*cur_dt=*/cur_dt,
-                                    /*final_time=*/1.0, /*output_dt=*/5e-2,
-                                    /*impl_max_dt=*/5e-2);
+                                   /*final_time=*/1.0, /*output_dt=*/5e-2,
+                                   /*impl_max_dt=*/5e-2);
   }
 }
 
@@ -223,7 +223,7 @@ TEST_CASE("Hybrid ABM cur_dt scan on two-way coupled problem",
 
 namespace
 {
-const char *coupling_mode_name(int m) { return m == 0 ? "lag" : (m == 1 ? "stagger" : "predict"); }
+  const char *coupling_mode_name(int m) { return m == 0 ? "lag" : (m == 1 ? "stagger" : "predict"); }
 } // namespace
 
 TEST_CASE("Hybrid ABM coupling-mode scan, dt_impl<<dt_expl, two-way",
@@ -238,9 +238,9 @@ TEST_CASE("Hybrid ABM coupling-mode scan, dt_impl<<dt_expl, two-way",
       const std::string tag =
           "test_modes_twoway_" + std::string(coupling_mode_name(mode)) + "_" + std::to_string(cur_dt);
       run_hybrid<Model, TimeStepper>(tag, /*tol=*/1e-30, /*cur_dt=*/cur_dt,
-                                      /*final_time=*/1.0, /*output_dt=*/5e-2,
-                                      /*impl_max_dt=*/1e-3, /*impl_rel_tol=*/1e-6,
-                                      /*coupling_mode=*/mode, /*expl_max_dt=*/2e-1);
+                                     /*final_time=*/1.0, /*output_dt=*/5e-2,
+                                     /*impl_max_dt=*/1e-3, /*impl_rel_tol=*/1e-6,
+                                     /*coupling_mode=*/mode, /*expl_max_dt=*/2e-1);
     }
 }
 
@@ -256,9 +256,9 @@ TEST_CASE("Hybrid ABM coupling-mode scan, dt_impl<<dt_expl, smooth",
       const std::string tag =
           "test_modes_smooth_" + std::string(coupling_mode_name(mode)) + "_" + std::to_string(cur_dt);
       run_hybrid<Model, TimeStepper>(tag, /*tol=*/1e-30, /*cur_dt=*/cur_dt,
-                                      /*final_time=*/1.0, /*output_dt=*/5e-2,
-                                      /*impl_max_dt=*/1e-3, /*impl_rel_tol=*/1e-6,
-                                      /*coupling_mode=*/mode, /*expl_max_dt=*/2e-1);
+                                     /*final_time=*/1.0, /*output_dt=*/5e-2,
+                                     /*impl_max_dt=*/1e-3, /*impl_rel_tol=*/1e-6,
+                                     /*coupling_mode=*/mode, /*expl_max_dt=*/2e-1);
     }
 }
 
@@ -275,12 +275,11 @@ TEST_CASE("Hybrid ABM coupling-mode scan, dt_impl<<dt_expl, weak coupling",
   using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<VectorType, SparseMatrixType, 1, UMFPack>;
   for (int mode : {0, 1, 2})
     for (double cur_dt : {1e-1, 5e-2, 2.5e-2}) {
-      const std::string tag =
-          "test_modes_weak_" + std::string(coupling_mode_name(mode)) + "_" + std::to_string(cur_dt);
+      const std::string tag = "test_modes_weak_" + std::string(coupling_mode_name(mode)) + "_" + std::to_string(cur_dt);
       run_hybrid<Model, TimeStepper>(tag, /*tol=*/1e-30, /*cur_dt=*/cur_dt,
-                                      /*final_time=*/1.0, /*output_dt=*/5e-2,
-                                      /*impl_max_dt=*/1e-3, /*impl_rel_tol=*/1e-6,
-                                      /*coupling_mode=*/mode, /*expl_max_dt=*/2e-1);
+                                     /*final_time=*/1.0, /*output_dt=*/5e-2,
+                                     /*impl_max_dt=*/1e-3, /*impl_rel_tol=*/1e-6,
+                                     /*coupling_mode=*/mode, /*expl_max_dt=*/2e-1);
     }
 }
 
@@ -297,12 +296,11 @@ TEST_CASE("Hybrid ABM coupling-mode scan, stiff under-resolved one-way",
   using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<VectorType, SparseMatrixType, 1, UMFPack>;
   for (int mode : {0, 1, 2})
     for (double cur_dt : {5e-1, 2.5e-1, 1.25e-1}) {
-      const std::string tag =
-          "test_stiff_" + std::string(coupling_mode_name(mode)) + "_" + std::to_string(cur_dt);
+      const std::string tag = "test_stiff_" + std::string(coupling_mode_name(mode)) + "_" + std::to_string(cur_dt);
       run_hybrid<Model, TimeStepper>(tag, /*tol=*/1e-30, /*cur_dt=*/cur_dt,
-                                      /*final_time=*/1.0, /*output_dt=*/5e-1,
-                                      /*impl_max_dt=*/1e-3, /*impl_rel_tol=*/1e-6,
-                                      /*coupling_mode=*/mode, /*expl_max_dt=*/1.0);
+                                     /*final_time=*/1.0, /*output_dt=*/5e-1,
+                                     /*impl_max_dt=*/1e-3, /*impl_rel_tol=*/1e-6,
+                                     /*coupling_mode=*/mode, /*expl_max_dt=*/1.0);
     }
 }
 
@@ -314,8 +312,8 @@ TEST_CASE("Hybrid ABM mode 2 (lookahead) handles weak explicit<-implicit couplin
   using SparseMatrixType = dealii::SparseMatrix<double>;
   using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<VectorType, SparseMatrixType, 1, UMFPack>;
   REQUIRE(run_hybrid<Model, TimeStepper>("test_diag_abm_weak_predict", /*tol=*/1e-3, /*cur_dt=*/5e-2,
-                                          /*final_time=*/1.0, /*output_dt=*/5e-2, /*impl_max_dt=*/1e-3,
-                                          /*impl_rel_tol=*/1e-6, /*coupling_mode=*/2, /*expl_max_dt=*/2e-1));
+                                         /*final_time=*/1.0, /*output_dt=*/5e-2, /*impl_max_dt=*/1e-3,
+                                         /*impl_rel_tol=*/1e-6, /*coupling_mode=*/2, /*expl_max_dt=*/2e-1));
 }
 
 TEST_CASE("Hybrid RK stepper retains accuracy on smooth problem at ~1 substep per IDA step",
@@ -326,8 +324,8 @@ TEST_CASE("Hybrid RK stepper retains accuracy on smooth problem at ~1 substep pe
   using SparseMatrixType = dealii::SparseMatrix<double>;
   using TimeStepper = TimeStepperSUNDIALS_IDA_BoostRK<VectorType, SparseMatrixType, 1, UMFPack, 0>;
   REQUIRE(run_hybrid<Model, TimeStepper>("test_diag_rk_smooth", /*tol=*/1e-3, /*cur_dt=*/5e-2,
-                                          /*final_time=*/1.0, /*output_dt=*/5e-2,
-                                          /*impl_max_dt=*/5e-2));
+                                         /*final_time=*/1.0, /*output_dt=*/5e-2,
+                                         /*impl_max_dt=*/5e-2));
 }
 
 //--------------------------------------------
@@ -348,18 +346,17 @@ TEST_CASE("Hybrid ABM stepper handles two-way FEM <-> variable coupling",
   using SparseMatrixType = dealii::SparseMatrix<double>;
   using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<VectorType, SparseMatrixType, 1, UMFPack>;
   REQUIRE(run_hybrid<Model, TimeStepper>("test_diag_abm_twoway", /*tol=*/1e-3, /*cur_dt=*/2e-2,
-                                          /*final_time=*/1.0, /*output_dt=*/5e-2,
-                                          /*impl_max_dt=*/5e-2));
+                                         /*final_time=*/1.0, /*output_dt=*/5e-2,
+                                         /*impl_max_dt=*/5e-2));
 }
 
-TEST_CASE("Hybrid RK stepper handles two-way FEM <-> variable coupling",
-          "[timestepping][sundials_ida_boost][rk][diag]")
+TEST_CASE("Hybrid RK stepper handles two-way FEM <-> variable coupling", "[timestepping][sundials_ida_boost][rk][diag]")
 {
   using Model = Testing::ModelHybridTwoWay<1>;
   using VectorType = dealii::Vector<double>;
   using SparseMatrixType = dealii::SparseMatrix<double>;
   using TimeStepper = TimeStepperSUNDIALS_IDA_BoostRK<VectorType, SparseMatrixType, 1, UMFPack, 0>;
   REQUIRE(run_hybrid<Model, TimeStepper>("test_diag_rk_twoway", /*tol=*/1e-3, /*cur_dt=*/2e-2,
-                                          /*final_time=*/1.0, /*output_dt=*/5e-2,
-                                          /*impl_max_dt=*/5e-2));
+                                         /*final_time=*/1.0, /*output_dt=*/5e-2,
+                                         /*impl_max_dt=*/5e-2));
 }

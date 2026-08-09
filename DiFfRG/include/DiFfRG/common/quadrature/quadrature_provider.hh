@@ -142,7 +142,7 @@ namespace DiFfRG
   {
   public:
     QuadratureProvider();
-    explicit QuadratureProvider(const ConfigTree &json, LogPort log = {});
+    explicit QuadratureProvider(const ConfigTree &config, LogPort log = {});
 
     /**
      * @brief Get the quadrature points for a quadrature of size quadrature_size.

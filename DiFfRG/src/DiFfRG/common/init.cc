@@ -22,7 +22,7 @@ namespace DiFfRG
     dealii::MultithreadInfo::set_thread_limit(threads == 0 ? dealii::numbers::invalid_unsigned_int : threads);
   }
 
-  void set_thread_limit(const ConfigTree &json) { set_thread_limit(json.get_uint("/discretization/threads", 0)); }
+  void set_thread_limit(const ConfigTree &config) { set_thread_limit(config.get_uint("/discretization/threads", 0)); }
 
   bool Init::initialized = false;
 
@@ -46,8 +46,7 @@ namespace DiFfRG
                      "         assembly pipeline; that is now '/discretization/mesh_workers' (default 8).\n"
                      "         It now sets the number of CPU threads the whole program may use, so this run is\n"
                      "         limited to "
-                  << configured_threads
-                  << " threads. Set '/discretization/threads' to 0 to use all available cores.\n"
+                  << configured_threads << " threads. Set '/discretization/threads' to 0 to use all available cores.\n"
                   << std::endl;
 
       // A configured count is handed to deal.II, which takes the minimum with DEAL_II_NUM_THREADS.
@@ -74,9 +73,8 @@ namespace DiFfRG
       // alive, and Kokkos is finalized afterwards.
       mpi_initialization = new dealii::InitFinalize(
           argc, argv,
-          dealii::InitializeLibrary::MPI | dealii::InitializeLibrary::SLEPc |
-              dealii::InitializeLibrary::PETSc | dealii::InitializeLibrary::Zoltan |
-              dealii::InitializeLibrary::P4EST,
+          dealii::InitializeLibrary::MPI | dealii::InitializeLibrary::SLEPc | dealii::InitializeLibrary::PETSc |
+              dealii::InitializeLibrary::Zoltan | dealii::InitializeLibrary::P4EST,
           max_num_threads);
 
       std::atexit([]() {

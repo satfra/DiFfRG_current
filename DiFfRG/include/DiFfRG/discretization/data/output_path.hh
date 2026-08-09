@@ -17,7 +17,7 @@ namespace DiFfRG
   public:
     OutputPath() = delete;
     OutputPath(std::filesystem::path root, std::string run_name, std::filesystem::path field_directory = "output");
-    explicit OutputPath(const ConfigTree &json);
+    explicit OutputPath(const ConfigTree &config);
 
     static OutputPath temporary(TemporaryRetention retention = TemporaryRetention::remove_on_destruction,
                                 std::string run_name = "output", std::filesystem::path field_directory = "output");

@@ -18,7 +18,7 @@ namespace DiFfRG
       // spatial dimensions and carries the zonal measure (1-c^2)^{(sdim-3)/2} dc, supplied by the
       // Gauss-Jacobi(alpha=beta=(sdim-3)/2) angular quadrature (see the class below). The remaining
       // (sdim-2)-sphere gives S_{sdim-1} = S_d_prec(sdim-1).
-      static constexpr ctype int_prefactor = S_d_prec<ctype>(sdim - 1)     // remaining solid angle after the polar angle
+      static constexpr ctype int_prefactor = S_d_prec<ctype>(sdim - 1) // remaining solid angle after the polar angle
                                              / powr<sdim>(2 * (ctype)M_PI); // fourier factor
 
       template <typename... T>
@@ -68,10 +68,11 @@ namespace DiFfRG
     using ctype = typename get_type::ctype<NT>;
     using execution_space = ExecutionSpace;
 
-    Integrator_fT_p2_1ang(QuadratureProvider &quadrature_provider, const ConfigTree &json)
+    Integrator_fT_p2_1ang(QuadratureProvider &quadrature_provider, const ConfigTree &config)
       requires provides_regulator<KERNEL>
-        : Integrator_fT_p2_1ang(quadrature_provider, internal::make_int_grid<2, NT>(json, {"x_order", "cos1_order"}),
-                                optimize_x_extent<typename KERNEL::Regulator>(json), json.get_double("/physical/T", 1.0))
+        : Integrator_fT_p2_1ang(quadrature_provider, internal::make_int_grid<2, NT>(config, {"x_order", "cos1_order"}),
+                                optimize_x_extent<typename KERNEL::Regulator>(config),
+                                config.get_double("/physical/T", 1.0))
     {
     }
 

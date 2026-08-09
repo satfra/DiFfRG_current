@@ -203,16 +203,16 @@ namespace DiFfRG
 
       [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Assembler(
           Discretization &discretization, Model &model,
-          DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, ConfigTree> json)
-          : Assembler(discretization, model, json.value(),
+          DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, ConfigTree> config)
+          : Assembler(discretization, model, config.value(),
                       DiFfRG::internal::legacy_default_log_port<Discretization>())
       {
       }
 
-      Assembler(Discretization &discretization, Model &model, const ConfigTree &json, LogPort log_port)
-          : Base(discretization, model, json, std::move(log_port)),
-            quadrature(fe.degree + 1 + json.get_uint("/discretization/overintegration", 0)),
-            quadrature_face(fe.degree + 1 + json.get_uint("/discretization/overintegration", 0))
+      Assembler(Discretization &discretization, Model &model, const ConfigTree &config, LogPort log_port)
+          : Base(discretization, model, config, std::move(log_port)),
+            quadrature(fe.degree + 1 + config.get_uint("/discretization/overintegration", 0)),
+            quadrature_face(fe.degree + 1 + config.get_uint("/discretization/overintegration", 0))
       {
         static_assert(Components::count_fe_subsystems() == 1, "A dDG model cannot have multiple submodels!");
         reinit();

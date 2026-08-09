@@ -25,15 +25,13 @@ namespace DiFfRG
      *
      * @param top_folder The top folder to store the output in.
      * @param output_name The name of the output file.
-     * @param json The JSON object containing the parameters.
+     * @param config The ConfigTree object containing the parameters.
      */
     CsvOutput(const std::string top_folder, const std::string output_name);
-    [[deprecated("Use CsvOutput(top_folder, output_name) instead")]] CsvOutput(const std::string top_folder,
-                                                                                const std::string output_name,
-                                                                                const ConfigTree &json)
+    [[deprecated("Use CsvOutput(top_folder, output_name) instead")]] CsvOutput(
+        const std::string top_folder, const std::string output_name, [[maybe_unused]] const ConfigTree &config)
         : CsvOutput(std::move(top_folder), std::move(output_name))
     {
-      (void)json;
     }
 
     /**

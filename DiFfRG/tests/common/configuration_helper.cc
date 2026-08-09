@@ -39,16 +39,16 @@ TEST_CASE("Test configuration helper", "[config][common]")
     ConfigurationHelper config(argc, argv);
 
     // Check that the values are read correctly
-    REQUIRE(config.get_json().get_int("/a") == 1);
-    REQUIRE(config.get_json().get_int("/b") == 2);
-    REQUIRE(config.get_json().get_int("/c") == 3);
-    REQUIRE(config.get_json().get_int("/d") == 4);
-    REQUIRE(config.get_json().get_int("/e") == 5);
-    REQUIRE(config.get_json().get_int("/f") == 6);
-    REQUIRE(config.get_json().get_int("/g") == 7);
-    REQUIRE(config.get_json().get_int("/h") == 8);
-    REQUIRE(config.get_json().get_int("/i") == 9);
-    REQUIRE(config.get_json().get_bool("/j") == true);
+    REQUIRE(config.get_config().get_int("/a") == 1);
+    REQUIRE(config.get_config().get_int("/b") == 2);
+    REQUIRE(config.get_config().get_int("/c") == 3);
+    REQUIRE(config.get_config().get_int("/d") == 4);
+    REQUIRE(config.get_config().get_int("/e") == 5);
+    REQUIRE(config.get_config().get_int("/f") == 6);
+    REQUIRE(config.get_config().get_int("/g") == 7);
+    REQUIRE(config.get_config().get_int("/h") == 8);
+    REQUIRE(config.get_config().get_int("/i") == 9);
+    REQUIRE(config.get_config().get_bool("/j") == true);
   }
 }
 
@@ -71,8 +71,13 @@ verbosity = 0
     std::ofstream(filename, std::ofstream::trunc) << document;
 
     int argc = 7;
-    char *argv[] = {(char *)"test",           (char *)"-p", (char *)filename.c_str(), (char *)"-sd",
-                    (char *)"/physical/T=0.5", (char *)"-ss", (char *)"/output/name=renamed"};
+    char *argv[] = {(char *)"test",
+                    (char *)"-p",
+                    (char *)filename.c_str(),
+                    (char *)"-sd",
+                    (char *)"/physical/T=0.5",
+                    (char *)"-ss",
+                    (char *)"/output/name=renamed"};
     ConfigurationHelper config(argc, argv);
 
     CHECK(config.get_config().get_double("/physical/Lambda") == Catch::Approx(0.65));
@@ -144,14 +149,14 @@ TEST_CASE("probe() reads the configuration without diagnostics or exiting", "[co
 
 TEST_CASE("contains() distinguishes a missing key from a present one", "[config][common]")
 {
-  const ConfigTree json(json::value{{"discretization", {{"threads", 4}}}});
+  const ConfigTree config(json::value{{"discretization", {{"threads", 4}}}});
 
-  CHECK(json.contains("/discretization/threads"));
-  CHECK_FALSE(json.contains("/discretization/mesh_workers"));
-  CHECK_FALSE(json.contains("/nonexistent/section/key"));
+  CHECK(config.contains("/discretization/threads"));
+  CHECK_FALSE(config.contains("/discretization/mesh_workers"));
+  CHECK_FALSE(config.contains("/nonexistent/section/key"));
   // A defaulted getter must agree with contains().
-  CHECK(json.get_uint("/discretization/threads", 99) == 4);
-  CHECK(json.get_uint("/discretization/mesh_workers", 99) == 99);
+  CHECK(config.get_uint("/discretization/threads", 99) == 4);
+  CHECK(config.get_uint("/discretization/mesh_workers", 99) == 99);
 }
 
 TEST_CASE("set_thread_limit caps the process thread count", "[config][common][threads]")
@@ -174,16 +179,16 @@ TEST_CASE("set_thread_limit caps the process thread count", "[config][common][th
 TEST_CASE("Legacy configuration output getters forward to OutputPath", "[config][common][migration]")
 {
   const auto root = std::filesystem::absolute("configuration-helper-output").lexically_normal();
-  const ConfigTree json(json::value{
-      {"output", {{"folder", root.string()}, {"name", "run"}, {"field_directory", "fields"}}}});
-  const ConfigurationHelper config(json);
-  const OutputPath output_path(json);
+  const ConfigTree config(
+      json::value{{"output", {{"folder", root.string()}, {"name", "run"}, {"field_directory", "fields"}}}});
+  const ConfigurationHelper config_helper(config);
+  const OutputPath output_path(config);
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-  CHECK(config.get_log_file() == output_path.run_file(".log").filename().string());
-  CHECK(config.get_output_name() == output_path.run_name());
-  CHECK(config.get_output_folder() == make_folder(output_path.field_directory().generic_string()));
-  CHECK(config.get_top_folder() == make_folder(output_path.root().generic_string()));
+  CHECK(config_helper.get_log_file() == output_path.run_file(".log").filename().string());
+  CHECK(config_helper.get_output_name() == output_path.run_name());
+  CHECK(config_helper.get_output_folder() == make_folder(output_path.field_directory().generic_string()));
+  CHECK(config_helper.get_top_folder() == make_folder(output_path.root().generic_string()));
 #pragma GCC diagnostic pop
 }
