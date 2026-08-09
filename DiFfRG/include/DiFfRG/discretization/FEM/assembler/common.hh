@@ -49,8 +49,8 @@ namespace DiFfRG
     template <typename... T> static constexpr auto e_tie(T &&...t)
     {
       return named_tuple<std::tuple<T &...>,
-                         StringSet<"fe_functions", "fe_derivatives", "fe_hessians", "extractors", "variables">>(
-          std::tie(t...));
+                         StringSet<"fe_functions", "fe_derivatives", "fe_hessians", "extractors", "variables",
+                                   "potential", "potential_gradient", "potential_hessian">>(std::tie(t...));
     }
 
   public:
@@ -77,8 +77,7 @@ namespace DiFfRG
           batch_size(config.get_uint("/discretization/batch_size", 16)),
           EoM_cell(*(dof_handler.active_cell_iterators().end())),
           old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
-          EoM_abs_tol(config.get_double("/discretization/EoM_abs_tol", 1e-12)),
-          EoM_max_iter(config.get_uint("/discretization/EoM_max_iter", 100))
+          EoM_config(DiFfRG::internal::resolve_eom_config(dof_handler, Config::EoMConfig(config)))
     {
       if (this->mesh_workers == 0) this->mesh_workers = std::max(1u, dealii::MultithreadInfo::n_threads() / 2);
       log_port.info("FEM: Using {} mesh workers for assembly.", mesh_workers);
@@ -161,6 +160,9 @@ namespace DiFfRG
     void readouts(OutputFrame<dim, VectorType> &data_out, const VectorType &solution_global,
                   const VectorType &variables) const
     {
+      auto raw_potential = reconstruct_raw_potential(
+          solution_global, dof_handler, mapping,
+          [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
       auto helper = [&](auto &&...args) {
         if constexpr (sizeof...(args) == 3) {
           auto &&[id, EoMfun, outputter] = std::forward_as_tuple(std::forward<decltype(args)>(args)...);
@@ -168,7 +170,8 @@ namespace DiFfRG
           auto EoM_cell = this->EoM_cell;
           auto EoM_result = get_EoM_point_with_potential(
               EoM_cell, solution_global, dof_handler, mapping, EoMfun, [&](const auto &p, const auto &) { return p; },
-              EoM_abs_tol, EoM_max_iter);
+              EoM_config, EoM_minimum_guess);
+          if (EoM_result.potential) EoM_minimum_guess = EoM_result.potential->minimum;
           const auto EoM = EoM_result.point;
           auto EoM_unit = mapping.transform_real_to_unit_cell(EoM_cell, EoM);
 
@@ -189,18 +192,25 @@ namespace DiFfRG
           fe_v.get_function_gradients(solution_global, solution_grad);
           fe_v.get_function_hessians(solution_global, solution_hess);
 
+          const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
+
           std::array<NumberType, Components::count_extractors()> __extracted_data{{}};
           if constexpr (Components::count_extractors() > 0)
-            extract(__extracted_data, solution_global, variables, true, false, false);
+            model.extract(__extracted_data, EoM,
+                          e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables, potential.value,
+                                potential.gradient, potential.hessian));
           const auto &extracted_data = __extracted_data;
 
-          outputter(data_out, EoM, e_tie(solution[0], solution_grad[0], solution_hess[0], extracted_data, variables));
+          outputter(data_out, EoM,
+                    e_tie(solution[0], solution_grad[0], solution_hess[0], extracted_data, variables, potential.value,
+                          potential.gradient, potential.hessian));
           data_out.attach_eom_potential(std::move(EoM_result));
         } else {
           internal::validate_readout_helper_arity<decltype(args)...>();
         }
       };
       model.readouts_multiple(helper, data_out);
+      data_out.attach_raw_potential(std::move(raw_potential));
     }
 
     void extract(std::array<NumberType, Components::count_extractors()> &data, const VectorType &solution_global,
@@ -208,12 +218,15 @@ namespace DiFfRG
     {
       auto EoM = this->EoM;
       auto EoM_cell = this->EoM_cell;
-      if (search_EoM || EoM_cell == *(dof_handler.active_cell_iterators().end()))
-        EoM = get_EoM_point(
+      if (search_EoM || EoM_cell == *(dof_handler.active_cell_iterators().end())) {
+        auto EoM_result = get_EoM_point_with_potential(
             EoM_cell, solution_global, dof_handler, mapping,
             [&](const auto &p, const auto &values) { return model.EoM(p, values); },
             [&](const auto &p, const auto &values) { return postprocess ? model.EoM_postprocess(p, values) : p; },
-            EoM_abs_tol, EoM_max_iter);
+            EoM_config, EoM_minimum_guess);
+        EoM = EoM_result.point;
+        if (EoM_result.potential) EoM_minimum_guess = EoM_result.potential->minimum;
+      }
       if (set_EoM) {
         this->EoM = EoM;
         this->EoM_cell = EoM_cell;
@@ -237,7 +250,13 @@ namespace DiFfRG
       fe_v.get_function_gradients(solution_global, solution_grad);
       fe_v.get_function_hessians(solution_global, solution_hess);
 
-      model.extract(data, EoM, e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables));
+      const auto raw_potential = reconstruct_raw_potential(
+          solution_global, dof_handler, mapping,
+          [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
+      const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
+      model.extract(data, EoM,
+                    e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables, potential.value,
+                          potential.gradient, potential.hessian));
     }
 
     bool jacobian_extractors(FullMatrix<NumberType> &extractor_jacobian, const VectorType &solution_global,
@@ -255,11 +274,13 @@ namespace DiFfRG
         extractor_jacobian_ddu =
             FullMatrix<NumberType>(Components::count_extractors(), Components::count_fe_functions() * dim * dim);
 
-      EoM = get_EoM_point(
+      auto EoM_result = get_EoM_point_with_potential(
           EoM_cell, solution_global, dof_handler, mapping,
           [&](const auto &p, const auto &values) { return model.EoM(p, values); },
-          [&](const auto &p, const auto &values) { return model.EoM_postprocess(p, values); }, EoM_abs_tol,
-          EoM_max_iter);
+          [&](const auto &p, const auto &values) { return model.EoM_postprocess(p, values); }, EoM_config,
+          EoM_minimum_guess);
+      EoM = EoM_result.point;
+      if (EoM_result.potential) EoM_minimum_guess = EoM_result.potential->minimum;
       auto EoM_unit = mapping.transform_real_to_unit_cell(EoM_cell, EoM);
       bool new_cell = (old_EoM_cell != EoM_cell);
       old_EoM_cell = EoM_cell;
@@ -288,15 +309,23 @@ namespace DiFfRG
       fe_v.get_function_gradients(solution_global, solution_grad);
       fe_v.get_function_hessians(solution_global, solution_hess);
 
+      const auto raw_potential = reconstruct_raw_potential(
+          solution_global, dof_handler, mapping,
+          [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
+      const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
+
       extractor_jacobian_u = 0;
       extractor_jacobian_du = 0;
       extractor_jacobian_ddu = 0;
       model.template jacobian_extractors<0>(extractor_jacobian_u, EoM,
-                                            e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables));
+                                            e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables,
+                                                  potential.value, potential.gradient, potential.hessian));
       model.template jacobian_extractors<1>(extractor_jacobian_du, EoM,
-                                            e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables));
+                                            e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables,
+                                                  potential.value, potential.gradient, potential.hessian));
       model.template jacobian_extractors<2>(extractor_jacobian_ddu, EoM,
-                                            e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables));
+                                            e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables,
+                                                  potential.value, potential.gradient, potential.hessian));
 
       if (extractor_jacobian.m() != Components::count_extractors() || extractor_jacobian.n() != n_dofs)
         extractor_jacobian = FullMatrix<NumberType>(Components::count_extractors(), n_dofs);
@@ -353,9 +382,9 @@ namespace DiFfRG
 
     mutable typename DoFHandler<dim>::cell_iterator EoM_cell;
     typename DoFHandler<dim>::cell_iterator old_EoM_cell;
-    const double EoM_abs_tol;
-    const uint EoM_max_iter;
+    const Config::EoMConfig EoM_config;
     mutable Point<dim> EoM;
+    mutable std::optional<Point<dim>> EoM_minimum_guess;
     FullMatrix<NumberType> extractor_jacobian;
     FullMatrix<NumberType> extractor_jacobian_u;
     FullMatrix<NumberType> extractor_jacobian_du;

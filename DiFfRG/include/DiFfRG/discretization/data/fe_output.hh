@@ -41,13 +41,14 @@ namespace DiFfRG
      * @param output_folder Folder where the .vtu files will be saved. Should be relative to top_folder.
      * @param subdivisions Number of subdivisions of the cells in the .vtu files.
      */
-    FEOutput(std::string top_folder, std::string output_name, std::string output_folder, const OutputSettings &settings,
-             bool active = true);
-    [[deprecated("Use FEOutput(top_folder, output_name, output_folder, OutputSettings(config), active) instead")]]
+    FEOutput(std::string top_folder, std::string output_name, std::string output_folder,
+             const Config::OutputSettings &settings, bool active = true);
+    [[deprecated(
+        "Use FEOutput(top_folder, output_name, output_folder, Config::OutputSettings(config), active) instead")]]
     FEOutput(std::string top_folder, std::string output_name, std::string output_folder, const ConfigTree &config,
              bool active = true)
-        : FEOutput(std::move(top_folder), std::move(output_name), std::move(output_folder), OutputSettings(config),
-                   active)
+        : FEOutput(std::move(top_folder), std::move(output_name), std::move(output_folder),
+                   Config::OutputSettings(config), active)
     {
     }
 
@@ -144,13 +145,14 @@ namespace DiFfRG
      * @param output_folder Folder where the .vtu files will be saved. Should be relative to top_folder.
      * @param subdivisions Number of subdivisions of the cells in the .vtu files.
      */
-    FEOutput(std::string top_folder, std::string output_name, std::string output_folder, const OutputSettings &settings,
-             bool active = true);
-    [[deprecated("Use FEOutput(top_folder, output_name, output_folder, OutputSettings(config), active) instead")]]
+    FEOutput(std::string top_folder, std::string output_name, std::string output_folder,
+             const Config::OutputSettings &settings, bool active = true);
+    [[deprecated(
+        "Use FEOutput(top_folder, output_name, output_folder, Config::OutputSettings(config), active) instead")]]
     FEOutput(std::string top_folder, std::string output_name, std::string output_folder, const ConfigTree &config,
              bool active = true)
-        : FEOutput(std::move(top_folder), std::move(output_name), std::move(output_folder), OutputSettings(config),
-                   active)
+        : FEOutput(std::move(top_folder), std::move(output_name), std::move(output_folder),
+                   Config::OutputSettings(config), active)
     {
     }
     void drain() {}

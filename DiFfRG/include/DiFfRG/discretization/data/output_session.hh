@@ -127,6 +127,11 @@ namespace DiFfRG
       session.attach_eom_potential(std::move(result));
     }
 
+    void attach_raw_potential(ReconstructedRawPotential<dim, typename VectorType::value_type> potential)
+    {
+      session.attach_raw_potential(std::move(potential));
+    }
+
     void dump_table(const std::string &name, const std::vector<std::vector<double>> &values, bool append = false,
                     const std::vector<std::string> &header = {})
     {
@@ -159,8 +164,11 @@ namespace DiFfRG
   template <uint dim, typename VectorType> class OutputSession
   {
   public:
-    explicit OutputSession(const OutputPath &path, OutputSettings settings = {});
-    OutputSession(const OutputPath &path, const ConfigTree &config) : OutputSession(path, OutputSettings(config)) {}
+    explicit OutputSession(const OutputPath &path, Config::OutputSettings settings = {});
+    OutputSession(const OutputPath &path, const ConfigTree &config)
+        : OutputSession(path, Config::OutputSettings(config))
+    {
+    }
     ~OutputSession() noexcept;
 
     OutputSession(const OutputSession &) = delete;
@@ -201,6 +209,7 @@ namespace DiFfRG
 
   private:
     FEOutput<dim, VectorType> &fe_output() { return fe_out; }
+    void attach_raw_potential(ReconstructedRawPotential<dim, typename VectorType::value_type> potential);
     void attach_eom_potential(EoMResult<dim, typename VectorType::value_type> result);
     CsvOutput &csv(const std::string &name);
     HDF5Output &hdf5(const std::string &name);
@@ -211,7 +220,7 @@ namespace DiFfRG
     void rethrow_deferred_error();
 
     const OutputPath &output_path;
-    OutputSettings settings;
+    Config::OutputSettings settings;
     const std::string top_folder;
     const std::string output_name;
     const std::string output_folder;
@@ -224,8 +233,10 @@ namespace DiFfRG
 
     RunLogger run_logger;
     FEOutput<dim, VectorType> fe_out;
-    std::vector<ReconstructedEoMPotential<dim, typename VectorType::value_type>> pending_eom_potentials;
+    std::optional<ReconstructedRawPotential<dim, typename VectorType::value_type>> pending_raw_potential;
     FEOutput<dim, dealii::Vector<typename VectorType::value_type>> potential_fe_out;
+    std::vector<ReconstructedEoMPotential<dim, typename VectorType::value_type>> pending_eom_potentials;
+    FEOutput<dim, dealii::Vector<typename VectorType::value_type>> eom_potential_fe_out;
     std::map<std::string, CsvOutput> csv_files;
 
     bool use_hdf5;

@@ -15,13 +15,15 @@
 namespace DiFfRG
 {
   template <uint dim, typename VectorType>
-  OutputSession<dim, VectorType>::OutputSession(const OutputPath &path, OutputSettings settings)
+  OutputSession<dim, VectorType>::OutputSession(const OutputPath &path, Config::OutputSettings settings)
       : output_path(path), settings(std::move(settings)), top_folder(make_folder(path.root().string())),
         output_name(path.run_name()), output_folder(make_folder(path.field_directory().generic_string())),
         active(MPI::rank(MPI_COMM_WORLD) == 0), run_logger(path, this->settings, active),
         fe_out(this->top_folder, this->output_name, this->output_folder, this->settings, active),
         potential_fe_out(this->top_folder, this->output_name + "_potential", this->output_folder, this->settings,
                          active),
+        eom_potential_fe_out(this->top_folder, this->output_name + "_eom_potential", this->output_folder,
+                             this->settings, active),
         use_hdf5(this->settings.write_hdf5), filename_h5(this->output_name + ".h5")
   {
     set_Lambda(this->settings.Lambda);
@@ -48,14 +50,27 @@ namespace DiFfRG
   }
 
   template <uint dim, typename VectorType>
+  void OutputSession<dim, VectorType>::attach_raw_potential(
+      ReconstructedRawPotential<dim, typename VectorType::value_type> potential)
+  {
+    if constexpr (dim > 0) {
+      if (pending_raw_potential)
+        throw std::logic_error("OutputSession::attach_raw_potential: a raw potential is already attached.");
+      potential_fe_out.attach(*potential.dof_handler, potential.values, "potential");
+      pending_raw_potential.emplace(std::move(potential));
+    }
+  }
+
+  template <uint dim, typename VectorType>
   void OutputSession<dim, VectorType>::attach_eom_potential(EoMResult<dim, typename VectorType::value_type> result)
   {
     if constexpr (dim > 0) {
       if (!result.potential.has_value()) return;
       auto &potential = result.potential.value();
-      const std::string name =
-          pending_eom_potentials.empty() ? "potential" : "potential_" + std::to_string(pending_eom_potentials.size());
-      potential_fe_out.attach(*potential.dof_handler, potential.values, name);
+      const std::string name = pending_eom_potentials.empty()
+                                   ? "eom_potential"
+                                   : "eom_potential_" + std::to_string(pending_eom_potentials.size());
+      eom_potential_fe_out.attach(*potential.dof_handler, potential.values, name);
       pending_eom_potentials.push_back(std::move(potential));
     }
   }
@@ -93,8 +108,12 @@ namespace DiFfRG
 
     if constexpr (dim > 0) {
       fe_out.flush(time);
-      if (!pending_eom_potentials.empty()) {
+      if (pending_raw_potential) {
         potential_fe_out.flush(time);
+        pending_raw_potential.reset();
+      }
+      if (!pending_eom_potentials.empty()) {
+        eom_potential_fe_out.flush(time);
         pending_eom_potentials.clear();
       }
     }
@@ -164,6 +183,11 @@ namespace DiFfRG
     } catch (...) {
       if (!drain_error) drain_error = std::current_exception();
     }
+    try {
+      eom_potential_fe_out.drain();
+    } catch (...) {
+      if (!drain_error) drain_error = std::current_exception();
+    }
     if (drain_error) {
       terminal_error = drain_error;
       std::rethrow_exception(drain_error);
@@ -187,6 +211,11 @@ namespace DiFfRG
       }
       try {
         potential_fe_out.finish();
+      } catch (...) {
+        if (!terminal_error) terminal_error = std::current_exception();
+      }
+      try {
+        eom_potential_fe_out.finish();
       } catch (...) {
         if (!terminal_error) terminal_error = std::current_exception();
       }

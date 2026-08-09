@@ -370,6 +370,23 @@ namespace DiFfRG
         return std::array<double, dim>{{u[0]}};
       }
 
+      /**
+       * @brief The unmodified gradient of the scalar potential reconstructed for readouts and extractors.
+       *
+       * This is deliberately separate from the EoM callback supplied by readouts_multiple(): a physical EoM may
+       * contain explicit-breaking or other terms which are not part of the raw potential. By default, the first dim
+       * solution components are interpreted as the raw potential gradient; missing components are zero-filled. Models
+       * with a different component layout should override this method.
+       */
+      template <int dim, typename Vector>
+      std::array<double, dim> raw_potential_gradient([[maybe_unused]] const Point<dim> &x, const Vector &u) const
+      {
+        std::array<double, dim> gradient{};
+        for (uint d = 0; d < dim && d < u.size(); ++d)
+          gradient[d] = u[d];
+        return gradient;
+      }
+
       template <int dim, typename Vector> Point<dim> EoM_postprocess(const Point<dim> &EoM, const Vector &) const
       {
         return EoM;

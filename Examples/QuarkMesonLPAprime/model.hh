@@ -279,6 +279,12 @@ public:
     return {{d1V - cSigma / (sigma + 1e-14)}};
   }
 
+  template <int dim, typename Vector>
+  std::array<double, 1> raw_potential_gradient(const Point<dim> &, const Vector &u_i) const
+  {
+    return {{u_i[idxf("u")]}};
+  }
+
   mutable double last_EoM = 0.;
   mutable bool lock_EoM = false;
 

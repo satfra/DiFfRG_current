@@ -2,7 +2,7 @@
 
 #include <sstream>
 
-namespace DiFfRG
+namespace DiFfRG::Config
 {
   OutputSettings::OutputSettings(const ConfigTree &config)
       : write_vtk(config.get_bool("/output/vtk", true)), write_hdf5(config.get_bool("/output/hdf5", true)),
@@ -18,4 +18,4 @@ namespace DiFfRG
     config.print(stream);
     configuration_log = stream.str();
   }
-} // namespace DiFfRG
+} // namespace DiFfRG::Config

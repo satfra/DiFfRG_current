@@ -21,9 +21,9 @@
 
 namespace
 {
-  DiFfRG::OutputSettings output_settings()
+  DiFfRG::Config::OutputSettings output_settings()
   {
-    DiFfRG::OutputSettings settings;
+    DiFfRG::Config::OutputSettings settings;
     settings.Lambda = 1.;
     settings.write_vtk = false;
     settings.write_hdf5 = false;
@@ -219,9 +219,9 @@ TEST_CASE("OutputSettings keeps debugging and memory policy in C++", "[output][s
   output["async"] = false;
   output["max_pending_bytes"] = 1;
 
-  const DiFfRG::OutputSettings settings(json);
+  const DiFfRG::Config::OutputSettings settings(json);
   CHECK(settings.asynchronous);
-  CHECK(settings.max_pending_bytes == DiFfRG::OutputSettings::default_max_pending_bytes);
+  CHECK(settings.max_pending_bytes == DiFfRG::Config::OutputSettings::default_max_pending_bytes);
 }
 
 TEST_CASE("OutputPath creates unique temporary roots concurrently", "[output][path][thread-safe]")
