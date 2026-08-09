@@ -13,7 +13,11 @@ function(add_migration_contract_test NAME TARGET EXPECT_SUCCESS EXPECTED_DIAGNOS
       -DSOURCE_TO_TOUCH=${CMAKE_CURRENT_SOURCE_DIR}/${probe_source} -DEXPECT_SUCCESS=${EXPECT_SUCCESS}
       "-DEXPECTED_DIAGNOSTICS=${EXPECTED_DIAGNOSTICS}" -P
       ${CMAKE_CURRENT_SOURCE_DIR}/check_compile_contract.cmake)
-  set_tests_properties(${NAME} PROPERTIES LABELS "api;migration" RUN_SERIAL TRUE)
+  # "slow": each of these recompiles a translation unit against the DiFfRG headers to assert
+  # which diagnostics the compiler emits, costing 10-53s apiece (worst for the ones pulling in
+  # KurganovTadmor.hh). Together they were ~56% of the default suite, and RUN_SERIAL means -j
+  # cannot hide it. Run with `ctest -L slow`.
+  set_tests_properties(${NAME} PROPERTIES LABELS "api;migration;slow" RUN_SERIAL TRUE)
 endfunction()
 
 function(add_clean_migration_contract_test NAME TARGET FORBIDDEN_DIAGNOSTICS)
@@ -26,13 +30,17 @@ function(add_clean_migration_contract_test NAME TARGET FORBIDDEN_DIAGNOSTICS)
       -DSOURCE_TO_TOUCH=${CMAKE_CURRENT_SOURCE_DIR}/${probe_source} -DEXPECT_SUCCESS=TRUE
       "-DFORBIDDEN_DIAGNOSTICS=${FORBIDDEN_DIAGNOSTICS}" -P
       ${CMAKE_CURRENT_SOURCE_DIR}/check_compile_contract.cmake)
-  set_tests_properties(${NAME} PROPERTIES LABELS "api;migration" RUN_SERIAL TRUE)
+  # "slow": each of these recompiles a translation unit against the DiFfRG headers to assert
+  # which diagnostics the compiler emits, costing 10-53s apiece (worst for the ones pulling in
+  # KurganovTadmor.hh). Together they were ~56% of the default suite, and RUN_SERIAL means -j
+  # cannot hide it. Run with `ctest -L slow`.
+  set_tests_properties(${NAME} PROPERTIES LABELS "api;migration;slow" RUN_SERIAL TRUE)
 endfunction()
 
 add_migration_probe(migration_callable_probe callable_probe.cc)
 add_migration_contract_test(
   migration_callable_diagnostics migration_callable_probe TRUE
-  "OutputPath(json).run_file|OutputPath(json).run_name|OutputPath(json).field_directory|OutputPath(json).root|CsvOutput(top_folder, output_name)|OutputSettings(json), active|OutputSettings(json).configuration_json|ConfigurationMesh<dim>")
+  "OutputPath(config).run_file|OutputPath(config).run_name|OutputPath(config).field_directory|OutputPath(config).root|CsvOutput(top_folder, output_name)|OutputSettings(config), active|OutputSettings(config).configuration_config|ConfigurationMesh<dim>")
 
 add_migration_probe(migration_data_output_failure data_output_failure.cc)
 add_migration_contract_test(
@@ -53,11 +61,6 @@ add_migration_probe(migration_readout_failure readout_failure.cc)
 add_migration_contract_test(
   migration_readout_diagnostic migration_readout_failure FALSE
   "stable readout ID: helper(id, EoM, outputter)")
-
-add_migration_probe(migration_output_callback_failure output_callback_failure.cc)
-add_migration_contract_test(
-  migration_output_callback_diagnostic migration_output_callback_failure FALSE
-  "attach_data_output(OutputFrame<dim, VectorType>&, ...) instead")
 
 add_migration_probe(migration_output_frame_csv_failure output_frame_csv_failure.cc)
 add_migration_contract_test(

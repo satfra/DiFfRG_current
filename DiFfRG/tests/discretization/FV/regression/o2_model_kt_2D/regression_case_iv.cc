@@ -498,7 +498,7 @@ TEST_CASE("O2 Model VI_B_IV run extracts Gamma2 at the origin", "[2d][FV][KT][O2
   CHECK_THAT(gamma.gamma_12, Catch::Matchers::WithinAbs(0.0, gamma_tolerance));
 }
 
-TEST_CASE("O2 Model VI_B_IV coarse 40x40 run extracts Gamma2 at the origin", "[2d][FV][KT][O2][VI_B_IV][coarse]")
+TEST_CASE("O2 Model VI_B_IV coarse 40x40 run extracts Gamma2 at the origin", "[2d][FV][KT][O2][VI_B_IV][coarse][slow]")
 {
   const Gamma2 gamma = run_o2_vi_b_iv_gamma_regression(
       {.n_cells_per_direction = 40, .final_time = default_final_time, .retain_output = false});

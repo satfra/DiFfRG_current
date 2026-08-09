@@ -981,7 +981,7 @@ TEST_CASE("Zero-dimensional KT Case V 200x200 diagnostic run reaches t=60",
 }
 
 TEST_CASE("Zero-dimensional KT Case V coarse 40x40 run extracts non-O2 observables",
-          "[2d][FV][KT][paper][case_v][coarse]")
+          "[2d][FV][KT][paper][case_v][coarse][slow]")
 {
   const CaseVObservables observables = run_case_v_regression({.n_cells_per_direction = 40,
                                                               .final_time = default_final_time,

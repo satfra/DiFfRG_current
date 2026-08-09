@@ -38,15 +38,20 @@ namespace
   constexpr double dx = domain_length / static_cast<double>(n_cells_per_direction);
   constexpr double velocity_x = 0.8;
   constexpr double velocity_y = 0.4;
-  constexpr double final_time = 1.25;
+  // Halved from 1.25 purely for runtime. The check is against the exact translated state, which
+  // is evaluated at whatever final_time is set here, so the test keeps its meaning; the error
+  // tolerances below are calibrated for this distance.
+  constexpr double final_time = 0.625;
   constexpr double pulse_x0 = -0.75;
   constexpr double pulse_y0 = -0.4;
   constexpr double pulse_radius = 0.35;
   constexpr double explicit_dt = 1.0e-3;
   constexpr double implicit_dt = 1.0e-2;
-  constexpr double l1_tolerance = 2.5e-2;
-  constexpr double l2_tolerance = 4.0e-2;
-  constexpr double linf_tolerance = 2.0e-1;
+  // Calibrated for final_time = 0.625. Measured errors are L1 = 1.336e-2, L2 = 2.223e-2,
+  // Linf = 8.110e-2; the bounds keep ~25% headroom. Re-derive if final_time or the grid changes.
+  constexpr double l1_tolerance = 1.7e-2;
+  constexpr double l2_tolerance = 2.8e-2;
+  constexpr double linf_tolerance = 1.0e-1;
 
   using NumberType = double;
   using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">>;
@@ -228,7 +233,7 @@ namespace
   }
 } // namespace
 
-TEST_CASE("2D linear advection compact pulse matches exact translated final state", "[2d][FV][KT][advection]")
+TEST_CASE("2D linear advection compact pulse matches exact translated final state", "[2d][FV][KT][advection][slow]")
 {
   const ErrorMetrics error = run_linear_advection();
 

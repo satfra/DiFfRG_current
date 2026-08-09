@@ -20,6 +20,9 @@
 #include <limits>
 #include <memory>
 #include <sstream>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -32,9 +35,13 @@ namespace
 
   constexpr uint dim = 2;
   constexpr std::size_t n_components = 1;
-  constexpr unsigned int n_coarse_cells = 60;
-  constexpr unsigned int n_medium_cells = 120;
-  constexpr unsigned int n_fine_cells = 240;
+  // Grid-convergence ladder. The finest run is NOT executed by the benchmark: its
+  // downsampled result is committed as a fixture (see the hidden [generate] test case
+  // below), because a direct UMFPack solve on the fine 2D grid dominates the runtime
+  // while contributing nothing the fixture cannot carry.
+  constexpr unsigned int n_coarse_cells = 30;
+  constexpr unsigned int n_medium_cells = 60;
+  constexpr unsigned int n_fine_cells = 120;
   constexpr double domain_min = -1.5;
   constexpr double domain_max = 1.5;
   constexpr double domain_length = domain_max - domain_min;
@@ -45,9 +52,18 @@ namespace
   constexpr double negative_center_x = 0.5;
   constexpr double negative_center_y = 0.5;
   constexpr double implicit_dt = 1.0e-2;
-  constexpr double l1_tolerance = 7.6e-2;
-  constexpr double l2_tolerance = 9.5e-2;
-  constexpr double linf_tolerance = 3.2e-1;
+  // IDA's FIRST step must be much smaller than its largest: the initial condition is two
+  // discontinuous disks, and opening with a 1e-2 step sends the nonlinear solve into
+  // repeated rejections (SUNDIALS "nonlinear convergence failure rate" warnings) before it
+  // claws its way back down.
+  constexpr double implicit_initial_dt = 1.0e-5;
+  // Calibrated for the 30/60/120 ladder against the committed fine-grid fixture. Measured
+  // coarse-grid errors are L1 = 1.013e-1, L2 = 9.445e-2, Linf = 2.201e-1; the bounds carry
+  // ~25% headroom for platform and threading variation. Re-derive these whenever the ladder,
+  // the model, the domain or final_time changes -- they encode "30x30 vs 120x120", nothing more.
+  constexpr double l1_tolerance = 1.30e-1;
+  constexpr double l2_tolerance = 1.20e-1;
+  constexpr double linf_tolerance = 2.80e-1;
   constexpr double medium_l1_refinement_factor = 0.75;
   constexpr double medium_l2_refinement_factor = 0.85;
   constexpr double min_tolerance = -1.05;
@@ -139,7 +155,7 @@ namespace
            {"explicit",
             {{"dt", 1.0e-3}, {"minimal_dt", 1.0e-8}, {"maximal_dt", 1.0e-3}, {"abs_tol", 1.0e-9}, {"rel_tol", 1.0e-9}}},
            {"implicit",
-            {{"dt", implicit_dt},
+            {{"dt", implicit_initial_dt},
              {"minimal_dt", 1.0e-8},
              {"maximal_dt", implicit_dt},
              {"abs_tol", 1.0e-6},
@@ -242,6 +258,37 @@ namespace
     return target;
   }
 
+
+  std::filesystem::path reference_fixture_path()
+  {
+    return std::filesystem::path(__FILE__).parent_path() / "data" / "burgers_2D_reference_fine.json";
+  }
+
+  // Downsampled fine-grid reference, produced by the hidden [generate] test case below.
+  // Regenerate with:  ./burgers_2D "GENERATE 2D Burgers fine-grid reference fixture"
+  std::vector<double> load_downsampled_reference(const unsigned int target_cells)
+  {
+    const auto path = reference_fixture_path();
+    if (!std::filesystem::exists(path))
+      throw std::runtime_error("Missing 2D Burgers reference fixture: " + path.string() +
+                               " (regenerate with the [generate] test case)");
+
+    const ConfigTree fixture(path.string());
+    const json::value value = static_cast<json::value>(fixture);
+    const auto &root = value.as_object();
+
+    REQUIRE(root.at("n_fine_cells").as_int64() == static_cast<std::int64_t>(n_fine_cells));
+    REQUIRE(root.at("final_time").as_double() == final_time);
+
+    const auto key = std::to_string(target_cells);
+    if (!root.contains(key))
+      throw std::runtime_error("2D Burgers reference fixture has no entry for " + key + " cells");
+
+    auto values = kt_regression::json_array_to_doubles(root.at(key).as_array());
+    REQUIRE(values.size() == static_cast<std::size_t>(target_cells) * target_cells);
+    return values;
+  }
+
   struct RegressionMetrics {
     double l1 = 0.0;
     double l2 = 0.0;
@@ -302,23 +349,53 @@ namespace
   }
 } // namespace
 
-TEST_CASE("2D Burgers disk benchmark matches downsampled fine-grid run", "[2d][FV][KT][burgers]")
+// Regenerates data/burgers_2D_reference_fine.json. Hidden ("[.]") so it never runs in a
+// normal pass: it performs the expensive fine-grid solve that the benchmark itself avoids.
+// Run it explicitly after changing the model, the ladder, the domain or final_time.
+TEST_CASE("GENERATE 2D Burgers fine-grid reference fixture", "[.][generate][2d][FV][KT][burgers]")
 {
   const auto fine = run_burgers(n_fine_cells, "burgers_2D_fine_grid");
 
-  const auto downsampled_fine_coarse = average_to_grid(fine, n_fine_cells, n_coarse_cells);
+  json::object root;
+  root["n_fine_cells"] = static_cast<std::int64_t>(n_fine_cells);
+  root["final_time"] = final_time;
+  root["comment"] = "Fine-grid 2D Burgers run, cell-averaged onto the coarser ladder grids. "
+                    "Generated by the [generate] test case in burgers_2D.cc.";
+  for (const unsigned int target : {n_coarse_cells, n_medium_cells}) {
+    const auto downsampled = average_to_grid(fine, n_fine_cells, target);
+    json::array entries;
+    entries.reserve(downsampled.size());
+    for (const double value : downsampled)
+      entries.push_back(json::value(value));
+    root[std::to_string(target)] = std::move(entries);
+  }
+
+  const auto path = reference_fixture_path();
+  std::ofstream out(path);
+  if (!out) throw std::runtime_error("Cannot write reference fixture: " + path.string());
+  out << json::serialize(json::value(std::move(root))) << '\n';
+  out.close();
+  std::cout << "Wrote 2D Burgers reference fixture to " << path << '\n';
+  REQUIRE(std::filesystem::exists(path));
+}
+
+TEST_CASE("2D Burgers disk benchmark matches downsampled fine-grid run", "[2d][FV][KT][burgers][slow]")
+{
+  const auto downsampled_fine_coarse = load_downsampled_reference(n_coarse_cells);
   const auto coarse = run_burgers(n_coarse_cells, "burgers_2D_regression");
   const RegressionMetrics coarse_metrics = compute_metrics(n_coarse_cells, coarse, downsampled_fine_coarse);
 
-  const auto downsampled_fine_medium = average_to_grid(fine, n_fine_cells, n_medium_cells);
+  const auto downsampled_fine_medium = load_downsampled_reference(n_medium_cells);
   const auto medium = run_burgers(n_medium_cells, "burgers_2D_medium_grid");
   const RegressionMetrics medium_metrics = compute_metrics(n_medium_cells, medium, downsampled_fine_medium);
 
   std::cout << std::scientific << std::setprecision(8)
-            << "2D Burgers 60x60 vs downsampled 240x240: L1=" << coarse_metrics.l1 << ", L2=" << coarse_metrics.l2
+            << "2D Burgers " << n_coarse_cells << "x" << n_coarse_cells << " vs downsampled "
+            << n_fine_cells << "x" << n_fine_cells << ": L1=" << coarse_metrics.l1 << ", L2=" << coarse_metrics.l2
             << ", Linf=" << coarse_metrics.linf << ", mass=" << coarse_metrics.mass << ", min=" << coarse_metrics.min
             << ", max=" << coarse_metrics.max << ", antisymmetry=" << coarse_metrics.antisymmetry << '\n'
-            << "2D Burgers 120x120 vs downsampled 240x240: L1=" << medium_metrics.l1 << ", L2=" << medium_metrics.l2
+            << "2D Burgers " << n_medium_cells << "x" << n_medium_cells << " vs downsampled "
+            << n_fine_cells << "x" << n_fine_cells << ": L1=" << medium_metrics.l1 << ", L2=" << medium_metrics.l2
             << ", Linf=" << medium_metrics.linf << ", mass=" << medium_metrics.mass << ", min=" << medium_metrics.min
             << ", max=" << medium_metrics.max << ", antisymmetry=" << medium_metrics.antisymmetry << '\n';
 

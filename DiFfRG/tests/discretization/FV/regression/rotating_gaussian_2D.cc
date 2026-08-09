@@ -44,7 +44,12 @@ namespace
   constexpr double domain_length = domain_max - domain_min;
   constexpr double pi = 3.141592653589793238462643383279502884;
   constexpr double angular_velocity = 1.0;
-  constexpr double final_time = 2.0 * pi;
+  // Half a revolution rather than a full one, purely for runtime: the error is measured against
+  // the ANALYTIC rotated Gaussian at final_time (not against the initial condition), so the
+  // reference stays exact and the spatial convergence orders are unchanged. Every assertion in
+  // check_convergence_rows is relative or monotonic, so none of them is calibrated to the
+  // revolution count. Cost scales with the step count, i.e. linearly in final_time.
+  constexpr double final_time = pi;
   constexpr double center_x = 0.0;
   constexpr double center_y = 0.0;
   constexpr double pulse_x0 = 0.5;
@@ -454,7 +459,8 @@ namespace
   }
 } // namespace
 
-TEST_CASE("2D rotating Gaussian regression converges after one solid-body revolution", "[2d][FV][KT][advection][slow]")
+TEST_CASE("2D rotating Gaussian regression converges after half a solid-body revolution",
+          "[2d][FV][KT][advection][slow]")
 {
   const std::filesystem::path artifact_root =
       std::filesystem::current_path() / "rotating_gaussian_2D_regression_artifacts";

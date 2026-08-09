@@ -28,7 +28,12 @@ generatesSecondOrderComplexAD[] :=
         header = Import[FileNameJoin[{tmp, "flows", "pion", "pion.hh"}], "Text"];
         adGet = Import[FileNameJoin[{tmp, "flows", "pion", "src", "AD_get.cc"}], "Text"];
         constructor = Import[FileNameJoin[{tmp, "flows", "pion", "src", "constructor.cc"}], "Text"];
-        result = containsAll[header, {"Integrator_p2<3, cxreal, pion_kernel<Regulator>, DiFfRG::TBB_exec> integrator_AD;", "Integrator_p2<3, cxReal<2, double>, pion_kernel<Regulator>, DiFfRG::TBB_exec> integrator_AD2;", "void get(cxreal &dest, const double &k, const double &T, const cxreal &mpi2);", "void get(cxReal<2, double> &dest, const double &k, const double &T, const cxReal<2, double> &mpi2);"}] && containsAll[adGet, {"void pion_integrator::get(cxreal &dest, const double &k, const double &T, const cxreal &mpi2)", "integrator_AD.get(dest, k, T, mpi2);", "void pion_integrator::get(cxReal<2, double> &dest, const double &k, const double &T, const cxReal<2, double> &mpi2)", "integrator_AD2.get(dest, k, T, mpi2);"}] && StringContainsQ[constructor, "integrator_AD(quadrature_provider, config)"] && StringContainsQ[constructor, "integrator_AD2(quadrature_provider, config)"];
+        (* Expectations match ExportCode's RAW output. It does not run clang-format (despite
+           what its usage message once claimed), so the generated text uses `T& x` rather than
+           the project's `T &x`, splits the declaration semicolon onto its own line, and leaves
+           a double space after the first `get` argument. Those are formatting artefacts of the
+           generator, not style choices -- if any of them is ever cleaned up this test will say so. *)
+        result = containsAll[header, {"Integrator_p2<3, cxreal, pion_kernel<Regulator>, DiFfRG::TBB_exec> integrator_AD;", "Integrator_p2<3, cxReal<2, double>, pion_kernel<Regulator>, DiFfRG::TBB_exec> integrator_AD2;", "void get(cxreal& dest, const double& k, const double& T, const cxreal& mpi2)", "void get(cxReal<2, double>& dest, const double& k, const double& T, const cxReal<2, double>& mpi2)"}] && containsAll[adGet, {"void pion_integrator::get(cxreal& dest, const double& k, const double& T, const cxreal& mpi2)", "integrator_AD.get(dest,  k, T, mpi2);", "void pion_integrator::get(cxReal<2, double>& dest, const double& k, const double& T, const cxReal<2, double>& mpi2)", "integrator_AD2.get(dest,  k, T, mpi2);"}] && StringContainsQ[constructor, "integrator_AD(quadrature_provider, config)"] && StringContainsQ[constructor, "integrator_AD2(quadrature_provider, config)"];
         DeleteDirectory[tmp, DeleteContents -> True];
         result
     ];
