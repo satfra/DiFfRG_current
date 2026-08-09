@@ -6,7 +6,7 @@ using namespace DiFfRG;
 #include "flows/flows.hh"
 
 struct Parameters {
-  Parameters(const JSONValue &json)
+  Parameters(const ConfigTree &json)
   {
     try {
       Lambda = json.get_double("/physical/Lambda");
@@ -74,7 +74,7 @@ class YangMills : public def::AbstractModel<YangMills, Components>,
   mutable SplineInterpolator1D<double, Coordinates1D, GPU_memory> ZA4, ZAcbc, ZA3;
 
 public:
-  YangMills(const JSONValue &json)
+  YangMills(const ConfigTree &json)
       : def::fRG(json.get_double("/physical/Lambda")), prm(json),
         coordinates1D(p_grid_size, prm.p_grid_min, prm.p_grid_max, prm.p_grid_bias), flow_equations(json),
         dtZc(coordinates1D), dtZA(coordinates1D), ZA(coordinates1D), Zc(coordinates1D), // propagators
@@ -164,7 +164,7 @@ public:
       throw std::runtime_error("Diverging result: Zc(0) = " + std::to_string(Zc[0]));
     }
 
-    auto &hdf = output.hdf5();
+    auto hdf = output.hdf5();
     hdf.map("ZA", coordinates1D, &(variables.data()[idxv("ZA")]));
     hdf.map("Zc", coordinates1D, &(variables.data()[idxv("Zc")]));
 

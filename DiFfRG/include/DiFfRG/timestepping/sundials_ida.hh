@@ -6,8 +6,11 @@
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/common/abstract_data.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/timestepping/abstract_timestepper.hh>
+
+#include <functional>
+#include <utility>
 
 namespace DiFfRG
 {
@@ -28,8 +31,9 @@ namespace DiFfRG
     using NumberType = typename Base::NumberType;
     using InverseSparseMatrixType = typename Base::InverseSparseMatrixType;
     using BlockVectorType = typename Base::BlockVectorType;
+    using IDAErrorDofCallback = std::function<void(const IDAErrorDofDiagnostics &)>;
 
-    using Base::assembler, Base::data_out, Base::json, Base::adaptor;
+    using Base::assembler, Base::data_out, Base::config, Base::adaptor;
     using Base::Base;
     using Base::console_out;
     using Base::verbosity, Base::output_dt, Base::impl, Base::expl;
@@ -37,9 +41,13 @@ namespace DiFfRG
     virtual void run(AbstractFlowingVariables<NumberType> *initial_condition, const double t_start,
                      const double t_stop) override;
 
+    void set_ida_error_dof_callback(IDAErrorDofCallback callback) { ida_error_dof_callback = std::move(callback); }
+
   private:
     void run(VectorType &initial_data, const double t_start, const double t_stop);
     void run(BlockVectorType &initial_data, const double t_start, const double t_stop);
     void run_vars(VectorType &initial_data, const double t_start, const double t_stop);
+
+    IDAErrorDofCallback ida_error_dof_callback;
   };
 } // namespace DiFfRG

@@ -13,7 +13,7 @@ namespace DiFfRG
     class ZA4tadpole_integrator
     {
     public:
-      ZA4tadpole_integrator(QuadratureProvider &quadrature_provider, std::array<uint, 3> grid_sizes, const double x_extent, const JSONValue &json);
+      ZA4tadpole_integrator(QuadratureProvider &quadrature_provider, std::array<uint, 3> grid_sizes, const double x_extent, const ConfigTree &json);
       ZA4tadpole_integrator(const ZA4tadpole_integrator &other);
       ~ZA4tadpole_integrator();
 
@@ -53,7 +53,7 @@ namespace DiFfRG
       std::array<uint, 3> jac_grid_sizes;
       const double x_extent;
       const double jacobian_quadrature_factor;
-      const JSONValue json;
+      const ConfigTree json;
 
       std::unique_ptr<DiFfRG::Integrator4D2AngGPU<double, ZA4tadpole_kernel<__REGULATOR__>>> integrator;
     };

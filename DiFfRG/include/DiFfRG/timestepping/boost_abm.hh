@@ -6,7 +6,7 @@
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/common/abstract_data.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/timestepping/abstract_timestepper.hh>
 
 namespace DiFfRG
@@ -26,7 +26,7 @@ namespace DiFfRG
     using InverseSparseMatrixType = typename Base::InverseSparseMatrixType;
     using BlockVectorType = typename Base::BlockVectorType;
 
-    using Base::assembler, Base::data_out, Base::json, Base::adaptor;
+    using Base::assembler, Base::data_out, Base::config, Base::adaptor;
     using Base::Base;
     using Base::console_out;
     using Base::verbosity, Base::output_dt, Base::impl, Base::expl;

@@ -7,7 +7,7 @@ namespace DiFfRG
 {
   namespace Flows
   {
-    ZA3_integrator::ZA3_integrator(QuadratureProvider &quadrature_provider, std::array<uint, 3> grid_sizes, const double x_extent, const JSONValue &json)
+    ZA3_integrator::ZA3_integrator(QuadratureProvider &quadrature_provider, std::array<uint, 3> grid_sizes, const double x_extent, const ConfigTree &json)
         : quadrature_provider(quadrature_provider), grid_sizes(grid_sizes), x_extent(x_extent),
           jacobian_quadrature_factor(json.get_double("/integration/jacobian_quadrature_factor")), json(json)
     {

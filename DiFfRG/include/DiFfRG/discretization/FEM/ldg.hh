@@ -11,6 +11,7 @@
 #include <deal.II/lac/affine_constraints.h>
 
 // DiFfRG
+#include <DiFfRG/common/run_logger.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/FEM/assembler/ldg.hh>
 #include <DiFfRG/discretization/discretization.hh>
@@ -37,13 +38,20 @@ namespace DiFfRG
       using Mesh = Mesh_;
       static constexpr uint dim = Mesh::dim;
 
-      Discretization(Mesh &mesh, const JSONValue &json) : mesh(mesh), json(json)
+      [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Discretization(
+          Mesh &mesh, DiFfRG::internal::LegacyDefaultLogPortArgument<Mesh, ConfigTree> config)
+          : Discretization(mesh, config.value(), DiFfRG::internal::legacy_default_log_port<Mesh>())
+      {
+      }
+
+      Discretization(Mesh &mesh, const ConfigTree &config, LogPort log_port)
+          : mesh(mesh), config(config), log_port(std::move(log_port))
       {
         static_assert(Components::count_fe_subsystems() > 1,
                       "LDG must have a defined submodel of the Model with index 1.");
         for (uint i = 0; i < Components::count_fe_subsystems(); ++i) {
-          fe.emplace_back(std::make_shared<FESystem<dim>>(FE_DGQ<dim>(json.get_uint("/discretization/fe_order")),
-                                                          Components::count_fe_functions(i)));
+          fe.emplace_back(std::make_shared<FESystem<dim>>(
+              FE_DGQ<dim>(config.get_uint_or_warn("/discretization/fe_order", 3)), Components::count_fe_functions(i)));
           dof_handler.emplace_back(std::make_shared<DoFHandler<dim>>(mesh.get_triangulation()));
           constraints.emplace_back();
         }
@@ -58,7 +66,7 @@ namespace DiFfRG
       }
       const auto &get_dof_handler(const uint i = 0) const { return *(dof_handler[i]); }
       auto &get_dof_handler(const uint i = 0) { return *(dof_handler[i]); }
-      const auto get_dof_handler_list() const
+      auto get_dof_handler_list() const
       {
         std::vector<const DoFHandler<dim> *> ret;
         for (uint i = 0; i < Components::count_fe_subsystems(); ++i)
@@ -71,7 +79,7 @@ namespace DiFfRG
       auto &get_triangulation() { return mesh.get_triangulation(); }
       const Point<dim> &get_support_point(const uint &dof) const { return support_points[dof]; }
       const auto &get_support_points() const { return support_points; }
-      const auto &get_json() const { return json; }
+      const auto &get_config() const { return config; }
 
       void reinit() { setup_dofs(); }
 
@@ -99,7 +107,7 @@ namespace DiFfRG
     protected:
       void setup_dofs()
       {
-        spdlog::get("log")->info("FEM: Number of active cells: {}", mesh.get_triangulation().n_active_cells());
+        log_port.info("FEM: Number of active cells: {}", mesh.get_triangulation().n_active_cells());
 
         for (uint i = 0; i < Components::count_fe_subsystems(); ++i) {
           dof_handler[i]->distribute_dofs(*(fe[i]));
@@ -108,7 +116,7 @@ namespace DiFfRG
           DoFTools::make_hanging_node_constraints(*(dof_handler[i]), constraints[i]);
           constraints[i].close();
 
-          if (i == 0) spdlog::get("log")->info("FEM: Number of degrees of freedom: {}", dof_handler[0]->n_dofs());
+          if (i == 0) log_port.info("FEM: Number of degrees of freedom: {}", dof_handler[0]->n_dofs());
         }
 
         support_points.resize(dof_handler[0]->n_dofs());
@@ -116,7 +124,8 @@ namespace DiFfRG
       }
 
       Mesh &mesh;
-      JSONValue json;
+      ConfigTree config;
+      LogPort log_port;
 
       std::vector<std::shared_ptr<FESystem<dim>>> fe;
       std::vector<std::shared_ptr<DoFHandler<dim>>> dof_handler;

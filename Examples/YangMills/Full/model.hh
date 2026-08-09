@@ -6,7 +6,7 @@ using namespace DiFfRG;
 #include "flows/flows.hh"
 
 struct Parameters {
-  Parameters(const JSONValue &json)
+  Parameters(const ConfigTree &json)
   {
     try {
       Lambda = json.get_double("/physical/Lambda");
@@ -53,7 +53,11 @@ static constexpr uint p_grid_size = 96;
 // instead of a whole face as with (|p1|,|p2|,cos), which is what makes the flow tunable.
 static constexpr uint S0_grid_size = 96; // match the legacy momentum resolution on the vertex scale axis
 static constexpr uint S1_grid_size = 8;
-static constexpr uint SPhi_grid_size = 7;
+// SPhi is a genuine angle: everything downstream depends only on sin(SPhi), cos(SPhi), cos(2 SPhi), so the axis is
+// gridded periodically over [-pi, pi) with the endpoint excluded. That drops one full 2D plane of variables compared
+// to the naive [-pi, pi] grid (where -pi and +pi were duplicated, unconstrained degrees of freedom) at unchanged
+// pi/3 spacing, and makes the interpolation wrap across the seam instead of clamping.
+static constexpr uint SPhi_grid_size = 6;
 static constexpr uint vertex_grid_size = S0_grid_size * S1_grid_size * SPhi_grid_size;
 
 // The 3-gluon (ZA3), ghost-gluon (ZAcbc) and 4-gluon tadpole (ZA4tadpole) are angle-resolved 3D
@@ -81,12 +85,13 @@ class YangMills : public def::AbstractModel<YangMills, Components>,
   const Parameters prm;
 
   using Coordinates1D = LogarithmicCoordinates1D<double>;
-  using Coordinates3D = LogLinLinCoordinates; // CoordinatePackND<Log, Lin, Lin> over (S0, S1, SPhi)
+  // CoordinatePackND<Log, Lin, LinPeriodic> over (S0, S1, SPhi)
+  using Coordinates3D = LogLinLinPeriodicCoordinates;
 
   const Coordinates1D coordinates1D;
   const Coordinates1D S0_coordinates;
   const LinearCoordinates1D<double> S1_coordinates;
-  const LinearCoordinates1D<double> SPhi_coordinates;
+  const LinearPeriodicCoordinates1D<double> SPhi_coordinates;
   const Coordinates3D coordinates3D;
 
   mutable YangMillsFlows flow_equations;
@@ -95,12 +100,12 @@ class YangMills : public def::AbstractModel<YangMills, Components>,
   mutable LinearInterpolatorND<double, Coordinates3D, GPU_memory> ZA3, ZAcbc, ZA4tadpole;
 
 public:
-  YangMills(const JSONValue &json)
+  YangMills(const ConfigTree &json)
       : def::fRG(json.get_double("/physical/Lambda")), prm(json),
         coordinates1D(p_grid_size, prm.p_grid_min, prm.p_grid_max, prm.p_grid_bias),
         S0_coordinates(S0_grid_size, prm.p_grid_min, prm.p_grid_max, prm.p_grid_bias),
         S1_coordinates(S1_grid_size, 0.0, 0.9999),       // shape variable, [0,1)
-        SPhi_coordinates(SPhi_grid_size, -M_PI, M_PI),   // angle, matches the atan2 feed range
+        SPhi_coordinates(SPhi_grid_size, -M_PI, M_PI),   // periodic angle, matches the atan2 feed range (-pi, pi]
         coordinates3D(S0_coordinates, S1_coordinates, SPhi_coordinates), flow_equations(json),
         dtZc(coordinates1D), dtZA(coordinates1D), ZA(coordinates1D), Zc(coordinates1D), ZA4SP(coordinates1D),
         ZA3(coordinates3D), ZAcbc(coordinates3D), ZA4tadpole(coordinates3D)
@@ -203,7 +208,7 @@ public:
     // sanity check: make sure 0 < Zc[0] < 1
     if (Zc[0] < 0 || Zc[0] > 1) throw std::runtime_error("Diverging result: Zc(0) = " + std::to_string(Zc[0]));
 
-    auto &hdf = output.hdf5();
+    auto hdf = output.hdf5();
     hdf.map("ZA", coordinates1D, &(variables.data()[idxv("ZA")]));
     hdf.map("Zc", coordinates1D, &(variables.data()[idxv("Zc")]));
     hdf.map("ZA4SP", coordinates1D, &(variables.data()[idxv("ZA4SP")]));

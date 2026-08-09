@@ -3,6 +3,7 @@
 // DiFfRG
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/math.hh>
+#include <DiFfRG/physics/interpolation/interpolation_stencil.hh>
 
 namespace DiFfRG
 {
@@ -15,6 +16,9 @@ namespace DiFfRG
   template <typename NT, typename Coordinates, typename DefaultMemorySpace = CPU_memory> class LinearInterpolator2D
   {
     static_assert(Coordinates::dim == 2, "LinearInterpolator2D requires 2D coordinates");
+
+    static constexpr bool periodic_x = is_periodic_axis_v<Coordinates, 0>;
+    static constexpr bool periodic_y = is_periodic_axis_v<Coordinates, 1>;
 
   public:
     using memory_space = DefaultMemorySpace;
@@ -99,26 +103,50 @@ namespace DiFfRG
      * @param x the point at which to interpolate
      * @return NT the interpolated value
      */
-    NT KOKKOS_FUNCTION operator()(const typename Coordinates::ctype x, const typename Coordinates::ctype y) const
+    /**
+     * @brief Map physical coordinates onto grid indices.
+     *
+     * Split out of operator() because it is the expensive half: Coordinates::backward is a fp64
+     * log/log1p per logarithmic axis, ~200 fp64 instructions each on current NVIDIA parts against
+     * ~10 for the interpolation. A generated kernel evaluating several dressings at the SAME point
+     * otherwise pays it once per dressing -- the compiler cannot CSE it, because each interpolator
+     * owns its own `coordinates` members and cannot be proven to agree with another's.
+     *
+     * Depends only on the coordinate system, so the result may be shared across interpolators that
+     * share one. Clamping and stencil resolution stay in at(), since they are size dependent and
+     * would otherwise make an index untransferable between interpolators of different extent.
+     *
+     * The return type is spelled out rather than deduced: nvcc loses `decltype(var)` when the
+     * initializer has a deduced return type inside a class-template member, and the consumer stores
+     * this in a `const auto`.
+     */
+    device::array<typename Coordinates::ctype, 2> KOKKOS_FUNCTION
+    index(const typename Coordinates::ctype x, const typename Coordinates::ctype y) const
     {
-      using Kokkos::min, Kokkos::max;
-      auto [idx_x, idx_y] = coordinates.backward(x, y);
-      idx_x = max(static_cast<decltype(idx_x)>(0), min(idx_x, static_cast<decltype(idx_x)>(sizes[0] - 1)));
-      idx_y = max(static_cast<decltype(idx_y)>(0), min(idx_y, static_cast<decltype(idx_y)>(sizes[1] - 1)));
+      return coordinates.backward(x, y);
+    }
 
-      // Lower index clamped to [0, sizes-2], upper = lower+1
-      const size_t x0 = min(size_t(Kokkos::floor(idx_x)), sizes[0] - 2);
-      const size_t y0 = min(size_t(Kokkos::floor(idx_y)), sizes[1] - 2);
-      const size_t x1 = x0 + 1;
-      const size_t y1 = y0 + 1;
+    /**
+     * @brief Interpolate at grid indices previously obtained from index().
+     */
+    NT KOKKOS_FUNCTION at(const device::array<typename Coordinates::ctype, 2> &idx) const
+    {
+      const auto idx_x = idx[0];
+      const auto idx_y = idx[1];
+      // Clamped [i, i+1] stencil on bounded axes, wrapping [i, (i+1) % n] on periodic ones
+      const auto sx = make_interpolation_stencil<periodic_x>(idx_x, sizes[0]);
+      const auto sy = make_interpolation_stencil<periodic_y>(idx_y, sizes[1]);
+
+      const size_t x0 = sx.lower, x1 = sx.upper;
+      const size_t y0 = sy.lower, y1 = sy.upper;
 
       const auto corner00 = device_data(x0, y0);
       const auto corner01 = device_data(x0, y1);
       const auto corner10 = device_data(x1, y0);
       const auto corner11 = device_data(x1, y1);
 
-      const auto tx = idx_x - x0;
-      const auto ty = idx_y - y0;
+      const auto tx = sx.t;
+      const auto ty = sy.t;
 
       if constexpr (std::is_arithmetic_v<NT>)
         return Kokkos::fma(ty, Kokkos::fma(tx, corner11, Kokkos::fma(-tx, corner01, corner01)),
@@ -126,6 +154,15 @@ namespace DiFfRG
       else
         return corner00 * (1 - tx) * (1 - ty) + corner01 * (1 - tx) * ty + corner10 * tx * (1 - ty) +
                corner11 * tx * ty;
+    }
+
+    /**
+     * @brief Interpolate the data at a given point.
+     */
+    NT KOKKOS_FUNCTION operator()(const typename Coordinates::ctype x,
+                                  const typename Coordinates::ctype y) const
+    {
+      return at(index(x, y));
     }
 
     auto &CPU() const { return get_on<CPU_memory>(); }

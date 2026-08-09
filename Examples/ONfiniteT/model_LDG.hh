@@ -6,7 +6,7 @@ using namespace DiFfRG;
 #include "flows/flows.hh"
 
 struct Parameters {
-  Parameters(const JSONValue &value)
+  Parameters(const ConfigTree &value)
   {
     try {
       Lambda = value.get_double("/physical/Lambda");
@@ -57,7 +57,7 @@ protected:
   // initialization
   // ----------------------------------------------------------------------------------------------------
 public:
-  ON_finiteT(const JSONValue &json) : def::fRG(json.get_double("/physical/Lambda")), prm(json), flow_equations(json)
+  ON_finiteT(const ConfigTree &json) : def::fRG(json.get_double("/physical/Lambda")), prm(json), flow_equations(json)
   {
     flow_equations.set_k(Lambda);
     flow_equations.set_T(prm.T);
@@ -120,7 +120,7 @@ public:
     const double mPi = m2Pi > 0. ? std::sqrt(m2Pi) : 0.;
     const double mSigma = m2Sigma > 0. ? std::sqrt(m2Sigma) : 0.;
 
-    auto &out_file = output.csv("data.csv");
+    auto out_file = output.table("data.csv");
     out_file.set_Lambda(Lambda);
 
     out_file.value("sigma [GeV]", sigma);

@@ -9,8 +9,9 @@
 
 namespace DiFfRG
 {
-  HDF5Output::HDF5Output(const std::string top_folder, const std::string _output_name, const JSONValue &json)
-      : json(json), top_folder(make_folder(top_folder)),
+  HDF5Output::HDF5Output(const std::string top_folder, const std::string _output_name,
+                         const std::string &configuration_json)
+      : top_folder(make_folder(top_folder)),
         output_name(has_suffix(_output_name, ".h5") ? _output_name : _output_name + ".h5"), opened(false)
   {
     create_folder(this->top_folder);
@@ -20,6 +21,7 @@ namespace DiFfRG
     h5_file = DiFfRG::hdf5::File::open(path.string(), DiFfRG::hdf5::Access::Truncate);
 
     auto root = h5_file.root();
+    root.write_attribute("configuration_json", configuration_json);
     scalars = root.create_group("scalars");
     maps = root.create_group("maps");
     coords = root.create_group("coordinates");

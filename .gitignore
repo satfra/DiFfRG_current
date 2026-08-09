@@ -4,6 +4,7 @@ local_install/
 .ci/
 CMakeUserPresets.json
 .idea/
+.zed/
 profile/
 .ipynb_checkpoints
 *.pvd
@@ -12,6 +13,17 @@ profile/
 .cache/
 .venv/
 .vscode/
+.claude/
+.codex/
+.opencode/
+CMakeUserPresets.json
+
+## profiling metadata
+.xctrace-home/
+profile.time-profile.xml
+profile.time-sample.xml
+profile.trace/
+
 
 ## Core latex/pdflatex auxiliary files:
 *.aux
@@ -207,6 +219,7 @@ sympy-plots-for-*.tex/
 # pythontex
 *.pytxcode
 pythontex-files-*/
+__pycache__
 
 # tcolorbox
 *.listing

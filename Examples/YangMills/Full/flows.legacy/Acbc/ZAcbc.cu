@@ -8,7 +8,7 @@ namespace DiFfRG
   namespace Flows
   {
     ZAcbc_integrator::ZAcbc_integrator(QuadratureProvider &quadrature_provider, std::array<uint, 3> grid_sizes,
-                                       const double x_extent, const JSONValue &json)
+                                       const double x_extent, const ConfigTree &json)
         : quadrature_provider(quadrature_provider), grid_sizes(grid_sizes), x_extent(x_extent),
           jacobian_quadrature_factor(json.get_double("/integration/jacobian_quadrature_factor")), json(json)
     {

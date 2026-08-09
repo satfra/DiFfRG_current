@@ -12,22 +12,39 @@ set_target_properties(DiFfRG_boost_json PROPERTIES
     CUDA_SEPARABLE_COMPILATION OFF)
 target_include_directories(DiFfRG_boost_json SYSTEM PRIVATE ${Boost_INCLUDE_DIRS})
 
+# toml_json.cc is the only translation unit that sees toml11, an 18k-line header-only
+# library. Like boost_json.cc it is kept out of the CUDA path: pushing it through
+# nvcc/nvcc_wrapper is slow and risks the same duplicate-symbol trouble.
+add_library(DiFfRG_toml STATIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/toml_json.cc)
+set_target_properties(DiFfRG_toml PROPERTIES
+    LANGUAGE CXX
+    LINKER_LANGUAGE CXX
+    CUDA_SEPARABLE_COMPILATION OFF)
+target_include_directories(DiFfRG_toml PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
+target_include_directories(DiFfRG_toml SYSTEM PRIVATE ${Boost_INCLUDE_DIRS})
+
 set(DiFfRG_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/configuration_helper.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/csv_reader.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/external_data_interpolator.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/init.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/interpolation.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/json.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/config_tree.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/eigen.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/mpi.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/polynomials.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/run_logger.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/utils.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/csv_output.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/data_output.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/diagnostic_port.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/fe_output.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/hdf5_output.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/hdf5_input.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/output_path.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/output_settings.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/output_session.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/common/eom_config.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/mesh/rectangular_mesh.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/model/model.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/timestepping/solver/kinsol.cc
@@ -51,27 +68,21 @@ set(DiFfRG_SOURCES
 
 add_library(DiFfRG STATIC ${DiFfRG_SOURCES})
 
-target_link_libraries(DiFfRG PUBLIC DiFfRG_boost_json)
+target_link_libraries(DiFfRG PRIVATE DiFfRG_boost_json)
+target_link_libraries(DiFfRG PRIVATE DiFfRG_toml)
 
 setup_target(DiFfRG)
 
-# DiFfRG_HDF5_LIBRARIES is resolved by find_package(HDF5) in
-# setup_build_system.cmake (the bundled static build exports hdf5-static; a
-# system HDF5 may export hdf5-shared / hdf5::hdf5 / HDF5::HDF5 instead).
-target_link_libraries(DiFfRG PUBLIC ${DiFfRG_HDF5_LIBRARIES})
 target_include_directories(DiFfRG PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
     $<INSTALL_INTERFACE:include>)
 message(STATUS "HDF5 (static) support enabled")
 
-target_include_directories(
-  DiFfRG INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
-                   $<INSTALL_INTERFACE:include>)
 add_library(DiFfRG::DiFfRG ALIAS DiFfRG)
 set_property(TARGET DiFfRG PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS ON)
 
 include(GNUInstallDirs)
 install(
-  TARGETS DiFfRG DiFfRG_boost_json
+  TARGETS DiFfRG DiFfRG_boost_json DiFfRG_toml
   EXPORT DiFfRGTargets
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})

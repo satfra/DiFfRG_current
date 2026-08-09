@@ -17,7 +17,7 @@
 class FourFermiFlowEquations : public FlowEquationsFiniteT
 {
 public:
-  FourFermiFlowEquations(const JSONValue &json);
+  FourFermiFlowEquations(const ConfigTree &json);
 
 private:
   const std::array<uint, 1> grid_size_int;

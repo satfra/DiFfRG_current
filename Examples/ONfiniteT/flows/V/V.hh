@@ -1,17 +1,17 @@
 #pragma once
 
 #include "DiFfRG/physics/integration.hh"
-#include "DiFfRG/physics/interpolation.hh"
 #include "DiFfRG/physics/physics.hh"
+#include "DiFfRG/physics/interpolation.hh"
 
-namespace DiFfRG
-{
-  template <typename> class V_kernel;
+namespace DiFfRG { template<typename> class V_kernel;
 
   class V_integrator
   {
-  public:
-    V_integrator(DiFfRG::QuadratureProvider &quadrature_provider, const DiFfRG::JSONValue &json);
+    public:
+    V_integrator(DiFfRG::QuadratureProvider& quadrature_provider, const DiFfRG::ConfigTree& json)
+    ;
+
 
     using Regulator = DiFfRG::PolynomialExpRegulator<>;
 
@@ -19,18 +19,24 @@ namespace DiFfRG
 
     Integrator_p2<3, autodiff::real, V_kernel<Regulator>, DiFfRG::TBB_exec> integrator_AD;
 
-    void get(double &dest, const double &k, const double &N, const double &T, const double &m2Pi, const double &m2Sigma);
+    Integrator_p2<3, autodiff::Real<2, double>, V_kernel<Regulator>, DiFfRG::TBB_exec> integrator_AD2;
 
-    template <typename IT, typename... T> void get(IT &dest, const device::tuple<T...> &args)
+    void get(double& dest, const double& k, const double& N, const double& T, const double& m2Pi, const double& m2Sigma)
+    ;
+
+    template<typename IT, typename ...T>
+    void get(IT& dest, const device::tuple<T...>& args)
     {
-      device::apply([&](const auto... t) { get(dest, t...); }, args);
+      device::apply([&](const auto...t){get(dest, t...);}, args);
     }
 
-    void get(autodiff::real &dest, const double &k, const double &N, const double &T, const autodiff::real &m2Pi,
-             const autodiff::real &m2Sigma);
+    void get(autodiff::real& dest, const double& k, const double& N, const double& T, const autodiff::real& m2Pi, const autodiff::real& m2Sigma)
+    ;
 
-  private:
-    DiFfRG::QuadratureProvider &quadrature_provider;
+    void get(autodiff::Real<2, double>& dest, const double& k, const double& N, const double& T, const autodiff::Real<2, double>& m2Pi, const autodiff::Real<2, double>& m2Sigma)
+    ;
+    private:
+    DiFfRG::QuadratureProvider& quadrature_provider;
   };
-} // namespace DiFfRG
+}
 using DiFfRG::V_integrator;

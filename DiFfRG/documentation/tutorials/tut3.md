@@ -212,7 +212,7 @@ This writes `flows/flows.hh`, `flows/flows.cc` and `flows/CMakeLists.txt`. The g
 class ONFiniteTFlows
 {
 public:
-  ONFiniteTFlows(const DiFfRG::JSONValue &json);
+  ONFiniteTFlows(const DiFfRG::ConfigTree &json);
 
   void set_k(const double k);   // set the RG scale on all kernels
   void set_T(const double T);   // set the temperature on all kernels
@@ -261,7 +261,7 @@ This is exactly the bosonic O(N) threshold structure: $N-1$ Goldstone (pion) con
 class V_integrator
 {
 public:
-  V_integrator(DiFfRG::QuadratureProvider &quadrature_provider, const DiFfRG::JSONValue &json);
+  V_integrator(DiFfRG::QuadratureProvider &quadrature_provider, const DiFfRG::ConfigTree &json);
 
   using Regulator = DiFfRG::PolynomialExpRegulator<>;
 
@@ -293,7 +293,7 @@ protected:
   mutable ONFiniteTFlows flow_equations;
 
 public:
-  ON_finiteT(const JSONValue &json)
+  ON_finiteT(const ConfigTree &json)
     : def::fRG(json.get_double("/physical/Lambda")), prm(json), flow_equations(json)
   {
     flow_equations.set_k(Lambda);

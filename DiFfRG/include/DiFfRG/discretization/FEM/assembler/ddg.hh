@@ -38,8 +38,8 @@ namespace DiFfRG
         static constexpr uint dim = Discretization::dim;
         using NumberType = typename Discretization::NumberType;
 
-        ScratchData(const Mapping<dim> &mapping, const FiniteElement<dim> &fe, const Quadrature<dim> &quadrature,
-                    const Quadrature<dim - 1> &quadrature_face,
+        ScratchData(const Mapping<dim> &mapping, const FiniteElement<dim> &fe,
+                    const dealii::Quadrature<dim> &quadrature, const dealii::Quadrature<dim - 1> &quadrature_face,
                     const UpdateFlags update_flags = update_values | update_gradients | update_quadrature_points |
                                                      update_JxW_values | update_hessians,
                     const UpdateFlags interface_update_flags = update_values | update_gradients |
@@ -201,10 +201,18 @@ namespace DiFfRG
       using Components = typename Discretization::Components;
       static constexpr uint dim = Discretization::dim;
 
-      Assembler(Discretization &discretization, Model &model, const JSONValue &json)
-          : Base(discretization, model, json),
-            quadrature(fe.degree + 1 + json.get_uint("/discretization/overintegration")),
-            quadrature_face(fe.degree + 1 + json.get_uint("/discretization/overintegration"))
+      [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Assembler(
+          Discretization &discretization, Model &model,
+          DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, ConfigTree> config)
+          : Assembler(discretization, model, config.value(),
+                      DiFfRG::internal::legacy_default_log_port<Discretization>())
+      {
+      }
+
+      Assembler(Discretization &discretization, Model &model, const ConfigTree &config, LogPort log_port)
+          : Base(discretization, model, config, std::move(log_port)),
+            quadrature(fe.degree + 1 + config.get_uint("/discretization/overintegration", 0)),
+            quadrature_face(fe.degree + 1 + config.get_uint("/discretization/overintegration", 0))
       {
         static_assert(Components::count_fe_subsystems() == 1, "A dDG model cannot have multiple submodels!");
         reinit();
@@ -349,7 +357,7 @@ namespace DiFfRG
         MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells | MeshWorker::assemble_own_interior_faces_once;
 
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, flags, nullptr, face_worker, threads, batch_size);
+                              copy_data, flags, nullptr, face_worker, mesh_workers, batch_size);
       }
 
       virtual void mass(VectorType &mass, const VectorType &solution_global, const VectorType &solution_global_dot,
@@ -401,7 +409,7 @@ namespace DiFfRG
         MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
 
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, flags, nullptr, nullptr, threads, batch_size);
+                              copy_data, flags, nullptr, nullptr, mesh_workers, batch_size);
       }
 
       virtual void residual(VectorType &residual, const VectorType &solution_global, NumberType weight,
@@ -577,7 +585,7 @@ namespace DiFfRG
 
         Timer timer;
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, flags, boundary_worker, face_worker, threads, batch_size);
+                              copy_data, flags, boundary_worker, face_worker, mesh_workers, batch_size);
         timings_residual.push_back(timer.wall_time());
       }
 
@@ -638,7 +646,7 @@ namespace DiFfRG
 
         Timer timer;
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, flags, nullptr, nullptr, threads, batch_size);
+                              copy_data, flags, nullptr, nullptr, mesh_workers, batch_size);
         timings_jacobian.push_back(timer.wall_time());
       }
 
@@ -738,19 +746,16 @@ namespace DiFfRG
                 // consolidated contribution: scalar + gradient + hessian + mass
                 copy_data.cell_jacobian(i, j) +=
                     weight * JxW[q_index] *
-                    (shape_value_j * // dx * phi_j * (
-                         (-scalar_product(shape_grad_i,
-                                          j_flux(component_i, component_j)) // -dphi_i * jflux
-                          + shape_value_i * j_source(component_i, component_j)) // -phi_i * jsource)
-                     + scalar_product(shape_grad_j, // gradient contribution
-                                      -scalar_product(shape_grad_i,
-                                                      j_grad_flux(component_i, component_j)) // -dphi_i * jflux
-                                          + shape_value_i *
-                                                j_grad_source(component_i, component_j)) // -phi_i * jsource
-                     + scalar_product(shape_hessian_j, // hessian contribution
-                                      -scalar_product(shape_grad_i,
-                                                      j_hess_flux(component_i, component_j)) +
-                                          shape_value_i * j_hess_source(component_i, component_j))) +
+                        (shape_value_j *                                                      // dx * phi_j * (
+                             (-scalar_product(shape_grad_i, j_flux(component_i, component_j)) // -dphi_i * jflux
+                              + shape_value_i * j_source(component_i, component_j))           // -phi_i * jsource)
+                         + scalar_product(
+                               shape_grad_j, // gradient contribution
+                               -scalar_product(shape_grad_i, j_grad_flux(component_i, component_j)) // -dphi_i * jflux
+                                   + shape_value_i * j_grad_source(component_i, component_j))       // -phi_i * jsource
+                         + scalar_product(shape_hessian_j, // hessian contribution
+                                          -scalar_product(shape_grad_i, j_hess_flux(component_i, component_j)) +
+                                              shape_value_i * j_hess_source(component_i, component_j))) +
                     JxW[q_index] * shape_value_j * shape_value_i * // mass contribution
                         (alpha * j_mass_dot(component_i, component_j) + beta * j_mass(component_i, component_j));
               }
@@ -758,11 +763,9 @@ namespace DiFfRG
               if constexpr (Components::count_extractors() > 0)
                 for (uint e = 0; e < Components::count_extractors(); ++e)
                   copy_data.extractor_cell_jacobian(i, e) +=
-                      weight * JxW[q_index] * // dx * phi_j * (
-                      (-scalar_product(shape_grad_i,
-                                       j_extr_flux(component_i, e)) // -dphi_i * jflux
-                       + shape_value_i *
-                             j_extr_source(component_i, e)); // -phi_i * jsource)
+                      weight * JxW[q_index] *                                     // dx * phi_j * (
+                      (-scalar_product(shape_grad_i, j_extr_flux(component_i, e)) // -dphi_i * jflux
+                       + shape_value_i * j_extr_source(component_i, e));          // -phi_i * jsource)
             }
           }
         };
@@ -835,26 +838,22 @@ namespace DiFfRG
                 copy_data.cell_jacobian(i, j) +=
                     weight * JxW[q_index] *
                     (shape_value_j * // dx * phi_j(x_q)
-                         (shape_value_i *
-                          scalar_product(j_boundary_numflux(component_i, component_j),
-                                         normals[q_index])) // phi_i(x_q) * j_numflux(x_q, u_q) * n(x_q)
-                     + scalar_product(shape_grad_j, // gradient contribution
-                                      shape_value_i *
-                                          scalar_product(j_grad_boundary_numflux(component_i, component_j),
-                                                         normals[q_index]))
-                     + scalar_product(shape_hessian_j, // hessian contribution
-                                      shape_value_i *
-                                          scalar_product(j_hess_boundary_numflux(component_i, component_j),
-                                                         normals[q_index])));
+                         (shape_value_i * scalar_product(j_boundary_numflux(component_i, component_j),
+                                                         normals[q_index])) // phi_i(x_q) * j_numflux(x_q, u_q) * n(x_q)
+                     + scalar_product(shape_grad_j,                         // gradient contribution
+                                      shape_value_i * scalar_product(j_grad_boundary_numflux(component_i, component_j),
+                                                                     normals[q_index])) +
+                     scalar_product(shape_hessian_j, // hessian contribution
+                                    shape_value_i * scalar_product(j_hess_boundary_numflux(component_i, component_j),
+                                                                   normals[q_index])));
               }
               // extractor contribution
               if constexpr (Components::count_extractors() > 0)
                 for (uint e = 0; e < Components::count_extractors(); ++e)
                   copy_data.extractor_cell_jacobian(i, e) +=
                       weight * JxW[q_index] * // dx * phi_j(x_q)
-                      (shape_value_i *
-                       scalar_product(j_extr_boundary_numflux(component_i, e),
-                                      normals[q_index])); // phi_i(x_q) * j_numflux(x_q, u_q) * n(x_q)
+                      (shape_value_i * scalar_product(j_extr_boundary_numflux(component_i, e),
+                                                      normals[q_index])); // phi_i(x_q) * j_numflux(x_q, u_q) * n(x_q)
             }
           }
         };
@@ -965,26 +964,22 @@ namespace DiFfRG
                 copy_data_face.cell_jacobian(i, j) +=
                     weight * JxW[q_index] *
                     (shape_value_j * // dx * phi_j(x_q)
-                         (jump_i *
-                          scalar_product(j_numflux[face_no_j](component_i, component_j),
-                                         normals[q_index])) // [[phi_i(x_q)]] * j_numflux(x_q, u_q)
-                     + scalar_product(shape_grad_j, // gradient contribution
-                                      jump_i *
-                                          scalar_product(j_grad_numflux[face_no_j](component_i, component_j),
-                                                         normals[q_index]))
-                     + scalar_product(shape_hessian_j, // hessian contribution
-                                      jump_i *
-                                          scalar_product(j_hess_numflux[face_no_j](component_i, component_j),
-                                                         normals[q_index])));
+                         (jump_i * scalar_product(j_numflux[face_no_j](component_i, component_j),
+                                                  normals[q_index])) // [[phi_i(x_q)]] * j_numflux(x_q, u_q)
+                     + scalar_product(shape_grad_j,                  // gradient contribution
+                                      jump_i * scalar_product(j_grad_numflux[face_no_j](component_i, component_j),
+                                                              normals[q_index])) +
+                     scalar_product(shape_hessian_j, // hessian contribution
+                                    jump_i * scalar_product(j_hess_numflux[face_no_j](component_i, component_j),
+                                                            normals[q_index])));
               }
               // extractor contribution
               if constexpr (Components::count_extractors() > 0)
                 for (uint e = 0; e < Components::count_extractors(); ++e)
                   copy_data_face.extractor_cell_jacobian(i, e) +=
                       weight * JxW[q_index] * // dx * phi_j(x_q)
-                      (jump_i *
-                       scalar_product(j_extr_numflux[face_no_i](component_i, e),
-                                      normals[q_index])); // [[phi_i(x_q)]] * j_numflux(x_q, u_q)
+                      (jump_i * scalar_product(j_extr_numflux[face_no_i](component_i, e),
+                                               normals[q_index])); // [[phi_i(x_q)]] * j_numflux(x_q, u_q)
             }
           }
         };
@@ -1014,11 +1009,18 @@ namespace DiFfRG
 
         Timer timer;
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, flags, boundary_worker, face_worker, threads, batch_size);
+                              copy_data, flags, boundary_worker, face_worker, mesh_workers, batch_size);
         timings_jacobian.push_back(timer.wall_time());
       }
 
-      void log(const std::string logger)
+      template <typename String>
+        requires std::convertible_to<String, std::string>
+      [[deprecated("Construct the assembler with output.log_port() and call log() instead")]] void log(String &&)
+      {
+        DiFfRG::internal::reject_named_assembler_log<String>();
+      }
+
+      void log()
       {
         std::stringstream ss;
         ss << "dDG Assembler: " << std::endl;
@@ -1027,7 +1029,7 @@ namespace DiFfRG
            << std::endl;
         ss << "        Jacobian: " << average_time_jacobian_assembly() * 1000 << "ms (" << num_jacobians() << ")"
            << std::endl;
-        spdlog::get(logger)->info(ss.str());
+        this->log_port.info(ss.str());
       }
 
       double average_time_reinit() const
@@ -1070,7 +1072,7 @@ namespace DiFfRG
       QGauss<dim> quadrature;
       QGauss<dim - 1> quadrature_face;
       using Base::batch_size;
-      using Base::threads;
+      using Base::mesh_workers;
 
       SparsityPattern sparsity_pattern_mass;
       SparsityPattern sparsity_pattern_jacobian;

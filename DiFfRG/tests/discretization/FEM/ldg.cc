@@ -31,7 +31,7 @@ TEST_CASE("Test LDG on Constant model", "[discretization][ldg]")
   using VectorType = typename Discretization::VectorType;
   using Assembler = LDG::Assembler<Discretization, Model>;
 
-  JSONValue json = json::value(
+  ConfigTree json = json::value(
       {{"physical", {}},
        {"integration",
         {{"x_quadrature_order", 32},
@@ -46,7 +46,7 @@ TEST_CASE("Test LDG on Constant model", "[discretization][ldg]")
          {"jacobian_quadrature_factor", 0.5}}},
        {"discretization",
         {{"fe_order", GENERATE(0, 1, 3, 5)},
-         {"threads", 8},
+         {"mesh_workers", 8},
          {"batch_size", 64},
          {"overintegration", 0},
          {"output_subdivisions", 2},
@@ -82,9 +82,9 @@ TEST_CASE("Test LDG on Constant model", "[discretization][ldg]")
 
   // Define the objects needed to run the simulation
   Model model(p_prm);
-  RectangularMesh<dim> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
+  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
   // Set up the initial condition
   FE::FlowingVariables initial_condition(discretization);
@@ -124,7 +124,7 @@ TEST_CASE("Test LDG on Constant model", "[discretization][ldg]")
     inverse_mass_matrix.solve(dst);
     REQUIRE(vector_is_close(dst, src, random_value));
   }
-  SECTION("Test jacobian mass", "[mass][jacobian][!shouldfail]")
+  SECTION("Test jacobian mass", "[mass][jacobian]")
   {
     dst_mat = 0;
     assembler.jacobian_mass(dst_mat, src, src, 1., 0.);

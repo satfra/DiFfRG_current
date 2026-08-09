@@ -3,6 +3,7 @@
 // DiFfRG
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/math.hh>
+#include <DiFfRG/physics/interpolation/interpolation_stencil.hh>
 
 namespace DiFfRG
 {
@@ -15,6 +16,8 @@ namespace DiFfRG
   template <typename NT, typename Coordinates, typename DefaultMemorySpace = CPU_memory> class LinearInterpolator1D
   {
     static_assert(Coordinates::dim == 1, "LinearInterpolator1D requires 1D coordinates");
+
+    static constexpr bool periodic = is_periodic_coordinate_v<Coordinates>;
 
   public:
     using memory_space = DefaultMemorySpace;
@@ -98,23 +101,42 @@ namespace DiFfRG
      * @param x the point at which to interpolate
      * @return NT the interpolated value
      */
-    NT KOKKOS_FUNCTION operator()(const typename Coordinates::ctype x) const
+    /**
+     * @brief Map a physical coordinate onto the grid index.
+     *
+     * Split out for the same reason as in SplineInterpolator1D: for a logarithmic or focused-log
+     * axis Coordinates::backward is a fp64 log/log1p costing ~200 fp64 instructions, and a kernel
+     * evaluating several dressings at one momentum otherwise pays it once per dressing (the
+     * compiler cannot CSE it, since each interpolator owns its own coordinate members).
+     *
+     * Depends only on the coordinate system, so the result may be shared across interpolators that
+     * share one — stencil resolution and clamping stay in at().
+     */
+    typename Coordinates::ctype KOKKOS_FUNCTION index(const typename Coordinates::ctype x) const
     {
-      auto idx = coordinates.backward(x);
-      // Clamp the index to the range [0, size - 1]
-      idx = Kokkos::max(static_cast<decltype(idx)>(0), Kokkos::min(idx, static_cast<decltype(idx)>(size - 1)));
-      // t is the fractional part of the index
-      const auto t = idx - Kokkos::floor(idx);
-      // Do the linear interpolation, clamping upper index to valid range
-      const size_t lower_idx = Kokkos::min(size_t(Kokkos::floor(idx)), size - 2);
-      const size_t upper_idx = lower_idx + 1;
-      const auto lower = device_data[lower_idx];
-      const auto upper = device_data[upper_idx];
+      return coordinates.backward(x);
+    }
+
+    /**
+     * @brief Interpolate at a grid index previously obtained from index().
+     */
+    NT KOKKOS_FUNCTION at(const typename Coordinates::ctype idx) const
+    {
+      // Resolve the stencil: clamped [i, i+1] for a bounded axis, wrapping [i, (i+1) % size] for a periodic one
+      const auto stencil = make_interpolation_stencil<periodic>(idx, size);
+      const auto t = stencil.t;
+      const auto lower = device_data[stencil.lower];
+      const auto upper = device_data[stencil.upper];
       if constexpr (std::is_arithmetic_v<NT>)
         return Kokkos::fma(t, upper, Kokkos::fma(-t, lower, lower));
       else
         return t * upper + (1 - t) * lower;
     }
+
+    /**
+     * @brief Interpolate the data at a given point.
+     */
+    NT KOKKOS_FUNCTION operator()(const typename Coordinates::ctype x) const { return at(index(x)); }
 
     /**
      * @brief Get the coordinate system of the data.

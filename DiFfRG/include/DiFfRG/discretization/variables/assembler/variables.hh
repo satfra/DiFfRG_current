@@ -14,7 +14,7 @@
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 
 namespace DiFfRG
 {
@@ -44,9 +44,17 @@ namespace DiFfRG
       using Components = typename Model_::Components;
       static constexpr uint dim = 0;
 
-      Assembler(Model &model, const JSONValue &json) : model(model), threads(json.get_uint("/discretization/threads"))
+      [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Assembler(
+          Model &model, DiFfRG::internal::LegacyDefaultLogPortArgument<Model, ConfigTree> config)
+          : Assembler(model, config.value(), DiFfRG::internal::legacy_default_log_port<Model>())
       {
-        if (threads == 0) threads = dealii::MultithreadInfo::n_threads() / 2;
+      }
+
+      Assembler(Model &model, const ConfigTree &config, LogPort log_port)
+          : model(model), log_port(std::move(log_port)),
+            mesh_workers(config.get_uint("/discretization/mesh_workers", 8))
+      {
+        if (mesh_workers == 0) mesh_workers = std::max(1u, dealii::MultithreadInfo::n_threads() / 2);
         static_assert(Components::count_fe_functions() == 0, "The pure variable assembler cannot handle FE functions!");
         reinit();
       }
@@ -55,9 +63,9 @@ namespace DiFfRG
 
       virtual IndexSet get_differential_indices() const override { return IndexSet(); }
 
-      virtual void attach_data_output(DataOutput<dim, VectorType> &data_out, const VectorType &solution,
+      virtual void attach_data_output(OutputFrame<dim, VectorType> &data_out, const VectorType &solution,
                                       const VectorType &variables, const VectorType &dt_solution = VectorType(),
-                                      const VectorType &residual = VectorType())
+                                      const VectorType &residual = VectorType()) override
       {
         (void)dt_solution;
         (void)residual;
@@ -91,11 +99,17 @@ namespace DiFfRG
         timings_jacobian.push_back(timer.wall_time());
       };
 
-      void readouts(DataOutput<dim, VectorType> &data_out, const VectorType &, const VectorType &variables) const
+      void readouts(OutputFrame<dim, VectorType> &data_out, const VectorType &, const VectorType &variables) const
       {
-        auto helper = [&](auto EoMfun, auto outputter) {
-          (void)EoMfun;
-          outputter(data_out, Point<0>(), fe_tie(variables));
+        auto helper = [&](auto &&...args) {
+          if constexpr (sizeof...(args) == 3) {
+            auto &&[id, EoMfun, outputter] = std::forward_as_tuple(std::forward<decltype(args)>(args)...);
+            data_out.register_readout(id);
+            (void)EoMfun;
+            outputter(data_out, Point<0>(), fe_tie(variables));
+          } else {
+            DiFfRG::internal::validate_readout_helper_arity<decltype(args)...>();
+          }
         };
         model.readouts_multiple(helper, data_out);
       }
@@ -119,7 +133,14 @@ namespace DiFfRG
         (void)variables;
       }
 
-      void log(const std::string logger) const
+      template <typename String>
+        requires std::convertible_to<String, std::string>
+      [[deprecated("Construct the assembler with output.log_port() and call log() instead")]] void log(String &&) const
+      {
+        DiFfRG::internal::reject_named_assembler_log<String>();
+      }
+
+      void log() const
       {
         std::stringstream ss;
         ss << "Variable Assembler: " << std::endl;
@@ -127,7 +148,7 @@ namespace DiFfRG
            << std::endl;
         ss << "        Jacobian: " << average_time_jacobian_assembly() * 1000 << "ms (" << num_jacobians() << ")"
            << std::endl;
-        spdlog::get(logger)->info(ss.str());
+        log_port.info(ss.str());
       }
 
       double average_time_residual_assembly()
@@ -152,8 +173,11 @@ namespace DiFfRG
 
     private:
       Model &model;
+      LogPort log_port;
 
-      uint threads;
+      /// Number of cells kept in flight in the MeshWorker assembly pipeline (its queue length).
+      /// This is not a thread count - see /discretization/threads for that.
+      uint mesh_workers;
 
       SparsityPattern sparsity_pattern_mass;
       SparsityPattern sparsity_pattern_jacobian;

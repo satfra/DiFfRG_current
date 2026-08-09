@@ -6,11 +6,18 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
   pull_request:
   workflow_dispatch:
     inputs:
+      test_suite:
+        description: "CTest suite to run"
+        required: true
+        default: quick
+        type: choice
+        options:
+          - quick
+          - slow
+          - all
       update_baselines:
         description: "Refresh example regression baselines and upload them as an artifact"
         required: false
@@ -24,9 +31,9 @@ permissions:
 env:
   DIFFRG_DEPS_REPOSITORY: ghcr.io/satfra/diffrg-deps
   DIFFRG_DEPS_STABLE_TAG: ubuntu24.04
-  DIFFRG_BUILD_JOBS: 4
-  DIFFRG_TEST_JOBS: 4
-  DIFFRG_EXAMPLE_JOBS: 4
+  DIFFRG_BUILD_JOBS: 8
+  DIFFRG_TEST_JOBS: 8
+  DIFFRG_EXAMPLE_JOBS: 8
 
 jobs:
   deps-image:
@@ -197,28 +204,59 @@ jobs:
       # then fail the job at the end so a red badge is still written on failure.
       - name: Run tests
         id: tests
+        env:
+          TEST_SUITE: ${{ github.event_name == 'workflow_dispatch' && inputs.test_suite || 'quick' }}
         run: |
+          set -o pipefail
+          case "${TEST_SUITE}" in
+            quick)
+              ctest_filter="-LE slow"
+              ;;
+            slow)
+              ctest_filter="-L slow"
+              ;;
+            all)
+              ctest_filter=""
+              ;;
+            *)
+              echo "::error::Unknown test suite: ${TEST_SUITE}"
+              exit 2
+              ;;
+          esac
+
+          echo "Running ${TEST_SUITE} test suite"
+          echo "CTest filter: ${ctest_filter:-<none>}"
+
           set +e
           bash containers/singularity-run.sh \
             -b "${GITHUB_WORKSPACE}:/work" \
             -w /work \
             "${{ steps.deps.outputs.sif }}" \
-            bash -lc 'ctest --test-dir DiFfRG/bin -j "${{ env.DIFFRG_TEST_JOBS }}" --output-on-failure' | tee "${RUNNER_TEMP}/ctest.log"
-          summary=$(grep -Eo '[0-9]+ tests failed out of [0-9]+' "${RUNNER_TEMP}/ctest.log" | tail -1)
-          failed=$(echo "$summary" | awk '{print $1}')
-          total=$(echo "$summary" | awk '{print $NF}')
+            bash -lc "ctest --test-dir DiFfRG/bin -j '${{ env.DIFFRG_TEST_JOBS }}' ${ctest_filter} --output-on-failure" | tee "${RUNNER_TEMP}/ctest.log"
+          ctest_status=${PIPESTATUS[0]}
+          set -e
+
+          summary=$(grep -Eo '[0-9]+ tests failed out of [0-9]+' "${RUNNER_TEMP}/ctest.log" | tail -1 || true)
+          if [[ -n "${summary}" ]]; then
+            failed=$(echo "$summary" | awk '{print $1}')
+            total=$(echo "$summary" | awk '{print $NF}')
+          else
+            failed=${ctest_status}
+            total=0
+          fi
           passed=$((total - failed))
+          echo "ctest_status=$ctest_status" >> "$GITHUB_OUTPUT"
           echo "passed=$passed" >> "$GITHUB_OUTPUT"
           echo "total=$total"   >> "$GITHUB_OUTPUT"
           echo "failed=$failed" >> "$GITHUB_OUTPUT"
-          echo "### Tests: ${passed}/${total} passing" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Tests (${TEST_SUITE}): ${passed}/${total} passing" >> "$GITHUB_STEP_SUMMARY"
 
       # Decide the badge text/colour. Runs even if the build failed (always()), so a
       # broken build shows a red "build failed" badge instead of leaving the gist at
       # its stale/placeholder value.
       - name: Compute badge content
         id: badge
-        if: always() && github.event_name == 'push'
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           if [ "${{ steps.build.outcome }}" != "success" ]; then
             echo "message=build failed" >> "$GITHUB_OUTPUT"
@@ -238,7 +276,7 @@ jobs:
       # Publish to a Gist that shields.io reads (see containers/ci/README.md for
       # setup). Only on push to main: PRs (esp. from forks) can't access secrets.
       - name: Update test-count badge
-        if: always() && github.event_name == 'push'
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
           auth: ${{ secrets.GIST_SECRET }}
@@ -260,6 +298,10 @@ jobs:
         run: |
           if [ "${{ steps.build.outcome }}" != "success" ]; then
             echo "Build failed."
+            exit 1
+          fi
+          if [ "${{ steps.tests.outputs.ctest_status }}" != "0" ]; then
+            echo "CTest failed with exit code ${{ steps.tests.outputs.ctest_status }}."
             exit 1
           fi
           if [ "${{ steps.tests.outputs.failed }}" != "0" ]; then

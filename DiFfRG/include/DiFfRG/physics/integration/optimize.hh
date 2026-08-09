@@ -5,16 +5,16 @@
 
 namespace DiFfRG
 {
-  template <typename Regulator, int dim = 4> double optimize_x_extent(const JSONValue &json)
+  template <typename Regulator, int dim = 4> double optimize_x_extent(const ConfigTree &config)
   {
     static bool already_run = false;
     static double x_extent = 1.;
 
     if (already_run) return x_extent;
 
-    const uint order = json.get_uint("/integration/x_order");
-    const int verbosity = json.get_int("/output/verbosity");
-    const double x_extent_tolerance = json.get_double("/integration/x_extent_tolerance");
+    const uint order = config.get_uint_or_warn("/integration/x_order", 32);
+    const int verbosity = config.get_int("/output/verbosity", 0);
+    const double x_extent_tolerance = config.get_double_or_warn("/integration/x_extent_tolerance", 1e-5);
     constexpr uint quadrature_factor = 8;
     auto optimize_x = [](double x) -> double { return 1. / (x + Regulator::RB(1., x)) * Regulator::RBdot(1., x); };
 

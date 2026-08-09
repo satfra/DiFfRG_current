@@ -1,23 +1,34 @@
 #pragma once
 
-#include "./V/V.hh"
 #include "DiFfRG/common/utils.hh"
 #include "DiFfRG/physics/integration.hh"
+#include "./V/V.hh"
+#include "./V_pion/V_pion.hh"
+#include "./V_sigma/V_sigma.hh"
 
 class ONFiniteTFlows
 {
-public:
-  ONFiniteTFlows(const DiFfRG::JSONValue &json);
+  public:
+  ONFiniteTFlows(const DiFfRG::ConfigTree& json)
+  ;
 
-  void set_k(const double k);
+  void set_k(const double k)
+  ;
 
-  void set_T(const double T);
+  void set_T(const double T)
+  ;
 
-  void set_typical_E(const double E);
+  void set_typical_E(const double E)
+  ;
 
-  void set_x_extent(const double x_extent);
+  void set_x_extent(const double x_extent)
+  ;
 
   DiFfRG::QuadratureProvider quadrature_provider;
 
   V_integrator V;
+
+  V_pion_integrator V_pion;
+
+  V_sigma_integrator V_sigma;
 };

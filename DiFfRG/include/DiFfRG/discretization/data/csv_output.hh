@@ -1,11 +1,12 @@
 #pragma once
 
 // DiFfRG
-#include <DiFfRG/common/json.hh>
+#include <DiFfRG/common/config_tree.hh>
 
 // standard library
 #include <fstream>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace DiFfRG
@@ -24,9 +25,14 @@ namespace DiFfRG
      *
      * @param top_folder The top folder to store the output in.
      * @param output_name The name of the output file.
-     * @param json The JSON object containing the parameters.
+     * @param config The ConfigTree object containing the parameters.
      */
-    CsvOutput(const std::string top_folder, const std::string output_name, const JSONValue &json);
+    CsvOutput(const std::string top_folder, const std::string output_name);
+    [[deprecated("Use CsvOutput(top_folder, output_name) instead")]] CsvOutput(
+        const std::string top_folder, const std::string output_name, [[maybe_unused]] const ConfigTree &config)
+        : CsvOutput(std::move(top_folder), std::move(output_name))
+    {
+    }
 
     /**
      * @brief Add a value to the output.
@@ -43,6 +49,7 @@ namespace DiFfRG
      * @param value The value to add.
      */
     void flush(const double time);
+    void validate_frame() const;
 
     /**
      * @brief Set the value of Lambda. If Lambda is set, the output will contain a column for k = exp(-t) * Lambda.
@@ -52,13 +59,13 @@ namespace DiFfRG
     void set_Lambda(const double Lambda);
 
   private:
-    [[maybe_unused]] const JSONValue &json;
     const std::string top_folder;
     const std::string output_name;
     std::ofstream output_stream;
 
     std::vector<std::string> insertion_order;
     std::unordered_map<std::string, std::vector<double>> values;
+    std::unordered_set<std::string> written_this_frame;
 
     std::vector<std::string> header;
     std::vector<double> time_values;

@@ -16,6 +16,11 @@ tests = {
           {"3", "autodiff::real", "Integrator_kernel<Regulator>", "DiFfRG::TBB_exec"}
      ],
      TestCreate[
+          TemplateParameterGeneration[<|"d" -> 3, "Name" -> "pion", "ctype" -> "DiFfRG::complex<double>", "Device" -> "TBB"|>, {"DiFfRG::complex<double>" -> "cxReal<2, double>"}],
+          {"3", "cxReal<2, double>", "pion_kernel<Regulator>", "DiFfRG::TBB_exec"},
+          TestID -> "Second-order complex AD template parameter generation"
+     ],
+     TestCreate[
           TemplateParameterGeneration[<|"d" -> 1, "Name" -> "Test", "ctype" -> "float", "Device" -> "Threads"|>],
           {"1", "float", "Test_kernel<Regulator>", "DiFfRG::Threads_exec"}
      ],

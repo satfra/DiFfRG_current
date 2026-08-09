@@ -10,7 +10,7 @@ required_examples="${REQUIRED_WOLFRAM_EXAMPLES:-}"
 timeout_seconds="${WOLFRAM_TIMEOUT:-1800}"
 
 examples=(
-  "ONfiniteT:Examples/ONfiniteT:ON.nb"
+  "ONfiniteT:Examples/ONfiniteT:ON.wl"
   "QuarkMesonLPAprime:Examples/QuarkMesonLPAprime:QuarkMesonLPAprime.nb"
   "YangMills_SP:Examples/YangMills/SP:Yang-Mills.nb"
   "YangMills_Full:Examples/YangMills/Full:Yang-Mills.nb"
@@ -135,7 +135,7 @@ for item in "${examples[@]}"; do
   if [[ "${entry}" == *.m ]]; then
     run_wolfram -code 'AppendTo[$Path, "/work/DiFfRG/Mathematica"]; SetDirectory["'"${example_dir}"'"]; Get["'"${entry}"'"]' > "${log}" 2>&1
     status=$?
-  elif [[ "${entry}" == *.nb ]]; then
+  elif [[ "${entry}" == *.nb || "${entry}" == *.wl ]]; then
     (
       cd "${example_dir}"
       run_wolfram -script "${entry}"
