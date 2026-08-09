@@ -75,7 +75,9 @@ namespace DiFfRG
 
       std::array<double, 1> solution(const Point<dim> &pos) const
       {
-        return {prm.initial_x0[0] + prm.initial_x1[0] * pos[0]};
+        // The return type is spelled out because nvcc's cudafe strips the braces from a
+        // single-element `return {...}` in a class template member, leaving g++ with a bare double.
+        return std::array<double, 1>{prm.initial_x0[0] + prm.initial_x1[0] * pos[0]};
       }
     };
 
@@ -128,7 +130,8 @@ namespace DiFfRG
 
       std::array<double, 1> solution(const Point<dim> &pos) const
       {
-        return {std::exp(t) * (prm.initial_x0[0] + prm.initial_x1[0] * pos[0])};
+        // Explicit return type: see the note in ModelConstant::solution.
+        return std::array<double, 1>{std::exp(t) * (prm.initial_x0[0] + prm.initial_x1[0] * pos[0])};
       }
 
       template <typename NT, typename Solution>
@@ -160,7 +163,9 @@ namespace DiFfRG
 
       std::array<double, 1> solution(const Point<dim> &pos) const
       {
-        return {(prm.initial_x0[0] + prm.initial_x1[0] * pos[0]) / (prm.initial_x1[0] * t + 1.)};
+        // Explicit return type: see the note in ModelConstant::solution.
+        return std::array<double, 1>{(prm.initial_x0[0] + prm.initial_x1[0] * pos[0]) /
+                                     (prm.initial_x1[0] * t + 1.)};
       }
 
       template <typename NT, typename Solution>

@@ -43,10 +43,10 @@ namespace DiFfRG
      */
     FEOutput(std::string top_folder, std::string output_name, std::string output_folder, const OutputSettings &settings,
              bool active = true);
-    [[deprecated("Use FEOutput(top_folder, output_name, output_folder, OutputSettings(json), active) instead")]]
-    FEOutput(std::string top_folder, std::string output_name, std::string output_folder, const ConfigTree &json,
+    [[deprecated("Use FEOutput(top_folder, output_name, output_folder, OutputSettings(config), active) instead")]]
+    FEOutput(std::string top_folder, std::string output_name, std::string output_folder, const ConfigTree &config,
              bool active = true)
-        : FEOutput(std::move(top_folder), std::move(output_name), std::move(output_folder), OutputSettings(json),
+        : FEOutput(std::move(top_folder), std::move(output_name), std::move(output_folder), OutputSettings(config),
                    active)
     {
     }
@@ -146,10 +146,10 @@ namespace DiFfRG
      */
     FEOutput(std::string top_folder, std::string output_name, std::string output_folder, const OutputSettings &settings,
              bool active = true);
-    [[deprecated("Use FEOutput(top_folder, output_name, output_folder, OutputSettings(json), active) instead")]]
-    FEOutput(std::string top_folder, std::string output_name, std::string output_folder, const ConfigTree &json,
+    [[deprecated("Use FEOutput(top_folder, output_name, output_folder, OutputSettings(config), active) instead")]]
+    FEOutput(std::string top_folder, std::string output_name, std::string output_folder, const ConfigTree &config,
              bool active = true)
-        : FEOutput(std::move(top_folder), std::move(output_name), std::move(output_folder), OutputSettings(json),
+        : FEOutput(std::move(top_folder), std::move(output_name), std::move(output_folder), OutputSettings(config),
                    active)
     {
     }

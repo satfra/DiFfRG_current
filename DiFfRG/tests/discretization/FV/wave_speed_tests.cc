@@ -20,6 +20,12 @@ using KT::MaxEigenvalueWaveSpeed;
 template <typename NT, size_t nc> using JacobianMatrix = KT::internal::JacobianMatrix<NT, nc>;
 template <typename NT, int dim, size_t nc> using HessianTensor = KT::internal::HessianTensor<NT, dim, nc>;
 
+// nvcc's cudafe emits the first use of a specialization symbolically but constant-folds every
+// later one, rendering a size_t argument as the ill-formed functional cast `unsigned long((1))`.
+// Naming each specialization once here keeps the use sites below off that path.
+using HessianTensor_1_1 = HessianTensor<NumberType, 1, 1>; // <dim, n_components>
+using HessianTensor_2_1 = HessianTensor<NumberType, 2, 1>;
+
 // ---------------------------------------------------------------------------
 // Concept satisfaction (compile-time)
 // ---------------------------------------------------------------------------
@@ -166,7 +172,7 @@ TEST_CASE("selected speed derivatives average equal max-speed branches", "[FV][w
   J_plus[1][0][0] = -4.0;
   J_minus[1][0][0] = 4.0;
 
-  HessianTensor<NumberType, dim, nc> H_plus{}, H_minus{};
+  HessianTensor_2_1 H_plus{}, H_minus{};
   H_plus[0][0][0][0] = 2.0;
   H_minus[0][0][0][0] = 6.0;
   H_plus[1][0][0][0] = 2.0;
@@ -200,7 +206,7 @@ TEST_CASE("compute_speed_derivatives 1D 1-component — positive J", "[FV][wave_
   J_plus[0][0][0] = 3.0;
   J_minus[0][0][0] = 1.0;
 
-  HessianTensor<NumberType, dim, nc> H_plus{}, H_minus{};
+  HessianTensor_1_1 H_plus{}, H_minus{};
   H_plus[0][0][0][0] = 1.0;
   H_minus[0][0][0][0] = 1.0;
 
@@ -222,7 +228,7 @@ TEST_CASE("compute_speed_derivatives 1D 1-component — negative J", "[FV][wave_
   J_plus[0][0][0] = -2.0;
   J_minus[0][0][0] = -5.0;
 
-  HessianTensor<NumberType, dim, nc> H_plus{}, H_minus{};
+  HessianTensor_1_1 H_plus{}, H_minus{};
   H_plus[0][0][0][0] = 1.0;
   H_minus[0][0][0][0] = 1.0;
 

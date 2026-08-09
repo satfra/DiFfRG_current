@@ -35,7 +35,7 @@ namespace DiFfRG
     /**
      * @brief Construct a new Configuration Helper object from a ConfigTree object
      */
-    ConfigurationHelper(const ConfigTree &json);
+    ConfigurationHelper(const ConfigTree &config);
 
     /**
      * @brief Add a CLI-like argument to the list of arguments
@@ -57,14 +57,14 @@ namespace DiFfRG
      *
      * Kept as the historical spelling of get_config().
      */
-    ConfigTree &get_json();
+    [[deprecated("Use get_config() instead")]] ConfigTree &get_json();
 
     /**
      * @brief Obtain the configuration tree containing all the parameters.
      *
      * Kept as the historical spelling of get_config().
      */
-     [[deprecated("Use get_config() instead")]] const ConfigTree &get_json() const;
+    [[deprecated("Use get_config() instead")]] const ConfigTree &get_json() const;
 
     [[deprecated("Use OutputPath(config).run_file(\".log\").filename().string() instead")]] std::string
     get_log_file() const;
@@ -97,7 +97,7 @@ namespace DiFfRG
     std::list<std::string> args;
     std::list<std::pair<std::string, std::string>> cli_parameters;
 
-    ConfigTree json;
+    ConfigTree config;
 
     bool parsed = false;
 

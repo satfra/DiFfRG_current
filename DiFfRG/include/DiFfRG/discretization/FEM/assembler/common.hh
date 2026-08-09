@@ -19,8 +19,8 @@
 #include <tbb/tbb.h>
 
 #include <DiFfRG/common/utils.hh>
-#include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
+#include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
 #include <DiFfRG/discretization/common/eom.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
 
@@ -64,21 +64,21 @@ namespace DiFfRG
 
     [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] FEMAssembler(
         Discretization &discretization, Model &model,
-        DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, ConfigTree> json)
-        : FEMAssembler(discretization, model, json.value(),
+        DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, ConfigTree> config)
+        : FEMAssembler(discretization, model, config.value(),
                        DiFfRG::internal::legacy_default_log_port<Discretization>())
     {
     }
 
-    FEMAssembler(Discretization &discretization, Model &model, const ConfigTree &json, LogPort log_port)
+    FEMAssembler(Discretization &discretization, Model &model, const ConfigTree &config, LogPort log_port)
         : discretization(discretization), model(model), log_port(std::move(log_port)), fe(discretization.get_fe()),
           dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
-          mesh_workers(json.get_uint("/discretization/mesh_workers", 8)),
-          batch_size(json.get_uint("/discretization/batch_size", 16)),
+          mesh_workers(config.get_uint("/discretization/mesh_workers", 8)),
+          batch_size(config.get_uint("/discretization/batch_size", 16)),
           EoM_cell(*(dof_handler.active_cell_iterators().end())),
           old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
-          EoM_abs_tol(json.get_double("/discretization/EoM_abs_tol", 1e-12)),
-          EoM_max_iter(json.get_uint("/discretization/EoM_max_iter", 100))
+          EoM_abs_tol(config.get_double("/discretization/EoM_abs_tol", 1e-12)),
+          EoM_max_iter(config.get_uint("/discretization/EoM_max_iter", 100))
     {
       if (this->mesh_workers == 0) this->mesh_workers = std::max(1u, dealii::MultithreadInfo::n_threads() / 2);
       log_port.info("FEM: Using {} mesh workers for assembly.", mesh_workers);
@@ -91,8 +91,8 @@ namespace DiFfRG
     }
 
     virtual void attach_data_output(OutputFrame<dim, VectorType> &data_out, const VectorType &solution,
-                                const VectorType &variables, const VectorType &dt_solution = VectorType(),
-                                const VectorType &residual = VectorType()) override
+                                    const VectorType &variables, const VectorType &dt_solution = VectorType(),
+                                    const VectorType &residual = VectorType()) override
     {
       const auto fe_function_names = Components::FEFunction_Descriptor::get_names_vector();
       std::vector<std::string> fe_function_names_residual;
@@ -164,38 +164,38 @@ namespace DiFfRG
       auto helper = [&](auto &&...args) {
         if constexpr (sizeof...(args) == 3) {
           auto &&[id, EoMfun, outputter] = std::forward_as_tuple(std::forward<decltype(args)>(args)...);
-        data_out.register_readout(id);
-        auto EoM_cell = this->EoM_cell;
-        auto EoM_result = get_EoM_point_with_potential(
-            EoM_cell, solution_global, dof_handler, mapping, EoMfun, [&](const auto &p, const auto &) { return p; },
-            EoM_abs_tol, EoM_max_iter);
-        const auto EoM = EoM_result.point;
-        auto EoM_unit = mapping.transform_real_to_unit_cell(EoM_cell, EoM);
+          data_out.register_readout(id);
+          auto EoM_cell = this->EoM_cell;
+          auto EoM_result = get_EoM_point_with_potential(
+              EoM_cell, solution_global, dof_handler, mapping, EoMfun, [&](const auto &p, const auto &) { return p; },
+              EoM_abs_tol, EoM_max_iter);
+          const auto EoM = EoM_result.point;
+          auto EoM_unit = mapping.transform_real_to_unit_cell(EoM_cell, EoM);
 
-        Vector<typename VectorType::value_type> values(dof_handler.get_fe().n_components());
-        std::vector<Tensor<1, dim, typename VectorType::value_type>> gradients(dof_handler.get_fe().n_components());
+          Vector<typename VectorType::value_type> values(dof_handler.get_fe().n_components());
+          std::vector<Tensor<1, dim, typename VectorType::value_type>> gradients(dof_handler.get_fe().n_components());
 
-        FEValues<dim> fe_v(mapping, fe, EoM_unit,
-                           update_values | update_gradients | update_quadrature_points | update_JxW_values |
-                               update_hessians);
-        fe_v.reinit(EoM_cell);
+          FEValues<dim> fe_v(mapping, fe, EoM_unit,
+                             update_values | update_gradients | update_quadrature_points | update_JxW_values |
+                                 update_hessians);
+          fe_v.reinit(EoM_cell);
 
-        std::vector<Vector<NumberType>> solution{Vector<NumberType>(Components::count_fe_functions())};
-        std::vector<std::vector<Tensor<1, dim, NumberType>>> solution_grad{
-            std::vector<Tensor<1, dim, NumberType>>(Components::count_fe_functions())};
-        std::vector<std::vector<Tensor<2, dim, NumberType>>> solution_hess{
-            std::vector<Tensor<2, dim, NumberType>>(Components::count_fe_functions())};
-        fe_v.get_function_values(solution_global, solution);
-        fe_v.get_function_gradients(solution_global, solution_grad);
-        fe_v.get_function_hessians(solution_global, solution_hess);
+          std::vector<Vector<NumberType>> solution{Vector<NumberType>(Components::count_fe_functions())};
+          std::vector<std::vector<Tensor<1, dim, NumberType>>> solution_grad{
+              std::vector<Tensor<1, dim, NumberType>>(Components::count_fe_functions())};
+          std::vector<std::vector<Tensor<2, dim, NumberType>>> solution_hess{
+              std::vector<Tensor<2, dim, NumberType>>(Components::count_fe_functions())};
+          fe_v.get_function_values(solution_global, solution);
+          fe_v.get_function_gradients(solution_global, solution_grad);
+          fe_v.get_function_hessians(solution_global, solution_hess);
 
-        std::array<NumberType, Components::count_extractors()> __extracted_data{{}};
-        if constexpr (Components::count_extractors() > 0)
-          extract(__extracted_data, solution_global, variables, true, false, false);
-        const auto &extracted_data = __extracted_data;
+          std::array<NumberType, Components::count_extractors()> __extracted_data{{}};
+          if constexpr (Components::count_extractors() > 0)
+            extract(__extracted_data, solution_global, variables, true, false, false);
+          const auto &extracted_data = __extracted_data;
 
-        outputter(data_out, EoM, e_tie(solution[0], solution_grad[0], solution_hess[0], extracted_data, variables));
-        data_out.attach_eom_potential(std::move(EoM_result));
+          outputter(data_out, EoM, e_tie(solution[0], solution_grad[0], solution_hess[0], extracted_data, variables));
+          data_out.attach_eom_potential(std::move(EoM_result));
         } else {
           internal::validate_readout_helper_arity<decltype(args)...>();
         }

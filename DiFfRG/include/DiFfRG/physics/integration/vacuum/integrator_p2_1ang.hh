@@ -19,7 +19,7 @@ namespace DiFfRG
       // The polar angle (loop vs. external momentum) of a 2-point loop in d dims carries the zonal
       // measure (1-c^2)^{(d-3)/2} dc, supplied by the Gauss-Jacobi(alpha=beta=(d-3)/2) angular
       // quadrature (see the class below). The remaining (d-2)-sphere gives S_{d-2} = S_d_prec(dim-1).
-      static constexpr ctype int_prefactor = S_d_prec<ctype>(dim - 1)     // remaining solid angle after the polar angle
+      static constexpr ctype int_prefactor = S_d_prec<ctype>(dim - 1) // remaining solid angle after the polar angle
                                              / powr<dim>(2 * (ctype)M_PI); // fourier factor
 
       template <typename... T>
@@ -45,8 +45,8 @@ namespace DiFfRG
   } // namespace internal
 
   /**
-   * @brief Integrator_p2_1ang integrates a kernel \f$K(p,\cos,\ldots)\f$ depending on the radial momentum \f$p\f$ and the
-   * cosine of the single polar angle between the loop and external momentum as
+   * @brief Integrator_p2_1ang integrates a kernel \f$K(p,\cos,\ldots)\f$ depending on the radial momentum \f$p\f$ and
+   * the cosine of the single polar angle between the loop and external momentum as
    * $$
    * \frac{S_{d-1}}{(2\pi)^{d}}\,\int_{-1}^1 dc\,(1-c^2)^{\frac{d-3}{2}}\,\int_0^\infty dp\, p^{d-1} K(p,c,\ldots)
    * $$
@@ -87,10 +87,10 @@ namespace DiFfRG
      */
     using execution_space = ExecutionSpace;
 
-    Integrator_p2_1ang(QuadratureProvider &quadrature_provider, const ConfigTree &json)
+    Integrator_p2_1ang(QuadratureProvider &quadrature_provider, const ConfigTree &config)
       requires provides_regulator<KERNEL>
-        : Integrator_p2_1ang(quadrature_provider, internal::make_int_grid<2, NT>(json, {"x_order", "cos1_order"}),
-                             optimize_x_extent<typename KERNEL::Regulator>(json))
+        : Integrator_p2_1ang(quadrature_provider, internal::make_int_grid<2, NT>(config, {"x_order", "cos1_order"}),
+                             optimize_x_extent<typename KERNEL::Regulator>(config))
     {
     }
 

@@ -26,13 +26,14 @@ namespace DiFfRG
      *
      * @param top_folder The top folder to store the output in.
      * @param output_name The name of the output file.
-     * @param json The JSON object containing the parameters.
+     * @param config The ConfigTree object containing the parameters.
      */
     HDF5Output(const std::string top_folder, const std::string output_name,
                const std::string &configuration_json = "{}");
-    [[deprecated("Use HDF5Output(top_folder, output_name, OutputSettings(json).configuration_json) instead")]]
-    HDF5Output(const std::string top_folder, const std::string output_name, const ConfigTree &json)
-        : HDF5Output(std::move(top_folder), std::move(output_name), OutputSettings(json).configuration_json)
+
+    [[deprecated("Use HDF5Output(top_folder, output_name, OutputSettings(config).configuration_config) instead")]]
+    HDF5Output(const std::string top_folder, const std::string output_name, const ConfigTree &config)
+        : HDF5Output(std::move(top_folder), std::move(output_name), OutputSettings(config).configuration_json)
     {
     }
 

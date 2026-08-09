@@ -12,7 +12,10 @@ namespace DiFfRG
 
     fRG::fRG(double Lambda) : Lambda(Lambda), k(Lambda) { set_time(0.); }
 
-    fRG::fRG(const ConfigTree& json) : Lambda(json.get_double_or_warn("/physical/Lambda", 1.0)), k(Lambda) { set_time(0.); }
+    fRG::fRG(const ConfigTree &config) : Lambda(config.get_double_or_warn("/physical/Lambda", 1.0)), k(Lambda)
+    {
+      set_time(0.);
+    }
 
     void fRG::set_time(double t_)
     {

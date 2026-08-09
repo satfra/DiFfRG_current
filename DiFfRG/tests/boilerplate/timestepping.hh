@@ -30,8 +30,7 @@ struct UsesFVFlowingVariables<Discretization, std::void_t<decltype(Discretizatio
 
 template <typename Discretization>
 using FlowingVariablesFor =
-    std::conditional_t<UsesFVFlowingVariables<Discretization>::value,
-                       DiFfRG::FV::FlowingVariables<Discretization>,
+    std::conditional_t<UsesFVFlowingVariables<Discretization>::value, DiFfRG::FV::FlowingVariables<Discretization>,
                        DiFfRG::FE::FlowingVariables<Discretization>>;
 
 template <typename Model, typename Discretization, typename Assembler, typename TimeStepper, bool expl = false,
@@ -46,7 +45,7 @@ bool run(std::string test_name, double expected_precision)
   p_prm.initial_x1[0] = 1.;
   p_prm.initial_x2[0] = 0.5;
 
-  ConfigTree json = json::value(
+  ConfigTree config = json::value(
       {{"physical", {{"Lambda", 1.}}},
        {"integration",
         {{"x_quadrature_order", 32},
@@ -85,7 +84,7 @@ bool run(std::string test_name, double expected_precision)
           {{"dt", 1e-4}, {"minimal_dt", 1e-6}, {"maximal_dt", 1e-1}, {"abs_tol", 1e-16}, {"rel_tol", 1e-12}}}}},
        {"output", {{"verbosity", 0}, {"vtk", false}}}});
 
-  const double final_time = json.get_double("/timestepping/final_time");
+  const double final_time = config.get_double("/timestepping/final_time");
 
   try {
     auto log = spdlog::stdout_color_mt("log");
@@ -101,21 +100,21 @@ bool run(std::string test_name, double expected_precision)
 
   // Define the objects needed to run the simulation
   Model model(p_prm);
-  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(config)};
+  Discretization discretization(mesh, config, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, config, DiFfRG::LogPort{});
   auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, test_name, test_name);
-  OutputSession<dim, VectorType> data_out(data_out_path, json);
+  OutputSession<dim, VectorType> data_out(data_out_path, config);
 
   const int n_components = Model::Components::count_fe_functions(0);
 
   std::unique_ptr<AbstractAdaptor<VectorType>> adaptor;
   if constexpr (adapt)
-    adaptor = std::make_unique<HAdaptivity<Assembler>>(assembler, json);
+    adaptor = std::make_unique<HAdaptivity<Assembler>>(assembler, config);
   else
     adaptor = std::make_unique<NoAdaptivity<VectorType>>();
 
-  TimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+  TimeStepper time_stepper(config, &assembler, &data_out, adaptor.get());
 
   // Set up the initial condition
   FlowingVariablesFor<Discretization> initial_condition(discretization);

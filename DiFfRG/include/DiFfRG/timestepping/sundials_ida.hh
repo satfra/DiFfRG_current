@@ -33,7 +33,7 @@ namespace DiFfRG
     using BlockVectorType = typename Base::BlockVectorType;
     using IDAErrorDofCallback = std::function<void(const IDAErrorDofDiagnostics &)>;
 
-    using Base::assembler, Base::data_out, Base::json, Base::adaptor;
+    using Base::assembler, Base::data_out, Base::config, Base::adaptor;
     using Base::Base;
     using Base::console_out;
     using Base::verbosity, Base::output_dt, Base::impl, Base::expl;

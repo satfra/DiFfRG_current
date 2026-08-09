@@ -2,8 +2,8 @@
 #include <catch2/catch_all.hpp>
 
 #include <DiFfRG/common/complex_math.hh>
-#include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/config_tree.hh>
+#include <DiFfRG/common/init.hh>
 #include <DiFfRG/discretization/discretization.hh>
 #include <DiFfRG/physics/interpolation.hh>
 
@@ -21,7 +21,7 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
   using namespace dealii;
   using namespace DiFfRG;
 
-  ConfigTree json = json::value(
+  ConfigTree config = json::value(
       {{"physical", {}},
        {"integration",
         {{"x_quadrature_order", 32},
@@ -75,7 +75,7 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
   SECTION("Scalars")
   {
     {
-      HDF5Output hdf5_output(tmp.string(), hdf5FileName, OutputSettings(json).configuration_json);
+      HDF5Output hdf5_output(tmp.string(), hdf5FileName, OutputSettings(config).configuration_json);
 
       hdf5_output.scalar("d", 42.0);
       hdf5_output.scalar("i", 1);
@@ -234,7 +234,7 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
     {
       // Write the coordinates and interpolators very manually to files
       {
-        HDF5Output hdf5_output(tmp.string(), hdf5FileName, OutputSettings(json).configuration_json);
+        HDF5Output hdf5_output(tmp.string(), hdf5FileName, OutputSettings(config).configuration_json);
 
         hdf5_output.map("log", log_coords);
         hdf5_output.map("log_w", log_coords_wrong);
@@ -342,7 +342,7 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
     }
     {
       spdlog::get("log")->info("checking convenience writing.");
-      HDF5Output hdf5_output(tmp.string(), hdf5FileName, OutputSettings(json).configuration_json);
+      HDF5Output hdf5_output(tmp.string(), hdf5FileName, OutputSettings(config).configuration_json);
 
       REQUIRE_NOTHROW(hdf5_output.map("spline", spline));
       REQUIRE_NOTHROW(hdf5_output.map("lin2d", lin2d));

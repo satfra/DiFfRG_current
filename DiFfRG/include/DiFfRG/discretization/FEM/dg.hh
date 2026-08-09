@@ -11,8 +11,8 @@
 #include <deal.II/lac/affine_constraints.h>
 
 // DiFfRG
-#include <DiFfRG/common/utils.hh>
 #include <DiFfRG/common/run_logger.hh>
+#include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/FEM/assembler/ddg.hh>
 #include <DiFfRG/discretization/FEM/assembler/dg.hh>
 #include <DiFfRG/discretization/discretization.hh>
@@ -40,14 +40,14 @@ namespace DiFfRG
       static constexpr uint dim = Mesh::dim;
 
       [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Discretization(
-          Mesh &mesh, DiFfRG::internal::LegacyDefaultLogPortArgument<Mesh, ConfigTree> json)
-          : Discretization(mesh, json.value(), DiFfRG::internal::legacy_default_log_port<Mesh>())
+          Mesh &mesh, DiFfRG::internal::LegacyDefaultLogPortArgument<Mesh, ConfigTree> config)
+          : Discretization(mesh, config.value(), DiFfRG::internal::legacy_default_log_port<Mesh>())
       {
       }
 
-      Discretization(Mesh &mesh, const ConfigTree &json, LogPort log_port)
-          : mesh(mesh), json(json), log_port(std::move(log_port)),
-            fe(std::make_shared<FESystem<dim>>(FE_DGQ<dim>(json.get_uint_or_warn("/discretization/fe_order", 3)),
+      Discretization(Mesh &mesh, const ConfigTree &config, LogPort log_port)
+          : mesh(mesh), config(config), log_port(std::move(log_port)),
+            fe(std::make_shared<FESystem<dim>>(FE_DGQ<dim>(config.get_uint_or_warn("/discretization/fe_order", 3)),
                                                Components::count_fe_functions(0))),
             dof_handler(mesh.get_triangulation())
       {
@@ -84,7 +84,7 @@ namespace DiFfRG
       auto &get_triangulation() { return mesh.get_triangulation(); }
       const Point<dim> &get_support_point(const uint &dof) const { return support_points[dof]; }
       const auto &get_support_points() const { return support_points; }
-      const auto &get_json() const { return json; }
+      const auto &get_config() const { return config; }
 
       void reinit() { setup_dofs(); }
 
@@ -126,7 +126,7 @@ namespace DiFfRG
       }
 
       Mesh &mesh;
-      ConfigTree json;
+      ConfigTree config;
       LogPort log_port;
 
       std::shared_ptr<FESystem<dim>> fe;

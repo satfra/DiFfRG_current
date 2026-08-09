@@ -1892,14 +1892,23 @@ using KT::internal::make_tagged_neighbors;
 using KT::internal::tag_cell_dofs;
 template <int dim, typename NT, size_t nc> using KTCellData = KT::internal::CellData<dim, NT, nc>;
 template <int dim, typename NT, size_t nc> using KTNeighborData = KT::internal::NeighborData<dim, NT, nc>;
+
+// nvcc's cudafe emits the first use of a specialization symbolically but constant-folds every
+// later one, rendering a size_t argument as the ill-formed functional cast `unsigned long((1))`.
+// Naming each specialization once here keeps the use sites below off that path.
+using KTCellData_1_1 = KTCellData<1, NumberType, 1>; // <dim, n_components>
+using KTCellData_1_2 = KTCellData<1, NumberType, 2>;
+using KTCellData_2_1 = KTCellData<2, NumberType, 1>;
+using KTNeighborData_1_1 = KTNeighborData<1, NumberType, 1>;
+using KTNeighborData_1_2 = KTNeighborData<1, NumberType, 2>;
+using KTNeighborData_2_1 = KTNeighborData<2, NumberType, 1>;
 using AD = autodiff::Real<1, NumberType>;
 
 TEST_CASE("tag_cell_dofs 1D single component — matching dof is seeded", "[FV][KT][tag_cell_dofs]")
 {
   constexpr int dim = 1;
-  constexpr size_t nc = 1;
 
-  const KTCellData<dim, NumberType, nc> cell_data{
+  const KTCellData_1_1 cell_data{
       .x = Point<dim>(1.0),
       .u = {3.5},
       .dof_indices = {42},
@@ -1916,9 +1925,8 @@ TEST_CASE("tag_cell_dofs 1D single component — matching dof is seeded", "[FV][
 TEST_CASE("tag_cell_dofs 1D single component — non-matching dof is not seeded", "[FV][KT][tag_cell_dofs]")
 {
   constexpr int dim = 1;
-  constexpr size_t nc = 1;
 
-  const KTCellData<dim, NumberType, nc> cell_data{
+  const KTCellData_1_1 cell_data{
       .x = Point<dim>(1.0),
       .u = {3.5},
       .dof_indices = {42},
@@ -1933,9 +1941,8 @@ TEST_CASE("tag_cell_dofs 1D single component — non-matching dof is not seeded"
 TEST_CASE("tag_cell_dofs 1D multi-component — only matching component seeded", "[FV][KT][tag_cell_dofs]")
 {
   constexpr int dim = 1;
-  constexpr size_t nc = 2;
 
-  const KTCellData<dim, NumberType, nc> cell_data{
+  const KTCellData_1_2 cell_data{
       .x = Point<dim>(0.0),
       .u = {1.0, 2.0},
       .dof_indices = {10, 20},
@@ -1967,9 +1974,8 @@ TEST_CASE("tag_cell_dofs 1D multi-component — only matching component seeded",
 TEST_CASE("tag_cell_dofs 2D single component — point preserved and seeded", "[FV][KT][tag_cell_dofs]")
 {
   constexpr int dim = 2;
-  constexpr size_t nc = 1;
 
-  const KTCellData<dim, NumberType, nc> cell_data{
+  const KTCellData_2_1 cell_data{
       .x = Point<dim>(0.5, 0.7),
       .u = {4.0},
       .dof_indices = {5},
@@ -1993,7 +1999,7 @@ TEST_CASE("make_tagged_neighbors 1D single component — matching dof in one fac
   constexpr int dim = 1;
   constexpr size_t nc = 1;
 
-  const KTNeighborData<dim, NumberType, nc> nd{
+  const KTNeighborData_1_1 nd{
       .x = {Point<dim>(-1.0), Point<dim>(1.0)},
       .u = {std::array<NumberType, nc>{1.0}, std::array<NumberType, nc>{2.0}},
       .dof_indices = {std::array<dealii::types::global_dof_index, nc>{10},
@@ -2024,7 +2030,7 @@ TEST_CASE("make_tagged_neighbors 1D single component — no matching dof", "[FV]
   constexpr int dim = 1;
   constexpr size_t nc = 1;
 
-  const KTNeighborData<dim, NumberType, nc> nd{
+  const KTNeighborData_1_1 nd{
       .x = {Point<dim>(-1.0), Point<dim>(1.0)},
       .u = {std::array<NumberType, nc>{1.0}, std::array<NumberType, nc>{2.0}},
       .dof_indices = {std::array<dealii::types::global_dof_index, nc>{10},
@@ -2033,7 +2039,7 @@ TEST_CASE("make_tagged_neighbors 1D single component — no matching dof", "[FV]
 
   const auto result = make_tagged_neighbors(nd, 99);
 
-  for (size_t face = 0; face < KTNeighborData<dim, NumberType, nc>::n_faces; ++face)
+  for (size_t face = 0; face < KTNeighborData_1_1::n_faces; ++face)
     for (size_t c = 0; c < nc; ++c)
       CHECK(derivative(result.u[face][c]) == Catch::Approx(0.0));
 }
@@ -2044,7 +2050,7 @@ TEST_CASE("make_tagged_neighbors 1D multi-component — specific face and compon
   constexpr int dim = 1;
   constexpr size_t nc = 2;
 
-  const KTNeighborData<dim, NumberType, nc> nd{
+  const KTNeighborData_1_2 nd{
       .x = {Point<dim>(-1.0), Point<dim>(1.0)},
       .u = {std::array<NumberType, nc>{1.0, 2.0}, std::array<NumberType, nc>{3.0, 4.0}},
       .dof_indices = {std::array<dealii::types::global_dof_index, nc>{10, 20},
@@ -2084,7 +2090,7 @@ TEST_CASE("make_tagged_neighbors 2D single component — 4 faces, one matching",
   constexpr int dim = 2;
   constexpr size_t nc = 1;
 
-  const KTNeighborData<dim, NumberType, nc> nd{
+  const KTNeighborData_2_1 nd{
       .x = {Point<dim>(-1.0, 0.0), Point<dim>(1.0, 0.0), Point<dim>(0.0, -1.0), Point<dim>(0.0, 1.0)},
       .u = {std::array<NumberType, nc>{1.0}, std::array<NumberType, nc>{2.0}, std::array<NumberType, nc>{3.0},
             std::array<NumberType, nc>{4.0}},
