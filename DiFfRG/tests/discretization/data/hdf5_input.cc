@@ -129,6 +129,43 @@ TEST_CASE("Test HDF5 input", "[input][hdf5]")
     }
   }
 
+  SECTION("Test map round trip on focused logarithmic coordinates")
+  {
+    // to_string() is the identity key of a coordinate dataset, so it has to separate grids that
+    // differ only in the focusing parameters -- otherwise two different grids silently share one
+    // dataset and load_map() accepts the wrong one.
+    FocusedLogCoordinates1D<double> coords(32, 1e-3, 100.0, 1.0, 2.0);
+    FocusedLogCoordinates1D<double> coords_other_center(32, 1e-3, 100.0, 5.0, 2.0);
+    FocusedLogCoordinates1D<double> coords_other_focus(32, 1e-3, 100.0, 1.0, 3.0);
+
+    CHECK(coords.to_string() != coords_other_center.to_string());
+    CHECK(coords.to_string() != coords_other_focus.to_string());
+
+    std::vector<double> test_data(coords.size());
+    for (size_t i = 0; i < coords.size(); ++i)
+      test_data[i] = std::log(coords.forward(i));
+
+    {
+      HDF5Output hdf5_output(tmp.string(), hdf5FileName, OutputSettings(json).configuration_json);
+      hdf5_output.map("focused_map", coords, test_data.data());
+      hdf5_output.flush(1.0);
+    }
+
+    {
+      HDF5Input hdf5_input(hdf5_file.string());
+      std::vector<double> loaded_data(coords.size());
+      REQUIRE_NOTHROW(hdf5_input.load_map("focused_map", loaded_data.data(), coords));
+      for (size_t i = 0; i < coords.size(); ++i)
+        CHECK(loaded_data[i] == Catch::Approx(test_data[i]));
+
+      // a grid with a different center or focus must be rejected
+      std::vector<double> dummy_data(coords.size());
+      REQUIRE_THROWS_AS(hdf5_input.load_map("focused_map", dummy_data.data(), coords_other_center),
+                        std::runtime_error);
+      REQUIRE_THROWS_AS(hdf5_input.load_map("focused_map", dummy_data.data(), coords_other_focus), std::runtime_error);
+    }
+  }
+
   SECTION("Test coordinate validation errors")
   {
     // Create original coordinates and different coordinates for testing validation

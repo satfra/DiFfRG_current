@@ -224,13 +224,7 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
            {"cos1_order", 8},
            {"cos2_order", 8},
            {"phi_order", 8},
-           {"x0_quadrature_order", 16},
-           {"x0_summands", 8},
-           {"q0_quadrature_order", 16},
-           {"q0_summands", 8},
            {"x_extent_tolerance", 1e-5},
-           {"x0_extent_tolerance", 1e-5},
-           {"q0_extent_tolerance", 1e-6},
            {"jacobian_quadrature_factor", 0.5}}},
          {"discretization",
           {{"fe_order", 3},
@@ -283,10 +277,12 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
               << "  /integration       Quadrature settings for momentum-space loop integrals\n"
               << "    x_order                       Order of radial momentum quadrature\n"
               << "    cos1/cos2/phi_order           Order of angular quadrature\n"
-              << "    x0/q0_quadrature_order        Order of Matsubara frequency quadrature\n"
-              << "    x0/q0_summands                Number of Matsubara summands\n"
-              << "    *_extent_tolerance            Tolerance for integration domain extent\n"
+              << "    x_extent_tolerance            Tolerance for integration domain extent\n"
               << "    jacobian_quadrature_factor    Quadrature reduction factor for Jacobian assembly\n"
+              << "    vacuum_quad_size                                                               \n"
+              << "    matsubara_precision_factor                                                     \n"
+              << "    min_matsubara_size                                                             \n"
+              << "    max_matsubara_size                                                             \n"
               << "  /discretization    Spatial discretization settings\n"
               << "    fe_order                      Finite element polynomial order\n"
               << "    threads                       Number of CPU threads the whole program may use\n"

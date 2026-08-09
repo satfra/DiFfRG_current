@@ -119,11 +119,36 @@ namespace DiFfRG
      * @param x the point at which to interpolate
      * @return NT the interpolated value
      */
-    NT KOKKOS_FUNCTION operator()(const typename Coordinates::ctype x) const
+    /**
+     * @brief Map a physical coordinate onto the (clamped) grid index.
+     *
+     * Split out of operator() because it is the expensive half: for a logarithmic axis
+     * Coordinates::backward is a fp64 log1p, which costs ~200 fp64 instructions on current NVIDIA
+     * parts, against ~10 for the spline evaluation itself. A generated kernel that evaluates many
+     * dressings at the SAME momentum pays that log1p once per dressing, because each interpolator
+     * owns its own `coordinates` members and the compiler cannot prove they are equal across
+     * objects — so it cannot CSE the transform. Hoisting index() lets the caller pay it once.
+     *
+     * The returned index is only meaningful for interpolators sharing this coordinate system.
+     */
+    ctype KOKKOS_FUNCTION index(const typename Coordinates::ctype x) const
     {
-      ctype idx = coordinates.backward(x);
+      return coordinates.backward(x);
+    }
+
+    /**
+     * @brief Interpolate at a grid index previously obtained from index().
+     *
+     * Clamping lives here, not in index(), so that index() depends ONLY on the coordinate system.
+     * That is exactly the precondition under which a caller may share one index across several
+     * interpolators; folding a size-dependent clamp into it would silently break sharing between
+     * interpolators of different length.
+     */
+    NT KOKKOS_FUNCTION at(const ctype raw_idx) const
+    {
       // Clamp the index to the range [0, size - 1]
-      idx = Kokkos::max(static_cast<decltype(idx)>(0), Kokkos::min(idx, static_cast<decltype(idx)>(size - 1)));
+      const ctype idx = Kokkos::max(static_cast<ctype>(0),
+                                    Kokkos::min(raw_idx, static_cast<ctype>(size - 1)));
       const size_t lidx = Kokkos::min(size_t(Kokkos::floor(idx)), size - 2);
       const size_t uidx = lidx + 1;
       // t is the fractional part of the index
@@ -143,6 +168,14 @@ namespace DiFfRG
       else
         return t * upper + (1 - t) * lower + cubic; // linear + cubic
     }
+
+    /**
+     * @brief Interpolate the data at a given point.
+     *
+     * @param x the point at which to interpolate
+     * @return NT the interpolated value
+     */
+    NT KOKKOS_FUNCTION operator()(const typename Coordinates::ctype x) const { return at(index(x)); }
 
     auto &CPU() const { return get_on<CPU_memory>(); }
     auto &GPU() const { return get_on<GPU_memory>(); }
