@@ -103,9 +103,36 @@ namespace DiFfRG
      * @param x the point at which to interpolate
      * @return NT the interpolated value
      */
-    NT KOKKOS_FUNCTION operator()(const typename Coordinates::ctype x, const typename Coordinates::ctype y) const
+    /**
+     * @brief Map physical coordinates onto grid indices.
+     *
+     * Split out of operator() because it is the expensive half: Coordinates::backward is a fp64
+     * log/log1p per logarithmic axis, ~200 fp64 instructions each on current NVIDIA parts against
+     * ~10 for the interpolation. A generated kernel evaluating several dressings at the SAME point
+     * otherwise pays it once per dressing -- the compiler cannot CSE it, because each interpolator
+     * owns its own `coordinates` members and cannot be proven to agree with another's.
+     *
+     * Depends only on the coordinate system, so the result may be shared across interpolators that
+     * share one. Clamping and stencil resolution stay in at(), since they are size dependent and
+     * would otherwise make an index untransferable between interpolators of different extent.
+     *
+     * The return type is spelled out rather than deduced: nvcc loses `decltype(var)` when the
+     * initializer has a deduced return type inside a class-template member, and the consumer stores
+     * this in a `const auto`.
+     */
+    device::array<typename Coordinates::ctype, 2> KOKKOS_FUNCTION
+    index(const typename Coordinates::ctype x, const typename Coordinates::ctype y) const
     {
-      const auto [idx_x, idx_y] = coordinates.backward(x, y);
+      return coordinates.backward(x, y);
+    }
+
+    /**
+     * @brief Interpolate at grid indices previously obtained from index().
+     */
+    NT KOKKOS_FUNCTION at(const device::array<typename Coordinates::ctype, 2> &idx) const
+    {
+      const auto idx_x = idx[0];
+      const auto idx_y = idx[1];
       // Clamped [i, i+1] stencil on bounded axes, wrapping [i, (i+1) % n] on periodic ones
       const auto sx = make_interpolation_stencil<periodic_x>(idx_x, sizes[0]);
       const auto sy = make_interpolation_stencil<periodic_y>(idx_y, sizes[1]);
@@ -127,6 +154,15 @@ namespace DiFfRG
       else
         return corner00 * (1 - tx) * (1 - ty) + corner01 * (1 - tx) * ty + corner10 * tx * (1 - ty) +
                corner11 * tx * ty;
+    }
+
+    /**
+     * @brief Interpolate the data at a given point.
+     */
+    NT KOKKOS_FUNCTION operator()(const typename Coordinates::ctype x,
+                                  const typename Coordinates::ctype y) const
+    {
+      return at(index(x, y));
     }
 
     auto &CPU() const { return get_on<CPU_memory>(); }

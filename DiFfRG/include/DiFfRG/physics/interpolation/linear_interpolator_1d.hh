@@ -101,10 +101,29 @@ namespace DiFfRG
      * @param x the point at which to interpolate
      * @return NT the interpolated value
      */
-    NT KOKKOS_FUNCTION operator()(const typename Coordinates::ctype x) const
+    /**
+     * @brief Map a physical coordinate onto the grid index.
+     *
+     * Split out for the same reason as in SplineInterpolator1D: for a logarithmic or focused-log
+     * axis Coordinates::backward is a fp64 log/log1p costing ~200 fp64 instructions, and a kernel
+     * evaluating several dressings at one momentum otherwise pays it once per dressing (the
+     * compiler cannot CSE it, since each interpolator owns its own coordinate members).
+     *
+     * Depends only on the coordinate system, so the result may be shared across interpolators that
+     * share one — stencil resolution and clamping stay in at().
+     */
+    typename Coordinates::ctype KOKKOS_FUNCTION index(const typename Coordinates::ctype x) const
+    {
+      return coordinates.backward(x);
+    }
+
+    /**
+     * @brief Interpolate at a grid index previously obtained from index().
+     */
+    NT KOKKOS_FUNCTION at(const typename Coordinates::ctype idx) const
     {
       // Resolve the stencil: clamped [i, i+1] for a bounded axis, wrapping [i, (i+1) % size] for a periodic one
-      const auto stencil = make_interpolation_stencil<periodic>(coordinates.backward(x), size);
+      const auto stencil = make_interpolation_stencil<periodic>(idx, size);
       const auto t = stencil.t;
       const auto lower = device_data[stencil.lower];
       const auto upper = device_data[stencil.upper];
@@ -113,6 +132,11 @@ namespace DiFfRG
       else
         return t * upper + (1 - t) * lower;
     }
+
+    /**
+     * @brief Interpolate the data at a given point.
+     */
+    NT KOKKOS_FUNCTION operator()(const typename Coordinates::ctype x) const { return at(index(x)); }
 
     /**
      * @brief Get the coordinate system of the data.

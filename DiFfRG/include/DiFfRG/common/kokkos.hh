@@ -194,12 +194,28 @@ namespace DiFfRG
   // ------------------------------------------------
   // Getting ranges to iterate over
   // ------------------------------------------------
+  // Pin launch bounds. Without __launch_bounds__ ptxas cannot see the block size and pins registers
+  // differently; measured ~3-14% slower across the YangMills flow set on sm_89, results identical
+  // (numtracer/gpubench/FINDINGS.md). Override with -DDIFFRG_LAUNCH_BOUNDS=N.
+#ifndef DIFFRG_LAUNCH_BOUNDS
+#define DIFFRG_LAUNCH_BOUNDS 128
+#endif
+#if DIFFRG_LAUNCH_BOUNDS == 0 // A/B control: no launch bounds at all (the historical behaviour)
   template <int dim, typename ExecutionSpace> struct KokkosNDRangeHelper {
     using type = Kokkos::MDRangePolicy<Kokkos::Rank<dim>, ExecutionSpace>;
   };
   template <typename ExecutionSpace> struct KokkosNDRangeHelper<1, ExecutionSpace> {
     using type = Kokkos::RangePolicy<ExecutionSpace>;
   };
+#else
+  template <int dim, typename ExecutionSpace> struct KokkosNDRangeHelper {
+    using type = Kokkos::MDRangePolicy<Kokkos::Rank<dim>, ExecutionSpace,
+                                       Kokkos::LaunchBounds<DIFFRG_LAUNCH_BOUNDS>>;
+  };
+  template <typename ExecutionSpace> struct KokkosNDRangeHelper<1, ExecutionSpace> {
+    using type = Kokkos::RangePolicy<ExecutionSpace, Kokkos::LaunchBounds<DIFFRG_LAUNCH_BOUNDS>>;
+  };
+#endif
   template <int dim, typename ExecutionSpace> using KokkosNDRange = KokkosNDRangeHelper<dim, ExecutionSpace>::type;
 
   /**

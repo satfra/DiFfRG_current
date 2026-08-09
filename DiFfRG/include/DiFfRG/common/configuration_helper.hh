@@ -64,14 +64,14 @@ namespace DiFfRG
      *
      * Kept as the historical spelling of get_config().
      */
-    const ConfigTree &get_json() const;
+     [[deprecated("Use get_config() instead")]] const ConfigTree &get_json() const;
 
-    [[deprecated("Use OutputPath(json).run_file(\".log\").filename().string() instead")]] std::string
+    [[deprecated("Use OutputPath(config).run_file(\".log\").filename().string() instead")]] std::string
     get_log_file() const;
     std::string get_parameter_file() const;
-    [[deprecated("Use OutputPath(json).run_name() instead")]] std::string get_output_name() const;
-    [[deprecated("Use OutputPath(json).field_directory() instead")]] std::string get_output_folder() const;
-    [[deprecated("Use OutputPath(json).root() instead")]] std::string get_top_folder() const;
+    [[deprecated("Use OutputPath(config).run_name() instead")]] std::string get_output_name() const;
+    [[deprecated("Use OutputPath(config).field_directory() instead")]] std::string get_output_folder() const;
+    [[deprecated("Use OutputPath(config).root() instead")]] std::string get_top_folder() const;
 
     /**
      * @brief Read the configuration without producing any diagnostics or terminating.

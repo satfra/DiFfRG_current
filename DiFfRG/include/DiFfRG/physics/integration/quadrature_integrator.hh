@@ -170,6 +170,11 @@ namespace DiFfRG
         device::apply([&](const auto &...iargs) { subview() = weight * KERNEL::kernel(iargs...); }, full_args);
       };
 
+      // No explicit tile: Kokkos' own heuristic is used. An explicit tile matched to
+      // DIFFRG_LAUNCH_BOUNDS was measured and is INERT (numtracer/gpubench/FINDINGS.md) -- the
+      // 1.3-1.5x it appeared to give was GPU clock ramp, not tiling. Not worth the coupling: Kokkos
+      // hard-aborts when the tile product exceeds LaunchBounds, so an explicit tile turns a future
+      // launch-bounds change into a runtime abort.
       Kokkos::parallel_for(make_kokkos_nd_range<1 + dim, ExecutionSpace>(space, {0}, extents),
                            KokkosNDLambdaWrapper<1 + dim, decltype(functor)>(functor));
 
