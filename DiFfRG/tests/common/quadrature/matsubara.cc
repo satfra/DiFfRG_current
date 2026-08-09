@@ -65,10 +65,16 @@ TEST_CASE("Test matsubara quadrature rule", "[double][quadrature][matsubara]")
 
     const auto f = [&](const double x) { return 1. / (powr<2>(a) + b * x + powr<2>(x)); };
 
-    const double reference =
-        -(std::sinh(std::sqrt(4 * std::pow(a, 2) - std::pow(b, 2)) / (2. * T)) /
-          (std::sqrt(4 * std::pow(a, 2) - std::pow(b, 2)) *
-           (std::cos(b / (2. * T)) - std::cosh(std::sqrt(4 * std::pow(a, 2) - std::pow(b, 2)) / (2. * T)))));
+    // Analytically this is sinh(X) / (R * (cosh(X) - cos(y))) with R = sqrt(4a^2 - b^2),
+    // X = R/(2T), y = b/(2T) -- but it must not be evaluated in that form. Over these parameter
+    // ranges X reaches ~10^3, so sinh(X) and cosh(X) are astronomically large (they overflow
+    // outright near the corner T=0.001, a=1) and the value is recovered only as their ratio.
+    // Dividing through by cosh(X) first keeps every intermediate bounded: tanh -> 1 and
+    // cos(y)/cosh(X) -> 0 (or exactly 0 once cosh overflows, which is the right limit).
+    // Verified against a direct Matsubara sum; the unnormalised form disagreed with it by
+    // factors of ~10^3 on a few percent of draws, which is what made this test flaky.
+    const double R = std::sqrt(4 * std::pow(a, 2) - std::pow(b, 2));
+    const double reference = std::tanh(R / (2. * T)) / (R * (1. - std::cos(b / (2. * T)) / std::cosh(R / (2. * T))));
 
     const double result = mq.sum(f);
 

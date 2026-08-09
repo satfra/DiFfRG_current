@@ -423,7 +423,7 @@ TEST_CASE("Zero-dimensional KT Gaussian exposes analytic affine fields and diago
   }
 }
 
-TEST_CASE("Zero-dimensional KT Gaussian 40x40 matrix preserves analytic observables", "[2d][FV][KT][gaussian][coarse]")
+TEST_CASE("Zero-dimensional KT Gaussian 40x40 matrix preserves analytic observables", "[2d][FV][KT][gaussian][coarse][slow]")
 {
   for (const auto &scenario : gaussian_scenarios()) {
     DYNAMIC_SECTION(scenario.name)

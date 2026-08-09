@@ -363,7 +363,7 @@ namespace
 } // namespace
 
 TEST_CASE("2D manufactured advection-diffusion converges with asymmetric origin boundaries",
-          "[2d][FV][KT][advection][diffusion][manufactured]")
+          "[2d][FV][KT][advection][diffusion][manufactured][slow]")
 {
   const std::vector<ConvergenceRow> rows = run_convergence_study();
   print_table(rows);

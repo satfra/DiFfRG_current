@@ -595,7 +595,9 @@ namespace DiFfRG
         s_min = s_of_u(u_start);
         a = (s_of_u(u_stop) - s_min) / NT(grid_extent - 1);
         using Kokkos::sinh;
-        g_min = sinh(s_min) * c_inv;
+        // Store sinh(s_min), NOT sinh(s_min) * c_inv: forward() subtracts this BEFORE scaling by
+        // c_inv, which is what makes x == 0 cancel exactly. See the note in forward().
+        g_min = sinh(s_min);
       }
       a_inv = NT(1) / a;
     }
@@ -624,7 +626,15 @@ namespace DiFfRG
       // Factored as start * exp(...) rather than exp(log(start) + ...) so that x == 0 gives back
       // start bit-for-bit: the models pair grid element 0 with the p_grid_min parameter directly.
       // The upper end is then accurate to a handful of ulp, which nothing reads that way.
-      return start * exp((pure_log ? s : sinh(s) * c_inv) - g_min);
+      //
+      // The subtraction MUST happen before the multiplication by c_inv. Written the other way
+      // round, `sinh(s) * c_inv - g_min` is a multiply-add, which the compiler is free to
+      // contract into an FMA: the product is then kept at infinite precision and the ALREADY
+      // ROUNDED g_min subtracted from it, so x == 0 yields that rounding error instead of zero
+      // and start comes back off by an ulp. As written, `sinh(s) - g_min` is exactly zero at
+      // x == 0 (identical argument, same function), and 0 * c_inv is exactly zero.
+      const NT d = pure_log ? (s - g_min) : (sinh(s) - g_min) * c_inv;
+      return start * exp(d);
     }
 
     template <typename IT> device::array<NT, 1> KOKKOS_FORCEINLINE_FUNCTION forward(const device::array<IT, 1> &x) const
