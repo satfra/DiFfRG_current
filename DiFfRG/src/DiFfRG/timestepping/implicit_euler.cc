@@ -40,6 +40,7 @@ namespace DiFfRG
     // create jacobian and solver for inverse jacobian
     SparseMatrixType jacobian(assembler->get_sparsity_pattern_jacobian());
     LinearSolver<SparseMatrixType, VectorType> linSolver;
+    const DiagnosticPort jacobian_diagnostic_port = data_out ? data_out->diagnostic_port() : DiagnosticPort{};
 
     // all functions for assembly of the problem and linear solving
     newton.residual = [&](VectorType &res, const VectorType &u) {
@@ -53,14 +54,38 @@ namespace DiFfRG
 
     newton.update_jacobian = [&](const VectorType &u) {
       CalcDtTimer calc_timer;
-      jacobian = 0;
-      assembler->jacobian(jacobian, u, tc.get_dt(), 1);
-      linSolver.init(jacobian);
+      const auto build_diagnostics = this->jacobian_diagnostics_state.make_build(
+          this->next_jacobian_build_id++, ImplicitTimestepperKind::implicit_euler, ImplicitTimestepperStage::main,
+          tc.get_dt(), 1., 1., tc.get_dt());
+      JacobianMatrixDiagnostics matrix_diagnostics;
+      matrix_diagnostics.n_rows = jacobian.m();
+      JacobianFactorizationDiagnostics factorization_diagnostics;
+      bool diagnostics_recorded = false;
+      const auto record_diagnostics = [&]() {
+        if (diagnostics_recorded) return;
+        diagnostics_recorded = true;
+        record_jacobian_diagnostics(jacobian_diagnostic_port, "jacobian_diagnostics.csv", tc.get_t(), build_diagnostics,
+                                    matrix_diagnostics, factorization_diagnostics);
+      };
 
-      console_out(tc.get_t(), "jacobian construction", 2, nullptr, calc_timer.lap());
+      try {
+        jacobian = 0;
+        assembler->jacobian(jacobian, u, tc.get_dt(), 1);
+        matrix_diagnostics = analyze_jacobian_matrix(jacobian);
+        linSolver.init(jacobian);
 
-      if (linSolver.invert()) {
-        console_out(tc.get_t(), "jacobian inversion", 3, nullptr, calc_timer.lap());
+        console_out(tc.get_t(), "jacobian construction", 2, nullptr, calc_timer.lap());
+
+        factorize_with_diagnostics(linSolver, jacobian, factorization_diagnostics);
+        if (factorization_diagnostics.factorization_success == 1.)
+          console_out(tc.get_t(), "jacobian inversion", 3, nullptr, calc_timer.lap());
+        record_diagnostics();
+      } catch (...) {
+        if constexpr (decltype(linSolver)::performs_factorization)
+          if (std::isnan(factorization_diagnostics.factorization_success))
+            factorization_diagnostics.factorization_success = 0.;
+        record_diagnostics();
+        throw;
       }
     };
 
@@ -97,7 +122,10 @@ namespace DiFfRG
     save_data(start);
     while (!tc.finished()) {
       if ((*adaptor)(tc.get_t(), old_solution)) solution = old_solution;
+      const double t_before_attempt = tc.get_t();
+      const double attempted_h = tc.get_dt();
       tc.advance(dt_step, save_data);
+      this->jacobian_diagnostics_state.finish_attempt(tc.get_t() > t_before_attempt, attempted_h);
     }
 
     initial_condition->spatial_data() = solution;

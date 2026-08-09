@@ -2,12 +2,14 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <DiFfRG/timestepping/jacobian_diagnostics.hh>
 #include <DiFfRG/timestepping/linear_solver/GMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/ScaledGMRES.hh>
 
-#include <deal.II/lac/block_sparsity_pattern.h>
 #include <deal.II/lac/block_sparse_matrix.h>
+#include <deal.II/lac/block_sparsity_pattern.h>
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
+#include <deal.II/lac/full_matrix.h>
 #include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/sparsity_pattern.h>
 #include <deal.II/lac/vector.h>
@@ -150,16 +152,13 @@ namespace
   }
 } // namespace
 
-static_assert(
-    std::is_same_v<GMRES<SparseMatrix<double>, Vector<double>>,
-                   GMRES<SparseMatrix<double>, Vector<double>, PreconditionJacobi<SparseMatrix<double>>>>);
-static_assert(
-    std::is_same_v<ScaledLinearSolver<SparseMatrix<double>, Vector<double>>,
-                   ScaledLinearSolver<SparseMatrix<double>, Vector<double>,
-                                      GMRES<SparseMatrix<double>, Vector<double>, PreconditionIdentity>>>);
-static_assert(
-    std::is_same_v<ScaledGMRES<SparseMatrix<double>, Vector<double>>,
-                   ScaledGMRES<SparseMatrix<double>, Vector<double>, PreconditionIdentity>>);
+static_assert(std::is_same_v<GMRES<SparseMatrix<double>, Vector<double>>,
+                             GMRES<SparseMatrix<double>, Vector<double>, PreconditionJacobi<SparseMatrix<double>>>>);
+static_assert(std::is_same_v<ScaledLinearSolver<SparseMatrix<double>, Vector<double>>,
+                             ScaledLinearSolver<SparseMatrix<double>, Vector<double>,
+                                                GMRES<SparseMatrix<double>, Vector<double>, PreconditionIdentity>>>);
+static_assert(std::is_same_v<ScaledGMRES<SparseMatrix<double>, Vector<double>>,
+                             ScaledGMRES<SparseMatrix<double>, Vector<double>, PreconditionIdentity>>);
 
 TEST_CASE("ScaledLinearSolver defaults to scaled GMRES", "[timestepping][linear_solver][scaled_gmres]")
 {
@@ -215,6 +214,160 @@ TEST_CASE("ScaledUMFPack solves a badly scaled sparse system", "[timestepping][l
 
   CHECK(iterations == -1);
   check_badly_scaled_solution(matrix, rhs, solution);
+}
+
+TEST_CASE("Jacobian diagnostics use assembled values and ratio dominance", "[timestepping][jacobian_diagnostics]")
+{
+  DynamicSparsityPattern dsp(3, 3);
+  dsp.add(0, 0);
+  dsp.add(0, 1);
+  dsp.add(0, 2); // allocated but assembled to zero
+  dsp.add(1, 0);
+  dsp.add(1, 1);
+  dsp.add(2, 2);
+  SparsityPattern sparsity;
+  sparsity.copy_from(dsp);
+  SparseMatrix<double> matrix(sparsity);
+  matrix.set(0, 0, 4.);
+  matrix.set(0, 1, -1.);
+  matrix.set(1, 0, 2.);
+  matrix.set(1, 1, 3.);
+  matrix.set(2, 2, 0.5);
+
+  const auto diagnostics = analyze_jacobian_matrix(matrix);
+  CHECK(diagnostics.n_rows == 3.);
+  CHECK(diagnostics.nnz == 5.);
+  CHECK(diagnostics.max_abs_entry == 4.);
+  CHECK(diagnostics.frobenius_norm == Catch::Approx(5.5));
+  CHECK(diagnostics.one_norm == 6.);
+  CHECK(diagnostics.infinity_norm == 5.);
+  CHECK(diagnostics.min_abs_diagonal == 0.5);
+  CHECK(diagnostics.max_abs_diagonal == 4.);
+  CHECK(diagnostics.zero_diagonal_count == 0.);
+  CHECK(diagnostics.min_diagonal_dominance == Catch::Approx(1.5));
+  CHECK(diagnostics.min_row_max_abs == 0.5);
+  CHECK(diagnostics.max_row_max_abs == 4.);
+  CHECK(diagnostics.min_column_max_abs == 0.5);
+  CHECK(diagnostics.max_column_max_abs == 4.);
+}
+
+TEST_CASE("Jacobian diagnostics handle zero and diagonal-only rows", "[timestepping][jacobian_diagnostics]")
+{
+  FullMatrix<double> matrix(3, 3);
+  matrix(0, 0) = 2.;
+  matrix(2, 1) = -3.;
+
+  const auto diagnostics = analyze_jacobian_matrix(matrix);
+  CHECK(diagnostics.nnz == 2.);
+  CHECK(diagnostics.zero_diagonal_count == 2.);
+  CHECK(diagnostics.min_abs_diagonal == 0.);
+  CHECK(diagnostics.min_diagonal_dominance == 0.);
+  CHECK(diagnostics.min_row_max_abs == 0.);
+  CHECK(diagnostics.min_column_max_abs == 0.);
+}
+
+TEST_CASE("Timestepper Jacobian state tracks accepted steps and retries", "[timestepping][jacobian_diagnostics]")
+{
+  TimestepperJacobianDiagnosticsState state;
+
+  const auto initial =
+      state.make_build(7, ImplicitTimestepperKind::implicit_euler, ImplicitTimestepperStage::main, 0.25, 1., 1., 0.25);
+  CHECK(initial.jacobian_build_id == 7);
+  CHECK(initial.step == 0.);
+  CHECK(initial.retry_index == 0.);
+  CHECK(std::isnan(initial.last_h));
+
+  state.finish_attempt(false, 0.25);
+  const auto retry =
+      state.make_build(8, ImplicitTimestepperKind::implicit_euler, ImplicitTimestepperStage::main, 0.1, 1., 1., 0.1);
+  CHECK(retry.step == 0.);
+  CHECK(retry.retry_index == 1.);
+  CHECK(std::isnan(retry.last_h));
+
+  state.finish_attempt(true, 0.1);
+  const auto next =
+      state.make_build(9, ImplicitTimestepperKind::trbdf2, ImplicitTimestepperStage::trapezoidal, 0.2, 1., 1., 0.1);
+  CHECK(next.step == 1.);
+  CHECK(next.retry_index == 0.);
+  CHECK(next.last_h == 0.1);
+  CHECK(next.current_h == 0.2);
+}
+
+TEST_CASE("Jacobian diagnostics support block sparse matrices", "[timestepping][jacobian_diagnostics]")
+{
+  BlockSparsityPattern sparsity;
+  BlockSparseMatrix<double> matrix;
+  build_badly_scaled_block_matrix(sparsity, matrix);
+
+  const auto diagnostics = analyze_jacobian_matrix(matrix);
+  CHECK(diagnostics.n_rows == 3.);
+  CHECK(diagnostics.nnz == 7.);
+  CHECK(diagnostics.max_abs_entry == 7.e8);
+  CHECK(diagnostics.one_norm == Catch::Approx(7.005e8));
+  CHECK(diagnostics.infinity_norm == Catch::Approx(7.e8 + 6.e-6));
+  CHECK(diagnostics.zero_diagonal_count == 0.);
+}
+
+TEST_CASE("GMRES leaves factorization-only diagnostics unavailable", "[timestepping][jacobian_diagnostics][gmres]")
+{
+  const SparseSystem system = make_badly_scaled_matrix();
+  GMRES<SparseMatrix<double>, Vector<double>> solver;
+  solver.init(system.matrix);
+  JacobianFactorizationDiagnostics diagnostics;
+
+  factorize_with_diagnostics(solver, system.matrix, diagnostics);
+
+  CHECK(std::isnan(diagnostics.factorization_ms));
+  CHECK(std::isnan(diagnostics.factorization_success));
+  CHECK(std::isnan(diagnostics.scaled_rcond_estimate));
+}
+
+TEST_CASE("Failed UMFPack factorization is recorded", "[timestepping][jacobian_diagnostics][umfpack]")
+{
+  DynamicSparsityPattern dsp(2, 2);
+  for (unsigned int row = 0; row < 2; ++row)
+    for (unsigned int column = 0; column < 2; ++column)
+      dsp.add(row, column);
+  SparsityPattern sparsity;
+  sparsity.copy_from(dsp);
+  SparseMatrix<double> matrix(sparsity);
+  matrix.set(0, 0, 1.);
+  matrix.set(0, 1, 1.);
+  matrix.set(1, 0, 2.);
+  matrix.set(1, 1, 2.);
+
+  UMFPack<SparseMatrix<double>, Vector<double>> solver;
+  solver.init(matrix);
+  JacobianFactorizationDiagnostics diagnostics;
+
+  CHECK_THROWS(factorize_with_diagnostics(solver, matrix, diagnostics));
+  CHECK(diagnostics.factorization_ms >= 0.);
+  CHECK(diagnostics.factorization_success == 0.);
+  CHECK(std::isnan(diagnostics.scaled_rcond_estimate));
+}
+
+TEST_CASE("UMFPack estimates the condition of the equilibrated matrix",
+          "[timestepping][jacobian_diagnostics][scaled_umfpack]")
+{
+  DynamicSparsityPattern dsp(3, 3);
+  for (unsigned int i = 0; i < 3; ++i)
+    dsp.add(i, i);
+  SparsityPattern sparsity;
+  sparsity.copy_from(dsp);
+  SparseMatrix<double> matrix(sparsity);
+  matrix.set(0, 0, 1.e-12);
+  matrix.set(1, 1, 1.);
+  matrix.set(2, 2, 1.e12);
+
+  UMFPack<SparseMatrix<double>, Vector<double>> solver;
+  solver.init(matrix);
+  REQUIRE(solver.invert());
+  CHECK(solver.estimate_scaled_rcond(matrix, 5) == Catch::Approx(1.).epsilon(1.e-12));
+
+  ScaledUMFPack<SparseMatrix<double>, Vector<double>> scaled_solver;
+  scaled_solver.init(matrix);
+  REQUIRE(scaled_solver.invert());
+  CHECK(scaled_solver.estimate_scaled_rcond(matrix, 5) == Catch::Approx(1.).epsilon(1.e-12));
 }
 
 TEST_CASE("ScaledLinearSolver wraps UMFPack explicitly", "[timestepping][linear_solver][scaled_umfpack]")

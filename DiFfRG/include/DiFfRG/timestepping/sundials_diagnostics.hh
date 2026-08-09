@@ -3,6 +3,7 @@
 #include <deal.II/sundials/ida.h>
 
 #include <DiFfRG/timestepping/abstract_timestepper.hh>
+#include <DiFfRG/timestepping/jacobian_diagnostics.hh>
 
 namespace DiFfRG
 {
@@ -47,6 +48,30 @@ namespace DiFfRG
     diagnostics.jacobian_failures = callbacks.jacobian_failures;
     diagnostics.linear_solver_failures = callbacks.linear_solver_failures;
 
+    return diagnostics;
+  }
+
+  template <typename VectorType>
+  TimestepperJacobianBuildDiagnostics
+  make_ida_jacobian_build_diagnostics(const SUNDIALS::IDA<VectorType> &time_stepper, const std::size_t build_id,
+                                      const double alpha,
+                                      const ImplicitTimestepperKind stepper_kind = ImplicitTimestepperKind::ida)
+  {
+    TimestepperJacobianBuildDiagnostics diagnostics;
+    diagnostics.jacobian_build_id = build_id;
+    diagnostics.stepper_kind = stepper_kind;
+    diagnostics.alpha = alpha;
+    diagnostics.beta = 1.;
+    diagnostics.residual_weight = 1.;
+    if constexpr (requires { time_stepper.get_statistics(); }) {
+      const auto ida = time_stepper.get_statistics();
+      if (ida.valid) {
+        diagnostics.step = static_cast<double>(ida.num_steps);
+        diagnostics.ida_step = static_cast<double>(ida.num_steps);
+        diagnostics.last_h = ida.last_step_size;
+        diagnostics.current_h = ida.current_step_size;
+      }
+    }
     return diagnostics;
   }
 } // namespace DiFfRG

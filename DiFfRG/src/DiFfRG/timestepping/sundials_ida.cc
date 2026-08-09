@@ -243,6 +243,7 @@ namespace DiFfRG
     // sparsity patterns)
     SparseMatrixType jacobian(assembler->get_sparsity_pattern_jacobian());
     LinearSolver<SparseMatrixType, VectorType> linSolver;
+    const DiagnosticPort jacobian_diagnostic_port = data_out ? data_out->diagnostic_port() : DiagnosticPort{};
 
     // Create a SUNDIALS IDA object with the right settings
     typename SUNDIALS::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
@@ -297,9 +298,8 @@ namespace DiFfRG
                                    unsigned int /*step_number*/) {
       if (!is_close(last_save, t, 1e-10)) {
         assembler->set_time(t);
-        data_out->write_frame(t, [&](auto &frame) {
-          assembler->attach_data_output(frame, sol, Vector<double>(), sol_dot, (*residual));
-        });
+        data_out->write_frame(
+            t, [&](auto &frame) { assembler->attach_data_output(frame, sol, Vector<double>(), sol_dot, (*residual)); });
 
         last_save = t;
       }
@@ -371,6 +371,18 @@ namespace DiFfRG
       CalcDtTimer calc_timer;
       if (failure_counter > 200) throw std::runtime_error("timestep failure at jacobian");
 
+      const auto build_diagnostics =
+          make_ida_jacobian_build_diagnostics(time_stepper, this->next_jacobian_build_id++, alpha);
+      JacobianMatrixDiagnostics matrix_diagnostics;
+      JacobianFactorizationDiagnostics factorization_diagnostics;
+      bool diagnostics_recorded = false;
+      const auto record_diagnostics = [&]() {
+        if (diagnostics_recorded) return;
+        diagnostics_recorded = true;
+        record_jacobian_diagnostics(jacobian_diagnostic_port, "jacobian_diagnostics.csv", t, build_diagnostics,
+                                    matrix_diagnostics, factorization_diagnostics);
+      };
+
       assembler->set_time(t);
 
       try {
@@ -384,7 +396,10 @@ namespace DiFfRG
 
         jacobian = 0;
         assembler->jacobian(jacobian, y, 1., y_dot, alpha, 1.);
+        matrix_diagnostics = analyze_jacobian_matrix(jacobian);
         if (!std::isfinite(jacobian.frobenius_norm())) {
+          factorization_diagnostics.factorization_success = 0.;
+          record_diagnostics();
           callback_diagnostics.jacobian_failures++;
           ++failure_counter;
           callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics,
@@ -396,11 +411,18 @@ namespace DiFfRG
         const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
         console_out(t, "jacobian construction", 2, &current_diagnostics, calc_timer.lap());
 
-        if (linSolver.invert()) {
+        factorize_with_diagnostics(linSolver, jacobian, factorization_diagnostics);
+        if (factorization_diagnostics.factorization_success == 1.) {
           const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
           console_out(t, "jacobian inversion", 3, &current_diagnostics, calc_timer.lap());
         }
+        record_diagnostics();
       } catch (std::exception &e) {
+        if (matrix_diagnostics.n_rows == 0.) matrix_diagnostics = analyze_jacobian_matrix(jacobian);
+        if constexpr (decltype(linSolver)::performs_factorization)
+          if (std::isnan(factorization_diagnostics.factorization_success))
+            factorization_diagnostics.factorization_success = 0.;
+        record_diagnostics();
         callback_diagnostics.jacobian_failures++;
         ++failure_counter;
         callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "exception", &y,
@@ -484,6 +506,7 @@ namespace DiFfRG
     const uint n_vars = initial_data.block(1).size();
     FullMatrix<NumberType> variable_jacobian(n_vars);
     FullMatrix<NumberType> variable_jacobian_inverse(n_vars);
+    const DiagnosticPort jacobian_diagnostic_port = data_out ? data_out->diagnostic_port() : DiagnosticPort{};
 
     // Create a SUNDIALS IDA object with the right settings
     typename SUNDIALS::IDA<BlockVectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt,
@@ -624,8 +647,29 @@ namespace DiFfRG
       CalcDtTimer calc_timer;
       if (failure_counter > 200) throw std::runtime_error("timestep failure at jacobian");
 
+      const auto build_diagnostics =
+          make_ida_jacobian_build_diagnostics(time_stepper, this->next_jacobian_build_id++, alpha);
+      JacobianMatrixDiagnostics spatial_matrix_diagnostics;
+      JacobianMatrixDiagnostics variable_matrix_diagnostics;
+      spatial_matrix_diagnostics.n_rows = spatial_jacobian.m();
+      variable_matrix_diagnostics.n_rows = variable_jacobian.m();
+      JacobianFactorizationDiagnostics spatial_factorization_diagnostics;
+      JacobianFactorizationDiagnostics variable_factorization_diagnostics;
+      bool diagnostics_recorded = false;
+      const auto record_diagnostics = [&]() {
+        if (diagnostics_recorded) return;
+        diagnostics_recorded = true;
+        record_jacobian_diagnostics(jacobian_diagnostic_port, "jacobian_diagnostics.csv", t, build_diagnostics,
+                                    spatial_matrix_diagnostics, spatial_factorization_diagnostics);
+        record_jacobian_diagnostics(jacobian_diagnostic_port, "variable_jacobian_diagnostics.csv", t, build_diagnostics,
+                                    variable_matrix_diagnostics, variable_factorization_diagnostics);
+      };
+
       try {
         if (!is_finite_vector(y) || !is_finite_vector(y_dot)) {
+          spatial_factorization_diagnostics.factorization_success = 0.;
+          variable_factorization_diagnostics.factorization_success = 0.;
+          record_diagnostics();
           callback_diagnostics.jacobian_failures++;
           ++failure_counter;
           callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "nonfinite-state",
@@ -640,33 +684,52 @@ namespace DiFfRG
         assembler->jacobian_variables(variable_jacobian, y.block(1), y.block(0));
         variable_jacobian *= -1.;
         variable_jacobian.diagadd(alpha);
+        spatial_matrix_diagnostics = analyze_jacobian_matrix(spatial_jacobian);
+        variable_matrix_diagnostics = analyze_jacobian_matrix(variable_jacobian);
+
+        if (!std::isfinite(spatial_matrix_diagnostics.frobenius_norm) ||
+            !std::isfinite(variable_matrix_diagnostics.frobenius_norm)) {
+          spatial_factorization_diagnostics.factorization_success = 0.;
+          variable_factorization_diagnostics.factorization_success = 0.;
+          record_diagnostics();
+          callback_diagnostics.jacobian_failures++;
+          ++failure_counter;
+          callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics,
+                                "nonfinite-jacobian", &y, &y_dot, nullptr);
+          return recoverable_ida_callback_failure;
+        }
 
         linSolver.init(spatial_jacobian);
 
         const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
         console_out(t, "jacobian construction", 2, &current_diagnostics, calc_timer.lap());
 
-        linSolver.invert();
-        variable_jacobian_inverse.invert(variable_jacobian);
+        factorize_with_diagnostics(linSolver, spatial_jacobian, spatial_factorization_diagnostics);
+        const auto variable_factorization_start = std::chrono::steady_clock::now();
+        try {
+          variable_jacobian_inverse.invert(variable_jacobian);
+          variable_factorization_diagnostics.factorization_success = 1.;
+        } catch (...) {
+          variable_factorization_diagnostics.factorization_success = 0.;
+          variable_factorization_diagnostics.factorization_ms =
+              std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - variable_factorization_start)
+                  .count();
+          throw;
+        }
+        variable_factorization_diagnostics.factorization_ms =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - variable_factorization_start)
+                .count();
         const auto current_diagnostics_after_inversion =
             make_timestepping_diagnostics(time_stepper, callback_diagnostics);
         console_out(t, "jacobian inversion", 3, &current_diagnostics_after_inversion, calc_timer.lap());
-
-        if (!std::isfinite(spatial_jacobian.frobenius_norm())) {
-          callback_diagnostics.jacobian_failures++;
-          ++failure_counter;
-          callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics,
-                                "nonfinite-spatial-jacobian", &y, &y_dot, nullptr);
-          return recoverable_ida_callback_failure;
-        }
-        if (!std::isfinite(variable_jacobian.frobenius_norm())) {
-          callback_diagnostics.jacobian_failures++;
-          ++failure_counter;
-          callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics,
-                                "nonfinite-variable-jacobian", &y, &y_dot, nullptr);
-          return recoverable_ida_callback_failure;
-        }
+        record_diagnostics();
       } catch (std::exception &e) {
+        if constexpr (decltype(linSolver)::performs_factorization)
+          if (std::isnan(spatial_factorization_diagnostics.factorization_success))
+            spatial_factorization_diagnostics.factorization_success = 0.;
+        if (std::isnan(variable_factorization_diagnostics.factorization_success))
+          variable_factorization_diagnostics.factorization_success = 0.;
+        record_diagnostics();
         callback_diagnostics.jacobian_failures++;
         std::cerr << e.what() << std::endl;
         ++failure_counter;
@@ -747,6 +810,7 @@ namespace DiFfRG
     const uint n_vars = initial_data.size();
     FullMatrix<NumberType> variable_jacobian(n_vars);
     FullMatrix<NumberType> variable_jacobian_inverse(n_vars);
+    const DiagnosticPort jacobian_diagnostic_port = data_out ? data_out->diagnostic_port() : DiagnosticPort{};
 
     // Create a SUNDIALS IDA object with the right settings
     typename SUNDIALS::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
@@ -779,8 +843,7 @@ namespace DiFfRG
                                    uint /*step_number*/) {
       if (!is_close(last_save, t, 1e-10)) {
         assembler->set_time(t);
-        data_out->write_frame(t,
-                              [&](auto &frame) { assembler->attach_data_output(frame, Vector<double>(), sol); });
+        data_out->write_frame(t, [&](auto &frame) { assembler->attach_data_output(frame, Vector<double>(), sol); });
 
         last_save = t;
       }
@@ -860,8 +923,23 @@ namespace DiFfRG
       CalcDtTimer calc_timer;
       if (failure_counter > 200) throw std::runtime_error("timestep failure at jacobian");
 
+      const auto build_diagnostics =
+          make_ida_jacobian_build_diagnostics(time_stepper, this->next_jacobian_build_id++, alpha);
+      JacobianMatrixDiagnostics matrix_diagnostics;
+      matrix_diagnostics.n_rows = variable_jacobian.m();
+      JacobianFactorizationDiagnostics factorization_diagnostics;
+      bool diagnostics_recorded = false;
+      const auto record_diagnostics = [&]() {
+        if (diagnostics_recorded) return;
+        diagnostics_recorded = true;
+        record_jacobian_diagnostics(jacobian_diagnostic_port, "variable_jacobian_diagnostics.csv", t, build_diagnostics,
+                                    matrix_diagnostics, factorization_diagnostics);
+      };
+
       try {
         if (!is_finite_vector(y) || !is_finite_vector(y_dot)) {
+          factorization_diagnostics.factorization_success = 0.;
+          record_diagnostics();
           callback_diagnostics.jacobian_failures++;
           ++failure_counter;
           callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "nonfinite-state",
@@ -874,17 +952,35 @@ namespace DiFfRG
         assembler->jacobian_variables(variable_jacobian, y, Vector<double>());
         variable_jacobian *= -1.;
         variable_jacobian.diagadd(alpha);
+        matrix_diagnostics = analyze_jacobian_matrix(variable_jacobian);
 
-        variable_jacobian_inverse.invert(variable_jacobian);
-
-        if (!std::isfinite(variable_jacobian.frobenius_norm())) {
+        if (!std::isfinite(matrix_diagnostics.frobenius_norm)) {
+          factorization_diagnostics.factorization_success = 0.;
+          record_diagnostics();
           callback_diagnostics.jacobian_failures++;
           ++failure_counter;
           callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics,
                                 "nonfinite-variable-jacobian", &y, &y_dot, nullptr);
           return recoverable_ida_callback_failure;
         }
+
+        const auto factorization_start = std::chrono::steady_clock::now();
+        try {
+          variable_jacobian_inverse.invert(variable_jacobian);
+          factorization_diagnostics.factorization_success = 1.;
+        } catch (...) {
+          factorization_diagnostics.factorization_success = 0.;
+          factorization_diagnostics.factorization_ms =
+              std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - factorization_start).count();
+          throw;
+        }
+        factorization_diagnostics.factorization_ms =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - factorization_start).count();
+        record_diagnostics();
       } catch (std::exception &e) {
+        if (std::isnan(factorization_diagnostics.factorization_success))
+          factorization_diagnostics.factorization_success = 0.;
+        record_diagnostics();
         callback_diagnostics.jacobian_failures++;
         std::cerr << e.what() << std::endl;
         ++failure_counter;

@@ -20,7 +20,9 @@ TEST_CASE("Test TRBDF2 with DG constant model", "[timestepping][constant][trbdf2
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = DG::Assembler<Discretization, Model>;
   using TimeStepper = TimeStepperTRBDF2<VectorType, SparseMatrixType, dim, UMFPack>;
-  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>("test_trbdf2_constant_dg", 1e-3));
+  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>(
+      "test_trbdf2_constant_dg", 1e-3, "jacobian_diagnostics.csv", static_cast<double>(ImplicitTimestepperKind::trbdf2),
+      {1., 2.}));
 }
 TEST_CASE("Test TRBDF2 with DG exponential model", "[timestepping][exponential][trbdf2][dg]")
 {
