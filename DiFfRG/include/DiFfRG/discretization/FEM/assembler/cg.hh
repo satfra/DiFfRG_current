@@ -174,10 +174,18 @@ namespace DiFfRG
       using Components = typename Discretization::Components;
       static constexpr uint dim = Discretization::dim;
 
-      Assembler(Discretization &discretization, Model &model, const JSONValue &json)
-          : Base(discretization, model, json),
-            quadrature(fe.degree + 1 + json.get_uint("/discretization/overintegration")),
-            quadrature_face(fe.degree + 1 + json.get_uint("/discretization/overintegration"))
+      [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Assembler(
+          Discretization &discretization, Model &model,
+          DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, ConfigTree> config)
+          : Assembler(discretization, model, config.value(),
+                      DiFfRG::internal::legacy_default_log_port<Discretization>())
+      {
+      }
+
+      Assembler(Discretization &discretization, Model &model, const ConfigTree &config, LogPort log_port)
+          : Base(discretization, model, config, std::move(log_port)),
+            quadrature(fe.degree + 1 + config.get_uint("/discretization/overintegration", 0)),
+            quadrature_face(fe.degree + 1 + config.get_uint("/discretization/overintegration", 0))
       {
         static_assert(Components::count_fe_subsystems() == 1, "A CG model cannot have multiple submodels!");
         reinit();
@@ -210,25 +218,13 @@ namespace DiFfRG
         }
         timings_reinit.push_back(timer.wall_time());
 
-        // Boundary dofs
-        std::vector<IndexSet> component_boundary_dofs(Components::count_fe_functions());
-        for (uint c = 0; c < Components::count_fe_functions(); ++c) {
-          ComponentMask component_mask(Components::count_fe_functions(), false);
-          component_mask.set(c, true);
-          component_boundary_dofs[c] = DoFTools::extract_boundary_dofs(dof_handler, component_mask);
-        }
-        std::vector<std::vector<Point<dim>>> component_boundary_points(Components::count_fe_functions());
-        for (uint c = 0; c < Components::count_fe_functions(); ++c) {
-          component_boundary_points[c].resize(component_boundary_dofs[c].n_elements());
-          for (uint i = 0; i < component_boundary_dofs[c].n_elements(); ++i)
-            component_boundary_points[c][i] =
-                discretization.get_support_point(component_boundary_dofs[c].nth_index_in_set(i));
-        }
+        const auto metadata = DiFfRG::internal::build_affine_constraint_metadata<Components, dim>(discretization);
+        const AffineConstraintContext<Components, dim> context(metadata);
 
         auto &constraints = discretization.get_constraints();
         constraints.clear();
         DoFTools::make_hanging_node_constraints(dof_handler, constraints);
-        model.affine_constraints(constraints, component_boundary_dofs, component_boundary_points);
+        DiFfRG::internal::apply_model_affine_constraints(model, constraints, context);
         constraints.close();
       }
 
@@ -295,7 +291,7 @@ namespace DiFfRG
         MeshWorker::AssembleFlags assemble_flags = MeshWorker::assemble_own_cells;
 
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, nullptr, nullptr, threads, batch_size);
+                              copy_data, assemble_flags, nullptr, nullptr, mesh_workers, batch_size);
       }
 
       virtual void mass(VectorType &mass, const VectorType &solution_global, const VectorType &solution_global_dot,
@@ -345,7 +341,7 @@ namespace DiFfRG
         MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
 
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, flags, nullptr, nullptr, threads, batch_size);
+                              copy_data, flags, nullptr, nullptr, mesh_workers, batch_size);
       }
 
       virtual void residual(VectorType &residual, const VectorType &solution_global, NumberType weight,
@@ -459,7 +455,7 @@ namespace DiFfRG
 
         Timer timer;
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, flags, boundary_worker, nullptr, threads, batch_size);
+                              copy_data, flags, boundary_worker, nullptr, mesh_workers, batch_size);
         timings_residual.push_back(timer.wall_time());
       }
 
@@ -518,7 +514,7 @@ namespace DiFfRG
 
         Timer timer;
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, flags, nullptr, nullptr, threads, batch_size);
+                              copy_data, flags, nullptr, nullptr, mesh_workers, batch_size);
         timings_jacobian.push_back(timer.wall_time());
       }
 
@@ -757,11 +753,18 @@ namespace DiFfRG
 
         Timer timer;
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, flags, boundary_worker, nullptr, threads, batch_size);
+                              copy_data, flags, boundary_worker, nullptr, mesh_workers, batch_size);
         timings_jacobian.push_back(timer.wall_time());
       }
 
-      void log(const std::string logger)
+      template <typename String>
+        requires std::convertible_to<String, std::string>
+      [[deprecated("Construct the assembler with output.log_port() and call log() instead")]] void log(String &&)
+      {
+        DiFfRG::internal::reject_named_assembler_log<String>();
+      }
+
+      void log()
       {
         std::stringstream ss;
         ss << "CG Assembler: " << std::endl;
@@ -770,7 +773,7 @@ namespace DiFfRG
            << std::endl;
         ss << "        Jacobian: " << average_time_jacobian_assembly() * 1000 << "ms (" << num_jacobians() << ")"
            << std::endl;
-        spdlog::get(logger)->info(ss.str());
+        this->log_port.info(ss.str());
       }
 
       double average_time_reinit() const
@@ -813,7 +816,7 @@ namespace DiFfRG
       QGauss<dim> quadrature;
       QGauss<dim - 1> quadrature_face;
       using Base::batch_size;
-      using Base::threads;
+      using Base::mesh_workers;
 
       SparsityPattern sparsity_pattern_mass;
       SparsityPattern sparsity_pattern_jacobian;

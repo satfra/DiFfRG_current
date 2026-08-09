@@ -3,6 +3,9 @@
 // standard library
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
+#include <cstdlib>
+#include <limits>
 #include <stdexcept>
 #include <tuple>
 #include <type_traits>
@@ -23,6 +26,37 @@ namespace DiFfRG
     t.forward(device::array<size_t, T::dim>{});
     { t.from_linear_index(size_t{}) } -> std::same_as<device::array<size_t, T::dim>>;
   };
+
+  namespace internal
+  {
+    template <typename T, typename = void> struct coord_periodic : std::false_type {
+    };
+    template <typename T>
+    struct coord_periodic<T, std::void_t<decltype(T::periodic)>> : std::bool_constant<T::periodic> {
+    };
+  } // namespace internal
+
+  /**
+   * @brief Whether a 1D coordinate class describes a periodic axis, i.e. one where the last grid point is followed
+   * again by the first one. Detected through a `static constexpr bool periodic` member, defaulting to false.
+   */
+  template <typename T> inline constexpr bool is_periodic_coordinate_v = internal::coord_periodic<T>::value;
+
+  namespace internal
+  {
+    template <typename C, size_t i, typename = void> struct axis_periodic : std::false_type {
+    };
+    template <typename C, size_t i>
+    struct axis_periodic<C, i, std::void_t<typename C::template coordinate_type<i>>>
+        : std::bool_constant<is_periodic_coordinate_v<typename C::template coordinate_type<i>>> {
+    };
+  } // namespace internal
+
+  /**
+   * @brief Whether axis i of a (possibly multi-dimensional) coordinate system is periodic. Falls back to false for
+   * coordinate systems which do not expose their axes as separate types, e.g. BosonicCoordinates1DFiniteT.
+   */
+  template <typename C, size_t i> inline constexpr bool is_periodic_axis_v = internal::axis_periodic<C, i>::value;
 
   /**
    * @brief Utility class for combining multiple coordinate systems into one
@@ -85,6 +119,12 @@ namespace DiFfRG
     }
 
     template <size_t i> const auto &get_coordinates() const { return device::get<i>(coordinates); }
+
+    /**
+     * @brief The type of the i-th axis. Used e.g. to query per-axis periodicity, see is_periodic_axis_v.
+     */
+    template <size_t i>
+    using coordinate_type = typename device::tuple_element<i, device::tuple<Coordinates...>>::type;
 
     size_t KOKKOS_FORCEINLINE_FUNCTION size() const
     {
@@ -298,6 +338,100 @@ namespace DiFfRG
     NT a;
   };
 
+  /**
+   * @brief Linear coordinates on a periodic axis of period (stop - start).
+   *
+   * In contrast to LinearCoordinates1D, the endpoint is *excluded*: the grid points are
+   * start, start + a, ..., stop - a with a = (stop - start) / grid_extent, because stop and start describe the same
+   * physical point. For an angle this means one full plane of grid points less than the naive [start, stop] grid, and
+   * no duplicated, unconstrained degrees of freedom.
+   *
+   * backward() folds the returned fractional index into [0, grid_extent); interpolators aware of
+   * is_periodic_coordinate_v additionally wrap the upper stencil index around to 0.
+   */
+  template <typename NT = double>
+    requires std::is_floating_point_v<NT>
+  class LinearPeriodicCoordinates1D
+  {
+  public:
+    using ctype = NT;
+    static constexpr size_t dim = 1;
+    static constexpr bool periodic = true;
+
+    LinearPeriodicCoordinates1D(size_t grid_extent, double start, double stop)
+        : start(start), stop(stop), grid_extent(grid_extent), extent(static_cast<NT>(grid_extent))
+    {
+      if (grid_extent == 0) throw std::runtime_error("LinearPeriodicCoordinates1D: grid_extent must be > 0");
+      a = (stop - start) / NT(grid_extent);
+    }
+
+    template <typename NT2>
+    LinearPeriodicCoordinates1D(const LinearPeriodicCoordinates1D<NT2> &other)
+        : LinearPeriodicCoordinates1D(other.size(), other.start, other.stop)
+    {
+    }
+
+    device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(size_t i) const
+    {
+      return device::array<size_t, 1>{i};
+    }
+
+    /**
+     * @brief Transform from the grid to the physical space
+     *
+     * @param x grid coordinate
+     * @return NumberType physical coordinate
+     */
+    template <typename IT> NT KOKKOS_FORCEINLINE_FUNCTION forward(const IT &x) const { return start + a * x; }
+
+    template <typename IT> device::array<NT, 1> KOKKOS_FORCEINLINE_FUNCTION forward(const device::array<IT, 1> &x) const
+    {
+      return {forward(x[0])};
+    }
+
+    /**
+     * @brief Transform from the physical space to the grid, folded into [0, grid_extent)
+     *
+     * @param y physical coordinate
+     * @return double grid coordinate
+     */
+    NT KOKKOS_FORCEINLINE_FUNCTION backward(const NT &y) const
+    {
+      using Kokkos::floor;
+      // fmod would keep the sign of idx, so fold explicitly into [0, grid_extent)
+      NT idx = (y - start) / a;
+      idx -= floor(idx / extent) * extent;
+      // right at the seam the division can round such that the fold leaves idx just outside the interval
+      if (idx >= extent) idx -= extent;
+      if (idx < NT(0)) idx = NT(0);
+      return idx;
+    }
+
+    size_t KOKKOS_FORCEINLINE_FUNCTION size() const { return grid_extent; }
+
+    device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION sizes() const { return {grid_extent}; }
+
+    const NT start, stop;
+
+    template <typename NT2>
+    friend bool operator==(const LinearPeriodicCoordinates1D<NT> &lhs, const LinearPeriodicCoordinates1D<NT2> &rhs)
+    {
+      if constexpr (!std::is_same_v<NT, NT2>) return false; // Different types, cannot be equal
+      return lhs.start == rhs.start && lhs.stop == rhs.stop && lhs.grid_extent == rhs.grid_extent;
+    }
+
+    std::string to_string() const
+    {
+      return "LinearPeriodicCoordinates1D(" + std::to_string(grid_extent) + ", " + std::to_string(start) + ", " +
+             std::to_string(stop) + ")";
+    }
+
+  private:
+    const size_t grid_extent;
+    const NT extent;
+    NT a;
+  };
+
   template <typename NT = double>
     requires std::is_floating_point_v<NT>
   class LogarithmicCoordinates1D
@@ -385,6 +519,214 @@ namespace DiFfRG
     NT a, b, c;
   };
 
+  /**
+   * @brief Logarithmic coordinates which cluster grid points around an interior scale.
+   *
+   * In contrast to LogarithmicCoordinates1D, whose single `bias` knob can only pack points towards
+   * `start`, this coordinate spends its resolution around a freely chosen `center` and lets it fall
+   * off smoothly to both sides. That is what is needed when the interesting structure sits at an
+   * intermediate scale -- e.g. the ~1 GeV peak of a gluon dressing on a grid spanning 0.005 to 250
+   * GeV -- while the deep IR and the deep UV are flat.
+   *
+   * The construction works in u = log(p) and stretches it with a sinh, the standard interior-point
+   * clustering map. With u0 = log(center) and c = focus,
+   *
+   *     forward:  u(s) = u0 + sinh(s) / c,          s = s_min + a * i uniform in the index
+   *     backward: s(u) = asinh(c * (u - u0))
+   *
+   * where s_min = s(log(start)) and a = (s(log(stop)) - s_min) / (grid_extent - 1). forward(0)
+   * returns `start` exactly and forward(grid_extent - 1) returns `stop` to a few ulp, which matters
+   * for the common idiom of pairing grid element 0 with `start` directly rather than going through
+   * forward(). The node density is dindex/du ~ 1 / sqrt(1 + c^2 (u - u0)^2), i.e. peaked at
+   * `center` and decaying like 1/(c |u - u0|), so resolution is redistributed smoothly rather than
+   * cut off at the edge of a window.
+   *
+   * `focus == 0` reproduces a pure logarithmic (geometric) grid; larger values cluster harder. As a
+   * calibration point, 64 points on [0.005, 250] with center = 1 and focus = 2 give a cell width of
+   * 0.021 decades at the center and 32 points in [0.3, 3], against 0.076 decades and 13 points for
+   * LogarithmicCoordinates1D with bias = 11 on the same interval.
+   *
+   * `center` outside [start, stop] is allowed and degenerates to a one-sided stretch.
+   */
+  template <typename NT = double>
+    requires std::is_floating_point_v<NT>
+  class FocusedLogCoordinates1D
+  {
+  public:
+    using ctype = NT;
+    static constexpr size_t dim = 1;
+
+    /**
+     * @brief Construct a new FocusedLogCoordinates1D object
+     *
+     * @param grid_extent number of grid points, must be at least 2
+     * @param start first grid point, must be positive
+     * @param stop last grid point, must be larger than start
+     * @param center the scale to cluster around, in the same units as start and stop
+     * @param focus clustering strength; 0 gives a pure logarithmic grid
+     */
+    FocusedLogCoordinates1D(size_t grid_extent, NT start, NT stop, NT center, NT focus)
+        : start(start), stop(stop), center(center), focus(focus), grid_extent(grid_extent)
+    {
+      if (grid_extent < 2) throw std::runtime_error("FocusedLogCoordinates1D: grid_extent must be > 1");
+      if (!(start > NT(0))) throw std::runtime_error("FocusedLogCoordinates1D: start must be > 0");
+      if (!(stop > start)) throw std::runtime_error("FocusedLogCoordinates1D: stop must be > start");
+      if (!(center > NT(0))) throw std::runtime_error("FocusedLogCoordinates1D: center must be > 0");
+      if (!(focus >= NT(0))) throw std::runtime_error("FocusedLogCoordinates1D: focus must be >= 0");
+
+      using Kokkos::log;
+      const NT u_start = log(start);
+      const NT u_stop = log(stop);
+
+      u0 = log(center);
+      c = focus;
+      // sinh(s)/c is 0/0 at c == 0; below this threshold the map is a pure logarithmic grid to
+      // within round-off anyway, so switch to it explicitly.
+      pure_log = !(focus > NT(1e-8));
+
+      if (pure_log) {
+        // in this branch s *is* u, so forward() degenerates to start * exp(u - log(start))
+        c_inv = NT(1);
+        s_min = u_start;
+        a = (u_stop - u_start) / NT(grid_extent - 1);
+        g_min = s_min;
+      } else {
+        c_inv = NT(1) / c;
+        s_min = s_of_u(u_start);
+        a = (s_of_u(u_stop) - s_min) / NT(grid_extent - 1);
+        using Kokkos::sinh;
+        // Store sinh(s_min), NOT sinh(s_min) * c_inv: forward() subtracts this BEFORE scaling by
+        // c_inv, which is what makes x == 0 cancel exactly. See the note in forward().
+        g_min = sinh(s_min);
+      }
+      a_inv = NT(1) / a;
+    }
+
+    template <typename NT2>
+    FocusedLogCoordinates1D(const FocusedLogCoordinates1D<NT2> &other)
+        : FocusedLogCoordinates1D(other.size(), other.start, other.stop, other.center, other.focus)
+    {
+    }
+
+    device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(size_t i) const
+    {
+      return device::array<size_t, 1>{i};
+    }
+
+    /**
+     * @brief Transform from the grid to the physical space
+     *
+     * @param x grid coordinate
+     * @return NumberType physical coordinate
+     */
+    template <typename IT> NT KOKKOS_FORCEINLINE_FUNCTION forward(const IT &x) const
+    {
+      using Kokkos::exp, Kokkos::sinh;
+      const NT s = s_min + a * x;
+      // Factored as start * exp(...) rather than exp(log(start) + ...) so that x == 0 gives back
+      // start bit-for-bit: the models pair grid element 0 with the p_grid_min parameter directly.
+      // The upper end is then accurate to a handful of ulp, which nothing reads that way.
+      //
+      // The subtraction MUST happen before the multiplication by c_inv. Written the other way
+      // round, `sinh(s) * c_inv - g_min` is a multiply-add, which the compiler is free to
+      // contract into an FMA: the product is then kept at infinite precision and the ALREADY
+      // ROUNDED g_min subtracted from it, so x == 0 yields that rounding error instead of zero
+      // and start comes back off by an ulp. As written, `sinh(s) - g_min` is exactly zero at
+      // x == 0 (identical argument, same function), and 0 * c_inv is exactly zero.
+      const NT d = pure_log ? (s - g_min) : (sinh(s) - g_min) * c_inv;
+      return start * exp(d);
+    }
+
+    template <typename IT> device::array<NT, 1> KOKKOS_FORCEINLINE_FUNCTION forward(const device::array<IT, 1> &x) const
+    {
+      return {forward(x[0])};
+    }
+
+    /**
+     * @brief Transform from the physical space to the grid
+     *
+     * @param y physical coordinate
+     * @return double grid coordinate
+     */
+    NT KOKKOS_FORCEINLINE_FUNCTION backward(const NT &y) const
+    {
+      using Kokkos::log;
+      const NT u = log(y);
+      return ((pure_log ? u : s_of_u(u)) - s_min) * a_inv;
+    }
+
+    NT KOKKOS_FORCEINLINE_FUNCTION backward_derivative(const NT &y) const
+    {
+      using Kokkos::log, Kokkos::sqrt;
+      if (pure_log) return a_inv / y;
+      const NT v = c * (log(y) - u0);
+      return a_inv * c / (sqrt(v * v + NT(1)) * y);
+    }
+
+    size_t KOKKOS_FORCEINLINE_FUNCTION size() const { return grid_extent; }
+
+    device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION sizes() const { return {grid_extent}; }
+
+    const NT start, stop, center, focus;
+
+    template <typename NT2>
+    friend bool operator==(const FocusedLogCoordinates1D<NT> &lhs, const FocusedLogCoordinates1D<NT2> &rhs)
+    {
+      if constexpr (!std::is_same_v<NT, NT2>) return false; // Different types, cannot be equal
+      return lhs.start == rhs.start && lhs.stop == rhs.stop && lhs.center == rhs.center && lhs.focus == rhs.focus &&
+             lhs.size() == rhs.size();
+    }
+
+    std::string to_string() const
+    {
+      return "FocusedLogCoordinates1D(" + std::to_string(grid_extent) + ", " + round_trip(start) + ", " +
+             round_trip(stop) + ", " + round_trip(center) + ", " + round_trip(focus) + ")";
+    }
+
+  private:
+    /**
+     * @brief Format a parameter with the fewest digits that still identify it uniquely.
+     *
+     * to_string() is the identity key of a coordinate dataset in HDF5 output, and the key that
+     * HDF5Input::load_map compares against, so two grids that differ must render differently.
+     * std::to_string would not do: it emits six decimals, under which every start below 1e-6 --
+     * a perfectly ordinary IR cutoff here -- renders as "0.000000" and distinct grids would
+     * silently share one dataset. Widening the precision until the text parses back to the
+     * original value keeps the common cases readable ("0.005", not "0.0050000000000000001") while
+     * still separating values that genuinely differ.
+     */
+    static std::string round_trip(const NT value)
+    {
+      char buffer[40];
+      for (int precision = 6; precision < std::numeric_limits<NT>::max_digits10; ++precision) {
+        std::snprintf(buffer, sizeof(buffer), "%.*g", precision, double(value));
+        if (NT(std::strtod(buffer, nullptr)) == value) return std::string(buffer);
+      }
+      std::snprintf(buffer, sizeof(buffer), "%.*g", std::numeric_limits<NT>::max_digits10, double(value));
+      return std::string(buffer);
+    }
+
+    /**
+     * @brief asinh(c * (u - u0)), written out to pick the cancellation-free branch.
+     *
+     * Naively log(v + sqrt(v^2 + 1)) cancels catastrophically for v << 0 -- these grids reach
+     * v ~ -40, where it loses several digits. Using (v + D)(D - v) = 1 to rewrite the negative
+     * branch as -log(D - v) makes both sides exact to round-off. Note this is called from the
+     * constructor, so it may only use members assigned before it.
+     */
+    NT KOKKOS_FORCEINLINE_FUNCTION s_of_u(const NT u) const
+    {
+      using Kokkos::log, Kokkos::sqrt;
+      const NT v = c * (u - u0);
+      const NT D = sqrt(v * v + NT(1));
+      return v >= NT(0) ? log(v + D) : -log(D - v);
+    }
+
+    const size_t grid_extent;
+    NT u0, s_min, a, a_inv, c, c_inv, g_min;
+    bool pure_log;
+  };
+
   template <typename Coordinates> auto make_grid(const Coordinates &coordinates)
   {
     using ctype = typename Coordinates::ctype;
@@ -439,4 +781,22 @@ namespace DiFfRG
       CoordinatePackND<LogarithmicCoordinates1D<double>, LinearCoordinates1D<double>, LinearCoordinates1D<double>>;
   using LinLinLinCoordinates =
       CoordinatePackND<LinearCoordinates1D<double>, LinearCoordinates1D<double>, LinearCoordinates1D<double>>;
+
+  // Logarithmic coordinates focused on an interior scale, see FocusedLogCoordinates1D
+  using FocusedLogCoordinates = FocusedLogCoordinates1D<double>;
+  using FocusedLogLinCoordinates = CoordinatePackND<FocusedLogCoordinates1D<double>, LinearCoordinates1D<double>>;
+  using FocusedLogLinLinCoordinates = CoordinatePackND<FocusedLogCoordinates1D<double>, LinearCoordinates1D<double>,
+                                                       LinearCoordinates1D<double>>;
+
+  // Periodic (angular) coordinates
+  using LinPeriodicCoordinates = LinearPeriodicCoordinates1D<double>;
+  using LogLinPeriodicCoordinates =
+      CoordinatePackND<LogarithmicCoordinates1D<double>, LinearPeriodicCoordinates1D<double>>;
+  using LogLinLinPeriodicCoordinates = CoordinatePackND<LogarithmicCoordinates1D<double>, LinearCoordinates1D<double>,
+                                                        LinearPeriodicCoordinates1D<double>>;
+  using FocusedLogLinPeriodicCoordinates =
+      CoordinatePackND<FocusedLogCoordinates1D<double>, LinearPeriodicCoordinates1D<double>>;
+  using FocusedLogLinLinPeriodicCoordinates =
+      CoordinatePackND<FocusedLogCoordinates1D<double>, LinearCoordinates1D<double>,
+                       LinearPeriodicCoordinates1D<double>>;
 } // namespace DiFfRG

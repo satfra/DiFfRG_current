@@ -1,6 +1,6 @@
 #include "flows.hh"
 
-YangMillsFlowEquations::YangMillsFlowEquations(const JSONValue &json)
+YangMillsFlowEquations::YangMillsFlowEquations(const ConfigTree &json)
     : FlowEquations(json,
                     [](double x) { return powr<-1>(x + __REGULATOR__::RB(1., x)) * __REGULATOR__::RBdot(1., x); }),
 

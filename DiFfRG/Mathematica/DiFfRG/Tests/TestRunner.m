@@ -41,7 +41,15 @@ RunAndReportTests[exprText_String, testFileName_String] :=
             TestReport[tests]
         ];
         succeededKeys = If[$VersionNumber >= 12.0, result["TestsSucceededKeys"], result["TestsSucceededIndices"]];
-        failedKeys = If[$VersionNumber >= 12.0, result["TestsFailedWrongResultsKeys"], result["TestsFailedWrongResultsIndices"]];
+        (* TestReport splits failures across THREE buckets. Collecting only WrongResults means a
+           test that aborts, times out or emits unexpected messages is neither printed nor counted
+           -- it simply vanishes from the report. Take all three. *)
+        failedKeys =
+            If[$VersionNumber >= 12.0,
+                Join[result["TestsFailedWrongResultsKeys"], result["TestsFailedWithMessagesKeys"], result["TestsFailedWithErrorsKeys"]]
+                ,
+                Join[result["TestsFailedWrongResultsIndices"], result["TestsFailedWithMessagesIndices"], result["TestsFailedWithErrorsIndices"]]
+            ];
         successCount = Length[succeededKeys];
         failureCount = Length[failedKeys];
         Print[Style["  \[Checkmark] " <> ToString[successCount] <> " passed", mGreen], "    ", Style["x " <> ToString[failureCount] <> " failed", mRed]];
@@ -54,8 +62,10 @@ RunAndReportTests[exprText_String, testFileName_String] :=
             Scan[
                 (
                     Print["\n", Style["  Test:", mRed, Bold], " ", #["TestID"]];
+                    Print["    Outcome:  ", #["Outcome"]];
                     Print["    Expected: ", #["ExpectedOutput"]];
                     Print["    Actual:   ", #["ActualOutput"]];
+                    If[#["ActualMessages"] =!= {}, Print["    Messages: ", #["ActualMessages"]]];
                 )&
                 ,
                 Values[KeyTake[result["TestResults"], failedKeys]]

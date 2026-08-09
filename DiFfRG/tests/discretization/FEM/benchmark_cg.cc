@@ -12,7 +12,7 @@
 using namespace dealii;
 using namespace DiFfRG;
 
-template <typename Model> void run_benchmarks(const std::string &label, const JSONValue &json)
+template <typename Model> void run_benchmarks(const std::string &label, const ConfigTree &json)
 {
   constexpr uint dim = 1;
   using NumberType = double;
@@ -23,9 +23,9 @@ template <typename Model> void run_benchmarks(const std::string &label, const JS
   Testing::PhysicalParameters p_prm = {/*x0_initial = */ {0., 0., 0.}, /*x1_initial = */ {3.14, 2.72, 1.41}};
 
   Model model(p_prm);
-  RectangularMesh<dim> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
+  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
   FE::FlowingVariables initial_condition(discretization);
   initial_condition.interpolate(model);
@@ -79,7 +79,7 @@ TEST_CASE("Benchmark CG Burgers", "[benchmark][cg][burgers]")
   constexpr uint dim = 1;
   const int fe_order = GENERATE(1, 3, 5);
 
-  JSONValue json = json::value(
+  ConfigTree json = json::value(
       {{"physical", {}},
        {"integration",
         {{"x_quadrature_order", 32},
@@ -94,7 +94,7 @@ TEST_CASE("Benchmark CG Burgers", "[benchmark][cg][burgers]")
          {"jacobian_quadrature_factor", 0.5}}},
        {"discretization",
         {{"fe_order", fe_order},
-         {"threads", 8},
+         {"mesh_workers", 8},
          {"batch_size", 64},
          {"overintegration", 0},
          {"output_subdivisions", 2},
@@ -130,7 +130,7 @@ TEST_CASE("Benchmark CG Constant 3-comp", "[benchmark][cg][constant3]")
   constexpr uint dim = 1;
   const int fe_order = GENERATE(1, 3, 5);
 
-  JSONValue json = json::value(
+  ConfigTree json = json::value(
       {{"physical", {}},
        {"integration",
         {{"x_quadrature_order", 32},
@@ -145,7 +145,7 @@ TEST_CASE("Benchmark CG Constant 3-comp", "[benchmark][cg][constant3]")
          {"jacobian_quadrature_factor", 0.5}}},
        {"discretization",
         {{"fe_order", fe_order},
-         {"threads", 8},
+         {"mesh_workers", 8},
          {"batch_size", 64},
          {"overintegration", 0},
          {"output_subdivisions", 2},

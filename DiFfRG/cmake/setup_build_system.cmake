@@ -100,10 +100,12 @@ endif()
 if(POLICY CMP0144)
   cmake_policy(SET CMP0144 NEW)
 endif()
-
-link_directories(${BUNDLED_DIR}/lib/)
-link_directories(${BUNDLED_DIR}/lib64/)
-include_directories(SYSTEM ${BUNDLED_DIR}/include)
+if(POLICY CMP0156)
+  cmake_policy(SET CMP0156 NEW)
+endif()
+if(POLICY CMP0179)
+  cmake_policy(SET CMP0179 NEW)
+endif()
 
 message(STATUS "DiFfRG include directory: ${BASE_DIR}/include")
 message(STATUS "DiFfRG bundle directory: ${BUNDLED_DIR}")
@@ -182,10 +184,53 @@ endmacro()
 # Direct external dependencies
 # ##############################################################################
 
+if(APPLE)
+  include(CheckLinkerFlag)
+  check_linker_flag(CXX "LINKER:-no_warn_duplicate_libraries"
+                    DiFfRG_LINKER_SUPPORTS_NO_WARN_DUPLICATE_LIBRARIES)
+endif()
+
 # Find deal.II
 diffrg_find_package(deal.II VERSION 9.4.2 HINTS ${BUNDLED_DIR})
 deal_ii_initialize_cached_variables()
 message(STATUS "Found deal.II in  ${deal.II_DIR}")
+
+# ----------------------------------------------------------------------------
+# Drop deal.II's optimization level from its imported target
+# ----------------------------------------------------------------------------
+# dealii::dealii carries deal.II's build flags in INTERFACE_COMPILE_OPTIONS,
+# including a per-config optimization level (e.g. "$<$<CONFIG:Release>:-O2;
+# -funroll-loops;...>"). Every target that links it therefore receives that -O
+# *in addition to* the one CMake itself puts in CMAKE_CXX_FLAGS_<CONFIG>
+# (-O3 -DNDEBUG for Release), so the compile line ends up with two -O flags.
+#
+# CMake de-duplicates the other repeated deal.II flags against the copy that
+# setup_dealii() adds by hand, but not the -O: setup_dealii() strips it from its
+# copy (see there), leaving the interface's -O as the sole survivor. On the GCC +
+# CUDA path -- where Kokkos routes compilation through nvcc_wrapper -- nvcc then
+# warns ("you have set multiple optimization flags ... only the last is used")
+# and silently keeps the *last* one, downgrading Release objects to deal.II's
+# -O2 instead of CMake's -O3.
+#
+# Strip the optimization level here, once, so CMAKE_CXX_FLAGS_<CONFIG> is the
+# single source of truth for it. Everything else deal.II exports is kept.
+#
+# The property is a ";"-list that also contains generator expressions, so an -O
+# token may be glued to a genex head ("$<$<CONFIG:Release>>:-O2"). Delete the
+# tokens textually, then collapse the separators they leave behind -- an empty
+# list entry would otherwise reach the compiler as an empty argument.
+get_target_property(_dealii_iface_opts dealii::dealii INTERFACE_COMPILE_OPTIONS)
+if(_dealii_iface_opts)
+  string(REGEX REPLACE "^-O[0-9a-zA-Z]+;" "" _dealii_iface_opts
+                       "${_dealii_iface_opts}")
+  string(REGEX REPLACE "([:;])-O[0-9a-zA-Z]+" "\\1" _dealii_iface_opts
+                       "${_dealii_iface_opts}")
+  string(REPLACE ":;" ":" _dealii_iface_opts "${_dealii_iface_opts}")
+  string(REPLACE ";;" ";" _dealii_iface_opts "${_dealii_iface_opts}")
+  string(REPLACE ";>" ">" _dealii_iface_opts "${_dealii_iface_opts}")
+  set_target_properties(dealii::dealii PROPERTIES INTERFACE_COMPILE_OPTIONS
+                                                  "${_dealii_iface_opts}")
+endif()
 
 # Find TBB. TBB_DIR (set by the top-level build, or by the user) selects bundled
 # vs system; DiFfRG requires oneTBB >= 2021.
@@ -228,7 +273,6 @@ diffrg_find_package(
 message(STATUS "Boost version: ${Boost_VERSION}")
 message(STATUS "Boost include dir: ${Boost_INCLUDE_DIRS}")
 message(STATUS "Boost libraries: ${Boost_LIBRARIES}")
-include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 # Boost is ABI-critical: a version divergence from what the superbuild pinned
 # (e.g. a system Boost upgraded in place after the bundle was built) is a hard
 # error rather than a warning.
@@ -244,6 +288,11 @@ endif()
 
 # Find Eigen3
 diffrg_find_package(Eigen3 VERSION 3.4.0 HINTS ${BUNDLED_DIR})
+if(TARGET Eigen3::Eigen)
+  set(DiFfRG_EIGEN_TARGET Eigen3::Eigen)
+else()
+  set(DiFfRG_EIGEN_TARGET Eigen3)
+endif()
 
 # Find GSL (system dependency)
 find_package(GSL QUIET)
@@ -279,6 +328,7 @@ diffrg_find_package(spdlog VERSION 1.14.1 HINTS ${BUNDLED_DIR})
 # Config mode first (bundled static build + distros that ship a CMake config,
 # e.g. Arch); then module mode (FindHDF5) for config-less system installs
 # (Fedora/Debian/Ubuntu). HDF5_DIR/HDF5_ROOT are set by the top-level build.
+option(HDF5 "Enable HDF5 support" ON)
 find_package(HDF5 CONFIG QUIET COMPONENTS C HINTS ${BUNDLED_DIR})
 if(NOT HDF5_FOUND OR HDF5_VERSION VERSION_LESS 1.12.0)
   find_package(HDF5 MODULE QUIET COMPONENTS C)
@@ -297,6 +347,7 @@ if(NOT HDF5_FOUND OR HDF5_VERSION VERSION_LESS 1.12.0)
 endif()
 message(STATUS "HDF5 version: ${HDF5_VERSION}")
 message(STATUS "HDF5 include dir: ${HDF5_INCLUDE_DIRS}")
+
 # Resolve the HDF5 link target: the bundled static build exports hdf5-static;
 # system installs vary (hdf5-shared / hdf5::hdf5 / HDF5::HDF5), or only set vars.
 if(TARGET hdf5-static)
@@ -311,7 +362,7 @@ elseif(TARGET HDF5::HDF5)
   set(DiFfRG_HDF5_LIBRARIES HDF5::HDF5)
 else()
   set(DiFfRG_HDF5_LIBRARIES ${HDF5_C_LIBRARIES} ${HDF5_LIBRARIES})
-  include_directories(SYSTEM ${HDF5_INCLUDE_DIRS})
+  set(DiFfRG_HDF5_INCLUDE_DIRS ${HDF5_INCLUDE_DIRS})
 endif()
 message(STATUS "HDF5 link target(s): ${DiFfRG_HDF5_LIBRARIES}")
 if(DEFINED DiFfRG_PINNED_HDF5_VERSION
@@ -422,15 +473,19 @@ function(setup_dealii TARGET)
   # dealii::dealii, which (unlike DEAL_II_INCLUDE_DIRS) also propagates the
   # include dirs of optional features such as UMFPACK/suitesparse.
   target_link_libraries(${TARGET} PUBLIC dealii::dealii)
-  target_link_libraries(${TARGET} INTERFACE dealii::dealii)
 
   target_include_directories(${TARGET} SYSTEM PUBLIC ${DEAL_II_INCLUDE_DIRS})
 
   set(_cflags "${DEAL_II_CXX_FLAGS} ${DEAL_II_CXX_FLAGS_${_build}}")
-  # remove c++20 flag and O2 flag - CMake adds them automatically and we thus
-  # avoid the nvcc_wrapper warnings
+  # Remove the c++20 and the optimization flag: CMake adds the standard itself
+  # and CMAKE_CXX_FLAGS_<CONFIG> is the single source of truth for the -O level
+  # (the same reason dealii::dealii's INTERFACE_COMPILE_OPTIONS is sanitized
+  # after find_package(deal.II) above). Keeping either here would put two -O
+  # flags on the compile line, which makes nvcc_wrapper warn and silently keep
+  # the last one. The leading space lets the regex match a flag in first
+  # position too.
   string(REPLACE "-std=c++20" "" _cflags ${_cflags})
-  string(REPLACE "-O2" "" _cflags ${_cflags})
+  string(REGEX REPLACE " -O[0-9a-zA-Z]+" "" _cflags " ${_cflags}")
   separate_arguments(_cflags)
   # deal.II built through nvcc/nvcc_wrapper (the GCC + CUDA path) emits repeated
   # "-Xcudafe <code>" pairs. Added as plain compile options these get
@@ -466,20 +521,25 @@ function(setup_target TARGET)
   # Check if the target is DiFfRG
   if(${TARGET} STREQUAL "DiFfRG")
     target_include_directories(${TARGET} PRIVATE ${autodiff_SOURCE_DIR})
-  else()
-    target_link_libraries(${TARGET} PUBLIC autodiff::autodiff)
   endif()
 
   # Do not warn about missing braces
   target_compile_options(${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:
                                           -Wno-missing-braces>)
 
+  target_include_directories(${TARGET} SYSTEM PUBLIC ${BUNDLED_DIR}/include)
+  target_link_libraries(${TARGET} PUBLIC autodiff::autodiff)
   target_link_libraries(${TARGET} PUBLIC GSL::gsl)
-  target_link_libraries(${TARGET} PUBLIC Eigen3)
+  target_link_libraries(${TARGET} PUBLIC ${DiFfRG_EIGEN_TARGET})
   target_link_libraries(${TARGET} PUBLIC spdlog::spdlog)
   target_link_libraries(${TARGET} PUBLIC ${Boost_LIBRARIES})
   target_link_libraries(${TARGET} PUBLIC TBB::tbb)
-  target_link_libraries(${TARGET} PUBLIC Kokkos::kokkos)
+  # deal.II's exported target already carries the concrete Kokkos archives.
+  # Keep Kokkos discovered above, but do not add the same archives a second time.
+  target_link_libraries(${TARGET} PUBLIC ${DiFfRG_HDF5_LIBRARIES})
+  if(DiFfRG_HDF5_INCLUDE_DIRS)
+    target_include_directories(${TARGET} SYSTEM PUBLIC ${DiFfRG_HDF5_INCLUDE_DIRS})
+  endif()
   # target_link_libraries(${TARGET} PUBLIC petsc)
 
   if(${DiFfRG_MPI})
@@ -510,4 +570,13 @@ function(setup_target TARGET)
   # Workaround: deal.II's tensor.h uses assert() without including <cassert>.
   target_compile_options(
     ${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-include cassert>)
+
+  if(HDF5)
+    target_compile_definitions(${TARGET} PUBLIC H5CPP)
+  endif()
+
+  if(DiFfRG_LINKER_SUPPORTS_NO_WARN_DUPLICATE_LIBRARIES)
+    target_link_options(${TARGET} PUBLIC
+                        "LINKER:-no_warn_duplicate_libraries")
+  endif()
 endfunction()

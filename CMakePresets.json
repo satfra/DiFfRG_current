@@ -13,7 +13,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_INSTALL_PREFIX": "${sourceDir}/local_install",
-        "BUILD_PETSC": "OFF"
+        "BUILD_PETSC": "OFF",
+        "HDF5": "ON"
       }
     },
     {

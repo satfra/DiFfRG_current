@@ -14,7 +14,7 @@ namespace DiFfRG
     {
     public:
       lambda10_integrator(QuadratureProvider &quadrature_provider, std::array<uint, 2> grid_sizes,
-                          const double x_extent, const double q0_extent, const uint q0_summands, const JSONValue &json);
+                          const double x_extent, const double q0_extent, const uint q0_summands, const ConfigTree &json);
       lambda10_integrator(const lambda10_integrator &other);
       ~lambda10_integrator();
 
@@ -55,7 +55,7 @@ namespace DiFfRG
       const double q0_extent;
       const uint q0_summands;
       const double jacobian_quadrature_factor;
-      const JSONValue json;
+      const ConfigTree json;
 
       std::unique_ptr<DiFfRG::IntegratorFiniteTq0TBB<4, double, lambda10_kernel<__REGULATOR__>>> integrator;
     };

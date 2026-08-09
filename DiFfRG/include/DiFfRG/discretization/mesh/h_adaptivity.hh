@@ -30,14 +30,14 @@ namespace DiFfRG
     static constexpr uint dim = Discretization::dim;
 
   public:
-    HAdaptivity(Assembler &assembler, const JSONValue &json)
+    HAdaptivity(Assembler &assembler, const ConfigTree &config)
         : assembler(assembler), discretization(assembler.get_discretization())
     {
-      adapt_t = json.get_double("/discretization/adaptivity/start_adapt_at");
-      adapt_dt = json.get_double("/discretization/adaptivity/adapt_dt");
-      adapt_level = json.get_uint("/discretization/adaptivity/level");
-      adapt_upper = json.get_double("/discretization/adaptivity/refine_percent");
-      adapt_lower = json.get_double("/discretization/adaptivity/coarsen_percent");
+      adapt_t = config.get_double("/discretization/adaptivity/start_adapt_at", 0.0);
+      adapt_dt = config.get_double("/discretization/adaptivity/adapt_dt", 1e-1);
+      adapt_level = config.get_uint("/discretization/adaptivity/level", 0);
+      adapt_upper = config.get_double("/discretization/adaptivity/refine_percent", 1e-1);
+      adapt_lower = config.get_double("/discretization/adaptivity/coarsen_percent", 5e-2);
     }
 
     virtual ~HAdaptivity() = default;

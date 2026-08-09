@@ -30,7 +30,7 @@ TEST_CASE("Benchmark DG Constant", "[benchmark][dg]")
 
   const int fe_order = GENERATE(0, 1, 3, 5);
 
-  JSONValue json = json::value(
+  ConfigTree json = json::value(
       {{"physical", {}},
        {"integration",
         {{"x_quadrature_order", 32},
@@ -45,7 +45,7 @@ TEST_CASE("Benchmark DG Constant", "[benchmark][dg]")
          {"jacobian_quadrature_factor", 0.5}}},
        {"discretization",
         {{"fe_order", fe_order},
-         {"threads", 8},
+         {"mesh_workers", 8},
          {"batch_size", 64},
          {"overintegration", 0},
          {"output_subdivisions", 2},
@@ -71,9 +71,9 @@ TEST_CASE("Benchmark DG Constant", "[benchmark][dg]")
   std::string label = "DG p=" + std::to_string(fe_order);
 
   Model model(p_prm);
-  RectangularMesh<dim> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
+  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
   FE::FlowingVariables initial_condition(discretization);
   initial_condition.interpolate(model);

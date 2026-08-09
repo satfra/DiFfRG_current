@@ -9,14 +9,25 @@ namespace DiFfRG
 {
   namespace internal
   {
+    /**
+     * @brief Fallback quadrature order for a momentum-space direction.
+     *
+     * Radial directions need far more points than angular ones, so the guess depends on the
+     * name. Both are only guesses - make_int_grid() warns when either is taken.
+     */
+    inline size_t default_quadrature_order(const std::string &name)
+    {
+      return name.starts_with("x") || name.starts_with("q") ? 32 : 8;
+    }
+
     template <int dim, typename NT = double>
-    std::array<size_t, dim> make_int_grid(const JSONValue &json, const std::array<std::string, dim> &names)
+    std::array<size_t, dim> make_int_grid(const ConfigTree &config, const std::array<std::string, dim> &names)
     {
       std::array<size_t, dim> int_grid;
       for (int i = 0; i < dim; ++i)
-        int_grid[i] = json.get_uint("/integration/" + names[i]);
+        int_grid[i] = config.get_uint_or_warn("/integration/" + names[i], default_quadrature_order(names[i]));
       if constexpr (get_type::is_autodiff<NT>) {
-        const double factor = json.get_double("/integration/jacobian_quadrature_factor", 0.8);
+        const double factor = config.get_double("/integration/jacobian_quadrature_factor", 0.8);
         for (int i = 0; i < dim; ++i)
           int_grid[i] = static_cast<size_t>(factor * int_grid[i]);
       }

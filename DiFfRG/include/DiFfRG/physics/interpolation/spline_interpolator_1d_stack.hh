@@ -3,6 +3,7 @@
 // DiFfRG
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/math.hh>
+#include <DiFfRG/discretization/coordinates/coordinates.hh>
 #include <limits>
 
 namespace DiFfRG
@@ -16,6 +17,10 @@ namespace DiFfRG
   template <typename NT, typename Coordinates, typename DefaultMemorySpace = CPU_memory> class SplineInterpolator1DStack
   {
     static_assert(Coordinates::dim == 2, "SplineInterpolator1DStack requires 2D coordinates");
+    // The spline coefficients come from a non-cyclic tridiagonal solve with boundary conditions at the grid edges,
+    // which cannot close a periodic axis. Use LinearInterpolator2D there instead.
+    static_assert(!is_periodic_axis_v<Coordinates, 0> && !is_periodic_axis_v<Coordinates, 1>,
+                  "SplineInterpolator1DStack does not support periodic coordinates; use LinearInterpolator2D.");
 
   public:
     using memory_space = DefaultMemorySpace;
@@ -111,9 +116,39 @@ namespace DiFfRG
      * @param x the point at which to interpolate
      * @return NT the interpolated value
      */
-    NT KOKKOS_FUNCTION operator()(const typename Coordinates::ctype s, const typename Coordinates::ctype x) const
+    /**
+     * @brief Map physical coordinates onto grid indices.
+     *
+     * Split out of operator() because it is the expensive half: Coordinates::backward is a fp64
+     * log/log1p per logarithmic axis, ~200 fp64 instructions each on current NVIDIA parts against
+     * ~10 for the interpolation. A generated kernel evaluating several dressings at the SAME point
+     * otherwise pays it once per dressing -- the compiler cannot CSE it, because each interpolator
+     * owns its own `coordinates` members and cannot be proven to agree with another's.
+     *
+     * Depends only on the coordinate system, so the result may be shared across interpolators that
+     * share one. Clamping and stencil resolution stay in at(), since they are size dependent and
+     * would otherwise make an index untransferable between interpolators of different extent.
+     *
+     * The return type is spelled out rather than deduced: nvcc loses `decltype(var)` when the
+     * initializer has a deduced return type inside a class-template member, and the consumer stores
+     * this in a `const auto`.
+     */
+    device::array<typename Coordinates::ctype, 2> KOKKOS_FUNCTION
+    index(const typename Coordinates::ctype s, const typename Coordinates::ctype x) const
     {
-      auto [_sidx, xidx] = coordinates.backward(s, x);
+      // backward() returns device::array for CoordinatePackND but std::tuple<Idx, NT> for the
+      // combined finite-T systems; the structured binding normalises both onto what at() expects.
+      auto [sidx, xidx] = coordinates.backward(s, x);
+      return {{static_cast<typename Coordinates::ctype>(sidx), static_cast<typename Coordinates::ctype>(xidx)}};
+    }
+
+    /**
+     * @brief Interpolate at grid indices previously obtained from index().
+     */
+    NT KOKKOS_FUNCTION at(const device::array<typename Coordinates::ctype, 2> &raw) const
+    {
+      auto _sidx = raw[0];
+      auto xidx = raw[1];
       // Clamp indices to the range [0, sizes[i] - 1]
       xidx = Kokkos::max(static_cast<decltype(xidx)>(0), Kokkos::min(xidx, static_cast<decltype(xidx)>(sizes[1] - 1)));
       _sidx =
@@ -140,6 +175,15 @@ namespace DiFfRG
         return Kokkos::fma(t, upper, Kokkos::fma(-t, lower, lower)) + cubic; // linear + cubic
       else
         return t * upper + (1 - t) * lower + cubic; // linear + cubic
+    }
+
+    /**
+     * @brief Interpolate the data at a given point.
+     */
+    NT KOKKOS_FUNCTION operator()(const typename Coordinates::ctype s,
+                                  const typename Coordinates::ctype x) const
+    {
+      return at(index(s, x));
     }
 
     NT operator[](size_t i) const

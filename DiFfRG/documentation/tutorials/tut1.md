@@ -97,10 +97,10 @@ The actual program logic starts with the entry point, the `main` function. The v
 ```
 `DiFfRG::Init(argc, argv)` sets up the runtime environment - in particular it initializes [Kokkos](https://kokkos.org/) (which provides the CPU/GPU parallelization) and, if enabled, MPI. It must be called once at the start of `main` before any `DiFfRG` object is constructed, and the returned object owns these environments for the lifetime of the program. From it we obtain a `ConfigurationHelper`.
 
-The `ConfigurationHelper` class automatically chooses the correct parameter file; if the executable is invoked with the `-p` parameter, i.e. `./tut1 -p parameter.json`, the argument of `-p` is chosen as the parameter file. Otherwise, `ConfigurationHelper` will try to open a file called `parameter.json` in the current working directory. The parameters have to be specified in the [JSON](https://www.json.org/json-en.html) format.
+The `ConfigurationHelper` class automatically chooses the correct parameter file; if the executable is invoked with the `-p` parameter, i.e. `./tut1 -p parameter.json`, the argument of `-p` is chosen as the parameter file. Otherwise, `ConfigurationHelper` will try to open a file called `parameter.json` in the current working directory, falling back to `parameter.toml` if that does not exist. The parameters can be specified either in the [JSON](https://www.json.org/json-en.html) or in the [TOML](https://toml.io/) format; files ending in `.toml` are read as TOML, everything else as JSON. This tutorial ships both `parameter.json` and the equivalent, commented `parameter.toml`.
 
 The `argc, argv` parameters are forwarded so that command line flags and arguments can be parsed.
-Afterwards, we load the entire parameter structure into the `json` variable, which has the same structure as the original json file.
+Afterwards, we load the entire parameter structure into the `json` variable, a `ConfigTree` which has the same structure as the original parameter file. `ConfigTree` used to be called `JSONValue`; that name still works, but is deprecated.
 
 After setting up the configuration, we choose the algorithms used in our simulation. To do so, we make some convenient type aliases with the chosen class types:
 ```cpp
@@ -143,9 +143,12 @@ Note that the TimeStepper takes an additional argument, where we can choose the 
   // Define the objects needed to run the simulation
   Model model(json);
   RectangularMesh<dim> mesh(json);
-  Discretization discretization(mesh, json);
-  Assembler assembler(discretization, model, json);
-  TimeStepper time_stepper(json, &assembler);
+  OutputPath output_path(json);
+  OutputSession<dim, VectorType> output(output_path, Config::OutputSettings(json));
+  const auto log = output.log_port();
+  Discretization discretization(mesh, json, log);
+  Assembler assembler(discretization, model, json, log);
+  TimeStepper time_stepper(json, &assembler, &output);
 ```
 We now use the types we defined above to construct objects of all the classes described above.
 
@@ -162,7 +165,7 @@ and use it to run the time-stepper from RG-time 0 to the final RG-time, which we
   try {
     time_stepper.run(&initial_condition, 0., json.get_double("/timestepping/final_time"));
   } catch (std::exception &e) {
-    spdlog::get("log")->error("Simulation finished with exception {}", e.what());
+    log.error("Simulation finished with exception {}", e.what());
     return -1;
   }
   auto time = timer.wall_time();
@@ -184,8 +187,8 @@ Furthermore, we recorded the time the simulation took using the `dealii::Timer` 
 We finish the program by printing a bit of information to the log file, in particular the performance and utilization of the `Assembler`.
 ```cpp
   // We print a bit of exit information.
-  assembler.log("log");
-  spdlog::get("log")->info("Simulation finished after " + time_format(time));
+  assembler.log();
+  log.info("Simulation finished after " + time_format(time));
   return 0;
 }
 ```
@@ -207,7 +210,7 @@ First things first, we set a few things up before we get to the equation system:
 using namespace DiFfRG;
 
 struct Parameters {
-  Parameters(const JSONValue &value)
+  Parameters(const ConfigTree &value)
   {
     try {
       a = value.get_double("/physical/a");
@@ -269,7 +272,7 @@ private:
 public:
   static constexpr uint dim = 1;
 
-  Tut1(const JSONValue &json) : def::fRG(json.get_double("/physical/Lambda")), prm(json) {}
+  Tut1(const ConfigTree &json) : def::fRG(json.get_double("/physical/Lambda")), prm(json) {}
 ```
 Here, we have only written the constructor, communicated $\Lambda$ to the `def::fRG` base class and created a `Parameters` object.
 
@@ -303,7 +306,7 @@ so that our choice of $F_i(u) = \frac12 u^2$ exactly implements Burgers' equatio
 
 ## parameter.json
 
-The parameter file contains usually user-defined quantities in a "physical" subsection and further paramters for the backend:
+The parameter file contains usually user-defined quantities in a "physical" subsection and further paramters for the backend. It can be written either as JSON or, as in the equivalent `parameter.toml` shipped alongside it, as TOML:
 
 ```json
 {
@@ -319,13 +322,18 @@ These sections are just the parameters we also use in the numerical model, i.e. 
 ```json
   "discretization": {
     "fe_order": 3,
-    "threads": 8,
+    "threads": 0,
+    "mesh_workers": 8,
     "batch_size": 64,
     "overintegration": 0,
     "output_subdivisions": 2,
 
     "EoM_abs_tol": 1e-10,
     "EoM_max_iter": 100,
+    "EoM_smoothing_length": -1,
+    "EoM_bound_tolerance": 1e-12,
+    "EoM_armijo_coefficient": 1e-4,
+    "EoM_max_backtracks": 20,
 
     "grid": {
       "x_grid": "0:1e-2:1",
@@ -336,12 +344,20 @@ These sections are just the parameters we also use in the numerical model, i.e. 
 ```
 The discretization section configures the FEM setup of our simulation:
 - `fe_order` sets the polynomial order of the local function space on the finite elements
-- `threads` sets the number of CPU threads used for assembly. Note, that other multithreading parts of `DiFfRG`, such as momentum integration, automatically use all available CPU threads and ignore this parameter.
-- `batch_size` the assembly threads get batches of `batch_size` which they sequentially process. Playing around with `threads` and `batch_size` may give a small performance boost, but keeping `threads` around the number of physical cores and `batch_size` around 32-64 should be sufficient for almost optimal performance.
+- `threads` sets the number of CPU threads the whole program may use, covering both FEM assembly and momentum integration. `0` means all available cores. This is read by `DiFfRG::Init` before any library comes up, and it caps the TBB arena and the Kokkos host backend alike. If the `DEAL_II_NUM_THREADS` environment variable is also set, the smaller of the two wins.
+- `mesh_workers` sets how many cells are kept in flight in the assembly pipeline (deal.II calls this the MeshWorker queue length). Despite its former name `threads`, this never was a thread count: it bounds concurrency in the pipeline and, with `batch_size`, the number of `ScratchData`/`CopyData` copies that get allocated. Keep it *below* `threads`: the integrators called from within a cell worker spawn their own nested TBB work in the same arena, and they need free threads to do so. `0` means `threads / 2`.
+- `batch_size` the mesh workers get batches of `batch_size` cells which they sequentially process. Playing around with `mesh_workers` and `batch_size` may give a small performance boost, but keeping `mesh_workers` around the number of physical cores and `batch_size` around 32-64 should be sufficient for almost optimal performance.
 - `overintegration` can be used to increase the order of the quadratures used in assembly when constructing the [weak form](https://en.wikipedia.org/wiki/Weak_formulation) of the PDE. It is seldom necessary to increase beyond 0.
 - `output_subdivisions` gives the precision with which the grids in the output data are written. This goes exponentially, so don't choose it too high.
-- `EoM_abs_tol` sets the absolute precision within which a specified equation of motion is solved. DiFfRG can be instructed to solve the EoM at every timestep and perform additional computations at this point.
-- `EoM_max_iter` sets the number of bisections used in determining the position of the EoM.
+- `EoM_abs_tol` sets the projected equation-of-motion/potential-gradient tolerance used to refine the EoM position within a cell. DiFfRG can be instructed to solve the EoM at every timestep and perform additional computations at this point.
+- `EoM_max_iter` sets the maximum number of in-cell minimizer iterations used in determining the position of the EoM.
+- `EoM_smoothing_length` controls damping of normal-gradient jumps in the reconstructed CG2 potential. A value of `-1` captures twice the smallest initial face-normal cell width as a fixed physical smoothing length, `0` disables smoothing, and a positive value sets the physical length explicitly. On a uniform mesh, the effective smoothing range in cells is approximately `EoM_smoothing_length / h`; a fixed physical length therefore spans more cells after refinement.
+- `EoM_bound_tolerance` determines when a reference-cell coordinate is treated as lying on an active lower or upper bound.
+- `EoM_armijo_coefficient` is the sufficient-decrease coefficient used by the Newton line search and must lie strictly between zero and one.
+- `EoM_max_backtracks` limits the number of line-search step halvings and must be positive.
+
+These three values are collected in `Config::EoMConfig`. JSON is the application-boundary adapter; the EoM reconstruction and assemblers consume the typed configuration. This mirrors `Config::ConfigurationMesh` and lets a future application-level configuration object forward only its EoM settings.
+
 - `x_grid` this works in a python-like slice syntax and sets the  used in a `RectangularMesh`. The parameter also supports locally different cell sizes: "0:1e-4:1e-2, 1e-2:1e-3:1" creates 100 cells between 0 and 1e-2, and 100 cells between 1e-2 and 1.
 - `y_grid` and `z_grid` work identically, but are only used in 2D / 3D simulations.
 - `refine` can be used to quickly increase the cell count by $2^\textrm{refine}$.
@@ -394,7 +410,7 @@ For more information about timesteppers and their relationship with spontaneous 
 }
 ```
 The `output` section defines:
-- `verbosity` sets how much information is being written to console while running. If at 0, no information is written at all, whereas at 1 the system gives updates at every timestep.
+- `verbosity` sets how much information is being written to console while running. If at 0, no information is written at all, whereas at 1 the system gives updates at every timestep. From 2 upwards, the progress lines are accompanied by the solver diagnostics (accepted steps, precision rejects, step widths, ...) and by timings for the jacobian and the linear solver.
 - `folder` sets the base folder where data is stored. This is useful to not clutter your current directory ("./") with output, or if you run a large amount of simulations.
 - `name` sets the beginning of all filenames of the output, i.e. in this case all files created by the simulation start with "output".
 
@@ -409,7 +425,7 @@ and then directly run it through
 $ ./tut1 -p ../parameter.json -si /output/verbosity=1
 ```
 We made use here of a mechanism to override the parameters of a simulation. The flag -p selects the parameter file to be used.
-By default it looks for a parameter.json in the current directory. One can use the flags `-si` to set an integer, `-ss`
+By default it looks for a parameter.json in the current directory, falling back to parameter.toml. One can use the flags `-si` to set an integer, `-ss`
 to set a string and `-sd` to set a double (floating-point) value, followed by the full path to the parameter and its
 value after an equality symbol.
 
@@ -423,7 +439,7 @@ $ cat output.log
 [2024/10/11] [23:01:31] [DiFfRG Application started]
 [2024/10/11] [23:01:31] [FEM: Number of active cells: 100]
 [2024/10/11] [23:01:31] [FEM: Number of degrees of freedom: 301]
-[2024/10/11] [23:01:31] [FEM: Using 8 threads for assembly.]
+[2024/10/11] [23:01:31] [FEM: Using 8 mesh workers for assembly.]
 [2024/10/11] [23:01:32] [CG Assembler: 
         Reinit: 4.36692ms (1)
         Residual: 0.184398ms (3557)

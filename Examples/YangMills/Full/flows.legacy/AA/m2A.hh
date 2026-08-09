@@ -14,7 +14,7 @@ namespace DiFfRG
     {
     public:
       m2A_integrator(QuadratureProvider &quadrature_provider, std::array<uint, 2> grid_sizes, const double x_extent,
-                     const JSONValue &json);
+                     const ConfigTree &json);
       m2A_integrator(const m2A_integrator &other);
       ~m2A_integrator();
 
@@ -69,7 +69,7 @@ namespace DiFfRG
       std::array<uint, 2> jac_grid_sizes;
       const double x_extent;
       const double jacobian_quadrature_factor;
-      const JSONValue json;
+      const ConfigTree json;
 
       std::unique_ptr<DiFfRG::IntegratorAngleTBB<4, double, m2A_kernel<__REGULATOR__>>> integrator;
     };

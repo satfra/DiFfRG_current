@@ -1,20 +1,20 @@
 #pragma once
 
 // standard library
+#include <concepts>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 // external libraries
 #include <deal.II/base/utilities.h>
-#include <spdlog/sinks/basic_file_sink.h>
-#include <spdlog/spdlog.h>
 
 // DiFfRG
 #include <DiFfRG/common/fixed_string.hh>
-#include <DiFfRG/common/json.hh>
+#include <DiFfRG/common/config_tree.hh>
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/tuples.hh>
@@ -35,8 +35,6 @@ namespace DiFfRG
       constexpr_for<Start + Inc, End, Inc>(f);
     }
   }
-
-  std::shared_ptr<spdlog::logger> build_logger(const std::string &name, const std::string &filename);
 
   /**
    * @brief Strips all special characters from a string, e.g. for use in filenames.
@@ -70,6 +68,13 @@ namespace DiFfRG
    * @param name The name of the file.
    */
   bool file_exists(const std::string &name);
+
+  template <typename Name, typename Filename>
+  [[deprecated("Use a run-owned RunLogger and pass its LogPort instead")]] void build_logger(Name &&, Filename &&)
+  {
+    static_assert(!std::is_same_v<Name, Name>,
+                  "build_logger(name, filename) was removed. Use a run-owned RunLogger and pass its LogPort instead");
+  }
 
   /**
    * @brief Return number with fixed significant digits

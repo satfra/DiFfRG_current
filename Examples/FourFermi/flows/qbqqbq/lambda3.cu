@@ -9,7 +9,7 @@ namespace DiFfRG
   {
     lambda3_integrator::lambda3_integrator(QuadratureProvider &quadrature_provider, std::array<uint, 2> grid_sizes,
                                            const double x_extent, const double q0_extent, const uint q0_summands,
-                                           const JSONValue &json)
+                                           const ConfigTree &json)
         : quadrature_provider(quadrature_provider), grid_sizes(grid_sizes), x_extent(x_extent), q0_extent(q0_extent),
           q0_summands(q0_summands),
           jacobian_quadrature_factor(json.get_double("/integration/jacobian_quadrature_factor")), json(json)

@@ -3,19 +3,216 @@
 #include <deal.II/lac/block_vector.h>
 #include <deal.II/sundials/ida.h>
 
+#include <algorithm>
+#include <cmath>
+#include <iomanip>
+#include <iostream>
+#include <limits>
+#include <sstream>
+#include <vector>
+
 // DiFfRG
 #include <DiFfRG/common/eigen.hh>
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/timestepping/linear_solver/GMRES.hh>
+#include <DiFfRG/timestepping/linear_solver/ScaledGMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/UMFPack.hh>
+#include <DiFfRG/timestepping/sundials_diagnostics.hh>
 #include <DiFfRG/timestepping/sundials_ida.hh>
 
 namespace DiFfRG
 {
   using namespace dealii;
+
+  namespace
+  {
+    constexpr int recoverable_ida_callback_failure = 1;
+
+    template <typename VectorType> double l1_norm_or_nan(const VectorType *vector)
+    {
+      if (vector == nullptr) return std::numeric_limits<double>::quiet_NaN();
+      try {
+        return vector->l1_norm();
+      } catch (...) {
+        return std::numeric_limits<double>::quiet_NaN();
+      }
+    }
+
+    template <typename VectorType> bool is_finite_vector(const VectorType &vector)
+    {
+      return std::isfinite(l1_norm_or_nan(&vector));
+    }
+
+    struct IDACallbackTrace {
+      bool enabled = false;
+      double min_t = 0.;
+      uint max_lines = 200;
+      bool trace_successes = false;
+      double Lambda = -1.;
+
+      size_t call_index = 0;
+      size_t printed_lines = 0;
+      double last_t = std::numeric_limits<double>::quiet_NaN();
+      size_t same_t_index = 0;
+
+      IDACallbackTrace(const bool enabled, const double min_t, const uint max_lines, const bool trace_successes,
+                       const double Lambda)
+          : enabled(enabled), min_t(min_t), max_lines(max_lines), trace_successes(trace_successes), Lambda(Lambda)
+      {
+      }
+
+      template <typename IDAType, typename VectorType, typename ResidualType = VectorType>
+      void record(const char *phase, const double t, const uint failure_counter, const IDAType &time_stepper,
+                  const IDACallbackDiagnostics &callback_diagnostics, const char *outcome, const VectorType *y,
+                  const VectorType *y_dot, const ResidualType *residual, const std::string &detail = {})
+      {
+        ++call_index;
+        if (std::isfinite(last_t) && std::abs(t - last_t) <= 1e-14)
+          ++same_t_index;
+        else {
+          same_t_index = 0;
+          last_t = t;
+        }
+
+        if (!enabled || t < min_t) return;
+        const bool failure = std::string(outcome) != "success";
+        if (!failure && printed_lines >= max_lines) return;
+        if (!trace_successes && !failure) return;
+
+        const auto diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+        std::ostringstream stream;
+        stream << std::scientific << std::setprecision(16);
+        stream << "[IDA TRACE] phase=" << phase << " outcome=" << outcome << " call=" << call_index
+               << " same_t=" << same_t_index
+               << " hint=" << (same_t_index == 0 ? "first-trial-candidate" : "repeat-corrector-candidate")
+               << " t=" << t;
+        if (Lambda > 0.) stream << " k=" << std::exp(-t) * Lambda;
+        stream << " failure_counter=" << failure_counter;
+        if (diagnostics.has_ida) {
+          stream << " ida_steps=" << diagnostics.ida_steps << " residual_evals=" << diagnostics.ida_residual_evaluations
+                 << " precision_rejects=" << diagnostics.ida_error_test_failures
+                 << " nonlinear_iterations=" << diagnostics.ida_nonlinear_iterations
+                 << " nonlinear_failures=" << diagnostics.ida_nonlinear_convergence_failures
+                 << " step_solve_failures=" << diagnostics.ida_step_solve_failures
+                 << " last_h=" << diagnostics.ida_last_step_size << " current_h=" << diagnostics.ida_current_step_size;
+        }
+        stream << " y_l1=" << l1_norm_or_nan(y) << " ydot_l1=" << l1_norm_or_nan(y_dot)
+               << " residual_l1=" << l1_norm_or_nan(residual);
+        if (!detail.empty()) stream << " detail=\"" << detail << "\"";
+        std::clog << stream.str() << '\n';
+        ++printed_lines;
+      }
+
+      template <typename IDAType, typename VectorType>
+      void record(const char *phase, const double t, const uint failure_counter, const IDAType &time_stepper,
+                  const IDACallbackDiagnostics &callback_diagnostics, const char *outcome, const VectorType *y,
+                  const VectorType *y_dot, std::nullptr_t, const std::string &detail = {})
+      {
+        record(phase, t, failure_counter, time_stepper, callback_diagnostics, outcome, y, y_dot,
+               static_cast<const VectorType *>(nullptr), detail);
+      }
+    };
+
+    template <typename VectorType> class IDAErrorDofMonitor
+    {
+    public:
+      IDAErrorDofMonitor(const bool enabled, const uint top_n, const double Lambda)
+          : enabled(enabled), top_n(top_n), Lambda(Lambda)
+      {
+      }
+
+      template <typename IDAType, typename Callback>
+      void observe(const double t, const IDAType &time_stepper, const TimesteppingDiagnostics &diagnostics,
+                   const VectorType &solution, const Callback &callback)
+      {
+        if (!diagnostics.has_ida) return;
+
+        const long int previous_error_test_failures = initialized ? last_error_test_failures : 0;
+        initialized = true;
+        const long int reject_delta = diagnostics.ida_error_test_failures - previous_error_test_failures;
+        last_error_test_failures = diagnostics.ida_error_test_failures;
+        if (!enabled || reject_delta <= 0) return;
+
+        if constexpr (requires(const IDAType &ida, VectorType &errors, VectorType &weights) {
+                        ida.get_error_test_vectors(errors, weights);
+                      }) {
+          estimated_local_errors.reinit(solution);
+          error_weights.reinit(solution);
+
+          if (!time_stepper.get_error_test_vectors(estimated_local_errors, error_weights)) {
+            std::clog << "[IDA ERROR DOF DIAG] precision rejects +" << reject_delta << " at t=" << t
+                      << ": failed to query IDA local-error vectors\n";
+            return;
+          }
+
+          IDAErrorDofDiagnostics report;
+          report.t = t;
+          report.k = Lambda > 0. ? std::exp(-t) * Lambda : std::numeric_limits<double>::quiet_NaN();
+          report.reject_delta = reject_delta;
+          report.total_rejects = diagnostics.ida_error_test_failures;
+          report.ida_steps = diagnostics.ida_steps;
+          report.ida_last_step_size = diagnostics.ida_last_step_size;
+          report.ida_current_step_size = diagnostics.ida_current_step_size;
+          report.ida_current_time = diagnostics.ida_current_time;
+
+          const std::size_t n_dofs = solution.size();
+          report.top_dofs.reserve(std::min<std::size_t>(top_n, n_dofs));
+          double weighted_error_norm_squared = 0.;
+          std::vector<IDAErrorDofRecord> records;
+          records.reserve(n_dofs);
+          for (std::size_t i = 0; i < n_dofs; ++i) {
+            const double estimated_local_error = static_cast<double>(estimated_local_errors[i]);
+            const double error_weight = static_cast<double>(error_weights[i]);
+            const double contribution = std::abs(estimated_local_error * error_weight);
+            weighted_error_norm_squared += contribution * contribution;
+            records.push_back({static_cast<types::global_dof_index>(i), static_cast<double>(solution[i]),
+                               estimated_local_error, error_weight, contribution});
+          }
+
+          if (n_dofs > 0) report.wrms = std::sqrt(weighted_error_norm_squared / static_cast<double>(n_dofs));
+          const std::size_t report_count = std::min<std::size_t>(top_n, records.size());
+          std::partial_sort(records.begin(), records.begin() + report_count, records.end(),
+                            [](const auto &a, const auto &b) { return a.contribution > b.contribution; });
+          report.top_dofs.insert(report.top_dofs.end(), records.begin(), records.begin() + report_count);
+
+          if (callback) {
+            callback(report);
+          } else {
+            log_generic_report(report);
+          }
+        } else {
+          std::clog << "[IDA ERROR DOF DIAG] precision rejects +" << reject_delta << " at t=" << t
+                    << ": IDA local-error vectors are not available in this build\n";
+        }
+      }
+
+    private:
+      bool enabled = false;
+      uint top_n = 0;
+      double Lambda = -1.;
+      bool initialized = false;
+      long int last_error_test_failures = 0;
+      VectorType estimated_local_errors;
+      VectorType error_weights;
+
+      static void log_generic_report(const IDAErrorDofDiagnostics &report)
+      {
+        std::clog << std::setprecision(17) << "[IDA ERROR DOF DIAG] precision rejects +" << report.reject_delta
+                  << " at t=" << report.t << ", k=" << report.k << ", total_rejects=" << report.total_rejects
+                  << ", ida_steps=" << report.ida_steps << ", last_h=" << report.ida_last_step_size
+                  << ", current_h=" << report.ida_current_step_size << ", wrms=" << report.wrms << '\n';
+        for (std::size_t rank = 0; rank < report.top_dofs.size(); ++rank) {
+          const auto &record = report.top_dofs[rank];
+          std::clog << std::setprecision(17) << "[IDA ERROR DOF DIAG] rank=" << rank << " dof=" << record.dof
+                    << " y=" << record.value << " ele=" << record.estimated_local_error
+                    << " ewt=" << record.error_weight << " abs_ele_ewt=" << record.contribution << '\n';
+        }
+      }
+    };
+  } // namespace
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver>
@@ -49,21 +246,35 @@ namespace DiFfRG
 
     // Create a SUNDIALS IDA object with the right settings
     typename SUNDIALS::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
-                                                                1e6, 0, impl.abs_tol, impl.rel_tol);
+                                                                impl.max_non_linear_iterations, 0, impl.abs_tol,
+                                                                impl.rel_tol);
     typename SUNDIALS::IDA<VectorType> time_stepper(ida_data);
 
     // Define some variables for monitoring
     uint stuck = 0;
     double stuck_t = 0.;
     uint failure_counter = 0;
+    IDACallbackDiagnostics callback_diagnostics;
+    IDACallbackTrace callback_trace(impl.ida_callback_trace, impl.ida_callback_trace_min_t,
+                                    impl.ida_callback_trace_max_lines, impl.ida_callback_trace_successes, this->Lambda);
+    IDAErrorDofMonitor<VectorType> error_dof_monitor(impl.ida_error_dof_diagnostics,
+                                                     impl.ida_error_dof_diagnostics_top_n, this->Lambda);
+    bool output_after_failure = false;
 
     // Initialize initial condition
     VectorType y = initial_data;
     VectorType y_dot = initial_data;
     y_dot *= 0.;
 
-    // Pointer to current residual for monitoring
-    VectorType *residual;
+    // Pointer to current residual for monitoring. Must be initialised before
+    // SUNDIALS::IDA calls `output_step` at the initial `t = 0` (the IDA wrapper
+    // may emit an initial-condition output before the first residual lambda
+    // has run and set this pointer). Without this placeholder the first
+    // `output_step` dereferences uninitialised garbage and the process
+    // segfaults inside `time_stepper.solve_dae`.
+    VectorType residual_placeholder = initial_data;
+    residual_placeholder *= 0.;
+    VectorType *residual = &residual_placeholder;
 
     // Tells SUNDIALS to do an internal reset, e.g. if we do local refinement
     time_stepper.solver_should_restart = [&](const double t, VectorType &sol, VectorType &sol_dot) -> bool {
@@ -86,17 +297,21 @@ namespace DiFfRG
                                    unsigned int /*step_number*/) {
       if (!is_close(last_save, t, 1e-10)) {
         assembler->set_time(t);
-        assembler->attach_data_output(*data_out, sol, Vector<double>(), sol_dot, (*residual));
-        data_out->flush(t);
+        data_out->write_frame(t, [&](auto &frame) {
+          assembler->attach_data_output(frame, sol, Vector<double>(), sol_dot, (*residual));
+        });
 
         last_save = t;
+      }
+      if (!output_after_failure && !is_close(t, 0.)) {
+        const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+        error_dof_monitor.observe(t, time_stepper, current_diagnostics, sol, ida_error_dof_callback);
       }
     };
 
     //  Calculate the residual of y_dot + F(y)
     time_stepper.residual = [&](const double t, const VectorType &y, const VectorType &y_dot, VectorType &res) -> int {
-      const auto now = std::chrono::high_resolution_clock::now();
-
+      CalcDtTimer calc_timer;
       if (is_close(t, stuck_t))
         stuck++;
       else {
@@ -104,12 +319,30 @@ namespace DiFfRG
         stuck_t = t;
       }
 
-      if (!is_close(t, 0.) && stuck > 100)
+      if (failure_counter == 0 && !is_close(t, 0.) && stuck > 100) {
+        const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+        console_out(t, "implicit residual", 1, &current_diagnostics);
+        callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "stuck", &y, &y_dot,
+                              &res);
         throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
-      if (is_close(t, 0.) && stuck > 200)
+      }
+      if (failure_counter == 0 && is_close(t, 0.) && stuck > 200) {
+        callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "stuck", &y, &y_dot,
+                              &res);
         throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
-      if (failure_counter > 200) throw std::runtime_error("timestep failure, at t = " + std::to_string(t));
-      if (!std::isfinite(y.l1_norm())) return ++failure_counter;
+      }
+      if (failure_counter > 200) {
+        callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "failure-limit", &y,
+                              &y_dot, &res);
+        throw std::runtime_error("timestep failure, at t = " + std::to_string(t));
+      }
+      if (!is_finite_vector(y) || !is_finite_vector(y_dot)) {
+        callback_diagnostics.nonfinite_solution_failures++;
+        ++failure_counter;
+        callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "nonfinite-y", &y,
+                              &y_dot, &res);
+        return recoverable_ida_callback_failure;
+      }
 
       assembler->set_time(t);
 
@@ -117,12 +350,17 @@ namespace DiFfRG
       assembler->residual(res, y, 1., y_dot, 1.);
       residual = &res;
 
-      if (!std::isfinite(res.l1_norm())) return ++failure_counter;
-
-      const auto ms_passed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-              .count();
-      console_out(t, "implicit residual", 1, ms_passed);
+      if (!std::isfinite(res.l1_norm())) {
+        callback_diagnostics.nonfinite_residual_failures++;
+        ++failure_counter;
+        callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "nonfinite-residual",
+                              &y, &y_dot, &res);
+        return recoverable_ida_callback_failure;
+      }
+      const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+      console_out(t, "implicit residual", 1, &current_diagnostics, calc_timer.lap());
+      callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "success", &y, &y_dot,
+                            &res);
 
       failure_counter = 0;
       return 0;
@@ -130,52 +368,86 @@ namespace DiFfRG
     // Calculate the jacobian d(y_dot + F(y))/dy + d(y_dot*alpha)/dy_dot
     time_stepper.setup_jacobian = [&](const double t, const VectorType &y, const VectorType &y_dot,
                                       const double alpha) -> int {
+      CalcDtTimer calc_timer;
       if (failure_counter > 200) throw std::runtime_error("timestep failure at jacobian");
 
       assembler->set_time(t);
 
       try {
-        auto now = std::chrono::high_resolution_clock::now();
+        if (!is_finite_vector(y) || !is_finite_vector(y_dot)) {
+          callback_diagnostics.jacobian_failures++;
+          ++failure_counter;
+          callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "nonfinite-state",
+                                &y, &y_dot, nullptr);
+          return recoverable_ida_callback_failure;
+        }
 
         jacobian = 0;
         assembler->jacobian(jacobian, y, 1., y_dot, alpha, 1.);
+        if (!std::isfinite(jacobian.frobenius_norm())) {
+          callback_diagnostics.jacobian_failures++;
+          ++failure_counter;
+          callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics,
+                                "nonfinite-jacobian", &y, &y_dot, nullptr);
+          return recoverable_ida_callback_failure;
+        }
         linSolver.init(jacobian);
 
-        const auto ms_passed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-                .count();
-        console_out(t, "jacobian construction", 1, ms_passed);
-        now = std::chrono::high_resolution_clock::now();
+        const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+        console_out(t, "jacobian construction", 2, &current_diagnostics, calc_timer.lap());
 
         if (linSolver.invert()) {
-          const auto ms_passed =
-              std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-                  .count();
-          console_out(t, "jacobian inversion", 2, ms_passed);
+          const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+          console_out(t, "jacobian inversion", 3, &current_diagnostics, calc_timer.lap());
         }
       } catch (std::exception &e) {
-        std::cerr << e.what() << std::endl;
-        return ++failure_counter;
+        callback_diagnostics.jacobian_failures++;
+        ++failure_counter;
+        callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "exception", &y,
+                              &y_dot, nullptr, e.what());
+        return recoverable_ida_callback_failure;
       }
 
+      callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "success", &y, &y_dot,
+                            nullptr);
       failure_counter = 0;
       return 0;
     };
 
     // Solve the linear system J dst = src
     time_stepper.solve_with_jacobian = [&](const VectorType &src, VectorType &dst, const double tol) -> int {
+      CalcDtTimer calc_timer;
       try {
-        const auto now = std::chrono::high_resolution_clock::now();
+        if (!is_finite_vector(src)) {
+          callback_diagnostics.linear_solver_failures++;
+          ++failure_counter;
+          callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics,
+                                "nonfinite-source", &src, &dst, nullptr);
+          return recoverable_ida_callback_failure;
+        }
+
         const auto sol_iterations = linSolver.solve(src, dst, tol);
+        if (!is_finite_vector(dst)) {
+          callback_diagnostics.linear_solver_failures++;
+          ++failure_counter;
+          callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics,
+                                "nonfinite-solution", &src, &dst, nullptr);
+          return recoverable_ida_callback_failure;
+        }
         if (sol_iterations >= 0) {
-          const auto ms_passed =
-              std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-                  .count();
-          console_out(stuck_t, "linear solver (" + std::to_string(sol_iterations) + " it)", 2, ms_passed);
+          const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+          console_out(stuck_t, "linear solver (" + std::to_string(sol_iterations) + " it)", 2, &current_diagnostics,
+                      calc_timer.lap());
         }
       } catch (std::exception &) {
-        return ++failure_counter;
+        callback_diagnostics.linear_solver_failures++;
+        ++failure_counter;
+        callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics, "exception",
+                              &src, &dst, nullptr);
+        return recoverable_ida_callback_failure;
       }
+      callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics, "success",
+                            &src, &dst, nullptr);
       return 0;
     };
 
@@ -183,12 +455,14 @@ namespace DiFfRG
     try {
       time_stepper.solve_dae(y, y_dot);
     } catch (const std::exception &e) {
-      spdlog::get("log")->error("Timestepping failed: {}", e.what());
+      this->log.error("Timestepping failed: {}", e.what());
+      output_after_failure = true;
       time_stepper.output_step(stuck_t, y, y_dot, 0);
       throw;
     }
 
     initial_data = y;
+    this->drain_output();
   }
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
@@ -212,22 +486,30 @@ namespace DiFfRG
     FullMatrix<NumberType> variable_jacobian_inverse(n_vars);
 
     // Create a SUNDIALS IDA object with the right settings
-    typename SUNDIALS::IDA<BlockVectorType>::AdditionalData ida_data(
-        t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5, 20, 0, impl.abs_tol, impl.rel_tol);
+    typename SUNDIALS::IDA<BlockVectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt,
+                                                                     impl.minimal_dt, 5, impl.max_non_linear_iterations,
+                                                                     0, impl.abs_tol, impl.rel_tol);
     typename SUNDIALS::IDA<BlockVectorType> time_stepper(ida_data);
 
     // Define some variables for monitoring
     uint stuck = 0;
     double stuck_t = 0.;
     uint failure_counter = 0;
+    IDACallbackDiagnostics callback_diagnostics;
+    IDACallbackTrace callback_trace(impl.ida_callback_trace, impl.ida_callback_trace_min_t,
+                                    impl.ida_callback_trace_max_lines, impl.ida_callback_trace_successes, this->Lambda);
 
     // Initialize initial condition
     BlockVectorType y = initial_data;
     BlockVectorType y_dot = initial_data;
     y_dot *= 0.;
 
-    // Pointer to current residual for monitoring
-    BlockVectorType *residual;
+    // Pointer to current residual for monitoring. See the VectorType overload
+    // for why this needs a placeholder before SUNDIALS::IDA's first
+    // `output_step` call at `t = 0`.
+    BlockVectorType residual_placeholder = initial_data;
+    residual_placeholder *= 0.;
+    BlockVectorType *residual = &residual_placeholder;
 
     // Tells SUNDIALS to do an internal reset, e.g. if we do local refinement
     time_stepper.solver_should_restart = [&](const double t, BlockVectorType &sol, BlockVectorType &sol_dot) -> bool {
@@ -261,8 +543,9 @@ namespace DiFfRG
                                    unsigned int /*step_number*/) {
       if (!is_close(last_save, t, 1e-10)) {
         assembler->set_time(t);
-        assembler->attach_data_output(*data_out, sol.block(0), sol.block(1), sol_dot.block(0), (*residual).block(0));
-        data_out->flush(t);
+        data_out->write_frame(t, [&](auto &frame) {
+          assembler->attach_data_output(frame, sol.block(0), sol.block(1), sol_dot.block(0), (*residual).block(0));
+        });
 
         last_save = t;
       }
@@ -271,8 +554,7 @@ namespace DiFfRG
     //  Calculate the residual of y_dot + F(y)
     time_stepper.residual = [&](const double t, const BlockVectorType &y, const BlockVectorType &y_dot,
                                 BlockVectorType &res) -> int {
-      const auto now = std::chrono::high_resolution_clock::now();
-
+      CalcDtTimer calc_timer;
       if (is_close(t, stuck_t, impl.minimal_dt))
         stuck++;
       else {
@@ -280,18 +562,28 @@ namespace DiFfRG
         stuck_t = t;
       }
 
-      if (!is_close(t, 0.) && stuck > 100)
+      if (failure_counter == 0 && !is_close(t, 0.) && stuck > 100) {
+        callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "stuck", &y, &y_dot,
+                              &res);
         throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
-      if (is_close(t, 0.) && stuck > 200)
+      }
+      if (failure_counter == 0 && is_close(t, 0.) && stuck > 200) {
+        callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "stuck", &y, &y_dot,
+                              &res);
         throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
+      }
       if (failure_counter > 200) {
         std::cerr << "timestep failure, at t = " << t << std::endl;
+        callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "failure-limit", &y,
+                              &y_dot, &res);
         throw std::runtime_error("timestep failure, at t = " + std::to_string(t));
       }
-      if (!std::isfinite(y.l1_norm())) {
-        if (!std::isfinite(y.block(0).l1_norm())) std::cerr << "residual: y0 is not finite" << std::endl;
-        if (!std::isfinite(y.block(1).l1_norm())) std::cerr << "residual: y1 is not finite" << std::endl;
-        return ++failure_counter;
+      if (!is_finite_vector(y) || !is_finite_vector(y_dot)) {
+        callback_diagnostics.nonfinite_solution_failures++;
+        ++failure_counter;
+        callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "nonfinite-y", &y,
+                              &y_dot, &res);
+        return recoverable_ida_callback_failure;
       }
 
       try {
@@ -302,20 +594,26 @@ namespace DiFfRG
         res.block(1) += y_dot.block(1);
         residual = &res;
       } catch (std::exception &e) {
+        callback_diagnostics.residual_exceptions++;
         std::cerr << e.what() << std::endl;
-        return ++failure_counter;
+        ++failure_counter;
+        callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "exception", &y,
+                              &y_dot, &res, e.what());
+        return recoverable_ida_callback_failure;
       }
 
       if (!std::isfinite(res.l1_norm())) {
-        if (!std::isfinite(res.block(0).l1_norm())) std::cerr << "residual: res0 is not finite" << std::endl;
-        if (!std::isfinite(res.block(1).l1_norm())) std::cerr << "residual: res1 is not finite" << std::endl;
-        return ++failure_counter;
+        callback_diagnostics.nonfinite_residual_failures++;
+        ++failure_counter;
+        callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "nonfinite-residual",
+                              &y, &y_dot, &res);
+        return recoverable_ida_callback_failure;
       }
 
-      const auto ms_passed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-              .count();
-      console_out(t, "implicit residual", 1, ms_passed);
+      const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+      console_out(t, "implicit residual", 1, &current_diagnostics, calc_timer.lap());
+      callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "success", &y, &y_dot,
+                            &res);
 
       failure_counter = 0;
       return 0;
@@ -323,10 +621,17 @@ namespace DiFfRG
     // Calculate the jacobian d(y_dot + F(y))/dy + d(y_dot*alpha)/dy_dot
     time_stepper.setup_jacobian = [&](const double t, const BlockVectorType &y, const BlockVectorType &y_dot,
                                       const double alpha) -> int {
+      CalcDtTimer calc_timer;
       if (failure_counter > 200) throw std::runtime_error("timestep failure at jacobian");
 
       try {
-        auto now = std::chrono::high_resolution_clock::now();
+        if (!is_finite_vector(y) || !is_finite_vector(y_dot)) {
+          callback_diagnostics.jacobian_failures++;
+          ++failure_counter;
+          callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "nonfinite-state",
+                                &y, &y_dot, nullptr);
+          return recoverable_ida_callback_failure;
+        }
 
         spatial_jacobian = 0;
         variable_jacobian = 0;
@@ -338,54 +643,81 @@ namespace DiFfRG
 
         linSolver.init(spatial_jacobian);
 
-        auto ms_passed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-                .count();
-        console_out(t, "jacobian construction", 1, ms_passed);
-        now = std::chrono::high_resolution_clock::now();
+        const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+        console_out(t, "jacobian construction", 2, &current_diagnostics, calc_timer.lap());
 
         linSolver.invert();
         variable_jacobian_inverse.invert(variable_jacobian);
-        ms_passed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-                .count();
-        console_out(t, "jacobian inversion", 2, ms_passed);
+        const auto current_diagnostics_after_inversion =
+            make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+        console_out(t, "jacobian inversion", 3, &current_diagnostics_after_inversion, calc_timer.lap());
 
         if (!std::isfinite(spatial_jacobian.frobenius_norm())) {
-          std::cerr << "spatial_jacobian is not finite" << std::endl;
-          return ++failure_counter;
+          callback_diagnostics.jacobian_failures++;
+          ++failure_counter;
+          callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics,
+                                "nonfinite-spatial-jacobian", &y, &y_dot, nullptr);
+          return recoverable_ida_callback_failure;
         }
         if (!std::isfinite(variable_jacobian.frobenius_norm())) {
-          std::cerr << "variable_jacobian is not finite" << std::endl;
-          return ++failure_counter;
+          callback_diagnostics.jacobian_failures++;
+          ++failure_counter;
+          callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics,
+                                "nonfinite-variable-jacobian", &y, &y_dot, nullptr);
+          return recoverable_ida_callback_failure;
         }
       } catch (std::exception &e) {
+        callback_diagnostics.jacobian_failures++;
         std::cerr << e.what() << std::endl;
-        return ++failure_counter;
+        ++failure_counter;
+        callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "exception", &y,
+                              &y_dot, nullptr, e.what());
+        return recoverable_ida_callback_failure;
       }
 
+      callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "success", &y, &y_dot,
+                            nullptr);
       failure_counter = 0;
       return 0;
     };
 
     // Solve the linear system J dst = src
     time_stepper.solve_with_jacobian = [&](const BlockVectorType &src, BlockVectorType &dst, const double tol) -> int {
+      CalcDtTimer calc_timer;
       try {
-        const auto now = std::chrono::high_resolution_clock::now();
+        if (!is_finite_vector(src)) {
+          callback_diagnostics.linear_solver_failures++;
+          ++failure_counter;
+          callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics,
+                                "nonfinite-source", &src, &dst, nullptr);
+          return recoverable_ida_callback_failure;
+        }
 
         const auto sol_iterations = linSolver.solve(src.block(0), dst.block(0), tol);
         variable_jacobian_inverse.vmult(dst.block(1), src.block(1));
+        if (!is_finite_vector(dst)) {
+          callback_diagnostics.linear_solver_failures++;
+          ++failure_counter;
+          callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics,
+                                "nonfinite-solution", &src, &dst, nullptr);
+          return recoverable_ida_callback_failure;
+        }
 
-        const auto ms_passed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-                .count();
+        const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
         if (sol_iterations >= 0)
-          console_out(stuck_t, "linear solver (" + std::to_string(sol_iterations) + " it)", 2, ms_passed);
+          console_out(stuck_t, "linear solver (" + std::to_string(sol_iterations) + " it)", 2, &current_diagnostics,
+                      calc_timer.lap());
         else
-          console_out(stuck_t, "linear solver", 2, ms_passed);
+          console_out(stuck_t, "linear solver", 2, &current_diagnostics, calc_timer.lap());
       } catch (std::exception &) {
-        return ++failure_counter;
+        callback_diagnostics.linear_solver_failures++;
+        ++failure_counter;
+        callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics, "exception",
+                              &src, &dst, nullptr);
+        return recoverable_ida_callback_failure;
       }
+      callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics, "success",
+                            &src, &dst, nullptr);
       return 0;
     };
 
@@ -393,12 +725,13 @@ namespace DiFfRG
     try {
       time_stepper.solve_dae(y, y_dot);
     } catch (const std::exception &e) {
-      spdlog::get("log")->error("Timestepping failed: {}", e.what());
+      this->log.error("Timestepping failed: {}", e.what());
       time_stepper.output_step(stuck_t, y, y_dot, 0);
       throw;
     }
 
     initial_data = y;
+    this->drain_output();
   }
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
@@ -417,13 +750,20 @@ namespace DiFfRG
 
     // Create a SUNDIALS IDA object with the right settings
     typename SUNDIALS::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
-                                                                20, 0, impl.abs_tol, impl.rel_tol);
+                                                                impl.max_non_linear_iterations, 0, impl.abs_tol,
+                                                                impl.rel_tol);
     typename SUNDIALS::IDA<VectorType> time_stepper(ida_data);
 
     // Define some variables for monitoring
     uint stuck = 0;
     double stuck_t = 0.;
     uint failure_counter = 0;
+    IDACallbackDiagnostics callback_diagnostics;
+    IDACallbackTrace callback_trace(impl.ida_callback_trace, impl.ida_callback_trace_min_t,
+                                    impl.ida_callback_trace_max_lines, impl.ida_callback_trace_successes, this->Lambda);
+    IDAErrorDofMonitor<VectorType> error_dof_monitor(impl.ida_error_dof_diagnostics,
+                                                     impl.ida_error_dof_diagnostics_top_n, this->Lambda);
+    bool output_after_failure = false;
 
     // Initialize initial condition
     VectorType y = initial_data;
@@ -439,17 +779,20 @@ namespace DiFfRG
                                    uint /*step_number*/) {
       if (!is_close(last_save, t, 1e-10)) {
         assembler->set_time(t);
-        assembler->attach_data_output(*data_out, Vector<double>(), sol);
-        data_out->flush(t);
+        data_out->write_frame(t,
+                              [&](auto &frame) { assembler->attach_data_output(frame, Vector<double>(), sol); });
 
         last_save = t;
+      }
+      if (!output_after_failure && !is_close(t, 0.)) {
+        const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+        error_dof_monitor.observe(t, time_stepper, current_diagnostics, sol, ida_error_dof_callback);
       }
     };
 
     //  Calculate the residual of y_dot + F(y)
     time_stepper.residual = [&](const double t, const VectorType &y, const VectorType &y_dot, VectorType &res) -> int {
-      const auto now = std::chrono::high_resolution_clock::now();
-
+      CalcDtTimer calc_timer;
       if (is_close(t, stuck_t, impl.minimal_dt))
         stuck++;
       else {
@@ -457,17 +800,28 @@ namespace DiFfRG
         stuck_t = t;
       }
 
-      if (!is_close(t, 0.) && stuck > 100)
+      if (failure_counter == 0 && !is_close(t, 0.) && stuck > 100) {
+        callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "stuck", &y, &y_dot,
+                              &res);
         throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
-      if (is_close(t, 0.) && stuck > 200)
+      }
+      if (failure_counter == 0 && is_close(t, 0.) && stuck > 200) {
+        callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "stuck", &y, &y_dot,
+                              &res);
         throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
+      }
       if (failure_counter > 200) {
         std::cerr << "timestep failure, at t = " << t << std::endl;
+        callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "failure-limit", &y,
+                              &y_dot, &res);
         throw std::runtime_error("timestep failure, at t = " + std::to_string(t));
       }
-      if (!std::isfinite(y.l1_norm())) {
-        std::cerr << "vector is not finite" << std::endl;
-        return ++failure_counter;
+      if (!is_finite_vector(y) || !is_finite_vector(y_dot)) {
+        callback_diagnostics.nonfinite_solution_failures++;
+        ++failure_counter;
+        callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "nonfinite-y", &y,
+                              &y_dot, &res);
+        return recoverable_ida_callback_failure;
       }
 
       try {
@@ -476,31 +830,45 @@ namespace DiFfRG
         assembler->residual_variables(res, y, Vector<double>());
         res += y_dot;
       } catch (std::exception &e) {
+        callback_diagnostics.residual_exceptions++;
         std::cerr << e.what() << std::endl;
-        return ++failure_counter;
+        ++failure_counter;
+        callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "exception", &y,
+                              &y_dot, &res, e.what());
+        return recoverable_ida_callback_failure;
       }
 
       if (!std::isfinite(res.l1_norm())) {
-        std::cerr << "residual is not finite" << std::endl;
-        return ++failure_counter;
+        callback_diagnostics.nonfinite_residual_failures++;
+        ++failure_counter;
+        callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "nonfinite-residual",
+                              &y, &y_dot, &res);
+        return recoverable_ida_callback_failure;
       }
 
-      const auto ms_passed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-              .count();
-      console_out(t, "implicit residual", 1, ms_passed);
+      const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+      console_out(t, "implicit residual", 1, &current_diagnostics, calc_timer.lap());
+      callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "success", &y, &y_dot,
+                            &res);
 
       failure_counter = 0;
       return 0;
     };
     // Calculate the jacobian d(y_dot + F(y))/dy + d(y_dot*alpha)/dy_dot
-    time_stepper.setup_jacobian = [&](const double t, const VectorType &y, const VectorType & /*y_dot*/,
+    time_stepper.setup_jacobian = [&](const double t, const VectorType &y, const VectorType &y_dot,
                                       const double alpha) -> int {
+      CalcDtTimer calc_timer;
       if (failure_counter > 200) throw std::runtime_error("timestep failure at jacobian");
 
-      const auto now = std::chrono::high_resolution_clock::now();
-
       try {
+        if (!is_finite_vector(y) || !is_finite_vector(y_dot)) {
+          callback_diagnostics.jacobian_failures++;
+          ++failure_counter;
+          callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "nonfinite-state",
+                                &y, &y_dot, nullptr);
+          return recoverable_ida_callback_failure;
+        }
+
         variable_jacobian = 0;
         assembler->set_time(t);
         assembler->jacobian_variables(variable_jacobian, y, Vector<double>());
@@ -510,18 +878,25 @@ namespace DiFfRG
         variable_jacobian_inverse.invert(variable_jacobian);
 
         if (!std::isfinite(variable_jacobian.frobenius_norm())) {
-          std::cerr << "variable_jacobian is not finite" << std::endl;
-          return ++failure_counter;
+          callback_diagnostics.jacobian_failures++;
+          ++failure_counter;
+          callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics,
+                                "nonfinite-variable-jacobian", &y, &y_dot, nullptr);
+          return recoverable_ida_callback_failure;
         }
       } catch (std::exception &e) {
+        callback_diagnostics.jacobian_failures++;
         std::cerr << e.what() << std::endl;
-        return ++failure_counter;
+        ++failure_counter;
+        callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "exception", &y,
+                              &y_dot, nullptr, e.what());
+        return recoverable_ida_callback_failure;
       }
 
-      const auto ms_passed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-              .count();
-      console_out(t, "jacobian", 1, ms_passed);
+      const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+      console_out(t, "jacobian", 2, &current_diagnostics, calc_timer.lap());
+      callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "success", &y, &y_dot,
+                            nullptr);
 
       failure_counter = 0;
       return 0;
@@ -530,10 +905,31 @@ namespace DiFfRG
     // Solve the linear system J dst = src
     time_stepper.solve_with_jacobian = [&](const VectorType &src, VectorType &dst, const double) -> int {
       try {
+        if (!is_finite_vector(src)) {
+          callback_diagnostics.linear_solver_failures++;
+          ++failure_counter;
+          callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics,
+                                "nonfinite-source", &src, &dst, nullptr);
+          return recoverable_ida_callback_failure;
+        }
+
         variable_jacobian_inverse.vmult(dst, src);
+        if (!is_finite_vector(dst)) {
+          callback_diagnostics.linear_solver_failures++;
+          ++failure_counter;
+          callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics,
+                                "nonfinite-solution", &src, &dst, nullptr);
+          return recoverable_ida_callback_failure;
+        }
       } catch (std::exception &) {
-        return ++failure_counter;
+        callback_diagnostics.linear_solver_failures++;
+        ++failure_counter;
+        callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics, "exception",
+                              &src, &dst, nullptr);
+        return recoverable_ida_callback_failure;
       }
+      callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics, "success",
+                            &src, &dst, nullptr);
       return 0;
     };
 
@@ -541,12 +937,14 @@ namespace DiFfRG
     try {
       time_stepper.solve_dae(y, y_dot);
     } catch (const std::exception &e) {
-      spdlog::get("log")->error("Timestepping failed: {}", e.what());
+      this->log.error("Timestepping failed: {}", e.what());
+      output_after_failure = true;
       time_stepper.output_step(stuck_t, y, y_dot, 0);
       throw;
     }
 
     initial_data = y;
+    this->drain_output();
   }
 } // namespace DiFfRG
 
@@ -572,6 +970,42 @@ template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::S
 template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 1, DiFfRG::GMRES>;
 template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 2, DiFfRG::GMRES>;
 template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 3, DiFfRG::GMRES>;
+
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 0,
+                                               DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                               DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                               DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                               DiFfRG::ScaledUMFPack>;
+
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
+                                               DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                               DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                               DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                               DiFfRG::ScaledUMFPack>;
+
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 0,
+                                               DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                               DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                               DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                               DiFfRG::ScaledGMRES>;
+
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
+                                               DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                               DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                               DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                               DiFfRG::ScaledGMRES>;
 
 template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
                                                DiFfRG::GMRES>;

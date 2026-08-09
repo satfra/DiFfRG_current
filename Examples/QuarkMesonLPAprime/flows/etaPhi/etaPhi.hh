@@ -8,7 +8,7 @@ namespace DiFfRG { template<typename> class etaPhi_kernel;
 
 class etaPhi_integrator
 {
-public:   etaPhi_integrator(DiFfRG::QuadratureProvider& quadrature_provider, const DiFfRG::JSONValue& json)
+public:   etaPhi_integrator(DiFfRG::QuadratureProvider& quadrature_provider, const DiFfRG::ConfigTree& json)
 ;
 
 

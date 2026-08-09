@@ -1,9 +1,10 @@
 #pragma once
 
 // DiFfRG
-#include <DiFfRG/common/json.hh>
+#include <DiFfRG/common/config_tree.hh>
 #include <DiFfRG/common/quadrature/matsubara.hh>
 #include <DiFfRG/common/quadrature/quadrature.hh>
+#include <DiFfRG/common/run_logger.hh>
 
 // standard library
 #include <mutex>
@@ -42,6 +43,7 @@ namespace DiFfRG
       }
 
       void set_verbosity(int v);
+      void set_log_port(LogPort port) { log = std::move(port); }
 
       void set_vacuum_quad_size(const int size);
       void set_min_matsubara_size(const int value);
@@ -74,6 +76,7 @@ namespace DiFfRG
       int max_matsubara_size = 128;
 
       std::mutex m_mutex;
+      LogPort log;
     };
 
     /**
@@ -102,6 +105,7 @@ namespace DiFfRG
       }
 
       void set_verbosity(int v);
+      void set_log_port(LogPort port) { log = std::move(port); }
 
     private:
       Quadrature<double> &get_quadrature_d(const size_t order, const QuadratureType type);
@@ -125,6 +129,7 @@ namespace DiFfRG
       int verbosity = 0;
 
       std::mutex m_mutex;
+      LogPort log;
     };
   } // namespace internal
 
@@ -137,7 +142,7 @@ namespace DiFfRG
   {
   public:
     QuadratureProvider();
-    QuadratureProvider(const JSONValue &json);
+    explicit QuadratureProvider(const ConfigTree &config, LogPort log = {});
 
     /**
      * @brief Get the quadrature points for a quadrature of size quadrature_size.

@@ -7,7 +7,7 @@
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/common/abstract_data.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/timestepping/implicit_euler.hh>
 #include <DiFfRG/timestepping/linear_solver/GMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/UMFPack.hh>
@@ -34,7 +34,7 @@ namespace DiFfRG
     Newton<VectorType> newton(impl.abs_tol, impl.rel_tol, 2e-1, 11, 21);
 
     // create time controller instance
-    TC_PI tc(newton, 1, start, stop, impl.dt, impl.minimal_dt, impl.maximal_dt, output_dt);
+    TC_PI tc(newton, 1, start, stop, impl.dt, impl.minimal_dt, impl.maximal_dt, output_dt, this->log);
     assembler->set_time(start);
 
     // create jacobian and solver for inverse jacobian
@@ -43,47 +43,33 @@ namespace DiFfRG
 
     // all functions for assembly of the problem and linear solving
     newton.residual = [&](VectorType &res, const VectorType &u) {
-      const auto now = std::chrono::high_resolution_clock::now();
-
+      CalcDtTimer calc_timer;
       res = 0;
       assembler->residual(res, u, tc.get_dt(), 1);
       assembler->mass(res, old_solution, -1.);
 
-      const auto ms_passed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-              .count();
-      console_out(tc.get_t(), "implicit residual", 1, ms_passed);
+      console_out(tc.get_t(), "implicit residual", 1, nullptr, calc_timer.lap());
     };
 
     newton.update_jacobian = [&](const VectorType &u) {
-      auto now = std::chrono::high_resolution_clock::now();
-
+      CalcDtTimer calc_timer;
       jacobian = 0;
       assembler->jacobian(jacobian, u, tc.get_dt(), 1);
       linSolver.init(jacobian);
 
-      const auto ms_passed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-              .count();
-      console_out(tc.get_t(), "jacobian construction", 1, ms_passed);
-      now = std::chrono::high_resolution_clock::now();
+      console_out(tc.get_t(), "jacobian construction", 2, nullptr, calc_timer.lap());
 
       if (linSolver.invert()) {
-        const auto ms_passed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-                .count();
-        console_out(tc.get_t(), "jacobian inversion", 2, ms_passed);
+        console_out(tc.get_t(), "jacobian inversion", 3, nullptr, calc_timer.lap());
       }
     };
 
     newton.lin_solve = [&](VectorType &Du, const VectorType &res) {
-      const auto now = std::chrono::high_resolution_clock::now();
+      CalcDtTimer calc_timer;
       const auto sol_iterations = linSolver.solve(res, Du, std::min(impl.abs_tol, impl.rel_tol * res.l2_norm()));
       if (sol_iterations >= 0) {
-        const auto ms_passed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-                .count();
-        console_out(tc.get_t(), "linear solver (" + std::to_string(sol_iterations) + " it)", 2, ms_passed);
+        console_out(tc.get_t(), "linear solver (" + std::to_string(sol_iterations) + " it)", 2, nullptr,
+                    calc_timer.lap());
       }
     };
 
@@ -93,12 +79,12 @@ namespace DiFfRG
     auto save_data = [&](double t) {
       assembler->set_time(t);
 
-      if (t > start)
-        assembler->attach_data_output(*data_out, solution, newton.get_residual());
-      else
-        assembler->attach_data_output(*data_out, solution);
-
-      data_out->flush(t);
+      data_out->write_frame(t, [&](auto &frame) {
+        if (t > start)
+          assembler->attach_data_output(frame, solution, newton.get_residual());
+        else
+          assembler->attach_data_output(frame, solution);
+      });
     };
     auto dt_step = [&](double t, double dt) {
       assembler->set_time(t + dt);
@@ -115,6 +101,7 @@ namespace DiFfRG
     }
 
     initial_condition->spatial_data() = solution;
+    this->drain_output();
   }
 } // namespace DiFfRG
 

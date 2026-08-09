@@ -12,7 +12,7 @@
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
-#include <DiFfRG/discretization/data/data_output.hh>
+#include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/timestepping/boost_abm.hh>
 
 namespace DiFfRG
@@ -79,17 +79,16 @@ namespace DiFfRG
 
         assembler->set_time(t_save);
 
-        assembler->attach_data_output(*data_out, output_dealii, Vector<double>(), dy_dealii);
-
-        data_out->flush(t_save);
+        data_out->write_frame(t_save, [&](auto &frame) {
+          assembler->attach_data_output(frame, output_dealii, Vector<double>(), dy_dealii);
+        });
       }
     };
 
     double stuck_t = 0.;
     uint stuck = 0;
     auto residual = [&](const Eigen::VectorXd &x, Eigen::VectorXd &dxdt, const double t) {
-      const auto now = std::chrono::high_resolution_clock::now();
-
+      CalcDtTimer calc_timer;
       if (is_close(t, stuck_t, expl.minimal_dt / 100.))
         stuck++;
       else {
@@ -111,10 +110,7 @@ namespace DiFfRG
 
       dealii_to_eigen(dy_dealii, dxdt);
 
-      const auto ms_passed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-              .count();
-      console_out(t, "explicit residual", 1, ms_passed);
+      console_out(t, "explicit residual", 1, nullptr, calc_timer.lap());
     };
 
     // Initialize initial condition
@@ -135,9 +131,10 @@ namespace DiFfRG
       output_step(y_eigen, step_time);
     }
 
-    spdlog::get("log")->info("TimeStepperBoostABM::run: finished after {} steps", step);
+    this->log.info("TimeStepperBoostABM::run: finished after {} steps", step);
 
     eigen_to_dealii(y_eigen, initial_data);
+    this->drain_output();
   }
 
   template <typename VectorType, typename SparseMatrixType, uint dim>
@@ -185,17 +182,16 @@ namespace DiFfRG
 
         assembler->set_time(t_save);
 
-        assembler->attach_data_output(*data_out, output_dealii.block(0), output_dealii.block(1), dy_dealii.block(0));
-
-        data_out->flush(t_save);
+        data_out->write_frame(t_save, [&](auto &frame) {
+          assembler->attach_data_output(frame, output_dealii.block(0), output_dealii.block(1), dy_dealii.block(0));
+        });
       }
     };
 
     double stuck_t = 0.;
     uint stuck = 0;
     auto residual = [&](const Eigen::VectorXd &x, Eigen::VectorXd &dxdt, const double t) {
-      const auto now = std::chrono::high_resolution_clock::now();
-
+      CalcDtTimer calc_timer;
       if (is_close(t, stuck_t, expl.minimal_dt / 100.))
         stuck++;
       else {
@@ -218,10 +214,7 @@ namespace DiFfRG
 
       dealii_to_eigen(dy_dealii, dxdt);
 
-      const auto ms_passed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-              .count();
-      console_out(t, "explicit residual", 1, ms_passed);
+      console_out(t, "explicit residual", 1, nullptr, calc_timer.lap());
     };
 
     // Initialize initial condition
@@ -242,9 +235,10 @@ namespace DiFfRG
       output_step(y_eigen, step_time);
     }
 
-    spdlog::get("log")->info("TimeStepperBoostABM::run: finished after {} steps", step);
+    this->log.info("TimeStepperBoostABM::run: finished after {} steps", step);
 
     eigen_to_dealii(y_eigen, initial_data);
+    this->drain_output();
   }
 
   template <typename VectorType, typename SparseMatrixType, uint dim>
@@ -283,8 +277,8 @@ namespace DiFfRG
 
         assembler->set_time(t_save);
 
-        assembler->attach_data_output(*data_out, Vector<double>(), output_dealii);
-        data_out->flush(t_save);
+        data_out->write_frame(t_save,
+                              [&](auto &frame) { assembler->attach_data_output(frame, Vector<double>(), output_dealii); });
       }
     };
 
@@ -299,8 +293,7 @@ namespace DiFfRG
     double stuck_t = 0.;
     uint stuck = 0;
     auto residual = [&](const Eigen::VectorXd &x, Eigen::VectorXd &dxdt, const double t) {
-      const auto now = std::chrono::high_resolution_clock::now();
-
+      CalcDtTimer calc_timer;
       if (is_close(t, stuck_t, expl.minimal_dt / 100.))
         stuck++;
       else {
@@ -322,10 +315,7 @@ namespace DiFfRG
       dealii_to_eigen(dy_dealii, dxdt);
       dxdt *= -1;
 
-      const auto ms_passed =
-          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - now)
-              .count();
-      console_out(t, "explicit residual", 1, ms_passed);
+      console_out(t, "explicit residual", 1, nullptr, calc_timer.lap());
     };
 
     using namespace boost::numeric::odeint;
@@ -342,9 +332,10 @@ namespace DiFfRG
       output_step(y_eigen, step_time);
     }
 
-    spdlog::get("log")->info("TimeStepperBoostABM::run_vars: finished after {} steps", step);
+    this->log.info("TimeStepperBoostABM::run_vars: finished after {} steps", step);
 
     eigen_to_dealii(y_eigen, initial_data);
+    this->drain_output();
   }
 } // namespace DiFfRG
 
