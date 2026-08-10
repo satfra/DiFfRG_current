@@ -2,6 +2,7 @@
 
 // DiFfRG
 #include <DiFfRG/common/config_tree.hh>
+#include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/quadrature/matsubara.hh>
 #include <DiFfRG/common/quadrature/quadrature.hh>
 #include <DiFfRG/common/run_logger.hh>
@@ -199,6 +200,37 @@ namespace DiFfRG
     template <typename NT = double> NT matsubara_T(const NT T, const NT typical_E)
     {
       return matsubara_storage.get_matsubara_quadrature<NT>(T, typical_E).get_T();
+    }
+
+    /**
+     * @brief Hand out one of a small pool of execution space instances, round robin.
+     *
+     * Every integrator used to default-construct its ExecutionSpace, i.e. they all shared the
+     * default stream and no two flows could ever execute concurrently -- even the ones that are
+     * mutually independent (the vertex flows of a typical RHS read the same dressings and write
+     * disjoint outputs). Handing neighbouring integrators different instances lets those overlap,
+     * which matters most for the many small launches that individually leave the device
+     * underutilised.
+     *
+     * Safe to mix with the interpolators' uploads, which fence on the host before returning, so
+     * any kernel issued afterwards on any stream already sees the new data.
+     *
+     * The pool is created lazily and shared by every integrator holding this provider. Host
+     * execution spaces have no streams to speak of, so they get a default-constructed instance.
+     */
+    template <typename ExecutionSpace> ExecutionSpace next_execution_space()
+    {
+      if constexpr (std::is_same_v<typename ExecutionSpace::memory_space, CPU_memory>) {
+        return ExecutionSpace();
+      } else {
+        static constexpr size_t pool_size = 8;
+        static std::vector<ExecutionSpace> pool = [] {
+          const std::vector<int> weights(pool_size, 1);
+          return Kokkos::Experimental::partition_space(ExecutionSpace(), weights);
+        }();
+        static size_t next = 0;
+        return pool[next++ % pool_size];
+      }
     }
 
   private:

@@ -10,6 +10,7 @@
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/coordinates/coordinates.hh>
 #include <DiFfRG/physics/integration/abstract_integrator.hh>
+#include <DiFfRG/physics/integration/map_completion.hh>
 
 // std
 #include <cstdio>
@@ -54,7 +55,8 @@ namespace DiFfRG
     QuadratureIntegrator(QuadratureProvider &quadrature_provider, const std::array<size_t, dim> &_grid_size,
                          const std::array<ctype, dim> &grid_min, const std::array<ctype, dim> &grid_max,
                          const std::array<QuadratureType, dim> &quadrature_type)
-        : quadrature_provider(quadrature_provider)
+        : space(quadrature_provider.template next_execution_space<ExecutionSpace>()),
+          quadrature_provider(quadrature_provider)
     {
       for (size_t i = 0; i < dim; ++i) {
         grid_size[i] = _grid_size[i];
@@ -377,25 +379,54 @@ namespace DiFfRG
     template <typename Coordinates, typename... Args>
     auto map_dist(NT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      // create unmanaged host view for dest
-      auto dest_view = Kokkos::View<NT *, CPU_memory, Kokkos::MemoryUnmanaged>(dest, coordinates.size());
+      const size_t n = coordinates.size();
 
       // Reuse cached device view if large enough, otherwise reallocate (grow-only)
-      if (m_dest_device_size < coordinates.size()) {
-        m_dest_device = Kokkos::View<NT *, ExecutionSpace>(Kokkos::view_alloc(space, "MapIntegrators_device_view"),
-                                                           coordinates.size());
-        m_dest_device_size = coordinates.size();
+      if (m_dest_device_size < n) {
+        m_dest_device =
+            Kokkos::View<NT *, ExecutionSpace>(Kokkos::view_alloc(space, "MapIntegrators_device_view"), n);
+        m_dest_device_size = n;
       }
-      auto dest_device_view =
-          Kokkos::View<NT *, ExecutionSpace>(m_dest_device, Kokkos::make_pair(size_t(0), coordinates.size()));
+      auto dest_device_view = Kokkos::View<NT *, ExecutionSpace>(m_dest_device, Kokkos::make_pair(size_t(0), n));
 
-      // run the map function
-      map(space, dest_device_view, coordinates, args...);
+      if constexpr (std::is_same_v<typename ExecutionSpace::memory_space, CPU_memory>) {
+        // Host backend: "device" memory is host memory, so there is nothing to stage or defer.
+        auto dest_view = Kokkos::View<NT *, CPU_memory, Kokkos::MemoryUnmanaged>(dest, n);
+        map(space, dest_device_view, coordinates, args...);
+        Kokkos::deep_copy(space, dest_view, dest_device_view);
+        return space;
+      } else {
+        // One staging buffer per integrator, so a second map() before a flush would clobber the
+        // first result. Land the outstanding one first; in the normal call pattern (each flow
+        // mapped once per flush interval) this never triggers.
+        if (m_dest_pinned_size > 0 && MapCompletion::has_pending(m_dest_pinned.data())) MapCompletion::flush();
 
-      // copy the result from device to the unmanaged host view
-      Kokkos::deep_copy(space, dest_view, dest_device_view);
+        if (m_dest_pinned_size < n) {
+          m_dest_pinned = Kokkos::View<NT *, PinnedHost_memory>(
+              Kokkos::view_alloc(Kokkos::WithoutInitializing, "MapIntegrators_pinned_view"), n);
+          m_dest_pinned_size = n;
+        }
+        auto pinned_view =
+            Kokkos::View<NT *, PinnedHost_memory>(m_dest_pinned, Kokkos::make_pair(size_t(0), n));
 
-      return space;
+        map(space, dest_device_view, coordinates, args...);
+
+        // Genuinely asynchronous, because the destination is page-locked.
+        Kokkos::deep_copy(space, pinned_view, dest_device_view);
+
+        if (MapCompletion::deferral_enabled()) {
+          // Caller has promised not to read `dest` until its DeferredMaps scope closes, so leave
+          // the result in staging and keep the host running ahead of the device.
+          MapCompletion::record(dest, m_dest_pinned.data(), n * sizeof(NT));
+        } else {
+          // Original contract: `dest` is valid on return. Still cheaper than the old copy straight
+          // into pageable memory, which the driver had to stage anyway.
+          space.fence();
+          std::memcpy(dest, m_dest_pinned.data(), n * sizeof(NT));
+        }
+
+        return space;
+      }
     }
 
   protected:
@@ -419,6 +450,9 @@ namespace DiFfRG
     mutable std::string m_positions_key;
     mutable Kokkos::View<NT *, ExecutionSpace> m_dest_device;
     mutable size_t m_dest_device_size = 0;
+    // Page-locked staging for the result copy; see map_dist() and MapCompletion.
+    mutable Kokkos::View<NT *, PinnedHost_memory> m_dest_pinned;
+    mutable size_t m_dest_pinned_size = 0;
     mutable Kokkos::View<NT, typename ExecutionSpace::memory_space> m_result_view;
     mutable typename Kokkos::View<NT, typename ExecutionSpace::memory_space>::host_mirror_type m_result_host;
     mutable bool m_result_views_initialized = false;

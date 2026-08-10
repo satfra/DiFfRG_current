@@ -1,6 +1,5 @@
 // DiFfRG
 #include <DiFfRG/common/configuration_helper.hh>
-#include <DiFfRG/common/fast_interp.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/common/eom_config.hh>
 #include <DiFfRG/discretization/data/output_path.hh>
@@ -18,9 +17,6 @@ namespace DiFfRG
       args.emplace_back(argv[i]);
     try {
       parse();
-      // Runs before any model (and hence any interpolator) is constructed — the interpolators
-      // sample this flag once at construction. See fast_interp.hh.
-      set_fast_interp_lookups(config.get_bool("/discretization/fastInterpLookups", false));
     } catch (const std::exception &e) {
       std::cerr << "While reading the CLI arguments an error occurred:\n    " << e.what() << "\n" << std::endl;
       print_usage_message();
@@ -28,10 +24,7 @@ namespace DiFfRG
     }
   }
 
-  ConfigurationHelper::ConfigurationHelper(const ConfigTree &config) : config(config), parsed(true)
-  {
-    set_fast_interp_lookups(this->config.get_bool("/discretization/fastInterpLookups", false));
-  }
+  ConfigurationHelper::ConfigurationHelper(const ConfigTree &config) : config(config), parsed(true) {}
 
   ConfigurationHelper::ConfigurationHelper(const ConfigurationHelper &other)
   {
@@ -246,8 +239,6 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
            {"overintegration", 0},
            {"output_subdivisions", 2},
 
-           {"fastInterpLookups", false},
-
            {"EoM_abs_tol", Config::EoMConfig::default_abs_tol},
            {"EoM_max_iter", Config::EoMConfig::default_max_iter},
            {"EoM_smoothing_length", Config::EoMConfig::default_smoothing_length},
@@ -317,7 +308,6 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
               << "    batch_size                    Batch size for GPU kernel launches\n"
               << "    overintegration               Extra quadrature points beyond FE order\n"
               << "    output_subdivisions           VTK output subdivisions per cell\n"
-              << "    fastInterpLookups             Enable fast lookups for interpolation\n"
               << "    EoM_abs_tol / EoM_max_iter    In-cell EoM minimizer tolerance and iteration limit\n"
               << "    EoM_smoothing_length          Physical EoM-potential smoothing length (-1: automatic)\n"
               << "    EoM_bound_tolerance           Reference-cell active-bound tolerance\n"

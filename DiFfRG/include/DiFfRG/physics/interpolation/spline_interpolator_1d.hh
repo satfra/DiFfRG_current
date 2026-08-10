@@ -1,7 +1,6 @@
 #pragma once
 
 // DiFfRG
-#include <DiFfRG/common/fast_interp.hh>
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/discretization/coordinates/coordinates.hh>
@@ -48,8 +47,6 @@ namespace DiFfRG
       // Create host mirrors
       host_values = Kokkos::create_mirror_view(device_values);
       host_coeffs = Kokkos::create_mirror_view(device_coeffs);
-      // Tabulated inverse transform ("fastInterpLookups"): sampled ONCE here; see fast_interp.hh.
-      if (fast_interp_lookups() && size >= 2) build_inverse_table();
     }
 
     /**
@@ -62,9 +59,6 @@ namespace DiFfRG
       // Use the same data (reference-counted)
       device_values = other.device_values;
       device_coeffs = other.device_coeffs;
-      device_fastidx = other.device_fastidx;
-      m_inv_degree = other.m_inv_degree;
-      m_fast_index = other.m_fast_index;
     }
 
     KOKKOS_FUNCTION ~SplineInterpolator1D() { KOKKOS_IF_ON_HOST((if (owns_other_instance) delete other_instance;)) }
@@ -86,9 +80,7 @@ namespace DiFfRG
       // Build the spline coefficients
       build_y2(lower_y1, upper_y1);
 
-      // Copy data to device
-      Kokkos::deep_copy(device_values, host_values);
-      Kokkos::deep_copy(device_coeffs, host_coeffs);
+      upload();
     }
 
     template <typename View>
@@ -102,15 +94,17 @@ namespace DiFfRG
             "SplineInterpolator1D: You probably called update() on a copied instance. This is not allowed. "
             "You need to call update() on the original instance.");
 
-      // Copy values from input view
-      Kokkos::deep_copy(host_values, view);
+      // Copy values from input view. The space-less overload would bracket this in a global
+      // Kokkos::fence(); name the source's execution space so a host-to-host copy costs no device
+      // barrier at all (this is the path get_on() takes to refresh the CPU twin).
+      typename View::execution_space view_exec;
+      Kokkos::deep_copy(view_exec, host_values, view);
+      view_exec.fence();
 
       // Build the spline coefficients
       build_y2(lower_y1, upper_y1);
 
-      // Copy data to device
-      Kokkos::deep_copy(device_values, host_values);
-      Kokkos::deep_copy(device_coeffs, host_coeffs);
+      upload();
     }
 
     NT operator[](size_t i) const
@@ -142,44 +136,7 @@ namespace DiFfRG
      *
      * The returned index is only meaningful for interpolators sharing this coordinate system.
      */
-    ctype KOKKOS_FUNCTION index(const typename Coordinates::ctype x) const
-    {
-      // m_fast_index is uniform across a launch (sampled once at construction from the
-      // fastInterpLookups parameter), so this branch never diverges.
-      if (m_fast_index) return index_tab(x);
-      return coordinates.backward(x);
-    }
-
-    /**
-     * @brief Tabulated inverse transform: binary search over the grid node positions plus a
-     * per-cell Chebyshev polynomial (Clenshaw evaluation), ~50 device ops against the ~155-400 of
-     * the analytic backward() on the logarithmic grids. Built at construction against the exact
-     * analytic transform; reproduces it to <= 1e-12 in index units (verified by a dense sweep in
-     * build_inverse_table). The input is clamped to the grid span first — identical post-at()
-     * behaviour, since at() clamps the index anyway.
-     */
-    ctype KOKKOS_FUNCTION index_tab(const ctype y_in) const
-    {
-      const int n = static_cast<int>(size);
-      const ctype y = Kokkos::max(device_fastidx(0), Kokkos::min(y_in, device_fastidx(n - 1)));
-      // largest cell lo in [0, n-2] with node(lo) <= y
-      int lo = 0, len = n - 1;
-      while (len > 1) {
-        const int half = len >> 1;
-        lo = (device_fastidx(lo + half) <= y) ? lo + half : lo;
-        len -= half;
-      }
-      const int base = n + lo * (m_inv_degree + 2);
-      const ctype t = ctype(2) * (y - device_fastidx(lo)) * device_fastidx(base) - ctype(1);
-      // Clenshaw over the Chebyshev coefficients (the fit is of backward itself, absolute index)
-      ctype b1 = 0, b2 = 0;
-      for (int k = m_inv_degree; k >= 1; --k) {
-        const ctype b0 = ctype(2) * t * b1 - b2 + device_fastidx(base + 1 + k);
-        b2 = b1;
-        b1 = b0;
-      }
-      return t * b1 - b2 + device_fastidx(base + 1);
-    }
+    ctype KOKKOS_FUNCTION index(const typename Coordinates::ctype x) const { return coordinates.backward(x); }
 
     /**
      * @brief Interpolate at a grid index previously obtained from index().
@@ -243,8 +200,13 @@ namespace DiFfRG
           owns_other_instance = true;
           other_instance->other_instance = const_cast<std::decay_t<decltype(*this)> *>(this);
         }
-        // Copy the data from the current instance to the new one
-        other_instance->update(host_values);
+        // Refresh the twin only if this instance has been updated since it was last synced.
+        // update() is an O(size) tridiagonal solve plus two copies, and callers hit this in tight
+        // loops (see m_version).
+        if (m_mirror_version != m_version) {
+          other_instance->update(host_values);
+          m_mirror_version = m_version;
+        }
         // Return the new instance
         return *other_instance;
       }
@@ -263,6 +225,11 @@ namespace DiFfRG
         throw std::runtime_error(
             "SplineInterpolator1D: You probably called data() on a copied instance. This is not allowed. "
             "You need to call data() on the original instance.");
+      // This hands out a WRITE handle to the host values, so conservatively invalidate the CPU/GPU
+      // twin: a caller that mutates through it and then calls CPU()/GPU() must still see its edit,
+      // which is what the unconditional refresh used to guarantee. Read-only users pay one extra
+      // mirror rebuild.
+      ++m_version;
       return host_values.data();
     }
 
@@ -282,94 +249,35 @@ namespace DiFfRG
     HostValueViewType host_values;
     HostCoeffViewType host_coeffs;
 
-    // Tabulated inverse transform ("fastInterpLookups"). Layout of device_fastidx:
-    //   [0 .. size-1]                                  node positions forward(i)
-    //   [size + i*(deg+2) .. size + (i+1)*(deg+2)-1]   cell i record: { invw, ch0 .. ch<deg> }
-    // where p(t) = Clenshaw(ch, 2*(y-node_i)*invw - 1) approximates backward(y) over cell i
-    // (backward returns the absolute fractional index, so no per-cell offset is needed). Empty
-    // (and m_fast_index false) unless the fastInterpLookups parameter was set when this instance
-    // was constructed.
-    using FastIdxViewType = Kokkos::View<ctype *, DefaultMemorySpace, Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
-    FastIdxViewType device_fastidx;
-    int m_inv_degree = 0;
-    bool m_fast_index = false;
-
     /**
-     * @brief Build the tabulated inverse of coordinates.backward on the host and upload it.
+     * @brief Push the freshly built host values and coefficients to the device.
      *
-     * Chebyshev interpolation per cell, degree chosen globally as the smallest of
-     * {6, 8, 10, 12, 14, 16} for which a dense verification sweep against the analytic backward
-     * stays below 1e-12 (index units). Throws if even degree 16 leaves more than 1e-10 — that
-     * would mean the transform is not smooth on a cell, which no supported coordinate class
-     * produces.
+     * Uses the execution-space overload of deep_copy rather than the space-less one. The
+     * space-less overload brackets EVERY copy with a global Kokkos::fence(), which synchronizes
+     * all execution space instances of all enabled backends — measured at ~11.4 cudaDeviceSynchronize
+     * calls per copy, i.e. ~98k device-wide barriers in a single 425-RHS YangMills solve. The two
+     * copies here only need to be ordered against the kernels that read them, which share this
+     * execution space instance, so a stream-local fence is sufficient.
+     *
+     * The trailing fence is NOT optional: it is what lets the caller immediately refill
+     * host_values/host_coeffs on the next update() without racing an in-flight H2D copy. Dropping
+     * it requires double-buffering the host staging arrays.
      */
-    void build_inverse_table()
+    void upload()
     {
-      const int n = static_cast<int>(size);
-      const int ncells = n - 1;
-      std::vector<double> nodes(n);
-      for (int i = 0; i < n; ++i)
-        nodes[i] = static_cast<double>(coordinates.forward(static_cast<ctype>(i)));
-
-      const double tol_target = 1e-12, tol_hard = 1e-10;
-      std::vector<double> coeffs; // ncells * (deg+1)
-      int deg = 0;
-      double worst = std::numeric_limits<double>::infinity();
-      for (const int d : {6, 8, 10, 12, 14, 16}) {
-        deg = d;
-        coeffs.assign(static_cast<size_t>(ncells) * (d + 1), 0.0);
-        worst = 0.0;
-        for (int i = 0; i < ncells; ++i) {
-          const double a = nodes[i], w = nodes[i + 1] - nodes[i];
-          // Chebyshev interpolation coefficients from the d+1 Chebyshev points of the cell
-          std::vector<double> fv(d + 1);
-          for (int j = 0; j <= d; ++j) {
-            const double xj = std::cos(M_PI * (j + 0.5) / (d + 1)); // in (-1, 1)
-            const double yj = a + 0.5 * (xj + 1.0) * w;
-            fv[j] = static_cast<double>(coordinates.backward(static_cast<ctype>(yj)));
-          }
-          for (int k = 0; k <= d; ++k) {
-            double s = 0.0;
-            for (int j = 0; j <= d; ++j)
-              s += fv[j] * std::cos(k * M_PI * (j + 0.5) / (d + 1));
-            coeffs[static_cast<size_t>(i) * (d + 1) + k] = (k == 0 ? 1.0 : 2.0) / (d + 1) * s;
-          }
-          // dense verification sweep over the cell
-          for (int j = 0; j <= 40; ++j) {
-            const double y = a + (j / 40.0) * w;
-            const double t = 2.0 * (y - a) / w - 1.0;
-            double b1 = 0.0, b2 = 0.0;
-            for (int k = d; k >= 1; --k) {
-              const double b0 = 2.0 * t * b1 - b2 + coeffs[static_cast<size_t>(i) * (d + 1) + k];
-              b2 = b1;
-              b1 = b0;
-            }
-            const double p = t * b1 - b2 + coeffs[static_cast<size_t>(i) * (d + 1)];
-            worst = std::max(worst, std::abs(p - static_cast<double>(coordinates.backward(static_cast<ctype>(y)))));
-          }
-        }
-        if (worst < tol_target) break;
-      }
-      if (worst > tol_hard)
-        throw std::runtime_error("SplineInterpolator1D: fastInterpLookups inverse table failed to reach 1e-10 (worst " +
-                                 std::to_string(worst) + ") — coordinates.backward is not smooth on a cell?");
-
-      // pack: nodes + per-cell records { invw, ch0 + i, ch1 .. chdeg }
-      device_fastidx = FastIdxViewType("SplineInterpolator1D_fastidx",
-                                       static_cast<size_t>(n) + static_cast<size_t>(ncells) * (deg + 2));
-      auto host_tab = Kokkos::create_mirror_view(device_fastidx);
-      for (int i = 0; i < n; ++i)
-        host_tab(i) = static_cast<ctype>(nodes[i]);
-      for (int i = 0; i < ncells; ++i) {
-        const size_t base = static_cast<size_t>(n) + static_cast<size_t>(i) * (deg + 2);
-        host_tab(base) = static_cast<ctype>(1.0 / (nodes[i + 1] - nodes[i]));
-        for (int k = 0; k <= deg; ++k)
-          host_tab(base + 1 + k) = static_cast<ctype>(coeffs[static_cast<size_t>(i) * (deg + 1) + k]);
-      }
-      Kokkos::deep_copy(device_fastidx, host_tab);
-      m_inv_degree = deg;
-      m_fast_index = true;
+      typename DefaultMemorySpace::execution_space exec;
+      Kokkos::deep_copy(exec, device_values, host_values);
+      Kokkos::deep_copy(exec, device_coeffs, host_coeffs);
+      exec.fence();
+      ++m_version;
     }
+
+    // Bumped by every upload(); get_on() refreshes the twin only when it has fallen behind.
+    // Without this the generated ntHoisted() helpers, which call X.CPU()(...) a handful of times
+    // per flow launch, rebuild the entire mirror spline on EVERY call -- ~20k redundant rebuilds
+    // (and, before the deep_copy fix above, ~40k device-wide barriers) in one YangMills solve.
+    size_t m_version = 1;
+    mutable size_t m_mirror_version = 0;
 
     mutable SplineInterpolator1D<NT, Coordinates, other_memory_space> *other_instance = nullptr;
     mutable bool owns_other_instance = false;
