@@ -44,6 +44,20 @@ namespace DiFfRG
 
   using CPU_memory = Kokkos::DefaultHostExecutionSpace::memory_space;
 
+  /**
+   * @brief Host memory the device can DMA to/from without staging, i.e. page-locked.
+   *
+   * A device-to-*pageable*-host `cudaMemcpyAsync` is synchronous in practice, because the driver
+   * must bounce it through its own pinned buffer; copying into this space instead is what makes an
+   * asynchronous result copy actually asynchronous. Falls back to ordinary host memory when there
+   * is no CUDA backend, where the distinction does not exist.
+   */
+#ifdef KOKKOS_ENABLE_CUDA
+  using PinnedHost_memory = Kokkos::CudaHostPinnedSpace;
+#else
+  using PinnedHost_memory = CPU_memory;
+#endif
+
   using GPU_exec = ExecutionSpaces::GPU_exec_space;
   using Threads_exec = ExecutionSpaces::Threads_exec_space;
   using TBB_exec = ExecutionSpaces::TBB_exec_space;
