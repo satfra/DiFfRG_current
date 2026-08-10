@@ -118,7 +118,7 @@ namespace DiFfRG
       if (size <= 0) throw std::invalid_argument("MatsubaraStorage: Vacuum quadrature size must be positive.");
       vacuum_quad_size = size;
     }
-    void MatsubaraStorage::set_matsubara_precision_factor(const int value)
+    void MatsubaraStorage::set_matsubara_precision_factor(const double value)
     {
       if (value < 0) throw std::invalid_argument("MatsubaraStorage: matsubara_precision_factor must be positive.");
       matsubara_precision_factor = value;
@@ -227,7 +227,7 @@ namespace DiFfRG
     const int vacuum_quad_size = config.get_uint("/integration/vacuum_quad_size", 64);
     matsubara_storage.set_vacuum_quad_size(vacuum_quad_size);
 
-    const int matsubara_precision_factor = config.get_uint("/integration/matsubara_precision_factor", 0);
+    const double matsubara_precision_factor = config.get_double("/integration/matsubara_precision_factor", 0.);
     matsubara_storage.set_matsubara_precision_factor(matsubara_precision_factor);
 
     const int min_matsubara_size = config.get_uint("/integration/min_matsubara_size", 8);

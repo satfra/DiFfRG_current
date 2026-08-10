@@ -246,6 +246,8 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
            {"overintegration", 0},
            {"output_subdivisions", 2},
 
+           {"fastInterpLookups", false},
+
            {"EoM_abs_tol", Config::EoMConfig::default_abs_tol},
            {"EoM_max_iter", Config::EoMConfig::default_max_iter},
            {"EoM_smoothing_length", Config::EoMConfig::default_smoothing_length},
@@ -300,10 +302,11 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
               << "    cos1/cos2/phi_order           Order of angular quadrature\n"
               << "    x_extent_tolerance            Tolerance for integration domain extent\n"
               << "    jacobian_quadrature_factor    Quadrature reduction factor for Jacobian assembly\n"
-              << "    vacuum_quad_size                                                               \n"
-              << "    matsubara_precision_factor                                                     \n"
-              << "    min_matsubara_size                                                             \n"
-              << "    max_matsubara_size                                                             \n"
+              << "    vacuum_quad_size              Quadrature size for temporal direction in vacuum (only applies to "
+                 "1+D integrals)\n"
+              << "    matsubara_precision_factor    Matsubara frequency precision factor\n"
+              << "    min_matsubara_size            Minimum Matsubara frequency size\n"
+              << "    max_matsubara_size            Maximum Matsubara frequency size\n"
               << "  /discretization    Spatial discretization settings\n"
               << "    fe_order                      Finite element polynomial order\n"
               << "    threads                       Number of CPU threads the whole program may use\n"
@@ -314,11 +317,12 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
               << "    batch_size                    Batch size for GPU kernel launches\n"
               << "    overintegration               Extra quadrature points beyond FE order\n"
               << "    output_subdivisions           VTK output subdivisions per cell\n"
+              << "    fastInterpLookups             Enable fast lookups for interpolation\n"
               << "    EoM_abs_tol / EoM_max_iter    In-cell EoM minimizer tolerance and iteration limit\n"
-              << "    EoM_smoothing_length           Physical EoM-potential smoothing length (-1: automatic)\n"
-              << "    EoM_bound_tolerance            Reference-cell active-bound tolerance\n"
-              << "    EoM_armijo_coefficient         Armijo sufficient-decrease coefficient\n"
-              << "    EoM_max_backtracks             Maximum line-search backtracking steps\n"
+              << "    EoM_smoothing_length          Physical EoM-potential smoothing length (-1: automatic)\n"
+              << "    EoM_bound_tolerance           Reference-cell active-bound tolerance\n"
+              << "    EoM_armijo_coefficient        Armijo sufficient-decrease coefficient\n"
+              << "    EoM_max_backtracks            Maximum line-search backtracking steps\n"
               << "    grid/*                        Grid specification (format: \"start:step:stop\")\n"
               << "    adaptivity/*                  h-adaptive mesh refinement settings\n"
               << "  /timestepping      Time integration settings\n"
