@@ -1,5 +1,6 @@
 // DiFfRG
 #include <DiFfRG/common/configuration_helper.hh>
+#include <DiFfRG/common/fast_interp.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/common/eom_config.hh>
 #include <DiFfRG/discretization/data/output_path.hh>
@@ -17,6 +18,9 @@ namespace DiFfRG
       args.emplace_back(argv[i]);
     try {
       parse();
+      // Runs before any model (and hence any interpolator) is constructed — the interpolators
+      // sample this flag once at construction. See fast_interp.hh.
+      set_fast_interp_lookups(config.get_bool("/discretization/fastInterpLookups", false));
     } catch (const std::exception &e) {
       std::cerr << "While reading the CLI arguments an error occurred:\n    " << e.what() << "\n" << std::endl;
       print_usage_message();
@@ -24,7 +28,10 @@ namespace DiFfRG
     }
   }
 
-  ConfigurationHelper::ConfigurationHelper(const ConfigTree &config) : config(config), parsed(true) {}
+  ConfigurationHelper::ConfigurationHelper(const ConfigTree &config) : config(config), parsed(true)
+  {
+    set_fast_interp_lookups(this->config.get_bool("/discretization/fastInterpLookups", false));
+  }
 
   ConfigurationHelper::ConfigurationHelper(const ConfigurationHelper &other)
   {
