@@ -41,7 +41,8 @@ namespace DiFfRG
     else
       this->precision_factor = precision_factor;
     if (precision_factor < 1e-1)
-      log.warn("MatsubaraQuadrature: precision_factor is very small (< 1e-1), which may lead to inaccurate results.");
+      std::cerr
+          << "MatsubaraQuadrature: precision_factor is very small (< 1e-1), which may lead to inaccurate results.";
 
     // This is ludicrously low, but let's cut somewhere
     if (vacuum_quad_size <= 16)
