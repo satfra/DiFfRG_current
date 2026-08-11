@@ -254,7 +254,7 @@ namespace DiFfRG
             full_args);
       };
 
-      Kokkos::parallel_for(make_kokkos_nd_range<1 + dim, ExecutionSpace>(space, {0}, extents),
+      Kokkos::parallel_for(make_kokkos_nd_range_divisible<1 + dim, ExecutionSpace>(space, {0}, extents),
                            KokkosNDLambdaWrapper<1 + dim, decltype(functor)>(functor));
 
       using TeamType = Kokkos::TeamPolicy<ExecutionSpace>::member_type;

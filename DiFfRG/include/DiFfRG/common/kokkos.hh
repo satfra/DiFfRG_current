@@ -2,7 +2,10 @@
 
 #include <DiFfRG/common/tuples.hh>
 #include <Kokkos_Core.hpp>
+#include <algorithm>
+#include <array>
 #include <type_traits>
+#include <vector>
 
 #ifdef KOKKOS_ENABLE_CUDA
 #include <cuda/std/array>
@@ -232,6 +235,131 @@ namespace DiFfRG
 #endif
   template <int dim, typename ExecutionSpace> using KokkosNDRange = KokkosNDRangeHelper<dim, ExecutionSpace>::type;
 
+  // Use a tile whose every dimension DIVIDES its extent, instead of Kokkos' heuristic.
+  //
+  // Kokkos picks a tile by halving its recommended tile until the product fits under
+  // min(512, LaunchBounds::maxTperB) -- so every tile dimension it can produce is the recommendation
+  // divided by a power of two. When an extent is not a multiple of that, the boundary tile launches
+  // masked-off lanes that occupy warp slots and do no work.
+  //
+  // That is not hypothetical here. Every QCD_Nf2 model uses angular order 6, and the shipped
+  // LB=128 gives tile {16,2,4,1,1} on the rank-5 flows: extent 6 against tile 4 is ceil(6/4)=2 tiles
+  // covering 8 slots, i.e. 4/3 of the threads launched for 1 unit of work. Since dim0 x dim1 = 32 is
+  // exactly one warp, the masked lanes form whole dead warps. Measured masked fractions at LB=128
+  // (numtracer/gpubench/tools/tilewaste.py): vacuum no_mesons 1.255x, with_mesons 1.306x,
+  // with_mesons_3D 1.299x, finite_T no_mesons 1.314x -- and YangMills 1.000x, because its angular
+  // orders are 8, which the power-of-two tile does divide.
+  //
+  // This is what the A100 LaunchBounds sweep actually measured. LB=96 and LB=64 both collapse the
+  // tile to {16,2,2,1,1}, which divides 6 -- and LB=64 came out 8.0% faster than LB=128 at
+  // *byte-identical* registers (255), spill (1864 B) and occupancy (12.5%), which no occupancy story
+  // explains. Per-flow it splits perfectly: the three rank-5 flows (the only ones with masked lanes)
+  // gained 21.7-24.2% against 25.0% predicted from the masked fraction alone, while every rank-4
+  // flow -- with nothing to recover -- got 0-21.6% *slower* from the smaller block.
+  //
+  // Set -DDIFFRG_DIVISIBLE_TILE=0 to restore Kokkos' heuristic (the A/B control).
+#ifndef DIFFRG_DIVISIBLE_TILE
+#define DIFFRG_DIVISIBLE_TILE 1
+#endif
+
+  /**
+   * @brief A tile whose every dimension divides its extent, so no lane is launched masked.
+   *
+   * @param extents      iteration-space extents
+   * @param kokkos_tile  the tile Kokkos would have chosen; used as the seed and as the tie-breaker,
+   *                     so this function inherits Kokkos' architecture-specific recommendation
+   *                     rather than duplicating it (which would silently drift on a Kokkos bump)
+   * @param budget       maximum tile product, i.e. the block size ceiling
+   *
+   * Among all tiles that divide their extents and fit the budget, take the largest product -- a
+   * bigger block means fewer blocks and less of the register file lost to per-warp allocation
+   * granularity -- breaking ties toward Kokkos' shape, which encodes the coalescing preference on
+   * dim 0. Returns `kokkos_tile` unchanged when it already divides everything, so architectures and
+   * models that were already clean (e.g. YangMills, whose orders are 8) are untouched.
+   */
+  template <int dim>
+  device::array<size_t, dim> compute_divisible_tile(const device::array<size_t, dim> &extents,
+                                                    const device::array<size_t, dim> &kokkos_tile, size_t budget)
+  {
+    bool already_divides = true;
+    for (int i = 0; i < dim; ++i)
+      if (kokkos_tile[i] == 0 || extents[i] % kokkos_tile[i] != 0) already_divides = false;
+    if (already_divides) return kokkos_tile;
+
+    // Candidate tile values per dimension: the divisors of the extent that fit the budget. Extents
+    // here are quadrature orders and grid sizes (order 10-100), so these lists are short and the
+    // search below visits a few thousand nodes at worst -- negligible against a millisecond kernel.
+    std::array<std::vector<size_t>, dim> candidates;
+    for (int i = 0; i < dim; ++i) {
+      const size_t cap = std::min<size_t>(extents[i], budget);
+      for (size_t d = 1; d <= cap; ++d)
+        if (extents[i] % d == 0) candidates[i].push_back(d);
+      if (candidates[i].empty()) candidates[i].push_back(1); // extent 0: degenerate, launch nothing
+    }
+
+    // Ranking, in order:
+    //  (1) whole warps -- a block that is not a multiple of 32 pads its last warp with dead lanes,
+    //      which is the very defect being fixed, only at warp instead of tile granularity;
+    //  (2) largest block -- fewer blocks, and the register file is handed out per warp;
+    //  (3) closest to Kokkos' shape, measured as sum |log2(tile/kokkos)| so the metric is
+    //      scale-free: 16->64 costs 2 and 4->2 costs 1, which stops the search from collapsing the
+    //      angular dimensions to 1 just to inflate dim 0;
+    //  (4) tile weight as far forward as possible, since dim 0 is the contiguous one under
+    //      LayoutLeft and a wider dim-0 tile coalesces the cache write better.
+    constexpr size_t warp = 32;
+    const auto log_distance = [&](const device::array<size_t, dim> &tile) {
+      double d = 0.;
+      for (int i = 0; i < dim; ++i)
+        d += std::abs(std::log2(static_cast<double>(tile[i]) / static_cast<double>(kokkos_tile[i])));
+      return d;
+    };
+    const auto lexicographically_greater = [](const device::array<size_t, dim> &a,
+                                              const device::array<size_t, dim> &b) {
+      for (int i = 0; i < dim; ++i)
+        if (a[i] != b[i]) return a[i] > b[i];
+      return false;
+    };
+
+    device::array<size_t, dim> best{}, current{};
+    size_t best_product = 0;
+    double best_distance = 0.;
+    bool best_whole_warps = false, have_best = false;
+
+    const auto visit = [&](auto &&self, int i, size_t product) -> void {
+      if (i == dim) {
+        const bool whole_warps = (product % warp == 0);
+        const double distance = log_distance(current);
+        bool better;
+        if (!have_best)
+          better = true;
+        else if (whole_warps != best_whole_warps)
+          better = whole_warps;
+        else if (product != best_product)
+          better = product > best_product;
+        else if (std::abs(distance - best_distance) > 1e-9)
+          better = distance < best_distance;
+        else
+          better = lexicographically_greater(current, best);
+        if (better) {
+          best = current;
+          best_product = product;
+          best_distance = distance;
+          best_whole_warps = whole_warps;
+          have_best = true;
+        }
+        return;
+      }
+      for (const size_t d : candidates[i]) {
+        if (product * d > budget) break; // candidates are ascending, so nothing further fits either
+        current[i] = d;
+        self(self, i + 1, product * d);
+      }
+    };
+    visit(visit, 0, 1);
+
+    return have_best ? best : kokkos_tile;
+  }
+
   /**
    * @brief Compute clamped tile sizes for MDRangePolicy so that the product of tile dimensions does not exceed
    * max_threads. Fills from the innermost (last) dimension outward.
@@ -287,6 +415,41 @@ namespace DiFfRG
       }
       return KokkosNDRange<dim, ExecutionSpace>(space, start_view, end_view, tile_view);
     }
+  }
+
+  /**
+   * @brief Like `make_kokkos_nd_range`, but re-tiled so no lane is launched masked.
+   *
+   * Builds the policy once with Kokkos' own tiling to read back what it chose (`m_tile`), then
+   * rebuilds with a divisibility-corrected tile of at most the same product. Because the product
+   * never grows, this cannot trip Kokkos' "tile dimensions exceed LaunchBounds" abort
+   * (KokkosExp_MDRangePolicy.hpp:449-462).
+   *
+   * Only for `parallel_for` over a write-per-thread range. Do NOT use it on the `parallel_reduce`
+   * paths: there the tile shape sets the reduction tree, so re-tiling would not be bit-identical.
+   */
+  template <int dim, typename ExecutionSpace>
+  auto make_kokkos_nd_range_divisible(ExecutionSpace &space, const device::array<size_t, dim> start,
+                                      const device::array<size_t, dim> end)
+  {
+    auto policy = make_kokkos_nd_range<dim, ExecutionSpace>(space, start, end);
+#if DIFFRG_DIVISIBLE_TILE
+    if constexpr (dim > 1) {
+      device::array<size_t, dim> extents, kokkos_tile;
+      size_t budget = 1;
+      bool changed = false;
+      for (int i = 0; i < dim; ++i) {
+        extents[i] = end[i] - start[i];
+        kokkos_tile[i] = static_cast<size_t>(policy.m_tile[i]);
+        budget *= kokkos_tile[i];
+      }
+      const auto tile = compute_divisible_tile<dim>(extents, kokkos_tile, budget);
+      for (int i = 0; i < dim; ++i)
+        changed |= (tile[i] != kokkos_tile[i]);
+      if (changed) return make_kokkos_nd_range<dim, ExecutionSpace>(space, start, end, tile);
+    }
+#endif
+    return policy;
   }
 
   template <int dim, typename TeamType>
