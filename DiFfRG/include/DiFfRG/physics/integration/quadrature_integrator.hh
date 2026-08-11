@@ -245,12 +245,22 @@ namespace DiFfRG
             weight *= w[i][idx[1 + i]] * scale[i];
           }
 
-          // make a tuple of all arguments
-          const auto full_args = device::tuple_cat(x, pos, m_args);
-
-          device::apply([&](const auto &...iargs) { subview() = weight * KERNEL::kernel(iargs...); }, full_args);
+          // Apply x/pos and the trailing arguments as two NESTED packs. Do not be tempted to
+          // tuple_cat them into one tuple and apply that once: tuple_cat builds a by-value object,
+          // and m_args holds every interpolator by value (device::make_tuple decays), so the
+          // concatenated tuple is a full per-thread copy of all of them in local memory. That cost
+          // 3576 B of stack frame on QCD_Nf2 (13 interpolators x 272 B) -- 89% of that binary's
+          // 4000 B frame -- and 2.3x of runtime, measured. Applying an *lvalue* tuple binds
+          // references instead, and KERNEL::kernel takes all of them by const&.
+          // See docs/NUMTRACER_PER_THREAD_FRAME.md in the numtracer repo.
+          device::apply(
+              [&](const auto &...xargs) {
+                device::apply([&](const auto &...iargs) { subview() = weight * KERNEL::kernel(xargs..., iargs...); },
+                              m_args);
+              },
+              device::tuple_cat(x, pos));
         };
-        Kokkos::parallel_for(make_kokkos_nd_range<1 + dim, ExecutionSpace>(space, {0}, extents),
+        Kokkos::parallel_for(make_kokkos_nd_range_divisible<1 + dim, ExecutionSpace>(space, {0}, extents),
                              KokkosNDLambdaWrapper<1 + dim, decltype(functor)>(functor));
       } else {
         auto functor = KOKKOS_LAMBDA(const device::array<size_t, 1 + dim> &idx)
@@ -269,12 +279,22 @@ namespace DiFfRG
             weight *= w[i][idx[1 + i]] * scale[i];
           }
 
-          // make a tuple of all arguments
-          const auto full_args = device::tuple_cat(x, pos, m_args);
-
-          device::apply([&](const auto &...iargs) { subview() = weight * KERNEL::kernel(iargs...); }, full_args);
+          // Apply x/pos and the trailing arguments as two NESTED packs. Do not be tempted to
+          // tuple_cat them into one tuple and apply that once: tuple_cat builds a by-value object,
+          // and m_args holds every interpolator by value (device::make_tuple decays), so the
+          // concatenated tuple is a full per-thread copy of all of them in local memory. That cost
+          // 3576 B of stack frame on QCD_Nf2 (13 interpolators x 272 B) -- 89% of that binary's
+          // 4000 B frame -- and 2.3x of runtime, measured. Applying an *lvalue* tuple binds
+          // references instead, and KERNEL::kernel takes all of them by const&.
+          // See docs/NUMTRACER_PER_THREAD_FRAME.md in the numtracer repo.
+          device::apply(
+              [&](const auto &...xargs) {
+                device::apply([&](const auto &...iargs) { subview() = weight * KERNEL::kernel(xargs..., iargs...); },
+                              m_args);
+              },
+              device::tuple_cat(x, pos));
         };
-        Kokkos::parallel_for(make_kokkos_nd_range<1 + dim, ExecutionSpace>(space, {0}, extents),
+        Kokkos::parallel_for(make_kokkos_nd_range_divisible<1 + dim, ExecutionSpace>(space, {0}, extents),
                              KokkosNDLambdaWrapper<1 + dim, decltype(functor)>(functor));
       }
 
@@ -338,9 +358,17 @@ namespace DiFfRG
               } else {
                 pos = coordinates.forward(coordinates.from_linear_index(k));
               }
-              const auto full_args = device::tuple_cat(pos, m_args);
+              // Nested packs, not tuple_cat -- same reason as the phase-1 functor above. This
+              // kernel is only 0.3-4% of GPU time (docs/NUMTRACER_GPU_INVESTIGATION.md) but it
+              // carried the whole per-thread copy too: 3544 B of stack frame on a kernel that does
+              // almost no arithmetic.
               integral_view(k) =
-                  res + device::apply([&](const auto &...iargs) { return KERNEL::constant(iargs...); }, full_args);
+                  res + device::apply(
+                            [&](const auto &...pargs) {
+                              return device::apply(
+                                  [&](const auto &...iargs) { return KERNEL::constant(pargs..., iargs...); }, m_args);
+                            },
+                            pos);
             });
           });
     }
