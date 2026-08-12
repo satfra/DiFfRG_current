@@ -113,6 +113,54 @@ TEST_CASE("Test FE output on Constant model", "[output][cg]")
   std::cout << "FEOutput finished after " << timer.wall_time() << " seconds." << std::endl;
 }
 
+// With /output/vtk off the worker thread has nothing to do -- its whole body is guarded on
+// save_vtk -- so spawning and joining one per frame is pure overhead. That is exactly the
+// configuration an HDF5-only cluster run uses, which is why it is worth pinning.
+TEST_CASE("FEOutput spawns no writer thread when VTK is disabled", "[output][cg][lifecycle]")
+{
+  DiFfRG::Init();
+
+  using namespace dealii;
+  using namespace DiFfRG;
+
+  constexpr uint dim = 1;
+  using Model = Testing::ModelConstant<dim>;
+  using Discretization = CG::Discretization<typename Model::Components, double, RectangularMesh<dim>>;
+  using VectorType = typename Discretization::VectorType;
+
+  ConfigTree json = json::value({{"physical", {}},
+                                 {"discretization",
+                                  {{"fe_order", 1},
+                                   {"mesh_workers", 1},
+                                   {"batch_size", 16},
+                                   {"overintegration", 0},
+                                   {"output_subdivisions", 1},
+                                   {"EoM_abs_tol", 1e-10},
+                                   {"EoM_max_iter", 0},
+                                   {"grid", {{"x_grid", "0:0.25:1"}, {"y_grid", "0:1:1"}, {"z_grid", "0:1:1"}}}}},
+                                 {"output", {{"verbosity", 0}, {"vtk", false}}}});
+
+  Testing::PhysicalParameters p_prm = {0., 1.};
+  Model model(p_prm);
+  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  FE::FlowingVariables initial_condition(discretization);
+  initial_condition.interpolate(model);
+
+  auto output_path = OutputPath::temporary();
+  FEOutput<dim, VectorType> fe_output(output_path.root().string(), "novtk", "fields",
+                                      Config::OutputSettings(json));
+  REQUIRE(fe_output.will_discard()); // no VTK and no HDF5 sink attached
+
+  for (uint i = 0; i < 5; ++i) {
+    fe_output.attach(discretization.get_dof_handler(), initial_condition.spatial_data(), "u");
+    fe_output.flush(static_cast<double>(i));
+    CHECK(fe_output.pending_workers() == 0);
+  }
+  CHECK_NOTHROW(fe_output.finish());
+  CHECK_FALSE(std::filesystem::exists(output_path.root() / "novtk.pvd"));
+}
+
 // Regression test for the nondeterministic timestepper-test crashes (SIGSEGV / "Could not
 // write pvd file."). Pre-fix, multiple writer threads spawned by flush() race on
 // time_series and on the shared .pvd path, which manifests as undefined behaviour and as

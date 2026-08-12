@@ -39,11 +39,14 @@ set(DiFfRG_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/csv_output.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/diagnostic_port.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/fe_output.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/hdf5_frame.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/hdf5_writer.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/hdf5_output.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/hdf5_input.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/output_path.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/output_settings.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/output_session.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/output_timings.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/common/eom_config.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/mesh/rectangular_mesh.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/model/model.cc

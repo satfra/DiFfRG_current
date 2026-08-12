@@ -65,7 +65,8 @@ JSON is only an adapter for the typed `Config::OutputSettings`. The correspondin
   "output": {
     "max_pending_frames": 2,
     "log_queue_size": 8192,
-    "log_flush_interval": 10.0
+    "log_flush_interval": 10.0,
+    "quadrature_log": true
   }
 }
 ```
@@ -74,9 +75,45 @@ The run log is written by an asynchronous logger whose file sink is otherwise on
 would show a log file lagging by a full stdio buffer and a killed job would lose its tail. `log_flush_interval` is the
 period in seconds at which the log file is flushed from a dedicated thread; set it to `0` to disable periodic flushing.
 
+A `QuadratureProvider` constructed from the configuration reports every quadrature it builds to its own side-channel
+log, `<output name>_quadrature.log`, written next to the run log and sharing its queue, level and flush settings. It
+owns that logger instead of borrowing the session's: integrators request their quadratures from within their
+constructors, usually before any `OutputSession` exists, and the provider is a process-level cache that outlives a
+single run. The file has no console sink, so the quadrature inventory does not interleave with the timestepper
+progress report. Set `quadrature_log` to `false` to suppress the file, or pass an explicit `LogPort` as the second
+constructor argument to route the messages into a log of your own.
+
 Debugging and process-memory policy stay in C++ rather than simulation configuration. Set
 `Config::OutputSettings::asynchronous` to `false` for synchronous field writes. The default pending-byte limit is 2
 GiB and can be changed through `Config::OutputSettings::max_pending_bytes` when constructing the session.
+
+## HDF5 writing
+
+`scalar()`, `map()` and the finite-element field data do not touch the file when they are called. They validate their
+arguments, copy their payload, and stage the write. `flush()` then commits the whole frame in a single
+open → write → `H5Fflush` → close cycle. Two consequences are worth knowing:
+
+- **A frame is on disk only after its flush.** Under an `OutputSession` this is automatic, once per `write_frame`.
+  Code that drives an `HDF5Output` directly and then reopens the file to read it back must flush first.
+- **Every frame is still closed on disk.** The file stays readable while the run continues, and an abort leaves a
+  complete prefix of frames behind rather than a corrupt file.
+
+One writer thread per session performs those cycles, so the integrator does not wait for the disk. It is one thread
+and not one per sink because the HDF5 library is built here without thread safety, which means every HDF5 call in the
+process has to be serialised. For the same reason, code that opens an HDF5 file itself in the middle of a run — an
+`HDF5Input`, say — must call `output.drain()` first.
+
+`Config::OutputSettings::hdf5_queue_depth` (default 1) bounds how many frames may be in flight. It is separate from
+`max_pending_frames`, which bounds VTK/`DataOut` memory. The default of 1 is a durability choice: a hard abort
+(`SIGKILL`, node eviction) can lose the queued frames on top of the one being written, so depth 1 caps that at two
+frames while still hiding the whole write behind the next output interval. Setting
+`Config::OutputSettings::asynchronous` to `false` removes the thread entirely and restores commit-on-return, at the
+cost of putting the write back on the critical path.
+
+Each run reports where its output time went, at `info` level, when the session finishes: the contributor callback and
+the potential reconstructions inside it, `build_patches`, the data filter, the HDF5 write and open/close, queue
+waiting, and the writer thread's own total, which is listed separately because it is off the critical path. Set
+`/output/verbosity` to 3 or more to additionally get one line and one `output_timings.csv` row per frame.
 
 Only MPI rank zero creates sinks. A full queue blocks the producer rather than dropping scientific data. At the end of
 each timestepper `run()`, the session drains pending writers and reports worker errors without closing, so the same

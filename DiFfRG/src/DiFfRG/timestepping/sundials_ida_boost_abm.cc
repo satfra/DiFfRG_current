@@ -777,7 +777,7 @@ namespace DiFfRG
       time_stepper.solve_dae(spatial_y, spatial_y_dot);
     } catch (const std::exception &e) {
       this->log.error("Timestepping failed: {}", e.what());
-      time_stepper.output_step(stuck_t, spatial_y, spatial_y_dot, 0);
+      this->finalize_output_after_failure([&]() { time_stepper.output_step(stuck_t, spatial_y, spatial_y_dot, 0); });
       throw;
     }
 

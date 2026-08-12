@@ -143,6 +143,15 @@ namespace DiFfRG
   {
   public:
     QuadratureProvider();
+    /**
+     * @brief Construct a provider that reports the quadratures it builds.
+     *
+     * If no port is passed, the provider opens its own side-channel log at
+     * <output folder>/<output name>_quadrature.log. It has to own that logger rather than borrow one from an
+     * OutputSession, because integrators request their quadratures inside their constructors -- typically before
+     * any output session exists -- and because the provider is a process-level cache that outlives a single run.
+     * Set /output/quadrature_log to false to suppress the file.
+     */
     explicit QuadratureProvider(const ConfigTree &config, LogPort log = {});
 
     /**
@@ -236,6 +245,9 @@ namespace DiFfRG
   private:
     internal::MatsubaraStorage matsubara_storage;
     internal::QuadratureStorage quadrature_storage;
+
+    /** Only engaged when the provider opens its own quadrature log; empty when a port was handed in. */
+    RunLogger own_logger;
 
     int verbosity;
   };
