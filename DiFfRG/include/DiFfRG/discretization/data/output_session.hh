@@ -6,8 +6,10 @@
 #include <DiFfRG/discretization/data/diagnostic_port.hh>
 #include <DiFfRG/discretization/data/fe_output.hh>
 #include <DiFfRG/discretization/data/hdf5_output.hh>
+#include <DiFfRG/discretization/data/hdf5_writer.hh>
 #include <DiFfRG/discretization/data/output_path.hh>
 #include <DiFfRG/discretization/data/output_settings.hh>
+#include <DiFfRG/discretization/data/output_timings.hh>
 
 #include <map>
 #include <mutex>
@@ -185,9 +187,21 @@ namespace DiFfRG
       if (!active) return;
 
       try {
-        OutputFrame<dim, VectorType> frame(*this);
-        std::forward<Contributor>(contributor)(frame);
+        current_frame = FrameTimings{};
+        ScopedTimer total_timer(current_frame.total);
+        {
+          const auto solves_before = internal::potential_solve_stats();
+          ScopedTimer contributor_timer(current_frame.contributor);
+          OutputFrame<dim, VectorType> frame(*this);
+          std::forward<Contributor>(contributor)(frame);
+          contributor_timer.stop();
+          const auto &solves_after = internal::potential_solve_stats();
+          current_frame.potential_solve_count += solves_after.solves - solves_before.solves;
+          current_frame.potential_solves += solves_after.seconds - solves_before.seconds;
+        }
         flush_frame(time);
+        total_timer.stop();
+        record_frame(time);
       } catch (...) {
         terminal_error = std::current_exception();
         throw;
@@ -215,6 +229,8 @@ namespace DiFfRG
     HDF5Output &hdf5(const std::string &name);
     HDF5Output &hdf5();
     void flush_frame(double time);
+    /** Fold `current_frame` into the run totals and, at verbosity >= 3, report it. */
+    void record_frame(double time);
     void dump_to_csv(const std::string &name, const std::vector<std::vector<double>> &values, bool append,
                      const std::vector<std::string> &header);
     void rethrow_deferred_error();
@@ -232,6 +248,10 @@ namespace DiFfRG
     mutable std::mutex submission_mutex;
 
     RunLogger run_logger;
+    /** Declared before every sink that submits to it, so it is destroyed last. finish() joins
+     * it explicitly before h5_files goes away, because ~HDF5Output closes the file and that
+     * must not race the worker. */
+    HDF5FrameWriter hdf5_writer;
     FEOutput<dim, VectorType> fe_out;
     std::optional<ReconstructedRawPotential<dim, typename VectorType::value_type>> pending_raw_potential;
     FEOutput<dim, dealii::Vector<typename VectorType::value_type>> potential_fe_out;
@@ -243,6 +263,10 @@ namespace DiFfRG
     const std::string filename_h5;
     std::map<std::string, HDF5Output> h5_files;
     DiagnosticPort diagnostics_port;
+
+    /** Cost split of the frame currently being written; folded into `timings` by flush_frame. */
+    FrameTimings current_frame;
+    OutputTimings timings;
 
     friend class OutputFrame<dim, VectorType>;
   };

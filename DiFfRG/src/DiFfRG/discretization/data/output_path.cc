@@ -115,9 +115,17 @@ namespace DiFfRG
 
   std::filesystem::path OutputPath::run_file(const std::string_view extension) const
   {
+    return run_file(std::string_view{}, extension);
+  }
+
+  std::filesystem::path OutputPath::run_file(const std::string_view name_suffix,
+                                             const std::string_view extension) const
+  {
     if (extension.empty() || extension.front() != '.' || extension.find_first_of("/\\") != std::string_view::npos)
       throw std::invalid_argument("OutputPath: file extension must begin with '.' and contain no path separators.");
-    return root_path / (output_name + std::string(extension));
+    if (name_suffix.find_first_of("/\\") != std::string_view::npos)
+      throw std::invalid_argument("OutputPath: run file name suffix must contain no path separators.");
+    return root_path / (output_name + std::string(name_suffix) + std::string(extension));
   }
 
   OutputPath OutputPath::child(std::filesystem::path directory, std::string run_name,

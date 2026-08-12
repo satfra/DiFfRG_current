@@ -215,6 +215,34 @@ namespace DiFfRG
     }
 
     /**
+     * @brief Best-effort output cleanup while a timestepping failure is being reported.
+     *
+     * Writes one final frame for the state that failed, then pushes everything pending to
+     * disk. Both steps are swallowed on error: a readout that cannot cope with a diverged
+     * solution must not replace the failure the caller is actually trying to report, and a
+     * drain error is latched anyway and resurfaces at finish().
+     *
+     * Callers rethrow the original exception afterwards.
+     */
+    template <typename EmitFinalFrame> void finalize_output_after_failure(EmitFinalFrame &&emit_final_frame)
+    {
+      try {
+        std::forward<EmitFinalFrame>(emit_final_frame)();
+      } catch (const std::exception &e) {
+        log.error("Output of the final frame after the failure failed: {}", e.what());
+      } catch (...) {
+        log.error("Output of the final frame after the failure failed.");
+      }
+      try {
+        drain_output();
+      } catch (const std::exception &e) {
+        log.error("Draining pending output after the failure failed: {}", e.what());
+      } catch (...) {
+        log.error("Draining pending output after the failure failed.");
+      }
+    }
+
+    /**
      * @brief Any derived class must implement this method to run the timestepping algorithm.
      *
      * @param initial_condition A pointer to a flowing variables object that contains the initial condition.
