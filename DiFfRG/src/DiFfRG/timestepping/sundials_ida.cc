@@ -479,7 +479,7 @@ namespace DiFfRG
     } catch (const std::exception &e) {
       this->log.error("Timestepping failed: {}", e.what());
       output_after_failure = true;
-      time_stepper.output_step(stuck_t, y, y_dot, 0);
+      this->finalize_output_after_failure([&]() { time_stepper.output_step(stuck_t, y, y_dot, 0); });
       throw;
     }
 
@@ -789,7 +789,7 @@ namespace DiFfRG
       time_stepper.solve_dae(y, y_dot);
     } catch (const std::exception &e) {
       this->log.error("Timestepping failed: {}", e.what());
-      time_stepper.output_step(stuck_t, y, y_dot, 0);
+      this->finalize_output_after_failure([&]() { time_stepper.output_step(stuck_t, y, y_dot, 0); });
       throw;
     }
 
@@ -1035,7 +1035,7 @@ namespace DiFfRG
     } catch (const std::exception &e) {
       this->log.error("Timestepping failed: {}", e.what());
       output_after_failure = true;
-      time_stepper.output_step(stuck_t, y, y_dot, 0);
+      this->finalize_output_after_failure([&]() { time_stepper.output_step(stuck_t, y, y_dot, 0); });
       throw;
     }
 

@@ -25,7 +25,7 @@ namespace DiFfRG
   template <typename NT>
   MatsubaraQuadrature<NT>::MatsubaraQuadrature(const NT T, const NT typical_E, const int step, const int min_size,
                                                const int max_size, const int vacuum_quad_size,
-                                               const int precision_factor)
+                                               const double precision_factor)
   {
     reinit(T, typical_E, step, min_size, max_size, vacuum_quad_size, precision_factor);
   }
@@ -34,12 +34,15 @@ namespace DiFfRG
 
   template <typename NT>
   void MatsubaraQuadrature<NT>::reinit(const NT T, const NT typical_E, const int step, const int min_size,
-                                       const int max_size, const int vacuum_quad_size, const int precision_factor)
+                                       const int max_size, const int vacuum_quad_size, const double precision_factor)
   {
     if (precision_factor <= 0)
       this->precision_factor = 1;
     else
       this->precision_factor = precision_factor;
+    if (precision_factor < 1e-1)
+      std::cerr
+          << "MatsubaraQuadrature: precision_factor is very small (< 1e-1), which may lead to inaccurate results.";
 
     // This is ludicrously low, but let's cut somewhere
     if (vacuum_quad_size <= 16)

@@ -2,6 +2,7 @@
 
 // DiFfRG
 #include <DiFfRG/common/config_tree.hh>
+#include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/quadrature/matsubara.hh>
 #include <DiFfRG/common/quadrature/quadrature.hh>
 #include <DiFfRG/common/run_logger.hh>
@@ -48,7 +49,7 @@ namespace DiFfRG
       void set_vacuum_quad_size(const int size);
       void set_min_matsubara_size(const int value);
       void set_max_matsubara_size(const int value);
-      void set_matsubara_precision_factor(const int value);
+      void set_matsubara_precision_factor(const double value);
 
     private:
       MatsubaraQuadrature<double> &get_matsubara_quadrature_d(const double T, const double E);
@@ -71,7 +72,7 @@ namespace DiFfRG
 
       int verbosity = 0;
       int vacuum_quad_size = 64;
-      int matsubara_precision_factor = 0;
+      double matsubara_precision_factor = 0;
       int min_matsubara_size = 32;
       int max_matsubara_size = 128;
 
@@ -142,6 +143,15 @@ namespace DiFfRG
   {
   public:
     QuadratureProvider();
+    /**
+     * @brief Construct a provider that reports the quadratures it builds.
+     *
+     * If no port is passed, the provider opens its own side-channel log at
+     * <output folder>/<output name>_quadrature.log. It has to own that logger rather than borrow one from an
+     * OutputSession, because integrators request their quadratures inside their constructors -- typically before
+     * any output session exists -- and because the provider is a process-level cache that outlives a single run.
+     * Set /output/quadrature_log to false to suppress the file.
+     */
     explicit QuadratureProvider(const ConfigTree &config, LogPort log = {});
 
     /**
@@ -201,9 +211,43 @@ namespace DiFfRG
       return matsubara_storage.get_matsubara_quadrature<NT>(T, typical_E).get_T();
     }
 
+    /**
+     * @brief Hand out one of a small pool of execution space instances, round robin.
+     *
+     * Every integrator used to default-construct its ExecutionSpace, i.e. they all shared the
+     * default stream and no two flows could ever execute concurrently -- even the ones that are
+     * mutually independent (the vertex flows of a typical RHS read the same dressings and write
+     * disjoint outputs). Handing neighbouring integrators different instances lets those overlap,
+     * which matters most for the many small launches that individually leave the device
+     * underutilised.
+     *
+     * Safe to mix with the interpolators' uploads, which fence on the host before returning, so
+     * any kernel issued afterwards on any stream already sees the new data.
+     *
+     * The pool is created lazily and shared by every integrator holding this provider. Host
+     * execution spaces have no streams to speak of, so they get a default-constructed instance.
+     */
+    template <typename ExecutionSpace> ExecutionSpace next_execution_space()
+    {
+      if constexpr (std::is_same_v<typename ExecutionSpace::memory_space, CPU_memory>) {
+        return ExecutionSpace();
+      } else {
+        static constexpr size_t pool_size = 8;
+        static std::vector<ExecutionSpace> pool = [] {
+          const std::vector<int> weights(pool_size, 1);
+          return Kokkos::Experimental::partition_space(ExecutionSpace(), weights);
+        }();
+        static size_t next = 0;
+        return pool[next++ % pool_size];
+      }
+    }
+
   private:
     internal::MatsubaraStorage matsubara_storage;
     internal::QuadratureStorage quadrature_storage;
+
+    /** Only engaged when the provider opens its own quadrature log; empty when a port was handed in. */
+    RunLogger own_logger;
 
     int verbosity;
   };

@@ -15,6 +15,7 @@
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
+#include <DiFfRG/physics/integration/map_completion.hh>
 
 namespace DiFfRG
 {
@@ -86,7 +87,8 @@ namespace DiFfRG
       {
         Timer timer;
         model.dt_variables(residual, fe_tie(variables));
-        Kokkos::fence();
+        // Fences AND lands any map() results still sitting in pinned staging -- see MapCompletion.
+        flush_maps();
         timings_residual.push_back(timer.wall_time());
       };
 
@@ -95,7 +97,7 @@ namespace DiFfRG
       {
         Timer timer;
         model.template jacobian_variables<0>(jacobian, fe_tie(variables));
-        Kokkos::fence();
+        flush_maps();
         timings_jacobian.push_back(timer.wall_time());
       };
 

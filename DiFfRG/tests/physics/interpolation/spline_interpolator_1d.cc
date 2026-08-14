@@ -159,3 +159,4 @@ TEMPLATE_TEST_CASE("Test GPU 1D spline interpolation", "[float][double][complex]
   CHECK(is_close(res_host, res_local, expected_precision));
   CHECK(is_close(res_gpu, res_local, expected_precision));
 }
+

@@ -59,7 +59,8 @@ namespace DiFfRG
     std::thread worker;
   };
 
-  RunLogger::RunLogger(const OutputPath &path, const Config::OutputSettings &settings, const bool active)
+  RunLogger::RunLogger(const OutputPath &path, const Config::OutputSettings &settings, const bool active,
+                       RunLoggerOptions options)
   {
     if (!active) return;
 
@@ -69,12 +70,15 @@ namespace DiFfRG
     thread_pool = std::make_shared<spdlog::details::thread_pool>(queue_size, 1);
 
     std::vector<spdlog::sink_ptr> sinks;
-    auto console = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-    console->set_pattern("[%v]");
-    sinks.push_back(console);
-    sinks.push_back(std::make_shared<spdlog::sinks::basic_file_sink_mt>(path.run_file(".log").string(), true));
+    if (options.console) {
+      auto console = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+      console->set_pattern("[%v]");
+      sinks.push_back(console);
+    }
+    sinks.push_back(std::make_shared<spdlog::sinks::basic_file_sink_mt>(
+        path.run_file(options.file_suffix, ".log").string(), true));
 
-    logger = std::make_shared<spdlog::async_logger>("run", sinks.begin(), sinks.end(), thread_pool,
+    logger = std::make_shared<spdlog::async_logger>(options.logger_name, sinks.begin(), sinks.end(), thread_pool,
                                                     spdlog::async_overflow_policy::block);
     logger->set_level(settings.log_level);
 
