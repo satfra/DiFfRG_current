@@ -25,6 +25,7 @@
 #include <deal.II/numerics/fe_field_function.h>
 
 #include <DiFfRG/discretization/common/eom_config.hh>
+#include <DiFfRG/discretization/data/output_timings.hh>
 
 // standard library
 #include <algorithm>
@@ -39,6 +40,32 @@
 
 namespace DiFfRG
 {
+  namespace internal
+  {
+    /**
+     * @brief How much of an output frame went into reconstructing potentials.
+     *
+     * `solve_potential` is the single most expensive thing an output frame does on larger
+     * meshes -- it distributes a fresh DoFHandler, assembles a flux system and runs a direct
+     * sparse factorisation, once for the raw potential plus once per readout id. The counter
+     * lets `OutputSession` attribute that cost without threading a timing object through the
+     * whole EoM call chain.
+     *
+     * `thread_local` rather than atomic: readouts() is called from the single thread that runs
+     * the contributor callback, so this stays lock-free and correct.
+     */
+    struct PotentialSolveStats {
+      std::size_t solves = 0;
+      double seconds = 0.;
+    };
+
+    inline PotentialSolveStats &potential_solve_stats()
+    {
+      static thread_local PotentialSolveStats stats;
+      return stats;
+    }
+  } // namespace internal
+
   /**
    * @brief An owning scalar potential reconstructed from a model EoM vector field.
    *
@@ -829,6 +856,10 @@ namespace DiFfRG
                     const Config::EoMConfig &config, std::unique_ptr<dealii::FiniteElement<dim>> potential_fe)
     {
       using NumberType = typename VectorType::value_type;
+
+      auto &solve_stats = potential_solve_stats();
+      ++solve_stats.solves;
+      ScopedTimer solve_timer(solve_stats.seconds);
 
       auto origin_cell = solution_dof_handler.begin_active();
       const auto origin = get_origin(solution_dof_handler, origin_cell);

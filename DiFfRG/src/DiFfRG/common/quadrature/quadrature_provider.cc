@@ -118,7 +118,7 @@ namespace DiFfRG
       if (size <= 0) throw std::invalid_argument("MatsubaraStorage: Vacuum quadrature size must be positive.");
       vacuum_quad_size = size;
     }
-    void MatsubaraStorage::set_matsubara_precision_factor(const int value)
+    void MatsubaraStorage::set_matsubara_precision_factor(const double value)
     {
       if (value < 0) throw std::invalid_argument("MatsubaraStorage: matsubara_precision_factor must be positive.");
       matsubara_precision_factor = value;
@@ -217,6 +217,22 @@ namespace DiFfRG
     if (!DiFfRG::Init::is_initialized()) throw std::runtime_error("QuadratureProvider: DiFfRG is not initialized.");
 
     verbosity = config.get_int("/output/verbosity", 0);
+
+    // Without an explicit port every quadrature message would be dropped into an empty LogPort, so open the
+    // side-channel log the provider is named after. Only the log-transport settings are read here; building a full
+    // OutputSettings would serialize the whole configuration for no reason.
+    if (verbosity >= 0 && !log && config.get_bool("/output/quadrature_log", true)) {
+      Config::OutputSettings log_settings;
+      log_settings.log_queue_size = config.get_uint("/output/log_queue_size", 8192);
+      log_settings.log_level =
+          static_cast<spdlog::level::level_enum>(config.get_int("/output/log_level", SPDLOG_LEVEL_INFO));
+      log_settings.log_flush_interval = config.get_double("/output/log_flush_interval", 10.);
+
+      own_logger = RunLogger(OutputPath(config), log_settings, MPI::rank(MPI_COMM_WORLD) == 0,
+                             RunLoggerOptions{"_quadrature", "quadrature", false});
+      log = own_logger.port();
+    }
+
     if (verbosity >= 0) log.info("QuadratureProvider: Initialized quadrature provider.");
 
     matsubara_storage.set_verbosity(verbosity);
@@ -227,7 +243,7 @@ namespace DiFfRG
     const int vacuum_quad_size = config.get_uint("/integration/vacuum_quad_size", 64);
     matsubara_storage.set_vacuum_quad_size(vacuum_quad_size);
 
-    const int matsubara_precision_factor = config.get_uint("/integration/matsubara_precision_factor", 0);
+    const double matsubara_precision_factor = config.get_double("/integration/matsubara_precision_factor", 1.);
     matsubara_storage.set_matsubara_precision_factor(matsubara_precision_factor);
 
     const int min_matsubara_size = config.get_uint("/integration/min_matsubara_size", 8);

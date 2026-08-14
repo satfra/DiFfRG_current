@@ -4,8 +4,29 @@
 
 #include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/quadrature/quadrature_provider.hh>
+#include <DiFfRG/discretization/data/output_path.hh>
+
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <string>
 
 using namespace DiFfRG;
+
+namespace
+{
+  DiFfRG::ConfigTree quadrature_log_json(const std::filesystem::path &folder, const bool quadrature_log)
+  {
+    return DiFfRG::json::value(
+        {{"output", {{"folder", folder.string()}, {"name", "run"}, {"quadrature_log", quadrature_log}}}});
+  }
+
+  std::string read_file(const std::filesystem::path &path)
+  {
+    std::ifstream stream(path);
+    return std::string(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
+  }
+} // namespace
 
 TEST_CASE("Test quadrature provider", "[double][quadrature]")
 {
@@ -54,5 +75,56 @@ TEST_CASE("Test quadrature provider", "[double][quadrature]")
 
     REQUIRE(point != Catch::Approx(0.));
     REQUIRE(weight != Catch::Approx(0.));
+  }
+}
+
+TEST_CASE("Quadrature provider writes its own quadrature log", "[quadrature][output]")
+{
+  DiFfRG::Init();
+
+  auto path = DiFfRG::OutputPath::temporary(TemporaryRetention::remove_on_destruction, "run", "run");
+  const auto log_file = path.run_file("_quadrature", ".log");
+
+  SECTION("Enabled by default")
+  {
+    {
+      DiFfRG::QuadratureProvider quadrature_provider(quadrature_log_json(path.root(), true));
+      // Requesting a quadrature has to be reported, since this is what the file exists for. The provider owns the
+      // logger, so the records are only guaranteed on disk once it has been destroyed.
+      const auto nodes = quadrature_provider.template nodes<double, CPU_memory>(32);
+      REQUIRE(nodes.size() == 32);
+    }
+
+    REQUIRE(std::filesystem::exists(log_file));
+    const auto contents = read_file(log_file);
+    CHECK_THAT(contents, Catch::Matchers::ContainsSubstring("Initialized quadrature provider"));
+    CHECK_THAT(contents, Catch::Matchers::ContainsSubstring("order = 32"));
+  }
+
+  SECTION("Suppressed by /output/quadrature_log")
+  {
+    {
+      DiFfRG::QuadratureProvider quadrature_provider(quadrature_log_json(path.root(), false));
+      const auto nodes = quadrature_provider.template nodes<double, CPU_memory>(32);
+      REQUIRE(nodes.size() == 32);
+    }
+
+    CHECK_FALSE(std::filesystem::exists(log_file));
+  }
+
+  SECTION("An explicit port takes precedence over the own log")
+  {
+    {
+      Config::OutputSettings settings;
+      RunLogger run_logger(path, settings, true, RunLoggerOptions{"", "run", false});
+
+      DiFfRG::QuadratureProvider quadrature_provider(quadrature_log_json(path.root(), true), run_logger.port());
+      const auto nodes = quadrature_provider.template nodes<double, CPU_memory>(32);
+      REQUIRE(nodes.size() == 32);
+    }
+
+    // The messages belong to the port that was handed in, so no side-channel file is opened.
+    CHECK_FALSE(std::filesystem::exists(log_file));
+    CHECK_THAT(read_file(path.run_file(".log")), Catch::Matchers::ContainsSubstring("order = 32"));
   }
 }

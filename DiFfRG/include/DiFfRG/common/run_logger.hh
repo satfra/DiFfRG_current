@@ -89,12 +89,24 @@ namespace DiFfRG
     }
   } // namespace internal
 
+  /** Sink layout of a RunLogger: which file it writes to and whether it also echoes to the console. */
+  struct RunLoggerOptions {
+    /** Inserted between the run name and ".log", e.g. "_quadrature" for "output_quadrature.log". */
+    std::string file_suffix;
+    /** spdlog logger name, written to the "[%n]" field of the file records. */
+    std::string logger_name = "run";
+    /** Whether records are echoed to stdout. Side-channel logs keep this off so they do not
+     * interleave with the timestepper progress report. */
+    bool console = true;
+  };
+
   /** Owns a private bounded asynchronous logger for one simulation run. */
   class RunLogger
   {
   public:
     RunLogger() = default;
-    RunLogger(const OutputPath &path, const Config::OutputSettings &settings, bool active);
+    RunLogger(const OutputPath &path, const Config::OutputSettings &settings, bool active,
+              RunLoggerOptions options = {});
     ~RunLogger() noexcept;
 
     RunLogger(const RunLogger &) = delete;

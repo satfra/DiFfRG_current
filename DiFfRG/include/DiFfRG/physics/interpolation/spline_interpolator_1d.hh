@@ -4,7 +4,12 @@
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/discretization/coordinates/coordinates.hh>
+
+// std
+#include <cmath>
 #include <limits>
+#include <stdexcept>
+#include <vector>
 
 namespace DiFfRG
 {
@@ -75,9 +80,7 @@ namespace DiFfRG
       // Build the spline coefficients
       build_y2(lower_y1, upper_y1);
 
-      // Copy data to device
-      Kokkos::deep_copy(device_values, host_values);
-      Kokkos::deep_copy(device_coeffs, host_coeffs);
+      upload();
     }
 
     template <typename View>
@@ -91,15 +94,17 @@ namespace DiFfRG
             "SplineInterpolator1D: You probably called update() on a copied instance. This is not allowed. "
             "You need to call update() on the original instance.");
 
-      // Copy values from input view
-      Kokkos::deep_copy(host_values, view);
+      // Copy values from input view. The space-less overload would bracket this in a global
+      // Kokkos::fence(); name the source's execution space so a host-to-host copy costs no device
+      // barrier at all (this is the path get_on() takes to refresh the CPU twin).
+      typename View::execution_space view_exec;
+      Kokkos::deep_copy(view_exec, host_values, view);
+      view_exec.fence();
 
       // Build the spline coefficients
       build_y2(lower_y1, upper_y1);
 
-      // Copy data to device
-      Kokkos::deep_copy(device_values, host_values);
-      Kokkos::deep_copy(device_coeffs, host_coeffs);
+      upload();
     }
 
     NT operator[](size_t i) const
@@ -131,10 +136,7 @@ namespace DiFfRG
      *
      * The returned index is only meaningful for interpolators sharing this coordinate system.
      */
-    ctype KOKKOS_FUNCTION index(const typename Coordinates::ctype x) const
-    {
-      return coordinates.backward(x);
-    }
+    ctype KOKKOS_FUNCTION index(const typename Coordinates::ctype x) const { return coordinates.backward(x); }
 
     /**
      * @brief Interpolate at a grid index previously obtained from index().
@@ -198,8 +200,13 @@ namespace DiFfRG
           owns_other_instance = true;
           other_instance->other_instance = const_cast<std::decay_t<decltype(*this)> *>(this);
         }
-        // Copy the data from the current instance to the new one
-        other_instance->update(host_values);
+        // Refresh the twin only if this instance has been updated since it was last synced.
+        // update() is an O(size) tridiagonal solve plus two copies, and callers hit this in tight
+        // loops (see m_version).
+        if (m_mirror_version != m_version) {
+          other_instance->update(host_values);
+          m_mirror_version = m_version;
+        }
         // Return the new instance
         return *other_instance;
       }
@@ -218,6 +225,11 @@ namespace DiFfRG
         throw std::runtime_error(
             "SplineInterpolator1D: You probably called data() on a copied instance. This is not allowed. "
             "You need to call data() on the original instance.");
+      // This hands out a WRITE handle to the host values, so conservatively invalidate the CPU/GPU
+      // twin: a caller that mutates through it and then calls CPU()/GPU() must still see its edit,
+      // which is what the unconditional refresh used to guarantee. Read-only users pay one extra
+      // mirror rebuild.
+      ++m_version;
       return host_values.data();
     }
 
@@ -236,6 +248,36 @@ namespace DiFfRG
     CoeffViewType device_coeffs;
     HostValueViewType host_values;
     HostCoeffViewType host_coeffs;
+
+    /**
+     * @brief Push the freshly built host values and coefficients to the device.
+     *
+     * Uses the execution-space overload of deep_copy rather than the space-less one. The
+     * space-less overload brackets EVERY copy with a global Kokkos::fence(), which synchronizes
+     * all execution space instances of all enabled backends — measured at ~11.4 cudaDeviceSynchronize
+     * calls per copy, i.e. ~98k device-wide barriers in a single 425-RHS YangMills solve. The two
+     * copies here only need to be ordered against the kernels that read them, which share this
+     * execution space instance, so a stream-local fence is sufficient.
+     *
+     * The trailing fence is NOT optional: it is what lets the caller immediately refill
+     * host_values/host_coeffs on the next update() without racing an in-flight H2D copy. Dropping
+     * it requires double-buffering the host staging arrays.
+     */
+    void upload()
+    {
+      typename DefaultMemorySpace::execution_space exec;
+      Kokkos::deep_copy(exec, device_values, host_values);
+      Kokkos::deep_copy(exec, device_coeffs, host_coeffs);
+      exec.fence();
+      ++m_version;
+    }
+
+    // Bumped by every upload(); get_on() refreshes the twin only when it has fallen behind.
+    // Without this the generated ntHoisted() helpers, which call X.CPU()(...) a handful of times
+    // per flow launch, rebuild the entire mirror spline on EVERY call -- ~20k redundant rebuilds
+    // (and, before the deep_copy fix above, ~40k device-wide barriers) in one YangMills solve.
+    size_t m_version = 1;
+    mutable size_t m_mirror_version = 0;
 
     mutable SplineInterpolator1D<NT, Coordinates, other_memory_space> *other_instance = nullptr;
     mutable bool owns_other_instance = false;
