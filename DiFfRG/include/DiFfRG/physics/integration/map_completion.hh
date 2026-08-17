@@ -2,9 +2,11 @@
 
 // DiFfRG
 #include <DiFfRG/common/kokkos.hh>
+#include <DiFfRG/physics/integration/map_scheduler.hh>
 
 // std
 #include <cstring>
+#include <exception>
 #include <vector>
 
 namespace DiFfRG
@@ -59,10 +61,14 @@ namespace DiFfRG
     }
 
     /**
-     * @brief Fence, then land every pending map result in its caller-visible destination.
+     * @brief Fence, land every pending map result, then exchange slices between MPI ranks.
      *
      * Always fences, even with nothing pending, so this is a drop-in replacement for the
      * `Kokkos::fence()` it supersedes at the end of a residual evaluation.
+     *
+     * The MPI step is driven by MapScheduler's plan, **not** by the local pending list. A rank that
+     * owns no slice of a given map records no pending copy, so a pending-list-driven decision would
+     * have some ranks enter the collective and others skip it -- a silent hang. See MapScheduler.
      */
     static void flush()
     {
@@ -71,6 +77,18 @@ namespace DiFfRG
       for (const auto &c : p)
         std::memcpy(c.dst, c.src, c.bytes);
       p.clear();
+      MapScheduler::instance().complete();
+    }
+
+    /**
+     * @brief Drop every pending copy without performing it, and abandon the MPI plan.
+     *
+     * Only for stack unwinding, where the destinations may already be gone.
+     */
+    static void discard(const char *reason)
+    {
+      pending().clear();
+      MapScheduler::instance().poison(reason);
     }
 
     /**
@@ -136,6 +154,14 @@ namespace DiFfRG
     ~DeferredMaps()
     {
       MapCompletion::set_deferral(false);
+      // Leaving via an exception means this rank abandons the batch while the others are still
+      // filling theirs. Running the collective here would deadlock; poisoning the scheduler turns
+      // the next flush into a diagnosable abort instead. Under MPI an exception thrown out of a
+      // flow block is not recoverable anyway -- the ranks have already diverged.
+      if (std::uncaught_exceptions() > 0) {
+        MapCompletion::discard("an exception was thrown inside a DeferredMaps scope");
+        return;
+      }
       MapCompletion::flush();
     }
     DeferredMaps(const DeferredMaps &) = delete;

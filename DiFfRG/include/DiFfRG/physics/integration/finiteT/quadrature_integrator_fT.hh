@@ -10,6 +10,7 @@
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/coordinates/coordinates.hh>
 #include <DiFfRG/physics/integration/abstract_integrator.hh>
+#include <DiFfRG/physics/integration/map_completion.hh>
 
 namespace DiFfRG
 {
@@ -320,35 +321,33 @@ namespace DiFfRG
           });
     }
 
+    /// Points evaluated per external grid point. Half of the scheduler's cost score.
+    size_t quadrature_volume() const
+    {
+      size_t volume = 1;
+      for (int i = 0; i < dim; ++i)
+        volume *= grid_size[i];
+      return volume;
+    }
+
     template <typename Coordinates, typename... Args>
     auto map(NT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      // Take care of MPI distribution
-      const auto &node_distribution = AbstractIntegrator::node_distribution;
-      if (node_distribution.mpi_comm != MPI_COMM_NULL && node_distribution.total_size > 0) {
-        auto mpi_comm = node_distribution.mpi_comm;
-        const auto &nodes = node_distribution.nodes;
-        const auto &sizes = node_distribution.sizes;
+      auto &scheduler = MapScheduler::instance();
 
-        // Check if the rank is contained in nodes
-        const size_t m_rank = DiFfRG::MPI::rank(mpi_comm);
-        // If not, return an empty execution space
-        if (std::find(nodes.begin(), nodes.end(), m_rank) == nodes.end()) return ExecutionSpace();
+      // See QuadratureIntegrator::map() for why this is decided from the plan, not from local state.
+      if (scheduler.active() && scheduler.plan_contains(integrator_id())) MapCompletion::flush();
 
-        // Get the size of the current rank
-        const size_t rank_size = sizes[m_rank];
-        // Offset is the sum of all previous ranks
-        const size_t offset = std::accumulate(sizes.begin(), sizes.begin() + m_rank, 0);
+      const MapSlice slice = scheduler.schedule(integrator_id(), dest, sizeof(NT), coordinates.size(),
+                                                quadrature_volume(), Coordinates::dim == 1);
 
-        // Create a SubCoordinates object
-        const auto sub_coordinates = SubCoordinates(coordinates, offset, rank_size);
-        // Offset the destination pointer
-        NT *dest_offset = dest + offset;
-
-        return map_dist(dest_offset, sub_coordinates, args...);
+      if (slice.count == 0) {
+        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
+        return ExecutionSpace();
       }
+      if (slice.owns_all(coordinates.size())) return map_dist(dest, coordinates, args...);
 
-      return map_dist(dest, coordinates, args...);
+      return map_dist(dest + slice.offset, SubCoordinates(coordinates, slice.offset, slice.count), args...);
     }
 
     template <typename Coordinates, typename... Args>
@@ -371,6 +370,9 @@ namespace DiFfRG
 
       // copy the result from device to the unmanaged host view
       Kokkos::deep_copy(space, dest_view, dest_device_view);
+
+      // Under MPI the slices still have to be exchanged before the caller reads `dest`.
+      if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
 
       return space;
     }
@@ -497,32 +499,23 @@ namespace DiFfRG
     auto map(NT *dest, const Coordinates &coordinates, const Args &...args)
     {
       auto space = execution_space();
+      auto &scheduler = MapScheduler::instance();
 
-      // Take care of MPI distribution
-      const auto &node_distribution = AbstractIntegrator::node_distribution;
-      if (node_distribution.mpi_comm != MPI_COMM_NULL && node_distribution.total_size > 0) {
-        auto mpi_comm = node_distribution.mpi_comm;
-        const auto &nodes = node_distribution.nodes;
-        const auto &sizes = node_distribution.sizes;
+      if (scheduler.active() && scheduler.plan_contains(this->integrator_id())) MapCompletion::flush();
 
-        // Check if the rank is contained in nodes
-        const size_t m_rank = DiFfRG::MPI::rank(mpi_comm);
-        // If not, return an empty execution space
-        if (std::find(nodes.begin(), nodes.end(), m_rank) == nodes.end()) return execution_space();
+      const MapSlice slice = scheduler.schedule(this->integrator_id(), dest, sizeof(NT), coordinates.size(),
+                                                Base::quadrature_volume(), Coordinates::dim == 1);
 
-        // Get the size of the current rank
-        const size_t rank_size = sizes[m_rank];
-        // Offset is the sum of all previous ranks
-        const size_t offset = std::accumulate(sizes.begin(), sizes.begin() + m_rank, 0);
-
-        // Create a SubCoordinates object
-        const auto sub_coordinates = SubCoordinates(coordinates, offset, rank_size);
-        // Offset the destination pointer
-        NT *dest_offset = dest + offset;
-
-        map(space, dest_offset, sub_coordinates, args...);
-      } else
+      if (slice.count == 0) {
+        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
+        return space;
+      }
+      if (slice.owns_all(coordinates.size()))
         map(space, dest, coordinates, args...);
+      else
+        map(space, dest + slice.offset, SubCoordinates(coordinates, slice.offset, slice.count), args...);
+
+      if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
       return space;
     }
 
