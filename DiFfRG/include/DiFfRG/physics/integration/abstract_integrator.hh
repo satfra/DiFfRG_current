@@ -1,9 +1,8 @@
 #pragma once
 
 // DiFfRG
-#include "distribution.hh"
 #include <DiFfRG/common/types.hh>
-#include <DiFfRG/physics/integration/distribution.hh>
+#include <DiFfRG/physics/integration/map_scheduler.hh>
 
 namespace DiFfRG
 {
@@ -71,16 +70,33 @@ namespace DiFfRG
                   "Kernel must provide a static 'constant(...)' method returning the numeric type.");
   }
 
+  /**
+   * @brief Common base of every integrator, carrying the identity MapScheduler needs.
+   *
+   * There is deliberately no MPI-related setter here. Distribution is decided automatically by
+   * MapScheduler from the size of each map() call, so the feature has no user-facing API at all:
+   * an application scales across ranks without a single line of change.
+   */
   class AbstractIntegrator
   {
   public:
-    void set_node_distribution(const NodeDistribution &distribution);
+    // Construction order is part of the program, so these ids come out the same on every rank
+    // without any communication -- which is what lets MapScheduler put them in a plan that all
+    // ranks must agree on.
+    //
+    // The copy constructor is deliberately left implicit, so that an id travels with the object.
+    // Integrators are captured by value into device lambdas (KOKKOS_CLASS_LAMBDA), and a
+    // user-defined copy constructor is host-only, which makes that capture ill-formed. Copies
+    // sharing an id is harmless: only the host-side original ever schedules.
+    AbstractIntegrator() : m_integrator_id(next_integrator_id()) {}
 
-    const NodeDistribution &get_node_distribution() const;
-
-    void set_load_balancer(IntegrationLoadBalancer &load_balancer);
+    /// Stable, rank-independent identity of this integrator.
+    KOKKOS_FORCEINLINE_FUNCTION size_t integrator_id() const { return m_integrator_id; }
 
   protected:
-    NodeDistribution node_distribution;
+    size_t m_integrator_id;
+
+  private:
+    static size_t next_integrator_id();
   };
 } // namespace DiFfRG

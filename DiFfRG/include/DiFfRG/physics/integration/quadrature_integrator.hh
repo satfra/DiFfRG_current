@@ -173,8 +173,10 @@ namespace DiFfRG
       // system into a device view; the fill runs the very same forward() on the same device, so the
       // cached values are bit-identical to what the per-thread computation produced.
       //
-      // Coordinates without a to_string() identity (e.g. SubCoordinates on the MPI path) keep the
-      // per-thread computation.
+      // Coordinates without a to_string() identity keep the per-thread computation. SubCoordinates
+      // (the MPI path) is *not* one of them -- it has its own to_string(), and the key construction
+      // below was written to separate two windows into the same base grid. The only cost on that
+      // path is that a schedule which moves a slice boundary re-keys and re-runs the ~5 us fill.
       constexpr size_t cdim = Coordinates::dim;
       // Compile-time, so the un-taken branch in the device functors below is dead code and the
       // per-thread forward() (a fp64 expm1/sinh+exp on the log grids) actually leaves the kernel.
@@ -307,7 +309,7 @@ namespace DiFfRG
             // get the current (continuous) index
             const uint k = team.league_rank();
 
-            if (k > integral_view.size()) return;
+            if (k >= integral_view.size()) return;
 
             // no-ops to capture
             (void)cache;
@@ -373,35 +375,38 @@ namespace DiFfRG
           });
     }
 
+    /// Points evaluated per external grid point. Half of the scheduler's cost score.
+    size_t quadrature_volume() const
+    {
+      size_t volume = 1;
+      for (int i = 0; i < dim; ++i)
+        volume *= grid_size[i];
+      return volume;
+    }
+
     template <typename Coordinates, typename... Args>
     auto map(NT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      // Take care of MPI distribution
-      const auto &node_distribution = AbstractIntegrator::node_distribution;
-      if (node_distribution.mpi_comm != MPI_COMM_NULL && node_distribution.total_size > 0) {
-        auto mpi_comm = node_distribution.mpi_comm;
-        const auto &nodes = node_distribution.nodes;
-        const auto &sizes = node_distribution.sizes;
+      auto &scheduler = MapScheduler::instance();
 
-        // Check if the rank is contained in nodes
-        const size_t m_rank = DiFfRG::MPI::rank(mpi_comm);
-        // If not, return an empty execution space
-        if (std::find(nodes.begin(), nodes.end(), m_rank) == nodes.end()) return ExecutionSpace();
+      // One staging buffer per integrator, so a second map() from this integrator before a flush
+      // would clobber the first result. The *plan* is what decides, not the local pending list: a
+      // rank that owned no slice of the earlier map has nothing pending and would skip a flush the
+      // other ranks perform, leaving the collectives mismatched.
+      if (scheduler.active() && scheduler.plan_contains(integrator_id())) MapCompletion::flush();
 
-        // Get the size of the current rank
-        const size_t rank_size = sizes[m_rank];
-        // Offset is the sum of all previous ranks
-        const size_t offset = std::accumulate(sizes.begin(), sizes.begin() + m_rank, 0);
+      const MapSlice slice = scheduler.schedule(integrator_id(), dest, sizeof(NT), coordinates.size(),
+                                                quadrature_volume(), Coordinates::dim == 1);
 
-        // Create a SubCoordinates object
-        const auto sub_coordinates = SubCoordinates(coordinates, offset, rank_size);
-        // Offset the destination pointer
-        NT *dest_offset = dest + offset;
-
-        return map_dist(dest_offset, sub_coordinates, args...);
+      if (slice.count == 0) {
+        // Not an owner: no kernels, but the plan entry is registered, so this rank still has to
+        // take part in the exchange.
+        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
+        return ExecutionSpace();
       }
+      if (slice.owns_all(coordinates.size())) return map_dist(dest, coordinates, args...);
 
-      return map_dist(dest, coordinates, args...);
+      return map_dist(dest + slice.offset, SubCoordinates(coordinates, slice.offset, slice.count), args...);
     }
 
     template <typename Coordinates, typename... Args>
@@ -422,6 +427,8 @@ namespace DiFfRG
         auto dest_view = Kokkos::View<NT *, CPU_memory, Kokkos::MemoryUnmanaged>(dest, n);
         map(space, dest_device_view, coordinates, args...);
         Kokkos::deep_copy(space, dest_view, dest_device_view);
+        // Nothing to land, but the MPI slices still have to be exchanged before the caller reads.
+        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
         return space;
       } else {
         // One staging buffer per integrator, so a second map() before a flush would clobber the
@@ -442,16 +449,13 @@ namespace DiFfRG
         // Genuinely asynchronous, because the destination is page-locked.
         Kokkos::deep_copy(space, pinned_view, dest_device_view);
 
-        if (MapCompletion::deferral_enabled()) {
-          // Caller has promised not to read `dest` until its DeferredMaps scope closes, so leave
-          // the result in staging and keep the host running ahead of the device.
-          MapCompletion::record(dest, m_dest_pinned.data(), n * sizeof(NT));
-        } else {
-          // Original contract: `dest` is valid on return. Still cheaper than the old copy straight
-          // into pageable memory, which the driver had to stage anyway.
-          space.fence();
-          std::memcpy(dest, m_dest_pinned.data(), n * sizeof(NT));
-        }
+        // Caller has promised not to read `dest` until its DeferredMaps scope closes, so leave the
+        // result in staging and keep the host running ahead of the device.
+        MapCompletion::record(dest, m_dest_pinned.data(), n * sizeof(NT));
+        // Original contract outside such a scope: `dest` is valid on return. flush() fences, lands
+        // the staged copy and -- under MPI -- exchanges this batch's slices, all of which must
+        // happen before the caller looks at `dest`.
+        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
 
         return space;
       }
@@ -553,32 +557,29 @@ namespace DiFfRG
     auto map(NT *dest, const Coordinates &coordinates, const Args &...args)
     {
       auto space = execution_space();
+      auto &scheduler = MapScheduler::instance();
 
-      // Take care of MPI distribution
-      const auto &node_distribution = AbstractIntegrator::node_distribution;
-      if (node_distribution.mpi_comm != MPI_COMM_NULL && node_distribution.total_size > 0) {
-        auto mpi_comm = node_distribution.mpi_comm;
-        const auto &nodes = node_distribution.nodes;
-        const auto &sizes = node_distribution.sizes;
+      // A second map() from this integrator would overwrite `dest` before the first one's slices
+      // have been exchanged, so land the open batch first. Plan-driven, not local -- see the GPU
+      // overload for why that distinction is what keeps the collectives matched.
+      if (scheduler.active() && scheduler.plan_contains(this->integrator_id())) MapCompletion::flush();
 
-        // Check if the rank is contained in nodes
-        const size_t m_rank = DiFfRG::MPI::rank(mpi_comm);
-        // If not, return an empty execution space
-        if (std::find(nodes.begin(), nodes.end(), m_rank) == nodes.end()) return execution_space();
+      const MapSlice slice = scheduler.schedule(this->integrator_id(), dest, sizeof(NT), coordinates.size(),
+                                                Base::quadrature_volume(), Coordinates::dim == 1);
 
-        // Get the size of the current rank
-        const size_t rank_size = sizes[m_rank];
-        // Offset is the sum of all previous ranks
-        const size_t offset = std::accumulate(sizes.begin(), sizes.begin() + m_rank, 0);
-
-        // Create a SubCoordinates object
-        const auto sub_coordinates = SubCoordinates(coordinates, offset, rank_size);
-        // Offset the destination pointer
-        NT *dest_offset = dest + offset;
-
-        map(space, dest_offset, sub_coordinates, args...);
-      } else
+      if (slice.count == 0) {
+        // Not an owner, but still part of the batch -- see the GPU overload.
+        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
+        return space;
+      }
+      if (slice.owns_all(coordinates.size()))
         map(space, dest, coordinates, args...);
+      else
+        map(space, dest + slice.offset, SubCoordinates(coordinates, slice.offset, slice.count), args...);
+
+      // This backend writes straight into `dest`, so there is nothing to land -- but the slices
+      // still have to be exchanged before the caller reads them.
+      if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
       return space;
     }
 

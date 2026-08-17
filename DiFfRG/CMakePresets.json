@@ -32,6 +32,14 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "release-mpi",
+      "displayName": "DiFfRG Release (MPI)",
+      "inherits": "release",
+      "cacheVariables": {
+        "MPI": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -46,6 +54,12 @@
       "displayName": "Build DiFfRG Release",
       "configurePreset": "release",
       "jobs": 8
+    },
+    {
+      "name": "release-mpi",
+      "displayName": "Build DiFfRG Release (MPI)",
+      "configurePreset": "release-mpi",
+      "jobs": 6
     }
   ]
 }
