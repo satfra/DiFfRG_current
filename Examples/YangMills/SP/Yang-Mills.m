@@ -120,7 +120,7 @@ $Assumptions=k>0&&p>0&&l1>0&&-1<cos1<1&&-1<cos2<1&&-1<cos3<1;
 
 
 (* ::Input::Initialization:: *)
-interpolatorType="SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory>";
+interpolatorType="SplineInterpolator1D<double, LogarithmicCoordinates1D<double>>";
 
 kernelParameterList={
 <|"Name"->"k","Type"->"double"|>,
