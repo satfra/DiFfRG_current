@@ -1,15 +1,84 @@
 #pragma once
 
 // DiFfRG
+#include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/mpi.hh>
 
 // std
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 #include <vector>
 
 namespace DiFfRG
 {
+  namespace internal
+  {
+    /**
+     * @brief Kernel evaluations needed to saturate one rank's compute resource.
+     *
+     * Both are derived from `Kokkos::…::concurrency()` and cached on first use, so the split width
+     * adapts to the hardware instead of being a constant tuned on one machine. That matters: the
+     * measured fill threshold on the development GPU (5e4) is within 10% of its resident-thread
+     * capacity (55 296 = 36 SMs x 1536), and an A100 has four times that. A hardcoded constant would
+     * over-split by 4x on the very cluster this feature exists for.
+     *
+     * The two differ in more than magnitude. On the device `concurrency()` counts *resident threads*
+     * and each thread evaluates the kernel once, so the fill threshold is the concurrency itself. On
+     * the host it counts *workers*, each of which loops over many evaluations, so the threshold is
+     * workers x a grain large enough that one parallel_for spawn (order 10 us) disappears into the
+     * work it dispatches.
+     */
+    double device_fill_threshold();
+    double host_fill_threshold();
+
+    /// Evaluations per worker the host backend needs to amortize a parallel_for spawn. A judgement,
+    /// not a measurement -- see the note in documentation/multi_gpu.md.
+    inline constexpr double host_grain = 1024.;
+  } // namespace internal
+
+  /**
+   * @brief The physical resource a map() competes for.
+   *
+   * A rank owns *both*: one GPU and a slice of the node's cores. Work placed on one does not make
+   * the other busy, and in a DeferredMaps scope the two genuinely run at the same time -- the device
+   * path launches asynchronously and returns, so a host map issued after it executes while the
+   * device is still working. Ownership is therefore balanced against a separate budget per resource;
+   * see MapScheduler::least_loaded.
+   */
+  enum class MapResource : int { device = 0, host = 1 };
+  inline constexpr int n_map_resources = 2;
+
+  inline const char *to_string(const MapResource r) { return r == MapResource::host ? "host" : "device"; }
+
+  /// Which resource a map() runs on and how many evaluations saturate one rank's share of it.
+  struct MapTarget {
+    MapResource resource;
+    double fill_threshold;
+  };
+
+  /**
+   * @brief The scheduling target of an execution space, selected at compile time.
+   *
+   * `memory_space == CPU_memory` is the same test `map_dist()` uses to pick its staging path, so a
+   * CUDA-less build -- where `GPU_exec` *is* the host space -- automatically resolves to the host
+   * resource and threshold with no configuration at all, collapsing back to a single budget.
+   */
+  template <typename ExecutionSpace> inline MapTarget map_target()
+  {
+    if constexpr (std::is_same_v<typename ExecutionSpace::memory_space, CPU_memory>)
+      return MapTarget{MapResource::host, internal::host_fill_threshold()};
+    else
+      return MapTarget{MapResource::device, internal::device_fill_threshold()};
+  }
+
+  /// The fill threshold alone, for callers that do not need the resource class.
+  template <typename ExecutionSpace> inline double map_fill_threshold()
+  {
+    return map_target<ExecutionSpace>().fill_threshold;
+  }
+
   /**
    * @brief This rank's window into the external grid of one QuadratureIntegrator::map() call.
    */
@@ -56,6 +125,27 @@ namespace DiFfRG
    * whole** to the least-loaded rank rather than chopped into slivers, so a block of many small
    * flows spreads across ranks instead of every rank doing a sliver of every flow.
    *
+   * ## Mixed device and host models
+   *
+   * A rank holds two independent resources -- its GPU and its share of the node's cores -- and both
+   * `r` and the ownership choice are made against the one the calling integrator actually uses.
+   * `r` follows from that space's fill threshold (a device is saturated by its resident threads, a
+   * host by workers x a grain), and the slices are charged to a **separate per-resource budget**, so
+   * a rank that has just taken a large TBB flow is still the natural home for the next GPU flow.
+   *
+   * That is what makes a model mixing `GPU_exec` and `TBB_exec` integrators use both at once rather
+   * than merely correctly: within a `DeferredMaps` scope the device path launches asynchronously and
+   * returns, so a host map issued after it runs concurrently with it, and each resource is levelled
+   * across ranks on its own. What the budgets deliberately do *not* do is convert between the two --
+   * there is no exchange rate at which a device evaluation equals a host one, and assuming one is
+   * exactly the mistake a single shared budget makes.
+   *
+   * Two limits remain, and both are outside this class. Within one resource the weight per
+   * evaluation is 1, so flows with equal `S` but different per-evaluation cost still mis-weigh
+   * (calibration, plan stage 4). And the overlap only exists inside a deferral scope: a host map
+   * issued with deferral off flushes -- and therefore synchronises every rank -- before the device
+   * work behind it can catch up.
+   *
    * ## Determinism
    *
    * Every rank runs the same program and issues the same sequence of `map()` calls, so a schedule
@@ -89,9 +179,14 @@ namespace DiFfRG
      * @param grid_size number of external grid points, G
      * @param quadrature_volume points per integral, Q
      * @param splittable whether this coordinate system may be windowed (see class docs)
+     * @param target the resource the calling integrator's execution space runs on, and the number of
+     *        evaluations that saturate one rank's share of it, from map_target<ExecutionSpace>().
+     *        The threshold sets the split width; the resource selects which budget the resulting
+     *        slices are charged to. An explicit user override (DIFFRG_MAP_QUANTUM or
+     *        /integration/map_quantum) replaces the threshold, but never the resource.
      */
     MapSlice schedule(size_t integrator_id, void *dest, size_t elem_size, size_t grid_size, size_t quadrature_volume,
-                      bool splittable);
+                      bool splittable, MapTarget target);
 
     /// Whether the open plan already contains a map() from this integrator. Used in place of a
     /// rank-local "is a result still staged" test, which ranks would answer differently.
@@ -111,8 +206,11 @@ namespace DiFfRG
     /// collective aborts with a diagnosis instead of hanging. See DeferredMaps' destructor.
     void poison(const char *reason);
 
+    /// Override the per-execution-space fill thresholds with one explicit value. 0 restores the
+    /// automatic, hardware-derived defaults.
     void set_quantum(double quantum);
-    double quantum() const { return m_quantum; }
+    /// The explicit override, or 0 when the automatic defaults are in force.
+    double quantum() const { return m_quantum_override; }
     void set_verbose(bool verbose) { m_verbose = verbose; }
 
   protected:
@@ -146,6 +244,7 @@ namespace DiFfRG
       void *dest;
       size_t elem_size;
       size_t grid_size;
+      MapResource resource;
       /// The r owning ranks, ascending. Slice j of the grid belongs to owners[j].
       std::vector<uint> owners;
     };
@@ -153,7 +252,9 @@ namespace DiFfRG
     /// Canonical partition: slice j of r covers [part(G, r, j), part(G, r, j + 1)).
     static size_t part(size_t grid_size, size_t r, size_t j) { return (j * grid_size) / r; }
 
-    std::vector<uint> least_loaded(size_t r) const;
+    std::vector<uint> least_loaded(size_t r, MapResource resource) const;
+    /// Zero every resource budget, sized to the rank count.
+    void reset_load();
     uint64_t plan_hash() const;
     void log_plan() const;
 
@@ -161,15 +262,17 @@ namespace DiFfRG
     uint m_rank = 0;
     uint m_n_ranks = 1;
 
-    double m_quantum = 5e4;
+    /// 0 == no override, use the hardware-derived per-space thresholds.
+    double m_quantum_override = 0.;
     bool m_quantum_pinned = false;
     bool m_verbose = false;
     bool m_logged = false;
     const char *m_poisoned = nullptr;
 
     std::vector<Entry> m_plan;
-    /// Running kernel-evaluation count per rank within the open plan; reset by complete().
-    std::vector<double> m_load;
+    /// Running kernel-evaluation count per rank within the open plan, one budget per resource;
+    /// reset by complete(). Never summed across resources -- see the class docs.
+    std::array<std::vector<double>, n_map_resources> m_load;
     /// Simulated instances (see the rank/n_ranks constructor) never communicate.
     bool m_simulated = false;
   };

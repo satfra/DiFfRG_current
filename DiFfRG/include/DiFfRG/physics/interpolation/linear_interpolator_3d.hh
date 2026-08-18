@@ -9,12 +9,14 @@
 namespace DiFfRG
 {
   /**
-   * @brief A linear interpolator for 3D data, both on GPU and CPU
+   * @brief A linear interpolator for 3D data, callable from host AND device code.
+   *
+   * See LinearInterpolator1D for the host/device dispatch rationale.
    *
    * @tparam NT input data type
    * @tparam Coordinates coordinate system of the input data
    */
-  template <typename NT, typename Coordinates, typename DefaultMemorySpace = CPU_memory> class LinearInterpolator3D
+  template <typename NT, typename Coordinates> class LinearInterpolator3D
   {
     static_assert(Coordinates::dim == 3, "LinearInterpolator3D requires 3D coordinates");
 
@@ -22,9 +24,13 @@ namespace DiFfRG
     static constexpr bool periodic_y = is_periodic_axis_v<Coordinates, 1>;
     static constexpr bool periodic_z = is_periodic_axis_v<Coordinates, 2>;
 
+    using ViewType = Kokkos::View<NT ***, GPU_memory, Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
+    using HostViewType = typename ViewType::host_mirror_type;
+
+    static constexpr bool has_separate_device =
+        !std::is_same_v<typename ViewType::memory_space, typename HostViewType::memory_space>;
+
   public:
-    using memory_space = DefaultMemorySpace;
-    using other_memory_space = other_memory_space_t<DefaultMemorySpace>;
     using ctype = typename Coordinates::ctype;
     using value_type = NT;
     static constexpr size_t dim = 3;
@@ -32,75 +38,48 @@ namespace DiFfRG
     /**
      * @brief Construct a LinearInterpolator3D with internal, zeroed data and a coordinate system.
      *
-     * @param size size of the internal data
      * @param coordinates coordinate system of the data
      */
     LinearInterpolator3D(const Coordinates &coordinates)
-        : coordinates(coordinates), sizes(coordinates.sizes()), total_size(sizes[0] * sizes[1] * sizes[2])
+        : coordinates(coordinates), sizes(coordinates.sizes()),
+          device_data("LinearInterpolator3D_data", coordinates.sizes()[0], coordinates.sizes()[1],
+                      coordinates.sizes()[2]),
+          host_data(Kokkos::create_mirror_view(device_data))
     {
-      // Allocate Kokkos View
-      device_data = ViewType("LinearInterpolator3D_data", sizes[0], sizes[1], sizes[2]);
-      // Create host mirror
-      host_data = Kokkos::create_mirror_view(device_data);
     }
 
-    KOKKOS_FUNCTION
-    LinearInterpolator3D(const LinearInterpolator3D &other)
-        : coordinates(other.coordinates), sizes(other.sizes), total_size(other.total_size)
-    {
-      // Use the same data
-      device_data = other.device_data;
-    }
+    /// Shallow copy of BOTH views, valid in host and in device code. See LinearInterpolator1D.
+    KOKKOS_DEFAULTED_FUNCTION LinearInterpolator3D(const LinearInterpolator3D &) = default;
 
-    KOKKOS_FUNCTION ~LinearInterpolator3D()
-    {
-      KOKKOS_IF_ON_HOST((if (owns_other_instance) delete other_instance;))
-    }
-
+    /**
+     * @brief Replace the data, leaving host AND device current. The only mutator.
+     *
+     * `in_data` is row-major; see LinearInterpolator2D::update() for why the fill indexes the
+     * mirror through operator() instead of copying flat, and LinearInterpolator1D::update() for
+     * why the single trailing fence is not optional.
+     */
     template <typename NT2> void update(const NT2 *in_data)
     {
-      // Check if the host data is already allocated
-      if (!host_data.is_allocated())
-        throw std::runtime_error(
-            "LinearInterpolator3D: You probably called update() on a copied instance. This is not allowed. "
-            "You need to call update() on the original instance.");
-      // Populate host mirror
-      Kokkos::View<const NT2 ***, Kokkos::LayoutRight, Kokkos::HostSpace, Kokkos::MemoryTraits<Kokkos::Unmanaged>>
-          in_view(in_data, sizes[0], sizes[1], sizes[2]);
-      update(in_view);
-    }
+      for (size_t i = 0; i < sizes[0]; ++i)
+        for (size_t j = 0; j < sizes[1]; ++j)
+          for (size_t k = 0; k < sizes[2]; ++k)
+            host_data(i, j, k) = in_data[(i * sizes[1] + j) * sizes[2] + k];
 
-    template <typename View>
-      requires Kokkos::is_view<View>::value
-    void update(const View &view)
-    {
-      // Check if the host data is already allocated
-      if (!host_data.is_allocated())
-        throw std::runtime_error(
-            "LinearInterpolator2D: You probably called update() on a copied instance. This is not allowed. "
-            "You need to call update() on the original instance.");
-      // Populate host mirror
-      Kokkos::deep_copy(host_data, view);
-      // Copy data to device
-      Kokkos::deep_copy(device_data, host_data);
-    }
-
-    NT operator[](size_t i) const
-    {
-      // Check if the host data is already allocated
-      if (!host_data.is_allocated())
-        throw std::runtime_error(
-            "LinearInterpolator3D: You probably called operator[]() on a copied instance. This is not allowed. "
-            "You need to call operator[]() on the original instance.");
-      return host_data.data()[i]; // Access the host data directly
+      if constexpr (has_separate_device) {
+        typename ViewType::execution_space exec;
+        Kokkos::deep_copy(exec, device_data, host_data);
+        exec.fence();
+      }
     }
 
     /**
-     * @brief Interpolate the data at a given point.
-     *
-     * @param x the point at which to interpolate
-     * @return NT the interpolated value
+     * @brief Host-side element access, in the row-major order update() takes its input in.
      */
+    NT operator[](size_t i) const
+    {
+      return host_data(i / (sizes[1] * sizes[2]), (i / sizes[2]) % sizes[1], i % sizes[2]);
+    }
+
     /**
      * @brief Map physical coordinates onto grid indices.
      *
@@ -140,14 +119,14 @@ namespace DiFfRG
       const size_t y0 = sy.lower, y1 = sy.upper;
       const size_t z0 = sz.lower, z1 = sz.upper;
 
-      const auto corner000 = device_data(x0, y0, z0);
-      const auto corner010 = device_data(x0, y1, z0);
-      const auto corner100 = device_data(x1, y0, z0);
-      const auto corner110 = device_data(x1, y1, z0);
-      const auto corner001 = device_data(x0, y0, z1);
-      const auto corner011 = device_data(x0, y1, z1);
-      const auto corner101 = device_data(x1, y0, z1);
-      const auto corner111 = device_data(x1, y1, z1);
+      const auto corner000 = value(x0, y0, z0);
+      const auto corner010 = value(x0, y1, z0);
+      const auto corner100 = value(x1, y0, z0);
+      const auto corner110 = value(x1, y1, z0);
+      const auto corner001 = value(x0, y0, z1);
+      const auto corner011 = value(x0, y1, z1);
+      const auto corner101 = value(x1, y0, z1);
+      const auto corner111 = value(x1, y1, z1);
 
       const auto tx = sx.t;
       const auto ty = sy.t;
@@ -175,34 +154,6 @@ namespace DiFfRG
       return at(index(x, y, z));
     }
 
-    auto &CPU() const { return get_on<CPU_memory>(); }
-    auto &GPU() const { return get_on<GPU_memory>(); }
-
-    template <typename MemorySpace> auto &get_on() const
-    {
-      // Check if the host data is already allocated
-      if (!host_data.is_allocated())
-        throw std::runtime_error(
-            "LinearInterpolator3D: You probably called get_on[]() on a copied instance. This is not allowed. "
-            "You need to call get_on[]() on the original instance.");
-
-      if constexpr (std::is_same_v<MemorySpace, DefaultMemorySpace>) {
-        // remove constness
-        return const_cast<LinearInterpolator3D<NT, Coordinates, MemorySpace> &>(*this);
-      } else {
-        // Create a new instance with the same data but in the requested memory space
-        if (other_instance == nullptr) {
-          other_instance = new LinearInterpolator3D<NT, Coordinates, MemorySpace>(coordinates);
-          owns_other_instance = true;
-          other_instance->other_instance = const_cast<std::decay_t<decltype(*this)> *>(this);
-        }
-        // Copy the data from the current instance to the new one
-        other_instance->update(host_data);
-        // Return the new instance
-        return *other_instance;
-      }
-    }
-
     /**
      * @brief Get the coordinate system of the data.
      *
@@ -210,29 +161,25 @@ namespace DiFfRG
      */
     const Coordinates &get_coordinates() const { return coordinates; }
 
-    NT *data()
-    {
-      if (!host_data.is_allocated())
-        throw std::runtime_error(
-            "LinearInterpolator1D: You probably called data() on a copied instance. This is not allowed. "
-            "You need to call data() on the original instance.");
-      return host_data.data();
-    }
-
-    friend class LinearInterpolator3D<NT, Coordinates, other_memory_space>;
+    /**
+     * @brief Read-only handle to the host values, in the mirror's storage order.
+     *
+     * NOTE the storage order is NOT the row-major order update() takes; see LinearInterpolator2D.
+     */
+    const NT *data() const { return host_data.data(); }
 
   private:
+    /// Read one element from whichever buffer belongs to the executing side.
+    KOKKOS_FORCEINLINE_FUNCTION NT value(const size_t i, const size_t j, const size_t k) const
+    {
+      KOKKOS_IF_ON_DEVICE((return device_data(i, j, k);))
+      KOKKOS_IF_ON_HOST((return host_data(i, j, k);))
+    }
+
     const Coordinates coordinates;
     const device::array<size_t, 3> sizes;
-    const size_t total_size;
-
-    using ViewType = Kokkos::View<NT ***, DefaultMemorySpace, Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
-    using HostViewType = typename ViewType::host_mirror_type;
 
     ViewType device_data;
     HostViewType host_data;
-
-    mutable LinearInterpolator3D<NT, Coordinates, other_memory_space> *other_instance = nullptr;
-    mutable bool owns_other_instance = false;
   };
 } // namespace DiFfRG

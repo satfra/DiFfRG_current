@@ -38,11 +38,11 @@ using Coordinates1D = LogarithmicCoordinates1D<double>;
 const Coordinates1D coordinates1D;   // constructed as (p_grid_size, p_grid_min, p_grid_max, p_grid_bias)
 ```
 
-`coordinates1D.forward(i)` returns the physical momentum at grid point `i`. To evaluate a dressing at an arbitrary loop momentum inside a kernel, the model holds an **interpolator** per dressing, living in GPU memory:
+`coordinates1D.forward(i)` returns the physical momentum at grid point `i`. To evaluate a dressing at an arbitrary loop momentum inside a kernel, the model holds an **interpolator** per dressing:
 
 ```cpp
-mutable SplineInterpolator1D<double, Coordinates1D, GPU_memory> dtZc, dtZA, ZA, Zc;
-mutable SplineInterpolator1D<double, Coordinates1D, GPU_memory> ZA4, ZAcbc, ZA3;
+mutable SplineInterpolator1D<double, Coordinates1D> dtZc, dtZA, ZA, Zc;
+mutable SplineInterpolator1D<double, Coordinates1D> ZA4, ZAcbc, ZA3;
 ```
 
 `dtZA`/`dtZc` hold the anomalous dimensions (the propagator flows) and are needed inside the loop integrands — see the self-consistency loop below.
@@ -192,7 +192,7 @@ $ ./tut4
 ```
 
 ```{important}
-The kernels are generated with `"Device" -> "GPU"`, so this tutorial requires a CUDA build of DiFfRG **and a GPU at runtime**. To run on the CPU instead, regenerate the kernels with `"Device" -> "TBB"` (and switch the interpolators' memory space accordingly).
+The kernels are generated with `"Device" -> "GPU"`, so this tutorial requires a CUDA build of DiFfRG **and a GPU at runtime**. To run on the CPU instead, regenerate the kernels with `"Device" -> "TBB"`. The interpolators need no change: they hold their data on both sides and evaluate on whichever one the kernel runs on.
 ```
 
 The run flows from the UV cutoff $\Lambda$ to the IR and writes `output.h5`, containing the momentum-dependent dressings $Z_A(p)$, $Z_c(p)$ and couplings, plus the gluon mass $m_A^2$. Read these with the Python HDF5 utilities (`DiFfRG.file_io`).
@@ -203,7 +203,7 @@ The SP truncation keeps only the external-momentum dependence of the vertices. A
 
 - **Coordinates** become a product grid, `LogLogLinCoordinates` (= `CoordinatePackND<LogarithmicCoordinates1D<double>, LogarithmicCoordinates1D<double>, LinearCoordinates1D<double>>`): two logarithmic momentum axes and one linear angle axis.
 - **Variables** become multi-dimensional, e.g. `FunctionND<"ZA3", vertex_grid_size>` with `vertex_grid_size = vertex_p_grid_size * vertex_p_grid_size * n_angles` laid out row-major over `(p1, p2, cos)`.
-- **Interpolators** become `LinearInterpolatorND<double, LogLogLinCoordinates, GPU_memory>`.
+- **Interpolators** become `LinearInterpolatorND<double, LogLogLinCoordinates>`.
 - **Kernels** use multi-angle integrators — `Integrator_p2_4D_2ang` / `_3ang` — generated with the same `MakeKernel` options, plus `"Coordinates" -> {"LogLogLinCoordinates"}`, `"CoordinateArguments" -> {"p1","p2","cosp1p2"}`, and a `"KernelBody" -> DeclareAnglesP34Dpqr[l1,p1,p2]` that declares the loop–external cosines in terms of the integration angles. In the model, the residual is filled with `flow_equations.ZA3.map(&residual[idxv("ZA3")], coordinates3D, arguments)`, exactly the same `.map` call as the 1D dressings but over the 3D coordinate pack.
 
 The angle-resolved Yang-Mills example lives in `Examples/YangMills/Full` and is the worked reference for this: `Yang-Mills.m`/`Yang-Mills.nb` generate the six kernels (`ZA`, `Zc`, `ZA3`, `ZAcbc`, `ZA4tadpole`, `ZA4SP`) and `model.hh` wires them with the `.map` pattern. Like SP, it must be tuned in the initial gluon mass `m2A` — too negative lands on the Higgs branch (the flow diverges), too small on the massive branch, and the scaling regime lies in between; set `/tuning/tune_m2A` to bisect onto it.

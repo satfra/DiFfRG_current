@@ -32,6 +32,26 @@ namespace DiFfRG
     }
   } // namespace
 
+  namespace internal
+  {
+    double device_fill_threshold()
+    {
+      // Resident threads on the device: below this many evaluations a launch cannot occupy it, so
+      // splitting further only adds launches and gather slices. Measured against this: the
+      // empirically tuned 5e4 on an RTX 4070 Laptop vs its capacity of 55 296.
+      static const double t = double(Kokkos::DefaultExecutionSpace().concurrency());
+      return t > 0. ? t : 5e4;
+    }
+
+    double host_fill_threshold()
+    {
+      // Workers, not threads-per-evaluation: each worker loops over many evaluations, so it takes a
+      // grain of them to amortize one parallel_for spawn.
+      static const double t = double(Kokkos::DefaultHostExecutionSpace().concurrency()) * host_grain;
+      return t > 0. ? t : host_grain;
+    }
+  } // namespace internal
+
   MapScheduler &MapScheduler::instance()
   {
     static MapScheduler scheduler;
@@ -41,7 +61,7 @@ namespace DiFfRG
   MapScheduler::MapScheduler(const uint rank, const uint n_ranks)
       : m_comm(MPI_COMM_WORLD), m_rank(rank), m_n_ranks(n_ranks), m_simulated(true)
   {
-    m_load.assign(m_n_ranks, 0.);
+    reset_load();
   }
 
   MapScheduler::MapScheduler() : m_comm(MPI_COMM_WORLD)
@@ -50,27 +70,38 @@ namespace DiFfRG
     m_n_ranks = MPI::size(m_comm);
     const double from_env = env_double("DIFFRG_MAP_QUANTUM", 0.);
     if (from_env > 0.) {
-      m_quantum = from_env;
+      m_quantum_override = from_env;
       m_quantum_pinned = true;
     }
     m_verbose = env_flag("DIFFRG_MAP_VERBOSE");
-    m_load.assign(m_n_ranks, 0.);
+    reset_load();
+  }
+
+  void MapScheduler::reset_load()
+  {
+    for (auto &budget : m_load)
+      budget.assign(m_n_ranks, 0.);
   }
 
   void MapScheduler::set_quantum(double quantum)
   {
     // DIFFRG_MAP_QUANTUM is the knob a scaling sweep turns from the outside, so it wins over the
     // parameter file rather than being silently overwritten by it.
-    if (quantum > 0. && !m_quantum_pinned) m_quantum = quantum;
+    if (!m_quantum_pinned) m_quantum_override = quantum > 0. ? quantum : 0.;
   }
 
-  std::vector<uint> MapScheduler::least_loaded(const size_t r) const
+  std::vector<uint> MapScheduler::least_loaded(const size_t r, const MapResource resource) const
   {
+    // Only the budget of the resource this map actually runs on. A rank loaded with host work has
+    // an idle GPU and is a perfectly good owner for a device map, and vice versa; ranking on a
+    // shared budget would skip it, which is the one thing that makes a mixed model balance badly.
+    const std::vector<double> &load = m_load[static_cast<int>(resource)];
+
     std::vector<uint> order(m_n_ranks);
     std::iota(order.begin(), order.end(), 0u);
     // Ties broken by rank index, so the choice is identical on every rank.
-    std::partial_sort(order.begin(), order.begin() + r, order.end(), [this](const uint a, const uint b) {
-      if (m_load[a] != m_load[b]) return m_load[a] < m_load[b];
+    std::partial_sort(order.begin(), order.begin() + r, order.end(), [&load](const uint a, const uint b) {
+      if (load[a] != load[b]) return load[a] < load[b];
       return a < b;
     });
     std::vector<uint> owners(order.begin(), order.begin() + r);
@@ -80,30 +111,36 @@ namespace DiFfRG
   }
 
   MapSlice MapScheduler::schedule(const size_t integrator_id, void *dest, const size_t elem_size,
-                                  const size_t grid_size, const size_t quadrature_volume, const bool splittable)
+                                  const size_t grid_size, const size_t quadrature_volume, const bool splittable,
+                                  const MapTarget target)
   {
     if (!active() || grid_size == 0) return MapSlice{0, grid_size};
 
     const double S = double(grid_size) * double(quadrature_volume);
+    // An explicit override applies to every execution space; otherwise each map() is split against
+    // the threshold of the resource it actually runs on. The override replaces the threshold only:
+    // the resource still selects which budget the slices are charged to.
+    const double quantum = m_quantum_override > 0. ? m_quantum_override : target.fill_threshold;
 
     size_t r = 1;
-    if (splittable && grid_size > 1 && m_quantum > 0.) {
-      const double raw = S / m_quantum;
+    if (splittable && grid_size > 1 && quantum > 0.) {
+      const double raw = S / quantum;
       r = raw < 1. ? 1 : static_cast<size_t>(raw);
       r = std::min<size_t>(r, std::min<size_t>(m_n_ranks, grid_size));
     }
 
-    const std::vector<uint> owners = least_loaded(r);
+    const std::vector<uint> owners = least_loaded(r, target.resource);
+    std::vector<double> &load = m_load[static_cast<int>(target.resource)];
 
     MapSlice mine{0, 0};
     for (size_t j = 0; j < r; ++j) {
       const size_t begin = part(grid_size, r, j);
       const size_t end = part(grid_size, r, j + 1);
-      m_load[owners[j]] += double(end - begin) * double(quadrature_volume);
+      load[owners[j]] += double(end - begin) * double(quadrature_volume);
       if (owners[j] == m_rank) mine = MapSlice{begin, end - begin};
     }
 
-    m_plan.push_back(Entry{integrator_id, dest, elem_size, grid_size, owners});
+    m_plan.push_back(Entry{integrator_id, dest, elem_size, grid_size, target.resource, owners});
     return mine;
   }
 
@@ -130,6 +167,7 @@ namespace DiFfRG
       mix(e.integrator_id);
       mix(e.elem_size);
       mix(e.grid_size);
+      mix(static_cast<uint64_t>(e.resource));
       mix(e.owners.size());
       for (const uint o : e.owners)
         mix(o);
@@ -140,25 +178,35 @@ namespace DiFfRG
   void MapScheduler::log_plan() const
   {
     std::stringstream ss;
-    ss << "MapScheduler: " << m_n_ranks << " ranks, quantum " << m_quantum << ", " << m_plan.size()
+    ss << "MapScheduler: " << m_n_ranks << " ranks, "
+       << (m_quantum_override > 0. ? "quantum (override) " + std::to_string(m_quantum_override)
+                                   : "quantum auto: device " + std::to_string(internal::device_fill_threshold()) +
+                                         ", host " + std::to_string(internal::host_fill_threshold()))
+       << ", " << m_plan.size()
        << " maps in this batch\n";
     for (size_t e = 0; e < m_plan.size(); ++e) {
       const auto &en = m_plan[e];
-      ss << "  map " << e << ": G=" << en.grid_size << " split " << en.owners.size() << "x over ranks {";
+      ss << "  map " << e << ": " << to_string(en.resource) << ", G=" << en.grid_size << " split "
+         << en.owners.size() << "x over ranks {";
       for (size_t j = 0; j < en.owners.size(); ++j)
         ss << en.owners[j] << (j + 1 < en.owners.size() ? "," : "");
       ss << "}\n";
     }
-    ss << "  per-rank load (kernel evaluations):";
-    for (uint p = 0; p < m_n_ranks; ++p)
-      ss << " [" << p << "]=" << m_load[p];
+    // Reported per resource and never summed: the two are different hardware and overlap in time,
+    // so a total would be a number with no wall-clock meaning.
+    for (int res = 0; res < n_map_resources; ++res) {
+      ss << "  per-rank " << to_string(static_cast<MapResource>(res)) << " load (kernel evaluations):";
+      for (uint p = 0; p < m_n_ranks; ++p)
+        ss << " [" << p << "]=" << m_load[res][p];
+      ss << "\n";
+    }
     std::cout << ss.str() << std::endl;
   }
 
   void MapScheduler::poison(const char *reason)
   {
     m_plan.clear();
-    std::fill(m_load.begin(), m_load.end(), 0.);
+    reset_load();
     if (m_poisoned == nullptr) m_poisoned = reason;
   }
 
@@ -258,6 +306,6 @@ namespace DiFfRG
     }
 
     m_plan.clear();
-    std::fill(m_load.begin(), m_load.end(), 0.);
+    reset_load();
   }
 } // namespace DiFfRG

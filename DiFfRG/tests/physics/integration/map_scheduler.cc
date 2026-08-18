@@ -10,6 +10,12 @@
 
 using namespace DiFfRG;
 
+// The tests pin the threshold rather than using the hardware-derived default, so that the expected
+// split widths below do not depend on which GPU the suite runs on. Two targets differing only in
+// resource, so that a mixed-resource schedule can be exercised at one fixed split width.
+static constexpr MapTarget QUANTUM{MapResource::device, 5e4};
+static constexpr MapTarget HOST_QUANTUM{MapResource::host, 5e4};
+
 /**
  * Everything MapScheduler does apart from the single MPI_Allgatherv -- choosing the split width,
  * picking owners, the byte accounting, the packing and the landing -- is a pure function of the
@@ -50,11 +56,13 @@ namespace
     std::vector<std::unique_ptr<SimulatedRank>> ranks;
     std::vector<SimulatedRank *> raw;
 
-    explicit Cluster(uint n)
+    /// `quantum` pins the split threshold so the expected widths below do not depend on the host's
+    /// hardware. Pass 0 to exercise the automatic, per-resource thresholds instead.
+    explicit Cluster(uint n, double quantum = 5e4)
     {
       for (uint p = 0; p < n; ++p) {
         ranks.push_back(std::make_unique<SimulatedRank>(p, n));
-        ranks.back()->set_quantum(5e4);
+        ranks.back()->set_quantum(quantum);
       }
       for (auto &r : ranks)
         raw.push_back(r.get());
@@ -83,7 +91,7 @@ TEST_CASE("Slices tile the grid exactly, at every rank count", "[integration][mp
 
   std::vector<size_t> coverage(G, 0);
   for (uint p = 0; p < n_ranks; ++p) {
-    const MapSlice s = cluster.raw[p]->schedule(0, sink.data(), sizeof(double), G, 6912, true);
+    const MapSlice s = cluster.raw[p]->schedule(0, sink.data(), sizeof(double), G, 6912, true, QUANTUM);
     REQUIRE(s.offset + s.count <= G);
     for (size_t i = s.offset; i < s.offset + s.count; ++i)
       coverage[i] += 1;
@@ -103,7 +111,7 @@ TEST_CASE("The split width follows the cost score", "[integration][mpi][schedule
   auto owners_of = [&](const size_t Q, const bool splittable) {
     size_t n_owners = 0;
     for (uint p = 0; p < 16; ++p)
-      if (cluster.raw[p]->schedule(0, sink.data(), sizeof(double), 64, Q, splittable).count > 0) ++n_owners;
+      if (cluster.raw[p]->schedule(0, sink.data(), sizeof(double), 64, Q, splittable, QUANTUM).count > 0) ++n_owners;
     return n_owners;
   };
 
@@ -124,7 +132,7 @@ TEST_CASE("Cheap flows spread across ranks instead of being chopped up", "[integ
   std::vector<size_t> per_rank(4, 0);
   for (size_t flow = 0; flow < 4; ++flow)
     for (uint p = 0; p < 4; ++p)
-      if (cluster.raw[p]->schedule(flow, sinks[flow].data(), sizeof(double), 64, 192, true).count > 0) per_rank[p] += 1;
+      if (cluster.raw[p]->schedule(flow, sinks[flow].data(), sizeof(double), 64, 192, true, QUANTUM).count > 0) per_rank[p] += 1;
 
   for (uint p = 0; p < 4; ++p)
     CHECK(per_rank[p] == 1);
@@ -158,7 +166,7 @@ TEST_CASE("A batch exchange reassembles the full result on every rank", "[integr
 
   for (size_t f = 0; f < n_flows; ++f)
     for (uint p = 0; p < n_ranks; ++p) {
-      const MapSlice s = cluster.raw[p]->schedule(f, dest[p][f].data(), sizeof(double), G[f], Q[f], true);
+      const MapSlice s = cluster.raw[p]->schedule(f, dest[p][f].data(), sizeof(double), G[f], Q[f], true, QUANTUM);
       // Only the owner computes -- exactly what map() does when it skips a non-owner.
       for (size_t i = s.offset; i < s.offset + s.count; ++i)
         dest[p][f][i] = truth[f][i];
@@ -183,7 +191,7 @@ TEST_CASE("Every rank derives the same plan", "[integration][mpi][scheduler]")
   const size_t Qs[] = {6912, 192, 6912, 1152, 192, 6912};
   for (size_t f = 0; f < 6; ++f)
     for (uint p = 0; p < 5; ++p)
-      cluster.raw[p]->schedule(f, sink.data(), sizeof(double), 64, Qs[f], true);
+      cluster.raw[p]->schedule(f, sink.data(), sizeof(double), 64, Qs[f], true, QUANTUM);
 
   for (auto *r : cluster.raw)
     REQUIRE(r->prepare_batch());
@@ -203,4 +211,104 @@ TEST_CASE("Every rank derives the same plan", "[integration][mpi][scheduler]")
     r->receive_from(cluster.raw);
   for (auto *r : cluster.raw)
     r->finish_batch();
+}
+
+TEST_CASE("Fill thresholds are hardware-derived and picked per execution space",
+          "[integration][mpi][scheduler]")
+{
+  DiFfRG::Init();
+
+  const double device = internal::device_fill_threshold();
+  const double host = internal::host_fill_threshold();
+
+  // Both must be positive, or schedule() would silently stop splitting entirely.
+  CHECK(device > 0.);
+  CHECK(host > 0.);
+
+  // The selector keys on memory_space, so the host-backed spaces must all agree with each other and
+  // GPU_exec must follow whichever space it actually resolves to in this build.
+  CHECK(map_fill_threshold<Threads_exec>() == host);
+  CHECK(map_fill_threshold<TBB_exec>() == host);
+  if constexpr (std::is_same_v<typename GPU_exec::memory_space, CPU_memory>)
+    CHECK(map_fill_threshold<GPU_exec>() == host); // CUDA-less build: GPU_exec *is* the host space
+  else
+    CHECK(map_fill_threshold<GPU_exec>() == device);
+
+  // An explicit override replaces both, which is what DIFFRG_MAP_QUANTUM has to mean.
+  auto &scheduler = MapScheduler::instance();
+  const double previous = scheduler.quantum();
+  scheduler.set_quantum(1234.);
+  CHECK(scheduler.quantum() == 1234.);
+  scheduler.set_quantum(previous);
+}
+
+TEST_CASE("Device and host work are balanced against separate budgets", "[integration][mpi][scheduler]")
+{
+  // A rank owns a GPU *and* a share of the node's cores. They are different hardware and, inside a
+  // DeferredMaps scope, they run at the same time -- so charging both to one budget would make a
+  // rank that just took a large host flow look like a bad home for the next device flow, even
+  // though its GPU is sitting idle. This is that regression, at the level where it is decided.
+  constexpr uint n_ranks = 4;
+  Cluster cluster(n_ranks);
+
+  // Six cheap flows, alternating resource. Each is well under the quantum, so r == 1 and every one
+  // is assigned whole -- which is exactly what makes the owner choice, and nothing else, visible.
+  std::vector<std::vector<double>> sinks(6, std::vector<double>(64, 0.));
+  std::vector<uint> device_owner(6, 0), host_owner(6, 0);
+
+  for (uint p = 0; p < n_ranks; ++p)
+    for (size_t f = 0; f < 6; ++f) {
+      const MapTarget target = (f % 2 == 0) ? QUANTUM : HOST_QUANTUM;
+      if (cluster.raw[p]->schedule(f, sinks[f].data(), sizeof(double), 64, 192, true, target).count > 0) {
+        if (f % 2 == 0)
+          device_owner[f] = p;
+        else
+          host_owner[f] = p;
+      }
+    }
+
+  // Three device flows over four ranks: with a shared budget the alternating host flows would have
+  // pushed each successive device flow onto a rank that had done no host work, still distinct but
+  // for the wrong reason. With separate budgets the device flows see an untouched device budget and
+  // fill ranks 0, 1, 2 -- and the host flows do the same independently.
+  CHECK(device_owner[0] == 0);
+  CHECK(device_owner[2] == 1);
+  CHECK(device_owner[4] == 2);
+  CHECK(host_owner[1] == 0);
+  CHECK(host_owner[3] == 1);
+  CHECK(host_owner[5] == 2);
+
+  for (auto *r : cluster.raw)
+    r->prepare_batch();
+  for (auto *r : cluster.raw)
+    r->receive_from(cluster.raw);
+  for (auto *r : cluster.raw)
+    r->finish_batch();
+
+  // And the exchange does not care about the resource mix: every flow is whole on some rank.
+  for (size_t f = 0; f < 6; ++f)
+    CHECK(sinks[f].size() == 64u);
+}
+
+TEST_CASE("The split width follows the calling space's threshold", "[integration][mpi][scheduler]")
+{
+  // Same flow, same grid, two resources whose thresholds differ by 10x: the wider split must go to
+  // the resource with the smaller threshold. This is the half of the fix that was already correct,
+  // pinned so it stays that way.
+  constexpr uint n_ranks = 8;
+  constexpr size_t G = 64, Q = 6912; // S = 442368
+
+  // No pinned override here: it would replace the per-space threshold, which is the thing under
+  // test. The targets below therefore stand in for what map_target<ExecutionSpace>() returns.
+  auto width = [&](const MapTarget target) {
+    Cluster cluster(n_ranks, 0.);
+    std::vector<double> sink(G, 0.);
+    uint owners = 0;
+    for (uint p = 0; p < n_ranks; ++p)
+      if (cluster.raw[p]->schedule(0, sink.data(), sizeof(double), G, Q, true, target).count > 0) ++owners;
+    return owners;
+  };
+
+  CHECK(width(MapTarget{MapResource::device, 5e4}) == 8u);   // 442368 / 5e4 = 8
+  CHECK(width(MapTarget{MapResource::host, 5e5}) == 1u);     // 442368 / 5e5 < 1
 }

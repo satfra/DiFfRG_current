@@ -42,7 +42,75 @@ window from `from_linear_index()`, which is exact for `dim == 1` and not for hig
 multi-dimensional external grid is assigned whole to one rank. Every `map()` in `QCD_Nf2` is over a
 1D momentum grid, so this costs nothing there.
 
-### 1.2 How the split width is chosen
+### 1.2 CPU backends, and mixed CPU/GPU models
+
+`MapScheduler` is **execution-space agnostic**: `schedule()` runs before any space-specific code, in
+all four `map()` overloads (the generic `QuadratureIntegrator`, its `TBB_exec` specialisation, and
+the two finite-T mirrors). Generated flow wrappers such as `Integrator_p2_1ang` inherit `map()`
+unchanged, so nothing is needed per integrator.
+
+- **A CPU-only build distributes identically.** `GPU_exec` is `Kokkos::DefaultExecutionSpace`, which
+  *is* the host space when CUDA is off, so the same flows route through the host branch of
+  `map_dist()`. Same slices, same plan, same `Allgatherv`, same bitwise guarantee — only the pinned
+  staging disappears, because there is no device to stage from.
+- **The target is chosen per execution space, automatically.** The execution space is a compile-time
+  property of the integrator, so `map()` passes `map_target<ExecutionSpace>()` into `schedule()`; no
+  configuration is involved. That target carries two things: the fill threshold, which sets the split
+  width, and the **resource class** — `device` or `host` — which selects the budget the slices are
+  charged to. A CUDA-less build resolves both to `host` for free, because there `GPU_exec` *is* the
+  host space and the selector keys on `memory_space == CPU_memory`, the same test `map_dist()`
+  already uses to pick its staging path.
+- **CPU-only MPI within a single node is expected to be a small net loss.** `Init` gives each rank
+  the cores its affinity mask actually grants it, so N ranks on one node share the same T cores,
+  minus MPI overhead and minus TBB's ability to work-steal across one arena. CPU-only MPI pays off
+  *across* nodes, not within one.
+- **A model mixing `GPU_exec` and `TBB_exec` integrators uses both at once, and is balanced on
+  each.** A rank owns two independent resources — its GPU and its share of the node's cores — and
+  they overlap in time: inside a `DeferredMaps` scope the device path launches asynchronously and
+  returns, so a host map issued after it executes while the device is still working. This is the one
+  case where the "97.5 % serialised" measurement in section 7 does not describe the run.
+
+  `MapScheduler` models that with **one load budget per resource**. Both the split width and the
+  owner choice are made against the budget of the space the calling integrator actually uses, so a
+  rank that has just taken a large TBB flow is still the natural home for the next GPU flow. The
+  budgets are never summed and never converted into each other: there is no exchange rate at which a
+  device evaluation equals a host one, and assuming one is exactly what a single shared budget did.
+  With each resource levelled independently, per-rank wall time is `max(device_i, host_i)` with both
+  terms flat in `i` — which is the optimum available under this structure.
+
+  Two limits remain, and both are outside the scheduler. Within one resource the weight per
+  evaluation is still 1, so flows with equal `S` but different per-evaluation cost still mis-weigh
+  (see §8). And the overlap only exists inside a deferral scope — a host map issued with deferral off
+  flushes, and therefore synchronises every rank, before the device work behind it can catch up.
+
+  **Call order inside a deferral scope does not matter.** It used to: a host `map()` is
+  `tbb::parallel_for` or a host `Kokkos::parallel_for`, both of which return only once the work is
+  done, so it blocks the *host thread* — not the GPU, which keeps running whatever was already
+  launched, but the launch of any device map issued *after* it. Writing `GPU, CPU, GPU` therefore
+  drained the stream whenever the host map outlasted the device work in flight, while `GPU, GPU, CPU`
+  did not. A performance cliff that depends on statement order is exactly the kind of thing a user
+  should not have to know, so it was removed rather than documented: inside a `DeferredMaps` scope a
+  host map is **queued**, not run, and `flush()` drains the queue *before* it fences. Any mixed block
+  therefore executes as "launch every device map, run the host maps while they are in flight, fence",
+  however it was written. Wall time is the larger of the two totals, never their sum.
+
+  The queue is `MapCompletion::record_work` (`map_completion.hh`), fed by `run_or_queue*()` in the
+  four `map()` overloads. Three properties are worth knowing:
+
+  - It is **compiled out** when there is no device backend (`internal::has_device_backend`), so a
+    CUDA-less build keeps running host maps inline — there would be nothing to overlap with.
+  - Jobs run **sequentially, in call order**, each still internally TBB-parallel. So the summation
+    order inside every integral is untouched and results stay bitwise identical; and the per-integrator
+    `m_dest_device` scratch is written and drained before the next job touches it.
+  - On the exception path `~DeferredMaps` **drops** queued jobs without running them, exactly as it
+    already drops unlanded copies — the destinations may be gone.
+
+  `DIFFRG_MAP_QUANTUM` replaces the *threshold* for every space, but never the resource class, so
+  pinning it does not collapse the two budgets back into one. Nothing in `QCD_Nf2` exercises any of
+  this — every flow there is `GPU_exec` — but the mixed path is covered by
+  `tests/physics/integration/map_scheduler.cc`.
+
+### 1.3 How the split width is chosen
 
 Per `map()` call, with `G` external grid points and quadrature volume `Q = prod(grid_size)`:
 
@@ -52,24 +120,47 @@ r = clamp(S / quantum, 1, min(n_ranks, G))   how many ranks to spread it over
 owners = the r least-loaded ranks so far in this batch
 ```
 
-`quantum` defaults to `5e4` and is a **GPU fill threshold**, not a launch-overhead threshold. Below
-roughly 5·10⁴ evaluations these register-heavy NumTracer kernels do not occupy a modern device
-anyway, so splitting further buys nothing and costs a launch plus a share of a gather. (Deriving it
-from launch cost — order 10³ evaluations — would oversplit by two orders of magnitude.)
+`quantum` is a **fill threshold** — the work below which one rank's compute resource cannot be kept
+busy, so that splitting further buys nothing and costs a launch plus a share of a gather. It is *not*
+a launch-overhead threshold; deriving it from launch cost (order 10³ evaluations) would oversplit by
+two orders of magnitude.
+
+**It is derived from the hardware, not hardcoded**, via `Kokkos::…::concurrency()`:
+
+| execution space | threshold | why |
+|---|---|---|
+| device | `concurrency()` | it counts *resident threads*, and each thread evaluates the kernel once, so the device is full at exactly that many evaluations |
+| host | `concurrency() × 1024` | it counts *workers*, each looping over many evaluations, so the threshold is workers × a grain big enough to bury one `parallel_for` spawn (order 10 µs) |
+
+The device rule is checkable and checks out: the value tuned empirically on the development GPU was
+`5e4`, and that GPU reports `concurrency() == 55 296` (36 SMs × 1536). **The host grain of 1024 is a
+judgement, not a measurement** — no CPU-backend flow run has been profiled. If a CPU run splits
+badly, that constant is the first suspect, and `DIFFRG_MAP_QUANTUM` overrides both.
+
+This is not cosmetic. An A100 has `concurrency() == 221 184`, four times the development GPU, so a
+hardcoded `5e4` would have **over-split by 4×** on exactly the cluster this feature exists for: each
+`4D_3ang` flow would go to 8 ranks holding 55 296 evaluations each, a quarter of what it takes to
+fill an A100. With the derived threshold it goes to 2 ranks at full occupancy while the least-loaded
+packing keeps the other ranks busy on different flows.
 
 The consequence that matters for load balance: **a cheap flow is assigned whole** to the
 least-loaded rank rather than chopped into slivers, so a batch of many small flows spreads *across*
 ranks instead of every rank doing a sliver of every flow.
 
-For `QCD_Nf2/no_mesons_AAqbq18` at `x_order=32, cos1=cos2=phi=6`:
+For `QCD_Nf2/no_mesons_AAqbq18` at `x_order=32, cos1=cos2=phi=6`, on the development GPU
+(threshold 55 296) and on an A100 (threshold 221 184):
 
-| class | count | Q | S = 64·Q | r at quantum = 5e4 |
-|---|---|---|---|---|
-| `4D_3ang` (18 `ZAAqbq` + `ZA4`) | 19 | 6912 | 442 368 | 8 |
-| `4D_2ang` (`ZA3`, `ZAcbc`, `ZAqbq1/4/7`) | 5 | 1152 | 73 728 | 1 |
-| `p2_1ang` (`ZA`, `Zc`, `Zq`) | 3 | 192 | 12 288 | 1 |
+| class | count | Q | S = 64·Q | r on 4070 Laptop | r on A100 |
+|---|---|---|---|---|---|
+| `4D_3ang` (18 `ZAAqbq` + `ZA4`) | 19 | 6912 | 442 368 | 8 | 2 |
+| `4D_2ang` (`ZA3`, `ZAcbc`, `ZAqbq1/4/7`) | 5 | 1152 | 73 728 | 1 | 1 |
+| `p2_1ang` (`ZA`, `Zc`, `Zq`) | 3 | 192 | 12 288 | 1 | 1 |
 
-### 1.3 How results come back
+Note what this means for the cluster run: at N ≤ 4 the split width is clamped by the rank count
+anyway (`r = min(…, n_ranks)`), so 1–4 GPUs behave identically under either threshold. The
+distinction only starts to matter at N > 4.
+
+### 1.4 How results come back
 
 `MapCompletion::flush()` fences, lands the pinned staging buffers, and then performs **one**
 `MPI_Allgatherv` covering every map in the open batch (~12.8 kB for the 25-map block). One collective
@@ -94,13 +185,12 @@ There is deliberately **no** `MPI_Iallgatherv`. Every gather result is consumed 
 statement (`dtZA.update()`, `zqF[0]`, the AAqbq basis rotation), and an explicit ABM stepper cannot
 start the next RHS, so there is nothing to overlap with.
 
-### 1.4 Rank → GPU affinity
+### 1.5 Rank → CPU and GPU affinity
 
 `Init` now, after `MPI_Init`:
 
 1. builds a node-local communicator (`MPI_Comm_split_type(MPI_COMM_TYPE_SHARED)`),
-2. divides `/discretization/threads` by the number of node-local ranks, so that setting still means
-   *threads per rank* (both deal.II's limit and DiFfRG's own `tbb::global_control`),
+2. works out this rank's CPU thread budget from the **affinity masks** (below),
 3. picks `device = local_rank % n_visible_devices`,
 4. initialises Kokkos itself with that device — replicating everything deal.II's
    `ensure_kokkos_initialized()` would have done, **including** setting
@@ -108,6 +198,46 @@ start the next RHS, so there is nothing to overlap with.
    Both of those live inside its `if (!Kokkos::is_initialized())` branch; skipping them reintroduces
    the exit segfault documented at `init.cc:59-92`. This path is taken only when there is more than
    one node-local rank; a single-rank run still goes through deal.II unchanged.
+
+#### CPU threads per rank
+
+The obvious rule — take the machine's core count and divide by the number of node-local ranks — is
+wrong on the systems that matter, and wrong in *both* directions. Measured on a 32-CPU machine
+pinned to 8 CPUs with `taskset`:
+
+| what it reports | unpinned | pinned to 8 of 32 |
+|---|---|---|
+| `std::thread::hardware_concurrency()` — what deal.II's `MultithreadInfo::n_cores()` calls | 32 | **32** |
+| `sysconf(_SC_NPROCESSORS_ONLN)` | 32 | **32** |
+| `CPU_COUNT(sched_getaffinity)` | 32 | 8 |
+| TBB `default_concurrency()` | 32 | 8 |
+
+So:
+
+- **`hardware_concurrency()` ignores the affinity mask.** A rank pinned to its own cores does not
+  learn it from there. Split a 128-core node into two ranks and each would deduce 128 — exactly the
+  failure you would expect.
+- **But DiFfRG's auto path already reads TBB's value, which does see the mask.** So under Slurm
+  `--cpus-per-task=64` each rank's limit is *already* 64 — and dividing that again by the node-local
+  rank count gives **32**, halving it a second time. That is the more dangerous bug, because it only
+  fires on a correctly configured cluster.
+
+The divisor is therefore not "how many ranks are on this node" but **"how many node-local ranks are
+competing for *my* CPUs"**, answered by intersecting the affinity masks — the same shape of test as
+the GPU bus-id comparison below, and for the same reason. Disjoint masks ⇒ the launcher already
+partitioned the node, divisor 1. Identical masks ⇒ the ranks share it, divisor = the number that
+overlap. `Init` prints which case it took.
+
+**The knobs, in precedence order:**
+
+| knob | effect |
+|---|---|
+| `/discretization/threads` | Taken **verbatim, per rank**, with no division. Silently dividing it would make the setting mean "threads per node", which is neither what it says nor what it means in a serial run. This is the escape hatch when the automatic answer is wrong. |
+| launcher pinning — `srun --cpus-per-task=N`, `mpirun --bind-to`, `taskset` | The preferred mechanism. It is now *detected* rather than fought: the mask is authoritative and is not divided again. |
+| `DEAL_II_NUM_THREADS` | deal.II takes the minimum with it, so it can only lower the budget further. |
+| nothing set, no pinning | The node is split evenly among the ranks that share it. |
+
+#### GPUs per rank
 
 **Sharing is detected by PCI bus id, not by counting.** Under Slurm `--gpus-per-task=1` every rank
 sees exactly one device and `local_rank % n_devices == 0` is the *correct* answer; a count-based
@@ -130,6 +260,32 @@ case:
 
 Timestepper progress is stdout-only, so this deliberately goes to stderr — check both streams, or
 merge them, if your launcher separates them.
+
+### 1.6 Finite-T integrators now get host run-ahead too
+
+`QuadratureIntegrator_fT` never had the pinned-staging path that `QuadratureIntegrator` was given
+for exactly this reason, so its device path copied straight from the device into `dest`. `dest` is
+ordinary *pageable* caller memory — a `dealii::Vector` element range — and a device-to-pageable
+`cudaMemcpyAsync` is not actually asynchronous: the driver has to stage it, so the call blocks until
+the copy, and therefore the kernels feeding it, has completed.
+
+The consequence was **zero host run-ahead at finite temperature**: the GPU drained after every
+single `map()`, and all host preparation for the next flow was exposed as device idle time. On the
+vacuum integrator that was measured at `cudaMemcpyAsync` totalling 15.933 s against 15.966 s of
+kernel time — the host sat inside the copy for essentially the whole run. It cost a few percent on a
+slow part and over half the wall clock on a fast one, which is why `MapCompletion` exists; the
+finite-T mirror simply never received it.
+
+It has it now: page-locked staging, `MapCompletion::record`, the same one-staging-buffer-per-
+integrator guard that lands an outstanding result before a second `map()` from the same integrator
+overwrites it, and the same participation in the batched `Allgatherv`. Nothing about the API or the
+numbers changes — `tests/physics/integration/finiteT/quadrature_integrator_fT.cc` pins that the
+deferred results are bitwise what the undeferred path produced, and that they really are still in
+staging while the scope is open.
+
+**This matters independently of MPI.** A single-GPU finite-T run gets the speed-up too; it is not
+something the rank count unlocks. Expect the gain to be largest exactly where the kernels are
+fastest relative to the host, i.e. on the cluster part rather than on a laptop GPU.
 
 ---
 
@@ -181,8 +337,8 @@ Two knobs, both optional:
 
 | knob | where | meaning |
 |---|---|---|
-| `DIFFRG_MAP_QUANTUM` | environment | overrides the split threshold (wins over the parameter file) |
-| `DIFFRG_MAP_VERBOSE=1` | environment | prints the plan once: per-flow split width, owning ranks, per-rank load |
+| `DIFFRG_MAP_QUANTUM` | environment | overrides the split threshold for *every* execution space, replacing the hardware-derived defaults (wins over the parameter file). It does not merge the per-resource budgets — see §1.2 |
+| `DIFFRG_MAP_VERBOSE=1` | environment | prints the plan once: per-flow resource and split width, owning ranks, and the per-rank load of each resource separately |
 | `/integration/map_quantum` | parameter file | same as above, lower precedence |
 | `/integration/map_verbose` | parameter file | same as above |
 
@@ -396,9 +552,34 @@ calibration listed as open in section 8, or simply raising `p_grid_size` so that
 
 These were consciously left out of this increment:
 
-- **FE work is not distributed.** `QuadratureIntegrator::get()` (the scalar, blocking path the FE
-  assemblers use) is untouched, and the mesh is not partitioned. The SPMD choice was made partly so
-  that adding this later is an orthogonal addition rather than a rewrite — deal.II is SPMD.
+- **FE work is not distributed — every rank runs the whole of it, redundantly.** This is worth
+  stating precisely, because "not distributed" is easy to misread as "one rank does it". It is the
+  opposite: under SPMD all ranks execute the same program, so all of them assemble the entire mesh.
+  No FE assembler calls `map()` (verified by grep over `discretization/`); they reach flows through
+  the scalar `get()` path, which the scheduler never sees. All ranks therefore compute the same FE
+  residual from the same input and agree bitwise, which is why no gather is needed and why this is
+  *correct* — just not *fast*.
+
+  Two consequences for anyone running an FE + variables model, as opposed to the pure-variables
+  `QCD_Nf2`:
+
+  1. **FE assembly is a pure Amdahl term.** Its cost is constant in N while the flow cost falls as
+     1/N, so it caps the speedup at `1/f_FE`.
+  2. **Worse: with several ranks per node it actively grows.** FE assembly is TBB-parallel over
+     cells, and `Init` divides the thread budget by the node-local rank count — so N ranks on one
+     node each do the *full* mesh with T/N threads, and FE wall time rises roughly linearly in N.
+     Total time then behaves like `F·N + S/N`, which has a minimum at `N ≈ sqrt(S/F)` and gets worse
+     beyond it. One rank *per node* avoids this entirely (the thread division only triggers for
+     node-local ranks > 1); several ranks per node does not. Until FE is distributed, prefer one rank
+     per node for any model with FE functions, and measure before assuming more ranks help.
+
+  A related rule while this stands: **never call `map()` from inside a threaded FE cell worker.**
+  `MapScheduler` and `MapCompletion` are single-threaded by design, and cell order across threads is
+  not deterministic, so the per-rank plans would diverge. That fails loudly rather than silently —
+  the plan checksum calls `MPI_Abort` — but it is a design constraint, not a diagnostic.
+
+  The SPMD choice was made partly so that distributing FE later is an orthogonal addition rather than
+  a rewrite: deal.II is SPMD, so the mesh partitioning it already supports drops into this model.
 - **Cost calibration is not implemented.** `w_kernel` is fixed at 1, i.e. the score is exactly
   `G · Q`. The Step-0 profile shows this is *exactly* right for N ≤ 8 and *wrong by up to 6–8×
   per flow* at N > 8 — see the end of section 7 for why the first statement holds despite the
@@ -415,6 +596,11 @@ These were consciously left out of this increment:
   ~2.5 % here, so the measured per-flow times may be used directly as weights. Re-check the
   concurrency table if the truncation, the quadrature orders, or the GPU change enough that a launch
   no longer fills the device.
+- **The host fill grain (1024 evaluations per worker) is unmeasured.** The device threshold is
+  `concurrency()` and is corroborated by the value tuned empirically on the development GPU; its host
+  counterpart is `concurrency() × 1024`, where the 1024 comes from reasoning about `parallel_for`
+  spawn cost rather than from a profile. No CPU-backend flow run has been measured. Anyone running a
+  CPU or mixed backend at scale should profile one and correct `internal::host_grain`.
 - **Multi-dimensional external grids are not split** (section 1.1). Fixing this means fixing
   `SubCoordinates`' per-axis window derivation, which is currently only correct for `dim == 1`.
 - **The application must not branch on rank-local data.** `QCD.cc` reads control-flow scalars back

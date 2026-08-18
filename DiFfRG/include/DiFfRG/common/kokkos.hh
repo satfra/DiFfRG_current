@@ -71,9 +71,6 @@ namespace DiFfRG
                 "CPU memory space must be the same as Threads memory space");
   static_assert(std::is_same_v<CPU_memory, TBB_memory>, "CPU memory space must be the same as TBB memory space");
 
-  template <typename MemorySpace>
-  using other_memory_space_t = std::conditional_t<std::is_same_v<MemorySpace, GPU_memory>, CPU_memory, GPU_memory>;
-
   /**
    * @brief An extension of the Kokkos::Sum reducer that adds a constant value to the result.
    *

@@ -136,7 +136,7 @@ TEST_CASE("Test the map schedule itself", "[integration][quadrature][mpi]")
 
     // G * Q = 64 * 192, well under the quantum: this must land on a single rank.
     std::vector<double> sink(64, 0.);
-    const MapSlice slice = scheduler.schedule(1000, sink.data(), sizeof(double), 64, 192, true);
+    const MapSlice slice = scheduler.schedule(1000, sink.data(), sizeof(double), 64, 192, true, map_target<GPU_exec>());
     CHECK((slice.count == 0 || slice.count == 64));
 
     // Exactly one rank may own it.
@@ -152,7 +152,7 @@ TEST_CASE("Test the map schedule itself", "[integration][quadrature][mpi]")
 
     // G * Q = 64 * 6912 = 442368, i.e. r = 8 before the rank-count clamp.
     std::vector<double> sink(64, 0.);
-    const MapSlice slice = scheduler.schedule(1001, sink.data(), sizeof(double), 64, 6912, true);
+    const MapSlice slice = scheduler.schedule(1001, sink.data(), sizeof(double), 64, 6912, true, map_target<GPU_exec>());
 
     const int covered = DiFfRG::MPI::sum_reduce(MPI_COMM_WORLD, static_cast<int>(slice.count));
     CHECK(covered == 64);
@@ -168,9 +168,135 @@ TEST_CASE("Test the map schedule itself", "[integration][quadrature][mpi]")
     scheduler.set_quantum(1.);
 
     std::vector<double> sink(64, 0.);
-    const MapSlice slice = scheduler.schedule(1002, sink.data(), sizeof(double), 64, 6912, false);
+    const MapSlice slice = scheduler.schedule(1002, sink.data(), sizeof(double), 64, 6912, false, map_target<GPU_exec>());
     CHECK((slice.count == 0 || slice.count == 64));
 
     flush_maps();
+  }
+}
+
+TEST_CASE("Interleaved device and host maps in one deferral scope", "[integration][quadrature][mpi]")
+{
+  DiFfRG::Init();
+
+  // The gotcha this guards: a host map() is synchronous, so writing GPU, CPU, GPU used to block the
+  // second launch until the host kernel finished. Host maps inside a DeferredMaps scope are now
+  // queued and run at flush time, which makes call order irrelevant -- but only if the results are
+  // still exactly right, and still land in the right place.
+  constexpr int dim = 2;
+  using NT = double;
+  using ctype = get_type::ctype<NT>;
+
+  std::array<ctype, dim> ext_min, ext_max;
+  std::array<size_t, dim> grid_size;
+  std::array<QuadratureType, dim> quad_type;
+  for (uint d = 0; d < dim; ++d) {
+    ext_min[d] = ctype(-1.5);
+    ext_max[d] = ctype(1.25);
+    grid_size[d] = 16;
+    quad_type[d] = QuadratureType::legendre;
+  }
+
+  QuadratureProvider qp;
+  QuadratureIntegrator<dim, NT, PolyIntegrand<dim, NT>, GPU_exec> gpu_a(qp, grid_size, ext_min, ext_max, quad_type);
+  QuadratureIntegrator<dim, NT, PolyIntegrand<dim, NT>, TBB_exec> cpu(qp, grid_size, ext_min, ext_max, quad_type);
+  QuadratureIntegrator<dim, NT, PolyIntegrand<dim, NT>, GPU_exec> gpu_b(qp, grid_size, ext_min, ext_max, quad_type);
+
+  std::array<NT, 4 * dim> coeffs{};
+  for (uint d = 0; d < dim; ++d)
+    coeffs[4 * d] = 1;
+
+  constexpr uint rsize = 32;
+  LinearCoordinates1D<ctype> coordinates(rsize, 0., 1.);
+
+  // Reference: each map on its own, fully landed, no deferral anywhere.
+  std::vector<NT> ref_a(rsize, NT(0)), ref_c(rsize, NT(0)), ref_b(rsize, NT(0));
+  std::apply([&](auto... c) { gpu_a.map(ref_a.data(), coordinates, c...); }, coeffs);
+  flush_maps();
+  std::apply([&](auto... c) { cpu.map(ref_c.data(), coordinates, c...); }, coeffs);
+  flush_maps();
+  std::apply([&](auto... c) { gpu_b.map(ref_b.data(), coordinates, c...); }, coeffs);
+  flush_maps();
+
+  // The interleaved block: the CPU map in the middle is queued, so it must not have written
+  // anything yet when the scope is still open, and must be correct once it closes.
+  std::vector<NT> got_a(rsize, NT(0)), got_c(rsize, NT(0)), got_b(rsize, NT(0));
+  {
+    DeferredMaps defer;
+    std::apply([&](auto... c) { gpu_a.map(got_a.data(), coordinates, c...); }, coeffs);
+    std::apply([&](auto... c) { cpu.map(got_c.data(), coordinates, c...); }, coeffs);
+    std::apply([&](auto... c) { gpu_b.map(got_b.data(), coordinates, c...); }, coeffs);
+
+    // Deferred, so still untouched -- unless this build has no device at all, in which case there
+    // is nothing to overlap with and the map runs inline by design.
+    if constexpr (internal::has_device_backend) {
+      bool all_zero = true;
+      for (uint i = 0; i < rsize; ++i)
+        all_zero &= got_c[i] == NT(0);
+      CHECK(all_zero);
+    }
+  } // one fence, host queue drained first, then everything lands
+
+  CHECK(bitwise_equal(ref_a, got_a));
+  CHECK(bitwise_equal(ref_c, got_c));
+  CHECK(bitwise_equal(ref_b, got_b));
+
+  // And the middle one really is the integral, not a copy of a neighbour.
+  NT volume = 1;
+  for (uint d = 0; d < dim; ++d)
+    volume *= (ext_max[d] - ext_min[d]);
+  for (uint i = 0; i < rsize; ++i) {
+    const auto expected = coordinates.forward(i) + volume;
+    using Kokkos::abs;
+    CHECK(abs(expected - got_c[i]) <= 10 * expected_precision<ctype>::value * abs(expected));
+  }
+}
+
+TEST_CASE("A queued host map is dropped, not run, when the scope unwinds", "[integration][quadrature][mpi]")
+{
+  DiFfRG::Init();
+
+  // ~DeferredMaps discards on the exception path because the destinations may already be gone. A
+  // queued job is exactly as abandoned as an unlanded copy, so it must not run either.
+  constexpr int dim = 2;
+  using NT = double;
+  using ctype = get_type::ctype<NT>;
+
+  std::array<ctype, dim> ext_min, ext_max;
+  std::array<size_t, dim> grid_size;
+  std::array<QuadratureType, dim> quad_type;
+  for (uint d = 0; d < dim; ++d) {
+    ext_min[d] = ctype(-1.5);
+    ext_max[d] = ctype(1.25);
+    grid_size[d] = 16;
+    quad_type[d] = QuadratureType::legendre;
+  }
+
+  QuadratureProvider qp;
+  QuadratureIntegrator<dim, NT, PolyIntegrand<dim, NT>, TBB_exec> cpu(qp, grid_size, ext_min, ext_max, quad_type);
+  std::array<NT, 4 * dim> coeffs{};
+  for (uint d = 0; d < dim; ++d)
+    coeffs[4 * d] = 1;
+
+  constexpr uint rsize = 32;
+  LinearCoordinates1D<ctype> coordinates(rsize, 0., 1.);
+  std::vector<NT> sink(rsize, NT(0));
+
+  // Single rank only, deliberately. Unwinding out of a DeferredMaps scope poisons the scheduler by
+  // design -- the ranks have diverged, so the next collective must abort with a diagnosis rather
+  // than hang. There is no un-poison, and there should not be one: provoking that state under
+  // mpiexec would correctly take the whole test binary down with it.
+  if constexpr (internal::has_device_backend) {
+    if (MapScheduler::instance().n_ranks() == 1) {
+      try {
+        DeferredMaps defer;
+        std::apply([&](auto... c) { cpu.map(sink.data(), coordinates, c...); }, coeffs);
+        throw std::runtime_error("unwind");
+      } catch (const std::runtime_error &) {
+      }
+
+      for (uint i = 0; i < rsize; ++i)
+        CHECK(sink[i] == NT(0));
+    }
   }
 }
