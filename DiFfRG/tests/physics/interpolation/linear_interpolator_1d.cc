@@ -10,15 +10,10 @@ using namespace DiFfRG;
 
 TEST_CASE("Test template constraints for LinearInterpolator1D", "[interpolator]")
 {
-  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<double, LinCoordinates, CPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<complex<double>, LinCoordinates, CPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<autodiff::real, LinCoordinates, CPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<cxreal, LinCoordinates, CPU_memory>>);
-
-  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<double, LinCoordinates, GPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<complex<double>, LinCoordinates, GPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<autodiff::real, LinCoordinates, GPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<cxreal, LinCoordinates, GPU_memory>>);
+  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<double, LinCoordinates>>);
+  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<complex<double>, LinCoordinates>>);
+  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<autodiff::real, LinCoordinates>>);
+  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<cxreal, LinCoordinates>>);
 
   STATIC_REQUIRE(!is_interpolator<int>);
   STATIC_REQUIRE(!is_interpolator<std::array<double, 3>>);
@@ -41,13 +36,13 @@ TEMPLATE_TEST_CASE("Test 1D interpolation", "[float][double][complex][autodiff]"
   for (int j = 0; j < p_size; ++j)
     in_data[j] = j;
   LogarithmicCoordinates1D<ctype> coords(p_size, p_start, p_stop, p_bias);
-  LinearInterpolatorND<T, LogarithmicCoordinates1D<ctype>, CPU_memory> interpolator(coords);
+  LinearInterpolatorND<T, LogarithmicCoordinates1D<ctype>> interpolator(coords);
   interpolator.update(in_data.data());
 
   const int n_el = GENERATE(take(3, random(2, 200)));
   const ctype p_pt = (p_start + GENERATE(take(10, random(0., 1.))) * (p_stop - p_start));
 
-  const auto res_host = interpolator.CPU()(p_pt) * ctype(n_el);
+  const auto res_host = interpolator(p_pt) * ctype(n_el);
 
   auto p_idx = coords.backward(p_pt);
   p_idx = std::max((ctype)0, std::min(p_idx, ctype(p_size)));
@@ -78,13 +73,13 @@ TEMPLATE_TEST_CASE("Test 1D interpolation GPU", "[float][double][complex][autodi
   for (int j = 0; j < p_size; ++j)
     in_data[j] = j;
   LogarithmicCoordinates1D<ctype> coords(p_size, p_start, p_stop, p_bias);
-  LinearInterpolatorND<T, LogarithmicCoordinates1D<ctype>, GPU_memory> interpolator(coords);
+  LinearInterpolatorND<T, LogarithmicCoordinates1D<ctype>> interpolator(coords);
   interpolator.update(in_data.data());
 
   const int n_el = GENERATE(take(3, random(2, 200)));
   const ctype p_pt = (p_start + GENERATE(take(10, random(0., 1.))) * (p_stop - p_start));
 
-  const auto res_host = interpolator.CPU().GPU().CPU()(p_pt) * ctype(n_el);
+  const auto res_host = interpolator(p_pt) * ctype(n_el);
 
   auto p_idx = coords.backward(p_pt);
   p_idx = std::max((ctype)0, std::min(p_idx, ctype(p_size)));

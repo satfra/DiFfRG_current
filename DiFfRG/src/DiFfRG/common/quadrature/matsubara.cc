@@ -9,16 +9,60 @@
 
 namespace DiFfRG
 {
+  namespace
+  {
+    /**
+     * @brief How far, in units of typical_E, the Monien rule is asked to reach in frequency.
+     *
+     * The Monien rule with N nodes resolves frequencies up to x_max ~ pi^2 T N^2 / 4, so this
+     * constant is what sets N. It exists purely to cover structure ABOVE typical_E: anything
+     * within a decade of typical_E (including the shape of a 4D-regulated kernel) is already at
+     * machine precision for a reach of ~50. What costs reach is a second, heavier scale in the
+     * frequency direction -- which only reaches the sum when the regulator does not cut p0.
+     *
+     * Measured worst-case relative error (tests/common/quadrature/matsubara_convergence.cc,
+     * `[.study]`), over E/T in [0.3, 78], for a heavy mode 100x above typical_E:
+     *
+     *   reach   2000 -> 8.4e-10     400 -> 1.1e-08     200 -> 1.3e-05     100 -> 3.5e-04
+     *
+     * and for everything within a decade of typical_E, all of these stay at ~1e-15.
+     *
+     * 400 keeps a 4x margin over a two-decade scale separation at ~1e-8 -- comfortably under the
+     * tolerances the stiff timesteppers run at -- for about half the nodes of the old 2000.
+     * The user-facing dial is /integration/matsubara_precision_factor, which multiplies this;
+     * setting it to 5 restores the pre-2026-08 *reach* of 2000 (it does not restore the old
+     * handover point, which is now decided by thermal_negligible_ratio below).
+     */
+    constexpr double monien_reach = 400.;
+
+    /**
+     * @brief Above this E/T there is no thermal content left to resolve.
+     *
+     * The relative thermal correction to a pole at E is 2(coth(E/2T) - 1) ~ 4 exp(-E/T):
+     * 4.1e-9 at E/T = 20, 1.9e-13 at E/T = 30, 1.3e-15 at E/T = 35 (measured, same study).
+     * Past that the vacuum rule is the better answer, and with the tangent map it is also an
+     * accurate one.
+     */
+    constexpr double thermal_negligible_ratio = 30.;
+  } // namespace
+
   template <typename NT> int MatsubaraQuadrature<NT>::predict_size(const NT T, const NT typical_E, const int step)
   {
-    const NT relative_distance = std::fabs(typical_E) / std::fabs(2. * M_PI * T + 1e-16);
-    // From some testing, switching here to the vacuum quadrature will generate relative errors of order 5e-6 when using
-    // the default arguments
-    if (is_close(T, NT{}) || relative_distance > 1e+4) return -vacuum_quad_size;
+    if (is_close(T, NT{})) return -vacuum_quad_size;
 
-    const NT E_max = 2e3 * precision_factor * std::fabs(typical_E);
+    const NT ratio = std::fabs(typical_E) / (std::fabs(T) + NT(1e-16)); // E/T
+
+    const NT E_max = monien_reach * precision_factor * std::fabs(typical_E);
     int size = 5 + int(std::sqrt(4. * E_max / (M_PI * M_PI * std::fabs(T))));
     size = (int)std::ceil(size / (double)step) * step;
+
+    // Hand over to the vacuum rule once the thermal content is gone -- but never to a rule that
+    // costs MORE than the one it replaces. Deciding this on physics rather than on the node
+    // ceiling matters: with a smaller reach the old `size > 2 * max_size` test would not fire
+    // until E/T ~ 390, and the band below it would run a clamped 128-node sum where a 64-node
+    // vacuum rule is both cheaper and, thermally, indistinguishable.
+    if (ratio > thermal_negligible_ratio && size > vacuum_quad_size) return -vacuum_quad_size;
+
     return size;
   }
 
@@ -40,7 +84,9 @@ namespace DiFfRG
       this->precision_factor = 1;
     else
       this->precision_factor = precision_factor;
-    if (precision_factor < 1e-1)
+    // Warn on the *effective* factor: a non-positive argument has just been coerced to 1, so
+    // testing the argument here warned on every default-constructed QuadratureProvider.
+    if (this->precision_factor < 1e-1)
       std::cerr
           << "MatsubaraQuadrature: precision_factor is very small (< 1e-1), which may lead to inaccurate results.";
 
@@ -70,8 +116,44 @@ namespace DiFfRG
       reinit_0();
       return;
     }
+    // Truncating to max_size silently violates the resolution law E_max ~ pi^2 N^2 T / 4 -- the
+    // rule then reaches (max_size/predicted)^2 less far in frequency than it was asked to, with
+    // no other symptom. Say so once; it means max_matsubara_size (or precision_factor) is
+    // fighting the sizing rather than bounding it.
+    if (m_size > max_size) {
+      static bool warned = false;
+      if (!warned) {
+        warned = true;
+        std::cerr << "MatsubaraQuadrature: requested size " << m_size << " exceeds max_matsubara_size " << max_size
+                  << " (T = " << T << ", typical_E = " << typical_E << "); the rule reaches "
+                  << (double(m_size) / max_size) * (double(m_size) / max_size)
+                  << "x less far in frequency than the sizing asked for. Raise max_matsubara_size, or lower "
+                     "matsubara_precision_factor if that reach is not needed. (warned once)\n";
+      }
+    }
     m_size = std::max(min_size, std::min(max_size, m_size));
 
+    build_monien();
+  }
+
+  template <typename NT>
+  void MatsubaraQuadrature<NT>::reinit_with_size(const int size, const NT T, const NT typical_E)
+  {
+    if (size <= 0) throw std::invalid_argument("MatsubaraQuadrature: size must be positive.");
+
+    this->T = T;
+    this->typical_E = typical_E;
+    m_size = size;
+
+    if (is_close(T, NT{})) {
+      reinit_0();
+      return;
+    }
+    build_monien();
+  }
+
+  template <typename NT> void MatsubaraQuadrature<NT>::build_monien()
+  {
     // construct the recurrence relation for the quadrature rule from [1]
     std::vector<NT> a(m_size, 0.);
     std::vector<NT> b(m_size, 0.);
@@ -100,43 +182,53 @@ namespace DiFfRG
     write_data(x, w);
   }
 
-  // TODO: rewrite this function
+  /**
+   * @brief The vacuum (T=0) rule for the frequency integral.
+   *
+   * At T=0 the Matsubara sum degenerates to \f$\int dp_0/(2\pi) f(p_0)\f$. Substituting
+   * \f$p_0 = E \tan\theta\f$, \f$\theta\in[0,\pi/2)\f$, maps the canonical propagator structure
+   * to a constant: for \f$f = 1/(p_0^2+E^2)\f$ the transformed integrand is exactly \f$1/E\f$,
+   * so Gauss-Legendre in \f$\theta\f$ is near-exact. An algebraic \f$c/p_0^2\f$ tail maps to the
+   * finite limit \f$c/E\f$ at \f$\theta\to\pi/2\f$ and is thus *covered* by the quadrature
+   * rather than truncated.
+   *
+   * The previous construction (2/3 of the nodes linear on [0,3E], 1/3 log-spaced on
+   * [3E, 1e11 E]) truncated the tail at 1e11 E, which floored the relative error of a
+   * 1/p0^2 tail at ~6e-12 regardless of the node count -- going from 81 to 513 nodes did not
+   * improve it at all. The tangent map has no such floor.
+   *
+   * Caller convention (see sum()): \f$\sum_i w_i (f(x_i)+f(-x_i)) = \int dp_0/(2\pi) f\f$, so
+   * for even f we need \f$\sum_i w_i f(x_i) = (1/2\pi)\int_0^\infty f\,dp_0\f$, giving
+   * \f[ x_i = E\tan\theta_i, \qquad w_i = \frac{E\,w^{GL}_i}{4\cos^2\theta_i}. \f]
+   * Everything is linear in E, i.e. this is one dimensionless table times a single scale.
+   */
   template <typename NT> void MatsubaraQuadrature<NT>::reinit_0()
   {
     this->T = 0;
     m_size = abs(m_size);
-    // ensure that m_size is divisible by 3, so that we can divide it into 2/3 and 1/3 parts
-    while (m_size % 3 != 0)
-      m_size++;
     if (is_close(typical_E, NT(0))) this->typical_E = 1.;
 
-    // obtain a gauss-legendre quadrature rule for the interval [0, 1]
-    Quadrature<NT> quad_up(m_size / 3, QuadratureType::legendre);
-    Quadrature<NT> quad_down(m_size / 3 * 2, QuadratureType::legendre);
+    // gauss-legendre nodes/weights on [0, 1]
+    Quadrature<NT> quad(m_size, QuadratureType::legendre);
+    const auto gl_nodes = quad.template nodes<CPU_memory>();
+    const auto gl_weights = quad.template weights<CPU_memory>();
 
-    // resize the nodes and weights
     std::vector<NT> x(m_size, 0.);
     std::vector<NT> w(m_size, 0.);
 
-    // strategy: divide into two parts, one with linear and one with logarithmic scaling
-    // the dividing point is somewhat above the typical energy scale
-    const long double div = 3 * std::abs(typical_E);
+    using std::abs, std::cos, std::sin;
+    const long double E = abs((long double)typical_E);
+    const long double half_pi = (long double)M_PI / 2.0L;
 
-    // the nodes with a linear scale
-    for (int i = 0; i < m_size / 3 * 2; ++i) {
-      x[i] = quad_down.template nodes<CPU_memory>()[i] * div;
-      w[i] = quad_down.template weights<CPU_memory>()[i] * div / NT(2 * M_PI);
-    }
+    for (int i = 0; i < m_size; ++i) {
+      // Parameterise by the complement delta = pi/2 - theta: the large nodes are the ones
+      // that matter for the tail, and cot(delta) is far better conditioned there than
+      // tan(theta) with theta -> pi/2.
+      const long double delta = half_pi * (1.0L - (long double)gl_nodes[i]);
+      const long double s = sin(delta);
 
-    // the nodes with a logarithmic scale
-    using std::log, std::exp, std::abs, std::min;
-    const long double extent = 1e11 * std::abs(typical_E);
-    const long double log_start = log(div);
-    const long double log_ext = log(extent / div);
-    for (int i = 0; i < m_size / 3; ++i) {
-      x[i + m_size / 3 * 2] = exp(log_start + log_ext * quad_up.template nodes<CPU_memory>()[i]);
-      w[i + m_size / 3 * 2] =
-          (quad_up.template weights<CPU_memory>()[i] * log_ext * x[i + m_size / 3 * 2]) / NT(2 * M_PI);
+      x[i] = (NT)(E * cos(delta) / s);
+      w[i] = (NT)(E * (long double)gl_weights[i] / (4.0L * s * s));
     }
 
     write_data(x, w);

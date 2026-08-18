@@ -10,18 +10,18 @@ using namespace DiFfRG;
 
 TEST_CASE("Test template constraints for SplineInterpolator1DStack", "[interpolator]")
 {
-  STATIC_REQUIRE(is_interpolator<SplineInterpolator1DStack<double, BosonicCoordinates1DFiniteT<>, CPU_memory>>);
+  STATIC_REQUIRE(is_interpolator<SplineInterpolator1DStack<double, BosonicCoordinates1DFiniteT<>>>);
   STATIC_REQUIRE(
-      is_interpolator<SplineInterpolator1DStack<complex<double>, BosonicCoordinates1DFiniteT<>, CPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<SplineInterpolator1DStack<autodiff::real, BosonicCoordinates1DFiniteT<>, CPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<SplineInterpolator1DStack<cxreal, BosonicCoordinates1DFiniteT<>, CPU_memory>>);
+      is_interpolator<SplineInterpolator1DStack<complex<double>, BosonicCoordinates1DFiniteT<>>>);
+  STATIC_REQUIRE(is_interpolator<SplineInterpolator1DStack<autodiff::real, BosonicCoordinates1DFiniteT<>>>);
+  STATIC_REQUIRE(is_interpolator<SplineInterpolator1DStack<cxreal, BosonicCoordinates1DFiniteT<>>>);
 
-  STATIC_REQUIRE(is_interpolator<SplineInterpolator1DStack<double, FermionicCoordinates1DFiniteT<>, GPU_memory>>);
+  STATIC_REQUIRE(is_interpolator<SplineInterpolator1DStack<double, FermionicCoordinates1DFiniteT<>>>);
   STATIC_REQUIRE(
-      is_interpolator<SplineInterpolator1DStack<complex<double>, FermionicCoordinates1DFiniteT<>, GPU_memory>>);
+      is_interpolator<SplineInterpolator1DStack<complex<double>, FermionicCoordinates1DFiniteT<>>>);
   STATIC_REQUIRE(
-      is_interpolator<SplineInterpolator1DStack<autodiff::real, FermionicCoordinates1DFiniteT<>, GPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<SplineInterpolator1DStack<cxreal, FermionicCoordinates1DFiniteT<>, GPU_memory>>);
+      is_interpolator<SplineInterpolator1DStack<autodiff::real, FermionicCoordinates1DFiniteT<>>>);
+  STATIC_REQUIRE(is_interpolator<SplineInterpolator1DStack<cxreal, FermionicCoordinates1DFiniteT<>>>);
 
   STATIC_REQUIRE(!is_interpolator<int>);
   STATIC_REQUIRE(!is_interpolator<std::array<double, 3>>);
@@ -51,7 +51,7 @@ TEMPLATE_TEST_CASE("Test 1D spline interpolation stack", "[float][double][comple
     for (int j = 0; j < p_size; ++j)
       in_data[i * p_size + j] = i * p_size + j;
   BosonicCoordinates1DFiniteT<int, ctype> coords(m_start, m_stop, T, p_size, p_start, p_stop, p_bias);
-  SplineInterpolator1DStack<Type, BosonicCoordinates1DFiniteT<int, ctype>, CPU_memory> interpolator(coords);
+  SplineInterpolator1DStack<Type, BosonicCoordinates1DFiniteT<int, ctype>> interpolator(coords);
   interpolator.update(in_data.data());
 
   const int n_el = GENERATE(take(2, random(2, 200)));
@@ -97,14 +97,14 @@ TEMPLATE_TEST_CASE("Test 1D spline interpolation stack GPU", "[float][double][co
     for (int j = 0; j < p_size; ++j)
       in_data[i * p_size + j] = i * p_size + j;
   BosonicCoordinates1DFiniteT<int, ctype> coords(m_start, m_stop, T, p_size, p_start, p_stop, p_bias);
-  SplineInterpolator1DStack<Type, BosonicCoordinates1DFiniteT<int, ctype>, GPU_memory> interpolator(coords);
+  SplineInterpolator1DStack<Type, BosonicCoordinates1DFiniteT<int, ctype>> interpolator(coords);
   interpolator.update(in_data.data());
 
   const int n_el = GENERATE(take(2, random(2, 200)));
   const ctype m_pt = (m_start + int(GENERATE(take(2, random(0., 1.))) * (m_stop - m_start - 0.5))) * 2. * M_PI * T;
   const ctype p_pt = (p_start + GENERATE(take(2, random(0., 1.))) * (p_stop - p_start));
 
-  const auto res_host = interpolator.CPU()(m_pt, p_pt) * ctype(n_el);
+  const auto res_host = interpolator(m_pt, p_pt) * ctype(n_el);
 
   auto [m_idx, p_idx] = coords.backward(m_pt, p_pt);
 
@@ -125,4 +125,24 @@ TEMPLATE_TEST_CASE("Test 1D spline interpolation stack GPU", "[float][double][co
     std::cout << "gpu: " << res_gpu << " local: " << res_local << std::endl;
   CHECK(is_close(res_host, res_local, 1e-6 * n_el));
   CHECK(is_close(res_gpu, res_local, 1e-6 * n_el));
+}
+TEST_CASE("Test stack row-major element access", "[interpolator]")
+{
+  DiFfRG::Init();
+
+  // See LinearInterpolator2D: row-major in, row-major out, over a LayoutLeft mirror.
+  constexpr int m_start = -2, m_stop = 3; // 5 stack entries
+  constexpr size_t n_p = 7;
+  const double T = 1e-2;
+
+  std::vector<double> in_data((m_stop - m_start) * n_p);
+  for (size_t i = 0; i < in_data.size(); ++i)
+    in_data[i] = double(i);
+
+  BosonicCoordinates1DFiniteT<int, double> coords(m_start, m_stop, T, n_p, 1e-3, 10., 2.);
+  SplineInterpolator1DStack<double, BosonicCoordinates1DFiniteT<int, double>> interpolator(coords);
+  interpolator.update(in_data.data());
+
+  for (size_t i = 0; i < in_data.size(); ++i)
+    CHECK(interpolator[i] == in_data[i]);
 }

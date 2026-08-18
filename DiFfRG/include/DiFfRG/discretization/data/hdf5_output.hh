@@ -189,7 +189,7 @@ namespace DiFfRG
     {
       using value_type = typename std::decay_t<INTERP>::value_type;
 
-      const auto &interpolator = _interpolator.template get_on<CPU_memory>();
+      const auto &interpolator = _interpolator;
 
       check_coordinates(coord_name, interpolator.get_coordinates());
 
@@ -198,8 +198,8 @@ namespace DiFfRG
       for (const auto &dim : coordinates.sizes())
         dims.push_back(dim);
 
-      // Sampling the interpolator needs its device-side data, so it stays here rather than
-      // moving into the staged action; only the resulting dense buffer is deferred.
+      // Sampling stays here rather than moving into the staged action; only the resulting dense
+      // buffer is deferred.
       std::vector<value_type> payload(coordinates.size());
       for (size_t i = 0; i < payload.size(); ++i) {
         const auto lcoord = coordinates.forward(coordinates.from_linear_index(i));

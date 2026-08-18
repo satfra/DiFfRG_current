@@ -11,6 +11,8 @@ using namespace DiFfRG;
 
 #include "../boilerplate/poly_integrand.hh"
 
+#include <cstring>
+
 //--------------------------------------------
 // Quadrature integration
 
@@ -126,4 +128,119 @@ TEMPLATE_TEST_CASE_SIG("Test finite temperature quadrature integrals", "[integra
   SECTION("Threads") { check(Threads_exec(), (double)0); }
   // Check on GPU
   SECTION("GPU") { check(GPU_exec(), (double)0); }
+}
+TEST_CASE("Finite-T device maps stage through pinned memory and defer", "[integration][quadrature]")
+{
+  DiFfRG::Init();
+
+  // The finite-T integrator used to copy device -> `dest` directly. `dest` is ordinary pageable
+  // caller memory, so that cudaMemcpyAsync is not actually asynchronous: the driver stages it and
+  // the call blocks until the kernels feeding it have finished. The result was zero host run-ahead
+  // -- the device drained after every single map(), which is exactly what MapCompletion was built
+  // to avoid for the vacuum integrator. This pins the fix: results must be staged and deferred,
+  // and must still be bitwise what the undeferred path produces.
+  constexpr int dim = 2;
+  constexpr int sdim = dim - 1;
+  using NT = double;
+  using ctype = get_type::ctype<NT>;
+
+  auto check = [](auto execution_space) {
+    using ExecutionSpace = std::decay_t<decltype(execution_space)>;
+
+    std::array<ctype, sdim> ext_min{-1.5}, ext_max{1.25};
+    std::array<size_t, sdim> grid_size{32};
+    std::array<QuadratureType, sdim> quad_type{QuadratureType::legendre};
+
+    QuadratureProvider qp;
+    QuadratureIntegrator_fT<dim, NT, PolyIntegrand<sdim + 1, NT, -1>, ExecutionSpace> a(qp, grid_size, ext_min,
+                                                                                        ext_max, quad_type);
+    QuadratureIntegrator_fT<dim, NT, PolyIntegrand<sdim + 1, NT, -1>, ExecutionSpace> b(qp, grid_size, ext_min,
+                                                                                        ext_max, quad_type);
+    a.set_T(0.3);
+    b.set_T(0.3);
+
+    std::array<NT, 4 * (sdim + 1)> coeffs{};
+    coeffs[0] = 1;
+    coeffs[4 * sdim] = powr<2>(NT(1.7));
+    coeffs[4 * sdim + 2] = 1;
+
+    constexpr size_t rsize = 32;
+    LinearCoordinates1D<ctype> coordinates(rsize, 0., 1.);
+
+    // Undeferred reference: map() lands before it returns, as it always has outside a scope.
+    std::vector<NT> ref_a(rsize, NT(0)), ref_b(rsize, NT(0));
+    std::apply([&](auto... c) { a.map(ref_a.data(), coordinates, c...); }, coeffs);
+    std::apply([&](auto... c) { b.map(ref_b.data(), coordinates, c...); }, coeffs);
+
+    std::vector<NT> got_a(rsize, NT(0)), got_b(rsize, NT(0));
+    {
+      DeferredMaps defer;
+      std::apply([&](auto... c) { a.map(got_a.data(), coordinates, c...); }, coeffs);
+      std::apply([&](auto... c) { b.map(got_b.data(), coordinates, c...); }, coeffs);
+
+      // Held in pinned staging, not yet landed -- the host ran ahead instead of blocking on the
+      // copy. On a host backend there is no staging and the result is already in place, by design.
+      if constexpr (!std::is_same_v<typename ExecutionSpace::memory_space, CPU_memory>) {
+        bool untouched = true;
+        for (size_t i = 0; i < rsize; ++i)
+          untouched &= got_a[i] == NT(0) && got_b[i] == NT(0);
+        CHECK(untouched);
+      }
+    }
+
+    CHECK(std::memcmp(ref_a.data(), got_a.data(), rsize * sizeof(NT)) == 0);
+    CHECK(std::memcmp(ref_b.data(), got_b.data(), rsize * sizeof(NT)) == 0);
+
+    // Sanity: not zeros that happen to match.
+    bool nonzero = false;
+    for (size_t i = 0; i < rsize; ++i)
+      nonzero |= got_a[i] != NT(0);
+    CHECK(nonzero);
+  };
+
+  SECTION("GPU") { check(GPU_exec()); }
+  SECTION("Threads") { check(Threads_exec()); }
+  SECTION("TBB") { check(TBB_exec()); }
+}
+
+TEST_CASE("A second finite-T map from one integrator lands the first", "[integration][quadrature]")
+{
+  DiFfRG::Init();
+
+  // One staging buffer per integrator, so mapping twice inside a scope must land the first result
+  // before the second overwrites the buffer.
+  constexpr int dim = 2;
+  constexpr int sdim = dim - 1;
+  using NT = double;
+  using ctype = get_type::ctype<NT>;
+
+  std::array<ctype, sdim> ext_min{-1.5}, ext_max{1.25};
+  std::array<size_t, sdim> grid_size{32};
+  std::array<QuadratureType, sdim> quad_type{QuadratureType::legendre};
+
+  QuadratureProvider qp;
+  QuadratureIntegrator_fT<dim, NT, PolyIntegrand<sdim + 1, NT, -1>, GPU_exec> integrator(qp, grid_size, ext_min,
+                                                                                         ext_max, quad_type);
+  integrator.set_T(0.3);
+
+  std::array<NT, 4 * (sdim + 1)> coeffs{};
+  coeffs[0] = 1;
+  coeffs[4 * sdim] = powr<2>(NT(1.7));
+  coeffs[4 * sdim + 2] = 1;
+
+  constexpr size_t rsize = 32;
+  LinearCoordinates1D<ctype> coordinates(rsize, 0., 1.);
+
+  std::vector<NT> reference(rsize, NT(0));
+  std::apply([&](auto... c) { integrator.map(reference.data(), coordinates, c...); }, coeffs);
+
+  std::vector<NT> first(rsize, NT(0)), second(rsize, NT(0));
+  {
+    DeferredMaps defer;
+    std::apply([&](auto... c) { integrator.map(first.data(), coordinates, c...); }, coeffs);
+    std::apply([&](auto... c) { integrator.map(second.data(), coordinates, c...); }, coeffs);
+  }
+
+  CHECK(std::memcmp(reference.data(), first.data(), rsize * sizeof(NT)) == 0);
+  CHECK(std::memcmp(reference.data(), second.data(), rsize * sizeof(NT)) == 0);
 }

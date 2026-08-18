@@ -30,8 +30,10 @@ namespace DiFfRG
      * @param T The temperature.
      * @param typical_E A typical energy scale.
      * @param step The step size of considered node sizes (e.g. step=2 implies only even numbers of nodes).
-     * @return int The number of nodes needed. If the number is negative, the T=0-limit has been reached (usually if
-     * typical_E / T > 4.4e+2, which is 64 nodes).
+     * @return int The number of nodes needed. A negative return means the vacuum (T=0) rule should be used
+     * instead, and |return| is its size. That happens at T == 0, and once the thermal content
+     * (~4 exp(-typical_E/T)) has died away while the Monien rule would cost more than the vacuum
+     * rule -- with the shipped constants, around typical_E / T > 30.
      */
     int predict_size(const NT T, const NT typical_E = 1., const int step = 2);
 
@@ -42,10 +44,16 @@ namespace DiFfRG
      * @param typical_E A typical energy scale, which determines the number of nodes in the quadrature rule.
      * @param step The step size of considered node sizes (e.g. step=2 implies only even numbers of nodes).
      * @param min_size Minimum number of nodes.
-     * @param max_size Maximum number of nodes.
+     * @param max_size Maximum number of nodes. Exceeding it truncates the rule and warns once.
+     * @param vacuum_quad_size Size of the T=0 rule used when predict_size hands over to it.
+     * @param precision_factor Multiplies the reach; the user-facing dial.
+     *
+     * @note These defaults are kept equal to the ConfigTree defaults read by QuadratureProvider
+     * (/integration/{min,max}_matsubara_size, vacuum_quad_size, matsubara_precision_factor), so
+     * that a directly constructed rule behaves like one a production run would build.
      */
-    MatsubaraQuadrature(const NT T, const NT typical_E = 1., const int step = 2, const int min_size = 0,
-                        const int max_size = 256, const int vacuum_quad_size = 48, const double precision_factor = 1);
+    MatsubaraQuadrature(const NT T, const NT typical_E = 1., const int step = 2, const int min_size = 8,
+                        const int max_size = 128, const int vacuum_quad_size = 64, const double precision_factor = 1);
 
     MatsubaraQuadrature();
 
@@ -56,10 +64,30 @@ namespace DiFfRG
      * @param typical_E A typical energy scale, which determines the number of nodes in the quadrature rule.
      * @param step The step size of considered node sizes (e.g. step=2 implies only even numbers of nodes).
      * @param min_size Minimum number of nodes.
-     * @param max_size Maximum number of nodes.
+     * @param max_size Maximum number of nodes. Exceeding it truncates the rule and warns once.
+     * @param vacuum_quad_size Size of the T=0 rule used when predict_size hands over to it.
+     * @param precision_factor Multiplies the reach; the user-facing dial.
+     *
+     * @note These defaults are kept equal to the ConfigTree defaults read by QuadratureProvider
+     * (/integration/{min,max}_matsubara_size, vacuum_quad_size, matsubara_precision_factor), so
+     * that a directly constructed rule behaves like one a production run would build.
      */
-    void reinit(const NT T, const NT typical_E = 1., const int step = 2, const int min_size = 0,
-                const int max_size = 256, const int vacuum_quad_size = 48, const double precision_factor = 1);
+    void reinit(const NT T, const NT typical_E = 1., const int step = 2, const int min_size = 8,
+                const int max_size = 128, const int vacuum_quad_size = 64, const double precision_factor = 1);
+
+    /**
+     * @brief Build a rule with an explicitly prescribed number of nodes, bypassing predict_size().
+     *
+     * This is the entry point for convergence studies: it answers "what accuracy does N nodes
+     * buy at this (T, typical_E)", which is the question predict_size() encodes an answer to.
+     * A T of zero selects the vacuum (T=0) rule with `size` nodes, exactly as reinit() would.
+     *
+     * @param size The number of nodes to use. Must be positive.
+     * @param T The temperature.
+     * @param typical_E A typical energy scale. Only sets the scale of the vacuum rule; the
+     * Monien rule's nodes depend on T alone once the size is fixed.
+     */
+    void reinit_with_size(const int size, const NT T, const NT typical_E = 1.);
 
     /**
      * @brief Get the size of the quadrature rule.
@@ -128,6 +156,11 @@ namespace DiFfRG
     int m_size;
 
     void write_data(const std::vector<NT> &x, const std::vector<NT> &w);
+
+    /**
+     * @brief Construct the Monien rule for the current m_size and T.
+     */
+    void build_monien();
 
     /**
      * @brief Construct a quadrature rule for T=0.

@@ -7,10 +7,25 @@
 // std
 #include <cstring>
 #include <exception>
+#include <functional>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace DiFfRG
 {
+  namespace internal
+  {
+    /**
+     * @brief Whether the default execution space is a real device.
+     *
+     * Only then is there anything for a deferred host map to overlap with. In a CUDA-less build
+     * every map runs on the host anyway, so queuing them would be pure bookkeeping for no gain --
+     * and the queue is therefore compiled out entirely rather than merely skipped.
+     */
+    inline constexpr bool has_device_backend = !std::is_same_v<typename GPU_exec::memory_space, CPU_memory>;
+  } // namespace internal
+
   /**
    * @brief Deferred landing of QuadratureIntegrator::map() results in host memory.
    *
@@ -61,6 +76,26 @@ namespace DiFfRG
     }
 
     /**
+     * @brief Queue a host-side map() to be run at flush time instead of now.
+     *
+     * Host kernels are synchronous -- `tbb::parallel_for` and the host Kokkos backends all return
+     * only once the work is done. Running one inside a DeferredMaps scope therefore blocks the
+     * *host thread*, and with it the launch of every device map issued after it. The device itself
+     * keeps working on whatever is already in flight, so the cost is not the host map's own time
+     * but the device idling once its queue drains.
+     *
+     * Deferring removes the trap. `flush()` runs this queue **before** it fences, so the host work
+     * happens while the device work already issued is still running, and the caller no longer has
+     * to know that interleaving `GPU, CPU, GPU` is slower than `GPU, GPU, CPU`.
+     *
+     * The job owns copies of everything it needs (`std::function` requires a copy-constructible
+     * target, which every kernel argument is), so it does not depend on the caller's locals still
+     * being alive -- only on `dest` and the integrator, which the DeferredMaps contract already
+     * requires to outlive the scope.
+     */
+    static void record_work(std::function<void()> job) { deferred_work().push_back(std::move(job)); }
+
+    /**
      * @brief Fence, land every pending map result, then exchange slices between MPI ranks.
      *
      * Always fences, even with nothing pending, so this is a drop-in replacement for the
@@ -72,6 +107,17 @@ namespace DiFfRG
      */
     static void flush()
     {
+      // Host work first, and *before* the fence: the device is still chewing through whatever was
+      // launched inside the scope, so this is the window in which host kernels are free. Drained
+      // through a local so that a job which itself queues work cannot invalidate the iteration.
+      auto &w = deferred_work();
+      while (!w.empty()) {
+        std::vector<std::function<void()>> batch;
+        batch.swap(w);
+        for (auto &job : batch)
+          job();
+      }
+
       Kokkos::fence("DiFfRG::MapCompletion::flush");
       auto &p = pending();
       for (const auto &c : p)
@@ -87,6 +133,9 @@ namespace DiFfRG
      */
     static void discard(const char *reason)
     {
+      // Dropped without running: the destinations may already be gone, and an unrun job is exactly
+      // as abandoned as an unlanded copy.
+      deferred_work().clear();
       pending().clear();
       MapScheduler::instance().poison(reason);
     }
@@ -116,6 +165,11 @@ namespace DiFfRG
       static std::vector<PendingCopy> p;
       return p;
     }
+    static std::vector<std::function<void()>> &deferred_work()
+    {
+      static std::vector<std::function<void()>> w;
+      return w;
+    }
     static bool &deferral()
     {
       static bool enabled = false;
@@ -143,6 +197,13 @@ namespace DiFfRG
    * Inside the scope the host keeps issuing work instead of blocking on each result, so the GPU
    * does not drain between flows. Reading any of the destinations before the scope closes is a
    * use-before-write bug; nest a flush_maps() if a value is genuinely needed early.
+   *
+   * **Call order inside the scope does not matter.** Device maps launch asynchronously and host
+   * maps are queued (see MapCompletion::record_work), so a mixed block is executed as "launch every
+   * device map, then run the host maps while they are in flight, then fence" no matter which order
+   * it was written in. That is also the fastest available schedule: wall time is the larger of the
+   * two totals, not their sum. Without the queue, a host map placed between two device maps would
+   * stall the second launch until it finished.
    *
    * Non-reentrant by design: a nested scope would flush at the inner closing brace and surprise
    * the outer one, so nesting is not supported.

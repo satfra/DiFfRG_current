@@ -71,9 +71,12 @@ namespace DiFfRG
       StorageType<float> quadratures_f;
 
       int verbosity = 0;
+      // These must agree with the ConfigTree defaults read in QuadratureProvider's
+      // ConfigTree constructor, otherwise a default-constructed provider (every test, and any
+      // integrator built without a config) silently runs a different rule than production.
       int vacuum_quad_size = 64;
-      double matsubara_precision_factor = 0;
-      int min_matsubara_size = 32;
+      double matsubara_precision_factor = 1;
+      int min_matsubara_size = 8;
       int max_matsubara_size = 128;
 
       std::mutex m_mutex;

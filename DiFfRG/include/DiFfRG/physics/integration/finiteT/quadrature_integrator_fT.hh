@@ -339,7 +339,8 @@ namespace DiFfRG
       if (scheduler.active() && scheduler.plan_contains(integrator_id())) MapCompletion::flush();
 
       const MapSlice slice = scheduler.schedule(integrator_id(), dest, sizeof(NT), coordinates.size(),
-                                                quadrature_volume(), Coordinates::dim == 1);
+                                                quadrature_volume(), Coordinates::dim == 1,
+                                                map_target<ExecutionSpace>());
 
       if (slice.count == 0) {
         if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
@@ -353,28 +354,93 @@ namespace DiFfRG
     template <typename Coordinates, typename... Args>
     auto map_dist(NT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      // create unmanaged host view for dest
-      auto dest_view = Kokkos::View<NT *, CPU_memory, Kokkos::MemoryUnmanaged>(dest, coordinates.size());
+      const size_t n = coordinates.size();
 
-      // Reuse cached device view if large enough, otherwise reallocate (grow-only)
-      if (m_dest_device_size < coordinates.size()) {
-        m_dest_device = Kokkos::View<NT *, ExecutionSpace>(Kokkos::view_alloc(space, "MapIntegrators_device_view"),
-                                                           coordinates.size());
-        m_dest_device_size = coordinates.size();
+      if constexpr (std::is_same_v<typename ExecutionSpace::memory_space, CPU_memory>) {
+        // Host backend: "device" memory is host memory, so there is nothing to stage. The work is
+        // synchronous though, so inside a deferral scope it is queued rather than run here -- see
+        // run_or_queue_host().
+        run_or_queue_host(dest, coordinates, args...);
+        // Nothing to land, but the MPI slices still have to be exchanged before the caller reads.
+        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
+        return space;
+      } else {
+        // One staging buffer per integrator, so a second map() before a flush would clobber the
+        // first result. Land the outstanding one first; in the normal call pattern (each flow
+        // mapped once per flush interval) this never triggers.
+        if (m_dest_pinned_size > 0 && MapCompletion::has_pending(m_dest_pinned.data())) MapCompletion::flush();
+
+        auto dest_device_view = device_scratch(n);
+
+        if (m_dest_pinned_size < n) {
+          m_dest_pinned = Kokkos::View<NT *, PinnedHost_memory>(
+              Kokkos::view_alloc(Kokkos::WithoutInitializing, "MapIntegrators_fT_pinned_view"), n);
+          m_dest_pinned_size = n;
+        }
+        auto pinned_view = Kokkos::View<NT *, PinnedHost_memory>(m_dest_pinned, Kokkos::make_pair(size_t(0), n));
+
+        map(space, dest_device_view, coordinates, args...);
+
+        // Genuinely asynchronous, because the destination is page-locked. Copying straight into
+        // `dest` -- ordinary pageable caller memory, e.g. a dealii::Vector element range -- is not:
+        // the driver has to stage it, so the call blocks until the kernels feeding it have finished
+        // and the host gets no run-ahead at all. See MapCompletion for the measurement.
+        Kokkos::deep_copy(space, pinned_view, dest_device_view);
+
+        // Caller has promised not to read `dest` until its DeferredMaps scope closes, so leave the
+        // result in staging and keep the host running ahead of the device.
+        MapCompletion::record(dest, m_dest_pinned.data(), n * sizeof(NT));
+        // Original contract outside such a scope: `dest` is valid on return. flush() fences, lands
+        // the staged copy and -- under MPI -- exchanges this batch's slices, all of which must
+        // happen before the caller looks at `dest`.
+        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
+
+        return space;
       }
-      auto dest_device_view =
-          Kokkos::View<NT *, ExecutionSpace>(m_dest_device, Kokkos::make_pair(size_t(0), coordinates.size()));
+    }
+
+  private:
+    /// Grow-only scratch in the integrator's own execution space, reused across calls.
+    Kokkos::View<NT *, ExecutionSpace> device_scratch(const size_t n)
+    {
+      if (m_dest_device_size < n) {
+        m_dest_device =
+            Kokkos::View<NT *, ExecutionSpace>(Kokkos::view_alloc(space, "MapIntegrators_device_view"), n);
+        m_dest_device_size = n;
+      }
+      return Kokkos::View<NT *, ExecutionSpace>(m_dest_device, Kokkos::make_pair(size_t(0), n));
+    }
+
+    /// Run a host-backend map now, or queue it for flush time if a deferral scope is open. See
+    /// MapCompletion::record_work. Compiled out in a CUDA-less build.
+    template <typename Coordinates, typename... Args>
+    void run_or_queue_host(NT *dest, const Coordinates &coordinates, const Args &...args)
+    {
+      if constexpr (internal::has_device_backend) {
+        if (MapCompletion::deferral_enabled()) {
+          MapCompletion::record_work(
+              [this, dest, coordinates, args...]() { this->run_host(dest, coordinates, args...); });
+          return;
+        }
+      }
+      run_host(dest, coordinates, args...);
+    }
+
+    /// The host-backend body of map_dist(). Queued jobs run one after another, so the shared
+    /// `m_dest_device` scratch is written and drained before the next job touches it.
+    template <typename Coordinates, typename... Args>
+    void run_host(NT *dest, const Coordinates &coordinates, const Args &...args)
+    {
+      const size_t n = coordinates.size();
+      auto dest_device_view = device_scratch(n);
+      // create unmanaged host view for dest
+      auto dest_view = Kokkos::View<NT *, CPU_memory, Kokkos::MemoryUnmanaged>(dest, n);
 
       // run the map function
       map(space, dest_device_view, coordinates, args...);
 
       // copy the result from device to the unmanaged host view
       Kokkos::deep_copy(space, dest_view, dest_device_view);
-
-      // Under MPI the slices still have to be exchanged before the caller reads `dest`.
-      if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
-
-      return space;
     }
 
   protected:
@@ -400,6 +466,9 @@ namespace DiFfRG
     mutable device::array<size_t, 1 + dim> m_cache_extents{};
     mutable Kokkos::View<NT *, ExecutionSpace> m_dest_device;
     mutable size_t m_dest_device_size = 0;
+    /// Page-locked staging for the device path, so the result copy is genuinely asynchronous.
+    mutable Kokkos::View<NT *, PinnedHost_memory> m_dest_pinned;
+    mutable size_t m_dest_pinned_size = 0;
     mutable Kokkos::View<NT, typename ExecutionSpace::memory_space> m_result_view;
     mutable typename Kokkos::View<NT, typename ExecutionSpace::memory_space>::host_mirror_type m_result_host;
     mutable bool m_result_views_initialized = false;
@@ -504,19 +573,39 @@ namespace DiFfRG
       if (scheduler.active() && scheduler.plan_contains(this->integrator_id())) MapCompletion::flush();
 
       const MapSlice slice = scheduler.schedule(this->integrator_id(), dest, sizeof(NT), coordinates.size(),
-                                                Base::quadrature_volume(), Coordinates::dim == 1);
+                                                Base::quadrature_volume(), Coordinates::dim == 1,
+                                                map_target<execution_space>());
 
       if (slice.count == 0) {
         if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
         return space;
       }
       if (slice.owns_all(coordinates.size()))
-        map(space, dest, coordinates, args...);
+        run_or_queue(dest, coordinates, args...);
       else
-        map(space, dest + slice.offset, SubCoordinates(coordinates, slice.offset, slice.count), args...);
+        run_or_queue(dest + slice.offset, SubCoordinates(coordinates, slice.offset, slice.count), args...);
 
       if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
       return space;
+    }
+
+  private:
+    /// Run now, or queue for flush time inside a deferral scope -- see MapCompletion::record_work.
+    /// Compiled out in a CUDA-less build.
+    template <typename Coordinates, typename... Args>
+    void run_or_queue(NT *dest, const Coordinates &coordinates, const Args &...args)
+    {
+      if constexpr (internal::has_device_backend) {
+        if (MapCompletion::deferral_enabled()) {
+          MapCompletion::record_work([this, dest, coordinates, args...]() {
+            auto sp = execution_space();
+            this->map(sp, dest, coordinates, args...);
+          });
+          return;
+        }
+      }
+      auto sp = execution_space();
+      map(sp, dest, coordinates, args...);
     }
 
   protected:

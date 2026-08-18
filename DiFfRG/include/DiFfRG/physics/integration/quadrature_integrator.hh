@@ -396,7 +396,8 @@ namespace DiFfRG
       if (scheduler.active() && scheduler.plan_contains(integrator_id())) MapCompletion::flush();
 
       const MapSlice slice = scheduler.schedule(integrator_id(), dest, sizeof(NT), coordinates.size(),
-                                                quadrature_volume(), Coordinates::dim == 1);
+                                                quadrature_volume(), Coordinates::dim == 1,
+                                                map_target<ExecutionSpace>());
 
       if (slice.count == 0) {
         // Not an owner: no kernels, but the plan entry is registered, so this rank still has to
@@ -423,10 +424,10 @@ namespace DiFfRG
       auto dest_device_view = Kokkos::View<NT *, ExecutionSpace>(m_dest_device, Kokkos::make_pair(size_t(0), n));
 
       if constexpr (std::is_same_v<typename ExecutionSpace::memory_space, CPU_memory>) {
-        // Host backend: "device" memory is host memory, so there is nothing to stage or defer.
-        auto dest_view = Kokkos::View<NT *, CPU_memory, Kokkos::MemoryUnmanaged>(dest, n);
-        map(space, dest_device_view, coordinates, args...);
-        Kokkos::deep_copy(space, dest_view, dest_device_view);
+        // Host backend: "device" memory is host memory, so there is nothing to stage. The work is
+        // synchronous though, so inside a deferral scope it is queued rather than run here -- see
+        // run_or_queue_host().
+        run_or_queue_host(dest, coordinates, args...);
         // Nothing to land, but the MPI slices still have to be exchanged before the caller reads.
         if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
         return space;
@@ -459,6 +460,49 @@ namespace DiFfRG
 
         return space;
       }
+    }
+
+  private:
+    /**
+     * @brief Run a host-backend map now, or queue it for flush time if a deferral scope is open.
+     *
+     * A host kernel is synchronous, so running it inline blocks the host thread and delays the
+     * launch of any device map issued after it. Queuing makes the call order inside a DeferredMaps
+     * scope irrelevant: flush() runs the queue before it fences, i.e. while the device work already
+     * launched is still running. See MapCompletion::record_work.
+     *
+     * Compiled out entirely in a CUDA-less build, where there is no device to overlap with.
+     */
+    template <typename Coordinates, typename... Args>
+    void run_or_queue_host(NT *dest, const Coordinates &coordinates, const Args &...args)
+    {
+      if constexpr (internal::has_device_backend) {
+        if (MapCompletion::deferral_enabled()) {
+          // Everything the job needs is captured by value; `this` and `dest` are covered by the
+          // DeferredMaps contract, which already requires them to outlive the scope.
+          MapCompletion::record_work(
+              [this, dest, coordinates, args...]() { this->run_host(dest, coordinates, args...); });
+          return;
+        }
+      }
+      run_host(dest, coordinates, args...);
+    }
+
+    /// The host-backend body of map_dist(). Queued jobs run one after another, so the shared
+    /// `m_dest_device` scratch is written and drained before the next job touches it.
+    template <typename Coordinates, typename... Args>
+    void run_host(NT *dest, const Coordinates &coordinates, const Args &...args)
+    {
+      const size_t n = coordinates.size();
+      if (m_dest_device_size < n) {
+        m_dest_device =
+            Kokkos::View<NT *, ExecutionSpace>(Kokkos::view_alloc(space, "MapIntegrators_device_view"), n);
+        m_dest_device_size = n;
+      }
+      auto dest_device_view = Kokkos::View<NT *, ExecutionSpace>(m_dest_device, Kokkos::make_pair(size_t(0), n));
+      auto dest_view = Kokkos::View<NT *, CPU_memory, Kokkos::MemoryUnmanaged>(dest, n);
+      map(space, dest_device_view, coordinates, args...);
+      Kokkos::deep_copy(space, dest_view, dest_device_view);
     }
 
   protected:
@@ -565,7 +609,8 @@ namespace DiFfRG
       if (scheduler.active() && scheduler.plan_contains(this->integrator_id())) MapCompletion::flush();
 
       const MapSlice slice = scheduler.schedule(this->integrator_id(), dest, sizeof(NT), coordinates.size(),
-                                                Base::quadrature_volume(), Coordinates::dim == 1);
+                                                Base::quadrature_volume(), Coordinates::dim == 1,
+                                                map_target<execution_space>());
 
       if (slice.count == 0) {
         // Not an owner, but still part of the batch -- see the GPU overload.
@@ -573,14 +618,34 @@ namespace DiFfRG
         return space;
       }
       if (slice.owns_all(coordinates.size()))
-        map(space, dest, coordinates, args...);
+        run_or_queue(dest, coordinates, args...);
       else
-        map(space, dest + slice.offset, SubCoordinates(coordinates, slice.offset, slice.count), args...);
+        run_or_queue(dest + slice.offset, SubCoordinates(coordinates, slice.offset, slice.count), args...);
 
       // This backend writes straight into `dest`, so there is nothing to land -- but the slices
       // still have to be exchanged before the caller reads them.
       if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
       return space;
+    }
+
+  private:
+    /// Run now, or queue for flush time inside a deferral scope. `tbb::parallel_for` is
+    /// synchronous, so running it inline would stall the launch of any device map issued after it;
+    /// see MapCompletion::record_work. Compiled out in a CUDA-less build.
+    template <typename Coordinates, typename... Args>
+    void run_or_queue(NT *dest, const Coordinates &coordinates, const Args &...args)
+    {
+      if constexpr (internal::has_device_backend) {
+        if (MapCompletion::deferral_enabled()) {
+          MapCompletion::record_work([this, dest, coordinates, args...]() {
+            auto sp = execution_space();
+            this->map(sp, dest, coordinates, args...);
+          });
+          return;
+        }
+      }
+      auto sp = execution_space();
+      map(sp, dest, coordinates, args...);
     }
 
   protected:

@@ -24,12 +24,99 @@
 #include <cuda_runtime.h>
 #endif
 
+#ifdef __linux__
+#include <sched.h>
+#endif
+
 namespace DiFfRG
 {
   namespace
   {
     /// Length of the PCI bus id string CUDA returns, e.g. "0000:65:00.0".
     constexpr int bus_id_len = 16;
+
+    /**
+     * @brief This rank's CPU budget: how many threads it may start, and why.
+     */
+    struct CpuBudget {
+      unsigned int threads;
+      /// Node-local ranks competing for the same CPUs, this rank included. 1 == exclusive.
+      unsigned int sharing;
+      /// Whether the launcher handed this rank its own CPUs.
+      bool pinned;
+    };
+
+    /**
+     * @brief Work out how many CPU threads this rank may start.
+     *
+     * The naive version of this -- take the machine's core count and divide by the number of
+     * node-local ranks -- is wrong on exactly the systems that matter, and wrong in both directions:
+     *
+     *  - `std::thread::hardware_concurrency()`, which is what deal.II's `MultithreadInfo::n_cores()`
+     *    calls, **ignores the CPU affinity mask**. Measured on this machine: pinned to 8 of 32 CPUs
+     *    with taskset, it still reports 32. So a rank pinned to its own cores does not know it.
+     *  - Conversely, when a launcher *has* pinned each rank (Slurm `--cpus-per-task`), TBB's
+     *    `default_concurrency()` does see the mask (8 in the same test), so the thread limit is
+     *    already per-rank -- and dividing it again by the node-local rank count halves it a second
+     *    time. On a 128-core node split into 2 pinned ranks that yields 32 threads each, not 64.
+     *
+     * So the divisor is not "how many ranks are on this node" but "how many node-local ranks are
+     * competing for *my* CPUs". That is answered by intersecting the affinity masks, the same way
+     * GPU sharing is answered by comparing bus ids rather than counting devices.
+     */
+    CpuBudget cpu_budget([[maybe_unused]] const unsigned int local_size,
+                         const unsigned int configured_threads)
+    {
+      // An explicit /discretization/threads is a statement about one process. Honour it verbatim:
+      // silently dividing it would make the setting mean "threads per node", which is neither what
+      // it says nor what it means in a serial run.
+      if (configured_threads > 0) return CpuBudget{configured_threads, 1, false};
+
+#ifdef __linux__
+      cpu_set_t mask;
+      CPU_ZERO(&mask);
+      if (sched_getaffinity(0, sizeof(mask), &mask) != 0)
+        return CpuBudget{std::max(1u, dealii::MultithreadInfo::n_threads() / std::max(1u, local_size)), local_size,
+                         false};
+
+      const unsigned int my_cpus = static_cast<unsigned int>(CPU_COUNT(&mask));
+
+      unsigned int sharing = 1;
+      if (local_size > 1) {
+        // Gather every node-local rank's mask and count how many overlap mine. Disjoint masks mean
+        // the launcher already partitioned the node; identical masks mean the ranks share it.
+        MPI_Comm node_comm = MPI::split_shared(MPI_COMM_WORLD);
+        const size_t bytes = sizeof(cpu_set_t);
+        std::vector<char> all(bytes * local_size, '\0');
+        std::vector<int> counts(local_size, static_cast<int>(bytes));
+        std::vector<int> displs(local_size);
+        for (unsigned int i = 0; i < local_size; ++i)
+          displs[i] = static_cast<int>(i * bytes);
+        MPI::allgatherv_bytes(node_comm, &mask, bytes, all.data(), counts, displs);
+        MPI::free_comm(node_comm);
+
+        const char *mine = reinterpret_cast<const char *>(&mask);
+        sharing = 0;
+        for (unsigned int p = 0; p < local_size; ++p) {
+          const char *other = all.data() + p * bytes;
+          bool overlaps = false;
+          for (size_t b = 0; b < bytes && !overlaps; ++b)
+            overlaps = (mine[b] & other[b]) != 0;
+          if (overlaps) ++sharing;
+        }
+        if (sharing == 0) sharing = 1; // cannot happen: a mask always overlaps itself
+      }
+
+      // Cap by whatever limit is already in force (DEAL_II_NUM_THREADS, an application's own
+      // global_control), so this only ever lowers the budget.
+      const unsigned int budget = std::max(1u, my_cpus / sharing);
+      return CpuBudget{std::min(budget, dealii::MultithreadInfo::n_threads()), sharing, sharing == 1 && local_size > 1};
+#else
+      // No portable way to read an affinity mask; fall back to an even split of the node.
+      return CpuBudget{std::max(1u, dealii::MultithreadInfo::n_threads() / std::max(1u, local_size)), local_size,
+                       false};
+#endif
+    }
 
     /**
      * @brief Give this rank its own GPU, and warn loudly if it has to share one.
@@ -172,18 +259,26 @@ namespace DiFfRG
       const unsigned int local_size = MPI::size(node_comm);
       MPI::free_comm(node_comm);
 
-      // /discretization/threads keeps meaning "threads per rank" only if we divide the machine
-      // between the ranks sharing it. Without this, N ranks each start a full-width TBB arena on
-      // the same cores and spend their time fighting each other.
-      unsigned int rank_threads = dealii::MultithreadInfo::n_threads();
-      if (local_size > 1) {
-        rank_threads = std::max(1u, rank_threads / local_size);
-        dealii::MultithreadInfo::set_thread_limit(rank_threads);
+      // Without a per-rank cap, N ranks each start a full-width TBB arena on the same cores and
+      // spend their time fighting each other. cpu_budget() works out the right cap from the affinity
+      // masks rather than by dividing a machine-wide count -- see its comment for why the obvious
+      // version is wrong in both directions.
+      const CpuBudget budget = cpu_budget(local_size, configured_threads);
+      if (budget.threads != dealii::MultithreadInfo::n_threads()) {
+        dealii::MultithreadInfo::set_thread_limit(budget.threads);
         // deal.II's limit governs its own pipelines; DiFfRG's TBB integrators need the arena capped
         // too, and that is a separate global_control.
-        static tbb::global_control rank_parallelism(tbb::global_control::max_allowed_parallelism, rank_threads);
+        static tbb::global_control rank_parallelism(tbb::global_control::max_allowed_parallelism, budget.threads);
         (void)rank_parallelism;
       }
+      if (local_size > 1 && MPI::rank(MPI_COMM_WORLD) == 0)
+        std::cerr << "DiFfRG: " << local_size << " ranks per node, " << budget.threads
+                  << " CPU threads each ("
+                  << (configured_threads > 0
+                          ? "from /discretization/threads, applied per rank"
+                          : budget.pinned ? "the launcher pinned each rank to its own CPUs"
+                                          : std::to_string(budget.sharing) + " ranks share one CPU set")
+                  << ")." << std::endl;
 
       const int device = select_device(local_rank, local_size);
 
