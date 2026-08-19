@@ -34,12 +34,13 @@ namespace DiFfRG
     if (!initialized) {
       // The thread count has to be known *before* the libraries come up: dealii::InitFinalize
       // forwards it to MultithreadInfo::set_thread_limit(), which installs the process-wide
-      // tbb::global_control that caps every TBB pipeline in deal.II and DiFfRG, and which
-      // ensure_kokkos_initialized() below reads to size the Kokkos host backend. Neither can be
-      // lowered meaningfully afterwards. probe() therefore takes an early, silent look at the
-      // parameter file; the application's own ConfigurationHelper does the authoritative parse.
+      // tbb::global_control that caps every TBB pipeline in deal.II and DiFfRG. Kokkos also reads
+      // MultithreadInfo::n_threads() exactly once below, so both thread counts must be available
+      // here. probe() therefore takes an early, silent look at the parameter file; the
+      // application's own ConfigurationHelper does the authoritative parse.
       const ConfigTree config = ConfigurationHelper::probe(argc, argv, parameter_file);
       const unsigned int configured_threads = config.get_uint("/discretization/threads", 0);
+      const unsigned int configured_kokkos_threads = config.get_uint("/discretization/kokkos_threads", 0);
 
       if (config.contains("/discretization/threads") && !config.contains("/discretization/mesh_workers"))
         std::cerr << "WARNING: '/discretization/threads' has changed meaning. It used to set the length of the\n"
@@ -77,6 +78,14 @@ namespace DiFfRG
               dealii::InitializeLibrary::Zoltan | dealii::InitializeLibrary::P4EST,
           max_num_threads);
 
+      // InitFinalize has now resolved the application limit, including DEAL_II_NUM_THREADS. Keep
+      // that resolved value so Kokkos can be initialized with an independent host-backend count
+      // without changing the TBB/deal.II limit observed by the rest of the application. An absent
+      // kokkos_threads entry and an explicit zero both retain the historical application count.
+      const unsigned int application_threads = dealii::MultithreadInfo::n_threads();
+      const unsigned int kokkos_threads =
+          configured_kokkos_threads > 0 ? configured_kokkos_threads : application_threads;
+
       std::atexit([]() {
         if (initialized) {
           // Finalizes MPI/PETSc/... (but not Kokkos, which deal.II finalizes via its own atexit hook
@@ -88,9 +97,18 @@ namespace DiFfRG
 
       // Initialize Kokkos *after* registering the teardown above so that Kokkos::finalize() (also
       // registered via std::atexit, here) runs before the MPI finalization, matching the order
-      // deal.II's own ~MPI_InitFinalize uses. set_thread_limit() has already run (in InitFinalize),
-      // so ensure_kokkos_initialized() picks up the correct thread count.
-      dealii::internal::ensure_kokkos_initialized();
+      // deal.II's own ~MPI_InitFinalize uses. deal.II sizes the Kokkos host backend from the
+      // current MultithreadInfo limit, so apply the requested Kokkos count only for that call and
+      // then restore the resolved application/TBB count. set_thread_limit() continues to apply
+      // DEAL_II_NUM_THREADS as an upper bound to both values.
+      dealii::MultithreadInfo::set_thread_limit(kokkos_threads);
+      try {
+        dealii::internal::ensure_kokkos_initialized();
+      } catch (...) {
+        dealii::MultithreadInfo::set_thread_limit(application_threads);
+        throw;
+      }
+      dealii::MultithreadInfo::set_thread_limit(application_threads);
 
       initialized = true;
     }
