@@ -11,7 +11,7 @@ namespace DiFfRG
 {
   template <typename VectorType, typename SparseMatrixType, uint dim>
   void TimeStepperExplicitEuler<VectorType, SparseMatrixType, dim>::run(
-      AbstractFlowingVariables<NumberType> *initial_condition, double start, double stop)
+      AbstractFlowingVariables<NumberType, VectorType> *initial_condition, double start, double stop)
   {
     this->data_out = this->get_data_out();
     this->adaptor = this->get_adaptor();

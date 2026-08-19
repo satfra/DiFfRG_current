@@ -26,7 +26,7 @@ namespace DiFfRG
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver, int prec>
   void TimeStepperSUNDIALS_IDA_BoostRK<VectorType, SparseMatrixType, dim, LinearSolver, prec>::run(
-      AbstractFlowingVariables<NumberType> *initial_condition, const double t_start, const double t_stop)
+      AbstractFlowingVariables<NumberType, VectorType> *initial_condition, const double t_start, const double t_stop)
   {
     this->data_out = this->get_data_out();
     this->adaptor = this->get_adaptor();

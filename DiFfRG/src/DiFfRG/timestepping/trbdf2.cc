@@ -40,7 +40,7 @@ namespace DiFfRG
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver>
   void TimeStepperTRBDF2<VectorType, SparseMatrixType, dim, LinearSolver>::run(
-      AbstractFlowingVariables<NumberType> *initial_condition, double start, double stop)
+      AbstractFlowingVariables<NumberType, VectorType> *initial_condition, double start, double stop)
   {
     OutputSession<dim, VectorType> *data_out = this->get_data_out();
 

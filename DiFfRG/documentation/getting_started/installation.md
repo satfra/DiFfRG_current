@@ -112,11 +112,41 @@ This top-level build is a *superbuild*: it builds the bundled dependencies (deal
 The most important options to pass to the top-level `cmake` invocation are:
 
 - `-DGPU=ON/OFF` — GPU support via the Kokkos CUDA/HIP backend (default `ON`).
-- `-DMPI=ON/OFF` — MPI support (default `OFF`).
+- `-DMPI=ON/OFF` — MPI support (default `OFF`). This is a single switch for the whole superbuild: deal.II, SUNDIALS, PETSc and DiFfRG must all agree about MPI, so it cannot be enabled for DiFfRG alone afterwards.
 - `-DNATIVE=ON/OFF` — optimize for the build machine's CPU (`-march=native`). Disable for portable binaries (default `ON`).
 - `-DDiFfRG_TEST=ON` — build the test suite (default `OFF`).
 - `-DDiFfRG_DOCUMENTATION=ON` — build this documentation (default `ON`).
-- `-DBUILD_PETSC=ON` / `-DBUILD_OpenBLAS=ON` — additionally build PETSc / OpenBLAS (default `OFF`).
+- `-DBUILD_OpenBLAS=ON` — additionally build OpenBLAS (default `OFF`).
+
+#### PETSc and distributed linear algebra
+
+- `-DBUILD_PETSC=ON/OFF` — build PETSc (**default: follows `-DMPI`**). PETSc provides the
+  distributed vectors, matrices and solvers, and via deal.II the only MPI-capable
+  `SUNDIALS::IDA` instantiation that does not require Trilinos. Without MPI it buys nothing
+  over the existing UMFPACK path, which is why it tracks `MPI`.
+- `-DPETSC_GMRES=ON/OFF` — build PETSc with hypre, enabling `PreconditionBoomerAMG` for
+  Krylov solves (default `ON`). Needs no Fortran and adds only a few minutes. With it off you
+  still get a working distributed Krylov solve via `PreconditionBlockJacobi`, just a weaker
+  preconditioner.
+- `-DPETSC_MUMPS=ON/OFF` — build PETSc with MUMPS, enabling `SparseDirectMUMPS` distributed
+  direct solves (default `OFF`). Requires a Fortran compiler and pulls in ScaLAPACK,
+  METIS and ParMETIS; this is by far the longest part of the build.
+
+deal.II detects what PETSc was actually built with and exports `DEAL_II_PETSC_WITH_HYPRE` /
+`DEAL_II_PETSC_WITH_MUMPS`, which is what DiFfRG's solver wrappers gate on.
+
+#### Bounding build parallelism
+
+The dependency builds each run their own nested `make`, which the outer `make -jN` never
+reaches. Two caps control them:
+
+- `-DDEALII_MAX_JOBS=<n>` (default 16) — deal.II's own build.
+- `-DPETSC_MAX_JOBS=<n>` (default 8) — PETSc's build *and*, via `--with-make-np`, the builds
+  of the packages PETSc downloads.
+
+Both are additionally clamped by available RAM (roughly one job per 2 GB). `install.sh`
+forwards its own thread count to both. Raise them only if you have the memory: linking deal.II
+is what usually triggers an OOM.
 
 Boost, TBB, HDF5 and SUNDIALS are taken from the system when a viable version is found, and otherwise built from the bundled, pinned sources. For each library `<LIB>` ∈ {`BOOST`, `TBB`, `HDF5`, `SUNDIALS`} you can override this:
 

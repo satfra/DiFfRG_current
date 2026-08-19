@@ -23,7 +23,7 @@ namespace DiFfRG
   }
 
   template <typename VectorType, typename SparseMatrixType, uint dim>
-  void TimeStepperRK<VectorType, SparseMatrixType, dim>::run(AbstractFlowingVariables<NumberType> *initial_condition,
+  void TimeStepperRK<VectorType, SparseMatrixType, dim>::run(AbstractFlowingVariables<NumberType, VectorType> *initial_condition,
                                                              const double t_start, const double t_stop)
   {
     this->data_out = this->get_data_out();
