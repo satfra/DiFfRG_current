@@ -1467,8 +1467,7 @@ Cell[BoxData[{
   RowBox[{
    RowBox[{
    "interpolatorType", "=", 
-    "\"\<SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, \
-GPU_memory>\>\""}], ";"}], "\[IndentingNewLine]"}], "\[IndentingNewLine]", 
+    "\"\<SplineInterpolator1D<double, LogarithmicCoordinates1D<double>>\>\""}], ";"}], "\[IndentingNewLine]"}], "\[IndentingNewLine]", 
  RowBox[{
   RowBox[{
    RowBox[{"kernelParameterList", "=", 

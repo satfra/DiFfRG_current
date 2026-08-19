@@ -15,14 +15,12 @@ namespace DiFfRG
   };
 
   /**
-   * @brief Checks that an interpolator class provides the required methods
-   * (get_coordinates, get_on<CPU_memory>, get_on<GPU_memory>) and a call operator with the correct arity.
+   * @brief Checks that an interpolator class provides the required methods (get_coordinates) and a
+   * call operator with the correct arity.
    */
   template <typename T>
   concept has_interpolator_methods = has_interpolator_types<T> && requires(T t) {
     t.get_coordinates();
-    t.template get_on<CPU_memory>();
-    t.template get_on<GPU_memory>();
     requires has_n_call_operator<T, typename T::ctype, T::dim>;
   };
 
@@ -31,7 +29,7 @@ namespace DiFfRG
    *
    * An interpolator class must provide the following methods:
    * - get_coordinates(): returns the coordinates object used for the interpolation
-   * - get_on<MemorySpace>(): returns the interpolator object on the specified memory space (CPU_memory or GPU_memory)
+   * - operator()(x...): interpolates at a point, callable from host AND device code
    *
    * The interpolator class must also define the following type aliases:
    * - value_type: the type of the values being interpolated

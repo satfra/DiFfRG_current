@@ -39,9 +39,11 @@ namespace DiFfRG
     attached_bytes.push_back(0);
   }
 
-  template <uint dim, typename VectorType> void FEOutput<dim, VectorType>::set_hdf5_output(HDF5Output *output)
+  template <uint dim, typename VectorType>
+  void FEOutput<dim, VectorType>::set_hdf5_output(HDF5Output *output, const bool session_closes_file)
   {
     this->hdf5_output = output;
+    this->hdf5_closed_by_session = session_closes_file;
   }
 
   template <uint dim, typename VectorType> void FEOutput<dim, VectorType>::update_buffers()
@@ -175,7 +177,11 @@ namespace DiFfRG
       if (to_throw) std::rethrow_exception(to_throw);
     }
 
-    update_buffers();
+    {
+      // Joining a retired worker here is backpressure: the producer is waiting for the disk.
+      ScopedTimer flush_timer(frame_timings.fe_flush);
+      update_buffers();
+    }
 
     if (!save_vtk && hdf5_output == nullptr) {
       data_outs[series_number % buffer_size].clear();
@@ -193,36 +199,40 @@ namespace DiFfRG
 
     auto &m_data_out = data_outs[series_number % buffer_size];
 
-    m_data_out.build_patches(subdivisions);
+    {
+      ScopedTimer patch_timer(frame_timings.build_patches);
+      m_data_out.build_patches(subdivisions);
+    }
 
     if (hdf5_output != nullptr) {
-      auto h5_file = hdf5_output->get_file();
-      auto h5_group = h5_file.root().open_group("FE");
+      DataOutBase::DataOutFilterFlags mflags(false, false);
+      DataOutBase::DataOutFilter data_filter(mflags);
+      std::vector<double> node_data;
+      std::vector<std::pair<std::string, std::vector<double>>> data_sets;
       {
-        auto cur_group = h5_group.create_group(Utilities::int_to_string(series_number, 6));
-        cur_group.write_attribute("time", time);
-        cur_group.write_attribute("series_number", static_cast<int>(series_number));
-        cur_group.write_attribute("output_name", output_name);
-
-        DataOutBase::DataOutFilterFlags mflags(false, false);
-        DataOutBase::DataOutFilter data_filter(mflags);
+        ScopedTimer filter_timer(frame_timings.data_filter);
         m_data_out.write_filtered_data(data_filter);
-        std::vector<double> node_data;
         data_filter.fill_node_data(node_data);
 
-        auto nodes_space = DiFfRG::hdf5::Dataspace::simple({data_filter.n_nodes(), dim});
-        auto nodes = cur_group.create_dataset("nodes", DiFfRG::hdf5::type_of<double>(), nodes_space);
-        nodes.write(node_data);
-
+        // Copied out of the filter rather than captured with it: the filter is a deal.II object
+        // whose lifetime we would otherwise have to reason about once the write is deferred.
+        data_sets.reserve(data_filter.n_data_sets());
         for (uint i = 0; i < data_filter.n_data_sets(); ++i) {
-          auto data_space = DiFfRG::hdf5::Dataspace::simple({data_filter.n_nodes()});
-          const std::string name = data_filter.get_data_set_name(i);
-          auto dataset = cur_group.create_dataset(name, DiFfRG::hdf5::type_of<double>(), data_space);
-          const double *data_set_data = data_filter.get_data_set(i);
-          dataset.write(data_set_data, data_filter.n_nodes());
+          const double *values = data_filter.get_data_set(i);
+          data_sets.emplace_back(data_filter.get_data_set_name(i),
+                                 std::vector<double>(values, values + data_filter.n_nodes()));
         }
       }
-      hdf5_output->close_file();
+
+      hdf5_output->stage_fe_frame(series_number, time, output_name, dim, data_filter.n_nodes(),
+                                  std::move(node_data), std::move(data_sets));
+      // Under a session, HDF5Output::flush() runs the frame -- after the model's scalars and
+      // maps have been staged too, so the whole frame is one open/write/flush/close. Standalone
+      // there is nobody to do that, and the staged writes would be dropped at destruction.
+      if (!hdf5_closed_by_session) hdf5_output->run_staged_frame(time);
+      // FEOutput does not own the HDF5Output, so it cannot own its timing buckets either: fold
+      // in whatever it has accumulated for this frame.
+      frame_timings += hdf5_output->take_frame_timings();
     }
 
     auto output_func = [=, this](const uint m_series_number, const double m_time) {
@@ -274,8 +284,13 @@ namespace DiFfRG
       }
     };
 
-    // If the buffer size is 1, we save ourselves the cost of spawning a thread
-    if (buffer_size == 1) {
+    ScopedTimer flush_timer(frame_timings.fe_flush);
+
+    // The worker exists only to write the .vtu and publish the .pvd entry. With VTK off there
+    // is nothing for it to do, so spawning and later joining one per frame is pure overhead --
+    // and it is exactly the configuration an HDF5-only cluster run uses. Take the synchronous
+    // tail instead, without touching next_published_series (nothing gets published).
+    if (buffer_size == 1 || !save_vtk) {
       output_func(series_number, time);
       // synchronous path: clear the DataOut here on the main thread (see note in output_func)
       data_outs[series_number % buffer_size].clear();
@@ -297,6 +312,8 @@ namespace DiFfRG
   void FEOutput<dim, VectorType>::attach(const DoFHandler<dim> &dof_handler, const VectorType &solution,
                                          const std::string &name)
   {
+    // Runs inside the user's contributor callback, so it is charged to fe_attach, not fe_flush.
+    ScopedTimer attach_timer(frame_timings.fe_attach);
     update_buffers();
     reserve_bytes(solution.size() * sizeof(typename VectorType::value_type));
 
@@ -311,6 +328,8 @@ namespace DiFfRG
   void FEOutput<dim, VectorType>::attach(const DoFHandler<dim> &dof_handler, const VectorType &solution,
                                          const std::vector<std::string> &names)
   {
+    // Runs inside the user's contributor callback, so it is charged to fe_attach, not fe_flush.
+    ScopedTimer attach_timer(frame_timings.fe_attach);
     update_buffers();
     reserve_bytes(solution.size() * sizeof(typename VectorType::value_type));
 

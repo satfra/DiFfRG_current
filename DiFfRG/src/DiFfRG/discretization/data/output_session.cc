@@ -19,6 +19,7 @@ namespace DiFfRG
       : output_path(path), settings(std::move(settings)), top_folder(make_folder(path.root().string())),
         output_name(path.run_name()), output_folder(make_folder(path.field_directory().generic_string())),
         active(MPI::rank(MPI_COMM_WORLD) == 0), run_logger(path, this->settings, active),
+        hdf5_writer(this->settings.asynchronous && active ? this->settings.hdf5_queue_depth : 0u),
         fe_out(this->top_folder, this->output_name, this->output_folder, this->settings, active),
         potential_fe_out(this->top_folder, this->output_name + "_potential", this->output_folder, this->settings,
                          active),
@@ -32,11 +33,18 @@ namespace DiFfRG
 
     if (active && use_hdf5) {
       h5_files.emplace(filename_h5, HDF5Output(this->top_folder, filename_h5, this->settings.configuration_json));
+      auto &h5 = h5_files.at(filename_h5);
       if constexpr (dim > 0) {
-        auto root_group = h5_files.at(filename_h5).get_file().root();
-        root_group.create_group("FE");
-        fe_out.set_hdf5_output(&h5_files.at(filename_h5));
+        {
+          auto root_group = h5.get_file().root();
+          root_group.create_group("FE");
+        }
+        // Without this the file stays open -- and its lock held -- from session construction
+        // until the first frame is flushed, which can be a long way into a run.
+        h5.close_file();
+        fe_out.set_hdf5_output(&h5, /*session_closes_file = */ true);
       }
+      h5.set_writer(&hdf5_writer);
     }
   }
 
@@ -56,6 +64,10 @@ namespace DiFfRG
     if constexpr (dim > 0) {
       if (pending_raw_potential)
         throw std::logic_error("OutputSession::attach_raw_potential: a raw potential is already attached.");
+      // The potential sinks have no HDF5Output, so with VTK off their flush() discards
+      // everything. Attaching anyway would still copy the whole potential vector and charge it
+      // against the pending-byte budget, once per frame, for nothing.
+      if (potential_fe_out.will_discard()) return;
       potential_fe_out.attach(*potential.dof_handler, potential.values, "potential");
       pending_raw_potential.emplace(std::move(potential));
     }
@@ -66,6 +78,7 @@ namespace DiFfRG
   {
     if constexpr (dim > 0) {
       if (!result.potential.has_value()) return;
+      if (eom_potential_fe_out.will_discard()) return; // see attach_raw_potential
       auto &potential = result.potential.value();
       const std::string name = pending_eom_potentials.empty()
                                    ? "eom_potential"
@@ -92,7 +105,13 @@ namespace DiFfRG
     if (found != h5_files.end()) return found->second;
 
     const std::string filename = output_name + "_" + OutputPath::checked_relative(name, "HDF5 name").generic_string();
-    return h5_files.emplace(name, HDF5Output(top_folder, filename, settings.configuration_json)).first->second;
+    // Constructing an HDF5Output creates the file and its top-level groups, which are HDF5
+    // calls on this thread. Since sinks are created lazily -- in practice during the first
+    // frame -- the writer may be mid-frame right now, and HDF5 is not thread safe here.
+    hdf5_writer.drain();
+    auto &created = h5_files.emplace(name, HDF5Output(top_folder, filename, settings.configuration_json)).first->second;
+    created.set_writer(&hdf5_writer);
+    return created;
   }
 
   template <uint dim, typename VectorType> HDF5Output &OutputSession<dim, VectorType>::hdf5()
@@ -117,10 +136,53 @@ namespace DiFfRG
         pending_eom_potentials.clear();
       }
     }
-    for (auto &[name, csv] : csv_files)
-      csv.flush(time);
+    {
+      ScopedTimer csv_timer(current_frame.csv);
+      for (auto &[name, csv] : csv_files)
+        csv.flush(time);
+    }
     for (auto &[name, hdf] : h5_files)
       hdf.flush(time);
+
+    // Drain the sinks' buckets into this frame. Each take_frame_timings() resets, so nothing is
+    // counted twice even though FEOutput already folded in the HDF5Output cost it triggered.
+    if constexpr (dim > 0) {
+      current_frame += fe_out.take_frame_timings();
+      current_frame += potential_fe_out.take_frame_timings();
+      current_frame += eom_potential_fe_out.take_frame_timings();
+    }
+    for (auto &[name, hdf] : h5_files)
+      current_frame += hdf.take_frame_timings();
+  }
+
+  template <uint dim, typename VectorType> void OutputSession<dim, VectorType>::record_frame(const double time)
+  {
+    timings.add(current_frame);
+
+    if (settings.verbosity < 3) return;
+
+    run_logger.port().debug("output frame t = {:.6e}: total {:.4f}s (contributor {:.4f}s, of which {} potential "
+                            "solve(s) {:.4f}s; build_patches {:.4f}s, filter {:.4f}s, hdf5 write {:.4f}s, hdf5 "
+                            "open/close {:.4f}s in {} open(s), fe attach {:.4f}s, fe flush {:.4f}s, csv {:.4f}s)",
+                            time, current_frame.total, current_frame.contributor,
+                            current_frame.potential_solve_count, current_frame.potential_solves,
+                            current_frame.build_patches, current_frame.data_filter, current_frame.hdf5_write,
+                            current_frame.hdf5_open_close, current_frame.hdf5_open_count, current_frame.fe_attach,
+                            current_frame.fe_flush, current_frame.csv);
+
+    diagnostics_port.record("output_timings.csv", time,
+                            {{"total", current_frame.total},
+                             {"contributor", current_frame.contributor},
+                             {"potential_solves", current_frame.potential_solves},
+                             {"potential_solve_count", static_cast<double>(current_frame.potential_solve_count)},
+                             {"build_patches", current_frame.build_patches},
+                             {"data_filter", current_frame.data_filter},
+                             {"hdf5_write", current_frame.hdf5_write},
+                             {"hdf5_open_close", current_frame.hdf5_open_close},
+                             {"hdf5_open_count", static_cast<double>(current_frame.hdf5_open_count)},
+                             {"fe_attach", current_frame.fe_attach},
+                             {"fe_flush", current_frame.fe_flush},
+                             {"csv", current_frame.csv}});
   }
 
   template <uint dim, typename VectorType>
@@ -188,6 +250,11 @@ namespace DiFfRG
     } catch (...) {
       if (!drain_error) drain_error = std::current_exception();
     }
+    try {
+      hdf5_writer.drain();
+    } catch (...) {
+      if (!drain_error) drain_error = std::current_exception();
+    }
     if (drain_error) {
       terminal_error = drain_error;
       std::rethrow_exception(drain_error);
@@ -219,6 +286,19 @@ namespace DiFfRG
       } catch (...) {
         if (!terminal_error) terminal_error = std::current_exception();
       }
+      // Must happen before h5_files is destroyed: ~HDF5Output closes the file, and that call
+      // may not race the worker.
+      try {
+        hdf5_writer.finish();
+      } catch (...) {
+        if (!terminal_error) terminal_error = std::current_exception();
+      }
+      // Reported only after the writer has been joined, so its totals are complete. Emitted
+      // unconditionally: knowing what a run spent on output should never require having
+      // thought to switch something on beforehand.
+      timings.set_writer_totals(hdf5_writer.worker_totals(), hdf5_writer.asynchronous());
+      const std::string report = timings.format();
+      if (!report.empty()) run_logger.port().info(report);
     }
     rethrow_deferred_error();
     if (terminal_error) std::rethrow_exception(terminal_error);

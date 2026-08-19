@@ -5,20 +5,20 @@
 
 namespace DiFfRG
 {
-  template <typename _Regulator, typename MemorySpace = GPU_memory> class ZA4_kernel
+  template <typename _Regulator> class ZA4_kernel
   {
   public:
     using Regulator = _Regulator;
 
     static KOKKOS_FORCEINLINE_FUNCTION auto
     kernel(const double &l1, const double &cos1, const double &cos2, const double &phi, const double &p,
-           const double &k, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, MemorySpace> &ZA3,
-           const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, MemorySpace> &ZAcbc,
-           const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, MemorySpace> &ZA4,
-           const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, MemorySpace> &dtZc,
-           const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, MemorySpace> &Zc,
-           const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, MemorySpace> &dtZA,
-           const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, MemorySpace> &ZA)
+           const double &k, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>> &ZA3,
+           const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>> &ZAcbc,
+           const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>> &ZA4,
+           const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>> &dtZc,
+           const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>> &Zc,
+           const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>> &dtZA,
+           const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>> &ZA)
     {
       using namespace DiFfRG;
       using namespace DiFfRG::compute;
@@ -813,13 +813,13 @@ namespace DiFfRG
 
     static KOKKOS_FORCEINLINE_FUNCTION auto
     constant(const double &p, const double &k,
-             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, MemorySpace> &ZA3,
-             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, MemorySpace> &ZAcbc,
-             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, MemorySpace> &ZA4,
-             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, MemorySpace> &dtZc,
-             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, MemorySpace> &Zc,
-             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, MemorySpace> &dtZA,
-             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, MemorySpace> &ZA)
+             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>> &ZA3,
+             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>> &ZAcbc,
+             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>> &ZA4,
+             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>> &dtZc,
+             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>> &Zc,
+             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>> &dtZA,
+             const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>> &ZA)
     {
       using namespace DiFfRG;
       using namespace DiFfRG::compute;

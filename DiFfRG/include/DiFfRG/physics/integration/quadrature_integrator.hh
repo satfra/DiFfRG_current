@@ -10,9 +10,26 @@
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/coordinates/coordinates.hh>
 #include <DiFfRG/physics/integration/abstract_integrator.hh>
+#include <DiFfRG/physics/integration/map_completion.hh>
+
+// std
+#include <cstdio>
+#include <string>
 
 namespace DiFfRG
 {
+  /**
+   * @brief Whether a coordinates type carries enough identity for QuadratureIntegrator::map() to
+   * cache its forward()-transformed positions in a device view (one forward() per grid point
+   * instead of per thread). Namespace-scope on purpose: it is referenced inside extended device
+   * lambdas, where nvcc mishandles function-local constexpr variables.
+   */
+  template <typename Coordinates>
+  inline constexpr bool has_cacheable_positions_v = requires(const Coordinates &c) {
+    c.to_string();
+    c.forward(c.from_linear_index(size_t(0)));
+  };
+
   /**
    * @brief This class performs numerical integration over a d-dimensional hypercube using quadrature rules.
    *
@@ -38,7 +55,8 @@ namespace DiFfRG
     QuadratureIntegrator(QuadratureProvider &quadrature_provider, const std::array<size_t, dim> &_grid_size,
                          const std::array<ctype, dim> &grid_min, const std::array<ctype, dim> &grid_max,
                          const std::array<QuadratureType, dim> &quadrature_type)
-        : quadrature_provider(quadrature_provider)
+        : space(quadrature_provider.template next_execution_space<ExecutionSpace>()),
+          quadrature_provider(quadrature_provider)
     {
       for (size_t i = 0; i < dim; ++i) {
         grid_size[i] = _grid_size[i];
@@ -148,35 +166,139 @@ namespace DiFfRG
       const auto &start = grid_start;
       const auto &scale = grid_scale;
 
-      auto functor = KOKKOS_LAMBDA(const device::array<size_t, 1 + dim> &idx)
-      {
-        // make subview
-        auto subview = device::apply([&](const auto &...i) { return Kokkos::subview(cache, i...); }, idx);
-
-        // get the position for the current index
-        const auto idx_v = coordinates.from_linear_index(idx[0]);
-        const auto pos = coordinates.forward(idx_v);
-
-        device::array<ctype, dim> x;
-        ctype weight = 1;
-        for (int i = 0; i < dim; ++i) {
-          x[i] = Kokkos::fma(scale[i], n[i][idx[1 + i]], start[i]);
-          weight *= w[i][idx[1 + i]] * scale[i];
+      // The external position is a function of idx[0] alone: at most integral_view.size() distinct
+      // values per launch, while the functor below runs size * prod(grid_size) threads. For the
+      // logarithmic coordinate classes forward() is a fp64 expm1/sinh+exp, so recomputing it per
+      // thread wastes one transcendental per thread. Precompute the positions once per coordinate
+      // system into a device view; the fill runs the very same forward() on the same device, so the
+      // cached values are bit-identical to what the per-thread computation produced.
+      //
+      // Coordinates without a to_string() identity keep the per-thread computation. SubCoordinates
+      // (the MPI path) is *not* one of them -- it has its own to_string(), and the key construction
+      // below was written to separate two windows into the same base grid. The only cost on that
+      // path is that a schedule which moves a slice boundary re-keys and re-runs the ~5 us fill.
+      constexpr size_t cdim = Coordinates::dim;
+      // Compile-time, so the un-taken branch in the device functors below is dead code and the
+      // per-thread forward() (a fp64 expm1/sinh+exp on the log grids) actually leaves the kernel.
+      if constexpr (has_cacheable_positions_v<Coordinates>) {
+        // The key must identify the positions, not just the coordinate parameters: SubCoordinates
+        // inherits its base's to_string(), so two windows into the same base grid would otherwise
+        // collide. Appending the exact (hex-formatted) first and last positions separates them.
+        std::string key = coordinates.to_string() + "|" + std::to_string(integral_view.size());
+        {
+          char buf[64];
+          const auto first = coordinates.forward(coordinates.from_linear_index(size_t(0)));
+          const auto last = coordinates.forward(coordinates.from_linear_index(integral_view.size() - 1));
+          for (size_t d = 0; d < cdim; ++d) {
+            std::snprintf(buf, sizeof(buf), "|%la|%la", double(first[d]), double(last[d]));
+            key += buf;
+          }
         }
+        const size_t need = integral_view.size() * cdim;
+        if (m_positions_key != key || m_positions.extent(0) < need) {
+          if (m_positions.extent(0) < need)
+            m_positions = Kokkos::View<ctype *, typename ExecutionSpace::memory_space>(
+                Kokkos::view_alloc(space, Kokkos::WithoutInitializing, "QuadratureIntegrator_positions"), need);
+          const auto pos_fill = m_positions;
+          const auto coords = coordinates;
+          Kokkos::parallel_for(
+              "QuadratureIntegrator_fill_positions",
+              Kokkos::RangePolicy<ExecutionSpace>(space, 0, integral_view.size()), KOKKOS_LAMBDA(const size_t i) {
+                const auto p = coords.forward(coords.from_linear_index(i));
+                for (size_t d = 0; d < cdim; ++d)
+                  pos_fill(i * cdim + d) = p[d];
+              });
+          m_positions_key = key;
+        }
+      }
+      const auto pos_view = m_positions;
+      using pos_ctype = typename Coordinates::ctype;
+      // Runtime copy for the team lambda below: its constant() evaluation runs once per team, so
+      // keeping the transform code there costs nothing, and a plain branch avoids nvcc's fragile
+      // handling of if-constexpr inside extended class lambdas.
+      const bool pos_cached_rt = has_cacheable_positions_v<Coordinates>;
 
-        // make a tuple of all arguments
-        const auto full_args = device::tuple_cat(x, pos, m_args);
-
-        device::apply([&](const auto &...iargs) { subview() = weight * KERNEL::kernel(iargs...); }, full_args);
-      };
-
+      // Two complete functors, selected by a HOST-level if constexpr. nvcc's extended-lambda
+      // transformation miscompiles `if constexpr` INSIDE the lambda body here (wrong or
+      // unregistered kernel stubs: cudaErrorInvalidResourceHandle, or a silently zero RHS), while
+      // a lambda DEFINED inside an if-constexpr block is fine (the position fill above). So the
+      // branch lives out here and each lambda body is branch-free.
+      //
       // No explicit tile: Kokkos' own heuristic is used. An explicit tile matched to
       // DIFFRG_LAUNCH_BOUNDS was measured and is INERT (numtracer/gpubench/FINDINGS.md) -- the
       // 1.3-1.5x it appeared to give was GPU clock ramp, not tiling. Not worth the coupling: Kokkos
       // hard-aborts when the tile product exceeds LaunchBounds, so an explicit tile turns a future
       // launch-bounds change into a runtime abort.
-      Kokkos::parallel_for(make_kokkos_nd_range<1 + dim, ExecutionSpace>(space, {0}, extents),
-                           KokkosNDLambdaWrapper<1 + dim, decltype(functor)>(functor));
+      if constexpr (has_cacheable_positions_v<Coordinates>) {
+        auto functor = KOKKOS_LAMBDA(const device::array<size_t, 1 + dim> &idx)
+        {
+          // make subview
+          auto subview = device::apply([&](const auto &...i) { return Kokkos::subview(cache, i...); }, idx);
+
+          // get the (precomputed) position for the current index
+          device::array<pos_ctype, cdim> pos;
+          for (size_t d = 0; d < cdim; ++d)
+            pos[d] = static_cast<pos_ctype>(pos_view(idx[0] * cdim + d));
+
+          device::array<ctype, dim> x;
+          ctype weight = 1;
+          for (int i = 0; i < dim; ++i) {
+            x[i] = Kokkos::fma(scale[i], n[i][idx[1 + i]], start[i]);
+            weight *= w[i][idx[1 + i]] * scale[i];
+          }
+
+          // Apply x/pos and the trailing arguments as two NESTED packs. Do not be tempted to
+          // tuple_cat them into one tuple and apply that once: tuple_cat builds a by-value object,
+          // and m_args holds every interpolator by value (device::make_tuple decays), so the
+          // concatenated tuple is a full per-thread copy of all of them in local memory. That cost
+          // 3576 B of stack frame on QCD_Nf2 (13 interpolators x 272 B) -- 89% of that binary's
+          // 4000 B frame -- and 2.3x of runtime, measured. Applying an *lvalue* tuple binds
+          // references instead, and KERNEL::kernel takes all of them by const&.
+          // See docs/NUMTRACER_PER_THREAD_FRAME.md in the numtracer repo.
+          device::apply(
+              [&](const auto &...xargs) {
+                device::apply([&](const auto &...iargs) { subview() = weight * KERNEL::kernel(xargs..., iargs...); },
+                              m_args);
+              },
+              device::tuple_cat(x, pos));
+        };
+        Kokkos::parallel_for(make_kokkos_nd_range_divisible<1 + dim, ExecutionSpace>(space, {0}, extents),
+                             KokkosNDLambdaWrapper<1 + dim, decltype(functor)>(functor));
+      } else {
+        auto functor = KOKKOS_LAMBDA(const device::array<size_t, 1 + dim> &idx)
+        {
+          // make subview
+          auto subview = device::apply([&](const auto &...i) { return Kokkos::subview(cache, i...); }, idx);
+
+          // get the position for the current index
+          const auto idx_v = coordinates.from_linear_index(idx[0]);
+          const auto pos = coordinates.forward(idx_v);
+
+          device::array<ctype, dim> x;
+          ctype weight = 1;
+          for (int i = 0; i < dim; ++i) {
+            x[i] = Kokkos::fma(scale[i], n[i][idx[1 + i]], start[i]);
+            weight *= w[i][idx[1 + i]] * scale[i];
+          }
+
+          // Apply x/pos and the trailing arguments as two NESTED packs. Do not be tempted to
+          // tuple_cat them into one tuple and apply that once: tuple_cat builds a by-value object,
+          // and m_args holds every interpolator by value (device::make_tuple decays), so the
+          // concatenated tuple is a full per-thread copy of all of them in local memory. That cost
+          // 3576 B of stack frame on QCD_Nf2 (13 interpolators x 272 B) -- 89% of that binary's
+          // 4000 B frame -- and 2.3x of runtime, measured. Applying an *lvalue* tuple binds
+          // references instead, and KERNEL::kernel takes all of them by const&.
+          // See docs/NUMTRACER_PER_THREAD_FRAME.md in the numtracer repo.
+          device::apply(
+              [&](const auto &...xargs) {
+                device::apply([&](const auto &...iargs) { subview() = weight * KERNEL::kernel(xargs..., iargs...); },
+                              m_args);
+              },
+              device::tuple_cat(x, pos));
+        };
+        Kokkos::parallel_for(make_kokkos_nd_range_divisible<1 + dim, ExecutionSpace>(space, {0}, extents),
+                             KokkosNDLambdaWrapper<1 + dim, decltype(functor)>(functor));
+      }
 
       using TeamType = Kokkos::TeamPolicy<ExecutionSpace>::member_type;
       // reduction with vector lanes for warp-level parallelism
@@ -187,7 +309,7 @@ namespace DiFfRG
             // get the current (continuous) index
             const uint k = team.league_rank();
 
-            if (k > integral_view.size()) return;
+            if (k >= integral_view.size()) return;
 
             // no-ops to capture
             (void)cache;
@@ -231,68 +353,156 @@ namespace DiFfRG
 
             // add the constant value (skip coordinate computation if kernel has no constant)
             Kokkos::single(Kokkos::PerTeam(team), [&]() {
-              const auto idx = coordinates.from_linear_index(k);
-              const auto pos = coordinates.forward(idx);
-              const auto full_args = device::tuple_cat(pos, m_args);
+              device::array<pos_ctype, cdim> pos;
+              if (pos_cached_rt) {
+                for (size_t d = 0; d < cdim; ++d)
+                  pos[d] = static_cast<pos_ctype>(pos_view(size_t(k) * cdim + d));
+              } else {
+                pos = coordinates.forward(coordinates.from_linear_index(k));
+              }
+              // Nested packs, not tuple_cat -- same reason as the phase-1 functor above. This
+              // kernel is only 0.3-4% of GPU time (docs/NUMTRACER_GPU_INVESTIGATION.md) but it
+              // carried the whole per-thread copy too: 3544 B of stack frame on a kernel that does
+              // almost no arithmetic.
               integral_view(k) =
-                  res + device::apply([&](const auto &...iargs) { return KERNEL::constant(iargs...); }, full_args);
+                  res + device::apply(
+                            [&](const auto &...pargs) {
+                              return device::apply(
+                                  [&](const auto &...iargs) { return KERNEL::constant(pargs..., iargs...); }, m_args);
+                            },
+                            pos);
             });
           });
+    }
+
+    /// Points evaluated per external grid point. Half of the scheduler's cost score.
+    size_t quadrature_volume() const
+    {
+      size_t volume = 1;
+      for (int i = 0; i < dim; ++i)
+        volume *= grid_size[i];
+      return volume;
     }
 
     template <typename Coordinates, typename... Args>
     auto map(NT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      // Take care of MPI distribution
-      const auto &node_distribution = AbstractIntegrator::node_distribution;
-      if (node_distribution.mpi_comm != MPI_COMM_NULL && node_distribution.total_size > 0) {
-        auto mpi_comm = node_distribution.mpi_comm;
-        const auto &nodes = node_distribution.nodes;
-        const auto &sizes = node_distribution.sizes;
+      auto &scheduler = MapScheduler::instance();
 
-        // Check if the rank is contained in nodes
-        const size_t m_rank = DiFfRG::MPI::rank(mpi_comm);
-        // If not, return an empty execution space
-        if (std::find(nodes.begin(), nodes.end(), m_rank) == nodes.end()) return ExecutionSpace();
+      // One staging buffer per integrator, so a second map() from this integrator before a flush
+      // would clobber the first result. The *plan* is what decides, not the local pending list: a
+      // rank that owned no slice of the earlier map has nothing pending and would skip a flush the
+      // other ranks perform, leaving the collectives mismatched.
+      if (scheduler.active() && scheduler.plan_contains(integrator_id())) MapCompletion::flush();
 
-        // Get the size of the current rank
-        const size_t rank_size = sizes[m_rank];
-        // Offset is the sum of all previous ranks
-        const size_t offset = std::accumulate(sizes.begin(), sizes.begin() + m_rank, 0);
+      const MapSlice slice = scheduler.schedule(integrator_id(), dest, sizeof(NT), coordinates.size(),
+                                                quadrature_volume(), Coordinates::dim == 1,
+                                                map_target<ExecutionSpace>());
 
-        // Create a SubCoordinates object
-        const auto sub_coordinates = SubCoordinates(coordinates, offset, rank_size);
-        // Offset the destination pointer
-        NT *dest_offset = dest + offset;
-
-        return map_dist(dest_offset, sub_coordinates, args...);
+      if (slice.count == 0) {
+        // Not an owner: no kernels, but the plan entry is registered, so this rank still has to
+        // take part in the exchange.
+        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
+        return ExecutionSpace();
       }
+      if (slice.owns_all(coordinates.size())) return map_dist(dest, coordinates, args...);
 
-      return map_dist(dest, coordinates, args...);
+      return map_dist(dest + slice.offset, SubCoordinates(coordinates, slice.offset, slice.count), args...);
     }
 
     template <typename Coordinates, typename... Args>
     auto map_dist(NT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      // create unmanaged host view for dest
-      auto dest_view = Kokkos::View<NT *, CPU_memory, Kokkos::MemoryUnmanaged>(dest, coordinates.size());
+      const size_t n = coordinates.size();
 
       // Reuse cached device view if large enough, otherwise reallocate (grow-only)
-      if (m_dest_device_size < coordinates.size()) {
-        m_dest_device = Kokkos::View<NT *, ExecutionSpace>(Kokkos::view_alloc(space, "MapIntegrators_device_view"),
-                                                           coordinates.size());
-        m_dest_device_size = coordinates.size();
+      if (m_dest_device_size < n) {
+        m_dest_device =
+            Kokkos::View<NT *, ExecutionSpace>(Kokkos::view_alloc(space, "MapIntegrators_device_view"), n);
+        m_dest_device_size = n;
       }
-      auto dest_device_view =
-          Kokkos::View<NT *, ExecutionSpace>(m_dest_device, Kokkos::make_pair(size_t(0), coordinates.size()));
+      auto dest_device_view = Kokkos::View<NT *, ExecutionSpace>(m_dest_device, Kokkos::make_pair(size_t(0), n));
 
-      // run the map function
+      if constexpr (std::is_same_v<typename ExecutionSpace::memory_space, CPU_memory>) {
+        // Host backend: "device" memory is host memory, so there is nothing to stage. The work is
+        // synchronous though, so inside a deferral scope it is queued rather than run here -- see
+        // run_or_queue_host().
+        run_or_queue_host(dest, coordinates, args...);
+        // Nothing to land, but the MPI slices still have to be exchanged before the caller reads.
+        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
+        return space;
+      } else {
+        // One staging buffer per integrator, so a second map() before a flush would clobber the
+        // first result. Land the outstanding one first; in the normal call pattern (each flow
+        // mapped once per flush interval) this never triggers.
+        if (m_dest_pinned_size > 0 && MapCompletion::has_pending(m_dest_pinned.data())) MapCompletion::flush();
+
+        if (m_dest_pinned_size < n) {
+          m_dest_pinned = Kokkos::View<NT *, PinnedHost_memory>(
+              Kokkos::view_alloc(Kokkos::WithoutInitializing, "MapIntegrators_pinned_view"), n);
+          m_dest_pinned_size = n;
+        }
+        auto pinned_view =
+            Kokkos::View<NT *, PinnedHost_memory>(m_dest_pinned, Kokkos::make_pair(size_t(0), n));
+
+        map(space, dest_device_view, coordinates, args...);
+
+        // Genuinely asynchronous, because the destination is page-locked.
+        Kokkos::deep_copy(space, pinned_view, dest_device_view);
+
+        // Caller has promised not to read `dest` until its DeferredMaps scope closes, so leave the
+        // result in staging and keep the host running ahead of the device.
+        MapCompletion::record(dest, m_dest_pinned.data(), n * sizeof(NT));
+        // Original contract outside such a scope: `dest` is valid on return. flush() fences, lands
+        // the staged copy and -- under MPI -- exchanges this batch's slices, all of which must
+        // happen before the caller looks at `dest`.
+        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
+
+        return space;
+      }
+    }
+
+  private:
+    /**
+     * @brief Run a host-backend map now, or queue it for flush time if a deferral scope is open.
+     *
+     * A host kernel is synchronous, so running it inline blocks the host thread and delays the
+     * launch of any device map issued after it. Queuing makes the call order inside a DeferredMaps
+     * scope irrelevant: flush() runs the queue before it fences, i.e. while the device work already
+     * launched is still running. See MapCompletion::record_work.
+     *
+     * Compiled out entirely in a CUDA-less build, where there is no device to overlap with.
+     */
+    template <typename Coordinates, typename... Args>
+    void run_or_queue_host(NT *dest, const Coordinates &coordinates, const Args &...args)
+    {
+      if constexpr (internal::has_device_backend) {
+        if (MapCompletion::deferral_enabled()) {
+          // Everything the job needs is captured by value; `this` and `dest` are covered by the
+          // DeferredMaps contract, which already requires them to outlive the scope.
+          MapCompletion::record_work(
+              [this, dest, coordinates, args...]() { this->run_host(dest, coordinates, args...); });
+          return;
+        }
+      }
+      run_host(dest, coordinates, args...);
+    }
+
+    /// The host-backend body of map_dist(). Queued jobs run one after another, so the shared
+    /// `m_dest_device` scratch is written and drained before the next job touches it.
+    template <typename Coordinates, typename... Args>
+    void run_host(NT *dest, const Coordinates &coordinates, const Args &...args)
+    {
+      const size_t n = coordinates.size();
+      if (m_dest_device_size < n) {
+        m_dest_device =
+            Kokkos::View<NT *, ExecutionSpace>(Kokkos::view_alloc(space, "MapIntegrators_device_view"), n);
+        m_dest_device_size = n;
+      }
+      auto dest_device_view = Kokkos::View<NT *, ExecutionSpace>(m_dest_device, Kokkos::make_pair(size_t(0), n));
+      auto dest_view = Kokkos::View<NT *, CPU_memory, Kokkos::MemoryUnmanaged>(dest, n);
       map(space, dest_device_view, coordinates, args...);
-
-      // copy the result from device to the unmanaged host view
       Kokkos::deep_copy(space, dest_view, dest_device_view);
-
-      return space;
     }
 
   protected:
@@ -310,8 +520,15 @@ namespace DiFfRG
     // Persistent view caches to avoid per-call GPU memory allocation
     mutable KokkosNDView<1 + dim, NT, ExecutionSpace> m_cache;
     mutable device::array<size_t, 1 + dim> m_cache_extents{};
+    // Cached external positions for map(): one forward() per grid point instead of per thread.
+    // Keyed on the coordinates' to_string() identity; flat layout [grid_point * cdim + d].
+    mutable Kokkos::View<ctype *, typename ExecutionSpace::memory_space> m_positions;
+    mutable std::string m_positions_key;
     mutable Kokkos::View<NT *, ExecutionSpace> m_dest_device;
     mutable size_t m_dest_device_size = 0;
+    // Page-locked staging for the result copy; see map_dist() and MapCompletion.
+    mutable Kokkos::View<NT *, PinnedHost_memory> m_dest_pinned;
+    mutable size_t m_dest_pinned_size = 0;
     mutable Kokkos::View<NT, typename ExecutionSpace::memory_space> m_result_view;
     mutable typename Kokkos::View<NT, typename ExecutionSpace::memory_space>::host_mirror_type m_result_host;
     mutable bool m_result_views_initialized = false;
@@ -384,33 +601,51 @@ namespace DiFfRG
     auto map(NT *dest, const Coordinates &coordinates, const Args &...args)
     {
       auto space = execution_space();
+      auto &scheduler = MapScheduler::instance();
 
-      // Take care of MPI distribution
-      const auto &node_distribution = AbstractIntegrator::node_distribution;
-      if (node_distribution.mpi_comm != MPI_COMM_NULL && node_distribution.total_size > 0) {
-        auto mpi_comm = node_distribution.mpi_comm;
-        const auto &nodes = node_distribution.nodes;
-        const auto &sizes = node_distribution.sizes;
+      // A second map() from this integrator would overwrite `dest` before the first one's slices
+      // have been exchanged, so land the open batch first. Plan-driven, not local -- see the GPU
+      // overload for why that distinction is what keeps the collectives matched.
+      if (scheduler.active() && scheduler.plan_contains(this->integrator_id())) MapCompletion::flush();
 
-        // Check if the rank is contained in nodes
-        const size_t m_rank = DiFfRG::MPI::rank(mpi_comm);
-        // If not, return an empty execution space
-        if (std::find(nodes.begin(), nodes.end(), m_rank) == nodes.end()) return execution_space();
+      const MapSlice slice = scheduler.schedule(this->integrator_id(), dest, sizeof(NT), coordinates.size(),
+                                                Base::quadrature_volume(), Coordinates::dim == 1,
+                                                map_target<execution_space>());
 
-        // Get the size of the current rank
-        const size_t rank_size = sizes[m_rank];
-        // Offset is the sum of all previous ranks
-        const size_t offset = std::accumulate(sizes.begin(), sizes.begin() + m_rank, 0);
+      if (slice.count == 0) {
+        // Not an owner, but still part of the batch -- see the GPU overload.
+        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
+        return space;
+      }
+      if (slice.owns_all(coordinates.size()))
+        run_or_queue(dest, coordinates, args...);
+      else
+        run_or_queue(dest + slice.offset, SubCoordinates(coordinates, slice.offset, slice.count), args...);
 
-        // Create a SubCoordinates object
-        const auto sub_coordinates = SubCoordinates(coordinates, offset, rank_size);
-        // Offset the destination pointer
-        NT *dest_offset = dest + offset;
-
-        map(space, dest_offset, sub_coordinates, args...);
-      } else
-        map(space, dest, coordinates, args...);
+      // This backend writes straight into `dest`, so there is nothing to land -- but the slices
+      // still have to be exchanged before the caller reads them.
+      if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
       return space;
+    }
+
+  private:
+    /// Run now, or queue for flush time inside a deferral scope. `tbb::parallel_for` is
+    /// synchronous, so running it inline would stall the launch of any device map issued after it;
+    /// see MapCompletion::record_work. Compiled out in a CUDA-less build.
+    template <typename Coordinates, typename... Args>
+    void run_or_queue(NT *dest, const Coordinates &coordinates, const Args &...args)
+    {
+      if constexpr (internal::has_device_backend) {
+        if (MapCompletion::deferral_enabled()) {
+          MapCompletion::record_work([this, dest, coordinates, args...]() {
+            auto sp = execution_space();
+            this->map(sp, dest, coordinates, args...);
+          });
+          return;
+        }
+      }
+      auto sp = execution_space();
+      map(sp, dest, coordinates, args...);
     }
 
   protected:

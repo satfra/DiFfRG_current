@@ -4,17 +4,25 @@
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/discretization/coordinates/coordinates.hh>
+
+// std
+#include <cmath>
+#include <cstring>
 #include <limits>
+#include <stdexcept>
+#include <vector>
 
 namespace DiFfRG
 {
   /**
-   * @brief A spline interpolator for 1D data, both on GPU and CPU
+   * @brief A spline interpolator for 1D data, callable from host AND device code.
+   *
+   * See LinearInterpolator1D for the host/device dispatch rationale.
    *
    * @tparam NT input data type
    * @tparam Coordinates coordinate system of the input data
    */
-  template <typename NT, typename Coordinates, typename DefaultMemorySpace = CPU_memory> class SplineInterpolator1D
+  template <typename NT, typename Coordinates> class SplineInterpolator1D
   {
     static_assert(Coordinates::dim == 1, "SplineInterpolator1D requires 1D coordinates");
     // The spline coefficients come from a non-cyclic tridiagonal solve with boundary conditions at the grid edges,
@@ -22,9 +30,16 @@ namespace DiFfRG
     static_assert(!is_periodic_coordinate_v<Coordinates>,
                   "SplineInterpolator1D does not support periodic coordinates; use LinearInterpolator1D.");
 
+    // SoA layout: separate views for values and spline coefficients, for coalesced GPU access
+    using ValueViewType = Kokkos::View<NT *, GPU_memory, Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
+    using CoeffViewType = ValueViewType;
+    using HostValueViewType = typename ValueViewType::host_mirror_type;
+    using HostCoeffViewType = typename CoeffViewType::host_mirror_type;
+
+    static constexpr bool has_separate_device =
+        !std::is_same_v<typename ValueViewType::memory_space, typename HostValueViewType::memory_space>;
+
   public:
-    using memory_space = DefaultMemorySpace;
-    using other_memory_space = other_memory_space_t<DefaultMemorySpace>;
     using ctype = typename Coordinates::ctype;
     using value_type = NT;
     static constexpr size_t dim = 1;
@@ -34,40 +49,28 @@ namespace DiFfRG
      *
      * @param coordinates coordinate system of the data
      */
-    SplineInterpolator1D(const Coordinates &coordinates) : coordinates(coordinates), size(coordinates.size())
+    SplineInterpolator1D(const Coordinates &coordinates)
+        : coordinates(coordinates), size(coordinates.size()),
+          device_values("SplineInterpolator1D_values", coordinates.size()),
+          device_coeffs("SplineInterpolator1D_coeffs", coordinates.size()),
+          host_values(Kokkos::create_mirror_view(device_values)),
+          host_coeffs(Kokkos::create_mirror_view(device_coeffs))
     {
-      // Allocate separate views for values and spline coefficients (SoA layout)
-      device_values = ValueViewType("SplineInterpolator1D_values", size);
-      device_coeffs = CoeffViewType("SplineInterpolator1D_coeffs", size);
-      // Create host mirrors
-      host_values = Kokkos::create_mirror_view(device_values);
-      host_coeffs = Kokkos::create_mirror_view(device_coeffs);
     }
+
+    /// Shallow copy of ALL views, valid in host and in device code. See LinearInterpolator1D.
+    KOKKOS_DEFAULTED_FUNCTION SplineInterpolator1D(const SplineInterpolator1D &) = default;
 
     /**
-     * @brief Copy constructor for SplineInterpolator1D. This is ONLY for usage inside Kokkos parallel loops.
+     * @brief Replace the data, leaving host AND device current. The only mutator.
      *
+     * See LinearInterpolator1D::update() for why the host fill is a plain copy and why the single
+     * trailing fence is not optional.
      */
-    KOKKOS_FUNCTION
-    SplineInterpolator1D(const SplineInterpolator1D &other) : coordinates(other.coordinates), size(other.size)
-    {
-      // Use the same data (reference-counted)
-      device_values = other.device_values;
-      device_coeffs = other.device_coeffs;
-    }
-
-    KOKKOS_FUNCTION ~SplineInterpolator1D() { KOKKOS_IF_ON_HOST((if (owns_other_instance) delete other_instance;)) }
-
     template <typename NT2>
     void update(const NT2 *in_data, const ctype lower_y1 = std::numeric_limits<ctype>::max(),
                 const ctype upper_y1 = std::numeric_limits<ctype>::max())
     {
-      // Check if the host data is already allocated
-      if (!host_values.is_allocated())
-        throw std::runtime_error(
-            "SplineInterpolator1D: You probably called update() on a copied instance. This is not allowed. "
-            "You need to call update() on the original instance.");
-
       // Copy values from input data
       for (size_t i = 0; i < size; ++i)
         host_values(i) = in_data[i];
@@ -75,50 +78,19 @@ namespace DiFfRG
       // Build the spline coefficients
       build_y2(lower_y1, upper_y1);
 
-      // Copy data to device
-      Kokkos::deep_copy(device_values, host_values);
-      Kokkos::deep_copy(device_coeffs, host_coeffs);
-    }
-
-    template <typename View>
-      requires(Kokkos::is_view<View>::value && View::rank == 1)
-    void update(const View &view, const ctype lower_y1 = std::numeric_limits<ctype>::max(),
-                const ctype upper_y1 = std::numeric_limits<ctype>::max())
-    {
-      // Check if the host data is already allocated
-      if (!host_values.is_allocated())
-        throw std::runtime_error(
-            "SplineInterpolator1D: You probably called update() on a copied instance. This is not allowed. "
-            "You need to call update() on the original instance.");
-
-      // Copy values from input view
-      Kokkos::deep_copy(host_values, view);
-
-      // Build the spline coefficients
-      build_y2(lower_y1, upper_y1);
-
-      // Copy data to device
-      Kokkos::deep_copy(device_values, host_values);
-      Kokkos::deep_copy(device_coeffs, host_coeffs);
-    }
-
-    NT operator[](size_t i) const
-    {
-      // Check if the host data is already allocated
-      if (!host_values.is_allocated())
-        throw std::runtime_error(
-            "SplineInterpolator1D: You probably called operator[]() on a copied instance. This is not allowed. "
-            "You need to call operator[]() on the original instance.");
-
-      return host_values(i);
+      if constexpr (has_separate_device) {
+        typename ValueViewType::execution_space exec;
+        Kokkos::deep_copy(exec, device_values, host_values);
+        Kokkos::deep_copy(exec, device_coeffs, host_coeffs);
+        exec.fence();
+      }
     }
 
     /**
-     * @brief Interpolate the data at a given point.
-     *
-     * @param x the point at which to interpolate
-     * @return NT the interpolated value
+     * @brief Host-side element access. Always valid, including on a copy.
      */
+    NT operator[](size_t i) const { return host_values(i); }
+
     /**
      * @brief Map a physical coordinate onto the (clamped) grid index.
      *
@@ -127,14 +99,11 @@ namespace DiFfRG
      * parts, against ~10 for the spline evaluation itself. A generated kernel that evaluates many
      * dressings at the SAME momentum pays that log1p once per dressing, because each interpolator
      * owns its own `coordinates` members and the compiler cannot prove they are equal across
-     * objects — so it cannot CSE the transform. Hoisting index() lets the caller pay it once.
+     * objects -- so it cannot CSE the transform. Hoisting index() lets the caller pay it once.
      *
      * The returned index is only meaningful for interpolators sharing this coordinate system.
      */
-    ctype KOKKOS_FUNCTION index(const typename Coordinates::ctype x) const
-    {
-      return coordinates.backward(x);
-    }
+    ctype KOKKOS_FUNCTION index(const typename Coordinates::ctype x) const { return coordinates.backward(x); }
 
     /**
      * @brief Interpolate at a grid index previously obtained from index().
@@ -154,11 +123,10 @@ namespace DiFfRG
       // t is the fractional part of the index
       const ctype t = idx - lidx;
 
-      // SoA layout: separate reads from values and coefficients views for coalesced GPU access
-      const NT lower = device_values(lidx);
-      const NT upper = device_values(uidx);
-      const NT cl = device_coeffs(lidx);
-      const NT cu = device_coeffs(uidx);
+      const NT lower = value(lidx);
+      const NT upper = value(uidx);
+      const NT cl = coeff(lidx);
+      const NT cu = coeff(uidx);
 
       const ctype tm1 = t - 1;
       const NT cubic = t * tm1 * ((t + 1) * cl - (t - 2) * cu);
@@ -177,34 +145,6 @@ namespace DiFfRG
      */
     NT KOKKOS_FUNCTION operator()(const typename Coordinates::ctype x) const { return at(index(x)); }
 
-    auto &CPU() const { return get_on<CPU_memory>(); }
-    auto &GPU() const { return get_on<GPU_memory>(); }
-
-    template <typename MemorySpace> auto &get_on() const
-    {
-      // Check if the host data is already allocated
-      if (!host_values.is_allocated())
-        throw std::runtime_error(
-            "SplineInterpolator1D: You probably called get_on() on a copied instance. This is not allowed. "
-            "You need to call get_on() on the original instance.");
-
-      if constexpr (std::is_same_v<MemorySpace, DefaultMemorySpace>) {
-        // remove constness
-        return const_cast<SplineInterpolator1D<NT, Coordinates, MemorySpace> &>(*this);
-      } else {
-        // Create a new instance with the same data but in the requested memory space
-        if (other_instance == nullptr) {
-          other_instance = new SplineInterpolator1D<NT, Coordinates, MemorySpace>(coordinates);
-          owns_other_instance = true;
-          other_instance->other_instance = const_cast<std::decay_t<decltype(*this)> *>(this);
-        }
-        // Copy the data from the current instance to the new one
-        other_instance->update(host_values);
-        // Return the new instance
-        return *other_instance;
-      }
-    }
-
     /**
      * @brief Get the coordinate system of the data.
      *
@@ -212,33 +152,36 @@ namespace DiFfRG
      */
     const Coordinates &get_coordinates() const { return coordinates; }
 
-    NT *data()
-    {
-      if (!host_values.is_allocated())
-        throw std::runtime_error(
-            "SplineInterpolator1D: You probably called data() on a copied instance. This is not allowed. "
-            "You need to call data() on the original instance.");
-      return host_values.data();
-    }
-
-    friend class SplineInterpolator1D<NT, Coordinates, other_memory_space>;
+    /**
+     * @brief Read-only handle to the host values.
+     *
+     * Deliberately const: a host-side write would leave both the device buffers and the spline
+     * coefficients stale, and there is no public way to push it. Route mutations through update().
+     */
+    const NT *data() const { return host_values.data(); }
 
   private:
+    /// Read one value from whichever buffer belongs to the executing side.
+    KOKKOS_FORCEINLINE_FUNCTION NT value(const size_t i) const
+    {
+      KOKKOS_IF_ON_DEVICE((return device_values(i);))
+      KOKKOS_IF_ON_HOST((return host_values(i);))
+    }
+
+    /// Read one spline coefficient from whichever buffer belongs to the executing side.
+    KOKKOS_FORCEINLINE_FUNCTION NT coeff(const size_t i) const
+    {
+      KOKKOS_IF_ON_DEVICE((return device_coeffs(i);))
+      KOKKOS_IF_ON_HOST((return host_coeffs(i);))
+    }
+
     const Coordinates coordinates;
     const size_t size;
-
-    using ValueViewType = Kokkos::View<NT *, DefaultMemorySpace, Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
-    using CoeffViewType = Kokkos::View<NT *, DefaultMemorySpace, Kokkos::MemoryTraits<Kokkos::RandomAccess>>;
-    using HostValueViewType = typename ValueViewType::host_mirror_type;
-    using HostCoeffViewType = typename CoeffViewType::host_mirror_type;
 
     ValueViewType device_values;
     CoeffViewType device_coeffs;
     HostValueViewType host_values;
     HostCoeffViewType host_coeffs;
-
-    mutable SplineInterpolator1D<NT, Coordinates, other_memory_space> *other_instance = nullptr;
-    mutable bool owns_other_instance = false;
 
     void build_y2(const ctype lower_y1, const ctype upper_y1)
     {

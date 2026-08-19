@@ -10,15 +10,10 @@ using namespace DiFfRG;
 
 TEST_CASE("Test template constraints for LinearInterpolator3D", "[interpolator]")
 {
-  STATIC_REQUIRE(is_interpolator<LinearInterpolator3D<double, LogLogLinCoordinates, CPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<LinearInterpolator3D<complex<double>, LogLogLinCoordinates, CPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<LinearInterpolator3D<autodiff::real, LogLogLinCoordinates, CPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<LinearInterpolator3D<cxreal, LogLogLinCoordinates, CPU_memory>>);
-
-  STATIC_REQUIRE(is_interpolator<LinearInterpolator3D<double, LogLogLinCoordinates, GPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<LinearInterpolator3D<complex<double>, LogLogLinCoordinates, GPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<LinearInterpolator3D<autodiff::real, LogLogLinCoordinates, GPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<LinearInterpolator3D<cxreal, LogLogLinCoordinates, GPU_memory>>);
+  STATIC_REQUIRE(is_interpolator<LinearInterpolator3D<double, LogLogLinCoordinates>>);
+  STATIC_REQUIRE(is_interpolator<LinearInterpolator3D<complex<double>, LogLogLinCoordinates>>);
+  STATIC_REQUIRE(is_interpolator<LinearInterpolator3D<autodiff::real, LogLogLinCoordinates>>);
+  STATIC_REQUIRE(is_interpolator<LinearInterpolator3D<cxreal, LogLogLinCoordinates>>);
 
   STATIC_REQUIRE(!is_interpolator<int>);
   STATIC_REQUIRE(!is_interpolator<std::array<double, 3>>);
@@ -56,7 +51,7 @@ TEMPLATE_TEST_CASE("Test 3D interpolation", "[float][double][complex][autodiff][
 
   Coordinates3D coords(Coordinates1D(p1_size, p1_start, p1_stop), Coordinates1D(p2_size, p2_start, p2_stop),
                        Coordinates1D(p3_size, p3_start, p3_stop));
-  LinearInterpolatorND<T, Coordinates3D, CPU_memory> interpolator(coords);
+  LinearInterpolatorND<T, Coordinates3D> interpolator(coords);
   interpolator.update(in_data.data());
 
   const int n_el = GENERATE(take(2, random(2, 200)));
@@ -64,7 +59,7 @@ TEMPLATE_TEST_CASE("Test 3D interpolation", "[float][double][complex][autodiff][
   const ctype p2_pt = (p2_start + GENERATE(take(2, random(0., 1.))) * (p2_stop - p2_start));
   const ctype p3_pt = (p3_start + GENERATE(take(2, random(0., 1.))) * (p3_stop - p3_start));
 
-  const auto res_host = interpolator.CPU()(p1_pt, p2_pt, p3_pt) * ctype(n_el);
+  const auto res_host = interpolator(p1_pt, p2_pt, p3_pt) * ctype(n_el);
 
   auto [p1_idx, p2_idx, p3_idx] = coords.backward(p1_pt, p2_pt, p3_pt);
   p1_idx = std::max((ctype)0, std::min(p1_idx, ctype(p1_size)));
@@ -109,7 +104,7 @@ TEMPLATE_TEST_CASE("Test 3D interpolation GPU", "[float][double][complex][autodi
 
   Coordinates3D coords(Coordinates1D(p1_size, p1_start, p1_stop), Coordinates1D(p2_size, p2_start, p2_stop),
                        Coordinates1D(p3_size, p3_start, p3_stop));
-  LinearInterpolatorND<T, Coordinates3D, GPU_memory> interpolator(coords);
+  LinearInterpolatorND<T, Coordinates3D> interpolator(coords);
   interpolator.update(in_data.data());
 
   const int n_el = GENERATE(take(2, random(2, 200)));
@@ -117,7 +112,7 @@ TEMPLATE_TEST_CASE("Test 3D interpolation GPU", "[float][double][complex][autodi
   const ctype p2_pt = (p2_start + GENERATE(take(2, random(0., 1.))) * (p2_stop - p2_start));
   const ctype p3_pt = (p3_start + GENERATE(take(2, random(0., 1.))) * (p3_stop - p3_start));
 
-  const auto res_host = interpolator.CPU().GPU().CPU()(p1_pt, p2_pt, p3_pt) * ctype(n_el);
+  const auto res_host = interpolator(p1_pt, p2_pt, p3_pt) * ctype(n_el);
 
   auto [p1_idx, p2_idx, p3_idx] = coords.backward(p1_pt, p2_pt, p3_pt);
   p1_idx = std::max((ctype)0, std::min(p1_idx, ctype(p1_size)));
@@ -136,4 +131,32 @@ TEMPLATE_TEST_CASE("Test 3D interpolation GPU", "[float][double][complex][autodi
     std::cout << "gpu: " << res_gpu << " local: " << res_local << std::endl;
   CHECK(is_close(res_host, res_local, 1e-6 * n_el));
   CHECK(is_close(res_gpu, res_local, 1e-6 * n_el));
+}
+TEST_CASE("Test 3D row-major element access", "[interpolator]")
+{
+  DiFfRG::Init();
+
+  // See the 2D case: row-major in, row-major out, over a LayoutLeft mirror. All three extents
+  // differ so a transposed read cannot coincide with the correct one.
+  using Coordinates1D = LinearCoordinates1D<double>;
+  using Coordinates3D = CoordinatePackND<Coordinates1D, Coordinates1D, Coordinates1D>;
+
+  constexpr size_t n0 = 3, n1 = 5, n2 = 7;
+  std::vector<double> in_data(n0 * n1 * n2);
+  for (size_t i = 0; i < in_data.size(); ++i)
+    in_data[i] = double(i);
+
+  Coordinates3D coords(Coordinates1D(n0, 0., 1.), Coordinates1D(n1, 0., 1.), Coordinates1D(n2, 0., 1.));
+  LinearInterpolatorND<double, Coordinates3D> interpolator(coords);
+  interpolator.update(in_data.data());
+
+  for (size_t i = 0; i < in_data.size(); ++i)
+    CHECK(interpolator[i] == in_data[i]);
+
+  for (size_t i = 0; i < n0; ++i)
+    for (size_t j = 0; j < n1; ++j)
+      for (size_t k = 0; k < n2; ++k) {
+        const auto x = coords.forward(i, j, k);
+        CHECK(is_close(interpolator(x[0], x[1], x[2]), in_data[(i * n1 + j) * n2 + k], 1e-12));
+      }
 }

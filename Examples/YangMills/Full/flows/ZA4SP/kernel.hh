@@ -10,7 +10,7 @@ namespace DiFfRG {
     public:
     using Regulator = _Regulator;
 
-    static KOKKOS_FORCEINLINE_FUNCTION auto kernel(const double& l1, const double& cos1, const double& cos2, const double& phi, const double& p, const double& k, const LinearInterpolatorND<double, LogLinLinPeriodicCoordinates, GPU_memory>& ZA3, const LinearInterpolatorND<double, LogLinLinPeriodicCoordinates, GPU_memory>& ZAcbc, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory>& ZA4SP, const LinearInterpolatorND<double, LogLinLinPeriodicCoordinates, GPU_memory>& ZA4tadpole, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory>& dtZc, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory>& Zc, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory>& dtZA, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory>& ZA)
+    static KOKKOS_FORCEINLINE_FUNCTION auto kernel(const double& l1, const double& cos1, const double& cos2, const double& phi, const double& p, const double& k, const LinearInterpolatorND<double, LogLinLinPeriodicCoordinates>& ZA3, const LinearInterpolatorND<double, LogLinLinPeriodicCoordinates>& ZAcbc, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>>& ZA4SP, const LinearInterpolatorND<double, LogLinLinPeriodicCoordinates>& ZA4tadpole, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>>& dtZc, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>>& Zc, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>>& dtZA, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>>& ZA)
     {
       using namespace DiFfRG;using namespace DiFfRG::compute;
       const double cosl1p1 = sqrt(1. - powr<2>(cos1)) * cos2;
@@ -529,7 +529,7 @@ _acc += -0.01360544217687075 * _den2 * _den22 * _den31 * _den34 * _den4 * _den41
       return _acc;
     }
 
-    static KOKKOS_FORCEINLINE_FUNCTION auto constant(const double& p, const double& k, const LinearInterpolatorND<double, LogLinLinPeriodicCoordinates, GPU_memory>& ZA3, const LinearInterpolatorND<double, LogLinLinPeriodicCoordinates, GPU_memory>& ZAcbc, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory>& ZA4SP, const LinearInterpolatorND<double, LogLinLinPeriodicCoordinates, GPU_memory>& ZA4tadpole, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory>& dtZc, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory>& Zc, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory>& dtZA, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory>& ZA)
+    static KOKKOS_FORCEINLINE_FUNCTION auto constant(const double& p, const double& k, const LinearInterpolatorND<double, LogLinLinPeriodicCoordinates>& ZA3, const LinearInterpolatorND<double, LogLinLinPeriodicCoordinates>& ZAcbc, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>>& ZA4SP, const LinearInterpolatorND<double, LogLinLinPeriodicCoordinates>& ZA4tadpole, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>>& dtZc, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>>& Zc, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>>& dtZA, const SplineInterpolator1D<double, LogarithmicCoordinates1D<double>>& ZA)
     {
       using namespace DiFfRG;using namespace DiFfRG::compute;
       return 0.;

@@ -56,13 +56,13 @@ void method4(Catch::Benchmark::Chronometer &meter)
   Kokkos::View<NT *, GPU_memory> integral_view("integral_view", coordinates.size());
   auto integral_view_host = Kokkos::create_mirror_view(integral_view);
 
-  SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> ZA3(coordinates);
-  SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> ZA4(coordinates);
-  SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> ZAcbc(coordinates);
-  SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> dtZc(coordinates);
-  SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> Zc(coordinates);
-  SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> dtZA(coordinates);
-  SplineInterpolator1D<double, LogarithmicCoordinates1D<double>, GPU_memory> ZA(coordinates);
+  SplineInterpolator1D<double, LogarithmicCoordinates1D<double>> ZA3(coordinates);
+  SplineInterpolator1D<double, LogarithmicCoordinates1D<double>> ZA4(coordinates);
+  SplineInterpolator1D<double, LogarithmicCoordinates1D<double>> ZAcbc(coordinates);
+  SplineInterpolator1D<double, LogarithmicCoordinates1D<double>> dtZc(coordinates);
+  SplineInterpolator1D<double, LogarithmicCoordinates1D<double>> Zc(coordinates);
+  SplineInterpolator1D<double, LogarithmicCoordinates1D<double>> dtZA(coordinates);
+  SplineInterpolator1D<double, LogarithmicCoordinates1D<double>> ZA(coordinates);
 
   std::vector<double> dummy_data(coordinates.size(), 1.0);
   ZA3.update(dummy_data.data());

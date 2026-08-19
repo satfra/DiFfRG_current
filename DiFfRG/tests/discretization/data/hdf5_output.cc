@@ -346,6 +346,10 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
 
       REQUIRE_NOTHROW(hdf5_output.map("spline", spline));
       REQUIRE_NOTHROW(hdf5_output.map("lin2d", lin2d));
+      // map() and scalar() stage a write; flush() commits the frame in one open/write/close
+      // cycle. Reading the file back therefore requires a flush first -- before the writes were
+      // staged, each call hit the disk on its own and this block did without one.
+      REQUIRE_NOTHROW(hdf5_output.flush(0.));
 
       std::filesystem::path hdf5_file(tmp / hdf5FileName);
       REQUIRE(std::filesystem::exists(hdf5_file));
