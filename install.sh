@@ -7,7 +7,7 @@ set -euo pipefail
 
 print_usage() {
   cat <<'USAGE'
-Usage: [THREADS=N] [FOLDER=path] [MPI=ON] bash install.sh [--help]
+Usage: [THREADS=N] [FOLDER=path] [MPI=ON] [PETSC_MUMPS=ON] bash install.sh [--help]
 
 Install DiFfRG and all dependencies from source.
 
@@ -18,7 +18,14 @@ Environment variables:
             whole superbuild -- deal.II, SUNDIALS, PETSc and DiFfRG must all agree
             about MPI, so it cannot be turned on for DiFfRG alone afterwards.
             Needed to run flow equations across several GPUs; see
-            DiFfRG/documentation/multi_gpu.md.
+            DiFfRG/documentation/multi_gpu.md. Turning it on also builds PETSc,
+            which supplies the distributed linear algebra and solvers.
+  PETSC_MUMPS
+            ON to additionally build PETSc with MUMPS for distributed direct
+            solves (default: OFF). Requires a Fortran compiler and pulls in the
+            ScaLAPACK chain, adding roughly half an hour to the build. The default
+            PETSc build includes hypre/BoomerAMG for Krylov solves, which needs
+            no Fortran and is much quicker.
 
 Examples:
   bash install.sh
@@ -165,7 +172,13 @@ fi
 echo "Running CMake in ${tempFolder}${repoName}/build..."
 mkdir -p "${tempFolder}${repoName}/build"
 cd "${tempFolder}${repoName}/build"
-cmake "${tempFolder}${repoName}" -DCMAKE_INSTALL_PREFIX="${installFolder}" -DMPI="${MPI:-OFF}"
+# bcores is already capped by core count (max 8) and by RAM. Forward it to the
+# nested dependency builds too -- deal.II runs its own `cmake --build . -- -jN`
+# and PETSc its own `make -jN`, neither of which sees the outer make -j.
+cmake "${tempFolder}${repoName}" -DCMAKE_INSTALL_PREFIX="${installFolder}" \
+  -DMPI="${MPI:-OFF}" \
+  -DDEALII_MAX_JOBS="${bcores}" -DPETSC_MAX_JOBS="${bcores}" \
+  ${PETSC_MUMPS:+-DPETSC_MUMPS="${PETSC_MUMPS}"}
 
 echo "Building DiFfRG with ${bcores} threads..."
 if ! make -j"${bcores}"; then

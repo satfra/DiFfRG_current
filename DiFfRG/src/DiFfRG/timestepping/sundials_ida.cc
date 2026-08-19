@@ -18,6 +18,8 @@
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/timestepping/linear_solver/GMRES.hh>
+#include <DiFfRG/timestepping/linear_solver/PETScDirect.hh>
+#include <DiFfRG/timestepping/linear_solver/PETScKrylov.hh>
 #include <DiFfRG/timestepping/linear_solver/ScaledGMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/UMFPack.hh>
 #include <DiFfRG/timestepping/sundials_diagnostics.hh>
@@ -217,7 +219,7 @@ namespace DiFfRG
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver>
   void TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, LinearSolver>::run(
-      AbstractFlowingVariables<NumberType> *initial_condition, const double t_start, const double t_stop)
+      AbstractFlowingVariables<NumberType, VectorType> *initial_condition, const double t_start, const double t_stop)
   {
     this->data_out = this->get_data_out();
     this->adaptor = this->get_adaptor();
@@ -1111,3 +1113,35 @@ template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::B
                                                DiFfRG::GMRES>;
 template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
                                                DiFfRG::GMRES>;
+
+// ##############################################################################
+// Distributed (PETSc-backed) instantiations -- blocked on the discretization layer
+// ##############################################################################
+//
+// PETScKrylov and PETScDirect both compile and satisfy the linear-solver contract; what is
+// not ready is this file's own body. Instantiating TimeStepperSUNDIALS_IDA for
+// PETScWrappers::MPI::{Vector,SparseMatrix} was measured twice:
+//
+//     2026-08-19, before the Stage B fixes: 12.3 errors per instantiation
+//     2026-08-19, after them:               10.0 errors per instantiation
+//
+// The 2.3 difference is exactly the two causes that were fixed (the eagerly-formed
+// InverseSparseMatrixType alias in AbstractTimestepper, and AbstractFlowingVariables being
+// hard-typed to dealii::Vector/BlockVector). What remains is four causes at ten sites, all of
+// which need the discretization layer to hand over IndexSets and a communicator:
+//
+//   :246, :505   SparseMatrixType jacobian(assembler->get_sparsity_pattern_jacobian());
+//                A PETSc matrix has no constructor from a bare pattern; it needs
+//                reinit(local_rows, local_cols, dsp, comm).
+//   :286, :561   reinit_vector / v.reinit(n) -- a PETSc vector needs
+//                reinit(locally_owned, comm), not a global size.
+//   :543         IndexSet arithmetic over global dof counts; must be intersected with
+//                locally_owned_dofs before being handed to IDA (see the
+//                differential_components note in the plan).
+//   :762, :840   FullMatrix<PetscScalar>::vmult against a distributed vector -- the
+//                extractor/variables path mixes a dense local matrix with a PETSc vector.
+//   :895, :954,  implicit dealii::Vector<double> -> PETSc vector conversions.
+//   :1014
+//
+// So these instantiations land with Stage D, not before. Re-run the probe after each Stage D
+// change: the error count per instantiation is a usable progress metric.

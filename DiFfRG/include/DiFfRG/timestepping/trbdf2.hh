@@ -22,7 +22,6 @@ namespace DiFfRG
 
   public:
     using NumberType = typename Base::NumberType;
-    using InverseSparseMatrixType = typename Base::InverseSparseMatrixType;
     using BlockVectorType = typename Base::BlockVectorType;
 
     using Base::assembler, Base::data_out, Base::config, Base::adaptor;
@@ -30,7 +29,7 @@ namespace DiFfRG
     using Base::console_out;
     using Base::verbosity, Base::output_dt, Base::impl, Base::expl;
 
-    virtual void run(AbstractFlowingVariables<NumberType> *initial_condition, const double t_start,
+    virtual void run(AbstractFlowingVariables<NumberType, VectorType> *initial_condition, const double t_start,
                      const double t_stop) override;
 
     uint get_jacobians();

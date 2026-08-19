@@ -104,7 +104,8 @@ namespace DiFfRG
      * @tparam Discretization Spatial Discretization used in the system
      */
     template <typename Discretization>
-    class FlowingVariables : public AbstractFlowingVariables<typename Discretization::NumberType>
+    class FlowingVariables : public AbstractFlowingVariables<typename Discretization::NumberType,
+                                                             typename Discretization::VectorType>
     {
     public:
       using NumberType = typename Discretization::NumberType;
@@ -181,7 +182,8 @@ namespace DiFfRG
      * integrates the model's pointwise initial condition over each active cell.
      */
     template <typename Discretization>
-    class FlowingVariables : public AbstractFlowingVariables<typename Discretization::NumberType>
+    class FlowingVariables : public AbstractFlowingVariables<typename Discretization::NumberType,
+                                                             typename Discretization::VectorType>
     {
     public:
       using NumberType = typename Discretization::NumberType;

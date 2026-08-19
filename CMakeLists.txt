@@ -933,14 +933,87 @@ ExternalProject_Add(
     -DKokkos_ENABLE_SERIAL:BOOL=ON
     -DKokkos_ENABLE_TESTS:BOOL=OFF)
 
+# Machine-capability probe, shared by every heavy dependency build (deal.II and
+# PETSc). Linking deal.II can OOM and PETSc's own make is unbounded, so both are
+# capped against RAM as well as core count -- never a bare -j/-j$(nproc).
+cmake_host_system_information(RESULT _total_ram_mb QUERY TOTAL_PHYSICAL_MEMORY)
+math(EXPR _max_threads_by_ram "${_total_ram_mb} / 2000")
+if(_max_threads_by_ram LESS 1)
+  set(_max_threads_by_ram 1)
+endif()
+include(ProcessorCount)
+ProcessorCount(_nproc)
+if(_nproc LESS 1)
+  set(_nproc 1)
+endif()
+math(EXPR _half_cores "${_nproc} / 2")
+if(_half_cores LESS 1)
+  set(_half_cores 1)
+endif()
+
 # ##############################################################################
 # PETSc
 # ##############################################################################
 
-option(BUILD_PETSC "Build PETSc" OFF)
+# PETSc supplies the distributed linear algebra (PETScWrappers::MPI::{Vector,
+# SparseMatrix}) and, via deal.II, the only MPI-capable SUNDIALS::IDA
+# instantiation that does not drag in Trilinos: deal.II instantiates IDA for
+# Vector, BlockVector, TrilinosWrappers::MPI::* and PETScWrappers::MPI::* only --
+# notably *not* for LinearAlgebra::distributed::Vector (that one gets KINSOL but
+# not IDA). PETSc is therefore required for a distributed FE/FV run, and useless
+# without MPI, hence the default.
+option(BUILD_PETSC "Build PETSc (distributed linear algebra and solvers)" ${MPI})
+
+# Solver capability. Both cost build time -- MUMPS a great deal of it -- so each is
+# its own switch. deal.II detects what PETSc was actually built with and exports
+# DEAL_II_PETSC_WITH_HYPRE / DEAL_II_PETSC_WITH_MUMPS (see its
+# cmake/configure/configure_20_petsc.cmake); DiFfRG's solver wrappers gate on
+# those macros rather than on these options, so a mismatch degrades rather than
+# miscompiles.
+option(PETSC_GMRES
+       "PETSc with hypre -> PreconditionBoomerAMG for Krylov solves (no Fortran required)"
+       ON)
+option(PETSC_MUMPS
+       "PETSc with MUMPS -> SparseDirectMUMPS distributed direct solves (requires Fortran; long build)"
+       OFF)
 
 if(BUILD_PETSC)
-  # build PETSc
+  if(NOT MPI)
+    message(
+      WARNING
+        "BUILD_PETSC=ON with MPI=OFF: PETSc will be built serial, which buys nothing "
+        "over the existing UMFPACK path. Set -DMPI=ON for distributed linear algebra.")
+  endif()
+
+  # MUMPS' PETSc recipe raises a hard error without an F90 compiler, so resolve one
+  # up front rather than failing 20 minutes into the build.
+  set(_petsc_fc "${CMAKE_Fortran_COMPILER}")
+  if(NOT _petsc_fc)
+    find_program(_petsc_fc NAMES gfortran flang f95)
+  endif()
+  if(PETSC_MUMPS AND NOT _petsc_fc)
+    message(
+      FATAL_ERROR
+        "PETSC_MUMPS=ON but no Fortran compiler was found. MUMPS cannot be built "
+        "without one. Install gfortran/flang, or use -DPETSC_MUMPS=OFF and rely on "
+        "PETSC_GMRES (hypre/BoomerAMG), which needs no Fortran.")
+  endif()
+
+  # Bound PETSc's own make the same way deal.II's build is bounded: never a bare -j.
+  set(PETSC_MAX_JOBS
+      8
+      CACHE STRING "Maximum parallel jobs for the PETSc build")
+  set(_petsc_jobs ${_half_cores})
+  if(_max_threads_by_ram LESS _petsc_jobs)
+    set(_petsc_jobs ${_max_threads_by_ram})
+  endif()
+  if(_petsc_jobs GREATER ${PETSC_MAX_JOBS})
+    set(_petsc_jobs ${PETSC_MAX_JOBS})
+  endif()
+  message(
+    "  ${BoldGreen}[PETSc] build parallelism: ${_petsc_jobs} jobs (hypre: ${PETSC_GMRES}, MUMPS: ${PETSC_MUMPS}).${ColourReset}"
+  )
+
   ExternalProject_Add(
     petsc_dep
     LOG_CONFIGURE ON
@@ -957,7 +1030,19 @@ if(BUILD_PETSC)
     CMAKE_CACHE_ARGS
       -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
       -DNATIVE:BOOL=${NATIVE}
-      -DOpenBLAS_LIBRARY:STRING=${BLAS_LIBRARY_PATH} -DHAVE_MPI:BOOL=${MPI})
+      -DOpenBLAS_LIBRARY:STRING=${BLAS_LIBRARY_PATH}
+      -DHAVE_MPI:BOOL=${MPI}
+      -DPETSC_GMRES:BOOL=${PETSC_GMRES}
+      -DPETSC_MUMPS:BOOL=${PETSC_MUMPS}
+      -DPETSC_JOBS:STRING=${_petsc_jobs}
+      -DMPI_C_COMPILER:STRING=${MPI_C_COMPILER}
+      -DMPI_CXX_COMPILER:STRING=${MPI_CXX_COMPILER}
+      -DPETSC_Fortran_COMPILER:STRING=${_petsc_fc}
+      # PETSc must be built with the *same* compilers as deal.II and DiFfRG. The
+      # MPI wrappers alone are not enough: mpicc/mpicxx wrap whichever compiler is
+      # the system default, which need not be the one this superbuild selected.
+      -DPETSC_C_COMPILER:STRING=${CMAKE_C_COMPILER}
+      -DPETSC_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER})
   set(is_petsc_dep petsc_dep)
 endif()
 
@@ -971,21 +1056,17 @@ if(BUILD_OpenBLAS)
   set(dealii_lapack "-DLAPACK_LIBRARIES:STRING=${BLAS_LIBRARY_PATH}")
 endif()
 
-# RAM-aware thread cap for deal.II (linking can OOM)
-cmake_host_system_information(RESULT _total_ram_mb QUERY TOTAL_PHYSICAL_MEMORY)
-math(EXPR _max_threads_by_ram "${_total_ram_mb} / 2000")
-if(_max_threads_by_ram LESS 1)
-  set(_max_threads_by_ram 1)
+# Only hand deal.II the PETSc hints when we actually built PETSc. PETSC_ARCH is
+# deliberately empty: `configure --prefix=` installs a flat tree with no arch
+# subdirectory, and deal.II's FindPETSC joins PETSC_DIR/PETSC_ARCH when the latter
+# is non-empty.
+if(BUILD_PETSC)
+  set(_dealii_petsc_args "-DPETSC_DIR:PATH=${DEPEND_INSTALL_PREFIX}"
+                         "-DPETSC_ARCH:STRING=")
+else()
+  set(_dealii_petsc_args "")
 endif()
-include(ProcessorCount)
-ProcessorCount(_nproc)
-if(_nproc LESS 1)
-  set(_nproc 1)
-endif()
-math(EXPR _half_cores "${_nproc} / 2")
-if(_half_cores LESS 1)
-  set(_half_cores 1)
-endif()
+
 # Use the lesser of half cores, RAM-based limit, and hard cap
 set(DEALII_MAX_JOBS
     16
@@ -1097,8 +1178,18 @@ ExternalProject_Add(
     -DDEAL_II_WITH_LAPACK:BOOL=ON
     -DDEAL_II_WITH_HDF5:BOOL=OFF
     -DDEAL_II_WITH_VTK:BOOL=OFF
-    -DPETSC_DIR:PATH=${DEPEND_INSTALL_PREFIX}
-    -DPETSC_ARCH:STRING=arch-linux-c-opt
+    # PETSc: enable it explicitly -- passing only PETSC_DIR/PETSC_ARCH (as this did
+    # before) leaves DEAL_II_WITH_PETSC off, so even a successful PETSc build had no
+    # effect at all. PETSC_ARCH must be *empty* for a --prefix= install: the
+    # installed tree has no arch subdirectory, and a stale "arch-linux-c-opt" sends
+    # deal.II's FindPETSC looking in a path that does not exist.
+    -DDEAL_II_WITH_PETSC:BOOL=${BUILD_PETSC}
+    ${_dealii_petsc_args}
+    # DEAL_II_ALLOW_AUTODETECTION defaults to ON, so a system p4est or Trilinos would
+    # otherwise be picked up silently and change what the bundled deal.II supports.
+    # Pin them off; P4EST flips on when the mesh itself becomes distributed.
+    -DDEAL_II_WITH_P4EST:BOOL=OFF
+    -DDEAL_II_WITH_TRILINOS:BOOL=OFF
     -DCMAKE_CXX_STANDARD:STRING=20
     -DCMAKE_CXX_EXTENSIONS:BOOL=OFF
     -DKOKKOS_DIR:STRING=${DEPEND_INSTALL_PREFIX}
@@ -1210,6 +1301,15 @@ message(
 option(DiFfRG_TEST "Build DiFfRG tests" OFF)
 option(DiFfRG_DOCUMENTATION "Build DiFfRG documentation" ON)
 
+# Only forward a CUDA compiler if one was resolved; passing an empty value would pin the
+# cache entry to nothing and break the sub-build's own detection.
+if(CMAKE_CUDA_COMPILER)
+  set(_diffrg_cuda_compiler_arg
+      "-DCMAKE_CUDA_COMPILER:STRING=${CMAKE_CUDA_COMPILER}")
+else()
+  set(_diffrg_cuda_compiler_arg "")
+endif()
+
 message("${BoldCyan}[8/8] Configuring DiFfRG...${ColourReset}")
 ExternalProject_Add(
   DiFfRG
@@ -1218,6 +1318,15 @@ ExternalProject_Add(
   INSTALL_DIR ${CMAKE_INSTALL_PREFIX}
   DEPENDS general_dep ${_boost_dep} deal.II_dep kokkos_dep autodiff_dep
   CMAKE_CACHE_ARGS
+    # Forward the toolchain. Without this the sub-build silently falls back to CMake's
+    # default compiler (/usr/bin/cc, /usr/bin/c++), which need not be -- and on a machine
+    # with a newer system GCC usually is not -- the compiler deal.II and Kokkos were built
+    # with. Every other dependency here already gets the compiler passed explicitly; DiFfRG
+    # itself did not, so its toolchain depended on whether CC/CXX happened to be exported
+    # in the caller's environment.
+    -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
+    -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
+    ${_diffrg_cuda_compiler_arg}
     -DMPI:BOOL=${MPI}
     -DHDF5:BOOL=ON
     -DBUNDLED_DIR:PATH=${DEPEND_INSTALL_PREFIX}

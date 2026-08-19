@@ -23,7 +23,7 @@ namespace DiFfRG
 
   public:
     using NumberType = typename Base::NumberType;
-    using InverseSparseMatrixType = typename Base::InverseSparseMatrixType;
+    using InverseSparseMatrixType = typename get_type::InverseSparseMatrixType<SparseMatrixType>;
     using BlockVectorType = typename Base::BlockVectorType;
 
     using Base::assembler, Base::data_out, Base::config, Base::adaptor;
@@ -34,7 +34,7 @@ namespace DiFfRG
     /**
      * @brief Run the time stepping algorithm.
      */
-    virtual void run(AbstractFlowingVariables<NumberType> *initial_condition, const double t_start,
+    virtual void run(AbstractFlowingVariables<NumberType, VectorType> *initial_condition, const double t_start,
                      const double t_stop) override;
 
   private:

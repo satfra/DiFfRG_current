@@ -122,8 +122,9 @@ namespace DiFfRG
    * The console_out method is used to print information about the current time, the calculation time and the current
    * RG scale k to the console in a standardized way.
    *
-   * @tparam VectorType_ The type of the vector used in the timestepping algorithm.. Currently only Vector<double> is
-   * supported.
+   * @tparam VectorType_ The type of the vector used in the timestepping algorithm. Must satisfy
+   * SupportedVectorType: dealii::Vector<double> and dealii::BlockVector<double>, plus the PETSc MPI
+   * vectors in an MPI build.
    * @tparam SparseMatrixType_ The type of the sparse matrix used in the timestepping algorithm. This depends on the
    * assembler used in the computation.
    * @tparam dim_ The dimensionality of the spatial discretization.
@@ -135,9 +136,15 @@ namespace DiFfRG
     using VectorType = VectorType_;
     using NumberType = typename get_type::NumberType<VectorType>;
     using SparseMatrixType = SparseMatrixType_;
-    using InverseSparseMatrixType = typename get_type::InverseSparseMatrixType<SparseMatrixType>;
-    static_assert(std::is_same_v<VectorType, Vector<NumberType>>, "VectorType must not be Vector<double>!");
-    using BlockVectorType = dealii::BlockVector<NumberType>;
+    // NOTE: InverseSparseMatrixType is deliberately NOT declared here. A member alias of a
+    // class template is instantiated with the class, so declaring it in the common base forces
+    // every timestepper to have a mass-matrix inverse type -- including the implicit ones,
+    // which never invert a mass matrix. That made the whole hierarchy unusable with any matrix
+    // type lacking a SparseDirectUMFPACK-shaped inverse (i.e. every distributed matrix). It now
+    // lives only in the explicit steppers that actually use it.
+    static_assert(SupportedVectorType<VectorType>,
+                  "VectorType is not a vector type DiFfRG supports; see get_type in common/types.hh.");
+    using BlockVectorType = typename get_type::BlockVectorType<VectorType>;
 
   public:
     /**
@@ -250,7 +257,7 @@ namespace DiFfRG
      * @param t_start The start time of the simulation.
      * @param t_stop The run method will evolve the system from t_start to t_stop.
      */
-    virtual void run(AbstractFlowingVariables<NumberType> *initial_condition, const double t_start,
+    virtual void run(AbstractFlowingVariables<NumberType, VectorType> *initial_condition, const double t_start,
                      const double t_stop) = 0;
 
   protected:
