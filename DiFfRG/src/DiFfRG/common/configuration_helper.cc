@@ -234,6 +234,7 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
          {"discretization",
           {{"fe_order", 3},
            {"threads", 0},
+           {"kokkos_threads", 0},
            {"mesh_workers", 8},
            {"batch_size", 16},
            {"overintegration", 0},
@@ -299,9 +300,11 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
               << "    max_matsubara_size                                                             \n"
               << "  /discretization    Spatial discretization settings\n"
               << "    fe_order                      Finite element polynomial order\n"
-              << "    threads                       Number of CPU threads the whole program may use\n"
-              << "                                  (TBB and Kokkos host backend). 0 = all available\n"
-              << "                                  cores. DEAL_II_NUM_THREADS, if set, caps this.\n"
+              << "    threads                       TBB/deal.II application thread limit. 0 = all\n"
+              << "                                  available cores\n"
+              << "    kokkos_threads                Kokkos host-backend thread count. 0 or absent =\n"
+              << "                                  resolved application thread count\n"
+              << "                                  DEAL_II_NUM_THREADS, if set, caps both counts.\n"
               << "    mesh_workers                  Number of in-flight cells in the assembly\n"
               << "                                  pipeline (MeshWorker queue length)\n"
               << "    batch_size                    Batch size for GPU kernel launches\n"

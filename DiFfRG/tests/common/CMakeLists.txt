@@ -10,6 +10,7 @@ add_subdirectory(quadrature)
 
 setup_test(config_tree.cc)
 setup_test(configuration_helper.cc)
+setup_test(init_threads.cc)
 setup_test(autodiff.cc)
 setup_test(complex_autodiff.cc)
 setup_test(tbb.cc)
