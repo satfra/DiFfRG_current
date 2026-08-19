@@ -99,8 +99,50 @@ TEST_CASE("Test matsubara quadrature rule", "[double][quadrature][matsubara]")
     const double result = mq.sum(f);
 
     CAPTURE(T, a, mq.size(), result, reference);
-    constexpr double expected_precision = 3e-6;
+    // The tangent-map rule is essentially exact on this integrand: p0 = a tan(theta) sends
+    // 1/(a^2+p0^2) dp0 to the constant d(theta)/a. The old two-piece linear+log rule needed
+    // ~60 nodes for 1e-9 here.
+    constexpr double expected_precision = 1e-12;
     CHECK(result == Catch::Approx(reference).epsilon(expected_precision));
+  }
+
+  SECTION("Test at T=0, pole away from the mapping scale")
+  {
+    // The rule is built around typical_E, but a propagator pole sits at its own energy. A
+    // mismatch of a decade either way is routine (spatial momentum up to sqrt(x_extent)*k,
+    // masses above or below k), so it must not cost accuracy at the shipped node count.
+    const double T = 0.;
+    const double typical_E = 1.;
+    const double ratio = GENERATE(0.1, 0.3, 1.0, 3.0, 10.0);
+    const double pole = ratio * typical_E;
+
+    MatsubaraQuadrature<double> mq(T, typical_E, 2, 0, 256, 64);
+
+    const auto f = [&](const double x) { return 1. / (powr<2>(pole) + powr<2>(x)); };
+    const double reference = 1 / (2. * pole);
+    const double result = mq.sum(f);
+
+    CAPTURE(T, typical_E, pole, mq.size(), result, reference);
+    CHECK(result == Catch::Approx(reference).epsilon(1e-11));
+  }
+
+  SECTION("Test at T=0, a 1/p0^2 tail has no error floor")
+  {
+    // This is the regression guard for the defect the tangent map fixes. The old rule
+    // truncated the frequency integral at 1e11 * typical_E, which floored the relative error
+    // of a 1/p0^2 tail at ~6.4e-12 -- going from 81 to 513 nodes did not improve it at all.
+    // An unregulated temporal direction is exactly this case, so the floor has to stay gone.
+    const double a = 1.;
+    const auto f = [&](const double x) { return 1. / (powr<2>(a) + powr<2>(x)); };
+    const double reference = 1 / (2. * a);
+
+    for (const int size : {32, 64, 128, 256}) {
+      MatsubaraQuadrature<double> mq;
+      mq.reinit_with_size(size, 0., a);
+      const double err = std::abs(mq.sum(f) - reference) / reference;
+      CAPTURE(size, mq.size(), err);
+      CHECK(err < 1e-13);
+    }
   }
 }
 

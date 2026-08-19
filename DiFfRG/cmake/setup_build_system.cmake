@@ -378,6 +378,25 @@ if(${DiFfRG_MPI})
   find_package(MPI REQUIRED)
 endif()
 
+# DiFfRG's HAVE_MPI and deal.II's DEAL_II_WITH_MPI must agree: deal.II is what declares MPI_Comm
+# and friends (real types with MPI, dummies in namespace dealii without), so a mixed configuration
+# compiles the two halves of DiFfRG::MPI against different type sets. common/mpi.hh turns this into
+# a #error as well, but catching it at configure time is much easier to act on.
+if(DEFINED DEAL_II_WITH_MPI)
+  if(${DiFfRG_MPI} AND NOT DEAL_II_WITH_MPI)
+    message(FATAL_ERROR
+      "DiFfRG is configured with MPI=ON but the deal.II found at ${DEAL_II_PATH} was built without "
+      "DEAL_II_WITH_MPI. MPI is a single switch for the whole superbuild -- reconfigure the "
+      "superbuild with -DMPI=ON so deal.II and SUNDIALS are rebuilt too, or set -DMPI=OFF.")
+  endif()
+  if(NOT ${DiFfRG_MPI} AND DEAL_II_WITH_MPI)
+    message(WARNING
+      "deal.II was built with MPI but DiFfRG is configured with MPI=OFF. This builds and runs, but "
+      "every DiFfRG::MPI call degrades to a single-rank no-op, so a multi-rank launch would give "
+      "each rank the full problem rather than a share of it.")
+  endif()
+endif()
+
 # ##############################################################################
 # Dependency summary
 # ##############################################################################

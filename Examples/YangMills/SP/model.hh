@@ -70,8 +70,8 @@ class YangMills : public def::AbstractModel<YangMills, Components>,
 
   mutable YangMillsFlows flow_equations;
 
-  mutable SplineInterpolator1D<double, Coordinates1D, GPU_memory> dtZc, dtZA, ZA, Zc;
-  mutable SplineInterpolator1D<double, Coordinates1D, GPU_memory> ZA4, ZAcbc, ZA3;
+  mutable SplineInterpolator1D<double, Coordinates1D> dtZc, dtZA, ZA, Zc;
+  mutable SplineInterpolator1D<double, Coordinates1D> ZA4, ZAcbc, ZA3;
 
 public:
   YangMills(const ConfigTree &json)

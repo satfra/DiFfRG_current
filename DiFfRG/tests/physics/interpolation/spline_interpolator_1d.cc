@@ -10,21 +10,15 @@ using namespace DiFfRG;
 
 TEST_CASE("Test template constraints for SplineInterpolator1D", "[interpolator]")
 {
-  STATIC_REQUIRE(is_interpolator<SplineInterpolator1D<double, LinCoordinates, CPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<SplineInterpolator1D<complex<double>, LinCoordinates, CPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<SplineInterpolator1D<autodiff::real, LinCoordinates, CPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<SplineInterpolator1D<cxreal, LinCoordinates, CPU_memory>>);
+  STATIC_REQUIRE(is_interpolator<SplineInterpolator1D<double, LinCoordinates>>);
+  STATIC_REQUIRE(is_interpolator<SplineInterpolator1D<complex<double>, LinCoordinates>>);
+  STATIC_REQUIRE(is_interpolator<SplineInterpolator1D<autodiff::real, LinCoordinates>>);
+  STATIC_REQUIRE(is_interpolator<SplineInterpolator1D<cxreal, LinCoordinates>>);
 
-  STATIC_REQUIRE(is_interpolator<SplineInterpolator1D<double, LinCoordinates, GPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<SplineInterpolator1D<complex<double>, LinCoordinates, GPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<SplineInterpolator1D<autodiff::real, LinCoordinates, GPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<SplineInterpolator1D<cxreal, LinCoordinates, GPU_memory>>);
-
-  STATIC_REQUIRE(is_interpolator<SplineInterpolator1D<double, FocusedLogCoordinates, CPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<SplineInterpolator1D<complex<double>, FocusedLogCoordinates, CPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<SplineInterpolator1D<autodiff::real, FocusedLogCoordinates, CPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<SplineInterpolator1D<double, FocusedLogCoordinates, GPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<SplineInterpolator1D<cxreal, FocusedLogCoordinates, GPU_memory>>);
+  STATIC_REQUIRE(is_interpolator<SplineInterpolator1D<double, FocusedLogCoordinates>>);
+  STATIC_REQUIRE(is_interpolator<SplineInterpolator1D<complex<double>, FocusedLogCoordinates>>);
+  STATIC_REQUIRE(is_interpolator<SplineInterpolator1D<autodiff::real, FocusedLogCoordinates>>);
+  STATIC_REQUIRE(is_interpolator<SplineInterpolator1D<cxreal, FocusedLogCoordinates>>);
 
   STATIC_REQUIRE(!is_interpolator<int>);
   STATIC_REQUIRE(!is_interpolator<std::array<double, 3>>);
@@ -48,7 +42,7 @@ TEMPLATE_TEST_CASE("Test 1D spline interpolation on focused logarithmic coordina
   for (int j = 0; j < p_size; ++j)
     in_data[j] = j;
   FocusedLogCoordinates1D<ctype> coords(p_size, p_start, p_stop, p_center, p_focus);
-  SplineInterpolator1D<T, FocusedLogCoordinates1D<ctype>, CPU_memory> interpolator(coords);
+  SplineInterpolator1D<T, FocusedLogCoordinates1D<ctype>> interpolator(coords);
   interpolator.update(in_data.data());
 
   const int n_el = GENERATE(take(2, random(2, 200)));
@@ -67,7 +61,7 @@ TEMPLATE_TEST_CASE("Test 1D spline interpolation on focused logarithmic coordina
   CHECK(is_close(res_host, res_local, expected_precision));
 
   // the same coordinate must also work from device code, where backward() is the hot path
-  SplineInterpolator1D<T, FocusedLogCoordinates1D<ctype>, GPU_memory> gpu_interpolator(coords);
+  SplineInterpolator1D<T, FocusedLogCoordinates1D<ctype>> gpu_interpolator(coords);
   gpu_interpolator.update(in_data.data());
   T res_gpu;
   Kokkos::parallel_reduce(
@@ -95,7 +89,7 @@ TEMPLATE_TEST_CASE("Test 1D spline interpolation", "[float][double][complex][aut
   for (int j = 0; j < p_size; ++j)
     in_data[j] = j;
   LogarithmicCoordinates1D<ctype> coords(p_size, p_start, p_stop, p_bias);
-  SplineInterpolator1D<T, LogarithmicCoordinates1D<ctype>, CPU_memory> interpolator(coords);
+  SplineInterpolator1D<T, LogarithmicCoordinates1D<ctype>> interpolator(coords);
   interpolator.update(in_data.data());
 
   const int n_el = GENERATE(take(3, random(2, 200)));
@@ -131,14 +125,14 @@ TEMPLATE_TEST_CASE("Test GPU 1D spline interpolation", "[float][double][complex]
   for (int j = 0; j < p_size; ++j)
     in_data[j] = j;
   LogarithmicCoordinates1D<ctype> coords(p_size, p_start, p_stop, p_bias);
-  SplineInterpolator1D<T, LogarithmicCoordinates1D<ctype>, GPU_memory> interpolator(coords);
+  SplineInterpolator1D<T, LogarithmicCoordinates1D<ctype>> interpolator(coords);
   interpolator.update(in_data.data());
 
   const int n_el = GENERATE(take(3, random(2, 200)));
   const ctype p_pt = (p_start + GENERATE(take(10, random(0., 1.))) * (p_stop - p_start));
 
   // Moving back and forth should not affect the data!
-  const auto res_host = interpolator.CPU().GPU().CPU()(p_pt) * ctype(n_el);
+  const auto res_host = interpolator(p_pt) * ctype(n_el);
 
   auto p_idx = coords.backward(p_pt);
   p_idx = std::max((ctype)0, std::min(p_idx, ctype(p_size)));
@@ -159,3 +153,4 @@ TEMPLATE_TEST_CASE("Test GPU 1D spline interpolation", "[float][double][complex]
   CHECK(is_close(res_host, res_local, expected_precision));
   CHECK(is_close(res_gpu, res_local, expected_precision));
 }
+

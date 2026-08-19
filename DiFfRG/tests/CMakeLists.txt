@@ -33,6 +33,40 @@ function(setup_test SOURCE)
     PROPERTIES TIMEOUT 3600)
 endfunction()
 
+# Same as setup_test, but additionally registers the test under mpirun for each rank count in
+# MPI_TEST_RANKS. Without this an "MPI test" only ever runs on one rank, which is exactly the
+# configuration in which none of the distribution code executes.
+set(MPI_TEST_RANKS "2;3;4" CACHE STRING "Rank counts at which MPI tests are additionally run")
+
+function(setup_mpi_test SOURCE)
+  get_filename_component(TARGET ${SOURCE} NAME_WE)
+  add_executable(${TARGET} ${SOURCE})
+  target_link_libraries(${TARGET} PRIVATE DiFfRG::DiFfRG Catch2::Catch2WithMain)
+  catch_discover_tests(${TARGET}
+    ADD_TAGS_AS_LABELS
+    PROPERTIES TIMEOUT 3600)
+
+  if(NOT DiFfRG_MPI)
+    return()
+  endif()
+  find_package(MPI QUIET)
+  if(NOT MPIEXEC_EXECUTABLE)
+    message(STATUS "MPI tests for ${TARGET}: no mpiexec found, single-rank only")
+    return()
+  endif()
+
+  foreach(NRANKS IN LISTS MPI_TEST_RANKS)
+    add_test(NAME ${TARGET}_mpi_${NRANKS}
+      COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} ${NRANKS}
+              ${MPIEXEC_PREFLAGS} $<TARGET_FILE:${TARGET}> ${MPIEXEC_POSTFLAGS})
+    # Ranks sharing one GPU is the normal case on a workstation; it is slow, not wrong.
+    set_tests_properties(${TARGET}_mpi_${NRANKS} PROPERTIES
+      TIMEOUT 3600
+      LABELS "mpi"
+      RUN_SERIAL TRUE)
+  endforeach()
+endfunction()
+
 function(setup_benchmark SOURCE)
   # Create a test executable from the source file, removing the extension
   get_filename_component(TARGET ${SOURCE} NAME_WE)

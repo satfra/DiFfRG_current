@@ -8,6 +8,7 @@ namespace DiFfRG::Config
       : write_vtk(config.get_bool("/output/vtk", true)), write_hdf5(config.get_bool("/output/hdf5", true)),
         max_pending_frames(config.get_uint("/output/max_pending_frames", 2)),
         subdivisions(config.get_uint("/discretization/output_subdivisions", 1)),
+        verbosity(config.get_int("/output/verbosity", 0)),
         log_queue_size(config.get_uint("/output/log_queue_size", 8192)),
         log_level(static_cast<spdlog::level::level_enum>(config.get_int("/output/log_level", SPDLOG_LEVEL_INFO))),
         log_flush_interval(config.get_double("/output/log_flush_interval", 10.)),

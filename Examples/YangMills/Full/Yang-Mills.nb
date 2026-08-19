@@ -893,14 +893,12 @@ Cell[BoxData[{
  RowBox[{
   RowBox[{
   "interpolatorType", 
-   "=", "\"\<LinearInterpolator1D<double, LogarithmicCoordinates1D<double>, \
-GPU_memory>\>\""}], ";"}], "\n", 
+   "=", "\"\<LinearInterpolator1D<double, LogarithmicCoordinates1D<double>>\>\""}], ";"}], "\n", 
  RowBox[{
   RowBox[{
    RowBox[{
    "interpolator3DType", 
-    "=", "\"\<LinearInterpolatorND<double, LogLogLinCoordinates, \
-GPU_memory>\>\""}], ";"}], "\n"}], "\n", 
+    "=", "\"\<LinearInterpolatorND<double, LogLogLinCoordinates>\>\""}], ";"}], "\n"}], "\n", 
  RowBox[{
   RowBox[{
    RowBox[{"kernelParameterList", "=", 

@@ -10,11 +10,9 @@ using namespace DiFfRG;
 
 TEST_CASE("Test template constraints for periodic interpolators", "[interpolator][periodic]")
 {
-  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<double, LinPeriodicCoordinates, CPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<double, LinPeriodicCoordinates, GPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<LinearInterpolatorND<double, LogLinPeriodicCoordinates, CPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<LinearInterpolatorND<double, LogLinLinPeriodicCoordinates, CPU_memory>>);
-  STATIC_REQUIRE(is_interpolator<LinearInterpolatorND<double, LogLinLinPeriodicCoordinates, GPU_memory>>);
+  STATIC_REQUIRE(is_interpolator<LinearInterpolator1D<double, LinPeriodicCoordinates>>);
+  STATIC_REQUIRE(is_interpolator<LinearInterpolatorND<double, LogLinPeriodicCoordinates>>);
+  STATIC_REQUIRE(is_interpolator<LinearInterpolatorND<double, LogLinLinPeriodicCoordinates>>);
 }
 
 //--------------------------------------------
@@ -44,9 +42,9 @@ TEMPLATE_TEST_CASE("Test 1D periodic interpolation", "[float][double][interpolat
   for (int i = 0; i < size; ++i)
     in_data[i] = f(coords.forward(i));
 
-  LinearInterpolator1D<T, Coordinates, CPU_memory> interpolator(coords);
+  LinearInterpolator1D<T, Coordinates> interpolator(coords);
   interpolator.update(in_data.data());
-  const auto &ip = interpolator.CPU();
+  const auto &ip = interpolator;
 
   const ctype eps = std::numeric_limits<ctype>::epsilon() * 1e2;
 
@@ -82,23 +80,23 @@ TEST_CASE("Test that a periodic axis is closed while a bounded one is clamped", 
 
   // Bounded: outside the grid the boundary value is held, and the last grid point is reproduced
   LinearCoordinates1D<double> bounded(size, 0., 3.);
-  LinearInterpolator1D<double, LinearCoordinates1D<double>, CPU_memory> bip(bounded);
+  LinearInterpolator1D<double, LinearCoordinates1D<double>> bip(bounded);
   bip.update(data.data());
-  CHECK(is_close(bip.CPU()(-10.), 0., 1e-12));
-  CHECK(is_close(bip.CPU()(1.5), 1.5, 1e-12));
-  CHECK(is_close(bip.CPU()(3.), 3., 1e-12));
-  CHECK(is_close(bip.CPU()(10.), 3., 1e-12));
+  CHECK(is_close(bip(-10.), 0., 1e-12));
+  CHECK(is_close(bip(1.5), 1.5, 1e-12));
+  CHECK(is_close(bip(3.), 3., 1e-12));
+  CHECK(is_close(bip(10.), 3., 1e-12));
 
   // Periodic over [0, 4): the cell [3, 4) wraps from data[3] back to data[0]
   LinearPeriodicCoordinates1D<double> periodic(size, 0., 4.);
-  LinearInterpolator1D<double, LinearPeriodicCoordinates1D<double>, CPU_memory> pip(periodic);
+  LinearInterpolator1D<double, LinearPeriodicCoordinates1D<double>> pip(periodic);
   pip.update(data.data());
-  CHECK(is_close(pip.CPU()(1.5), 1.5, 1e-12));
-  CHECK(is_close(pip.CPU()(3.), 3., 1e-12));
-  CHECK(is_close(pip.CPU()(3.5), 1.5, 1e-12));
-  CHECK(is_close(pip.CPU()(4.), 0., 1e-12));
-  CHECK(is_close(pip.CPU()(-0.5), 1.5, 1e-12));
-  CHECK(is_close(pip.CPU()(9.5), 1.5, 1e-12));
+  CHECK(is_close(pip(1.5), 1.5, 1e-12));
+  CHECK(is_close(pip(3.), 3., 1e-12));
+  CHECK(is_close(pip(3.5), 1.5, 1e-12));
+  CHECK(is_close(pip(4.), 0., 1e-12));
+  CHECK(is_close(pip(-0.5), 1.5, 1e-12));
+  CHECK(is_close(pip(9.5), 1.5, 1e-12));
 }
 
 //--------------------------------------------
@@ -129,9 +127,9 @@ TEST_CASE("Test 3D interpolation with a periodic last axis", "[3D][interpolation
         in_data[(i * p2_size + j) * p3_size + l] = f(pt[0], pt[1], pt[2]);
       }
 
-  LinearInterpolatorND<double, Coordinates3D, CPU_memory> interpolator(coords);
+  LinearInterpolatorND<double, Coordinates3D> interpolator(coords);
   interpolator.update(in_data.data());
-  const auto &ip = interpolator.CPU();
+  const auto &ip = interpolator;
 
   // nodes are reproduced
   for (int i = 0; i < p1_size; ++i)
@@ -177,7 +175,7 @@ TEST_CASE("Test 3D periodic interpolation on GPU", "[3D][interpolation][periodic
         in_data[(i * p2_size + j) * p3_size + l] = std::cos(pt[2]) + 0.1 * pt[1];
       }
 
-  LinearInterpolatorND<double, Coordinates3D, GPU_memory> interpolator(coords);
+  LinearInterpolatorND<double, Coordinates3D> interpolator(coords);
   interpolator.update(in_data.data());
 
   const auto ref = coords.forward(size_t(3), size_t(1), size_t(0));
@@ -185,7 +183,7 @@ TEST_CASE("Test 3D periodic interpolation on GPU", "[3D][interpolation][periodic
   // sample inside the seam cell, where a clamped axis would read unrelated data
   const double phi = M_PI - 0.5 * (2 * M_PI / p3_size);
 
-  const double res_host = interpolator.CPU()(s0, s1, phi);
+  const double res_host = interpolator(s0, s1, phi);
 
   double res_gpu = 0.;
   Kokkos::parallel_reduce(

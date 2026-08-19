@@ -4,6 +4,7 @@
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/data/hdf5_output.hh>
 #include <DiFfRG/discretization/data/output_settings.hh>
+#include <DiFfRG/discretization/data/output_timings.hh>
 
 // external libraries
 #include <deal.II/dofs/dof_handler.h>
@@ -61,7 +62,21 @@ namespace DiFfRG
     /** Drain pending writers, release terminal resources, and close the output. */
     void finish();
 
-    void set_hdf5_output(HDF5Output *output);
+    /**
+     * @brief Route the finite-element frame data into an HDF5 file owned by someone else.
+     *
+     * @param session_closes_file When true, flush() leaves the file open and relies on the
+     * owner to close it once per frame -- which is what OutputSession does, since it flushes
+     * its HDF5Output sinks after this one. Standalone users, who may never call
+     * HDF5Output::flush() at all, keep the default and get a close per frame.
+     */
+    void set_hdf5_output(HDF5Output *output, bool session_closes_file = false);
+
+    /** True when flush() would throw everything attached to it away. */
+    bool will_discard() const { return !save_vtk && hdf5_output == nullptr; }
+
+    /** Number of writer threads that have not been joined yet. */
+    std::size_t pending_workers() const { return output_threads.size(); }
 
     /**
      * @brief Attach a solution to the output.
@@ -87,6 +102,14 @@ namespace DiFfRG
      * @param time The time tag to attach to the solution.
      */
     void flush(double time);
+
+    /** Timing buckets accumulated since the last call, and reset by it. */
+    FrameTimings take_frame_timings()
+    {
+      const FrameTimings taken = frame_timings;
+      frame_timings = FrameTimings{};
+      return taken;
+    }
 
   private:
     const std::string top_folder;
@@ -129,8 +152,11 @@ namespace DiFfRG
     void reserve_bytes(std::size_t bytes);
 
     HDF5Output *hdf5_output = nullptr;
+    bool hdf5_closed_by_session = false;
 
     bool save_vtk;
+
+    FrameTimings frame_timings;
   };
 
   template <typename VectorType> class FEOutput<0, VectorType>
@@ -157,6 +183,7 @@ namespace DiFfRG
     }
     void drain() {}
     void finish() {}
+    FrameTimings take_frame_timings() { return {}; }
   };
 
 } // namespace DiFfRG
