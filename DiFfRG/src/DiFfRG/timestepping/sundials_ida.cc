@@ -23,6 +23,7 @@
 #include <DiFfRG/timestepping/linear_solver/ScaledGMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/UMFPack.hh>
 #include <DiFfRG/timestepping/sundials_diagnostics.hh>
+#include <DiFfRG/discretization/common/la_policy.hh>
 #include <DiFfRG/timestepping/sundials_ida.hh>
 
 namespace DiFfRG
@@ -243,7 +244,8 @@ namespace DiFfRG
   {
     // Start by setting up all needed matrices, i.e. jacobian, inverse of jacobian and the mass matrix (with two
     // sparsity patterns)
-    SparseMatrixType jacobian(assembler->get_sparsity_pattern_jacobian());
+    SparseMatrixType jacobian;
+    assembler->reinit_matrix(jacobian);
     LinearSolver<SparseMatrixType, VectorType> linSolver;
     const DiagnosticPort jacobian_diagnostic_port = data_out ? data_out->diagnostic_port() : DiagnosticPort{};
 
@@ -283,7 +285,7 @@ namespace DiFfRG
     time_stepper.solver_should_restart = [&](const double t, VectorType &sol, VectorType &sol_dot) -> bool {
       if ((*adaptor)(t, sol)) {
         assembler->reinit_vector(sol_dot);
-        jacobian.reinit(assembler->get_sparsity_pattern_jacobian());
+        assembler->reinit_matrix(jacobian);
         return true;
       }
       return false;
@@ -502,7 +504,8 @@ namespace DiFfRG
           "TimeStepperSUNDIALS_ARKode_vars::run: y contains no variables, use a different timestepper!");
     // Start by setting up all needed matrices, i.e. jacobian, inverse of jacobian and the mass matrix (with two
     // sparsity patterns)
-    SparseMatrixType spatial_jacobian(assembler->get_sparsity_pattern_jacobian());
+    SparseMatrixType spatial_jacobian;
+    assembler->reinit_matrix(spatial_jacobian);
     LinearSolver<SparseMatrixType, VectorType> linSolver;
     const uint n_FE_dofs = initial_data.block(0).size();
     const uint n_vars = initial_data.block(1).size();
@@ -540,7 +543,7 @@ namespace DiFfRG
     time_stepper.solver_should_restart = [&](const double t, BlockVectorType &sol, BlockVectorType &sol_dot) -> bool {
       if ((*adaptor)(t, sol.block(0))) {
         assembler->reinit_vector(sol_dot.block(0));
-        spatial_jacobian.reinit(assembler->get_sparsity_pattern_jacobian());
+        assembler->reinit_matrix(spatial_jacobian);
         return true;
       }
       return false;
@@ -558,7 +561,7 @@ namespace DiFfRG
     time_stepper.reinit_vector = [&](BlockVectorType &v) {
       v.reinit(2);
       assembler->reinit_vector(v.block(0));
-      v.block(1).reinit(n_vars);
+      reinit_la_variables_vector(v.block(1), n_vars, assembler->get_communicator());
       v.collect_sizes();
     };
 
@@ -837,7 +840,9 @@ namespace DiFfRG
     y_dot *= 0.;
 
     // Called whenever a vector needs to initalized
-    time_stepper.reinit_vector = [&](VectorType &v) { v.reinit(n_vars); };
+    time_stepper.reinit_vector = [&](VectorType &v) {
+      reinit_la_variables_vector(v, n_vars, assembler->get_communicator());
+    };
 
     // At output_dt intervals this function saves intermediate solutions
     double last_save = -1.;
@@ -892,7 +897,7 @@ namespace DiFfRG
       try {
         res = 0;
         assembler->set_time(t);
-        assembler->residual_variables(res, y, Vector<double>());
+        assembler->residual_variables(res, y, VectorType());
         res += y_dot;
       } catch (std::exception &e) {
         callback_diagnostics.residual_exceptions++;
@@ -951,7 +956,7 @@ namespace DiFfRG
 
         variable_jacobian = 0;
         assembler->set_time(t);
-        assembler->jacobian_variables(variable_jacobian, y, Vector<double>());
+        assembler->jacobian_variables(variable_jacobian, y, VectorType());
         variable_jacobian *= -1.;
         variable_jacobian.diagadd(alpha);
         matrix_diagnostics = analyze_jacobian_matrix(variable_jacobian);
@@ -1115,33 +1120,32 @@ template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::B
                                                DiFfRG::GMRES>;
 
 // ##############################################################################
-// Distributed (PETSc-backed) instantiations -- blocked on the discretization layer
+// Distributed (PETSc-backed) instantiations -- one root cause left
 // ##############################################################################
 //
-// PETScKrylov and PETScDirect both compile and satisfy the linear-solver contract; what is
-// not ready is this file's own body. Instantiating TimeStepperSUNDIALS_IDA for
-// PETScWrappers::MPI::{Vector,SparseMatrix} was measured twice:
+// Measured by instantiating TimeStepperSUNDIALS_IDA for
+// PETScWrappers::MPI::{Vector,SparseMatrix} x dim{1,2,3} and counting compiler errors:
 //
-//     2026-08-19, before the Stage B fixes: 12.3 errors per instantiation
-//     2026-08-19, after them:               10.0 errors per instantiation
+//     before the Stage B fixes:  12.3 errors per instantiation
+//     after them:                10.0
+//     after Stage D2:             2.0
 //
-// The 2.3 difference is exactly the two causes that were fixed (the eagerly-formed
-// InverseSparseMatrixType alias in AbstractTimestepper, and AbstractFlowingVariables being
-// hard-typed to dealii::Vector/BlockVector). What remains is four causes at ten sites, all of
-// which need the discretization layer to hand over IndexSets and a communicator:
+// Cleared in D2, all by routing construction through the assembler instead of doing it here:
 //
-//   :246, :505   SparseMatrixType jacobian(assembler->get_sparsity_pattern_jacobian());
-//                A PETSc matrix has no constructor from a bare pattern; it needs
-//                reinit(local_rows, local_cols, dsp, comm).
-//   :286, :561   reinit_vector / v.reinit(n) -- a PETSc vector needs
-//                reinit(locally_owned, comm), not a global size.
-//   :543         IndexSet arithmetic over global dof counts; must be intersected with
-//                locally_owned_dofs before being handed to IDA (see the
-//                differential_components note in the plan).
-//   :762, :840   FullMatrix<PetscScalar>::vmult against a distributed vector -- the
-//                extractor/variables path mixes a dense local matrix with a PETSc vector.
-//   :895, :954,  implicit dealii::Vector<double> -> PETSc vector conversions.
-//   :1014
+//   matrix construction   -> assembler->reinit_matrix(), which knows the owned row set and the
+//                            communicator. A PETSc matrix has no constructor from a bare pattern.
+//   variables vectors     -> reinit_la_variables_vector(), which shares its layout with
+//                            reinit_la_block_vector() so block 1 cannot be sized two ways.
+//   `Vector<double>()`    -> `VectorType()` at the two residual_variables/jacobian_variables calls.
 //
-// So these instantiations land with Stage D, not before. Re-run the probe after each Stage D
-// change: the error count per instantiation is a usable progress metric.
+// What is left is ONE cause at two sites, :765 and :1019:
+//
+//     variable_jacobian_inverse.vmult(dst.block(1), src.block(1));
+//
+// A dense FullMatrix applied to the distributed variables block. This is not a typing problem and
+// should not be papered over as one. Block 1 is owned outright by rank 0 (see
+// la_policy.hh::variables_owner_set), so on every other rank src.block(1) is locally empty --
+// a correct implementation has to gather it, apply the dense inverse redundantly, and scatter the
+// owned part back. That is a collective on IDA's critical path, so it belongs with Stage E+F,
+// where the IDA control-flow predicates become collective too. Adding a collective here while
+// those predicates are still rank-local would introduce a deadlock rather than fix anything.

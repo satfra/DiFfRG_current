@@ -19,6 +19,7 @@
 #include <tbb/tbb.h>
 
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/discretization/common/la_policy.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
 #include <DiFfRG/discretization/common/eom.hh>
@@ -58,6 +59,7 @@ namespace DiFfRG
     using Model = Model_;
     using NumberType = typename Discretization::NumberType;
     using VectorType = typename Discretization::VectorType;
+    using SparseMatrixType = typename Discretization::SparseMatrixType;
 
     using Components = typename Discretization::Components;
     static constexpr uint dim = Discretization::dim;
@@ -86,7 +88,11 @@ namespace DiFfRG
     virtual IndexSet get_differential_indices() const override
     {
       ComponentMask component_mask(model.template differential_components<dim>());
-      return DoFTools::extract_dofs(dof_handler, component_mask);
+      // Restricted to owned rows under the distributed policy: deal.II writes every index of this
+      // set into a distributed vector and compresses with VectorOperation::insert, so an
+      // unrestricted set has every rank inserting into every entry.
+      return restrict_to_owned<VectorType>(DoFTools::extract_dofs(dof_handler, component_mask),
+                                           discretization.get_locally_owned_dofs());
     }
 
     virtual void attach_data_output(OutputFrame<dim, VectorType> &data_out, const VectorType &solution,

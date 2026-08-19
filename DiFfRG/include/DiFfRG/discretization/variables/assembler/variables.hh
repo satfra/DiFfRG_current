@@ -41,6 +41,7 @@ namespace DiFfRG
       using Model = Model_;
       using NumberType = double;
       using VectorType = Vector<double>;
+      using SparseMatrixType = SparseMatrix<double>;
 
       using Components = typename Model_::Components;
       static constexpr uint dim = 0;
@@ -61,6 +62,13 @@ namespace DiFfRG
       }
 
       virtual void reinit_vector(VectorType &vec) const override { vec.reinit(0); }
+      // Serial by construction: this assembler has no FE space at all (dim == 0) and hard-codes
+      // dealii::Vector/SparseMatrix in its base-class list, so there is no distributed policy here.
+      virtual void reinit_matrix(SparseMatrixType &matrix) const override
+      {
+        matrix.reinit(get_sparsity_pattern_jacobian());
+      }
+      virtual MPI_Comm get_communicator() const override { return MPI_COMM_SELF; }
 
       virtual IndexSet get_differential_indices() const override { return IndexSet(); }
 
