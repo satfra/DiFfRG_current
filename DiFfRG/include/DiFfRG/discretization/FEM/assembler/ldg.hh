@@ -45,6 +45,7 @@ namespace DiFfRG
       using Model = Model_;
       using NumberType = typename Discretization::NumberType;
       using VectorType = typename Discretization::VectorType;
+      using SparseMatrixType = typename Discretization::SparseMatrixType;
 
       using Components = typename Discretization::Components;
       static constexpr uint dim = Discretization::dim;
@@ -402,6 +403,7 @@ namespace DiFfRG
       using Model = Model_;
       using NumberType = typename Discretization::NumberType;
       using VectorType = typename Discretization::VectorType;
+      using SparseMatrixType = typename Discretization::SparseMatrixType;
 
       using Components = typename Discretization::Components;
       static constexpr uint dim = Discretization::dim;
@@ -472,6 +474,13 @@ namespace DiFfRG
       }
 
       virtual void reinit_vector(VectorType &vec) const override { vec.reinit(dof_handler.n_dofs()); }
+      // LDG stays on the serial policy (see LDG::Discretization for why), so this is the plain
+      // pattern-based reinit rather than a policy call.
+      virtual void reinit_matrix(SparseMatrixType &matrix) const override
+      {
+        matrix.reinit(get_sparsity_pattern_jacobian());
+      }
+      virtual MPI_Comm get_communicator() const override { return discretization.get_communicator(); }
 
       /**
        * @brief Attach all intermediate (ldg) vectors to the data output

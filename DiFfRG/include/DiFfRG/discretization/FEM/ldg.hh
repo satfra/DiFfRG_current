@@ -11,6 +11,7 @@
 #include <deal.II/lac/affine_constraints.h>
 
 // DiFfRG
+#include <DiFfRG/common/mpi.hh>
 #include <DiFfRG/common/run_logger.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/FEM/assembler/ldg.hh>
@@ -77,9 +78,32 @@ namespace DiFfRG
       const auto &get_mapping() const { return mapping; }
       const auto &get_triangulation() const { return mesh.get_triangulation(); }
       auto &get_triangulation() { return mesh.get_triangulation(); }
-      const Point<dim> &get_support_point(const uint &dof) const { return support_points[dof]; }
+
+      /**
+       * @brief Get the support point for a given dof.
+       *
+       * @param dof The dof index.
+       * @return const dealii::Point<dim>& The support point for the given dof.
+       */
+      const Point<dim> &get_support_point(const uint dof) const { return support_points[dof]; }
+      /**
+       * @brief Get the support points for all dofs.
+       *
+       * @return const std::vector<Point<dim>>& The support points for all dofs.
+       */
       const auto &get_support_points() const { return support_points; }
+
       const auto &get_config() const { return config; }
+
+      // LDG is deliberately excluded from the distributed policy: DoFRenumbering::component_wise
+      // assumes globally contiguous per-component blocks, which a parallel DoFHandler destroys, and
+      // the assembler does sparse matrix-matrix products and a UMFPACK factorisation with no PETSc
+      // analogue. These three accessors exist only because LDG shares FE::FlowingVariables with
+      // CG/DG, which now asks every discretization for its layout. On the serial triangulation LDG
+      // is restricted to, they are exactly the trivial answers.
+      const dealii::IndexSet &get_locally_owned_dofs() const { return locally_owned_dofs; }
+      const dealii::IndexSet &get_locally_relevant_dofs() const { return locally_relevant_dofs; }
+      MPI_Comm get_communicator() const { return dof_handler[0]->get_mpi_communicator(); }
 
       void reinit() { setup_dofs(); }
 
@@ -119,6 +143,9 @@ namespace DiFfRG
           if (i == 0) log_port.info("FEM: Number of degrees of freedom: {}", dof_handler[0]->n_dofs());
         }
 
+        locally_owned_dofs = dof_handler[0]->locally_owned_dofs();
+        locally_relevant_dofs = dealii::complete_index_set(dof_handler[0]->n_dofs());
+
         support_points.resize(dof_handler[0]->n_dofs());
         DoFTools::map_dofs_to_support_points(mapping, *dof_handler[0], support_points);
       }
@@ -132,6 +159,8 @@ namespace DiFfRG
       std::vector<AffineConstraints<NumberType>> constraints;
       MappingQ1<dim> mapping;
       std::vector<Point<dim>> support_points;
+      dealii::IndexSet locally_owned_dofs;
+      dealii::IndexSet locally_relevant_dofs;
     };
   } // namespace LDG
 } // namespace DiFfRG

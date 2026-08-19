@@ -197,6 +197,7 @@ namespace DiFfRG
       using Model = Model_;
       using NumberType = typename Discretization::NumberType;
       using VectorType = typename Discretization::VectorType;
+      using SparseMatrixType = typename Discretization::SparseMatrixType;
 
       using Components = typename Discretization::Components;
       static constexpr uint dim = Discretization::dim;
@@ -218,7 +219,17 @@ namespace DiFfRG
         reinit();
       }
 
-      virtual void reinit_vector(VectorType &vec) const override { vec.reinit(dof_handler.n_dofs()); }
+      virtual void reinit_vector(VectorType &vec) const override
+      {
+        reinit_la_vector(vec, discretization.get_locally_owned_dofs(), discretization.get_communicator());
+      }
+      virtual void reinit_matrix(SparseMatrixType &matrix) const override
+      {
+        reinit_la_matrix(matrix, get_sparsity_pattern_jacobian(), discretization.get_locally_owned_dofs(),
+                         discretization.get_communicator());
+      }
+
+      virtual MPI_Comm get_communicator() const override { return discretization.get_communicator(); }
 
       virtual void reinit() override
       {
@@ -228,20 +239,20 @@ namespace DiFfRG
 
         // Mass sparsity pattern
         {
-          DynamicSparsityPattern dsp(dof_handler.n_dofs());
+          DynamicSparsityPattern dsp(discretization.get_locally_relevant_dofs());
           DoFTools::make_sparsity_pattern(dof_handler, dsp, discretization.get_constraints(),
                                           /*keep_constrained_dofs = */ true);
-          sparsity_pattern_mass.copy_from(dsp);
-          mass_matrix.reinit(sparsity_pattern_mass);
+          finalize_la_sparsity<SparseMatrixType>(dsp, sparsity_pattern_mass, discretization.get_locally_owned_dofs(), discretization.get_locally_relevant_dofs(), discretization.get_communicator());
+          reinit_la_matrix(mass_matrix, sparsity_pattern_mass, discretization.get_locally_owned_dofs(), discretization.get_communicator());
           MatrixCreator::create_mass_matrix(dof_handler, quadrature, mass_matrix, (Function<dim, NumberType> *)nullptr,
                                             discretization.get_constraints());
         }
         // Jacobian sparsity pattern
         {
-          DynamicSparsityPattern dsp(dof_handler.n_dofs());
+          DynamicSparsityPattern dsp(discretization.get_locally_relevant_dofs());
           DoFTools::make_flux_sparsity_pattern(dof_handler, dsp, discretization.get_constraints(),
                                                /*keep_constrained_dofs = */ true);
-          sparsity_pattern_jacobian.copy_from(dsp);
+          finalize_la_sparsity<SparseMatrixType>(dsp, sparsity_pattern_jacobian, discretization.get_locally_owned_dofs(), discretization.get_locally_relevant_dofs(), discretization.get_communicator());
         }
 
         timings_reinit.push_back(timer.wall_time());
@@ -250,20 +261,20 @@ namespace DiFfRG
       virtual void rebuild_jacobian_sparsity() override
       {
         // Jacobian sparsity pattern
-        DynamicSparsityPattern dsp(dof_handler.n_dofs());
+        DynamicSparsityPattern dsp(discretization.get_locally_relevant_dofs());
         DoFTools::make_flux_sparsity_pattern(dof_handler, dsp, discretization.get_constraints(),
                                              /*keep_constrained_dofs = */ true);
-        for (uint row = 0; row < dsp.n_rows(); ++row)
+        for (const auto &row : discretization.get_locally_relevant_dofs())
           for (const auto &col : extractor_dof_indices)
             dsp.add(row, col);
-        sparsity_pattern_jacobian.copy_from(dsp);
+        finalize_la_sparsity<SparseMatrixType>(dsp, sparsity_pattern_jacobian, discretization.get_locally_owned_dofs(), discretization.get_locally_relevant_dofs(), discretization.get_communicator());
       }
 
-      virtual const SparsityPattern &get_sparsity_pattern_jacobian() const override
+      virtual const get_type::SparsityPattern<SparseMatrixType> &get_sparsity_pattern_jacobian() const override
       {
         return sparsity_pattern_jacobian;
       }
-      virtual const SparseMatrix<NumberType> &get_mass_matrix() const override { return mass_matrix; }
+      virtual const SparseMatrixType &get_mass_matrix() const override { return mass_matrix; }
 
       /**
        * @brief refinement indicator for adaptivity. Calls the model's cell_indicator and face_indicator functions.
@@ -589,7 +600,7 @@ namespace DiFfRG
         timings_residual.push_back(timer.wall_time());
       }
 
-      virtual void jacobian_mass(SparseMatrix<NumberType> &jacobian, const VectorType &solution_global,
+      virtual void jacobian_mass(SparseMatrixType &jacobian, const VectorType &solution_global,
                                  const VectorType &solution_global_dot, NumberType alpha, NumberType beta) override
       {
         using Iterator = typename DoFHandler<dim>::active_cell_iterator;
@@ -650,7 +661,7 @@ namespace DiFfRG
         timings_jacobian.push_back(timer.wall_time());
       }
 
-      virtual void jacobian(SparseMatrix<NumberType> &jacobian, const VectorType &solution_global, NumberType weight,
+      virtual void jacobian(SparseMatrixType &jacobian, const VectorType &solution_global, NumberType weight,
                             const VectorType &solution_global_dot, NumberType alpha, NumberType beta,
                             const VectorType &variables = VectorType()) override
       {
@@ -664,7 +675,7 @@ namespace DiFfRG
         if constexpr (Components::count_extractors() > 0) {
           this->extract(__extracted_data, solution_global, variables, true, true, true);
           if (this->jacobian_extractors(this->extractor_jacobian, solution_global, variables))
-            jacobian.reinit(sparsity_pattern_jacobian);
+            reinit_la_matrix(jacobian, sparsity_pattern_jacobian, discretization.get_locally_owned_dofs(), discretization.get_communicator());
         }
         const auto &extracted_data = __extracted_data;
 
@@ -1074,9 +1085,9 @@ namespace DiFfRG
       using Base::batch_size;
       using Base::mesh_workers;
 
-      SparsityPattern sparsity_pattern_mass;
-      SparsityPattern sparsity_pattern_jacobian;
-      SparseMatrix<NumberType> mass_matrix;
+      get_type::SparsityPattern<SparseMatrixType> sparsity_pattern_mass;
+      get_type::SparsityPattern<SparseMatrixType> sparsity_pattern_jacobian;
+      SparseMatrixType mass_matrix;
 
       std::vector<double> timings_reinit;
       std::vector<double> timings_residual;

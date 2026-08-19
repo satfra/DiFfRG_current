@@ -12,26 +12,26 @@ namespace DiFfRG
 {
   using namespace dealii;
 
-  template <uint dim>
-  RectangularMesh<dim>::RectangularMesh(const ConfigTree &config)
-      : RectangularMesh<dim>(Config::ConfigurationMesh<dim>(config), RectangularMeshOptions{})
+  template <uint dim, typename Tria>
+  RectangularMesh<dim, Tria>::RectangularMesh(const ConfigTree &config)
+      : RectangularMesh<dim, Tria>(Config::ConfigurationMesh<dim>(config), RectangularMeshOptions{})
   {
   }
 
-  template <uint dim>
-  RectangularMesh<dim>::RectangularMesh(const ConfigTree &config, const RectangularMeshOptions options)
-      : RectangularMesh<dim>(Config::ConfigurationMesh<dim>(config), options)
+  template <uint dim, typename Tria>
+  RectangularMesh<dim, Tria>::RectangularMesh(const ConfigTree &config, const RectangularMeshOptions options)
+      : RectangularMesh<dim, Tria>(Config::ConfigurationMesh<dim>(config), options)
   {
   }
 
-  template <uint dim>
-  RectangularMesh<dim>::RectangularMesh(const Config::ConfigurationMesh<dim> &mesh_config)
-      : RectangularMesh<dim>(mesh_config, RectangularMeshOptions{})
+  template <uint dim, typename Tria>
+  RectangularMesh<dim, Tria>::RectangularMesh(const Config::ConfigurationMesh<dim> &mesh_config)
+      : RectangularMesh<dim, Tria>(mesh_config, RectangularMeshOptions{})
   {
   }
 
-  template <uint dim>
-  RectangularMesh<dim>::RectangularMesh(const Config::ConfigurationMesh<dim> &mesh_config,
+  template <uint dim, typename Tria>
+  RectangularMesh<dim, Tria>::RectangularMesh(const Config::ConfigurationMesh<dim> &mesh_config,
                                         const RectangularMeshOptions options)
       : mesh_config(mesh_config), options(options)
   {
@@ -39,16 +39,25 @@ namespace DiFfRG
     make_grid();
   }
 
-  template <uint dim> void RectangularMesh<dim>::make_grid()
+  template <uint dim, typename Tria> void RectangularMesh<dim, Tria>::make_grid()
   {
     const auto triangulation_data = mesh_config.get_triangulation_data(options.origin_cell_centered);
-    dealii::GridGenerator::subdivided_hyper_rectangle(triangulation, triangulation_data.step_sizes,
+    dealii::GridGenerator::subdivided_hyper_rectangle(this->triangulation, triangulation_data.step_sizes,
                                                       triangulation_data.lower_left, triangulation_data.upper_right);
 
-    triangulation.refine_global(mesh_config.refine);
+    this->triangulation.refine_global(mesh_config.refine);
   }
 
   template class RectangularMesh<1>;
   template class RectangularMesh<2>;
   template class RectangularMesh<3>;
+
+#ifdef DEAL_II_WITH_MPI
+  // The partitioned variants. GridGenerator::subdivided_hyper_rectangle and refine_global both
+  // work verbatim on a parallel::shared::Triangulation -- it is filled identically on every rank
+  // and partitioned afterwards -- so make_grid() needs no specialization.
+  template class RectangularMesh<1, dealii::parallel::shared::Triangulation<1>>;
+  template class RectangularMesh<2, dealii::parallel::shared::Triangulation<2>>;
+  template class RectangularMesh<3, dealii::parallel::shared::Triangulation<3>>;
+#endif
 } // namespace DiFfRG
