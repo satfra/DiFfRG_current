@@ -18,20 +18,20 @@ namespace DiFfRG
 {
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver>
-  uint TimeStepperTRBDF2<VectorType, SparseMatrixType, dim, LinearSolver>::get_jacobians()
+  uint TimeStepperTRBDF2_impl<VectorType, SparseMatrixType, dim, LinearSolver>::get_jacobians()
   {
     return ptr_newton_TR->get_jacobians() + ptr_newton_BDF2->get_jacobians();
   }
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver>
-  double TimeStepperTRBDF2<VectorType, SparseMatrixType, dim, LinearSolver>::get_error()
+  double TimeStepperTRBDF2_impl<VectorType, SparseMatrixType, dim, LinearSolver>::get_error()
   {
     return std::sqrt(powr<2>(ptr_newton_TR->get_error()) + powr<2>(ptr_newton_BDF2->get_error()));
   }
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver>
-  void TimeStepperTRBDF2<VectorType, SparseMatrixType, dim, LinearSolver>::set_ignore_nonconv(bool x)
+  void TimeStepperTRBDF2_impl<VectorType, SparseMatrixType, dim, LinearSolver>::set_ignore_nonconv(bool x)
   {
     ptr_newton_TR->set_ignore_nonconv(x);
     ptr_newton_BDF2->set_ignore_nonconv(x);
@@ -39,7 +39,7 @@ namespace DiFfRG
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver>
-  void TimeStepperTRBDF2<VectorType, SparseMatrixType, dim, LinearSolver>::run(
+  void TimeStepperTRBDF2_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(
       AbstractFlowingVariables<NumberType, VectorType> *initial_condition, double start, double stop)
   {
     OutputSession<dim, VectorType> *data_out = this->get_data_out();
@@ -215,18 +215,40 @@ namespace DiFfRG
 
 } // namespace DiFfRG
 
-template class DiFfRG::TimeStepperTRBDF2<dealii::Vector<double>, dealii::SparseMatrix<double>, 1, DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperTRBDF2<dealii::Vector<double>, dealii::SparseMatrix<double>, 2, DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperTRBDF2<dealii::Vector<double>, dealii::SparseMatrix<double>, 3, DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperTRBDF2_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1, DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperTRBDF2_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2, DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperTRBDF2_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3, DiFfRG::UMFPack>;
 
-template class DiFfRG::TimeStepperTRBDF2<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1, DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperTRBDF2<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2, DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperTRBDF2<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3, DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperTRBDF2_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                              DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperTRBDF2_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                              DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperTRBDF2_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                              DiFfRG::UMFPack>;
 
-template class DiFfRG::TimeStepperTRBDF2<dealii::Vector<double>, dealii::SparseMatrix<double>, 1, DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperTRBDF2<dealii::Vector<double>, dealii::SparseMatrix<double>, 2, DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperTRBDF2<dealii::Vector<double>, dealii::SparseMatrix<double>, 3, DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperTRBDF2_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1, DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperTRBDF2_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2, DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperTRBDF2_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3, DiFfRG::GMRES>;
 
-template class DiFfRG::TimeStepperTRBDF2<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1, DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperTRBDF2<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2, DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperTRBDF2<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3, DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperTRBDF2_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                              DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperTRBDF2_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                              DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperTRBDF2_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                              DiFfRG::GMRES>;
+
+// The default-solver spelling. DefaultLinearSolver is deliberately an indirect alias and so
+// stays a distinct template argument from UMFPack on every compiler, which means
+// TimeStepper<Assembler> needs its own instantiations alongside TimeStepper<Assembler, UMFPack>.
+template class DiFfRG::TimeStepperTRBDF2_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                              DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperTRBDF2_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                              DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperTRBDF2_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                              DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperTRBDF2_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                              DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperTRBDF2_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                              DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperTRBDF2_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                              DiFfRG::DefaultLinearSolver>;

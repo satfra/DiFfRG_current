@@ -4,19 +4,11 @@
 #include <deal.II/base/index_set.h>
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
 #include <deal.II/lac/full_matrix.h>
-#include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/sparsity_tools.h>
-#include <deal.II/lac/vector.h>
-#ifdef DEAL_II_WITH_PETSC
-#include <deal.II/lac/petsc_block_sparse_matrix.h>
-#include <deal.II/lac/petsc_block_vector.h>
-#include <deal.II/lac/petsc_sparse_matrix.h>
-#include <deal.II/lac/petsc_vector.h>
-#endif
 
 // DiFfRG
+#include <DiFfRG/common/linear_algebra.hh>
 #include <DiFfRG/common/mpi.hh>
-#include <DiFfRG/common/types.hh>
 #include <DiFfRG/discretization/common/solution_view.hh>
 
 // std
@@ -24,21 +16,6 @@
 
 namespace DiFfRG
 {
-  /**
-   * @brief Whether a linear algebra type distributes its rows across MPI ranks.
-   *
-   * Everything the assemblers do differently under distribution keys off this one predicate, so
-   * that the assembler bodies read identically for both policies and the branching lives here.
-   */
-  template <typename T> inline constexpr bool is_distributed_la = false;
-
-#ifdef DEAL_II_WITH_PETSC
-  template <> inline constexpr bool is_distributed_la<dealii::PETScWrappers::MPI::Vector> = true;
-  template <> inline constexpr bool is_distributed_la<dealii::PETScWrappers::MPI::BlockVector> = true;
-  template <> inline constexpr bool is_distributed_la<dealii::PETScWrappers::MPI::SparseMatrix> = true;
-  template <> inline constexpr bool is_distributed_la<dealii::PETScWrappers::MPI::BlockSparseMatrix> = true;
-#endif
-
   /**
    * @brief Size a vector to the rank's share of the rows.
    *
@@ -70,8 +47,7 @@ namespace DiFfRG
    * constructor and so has no implicit move. This runs once per reinit(), not per timestep.
    */
   template <typename SparseMatrixType>
-  void finalize_la_sparsity(dealii::DynamicSparsityPattern &dsp,
-                            get_type::SparsityPattern<SparseMatrixType> &pattern,
+  void finalize_la_sparsity(dealii::DynamicSparsityPattern &dsp, get_type::SparsityPattern<SparseMatrixType> &pattern,
                             const dealii::IndexSet &locally_owned, const dealii::IndexSet &locally_relevant,
                             MPI_Comm comm)
   {

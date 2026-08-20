@@ -6,11 +6,10 @@ using namespace DiFfRG;
 // Choices for types
 using Model = ON_finiteT;
 constexpr uint dim = Model::dim;
-using Discretization = LDG::Discretization<Model::Components, double, RectangularMesh<dim>>;
+using Discretization = LDG::Discretization<Model, RectangularMeshSerial<dim>>;
 using VectorType = typename Discretization::VectorType;
-using SparseMatrixType = typename Discretization::SparseMatrixType;
-using Assembler = LDG::Assembler<Discretization, Model>;
-using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
+using Assembler = LDG::Assembler<Discretization>;
+using TimeStepper = TimeStepperSUNDIALS_IDA<Assembler>;
 
 int main(int argc, char *argv[])
 {
@@ -21,7 +20,7 @@ int main(int argc, char *argv[])
 
   // Define the objects needed to run the simulation
   Model model(json);
-  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  RectangularMeshSerial<dim> mesh{Config::ConfigurationMesh<dim>(json)};
   OutputPath output_path(json);
   OutputSession<dim, VectorType> data_out(output_path, json);
   const auto log = data_out.log_port();

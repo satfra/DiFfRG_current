@@ -16,9 +16,9 @@ template <typename Model> void run_benchmarks(const std::string &label, const Co
 {
   constexpr uint dim = 1;
   using NumberType = double;
-  using Discretization = CG::Discretization<typename Model::Components, NumberType, RectangularMesh<dim>>;
+  using Discretization = CG::Discretization<Model, RectangularMesh<dim>, NumberType>;
   using VectorType = typename Discretization::VectorType;
-  using Assembler = CG::Assembler<Discretization, Model>;
+  using Assembler = CG::Assembler<Discretization>;
 
   Testing::PhysicalParameters p_prm = {/*x0_initial = */ {0., 0., 0.}, /*x1_initial = */ {3.14, 2.72, 1.41}};
 

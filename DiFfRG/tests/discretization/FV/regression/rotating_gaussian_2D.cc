@@ -66,14 +66,14 @@ namespace
   using NumberType = double;
   using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">>;
   using Components = ComponentDescriptor<FEFunctionDesc>;
-  using Mesh = RectangularMesh<dim>;
-  using Discretization = FV::Discretization<Components, NumberType, Mesh>;
+  using Mesh = RectangularMeshSerial<dim>;
+  using Discretization = FV::Discretization<Components, Mesh, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, class RotatingGaussian2DModel, Reconstructor,
                                                   FV::KurganovTadmor::MaxEigenvalueWaveSpeed>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA<Assembler>;
 
   template <typename NT> Tensor<1, dim, NT> solid_body_velocity(const Point<dim> &point)
   {

@@ -8,7 +8,7 @@ using namespace DiFfRG;
 using Model = YangMills;
 using VectorType = Vector<double>;
 using Assembler = Variables::Assembler<Model>;
-using TimeStepper = TimeStepperBoostABM<VectorType, dealii::SparseMatrix<get_type::NumberType<VectorType>>, 0>;
+using TimeStepper = TimeStepperBoostABM<Assembler>;
 
 bool run(const ConfigTree &json, const OutputPath &output_path, LogPort external_log = {})
 {

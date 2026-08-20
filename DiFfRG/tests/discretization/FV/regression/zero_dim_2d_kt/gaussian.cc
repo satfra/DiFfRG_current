@@ -44,12 +44,12 @@ namespace
   using NumberType = double;
   using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">, Scalar<"v">>;
   using Components = ComponentDescriptor<FEFunctionDesc>;
-  using Mesh = RectangularMesh<dim>;
-  using Discretization = FV::Discretization<Components, NumberType, Mesh>;
+  using Mesh = RectangularMeshSerial<dim>;
+  using Discretization = FV::Discretization<Components, Mesh, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
-  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
+  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<Discretization>;
 
   struct GaussianScenario {
     std::string name;
@@ -423,7 +423,8 @@ TEST_CASE("Zero-dimensional KT Gaussian exposes analytic affine fields and diago
   }
 }
 
-TEST_CASE("Zero-dimensional KT Gaussian 40x40 matrix preserves analytic observables", "[2d][FV][KT][gaussian][coarse][slow]")
+TEST_CASE("Zero-dimensional KT Gaussian 40x40 matrix preserves analytic observables",
+          "[2d][FV][KT][gaussian][coarse][slow]")
 {
   for (const auto &scenario : gaussian_scenarios()) {
     DYNAMIC_SECTION(scenario.name)

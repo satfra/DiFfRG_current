@@ -32,7 +32,7 @@ namespace DiFfRG
 
   template <uint dim, typename Tria>
   RectangularMesh<dim, Tria>::RectangularMesh(const Config::ConfigurationMesh<dim> &mesh_config,
-                                        const RectangularMeshOptions options)
+                                              const RectangularMeshOptions options)
       : mesh_config(mesh_config), options(options)
   {
     static_assert(dim > 0 && dim < 4);
@@ -48,9 +48,13 @@ namespace DiFfRG
     this->triangulation.refine_global(mesh_config.refine);
   }
 
-  template class RectangularMesh<1>;
-  template class RectangularMesh<2>;
-  template class RectangularMesh<3>;
+  // Spelled with the triangulation explicit rather than through the default argument. Since the
+  // default follows the build configuration, `RectangularMesh<1>` names the *parallel* type in an
+  // MPI build, which would both collide with the block below and leave the serial variant -- whose
+  // constructors and make_grid() are out of line -- with no instantiation at all.
+  template class RectangularMesh<1, dealii::Triangulation<1>>;
+  template class RectangularMesh<2, dealii::Triangulation<2>>;
+  template class RectangularMesh<3, dealii::Triangulation<3>>;
 
 #ifdef DEAL_II_WITH_MPI
   // The partitioned variants. GridGenerator::subdivided_hyper_rectangle and refine_global both

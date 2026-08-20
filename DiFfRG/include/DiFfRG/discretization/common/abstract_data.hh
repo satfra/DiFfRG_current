@@ -4,7 +4,7 @@
 #include <deal.II/lac/vector.h>
 
 // DiFfRG
-#include <DiFfRG/common/types.hh>
+#include <DiFfRG/common/linear_algebra.hh>
 
 namespace DiFfRG
 {
@@ -17,8 +17,7 @@ namespace DiFfRG
    *
    * @tparam Discretization Spatial Discretization used in the system
    */
-  template <typename NumberType, typename VectorType_ = dealii::Vector<NumberType>>
-  class AbstractFlowingVariables
+  template <typename NumberType, typename VectorType_ = dealii::Vector<NumberType>> class AbstractFlowingVariables
   {
   public:
     /**

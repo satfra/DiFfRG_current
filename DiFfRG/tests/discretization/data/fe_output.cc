@@ -30,9 +30,9 @@ TEST_CASE("Test FE output on Constant model", "[output][cg]")
   constexpr uint dim = 1;
   using Model = Testing::ModelConstant<dim>;
   using NumberType = double;
-  using Discretization = CG::Discretization<typename Model::Components, NumberType, RectangularMesh<dim>>;
+  using Discretization = CG::Discretization<Model, RectangularMesh<dim>, NumberType>;
   using VectorType = typename Discretization::VectorType;
-  using Assembler = CG::Assembler<Discretization, Model>;
+  using Assembler = CG::Assembler<Discretization>;
 
   ConfigTree json = json::value(
       {{"physical", {}},
@@ -125,7 +125,7 @@ TEST_CASE("FEOutput spawns no writer thread when VTK is disabled", "[output][cg]
 
   constexpr uint dim = 1;
   using Model = Testing::ModelConstant<dim>;
-  using Discretization = CG::Discretization<typename Model::Components, double, RectangularMesh<dim>>;
+  using Discretization = CG::Discretization<Model, RectangularMesh<dim>>;
   using VectorType = typename Discretization::VectorType;
 
   ConfigTree json = json::value({{"physical", {}},
@@ -148,8 +148,7 @@ TEST_CASE("FEOutput spawns no writer thread when VTK is disabled", "[output][cg]
   initial_condition.interpolate(model);
 
   auto output_path = OutputPath::temporary();
-  FEOutput<dim, VectorType> fe_output(output_path.root().string(), "novtk", "fields",
-                                      Config::OutputSettings(json));
+  FEOutput<dim, VectorType> fe_output(output_path.root().string(), "novtk", "fields", Config::OutputSettings(json));
   REQUIRE(fe_output.will_discard()); // no VTK and no HDF5 sink attached
 
   for (uint i = 0; i < 5; ++i) {
@@ -176,27 +175,27 @@ TEST_CASE("FEOutput async drain preserves reuse and publication order", "[output
   constexpr uint dim = 1;
   using Model = Testing::ModelConstant<dim>;
   using NumberType = double;
-  using Discretization = CG::Discretization<typename Model::Components, NumberType, RectangularMesh<dim>>;
+  using Discretization = CG::Discretization<Model, RectangularMesh<dim>, NumberType>;
   using VectorType = typename Discretization::VectorType;
 
-  ConfigTree json = json::value(
-      {{"physical", {}},
-       {"discretization",
-        {{"fe_order", 3},
-         {"mesh_workers", 4},
-         {"batch_size", 64},
-         {"overintegration", 0},
-         {"output_subdivisions", 2},
-         {"EoM_abs_tol", 1e-10},
-         {"EoM_max_iter", 0},
-         {"grid", {{"x_grid", "0:0.05:1"}, {"y_grid", "0:0.1:1"}, {"z_grid", "0:0.1:1"}, {"refine", 0}}},
-         {"adaptivity",
-          {{"start_adapt_at", 0.},
-           {"adapt_dt", 1e-1},
-           {"level", 0},
-           {"refine_percent", 1e-1},
-           {"coarsen_percent", 5e-2}}}}},
-       {"output", {{"live_plot", false}, {"verbosity", 0}}}});
+  ConfigTree json =
+      json::value({{"physical", {}},
+                   {"discretization",
+                    {{"fe_order", 3},
+                     {"mesh_workers", 4},
+                     {"batch_size", 64},
+                     {"overintegration", 0},
+                     {"output_subdivisions", 2},
+                     {"EoM_abs_tol", 1e-10},
+                     {"EoM_max_iter", 0},
+                     {"grid", {{"x_grid", "0:0.05:1"}, {"y_grid", "0:0.1:1"}, {"z_grid", "0:0.1:1"}, {"refine", 0}}},
+                     {"adaptivity",
+                      {{"start_adapt_at", 0.},
+                       {"adapt_dt", 1e-1},
+                       {"level", 0},
+                       {"refine_percent", 1e-1},
+                       {"coarsen_percent", 5e-2}}}}},
+                   {"output", {{"live_plot", false}, {"verbosity", 0}}}});
 
   Testing::PhysicalParameters p_prm = {/*x0_initial = */ 0., /*x1_initial = */ 1.};
 

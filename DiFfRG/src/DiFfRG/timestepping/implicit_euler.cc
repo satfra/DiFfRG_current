@@ -20,7 +20,7 @@ namespace DiFfRG
 {
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver>
-  void TimeStepperImplicitEuler<VectorType, SparseMatrixType, dim, LinearSolver>::run(
+  void TimeStepperImplicitEuler_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(
       AbstractFlowingVariables<NumberType, VectorType> *initial_condition, double start, double stop)
   {
     this->data_out = this->get_data_out();
@@ -133,27 +133,46 @@ namespace DiFfRG
   }
 } // namespace DiFfRG
 
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
-                                                DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
-                                                DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
-                                                DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                                     DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                                     DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                                     DiFfRG::UMFPack>;
 
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
-                                                DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
-                                                DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
-                                                DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                                     DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                                     DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                                     DiFfRG::UMFPack>;
 
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::SparseMatrix<double>, 1, DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::SparseMatrix<double>, 2, DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::SparseMatrix<double>, 3, DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                                     DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                                     DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                                     DiFfRG::GMRES>;
 
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
-                                                DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
-                                                DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
-                                                DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                                     DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                                     DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                                     DiFfRG::GMRES>;
+
+// The default-solver spelling. DefaultLinearSolver is deliberately an indirect alias and so
+// stays a distinct template argument from UMFPack on every compiler, which means
+// TimeStepper<Assembler> needs its own instantiations alongside TimeStepper<Assembler, UMFPack>.
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                                     DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                                     DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                                     DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                                     DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                                     DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                                     DiFfRG::DefaultLinearSolver>;

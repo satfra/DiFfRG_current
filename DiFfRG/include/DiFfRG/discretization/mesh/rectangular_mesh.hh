@@ -11,6 +11,7 @@
 #include <type_traits>
 
 // DiFfRG
+#include <DiFfRG/common/linear_algebra.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/mesh/configuration_mesh.hh>
 
@@ -47,8 +48,8 @@ namespace DiFfRG
        * Keeping every cell real is also what makes active_cell_index() a global, deterministic
        * index that every rank agrees on -- the property those caches are built on.
        */
-      dealii::parallel::shared::Triangulation<dim> triangulation{
-          MPI_COMM_WORLD, dealii::Triangulation<dim>::none, /*allow_artificial_cells=*/false};
+      dealii::parallel::shared::Triangulation<dim> triangulation{MPI_COMM_WORLD, dealii::Triangulation<dim>::none,
+                                                                 /*allow_artificial_cells=*/false};
     };
 #endif
   } // namespace internal
@@ -59,13 +60,16 @@ namespace DiFfRG
    * independently.
    *
    * @tparam dim_ dimensionality of the spatial discretization.
-   * @tparam TriangulationType_ the triangulation to build on. Appended with a default so every
-   * existing `RectangularMesh<dim>` keeps meaning a serial mesh. Substituting
-   * `parallel::shared::Triangulation<dim>` partitions the cells across ranks while keeping the
-   * mesh itself replicated, which is what lets the assemblers restrict themselves to
+   * @tparam TriangulationType_ the triangulation to build on. Defaults to
+   * DefaultTriangulation<dim_>, i.e. `parallel::shared::Triangulation` in an MPI+PETSc build and
+   * `dealii::Triangulation` otherwise, so that a plain `RectangularMesh<dim>` follows the build
+   * configuration. A partitioned triangulation splits cell ownership across ranks while keeping
+   * the mesh itself replicated, which is what lets the assemblers restrict themselves to
    * locally-owned cells without any of the caches or the EoM search having to change.
+   *
+   * Use RectangularMeshSerial<dim> / RectangularMeshParallel<dim> below to pin one explicitly.
    */
-  template <uint dim_, typename TriangulationType_ = dealii::Triangulation<dim_>>
+  template <uint dim_, typename TriangulationType_ = DefaultTriangulation<dim_>>
   class RectangularMesh : protected internal::TriangulationHolder<TriangulationType_>
   {
   public:
@@ -114,4 +118,27 @@ namespace DiFfRG
     const Config::ConfigurationMesh<dim> mesh_config;
     const RectangularMeshOptions options;
   };
+
+  /**
+   * @brief A rectangular mesh pinned to a serial triangulation, whatever the build configuration.
+   *
+   * Name this when a run must stay serial in an MPI build: LDG, which cannot be distributed at
+   * all, and any test compared against a stored reference, which must produce the same numbers in
+   * a serial and an MPI build tree.
+   *
+   * Naming it is sufficient on its own: a Discretization defaults its vector and matrix from the
+   * mesh (see LAVectorFor in common/linear_algebra.hh), so this pins the linear algebra serial
+   * too rather than leaving it on the build-configuration default.
+   */
+  template <uint dim> using RectangularMeshSerial = RectangularMesh<dim, dealii::Triangulation<dim>>;
+
+#ifdef DEAL_II_WITH_MPI
+  /**
+   * @brief A rectangular mesh pinned to a partitioned triangulation.
+   *
+   * Only cell ownership is distributed; the mesh itself stays replicated on every rank.
+   */
+  template <uint dim>
+  using RectangularMeshParallel = RectangularMesh<dim, dealii::parallel::shared::Triangulation<dim>>;
+#endif
 } // namespace DiFfRG

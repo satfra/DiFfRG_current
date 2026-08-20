@@ -1,7 +1,7 @@
 #pragma once
 
 // DiFfRG
-#include <DiFfRG/common/types.hh>
+#include <DiFfRG/common/linear_algebra.hh>
 #include <DiFfRG/common/mpi.hh>
 #include <DiFfRG/discretization/common/solution_view.hh>
 #include <DiFfRG/discretization/data/output_session.hh>

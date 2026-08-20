@@ -159,8 +159,7 @@ public:
 };
 
 class GradientDependentKTModel
-    : public def::AbstractModel<GradientDependentKTModel,
-                                ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>>>,
+    : public def::AbstractModel<GradientDependentKTModel, ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>>>,
       public def::Time,
       public def::LLFFlux<GradientDependentKTModel>,
       public def::FlowBoundaries<GradientDependentKTModel>,
@@ -176,10 +175,7 @@ public:
     values[0] = solution(pos)[0];
   }
 
-  std::array<double, 1> solution(const Point<1> &pos) const
-  {
-    return {1.0 + 0.2 * pos[0] + 0.03 * pos[0] * pos[0]};
-  }
+  std::array<double, 1> solution(const Point<1> &pos) const { return {1.0 + 0.2 * pos[0] + 0.03 * pos[0] * pos[0]}; }
 
   template <typename NT, typename Solution>
   void flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution &sol) const
@@ -214,8 +210,7 @@ public:
 };
 
 class DiffusiveAffineBoundary2DModel
-    : public def::AbstractModel<DiffusiveAffineBoundary2DModel,
-                                ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>>>,
+    : public def::AbstractModel<DiffusiveAffineBoundary2DModel, ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>>>,
       public def::Time,
       public def::LLFFlux<DiffusiveAffineBoundary2DModel>,
       public def::FlowBoundaries<DiffusiveAffineBoundary2DModel>,
@@ -290,9 +285,7 @@ public:
     using namespace def::BoundaryStencilIndex;
 
     unsigned int axis = 0;
-    if (std::abs(x_face[1] - x_stencil[physical_cell][1]) >
-        std::abs(x_face[0] - x_stencil[physical_cell][0]))
-      axis = 1;
+    if (std::abs(x_face[1] - x_stencil[physical_cell][1]) > std::abs(x_face[0] - x_stencil[physical_cell][0])) axis = 1;
 
     const bool lower_boundary = x_face[axis] <= x_stencil[physical_cell][axis];
     const double delta = lower_boundary ? (x_stencil[upper_inner][axis] - x_stencil[physical_cell][axis])
@@ -334,7 +327,7 @@ TEST_CASE("KT Jacobian matches FD Jacobian for traveling wave model (detects mis
 {
   using Model = Testing::ModelBurgersTravelingWaveKT<1>;
   using NumberType = double;
-  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<1>>;
+  using Discretization = FV::Discretization<Model, RectangularMesh<1>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -403,7 +396,7 @@ TEST_CASE("KT Jacobian matches FD Jacobian for third-derivative diffusion model 
 {
   using Model = ThirdDerivativeDiffusionModel;
   using NumberType = double;
-  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<1>>;
+  using Discretization = FV::Discretization<Model, RectangularMesh<1>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -471,7 +464,7 @@ TEST_CASE("KT Jacobian matches FD Jacobian for pure advection Burgers model", "[
 {
   using Model = Testing::ModelBurgersKT<1>;
   using NumberType = double;
-  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<1>>;
+  using Discretization = FV::Discretization<Model, RectangularMesh<1>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -534,7 +527,7 @@ TEST_CASE("KT gradient-dependent flux and separate diffusion Jacobian match FD",
 {
   using Model = GradientDependentKTModel;
   using NumberType = double;
-  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<1>>;
+  using Discretization = FV::Discretization<Model, RectangularMesh<1>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -582,9 +575,8 @@ TEST_CASE("KT gradient-dependent flux and separate diffusion Jacobian match FD",
       const double actual = sp.exists(i, j) ? analytic.el(i, j) : 0.0;
       const double scale = std::max(1.0, std::abs(fd));
       if (std::abs(actual - fd) > tolerance * scale) {
-        std::cout << "Gradient-dependent KT Jacobian mismatch at [" << i << "," << j
-                  << "]: analytic=" << actual << " fd=" << fd
-                  << " rel_err=" << std::abs(actual - fd) / scale << "\n";
+        std::cout << "Gradient-dependent KT Jacobian mismatch at [" << i << "," << j << "]: analytic=" << actual
+                  << " fd=" << fd << " rel_err=" << std::abs(actual - fd) / scale << "\n";
         pass = false;
       }
     }
@@ -596,7 +588,7 @@ TEST_CASE("KT Jacobian for x-dependent source-only model is diagonal", "[FV][KT]
 {
   using Model = SourceOnlyModel;
   using NumberType = double;
-  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<1>>;
+  using Discretization = FV::Discretization<Model, RectangularMesh<1>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -636,9 +628,8 @@ TEST_CASE("KT first-order Jacobian strategy does not use reconstruction-neighbor
 {
   using Model = Testing::ModelBurgersKT<1>;
   using NumberType = double;
-  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<1>>;
-  using ResidualReconstructor =
-      def::TVDReconstructor<Discretization::dim, def::MinModLimiter, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMesh<1>, NumberType>;
+  using ResidualReconstructor = def::TVDReconstructor<Discretization::dim, def::MinModLimiter, NumberType>;
   using JacobianReconstructor = def::FirstOrderReconstructor<Discretization::dim, NumberType>;
   using ExactAssembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using ApproxJacobianAssembler =
@@ -700,7 +691,7 @@ TEST_CASE("KT TVD Jacobian strategy keeps reconstruction-neighbor columns", "[FV
 {
   using Model = Testing::ModelBurgersKT<1>;
   using NumberType = double;
-  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<1>>;
+  using Discretization = FV::Discretization<Model, RectangularMesh<1>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -746,7 +737,7 @@ TEST_CASE("KT 2D Jacobian matches FD Jacobian for diagonal Burgers model", "[FV]
 {
   using Model = Testing::ModelBurgers2DKT;
   using NumberType = double;
-  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<2>>;
+  using Discretization = FV::Discretization<Model, RectangularMesh<2>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -815,7 +806,7 @@ TEST_CASE("KT 2D boundary Jacobian matches FD for affine ghost diffusion", "[FV]
 {
   using Model = DiffusiveAffineBoundary2DModel;
   using NumberType = double;
-  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<2>>;
+  using Discretization = FV::Discretization<Model, RectangularMesh<2>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -893,7 +884,7 @@ TEST_CASE("KT 2D boundary Jacobian uses model-owned tangential ghost derivatives
 {
   using Model = DiffusiveNonAffineTangentialBoundary2DModel;
   using NumberType = double;
-  using Discretization = FV::Discretization<typename Model::Components, NumberType, RectangularMesh<2>>;
+  using Discretization = FV::Discretization<Model, RectangularMesh<2>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 

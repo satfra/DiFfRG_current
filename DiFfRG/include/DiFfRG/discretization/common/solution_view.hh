@@ -8,8 +8,8 @@
 #endif
 
 // DiFfRG
+#include <DiFfRG/common/linear_algebra.hh>
 #include <DiFfRG/common/mpi.hh>
-#include <DiFfRG/common/types.hh>
 
 // std
 #include <stdexcept>
@@ -193,8 +193,7 @@ namespace DiFfRG
 
     const VectorType &get() const
     {
-      if (!initialized)
-        throw std::runtime_error("SolutionView::get() before reinit(): the view holds no solution.");
+      if (!initialized) throw std::runtime_error("SolutionView::get() before reinit(): the view holds no solution.");
       return is_empty ? empty : replica;
     }
     operator const VectorType &() const { return get(); }

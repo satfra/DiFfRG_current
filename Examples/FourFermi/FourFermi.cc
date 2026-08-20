@@ -16,7 +16,7 @@ using namespace DiFfRG;
 using Model = FourFermi;
 using VectorType = Vector<double>;
 using Assembler = Variables::Assembler<Model>;
-using TimeStepper = TimeStepperBoostABM<VectorType>;
+using TimeStepper = TimeStepperBoostABM<Assembler>;
 
 int main(int argc, char *argv[])
 {

@@ -27,6 +27,7 @@
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
 #include <DiFfRG/discretization/common/eom.hh>
+#include <DiFfRG/discretization/common/types.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
 
 namespace DiFfRG
@@ -395,7 +396,8 @@ namespace DiFfRG
      * @tparam Discretization Discretization on which to assemble
      * @tparam Model The model class which contains the physical equations.
      */
-    template <typename Discretization_, typename Model_>
+    template <typename Discretization_,
+              typename Model_ = typename DiFfRG::internal::assembler_model_of<Discretization_>::type>
     class Assembler : public LDGAssemblerBase<Discretization_, Model_>
     {
       using Base = LDGAssemblerBase<Discretization_, Model_>;

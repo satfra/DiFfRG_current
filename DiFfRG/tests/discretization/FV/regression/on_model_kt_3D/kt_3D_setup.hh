@@ -42,16 +42,16 @@ namespace on_kt_3D
   template <typename Model> using ConstrainUAtOrigin = def::ConstrainOriginSupportPointToZero<"u", Model>;
 
   using NumberType = double;
-  using Mesh = RectangularMesh<dim>;
-  using Discretization = FV::Discretization<Components, NumberType, Mesh>;
+  using Mesh = RectangularMeshSerial<dim>;
+  using Discretization = FV::Discretization<Components, Mesh, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
 
   template <typename Model>
-  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor,
-                                                  FV::KurganovTadmor::MaxEigenvalueWaveSpeed>;
-  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
+  using Assembler =
+      FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor, FV::KurganovTadmor::MaxEigenvalueWaveSpeed>;
+  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<Discretization>;
 
   // --- LSM physical-scale parameters -----------------------------------------
   //
@@ -59,19 +59,19 @@ namespace on_kt_3D
   //   with the field convention ρ = σ²/2. Matches Examples/ONfiniteT*.
 
   struct LSMPhysicalParameters {
-    static constexpr double Lambda = 0.65;          // UV cutoff (GeV)
-    static constexpr double m2 = -0.1;              // initial mass-squared
-    static constexpr double lambda_quartic = 71.6;  // initial quartic coupling
-    static constexpr double T = 0.05;               // temperature for the integrator
-    static constexpr double N = 2.0;                // O(N) flavors
+    static constexpr double Lambda = 0.65;         // UV cutoff (GeV)
+    static constexpr double m2 = -0.1;             // initial mass-squared
+    static constexpr double lambda_quartic = 71.6; // initial quartic coupling
+    static constexpr double T = 0.05;              // temperature for the integrator
+    static constexpr double N = 2.0;               // O(N) flavors
   };
 
   // --- Grid scale (matches Examples) ------------------------------------------
 
-  constexpr double max_rho = 1.5e-2;                          // from CG Example x_grid upper bound
-  inline double max_sigma() { return std::sqrt(2.0 * max_rho); }  // σ = sqrt(2ρ)
-  constexpr std::size_t n_cells_default = 150;                // matches Example uniform-grid case
-  constexpr double final_time = 4.0;                          // matches Examples
+  constexpr double max_rho = 1.5e-2;                             // from CG Example x_grid upper bound
+  inline double max_sigma() { return std::sqrt(2.0 * max_rho); } // σ = sqrt(2ρ)
+  constexpr std::size_t n_cells_default = 150;                   // matches Example uniform-grid case
+  constexpr double final_time = 4.0;                             // matches Examples
   // The flow develops the SSB convexification near the origin at the chiral IR; on the
   // default 150-cell grid the σ-mode argument k²+m²_σ touches the propagator pole around
   // t≈3.97. Reaching t=4.0 cleanly is a mesh-resolution matter (more cells), not a
@@ -82,16 +82,13 @@ namespace on_kt_3D
   struct GridSettings {
     std::size_t cells = n_cells_default;
     double x_min = 0.0;
-    double x_max = max_rho;  // overwritten by ρ/σ helpers
+    double x_max = max_rho; // overwritten by ρ/σ helpers
   };
 
   inline GridSettings default_rho_grid() { return GridSettings{n_cells_default, 0.0, max_rho}; }
   inline GridSettings default_sigma_grid() { return GridSettings{n_cells_default, 0.0, max_sigma()}; }
 
-  inline double grid_spacing(const GridSettings &g)
-  {
-    return (g.x_max - g.x_min) / static_cast<double>(g.cells - 1);
-  }
+  inline double grid_spacing(const GridSettings &g) { return (g.x_max - g.x_min) / static_cast<double>(g.cells - 1); }
 
   inline Config::ConfigurationMesh<1> make_mesh_config(const GridSettings &g)
   {
@@ -115,7 +112,8 @@ namespace on_kt_3D
   {
     std::vector<Config::GridAxis> axes;
     axes.reserve(subranges.size());
-    for (const auto &s : subranges) axes.emplace_back(s.min, s.step, s.max);
+    for (const auto &s : subranges)
+      axes.emplace_back(s.min, s.step, s.max);
     return Config::ConfigurationMesh<1>(0u, std::move(axes));
   }
 
@@ -147,16 +145,12 @@ namespace on_kt_3D
   //   x_order = 32, x_extent_tolerance = 1e-3 (matches both Examples).
   //   final_time and Λ are pulled from LSMPhysicalParameters.
 
-  inline ConfigTree make_json(const int threads = 1, const int fe_order = 0,
-                             const int x_order = 32, const double ida_abs_tol = 1.0e-7,
-                             const double ida_rel_tol = 1.0e-7)
+  inline ConfigTree make_json(const int threads = 1, const int fe_order = 0, const int x_order = 32,
+                              const double ida_abs_tol = 1.0e-7, const double ida_rel_tol = 1.0e-7)
   {
     return json::value(
         {{"physical", {{"Lambda", LSMPhysicalParameters::Lambda}}},
-         {"integration",
-          {{"x_order", x_order},
-           {"x_extent_tolerance", 1.0e-3},
-           {"jacobian_quadrature_factor", 0.5}}},
+         {"integration", {{"x_order", x_order}, {"x_extent_tolerance", 1.0e-3}, {"jacobian_quadrature_factor", 0.5}}},
          {"discretization",
           {{"fe_order", fe_order},
            {"mesh_workers", threads},

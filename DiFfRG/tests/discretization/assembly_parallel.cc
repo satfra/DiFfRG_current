@@ -11,8 +11,10 @@
 #include <DiFfRG/discretization/FV/assembler/KurganovTadmor.hh>
 #include <DiFfRG/discretization/FV/discretization.hh>
 #include <DiFfRG/discretization/data/data.hh>
+#include <DiFfRG/discretization/mesh/h_adaptivity.hh>
 #include <DiFfRG/model/model.hh>
 
+#include <type_traits>
 #include <vector>
 
 // Distributed assembly: does an n-rank residual equal the serial one?
@@ -43,7 +45,7 @@ namespace
   /// an `int`, and ConfigTree::get_uint used to throw on the unsigned one, so passing fe_order
   /// as an `unsigned` made the key silently unreadable and the discretization fell back to its
   /// default order. That is fixed in config_tree.cc now, but write plain ints regardless.
-  ConfigTree make_json()
+  ConfigTree make_json(const int adapt_level = 0)
   {
     return json::value(
         {{"physical", {}},
@@ -60,7 +62,7 @@ namespace
            {"adaptivity",
             {{"start_adapt_at", 0.},
              {"adapt_dt", 1e-1},
-             {"level", 0},
+             {"level", adapt_level},
              {"refine_percent", 1e-1},
              {"coarsen_percent", 5e-2}}}}},
          {"timestepping", {{"final_time", 1.}, {"output_dt", 1e-1}}},
@@ -85,22 +87,51 @@ namespace
 
   /// A model whose face_indicator is non-zero and whose cell_indicator is left at the default
   /// (zero), so refinement_indicator is non-zero if and only if faces were actually visited.
-  template <uint dim>
-  class FaceOnlyIndicatorModel : public Testing::ModelBurgers<dim>
+  template <uint dim> class FaceOnlyIndicatorModel : public Testing::ModelBurgers<dim>
   {
   public:
     using Testing::ModelBurgers<dim>::ModelBurgers;
 
     template <int mdim, typename NumberType, typename Solutions_s, typename Solutions_n>
     void face_indicator(std::array<NumberType, 2> &indicator, const Tensor<1, mdim> & /*normal*/,
-                        const Point<mdim> & /*p*/, const Solutions_s & /*sol_s*/,
-                        const Solutions_n & /*sol_n*/) const
+                        const Point<mdim> & /*p*/, const Solutions_s & /*sol_s*/, const Solutions_n & /*sol_n*/) const
     {
       indicator[0] = 1.;
       indicator[1] = 1.;
     }
   };
+
+  /// A model whose cell_indicator grows with x, so refine_and_coarsen_fixed_fraction selects a
+  /// proper subset of the cells. ModelBurgers leaves cell_indicator at the default (zero), and a
+  /// uniformly zero indicator refines nothing at all -- which would make the adaptivity test below
+  /// pass without ever transferring a solution.
+  template <uint dim> class CellIndicatorModel : public Testing::ModelBurgers<dim>
+  {
+  public:
+    using Testing::ModelBurgers<dim>::ModelBurgers;
+
+    template <int mdim, typename NumberType, typename Solution>
+    void cell_indicator(NumberType &indicator, const Point<mdim> &p, const Solution & /*sol*/) const
+    {
+      indicator = p[0];
+    }
+  };
 } // namespace
+
+// A Discretization defaults its vector and matrix from the *mesh*, not from the build
+// configuration. That is what makes RectangularMeshSerial<dim> sufficient on its own: a test
+// compared against a serial reference has to get serial linear algebra in an MPI build tree too.
+// When the pair defaulted to the build configuration, this pin was silently insufficient -- the
+// mesh went serial while the vectors stayed PETSc, and the resulting static_assert named the
+// mesh, not the vectors the caller had never mentioned.
+static_assert(
+    std::is_same_v<typename CG::Discretization<Testing::ModelBurgers<1>, RectangularMeshSerial<1>>::VectorType,
+                   dealii::Vector<double>>,
+    "A serial mesh must default to serial linear algebra.");
+static_assert(
+    std::is_same_v<typename FV::Discretization<Testing::ModelBurgersKT<1>, RectangularMeshSerial<1>>::SparseMatrixType,
+                   dealii::SparseMatrix<double>>,
+    "A serial mesh must default to a serial matrix.");
 
 TEST_CASE("DG refinement indicator sees face contributions", "[discretization][dg]")
 {
@@ -108,12 +139,12 @@ TEST_CASE("DG refinement indicator sees face contributions", "[discretization][d
   using namespace dealii;
   constexpr uint dim = 1;
   using Model = FaceOnlyIndicatorModel<dim>;
-  using DGDiscretization = DG::Discretization<typename Model::Components, double, RectangularMesh<dim>>;
-  using Assembler = DG::Assembler<DGDiscretization, Model>;
+  using DGDiscretization = DG::Discretization<Model, RectangularMeshSerial<dim>>;
+  using Assembler = DG::Assembler<DGDiscretization>;
 
   const auto json = make_json();
   Model model(nontrivial_parameters());
-  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  RectangularMeshSerial<dim> mesh{Config::ConfigurationMesh<dim>(json)};
   DGDiscretization discretization(mesh, json, DiFfRG::LogPort{});
   Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
@@ -141,7 +172,14 @@ TEST_CASE("DG refinement indicator sees face contributions", "[discretization][d
 
 namespace
 {
-  template <uint dim> using ParallelMesh = RectangularMesh<dim, dealii::parallel::shared::Triangulation<dim>>;
+  template <uint dim> using ParallelMesh = RectangularMeshParallel<dim>;
+
+  // The converse half of the rule above: a partitioned mesh must bring the distributed pair with
+  // it, so ParallelMesh<dim> alone is a complete spelling.
+  static_assert(
+      std::is_same_v<typename CG::Discretization<Testing::ModelBurgers<1>, ParallelMesh<1>>::VectorType,
+                     dealii::PETScWrappers::MPI::Vector>,
+      "A partitioned mesh must default to distributed linear algebra.");
 
   /**
    * @brief Assemble one residual serially and one distributed, and require them to agree.
@@ -158,7 +196,7 @@ namespace
     using namespace dealii;
     constexpr uint dim = SerialDisc::dim;
 
-    RectangularMesh<dim> serial_mesh{Config::ConfigurationMesh<dim>(json)};
+    RectangularMeshSerial<dim> serial_mesh{Config::ConfigurationMesh<dim>(json)};
     SerialDisc serial_disc(serial_mesh, json, DiFfRG::LogPort{});
     SerialAssembler serial_assembler(serial_disc, model, json, DiFfRG::LogPort{});
     SerialVars serial_ic(serial_disc);
@@ -228,14 +266,11 @@ TEST_CASE("CG residual is unchanged by distribution", "[discretization][cg][mpi]
   DiFfRG::Init();
   constexpr uint dim = 1;
   using Model = Testing::ModelBurgers<dim>;
-  using Components = typename Model::Components;
-  using SerialDisc = CG::Discretization<Components, double, RectangularMesh<dim>>;
-  using ParallelDisc = CG::Discretization<Components, double, ParallelMesh<dim>, dealii::PETScWrappers::MPI::Vector,
-                                          dealii::PETScWrappers::MPI::SparseMatrix>;
+  using SerialDisc = CG::Discretization<Model, RectangularMeshSerial<dim>>;
+  using ParallelDisc = CG::Discretization<Model, ParallelMesh<dim>>;
   Model model(nontrivial_parameters());
-  require_distributed_residual_matches_serial<CG::Assembler<SerialDisc, Model>, SerialDisc,
-                                              CG::Assembler<ParallelDisc, Model>, ParallelDisc,
-                                              FE::FlowingVariables<SerialDisc>,
+  require_distributed_residual_matches_serial<CG::Assembler<SerialDisc>, SerialDisc, CG::Assembler<ParallelDisc>,
+                                              ParallelDisc, FE::FlowingVariables<SerialDisc>,
                                               FE::FlowingVariables<ParallelDisc>>(model, make_json());
 }
 
@@ -244,14 +279,11 @@ TEST_CASE("DG residual is unchanged by distribution", "[discretization][dg][mpi]
   DiFfRG::Init();
   constexpr uint dim = 1;
   using Model = Testing::ModelBurgers<dim>;
-  using Components = typename Model::Components;
-  using SerialDisc = DG::Discretization<Components, double, RectangularMesh<dim>>;
-  using ParallelDisc = DG::Discretization<Components, double, ParallelMesh<dim>, dealii::PETScWrappers::MPI::Vector,
-                                          dealii::PETScWrappers::MPI::SparseMatrix>;
+  using SerialDisc = DG::Discretization<Model, RectangularMeshSerial<dim>>;
+  using ParallelDisc = DG::Discretization<Model, ParallelMesh<dim>>;
   Model model(nontrivial_parameters());
-  require_distributed_residual_matches_serial<DG::Assembler<SerialDisc, Model>, SerialDisc,
-                                              DG::Assembler<ParallelDisc, Model>, ParallelDisc,
-                                              FE::FlowingVariables<SerialDisc>,
+  require_distributed_residual_matches_serial<DG::Assembler<SerialDisc>, SerialDisc, DG::Assembler<ParallelDisc>,
+                                              ParallelDisc, FE::FlowingVariables<SerialDisc>,
                                               FE::FlowingVariables<ParallelDisc>>(model, make_json());
 }
 
@@ -260,14 +292,11 @@ TEST_CASE("dDG residual is unchanged by distribution", "[discretization][ddg][mp
   DiFfRG::Init();
   constexpr uint dim = 1;
   using Model = Testing::ModelBurgers<dim>;
-  using Components = typename Model::Components;
-  using SerialDisc = DG::Discretization<Components, double, RectangularMesh<dim>>;
-  using ParallelDisc = DG::Discretization<Components, double, ParallelMesh<dim>, dealii::PETScWrappers::MPI::Vector,
-                                          dealii::PETScWrappers::MPI::SparseMatrix>;
+  using SerialDisc = DG::Discretization<Model, RectangularMeshSerial<dim>>;
+  using ParallelDisc = DG::Discretization<Model, ParallelMesh<dim>>;
   Model model(nontrivial_parameters());
-  require_distributed_residual_matches_serial<dDG::Assembler<SerialDisc, Model>, SerialDisc,
-                                              dDG::Assembler<ParallelDisc, Model>, ParallelDisc,
-                                              FE::FlowingVariables<SerialDisc>,
+  require_distributed_residual_matches_serial<dDG::Assembler<SerialDisc>, SerialDisc, dDG::Assembler<ParallelDisc>,
+                                              ParallelDisc, FE::FlowingVariables<SerialDisc>,
                                               FE::FlowingVariables<ParallelDisc>>(model, make_json());
 }
 
@@ -276,15 +305,82 @@ TEST_CASE("KT residual is unchanged by distribution", "[discretization][kt][mpi]
   DiFfRG::Init();
   constexpr uint dim = 1;
   using Model = Testing::ModelBurgersKT<dim>;
-  using Components = typename Model::Components;
-  using SerialDisc = FV::Discretization<Components, double, RectangularMesh<dim>>;
-  using ParallelDisc = FV::Discretization<Components, double, ParallelMesh<dim>, dealii::PETScWrappers::MPI::Vector,
-                                          dealii::PETScWrappers::MPI::SparseMatrix>;
+  using SerialDisc = FV::Discretization<Model, RectangularMeshSerial<dim>>;
+  using ParallelDisc = FV::Discretization<Model, ParallelMesh<dim>>;
   Model model(nontrivial_parameters());
   require_distributed_residual_matches_serial<FV::KurganovTadmor::Assembler<SerialDisc, Model>, SerialDisc,
                                               FV::KurganovTadmor::Assembler<ParallelDisc, Model>, ParallelDisc,
-                                              FV::FlowingVariables<SerialDisc>,
-                                              FV::FlowingVariables<ParallelDisc>>(model, make_json());
+                                              FV::FlowingVariables<SerialDisc>, FV::FlowingVariables<ParallelDisc>>(
+      model, make_json());
+}
+
+
+TEST_CASE("HAdaptivity transfers the solution identically under distribution", "[discretization][adaptivity][mpi]")
+{
+  DiFfRG::Init();
+  using namespace dealii;
+  constexpr uint dim = 1;
+  using Model = CellIndicatorModel<dim>;
+  using SerialDisc = CG::Discretization<Model, RectangularMeshSerial<dim>>;
+  using ParallelDisc = CG::Discretization<Model, ParallelMesh<dim>>;
+  using ParVector = typename ParallelDisc::VectorType;
+
+  const auto json = make_json(/*adapt_level=*/2);
+  Model model(nontrivial_parameters());
+
+  RectangularMeshSerial<dim> serial_mesh{Config::ConfigurationMesh<dim>(json)};
+  SerialDisc serial_disc(serial_mesh, json, DiFfRG::LogPort{});
+  CG::Assembler<SerialDisc> serial_assembler(serial_disc, model, json, DiFfRG::LogPort{});
+  FE::FlowingVariables<SerialDisc> serial_ic(serial_disc);
+  serial_ic.interpolate(model);
+  typename SerialDisc::VectorType serial_sol(serial_ic.spatial_data());
+  const auto n_dofs_before = serial_disc.get_dof_handler().n_dofs();
+
+  HAdaptivity<CG::Assembler<SerialDisc>> serial_adaptor(serial_assembler, json);
+  REQUIRE(serial_adaptor.adapt(serial_sol));
+
+  ParallelMesh<dim> parallel_mesh{Config::ConfigurationMesh<dim>(json)};
+  ParallelDisc parallel_disc(parallel_mesh, json, DiFfRG::LogPort{});
+  CG::Assembler<ParallelDisc> parallel_assembler(parallel_disc, model, json, DiFfRG::LogPort{});
+  FE::FlowingVariables<ParallelDisc> parallel_ic(parallel_disc);
+  parallel_ic.interpolate(model);
+  ParVector parallel_sol(parallel_ic.spatial_data());
+
+  HAdaptivity<CG::Assembler<ParallelDisc>> parallel_adaptor(parallel_assembler, json);
+  REQUIRE(parallel_adaptor.adapt(parallel_sol));
+
+  const auto &serial_dh = serial_disc.get_dof_handler();
+  const auto &parallel_dh = parallel_disc.get_dof_handler();
+
+  // Vacuity guards. If nothing was refined, or the mesh came out different, the value comparison
+  // below is meaningless -- and a zero-size or zero-valued reference passes for every bug.
+  REQUIRE(serial_dh.n_dofs() > n_dofs_before);
+  REQUIRE(serial_dh.n_dofs() == parallel_dh.n_dofs());
+
+  SolutionView<ParVector> gathered;
+  gathered.reinit(parallel_disc.get_locally_owned_dofs(), parallel_disc.get_locally_relevant_dofs(),
+                  parallel_disc.get_communicator());
+  gathered.refresh(parallel_sol);
+
+  const double scale = std::max(serial_sol.linfty_norm(), 1e-300);
+  REQUIRE(scale > 1e-8);
+
+  std::vector<types::global_dof_index> serial_indices, parallel_indices;
+  double worst = 0.;
+  for (const auto &parallel_cell : parallel_dh.active_cell_iterators()) {
+    const typename DoFHandler<dim>::active_cell_iterator serial_cell(
+        &serial_dh.get_triangulation(), parallel_cell->level(), parallel_cell->index(), &serial_dh);
+    const auto n = parallel_cell->get_fe().n_dofs_per_cell();
+    serial_indices.resize(n);
+    parallel_indices.resize(n);
+    parallel_cell->get_dof_indices(parallel_indices);
+    serial_cell->get_dof_indices(serial_indices);
+    for (unsigned int k = 0; k < n; ++k)
+      worst = std::max(worst, std::abs(gathered[parallel_indices[k]] - serial_sol[serial_indices[k]]));
+  }
+
+  INFO("worst |distributed - serial| = " << worst << ", solution scale = " << scale);
+  REQUIRE(worst < 1e-10 * scale);
 }
 
 #endif // DEAL_II_WITH_MPI && DEAL_II_WITH_PETSC

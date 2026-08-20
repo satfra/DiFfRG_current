@@ -8,7 +8,7 @@
 namespace
 {
   using FVModel = DiFfRG::Testing::ModelBurgersKT<1>;
-  using FVDiscretization = DiFfRG::FV::Discretization<typename FVModel::Components, double, DiFfRG::RectangularMesh<1>>;
+  using FVDiscretization = DiFfRG::FV::Discretization<FVModel, DiFfRG::RectangularMesh<1>>;
   using FVBaseAssembler = DiFfRG::FV::KurganovTadmor::Assembler<FVDiscretization, FVModel>;
 
   class FVApplicationAssembler : public FVBaseAssembler
@@ -18,9 +18,8 @@ namespace
   };
 
   using FEMModel = DiFfRG::Testing::ModelConstant<1>;
-  using FEMDiscretization =
-      DiFfRG::CG::Discretization<typename FEMModel::Components, double, DiFfRG::RectangularMesh<1>>;
-  using FEMBaseAssembler = DiFfRG::CG::Assembler<FEMDiscretization, FEMModel>;
+  using FEMDiscretization = DiFfRG::CG::Discretization<FEMModel, DiFfRG::RectangularMesh<1>>;
+  using FEMBaseAssembler = DiFfRG::CG::Assembler<FEMDiscretization>;
 
   class FEMApplicationAssembler : public FEMBaseAssembler
   {

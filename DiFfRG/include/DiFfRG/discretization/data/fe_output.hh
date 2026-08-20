@@ -1,6 +1,7 @@
 #pragma once
 
 // DiFfRG
+#include <DiFfRG/common/linear_algebra.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/common/la_policy.hh>
 #include <DiFfRG/discretization/common/serial_mirror.hh>

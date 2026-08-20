@@ -33,7 +33,8 @@ namespace DiFfRG
   // Such a sum is finite and exact: enumerating the modes beats approximating the infinite sum
   // with a Gaussian rule. If the trait is absent or false, the integrator keeps the Monien/vacuum
   // rule, which is always correct -- a summand of finite extent is also an integrable one.
-  template <class K> inline constexpr bool kernel_has_finite_matsubara_extent = requires { requires K::matsubara_finite_extent; };
+  template <class K>
+  inline constexpr bool kernel_has_finite_matsubara_extent = requires { requires K::matsubara_finite_extent; };
 
   // True iff the kernel declares `static constexpr bool matsubara_split = true`, i.e. it was
   // generated as a MIXED flow and offers two entry points, `kernel_finite_extent` (the terms whose
@@ -150,35 +151,12 @@ namespace DiFfRG
     }
 
     /**
-     * @brief Multiply the frequency cutoff, i.e. how far past the regulator's support the exact sum
-     * keeps summing modes.
-     *
-     * The cutoff it is handed comes from `x_extent`, which `optimize_x_extent` sizes for SPATIAL
-     * quadrature convergence -- a different question from where a discrete sum may be truncated.
-     * In practice it overshoots (the 1.15 stepping lands well past the requested tolerance), so the
-     * exact sum inherits the error budget the spatial grid already accepts rather than adding to it.
-     * This knob is how one CHECKS that rather than assuming it: raise it to 2 and the answer must
-     * not move. Modes cost only linearly, so the check is cheap.
-     */
-    /**
      * @brief Order of the finite-interval frequency rule; 0 (the default) means the SPATIAL order.
      *
      * A summand of finite extent has no tail, and for a 4D regulator `p0` and `|q|` sit in
      * `p0^2 + |q|^2 <= x_extent k^2` symmetrically -- so the order that resolves the spatial radius
      * is the natural one for the frequency too, and `grid_size[0]` (the flow's `x_order`) is the
      * default rather than the `vacuum_quad_size` that sized the tangent map.
-     *
-     * Know the trade before changing it, because it is NOT free and it is not visible per step.
-     * Measured on QCD_Nf2 (x_order = 32, vacuum_quad_size = 64), against a converged reference:
-     *
-     *   per step, k ~ 1e3   order 32: 6.0e-6     order 64: 6.2e-6   -- indistinguishable
-     *   over t = 0..6       order 32: 1.75e-2    order 64: 1.87e-3  -- 9x apart
-     *
-     * i.e. the frequency error ACCUMULATES over a flow in a way one step does not reveal, and the
-     * tangent map this replaced sits at 1.18e-2 in the same comparison. So order 32 is ~1.5x less
-     * accurate than the old behaviour end to end, and order 64 is ~6x more accurate than it while
-     * still being faster. Raise this to `vacuum_quad_size` if the frequency direction turns out to
-     * matter for the observable in hand.
      */
     void set_frequency_order(const size_t order)
     {
@@ -549,9 +527,9 @@ namespace DiFfRG
       // See QuadratureIntegrator::map() for why this is decided from the plan, not from local state.
       if (scheduler.active() && scheduler.plan_contains(integrator_id())) MapCompletion::flush();
 
-      const MapSlice slice = scheduler.schedule(integrator_id(), dest, sizeof(NT), coordinates.size(),
-                                                quadrature_volume(), /* splittable */ true,
-                                                map_target<ExecutionSpace>());
+      const MapSlice slice =
+          scheduler.schedule(integrator_id(), dest, sizeof(NT), coordinates.size(), quadrature_volume(),
+                             /* splittable */ true, map_target<ExecutionSpace>());
 
       if (slice.count == 0) {
         if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
@@ -629,10 +607,9 @@ namespace DiFfRG
       // generated flow scaffolds used to forward-declare their kernel in <Flow>.hh, and flows.cc
       // (which instantiates set_T -> here) disagreed with the CT_*.cc translation units (which
       // instantiate map()). Fail loudly instead.
-      static_assert(sizeof(KERNEL) > 0,
-                    "QuadratureIntegrator_fT: the KERNEL type must be complete here. Include the "
-                    "flow's kernel.hh before its <Flow>.hh -- a forward declaration silently turns "
-                    "every kernel trait off in this translation unit and yields a wrong RHS.");
+      static_assert(sizeof(KERNEL) > 0, "QuadratureIntegrator_fT: the KERNEL type must be complete here. Include the "
+                                        "flow's kernel.hh before its <Flow>.hh -- a forward declaration silently turns "
+                                        "every kernel trait off in this translation unit and yields a wrong RHS.");
 
       using mem_space = typename ExecutionSpace::memory_space;
 
@@ -666,8 +643,8 @@ namespace DiFfRG
           // to reach for, so plain Gauss-Legendre at the SPATIAL order is both cheaper and more
           // accurate. (If `standard` is the Monien rule instead, the sum is genuinely thermal and
           // must not be replaced by an integral, so leave it alone.)
-          fe_rule = &quadrature_provider.template matsubara_finite_interval<ctype>(
-              m_extent_margin * m_freq_cutoff, frequency_order());
+          fe_rule = &quadrature_provider.template matsubara_finite_interval<ctype>(m_extent_margin * m_freq_cutoff,
+                                                                                   frequency_order());
         }
       }
 
@@ -718,8 +695,7 @@ namespace DiFfRG
     Kokkos::View<NT *, ExecutionSpace> device_scratch(const size_t n)
     {
       if (m_dest_device_size < n) {
-        m_dest_device =
-            Kokkos::View<NT *, ExecutionSpace>(Kokkos::view_alloc(space, "MapIntegrators_device_view"), n);
+        m_dest_device = Kokkos::View<NT *, ExecutionSpace>(Kokkos::view_alloc(space, "MapIntegrators_device_view"), n);
         m_dest_device_size = n;
       }
       return Kokkos::View<NT *, ExecutionSpace>(m_dest_device, Kokkos::make_pair(size_t(0), n));
@@ -884,9 +860,9 @@ namespace DiFfRG
 
       if (scheduler.active() && scheduler.plan_contains(this->integrator_id())) MapCompletion::flush();
 
-      const MapSlice slice = scheduler.schedule(this->integrator_id(), dest, sizeof(NT), coordinates.size(),
-                                                Base::quadrature_volume(), /* splittable */ true,
-                                                map_target<execution_space>());
+      const MapSlice slice =
+          scheduler.schedule(this->integrator_id(), dest, sizeof(NT), coordinates.size(), Base::quadrature_volume(),
+                             /* splittable */ true, map_target<execution_space>());
 
       if (slice.count == 0) {
         if (!MapCompletion::deferral_enabled()) MapCompletion::flush();

@@ -19,8 +19,7 @@ namespace
   using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">>;
   using Components = ComponentDescriptor<FEFunctionDesc>;
 
-  class QuadraticInitialConditionModel
-      : public def::AbstractModel<QuadraticInitialConditionModel, Components>
+  class QuadraticInitialConditionModel : public def::AbstractModel<QuadraticInitialConditionModel, Components>
   {
   public:
     template <typename Vector> void initial_condition(const Point<1> &pos, Vector &values) const
@@ -57,7 +56,7 @@ TEST_CASE("FV FlowingVariables stores cell averages", "[FV][data]")
                    {"output", {{"verbosity", 0}, {"vtk", false}}}});
 
   using Mesh = RectangularMesh<1>;
-  using Discretization = FV::Discretization<Components, double, Mesh>;
+  using Discretization = FV::Discretization<Components, Mesh>;
 
   QuadraticInitialConditionModel model;
   const Config::GridAxis x_axis(0.0, 1.0, 2.0);

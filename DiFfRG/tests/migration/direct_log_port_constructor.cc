@@ -8,13 +8,12 @@
 namespace
 {
   using FVModel = DiFfRG::Testing::ModelBurgersKT<1>;
-  using FVDiscretization = DiFfRG::FV::Discretization<typename FVModel::Components, double, DiFfRG::RectangularMesh<1>>;
+  using FVDiscretization = DiFfRG::FV::Discretization<FVModel, DiFfRG::RectangularMesh<1>>;
   using FVAssembler = DiFfRG::FV::KurganovTadmor::Assembler<FVDiscretization, FVModel>;
 
   using FEMModel = DiFfRG::Testing::ModelConstant<1>;
-  using FEMDiscretization =
-      DiFfRG::CG::Discretization<typename FEMModel::Components, double, DiFfRG::RectangularMesh<1>>;
-  using FEMAssembler = DiFfRG::CG::Assembler<FEMDiscretization, FEMModel>;
+  using FEMDiscretization = DiFfRG::CG::Discretization<FEMModel, DiFfRG::RectangularMesh<1>>;
+  using FEMAssembler = DiFfRG::CG::Assembler<FEMDiscretization>;
 
   struct VariablesModel {
     using Components = DiFfRG::ComponentDescriptor<DiFfRG::FEFunctionDescriptor<>>;

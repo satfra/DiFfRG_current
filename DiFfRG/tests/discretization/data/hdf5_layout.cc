@@ -80,7 +80,7 @@ TEST_CASE("HDF5 output layout is stable", "[output][hdf5][layout][golden]")
 
   constexpr uint dim = 1;
   using Model = Testing::ModelConstant<dim>;
-  using Discretization = CG::Discretization<typename Model::Components, double, RectangularMesh<dim>>;
+  using Discretization = CG::Discretization<Model, RectangularMesh<dim>>;
   using VectorType = typename Discretization::VectorType;
 
   // 4 cells, fe_order 1, no subdivision: small enough that the node counts below are exact and
@@ -171,8 +171,7 @@ TEST_CASE("HDF5 output layout is stable", "[output][hdf5][layout][golden]")
   SECTION("scalars are one appendable dataset per name, one element per frame")
   {
     auto scalars = root.open_group("scalars");
-    require_children(scalars, {},
-                     {"a_complex", "a_double", "a_string", "an_array", "an_int", "time"});
+    require_children(scalars, {}, {"a_complex", "a_double", "a_string", "an_array", "an_int", "time"});
 
     const DiFfRG::hdf5::Dims frames{n_frames};
     require_dataset<double>(scalars, "a_double", frames);

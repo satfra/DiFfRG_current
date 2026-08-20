@@ -15,6 +15,7 @@
 #include <DiFfRG/common/run_logger.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/FEM/assembler/ldg.hh>
+#include <DiFfRG/discretization/common/types.hh>
 #include <DiFfRG/discretization/discretization.hh>
 
 namespace DiFfRG
@@ -29,10 +30,12 @@ namespace DiFfRG
      *
      * @tparam Model_ The Model class used for the Simulation
      */
-    template <typename Components_, typename NumberType_, typename Mesh_> class Discretization
+    template <typename ModelOrComponents_, typename Mesh_, typename NumberType_ = double> class Discretization
     {
     public:
-      using Components = Components_;
+      /// The model this discretization belongs to, or void if it was built from a bare descriptor.
+      using Model = typename DiFfRG::internal::model_of_descriptor<ModelOrComponents_>::type;
+      using Components = typename DiFfRG::internal::components_of<ModelOrComponents_>::type;
       using NumberType = NumberType_;
       using VectorType = Vector<NumberType>;
       using SparseMatrixType = BlockSparseMatrix<NumberType>;
@@ -52,9 +55,9 @@ namespace DiFfRG
       // which deal.II documents as unsuitable for a parallel::TriangulationBase. Reject the
       // combination here instead, where the message can name the cause.
       static_assert(!Mesh::is_parallel,
-                    "LDG does not support a partitioned mesh. Use "
-                    "RectangularMesh<dim, dealii::Triangulation<dim>> (the default), or pick "
-                    "CG/DG/dDG/KT for a distributed run.");
+                    "LDG does not support a partitioned mesh. Use RectangularMeshSerial<dim>, or pick "
+                    "CG/DG/dDG/KT for a distributed run. Note that a plain RectangularMesh<dim> is "
+                    "partitioned in an MPI build, so LDG has to name the serial mesh explicitly.");
 
       [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Discretization(
           Mesh &mesh, DiFfRG::internal::LegacyDefaultLogPortArgument<Mesh, ConfigTree> config)
