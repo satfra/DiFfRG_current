@@ -86,4 +86,4 @@ DiFfRG uses [Kokkos](https://kokkos.org/) as a performance-portability layer, so
 
 The GPU backend is enabled at configure time with `-DGPU=ON` (the default; see the [installation](installation.md) page). Whether a particular computation runs on the CPU or the GPU is chosen per execution space: the **FEM assemblers always run on the CPU (`TBB_exec`)**, because they interact with deal.II's data structures, while the **momentum-space integrators can target the GPU** for a large speedup on fully momentum-dependent flows. The integrator's execution space is fixed when its kernel is generated (the `"Device"` option of `MakeKernel`, see [Tutorial 3](../tutorials/tut3.md)); `TBB` is the default and is required when an integrator is called from within an assembler.
 
-Because the backend is abstracted, models and generated kernels are written once (using the `KOKKOS_FORCEINLINE_FUNCTION` markers in the generated code) and compile for whichever backend is enabled.
+Because the backend is abstracted, models and generated kernels are written once (using the `KOKKOS_INLINE_FUNCTION` markers in the generated code) and compile for whichever backend is enabled.
