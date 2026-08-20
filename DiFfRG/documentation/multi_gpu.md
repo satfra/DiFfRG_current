@@ -37,10 +37,18 @@ answer* for every rank count, and no scaling curve drawn from it would be compar
 It also makes rebalancing free: moving a partition boundary changes *which* rank computes a grid
 point, never *what* it computes.
 
-Splitting applies only to one-dimensional coordinate systems. `SubCoordinates` derives its per-axis
-window from `from_linear_index()`, which is exact for `dim == 1` and not for higher dimensions, so a
-multi-dimensional external grid is assigned whole to one rank. Every `map()` in `QCD_Nf2` is over a
-1D momentum grid, so this costs nothing there.
+Splitting applies to external grids of **any** dimension. `SubCoordinates` is a window into the
+*linear* index range, which is exactly the shape `part(G, r, j)` hands out, so no per-axis structure
+is involved. It used to derive a per-axis box by running `from_linear_index()` on both ends and
+subtracting, which is the same set of points only for `dim == 1`; multi-dimensional grids were
+therefore assigned whole to one rank. That was free in `QCD_Nf2`, where every `map()` is over a 1D
+momentum grid, and expensive everywhere else — in `YangMills/Full` the three `coordinates3D` vertex
+flows are both the costliest and the ones that could not be split.
+
+The bitwise guarantee survives the change for the same reason as before, and more directly: the
+window's `from_linear_index(s)` returns the **base** multi-index of global point `offset + s`, and
+`forward()` is `Base::forward` unchanged, so a rank computes the same `double` for a point that a
+serial run computes for it.
 
 ### 1.2 CPU backends, and mixed CPU/GPU models
 
@@ -160,6 +168,35 @@ Note what this means for the cluster run: at N ≤ 4 the split width is clamped 
 anyway (`r = min(…, n_ranks)`), so 1–4 GPUs behave identically under either threshold. The
 distinction only starts to matter at N > 4.
 
+**The fill threshold is the right one only for a map inside a batch.** Holding back below it is an
+argument about *opportunity cost*: the ranks this map leaves out are about to be taken by the other
+maps in the same `DeferredMaps` scope, so slivering this one buys nothing and costs a launch plus a
+gather slice. Outside such a scope that premise is false. `map()` flushes on return, so the map *is*
+the batch — there are no other maps, and every rank that owns no slice sits in the `Allgatherv`
+doing nothing until the owners finish. The only reason left not to split is that a slice must still
+cover the launch that computes it.
+
+So `schedule()` measures against `internal::launch_threshold` (1024 evaluations, the launch-cost
+constant this section rejects for the batched case) whenever no deferral scope is open:
+
+```
+quantum = pinned override, if any
+        : batched   -> target.fill_threshold
+        : unbatched -> min(target.fill_threshold, launch_threshold)
+```
+
+`MapScheduler` learns which case it is from `MapCompletion::set_deferral()`, which forwards to
+`set_batched()`. That keeps the dependency one-way (`map_completion.hh` includes
+`map_scheduler.hh`, not the reverse) and keeps the plan a pure function of the call sequence, since
+`DeferredMaps` is constructed by replicated model code and the flag therefore holds the same value
+on every rank at every `schedule()` call. `DIFFRG_MAP_QUANTUM` wins over both: a user who pins a
+width chose it.
+
+This matters most for exactly the configuration section 1.2 warns is unmeasured. No model in
+`Examples/` or `Tutorials/` opens a `DeferredMaps` scope, so the unbatched case is the one they all
+take today. On a host backend with 8 workers (fill threshold `8 × 1024 = 8192`), a `p2_1ang` flow at
+`S = 12 288` went from `r = 1` to `r = 12`.
+
 ### 1.4 How results come back
 
 `MapCompletion::flush()` fences, lands the pinned staging buffers, and then performs **one**
@@ -177,6 +214,21 @@ owners and non-owners, so any decision based on them would have some ranks enter
 others skip — a silent hang. Before the exchange, the ranks agree on a hash of the plan
 (`MPI::agree`, one tiny collective); a mismatch calls `MPI_Abort` with a diagnosis rather than
 hanging in a malformed `Allgatherv`.
+
+That agreement is an `MPI_Allreduce`, and it is *tiny in bytes, not in latency*: at several hundred
+ranks it is comparable to the `Allgatherv` it guards, and with no deferral scope open it is paid
+once per flow per residual evaluation. It therefore runs on the first 8 batches and every 64th
+batch after that (`DIFFRG_MAP_VERIFY_EVERY`, `1` to restore it on every batch).
+
+Be clear about what that gives up. The head window still catches immediately the failure that
+actually happens — a model whose flow sequence is wrong from the start. A divergence appearing
+later is only diagnosed at the next verified batch, and until then a malformed gather runs instead.
+And because the same bug class can desynchronise the batch counter itself (a rank that skips a flow
+also skips its batch), one rank can reach the `Allreduce` while another goes straight to the
+gather — a hang, which is exactly what the check exists to prevent. So skipping degrades the
+guarantee back to what it was before the check existed; it never makes things worse than having no
+check at all. **When debugging a hang or a wrong distributed result, set `DIFFRG_MAP_VERIFY_EVERY=1`
+first.**
 
 `MPI_Allgatherv` rather than `MPI_Allreduce(SUM)` over zero-filled buffers: the latter moves ~25×
 more bytes and is **not bit-safe**, since `(-0.0) + 0.0 == +0.0` destroys a signed zero.
@@ -339,6 +391,7 @@ Two knobs, both optional:
 |---|---|---|
 | `DIFFRG_MAP_QUANTUM` | environment | overrides the split threshold for *every* execution space, replacing the hardware-derived defaults (wins over the parameter file). It does not merge the per-resource budgets — see §1.2 |
 | `DIFFRG_MAP_VERBOSE=1` | environment | prints the plan once: per-flow resource and split width, owning ranks, and the per-rank load of each resource separately |
+| `DIFFRG_MAP_VERIFY_EVERY` | environment | how often the ranks agree on the plan hash before an exchange. Default 64 (plus the first 8 batches unconditionally). **Set to `1` first when debugging a hang or a wrong distributed result** — it restores immediate, diagnosable detection of a schedule divergence |
 | `/integration/map_quantum` | parameter file | same as above, lower precedence |
 | `/integration/map_verbose` | parameter file | same as above |
 
@@ -601,8 +654,6 @@ These were consciously left out of this increment:
   counterpart is `concurrency() × 1024`, where the 1024 comes from reasoning about `parallel_for`
   spawn cost rather than from a profile. No CPU-backend flow run has been measured. Anyone running a
   CPU or mixed backend at scale should profile one and correct `internal::host_grain`.
-- **Multi-dimensional external grids are not split** (section 1.1). Fixing this means fixing
-  `SubCoordinates`' per-axis window derivation, which is currently only correct for `dim == 1`.
 - **The application must not branch on rank-local data.** `QCD.cc` reads control-flow scalars back
   out of the HDF5 file that only rank 0 writes, at four sites: `:46` and `:84`
   (`time_of_divergence`), `:52` (`m2A`, `Zc`), `:57` (`sti_deviation_or_nan`). Those values drive the

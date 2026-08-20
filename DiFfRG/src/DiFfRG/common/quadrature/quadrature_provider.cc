@@ -173,6 +173,67 @@ namespace DiFfRG
       return new_it->second;
     }
 
+    MatsubaraStorage::IntervalOrderIterator<double> MatsubaraStorage::find_interval_order_d(const size_t order)
+    {
+      auto it = intervals_d.find(order);
+      if (it != intervals_d.end()) return it;
+      return intervals_d.insert(std::make_pair(order, std::map<double, MatsubaraQuadrature<double>>())).first;
+    }
+
+    MatsubaraQuadrature<double> &MatsubaraStorage::find_interval_d(const double cutoff,
+                                                                   IntervalOrderIterator<double> o_it,
+                                                                   const Kokkos::View<const double *, CPU_memory> n,
+                                                                   const Kokkos::View<const double *, CPU_memory> w)
+    {
+      auto &map = o_it->second;
+
+      auto it = map.lower_bound(cutoff);
+      if (it != map.end()) {
+        if (is_close(it->first, cutoff, 1e-6 * cutoff)) return it->second;
+        if (it != map.begin() && is_close(std::prev(it)->first, cutoff, 1e-6 * cutoff)) return std::prev(it)->second;
+      }
+
+      auto new_it = map.insert(std::make_pair(cutoff, MatsubaraQuadrature<double>())).first;
+      new_it->second.reinit_finite_interval(cutoff, n, w);
+
+      if (verbosity >= 0)
+        log.info("Created finite-interval MatsubaraQuadrature<double> with cutoff = {:.4} and order = {}", cutoff,
+                 o_it->first);
+
+      return new_it->second;
+    }
+
+    MatsubaraStorage::IntervalOrderIterator<float> MatsubaraStorage::find_interval_order_f(const size_t order)
+    {
+      auto it = intervals_f.find(order);
+      if (it != intervals_f.end()) return it;
+      return intervals_f.insert(std::make_pair(order, std::map<double, MatsubaraQuadrature<float>>())).first;
+    }
+
+    MatsubaraQuadrature<float> &MatsubaraStorage::find_interval_f(const float cutoff,
+                                                                  IntervalOrderIterator<float> o_it,
+                                                                  const Kokkos::View<const float *, CPU_memory> n,
+                                                                  const Kokkos::View<const float *, CPU_memory> w)
+    {
+      auto &map = o_it->second;
+
+      auto it = map.lower_bound((double)cutoff);
+      if (it != map.end()) {
+        if (is_close(it->first, (double)cutoff, 1e-6 * cutoff)) return it->second;
+        if (it != map.begin() && is_close(std::prev(it)->first, (double)cutoff, 1e-6 * cutoff))
+          return std::prev(it)->second;
+      }
+
+      auto new_it = map.insert(std::make_pair((double)cutoff, MatsubaraQuadrature<float>())).first;
+      new_it->second.reinit_finite_interval(cutoff, n, w);
+
+      if (verbosity >= 0)
+        log.info("Created finite-interval MatsubaraQuadrature<float> with cutoff = {:.4} and order = {}", cutoff,
+                 o_it->first);
+
+      return new_it->second;
+    }
+
     void MatsubaraStorage::set_verbosity(int v) { verbosity = v; }
     void MatsubaraStorage::set_vacuum_quad_size(const int size)
     {

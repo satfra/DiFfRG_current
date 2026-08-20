@@ -54,8 +54,10 @@ namespace DiFfRG
 
       Assembler(Model &model, const ConfigTree &config, LogPort log_port)
           : model(model), log_port(std::move(log_port)),
-            mesh_workers(config.get_uint("/discretization/mesh_workers", 8))
+            mesh_workers(config.get_uint("/discretization/mesh_workers", 0))
       {
+        // Default 0 = derive from the thread count; see FEM/assembler/common.hh for why a fixed
+        // constant is wrong here (mesh_workers is mesh_loop's queue_length).
         if (mesh_workers == 0) mesh_workers = std::max(1u, dealii::MultithreadInfo::n_threads() / 2);
         static_assert(Components::count_fe_functions() == 0, "The pure variable assembler cannot handle FE functions!");
         reinit();

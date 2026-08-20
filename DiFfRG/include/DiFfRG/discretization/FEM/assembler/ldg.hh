@@ -61,12 +61,14 @@ namespace DiFfRG
       LDGAssemblerBase(Discretization &discretization, Model &model, const ConfigTree &config, LogPort log_port)
           : discretization(discretization), model(model), log_port(std::move(log_port)), fe(discretization.get_fe()),
             dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
-            mesh_workers(config.get_uint("/discretization/mesh_workers", 8)),
+            mesh_workers(config.get_uint("/discretization/mesh_workers", 0)),
             batch_size(config.get_uint("/discretization/batch_size", 16)),
             EoM_cell(*(dof_handler.active_cell_iterators().end())),
             old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
             EoM_config(DiFfRG::internal::resolve_eom_config(dof_handler, Config::EoMConfig(config)))
       {
+        // Default 0 = derive from the thread count; see FEM/assembler/common.hh for why a fixed
+        // constant is wrong here (mesh_workers is mesh_loop's queue_length).
         if (this->mesh_workers == 0) this->mesh_workers = std::max(1u, dealii::MultithreadInfo::n_threads() / 2);
         log_port.info("FEM: Using {} mesh workers for assembly.", mesh_workers);
       }

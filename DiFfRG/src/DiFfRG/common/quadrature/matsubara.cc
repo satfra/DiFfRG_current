@@ -183,6 +183,30 @@ namespace DiFfRG
     write_data(x, w);
   }
 
+  template <typename NT>
+  void MatsubaraQuadrature<NT>::reinit_finite_interval(const NT cutoff,
+                                                       const Kokkos::View<const NT *, CPU_memory> gl_nodes,
+                                                       const Kokkos::View<const NT *, CPU_memory> gl_weights)
+  {
+    if (!(cutoff > NT(0)))
+      throw std::invalid_argument("MatsubaraQuadrature: reinit_finite_interval needs a positive cutoff.");
+
+    // Zero, like the T=0 rule: this replaces the sum by an integral, so there is no separate zero
+    // mode and sum_size() == size().
+    this->T = 0;
+    this->typical_E = cutoff;
+    m_size = (int)gl_nodes.size();
+
+    std::vector<NT> x(m_size, 0.);
+    std::vector<NT> w(m_size, 0.);
+    for (int i = 0; i < m_size; ++i) {
+      x[i] = cutoff * gl_nodes[i];
+      w[i] = cutoff * gl_weights[i] / NT(2 * M_PI);
+    }
+
+    write_data(x, w);
+  }
+
   template <typename NT> void MatsubaraQuadrature<NT>::build_monien()
   {
     // construct the recurrence relation for the quadrature rule from [1]

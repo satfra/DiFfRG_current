@@ -157,7 +157,14 @@ namespace DiFfRG
      * @brief Whether the caller has opened a DeferredMaps scope.
      */
     static bool deferral_enabled() { return deferral(); }
-    static void set_deferral(const bool enabled) { deferral() = enabled; }
+    static void set_deferral(const bool enabled)
+    {
+      deferral() = enabled;
+      // The scheduler splits a map that is flushed on return more aggressively than one inside a
+      // batch, because the ranks it leaves out have nothing else to pick up. See
+      // MapScheduler::set_batched().
+      MapScheduler::instance().set_batched(enabled);
+    }
 
   private:
     static std::vector<PendingCopy> &pending()

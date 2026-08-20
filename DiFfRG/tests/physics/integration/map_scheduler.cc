@@ -2,8 +2,10 @@
 #include <catch2/catch_all.hpp>
 
 #include <DiFfRG/common/init.hh>
+#include <DiFfRG/discretization/coordinates/coordinates.hh>
 #include <DiFfRG/physics/integration/map_scheduler.hh>
 
+#include <algorithm>
 #include <cstring>
 #include <numeric>
 #include <vector>
@@ -68,6 +70,15 @@ namespace
         raw.push_back(r.get());
     }
 
+    /// Stand in for opening (or not opening) a DeferredMaps scope around the batch. Production sets
+    /// this through MapCompletion::set_deferral(); the default is false, matching a model that maps
+    /// without a scope.
+    void set_batched(const bool batched)
+    {
+      for (auto &r : ranks)
+        r->set_batched(batched);
+    }
+
     void exchange()
     {
       for (auto *r : raw)
@@ -119,7 +130,7 @@ TEST_CASE("The split width follows the cost score", "[integration][mpi][schedule
   SECTION("p2_1ang (Q = 192, S = 12288) stays on one rank") { CHECK(owners_of(192, true) == 1); }
   SECTION("4D_2ang (Q = 1152, S = 73728) stays on one rank") { CHECK(owners_of(1152, true) == 1); }
   SECTION("4D_3ang (Q = 6912, S = 442368) spreads over 8") { CHECK(owners_of(6912, true) == 8); }
-  SECTION("a multi-dimensional grid is never split") { CHECK(owners_of(6912, false) == 1); }
+  SECTION("a coordinate system flagged unsplittable is assigned whole") { CHECK(owners_of(6912, false) == 1); }
 }
 
 TEST_CASE("Cheap flows spread across ranks instead of being chopped up", "[integration][mpi][scheduler]")
@@ -300,8 +311,10 @@ TEST_CASE("The split width follows the calling space's threshold", "[integration
 
   // No pinned override here: it would replace the per-space threshold, which is the thing under
   // test. The targets below therefore stand in for what map_target<ExecutionSpace>() returns.
+  // Batched, because the *fill* threshold is only what a map inside a batch is measured against.
   auto width = [&](const MapTarget target) {
     Cluster cluster(n_ranks, 0.);
+    cluster.set_batched(true);
     std::vector<double> sink(G, 0.);
     uint owners = 0;
     for (uint p = 0; p < n_ranks; ++p)
@@ -311,4 +324,100 @@ TEST_CASE("The split width follows the calling space's threshold", "[integration
 
   CHECK(width(MapTarget{MapResource::device, 5e4}) == 8u);   // 442368 / 5e4 = 8
   CHECK(width(MapTarget{MapResource::host, 5e5}) == 1u);     // 442368 / 5e5 < 1
+}
+
+TEST_CASE("An unbatched map is split wider than a batched one", "[integration][mpi][scheduler]")
+{
+  // The fill threshold answers "is this rank's share big enough to occupy it?", and holding back
+  // below it is right only while the ranks left out are about to be taken by the *other* maps in
+  // the batch. Outside a DeferredMaps scope there are none: map() flushes on return, so every rank
+  // that owns no slice sits in the Allgatherv until the owners are done. There the threshold that
+  // applies is the launch cost, not the fill.
+  constexpr uint n_ranks = 8;
+  constexpr size_t G = 64, Q = 192; // S = 12288, i.e. below a 5e4 fill threshold
+
+  auto width = [&](const bool batched, const double pinned) {
+    Cluster cluster(n_ranks, pinned);
+    cluster.set_batched(batched);
+    std::vector<double> sink(G, 0.);
+    uint owners = 0;
+    for (uint p = 0; p < n_ranks; ++p)
+      if (cluster.raw[p]->schedule(0, sink.data(), sizeof(double), G, Q, true, MapTarget{MapResource::host, 5e4})
+              .count > 0)
+        ++owners;
+    return owners;
+  };
+
+  // Batched: below the fill threshold, so assigned whole -- the packing spreads a block of cheap
+  // flows across ranks instead of slivering each one, which is the behaviour worth keeping.
+  CHECK(width(true, 0.) == 1u);
+  // Unbatched: 12288 / 1024 = 12, clamped to the 8 ranks available.
+  CHECK(width(false, 0.) == 8u);
+  // A pinned DIFFRG_MAP_QUANTUM means the user chose the width; both cases must respect it.
+  CHECK(width(true, 5e4) == 1u);
+  CHECK(width(false, 5e4) == 1u);
+}
+
+TEST_CASE("Multi-dimensional grids split, and the slices reproduce the base positions",
+          "[integration][mpi][scheduler]")
+{
+  // Splitting used to be restricted to dim == 1 because SubCoordinates derived a per-axis *box*,
+  // which is the same set of points as a linear range only in one dimension. The expensive flows
+  // are exactly the multi-angle ones, so that restriction pinned them to a single rank at any rank
+  // count. This is the end-to-end property that restriction existed to avoid violating: the union
+  // of the slices is the whole grid, the slices are disjoint, and the position a rank computes for
+  // its s-th point is the *identical* double the unsplit run computes for that global point.
+  const uint n_ranks = GENERATE(2u, 3u, 4u, 5u, 8u, 16u);
+
+  // A quantum of 1 makes every map split as wide as it is allowed to, so the width is decided by
+  // min(n_ranks, G) alone and the assertions do not depend on any threshold.
+  auto check_grid = [&](const auto &base) {
+    const size_t G = base.size();
+    Cluster cluster(n_ranks, 1.);
+    std::vector<double> sink(G, 0.);
+
+    std::vector<size_t> coverage(G, 0);
+    uint owners = 0;
+    for (uint p = 0; p < n_ranks; ++p) {
+      const MapSlice sl = cluster.raw[p]->schedule(0, sink.data(), sizeof(double), G, 1, true, QUANTUM);
+      if (sl.count == 0) continue;
+      ++owners;
+
+      const SubCoordinates window(base, sl.offset, sl.count);
+      REQUIRE(window.size() == sl.count);
+      // The variadic forward() used to be ill-formed on instantiation (a braced-init-list cannot
+      // deduce the array overload's element type), so nothing had ever called it. Pin it here.
+      CHECK(device::apply([&](const auto &...ix) { return window.forward(ix...); }, window.from_linear_index(0)) ==
+            window.forward(window.from_linear_index(0)));
+      for (size_t i = 0; i < sl.count; ++i) {
+        const auto here = window.forward(window.from_linear_index(i));
+        const auto there = base.forward(base.from_linear_index(sl.offset + i));
+        // Bitwise, not approximate: forward() is an fp64 transform and the whole distribution
+        // guarantee is that a rank computes the same number for a point as a serial run does.
+        INFO("slice at " << sl.offset << ", point " << i);
+        CHECK(std::memcmp(&here, &there, sizeof(here)) == 0);
+        coverage[sl.offset + i] += 1;
+      }
+    }
+
+    // It really was split, rather than passing vacuously on one rank owning everything.
+    CHECK(owners == std::min<uint>(n_ranks, uint(G)));
+    // Every point computed exactly once: no gaps and no two ranks writing the same destination.
+    for (size_t i = 0; i < G; ++i)
+      CHECK(coverage[i] == 1);
+  };
+
+  // Extents chosen so the linear range never lines up with an axis boundary: 35 and 36 share no
+  // factor with most of the rank counts above, and neither grid is square, so a row/column mix-up
+  // cannot pass by symmetry.
+  SECTION("dim == 2")
+  {
+    check_grid(CoordinatePackND(LinearCoordinates1D<double>(7, 0.5, 3.5), LinearCoordinates1D<double>(5, -1., 2.)));
+  }
+
+  SECTION("dim == 3")
+  {
+    check_grid(CoordinatePackND(LinearCoordinates1D<double>(4, 0., 1.), LinearCoordinates1D<double>(3, 1., 2.),
+                                LinearCoordinates1D<double>(3, -1., 1.)));
+  }
 }

@@ -39,6 +39,23 @@ namespace DiFfRG
       using Mesh = Mesh_;
       static constexpr uint dim = Mesh::dim;
 
+      // LDG is deliberately excluded from the distributed policy, so it fixes serial linear
+      // algebra above rather than taking VectorType_/SparseMatrixType_ parameters. Three things
+      // block it, all structural: DoFRenumbering::component_wise assumes globally contiguous
+      // per-component blocks, which a parallel DoFHandler destroys (it renumbers per rank), and
+      // the BlockSparsityPattern sizing depends on that; the LDG jacobian does sparse
+      // matrix-matrix products, for which dealii::SparseMatrix::mmult has no PETSc analogue in
+      // the same API; and the component mass matrix is factorised with SparseDirectUMFPACK.
+      //
+      // Serial vectors on a *partitioned* mesh would still compile, and would only fail later
+      // and obscurely -- setup_dofs calls the std::vector overload of map_dofs_to_support_points,
+      // which deal.II documents as unsuitable for a parallel::TriangulationBase. Reject the
+      // combination here instead, where the message can name the cause.
+      static_assert(!Mesh::is_parallel,
+                    "LDG does not support a partitioned mesh. Use "
+                    "RectangularMesh<dim, dealii::Triangulation<dim>> (the default), or pick "
+                    "CG/DG/dDG/KT for a distributed run.");
+
       [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Discretization(
           Mesh &mesh, DiFfRG::internal::LegacyDefaultLogPortArgument<Mesh, ConfigTree> config)
           : Discretization(mesh, config.value(), DiFfRG::internal::legacy_default_log_port<Mesh>())

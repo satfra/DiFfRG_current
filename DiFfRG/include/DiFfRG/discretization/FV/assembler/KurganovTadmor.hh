@@ -574,7 +574,7 @@ namespace DiFfRG
             : discretization(discretization), model(model), log_port(std::move(log_port)),
               dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
               triangulation(discretization.get_triangulation()), config(config), fe(discretization.get_fe()),
-              mesh_workers(config.get_uint("/discretization/mesh_workers", 8)),
+              mesh_workers(config.get_uint("/discretization/mesh_workers", 0)),
               batch_size(config.get_uint("/discretization/batch_size", 16)),
               EoM_cell(*(dof_handler.active_cell_iterators().end())),
               old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
@@ -583,6 +583,12 @@ namespace DiFfRG
               quadrature_face(1 + config.get_uint("/discretization/overintegration", 0)),
               diagnose_flux_conditioning(config.get_bool("/discretization/diagnose_flux_conditioning", false))
         {
+          // Zero means "derive it from the thread count", and that is the default: mesh_workers is
+          // mesh_loop's queue_length, i.e. the cap on work items in flight, so a fixed constant is a
+          // ceiling on one machine and oversubscription on another. It used to default to 8, which is
+          // only the right answer at 16 threads -- below that it exceeds the thread count (integrators
+          // nest TBB work inside the cell workers, so the queue must stay under it), and above that it
+          // silently caps assembly parallelism no matter how many threads were asked for.
           if (this->mesh_workers == 0) this->mesh_workers = std::max(1u, dealii::MultithreadInfo::n_threads() / 2);
           log_port.info("FV: Using {} mesh workers for assembly.", mesh_workers);
 

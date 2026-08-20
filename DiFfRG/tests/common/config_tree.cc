@@ -108,6 +108,31 @@ TEST_CASE("ConfigTree::get_double accepts integer entries", "[config][common]")
   REQUIRE(config.get_double("/c", 3.0) == Catch::Approx(3.0));
 }
 
+TEST_CASE("ConfigTree integer getters accept values stored as unsigned", "[config][common]")
+{
+  // boost::json keeps a C++ `unsigned` in its uint64 arm and an `int` in its int64 arm, and
+  // as_int64() throws on the uint64 arm. get_uint -- the accessor that exists precisely for
+  // unsigned values -- therefore used to be unable to read one, and get_int with it. A config
+  // parsed from a file never hit this; one built in C++ from unsigned values always did, and it
+  // failed quietly, because get_uint_or_warn catches the exception and returns its default. The
+  // caller then silently ran with the default instead of the value it had set.
+  const ConfigTree config = boost::json::value(
+      {{"unsigned_value", 4u}, {"signed_value", 4}, {"negative", -1}, {"text", "no"}});
+
+  REQUIRE(config.get_uint("/unsigned_value") == 4u);
+  REQUIRE(config.get_uint("/signed_value") == 4u);
+  REQUIRE(config.get_int("/unsigned_value") == 4);
+
+  // The fallback getters must see the value, not their default -- this is the quiet failure.
+  REQUIRE(config.get_uint_or_warn("/unsigned_value", 99u) == 4u);
+  REQUIRE(config.get_int_or_warn("/unsigned_value", 99) == 4);
+
+  // Widening the accepted arm must not weaken the existing checks.
+  REQUIRE_THROWS_AS(config.get_uint("/negative"), std::runtime_error);
+  REQUIRE_THROWS_AS(config.get_uint("/text"), std::runtime_error);
+  REQUIRE_THROWS_AS(config.get_int("/text"), std::runtime_error);
+}
+
 TEST_CASE("ConfigTree writes TOML that reads back identically", "[config][common][toml]")
 {
   const auto config = ConfigTree::from_json_string(json_document);

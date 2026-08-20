@@ -1,10 +1,12 @@
 // standard library
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <mutex>
 #include <ostream>
 #include <set>
@@ -144,10 +146,35 @@ namespace DiFfRG
     }
   }
 
+  namespace internal
+  {
+    /**
+     * @brief Read an integer regardless of which arm boost::json stored it in.
+     *
+     * boost::json keeps a signed C++ integer as int64 and an unsigned one as uint64, and
+     * `as_int64()` throws on the uint64 arm. A config parsed from a file therefore reads fine
+     * while the same config built in C++ from an `unsigned` does not -- which made get_uint, the
+     * accessor that exists precisely for unsigned values, unable to read them. The failure is
+     * quiet where it matters: get_uint_or_warn catches the exception and falls back to its
+     * default, so a caller silently gets the default value instead of the one it set.
+     * as_double_relaxed above already handles both arms; these did not.
+     */
+    std::int64_t as_int64_relaxed(const boost::json::value &v)
+    {
+      if (v.is_uint64()) {
+        const auto u = v.get_uint64();
+        if (u > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
+          throw std::runtime_error("value does not fit in a signed 64-bit integer");
+        return static_cast<std::int64_t>(u);
+      }
+      return v.as_int64();
+    }
+  } // namespace internal
+
   int ConfigTree::get_int(const std::string &key) const
   {
     try {
-      return value.at_pointer(key).as_int64();
+      return internal::as_int64_relaxed(value.at_pointer(key));
     } catch (const std::exception &e) {
       throw std::runtime_error("ConfigTree::get_int error: " + std::string(e.what()) + "\n  At Key: " + key);
     }
@@ -155,16 +182,19 @@ namespace DiFfRG
 
   uint ConfigTree::get_uint(const std::string &key) const
   {
-    int val;
+    std::int64_t val;
     try {
-      val = value.at_pointer(key).as_int64();
+      val = internal::as_int64_relaxed(value.at_pointer(key));
     } catch (const std::exception &e) {
       throw std::runtime_error("ConfigTree::get_uint error: " + std::string(e.what()) + "\n  At Key: " + key);
     }
     if (val < 0)
       throw std::runtime_error("ConfigTree::get_uint: value at key '" + key + "' is negative (" + std::to_string(val) +
                                ")");
-    return val;
+    if (static_cast<std::uint64_t>(val) > std::numeric_limits<uint>::max())
+      throw std::runtime_error("ConfigTree::get_uint: value at key '" + key + "' (" + std::to_string(val) +
+                               ") does not fit in an unsigned int");
+    return static_cast<uint>(val);
   }
 
   std::string ConfigTree::get_string(const std::string &key) const
@@ -196,8 +226,12 @@ namespace DiFfRG
 
   int ConfigTree::get_int(const std::string &key, const int def) const
   {
+    // as_int64_relaxed, not as_int64: this overload swallows the exception and returns def, so
+    // reading the wrong boost::json arm here is not an error the caller ever sees -- it is a
+    // silent substitution of the default for the value they set. get_*_or_warn delegates here,
+    // so this is the path that actually bites.
     try {
-      return value.at_pointer(key).as_int64();
+      return internal::as_int64_relaxed(value.at_pointer(key));
     } catch (const std::exception &e) {
       return def;
     }
@@ -205,9 +239,12 @@ namespace DiFfRG
 
   uint ConfigTree::get_uint(const std::string &key, const uint def) const
   {
+    // See the note on get_int(key, def) above.
     try {
-      const int val = value.at_pointer(key).as_int64();
-      return val >= 0 ? val : throw std::runtime_error("Value is negative");
+      const std::int64_t val = internal::as_int64_relaxed(value.at_pointer(key));
+      if (val < 0 || static_cast<std::uint64_t>(val) > std::numeric_limits<uint>::max())
+        throw std::runtime_error("value is negative or does not fit in an unsigned int");
+      return static_cast<uint>(val);
     } catch (const std::exception &e) {
       return def;
     }

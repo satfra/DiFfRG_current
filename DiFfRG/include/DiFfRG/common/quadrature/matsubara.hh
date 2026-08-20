@@ -120,6 +120,36 @@ namespace DiFfRG
     void reinit_exact_sum(const NT T, const NT freq_cutoff);
 
     /**
+     * @brief Gauss-Legendre over the FINITE interval the summand actually lives on.
+     *
+     * The third rule, for a summand of finite extent in a regime where the sum may still be
+     * replaced by an integral (`typical_E / T` large). The T=0 rule reaches that regime by the
+     * tangent map `p0 = E tan(theta)`, which is built to cover an algebraic `1/p0^2` tail out to
+     * ~1e15 E -- and for a summand that is identically zero past `R = sqrt(x_extent) k` that is a
+     * poor use of nodes twice over: only `atan(R/E) / (pi/2) = 57%` of the theta range carries any
+     * integrand at all (28 of 64 nodes evaluate an exact zero), and the ones that are wasted are
+     * the HEAVY ones, since the tangent map's weights `~ 1/cos^2(theta)` grow towards the end it is
+     * throwing away. It also converges badly, being asked to resolve a near-discontinuity at the
+     * support edge with the ~36 nodes that remain.
+     *
+     * Over `[-R, R]` there is no tail to cover, so plain Gauss-Legendre is both cheaper and more
+     * accurate, and the frequency direction becomes just another radial direction: for a 4D
+     * regulator `p0` and `|q|` enter the support on the same footing, which is why the natural
+     * order for this rule is the SPATIAL `x_order` rather than `vacuum_quad_size`.
+     *
+     * Caller convention as in sum(): \f$\sum_i w_i (f(x_i)+f(-x_i)) = \frac{1}{2\pi}\int_{-R}^{R} f\,dp_0\f$,
+     * i.e. \f$x_i = R u_i\f$ and \f$w_i = R v_i / 2\pi\f$ for Gauss-Legendre nodes/weights
+     * \f$(u_i, v_i)\f$ on [0,1]. No zero mode: like the T=0 rule this integrates rather than sums.
+     *
+     * @param cutoff The frequency R beyond which the summand vanishes. Must be positive.
+     * @param gl_nodes Gauss-Legendre nodes on [0,1] -- passed in so the (cached) rule is not
+     * rebuilt for every cutoff; only the scaling depends on R.
+     * @param gl_weights The matching weights, summing to 1.
+     */
+    void reinit_finite_interval(const NT cutoff, const Kokkos::View<const NT *, CPU_memory> gl_nodes,
+                                const Kokkos::View<const NT *, CPU_memory> gl_weights);
+
+    /**
      * @brief Get the size of the quadrature rule, NOT counting the zero mode.
      */
     size_t size() const;
