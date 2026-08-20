@@ -13,12 +13,11 @@
 // Choices for types
 using Model = ON_finiteT_KT;
 constexpr uint dim = Model::dim;
-using Discretization = FV::Discretization<Model::Components, double, RectangularMesh<dim>>;
+using Discretization = FV::Discretization<Model, RectangularMesh<dim>>;
 using VectorType = typename Discretization::VectorType;
-using SparseMatrixType = typename Discretization::SparseMatrixType;
 using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
 using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor>;
-using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
+using TimeStepper = TimeStepperSUNDIALS_IDA<Assembler>;
 
 int main(int argc, char *argv[])
 {

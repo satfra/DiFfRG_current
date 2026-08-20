@@ -239,10 +239,10 @@ namespace
     }
   };
 
-  template <int dim, template <typename, typename, typename> typename DiscretizationTemplate, typename Model>
+  template <int dim, template <typename...> typename DiscretizationTemplate, typename Model>
   void check_raw_potential_is_scalar_cg2(const Model &model, const int fe_order)
   {
-    using Discretization = DiscretizationTemplate<typename Model::Components, double, RectangularMesh<dim>>;
+    using Discretization = DiscretizationTemplate<Model, RectangularMesh<dim>>;
 
     auto json = make_json(fe_order);
     RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
@@ -262,13 +262,13 @@ namespace
     CHECK(raw.finite_element->conforms(FiniteElementData<dim>::H1));
   }
 
-  template <int dim, template <typename, typename, typename> typename DiscretizationTemplate, typename Model>
+  template <int dim, template <typename...> typename DiscretizationTemplate, typename Model>
   auto reconstruct_with_potential_with_model(const Model &model, const int fe_order,
                                              const double smoothing_length = -1., const uint refinement = 0,
                                              const std::optional<Point<dim>> &initial_guess = std::nullopt)
   {
     using NumberType = double;
-    using Discretization = DiscretizationTemplate<typename Model::Components, NumberType, RectangularMesh<dim>>;
+    using Discretization = DiscretizationTemplate<Model, RectangularMesh<dim>, NumberType>;
     using VectorType = typename Discretization::VectorType;
 
     setup_logger();
@@ -293,7 +293,7 @@ namespace
         [&](const auto &p, const auto &) { return p; }, EoM_config, initial_guess);
   }
 
-  template <int dim, template <typename, typename, typename> typename DiscretizationTemplate, typename Model>
+  template <int dim, template <typename...> typename DiscretizationTemplate, typename Model>
   Point<dim> reconstruct_minimum_with_model(const Model &model, const int fe_order, const double smoothing_length = -1.,
                                             const uint refinement = 0,
                                             const std::optional<Point<dim>> &initial_guess = std::nullopt)
@@ -303,7 +303,7 @@ namespace
         .point;
   }
 
-  template <int dim, template <typename, typename, typename> typename DiscretizationTemplate>
+  template <int dim, template <typename...> typename DiscretizationTemplate>
   Point<dim> reconstruct_minimum(const Testing::PhysicalParameters &prm, const int fe_order,
                                  const double smoothing_length = -1., const uint refinement = 0)
   {
@@ -378,7 +378,7 @@ TEST_CASE("Detailed EoM reconstruction owns the scalar potential and its gauge",
     }();
 
     using Model = Testing::ModelConstant<dim, dim>;
-    using Discretization = CG::Discretization<typename Model::Components, double, RectangularMesh<dim>>;
+    using Discretization = CG::Discretization<Model, RectangularMesh<dim>>;
 
     auto json = make_json(2);
     Model model(parameters_with_minimum(expected));
@@ -426,7 +426,7 @@ TEST_CASE("Raw potential evaluation stays independent of the EoM used to select 
 {
   constexpr uint dim = 1;
   using Model = ModelAffineEoM<dim>;
-  using Discretization = CG::Discretization<typename Model::Components, double, RectangularMesh<dim>>;
+  using Discretization = CG::Discretization<Model, RectangularMesh<dim>>;
 
   setup_logger();
   auto json = make_json(2);
@@ -470,7 +470,7 @@ TEST_CASE("Origin-centred FV vacuum keeps the diquark EoM near zero and its raw 
 {
   constexpr uint dim = 2;
   using Model = QMDVacuumModel;
-  using Discretization = FV::Discretization<typename Model::Components, double, RectangularMesh<dim>>;
+  using Discretization = FV::Discretization<Model, RectangularMesh<dim>>;
 
   setup_logger();
   auto json = make_json(0);
@@ -706,7 +706,7 @@ TEST_CASE("CG2 EoM potential refinement handles indefinite and singular Hessians
   CHECK_FALSE(DiFfRG::internal::projected_newton_direction<dim>(non_finite_hessian, gradient, free, direction));
 
   using Model = ModelAffineEoM<dim>;
-  using Discretization = CG::Discretization<typename Model::Components, double, RectangularMesh<dim>>;
+  using Discretization = CG::Discretization<Model, RectangularMesh<dim>>;
   const Point<dim> saddle(0.437, 0.583);
   const Model model(saddle, {{{1., 0.}, {0., -1.}}});
   auto json = make_json(2);
@@ -975,12 +975,12 @@ TEST_CASE("EoM configuration provides validated typed defaults", "[discretizatio
   CHECK(from_default_json.max_backtracks == defaults.max_backtracks);
 
   const ConfigTree custom_json = json::value({{"discretization",
-                                              {{"EoM_abs_tol", 1e-9},
-                                               {"EoM_max_iter", 17},
-                                               {"EoM_smoothing_length", 0.25},
-                                               {"EoM_bound_tolerance", 1e-10},
-                                               {"EoM_armijo_coefficient", 1e-3},
-                                               {"EoM_max_backtracks", 12}}}});
+                                               {{"EoM_abs_tol", 1e-9},
+                                                {"EoM_max_iter", 17},
+                                                {"EoM_smoothing_length", 0.25},
+                                                {"EoM_bound_tolerance", 1e-10},
+                                                {"EoM_armijo_coefficient", 1e-3},
+                                                {"EoM_max_backtracks", 12}}}});
   const Config::EoMConfig from_custom_json(custom_json);
   CHECK(from_custom_json.abs_tol == 1e-9);
   CHECK(from_custom_json.max_iter == 17);
@@ -1161,7 +1161,7 @@ TEST_CASE("EoM max-iteration zero keeps the origin bypass", "[discretization][Eo
 {
   constexpr uint dim = 2;
   using Model = Testing::ModelConstant<dim, dim>;
-  using Discretization = CG::Discretization<typename Model::Components, double, RectangularMesh<dim>>;
+  using Discretization = CG::Discretization<Model, RectangularMesh<dim>>;
 
   setup_logger();
 

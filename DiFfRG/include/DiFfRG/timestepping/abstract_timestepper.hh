@@ -1,7 +1,7 @@
 #pragma once
 
 // DiFfRG
-#include <DiFfRG/common/types.hh>
+#include <DiFfRG/common/linear_algebra.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>

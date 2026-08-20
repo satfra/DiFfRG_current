@@ -52,14 +52,14 @@ namespace
   using NumberType = double;
   using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">, Scalar<"v">>;
   using Components = ComponentDescriptor<FEFunctionDesc>;
-  using Mesh = RectangularMesh<dim>;
-  using Discretization = FV::Discretization<Components, NumberType, Mesh>;
+  using Mesh = RectangularMeshSerial<dim>;
+  using Discretization = FV::Discretization<Components, Mesh, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
   using Assembler =
       FV::KurganovTadmor::Assembler<Discretization, class ManufacturedAdvectionDiffusion2DModel, Reconstructor>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA<Discretization>;
 
   class ManufacturedAdvectionDiffusion2DModel
       : public def::AbstractModel<ManufacturedAdvectionDiffusion2DModel, Components>,

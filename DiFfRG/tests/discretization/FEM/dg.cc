@@ -22,9 +22,9 @@ TEST_CASE("Test DG on Constant model", "[discretization][dg]")
   constexpr uint dim = 1;
   using Model = Testing::ModelConstant<dim>;
   using NumberType = double;
-  using Discretization = DG::Discretization<typename Model::Components, NumberType, RectangularMesh<dim>>;
+  using Discretization = DG::Discretization<Model, RectangularMesh<dim>, NumberType>;
   using VectorType = typename Discretization::VectorType;
-  using Assembler = DG::Assembler<Discretization, Model>;
+  using Assembler = DG::Assembler<Discretization>;
 
   ConfigTree json = json::value(
       {{"physical", {}},

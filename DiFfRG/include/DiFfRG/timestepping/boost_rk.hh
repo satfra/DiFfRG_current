@@ -5,8 +5,8 @@
 #include <boost/numeric/odeint/external/eigen/eigen.hpp>
 
 // DiFfRG
+#include <DiFfRG/common/linear_algebra.hh>
 #include <DiFfRG/common/math.hh>
-#include <DiFfRG/common/types.hh>
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/common/abstract_data.hh>
@@ -34,7 +34,7 @@ namespace DiFfRG
    *
    */
   template <typename VectorType, typename SparseMatrixType, uint dim, int prec>
-  class TimeStepperBoostRK : public AbstractTimestepper<VectorType, SparseMatrixType, dim>
+  class TimeStepperBoostRK_impl : public AbstractTimestepper<VectorType, SparseMatrixType, dim>
   {
     using Base = AbstractTimestepper<VectorType, SparseMatrixType, dim>;
 
@@ -47,8 +47,8 @@ namespace DiFfRG
     /// Forwards to the base with this stepper's kind. Not `using Base::Base;`: the base needs to
     /// know which /timestepping/ section to read, and it cannot ask a virtual function for that
     /// from inside its own constructor.
-    TimeStepperBoostRK(const ConfigTree &config, AbstractAssembler<VectorType, SparseMatrixType, dim> *assembler,
-                       OutputSession<dim, VectorType> *data_out, AbstractAdaptor<VectorType> *adaptor = nullptr)
+    TimeStepperBoostRK_impl(const ConfigTree &config, AbstractAssembler<VectorType, SparseMatrixType, dim> *assembler,
+                            OutputSession<dim, VectorType> *data_out, AbstractAdaptor<VectorType> *adaptor = nullptr)
         : Base(config, assembler, data_out, adaptor, /*implicit=*/false, /*explicit=*/true)
     {
     }
@@ -63,30 +63,31 @@ namespace DiFfRG
     virtual void run(AbstractFlowingVariables<NumberType, VectorType> *initial_condition, const double t_start,
                      const double t_stop) override;
 
-
   private:
     void run(VectorType &initial_data, const double t_start, const double t_stop);
     void run(BlockVectorType &initial_data, const double t_start, const double t_stop);
     void run_vars(VectorType &initial_data, const double t_start, const double t_stop);
   };
 
-  /**
-   * @brief A class to perform time stepping using the adaptive Boost Cash-Karp54 method.
-   *
-   * @tparam VectorType Type of the vector
-   * @tparam dim Dimension of the problem
-   */
-  template <typename VectorType, typename SparseMatrixType = dealii::SparseMatrix<get_type::NumberType<VectorType>>,
-            uint dim = 0>
-  using TimeStepperBoostRK54 = TimeStepperBoostRK<VectorType, SparseMatrixType, dim, 0>;
+  // ##############################################################################
+  // Application-facing spelling
+  // ##############################################################################
+  //
+  // The class above takes the linear algebra spelled out because it is compiled out of line: the
+  // set of valid arguments is closed by the explicit instantiations in src/. Applications name the
+  // assembler instead and let these aliases project it onto that fixed parameter list.
+  //
+  // The argument is anything exposing VectorType, SparseMatrixType and dim -- an Assembler, or a
+  // Discretization where the assembler type is not a single type (e.g. a test that runs one
+  // discretization against several models).
 
-  /**
-   * @brief A class to perform time stepping using the adaptive Boost Fehlberg78 method.
-   *
-   * @tparam VectorType Type of the vector
-   * @tparam dim Dimension of the problem
-   */
-  template <typename VectorType, typename SparseMatrixType = dealii::SparseMatrix<get_type::NumberType<VectorType>>,
-            uint dim = 0>
-  using TimeStepperBoostRK78 = TimeStepperBoostRK<VectorType, SparseMatrixType, dim, 1>;
+  template <typename Assembler, int prec>
+  using TimeStepperBoostRK = TimeStepperBoostRK_impl<typename Assembler::VectorType,
+                                                     typename Assembler::SparseMatrixType, Assembler::dim, prec>;
+
+  /// Time stepping with the adaptive Boost Cash-Karp54 method.
+  template <typename Assembler> using TimeStepperBoostRK54 = TimeStepperBoostRK<Assembler, 0>;
+
+  /// Time stepping with the adaptive Boost Fehlberg78 method.
+  template <typename Assembler> using TimeStepperBoostRK78 = TimeStepperBoostRK<Assembler, 1>;
 } // namespace DiFfRG

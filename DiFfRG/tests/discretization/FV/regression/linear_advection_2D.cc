@@ -56,13 +56,13 @@ namespace
   using NumberType = double;
   using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">>;
   using Components = ComponentDescriptor<FEFunctionDesc>;
-  using Mesh = RectangularMesh<dim>;
-  using Discretization = FV::Discretization<Components, NumberType, Mesh>;
+  using Mesh = RectangularMeshSerial<dim>;
+  using Discretization = FV::Discretization<Components, Mesh, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, class LinearAdvection2DModel, Reconstructor>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA<Assembler>;
 
   class LinearAdvection2DModel : public def::AbstractModel<LinearAdvection2DModel, Components>,
                                  public def::Time,

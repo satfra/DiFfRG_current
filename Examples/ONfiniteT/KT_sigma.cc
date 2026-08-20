@@ -14,13 +14,12 @@
 // Choices for types
 using Model = ON_finiteT_KT_sigma;
 constexpr uint dim = Model::dim;
-using Discretization = FV::Discretization<Model::Components, double, RectangularMesh<dim>>;
+using Discretization = FV::Discretization<Model, RectangularMesh<dim>>;
 using VectorType = typename Discretization::VectorType;
-using SparseMatrixType = typename Discretization::SparseMatrixType;
 using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
 using WaveSpeed = FV::KurganovTadmor::MaxEigenvalueWaveSpeed;
 using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor, WaveSpeed>;
-using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
+using TimeStepper = TimeStepperSUNDIALS_IDA<Assembler>;
 
 int main(int argc, char *argv[])
 {
@@ -50,7 +49,7 @@ int main(int argc, char *argv[])
   {
     const auto &support_points = discretization.get_support_points();
     auto &u = initial_condition.data().block(0);
-    const double dx = 1.16e-3;  // matches parameter_sigma.json grid step
+    const double dx = 1.16e-3; // matches parameter_sigma.json grid step
     const double m2 = -0.1, lam = 71.6;
     auto V = [&](double s) { return 0.5 * m2 * s * s + (lam / 8.0) * s * s * s * s; };
     for (unsigned int i = 0; i < u.size(); ++i) {

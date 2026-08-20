@@ -30,7 +30,11 @@ namespace
            {"EoM_max_iter", 0},
            {"grid", {{"x_grid", "0:1:1"}, {"y_grid", "0:1:1"}, {"z_grid", "0:1:1"}, {"refine", 0}}},
            {"adaptivity",
-            {{"start_adapt_at", 0.}, {"adapt_dt", 1.0}, {"level", 0}, {"refine_percent", 0.0}, {"coarsen_percent", 0.0}}}}},
+            {{"start_adapt_at", 0.},
+             {"adapt_dt", 1.0},
+             {"level", 0},
+             {"refine_percent", 0.0},
+             {"coarsen_percent", 0.0}}}}},
          {"output", {{"live_plot", false}, {"verbosity", 0}}}});
   }
 
@@ -81,8 +85,8 @@ namespace
     return index_set;
   }
 
-  using TwoDimensionalComponents = DiFfRG::ComponentDescriptor<DiFfRG::FEFunctionDescriptor<DiFfRG::Scalar<"u">,
-                                                                                            DiFfRG::Scalar<"v">>>;
+  using TwoDimensionalComponents =
+      DiFfRG::ComponentDescriptor<DiFfRG::FEFunctionDescriptor<DiFfRG::Scalar<"u">, DiFfRG::Scalar<"v">>>;
   using ReversedTwoDimensionalComponents =
       DiFfRG::ComponentDescriptor<DiFfRG::FEFunctionDescriptor<DiFfRG::Scalar<"v">, DiFfRG::Scalar<"u">>>;
   using SingleUTwoDimensionalComponents =
@@ -106,9 +110,8 @@ namespace
     static double signed_coordinate(const dealii::Point<2> &point) { return point[1]; }
   };
 
-  struct ULineTieConstraintModel
-      : DiFfRG::def::AbstractModel<ULineTieConstraintModel, SingleUTwoDimensionalComponents>,
-        DiFfRG::def::ConstrainOriginSupportPointToZero<"u", ULineTieConstraintModel> {
+  struct ULineTieConstraintModel : DiFfRG::def::AbstractModel<ULineTieConstraintModel, SingleUTwoDimensionalComponents>,
+                                   DiFfRG::def::ConstrainOriginSupportPointToZero<"u", ULineTieConstraintModel> {
     template <DiFfRG::FixedString component_name> struct OriginConstraintCoordinate;
   };
 
@@ -156,7 +159,7 @@ TEST_CASE("Affine-constraint metadata captures interior support points for scala
   constexpr uint dim = 1;
   using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">>;
   using Components = ComponentDescriptor<FEFunctionDesc>;
-  using Discretization = CG::Discretization<Components, double, RectangularMesh<dim>>;
+  using Discretization = CG::Discretization<Components, RectangularMesh<dim>>;
 
   auto json = make_json();
   ensure_logger();
@@ -181,7 +184,7 @@ TEST_CASE("Affine-constraint context exposes named component views", "[discretiz
   constexpr uint dim = 1;
   using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">, Scalar<"v">>;
   using Components = ComponentDescriptor<FEFunctionDesc>;
-  using Discretization = CG::Discretization<Components, double, RectangularMesh<dim>>;
+  using Discretization = CG::Discretization<Components, RectangularMesh<dim>>;
 
   auto json = make_json();
   ensure_logger();
@@ -263,7 +266,8 @@ TEST_CASE("ConstrainOriginSupportPointToZero chooses the nearest support dof whe
   component_support_dofs[0].compress();
 
   const std::vector<std::vector<Point<dim>>> component_boundary_points{{Point<dim>(1.5)}};
-  const std::vector<std::vector<Point<dim>>> component_support_points{{Point<dim>(-0.25), Point<dim>(0.75), Point<dim>(1.5)}};
+  const std::vector<std::vector<Point<dim>>> component_support_points{
+      {Point<dim>(-0.25), Point<dim>(0.75), Point<dim>(1.5)}};
   const AffineConstraintContext<Components, dim> context(component_boundary_dofs, component_boundary_points,
                                                          component_support_dofs, component_support_points);
 
@@ -308,8 +312,7 @@ TEST_CASE("ConstrainOriginSupportPointToZero prefers the non-negative side on sy
   CHECK(constraints.get_inhomogeneity(9) == Catch::Approx(0.0));
 }
 
-TEST_CASE("ConstrainOriginBoundaryPointToZero chooses only from boundary dofs",
-          "[discretization][constraints]")
+TEST_CASE("ConstrainOriginBoundaryPointToZero chooses only from boundary dofs", "[discretization][constraints]")
 {
   using namespace DiFfRG;
 
@@ -347,8 +350,7 @@ TEST_CASE("ConstrainOriginBoundaryPointToZero chooses only from boundary dofs",
   CHECK(constraints.get_inhomogeneity(6) == Catch::Approx(0.0));
 }
 
-TEST_CASE("ConstrainOriginSupportPointToZero selects the nearest phi_1 line in 2D",
-          "[discretization][constraints]")
+TEST_CASE("ConstrainOriginSupportPointToZero selects the nearest phi_1 line in 2D", "[discretization][constraints]")
 {
   using namespace DiFfRG;
 
@@ -357,20 +359,14 @@ TEST_CASE("ConstrainOriginSupportPointToZero selects the nearest phi_1 line in 2
   using Components = ComponentDescriptor<FEFunctionDesc>;
 
   std::vector<IndexSet> component_boundary_dofs(2, IndexSet(128));
-  std::vector<IndexSet> component_support_dofs{make_index_set({1, 2, 3, 4, 5, 6, 7}),
-                                               make_index_set({21, 22, 23})};
+  std::vector<IndexSet> component_support_dofs{make_index_set({1, 2, 3, 4, 5, 6, 7}), make_index_set({21, 22, 23})};
   for (auto &index_set : component_boundary_dofs)
     index_set.compress();
 
   const std::vector<std::vector<Point<dim>>> component_boundary_points(2);
   const std::vector<std::vector<Point<dim>>> component_support_points{
-      {Point<dim>(-0.25, -1.0),
-       Point<dim>(-0.25, 0.0),
-       Point<dim>(-0.25, 1.0),
-       Point<dim>(0.25, -1.0),
-       Point<dim>(0.25, 0.0),
-       Point<dim>(0.25, 1.0),
-       Point<dim>(0.75, 0.0)},
+      {Point<dim>(-0.25, -1.0), Point<dim>(-0.25, 0.0), Point<dim>(-0.25, 1.0), Point<dim>(0.25, -1.0),
+       Point<dim>(0.25, 0.0), Point<dim>(0.25, 1.0), Point<dim>(0.75, 0.0)},
       {Point<dim>(0.0, -1.0), Point<dim>(0.0, 0.0), Point<dim>(0.0, 1.0)}};
   const AffineConstraintContext<Components, dim> context(component_boundary_dofs, component_boundary_points,
                                                          component_support_dofs, component_support_points);
@@ -395,8 +391,7 @@ TEST_CASE("ConstrainOriginSupportPointToZero selects the nearest phi_1 line in 2
   CHECK(constraints.get_inhomogeneity(6) == Catch::Approx(0.0));
 }
 
-TEST_CASE("ConstrainOriginSupportPointToZero selects the nearest phi_2 line in 2D",
-          "[discretization][constraints]")
+TEST_CASE("ConstrainOriginSupportPointToZero selects the nearest phi_2 line in 2D", "[discretization][constraints]")
 {
   using namespace DiFfRG;
 
@@ -405,21 +400,15 @@ TEST_CASE("ConstrainOriginSupportPointToZero selects the nearest phi_2 line in 2
   using Components = ComponentDescriptor<FEFunctionDesc>;
 
   std::vector<IndexSet> component_boundary_dofs(2, IndexSet(128));
-  std::vector<IndexSet> component_support_dofs{make_index_set({1, 2, 3}),
-                                               make_index_set({21, 22, 23, 24, 25, 26, 27})};
+  std::vector<IndexSet> component_support_dofs{make_index_set({1, 2, 3}), make_index_set({21, 22, 23, 24, 25, 26, 27})};
   for (auto &index_set : component_boundary_dofs)
     index_set.compress();
 
   const std::vector<std::vector<Point<dim>>> component_boundary_points(2);
   const std::vector<std::vector<Point<dim>>> component_support_points{
       {Point<dim>(-1.0, 0.0), Point<dim>(0.0, 0.0), Point<dim>(1.0, 0.0)},
-      {Point<dim>(-1.0, -0.1),
-       Point<dim>(0.0, -0.1),
-       Point<dim>(1.0, -0.1),
-       Point<dim>(-1.0, 0.1),
-       Point<dim>(0.0, 0.1),
-       Point<dim>(1.0, 0.1),
-       Point<dim>(0.0, 0.4)}};
+      {Point<dim>(-1.0, -0.1), Point<dim>(0.0, -0.1), Point<dim>(1.0, -0.1), Point<dim>(-1.0, 0.1),
+       Point<dim>(0.0, 0.1), Point<dim>(1.0, 0.1), Point<dim>(0.0, 0.4)}};
   const AffineConstraintContext<Components, dim> context(component_boundary_dofs, component_boundary_points,
                                                          component_support_dofs, component_support_points);
 
@@ -473,8 +462,7 @@ TEST_CASE("ConstrainOriginSupportPointToZero prefers the non-negative side on 2D
   CHECK(constraints.is_constrained(6));
 }
 
-TEST_CASE("ConstrainOriginBoundaryPointToZero selects the nearest boundary line in 2D",
-          "[discretization][constraints]")
+TEST_CASE("ConstrainOriginBoundaryPointToZero selects the nearest boundary line in 2D", "[discretization][constraints]")
 {
   using namespace DiFfRG;
 
@@ -487,12 +475,9 @@ TEST_CASE("ConstrainOriginBoundaryPointToZero selects the nearest boundary line 
 
   const std::vector<std::vector<Point<dim>>> component_boundary_points{
       {Point<dim>(0.2, -1.0), Point<dim>(0.2, 0.0), Point<dim>(0.2, 1.0), Point<dim>(0.8, 0.0)}};
-  const std::vector<std::vector<Point<dim>>> component_support_points{{Point<dim>(0.0, -1.0),
-                                                                       Point<dim>(0.0, 1.0),
-                                                                       Point<dim>(0.2, -1.0),
-                                                                       Point<dim>(0.2, 0.0),
-                                                                       Point<dim>(0.2, 1.0),
-                                                                       Point<dim>(0.8, 0.0)}};
+  const std::vector<std::vector<Point<dim>>> component_support_points{{Point<dim>(0.0, -1.0), Point<dim>(0.0, 1.0),
+                                                                       Point<dim>(0.2, -1.0), Point<dim>(0.2, 0.0),
+                                                                       Point<dim>(0.2, 1.0), Point<dim>(0.8, 0.0)}};
   const AffineConstraintContext<Components, dim> context(component_boundary_dofs, component_boundary_points,
                                                          component_support_dofs, component_support_points);
 
@@ -519,8 +504,7 @@ TEST_CASE("ConstrainOriginSupportPointToZero uses explicit 2D coordinate policie
   using Components = ComponentDescriptor<FEFunctionDesc>;
 
   std::vector<IndexSet> component_boundary_dofs(2, IndexSet(128));
-  std::vector<IndexSet> component_support_dofs{make_index_set({1, 2, 3, 4}),
-                                               make_index_set({21, 22, 23, 24})};
+  std::vector<IndexSet> component_support_dofs{make_index_set({1, 2, 3, 4}), make_index_set({21, 22, 23, 24})};
   for (auto &index_set : component_boundary_dofs)
     index_set.compress();
 

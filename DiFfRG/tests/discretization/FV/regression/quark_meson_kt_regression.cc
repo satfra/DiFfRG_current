@@ -99,14 +99,14 @@ namespace
   using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">>;
   using Components = ComponentDescriptor<FEFunctionDesc>;
   using NumberType = double;
-  using Mesh = RectangularMesh<dim>;
-  using Discretization = FV::Discretization<Components, NumberType, Mesh>;
+  using Mesh = RectangularMeshSerial<dim>;
+  using Discretization = FV::Discretization<Components, Mesh, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
   template <typename Model>
   using ExactJacobianAssembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor>;
-  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
+  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<Discretization>;
 
   double grid_spacing() { return delta_sigma; }
 
@@ -373,7 +373,7 @@ namespace
 
   template <typename Case>
   ConfigTree make_json(const double final_time, const double output_dt = 2.0e-2, const double explicit_dt = 1.0e-8,
-                      const double explicit_abs_tol = 1.0e-14, const double explicit_rel_tol = 1.0e-14)
+                       const double explicit_abs_tol = 1.0e-14, const double explicit_rel_tol = 1.0e-14)
   {
     return json::value(
         {{"physical", {{"Lambda", Case::lambda_uv}, {"cSigma", PaperSharedParameters::cSigma}}},

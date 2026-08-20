@@ -34,14 +34,15 @@
 #include <tbb/tbb.h>
 
 #include <DiFfRG/common/utils.hh>
-#include <DiFfRG/physics/integration/map_scheduler.hh>
-#include <DiFfRG/discretization/common/la_policy.hh>
 #include <DiFfRG/discretization/FV/reconstructor/advection/first_order_reconstructor.hh>
 #include <DiFfRG/discretization/FV/reconstructor/advection/tvd_reconstructor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
 #include <DiFfRG/discretization/common/eom.hh>
+#include <DiFfRG/discretization/common/la_policy.hh>
+#include <DiFfRG/physics/integration/map_scheduler.hh>
 
+#include <DiFfRG/common/linear_algebra.hh>
 #include <DiFfRG/discretization/FV/assembler/assembly_context.hh>
 #include <DiFfRG/discretization/FV/assembler/flux_jacobian_hessian.hh>
 #include <DiFfRG/discretization/FV/assembler/flux_ties.hh>
@@ -488,7 +489,13 @@ namespace DiFfRG
 
       } // namespace internal
 
-      template <typename Discretization_, typename Model_,
+      // Model_ keeps its second place and merely gains a default, rather than moving to the end.
+      // Moving it would let an application that names a Reconstructor drop it, but it would also
+      // force every *model-generic* discretization -- one Discretization built from a bare
+      // ComponentDescriptor and shared across several models, which is how most of the regression
+      // tests are written -- to spell out all four preceding arguments to reach the model.
+      template <typename Discretization_,
+                typename Model_ = typename DiFfRG::internal::assembler_model_of<Discretization_>::type,
                 def::HasReconstructor Reconstructor_ =
                     def::TVDReconstructor<Discretization_::dim, def::MinModLimiter, double>,
                 def::HasWaveSpeed WaveSpeedStrategy_ = MaxEigenvalueWaveSpeed,
@@ -527,7 +534,7 @@ namespace DiFfRG
         using JacobianReconstructor = JacobianReconstructor_;
         using NumberType = typename Discretization::NumberType;
         using VectorType = typename Discretization::VectorType;
-      using SparseMatrixType = typename Discretization::SparseMatrixType;
+        using SparseMatrixType = typename Discretization::SparseMatrixType;
 
         using Components = typename Discretization::Components;
         static constexpr uint dim = Discretization::dim;
@@ -623,7 +630,8 @@ namespace DiFfRG
         {
           ComponentMask component_mask(model.template differential_components<dim>());
           // See FEMAssembler::get_differential_indices for why this is restricted to owned rows.
-          return restrict_to_owned<VectorType>(DoFTools::extract_dofs(dof_handler, component_mask), discretization.get_locally_owned_dofs());
+          return restrict_to_owned<VectorType>(DoFTools::extract_dofs(dof_handler, component_mask),
+                                               discretization.get_locally_owned_dofs());
         }
 
         virtual void attach_data_output(OutputFrame<dim, VectorType> &data_out, const VectorType &solution,
@@ -663,8 +671,11 @@ namespace DiFfRG
           {
             DynamicSparsityPattern dsp(discretization.get_locally_relevant_dofs());
             DoFTools::make_sparsity_pattern(dof_handler, dsp, constraints, /*keep_constrained_dofs = */ true);
-            finalize_la_sparsity<SparseMatrixType>(dsp, sparsity_pattern_mass, discretization.get_locally_owned_dofs(), discretization.get_locally_relevant_dofs(), discretization.get_communicator());
-            reinit_la_matrix(mass_matrix, sparsity_pattern_mass, discretization.get_locally_owned_dofs(), discretization.get_communicator());
+            finalize_la_sparsity<SparseMatrixType>(dsp, sparsity_pattern_mass, discretization.get_locally_owned_dofs(),
+                                                   discretization.get_locally_relevant_dofs(),
+                                                   discretization.get_communicator());
+            reinit_la_matrix(mass_matrix, sparsity_pattern_mass, discretization.get_locally_owned_dofs(),
+                             discretization.get_communicator());
             MatrixCreator::create_mass_matrix(dof_handler, quadrature, mass_matrix,
                                               static_cast<Function<dim, NumberType> *>(nullptr), constraints);
           }
@@ -904,11 +915,11 @@ namespace DiFfRG
           const NoMapsHere no_maps_during_assembly;
           MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
                                 copy_data, flags, nullptr, nullptr, mesh_workers, batch_size);
-                                // Resolve contributions this rank made to rows it does not own. A partition-boundary
-                                // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
-                                // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
-                                // arrive here. A no-op for the serial types.
-                                mass.compress(dealii::VectorOperation::add);
+          // Resolve contributions this rank made to rows it does not own. A partition-boundary
+          // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
+          // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
+          // arrive here. A no-op for the serial types.
+          mass.compress(dealii::VectorOperation::add);
         }
 
         using CellData = internal::CellData<dim, NumberType, n_components>;
@@ -1643,11 +1654,11 @@ namespace DiFfRG
           const NoMapsHere no_maps_during_assembly;
           MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
                                 copy_data, flags, boundary_worker, face_worker, mesh_workers, batch_size);
-                                // Resolve contributions this rank made to rows it does not own. A partition-boundary
-                                // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
-                                // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
-                                // arrive here. A no-op for the serial types.
-                                residual.compress(dealii::VectorOperation::add);
+          // Resolve contributions this rank made to rows it does not own. A partition-boundary
+          // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
+          // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
+          // arrive here. A no-op for the serial types.
+          residual.compress(dealii::VectorOperation::add);
           timings_residual.push_back(timer.wall_time());
         }
 
@@ -1700,11 +1711,11 @@ namespace DiFfRG
           const NoMapsHere no_maps_during_assembly;
           MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
                                 copy_data, flags, nullptr, nullptr, mesh_workers, batch_size);
-                                // Resolve contributions this rank made to rows it does not own. A partition-boundary
-                                // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
-                                // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
-                                // arrive here. A no-op for the serial types.
-                                jacobian.compress(dealii::VectorOperation::add);
+          // Resolve contributions this rank made to rows it does not own. A partition-boundary
+          // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
+          // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
+          // arrive here. A no-op for the serial types.
+          jacobian.compress(dealii::VectorOperation::add);
           timings_jacobian.push_back(timer.wall_time());
         }
 
@@ -2048,11 +2059,11 @@ namespace DiFfRG
           const NoMapsHere no_maps_during_assembly;
           MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
                                 copy_data, flags, boundary_worker, face_worker, mesh_workers, batch_size);
-                                // Resolve contributions this rank made to rows it does not own. A partition-boundary
-                                // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
-                                // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
-                                // arrive here. A no-op for the serial types.
-                                jacobian.compress(dealii::VectorOperation::add);
+          // Resolve contributions this rank made to rows it does not own. A partition-boundary
+          // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
+          // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
+          // arrive here. A no-op for the serial types.
+          jacobian.compress(dealii::VectorOperation::add);
           timings_jacobian.push_back(timer.wall_time());
         }
 
@@ -2142,8 +2153,8 @@ namespace DiFfRG
           sort_unique_dofs(dependencies.from_dofs);
         }
 
-        void build_sparsity(get_type::SparsityPattern<SparseMatrixType> &sparsity_pattern, const DoFHandler<dim> &to_dofh,
-                            const DoFHandler<dim> &from_dofh, const int stencil = 2,
+        void build_sparsity(get_type::SparsityPattern<SparseMatrixType> &sparsity_pattern,
+                            const DoFHandler<dim> &to_dofh, const DoFHandler<dim> &from_dofh, const int stencil = 2,
                             [[maybe_unused]] bool add_extractor_dofs = false) const
         {
           const auto &triangulation = discretization.get_triangulation();
@@ -2195,7 +2206,9 @@ namespace DiFfRG
 
           // if (add_extractor_dofs)
           //   throw std::runtime_error("Extractor dofs are not yet supported in the Kurganov-Tadmor assembler.");
-          finalize_la_sparsity<SparseMatrixType>(dsp, sparsity_pattern, discretization.get_locally_owned_dofs(), discretization.get_locally_relevant_dofs(), discretization.get_communicator());
+          finalize_la_sparsity<SparseMatrixType>(dsp, sparsity_pattern, discretization.get_locally_owned_dofs(),
+                                                 discretization.get_locally_relevant_dofs(),
+                                                 discretization.get_communicator());
         }
 
         void build_cached_jacobian_sparsity(get_type::SparsityPattern<SparseMatrixType> &sparsity_pattern) const
@@ -2215,7 +2228,9 @@ namespace DiFfRG
                   if (row != numbers::invalid_dof_index && column != numbers::invalid_dof_index) dsp.add(row, column);
             }
           }
-          finalize_la_sparsity<SparseMatrixType>(dsp, sparsity_pattern, discretization.get_locally_owned_dofs(), discretization.get_locally_relevant_dofs(), discretization.get_communicator());
+          finalize_la_sparsity<SparseMatrixType>(dsp, sparsity_pattern, discretization.get_locally_owned_dofs(),
+                                                 discretization.get_locally_relevant_dofs(),
+                                                 discretization.get_communicator());
         }
 
         void fill_boundary_topology(internal::BoundaryStencilTopologyData<dim, n_components> &boundary_topology,

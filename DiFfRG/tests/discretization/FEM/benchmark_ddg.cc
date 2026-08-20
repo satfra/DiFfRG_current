@@ -24,9 +24,9 @@ TEST_CASE("Benchmark dDG Constant", "[benchmark][ddg]")
   constexpr uint dim = 1;
   using Model = Testing::ModelConstant<dim>;
   using NumberType = double;
-  using Discretization = DG::Discretization<typename Model::Components, NumberType, RectangularMesh<dim>>;
+  using Discretization = DG::Discretization<Model, RectangularMesh<dim>, NumberType>;
   using VectorType = typename Discretization::VectorType;
-  using Assembler = dDG::Assembler<Discretization, Model>;
+  using Assembler = dDG::Assembler<Discretization>;
 
   const int fe_order = GENERATE(0, 1, 3, 5);
 

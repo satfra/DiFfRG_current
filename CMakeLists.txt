@@ -973,9 +973,25 @@ option(BUILD_PETSC "Build PETSc (distributed linear algebra and solvers)" ${MPI}
 option(PETSC_GMRES
        "PETSc with hypre -> PreconditionBoomerAMG for Krylov solves (no Fortran required)"
        ON)
+# MUMPS defaults to ON under MPI so that a distributed run keeps the *direct* solve a serial
+# run has: DefaultLinearSolver picks PETScDirect where deal.II reports MUMPS, and falls back to
+# the iterative PETScKrylov where it does not. That fallback changes the character of the solve,
+# which a fine-tuned flow can notice, so the default is worth the build time -- and MUMPS is the
+# bulk of it (it pulls the ScaLAPACK chain and needs Fortran). Turning it off is supported and
+# only costs the direct solver.
+#
+# It is a hard error only when asked for explicitly. Defaulted on and unbuildable, it degrades to
+# PETSC_GMRES with a warning, so a machine without MPI Fortran can still configure.
+if(NOT DEFINED PETSC_MUMPS_WAS_DEFAULTED)
+  if(DEFINED PETSC_MUMPS)
+    set(PETSC_MUMPS_WAS_DEFAULTED FALSE CACHE INTERNAL "PETSC_MUMPS was set explicitly")
+  else()
+    set(PETSC_MUMPS_WAS_DEFAULTED TRUE CACHE INTERNAL "PETSC_MUMPS came from the MPI default")
+  endif()
+endif()
 option(PETSC_MUMPS
        "PETSc with MUMPS -> SparseDirectMUMPS distributed direct solves (requires Fortran; long build)"
-       OFF)
+       ${MPI})
 
 if(BUILD_PETSC)
   if(NOT MPI)
@@ -985,18 +1001,48 @@ if(BUILD_PETSC)
         "over the existing UMFPACK path. Set -DMPI=ON for distributed linear algebra.")
   endif()
 
-  # MUMPS' PETSc recipe raises a hard error without an F90 compiler, so resolve one
-  # up front rather than failing 20 minutes into the build.
+  # MUMPS' PETSc recipe raises a hard error without an F90 compiler, so resolve one up front
+  # rather than failing 20 minutes into the build. Both probes live here, in the superbuild:
+  # dependencies/petsc/CMakeLists.txt needs an MPI Fortran *wrapper* as well, and it runs inside
+  # the ExternalProject configure step with LOG_CONFIGURE ON, so a failure there lands in a log
+  # file rather than on the terminal.
   set(_petsc_fc "${CMAKE_Fortran_COMPILER}")
   if(NOT _petsc_fc)
     find_program(_petsc_fc NAMES gfortran flang f95)
   endif()
-  if(PETSC_MUMPS AND NOT _petsc_fc)
-    message(
-      FATAL_ERROR
-        "PETSC_MUMPS=ON but no Fortran compiler was found. MUMPS cannot be built "
-        "without one. Install gfortran/flang, or use -DPETSC_MUMPS=OFF and rely on "
-        "PETSC_GMRES (hypre/BoomerAMG), which needs no Fortran.")
+
+  set(_mumps_viable TRUE)
+  set(_mumps_why "")
+  if(NOT _petsc_fc)
+    set(_mumps_viable FALSE)
+    set(_mumps_why "no Fortran compiler (gfortran/flang/f95) was found")
+  endif()
+  if(MPI)
+    find_program(_petsc_mpifc NAMES mpifort mpif90)
+    if(NOT _petsc_mpifc)
+      set(_mumps_viable FALSE)
+      set(_mumps_why "no MPI Fortran wrapper (mpifort/mpif90) was found on PATH")
+    endif()
+  endif()
+
+  if(PETSC_MUMPS AND NOT _mumps_viable)
+    if(PETSC_MUMPS_WAS_DEFAULTED)
+      message(
+        WARNING
+          "MUMPS was enabled by default because MPI=ON, but ${_mumps_why}. Falling back to the "
+          "hypre/BoomerAMG Krylov path. Distributed runs will use PETScKrylov instead of "
+          "PETScDirect, which is iterative rather than direct. Install your MPI's Fortran "
+          "support and reconfigure in a fresh build directory to get MUMPS, or pass "
+          "-DPETSC_MUMPS=ON explicitly to make this a hard error instead.")
+      set(PETSC_MUMPS OFF CACHE BOOL "" FORCE)
+      set(PETSC_GMRES ON CACHE BOOL "" FORCE)
+    else()
+      message(
+        FATAL_ERROR
+          "PETSC_MUMPS=ON was requested explicitly, but ${_mumps_why}. Install gfortran/flang "
+          "and your MPI's Fortran wrapper, or use -DPETSC_MUMPS=OFF and rely on PETSC_GMRES "
+          "(hypre/BoomerAMG), which needs no Fortran.")
+    endif()
   endif()
 
   # Bound PETSc's own make the same way deal.II's build is bounded: never a bare -j.

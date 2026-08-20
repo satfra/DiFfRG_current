@@ -8,6 +8,7 @@
 #include <deal.II/lac/vector.h>
 
 // DiFfRG
+#include <DiFfRG/common/linear_algebra.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/common/abstract_data.hh>
 #include <DiFfRG/discretization/common/la_policy.hh>
@@ -105,8 +106,8 @@ namespace DiFfRG
      * @tparam Discretization Spatial Discretization used in the system
      */
     template <typename Discretization>
-    class FlowingVariables : public AbstractFlowingVariables<typename Discretization::NumberType,
-                                                             typename Discretization::VectorType>
+    class FlowingVariables
+        : public AbstractFlowingVariables<typename Discretization::NumberType, typename Discretization::VectorType>
     {
     public:
       using NumberType = typename Discretization::NumberType;
@@ -186,8 +187,8 @@ namespace DiFfRG
      * integrates the model's pointwise initial condition over each active cell.
      */
     template <typename Discretization>
-    class FlowingVariables : public AbstractFlowingVariables<typename Discretization::NumberType,
-                                                             typename Discretization::VectorType>
+    class FlowingVariables
+        : public AbstractFlowingVariables<typename Discretization::NumberType, typename Discretization::VectorType>
     {
     public:
       using NumberType = typename Discretization::NumberType;

@@ -24,9 +24,9 @@ TEST_CASE("Benchmark LDG Constant", "[benchmark][ldg]")
   constexpr uint dim = 1;
   using Model = Testing::LDGModelConstant<dim>;
   using NumberType = double;
-  using Discretization = LDG::Discretization<typename Model::Components, NumberType, RectangularMesh<dim>>;
+  using Discretization = LDG::Discretization<Model, RectangularMeshSerial<dim>, NumberType>;
   using VectorType = typename Discretization::VectorType;
-  using Assembler = LDG::Assembler<Discretization, Model>;
+  using Assembler = LDG::Assembler<Discretization>;
 
   const int fe_order = GENERATE(0, 1, 3, 5);
 
@@ -71,7 +71,7 @@ TEST_CASE("Benchmark LDG Constant", "[benchmark][ldg]")
   std::string label = "LDG p=" + std::to_string(fe_order);
 
   Model model(p_prm);
-  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  RectangularMeshSerial<dim> mesh{Config::ConfigurationMesh<dim>(json)};
   Discretization discretization(mesh, json, DiFfRG::LogPort{});
   Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
 

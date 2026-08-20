@@ -6,11 +6,10 @@ using namespace DiFfRG;
 // Choices for types
 using Model = ON_finiteT;
 constexpr uint dim = Model::dim;
-using Discretization = CG::Discretization<Model::Components, double, RectangularMesh<dim>>;
+using Discretization = CG::Discretization<Model, RectangularMesh<dim>>;
 using VectorType = typename Discretization::VectorType;
-using SparseMatrixType = typename Discretization::SparseMatrixType;
-using Assembler = CG::Assembler<Discretization, Model>;
-using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
+using Assembler = CG::Assembler<Discretization>;
+using TimeStepper = TimeStepperSUNDIALS_IDA<Assembler>;
 
 int main(int argc, char *argv[])
 {

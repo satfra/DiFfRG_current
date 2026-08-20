@@ -13,9 +13,11 @@
 
 // DiFfRG
 #include <DiFfRG/common/eigen.hh>
+#include <DiFfRG/common/mpi.hh>
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
+#include <DiFfRG/discretization/common/la_policy.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/timestepping/linear_solver/GMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/PETScDirect.hh>
@@ -23,8 +25,6 @@
 #include <DiFfRG/timestepping/linear_solver/ScaledGMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/UMFPack.hh>
 #include <DiFfRG/timestepping/sundials_diagnostics.hh>
-#include <DiFfRG/common/mpi.hh>
-#include <DiFfRG/discretization/common/la_policy.hh>
 #include <DiFfRG/timestepping/sundials_ida.hh>
 
 namespace DiFfRG
@@ -243,7 +243,7 @@ namespace DiFfRG
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver>
-  void TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, LinearSolver>::run(
+  void TimeStepperSUNDIALS_IDA_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(
       AbstractFlowingVariables<NumberType, VectorType> *initial_condition, const double t_start, const double t_stop)
   {
     this->data_out = this->get_data_out();
@@ -262,9 +262,9 @@ namespace DiFfRG
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver>
-  void TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, LinearSolver>::run(VectorType &initial_data,
-                                                                                     const double t_start,
-                                                                                     const double t_stop)
+  void TimeStepperSUNDIALS_IDA_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(VectorType &initial_data,
+                                                                                          const double t_start,
+                                                                                          const double t_stop)
   {
     // Start by setting up all needed matrices, i.e. jacobian, inverse of jacobian and the mass matrix (with two
     // sparsity patterns)
@@ -315,14 +315,10 @@ namespace DiFfRG
       return false;
     };
 
-    time_stepper.differential_components = [&]() {
-      return assembler->get_differential_indices();
-    };
+    time_stepper.differential_components = [&]() { return assembler->get_differential_indices(); };
 
     // Called whenever a vector needs to initalized
-    time_stepper.reinit_vector = [&](VectorType &v) {
-      assembler->reinit_vector(v);
-    };
+    time_stepper.reinit_vector = [&](VectorType &v) { assembler->reinit_vector(v); };
 
     // Fully-replicated read-only views for the output path; see SolutionView.
     SolutionView<VectorType> sol_view, sol_dot_view, residual_view;
@@ -349,9 +345,9 @@ namespace DiFfRG
                                    unsigned int /*step_number*/) {
       if (!is_close(last_save, t, 1e-10)) {
         assembler->set_time(t);
-      // Refreshed here, OUTSIDE write_frame: refreshing a ghosted replica communicates, while
-      // write_frame runs its contributor on rank 0 only. Doing it inside would have rank 0 enter a
-      // collective the other ranks never reach.
+        // Refreshed here, OUTSIDE write_frame: refreshing a ghosted replica communicates, while
+        // write_frame runs its contributor on rank 0 only. Doing it inside would have rank 0 enter a
+        // collective the other ranks never reach.
         sol_view.refresh(sol);
         sol_dot_view.refresh(sol_dot);
         residual_view.refresh(*residual);
@@ -551,9 +547,9 @@ namespace DiFfRG
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver>
-  void TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, LinearSolver>::run(BlockVectorType &initial_data,
-                                                                                     const double t_start,
-                                                                                     const double t_stop)
+  void TimeStepperSUNDIALS_IDA_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(BlockVectorType &initial_data,
+                                                                                          const double t_start,
+                                                                                          const double t_stop)
   {
     if (initial_data.n_blocks() != 2)
       throw std::runtime_error("TimeStepperSUNDIALS_ARKode_vars::run: y must have two blocks!");
@@ -659,9 +655,9 @@ namespace DiFfRG
                                    unsigned int /*step_number*/) {
       if (!is_close(last_save, t, 1e-10)) {
         assembler->set_time(t);
-      // Refreshed here, OUTSIDE write_frame: refreshing a ghosted replica communicates, while
-      // write_frame runs its contributor on rank 0 only. Doing it inside would have rank 0 enter a
-      // collective the other ranks never reach.
+        // Refreshed here, OUTSIDE write_frame: refreshing a ghosted replica communicates, while
+        // write_frame runs its contributor on rank 0 only. Doing it inside would have rank 0 enter a
+        // collective the other ranks never reach.
         sol_view.refresh(sol.block(0));
         vars_view.refresh(sol.block(1));
         sol_dot_view.refresh(sol_dot.block(0));
@@ -716,8 +712,9 @@ namespace DiFfRG
         y_state.refresh(y.block(0));
         y_dot_state.refresh(y_dot.block(0));
         y_vars_state.refresh(y.block(1));
-        compute_variables_into(res.block(1), vars_scratch,
-                               [&](VectorType &out) { assembler->residual_variables(out, y_vars_state.get(), y_state.get()); });
+        compute_variables_into(res.block(1), vars_scratch, [&](VectorType &out) {
+          assembler->residual_variables(out, y_vars_state.get(), y_state.get());
+        });
         assembler->residual(res.block(0), y_state.get(), 1., y_dot_state.get(), 1., y_vars_state.get());
         res.block(1) += y_dot.block(1);
         residual = &res;
@@ -865,8 +862,7 @@ namespace DiFfRG
         }
 
         const auto sol_iterations = linSolver.solve(src.block(0), dst.block(0), tol);
-        dense_vmult_variables(variable_jacobian_inverse, dst.block(1), src.block(1),
-                              assembler->get_communicator());
+        dense_vmult_variables(variable_jacobian_inverse, dst.block(1), src.block(1), assembler->get_communicator());
         if (!is_finite_vector(dst)) {
           callback_diagnostics.linear_solver_failures++;
           ++failure_counter;
@@ -908,12 +904,13 @@ namespace DiFfRG
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver>
-  void TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, LinearSolver>::run_vars(VectorType &initial_data,
-                                                                                          const double t_start,
-                                                                                          const double t_stop)
+  void TimeStepperSUNDIALS_IDA_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run_vars(VectorType &initial_data,
+                                                                                               const double t_start,
+                                                                                               const double t_stop)
   {
     if (initial_data.size() == 0)
-      throw std::runtime_error("TimeStepperSUNDIALS_IDA::run: y contains no variables, use a different timestepper!");
+      throw std::runtime_error(
+          "TimeStepperSUNDIALS_IDA_impl::run: y contains no variables, use a different timestepper!");
     // Start by setting up all needed matrices, i.e. jacobian, inverse of jacobian and the mass matrix (with two
     // sparsity patterns)
     const uint n_vars = initial_data.size();
@@ -1157,73 +1154,77 @@ namespace DiFfRG
   }
 } // namespace DiFfRG
 
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 0,
-                                               DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
-                                               DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
-                                               DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
-                                               DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 0,
+                                                    DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                                    DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                                    DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                                    DiFfRG::UMFPack>;
 
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
-                                               DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
-                                               DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
-                                               DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
-                                               DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
+                                                    DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                                    DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                                    DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                                    DiFfRG::UMFPack>;
 
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 0, DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 1, DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 2, DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 3, DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 0,
+                                                    DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                                    DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                                    DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                                    DiFfRG::GMRES>;
 
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 0,
-                                               DiFfRG::ScaledUMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
-                                               DiFfRG::ScaledUMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
-                                               DiFfRG::ScaledUMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
-                                               DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 0,
+                                                    DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                                    DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                                    DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                                    DiFfRG::ScaledUMFPack>;
 
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
-                                               DiFfRG::ScaledUMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
-                                               DiFfRG::ScaledUMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
-                                               DiFfRG::ScaledUMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
-                                               DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
+                                                    DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                                    DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                                    DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                                    DiFfRG::ScaledUMFPack>;
 
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 0,
-                                               DiFfRG::ScaledGMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
-                                               DiFfRG::ScaledGMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
-                                               DiFfRG::ScaledGMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
-                                               DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 0,
+                                                    DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                                    DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                                    DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                                    DiFfRG::ScaledGMRES>;
 
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
-                                               DiFfRG::ScaledGMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
-                                               DiFfRG::ScaledGMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
-                                               DiFfRG::ScaledGMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
-                                               DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
+                                                    DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                                    DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                                    DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                                    DiFfRG::ScaledGMRES>;
 
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
-                                               DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
-                                               DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
-                                               DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
-                                               DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
+                                                    DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                                    DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                                    DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                                    DiFfRG::GMRES>;
 
 // ##############################################################################
 // Distributed (PETSc-backed) instantiations
@@ -1250,10 +1251,56 @@ template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::B
 // variables and has no FE space to distribute.
 
 #ifdef DEAL_II_WITH_PETSC
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::PETScWrappers::MPI::Vector,
-                                               dealii::PETScWrappers::MPI::SparseMatrix, 1, DiFfRG::PETScKrylov>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::PETScWrappers::MPI::Vector,
-                                               dealii::PETScWrappers::MPI::SparseMatrix, 2, DiFfRG::PETScKrylov>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::PETScWrappers::MPI::Vector,
-                                               dealii::PETScWrappers::MPI::SparseMatrix, 3, DiFfRG::PETScKrylov>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::PETScWrappers::MPI::Vector,
+                                                    dealii::PETScWrappers::MPI::SparseMatrix, 1, DiFfRG::PETScKrylov>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::PETScWrappers::MPI::Vector,
+                                                    dealii::PETScWrappers::MPI::SparseMatrix, 2, DiFfRG::PETScKrylov>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::PETScWrappers::MPI::Vector,
+                                                    dealii::PETScWrappers::MPI::SparseMatrix, 3, DiFfRG::PETScKrylov>;
+#endif
+
+// The default-solver spelling. DefaultLinearSolver is deliberately an indirect alias and so
+// stays a distinct template argument from UMFPack on every compiler, which means
+// TimeStepper<Assembler> needs its own instantiations alongside TimeStepper<Assembler, UMFPack>.
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 0,
+                                                    DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                                    DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                                    DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                                    DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
+                                                    DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                                    DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                                    DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                                    DiFfRG::DefaultLinearSolver>;
+
+// ##############################################################################
+// Distributed instantiations for the default solver
+// ##############################################################################
+//
+// An MPI build's default mesh is partitioned and its default linear algebra is PETSc-backed, so
+// TimeStepperSUNDIALS_IDA<Assembler> resolves here rather than to any of the serial rows above.
+// PETScDirect is instantiated in its own right as well: DefaultLinearSolver names it where PETSc
+// was built with MUMPS, but an application may also ask for it explicitly.
+#ifdef DEAL_II_WITH_PETSC
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 1, DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 2, DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 3, DiFfRG::DefaultLinearSolver>;
+
+#ifdef DEAL_II_PETSC_WITH_MUMPS
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::PETScWrappers::MPI::Vector,
+                                                    dealii::PETScWrappers::MPI::SparseMatrix, 1, DiFfRG::PETScDirect>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::PETScWrappers::MPI::Vector,
+                                                    dealii::PETScWrappers::MPI::SparseMatrix, 2, DiFfRG::PETScDirect>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::PETScWrappers::MPI::Vector,
+                                                    dealii::PETScWrappers::MPI::SparseMatrix, 3, DiFfRG::PETScDirect>;
+#endif
 #endif

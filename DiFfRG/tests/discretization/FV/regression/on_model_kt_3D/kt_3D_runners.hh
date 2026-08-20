@@ -106,10 +106,9 @@ namespace on_kt_3D
   void run_flow_to_time_cg(const GridSettings &grid, const double target_time, const int threads = 1,
                            const int fe_order = 4, const double abs_tol = 1.0e-7, const double rel_tol = 1.0e-7)
   {
-    using CGDiscretization = CG::Discretization<Components, NumberType, Mesh>;
+    using CGDiscretization = CG::Discretization<Components, Mesh, NumberType>;
     using CGAssembler = CG::Assembler<CGDiscretization, ModelType>;
-    using CGTimeStepper = TimeStepperSUNDIALS_IDA<typename CGDiscretization::VectorType,
-                                                  typename CGDiscretization::SparseMatrixType, dim, UMFPack>;
+    using CGTimeStepper = TimeStepperSUNDIALS_IDA<CGDiscretization>;
 
     const ConfigTree json = make_json(threads, fe_order, /*x_order=*/32, abs_tol, rel_tol);
     ModelType model(json, grid);
@@ -163,10 +162,9 @@ namespace on_kt_3D
                                     const int threads = 1, const int fe_order = 4, const double abs_tol = 1.0e-7,
                                     const double rel_tol = 1.0e-7)
   {
-    using CGDiscretization = CG::Discretization<Components, NumberType, Mesh>;
+    using CGDiscretization = CG::Discretization<Components, Mesh, NumberType>;
     using CGAssembler = CG::Assembler<CGDiscretization, ModelType>;
-    using CGTimeStepper = TimeStepperSUNDIALS_IDA<typename CGDiscretization::VectorType,
-                                                  typename CGDiscretization::SparseMatrixType, dim, UMFPack>;
+    using CGTimeStepper = TimeStepperSUNDIALS_IDA<CGDiscretization>;
 
     const ConfigTree json = make_json(threads, fe_order, /*x_order=*/32, abs_tol, rel_tol);
     const std::size_t n_cells_in_grid = total_cells(subranges);

@@ -6,6 +6,7 @@
 #include <deal.II/lac/vector.h>
 
 // DiFfRG
+#include <DiFfRG/common/linear_algebra.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/data/fe_output.hh>
 
@@ -239,8 +240,8 @@ namespace DiFfRG
         }
       }
 
-      hdf5_output->stage_fe_frame(series_number, time, output_name, dim, data_filter.n_nodes(),
-                                  std::move(node_data), std::move(data_sets));
+      hdf5_output->stage_fe_frame(series_number, time, output_name, dim, data_filter.n_nodes(), std::move(node_data),
+                                  std::move(data_sets));
       // Under a session, HDF5Output::flush() runs the frame -- after the model's scalars and
       // maps have been staged too, so the whole frame is one open/write/flush/close. Standalone
       // there is nobody to do that, and the staged writes would be dropped at destruction.
@@ -326,7 +327,7 @@ namespace DiFfRG
   template <uint dim, typename VectorType>
   const DoFHandler<FEOutput<dim, VectorType>::safe_dim> &
   FEOutput<dim, VectorType>::prepare_output_vector(const DoFHandler<dim> &dof_handler, const VectorType &solution,
-                                                  OutputVectorType &target)
+                                                   OutputVectorType &target)
   {
     if constexpr (!is_distributed_la<VectorType>) {
       // Serial policy: exactly what this function always did -- take the source's layout, copy, and
@@ -342,7 +343,8 @@ namespace DiFfRG
           mirror_dofs.dof_handler->n_dofs() != dof_handler.n_dofs()) {
         mirror_dofs.dof_handler = std::make_unique<DoFHandler<safe_dim>>(mirror_triangulation);
         mirror_dofs.dof_handler->distribute_dofs(dof_handler.get_fe());
-        mirror_dofs.connection = mirror_triangulation.signals.any_change.connect([this]() { mirror_dofs.stale = true; });
+        mirror_dofs.connection =
+            mirror_triangulation.signals.any_change.connect([this]() { mirror_dofs.stale = true; });
 
         mirror_dofs.to_mirror.assign(dof_handler.n_dofs(), numbers::invalid_dof_index);
         std::vector<types::global_dof_index> source_indices, mirror_indices;

@@ -26,7 +26,7 @@ namespace DiFfRG
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver>
-  void TimeStepperSUNDIALS_IDA_BoostABM<VectorType, SparseMatrixType, dim, LinearSolver>::run(
+  void TimeStepperSUNDIALS_IDA_BoostABM_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(
       AbstractFlowingVariables<NumberType, VectorType> *initial_condition, const double t_start, const double t_stop)
   {
     this->data_out = this->get_data_out();
@@ -37,12 +37,12 @@ namespace DiFfRG
       run(full_data, t_start, t_stop);
     else
       throw std::runtime_error(
-          "TimeStepperSUNDIALS_IDA_BoostABM::run: initial condition must have exactly two blocks!");
+          "TimeStepperSUNDIALS_IDA_BoostABM_impl::run: initial condition must have exactly two blocks!");
   }
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver>
-  void TimeStepperSUNDIALS_IDA_BoostABM<VectorType, SparseMatrixType, dim, LinearSolver>::run(
+  void TimeStepperSUNDIALS_IDA_BoostABM_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(
       BlockVectorType &initial_data, const double t_start, const double t_stop)
   {
     if (initial_data.n_blocks() != 2)
@@ -173,7 +173,7 @@ namespace DiFfRG
       assembler->residual_variables(variable_dy_dealii, variable_y_dealii, spatial_y_dealii);
 
       if (!std::isfinite(variable_dy_dealii.l2_norm()))
-        throw std::runtime_error("TimeStepperBoostABM::run_vars: dy is not finite!");
+        throw std::runtime_error("TimeStepperBoostABM_impl::run_vars: dy is not finite!");
 
       dealii_to_eigen(variable_dy_dealii, dxdt);
       dxdt *= -1;
@@ -808,30 +808,46 @@ namespace DiFfRG
   }
 } // namespace DiFfRG
 
-template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
-                                                        DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
-                                                        DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
-                                                        DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                                             DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                                             DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                                             DiFfRG::UMFPack>;
 
-template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
-                                                        DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
-                                                        DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
-                                                        DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>,
+                                                             1, DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>,
+                                                             2, DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>,
+                                                             3, DiFfRG::UMFPack>;
 
-template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
-                                                        DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
-                                                        DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
-                                                        DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                                             DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                                             DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                                             DiFfRG::GMRES>;
 
-template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
-                                                        DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
-                                                        DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
-                                                        DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>,
+                                                             1, DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>,
+                                                             2, DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>,
+                                                             3, DiFfRG::GMRES>;
+
+// The default-solver spelling. DefaultLinearSolver is deliberately an indirect alias and so
+// stays a distinct template argument from UMFPack on every compiler, which means
+// TimeStepper<Assembler> needs its own instantiations alongside TimeStepper<Assembler, UMFPack>.
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                                             DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                                             DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                                             DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>,
+                                                             1, DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>,
+                                                             2, DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostABM_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>,
+                                                             3, DiFfRG::DefaultLinearSolver>;

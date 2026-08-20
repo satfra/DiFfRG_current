@@ -778,7 +778,7 @@ static typename DoFHandler::active_cell_iterator find_2d_non_corner_boundary_cel
 TEST_CASE("KT 1D FV readouts use EoM potential reconstruction and write a time series", "[FV][KT][EoM][output]")
 {
   using Model = DiFfRG::Testing::ModelBurgersKT<1>;
-  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<1>>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -849,7 +849,7 @@ TEST_CASE("KT 1D FV readouts use EoM potential reconstruction and write a time s
 TEST_CASE("KT reconstruction cache recomputes cell stencil values per solution", "[FV][KT][cache]")
 {
   using Model = ResidualContributionModel;
-  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<1>>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -908,7 +908,7 @@ TEST_CASE("KT reconstruction cache recomputes cell stencil values per solution",
 TEST_CASE("KT solution reconstruction cache stores reversed interior face orientations", "[FV][KT][cache]")
 {
   using Model = ResidualContributionModel;
-  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<1>>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -946,7 +946,7 @@ TEST_CASE("KT solution reconstruction cache stores reversed interior face orient
 TEST_CASE("KT solution reconstruction cache matches direct interior reconstruction", "[FV][KT][cache]")
 {
   using Model = ResidualContributionModel;
-  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<1>>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -988,7 +988,7 @@ TEST_CASE("KT solution reconstruction cache matches direct interior reconstructi
 TEST_CASE("KT solution reconstruction cache matches direct boundary reconstruction", "[FV][KT][cache]")
 {
   using Model = ResidualContributionModel;
-  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<1>>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1024,7 +1024,7 @@ TEST_CASE("KT solution reconstruction cache matches direct boundary reconstructi
 TEST_CASE("KT boundary stencil cache recomputes values per solution", "[FV][KT][cache]")
 {
   using Model = ResidualContributionModel;
-  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<1>>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
   using BoundaryIndex = DiFfRG::FV::KurganovTadmor::internal::BoundaryStencilIndex<1>;
@@ -1062,7 +1062,7 @@ TEST_CASE("KT boundary stencil cache recomputes values per solution", "[FV][KT][
 TEST_CASE("KT 2D topology cache stores four face neighbours for an interior cell", "[FV][KT][cache][2d]")
 {
   using Model = DiFfRG::Testing::ModelBurgers2DKT;
-  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<2>>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<2>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
 
   ensure_logger();
@@ -1101,7 +1101,7 @@ TEST_CASE("KT 2D topology cache stores four face neighbours for an interior cell
 TEST_CASE("KT 2D boundary stencil cache stores two interior cells behind boundary faces", "[FV][KT][cache][2d]")
 {
   using Model = DiFfRG::Testing::ModelBurgers2DKT;
-  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<2>>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<2>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using namespace DiFfRG::def::BoundaryStencilIndex;
 
@@ -1156,7 +1156,7 @@ TEST_CASE("KT 2D boundary stencil cache stores two interior cells behind boundar
 TEST_CASE("KT 2D solution reconstruction cache recomputes values per solution", "[FV][KT][cache][2d]")
 {
   using Model = DiFfRG::Testing::ModelBurgers2DKT;
-  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<2>>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<2>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1210,7 +1210,7 @@ TEST_CASE("KT 2D solution reconstruction cache recomputes values per solution", 
 TEST_CASE("KT 2D solution reconstruction cache matches direct interior reconstruction", "[FV][KT][cache][2d]")
 {
   using Model = DiFfRG::Testing::ModelBurgers2DKT;
-  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<2>>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<2>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1258,7 +1258,7 @@ TEST_CASE("KT 2D solution reconstruction cache matches direct interior reconstru
 TEST_CASE("KT 2D boundary reconstruction cache reconstructs affine ghost side", "[FV][KT][cache][2d]")
 {
   using Model = DiFfRG::Testing::ModelBurgers2DKT;
-  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<2>>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<2>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1314,7 +1314,7 @@ TEST_CASE("KT 2D boundary reconstruction cache reconstructs affine ghost side", 
 TEST_CASE("KT 2D boundary reconstruction cache derives tangential ghost side from named slots", "[FV][KT][cache][2d]")
 {
   using Model = NamedSlotAffineBoundary2DModel;
-  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<2>>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<2>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1357,7 +1357,7 @@ TEST_CASE("KT 2D boundary reconstruction cache derives tangential ghost side fro
 TEST_CASE("KT 2D boundary reconstruction cache uses model-owned tangential ghost neighbours", "[FV][KT][cache][2d]")
 {
   using Model = NonAffineTangentialGhostBoundary2DModel;
-  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<2>>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<2>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1399,7 +1399,7 @@ TEST_CASE("KT 2D boundary reconstruction cache uses model-owned tangential ghost
 TEST_CASE("KT origin-odd boundary reconstruction remains curl-free", "[FV][KT][cache][boundary][2d]")
 {
   using Model = OriginOddCurlFreeBoundary2DModel;
-  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<2>>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<2>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1457,7 +1457,7 @@ TEST_CASE("KT origin-odd boundary reconstruction remains curl-free", "[FV][KT][c
 TEST_CASE("KT 2D solution reconstruction cache stores reversed interior face orientations", "[FV][KT][cache][2d]")
 {
   using Model = DiFfRG::Testing::ModelBurgers2DKT;
-  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<2>>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<2>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1498,7 +1498,7 @@ TEST_CASE("KT 2D solution reconstruction cache stores reversed interior face ori
 TEST_CASE("KT face hook exposes cached reconstruction before residual flux", "[FV][KT][hook]")
 {
   using Model = FaceHookProbeModel;
-  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<1>>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1552,7 +1552,7 @@ TEST_CASE("KT face hook exposes cached reconstruction before residual flux", "[F
 TEST_CASE("KT diffusion flux receives reconstructed third derivatives", "[FV][KT]")
 {
   using Model = ThirdDerivativeFluxProbeModel;
-  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<1>>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 

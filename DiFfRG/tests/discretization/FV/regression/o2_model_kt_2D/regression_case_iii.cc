@@ -46,12 +46,12 @@ namespace
   using NumberType = double;
   using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">, Scalar<"v">>;
   using Components = ComponentDescriptor<FEFunctionDesc>;
-  using Mesh = RectangularMesh<dim>;
-  using Discretization = FV::Discretization<Components, NumberType, Mesh>;
+  using Mesh = RectangularMeshSerial<dim>;
+  using Discretization = FV::Discretization<Components, Mesh, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
-  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
+  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<Discretization>;
 
   template <template <typename> class BoundaryPolicy>
   class O2_Model_VI_B_III_Base : public def::AbstractModel<O2_Model_VI_B_III_Base<BoundaryPolicy>, Components>,
@@ -467,7 +467,8 @@ TEST_CASE("O2 Model VI_B_III run extracts Gamma2 at the origin", "[2d][FV][KT][O
   CHECK_THAT(gamma.gamma_12, Catch::Matchers::WithinAbs(0.0, gamma_tolerance));
 }
 
-TEST_CASE("O2 Model VI_B_III coarse 40x40 run extracts Gamma2 at the origin", "[2d][FV][KT][O2][VI_B_III][coarse][slow]")
+TEST_CASE("O2 Model VI_B_III coarse 40x40 run extracts Gamma2 at the origin",
+          "[2d][FV][KT][O2][VI_B_III][coarse][slow]")
 {
   const Gamma2 gamma = run_o2_vi_b_iii_gamma_regression(
       {.n_cells_per_direction = 40, .final_time = default_final_time, .retain_output = false});
