@@ -5,6 +5,7 @@
 #include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/polynomials.hh>
+#include <DiFfRG/discretization/coordinates/coordinates.hh>
 #include <DiFfRG/physics/integration/map_completion.hh>
 #include <DiFfRG/physics/integration/map_scheduler.hh>
 #include <DiFfRG/physics/integration/quadrature_integrator.hh>
@@ -163,7 +164,7 @@ TEST_CASE("Test the map schedule itself", "[integration][quadrature][mpi]")
     flush_maps();
   }
 
-  SECTION("A multi-dimensional coordinate grid is never split")
+  SECTION("A coordinate system flagged unsplittable is assigned whole")
   {
     scheduler.set_quantum(1.);
 
@@ -173,6 +174,106 @@ TEST_CASE("Test the map schedule itself", "[integration][quadrature][mpi]")
 
     flush_maps();
   }
+}
+
+namespace
+{
+  /**
+   * A kernel whose *external* grid is two-dimensional, which is what the split used to refuse to
+   * touch. The quadrature stays 1D so the arity works out: map() passes the two external positions
+   * ahead of the caller's arguments, to both constant() and kernel().
+   */
+  template <typename T> struct External2DIntegrand {
+    using ctype = typename get_type::ctype<T>;
+    static KOKKOS_INLINE_FUNCTION T kernel(const ctype q, const ctype /*px*/, const ctype /*py*/, const T m)
+    {
+      using DiFfRG::powr;
+      return m * (1 + powr<2>(q));
+    }
+    static KOKKOS_INLINE_FUNCTION T constant(const ctype px, const ctype py, const T /*m*/)
+    {
+      // Distinct per grid point and cheap to predict, so a slice landing at the wrong offset shows
+      // up as a value from the wrong point rather than as a plausible number.
+      return T(px) + T(100) * T(py);
+    }
+  };
+} // namespace
+
+TEST_CASE("A two-dimensional external grid is split, and stays bitwise exact",
+          "[integration][quadrature][mpi]")
+{
+  DiFfRG::Init();
+
+  // Before SubCoordinates became a linear index window this could not happen at all: schedule() was
+  // told `splittable = (Coordinates::dim == 1)`, so a 2D external grid went whole to one rank. The
+  // window it would have produced -- a per-axis box derived from both ends of the linear range --
+  // is a different set of points, so the check below is what that restriction was protecting.
+  const uint my_rank = DiFfRG::MPI::rank(MPI_COMM_WORLD);
+  const uint n_ranks = DiFfRG::MPI::size(MPI_COMM_WORLD);
+
+  auto check = [&](auto execution_space, auto type) {
+    using NT = std::decay_t<decltype(type)>;
+    using ctype = typename get_type::ctype<NT>;
+    using ExecutionSpace = std::decay_t<decltype(execution_space)>;
+
+    constexpr int dim = 1;
+    const std::array<size_t, dim> grid_size{{16}};
+    const std::array<ctype, dim> ext_min{{ctype(-1.5)}};
+    const std::array<ctype, dim> ext_max{{ctype(1.25)}};
+    const std::array<QuadratureType, dim> quad_type{{QuadratureType::legendre}};
+
+    QuadratureProvider quadrature_provider;
+    QuadratureIntegrator<dim, NT, External2DIntegrand<NT>, ExecutionSpace> integrator(
+        quadrature_provider, grid_size, ext_min, ext_max, quad_type);
+
+    // 7 x 5 = 35: deliberately not a multiple of any rank count the suite runs at, and not a square,
+    // so a row/column mix-up cannot pass by symmetry.
+    const CoordinatePackND coordinates(LinearCoordinates1D<ctype>(7, 0., 1.),
+                                       LinearCoordinates1D<ctype>(5, 2., 3.));
+    STATIC_REQUIRE(std::decay_t<decltype(coordinates)>::dim == 2);
+    const size_t G = coordinates.size();
+    REQUIRE(G == 35u);
+
+    // Serial reference in the same process and space: map_dist()/the space overload skip the
+    // scheduler entirely.
+    std::vector<NT> reference(G, NT(0));
+    if constexpr (std::is_same_v<ExecutionSpace, TBB_exec>) {
+      auto space = ExecutionSpace();
+      integrator.map(space, reference.data(), coordinates, NT(1));
+    } else {
+      integrator.map_dist(reference.data(), coordinates, NT(1)).fence();
+    }
+    flush_maps();
+
+    // Small enough that the split is limited by the rank count, not the cost score.
+    MapScheduler::instance().set_quantum(1.);
+
+    std::vector<NT> distributed(G, NT(0));
+    integrator.map(distributed.data(), coordinates, NT(1)).fence();
+    flush_maps();
+
+    INFO("rank " << my_rank << " of " << n_ranks);
+    CHECK(bitwise_equal(reference, distributed));
+
+    // And each value belongs to the grid point it is stored at, not to a shifted one: constant()
+    // encodes the external position, while the kernel does not depend on it, so every entry is
+    // "its own position plus the same integral". Recovering that integral from entry 0 and
+    // predicting the rest is what catches a slice landing at the wrong offset.
+    auto position = [&](const size_t i) { return coordinates.forward(coordinates.from_linear_index(i)); };
+    auto encoded = [](const auto &p) { return NT(p[0]) + NT(100) * NT(p[1]); };
+
+    const NT integral = distributed[0] - encoded(position(0));
+    for (size_t i = 0; i < G; ++i) {
+      const NT expected = encoded(position(i)) + integral;
+      INFO("grid point " << i);
+      using Kokkos::abs;
+      CHECK(abs(expected - distributed[i]) <= 10 * expected_precision<ctype>::value * abs(expected));
+    }
+  };
+
+  SECTION("TBB") { check(TBB_exec(), (double)0); }
+  SECTION("Threads") { check(Threads_exec(), (double)0); }
+  SECTION("GPU") { check(GPU_exec(), (double)0); }
 }
 
 TEST_CASE("Interleaved device and host maps in one deferral scope", "[integration][quadrature][mpi]")

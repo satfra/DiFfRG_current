@@ -14,3 +14,4 @@ setup_test(integrator_fT_p2_1ang.cc)
 setup_test(integrator_fT_p2_4d_2ang.cc)
 
 setup_test(matsubara_stress.cc)
+setup_test(matsubara_split.cc)

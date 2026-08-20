@@ -66,6 +66,31 @@ namespace DiFfRG
                       "Unknown type requested of MatsubaraStorage::get_matsubara_exact_sum");
       }
 
+      /**
+       * @brief Gauss-Legendre over [-cutoff, cutoff] for a summand of finite extent; see
+       * MatsubaraQuadrature::reinit_finite_interval.
+       *
+       * Keyed on (order, cutoff). The cutoff is continuous -- it tracks k -- so this rebuilds once
+       * per RG step, exactly as the T=0 rule it replaces already did. The Gauss-Legendre rule
+       * itself is NOT rebuilt: it comes from QuadratureStorage and only the O(N) scaling by the
+       * cutoff happens here.
+       */
+      template <typename NT = double>
+      MatsubaraQuadrature<NT> &get_finite_interval(const NT cutoff, const size_t order,
+                                                   const Kokkos::View<const NT *, CPU_memory> gl_nodes,
+                                                   const Kokkos::View<const NT *, CPU_memory> gl_weights)
+      {
+        std::lock_guard<std::mutex> lock(m_mutex);
+
+        if constexpr (std::is_same_v<NT, double>) {
+          return find_interval_d(cutoff, find_interval_order_d(order), gl_nodes, gl_weights);
+        } else if constexpr (std::is_same_v<NT, float>) {
+          return find_interval_f(cutoff, find_interval_order_f(order), gl_nodes, gl_weights);
+        }
+        static_assert(std::is_same_v<NT, double> || std::is_same_v<NT, float>,
+                      "Unknown type requested of MatsubaraStorage::get_finite_interval");
+      }
+
       void set_verbosity(int v);
       void set_log_port(LogPort port) { log = std::move(port); }
 
@@ -104,6 +129,23 @@ namespace DiFfRG
 
       ExactStorageType<double> exact_sums_d;
       ExactStorageType<float> exact_sums_f;
+
+      template <typename NT = double>
+      using IntervalStorageType = std::map<size_t, std::map<double, MatsubaraQuadrature<NT>>>;
+      template <typename NT = double> using IntervalOrderIterator = typename IntervalStorageType<NT>::iterator;
+
+      IntervalOrderIterator<double> find_interval_order_d(const size_t order);
+      IntervalOrderIterator<float> find_interval_order_f(const size_t order);
+
+      MatsubaraQuadrature<double> &find_interval_d(const double cutoff, IntervalOrderIterator<double> o_it,
+                                                   const Kokkos::View<const double *, CPU_memory> n,
+                                                   const Kokkos::View<const double *, CPU_memory> w);
+      MatsubaraQuadrature<float> &find_interval_f(const float cutoff, IntervalOrderIterator<float> o_it,
+                                                  const Kokkos::View<const float *, CPU_memory> n,
+                                                  const Kokkos::View<const float *, CPU_memory> w);
+
+      IntervalStorageType<double> intervals_d;
+      IntervalStorageType<float> intervals_f;
 
       int verbosity = 0;
       // These must agree with the ConfigTree defaults read in QuadratureProvider's
@@ -260,12 +302,15 @@ namespace DiFfRG
     }
 
     /**
-     * @brief Get the effective temperature for the Matsubara zero-mode weight.
-     * Returns 0 for vacuum (T=0) quadratures and the physical T for Monien quadratures.
+     * @brief Gauss-Legendre over the finite frequency interval a compactly supported summand lives
+     * on, at the given order. See MatsubaraQuadrature::reinit_finite_interval.
      */
-    template <typename NT = double> NT matsubara_T(const NT T, const NT typical_E)
+    template <typename NT = double>
+    const MatsubaraQuadrature<NT> &matsubara_finite_interval(const NT cutoff, const size_t order)
     {
-      return matsubara_storage.get_matsubara_quadrature<NT>(T, typical_E).get_T();
+      auto &gl = quadrature_storage.get_quadrature<NT>(order, QuadratureType::legendre);
+      return matsubara_storage.template get_finite_interval<NT>(cutoff, order, gl.template nodes<CPU_memory>(),
+                                                                gl.template weights<CPU_memory>());
     }
 
     /**

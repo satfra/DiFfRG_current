@@ -35,6 +35,18 @@ namespace DiFfRG
   // rule, which is always correct -- a summand of finite extent is also an integrable one.
   template <class K> inline constexpr bool kernel_has_finite_matsubara_extent = requires { requires K::matsubara_finite_extent; };
 
+  // True iff the kernel declares `static constexpr bool matsubara_split = true`, i.e. it was
+  // generated as a MIXED flow and offers two entry points, `kernel_finite_extent` (the terms whose
+  // dR/dt insertion confines p0) and `kernel_tail` (the rest), which sum to `kernel`.
+  //
+  // The integrator then runs ONE launch over the concatenated axis [tail nodes | finite-extent
+  // nodes], evaluating only the matching half at each node. That is where the mixed case pays: a
+  // term's cost is dominated by the single trace it calls, and the generator's CSE is per-function,
+  // so each half's body computes only the traces it uses. On QCD_Nf2's ZA4 the one unbounded term
+  // carries a 313-line trace while the five confined ones carry 2918 + 609 + ... -- so the cheap
+  // half is what runs the full Gaussian rule and the expensive half runs a handful of exact modes.
+  template <class K> inline constexpr bool kernel_has_matsubara_split = requires { requires K::matsubara_split; };
+
   template <int dim, typename NT, typename KERNEL, typename ExecutionSpace>
     requires(dim > 0)
   class QuadratureIntegrator_fT : public AbstractIntegrator
@@ -61,7 +73,10 @@ namespace DiFfRG
                             const ctype typical_E = 1)
         : space(quadrature_provider.template next_execution_space<ExecutionSpace>()),
           quadrature_provider(quadrature_provider), T(T), typical_E(typical_E),
-          m_allow_exact(kernel_has_finite_matsubara_extent<KERNEL>)
+          // A SPLIT kernel does not carry `matsubara_finite_extent` -- only its finite-extent HALF
+          // has that property -- so it has to opt in here too, or its expensive half would keep
+          // running the Gaussian rule and the split would be pure overhead.
+          m_allow_exact(kernel_has_finite_matsubara_extent<KERNEL> || kernel_has_matsubara_split<KERNEL>)
     {
       for (int d = 0; d < sdim; ++d)
         grid_size[d] = _grid_size[d];
@@ -145,6 +160,36 @@ namespace DiFfRG
      * This knob is how one CHECKS that rather than assuming it: raise it to 2 and the answer must
      * not move. Modes cost only linearly, so the check is cheap.
      */
+    /**
+     * @brief Order of the finite-interval frequency rule; 0 (the default) means the SPATIAL order.
+     *
+     * A summand of finite extent has no tail, and for a 4D regulator `p0` and `|q|` sit in
+     * `p0^2 + |q|^2 <= x_extent k^2` symmetrically -- so the order that resolves the spatial radius
+     * is the natural one for the frequency too, and `grid_size[0]` (the flow's `x_order`) is the
+     * default rather than the `vacuum_quad_size` that sized the tangent map.
+     *
+     * Know the trade before changing it, because it is NOT free and it is not visible per step.
+     * Measured on QCD_Nf2 (x_order = 32, vacuum_quad_size = 64), against a converged reference:
+     *
+     *   per step, k ~ 1e3   order 32: 6.0e-6     order 64: 6.2e-6   -- indistinguishable
+     *   over t = 0..6       order 32: 1.75e-2    order 64: 1.87e-3  -- 9x apart
+     *
+     * i.e. the frequency error ACCUMULATES over a flow in a way one step does not reveal, and the
+     * tangent map this replaced sits at 1.18e-2 in the same comparison. So order 32 is ~1.5x less
+     * accurate than the old behaviour end to end, and order 64 is ~6x more accurate than it while
+     * still being faster. Raise this to `vacuum_quad_size` if the frequency direction turns out to
+     * matter for the observable in hand.
+     */
+    void set_frequency_order(const size_t order)
+    {
+      if (m_freq_order == order) return;
+      m_freq_order = order;
+      refresh_matsubara();
+    }
+
+    /// The order actually in use for the finite-interval rule.
+    size_t frequency_order() const { return m_freq_order != 0 ? m_freq_order : grid_size[0]; }
+
     void set_matsubara_extent_margin(const ctype margin)
     {
       if (!(margin > ctype(0)) || is_close(m_extent_margin, margin)) return;
@@ -178,7 +223,7 @@ namespace DiFfRG
      */
     template <typename XArr, typename PosArr, typename ArgTuple>
     KOKKOS_FORCEINLINE_FUNCTION static NT node_value(const XArr &x, const PosArr &pos, const ArgTuple &args,
-                                                     const ctype xt, const ctype wt)
+                                                     const ctype xt, const ctype wt, const bool is_tail)
     {
       NT out{};
       device::apply(
@@ -187,14 +232,41 @@ namespace DiFfRG
                 [&](const auto &...pargs) {
                   device::apply(
                       [&](const auto &...iargs) {
+                        // Six near-identical lines rather than the obvious factoring of the
+                        // +-frequency rule into a lambda taking the entry point. That factoring was
+                        // written and reverted: expanding an OUTER generic lambda's parameter pack
+                        // inside a nested lambda makes nvcc drop the pack, and it fails as "too few
+                        // arguments" only for the instantiation where the outer packs are EMPTY
+                        // (dim == 1, no spatial variables) -- i.e. it would have compiled here and
+                        // broken a 1-D flow somewhere else.
                         NT msum;
-                        if constexpr (kernel_is_matsubara_even<KERNEL>)
-                          // even kernel: kernel(+xt)+kernel(-xt) == 2*kernel(xt) (one evaluation)
-                          msum = ctype(2) * KERNEL::kernel(xargs..., xt, pargs..., iargs...);
-                        else
-                          // positive and negative Matsubara frequencies
-                          msum = KERNEL::kernel(xargs..., xt, pargs..., iargs...) +
-                                 KERNEL::kernel(xargs..., -xt, pargs..., iargs...);
+                        if constexpr (kernel_has_matsubara_split<KERNEL>) {
+                          // Runtime branch on the node index, not on data: within a frequency row
+                          // there is exactly ONE boundary, so at most one warp per row straddles it
+                          // and runs both bodies -- which together cost what the unsplit kernel
+                          // costs today. The split can therefore not be slower than not splitting.
+                          if (is_tail) {
+                            if constexpr (kernel_is_matsubara_even<KERNEL>)
+                              msum = ctype(2) * KERNEL::kernel_tail(xargs..., xt, pargs..., iargs...);
+                            else
+                              msum = KERNEL::kernel_tail(xargs..., xt, pargs..., iargs...) +
+                                     KERNEL::kernel_tail(xargs..., -xt, pargs..., iargs...);
+                          } else {
+                            if constexpr (kernel_is_matsubara_even<KERNEL>)
+                              msum = ctype(2) * KERNEL::kernel_finite_extent(xargs..., xt, pargs..., iargs...);
+                            else
+                              msum = KERNEL::kernel_finite_extent(xargs..., xt, pargs..., iargs...) +
+                                     KERNEL::kernel_finite_extent(xargs..., -xt, pargs..., iargs...);
+                          }
+                        } else {
+                          if constexpr (kernel_is_matsubara_even<KERNEL>)
+                            // even kernel: kernel(+xt)+kernel(-xt) == 2*kernel(xt) (one evaluation)
+                            msum = ctype(2) * KERNEL::kernel(xargs..., xt, pargs..., iargs...);
+                          else
+                            // positive and negative Matsubara frequencies
+                            msum = KERNEL::kernel(xargs..., xt, pargs..., iargs...) +
+                                   KERNEL::kernel(xargs..., -xt, pargs..., iargs...);
+                        }
                         out = wt * msum;
                       },
                       args);
@@ -235,6 +307,9 @@ namespace DiFfRG
       const auto &w = weights;
       const auto &m_n = matsubara_nodes;
       const auto &m_w = matsubara_weights;
+      // Nodes before the boundary of the concatenated axis; 0 for an unsplit kernel, where the
+      // is_tail flag is dead code that the `if constexpr` in node_value() removes anyway.
+      const size_t n_tail = m_n_tail;
       const auto &start = grid_start;
       const auto &scale = grid_scale;
 
@@ -251,7 +326,7 @@ namespace DiFfRG
         is_first &= idx[dim - 1] == 0;
         const size_t jt = idx[dim - 1];
         // Empty position pack: this overload's caller passes the external position inside `args`.
-        update += weight * node_value(x, device::tuple<>{}, args, m_n[jt], m_w[jt]);
+        update += weight * node_value(x, device::tuple<>{}, args, m_n[jt], m_w[jt], jt < n_tail);
         device::apply([&](const auto &...iargs) { update += is_first ? KERNEL::constant(iargs...) : NT(0); }, args);
       };
 
@@ -288,6 +363,9 @@ namespace DiFfRG
       const auto &w = weights;
       const auto &m_n = matsubara_nodes;
       const auto &m_w = matsubara_weights;
+      // Nodes before the boundary of the concatenated axis; 0 for an unsplit kernel, where the
+      // is_tail flag is dead code that the `if constexpr` in node_value() removes anyway.
+      const size_t n_tail = m_n_tail;
       const auto &start = grid_start;
       const auto &scale = grid_scale;
 
@@ -354,7 +432,7 @@ namespace DiFfRG
             weight *= w[i][idx[1 + i]] * scale[i];
           }
           const size_t jt = idx[1 + dim - 1];
-          subview() = weight * node_value(x, pos, m_args, m_n[jt], m_w[jt]);
+          subview() = weight * node_value(x, pos, m_args, m_n[jt], m_w[jt], jt < n_tail);
         };
         Kokkos::parallel_for(make_kokkos_nd_range_divisible<1 + dim, ExecutionSpace>(space, {0}, extents),
                              KokkosNDLambdaWrapper<1 + dim, decltype(functor)>(functor));
@@ -374,7 +452,7 @@ namespace DiFfRG
             weight *= w[i][idx[1 + i]] * scale[i];
           }
           const size_t jt = idx[1 + dim - 1];
-          subview() = weight * node_value(x, pos, m_args, m_n[jt], m_w[jt]);
+          subview() = weight * node_value(x, pos, m_args, m_n[jt], m_w[jt], jt < n_tail);
         };
         Kokkos::parallel_for(make_kokkos_nd_range_divisible<1 + dim, ExecutionSpace>(space, {0}, extents),
                              KokkosNDLambdaWrapper<1 + dim, decltype(functor)>(functor));
@@ -472,7 +550,7 @@ namespace DiFfRG
       if (scheduler.active() && scheduler.plan_contains(integrator_id())) MapCompletion::flush();
 
       const MapSlice slice = scheduler.schedule(integrator_id(), dest, sizeof(NT), coordinates.size(),
-                                                quadrature_volume(), Coordinates::dim == 1,
+                                                quadrature_volume(), /* splittable */ true,
                                                 map_target<ExecutionSpace>());
 
       if (slice.count == 0) {
@@ -543,10 +621,29 @@ namespace DiFfRG
      */
     void refresh_matsubara()
     {
+      // The kernel must be COMPLETE here, because this function branches on its traits. Every
+      // `requires { requires K::trait; }` detector reads false on an incomplete K -- a substitution
+      // failure, not an error -- so a translation unit that has not seen the kernel definition
+      // would build a different integrator than one that has, pick a different Matsubara rule, and
+      // produce a wrong right-hand side with no diagnostic anywhere. That is not hypothetical: the
+      // generated flow scaffolds used to forward-declare their kernel in <Flow>.hh, and flows.cc
+      // (which instantiates set_T -> here) disagreed with the CT_*.cc translation units (which
+      // instantiate map()). Fail loudly instead.
+      static_assert(sizeof(KERNEL) > 0,
+                    "QuadratureIntegrator_fT: the KERNEL type must be complete here. Include the "
+                    "flow's kernel.hh before its <Flow>.hh -- a forward declaration silently turns "
+                    "every kernel trait off in this translation unit and yields a wrong RHS.");
+
+      using mem_space = typename ExecutionSpace::memory_space;
+
       const auto &standard = quadrature_provider.template matsubara_rule<ctype>(T, typical_E);
-      const MatsubaraQuadrature<ctype> *rule = &standard;
       m_using_exact = false;
 
+      // Which rule the finite-extent side should run on. Never *less* accurate than the Gaussian
+      // rule -- it is the sum itself -- so the choice is purely one of cost, and the crossover is
+      // crossed during a flow (the exact sum shrinks with k while the Monien rule grows), which is
+      // why it is decided per RG step.
+      const MatsubaraQuadrature<ctype> *fe_rule = &standard;
       if (m_allow_exact && T > ctype(0) && m_freq_cutoff > ctype(0)) {
         // One mode of margin. A FERMIONIC insertion confines p0 to an interval centred at -pi T,
         // not at zero, so its support can reach one bosonic mode further in the negative direction
@@ -560,15 +657,60 @@ namespace DiFfRG
         // bottom -- and the provider's map never evicts, so each one leaked for the process.
         const size_t n_exact = size_t(MatsubaraQuadrature<ctype>::modes_below(T, cutoff)) + 1;
         if (n_exact < standard.sum_size()) {
-          rule = &quadrature_provider.template matsubara_exact_sum<ctype>(T, cutoff);
+          fe_rule = &quadrature_provider.template matsubara_exact_sum<ctype>(T, cutoff);
           m_using_exact = true;
+        } else if (is_close(standard.get_T(), ctype(0))) {
+          // Above the crossover the exact sum is the expensive rule -- but `standard` is then the
+          // T=0 TANGENT MAP, which spends 43% of its nodes past this summand's support evaluating
+          // an exact zero, and weights those most heavily. Over a finite interval there is nothing
+          // to reach for, so plain Gauss-Legendre at the SPATIAL order is both cheaper and more
+          // accurate. (If `standard` is the Monien rule instead, the sum is genuinely thermal and
+          // must not be replaced by an integral, so leave it alone.)
+          fe_rule = &quadrature_provider.template matsubara_finite_interval<ctype>(
+              m_extent_margin * m_freq_cutoff, frequency_order());
         }
       }
 
       // sum_nodes(), not nodes(): the zero mode is an ordinary node on this axis, so the hot
       // functor has no branch and an exact sum with no positive modes at all still evaluates it.
-      matsubara_nodes = rule->template sum_nodes<typename ExecutionSpace::memory_space>();
-      matsubara_weights = rule->template sum_weights<typename ExecutionSpace::memory_space>();
+      if constexpr (kernel_has_matsubara_split<KERNEL>) {
+        // Concatenate: [ tail half on the Gaussian rule | finite-extent half on fe_rule ]. Each
+        // half carries its own zero mode, because each is a complete rule for its own summand.
+        //
+        // The axis is built this way even ABOVE the crossover, where fe_rule IS the Gaussian rule
+        // and the concatenation is just that rule twice. That looks wasteful and is very nearly
+        // free -- each node evaluates half a kernel, so the arithmetic is the same as one pass of
+        // the full body -- and it buys something worth more: the integrator never has to call
+        // KERNEL::kernel, so only TWO bodies are ever inlined into the launch instead of three.
+        // On kernels already sitting at REG=255 with spills, a third inlined body is not free.
+        const auto tail_n = standard.template sum_nodes<mem_space>();
+        const auto tail_w = standard.template sum_weights<mem_space>();
+        const auto fe_n = fe_rule->template sum_nodes<mem_space>();
+        const auto fe_w = fe_rule->template sum_weights<mem_space>();
+
+        m_n_tail = tail_n.size();
+        const size_t n = m_n_tail + fe_n.size();
+
+        if (m_split_nodes.extent(0) < n) {
+          m_split_nodes = Kokkos::View<ctype *, mem_space>(
+              Kokkos::view_alloc(Kokkos::WithoutInitializing, "QuadratureIntegrator_fT_split_nodes"), n);
+          m_split_weights = Kokkos::View<ctype *, mem_space>(
+              Kokkos::view_alloc(Kokkos::WithoutInitializing, "QuadratureIntegrator_fT_split_weights"), n);
+        }
+        const auto head = Kokkos::make_pair(size_t(0), m_n_tail);
+        const auto tail = Kokkos::make_pair(m_n_tail, n);
+        Kokkos::deep_copy(Kokkos::subview(m_split_nodes, head), tail_n);
+        Kokkos::deep_copy(Kokkos::subview(m_split_weights, head), tail_w);
+        Kokkos::deep_copy(Kokkos::subview(m_split_nodes, tail), fe_n);
+        Kokkos::deep_copy(Kokkos::subview(m_split_weights, tail), fe_w);
+
+        matsubara_nodes = Kokkos::View<const ctype *, mem_space>(m_split_nodes, Kokkos::make_pair(size_t(0), n));
+        matsubara_weights = Kokkos::View<const ctype *, mem_space>(m_split_weights, Kokkos::make_pair(size_t(0), n));
+      } else {
+        m_n_tail = 0;
+        matsubara_nodes = fe_rule->template sum_nodes<mem_space>();
+        matsubara_weights = fe_rule->template sum_weights<mem_space>();
+      }
       grid_size[dim - 1] = matsubara_nodes.size();
     }
 
@@ -632,8 +774,15 @@ namespace DiFfRG
     ctype T, typical_E;
     /// Support boundary in frequency; zero means "unknown", which disables the exact sum.
     ctype m_freq_cutoff = 0;
+    /// Nodes before the boundary of the concatenated axis of a split kernel; 0 when not split.
+    size_t m_n_tail = 0;
+    /// Owned concatenation [tail | finite-extent]; the two halves come from different rules, so
+    /// unlike every other node list this one cannot be a view into the provider's cache.
+    Kokkos::View<ctype *, typename ExecutionSpace::memory_space> m_split_nodes, m_split_weights;
     bool m_allow_exact = false;
     bool m_using_exact = false;
+    /// 0 = follow the spatial order; see set_frequency_order().
+    size_t m_freq_order = 0;
     ctype m_extent_margin = 1;
 
     Kokkos::View<const ctype *, typename ExecutionSpace::memory_space> matsubara_nodes;
@@ -690,6 +839,9 @@ namespace DiFfRG
       const auto &w = weights;
       const auto &m_n = matsubara_nodes;
       const auto &m_w = matsubara_weights;
+      // Nodes before the boundary of the concatenated axis; 0 for an unsplit kernel, where the
+      // is_tail flag is dead code that the `if constexpr` in node_value() removes anyway.
+      const size_t n_tail = m_n_tail;
       const auto &start = grid_start;
       const auto &scale = grid_scale;
 
@@ -702,7 +854,7 @@ namespace DiFfRG
         }
         const size_t jt = idx[dim - 1];
         // Empty position pack: this overload's caller passes the external position inside `args`.
-        return weight * Base::node_value(x, device::tuple<>{}, args, m_n[jt], m_w[jt]);
+        return weight * Base::node_value(x, device::tuple<>{}, args, m_n[jt], m_w[jt], jt < n_tail);
       };
 
       dest = KERNEL::constant(t...) + TBBReduction<dim, NT, decltype(functor)>(grid_size, functor);
@@ -733,7 +885,7 @@ namespace DiFfRG
       if (scheduler.active() && scheduler.plan_contains(this->integrator_id())) MapCompletion::flush();
 
       const MapSlice slice = scheduler.schedule(this->integrator_id(), dest, sizeof(NT), coordinates.size(),
-                                                Base::quadrature_volume(), Coordinates::dim == 1,
+                                                Base::quadrature_volume(), /* splittable */ true,
                                                 map_target<execution_space>());
 
       if (slice.count == 0) {
@@ -775,6 +927,7 @@ namespace DiFfRG
     using Base::grid_start;
     using Base::quadrature_provider;
 
+    using Base::m_n_tail;
     using Base::matsubara_nodes;
     using Base::matsubara_weights;
     using Base::nodes;

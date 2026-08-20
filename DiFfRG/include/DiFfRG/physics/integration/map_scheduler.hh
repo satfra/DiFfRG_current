@@ -36,6 +36,18 @@ namespace DiFfRG
     /// Evaluations per worker the host backend needs to amortize a parallel_for spawn. A judgement,
     /// not a measurement -- see the note in documentation/multi_gpu.md.
     inline constexpr double host_grain = 1024.;
+
+    /**
+     * @brief Evaluations below which a slice cannot pay for the launch that computes it.
+     *
+     * This is the threshold the *fill* thresholds above deliberately are not: for a map inside a
+     * batch, splitting past the fill threshold buys nothing, because the ranks it would leave out
+     * are about to be filled by the other maps in the batch. For a map that is flushed on return
+     * there are no other maps, so those ranks are provably idle and the only reason left not to
+     * split is that a slice must still cover its own launch (order 10 us). See
+     * MapScheduler::schedule().
+     */
+    inline constexpr double launch_threshold = 1024.;
   } // namespace internal
 
   /**
@@ -104,9 +116,11 @@ namespace DiFfRG
    * numerically free -- moving a partition boundary changes *which* rank computes a point, never
    * *what* it computes.
    *
-   * Splitting is only applied to one-dimensional coordinate systems. `SubCoordinates` derives its
-   * per-axis window from `from_linear_index()`, which is exact for `dim == 1` and not for higher
-   * dimensions; a multi-dimensional grid is therefore assigned whole to a single rank.
+   * Splitting applies to grids of any dimension. `SubCoordinates` is a window into the *linear*
+   * index range, matching `part()` above, so the split needs no per-axis structure; it used to
+   * derive a per-axis box, which is the same set of points only for `dim == 1`, and multi-dimensional
+   * grids were therefore assigned whole to a single rank. That mattered: the multi-angle vertex
+   * flows are both the most expensive and the ones with multi-dimensional external grids.
    *
    * ## How the split is chosen
    *
@@ -116,14 +130,22 @@ namespace DiFfRG
    *     r = clamp(S / quantum, 1, min(n_ranks, G))  (how many ranks to spread it over)
    *     owners = the r least-loaded ranks
    *
-   * `quantum` is a **GPU fill threshold**, not a launch-overhead threshold: below roughly 5e4
-   * evaluations these register-heavy kernels do not occupy a modern device anyway, so splitting
-   * further buys nothing and costs a launch plus a gather. Deriving it from launch cost (~1e3
-   * evaluations) would oversplit by two orders of magnitude.
+   * Inside a batch, `quantum` is the **fill threshold**, not a launch-overhead threshold: below
+   * roughly 5e4 evaluations these register-heavy kernels do not occupy a modern device anyway, so
+   * splitting further buys nothing and costs a launch plus a gather. Deriving it from launch cost
+   * (~1e3 evaluations) would oversplit by two orders of magnitude.
    *
    * The practical consequence is the one that matters for load balance: a **cheap flow is assigned
    * whole** to the least-loaded rank rather than chopped into slivers, so a block of many small
    * flows spreads across ranks instead of every rank doing a sliver of every flow.
+   *
+   * That reasoning is an argument about *opportunity cost*, and it holds only while there are other
+   * maps to take the ranks this one leaves out. Outside a `DeferredMaps` scope there are none:
+   * `map()` flushes on return, so the map is the whole batch and every rank without a slice sits in
+   * the `Allgatherv` until the owners finish. There the fill threshold gives away ranks for nothing,
+   * and the threshold that applies is instead `internal::launch_threshold` -- a slice must still
+   * cover the launch that computes it, and that is the only remaining constraint. `set_batched()`
+   * is how the scheduler learns which case it is in. An explicit user override wins over both.
    *
    * ## Mixed device and host models
    *
@@ -206,7 +228,9 @@ namespace DiFfRG
      * @param elem_size sizeof one result element
      * @param grid_size number of external grid points, G
      * @param quadrature_volume points per integral, Q
-     * @param splittable whether this coordinate system may be windowed (see class docs)
+     * @param splittable whether this coordinate system may be windowed (see class docs). True for
+     *        every coordinate system today; kept as a parameter so a future one that cannot be
+     *        windowed has somewhere to say so.
      * @param target the resource the calling integrator's execution space runs on, and the number of
      *        evaluations that saturate one rank's share of it, from map_target<ExecutionSpace>().
      *        The threshold sets the split width; the resource selects which budget the resulting
@@ -233,6 +257,19 @@ namespace DiFfRG
     /// Discard the open plan without communicating and poison the scheduler, so that the next
     /// collective aborts with a diagnosis instead of hanging. See DeferredMaps' destructor.
     void poison(const char *reason);
+
+    /**
+     * @brief Tell the scheduler whether the caller has a deferral scope open.
+     *
+     * Only the split width depends on it, and only through which threshold schedule() measures
+     * against -- see internal::launch_threshold. Pushed in by MapCompletion::set_deferral() rather
+     * than read back out of MapCompletion, so the dependency between the two stays one-way.
+     *
+     * Safe for the plan hash: DeferredMaps is constructed by replicated model code, so this flag
+     * holds the same value on every rank at every schedule() call and the plan remains a pure
+     * function of the call sequence.
+     */
+    void set_batched(const bool batched) { m_batched = batched; }
 
     /// Override the per-execution-space fill thresholds with one explicit value. 0 restores the
     /// automatic, hardware-derived defaults.
@@ -293,6 +330,16 @@ namespace DiFfRG
     /// 0 == no override, use the hardware-derived per-space thresholds.
     double m_quantum_override = 0.;
     bool m_quantum_pinned = false;
+    /// Whether a DeferredMaps scope is open; see set_batched().
+    bool m_batched = false;
+    /// Completed batches, used to space out the plan-agreement collective. Only ever incremented
+    /// on the path where every rank agrees there is a batch, so it cannot drift between ranks.
+    size_t m_batch_index = 0;
+    /// Verify the plan hash on batch 1..verify_head and then every m_verify_every-th batch.
+    /// 0 == verify every batch (DIFFRG_MAP_VERIFY_EVERY).
+    size_t m_verify_every = 64;
+    /// Batches at the start of a run that are always verified, whatever m_verify_every says.
+    static constexpr size_t verify_head = 8;
     bool m_verbose = false;
     bool m_logged = false;
     const char *m_poisoned = nullptr;

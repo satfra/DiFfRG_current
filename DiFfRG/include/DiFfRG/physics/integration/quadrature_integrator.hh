@@ -181,9 +181,9 @@ namespace DiFfRG
       // Compile-time, so the un-taken branch in the device functors below is dead code and the
       // per-thread forward() (a fp64 expm1/sinh+exp on the log grids) actually leaves the kernel.
       if constexpr (has_cacheable_positions_v<Coordinates>) {
-        // The key must identify the positions, not just the coordinate parameters: SubCoordinates
-        // inherits its base's to_string(), so two windows into the same base grid would otherwise
-        // collide. Appending the exact (hex-formatted) first and last positions separates them.
+        // The key must identify the positions, not just the coordinate parameters. SubCoordinates
+        // does put its window into its own to_string(), but appending the exact (hex-formatted)
+        // first and last positions makes the separation independent of that.
         std::string key = coordinates.to_string() + "|" + std::to_string(integral_view.size());
         {
           char buf[64];
@@ -396,7 +396,7 @@ namespace DiFfRG
       if (scheduler.active() && scheduler.plan_contains(integrator_id())) MapCompletion::flush();
 
       const MapSlice slice = scheduler.schedule(integrator_id(), dest, sizeof(NT), coordinates.size(),
-                                                quadrature_volume(), Coordinates::dim == 1,
+                                                quadrature_volume(), /* splittable */ true,
                                                 map_target<ExecutionSpace>());
 
       if (slice.count == 0) {
@@ -609,7 +609,7 @@ namespace DiFfRG
       if (scheduler.active() && scheduler.plan_contains(this->integrator_id())) MapCompletion::flush();
 
       const MapSlice slice = scheduler.schedule(this->integrator_id(), dest, sizeof(NT), coordinates.size(),
-                                                Base::quadrature_volume(), Coordinates::dim == 1,
+                                                Base::quadrature_volume(), /* splittable */ true,
                                                 map_target<execution_space>());
 
       if (slice.count == 0) {

@@ -4,6 +4,7 @@
 
 #include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/quadrature/matsubara.hh>
+#include <DiFfRG/common/quadrature/quadrature.hh>
 
 #include <array>
 #include <cmath>
@@ -240,5 +241,79 @@ TEST_CASE("Test exact Matsubara sum", "[double][quadrature][matsubara][exact-sum
 
     CAPTURE(T, monien.size(), exact.size());
     REQUIRE_THAT(exact.sum(f), Catch::Matchers::WithinRel(monien.sum(f), 1e-9));
+  }
+}
+
+TEST_CASE("Finite-interval rule vs the tangent map on compact summands",
+          "[double][quadrature][matsubara][finite-interval]")
+{
+  DiFfRG::Init();
+
+  const double E = 1., R = 8.;
+
+  // TWO shapes, because which rule wins depends on where the integrand actually lives.
+  //   "peaked"  concentrates near p0 = 0 and is dead well before R -- the tangent map's node
+  //             clustering at small p0 is built for exactly this, and it wins.
+  //   "spread"  is O(1) across the whole support and vanishes at the edge, which is the shape a
+  //             regulator insertion produces: RBdot(k^2, p0^2+l1^2) dies gradually over [0, R].
+  auto peaked = [&](const double p0) {
+    const double u = p0 / 2.;
+    return std::exp(-std::pow(u * u, 4)) / (p0 * p0 + E * E);
+  };
+  auto spread = [&](const double p0) {
+    const double u = p0 / R;
+    return u >= 1. ? 0. : powr<3>(1. - u * u) / (p0 * p0 + E * E);
+  };
+
+  Quadrature<double> gl512(512, QuadratureType::legendre);
+
+  auto interval_err = [&](const auto &f, const int n, const double exact) {
+    Quadrature<double> gl(n, QuadratureType::legendre);
+    MatsubaraQuadrature<double> q;
+    q.reinit_finite_interval(R, gl.nodes<CPU_memory>(), gl.weights<CPU_memory>());
+    return std::abs(q.sum(f) - exact) / std::abs(exact);
+  };
+  auto tangent_err = [&](const auto &f, const int n, const double exact) {
+    MatsubaraQuadrature<double> q;
+    q.reinit_with_size(n, 0., E);
+    return std::abs(q.sum(f) - exact) / std::abs(exact);
+  };
+
+  for (int shape = 0; shape < 2; ++shape) {
+    MatsubaraQuadrature<double> ref;
+    ref.reinit_finite_interval(R, gl512.nodes<CPU_memory>(), gl512.weights<CPU_memory>());
+    const double exact = shape == 0 ? ref.sum(peaked) : ref.sum(spread);
+
+    const double i32 = shape == 0 ? interval_err(peaked, 32, exact) : interval_err(spread, 32, exact);
+    const double i64 = shape == 0 ? interval_err(peaked, 64, exact) : interval_err(spread, 64, exact);
+    const double t64 = shape == 0 ? tangent_err(peaked, 64, exact) : tangent_err(spread, 64, exact);
+
+    WARN("shape=" << (shape == 0 ? "peaked" : "spread") << "  interval32=" << i32 << "  interval64=" << i64
+                  << "  tangent64=" << t64);
+
+    // At EQUAL node count the finite-interval rule wins on both shapes -- that is the defensible
+    // claim, and the only one measured. How much it wins by depends entirely on where the
+    // integrand lives: on `peaked` it is ~100x (8e-10 vs 9e-8), on `spread` it is many orders
+    // (1e-15 vs worse than 1e-6), because there the tangent map has to resolve the support EDGE,
+    // which lands at theta = 0.57*(pi/2) where its nodes are sparsest.
+    //
+    // Note what this does NOT say: interval@32 does not beat tangent@64 on `peaked` (6.6e-6 vs
+    // 9.3e-8). Halving the order is a real trade, not a free one, which is why it is a knob.
+    REQUIRE(i64 < t64);
+    REQUIRE(i64 < 1e-8);
+    REQUIRE(i32 < i64 * 1e7); // the lower order still converges, just less far
+  }
+
+  SECTION("no zero mode, and the caller convention is the one sum() expects")
+  {
+    Quadrature<double> gl32(32, QuadratureType::legendre);
+    MatsubaraQuadrature<double> interval;
+    interval.reinit_finite_interval(R, gl32.nodes<CPU_memory>(), gl32.weights<CPU_memory>());
+    // Integrates rather than sums, like the T=0 rule: sum_nodes() must not append a zero mode.
+    REQUIRE(interval.get_T() == 0.);
+    REQUIRE(interval.sum_size() == interval.size());
+
+    // A flat integrand checks the normalisation outright: (1/2pi) int_{-R}^{R} 1 dp0 = R/pi.
+    REQUIRE_THAT(interval.sum([](const double) { return 1.; }), Catch::Matchers::WithinRel(R / M_PI, 1e-13));
   }
 }

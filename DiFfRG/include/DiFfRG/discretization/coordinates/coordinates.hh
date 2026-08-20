@@ -185,86 +185,87 @@ namespace DiFfRG
     const device::tuple<Coordinates...> coordinates;
   };
 
+  /**
+   * @brief A contiguous window into the *linear* index range of another coordinate system.
+   *
+   * The window is `[offset, offset + size)` of `Base`'s flattened grid, which is exactly the shape
+   * MapScheduler hands out (`part(G, r, j)`), and it is deliberately **not** a per-axis box. An
+   * earlier version derived one, by running `Base::from_linear_index()` on both ends and
+   * subtracting; that is only the same set when `dim == 1`, which is why splitting used to be
+   * restricted to one-dimensional grids and the expensive multi-angle vertex flows were assigned
+   * whole to a single rank.
+   *
+   * Carrying the linear offset instead makes the window exact in any dimension, at no cost:
+   * `from_linear_index(s)` returns the **base** multi-index of global point `offset + s`, and
+   * `forward()` is then `Base::forward` unchanged. So the position computed for a windowed point is
+   * the same fp64 value as the unwindowed run computes for that global point, which is what keeps a
+   * distributed result bitwise identical to a serial one.
+   *
+   * Only MapScheduler's four `map()` call sites construct this.
+   */
   template <typename Base> class SubCoordinates : public Base
   {
   public:
     using ctype = typename Base::ctype;
     static constexpr size_t dim = Base::dim;
 
-    SubCoordinates(const Base &base, size_t offset, size_t size) : Base(base), m_size(size)
+    SubCoordinates(const Base &base, size_t offset, size_t size) : Base(base), m_offset(offset), m_size(size)
     {
       if (size == 0) throw std::runtime_error("SubCoordinates: size must be > 0");
       if (offset + size > base.size()) throw std::runtime_error("SubCoordinates: offset + size must be <= base.size()");
-      // calculate the offsets and sizes from the continuous index
-      offsets = base.from_linear_index(offset);
-      m_sizes = base.from_linear_index(offset + size);
-      for (size_t i = 0; i < dim; ++i)
-        m_sizes[i] -= offsets[i];
     }
 
-    device::array<size_t, dim> KOKKOS_FORCEINLINE_FUNCTION sizes() const { return m_sizes; }
+    /// Per-axis extents, which a linear window only has when the grid is one-dimensional. Nothing
+    /// on the map() path calls this -- the integrators drive everything off size() and
+    /// from_linear_index() -- so a caller that needs a box should say so at compile time rather
+    /// than receive a plausible-looking wrong answer.
+    device::array<size_t, dim> KOKKOS_FORCEINLINE_FUNCTION sizes() const
+    {
+      static_assert(dim == 1, "SubCoordinates is a linear index window, which is a per-axis box only for dim == 1.");
+      return device::array<size_t, dim>{{m_size}};
+    }
 
     size_t KOKKOS_FORCEINLINE_FUNCTION size() const { return m_size; }
 
+    /// The base multi-index of the window's s-th point. Note this is a *base* index: it is fed
+    /// straight back into Base::forward(), which is what makes the positions identical to the
+    /// unwindowed ones.
     device::array<size_t, dim> KOKKOS_INLINE_FUNCTION from_linear_index(size_t s) const
     {
-      device::array<size_t, dim> result{};
-      // we do it for m_sizes
-      for (size_t i = 0; i < dim; ++i) {
-        result[dim - 1 - i] = s % m_sizes[dim - 1 - i];
-        s = s / m_sizes[dim - 1 - i];
-      }
-      return result;
+      return Base::from_linear_index(m_offset + s);
     }
 
+    /// Spelled-out array rather than `forward({{i...}})`: a braced-init-list cannot deduce the
+    /// element type of the overload below, so the old spelling was ill-formed the moment anyone
+    /// called it. Nothing on the map() path does, which is why it never showed up.
     template <typename... I>
       requires(std::is_convertible_v<std::decay_t<I>, size_t> && ...)
     KOKKOS_FORCEINLINE_FUNCTION device::array<ctype, dim> forward(I &&...i) const
     {
       static_assert(sizeof...(I) == dim);
-      return forward({{i...}});
+      return forward(device::array<size_t, dim>{{static_cast<size_t>(i)...}});
     }
 
+    /// Takes a *base* multi-index, i.e. what from_linear_index() above returns.
     template <typename IT> KOKKOS_INLINE_FUNCTION device::array<ctype, dim> forward(device::array<IT, dim> i) const
     {
-      for (size_t j = 0; j < dim; ++j) {
-        i[j] += offsets[j];
-      }
       return Base::forward(i);
     }
 
-    template <typename... I> KOKKOS_FORCEINLINE_FUNCTION device::array<ctype, dim> backward(I &&...i) const
-    {
-      static_assert(sizeof...(I) == dim);
-      return backward({{i...}});
-    }
-    KOKKOS_INLINE_FUNCTION device::array<ctype, dim> backward(device::array<size_t, dim> i) const
-    {
-      auto result = Base::backward(i);
-      for (size_t j = 0; j < dim; ++j) {
-        result[j] -= offsets[j];
-      }
-      return result;
-    }
+    // backward() is deliberately not overridden: it is the inverse of forward(), which is now
+    // Base's unchanged, so Base::backward is already the right answer and is inherited as is.
 
+    /// Identifies the window, not just the base grid: the position cache in QuadratureIntegrator
+    /// keys on this, and two windows into one base grid must not collide.
     std::string to_string() const
     {
-      std::string ret = "SubCoordinates(" + Base::to_string() + ", {";
-      for (uint i = 0; i < dim; ++i) {
-        ret += std::to_string(offsets[i]);
-        if (i + 1 < dim) ret += ", ";
-      }
-      ret += "}, {";
-      for (uint i = 0; i < dim; ++i) {
-        ret += std::to_string(m_sizes[i]);
-        if (i + 1 < dim) ret += ", ";
-      }
-      return ret + "})";
+      return "SubCoordinates(" + Base::to_string() + ", " + std::to_string(m_offset) + ", " + std::to_string(m_size) +
+             ")";
     }
 
   private:
-    device::array<size_t, dim> offsets, m_sizes;
-    const size_t m_size;
+    size_t m_offset;
+    size_t m_size;
   };
 
   template <typename NT = double>

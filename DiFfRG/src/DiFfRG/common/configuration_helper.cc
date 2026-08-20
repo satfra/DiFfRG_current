@@ -234,7 +234,10 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
          {"discretization",
           {{"fe_order", 3},
            {"threads", 0},
-           {"mesh_workers", 8},
+           // 0 = auto, as for "threads" above: the assemblers resolve it to n_threads()/2.
+           // mesh_workers is mesh_loop's queue_length, so a fixed constant caps assembly
+           // parallelism on a big machine and oversubscribes a small one.
+           {"mesh_workers", 0},
            {"batch_size", 16},
            {"overintegration", 0},
            {"output_subdivisions", 2},

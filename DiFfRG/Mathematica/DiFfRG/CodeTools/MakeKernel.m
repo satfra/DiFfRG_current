@@ -193,11 +193,20 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
         (* Now, we create the header which holds the class with the integrators and the map/get methods *)
         integratorHeader =
             FunKit`MakeCppHeader[
-                "Includes" -> {"DiFfRG/physics/integration.hh", "DiFfRG/physics/physics.hh", "DiFfRG/physics/interpolation.hh"}
+(* kernel.hh, NOT a forward declaration of <Name>_kernel. The integrator member below is
+   Integrator_*<..., <Name>_kernel<Regulator>, ...>, and completing that type evaluates the
+   integrator's kernel-trait detectors (`requires { requires K::matsubara_even; }` and friends). On
+   an INCOMPLETE K every such detector is a substitution failure, i.e. silently false -- so a TU
+   that had not seen kernel.hh built a DIFFERENT integrator class than one that had. That is an ODR
+   violation, and it is not benign: flows.cc instantiates set_T() -> refresh_matsubara() with the
+   traits off while the CT_*.cc TUs instantiate map() with them on, and the two disagree about
+   which Matsubara rule is on the axis. It produced a wrong RHS (a factor ~2 in dtZA), not a
+   diagnostic. Costs compile time in every consumer of <Name>.hh; correctness first. *)
+                "Includes" -> {"DiFfRG/physics/integration.hh", "DiFfRG/physics/physics.hh", "DiFfRG/physics/interpolation.hh", "kernel.hh"}
                 ,
                 "Body" ->
                     {
-                        StringTemplate["namespace DiFfRG { template<typename> class `Name`_kernel;\n"][spec]
+                        "namespace DiFfRG {\n"
                         ,
                         FunKit`MakeCppClass[
                             "Name" -> StringTemplate["`Name`_integrator"][spec]

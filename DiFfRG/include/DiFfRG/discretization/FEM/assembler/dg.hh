@@ -357,7 +357,15 @@ namespace DiFfRG
 
         Scratch scratch_data(mapping, fe, quadrature, quadrature_face, update_flags, interface_update_flags);
         CopyData copy_data;
-        MeshWorker::AssembleFlags assemble_flags = MeshWorker::assemble_own_cells;
+        // The face flags are load-bearing: a face_worker is passed below, and without
+        // assemble_own_interior_faces_once mesh_loop never calls it, so model.face_indicator
+        // contributed nothing at all to the refinement indicator -- DG refined on the cell term
+        // alone. ddg.hh and ldg.hh have always set it. assemble_ghost_faces_once then gives each
+        // partition-boundary face to exactly one rank, which is what the sum_reduce of the
+        // indicator under the distributed policy expects.
+        MeshWorker::AssembleFlags assemble_flags = MeshWorker::assemble_own_cells |
+                                                   MeshWorker::assemble_own_interior_faces_once |
+                                                   MeshWorker::assemble_ghost_faces_once;
 
         // map() is collective and each rank visits only its own cells; see NoMapsHere.
         const NoMapsHere no_maps_during_assembly;
