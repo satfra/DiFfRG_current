@@ -69,6 +69,12 @@ namespace DiFfRG
         matrix.reinit(get_sparsity_pattern_jacobian());
       }
       virtual MPI_Comm get_communicator() const override { return MPI_COMM_SELF; }
+      // dim == 0: no FE space, and the vector type is serial by construction, so the view is a
+      // passthrough and the layout arguments are ignored.
+      virtual void reinit_solution_view(SolutionView<VectorType> &view) const override
+      {
+        view.reinit(dealii::IndexSet(), dealii::IndexSet(), MPI_COMM_SELF);
+      }
 
       virtual IndexSet get_differential_indices() const override { return IndexSet(); }
 

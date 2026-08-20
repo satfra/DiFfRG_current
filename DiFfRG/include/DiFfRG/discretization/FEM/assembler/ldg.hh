@@ -481,6 +481,11 @@ namespace DiFfRG
         matrix.reinit(get_sparsity_pattern_jacobian());
       }
       virtual MPI_Comm get_communicator() const override { return discretization.get_communicator(); }
+      virtual void reinit_solution_view(SolutionView<VectorType> &view) const override
+      {
+        view.reinit(discretization.get_locally_owned_dofs(), discretization.get_locally_relevant_dofs(),
+                    discretization.get_communicator());
+      }
 
       /**
        * @brief Attach all intermediate (ldg) vectors to the data output

@@ -162,3 +162,83 @@ TEST_CASE("Matsubara quadrature nodes and weights are finite for representative 
     }
   }
 }
+
+TEST_CASE("Test exact Matsubara sum", "[double][quadrature][matsubara][exact-sum]")
+{
+  DiFfRG::Init();
+
+  SECTION("Node count and placement")
+  {
+    const double T = GENERATE(0.01, 0.1, 0.5, 1.3);
+    const double cutoff = GENERATE(0.5, 1., 7., 100.);
+
+    MatsubaraQuadrature<double> mq;
+    mq.reinit_exact_sum(T, cutoff);
+
+    const int n = MatsubaraQuadrature<double>::modes_below(T, cutoff);
+    CAPTURE(T, cutoff, n);
+    REQUIRE((int)mq.size() == n);
+    // The zero mode is a node of the summation list but not of size().
+    REQUIRE(mq.sum_size() == mq.size() + 1);
+
+    const auto nodes = mq.nodes<CPU_memory>();
+    for (int i = 0; i < n; ++i) {
+      // The true bosonic frequencies, not a Gaussian approximation to them.
+      REQUIRE_THAT(nodes[i], Catch::Matchers::WithinRel(2. * M_PI * (i + 1) * T, 1e-14));
+      REQUIRE(nodes[i] <= cutoff);
+    }
+    // ...and the first mode left out is genuinely outside the cutoff.
+    REQUIRE(2. * M_PI * (n + 1) * T > cutoff);
+
+    const auto sum_nodes = mq.sum_nodes<CPU_memory>();
+    const auto sum_weights = mq.sum_weights<CPU_memory>();
+    REQUIRE(sum_nodes[mq.size()] == 0.);
+    // w * (f(+0) + f(-0)) must reproduce T * f(0).
+    REQUIRE_THAT(sum_weights[mq.size()], Catch::Matchers::WithinRel(T / 2., 1e-15));
+  }
+
+  SECTION("Exact on a compactly supported summand")
+  {
+    // A summand that vanishes identically outside |p0| <= R is not approximated by this rule --
+    // it IS the sum. Check that against the brute-force enumeration it claims to be.
+    const double T = GENERATE(0.02, 0.11, 0.7);
+    const double R = GENERATE(1., 3.7, 20.);
+
+    auto f = [&](const double p0) {
+      const double u = p0 * p0 / (R * R);
+      return u >= 1. ? 0. : (1. - u) * (1. - u) * (1. - u) / (1. + p0 * p0);
+    };
+
+    MatsubaraQuadrature<double> mq;
+    mq.reinit_exact_sum(T, R);
+
+    double brute = T * f(0.);
+    for (int n = 1; 2. * M_PI * n * T < 2. * R; ++n)
+      brute += T * (f(2. * M_PI * n * T) + f(-2. * M_PI * n * T));
+
+    CAPTURE(T, R, mq.size(), brute);
+    REQUIRE_THAT(mq.sum(f), Catch::Matchers::WithinRel(brute, 1e-13));
+  }
+
+  SECTION("Agrees with the Monien rule where both are valid")
+  {
+    // Effectively compact (a super-exponential cut at ~R) but smooth and algebraically tailed
+    // enough for the Gaussian rule, so the two constructions must land on the same number.
+    const double T = GENERATE(0.05, 0.2);
+    const double E = 1.;
+    const double w = 2. * E; // width of the super-exponential cut
+    const double R = 8. * E; // cutoff handed to the exact sum: (R/w)^8 = 65536, i.e. dead by any measure
+
+    auto f = [&](const double p0) {
+      const double u = p0 / w;
+      return std::exp(-std::pow(u * u, 4)) / (p0 * p0 + E * E);
+    };
+
+    MatsubaraQuadrature<double> monien(T, E);
+    MatsubaraQuadrature<double> exact;
+    exact.reinit_exact_sum(T, R);
+
+    CAPTURE(T, monien.size(), exact.size());
+    REQUIRE_THAT(exact.sum(f), Catch::Matchers::WithinRel(monien.sum(f), 1e-9));
+  }
+}

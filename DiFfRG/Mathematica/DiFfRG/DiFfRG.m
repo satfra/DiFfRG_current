@@ -26,6 +26,7 @@ If[$FrontEnd === Null || $Notebooks === False,
 
 (*Welcome  Message*)
 
+If[$FrontEnd=!=Null,
 Print["Mathematica package \!\(\*
 StyleBox[\"DiFfRG\",\nFontWeight->\"Bold\"]\)\!\(\*
 StyleBox[\" \",\nFontWeight->\"Bold\"]\)loaded
@@ -35,7 +36,12 @@ StyleBox[\"Authors\",\nFontWeight->\"Bold\"]\): Franz Richard Sattler
 StyleBox[\"Version\",\nFontWeight->\"Bold\"]\): 2.0
 \!\(\*
 StyleBox[\"Year\",\nFontWeight->\"Bold\"]\): 2025
-"]
+"],
+Print["Mathematica package DiFfRG loaded"];
+Print["Authors: Franz Richard Sattler"];
+Print["Version: 2.0"];
+Print["Year:    2026"];
+];
 
 (* ::Section:: *)
 

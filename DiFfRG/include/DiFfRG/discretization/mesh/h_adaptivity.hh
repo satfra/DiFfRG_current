@@ -12,6 +12,7 @@
 
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/common/mpi.hh>
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 
 namespace DiFfRG
@@ -74,6 +75,16 @@ namespace DiFfRG
       indicator = 0;
       assembler.refinement_indicator(indicator, solution);
 
+      if constexpr (Discretization::Mesh::is_parallel) {
+        // The indicator is filled by a mesh_loop with assemble_own_cells, so on a partitioned mesh
+        // each rank only contributes its own cells and every other entry is still zero. Refining on
+        // that unreduced vector is not a crash -- it silently refines a different set of cells on
+        // every rank, which then diverge. Sum first; the mesh is replicated, so after this every
+        // rank holds the identical, complete indicator.
+        MPI::sum_reduce(triangulation.get_mpi_communicator(), indicator.data(),
+                        static_cast<int>(indicator.size()));
+      }
+
       GridRefinement::refine_and_coarsen_fixed_fraction(triangulation, indicator, adapt_upper, adapt_lower);
 
       std::vector<typename Triangulation<dim>::active_cell_iterator> refined_cells;
@@ -88,7 +99,11 @@ namespace DiFfRG
       refined_cells.clear();
       for (const auto &cell : triangulation.active_cell_iterators())
         if (cell->refine_flag_set()) refined_cells.push_back(cell);
-      if (refined_cells.size() == 0) return false;
+      // Agreed: this early return decides whether execute_coarsening_and_refinement() -- a
+      // collective on a parallel triangulation -- is reached at all. The reduced indicator above
+      // should already make every rank decide identically; this makes a hang impossible rather
+      // than unlikely.
+      if (!MPI::any_of(triangulation.get_mpi_communicator(), refined_cells.size() > 0)) return false;
 
       SolutionTransfer<dim, VectorType> solution_trans(dof_handler);
 

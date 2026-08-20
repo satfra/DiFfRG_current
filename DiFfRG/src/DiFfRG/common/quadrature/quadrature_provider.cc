@@ -112,6 +112,67 @@ namespace DiFfRG
       return new_it;
     }
 
+    MatsubaraStorage::ExactTemperatureIterator<double> MatsubaraStorage::find_exact_T_d(const double T)
+    {
+      auto it = exact_sums_d.lower_bound(T);
+
+      if (it != exact_sums_d.end()) {
+        if (is_close(it->first, T, 1e-6 * T)) return it;
+        if (it != exact_sums_d.begin() && is_close(std::prev(it)->first, T, 1e-6 * T)) return std::prev(it);
+      }
+
+      return exact_sums_d.insert(std::make_pair(T, std::map<int, MatsubaraQuadrature<double>>())).first;
+    }
+
+    MatsubaraQuadrature<double> &MatsubaraStorage::find_exact_d(const int n, ExactTemperatureIterator<double> T_it)
+    {
+      auto &map = T_it->second;
+
+      // Integer key: an exact lookup, unlike the (T, E) maps above, which is the whole point of
+      // keying on the node count instead of the continuous cutoff.
+      auto it = map.find(n);
+      if (it != map.end()) return it->second;
+
+      auto new_it = map.insert(std::make_pair(n, MatsubaraQuadrature<double>())).first;
+      // 2 pi (n + 1/2) T is the midpoint between mode n and mode n+1, so it reproduces exactly n
+      // positive modes -- reinit_exact_sum re-derives the count from the cutoff it is given.
+      new_it->second.reinit_exact_sum(T_it->first, 2. * M_PI * (n + 0.5) * T_it->first);
+
+      if (verbosity >= 0)
+        log.info("Created exact MatsubaraQuadrature<double> sum with T = {:.4} and {} positive modes", T_it->first,
+                 n);
+
+      return new_it->second;
+    }
+
+    MatsubaraStorage::ExactTemperatureIterator<float> MatsubaraStorage::find_exact_T_f(const float T)
+    {
+      auto it = exact_sums_f.lower_bound(T);
+
+      if (it != exact_sums_f.end()) {
+        if (is_close(it->first, (double)T, 1e-6 * T)) return it;
+        if (it != exact_sums_f.begin() && is_close(std::prev(it)->first, (double)T, 1e-6 * T)) return std::prev(it);
+      }
+
+      return exact_sums_f.insert(std::make_pair((double)T, std::map<int, MatsubaraQuadrature<float>>())).first;
+    }
+
+    MatsubaraQuadrature<float> &MatsubaraStorage::find_exact_f(const int n, ExactTemperatureIterator<float> T_it)
+    {
+      auto &map = T_it->second;
+
+      auto it = map.find(n);
+      if (it != map.end()) return it->second;
+
+      auto new_it = map.insert(std::make_pair(n, MatsubaraQuadrature<float>())).first;
+      new_it->second.reinit_exact_sum((float)T_it->first, (float)(2. * M_PI * (n + 0.5) * T_it->first));
+
+      if (verbosity >= 0)
+        log.info("Created exact MatsubaraQuadrature<float> sum with T = {:.4} and {} positive modes", T_it->first, n);
+
+      return new_it->second;
+    }
+
     void MatsubaraStorage::set_verbosity(int v) { verbosity = v; }
     void MatsubaraStorage::set_vacuum_quad_size(const int size)
     {

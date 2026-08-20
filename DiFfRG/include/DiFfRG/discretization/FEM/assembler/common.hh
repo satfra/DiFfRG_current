@@ -288,7 +288,13 @@ namespace DiFfRG
       EoM = EoM_result.point;
       if (EoM_result.potential) EoM_minimum_guess = EoM_result.potential->minimum;
       auto EoM_unit = mapping.transform_real_to_unit_cell(EoM_cell, EoM);
-      bool new_cell = (old_EoM_cell != EoM_cell);
+      // Agreed, not rank-local: new_cell gates rebuild_jacobian_sparsity(), which is now
+      // collective (SparsityTools::distribute_sparsity_pattern). A rank that skipped the rebuild
+      // while another performed it would sit out a collective the others are inside, and the run
+      // would hang rather than fail. any_of, not all_of: if ANY rank needs the rebuild, every rank
+      // must enter it. On a replicated mesh the ranks agree anyway -- this makes that a guarantee
+      // rather than a coincidence, and costs one bool reduction per EoM update.
+      bool new_cell = MPI::any_of(discretization.get_communicator(), old_EoM_cell != EoM_cell);
       old_EoM_cell = EoM_cell;
 
       Vector<typename VectorType::value_type> values(dof_handler.get_fe().n_components());

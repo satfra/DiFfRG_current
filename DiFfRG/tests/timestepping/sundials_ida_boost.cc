@@ -45,9 +45,14 @@ using namespace DiFfRG;
 template <typename Model, typename TimeStepper>
 bool run_hybrid(const std::string &test_name, double expected_precision, double cur_dt = 1e-3, double final_time = 1.0,
                 double output_dt = 5e-2, double impl_max_dt = 1e-1, double impl_rel_tol = 1e-6, int coupling_mode = 0,
-                double expl_max_dt = 1e-2, double expected_stepper_kind = std::numeric_limits<double>::quiet_NaN())
+                double expl_max_dt = -1., double expected_stepper_kind = std::numeric_limits<double>::quiet_NaN())
 {
   using namespace dealii;
+  // -1 means "pick a cap consistent with cur_dt". The diagnostics below deliberately set the
+  // explicit substep to the output interval (5e-2, 2e-2), which is above the old fixed 1e-2
+  // default -- an explicit.dt above explicit.maximal_dt that AbstractTimestepper now rejects at
+  // construction. Callers that pass a cap explicitly are unaffected.
+  if (expl_max_dt < 0.) expl_max_dt = std::max(1e-2, cur_dt);
   constexpr uint dim = 1;
   using Discretization = CG::Discretization<typename Model::Components, double, RectangularMesh<dim>>;
   using VectorType = typename Discretization::VectorType;
@@ -382,7 +387,11 @@ TEST_CASE("Hybrid ABM stepper handles two-way FEM <-> variable coupling",
   using VectorType = dealii::Vector<double>;
   using SparseMatrixType = dealii::SparseMatrix<double>;
   using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<VectorType, SparseMatrixType, 1, UMFPack>;
-  REQUIRE(run_hybrid<Model, TimeStepper>("test_diag_abm_twoway", /*tol=*/1e-3, /*cur_dt=*/2e-2,
+  // cur_dt is the substep this diagnostic actually exercised all along: it used to request 2e-2
+  // against an explicit maximal_dt of 1e-2, which clamped it. Now that AbstractTimestepper rejects
+  // dt > maximal_dt instead of silently capping, the request has to be the value that ran -- and the
+  // 1e-3 gate is calibrated for it (cur_dt scan: 1e-2 -> 5.7e-4, 2e-2 -> 2.3e-3).
+  REQUIRE(run_hybrid<Model, TimeStepper>("test_diag_abm_twoway", /*tol=*/1e-3, /*cur_dt=*/1e-2,
                                          /*final_time=*/1.0, /*output_dt=*/5e-2,
                                          /*impl_max_dt=*/5e-2));
 }
@@ -393,7 +402,11 @@ TEST_CASE("Hybrid RK stepper handles two-way FEM <-> variable coupling", "[times
   using VectorType = dealii::Vector<double>;
   using SparseMatrixType = dealii::SparseMatrix<double>;
   using TimeStepper = TimeStepperSUNDIALS_IDA_BoostRK<VectorType, SparseMatrixType, 1, UMFPack, 0>;
-  REQUIRE(run_hybrid<Model, TimeStepper>("test_diag_rk_twoway", /*tol=*/1e-3, /*cur_dt=*/2e-2,
+  // cur_dt is the substep this diagnostic actually exercised all along: it used to request 2e-2
+  // against an explicit maximal_dt of 1e-2, which clamped it. Now that AbstractTimestepper rejects
+  // dt > maximal_dt instead of silently capping, the request has to be the value that ran -- and the
+  // 1e-3 gate is calibrated for it (cur_dt scan: 1e-2 -> 5.7e-4, 2e-2 -> 2.3e-3).
+  REQUIRE(run_hybrid<Model, TimeStepper>("test_diag_rk_twoway", /*tol=*/1e-3, /*cur_dt=*/1e-2,
                                          /*final_time=*/1.0, /*output_dt=*/5e-2,
                                          /*impl_max_dt=*/5e-2));
 }

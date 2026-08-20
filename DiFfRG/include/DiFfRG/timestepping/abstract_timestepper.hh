@@ -151,39 +151,72 @@ namespace DiFfRG
      * @brief Construct a new Abstract Timestepper object
      *
      * @param config The ConfigTree object must contain a /timestepping/ section with all necessary parameters.
-     * @param assembler
-     * @param data_out
-     * @param adaptor
+     * @param assembler The assembler object is used to assemble the system matrices and vectors for the timestepping
+     * algorithm.
+     * @param data_out The data output object is used to write the output data to disk.
+     * @param adaptor The adaptor object is used to adapt the mesh and the solution vector to the new mesh. It can be
+     * nullptr if no adaptation is needed.
+     * @param implicit_stepper, explicit_stepper which /timestepping/ sections this stepper reads.
      */
     AbstractTimestepper(const ConfigTree &config, AbstractAssembler<VectorType, SparseMatrixType, dim> *assembler,
-                        OutputSession<dim, VectorType> *data_out, AbstractAdaptor<VectorType> *adaptor = nullptr)
+                        OutputSession<dim, VectorType> *data_out, AbstractAdaptor<VectorType> *adaptor,
+                        const bool implicit_stepper, const bool explicit_stepper)
         : config(config), assembler(assembler), data_out(data_out), adaptor(adaptor),
-          log(data_out ? data_out->log_port() : LogPort{}), start_time(std::chrono::high_resolution_clock::now())
+          log(data_out ? data_out->log_port() : LogPort{}), start_time(std::chrono::high_resolution_clock::now()),
+          m_is_implicit(implicit_stepper), m_is_explicit(explicit_stepper)
     {
       verbosity = config.get_int("/output/verbosity", 0);
       output_dt = config.get_double("/timestepping/output_dt", 1e-1);
 
-      impl.dt = config.get_double("/timestepping/implicit/dt", 1e-4);
-      impl.minimal_dt = config.get_double("/timestepping/implicit/minimal_dt", 1e-6);
-      impl.maximal_dt = config.get_double("/timestepping/implicit/maximal_dt", 1e-1);
-      impl.abs_tol = config.get_double_or_warn("/timestepping/implicit/abs_tol", 1e-13);
-      impl.rel_tol = config.get_double_or_warn("/timestepping/implicit/rel_tol", 1e-7);
-      impl.max_steps = config.get_uint("/timestepping/implicit/max_steps", 1000000);
-      impl.max_non_linear_iterations = config.get_uint("/timestepping/implicit/max_non_linear_iterations", 10);
-      impl.ida_callback_trace = config.get_bool("/timestepping/implicit/ida_callback_trace", false);
-      impl.ida_callback_trace_min_t = config.get_double("/timestepping/implicit/ida_callback_trace_min_t", 0.0);
-      impl.ida_callback_trace_max_lines = config.get_uint("/timestepping/implicit/ida_callback_trace_max_lines", 200);
-      impl.ida_callback_trace_successes = config.get_bool("/timestepping/implicit/ida_callback_trace_successes", false);
-      impl.ida_error_dof_diagnostics = config.get_bool("/timestepping/implicit/ida_error_dof_diagnostics", false);
-      impl.ida_error_dof_diagnostics_top_n =
-          config.get_uint("/timestepping/implicit/ida_error_dof_diagnostics_top_n", 8);
+      if (m_is_implicit) {
+        // Stuff you should really set
+        impl.abs_tol = config.get_double_or_warn("/timestepping/implicit/abs_tol", 1e-13);
+        impl.rel_tol = config.get_double_or_warn("/timestepping/implicit/rel_tol", 1e-7);
 
-      expl.dt = config.get_double("/timestepping/explicit/dt", 1e-2);
-      expl.minimal_dt = config.get_double("/timestepping/explicit/minimal_dt", 1e-6);
-      expl.maximal_dt = config.get_double("/timestepping/explicit/maximal_dt", 1e-1);
-      expl.abs_tol = config.get_double_or_warn("/timestepping/explicit/abs_tol", 1e-4);
-      expl.rel_tol = config.get_double_or_warn("/timestepping/explicit/rel_tol", 1e-4);
-      expl.detect_stuck = config.get_bool("/timestepping/explicit/detect_stuck", true);
+        // Stuff you can set, but defaults are reasonable
+        impl.dt = config.get_double("/timestepping/implicit/dt", 1e-4);
+        impl.minimal_dt = config.get_double("/timestepping/implicit/minimal_dt", 1e-8);
+        impl.maximal_dt = config.get_double("/timestepping/implicit/maximal_dt", 1.);
+        impl.max_steps = config.get_uint("/timestepping/implicit/max_steps", 1e6);
+        impl.max_non_linear_iterations = config.get_uint("/timestepping/implicit/max_non_linear_iterations", 10);
+        impl.ida_callback_trace = config.get_bool("/timestepping/implicit/ida_callback_trace", false);
+        impl.ida_callback_trace_min_t = config.get_double("/timestepping/implicit/ida_callback_trace_min_t", 0.0);
+        impl.ida_callback_trace_max_lines = config.get_uint("/timestepping/implicit/ida_callback_trace_max_lines", 200);
+        impl.ida_callback_trace_successes =
+            config.get_bool("/timestepping/implicit/ida_callback_trace_successes", false);
+        impl.ida_error_dof_diagnostics = config.get_bool("/timestepping/implicit/ida_error_dof_diagnostics", false);
+        impl.ida_error_dof_diagnostics_top_n =
+            config.get_uint("/timestepping/implicit/ida_error_dof_diagnostics_top_n", 8);
+
+        // Sanity checks:
+        if (impl.minimal_dt <= 0.0) throw std::invalid_argument("Minimal timestep size must be positive.");
+        if (impl.maximal_dt <= 0.0) throw std::invalid_argument("Maximal timestep size must be positive.");
+        if (impl.minimal_dt > impl.maximal_dt)
+          throw std::invalid_argument("Minimal timestep size must be smaller than maximal timestep size.");
+        if (impl.dt < impl.minimal_dt || impl.dt > impl.maximal_dt)
+          throw std::invalid_argument("Initial timestep size must be within the minimal and maximal timestep size.");
+        if (impl.abs_tol <= 0.0) throw std::invalid_argument("Absolute tolerance must be > 0.");
+        if (impl.rel_tol <= 0.0) throw std::invalid_argument("Relative tolerance must be > 0.");
+      }
+
+      if (m_is_explicit) {
+        expl.dt = config.get_double_or_warn("/timestepping/explicit/dt", 1e-2);
+        expl.minimal_dt = config.get_double("/timestepping/explicit/minimal_dt", 1e-16);
+        expl.maximal_dt = config.get_double("/timestepping/explicit/maximal_dt", 1e16);
+        expl.abs_tol = config.get_double_or_warn("/timestepping/explicit/abs_tol", 1e-3);
+        expl.rel_tol = config.get_double_or_warn("/timestepping/explicit/rel_tol", 1e-3);
+        expl.detect_stuck = config.get_bool("/timestepping/explicit/detect_stuck", true);
+
+        // Sanity checks:
+        if (expl.minimal_dt <= 0.0) throw std::invalid_argument("Minimal timestep size must be positive.");
+        if (expl.maximal_dt <= 0.0) throw std::invalid_argument("Maximal timestep size must be positive.");
+        if (expl.minimal_dt > expl.maximal_dt)
+          throw std::invalid_argument("Minimal timestep size must be smaller than maximal timestep size.");
+        if (expl.dt < expl.minimal_dt || expl.dt > expl.maximal_dt)
+          throw std::invalid_argument("Initial timestep size must be within the minimal and maximal timestep size.");
+        if (expl.abs_tol <= 0.0) throw std::invalid_argument("Absolute tolerance must be > 0.");
+        if (expl.rel_tol <= 0.0) throw std::invalid_argument("Relative tolerance must be > 0.");
+      }
 
       // -1 marks "no cutoff scale given"; the timesteppers use it only to label output, so
       // unlike def::fRG this must not warn - plenty of models have no /physical/Lambda at all.
@@ -260,6 +293,9 @@ namespace DiFfRG
     virtual void run(AbstractFlowingVariables<NumberType, VectorType> *initial_condition, const double t_start,
                      const double t_stop) = 0;
 
+    bool is_implicit() const { return m_is_implicit; }
+    bool is_explicit() const { return m_is_explicit; }
+
   protected:
     const ConfigTree config;
     AbstractAssembler<VectorType, SparseMatrixType, dim> *assembler;
@@ -268,6 +304,10 @@ namespace DiFfRG
     LogPort log;
 
     const std::chrono::time_point<std::chrono::high_resolution_clock> start_time;
+
+    // Declared after start_time so the declaration order matches the member-initializer order.
+    const bool m_is_implicit;
+    const bool m_is_explicit;
 
     std::shared_ptr<NoAdaptivity<VectorType>> adaptor_default;
     double Lambda;

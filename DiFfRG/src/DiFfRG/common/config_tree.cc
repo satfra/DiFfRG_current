@@ -263,12 +263,19 @@ namespace DiFfRG
                 << ". This default is a guess, not a safe choice - set the key explicitly in your parameter file."
                 << std::endl;
     }
+
+    std::string format_double(double value)
+    {
+      std::stringstream ss;
+      ss << std::scientific << std::setprecision(2) << value;
+      return ss.str();
+    }
   } // namespace internal
 
   double ConfigTree::get_double_or_warn(const std::string &key, const double def) const
   {
     if (contains(key)) return get_double(key, def);
-    internal::warn_missing_key(key, std::to_string(def));
+    internal::warn_missing_key(key, internal::format_double(def));
     return def;
   }
 

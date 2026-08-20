@@ -43,6 +43,29 @@ namespace DiFfRG
                       "Unknown type requested of MatsubaraStorage::get_matsubara_quadrature");
       }
 
+      /**
+       * @brief The exact Matsubara sum for a summand of finite extent in the frequency.
+       *
+       * Keyed on (T, node count) rather than on the cutoff, because that is all the rule depends
+       * on: the cutoff enters only through floor(cutoff / 2 pi T). Neighbouring RG steps therefore
+       * share an entry instead of each building their own, and the map stays bounded by the number
+       * of distinct mode counts the flow visits.
+       */
+      template <typename NT = double> MatsubaraQuadrature<NT> &get_matsubara_exact_sum(const NT T, const NT freq_cutoff)
+      {
+        std::lock_guard<std::mutex> lock(m_mutex);
+
+        const int n = MatsubaraQuadrature<NT>::modes_below(T, freq_cutoff);
+
+        if constexpr (std::is_same_v<NT, double>) {
+          return find_exact_d(n, find_exact_T_d(T));
+        } else if constexpr (std::is_same_v<NT, float>) {
+          return find_exact_f(n, find_exact_T_f(T));
+        }
+        static_assert(std::is_same_v<NT, double> || std::is_same_v<NT, float>,
+                      "Unknown type requested of MatsubaraStorage::get_matsubara_exact_sum");
+      }
+
       void set_verbosity(int v);
       void set_log_port(LogPort port) { log = std::move(port); }
 
@@ -67,8 +90,20 @@ namespace DiFfRG
       EnergyIterator<double> find_E_d(const double E, TemperatureIterator<double> T_it);
       EnergyIterator<float> find_E_f(const float E, TemperatureIterator<float> T_it);
 
+      template <typename NT = double> using ExactStorageType = std::map<double, std::map<int, MatsubaraQuadrature<NT>>>;
+      template <typename NT = double> using ExactTemperatureIterator = typename ExactStorageType<NT>::iterator;
+
+      ExactTemperatureIterator<double> find_exact_T_d(const double T);
+      ExactTemperatureIterator<float> find_exact_T_f(const float T);
+
+      MatsubaraQuadrature<double> &find_exact_d(const int n, ExactTemperatureIterator<double> T_it);
+      MatsubaraQuadrature<float> &find_exact_f(const int n, ExactTemperatureIterator<float> T_it);
+
       StorageType<double> quadratures_d;
       StorageType<float> quadratures_f;
+
+      ExactStorageType<double> exact_sums_d;
+      ExactStorageType<float> exact_sums_f;
 
       int verbosity = 0;
       // These must agree with the ConfigTree defaults read in QuadratureProvider's
@@ -203,6 +238,25 @@ namespace DiFfRG
     auto matsubara_weights(const NT T, const NT typical_E)
     {
       return matsubara_storage.get_matsubara_quadrature<NT>(T, typical_E).template weights<MemorySpace>();
+    }
+
+    /**
+     * @brief The Matsubara rule itself, for callers that need more than nodes and weights -- its
+     * size, or the zero-mode-inclusive node list of sum_nodes(). The reference is into a
+     * node-based map and stays valid for the lifetime of the provider.
+     */
+    template <typename NT = double> const MatsubaraQuadrature<NT> &matsubara_rule(const NT T, const NT typical_E)
+    {
+      return matsubara_storage.get_matsubara_quadrature<NT>(T, typical_E);
+    }
+
+    /**
+     * @brief The exact Matsubara sum for a summand that vanishes above `freq_cutoff`.
+     * See MatsubaraQuadrature::reinit_exact_sum.
+     */
+    template <typename NT = double> const MatsubaraQuadrature<NT> &matsubara_exact_sum(const NT T, const NT freq_cutoff)
+    {
+      return matsubara_storage.get_matsubara_exact_sum<NT>(T, freq_cutoff);
     }
 
     /**
