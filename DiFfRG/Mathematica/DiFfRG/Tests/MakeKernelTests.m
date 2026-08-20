@@ -53,9 +53,12 @@ If[Length@PacletFind["FunKit"] > 0,
     Needs["DiFfRG`CodeTools`MakeKernel`"];
     AppendTo[tests,
         TestCreate[
-            ListQ[GetStandardKernelDefinitions[]] && Length[GetStandardKernelDefinitions[]] === 6,
+            ListQ[GetStandardKernelDefinitions[]] &&
+                Length[GetStandardKernelDefinitions[]] === 6 &&
+                AllTrue[GetStandardKernelDefinitions[], Not @ FreeQ[#, "static KOKKOS_INLINE_FUNCTION"]&] &&
+                AllTrue[GetStandardKernelDefinitions[], FreeQ[#, "static KOKKOS_FORCEINLINE_FUNCTION"]&],
             True,
-            TestID -> "GetStandardKernelDefinitions returns list of 6 definitions"
+            TestID -> "GetStandardKernelDefinitions returns 6 compiler-inlineable definitions"
         ]
     ];
     ,

@@ -236,7 +236,7 @@ template <typename _Regulator> class V_kernel
 public:
   using Regulator = _Regulator;
 
-  static KOKKOS_FORCEINLINE_FUNCTION auto
+  static KOKKOS_INLINE_FUNCTION auto
   kernel(const double &l1, const auto &k, const auto &N, const auto &T,
          const auto &m2Pi, const auto &m2Sigma)
   {
@@ -249,11 +249,11 @@ public:
     ...
   }
 
-  static KOKKOS_FORCEINLINE_FUNCTION auto constant(...) { return 0.; }
+  static KOKKOS_INLINE_FUNCTION auto constant(...) { return 0.; }
 };
 ```
 
-This is exactly the bosonic O(N) threshold structure: $N-1$ Goldstone (pion) contributions plus one radial (sigma) contribution, weighted by the regulator-derivative $\partial_t R_k$ and the finite-$T$ $\coth$ factors. The `KOKKOS_FORCEINLINE_FUNCTION` markers make the kernel usable on both CPU and GPU backends.
+This is exactly the bosonic O(N) threshold structure: $N-1$ Goldstone (pion) contributions plus one radial (sigma) contribution, weighted by the regulator-derivative $\partial_t R_k$ and the finite-$T$ $\coth$ factors. The `KOKKOS_INLINE_FUNCTION` markers make the kernel usable on both CPU and GPU backends while leaving the final inlining decision to the compiler.
 
 `flows/V/V.hh` wraps the kernel in an integrator that owns both the plain-`double` and the `autodiff::real` instantiations of `Integrator_p2`:
 
