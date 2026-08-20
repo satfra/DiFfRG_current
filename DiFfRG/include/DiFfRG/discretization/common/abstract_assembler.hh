@@ -3,6 +3,7 @@
 // DiFfRG
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/common/mpi.hh>
+#include <DiFfRG/discretization/common/solution_view.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
 
 namespace DiFfRG
@@ -127,6 +128,15 @@ namespace DiFfRG
      * MPI_COMM_SELF for a serial discretization, so callers never branch on the build type.
      */
     virtual MPI_Comm get_communicator() const = 0;
+
+    /**
+     * @brief Establish the layout of a fully-replicated read-only view of the solution.
+     *
+     * Output, the EoM search and the potential solves all read arbitrary global dof indices, which
+     * a vector holding only this rank's rows cannot answer. Refreshing one of these before handing
+     * it to them keeps all of that code unchanged. See SolutionView.
+     */
+    virtual void reinit_solution_view(SolutionView<VectorType> &view) const = 0;
 
     /**
      * @brief Obtain the mass matrix.

@@ -2,6 +2,8 @@
 
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/discretization/common/la_policy.hh>
+#include <DiFfRG/discretization/common/serial_mirror.hh>
 #include <DiFfRG/discretization/data/hdf5_output.hh>
 #include <DiFfRG/discretization/data/output_settings.hh>
 #include <DiFfRG/discretization/data/output_timings.hh>
@@ -32,6 +34,20 @@ namespace DiFfRG
    */
   template <uint dim, typename VectorType> class FEOutput
   {
+    /**
+     * @brief What the DataOut actually gets handed.
+     *
+     * Never a distributed vector. DataOut::add_data_vector() routes every vector type through
+     * internal::DataOutImplementation::CreateVectors::create_dof_vector(), which builds a ghosted
+     * LinearAlgebra::distributed::BlockVector on dof_handler.get_mpi_communicator() and calls
+     * update_ghost_values() -- two collectives, in a code path OutputSession runs on rank 0 alone.
+     * Under the replicated-mesh policy rank 0 already holds every dof, so it copies the replica into
+     * a plain serial vector and attaches that to a serial mirror DoFHandler instead. Nothing
+     * communicates and the whole domain still gets written.
+     */
+    using OutputVectorType =
+        std::conditional_t<is_distributed_la<VectorType>, dealii::Vector<get_type::NumberType<VectorType>>, VectorType>;
+
   public:
     /**
      * @brief Construct a new FEOutput object
@@ -130,7 +146,14 @@ namespace DiFfRG
     // a DataOut frees its Kokkos-backed vectors, which (with deal.II's Kokkos host backend) must not
     // happen on a worker thread concurrently with the main thread's own Kokkos work.
     std::list<uint> output_thread_series;
-    std::list<std::list<typename VectorMemory<VectorType>::Pointer>> attached_solutions;
+    // Owned outright rather than drawn from a GrowingVectorMemory pool. A pooled vector is not
+    // destroyed when the frame retires, it is handed back to a process-wide pool that lives until
+    // InitFinalize::finalize() tears it down -- i.e. these buffers would be freed during MPI/Kokkos
+    // shutdown, concurrently with whatever else is being finalised. That showed up as an
+    // intermittent segfault in GrowingVectorMemory::release_unused_memory() after the run had
+    // already printed its final line. Owning them means they die in retire_oldest()/drain(), on the
+    // main thread, while the run is still up.
+    std::list<std::list<std::unique_ptr<OutputVectorType>>> attached_solutions;
     std::list<std::size_t> attached_bytes;
     std::size_t pending_bytes = 0;
 
@@ -145,7 +168,26 @@ namespace DiFfRG
     std::exception_ptr stored_exception;
     bool finished = false;
 
-    GrowingVectorMemory<VectorType> mem;
+    /**
+     * @brief Serial mirror of the solution DoFHandler, plus the map from its dof numbering to ours.
+     *
+     * The numbering genuinely differs: a DoFHandler on a parallel::shared::Triangulation renumbers
+     * so that each rank owns a contiguous range, so global index i means different nodes in the two
+     * handlers as soon as there is more than one rank. (At one rank they coincide, which is exactly
+     * why single-rank distributed runs looked fine.) The permutation is built cell by cell -- the
+     * two triangulations are structurally identical, so cells match by level and index.
+     */
+    struct SerialMirrorDoFs {
+      std::unique_ptr<DoFHandler<safe_dim>> dof_handler;
+      std::vector<types::global_dof_index> to_mirror;
+      boost::signals2::scoped_connection connection;
+      bool stale = true;
+    };
+    SerialMirrorDoFs mirror_dofs;
+
+    /** The DoFHandler to hand DataOut, and the values permuted into its numbering. */
+    const DoFHandler<safe_dim> &prepare_output_vector(const DoFHandler<dim> &dof_handler, const VectorType &solution,
+                                                      OutputVectorType &target);
 
     void update_buffers();
     void retire_oldest();

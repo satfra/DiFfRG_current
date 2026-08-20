@@ -34,6 +34,7 @@
 #include <tbb/tbb.h>
 
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/physics/integration/map_scheduler.hh>
 #include <DiFfRG/discretization/common/la_policy.hh>
 #include <DiFfRG/discretization/FV/reconstructor/advection/first_order_reconstructor.hh>
 #include <DiFfRG/discretization/FV/reconstructor/advection/tvd_reconstructor.hh>
@@ -606,6 +607,12 @@ namespace DiFfRG
 
         virtual MPI_Comm get_communicator() const override { return discretization.get_communicator(); }
 
+        virtual void reinit_solution_view(SolutionView<VectorType> &view) const override
+        {
+          view.reinit(discretization.get_locally_owned_dofs(), discretization.get_locally_relevant_dofs(),
+                      discretization.get_communicator());
+        }
+
         virtual IndexSet get_differential_indices() const override
         {
           ComponentMask component_mask(model.template differential_components<dim>());
@@ -662,6 +669,14 @@ namespace DiFfRG
           //                                        /*keep_constrained_dofs = */ true);
           //   sparsity_pattern_jacobian.copy_from(dsp);
           // }
+
+          // Hoisted out of probe_diffusion_flux_conditioning(): GridTools::diameter is COLLECTIVE
+          // on a partitioned triangulation, and that function is entered conditionally
+          // (diagnose_flux_conditioning, and only on the first residual assembly). A collective
+          // behind a condition is a hang waiting for the condition to stop agreeing across ranks.
+          // Here every rank arrives unconditionally, and the value cannot go stale because KT
+          // refuses to run under mesh adaptivity.
+          domain_diameter = GridTools::diameter(triangulation);
 
           rebuild_cell_topology_cache();
           rebuild_face_reconstruction_descriptors();
@@ -879,8 +894,15 @@ namespace DiFfRG
 
           MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
 
+          // map() is collective and each rank visits only its own cells; see NoMapsHere.
+          const NoMapsHere no_maps_during_assembly;
           MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
                                 copy_data, flags, nullptr, nullptr, mesh_workers, batch_size);
+                                // Resolve contributions this rank made to rows it does not own. A partition-boundary
+                                // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
+                                // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
+                                // arrive here. A no-op for the serial types.
+                                mass.compress(dealii::VectorOperation::add);
         }
 
         using CellData = internal::CellData<dim, NumberType, n_components>;
@@ -1336,7 +1358,7 @@ namespace DiFfRG
           const ThirdDerivativeType zero_third{};
           const GradientType zero_grad{};
 
-          const double domain_size = std::max(GridTools::diameter(triangulation), 1e-300);
+          const double domain_size = std::max(domain_diameter, 1e-300);
           std::array<double, n_components> max_baseline{};
           std::array<double, n_components> max_variation{};
           double u_scale = 0.0;
@@ -1608,10 +1630,18 @@ namespace DiFfRG
           };
 
           MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells | MeshWorker::assemble_boundary_faces |
-                                            MeshWorker::assemble_own_interior_faces_once;
+                                            MeshWorker::assemble_own_interior_faces_once |
+                                            MeshWorker::assemble_ghost_faces_once;
 
+          // map() is collective and each rank visits only its own cells; see NoMapsHere.
+          const NoMapsHere no_maps_during_assembly;
           MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
                                 copy_data, flags, boundary_worker, face_worker, mesh_workers, batch_size);
+                                // Resolve contributions this rank made to rows it does not own. A partition-boundary
+                                // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
+                                // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
+                                // arrive here. A no-op for the serial types.
+                                residual.compress(dealii::VectorOperation::add);
           timings_residual.push_back(timer.wall_time());
         }
 
@@ -1660,8 +1690,15 @@ namespace DiFfRG
           MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
 
           Timer timer;
+          // map() is collective and each rank visits only its own cells; see NoMapsHere.
+          const NoMapsHere no_maps_during_assembly;
           MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
                                 copy_data, flags, nullptr, nullptr, mesh_workers, batch_size);
+                                // Resolve contributions this rank made to rows it does not own. A partition-boundary
+                                // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
+                                // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
+                                // arrive here. A no-op for the serial types.
+                                jacobian.compress(dealii::VectorOperation::add);
           timings_jacobian.push_back(timer.wall_time());
         }
 
@@ -1998,10 +2035,18 @@ namespace DiFfRG
           Scratch scratch_data(quadrature);
           CopyData copy_data;
           MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells | MeshWorker::assemble_boundary_faces |
-                                            MeshWorker::assemble_own_interior_faces_once;
+                                            MeshWorker::assemble_own_interior_faces_once |
+                                            MeshWorker::assemble_ghost_faces_once;
 
+          // map() is collective and each rank visits only its own cells; see NoMapsHere.
+          const NoMapsHere no_maps_during_assembly;
           MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
                                 copy_data, flags, boundary_worker, face_worker, mesh_workers, batch_size);
+                                // Resolve contributions this rank made to rows it does not own. A partition-boundary
+                                // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
+                                // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
+                                // arrive here. A no-op for the serial types.
+                                jacobian.compress(dealii::VectorOperation::add);
           timings_jacobian.push_back(timer.wall_time());
         }
 
@@ -2412,6 +2457,8 @@ namespace DiFfRG
         // fRG flow is run at, so a warning always means real digits are being lost.
         static constexpr double flux_conditioning_warn_threshold = 1e-9;
         static constexpr unsigned int flux_conditioning_max_samples = 512;
+        // Set in reinit() so the collective that produces it is never behind a condition.
+        double domain_diameter = 0.0;
         // Opt-in ("/discretization/diagnose_flux_conditioning"). The baseline/variation ratio
         // is a sound measure of digits lost in the flux difference, but on its own it cannot
         // tell a harmful case from a harmless one: a model may be baseline-dominated in the

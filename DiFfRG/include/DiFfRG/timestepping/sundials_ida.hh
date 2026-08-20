@@ -33,12 +33,20 @@ namespace DiFfRG
     using IDAErrorDofCallback = std::function<void(const IDAErrorDofDiagnostics &)>;
 
     using Base::assembler, Base::data_out, Base::config, Base::adaptor;
-    using Base::Base;
+    /// Forwards to the base with this stepper's kind. Not `using Base::Base;`: the base needs to
+    /// know which /timestepping/ section to read, and it cannot ask a virtual function for that
+    /// from inside its own constructor.
+    TimeStepperSUNDIALS_IDA(const ConfigTree &config, AbstractAssembler<VectorType, SparseMatrixType, dim> *assembler,
+                            OutputSession<dim, VectorType> *data_out, AbstractAdaptor<VectorType> *adaptor = nullptr)
+        : Base(config, assembler, data_out, adaptor, /*implicit=*/true, /*explicit=*/false)
+    {
+    }
     using Base::console_out;
     using Base::verbosity, Base::output_dt, Base::impl, Base::expl;
 
     virtual void run(AbstractFlowingVariables<NumberType, VectorType> *initial_condition, const double t_start,
                      const double t_stop) override;
+
 
     void set_ida_error_dof_callback(IDAErrorDofCallback callback) { ida_error_dof_callback = std::move(callback); }
 

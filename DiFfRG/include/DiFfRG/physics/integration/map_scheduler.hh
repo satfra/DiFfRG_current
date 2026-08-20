@@ -153,6 +153,34 @@ namespace DiFfRG
    * The running per-rank load is part of that state and is reset by `complete()`. A plan checksum
    * is verified inside `complete()`; a mismatch aborts the job rather than hanging it.
    */
+  /**
+   * @brief A scope in which map() must not be called.
+   *
+   * map() is a collective: every rank must issue the same sequence of them. Distributed FE assembly
+   * breaks that guarantee, because each rank visits only its own cells -- so a map() from inside a
+   * cell worker is issued a different number of times on different ranks, and the run hangs in the
+   * next Allgatherv with no indication of which model did it.
+   *
+   * The rule "no map() inside FE assembly" already existed as documentation. This makes it
+   * enforceable: the assemblers open one of these around every mesh loop, and a map() inside aborts
+   * the job with a message naming the problem instead of hanging.
+   *
+   * Deliberately a process-wide counter rather than thread_local: assembly runs cell workers on TBB
+   * worker threads, and a thread_local flag set on the main thread would be invisible to exactly the
+   * threads that need checking.
+   */
+  class NoMapsHere
+  {
+  public:
+    NoMapsHere();
+    ~NoMapsHere();
+    NoMapsHere(const NoMapsHere &) = delete;
+    NoMapsHere &operator=(const NoMapsHere &) = delete;
+
+    /// Whether any NoMapsHere scope is currently open.
+    static bool active();
+  };
+
   class MapScheduler
   {
   public:

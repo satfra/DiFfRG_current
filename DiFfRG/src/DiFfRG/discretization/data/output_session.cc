@@ -293,12 +293,13 @@ namespace DiFfRG
       } catch (...) {
         if (!terminal_error) terminal_error = std::current_exception();
       }
-      // Reported only after the writer has been joined, so its totals are complete. Emitted
-      // unconditionally: knowing what a run spent on output should never require having
-      // thought to switch something on beforehand.
-      timings.set_writer_totals(hdf5_writer.worker_totals(), hdf5_writer.asynchronous());
-      const std::string report = timings.format();
-      if (!report.empty()) run_logger.port().info(report);
+
+      // Reported only after the writer has been joined, so its totals are complete.
+      if (settings.verbosity >= 3) {
+        timings.set_writer_totals(hdf5_writer.worker_totals(), hdf5_writer.asynchronous());
+        const std::string report = timings.format();
+        if (!report.empty()) run_logger.port().info(report);
+      }
     }
     rethrow_deferred_error();
     if (terminal_error) std::rethrow_exception(terminal_error);
@@ -311,4 +312,11 @@ namespace DiFfRG
   template class OutputSession<1, dealii::BlockVector<double>>;
   template class OutputSession<2, dealii::BlockVector<double>>;
   template class OutputSession<3, dealii::BlockVector<double>>;
+
+#ifdef DEAL_II_WITH_PETSC
+  template class OutputSession<0, dealii::PETScWrappers::MPI::Vector>;
+  template class OutputSession<1, dealii::PETScWrappers::MPI::Vector>;
+  template class OutputSession<2, dealii::PETScWrappers::MPI::Vector>;
+  template class OutputSession<3, dealii::PETScWrappers::MPI::Vector>;
+#endif
 } // namespace DiFfRG

@@ -23,11 +23,19 @@ namespace DiFfRG
     using BlockVectorType = typename Base::BlockVectorType;
 
     using Base::assembler, Base::data_out, Base::config, Base::adaptor;
-    using Base::Base;
+    /// Forwards to the base with this stepper's kind. Not `using Base::Base;`: the base needs to
+    /// know which /timestepping/ section to read, and it cannot ask a virtual function for that
+    /// from inside its own constructor.
+    TimeStepperExplicitEuler(const ConfigTree &config, AbstractAssembler<VectorType, SparseMatrixType, dim> *assembler,
+                             OutputSession<dim, VectorType> *data_out, AbstractAdaptor<VectorType> *adaptor = nullptr)
+        : Base(config, assembler, data_out, adaptor, /*implicit=*/false, /*explicit=*/true)
+    {
+    }
     using Base::console_out;
     using Base::verbosity, Base::output_dt, Base::impl, Base::expl;
 
     virtual void run(AbstractFlowingVariables<NumberType, VectorType> *initial_condition, const double t_start,
                      const double t_stop) override;
+
   };
 } // namespace DiFfRG

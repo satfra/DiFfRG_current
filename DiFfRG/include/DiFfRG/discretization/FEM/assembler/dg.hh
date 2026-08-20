@@ -5,6 +5,7 @@
 
 // DiFfRG
 #include <DiFfRG/discretization/FEM/assembler/common.hh>
+#include <DiFfRG/physics/integration/map_scheduler.hh>
 
 namespace DiFfRG
 {
@@ -206,6 +207,11 @@ namespace DiFfRG
       }
 
       virtual MPI_Comm get_communicator() const override { return discretization.get_communicator(); }
+      virtual void reinit_solution_view(SolutionView<VectorType> &view) const override
+      {
+        view.reinit(discretization.get_locally_owned_dofs(), discretization.get_locally_relevant_dofs(),
+                    discretization.get_communicator());
+      }
 
       virtual void reinit() override
       {
@@ -353,6 +359,8 @@ namespace DiFfRG
         CopyData copy_data;
         MeshWorker::AssembleFlags assemble_flags = MeshWorker::assemble_own_cells;
 
+        // map() is collective and each rank visits only its own cells; see NoMapsHere.
+        const NoMapsHere no_maps_during_assembly;
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
                               copy_data, assemble_flags, nullptr, face_worker, mesh_workers, batch_size);
       }
@@ -403,8 +411,15 @@ namespace DiFfRG
         CopyData copy_data;
         MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
 
+        // map() is collective and each rank visits only its own cells; see NoMapsHere.
+        const NoMapsHere no_maps_during_assembly;
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
                               copy_data, flags, nullptr, nullptr, mesh_workers, batch_size);
+                              // Resolve contributions this rank made to rows it does not own. A partition-boundary
+                              // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
+                              // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
+                              // arrive here. A no-op for the serial types.
+                              mass.compress(dealii::VectorOperation::add);
       }
 
       virtual void residual(VectorType &residual, const VectorType &solution_global, NumberType weight,
@@ -550,11 +565,19 @@ namespace DiFfRG
         Scratch scratch_data(mapping, fe, quadrature, quadrature_face);
         CopyData copy_data;
         MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells | MeshWorker::assemble_boundary_faces |
-                                          MeshWorker::assemble_own_interior_faces_once;
+                                          MeshWorker::assemble_own_interior_faces_once |
+                                          MeshWorker::assemble_ghost_faces_once;
 
         Timer timer;
+        // map() is collective and each rank visits only its own cells; see NoMapsHere.
+        const NoMapsHere no_maps_during_assembly;
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
                               copy_data, flags, boundary_worker, face_worker, mesh_workers, batch_size);
+                              // Resolve contributions this rank made to rows it does not own. A partition-boundary
+                              // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
+                              // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
+                              // arrive here. A no-op for the serial types.
+                              residual.compress(dealii::VectorOperation::add);
         timings_residual.push_back(timer.wall_time());
       }
 
@@ -612,8 +635,15 @@ namespace DiFfRG
         MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
 
         Timer timer;
+        // map() is collective and each rank visits only its own cells; see NoMapsHere.
+        const NoMapsHere no_maps_during_assembly;
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
                               copy_data, flags, nullptr, nullptr, mesh_workers, batch_size);
+                              // Resolve contributions this rank made to rows it does not own. A partition-boundary
+                              // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
+                              // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
+                              // arrive here. A no-op for the serial types.
+                              jacobian.compress(dealii::VectorOperation::add);
         timings_jacobian.push_back(timer.wall_time());
       }
 
@@ -839,11 +869,19 @@ namespace DiFfRG
         Scratch scratch_data(mapping, fe, quadrature, quadrature_face);
         CopyData copy_data;
         MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells | MeshWorker::assemble_boundary_faces |
-                                          MeshWorker::assemble_own_interior_faces_once;
+                                          MeshWorker::assemble_own_interior_faces_once |
+                                          MeshWorker::assemble_ghost_faces_once;
 
         Timer timer;
+        // map() is collective and each rank visits only its own cells; see NoMapsHere.
+        const NoMapsHere no_maps_during_assembly;
         MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
                               copy_data, flags, boundary_worker, face_worker, mesh_workers, batch_size);
+                              // Resolve contributions this rank made to rows it does not own. A partition-boundary
+                              // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
+                              // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
+                              // arrive here. A no-op for the serial types.
+                              jacobian.compress(dealii::VectorOperation::add);
         timings_jacobian.push_back(timer.wall_time());
       }
 

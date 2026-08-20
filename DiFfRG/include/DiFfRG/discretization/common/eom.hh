@@ -1,10 +1,13 @@
 #pragma once
 
 // external libraries
+#include <boost/signals2/connection.hpp>
+
 #include <Eigen/Eigenvalues>
 #include <Eigen/QR>
 
 #include <deal.II/base/point.h>
+#include <deal.II/distributed/tria_base.h>
 #include <deal.II/base/quadrature_lib.h>
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_tools.h>
@@ -25,6 +28,7 @@
 #include <deal.II/numerics/fe_field_function.h>
 
 #include <DiFfRG/discretization/common/eom_config.hh>
+#include <DiFfRG/discretization/common/serial_mirror.hh>
 #include <DiFfRG/discretization/data/output_timings.hh>
 
 // standard library
@@ -32,7 +36,9 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <utility>
@@ -156,16 +162,21 @@ namespace DiFfRG
       return origin;
     }
 
+    /**
+     * @brief The cell at the same position in another DoFHandler.
+     *
+     * Addressed by (level, index) rather than by copying the source accessor.
+     * TriaAccessorBase::copy_from also copies the *triangulation pointer*, which is silently wrong
+     * as soon as the two DoFHandlers sit on different -- though structurally identical --
+     * triangulations, which is exactly what the distributed policy does in solve_potential.
+     */
     template <int dim>
     typename dealii::DoFHandler<dim>::active_cell_iterator
     matching_dof_cell(const dealii::DoFHandler<dim> &target_dof_handler,
                       const typename dealii::DoFHandler<dim>::active_cell_iterator &source_cell)
     {
-      using TriaCell = typename dealii::Triangulation<dim>::active_cell_iterator;
-
-      auto target_cell = target_dof_handler.begin_active();
-      target_cell->copy_from(*TriaCell(source_cell));
-      return target_cell;
+      return typename dealii::DoFHandler<dim>::active_cell_iterator(
+          &target_dof_handler.get_triangulation(), source_cell->level(), source_cell->index(), &target_dof_handler);
     }
 
     template <int dim> double l1_distance(const dealii::Point<dim> &a, const dealii::Point<dim> &b)
@@ -471,8 +482,8 @@ namespace DiFfRG
         return eom_to_tensor<dim>(get_EoM(point, values));
       };
 
-      const auto cell_worker = [&](const Iterator &solution_cell, Scratch &scratch, Copy &copy) {
-        const auto potential_cell = matching_dof_cell(potential_dof_handler, solution_cell);
+      const auto cell_worker = [&](const Iterator &potential_cell, Scratch &scratch, Copy &copy) {
+        const auto solution_cell = matching_dof_cell(solution_dof_handler, potential_cell);
         const uint dofs_per_cell = potential_fe.n_dofs_per_cell();
 
         scratch.solution_fe_values.reinit(solution_cell);
@@ -502,11 +513,11 @@ namespace DiFfRG
         for (const auto &face : copy.face_data)
           constraints.distribute_local_to_global(face.matrix, face.rhs, face.dof_indices, matrix, rhs);
       };
-      const auto face_worker = [&](const Iterator &solution_cell, const uint &face_no, const uint &subface_no,
-                                   const Iterator &solution_neighbor, const uint &neighbor_face_no,
+      const auto face_worker = [&](const Iterator &potential_cell, const uint &face_no, const uint &subface_no,
+                                   const Iterator &potential_neighbor, const uint &neighbor_face_no,
                                    const uint &neighbor_subface_no, Scratch &scratch, Copy &copy) {
-        const auto potential_cell = matching_dof_cell(potential_dof_handler, solution_cell);
-        const auto potential_neighbor = matching_dof_cell(potential_dof_handler, solution_neighbor);
+        const auto solution_cell = matching_dof_cell(solution_dof_handler, potential_cell);
+        const auto solution_neighbor = matching_dof_cell(solution_dof_handler, potential_neighbor);
 
         scratch.solution_fe_interface_values.reinit(solution_cell, face_no, subface_no, solution_neighbor,
                                                     neighbor_face_no, neighbor_subface_no);
@@ -568,7 +579,14 @@ namespace DiFfRG
       const MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells | MeshWorker::assemble_boundary_faces |
                                               MeshWorker::assemble_own_interior_faces_once;
 
-      MeshWorker::mesh_loop(solution_dof_handler.begin_active(), solution_dof_handler.end(), cell_worker, copier,
+      // Driven by the POTENTIAL DoFHandler, not the solution one. Under the distributed policy the
+      // solution handler sits on a partitioned triangulation, and MeshWorker::mesh_loop then skips
+      // every cell this rank does not own and every face between two cells it does not own -- and
+      // those face skips cannot be recovered with any combination of AssembleFlags. Since
+      // solve_potential gives the potential its own serial copy of the mesh, driving from that side
+      // makes the traversal complete, identical on every rank, and unchanged in the serial case
+      // (there the two handlers share a triangulation, so this is the same loop it always was).
+      MeshWorker::mesh_loop(potential_dof_handler.begin_active(), potential_dof_handler.end(), cell_worker, copier,
                             scratch, copy, flags, boundary_worker, face_worker);
     }
 
@@ -865,7 +883,23 @@ namespace DiFfRG
       const auto origin = get_origin(solution_dof_handler, origin_cell);
       const double smoothing_length = resolve_potential_smoothing_length(solution_dof_handler, config.smoothing_length);
 
-      auto potential_dof_handler = std::make_unique<DoFHandler<dim>>(solution_dof_handler.get_triangulation());
+      // The potential gets its own SERIAL mesh whenever the solution lives on a partitioned one.
+      //
+      // Two things force this, and either alone is fatal:
+      //  * distribute_dofs() on a parallel triangulation is collective (MPI_Allgather inside
+      //    ParallelShared::distribute_dofs), while this whole call chain runs inside readouts(),
+      //    which OutputSession invokes on rank 0 only. Rank 0 would enter a collective nobody
+      //    else reaches, and the run hangs with no diagnostic.
+      //  * even if it did not hang, MeshWorker::mesh_loop over a partitioned mesh visits only the
+      //    calling rank's cells, so the potential system would be assembled with entire rows left
+      //    at zero -- a singular matrix handed to UMFPACK, or silently wrong readouts.
+      //
+      // The mesh is replicated at this rung and the solution is a full replica, so a serial copy is
+      // complete and every rank would compute the identical potential from it. The copy costs far
+      // less than the direct factorisation this function already performs on every call.
+      const auto &potential_triangulation = serial_mirror(solution_dof_handler.get_triangulation());
+
+      auto potential_dof_handler = std::make_unique<DoFHandler<dim>>(potential_triangulation);
       potential_dof_handler->distribute_dofs(*potential_fe);
 
       AffineConstraints<NumberType> constraints;

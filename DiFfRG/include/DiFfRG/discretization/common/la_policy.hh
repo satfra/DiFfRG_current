@@ -3,6 +3,7 @@
 // external libraries
 #include <deal.II/base/index_set.h>
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
+#include <deal.II/lac/full_matrix.h>
 #include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/sparsity_tools.h>
 #include <deal.II/lac/vector.h>
@@ -16,6 +17,7 @@
 // DiFfRG
 #include <DiFfRG/common/mpi.hh>
 #include <DiFfRG/common/types.hh>
+#include <DiFfRG/discretization/common/solution_view.hh>
 
 // std
 #include <vector>
@@ -79,7 +81,25 @@ namespace DiFfRG
       // alone would still fail name lookup in a serial build.
 #ifdef DEAL_II_WITH_MPI
       dealii::SparsityTools::distribute_sparsity_pattern(dsp, locally_owned, comm, locally_relevant);
-      pattern = dsp;
+
+      // Emphatically NOT `pattern = dsp`. DynamicSparsityPattern::operator= is documented to work
+      // "only for empty objects" and enforces that with an Assert -- which is compiled out in
+      // Release. So the obvious assignment silently leaves the pattern 0x0, PETSc then preallocates
+      // from an uninitialised row-start array, and the failure surfaces as
+      // "nnz cannot be greater than row length: value 545352472" from deep inside MatSeqAIJ.
+      // Copy the entries explicitly instead.
+      const auto &rows = dsp.row_index_set();
+      pattern.reinit(dsp.n_rows(), dsp.n_cols(), rows);
+      const auto copy_row = [&](const dealii::types::global_dof_index row) {
+        for (auto it = dsp.begin(row); it != dsp.end(row); ++it)
+          pattern.add(row, it->column());
+      };
+      if (rows.n_elements() > 0)
+        for (const auto row : rows)
+          copy_row(row);
+      else
+        for (dealii::types::global_dof_index row = 0; row < dsp.n_rows(); ++row)
+          copy_row(row);
 #endif
     } else {
       (void)locally_owned;
@@ -142,6 +162,19 @@ namespace DiFfRG
   }
 
   /**
+   * @brief Establish the layout of a fully-replicated view of the extra-variables block.
+   *
+   * Separate from the dof-shaped view because the variables block has its own ownership: rank 0
+   * holds all of it (variables_owner_set), so a view built from the dof partition would not fit.
+   */
+  template <typename VectorType>
+  void reinit_variables_view(SolutionView<VectorType> &view, const dealii::types::global_dof_index n_vars,
+                             MPI_Comm comm)
+  {
+    view.reinit(variables_owner_set(n_vars, comm), dealii::complete_index_set(n_vars), comm);
+  }
+
+  /**
    * @brief Size a standalone vector holding only the extra variables.
    */
   template <typename VectorType>
@@ -182,6 +215,93 @@ namespace DiFfRG
       (void)locally_owned;
       (void)comm;
       vec.reinit(block_structure);
+    }
+  }
+
+  /**
+   * @brief Run a model's variables computation and land the result in the distributed block.
+   *
+   * The models write their variables residual entry by entry (`residual[i] = ...`). Under
+   * distribution that block is owned outright by rank 0, so on every other rank the destination has
+   * no local entries at all and the writes would go into PETSc's off-process stash -- n_ranks ranks
+   * each inserting the same index, with no compress() anywhere to resolve it.
+   *
+   * The computation is redundant and identical on every rank anyway (its inputs are the replicated
+   * variables view and the replicated solution), so compute into a process-local scratch vector and
+   * copy back only what this rank owns.
+   *
+   * The serial branch calls @p compute directly on the destination, so the serial path keeps
+   * exactly today's instruction sequence and stays bit-exact.
+   *
+   * @param scratch a process-local vector of full variables size, from reinit_local_variables_vector.
+   */
+  template <typename VectorType, typename Fn>
+  void compute_variables_into(VectorType &dst, VectorType &scratch, Fn &&compute)
+  {
+    if constexpr (!is_distributed_la<VectorType>) {
+      (void)scratch;
+      compute(dst);
+    } else {
+      scratch = 0;
+      compute(scratch);
+      // The model wrote through VectorBase::operator(), which stages rather than stores.
+      scratch.compress(dealii::VectorOperation::insert);
+      for (const auto i : dst.locally_owned_elements())
+        dst(i) = scratch(i);
+      dst.compress(dealii::VectorOperation::insert);
+    }
+  }
+
+  /**
+   * @brief Size a process-local vector holding every extra variable on every rank.
+   */
+  template <typename VectorType>
+  void reinit_local_variables_vector(VectorType &vec, const dealii::types::global_dof_index n_vars)
+  {
+    if constexpr (is_distributed_la<VectorType>) {
+      if (n_vars > 0) vec.reinit(dealii::complete_index_set(n_vars), MPI_COMM_SELF);
+    } else {
+      vec.reinit(n_vars);
+    }
+  }
+
+  /**
+   * @brief Apply a dense matrix to the extra-variables block.
+   *
+   * The variables block is small, dense, and owned outright by rank 0 (variables_owner_set), so on
+   * every other rank `src` is locally empty and dealii::FullMatrix::vmult -- which indexes elements
+   * directly -- cannot be applied to it at all.
+   *
+   * Broadcast from the owner, apply the dense operator redundantly on every rank, then write back
+   * only what each rank owns. Broadcasting rather than sum-reducing partial contributions is
+   * deliberate: it is exact. A sum over zero-filled buffers would turn a -0.0 into +0.0 and is not
+   * bit-safe, which is the same reason MPI::allgatherv_bytes exists instead of an Allreduce.
+   *
+   * Redundant application is the right trade here: the matrix is n_variables squared with
+   * n_variables tiny, so replicating the work costs far less than a distributed solve, and it makes
+   * every rank agree bit-for-bit without a second collective.
+   */
+  template <typename VectorType, typename NumberType>
+  void dense_vmult_variables(const dealii::FullMatrix<NumberType> &matrix, VectorType &dst, const VectorType &src,
+                             MPI_Comm comm)
+  {
+    if constexpr (!is_distributed_la<VectorType>) {
+      (void)comm;
+      matrix.vmult(dst, src);
+    } else {
+      const auto n = src.size();
+      dealii::Vector<NumberType> local_src(n), local_dst(n);
+
+      const auto owned = src.locally_owned_elements();
+      for (const auto i : owned)
+        local_src[i] = src(i);
+      MPI::bcast(comm, local_src.data(), static_cast<size_t>(n) * sizeof(NumberType), /*root=*/0);
+
+      matrix.vmult(local_dst, local_src);
+
+      for (const auto i : dst.locally_owned_elements())
+        dst(i) = local_dst[i];
+      dst.compress(dealii::VectorOperation::insert);
     }
   }
 } // namespace DiFfRG

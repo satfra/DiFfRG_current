@@ -90,9 +90,45 @@ namespace DiFfRG
     void reinit_with_size(const int size, const NT T, const NT typical_E = 1.);
 
     /**
-     * @brief Get the size of the quadrature rule.
+     * @brief Number of positive Matsubara modes strictly inside a frequency cutoff.
+     *
+     * `2 pi n T <= freq_cutoff`, i.e. `floor(freq_cutoff / (2 pi T))`. Zero is a legitimate
+     * answer: below `freq_cutoff = 2 pi T` the whole sum is the zero mode.
+     */
+    static int modes_below(const NT T, const NT freq_cutoff);
+
+    /**
+     * @brief Build the EXACT Matsubara sum for a summand of finite extent in the frequency.
+     *
+     * When every term carries a `dR/dt` insertion whose argument confines the loop frequency, the
+     * summand is identically zero for `|p0| > freq_cutoff` and
+     * \f[ T \sum_{n\in\mathbb Z} f(2\pi n T) = T f(0) + T \sum_{n=1}^{N} (f(\omega_n)+f(-\omega_n)) \f]
+     * with \f$N = \f$ modes_below() is not an approximation but the sum itself. Nodes are the true
+     * frequencies and every weight is \f$T\f$, which is what the caller convention of sum()
+     * already expects -- so this is a drop-in replacement for the Monien rule, differing only in
+     * how many nodes it needs.
+     *
+     * Below the crossover this is dramatically cheaper (at k/T ~ 10 it is one node against a
+     * 44-node Monien rule) AND exact; above it, it is more expensive, so the caller is expected
+     * to pick whichever rule is smaller. The cutoff is a property of the regulator's support, not
+     * of the temperature: for a 4D regulator with extent `x_extent` in `q^2/k^2` it is
+     * `sqrt(x_extent) * k`.
+     *
+     * @param T The temperature. Must be positive; at T=0 there is nothing to sum.
+     * @param freq_cutoff The frequency beyond which the summand vanishes.
+     */
+    void reinit_exact_sum(const NT T, const NT freq_cutoff);
+
+    /**
+     * @brief Get the size of the quadrature rule, NOT counting the zero mode.
      */
     size_t size() const;
+
+    /**
+     * @brief Size of the node list returned by sum_nodes()/sum_weights(): size() plus the zero
+     * mode, where there is one (i.e. everywhere but the T=0 rule).
+     */
+    size_t sum_size() const;
 
     /**
      * @brief Get the temperature of the quadrature rule.
@@ -119,7 +155,43 @@ namespace DiFfRG
       return sum;
     }
 
+    /**
+     * @brief The positive-frequency nodes, without the zero mode. Length size().
+     */
     template <typename MemorySpace> Kokkos::View<const NT *, MemorySpace> nodes() const
+    {
+      return Kokkos::subview(raw_nodes<MemorySpace>(), Kokkos::make_pair(size_t(0), size_t(m_size)));
+    }
+
+    template <typename MemorySpace> Kokkos::View<const NT *, MemorySpace> weights() const
+    {
+      return Kokkos::subview(raw_weights<MemorySpace>(), Kokkos::make_pair(size_t(0), size_t(m_size)));
+    }
+
+    /**
+     * @brief Node list for a device-side sum: the positive frequencies followed by the zero mode.
+     *
+     * The zero mode is appended as a node like any other -- `x = 0` with weight `T/2` -- so that
+     * the `w * (f(+x) + f(-x))` body that evaluates every other node reproduces `T f(0)` exactly,
+     * with no branch. That matters twice over: a `idx == 0 ? T*f(0) : 0` guard around a kernel
+     * call costs the whole warp a full extra kernel evaluation for one active lane, and the exact
+     * exact sum can legitimately have ZERO positive modes in the deep IR, where a rule that carries
+     * its zero mode outside the node list would integrate to nothing at all.
+     *
+     * Empty for the T=0 rule, where there is no zero mode to add (it has weight zero).
+     */
+    template <typename MemorySpace> Kokkos::View<const NT *, MemorySpace> sum_nodes() const
+    {
+      return Kokkos::subview(raw_nodes<MemorySpace>(), Kokkos::make_pair(size_t(0), sum_size()));
+    }
+
+    template <typename MemorySpace> Kokkos::View<const NT *, MemorySpace> sum_weights() const
+    {
+      return Kokkos::subview(raw_weights<MemorySpace>(), Kokkos::make_pair(size_t(0), sum_size()));
+    }
+
+  private:
+    template <typename MemorySpace> Kokkos::View<const NT *, MemorySpace> raw_nodes() const
     {
       if constexpr (std::is_same_v<MemorySpace, Kokkos::DefaultExecutionSpace::memory_space>) {
         return device_nodes;
@@ -130,7 +202,7 @@ namespace DiFfRG
       }
     }
 
-    template <typename MemorySpace> Kokkos::View<const NT *, MemorySpace> weights() const
+    template <typename MemorySpace> Kokkos::View<const NT *, MemorySpace> raw_weights() const
     {
       if constexpr (std::is_same_v<MemorySpace, Kokkos::DefaultExecutionSpace::memory_space>) {
         return device_weights;
@@ -141,7 +213,6 @@ namespace DiFfRG
       }
     }
 
-  private:
     NT T, typical_E;
 
     Kokkos::View<NT *, GPU_memory> device_nodes;
@@ -155,8 +226,6 @@ namespace DiFfRG
      */
     int m_size;
 
-    void write_data(const std::vector<NT> &x, const std::vector<NT> &w);
-
     /**
      * @brief Construct the Monien rule for the current m_size and T.
      */
@@ -166,6 +235,11 @@ namespace DiFfRG
      * @brief Construct a quadrature rule for T=0.
      */
     void reinit_0();
+
+    /**
+     * @brief Store x/w plus the appended zero mode; see sum_nodes(). x and w have m_size entries.
+     */
+    void write_data(const std::vector<NT> &x, const std::vector<NT> &w);
 
     int vacuum_quad_size;
     double precision_factor;

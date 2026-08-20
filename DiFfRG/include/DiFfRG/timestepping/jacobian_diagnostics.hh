@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DiFfRG/common/mpi.hh>
 #include <DiFfRG/discretization/data/diagnostic_port.hh>
 
 #include <algorithm>
@@ -102,6 +103,29 @@ namespace DiFfRG
 
   namespace internal
   {
+    /**
+     * @brief The global rows this rank may read.
+     *
+     * PETSc's MatGetRow works only for locally owned rows -- reading someone else's row is an
+     * error, not a slow path -- so a diagnostic that walks 0..n unconditionally aborts every rank
+     * but the one owning row 0. Distributed matrices expose local_range(); serial ones do not, and
+     * for them the whole matrix is local.
+     */
+    template <typename MatrixType> std::pair<std::size_t, std::size_t> owned_row_range(const MatrixType &matrix)
+    {
+      if constexpr (requires { matrix.local_range(); }) {
+        const auto range = matrix.local_range();
+        return {static_cast<std::size_t>(range.first), static_cast<std::size_t>(range.second)};
+      } else {
+        return {std::size_t(0), static_cast<std::size_t>(matrix.m())};
+      }
+    }
+
+    template <typename MatrixType> bool is_distributed_matrix(const MatrixType &)
+    {
+      return requires(const MatrixType &m) { m.local_range(); };
+    }
+
     template <typename MatrixType, typename Visitor>
     void visit_matrix_row(const MatrixType &matrix, const std::size_t row, Visitor &&visitor)
     {
@@ -134,7 +158,10 @@ namespace DiFfRG
     result.min_diagonal_dominance = std::numeric_limits<double>::infinity();
     result.min_row_max_abs = std::numeric_limits<double>::infinity();
 
-    for (std::size_t row = 0; row < n; ++row) {
+    // Only this rank's rows; the partial results are reduced below. On a serial matrix the range
+    // is the whole matrix and the reduction is a no-op.
+    const auto [row_begin, row_end] = internal::owned_row_range(matrix);
+    for (std::size_t row = row_begin; row < row_end; ++row) {
       double diagonal = 0.;
       double row_sum = 0.;
       double row_maximum = 0.;
@@ -165,6 +192,27 @@ namespace DiFfRG
       const double dominance = off_diagonal_sum > 0. ? diagonal / off_diagonal_sum
                                                      : (diagonal > 0. ? std::numeric_limits<double>::infinity() : 0.);
       result.min_diagonal_dominance = std::min(result.min_diagonal_dominance, dominance);
+    }
+
+    if constexpr (requires { matrix.get_mpi_communicator(); }) {
+      // Combine the per-rank partials. Column quantities are accumulated across ranks first,
+      // because a column is generally touched by rows several ranks own -- taking the extremum of
+      // per-rank column sums would understate the one-norm.
+      const auto comm = matrix.get_mpi_communicator();
+      MPI::sum_reduce(comm, column_sums.data(), static_cast<int>(column_sums.size()));
+      MPI::max_reduce(comm, column_maxima.data(), static_cast<int>(column_maxima.size()));
+
+      squared_frobenius_norm = MPI::sum_reduce(comm, squared_frobenius_norm);
+      result.nnz = MPI::sum_reduce(comm, result.nnz);
+      result.zero_diagonal_count = MPI::sum_reduce(comm, result.zero_diagonal_count);
+
+      result.max_abs_entry = MPI::max_reduce(comm, result.max_abs_entry);
+      result.infinity_norm = MPI::max_reduce(comm, result.infinity_norm);
+      result.max_row_max_abs = MPI::max_reduce(comm, result.max_row_max_abs);
+      result.max_abs_diagonal = MPI::max_reduce(comm, result.max_abs_diagonal);
+      result.min_row_max_abs = MPI::min_reduce(comm, result.min_row_max_abs);
+      result.min_abs_diagonal = MPI::min_reduce(comm, result.min_abs_diagonal);
+      result.min_diagonal_dominance = MPI::min_reduce(comm, result.min_diagonal_dominance);
     }
 
     result.frobenius_norm = std::sqrt(squared_frobenius_norm);

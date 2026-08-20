@@ -11,6 +11,12 @@
 #include <DiFfRG/discretization/coordinates/coordinates.hh>
 #include <DiFfRG/physics/integration/abstract_integrator.hh>
 #include <DiFfRG/physics/integration/map_completion.hh>
+// for has_cacheable_positions_v, shared with the vacuum integrator
+#include <DiFfRG/physics/integration/quadrature_integrator.hh>
+
+// std
+#include <cstdio>
+#include <string>
 
 namespace DiFfRG
 {
@@ -20,6 +26,14 @@ namespace DiFfRG
   // If the trait is absent or false, the integrator falls back to the explicit two-call
   // form (always correct — an even kernel also satisfies kernel(xt)==kernel(-xt)).
   template <class K> inline constexpr bool kernel_is_matsubara_even = requires { requires K::matsubara_even; };
+
+  // True iff the kernel declares `static constexpr bool matsubara_finite_extent = true`, i.e. every
+  // term it sums carries a dR/dt insertion whose argument confines the loop FREQUENCY, so the
+  // summand vanishes identically outside |p0| <= the frequency cutoff the integrator is given.
+  // Such a sum is finite and exact: enumerating the modes beats approximating the infinite sum
+  // with a Gaussian rule. If the trait is absent or false, the integrator keeps the Monien/vacuum
+  // rule, which is always correct -- a summand of finite extent is also an integrable one.
+  template <class K> inline constexpr bool kernel_has_finite_matsubara_extent = requires { requires K::matsubara_finite_extent; };
 
   template <int dim, typename NT, typename KERNEL, typename ExecutionSpace>
     requires(dim > 0)
@@ -45,15 +59,12 @@ namespace DiFfRG
                             std::array<ctype, sdim> grid_min, std::array<ctype, sdim> grid_max,
                             const std::array<QuadratureType, sdim> quadrature_type, const ctype T = 1,
                             const ctype typical_E = 1)
-        : quadrature_provider(quadrature_provider), T(T), typical_E(typical_E)
+        : space(quadrature_provider.template next_execution_space<ExecutionSpace>()),
+          quadrature_provider(quadrature_provider), T(T), typical_E(typical_E),
+          m_allow_exact(kernel_has_finite_matsubara_extent<KERNEL>)
     {
       for (int d = 0; d < sdim; ++d)
         grid_size[d] = _grid_size[d];
-      matsubara_nodes =
-          quadrature_provider.template matsubara_nodes<ctype, typename ExecutionSpace::memory_space>(T, typical_E);
-      matsubara_weights =
-          quadrature_provider.template matsubara_weights<ctype, typename ExecutionSpace::memory_space>(T, typical_E);
-      matsubara_sum_T = quadrature_provider.template matsubara_T<ctype>(T, typical_E);
       for (int i = 0; i < sdim; ++i) {
         nodes[i] = quadrature_provider.template nodes<ctype, typename ExecutionSpace::memory_space>(grid_size[i],
                                                                                                     quadrature_type[i]);
@@ -61,7 +72,7 @@ namespace DiFfRG
             grid_size[i], quadrature_type[i]);
       }
       set_grid_extents(grid_min, grid_max);
-      grid_size[dim - 1] = matsubara_nodes.size();
+      refresh_matsubara();
     }
 
     void set_grid_extents(const std::array<ctype, sdim> grid_min, const std::array<ctype, sdim> grid_max)
@@ -79,12 +90,7 @@ namespace DiFfRG
     void set_T(const ctype T)
     {
       this->T = T;
-      matsubara_nodes =
-          quadrature_provider.template matsubara_nodes<ctype, typename ExecutionSpace::memory_space>(T, typical_E);
-      matsubara_weights =
-          quadrature_provider.template matsubara_weights<ctype, typename ExecutionSpace::memory_space>(T, typical_E);
-      matsubara_sum_T = quadrature_provider.template matsubara_T<ctype>(T, typical_E);
-      grid_size[dim - 1] = matsubara_nodes.size();
+      refresh_matsubara();
     }
 
     void set_typical_E(const ctype typical_E)
@@ -92,21 +98,115 @@ namespace DiFfRG
       if (is_close(this->typical_E, typical_E, 1e-4 * T + std::numeric_limits<ctype>::epsilon() * 10)) return;
 
       this->typical_E = typical_E;
-      matsubara_nodes =
-          quadrature_provider.template matsubara_nodes<ctype, typename ExecutionSpace::memory_space>(T, typical_E);
-      matsubara_weights =
-          quadrature_provider.template matsubara_weights<ctype, typename ExecutionSpace::memory_space>(T, typical_E);
-      matsubara_sum_T = quadrature_provider.template matsubara_T<ctype>(T, typical_E);
-      grid_size[dim - 1] = matsubara_nodes.size();
+      refresh_matsubara();
     }
 
+    /**
+     * @brief The frequency beyond which the summand is known to vanish, enabling the exact sum.
+     *
+     * Only meaningful for a kernel whose every term carries a `dR/dt` insertion that confines the
+     * loop frequency (see kernel_has_finite_matsubara_extent). For a 4D regulator of extent `x_extent`
+     * (in `q^2/k^2`) the summand's support is the ball `q0^2 + |q|^2 <= x_extent * k^2`, so the
+     * cutoff is `sqrt(x_extent) * k` -- the SAME number the spatial grid is already cut at, which
+     * is why the wrappers can supply it without any new configuration.
+     *
+     * Passing zero (the default) disables the exact sum and keeps the Monien/vacuum rule.
+     */
+    void set_frequency_cutoff(const ctype freq_cutoff)
+    {
+      if (is_close(m_freq_cutoff, freq_cutoff, 1e-10 * std::fabs(freq_cutoff))) return;
+      m_freq_cutoff = freq_cutoff;
+      refresh_matsubara();
+    }
+
+    /**
+     * @brief Force the exact sum on (or off) regardless of the kernel's trait.
+     *
+     * The trait is generated from the diagram algebra and is the right default, but a model that
+     * knows better -- or a study that wants to price the exact sum against the Gaussian rule on the
+     * same kernel -- needs to be able to say so. Forcing it ON for a kernel whose summand does NOT
+     * vanish above the cutoff silently truncates the sum.
+     */
+    void set_allow_exact_matsubara_sum(const bool allow)
+    {
+      if (m_allow_exact == allow) return;
+      m_allow_exact = allow;
+      refresh_matsubara();
+    }
+
+    /**
+     * @brief Multiply the frequency cutoff, i.e. how far past the regulator's support the exact sum
+     * keeps summing modes.
+     *
+     * The cutoff it is handed comes from `x_extent`, which `optimize_x_extent` sizes for SPATIAL
+     * quadrature convergence -- a different question from where a discrete sum may be truncated.
+     * In practice it overshoots (the 1.15 stepping lands well past the requested tolerance), so the
+     * exact sum inherits the error budget the spatial grid already accepts rather than adding to it.
+     * This knob is how one CHECKS that rather than assuming it: raise it to 2 and the answer must
+     * not move. Modes cost only linearly, so the check is cheap.
+     */
+    void set_matsubara_extent_margin(const ctype margin)
+    {
+      if (!(margin > ctype(0)) || is_close(m_extent_margin, margin)) return;
+      m_extent_margin = margin;
+      refresh_matsubara();
+    }
+
+    /// Nodes on the frequency axis, INCLUDING the zero mode.
     size_t get_matsubara_size() const { return matsubara_nodes.size(); }
+
+    /// True if the frequency axis is currently the exact sum rather than a Gaussian quadrature rule.
+    bool uses_exact_matsubara_sum() const { return m_using_exact; }
+
+    /**
+     * @brief One Matsubara node's contribution at one spatial point, weight excluded.
+     *
+     * Factored out of get()/map() so the +-frequency and zero-mode logic exists once, and --
+     * importantly -- so the `if constexpr` on matsubara_even lives in an ordinary __device__
+     * function rather than inside an extended lambda, where nvcc's transformation is fragile.
+     *
+     * The zero mode is NOT special-cased here: it arrives as an ordinary node `(0, T/2)` at the
+     * end of the node list (see MatsubaraQuadrature::sum_nodes), and `w * (f(+0) + f(-0))`
+     * reproduces `T f(0)` exactly. The branch this replaces cost the whole warp a full extra
+     * kernel evaluation for one active lane.
+     *
+     * The three packs are applied as NESTED lvalue tuples. Do not tuple_cat them: tuple_cat builds
+     * a by-value object, and `args` holds every interpolator by value, so the concatenated tuple
+     * becomes a full per-thread copy of all of them in local memory. On QCD_Nf2 that was 3576 B of
+     * stack frame and 2.3x of runtime in the vacuum integrator (see the comment in
+     * QuadratureIntegrator::map). Applying an lvalue tuple binds references instead.
+     */
+    template <typename XArr, typename PosArr, typename ArgTuple>
+    KOKKOS_FORCEINLINE_FUNCTION static NT node_value(const XArr &x, const PosArr &pos, const ArgTuple &args,
+                                                     const ctype xt, const ctype wt)
+    {
+      NT out{};
+      device::apply(
+          [&](const auto &...xargs) {
+            device::apply(
+                [&](const auto &...pargs) {
+                  device::apply(
+                      [&](const auto &...iargs) {
+                        NT msum;
+                        if constexpr (kernel_is_matsubara_even<KERNEL>)
+                          // even kernel: kernel(+xt)+kernel(-xt) == 2*kernel(xt) (one evaluation)
+                          msum = ctype(2) * KERNEL::kernel(xargs..., xt, pargs..., iargs...);
+                        else
+                          // positive and negative Matsubara frequencies
+                          msum = KERNEL::kernel(xargs..., xt, pargs..., iargs...) +
+                                 KERNEL::kernel(xargs..., -xt, pargs..., iargs...);
+                        out = wt * msum;
+                      },
+                      args);
+                },
+                pos);
+          },
+          x);
+      return out;
+    }
 
     template <typename... T> void get(NT &dest, const T &...t) const
     {
-      // create an execution space
-      ExecutionSpace space;
-
       if (!m_result_views_initialized) {
         m_result_view = Kokkos::View<NT, typename ExecutionSpace::memory_space>("result");
         m_result_host = Kokkos::create_mirror_view(m_result_view);
@@ -122,7 +222,6 @@ namespace DiFfRG
       requires(!std::is_same_v<OT, NT>)
     void get(OT &dest, const T &...t) const
     {
-      ExecutionSpace space;
       get(space, dest, t...);
     }
 
@@ -139,8 +238,6 @@ namespace DiFfRG
       const auto &start = grid_start;
       const auto &scale = grid_scale;
 
-      const auto &m_T = matsubara_sum_T;
-
       auto functor = KOKKOS_LAMBDA(const device::array<size_t, dim> &idx, NT &update)
       {
         device::array<ctype, sdim> x;
@@ -152,27 +249,9 @@ namespace DiFfRG
           is_first &= idx[i] == 0;
         }
         is_first &= idx[dim - 1] == 0;
-        const ctype xt = m_n[idx[dim - 1]];
-        const ctype wt = m_w[idx[dim - 1]];
-        device::apply(
-            [&](const auto &...iargs) {
-              device::apply(
-                  [&](const auto &...posargs) {
-                    NT msum;
-                    if constexpr (kernel_is_matsubara_even<KERNEL>)
-                      // even kernel: kernel(+xt)+kernel(-xt) == 2*kernel(xt) (one evaluation)
-                      msum = ctype(2) * KERNEL::kernel(posargs..., xt, iargs...);
-                    else
-                      // positive and negative Matsubara frequencies
-                      msum = KERNEL::kernel(posargs..., xt, iargs...) + KERNEL::kernel(posargs..., -xt, iargs...);
-                    update +=
-                        weight * (wt * msum
-                                  // The zero mode (once per matsubara sum)
-                                  + (idx[dim - 1] != 0 ? NT{} : m_T * KERNEL::kernel(posargs..., (ctype)0, iargs...)));
-                  },
-                  x);
-            },
-            args);
+        const size_t jt = idx[dim - 1];
+        // Empty position pack: this overload's caller passes the external position inside `args`.
+        update += weight * node_value(x, device::tuple<>{}, args, m_n[jt], m_w[jt]);
         device::apply([&](const auto &...iargs) { update += is_first ? KERNEL::constant(iargs...) : NT(0); }, args);
       };
 
@@ -212,51 +291,94 @@ namespace DiFfRG
       const auto &start = grid_start;
       const auto &scale = grid_scale;
 
-      const auto &m_T = matsubara_sum_T;
-
-      auto functor = KOKKOS_LAMBDA(const device::array<size_t, 1 + dim> &idx)
-      {
-        // make subview
-        auto subview = device::apply([&](const auto &...i) { return Kokkos::subview(cache, i...); }, idx);
-
-        // get the position for the current index
-        const auto idx_v = coordinates.from_linear_index(idx[0]);
-        const auto pos = coordinates.forward(idx_v);
-        // make a tuple of all arguments
-        const auto full_args = device::tuple_cat(pos, m_args);
-
-        device::array<ctype, sdim> x;
-        ctype weight = 1;
-        for (int i = 0; i < sdim; ++i) {
-          x[i] = Kokkos::fma(scale[i], n[i][idx[1 + i]], start[i]);
-          weight *= w[i][idx[1 + i]] * scale[i];
+      // The external position is a function of idx[0] alone, but this functor runs
+      // integral_view.size() * prod(grid_size) threads -- and grid_size carries the Matsubara axis,
+      // so the per-thread forward() (a fp64 expm1/sinh+exp on the logarithmic coordinate classes)
+      // is paid tens of times more often here than in the vacuum integrator. Precompute the
+      // positions once per coordinate system into a device view, exactly as
+      // QuadratureIntegrator::map does; see the comments there for why the key is built this way
+      // and why coordinates without a to_string() identity keep the per-thread computation.
+      constexpr size_t cdim = Coordinates::dim;
+      if constexpr (has_cacheable_positions_v<Coordinates>) {
+        std::string key = coordinates.to_string() + "|" + std::to_string(integral_view.size());
+        {
+          char buf[64];
+          const auto first = coordinates.forward(coordinates.from_linear_index(size_t(0)));
+          const auto last = coordinates.forward(coordinates.from_linear_index(integral_view.size() - 1));
+          for (size_t d = 0; d < cdim; ++d) {
+            std::snprintf(buf, sizeof(buf), "|%la|%la", double(first[d]), double(last[d]));
+            key += buf;
+          }
         }
-        const ctype xt = m_n[idx[1 + dim - 1]];
-        const ctype wt = m_w[idx[1 + dim - 1]];
-        device::apply(
-            [&](const auto &...iargs) {
-              device::apply(
-                  [&](const auto &...posargs) {
-                    NT msum;
-                    if constexpr (kernel_is_matsubara_even<KERNEL>)
-                      // even kernel: kernel(+xt)+kernel(-xt) == 2*kernel(xt) (one evaluation)
-                      msum = ctype(2) * KERNEL::kernel(posargs..., xt, iargs...);
-                    else
-                      // positive and negative Matsubara frequencies
-                      msum = KERNEL::kernel(posargs..., xt, iargs...) + KERNEL::kernel(posargs..., -xt, iargs...);
-                    subview() =
-                        weight *
-                        (wt * msum
-                         // The zero mode (once per matsubara sum)
-                         + (idx[1 + dim - 1] != 0 ? NT{} : m_T * KERNEL::kernel(posargs..., (ctype)0, iargs...)));
-                  },
-                  x);
-            },
-            full_args);
-      };
+        const size_t need = integral_view.size() * cdim;
+        if (m_positions_key != key || m_positions.extent(0) < need) {
+          if (m_positions.extent(0) < need)
+            m_positions = Kokkos::View<ctype *, typename ExecutionSpace::memory_space>(
+                Kokkos::view_alloc(space, Kokkos::WithoutInitializing, "QuadratureIntegrator_fT_positions"), need);
+          const auto pos_fill = m_positions;
+          const auto coords = coordinates;
+          Kokkos::parallel_for(
+              "QuadratureIntegrator_fT_fill_positions",
+              Kokkos::RangePolicy<ExecutionSpace>(space, 0, integral_view.size()), KOKKOS_LAMBDA(const size_t i) {
+                const auto p = coords.forward(coords.from_linear_index(i));
+                for (size_t d = 0; d < cdim; ++d)
+                  pos_fill(i * cdim + d) = p[d];
+              });
+          m_positions_key = key;
+        }
+      }
+      const auto pos_view = m_positions;
+      using pos_ctype = typename Coordinates::ctype;
+      // Runtime copy for the team lambda below: its constant() evaluation runs once per team, so a
+      // plain branch there costs nothing and avoids nvcc's fragile handling of if-constexpr inside
+      // extended class lambdas.
+      const bool pos_cached_rt = has_cacheable_positions_v<Coordinates>;
 
-      Kokkos::parallel_for(make_kokkos_nd_range_divisible<1 + dim, ExecutionSpace>(space, {0}, extents),
-                           KokkosNDLambdaWrapper<1 + dim, decltype(functor)>(functor));
+      // Two complete functors, selected by a HOST-level if constexpr -- nvcc miscompiles an
+      // `if constexpr` inside the extended lambda body. See QuadratureIntegrator::map.
+      if constexpr (has_cacheable_positions_v<Coordinates>) {
+        auto functor = KOKKOS_LAMBDA(const device::array<size_t, 1 + dim> &idx)
+        {
+          // make subview
+          auto subview = device::apply([&](const auto &...i) { return Kokkos::subview(cache, i...); }, idx);
+
+          // get the (precomputed) position for the current index
+          device::array<pos_ctype, cdim> pos;
+          for (size_t d = 0; d < cdim; ++d)
+            pos[d] = static_cast<pos_ctype>(pos_view(idx[0] * cdim + d));
+
+          device::array<ctype, sdim> x;
+          ctype weight = 1;
+          for (int i = 0; i < sdim; ++i) {
+            x[i] = Kokkos::fma(scale[i], n[i][idx[1 + i]], start[i]);
+            weight *= w[i][idx[1 + i]] * scale[i];
+          }
+          const size_t jt = idx[1 + dim - 1];
+          subview() = weight * node_value(x, pos, m_args, m_n[jt], m_w[jt]);
+        };
+        Kokkos::parallel_for(make_kokkos_nd_range_divisible<1 + dim, ExecutionSpace>(space, {0}, extents),
+                             KokkosNDLambdaWrapper<1 + dim, decltype(functor)>(functor));
+      } else {
+        auto functor = KOKKOS_LAMBDA(const device::array<size_t, 1 + dim> &idx)
+        {
+          // make subview
+          auto subview = device::apply([&](const auto &...i) { return Kokkos::subview(cache, i...); }, idx);
+
+          // get the position for the current index
+          const auto pos = coordinates.forward(coordinates.from_linear_index(idx[0]));
+
+          device::array<ctype, sdim> x;
+          ctype weight = 1;
+          for (int i = 0; i < sdim; ++i) {
+            x[i] = Kokkos::fma(scale[i], n[i][idx[1 + i]], start[i]);
+            weight *= w[i][idx[1 + i]] * scale[i];
+          }
+          const size_t jt = idx[1 + dim - 1];
+          subview() = weight * node_value(x, pos, m_args, m_n[jt], m_w[jt]);
+        };
+        Kokkos::parallel_for(make_kokkos_nd_range_divisible<1 + dim, ExecutionSpace>(space, {0}, extents),
+                             KokkosNDLambdaWrapper<1 + dim, decltype(functor)>(functor));
+      }
 
       using TeamType = Kokkos::TeamPolicy<ExecutionSpace>::member_type;
       // reduction with vector lanes for warp-level parallelism
@@ -267,7 +389,7 @@ namespace DiFfRG
             // get the current (continuous) index
             const uint k = team.league_rank();
 
-            if (k > integral_view.size()) return;
+            if (k >= integral_view.size()) return;
 
             // no-ops to capture
             (void)cache;
@@ -312,11 +434,22 @@ namespace DiFfRG
 
             // add the constant value (skip coordinate computation if kernel has no constant)
             Kokkos::single(Kokkos::PerTeam(team), [&]() {
-              const auto idx = coordinates.from_linear_index(k);
-              const auto pos = coordinates.forward(idx);
-              const auto full_args = device::tuple_cat(pos, m_args);
+              device::array<pos_ctype, cdim> pos;
+              if (pos_cached_rt) {
+                for (size_t d = 0; d < cdim; ++d)
+                  pos[d] = static_cast<pos_ctype>(pos_view(size_t(k) * cdim + d));
+              } else {
+                pos = coordinates.forward(coordinates.from_linear_index(k));
+              }
+              // Nested packs, not tuple_cat -- same reason as node_value(). This kernel does almost
+              // no arithmetic but carried a full per-thread copy of every interpolator.
               integral_view(k) =
-                  res + device::apply([&](const auto &...iargs) { return KERNEL::constant(iargs...); }, full_args);
+                  res + device::apply(
+                            [&](const auto &...pargs) {
+                              return device::apply(
+                                  [&](const auto &...iargs) { return KERNEL::constant(pargs..., iargs...); }, m_args);
+                            },
+                            pos);
             });
           });
     }
@@ -400,6 +533,45 @@ namespace DiFfRG
     }
 
   private:
+    /**
+     * @brief Re-select and re-fetch the frequency rule after T, typical_E or the cutoff changed.
+     *
+     * Two rules are on offer and the choice is purely one of cost: for a summand of finite extent
+     * the exact sum is never *less* accurate than the Gaussian rule -- it is the sum
+     * itself -- so whichever has fewer nodes wins. That crossover is crossed during a flow (the
+     * exact sum shrinks with k while the Monien rule grows), which is why this is decided per RG step.
+     */
+    void refresh_matsubara()
+    {
+      const auto &standard = quadrature_provider.template matsubara_rule<ctype>(T, typical_E);
+      const MatsubaraQuadrature<ctype> *rule = &standard;
+      m_using_exact = false;
+
+      if (m_allow_exact && T > ctype(0) && m_freq_cutoff > ctype(0)) {
+        // One mode of margin. A FERMIONIC insertion confines p0 to an interval centred at -pi T,
+        // not at zero, so its support can reach one bosonic mode further in the negative direction
+        // than a symmetric list built from the cutoff alone would cover. One node is a cheap price
+        // for not having to know which species a given kernel's insertion belongs to.
+        const ctype cutoff = m_extent_margin * m_freq_cutoff + ctype(2 * M_PI) * T;
+        // Price it BEFORE building it. modes_below() is three flops; the rule itself is an O(N)
+        // table and six Kokkos views, and in the UV the answer is thousands of modes that would be
+        // discarded on the very next line. Measured on QCD_Nf2 at T = 0.1: every step from k = 1000
+        // down to k = 150 built and threw away a rule, 1963 modes at the top and still 294 at the
+        // bottom -- and the provider's map never evicts, so each one leaked for the process.
+        const size_t n_exact = size_t(MatsubaraQuadrature<ctype>::modes_below(T, cutoff)) + 1;
+        if (n_exact < standard.sum_size()) {
+          rule = &quadrature_provider.template matsubara_exact_sum<ctype>(T, cutoff);
+          m_using_exact = true;
+        }
+      }
+
+      // sum_nodes(), not nodes(): the zero mode is an ordinary node on this axis, so the hot
+      // functor has no branch and an exact sum with no positive modes at all still evaluates it.
+      matsubara_nodes = rule->template sum_nodes<typename ExecutionSpace::memory_space>();
+      matsubara_weights = rule->template sum_weights<typename ExecutionSpace::memory_space>();
+      grid_size[dim - 1] = matsubara_nodes.size();
+    }
+
     /// Grow-only scratch in the integrator's own execution space, reused across calls.
     Kokkos::View<NT *, ExecutionSpace> device_scratch(const size_t n)
     {
@@ -444,7 +616,9 @@ namespace DiFfRG
     }
 
   protected:
-    ExecutionSpace space;
+    /// Mutable because the const get() overloads issue work on it: which stream instance a launch
+    /// goes to is not part of the integrator's logical state.
+    mutable ExecutionSpace space;
     QuadratureProvider &quadrature_provider;
     device::array<device::array<ctype, sdim>, 2> grid_extents;
     device::array<ctype, sdim> grid_start;
@@ -456,7 +630,11 @@ namespace DiFfRG
     device::array<Kokkos::View<const ctype *, typename ExecutionSpace::memory_space>, sdim> weights;
 
     ctype T, typical_E;
-    ctype matsubara_sum_T;
+    /// Support boundary in frequency; zero means "unknown", which disables the exact sum.
+    ctype m_freq_cutoff = 0;
+    bool m_allow_exact = false;
+    bool m_using_exact = false;
+    ctype m_extent_margin = 1;
 
     Kokkos::View<const ctype *, typename ExecutionSpace::memory_space> matsubara_nodes;
     Kokkos::View<const ctype *, typename ExecutionSpace::memory_space> matsubara_weights;
@@ -464,6 +642,10 @@ namespace DiFfRG
     // Persistent view caches to avoid per-call GPU memory allocation
     mutable KokkosNDView<1 + dim, NT, ExecutionSpace> m_cache;
     mutable device::array<size_t, 1 + dim> m_cache_extents{};
+    // Cached external positions for map(): one forward() per grid point instead of per thread.
+    // Keyed on the coordinates' to_string() identity; flat layout [grid_point * cdim + d].
+    mutable Kokkos::View<ctype *, typename ExecutionSpace::memory_space> m_positions;
+    mutable std::string m_positions_key;
     mutable Kokkos::View<NT *, ExecutionSpace> m_dest_device;
     mutable size_t m_dest_device_size = 0;
     /// Page-locked staging for the device path, so the result copy is genuinely asynchronous.
@@ -511,8 +693,6 @@ namespace DiFfRG
       const auto &start = grid_start;
       const auto &scale = grid_scale;
 
-      const auto &m_T = matsubara_sum_T;
-
       auto functor = [&](const device::array<size_t, dim> &idx) {
         device::array<ctype, sdim> x;
         ctype weight = 1;
@@ -520,29 +700,9 @@ namespace DiFfRG
           x[i] = Kokkos::fma(scale[i], n[i][idx[i]], start[i]);
           weight *= w[i][idx[i]] * scale[i];
         }
-        const ctype xt = m_n[idx[dim - 1]];
-        const ctype wt = m_w[idx[dim - 1]];
-        NT update{};
-        device::apply(
-            [&](const auto &...iargs) {
-              device::apply(
-                  [&](const auto &...posargs) {
-                    NT msum;
-                    if constexpr (kernel_is_matsubara_even<KERNEL>)
-                      // even kernel: kernel(+xt)+kernel(-xt) == 2*kernel(xt) (one evaluation)
-                      msum = ctype(2) * KERNEL::kernel(posargs..., xt, iargs...);
-                    else
-                      // positive and negative Matsubara frequencies
-                      msum = KERNEL::kernel(posargs..., xt, iargs...) + KERNEL::kernel(posargs..., -xt, iargs...);
-                    update +=
-                        weight * (wt * msum
-                                  // The zero mode (once per matsubara sum)
-                                  + (idx[dim - 1] != 0 ? NT{} : m_T * KERNEL::kernel(posargs..., (ctype)0, iargs...)));
-                  },
-                  x);
-            },
-            args);
-        return update;
+        const size_t jt = idx[dim - 1];
+        // Empty position pack: this overload's caller passes the external position inside `args`.
+        return weight * Base::node_value(x, device::tuple<>{}, args, m_n[jt], m_w[jt]);
       };
 
       dest = KERNEL::constant(t...) + TBBReduction<dim, NT, decltype(functor)>(grid_size, functor);
@@ -620,7 +780,6 @@ namespace DiFfRG
     using Base::nodes;
     using Base::weights;
 
-    using Base::matsubara_sum_T;
     using Base::T;
     using Base::typical_E;
   };

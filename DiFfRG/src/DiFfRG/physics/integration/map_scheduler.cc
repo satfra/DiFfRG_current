@@ -2,6 +2,7 @@
 
 // std
 #include <algorithm>
+#include <atomic>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -110,10 +111,29 @@ namespace DiFfRG
     return owners;
   }
 
+  namespace
+  {
+    std::atomic<int> no_maps_depth{0};
+  }
+
+  NoMapsHere::NoMapsHere() { no_maps_depth.fetch_add(1, std::memory_order_relaxed); }
+  NoMapsHere::~NoMapsHere() { no_maps_depth.fetch_sub(1, std::memory_order_relaxed); }
+  bool NoMapsHere::active() { return no_maps_depth.load(std::memory_order_relaxed) > 0; }
+
   MapSlice MapScheduler::schedule(const size_t integrator_id, void *dest, const size_t elem_size,
                                   const size_t grid_size, const size_t quadrature_volume, const bool splittable,
                                   const MapTarget target)
   {
+    // Checked before the early-out on purpose: a map() from inside FE assembly is a bug in a
+    // serial run too (it is simply not yet fatal there), and reporting it only under MPI would let
+    // it be introduced during single-rank development and surface as a hang in production.
+    if (NoMapsHere::active())
+      MPI::abort(m_comm, "map() was called from inside a distributed FE assembly scope (integrator id " +
+                             std::to_string(integrator_id) +
+                             "). map() is collective and must be issued identically on every rank, but a cell "
+                             "worker only visits this rank's cells. Move the map() out of the assembly loop -- "
+                             "compute it once before assembly and read the result inside.");
+
     if (!active() || grid_size == 0) return MapSlice{0, grid_size};
 
     const double S = double(grid_size) * double(quadrature_volume);

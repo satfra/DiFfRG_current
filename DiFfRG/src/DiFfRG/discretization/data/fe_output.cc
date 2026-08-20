@@ -9,6 +9,8 @@
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/data/fe_output.hh>
 
+#include <numeric>
+
 #include <hdf5lib/hdf5.hh>
 
 #include <algorithm>
@@ -148,13 +150,16 @@ namespace DiFfRG
       drain_error = std::current_exception();
     }
 
-    // Free the DataOut copies of the solution vectors and drain GrowingVectorMemory's shared pool
-    // now, while we are on the main thread and Kokkos is still alive, rather than leaving these
-    // (Kokkos-backed) deallocations for program teardown. NB: a rare exit-time crash can still
-    // occur deeper down, inside deal.II's GrowingVectorMemory Kokkos finalize hook, when that
-    // hook registry is corrupted by concurrent lazy registration during parallel vector
-    // allocation -- that is an upstream deal.II/Kokkos teardown race, tracked separately.
+    // Free the DataOut copies of the solution vectors now, while we are on the main thread and
+    // Kokkos is still alive, rather than leaving these (Kokkos-backed) deallocations for program
+    // teardown. attached_solutions owns its buffers outright, so clearing it here really does free
+    // them; the release_unused_memory() call drains anything else that reached the process-wide
+    // pool. NB: a rare exit-time crash can still occur deeper down, inside deal.II's
+    // GrowingVectorMemory Kokkos finalize hook, when that hook registry is corrupted by concurrent
+    // lazy registration during parallel vector allocation -- that is an upstream deal.II/Kokkos
+    // teardown race, tracked separately.
     data_outs.clear();
+    attached_solutions.clear();
     GrowingVectorMemory<VectorType>::release_unused_memory();
 
     finished = true;
@@ -201,6 +206,16 @@ namespace DiFfRG
 
     {
       ScopedTimer patch_timer(frame_timings.build_patches);
+      // DataOut defaults to "all locally owned and active cells", which on a partitioned mesh would
+      // silently write rank 0's subdomain and call it the whole solution. prepare_output_vector()
+      // hands DataOut a *serial* mirror DoFHandler precisely so that cannot happen, which makes this
+      // selection equivalent to the default -- it is kept because it states the intent, and because
+      // it is what would otherwise have to be right if anything ever attached a parallel handler.
+      //
+      // For a genuinely distributed mesh the whole approach changes: rank 0 no longer holds the
+      // other ranks' cells and the answer becomes write_vtu_with_pvtu_record.
+      m_data_out.set_cell_selection(
+          [](const typename Triangulation<safe_dim>::cell_iterator &cell) { return cell->is_active(); });
       m_data_out.build_patches(subdivisions);
     }
 
@@ -309,6 +324,62 @@ namespace DiFfRG
   }
 
   template <uint dim, typename VectorType>
+  const DoFHandler<FEOutput<dim, VectorType>::safe_dim> &
+  FEOutput<dim, VectorType>::prepare_output_vector(const DoFHandler<dim> &dof_handler, const VectorType &solution,
+                                                  OutputVectorType &target)
+  {
+    if constexpr (!is_distributed_la<VectorType>) {
+      // Serial policy: exactly what this function always did -- take the source's layout, copy, and
+      // hand DataOut the caller's own DoFHandler.
+      target.reinit(solution, /*omit_zeroing_entries=*/true);
+      target = solution;
+      return dof_handler;
+    } else {
+      const auto &mirror_triangulation = serial_mirror<safe_dim>(dof_handler.get_triangulation());
+
+      if (!mirror_dofs.dof_handler || !mirror_dofs.connection.connected() || mirror_dofs.stale ||
+          &mirror_dofs.dof_handler->get_triangulation() != &mirror_triangulation ||
+          mirror_dofs.dof_handler->n_dofs() != dof_handler.n_dofs()) {
+        mirror_dofs.dof_handler = std::make_unique<DoFHandler<safe_dim>>(mirror_triangulation);
+        mirror_dofs.dof_handler->distribute_dofs(dof_handler.get_fe());
+        mirror_dofs.connection = mirror_triangulation.signals.any_change.connect([this]() { mirror_dofs.stale = true; });
+
+        mirror_dofs.to_mirror.assign(dof_handler.n_dofs(), numbers::invalid_dof_index);
+        std::vector<types::global_dof_index> source_indices, mirror_indices;
+        for (const auto &cell : dof_handler.active_cell_iterators()) {
+          const typename DoFHandler<safe_dim>::active_cell_iterator matched(
+              &mirror_triangulation, cell->level(), cell->index(), mirror_dofs.dof_handler.get());
+          source_indices.resize(cell->get_fe().n_dofs_per_cell());
+          mirror_indices.resize(matched->get_fe().n_dofs_per_cell());
+          cell->get_dof_indices(source_indices);
+          matched->get_dof_indices(mirror_indices);
+          for (uint k = 0; k < source_indices.size(); ++k)
+            mirror_dofs.to_mirror[source_indices[k]] = mirror_indices[k];
+        }
+        for (const auto index : mirror_dofs.to_mirror)
+          if (index == numbers::invalid_dof_index)
+            throw std::runtime_error("FEOutput: a dof of the solution has no counterpart in the serial mirror. "
+                                     "The mirror and the solution mesh have diverged.");
+        mirror_dofs.stale = false;
+      }
+
+      // One PETSc call rather than n_dofs of them: VectorBase::operator() re-acquires the array on
+      // every element.
+      const auto n_dofs = dof_handler.n_dofs();
+      std::vector<types::global_dof_index> all(n_dofs);
+      std::iota(all.begin(), all.end(), types::global_dof_index(0));
+      std::vector<typename VectorType::value_type> values(n_dofs);
+      solution.extract_subvector_to(all, values);
+
+      target.reinit(n_dofs);
+      for (types::global_dof_index i = 0; i < n_dofs; ++i)
+        target[mirror_dofs.to_mirror[i]] = values[i];
+
+      return *mirror_dofs.dof_handler;
+    }
+  }
+
+  template <uint dim, typename VectorType>
   void FEOutput<dim, VectorType>::attach(const DoFHandler<dim> &dof_handler, const VectorType &solution,
                                          const std::string &name)
   {
@@ -317,11 +388,12 @@ namespace DiFfRG
     update_buffers();
     reserve_bytes(solution.size() * sizeof(typename VectorType::value_type));
 
-    attached_solutions.back().emplace_back(mem);
-    *(attached_solutions.back().back()) = solution;
+    attached_solutions.back().emplace_back(std::make_unique<OutputVectorType>());
+    auto &attached = *(attached_solutions.back().back());
+    const auto &output_dof_handler = prepare_output_vector(dof_handler, solution, attached);
 
     auto &m_data_out = data_outs[series_number % buffer_size];
-    m_data_out.add_data_vector(dof_handler, *(attached_solutions.back().back()), name);
+    m_data_out.add_data_vector(output_dof_handler, attached, name);
   }
 
   template <uint dim, typename VectorType>
@@ -333,11 +405,12 @@ namespace DiFfRG
     update_buffers();
     reserve_bytes(solution.size() * sizeof(typename VectorType::value_type));
 
-    attached_solutions.back().emplace_back(mem);
-    *(attached_solutions.back().back()) = solution;
+    attached_solutions.back().emplace_back(std::make_unique<OutputVectorType>());
+    auto &attached = *(attached_solutions.back().back());
+    const auto &output_dof_handler = prepare_output_vector(dof_handler, solution, attached);
 
     auto &m_data_out = data_outs[series_number % buffer_size];
-    m_data_out.add_data_vector(dof_handler, *(attached_solutions.back().back()), names);
+    m_data_out.add_data_vector(output_dof_handler, attached, names);
   }
 
   template <typename VectorType>
@@ -353,4 +426,14 @@ namespace DiFfRG
   template class FEOutput<1, dealii::BlockVector<double>>;
   template class FEOutput<2, dealii::BlockVector<double>>;
   template class FEOutput<3, dealii::BlockVector<double>>;
+
+#ifdef DEAL_II_WITH_PETSC
+  // The distributed output path. Only rank 0 ever reaches build_patches (OutputSession gates its
+  // contributor), and it is handed fully-replicated copies, so these instantiations write the whole
+  // domain rather than one subdomain -- see the set_cell_selection note in write_frame.
+  template class FEOutput<0, dealii::PETScWrappers::MPI::Vector>;
+  template class FEOutput<1, dealii::PETScWrappers::MPI::Vector>;
+  template class FEOutput<2, dealii::PETScWrappers::MPI::Vector>;
+  template class FEOutput<3, dealii::PETScWrappers::MPI::Vector>;
+#endif
 } // namespace DiFfRG

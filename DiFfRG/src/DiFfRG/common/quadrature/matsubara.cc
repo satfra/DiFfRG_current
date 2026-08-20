@@ -152,6 +152,37 @@ namespace DiFfRG
     build_monien();
   }
 
+  template <typename NT> int MatsubaraQuadrature<NT>::modes_below(const NT T, const NT freq_cutoff)
+  {
+    if (!(T > NT(0)) || !(freq_cutoff > NT(0))) return 0;
+    const double n = std::floor(double(std::fabs(freq_cutoff)) / (2. * M_PI * double(std::fabs(T))));
+    // Nothing here bounds the count: a caller that hands in a cutoff far above 2 pi T is asking
+    // for a sum that large, and it is the caller's job (see QuadratureIntegrator_fT) to prefer
+    // the Monien rule once it is the cheaper of the two.
+    return n < 0. ? 0 : int(n);
+  }
+
+  template <typename NT> void MatsubaraQuadrature<NT>::reinit_exact_sum(const NT T, const NT freq_cutoff)
+  {
+    if (!(T > NT(0))) throw std::invalid_argument("MatsubaraQuadrature: reinit_exact_sum needs a positive T.");
+
+    this->T = T;
+    // Not a "typical energy" in the predict_size sense -- it is the hard support boundary. Stored
+    // here so get_typical_E() still identifies which rule this is, and so write_data's view names
+    // stay distinguishable.
+    this->typical_E = freq_cutoff;
+    m_size = modes_below(T, freq_cutoff);
+
+    std::vector<NT> x(m_size, 0.);
+    std::vector<NT> w(m_size, 0.);
+    for (int i = 0; i < m_size; ++i) {
+      x[i] = NT(2. * M_PI * double(T) * double(i + 1));
+      w[i] = T;
+    }
+
+    write_data(x, w);
+  }
+
   template <typename NT> void MatsubaraQuadrature<NT>::build_monien()
   {
     // construct the recurrence relation for the quadrature rule from [1]
@@ -238,11 +269,16 @@ namespace DiFfRG
   {
     std::string name = "matsubara_T" + std::to_string(T) + "_typicalE" + std::to_string(typical_E);
 
+    // One slot past the rule itself, holding the zero mode; see sum_nodes(). Allocated
+    // unconditionally so that nodes()/sum_nodes() are two subviews of one buffer -- the T=0 rule
+    // simply never exposes the extra slot.
+    const size_t alloc = size_t(m_size) + 1;
+
     // copy nodes and weights to std::vector
     device_nodes = Kokkos::View<NT *, Kokkos::DefaultExecutionSpace::memory_space>(
-        "device_nodes_" + name + "_" + std::to_string(m_size), m_size);
+        "device_nodes_" + name + "_" + std::to_string(m_size), alloc);
     device_weights = Kokkos::View<NT *, Kokkos::DefaultExecutionSpace::memory_space>(
-        "device_weights_" + name + "_" + std::to_string(m_size), m_size);
+        "device_weights_" + name + "_" + std::to_string(m_size), alloc);
 
     // create a host mirror view
     auto host_mirror_nodes = Kokkos::create_mirror_view(device_nodes);
@@ -253,6 +289,11 @@ namespace DiFfRG
       host_mirror_nodes(i) = x[i];
       host_mirror_weights(i) = w[i];
     }
+    // The zero mode as an ordinary node: a summand evaluated as w * (f(+x) + f(-x)) reproduces
+    // T * f(0) exactly at x = 0, w = T/2 (the division by two is exact in binary). Zero-weight and
+    // harmless for the T=0 rule, which does not expose it anyway.
+    host_mirror_nodes(m_size) = NT(0);
+    host_mirror_weights(m_size) = T / NT(2);
 
     // copy data from host mirror view to device view
     Kokkos::deep_copy(device_nodes, host_mirror_nodes);
@@ -260,14 +301,20 @@ namespace DiFfRG
 
     // copy data from host mirror view to host view
     host_nodes = Kokkos::View<NT *, Kokkos::DefaultHostExecutionSpace::memory_space>(
-        "host_nodes_" + name + "_" + std::to_string(m_size), m_size);
+        "host_nodes_" + name + "_" + std::to_string(m_size), alloc);
     host_weights = Kokkos::View<NT *, Kokkos::DefaultHostExecutionSpace::memory_space>(
-        "host_weights_" + name + "_" + std::to_string(m_size), m_size);
+        "host_weights_" + name + "_" + std::to_string(m_size), alloc);
     Kokkos::deep_copy(host_nodes, host_mirror_nodes);
     Kokkos::deep_copy(host_weights, host_mirror_weights);
   }
 
   template <typename NT> size_t MatsubaraQuadrature<NT>::size() const { return m_size; }
+  template <typename NT> size_t MatsubaraQuadrature<NT>::sum_size() const
+  {
+    // The T=0 rule integrates rather than sums: its "zero mode" has weight zero, so exposing it
+    // would only buy a wasted kernel evaluation per spatial point.
+    return size_t(m_size) + (is_close(T, NT{}) ? 0u : 1u);
+  }
   template <typename NT> NT MatsubaraQuadrature<NT>::get_T() const { return T; }
   template <typename NT> NT MatsubaraQuadrature<NT>::get_typical_E() const { return typical_E; }
 
