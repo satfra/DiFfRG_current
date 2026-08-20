@@ -64,8 +64,7 @@ namespace DiFfRG
      * competing for *my* CPUs". That is answered by intersecting the affinity masks, the same way
      * GPU sharing is answered by comparing bus ids rather than counting devices.
      */
-    CpuBudget cpu_budget([[maybe_unused]] const unsigned int local_size,
-                         const unsigned int configured_threads)
+    CpuBudget cpu_budget([[maybe_unused]] const unsigned int local_size, const unsigned int configured_threads)
     {
       // An explicit /discretization/threads is a statement about one process. Honour it verbatim:
       // silently dividing it would make the setting mean "threads per node", which is neither what
@@ -200,12 +199,13 @@ namespace DiFfRG
     if (!initialized) {
       // The thread count has to be known *before* the libraries come up: dealii::InitFinalize
       // forwards it to MultithreadInfo::set_thread_limit(), which installs the process-wide
-      // tbb::global_control that caps every TBB pipeline in deal.II and DiFfRG, and which
-      // ensure_kokkos_initialized() below reads to size the Kokkos host backend. Neither can be
-      // lowered meaningfully afterwards. probe() therefore takes an early, silent look at the
-      // parameter file; the application's own ConfigurationHelper does the authoritative parse.
+      // tbb::global_control that caps every TBB pipeline in deal.II and DiFfRG. Kokkos also reads
+      // MultithreadInfo::n_threads() exactly once below, so both thread counts must be available
+      // here. probe() therefore takes an early, silent look at the parameter file; the
+      // application's own ConfigurationHelper does the authoritative parse.
       const ConfigTree config = ConfigurationHelper::probe(argc, argv, parameter_file);
       const unsigned int configured_threads = config.get_uint("/discretization/threads", 0);
+      const unsigned int configured_kokkos_threads = config.get_uint("/discretization/kokkos_threads", 0);
 
       if (config.contains("/discretization/threads") && !config.contains("/discretization/mesh_workers"))
         std::cerr << "WARNING: '/discretization/threads' has changed meaning. It used to set the length of the\n"
@@ -272,13 +272,21 @@ namespace DiFfRG
         (void)rank_parallelism;
       }
       if (local_size > 1 && MPI::rank(MPI_COMM_WORLD) == 0)
-        std::cerr << "DiFfRG: " << local_size << " ranks per node, " << budget.threads
-                  << " CPU threads each ("
-                  << (configured_threads > 0
-                          ? "from /discretization/threads, applied per rank"
-                          : budget.pinned ? "the launcher pinned each rank to its own CPUs"
-                                          : std::to_string(budget.sharing) + " ranks share one CPU set")
+        std::cerr << "DiFfRG: " << local_size << " ranks per node, " << budget.threads << " CPU threads each ("
+                  << (configured_threads > 0 ? "from /discretization/threads, applied per rank"
+                      : budget.pinned        ? "the launcher pinned each rank to its own CPUs"
+                                             : std::to_string(budget.sharing) + " ranks share one CPU set")
                   << ")." << std::endl;
+
+      // Keep the two host-side thread resources independent. The application count is captured
+      // only after MPI affinity budgeting, because it is the persistent TBB/deal.II limit for this
+      // rank. Kokkos may temporarily see a different count while its host backend is initialized:
+      // expensive CPU integrals can use a wider pool, while cheap ones can avoid nested-parallel
+      // overhead with a single worker. An absent or zero kokkos_threads keeps the historical
+      // behaviour and uses the resolved per-rank application count.
+      const unsigned int application_threads = dealii::MultithreadInfo::n_threads();
+      const unsigned int kokkos_threads =
+          configured_kokkos_threads > 0 ? configured_kokkos_threads : application_threads;
 
       const int device = select_device(local_rank, local_size);
 
@@ -293,17 +301,26 @@ namespace DiFfRG
       // otherwise be skipped. Getting that wrong reintroduces the teardown segfault described
       // above: GrowingVectorMemory installs a Kokkos finalize-hook into an already-destroyed
       // static, and nothing ever finalizes Kokkos.
-      if (device >= 0 && local_size > 1 && !Kokkos::is_initialized() && !Kokkos::is_finalized()) {
-        dealii::internal::dealii_initialized_kokkos = true;
-        Kokkos::initialize(Kokkos::InitializationSettings()
-                               .set_device_id(device)
-                               .set_num_threads(dealii::MultithreadInfo::n_threads()));
-        std::atexit([]() { Kokkos::finalize(); });
-      } else {
-        // set_thread_limit() has already run (in InitFinalize), so ensure_kokkos_initialized()
-        // picks up the correct thread count.
-        dealii::internal::ensure_kokkos_initialized();
+      //
+      // num_threads configures only Kokkos's host execution backend; it does not restrict CUDA
+      // kernel parallelism. Device selection and host-pool sizing are therefore orthogonal settings
+      // and belong in the same initialization. Temporarily publish kokkos_threads through deal.II,
+      // then restore the persistent application count even if initialization fails.
+      dealii::MultithreadInfo::set_thread_limit(kokkos_threads);
+      try {
+        if (device >= 0 && local_size > 1 && !Kokkos::is_initialized() && !Kokkos::is_finalized()) {
+          dealii::internal::dealii_initialized_kokkos = true;
+          Kokkos::initialize(Kokkos::InitializationSettings().set_device_id(device).set_num_threads(
+              dealii::MultithreadInfo::n_threads()));
+          std::atexit([]() { Kokkos::finalize(); });
+        } else {
+          dealii::internal::ensure_kokkos_initialized();
+        }
+      } catch (...) {
+        dealii::MultithreadInfo::set_thread_limit(application_threads);
+        throw;
       }
+      dealii::MultithreadInfo::set_thread_limit(application_threads);
 
       // The scheduler defaults are fine for most runs; expose them anyway, since the split width is
       // the one knob a scaling study may want to turn.

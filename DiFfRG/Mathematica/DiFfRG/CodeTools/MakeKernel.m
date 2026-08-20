@@ -49,7 +49,7 @@ $ADSpecializations = {<|"Suffix" -> "AD", "Replacements" -> $ADReplacements|>, <
 
 $PredefRegFunc = {"RB", "RF", "RBdot", "RFdot", "dq2RB", "dq2RF"};
 
-$StandardKernelDefinitions = Map[FunKit`MakeCppFunction["Name" -> #, "Body" -> "return Regulator::" <> # <> "(k2, p2);", "Prefix" -> "static KOKKOS_FORCEINLINE_FUNCTION", "Suffix" -> "", "Parameters" -> {"k2", "p2"}]&, $PredefRegFunc];
+$StandardKernelDefinitions = Map[FunKit`MakeCppFunction["Name" -> #, "Body" -> "return Regulator::" <> # <> "(k2, p2);", "Prefix" -> "static KOKKOS_INLINE_FUNCTION", "Suffix" -> "", "Parameters" -> {"k2", "p2"}]&, $PredefRegFunc];
 
 CheckKey[kernel_Association, name_String, test_, msg_String] :=
     Module[{valid},
@@ -151,11 +151,11 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
             ];
         kernel =
             If[TrueQ[OptionValue["SplitKernel"]] || TrueQ[OptionValue["SeparateLookups"]],
-                FunKit`MakeCppFunctionSplit[expr, "Name" -> "kernel", "Return" -> OptionValue["KernelReturnType"], "Suffix" -> "", "Prefix" -> "static KOKKOS_FORCEINLINE_FUNCTION", "Decorator" -> OptionValue["Decorator"], "SeparateLookups" -> OptionValue["SeparateLookups"], "Parameters" -> Join[intVariables, getArgs, parametersKernel], "Body" -> StringTemplate["using namespace DiFfRG;using namespace DiFfRG::compute;\n`1`"][OptionValue["KernelBody"]], "ReturnTransform" -> OptionValue["KernelReturnTransform"]]
+                FunKit`MakeCppFunctionSplit[expr, "Name" -> "kernel", "Return" -> OptionValue["KernelReturnType"], "Suffix" -> "", "Prefix" -> "static KOKKOS_INLINE_FUNCTION", "Decorator" -> OptionValue["Decorator"], "SeparateLookups" -> OptionValue["SeparateLookups"], "Parameters" -> Join[intVariables, getArgs, parametersKernel], "Body" -> StringTemplate["using namespace DiFfRG;using namespace DiFfRG::compute;\n`1`"][OptionValue["KernelBody"]], "ReturnTransform" -> OptionValue["KernelReturnTransform"]]
                 ,
-                FunKit`MakeCppFunction[expr, "Name" -> "kernel", "Return" -> OptionValue["KernelReturnType"], "Suffix" -> "", "Prefix" -> "static KOKKOS_FORCEINLINE_FUNCTION", "Parameters" -> Join[intVariables, getArgs, parametersKernel], "Body" -> StringTemplate["using namespace DiFfRG;using namespace DiFfRG::compute;\n`1`"][OptionValue["KernelBody"]], "ReturnTransform" -> OptionValue["KernelReturnTransform"]]
+                FunKit`MakeCppFunction[expr, "Name" -> "kernel", "Return" -> OptionValue["KernelReturnType"], "Suffix" -> "", "Prefix" -> "static KOKKOS_INLINE_FUNCTION", "Parameters" -> Join[intVariables, getArgs, parametersKernel], "Body" -> StringTemplate["using namespace DiFfRG;using namespace DiFfRG::compute;\n`1`"][OptionValue["KernelBody"]], "ReturnTransform" -> OptionValue["KernelReturnTransform"]]
             ];
-        constant = FunKit`MakeCppFunction[constExpr, "Name" -> "constant", "Return" -> OptionValue["ConstantReturnType"], "Suffix" -> "", "Prefix" -> "static KOKKOS_FORCEINLINE_FUNCTION", "Parameters" -> Join[getArgs, parametersKernel], "Body" -> StringTemplate["using namespace DiFfRG;using namespace DiFfRG::compute;\n`1`"][OptionValue["ConstantBody"]], "ReturnTransform" -> OptionValue["ConstantReturnTransform"]];
+        constant = FunKit`MakeCppFunction[constExpr, "Name" -> "constant", "Return" -> OptionValue["ConstantReturnType"], "Suffix" -> "", "Prefix" -> "static KOKKOS_INLINE_FUNCTION", "Parameters" -> Join[getArgs, parametersKernel], "Body" -> StringTemplate["using namespace DiFfRG;using namespace DiFfRG::compute;\n`1`"][OptionValue["ConstantBody"]], "ReturnTransform" -> OptionValue["ConstantReturnTransform"]];
         kernelClass = FunKit`MakeCppClass["TemplateTypes" -> {"_Regulator"}, "Name" -> OptionValue["Name"] <> "_kernel", "MembersPublic" -> Join[{"using Regulator = _Regulator;"}, matsubaraEvenTrait, {kernel, constant}], "MembersPrivate" -> kernelDefs];
         kernelHeader = FunKit`MakeCppHeader["Includes" -> {"DiFfRG/physics/interpolation.hh", "DiFfRG/physics/physics.hh"}, "Body" -> {"namespace DiFfRG {", kernelClass, StringTemplate["} using DiFfRG::`1`_kernel;"][spec["Name"]]}];
         (********************************************************************)

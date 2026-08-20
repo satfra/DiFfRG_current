@@ -20,12 +20,13 @@ containsAll[text_String, patterns_List] :=
     AllTrue[patterns, StringContainsQ[text, #]&];
 
 generatesSecondOrderComplexAD[] :=
-    Module[{tmp, header, adGet, constructor, result},
+    Module[{tmp, header, kernelHeader, adGet, constructor, result},
         tmp = CreateDirectory[];
         SetFlowDirectory[tmp <> "/"];
         CreateDirectory[FileNameJoin[{tmp, "flows", "pion", "src"}], CreateIntermediateDirectories -> True];
         MakeKernel[mpi2, "IntegrationVariables" -> {"l1"}, "Name" -> "pion", "Integrator" -> "Integrator_p2", "d" -> 3, "ctype" -> "DiFfRG::complex<double>", "Parameters" -> {<|"Name" -> "k", "Type" -> "double", "Const" -> True, "AD" -> False|>, <|"Name" -> "T", "Type" -> "double", "Const" -> True, "AD" -> False|>, <|"Name" -> "mpi2", "Type" -> "DiFfRG::complex<double>", "Const" -> True, "AD" -> True|>}, "AD" -> True, "ConstantReturnType" -> "complex<double>"];
         header = Import[FileNameJoin[{tmp, "flows", "pion", "pion.hh"}], "Text"];
+        kernelHeader = Import[FileNameJoin[{tmp, "flows", "pion", "kernel.hh"}], "Text"];
         adGet = Import[FileNameJoin[{tmp, "flows", "pion", "src", "AD_get.cc"}], "Text"];
         constructor = Import[FileNameJoin[{tmp, "flows", "pion", "src", "constructor.cc"}], "Text"];
         (* Expectations match ExportCode's RAW output. It does not run clang-format (despite
@@ -33,7 +34,7 @@ generatesSecondOrderComplexAD[] :=
            the project's `T &x`, splits the declaration semicolon onto its own line, and leaves
            a double space after the first `get` argument. Those are formatting artefacts of the
            generator, not style choices -- if any of them is ever cleaned up this test will say so. *)
-        result = containsAll[header, {"Integrator_p2<3, cxreal, pion_kernel<Regulator>, DiFfRG::TBB_exec> integrator_AD;", "Integrator_p2<3, cxReal<2, double>, pion_kernel<Regulator>, DiFfRG::TBB_exec> integrator_AD2;", "void get(cxreal& dest, const double& k, const double& T, const cxreal& mpi2)", "void get(cxReal<2, double>& dest, const double& k, const double& T, const cxReal<2, double>& mpi2)"}] && containsAll[adGet, {"void pion_integrator::get(cxreal& dest, const double& k, const double& T, const cxreal& mpi2)", "integrator_AD.get(dest,  k, T, mpi2);", "void pion_integrator::get(cxReal<2, double>& dest, const double& k, const double& T, const cxReal<2, double>& mpi2)", "integrator_AD2.get(dest,  k, T, mpi2);"}] && StringContainsQ[constructor, "integrator_AD(quadrature_provider, config)"] && StringContainsQ[constructor, "integrator_AD2(quadrature_provider, config)"];
+        result = containsAll[header, {"Integrator_p2<3, cxreal, pion_kernel<Regulator>, DiFfRG::TBB_exec> integrator_AD;", "Integrator_p2<3, cxReal<2, double>, pion_kernel<Regulator>, DiFfRG::TBB_exec> integrator_AD2;", "void get(cxreal& dest, const double& k, const double& T, const cxreal& mpi2)", "void get(cxReal<2, double>& dest, const double& k, const double& T, const cxReal<2, double>& mpi2)"}] && StringCount[kernelHeader, "static KOKKOS_INLINE_FUNCTION"] === 8 && StringFreeQ[kernelHeader, "KOKKOS_FORCEINLINE_FUNCTION"] && containsAll[adGet, {"void pion_integrator::get(cxreal& dest, const double& k, const double& T, const cxreal& mpi2)", "integrator_AD.get(dest,  k, T, mpi2);", "void pion_integrator::get(cxReal<2, double>& dest, const double& k, const double& T, const cxReal<2, double>& mpi2)", "integrator_AD2.get(dest,  k, T, mpi2);"}] && StringContainsQ[constructor, "integrator_AD(quadrature_provider, config)"] && StringContainsQ[constructor, "integrator_AD2(quadrature_provider, config)"];
         DeleteDirectory[tmp, DeleteContents -> True];
         result
     ];

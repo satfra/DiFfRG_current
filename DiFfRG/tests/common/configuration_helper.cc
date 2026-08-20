@@ -108,19 +108,25 @@ verbosity = 0
 
 TEST_CASE("probe() reads the configuration without diagnostics or exiting", "[config][common][threads]")
 {
-  const std::string document = R"JSON({"discretization": {"threads": 3, "mesh_workers": 7}})JSON";
+  const std::string document = R"JSON({"discretization": {"threads": 3, "kokkos_threads": 2, "mesh_workers": 7}})JSON";
 
   SECTION("A -p file and CLI overrides are honoured just like the normal parse")
   {
     const std::string filename = "test_probe.json";
     std::ofstream(filename, std::ofstream::trunc) << document;
 
-    int argc = 5;
-    char *argv[] = {(char *)"test", (char *)"-p", (char *)filename.c_str(), (char *)"-si",
-                    (char *)"/discretization/threads=5"};
+    int argc = 7;
+    char *argv[] = {(char *)"test",
+                    (char *)"-p",
+                    (char *)filename.c_str(),
+                    (char *)"-si",
+                    (char *)"/discretization/threads=5",
+                    (char *)"-si",
+                    (char *)"/discretization/kokkos_threads=1"};
     const ConfigTree config = ConfigurationHelper::probe(argc, argv);
 
     CHECK(config.get_uint("/discretization/threads", 0) == 5);
+    CHECK(config.get_uint("/discretization/kokkos_threads", 0) == 1);
     CHECK(config.get_uint("/discretization/mesh_workers", 0) == 7);
 
     std::filesystem::remove(filename);
