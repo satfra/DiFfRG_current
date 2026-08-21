@@ -211,12 +211,29 @@ else()
   list(APPEND PETSC_OPTIONS --with-fc=0)
 endif()
 
-# Only pass the BLAS/LAPACK hints when the superbuild actually built OpenBLAS;
-# an empty --with-blas-lib= is worse than letting PETSc search for itself.
+# Point PETSc at the same BLAS/LAPACK the rest of the superbuild uses: the bundled
+# OpenBLAS if one was built, otherwise the system library the superbuild found and
+# handed down as a comma-separated list. Left to search on its own PETSc can pick a
+# different library entirely -- on a cluster, MKL via MKLROOT is the usual one --
+# and an index-size or ABI mismatch with deal.II follows.
 if(OpenBLAS_LIBRARY)
   list(APPEND PETSC_OPTIONS
        "--with-blas-lib=${OpenBLAS_LIBRARY}"
        "--with-lapack-lib=${OpenBLAS_LIBRARY}")
+elseif(PETSC_BLASLAPACK_LIB)
+  list(APPEND PETSC_OPTIONS "--with-blaslapack-lib=[${PETSC_BLASLAPACK_LIB}]")
+endif()
+
+# PETSc determines the BLAS index size by *running* a test binary, and where it
+# cannot run one it assumes 64-bit -- which makes --download-scalapack (i.e. MUMPS)
+# fail outright with "Cannot use scalapack with 64-bit BLAS/LAPACK indices". The
+# superbuild has already probed the very library pinned above, so hand PETSc the
+# answer instead of letting it guess. Only ever passed when the probe produced a
+# verdict; `unknown` leaves PETSc's own detection in charge.
+if(OpenBLAS_LIBRARY OR BLAS_INDEX_SIZE STREQUAL "32")
+  list(APPEND PETSC_OPTIONS --known-64-bit-blas-indices=0)
+elseif(BLAS_INDEX_SIZE STREQUAL "64")
+  message(FATAL_ERROR "The BLAS/LAPACK in use has 64-bit indices; PETSc here is built with 32-bit ones.")
 endif()
 
 list(APPEND PETSC_OPTIONS

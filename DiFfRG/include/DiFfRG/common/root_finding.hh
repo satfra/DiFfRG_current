@@ -391,7 +391,16 @@ namespace DiFfRG
       // nearly equal doubles. Measured against exact data the result is good to 1e-8 relative up
       // to s ~ 1e4 d2 and degrades to tens of percent beyond it -- while still looking perfectly
       // finite. Reject rather than hand back a confident wrong critical point.
-      if (s > 1e4 * d2) return NAN;
+      //
+      // The comparison carries a guard band because the quantity being tested is the bisection's
+      // own output, and at the ceiling that output already carries O(1e-8) relative error. A bare
+      // `s > 1e4 * d2` therefore decides data sitting exactly on the threshold by which side
+      // rounding happens to land on -- for the canonical d1=3, d2=1 triple the root at s = 1e4
+      // comes out as 1e4*(1 +/- 1.3e-8), so the verdict flips with optimisation flags rather than
+      // with the data. Widening the rejection by 1e-6 relative, ~100x the noise, makes the
+      // documented ceiling a hard boundary. Everything the accurate branch relies on sits at
+      // s <= 1e3 * d2, a full decade below, so nothing that was accepted becomes rejected.
+      if (!(s < 1e4 * d2 * (1. - 1e-6))) return NAN;
 
       return s;
     }

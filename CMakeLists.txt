@@ -169,7 +169,87 @@ if(NOT BUILD_OpenBLAS)
           "  The LAPACK installation may be incomplete or broken.\n"
           "  If the deal.II build fails, try: cmake .. -DBUILD_OpenBLAS=ON\n")
     endif()
+
+    # The whole stack assumes 32-bit BLAS/LAPACK indices: deal.II's types::blas_int
+    # is a plain int and PETSc is configured --with-64-bit-indices=0. A cluster
+    # module that provides an ILP64 BLAS (MKL's ilp64 layer, an OpenBLAS built with
+    # INTERFACE64=1) links fine and then reads every dimension argument as garbage,
+    # so establish the index size here instead of letting it through.
+    #
+    # Knowing the answer is also what keeps PETSc's own detection honest: its probe
+    # has to *run* a test binary, and where it cannot -- batch nodes, restricted
+    # login nodes -- it assumes 64-bit and then refuses ScaLAPACK, i.e. MUMPS, with
+    #   Cannot use scalapack with 64-bit BLAS/LAPACK indices
+    # We forward the verdict as --known-64-bit-blas-indices only when the probe
+    # below actually produced one.
+    set(_blas_probe_src ${CMAKE_CURRENT_BINARY_DIR}/blas_index_probe.c)
+    file(
+      WRITE ${_blas_probe_src}
+      "extern double ddot_(const int *, const double *, const int *, const double *, const int *);\n"
+      "int main(void)\n"
+      "{\n"
+      "  double x[4] = {3.0, 5.0, 7.0, 9.0};\n"
+      "  int n = 2, one = 1;\n"
+      "  /* 32-bit indices: 3*3 + 5*5 = 34. With 64-bit indices n and one are read as garbage. */\n"
+      "  return ddot_(&n, x, &one, x, &one) == 34.0 ? 0 : 1;\n"
+      "}\n")
+    try_run(
+      _blas_probe_run _blas_probe_compiled ${CMAKE_CURRENT_BINARY_DIR}/blas_index_probe
+      ${_blas_probe_src} LINK_LIBRARIES ${LAPACK_LIBRARIES} ${BLAS_LIBRARIES})
+
+    if(_blas_probe_compiled AND _blas_probe_run STREQUAL "0")
+      set(BLAS_INDEX_SIZE 32)
+    elseif(_blas_probe_compiled AND _blas_probe_run STREQUAL "1")
+      set(BLAS_INDEX_SIZE 64)
+    else()
+      # Did not compile, or did not run (cross-compilation, a crash inside the
+      # BLAS). No verdict; PETSc falls back to its own detection.
+      set(BLAS_INDEX_SIZE unknown)
+    endif()
+
+    if(BLAS_INDEX_SIZE STREQUAL "64")
+      message(
+        FATAL_ERROR
+          "\n"
+          "======================================================================\n"
+          "  The BLAS/LAPACK found here uses 64-bit integer indices (ILP64)\n"
+          "======================================================================\n"
+          "  Found: ${LAPACK_LIBRARIES}\n"
+          "\n"
+          "  deal.II and PETSc are both built with 32-bit indices here, and an\n"
+          "  ILP64 BLAS links against them without complaint while silently\n"
+          "  misreading every matrix dimension. PETSc additionally refuses to\n"
+          "  build ScaLAPACK/MUMPS against it.\n"
+          "\n"
+          "  Either point the build at an LP64 BLAS -- on a cluster that usually\n"
+          "  means loading the module's lp64 variant rather than the ilp64 one --\n"
+          "  or let DiFfRG build its own:\n"
+          "    cmake .. -DBUILD_OpenBLAS=ON\n"
+          "======================================================================\n")
+    endif()
+
+    if(BLAS_INDEX_SIZE STREQUAL "unknown")
+      message(
+        STATUS
+          "Could not determine the BLAS/LAPACK index size; leaving the detection to PETSc.")
+    endif()
+
+    # Pin PETSc to the same BLAS/LAPACK deal.II gets. Left to itself PETSc searches
+    # independently and can land on a different library entirely (MKL via MKLROOT,
+    # say), which is how an ILP64 BLAS gets into the build on a machine whose
+    # default BLAS is LP64. PETSc takes the list as --with-blaslapack-lib=[a,b,c],
+    # so anything CMake could put in it that a comma-separated list cannot carry --
+    # generator expressions, embedded separators -- means falling back to PETSc's
+    # own search rather than handing it something malformed.
+    set(_system_blaslapack ${LAPACK_LIBRARIES} ${BLAS_LIBRARIES})
+    list(REMOVE_DUPLICATES _system_blaslapack)
+    if(NOT "${_system_blaslapack}" MATCHES "[$,]")
+      list(JOIN _system_blaslapack "," PETSC_BLASLAPACK_LIB)
+    endif()
   endif()
+else()
+  # The bundled OpenBLAS is built without INTERFACE64, so its indices are 32-bit.
+  set(BLAS_INDEX_SIZE 32)
 endif()
 
 message("${BoldGreen}All pre-flight checks passed.${ColourReset}")
@@ -1077,6 +1157,8 @@ if(BUILD_PETSC)
       -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
       -DNATIVE:BOOL=${NATIVE}
       -DOpenBLAS_LIBRARY:STRING=${BLAS_LIBRARY_PATH}
+      -DPETSC_BLASLAPACK_LIB:STRING=${PETSC_BLASLAPACK_LIB}
+      -DBLAS_INDEX_SIZE:STRING=${BLAS_INDEX_SIZE}
       -DHAVE_MPI:BOOL=${MPI}
       -DPETSC_GMRES:BOOL=${PETSC_GMRES}
       -DPETSC_MUMPS:BOOL=${PETSC_MUMPS}
