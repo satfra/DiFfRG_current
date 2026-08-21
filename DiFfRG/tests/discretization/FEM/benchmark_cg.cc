@@ -1,6 +1,7 @@
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 
+#include <boilerplate/benchmark_sweep.hh>
 #include <boilerplate/models.hh>
 
 #include <DiFfRG/common/types.hh>
@@ -77,7 +78,7 @@ TEST_CASE("Benchmark CG Burgers", "[benchmark][cg][burgers]")
   }
 
   constexpr uint dim = 1;
-  const int fe_order = GENERATE(1, 3, 5);
+  const int fe_order = GENERATE_COPY(from_range(Testing::benchmark_fe_orders({1, 3, 5})));
 
   ConfigTree json = json::value(
       {{"physical", {}},
@@ -94,8 +95,6 @@ TEST_CASE("Benchmark CG Burgers", "[benchmark][cg][burgers]")
          {"jacobian_quadrature_factor", 0.5}}},
        {"discretization",
         {{"fe_order", fe_order},
-         {"mesh_workers", 8},
-         {"batch_size", 64},
          {"overintegration", 0},
          {"output_subdivisions", 2},
          {"EoM_abs_tol", 1e-10},
@@ -115,6 +114,8 @@ TEST_CASE("Benchmark CG Burgers", "[benchmark][cg][burgers]")
          {"implicit",
           {{"dt", 1e-4}, {"minimal_dt", 1e-6}, {"maximal_dt", 1e-1}, {"abs_tol", 1e-14}, {"rel_tol", 1e-8}}}}},
        {"output", {{"live_plot", false}, {"verbosity", 0}}}});
+
+  Testing::apply_benchmark_sweep(json);
 
   run_benchmarks<Testing::ModelBurgers<dim>>("Burgers p=" + std::to_string(fe_order), json);
 }
@@ -128,7 +129,7 @@ TEST_CASE("Benchmark CG Constant 3-comp", "[benchmark][cg][constant3]")
   }
 
   constexpr uint dim = 1;
-  const int fe_order = GENERATE(1, 3, 5);
+  const int fe_order = GENERATE_COPY(from_range(Testing::benchmark_fe_orders({1, 3, 5})));
 
   ConfigTree json = json::value(
       {{"physical", {}},
@@ -145,8 +146,6 @@ TEST_CASE("Benchmark CG Constant 3-comp", "[benchmark][cg][constant3]")
          {"jacobian_quadrature_factor", 0.5}}},
        {"discretization",
         {{"fe_order", fe_order},
-         {"mesh_workers", 8},
-         {"batch_size", 64},
          {"overintegration", 0},
          {"output_subdivisions", 2},
          {"EoM_abs_tol", 1e-10},
@@ -166,6 +165,8 @@ TEST_CASE("Benchmark CG Constant 3-comp", "[benchmark][cg][constant3]")
          {"implicit",
           {{"dt", 1e-4}, {"minimal_dt", 1e-6}, {"maximal_dt", 1e-1}, {"abs_tol", 1e-14}, {"rel_tol", 1e-8}}}}},
        {"output", {{"live_plot", false}, {"verbosity", 0}}}});
+
+  Testing::apply_benchmark_sweep(json);
 
   run_benchmarks<Testing::ModelConstant<dim, 3>>("Constant3 p=" + std::to_string(fe_order), json);
 }

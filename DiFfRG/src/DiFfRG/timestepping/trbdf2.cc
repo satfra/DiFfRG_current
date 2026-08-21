@@ -42,7 +42,7 @@ namespace DiFfRG
   void TimeStepperTRBDF2_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(
       AbstractFlowingVariables<NumberType, VectorType> *initial_condition, double start, double stop)
   {
-    OutputSession<dim, VectorType> *data_out = this->get_data_out();
+    OutputSession_impl<dim, VectorType> *data_out = this->get_data_out();
 
     const double gamma = 2. - std::sqrt(2.);
 

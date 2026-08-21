@@ -200,7 +200,7 @@ namespace DiFfRG
      * QuadratureIntegrator::map). Applying an lvalue tuple binds references instead.
      */
     template <typename XArr, typename PosArr, typename ArgTuple>
-    KOKKOS_FORCEINLINE_FUNCTION static NT node_value(const XArr &x, const PosArr &pos, const ArgTuple &args,
+    KOKKOS_INLINE_FUNCTION static NT node_value(const XArr &x, const PosArr &pos, const ArgTuple &args,
                                                      const ctype xt, const ctype wt, const bool is_tail)
     {
       NT out{};

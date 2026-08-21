@@ -473,8 +473,6 @@ static DiFfRG::ConfigTree make_fv_test_json()
       {{"physical", {{"Lambda", 1.}}},
        {"discretization",
         {{"fe_order", 0},
-         {"mesh_workers", 1},
-         {"batch_size", 8},
          {"overintegration", 0},
          {"output_subdivisions", 1},
          {"EoM_abs_tol", 1e-10},
@@ -714,8 +712,6 @@ static DiFfRG::ConfigTree make_kt_boundary_json()
       {{"physical", {{"Lambda", 1.}}},
        {"discretization",
         {{"fe_order", 0},
-         {"mesh_workers", 1},
-         {"batch_size", 8},
          {"overintegration", 0},
          {"output_subdivisions", 1},
          {"EoM_abs_tol", 1e-10},
@@ -802,7 +798,7 @@ TEST_CASE("KT 1D FV readouts use EoM potential reconstruction and write a time s
       DiFfRG::OutputPath::temporary(DiFfRG::TemporaryRetention::remove_on_destruction, output_name, "output");
   const auto output_dir = data_out_path.root();
   {
-    DiFfRG::OutputSession<1, VectorType> data_out(data_out_path, json);
+    DiFfRG::OutputSession<Assembler> data_out(data_out_path, json);
     data_out.write_frame(0.25,
                          [&](auto &frame) { assembler.attach_data_output(frame, state.spatial_data(), VectorType()); });
     data_out.write_frame(0.5,

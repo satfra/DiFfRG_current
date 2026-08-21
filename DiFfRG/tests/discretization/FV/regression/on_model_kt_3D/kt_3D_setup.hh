@@ -145,7 +145,7 @@ namespace on_kt_3D
   //   x_order = 32, x_extent_tolerance = 1e-3 (matches both Examples).
   //   final_time and Λ are pulled from LSMPhysicalParameters.
 
-  inline ConfigTree make_json(const int threads = 1, const int fe_order = 0, const int x_order = 32,
+  inline ConfigTree make_json(const int fe_order = 0, const int x_order = 32,
                               const double ida_abs_tol = 1.0e-7, const double ida_rel_tol = 1.0e-7)
   {
     return json::value(
@@ -153,8 +153,6 @@ namespace on_kt_3D
          {"integration", {{"x_order", x_order}, {"x_extent_tolerance", 1.0e-3}, {"jacobian_quadrature_factor", 0.5}}},
          {"discretization",
           {{"fe_order", fe_order},
-           {"mesh_workers", threads},
-           {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
            {"EoM_abs_tol", 1.0e-10},

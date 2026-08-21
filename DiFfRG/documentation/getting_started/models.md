@@ -419,7 +419,7 @@ int main(int argc, char *argv[])
   Model model(json);
   RectangularMesh<dim> mesh(json);
   OutputPath output_path(json);
-  OutputSession<dim, VectorType> output(output_path, Config::OutputSettings(json));
+  OutputSession<Assembler> output(output_path, Config::OutputSettings(json));
   const auto log = output.log_port();
   Discretization discretization(mesh, json, log);
   Assembler assembler(discretization, model, json, log);

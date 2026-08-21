@@ -159,7 +159,7 @@ namespace DiFfRG
      * @param implicit_stepper, explicit_stepper which /timestepping/ sections this stepper reads.
      */
     AbstractTimestepper(const ConfigTree &config, AbstractAssembler<VectorType, SparseMatrixType, dim> *assembler,
-                        OutputSession<dim, VectorType> *data_out, AbstractAdaptor<VectorType> *adaptor,
+                        OutputSession_impl<dim, VectorType> *data_out, AbstractAdaptor<VectorType> *adaptor,
                         const bool implicit_stepper, const bool explicit_stepper)
         : config(config), assembler(assembler), data_out(data_out), adaptor(adaptor),
           log(data_out ? data_out->log_port() : LogPort{}), start_time(std::chrono::high_resolution_clock::now()),
@@ -226,12 +226,12 @@ namespace DiFfRG
     /**
      * @brief Obtain the run-owned output session supplied by the application.
      *
-     * @return OutputSession<dim, VectorType>* The active output session.
+     * @return OutputSession_impl<dim, VectorType>* The active output session.
      */
-    OutputSession<dim, VectorType> *get_data_out()
+    OutputSession_impl<dim, VectorType> *get_data_out()
     {
       if (data_out == nullptr)
-        throw std::invalid_argument("AbstractTimestepper: an OutputSession must be supplied explicitly.");
+        throw std::invalid_argument("AbstractTimestepper: an OutputSession_impl must be supplied explicitly.");
       return data_out;
     }
 
@@ -299,7 +299,7 @@ namespace DiFfRG
   protected:
     const ConfigTree config;
     AbstractAssembler<VectorType, SparseMatrixType, dim> *assembler;
-    OutputSession<dim, VectorType> *data_out;
+    OutputSession_impl<dim, VectorType> *data_out;
     AbstractAdaptor<VectorType> *adaptor;
     LogPort log;
 

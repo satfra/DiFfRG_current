@@ -40,6 +40,6 @@ namespace DiFfRG
 
     std::shared_ptr<State> state;
 
-    template <unsigned int, typename> friend class OutputSession;
+    template <unsigned int, typename> friend class OutputSession_impl;
   };
 } // namespace DiFfRG

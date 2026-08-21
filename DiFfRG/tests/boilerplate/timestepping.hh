@@ -67,8 +67,6 @@ bool run(std::string test_name, double expected_precision, const std::string &re
          {"jacobian_quadrature_factor", 0.5}}},
        {"discretization",
         {{"fe_order", 3},
-         {"mesh_workers", 8},
-         {"batch_size", 64},
          {"overintegration", 0},
          {"output_subdivisions", 2},
 
@@ -111,7 +109,7 @@ bool run(std::string test_name, double expected_precision, const std::string &re
   Discretization discretization(mesh, config, DiFfRG::LogPort{});
   Assembler assembler(discretization, model, config, DiFfRG::LogPort{});
   auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, test_name, test_name);
-  OutputSession<dim, VectorType> data_out(data_out_path, config);
+  OutputSession<Assembler> data_out(data_out_path, config);
 
   const int n_components = Model::Components::count_fe_functions(0);
 

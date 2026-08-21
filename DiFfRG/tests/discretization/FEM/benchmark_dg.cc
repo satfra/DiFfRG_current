@@ -1,6 +1,7 @@
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 
+#include <boilerplate/benchmark_sweep.hh>
 #include <boilerplate/models.hh>
 
 #include <DiFfRG/common/types.hh>
@@ -28,7 +29,7 @@ TEST_CASE("Benchmark DG Constant", "[benchmark][dg]")
   using VectorType = typename Discretization::VectorType;
   using Assembler = DG::Assembler<Discretization>;
 
-  const int fe_order = GENERATE(0, 1, 3, 5);
+  const int fe_order = GENERATE_COPY(from_range(Testing::benchmark_fe_orders({0, 1, 3, 5})));
 
   ConfigTree json = json::value(
       {{"physical", {}},
@@ -45,8 +46,6 @@ TEST_CASE("Benchmark DG Constant", "[benchmark][dg]")
          {"jacobian_quadrature_factor", 0.5}}},
        {"discretization",
         {{"fe_order", fe_order},
-         {"mesh_workers", 8},
-         {"batch_size", 64},
          {"overintegration", 0},
          {"output_subdivisions", 2},
          {"EoM_abs_tol", 1e-10},
@@ -71,6 +70,8 @@ TEST_CASE("Benchmark DG Constant", "[benchmark][dg]")
   std::string label = "DG p=" + std::to_string(fe_order);
 
   Model model(p_prm);
+  Testing::apply_benchmark_sweep(json);
+
   RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
   Discretization discretization(mesh, json, DiFfRG::LogPort{});
   Assembler assembler(discretization, model, json, DiFfRG::LogPort{});

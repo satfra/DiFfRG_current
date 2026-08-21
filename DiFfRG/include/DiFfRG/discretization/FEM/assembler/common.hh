@@ -22,6 +22,7 @@
 #include <DiFfRG/discretization/common/la_policy.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
+#include <DiFfRG/discretization/common/assembly_schedule.hh>
 #include <DiFfRG/discretization/common/eom.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
 
@@ -75,20 +76,14 @@ namespace DiFfRG
     FEMAssembler(Discretization &discretization, Model &model, const ConfigTree &config, LogPort log_port)
         : discretization(discretization), model(model), log_port(std::move(log_port)), fe(discretization.get_fe()),
           dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
-          mesh_workers(config.get_uint("/discretization/mesh_workers", 0)),
-          batch_size(config.get_uint("/discretization/batch_size", 16)),
+          schedule_overrides(AssemblyScheduleOverrides::from_config(config)),
           EoM_cell(*(dof_handler.active_cell_iterators().end())),
           old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
           EoM_config(DiFfRG::internal::resolve_eom_config(dof_handler, Config::EoMConfig(config)))
     {
-      // Zero means "derive it from the thread count", and that is the default: mesh_workers is
-      // mesh_loop's queue_length, i.e. the cap on work items in flight, so a fixed constant is a
-      // ceiling on one machine and oversubscription on another. It used to default to 8, which is
-      // only the right answer at 16 threads -- below that it exceeds the thread count (integrators
-      // nest TBB work inside the cell workers, so the queue must stay under it), and above that it
-      // silently caps assembly parallelism no matter how many threads were asked for.
-      if (this->mesh_workers == 0) this->mesh_workers = std::max(1u, dealii::MultithreadInfo::n_threads() / 2);
-      log_port.info("FEM: Using {} mesh workers for assembly.", mesh_workers);
+      // reinit() refreshes this, but a derived assembler is not obliged to call it before its
+      // first mesh_loop, and an unset schedule would be a zero queue length.
+      update_assembly_schedules();
     }
 
     virtual IndexSet get_differential_indices() const override
@@ -136,6 +131,8 @@ namespace DiFfRG
       DoFTools::make_hanging_node_constraints(dof_handler, constraints);
       internal::apply_model_affine_constraints(model, constraints, context);
       constraints.close();
+
+      update_assembly_schedules();
     }
 
     virtual void rebuild_jacobian_sparsity() = 0;
@@ -393,10 +390,44 @@ namespace DiFfRG
     const DoFHandler<dim> &dof_handler;
     const Mapping<dim> &mapping;
 
-    /// Number of cells kept in flight in the MeshWorker assembly pipeline (its queue length).
-    /// This is not a thread count - see /discretization/threads for that.
-    uint mesh_workers;
-    uint batch_size;
+    /**
+     * @brief The mesh_loop schedule for a loop whose cell worker costs @p cost_ns nanoseconds.
+     *
+     * Pure arithmetic on the cached cell count, so it is called per loop rather than stored per
+     * cost: the loops do not fall into two classes, and anything between the reference points in
+     * namespace assembly_cost gets its own schedule instead of being rounded to one of them.
+     */
+    AssemblySchedule schedule_for(const double cost_ns) const
+    {
+      return make_assembly_schedule(n_owned_cells, dealii::MultithreadInfo::n_threads(), cost_ns,
+                                    schedule_overrides);
+    }
+
+    /**
+     * @brief Re-count the cells the schedules are sized from.
+     *
+     * Called from reinit(), because h-adaptivity moves the cell count. Logs only on a change, so
+     * an adaptive run does not narrate every refinement.
+     */
+    void update_assembly_schedules()
+    {
+      const uint n_owned = n_locally_owned_cells(discretization);
+      const bool unchanged = n_owned == n_owned_cells;
+      n_owned_cells = n_owned;
+      if (unchanged) return;
+
+      const uint n_threads = dealii::MultithreadInfo::n_threads();
+      const auto cheap = schedule_for(assembly_cost::local_fe);
+      const auto integral = schedule_for(assembly_cost::momentum_integral);
+      log_port.info("FEM: Assembling {} cells on {} threads -- {}x{} workers/cells for a cheap cell loop, "
+                    "{}x{} for an integral one.",
+                    n_owned_cells, n_threads, cheap.queue_length, cheap.chunk_size, integral.queue_length,
+                    integral.chunk_size);
+    }
+
+    /// Cells this rank assembles. Refreshed in reinit(); the per-loop schedules are sized from it.
+    uint n_owned_cells = 0;
+    const AssemblyScheduleOverrides schedule_overrides;
 
     mutable typename DoFHandler<dim>::cell_iterator EoM_cell;
     typename DoFHandler<dim>::cell_iterator old_EoM_cell;

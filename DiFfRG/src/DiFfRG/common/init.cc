@@ -207,12 +207,24 @@ namespace DiFfRG
       const unsigned int configured_threads = config.get_uint("/discretization/threads", 0);
       const unsigned int configured_kokkos_threads = config.get_uint("/discretization/kokkos_threads", 0);
 
-      if (config.contains("/discretization/threads") && !config.contains("/discretization/mesh_workers"))
+      if (config.contains("/discretization/threads") && configured_threads > 0)
         std::cerr << "WARNING: '/discretization/threads' has changed meaning. It used to set the length of the\n"
-                     "         assembly pipeline; that is now '/discretization/mesh_workers' (default 8).\n"
+                     "         assembly pipeline; the pipeline is now sized automatically.\n"
                      "         It now sets the number of CPU threads the whole program may use, so this run is\n"
                      "         limited to "
                   << configured_threads << " threads. Set '/discretization/threads' to 0 to use all available cores.\n"
+                  << std::endl;
+
+      if (config.contains("/discretization/mesh_workers") || config.contains("/discretization/batch_size"))
+        std::cerr << "WARNING: '/discretization/mesh_workers' and '/discretization/batch_size' are deprecated.\n"
+                     "         The assembly schedule -- the MeshWorker queue length and chunk size -- is now\n"
+                     "         derived per loop from how expensive its cell worker is, the thread budget, and\n"
+                     "         the number of cells this rank owns.\n"
+                     "         They are still honoured, but setting either one pins every loop to a single\n"
+                     "         hand-tuned pair: the cheap loops and the ones calling the momentum integrals\n"
+                     "         stop being scheduled differently, and the adaptation to mesh size, thread count\n"
+                     "         and MPI partitioning is switched off. Please delete them from your parameter\n"
+                     "         file unless you are deliberately benchmarking the schedule itself.\n"
                   << std::endl;
 
       // A configured count is handed to deal.II, which takes the minimum with DEAL_II_NUM_THREADS.

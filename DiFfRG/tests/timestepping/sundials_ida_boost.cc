@@ -42,6 +42,14 @@ using namespace DiFfRG;
 //     iterations is not consistent with the spatial trial state, Newton's convergence
 //     breaks down and IDA reports recoverable residual errors.
 
+// The discretization and assembler that run_hybrid builds internally. The TEST_CASEs below have
+// to name the assembler in order to spell their stepper type, and it must be the *same* type:
+// run_hybrid constructs the stepper with a pointer to its own assembler, so a spelling that drifts
+// from this one would not compile. Defining it once here is what keeps the two in step.
+constexpr uint hybrid_dim = 1;
+template <typename Model> using HybridDiscretization = CG::Discretization<Model, RectangularMesh<hybrid_dim>>;
+template <typename Model> using HybridAssembler = CG::Assembler<HybridDiscretization<Model>>;
+
 template <typename Model, typename TimeStepper>
 bool run_hybrid(const std::string &test_name, double expected_precision, double cur_dt = 1e-3, double final_time = 1.0,
                 double output_dt = 5e-2, double impl_max_dt = 1e-1, double impl_rel_tol = 1e-6, int coupling_mode = 0,
@@ -53,17 +61,15 @@ bool run_hybrid(const std::string &test_name, double expected_precision, double 
   // default -- an explicit.dt above explicit.maximal_dt that AbstractTimestepper now rejects at
   // construction. Callers that pass a cap explicitly are unaffected.
   if (expl_max_dt < 0.) expl_max_dt = std::max(1e-2, cur_dt);
-  constexpr uint dim = 1;
-  using Discretization = CG::Discretization<Model, RectangularMesh<dim>>;
+  constexpr uint dim = hybrid_dim;
+  using Discretization = HybridDiscretization<Model>;
   using VectorType = typename Discretization::VectorType;
-  using Assembler = CG::Assembler<Discretization>;
+  using Assembler = HybridAssembler<Model>;
 
   ConfigTree json =
       json::value({{"physical", {{"Lambda", 1.}}},
                    {"discretization",
                     {{"fe_order", 3},
-                     {"mesh_workers", 4},
-                     {"batch_size", 64},
                      {"overintegration", 0},
                      {"output_subdivisions", 2},
                      {"EoM_abs_tol", 1e-12},
@@ -106,7 +112,7 @@ bool run_hybrid(const std::string &test_name, double expected_precision, double 
   Discretization discretization(mesh, json, DiFfRG::LogPort{});
   Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
   auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, test_name, test_name);
-  OutputSession<dim, VectorType> data_out(data_out_path, json);
+  OutputSession<Assembler> data_out(data_out_path, json);
   HAdaptivity mesh_adaptor(assembler, json);
   TimeStepper time_stepper(json, &assembler, &data_out, &mesh_adaptor);
 
@@ -184,9 +190,7 @@ bool run_hybrid(const std::string &test_name, double expected_precision, double 
 TEST_CASE("Test SUNDIALS IDA + Boost ABM hybrid stepper", "[timestepping][sundials_ida_boost][abm]")
 {
   using Model = Testing::ModelHybridRollback<1>;
-  using VectorType = dealii::Vector<double>;
-  using SparseMatrixType = dealii::SparseMatrix<double>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<Assembler>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<HybridAssembler<Model>>;
   REQUIRE(run_hybrid<Model, TimeStepper>("test_sundials_ida_boost_abm", 1e-3, 1e-3, 1., 5e-2, 1e-1, 1e-6, 0, 1e-2,
                                          static_cast<double>(ImplicitTimestepperKind::ida_boost_abm)));
 }
@@ -194,9 +198,7 @@ TEST_CASE("Test SUNDIALS IDA + Boost ABM hybrid stepper", "[timestepping][sundia
 TEST_CASE("Test SUNDIALS IDA + Boost RK hybrid stepper", "[timestepping][sundials_ida_boost][rk]")
 {
   using Model = Testing::ModelHybridRollback<1>;
-  using VectorType = dealii::Vector<double>;
-  using SparseMatrixType = dealii::SparseMatrix<double>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostRK<Assembler, UMFPack, 0>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostRK<HybridAssembler<Model>, UMFPack, 0>;
   REQUIRE(run_hybrid<Model, TimeStepper>("test_sundials_ida_boost_rk", 1e-3, 1e-3, 1., 5e-2, 1e-1, 1e-6, 0, 1e-2,
                                          static_cast<double>(ImplicitTimestepperKind::ida_boost_rk)));
 }
@@ -215,9 +217,7 @@ TEST_CASE("Hybrid ABM stepper retains accuracy on smooth problem at ~1 substep p
           "[timestepping][sundials_ida_boost][abm][diag]")
 {
   using Model = Testing::ModelHybridSmooth<1>;
-  using VectorType = dealii::Vector<double>;
-  using SparseMatrixType = dealii::SparseMatrix<double>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<Assembler>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<HybridAssembler<Model>>;
   // explicit.dt = output_dt so each IDA trial step usually triggers exactly one ABM substep
   REQUIRE(run_hybrid<Model, TimeStepper>("test_diag_abm_smooth", /*tol=*/1e-3, /*cur_dt=*/5e-2,
                                          /*final_time=*/1.0, /*output_dt=*/5e-2,
@@ -227,9 +227,7 @@ TEST_CASE("Hybrid ABM stepper retains accuracy on smooth problem at ~1 substep p
 TEST_CASE("Hybrid ABM cur_dt scan on smooth problem", "[timestepping][sundials_ida_boost][abm][scan]")
 {
   using Model = Testing::ModelHybridSmooth<1>;
-  using VectorType = dealii::Vector<double>;
-  using SparseMatrixType = dealii::SparseMatrix<double>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<Assembler>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<HybridAssembler<Model>>;
   // Sweep cur_dt while holding output_dt and IDA max_dt fixed; the test prints the
   // observed v error so the scaling can be read off the log. We do not REQUIRE pass --
   // this is a diagnostic scan, not a regression gate.
@@ -244,9 +242,7 @@ TEST_CASE("Hybrid ABM cur_dt scan on smooth problem", "[timestepping][sundials_i
 TEST_CASE("Hybrid ABM cur_dt scan on two-way coupled problem", "[timestepping][sundials_ida_boost][abm][scan]")
 {
   using Model = Testing::ModelHybridTwoWay<1>;
-  using VectorType = dealii::Vector<double>;
-  using SparseMatrixType = dealii::SparseMatrix<double>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<Assembler>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<HybridAssembler<Model>>;
   for (double cur_dt : {2e-2, 1e-2, 5e-3, 2.5e-3, 1.25e-3}) {
     const std::string tag = "test_scan_abm_dt_twoway_" + std::to_string(cur_dt);
     run_hybrid<Model, TimeStepper>(tag, /*tol=*/1e-30, /*cur_dt=*/cur_dt,
@@ -272,9 +268,7 @@ TEST_CASE("Hybrid ABM coupling-mode scan, dt_impl<<dt_expl, two-way",
           "[timestepping][sundials_ida_boost][abm][scan][modes]")
 {
   using Model = Testing::ModelHybridTwoWay<1>;
-  using VectorType = dealii::Vector<double>;
-  using SparseMatrixType = dealii::SparseMatrix<double>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<Assembler>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<HybridAssembler<Model>>;
   for (int mode : {0, 1, 2})
     for (double cur_dt : {1e-1, 5e-2, 2.5e-2}) {
       const std::string tag =
@@ -290,9 +284,7 @@ TEST_CASE("Hybrid ABM coupling-mode scan, dt_impl<<dt_expl, smooth",
           "[timestepping][sundials_ida_boost][abm][scan][modes]")
 {
   using Model = Testing::ModelHybridSmooth<1>;
-  using VectorType = dealii::Vector<double>;
-  using SparseMatrixType = dealii::SparseMatrix<double>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<Assembler>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<HybridAssembler<Model>>;
   for (int mode : {0, 1, 2})
     for (double cur_dt : {1e-1, 5e-2, 2.5e-2}) {
       const std::string tag =
@@ -312,9 +304,7 @@ TEST_CASE("Hybrid ABM coupling-mode scan, dt_impl<<dt_expl, weak coupling",
           "[timestepping][sundials_ida_boost][abm][scan][modes]")
 {
   using Model = Testing::ModelHybridWeakCoupling<1>;
-  using VectorType = dealii::Vector<double>;
-  using SparseMatrixType = dealii::SparseMatrix<double>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<Assembler>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<HybridAssembler<Model>>;
   for (int mode : {0, 1, 2})
     for (double cur_dt : {1e-1, 5e-2, 2.5e-2}) {
       const std::string tag = "test_modes_weak_" + std::string(coupling_mode_name(mode)) + "_" + std::to_string(cur_dt);
@@ -333,9 +323,7 @@ TEST_CASE("Hybrid ABM coupling-mode scan, stiff under-resolved one-way",
           "[timestepping][sundials_ida_boost][abm][scan][stiff]")
 {
   using Model = Testing::ModelHybridSmooth<1>;
-  using VectorType = dealii::Vector<double>;
-  using SparseMatrixType = dealii::SparseMatrix<double>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<Assembler>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<HybridAssembler<Model>>;
   for (int mode : {0, 1, 2})
     for (double cur_dt : {5e-1, 2.5e-1, 1.25e-1}) {
       const std::string tag = "test_stiff_" + std::string(coupling_mode_name(mode)) + "_" + std::to_string(cur_dt);
@@ -350,9 +338,7 @@ TEST_CASE("Hybrid ABM mode 2 (lookahead) handles weak explicit<-implicit couplin
           "[timestepping][sundials_ida_boost][abm][diag]")
 {
   using Model = Testing::ModelHybridWeakCoupling<1>;
-  using VectorType = dealii::Vector<double>;
-  using SparseMatrixType = dealii::SparseMatrix<double>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<Assembler>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<HybridAssembler<Model>>;
   REQUIRE(run_hybrid<Model, TimeStepper>("test_diag_abm_weak_predict", /*tol=*/1e-3, /*cur_dt=*/5e-2,
                                          /*final_time=*/1.0, /*output_dt=*/5e-2, /*impl_max_dt=*/1e-3,
                                          /*impl_rel_tol=*/1e-6, /*coupling_mode=*/2, /*expl_max_dt=*/2e-1));
@@ -362,9 +348,7 @@ TEST_CASE("Hybrid RK stepper retains accuracy on smooth problem at ~1 substep pe
           "[timestepping][sundials_ida_boost][rk][diag]")
 {
   using Model = Testing::ModelHybridSmooth<1>;
-  using VectorType = dealii::Vector<double>;
-  using SparseMatrixType = dealii::SparseMatrix<double>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostRK<Assembler, UMFPack, 0>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostRK<HybridAssembler<Model>, UMFPack, 0>;
   REQUIRE(run_hybrid<Model, TimeStepper>("test_diag_rk_smooth", /*tol=*/1e-3, /*cur_dt=*/5e-2,
                                          /*final_time=*/1.0, /*output_dt=*/5e-2,
                                          /*impl_max_dt=*/5e-2));
@@ -384,9 +368,7 @@ TEST_CASE("Hybrid ABM stepper handles two-way FEM <-> variable coupling",
           "[timestepping][sundials_ida_boost][abm][diag]")
 {
   using Model = Testing::ModelHybridTwoWay<1>;
-  using VectorType = dealii::Vector<double>;
-  using SparseMatrixType = dealii::SparseMatrix<double>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<Assembler>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostABM<HybridAssembler<Model>>;
   // cur_dt is the substep this diagnostic actually exercised all along: it used to request 2e-2
   // against an explicit maximal_dt of 1e-2, which clamped it. Now that AbstractTimestepper rejects
   // dt > maximal_dt instead of silently capping, the request has to be the value that ran -- and the
@@ -399,9 +381,7 @@ TEST_CASE("Hybrid ABM stepper handles two-way FEM <-> variable coupling",
 TEST_CASE("Hybrid RK stepper handles two-way FEM <-> variable coupling", "[timestepping][sundials_ida_boost][rk][diag]")
 {
   using Model = Testing::ModelHybridTwoWay<1>;
-  using VectorType = dealii::Vector<double>;
-  using SparseMatrixType = dealii::SparseMatrix<double>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostRK<Assembler, UMFPack, 0>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostRK<HybridAssembler<Model>, UMFPack, 0>;
   // cur_dt is the substep this diagnostic actually exercised all along: it used to request 2e-2
   // against an explicit maximal_dt of 1e-2, which clamped it. Now that AbstractTimestepper rejects
   // dt > maximal_dt instead of silently capping, the request has to be the value that ran -- and the

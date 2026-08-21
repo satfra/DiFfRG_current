@@ -36,7 +36,6 @@ namespace
   constexpr std::size_t n_cells = 800;
   constexpr double grid_tol = 1.0e-12;
   constexpr double origin_tol = 1.0e-12;
-  constexpr int diagnostic_threads = 1;
   constexpr double scenario_i_lambda = 1.0e6;
   constexpr double scenario_ii_lambda = 1.0e12;
   constexpr double scenario_iii_lambda = 1.0e12;
@@ -446,14 +445,12 @@ namespace
       ONKTDiagnosticModel<def::OriginOddLinearExtrapolationBoundaries, ConstrainUAtOrigin>;
   using ONSymmetricDefaultBoundaryDiagnosticModel = ONKTDiagnosticModel<def::FVDefaultBoundaries, ConstrainUAtOrigin>;
 
-  ConfigTree make_json(const FlowCase &flow_case, const int threads = 8)
+  ConfigTree make_json(const FlowCase &flow_case)
   {
     return json::value(
         {{"physical", {{"Lambda", flow_case.lambda}}},
          {"discretization",
           {{"fe_order", 0},
-           {"mesh_workers", threads},
-           {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
            {"EoM_abs_tol", 1e-10},
@@ -575,9 +572,9 @@ namespace
   template <typename ModelType = ONKTModel>
   std::vector<SimulationResult>
   run_flow_snapshots(const FlowCase &flow_case, const std::vector<double> &times_to_sample,
-                     const GridSettings &grid_settings = default_grid_settings(), const int threads = 8)
+                     const GridSettings &grid_settings = default_grid_settings())
   {
-    const ConfigTree json = make_json(flow_case, threads);
+    const ConfigTree json = make_json(flow_case);
     ModelType model(json, flow_case, grid_settings);
     Mesh mesh(make_mesh_config(grid_settings));
     Discretization discretization(mesh, json, DiFfRG::LogPort{});
@@ -585,7 +582,7 @@ namespace
 
     auto data_out_path =
         OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_model_kt_regression", "output");
-    OutputSession<dim, VectorType> data_out(data_out_path, json);
+    OutputSession<Discretization> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 
@@ -630,9 +627,9 @@ namespace
 
   template <typename ModelType = ONKTModel>
   void run_flow_to_time(const FlowCase &flow_case, const double target_time,
-                        const GridSettings &grid_settings = default_grid_settings(), const int threads = 8)
+                        const GridSettings &grid_settings = default_grid_settings())
   {
-    const ConfigTree json = make_json(flow_case, threads);
+    const ConfigTree json = make_json(flow_case);
     ModelType model(json, flow_case, grid_settings);
     Mesh mesh(make_mesh_config(grid_settings));
     Discretization discretization(mesh, json, DiFfRG::LogPort{});
@@ -640,7 +637,7 @@ namespace
 
     auto data_out_path =
         OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_model_kt_regression", "output");
-    OutputSession<dim, VectorType> data_out(data_out_path, json);
+    OutputSession<Discretization> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 
@@ -730,7 +727,7 @@ TEST_CASE("KT O(N) symmetric default-boundary full-domain run matches the refere
 
   GridSettings symmetric_grid{2 * n_cells - 1, -sigma_max, sigma_max};
   const auto full_domain_snapshots = run_flow_snapshots<ONSymmetricDefaultBoundaryDiagnosticModel>(
-      flow_case, times_to_sample, symmetric_grid, diagnostic_threads);
+      flow_case, times_to_sample, symmetric_grid);
   REQUIRE(full_domain_snapshots.size() == indices.size());
 
   for (std::size_t snapshot_index = 0; snapshot_index < indices.size(); ++snapshot_index) {
@@ -766,8 +763,7 @@ TEST_CASE("KT O(N) half-domain origin-constrained diagnostic solve reaches final
   const auto flow_case = ScenarioI_ON3::flow_case();
   INFO(flow_case.label << ", half-domain origin-constrained diagnostic, Lambda=" << flow_case.lambda);
 
-  run_flow_to_time<ONKTDiagnosticModelOriginConstrained>(flow_case, final_time, default_grid_settings(),
-                                                         diagnostic_threads);
+  run_flow_to_time<ONKTDiagnosticModelOriginConstrained>(flow_case, final_time, default_grid_settings());
 }
 
 TEST_CASE("KT O(N) half-domain run matches the symmetric full-domain run on sigma >= 0 - ScenarioI_ON3",
@@ -781,10 +777,10 @@ TEST_CASE("KT O(N) half-domain run matches the symmetric full-domain run on sigm
   const std::vector<double> times_to_sample{0.0, 5.0, 10.0, 12.0, 15.0, 20.0};
 
   const auto half_domain_snapshots = run_flow_snapshots<ONKTDiagnosticModelOriginConstrained>(
-      flow_case, times_to_sample, default_grid_settings(), diagnostic_threads);
+      flow_case, times_to_sample, default_grid_settings());
   GridSettings symmetric_grid{2 * n_cells - 1, -sigma_max, sigma_max};
   const auto full_domain_snapshots = run_flow_snapshots<ONSymmetricDefaultBoundaryDiagnosticModel>(
-      flow_case, times_to_sample, symmetric_grid, diagnostic_threads);
+      flow_case, times_to_sample, symmetric_grid);
 
   REQUIRE(half_domain_snapshots.size() == times_to_sample.size());
   REQUIRE(full_domain_snapshots.size() == times_to_sample.size());
