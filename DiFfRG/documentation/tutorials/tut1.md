@@ -324,8 +324,6 @@ These sections are just the parameters we also use in the numerical model, i.e. 
     "fe_order": 3,
     "threads": 0,
     "kokkos_threads": 0,
-    "mesh_workers": 8,
-    "batch_size": 64,
     "overintegration": 0,
     "output_subdivisions": 2,
 
@@ -347,8 +345,7 @@ The discretization section configures the FEM setup of our simulation:
 - `fe_order` sets the polynomial order of the local function space on the finite elements
 - `threads` sets the persistent TBB/deal.II application thread limit, covering FEM assembly and TBB momentum integration. `0` means all available cores. This is read by `DiFfRG::Init` before the libraries come up.
 - `kokkos_threads` independently sets the Kokkos host-backend thread count when positive. If it is absent or `0`, Kokkos uses the resolved `threads` count, preserving the historical behavior. Kokkos reads this value only during process-global initialization; later changes to `threads` do not resize its host pool. If `DEAL_II_NUM_THREADS` is set, it remains an upper bound for both limits.
-- `mesh_workers` sets how many cells are kept in flight in the assembly pipeline (deal.II calls this the MeshWorker queue length). Despite its former name `threads`, this never was a thread count: it bounds concurrency in the pipeline and, with `batch_size`, the number of `ScratchData`/`CopyData` copies that get allocated. Keep it *below* `threads`: the integrators called from within a cell worker spawn their own nested TBB work in the same arena, and they need free threads to do so. `0` means `threads / 2`.
-- `batch_size` the mesh workers get batches of `batch_size` cells which they sequentially process. Playing around with `mesh_workers` and `batch_size` may give a small performance boost, but keeping `mesh_workers` around the number of physical cores and `batch_size` around 32-64 should be sufficient for almost optimal performance.
+  The assembly pipeline is sized from this together with the number of cells the rank owns, separately for every `mesh_loop`: a mass matrix costs a fraction of a microsecond per cell while a residual calls the momentum integrals and costs microseconds, so they get different numbers of workers and different batch sizes. Using the keys `mesh_workers` and `batch_size` one can override automatic sizing, but they pin every loop to one pair and are discouraged; DiFfRG warns if it finds them.
 - `overintegration` can be used to increase the order of the quadratures used in assembly when constructing the [weak form](https://en.wikipedia.org/wiki/Weak_formulation) of the PDE. It is seldom necessary to increase beyond 0.
 - `output_subdivisions` gives the precision with which the grids in the output data are written. This goes exponentially, so don't choose it too high.
 - `EoM_abs_tol` sets the projected equation-of-motion/potential-gradient tolerance used to refine the EoM position within a cell. DiFfRG can be instructed to solve the EoM at every timestep and perform additional computations at this point.
