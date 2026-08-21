@@ -23,8 +23,6 @@
   "discretization": {
     "fe_order": 2,
     "threads": 0,
-    "mesh_workers": 16,
-    "batch_size": 8,
     "overintegration": 0,
     "output_subdivisions": 4,
 

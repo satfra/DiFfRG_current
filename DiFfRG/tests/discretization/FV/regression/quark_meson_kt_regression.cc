@@ -380,8 +380,6 @@ namespace
          {"integration", {{"x_order", 100}, {"x_extent_tolerance", 1.0e-4}, {"jacobian_quadrature_factor", 0.5}}},
          {"discretization",
           {{"fe_order", 0},
-           {"mesh_workers", 16},
-           {"batch_size", 32},
            {"overintegration", 0},
            {"output_subdivisions", 1},
            {"EoM_abs_tol", 1.0e-10},
@@ -427,7 +425,7 @@ namespace
 
     auto data_out_path = OutputPath::temporary(TemporaryRetention::keep, output_prefix, "output");
     std::clog << "[QM DIAG] retaining output directory " << data_out_path.root() << '\n';
-    OutputSession<dim, VectorType> data_out(data_out_path, json);
+    OutputSession<Discretization> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     TimeStepperType time_stepper(json, &assembler, &data_out, adaptor.get());
 

@@ -42,8 +42,6 @@ namespace
            {"jacobian_quadrature_factor", 0.5}}},
          {"discretization",
           {{"fe_order", fe_order},
-           {"mesh_workers", 1},
-           {"batch_size", 16},
            {"overintegration", 0},
            {"output_subdivisions", 2},
            {"EoM_abs_tol", 1e-12},

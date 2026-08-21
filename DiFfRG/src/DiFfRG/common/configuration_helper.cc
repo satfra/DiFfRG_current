@@ -235,8 +235,6 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
           {{"fe_order", 3},
            {"threads", 0},
            {"kokkos_threads", 0},
-           {"mesh_workers", 8},
-           {"batch_size", 16},
            {"overintegration", 0},
            {"output_subdivisions", 2},
 
@@ -303,12 +301,11 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
               << "    fe_order                      Finite element polynomial order\n"
               << "    threads                       TBB/deal.II application thread limit. 0 = all\n"
               << "                                  available cores\n"
+              << "                                  The assembly pipeline is sized from this and the\n"
+              << "                                  cell count; there is nothing to tune by hand.\n"
               << "    kokkos_threads                Kokkos host-backend thread count. 0 or absent =\n"
               << "                                  resolved application thread count\n"
               << "                                  DEAL_II_NUM_THREADS, if set, caps both counts.\n"
-              << "    mesh_workers                  Number of in-flight cells in the assembly\n"
-              << "                                  pipeline (MeshWorker queue length)\n"
-              << "    batch_size                    Batch size for GPU kernel launches\n"
               << "    overintegration               Extra quadrature points beyond FE order\n"
               << "    output_subdivisions           VTK output subdivisions per cell\n"
               << "    EoM_abs_tol / EoM_max_iter    In-cell EoM minimizer tolerance and iteration limit\n"

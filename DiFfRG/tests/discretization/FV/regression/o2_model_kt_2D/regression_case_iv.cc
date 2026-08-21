@@ -172,8 +172,6 @@ namespace
         {{"physical", {{"Lambda", 1.0e12}}},
          {"discretization",
           {{"fe_order", 0},
-           {"mesh_workers", static_cast<std::int64_t>(dealii::MultithreadInfo::n_threads())},
-           {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
            {"EoM_abs_tol", 1.0e-10},
@@ -354,7 +352,7 @@ namespace
                                                "o2_model_kt_2D_case_iv_regression", "output");
     std::clog << "[O2 DIAG] " << (params.retain_output ? "retaining" : "using temporary") << " output directory "
               << data_out_path.root() << '\n';
-    OutputSession<dim, VectorType> data_out(data_out_path, json);
+    OutputSession<Discretization> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 
@@ -384,7 +382,7 @@ namespace
     auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction,
                                                "o2_model_kt_2D_case_iv_origin_centered_quarter_domain", "output");
     std::clog << "[O2 DIAG] using temporary output directory " << data_out_path.root() << '\n';
-    OutputSession<dim, VectorType> data_out(data_out_path, json);
+    OutputSession<Discretization> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 

@@ -25,6 +25,7 @@
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
+#include <DiFfRG/discretization/common/assembly_schedule.hh>
 #include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
 #include <DiFfRG/discretization/common/eom.hh>
 #include <DiFfRG/discretization/common/types.hh>
@@ -62,16 +63,14 @@ namespace DiFfRG
       LDGAssemblerBase(Discretization &discretization, Model &model, const ConfigTree &config, LogPort log_port)
           : discretization(discretization), model(model), log_port(std::move(log_port)), fe(discretization.get_fe()),
             dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
-            mesh_workers(config.get_uint("/discretization/mesh_workers", 0)),
-            batch_size(config.get_uint("/discretization/batch_size", 16)),
+            schedule_overrides(AssemblyScheduleOverrides::from_config(config)),
             EoM_cell(*(dof_handler.active_cell_iterators().end())),
             old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
             EoM_config(DiFfRG::internal::resolve_eom_config(dof_handler, Config::EoMConfig(config)))
       {
-        // Default 0 = derive from the thread count; see FEM/assembler/common.hh for why a fixed
-        // constant is wrong here (mesh_workers is mesh_loop's queue_length).
-        if (this->mesh_workers == 0) this->mesh_workers = std::max(1u, dealii::MultithreadInfo::n_threads() / 2);
-        log_port.info("FEM: Using {} mesh workers for assembly.", mesh_workers);
+        // reinit() refreshes this, but a derived assembler is not obliged to call it before its
+        // first mesh_loop, and an unset schedule would be a zero queue length.
+        update_assembly_schedules();
       }
 
       virtual IndexSet get_differential_indices() const override
@@ -93,6 +92,8 @@ namespace DiFfRG
         DoFTools::make_hanging_node_constraints(dof_handler, constraints);
         DiFfRG::internal::apply_model_affine_constraints(model, constraints, context);
         constraints.close();
+
+        update_assembly_schedules();
       }
 
       virtual void rebuild_jacobian_sparsity() = 0;
@@ -129,10 +130,33 @@ namespace DiFfRG
       const DoFHandler<dim> &dof_handler;
       const Mapping<dim> &mapping;
 
-      /// Number of cells kept in flight in the MeshWorker assembly pipeline (its queue length).
-      /// This is not a thread count - see /discretization/threads for that.
-      uint mesh_workers;
-      uint batch_size;
+      /// @see FEMAssembler::schedule_for
+      AssemblySchedule schedule_for(const double cost_ns) const
+      {
+        return make_assembly_schedule(n_owned_cells, dealii::MultithreadInfo::n_threads(), cost_ns,
+                                      schedule_overrides);
+      }
+
+      /// @see FEMAssembler::update_assembly_schedules
+      void update_assembly_schedules()
+      {
+        const uint n_owned = n_locally_owned_cells(discretization);
+        const bool unchanged = n_owned == n_owned_cells;
+        n_owned_cells = n_owned;
+        if (unchanged) return;
+
+        const uint n_threads = dealii::MultithreadInfo::n_threads();
+        const auto cheap = schedule_for(assembly_cost::local_fe);
+        const auto integral = schedule_for(assembly_cost::momentum_integral);
+        log_port.info("FEM: Assembling {} cells on {} threads -- {}x{} workers/cells for a cheap cell loop, "
+                      "{}x{} for an integral one.",
+                      n_owned_cells, n_threads, cheap.queue_length, cheap.chunk_size, integral.queue_length,
+                      integral.chunk_size);
+      }
+
+      /// @see FEMAssembler::n_owned_cells
+      uint n_owned_cells = 0;
+      const AssemblyScheduleOverrides schedule_overrides;
 
       mutable typename DoFHandler<dim>::cell_iterator EoM_cell;
       typename DoFHandler<dim>::cell_iterator old_EoM_cell;
@@ -385,8 +409,8 @@ namespace DiFfRG
           std::array<double, 2> values;
         };
         std::vector<CopyFaceData_I> face_data;
-        double value;
-        uint cell_index;
+        double value = 0.;
+        uint cell_index = 0;
       };
     } // namespace internal
 
@@ -683,8 +707,9 @@ namespace DiFfRG
             MeshWorker::assemble_own_cells | MeshWorker::assemble_own_interior_faces_once;
 
         rebuild_ldg_vectors(solution_global);
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, nullptr, face_worker, mesh_workers, batch_size);
+        const auto schedule = schedule_for(assembly_cost::local_fe);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data,
+                              assemble_flags, nullptr, face_worker, schedule.queue_length, schedule.chunk_size);
       }
 
       virtual const BlockSparsityPattern &get_sparsity_pattern_jacobian() const override
@@ -745,8 +770,9 @@ namespace DiFfRG
         Scratch scratch_data(mapping, dof_handler_list, quadrature, quadrature_face, update_flags);
         CopyData copy_data;
 
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, nullptr, nullptr, mesh_workers, batch_size);
+        const auto schedule = schedule_for(assembly_cost::local_fe);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data,
+                              copy_data, assemble_flags, nullptr, nullptr, schedule.queue_length, schedule.chunk_size);
       }
 
       /**
@@ -906,8 +932,9 @@ namespace DiFfRG
         Timer timer;
 
         rebuild_ldg_vectors(solution_global);
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, boundary_worker, face_worker, mesh_workers, batch_size);
+        const auto schedule = schedule_for(assembly_cost::momentum_integral);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data,
+                              assemble_flags, boundary_worker, face_worker, schedule.queue_length, schedule.chunk_size);
 
         timings_residual.push_back(timer.wall_time());
       }
@@ -969,8 +996,9 @@ namespace DiFfRG
         Scratch scratch_data(mapping, dof_handler_list, quadrature, quadrature_face, update_flags);
         CopyData copy_data;
 
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, nullptr, nullptr, mesh_workers, batch_size);
+        const auto schedule = schedule_for(assembly_cost::local_fe);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data,
+                              copy_data, assemble_flags, nullptr, nullptr, schedule.queue_length, schedule.chunk_size);
       }
 
       /**
@@ -1259,8 +1287,9 @@ namespace DiFfRG
         });
         rebuild_ldg_vectors(solution_global);
 
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, boundary_worker, face_worker, mesh_workers, batch_size);
+        const auto schedule = schedule_for(assembly_cost::momentum_integral);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data,
+                              assemble_flags, boundary_worker, face_worker, schedule.queue_length, schedule.chunk_size);
 
         if (exception) throw std::runtime_error("Infinity encountered in jacobian construction");
 
@@ -1355,8 +1384,7 @@ namespace DiFfRG
 
       QGauss<dim> quadrature;
       QGauss<dim - 1> quadrature_face;
-      using Base::batch_size;
-      using Base::mesh_workers;
+      using Base::schedule_for;
 
       std::vector<const DoFHandler<dim> *> dof_handler_list;
 
@@ -1547,8 +1575,9 @@ namespace DiFfRG
         CopyData copy_data;
 
         ldg_vector_tmp = 0;
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, boundary_worker, face_worker, mesh_workers, batch_size);
+        const auto schedule = schedule_for(assembly_cost::algebraic);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data,
+                              assemble_flags, boundary_worker, face_worker, schedule.queue_length, schedule.chunk_size);
 
         for (uint i = 0; i < Components::count_fe_functions(to); ++i)
           component_mass_matrix_inverse.vmult(ldg_vector.block(i), ldg_vector_tmp.block(i));
@@ -1700,8 +1729,9 @@ namespace DiFfRG
 
         ldg_jacobian_tmp = 0;
         ldg_jacobian = 0;
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, boundary_worker, face_worker, mesh_workers, batch_size);
+        const auto schedule = schedule_for(assembly_cost::algebraic);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data,
+                              assemble_flags, boundary_worker, face_worker, schedule.queue_length, schedule.chunk_size);
         for (const auto &c : model.get_components().ldg_couplings(to, from))
           component_mass_matrix_inverse.mmult(ldg_jacobian.block(c[0], c[1]), ldg_jacobian_tmp.block(c[0], c[1]),
                                               Vector<NumberType>(), false);

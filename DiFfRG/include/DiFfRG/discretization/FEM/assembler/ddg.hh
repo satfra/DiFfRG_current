@@ -181,8 +181,8 @@ namespace DiFfRG
           std::array<double, 2> values;
         };
         std::vector<CopyFaceData_I> face_data;
-        double value;
-        uint cell_index;
+        double value = 0.;
+        uint cell_index = 0;
       };
     } // namespace internal
 
@@ -388,8 +388,9 @@ namespace DiFfRG
 
         // map() is collective and each rank visits only its own cells; see NoMapsHere.
         const NoMapsHere no_maps_during_assembly;
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, flags, nullptr, face_worker, mesh_workers, batch_size);
+        const auto schedule = schedule_for(assembly_cost::local_fe);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data,
+                              copy_data, flags, nullptr, face_worker, schedule.queue_length, schedule.chunk_size);
       }
 
       virtual void mass(VectorType &mass, const VectorType &solution_global, const VectorType &solution_global_dot,
@@ -442,8 +443,9 @@ namespace DiFfRG
 
         // map() is collective and each rank visits only its own cells; see NoMapsHere.
         const NoMapsHere no_maps_during_assembly;
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, flags, nullptr, nullptr, mesh_workers, batch_size);
+        const auto schedule = schedule_for(assembly_cost::local_fe);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data,
+                              copy_data, flags, nullptr, nullptr, schedule.queue_length, schedule.chunk_size);
         // Resolve contributions this rank made to rows it does not own. A partition-boundary
         // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
         // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
@@ -626,8 +628,9 @@ namespace DiFfRG
         Timer timer;
         // map() is collective and each rank visits only its own cells; see NoMapsHere.
         const NoMapsHere no_maps_during_assembly;
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, flags, boundary_worker, face_worker, mesh_workers, batch_size);
+        const auto schedule = schedule_for(assembly_cost::momentum_integral);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data, flags,
+                              boundary_worker, face_worker, schedule.queue_length, schedule.chunk_size);
         // Resolve contributions this rank made to rows it does not own. A partition-boundary
         // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
         // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
@@ -694,8 +697,9 @@ namespace DiFfRG
         Timer timer;
         // map() is collective and each rank visits only its own cells; see NoMapsHere.
         const NoMapsHere no_maps_during_assembly;
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, flags, nullptr, nullptr, mesh_workers, batch_size);
+        const auto schedule = schedule_for(assembly_cost::local_fe);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data,
+                              copy_data, flags, nullptr, nullptr, schedule.queue_length, schedule.chunk_size);
         // Resolve contributions this rank made to rows it does not own. A partition-boundary
         // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
         // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
@@ -1066,8 +1070,9 @@ namespace DiFfRG
         Timer timer;
         // map() is collective and each rank visits only its own cells; see NoMapsHere.
         const NoMapsHere no_maps_during_assembly;
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, flags, boundary_worker, face_worker, mesh_workers, batch_size);
+        const auto schedule = schedule_for(assembly_cost::momentum_integral);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data, flags,
+                              boundary_worker, face_worker, schedule.queue_length, schedule.chunk_size);
         // Resolve contributions this rank made to rows it does not own. A partition-boundary
         // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
         // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
@@ -1134,8 +1139,7 @@ namespace DiFfRG
 
       QGauss<dim> quadrature;
       QGauss<dim - 1> quadrature_face;
-      using Base::batch_size;
-      using Base::mesh_workers;
+      using Base::schedule_for;
 
       get_type::SparsityPattern<SparseMatrixType> sparsity_pattern_mass;
       get_type::SparsityPattern<SparseMatrixType> sparsity_pattern_jacobian;

@@ -6,14 +6,13 @@ using namespace DiFfRG;
 
 // Choices for types
 using Model = YangMills;
-using VectorType = Vector<double>;
 using Assembler = Variables::Assembler<Model>;
 using TimeStepper = TimeStepperBoostABM<Assembler>;
 
 bool run(const ConfigTree &json, const OutputPath &output_path, LogPort external_log = {})
 {
   // Define the objects needed to run the simulation
-  OutputSession<0, VectorType> data_out(output_path, json);
+  OutputSession<Assembler> data_out(output_path, json);
   const auto log = external_log ? external_log : data_out.log_port();
   Model model(json);
   Assembler assembler(model, json, log);

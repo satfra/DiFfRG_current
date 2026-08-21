@@ -115,7 +115,6 @@ namespace
                         {"discretization",
                          {{"fe_order", fe_order},
                           {"threads", 1},
-                          {"batch_size", 8},
                           {"overintegration", 0},
                           {"output_subdivisions", 1},
                           {"EoM_abs_tol", 1e-12},
@@ -136,7 +135,7 @@ namespace
     state.interpolate(model);
 
     auto output_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "raw_potential", "output");
-    OutputSession<1, typename Discretization::VectorType> output(output_path, json);
+    OutputSession<Discretization> output(output_path, json);
     output.write_frame(0., [&](auto &frame) {
       assembler.attach_data_output(frame, state.spatial_data(), typename Discretization::VectorType());
     });

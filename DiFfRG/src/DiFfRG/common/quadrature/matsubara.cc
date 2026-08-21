@@ -136,8 +136,7 @@ namespace DiFfRG
     build_monien();
   }
 
-  template <typename NT>
-  void MatsubaraQuadrature<NT>::reinit_with_size(const int size, const NT T, const NT typical_E)
+  template <typename NT> void MatsubaraQuadrature<NT>::reinit_with_size(const int size, const NT T, const NT typical_E)
   {
     if (size <= 0) throw std::invalid_argument("MatsubaraQuadrature: size must be positive.");
 
@@ -273,7 +272,7 @@ namespace DiFfRG
 
     using std::abs, std::cos, std::sin;
     const long double E = abs((long double)typical_E);
-    const long double half_pi = (long double)M_PI / 2.0L;
+    constexpr long double half_pi = (long double)M_PI / 2.0L;
 
     for (int i = 0; i < m_size; ++i) {
       // Parameterise by the complement delta = pi/2 - theta: the large nodes are the ones

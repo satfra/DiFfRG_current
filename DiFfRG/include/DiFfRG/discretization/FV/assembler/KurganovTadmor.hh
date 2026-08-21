@@ -37,6 +37,7 @@
 #include <DiFfRG/discretization/FV/reconstructor/advection/first_order_reconstructor.hh>
 #include <DiFfRG/discretization/FV/reconstructor/advection/tvd_reconstructor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
+#include <DiFfRG/discretization/common/assembly_schedule.hh>
 #include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
 #include <DiFfRG/discretization/common/eom.hh>
 #include <DiFfRG/discretization/common/la_policy.hh>
@@ -180,12 +181,12 @@ namespace DiFfRG
 
         template <typename NumberType> struct CopyData_I {
           struct CopyFaceData_I {
-            std::array<uint, 2> cell_indices;
-            std::array<double, 2> values;
+            std::array<uint, 2> cell_indices{};
+            std::array<double, 2> values{};
           };
           std::vector<CopyFaceData_I> face_data;
-          double value;
-          uint cell_index;
+          double value = 0.;
+          uint cell_index = 0;
         };
 
         template <typename T> int sgn(T val) { return (T{} < val) - (val < T{}); }
@@ -580,9 +581,8 @@ namespace DiFfRG
         Assembler(Discretization &discretization, Model &model, const ConfigTree &config, LogPort log_port)
             : discretization(discretization), model(model), log_port(std::move(log_port)),
               dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
-              triangulation(discretization.get_triangulation()), config(config), fe(discretization.get_fe()),
-              mesh_workers(config.get_uint("/discretization/mesh_workers", 0)),
-              batch_size(config.get_uint("/discretization/batch_size", 16)),
+              triangulation(discretization.get_triangulation()), fe(discretization.get_fe()),
+              schedule_overrides(AssemblyScheduleOverrides::from_config(config)),
               EoM_cell(*(dof_handler.active_cell_iterators().end())),
               old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
               EoM_config(DiFfRG::internal::resolve_eom_config(dof_handler, Config::EoMConfig(config))),
@@ -590,15 +590,6 @@ namespace DiFfRG
               quadrature_face(1 + config.get_uint("/discretization/overintegration", 0)),
               diagnose_flux_conditioning(config.get_bool("/discretization/diagnose_flux_conditioning", false))
         {
-          // Zero means "derive it from the thread count", and that is the default: mesh_workers is
-          // mesh_loop's queue_length, i.e. the cap on work items in flight, so a fixed constant is a
-          // ceiling on one machine and oversubscription on another. It used to default to 8, which is
-          // only the right answer at 16 threads -- below that it exceeds the thread count (integrators
-          // nest TBB work inside the cell workers, so the queue must stay under it), and above that it
-          // silently caps assembly parallelism no matter how many threads were asked for.
-          if (this->mesh_workers == 0) this->mesh_workers = std::max(1u, dealii::MultithreadInfo::n_threads() / 2);
-          log_port.info("FV: Using {} mesh workers for assembly.", mesh_workers);
-
           AssertThrow(fe.dofs_per_cell == n_components,
                       ExcMessage("FV Kurganov-Tadmor assembler expects one dof per component."));
           for (uint i = 0; i < n_components; ++i)
@@ -694,6 +685,8 @@ namespace DiFfRG
           // Here every rank arrives unconditionally, and the value cannot go stale because KT
           // refuses to run under mesh adaptivity.
           domain_diameter = GridTools::diameter(triangulation);
+
+          update_assembly_schedules();
 
           rebuild_cell_topology_cache();
           rebuild_face_reconstruction_descriptors();
@@ -913,8 +906,9 @@ namespace DiFfRG
 
           // map() is collective and each rank visits only its own cells; see NoMapsHere.
           const NoMapsHere no_maps_during_assembly;
-          MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                                copy_data, flags, nullptr, nullptr, mesh_workers, batch_size);
+          const auto schedule = schedule_for(assembly_cost::local_fe);
+          MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data,
+                                copy_data, flags, nullptr, nullptr, schedule.queue_length, schedule.chunk_size);
           // Resolve contributions this rank made to rows it does not own. A partition-boundary
           // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
           // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
@@ -1266,6 +1260,9 @@ namespace DiFfRG
           face_reconstruction_descriptors.clear();
           face_reconstruction_descriptors.reserve(triangulation.n_active_cells() * n_faces);
 
+          // Every cell, not just the owned ones: an owned cell's flux worker reads its neighbours'
+          // descriptors, and the `neighbor_index < cell_index` tiebreak below needs both sides
+          // present to pick a side consistently.
           for (const auto &cell : dof_handler.active_cell_iterators()) {
             const auto cell_index = cell->active_cell_index();
             for (const auto face_index : cell->face_indices()) {
@@ -1652,8 +1649,9 @@ namespace DiFfRG
 
           // map() is collective and each rank visits only its own cells; see NoMapsHere.
           const NoMapsHere no_maps_during_assembly;
-          MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                                copy_data, flags, boundary_worker, face_worker, mesh_workers, batch_size);
+          const auto schedule = schedule_for(assembly_cost::momentum_integral);
+          MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data, flags,
+                                boundary_worker, face_worker, schedule.queue_length, schedule.chunk_size);
           // Resolve contributions this rank made to rows it does not own. A partition-boundary
           // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
           // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
@@ -1709,8 +1707,9 @@ namespace DiFfRG
           Timer timer;
           // map() is collective and each rank visits only its own cells; see NoMapsHere.
           const NoMapsHere no_maps_during_assembly;
-          MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                                copy_data, flags, nullptr, nullptr, mesh_workers, batch_size);
+          const auto schedule = schedule_for(assembly_cost::local_fe);
+          MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data,
+                                copy_data, flags, nullptr, nullptr, schedule.queue_length, schedule.chunk_size);
           // Resolve contributions this rank made to rows it does not own. A partition-boundary
           // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
           // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
@@ -2057,8 +2056,9 @@ namespace DiFfRG
 
           // map() is collective and each rank visits only its own cells; see NoMapsHere.
           const NoMapsHere no_maps_during_assembly;
-          MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                                copy_data, flags, boundary_worker, face_worker, mesh_workers, batch_size);
+          const auto schedule = schedule_for(assembly_cost::momentum_integral);
+          MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data, flags,
+                                boundary_worker, face_worker, schedule.queue_length, schedule.chunk_size);
           // Resolve contributions this rank made to rows it does not own. A partition-boundary
           // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
           // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
@@ -2290,6 +2290,8 @@ namespace DiFfRG
           cell_topology_cache.resize(triangulation.n_active_cells());
 
           std::vector<types::global_dof_index> dof_indices(fe.dofs_per_cell);
+          // Every cell, not just the owned ones: the stencil reaches two cells out, so an owned
+          // cell at a partition boundary needs entries for cells it does not own.
           for (const auto &cell : dof_handler.active_cell_iterators()) {
             auto &cache_entry = cell_topology_cache[cell->active_cell_index()];
             auto &stencil_topology = cache_entry.stencil;
@@ -2443,12 +2445,33 @@ namespace DiFfRG
         const Triangulation<dim> &triangulation;
         const FiniteElement<dim> &fe;
 
-        const ConfigTree &config;
+        /// @see FEMAssembler::schedule_for
+        AssemblySchedule schedule_for(const double cost_ns) const
+        {
+          return make_assembly_schedule(n_owned_cells, dealii::MultithreadInfo::n_threads(), cost_ns,
+                                        schedule_overrides);
+        }
 
-        /// Number of cells kept in flight in the MeshWorker assembly pipeline (its queue length).
-        /// This is not a thread count - see /discretization/threads for that.
-        uint mesh_workers;
-        const uint batch_size;
+        /// @see FEMAssembler::update_assembly_schedules
+        void update_assembly_schedules()
+        {
+          const uint n_owned = n_locally_owned_cells(discretization);
+          const bool unchanged = n_owned == n_owned_cells;
+          n_owned_cells = n_owned;
+          if (unchanged) return;
+
+          const uint n_threads = dealii::MultithreadInfo::n_threads();
+          const auto cheap = schedule_for(assembly_cost::local_fe);
+          const auto integral = schedule_for(assembly_cost::momentum_integral);
+          log_port.info("FV: Assembling {} cells on {} threads -- {}x{} workers/cells for a cheap cell loop, "
+                        "{}x{} for an integral one.",
+                        n_owned_cells, n_threads, cheap.queue_length, cheap.chunk_size, integral.queue_length,
+                        integral.chunk_size);
+        }
+
+        /// @see FEMAssembler::n_owned_cells
+        uint n_owned_cells = 0;
+        const AssemblyScheduleOverrides schedule_overrides;
 
         mutable Point EoM;
         mutable Iterator EoM_cell;

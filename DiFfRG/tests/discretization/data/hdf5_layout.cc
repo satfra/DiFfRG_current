@@ -88,8 +88,6 @@ TEST_CASE("HDF5 output layout is stable", "[output][hdf5][layout][golden]")
   ConfigTree config = json::value({{"physical", {}},
                                    {"discretization",
                                     {{"fe_order", 1},
-                                     {"mesh_workers", 1},
-                                     {"batch_size", 16},
                                      {"overintegration", 0},
                                      {"output_subdivisions", 1},
                                      {"EoM_abs_tol", 1e-10},

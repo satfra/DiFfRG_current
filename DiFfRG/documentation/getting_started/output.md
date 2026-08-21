@@ -9,14 +9,18 @@ Applications may adapt their JSON configuration at the boundary:
 
 ```cpp
 OutputPath path(json);
-OutputSession<dim, VectorType> output(path, Config::OutputSettings(json));
+OutputSession<Assembler> output(path, Config::OutputSettings(json));
 ```
+
+The session is keyed on the assembler so that its spatial dimension and vector type cannot drift from the ones the
+timestepper is built on. Anything exposing `dim` and `VectorType` works — pass the `Discretization` instead wherever
+there is no single assembler type, e.g. a test that runs one discretization against several models.
 
 Unit tests request an automatically cleaned system-temporary directory without constructing output JSON:
 
 ```cpp
 OutputPath path = OutputPath::temporary();
-OutputSession<dim, VectorType> output(path, Config::OutputSettings{});
+OutputSession<Assembler> output(path, Config::OutputSettings{});
 ```
 
 Use `OutputPath::temporary(TemporaryRetention::keep)` while debugging a test. `OutputPath` has no default constructor,

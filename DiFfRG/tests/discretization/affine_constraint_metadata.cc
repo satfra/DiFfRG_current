@@ -22,8 +22,6 @@ namespace
         {{"physical", {}},
          {"discretization",
           {{"fe_order", 2},
-           {"mesh_workers", 1},
-           {"batch_size", 1},
            {"overintegration", 0},
            {"output_subdivisions", 1},
            {"EoM_abs_tol", 1e-10},

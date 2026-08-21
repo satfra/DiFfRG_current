@@ -45,7 +45,7 @@ TEST_CASE("OutputSession rejects an incomplete table frame", "[output][session]"
   auto path = DiFfRG::OutputPath::temporary();
 
   {
-    DiFfRG::OutputSession<0, dealii::Vector<double>> output(path, output_settings());
+    DiFfRG::OutputSession_impl<0, dealii::Vector<double>> output(path, output_settings());
     output.write_frame(0.0, [](auto &frame) {
       auto table = frame.table("data.csv");
       table.value("a", 1.0);
@@ -63,7 +63,7 @@ TEST_CASE("DiagnosticPort serializes concurrent records", "[output][diagnostics]
   auto path = DiFfRG::OutputPath::temporary();
 
   {
-    DiFfRG::OutputSession<0, dealii::Vector<double>> output(path, output_settings());
+    DiFfRG::OutputSession_impl<0, dealii::Vector<double>> output(path, output_settings());
     const auto diagnostics = output.diagnostic_port();
 
     std::vector<std::jthread> writers;
@@ -84,7 +84,7 @@ TEST_CASE("DiagnosticPort is fail-stop after a malformed record", "[output][diag
   auto path = DiFfRG::OutputPath::temporary();
 
   {
-    DiFfRG::OutputSession<0, dealii::Vector<double>> output(path, output_settings());
+    DiFfRG::OutputSession_impl<0, dealii::Vector<double>> output(path, output_settings());
     const auto diagnostics = output.diagnostic_port();
     diagnostics.record("coefficients.csv", 0.0, {{"diffusion", 1.0}, {"viscosity", 2.0}});
     CHECK_THROWS_WITH(diagnostics.scalar("coefficients.csv", "diffusion", 1.0, 3.0),
@@ -99,14 +99,14 @@ TEST_CASE("OutputSession rejects path traversal and use after finish", "[output]
   auto path = DiFfRG::OutputPath::temporary();
 
   {
-    DiFfRG::OutputSession<0, dealii::Vector<double>> output(path, output_settings());
+    DiFfRG::OutputSession_impl<0, dealii::Vector<double>> output(path, output_settings());
     CHECK_FALSE(spdlog::get("run"));
     CHECK_THROWS_WITH(output.write_frame(0.0, [](auto &frame) { frame.table("../escape.csv"); }),
                       Catch::Matchers::ContainsSubstring("unsafe"));
     CHECK_THROWS_WITH(output.finish(), Catch::Matchers::ContainsSubstring("unsafe"));
   }
   {
-    DiFfRG::OutputSession<0, dealii::Vector<double>> output(path, output_settings());
+    DiFfRG::OutputSession_impl<0, dealii::Vector<double>> output(path, output_settings());
     output.finish();
     CHECK_THROWS_WITH(output.write_frame(1.0, [](auto &) {}),
                       Catch::Matchers::ContainsSubstring("already been finished"));
@@ -116,7 +116,7 @@ TEST_CASE("OutputSession rejects path traversal and use after finish", "[output]
 TEST_CASE("OutputSession drain keeps the session writable until finish", "[output][session][lifecycle]")
 {
   auto path = DiFfRG::OutputPath::temporary();
-  DiFfRG::OutputSession<0, dealii::Vector<double>> output(path, output_settings());
+  DiFfRG::OutputSession_impl<0, dealii::Vector<double>> output(path, output_settings());
 
   output.write_frame(0.0, [](auto &frame) { frame.table("data.csv").value("value", 1.0); });
   REQUIRE_NOTHROW(output.drain());
@@ -137,7 +137,7 @@ TEST_CASE("Run log reaches disk while the session is alive", "[output][session][
   auto settings = output_settings();
   settings.log_flush_interval = 0.1;
 
-  DiFfRG::OutputSession<0, dealii::Vector<double>> output(path, settings);
+  DiFfRG::OutputSession_impl<0, dealii::Vector<double>> output(path, settings);
   output.log_port().info("periodic flush marker");
 
   // A single short line stays inside the file sink's stdio buffer, so this only passes if the flusher runs.

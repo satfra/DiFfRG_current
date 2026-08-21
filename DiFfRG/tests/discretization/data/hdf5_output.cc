@@ -36,8 +36,6 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
          {"jacobian_quadrature_factor", 0.5}}},
        {"discretization",
         {{"fe_order", 3},
-         {"mesh_workers", 8},
-         {"batch_size", 64},
          {"overintegration", 0},
          {"output_subdivisions", 2},
 
