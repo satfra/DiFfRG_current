@@ -33,7 +33,7 @@ namespace DiFfRG
 
     std::filesystem::path resolve(std::filesystem::path relative) const;
     std::filesystem::path run_file(std::string_view extension) const;
-    /** Side-channel companion of run_file: <run name><name_suffix><extension>, e.g. "output_quadrature.log". */
+    /** Companion of run_file carrying an extra suffix: <run name><name_suffix><extension>. */
     std::filesystem::path run_file(std::string_view name_suffix, std::string_view extension) const;
     OutputPath child(std::filesystem::path directory, std::string run_name,
                      std::filesystem::path field_directory = "output") const;

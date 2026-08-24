@@ -92,6 +92,34 @@ TEST_CASE("Run logger console output follows /output/verbosity", "[logger]")
     CHECK_THAT(result.console, !Catch::Matchers::ContainsSubstring("marker-debug"));
   }
 
+  SECTION("several loggers share one run log file")
+  {
+    const auto folder = root / "shared";
+    std::filesystem::remove_all(folder);
+    std::filesystem::create_directories(folder);
+
+    Config::OutputSettings settings;
+    settings.log_flush_interval = 0.;
+
+    // The ordering of every example main: a QuadratureProvider opens the run log from inside the integrator
+    // constructors and gets its records onto disk, and only then does the OutputSession open the same file.
+    RunLogger first(OutputPath(folder.string(), "run"), settings, true, RunLoggerOptions{"quadrature", false});
+    first.port().info("first marker");
+    first.port().flush();
+
+    RunLogger second(OutputPath(folder.string(), "run"), settings, true);
+    second.port().info("second marker");
+    second.finish();
+    first.finish();
+
+    const auto contents = read_file(OutputPath(folder.string(), "run").run_file(".log"));
+    // The second logger must not truncate away what the first one already wrote.
+    CHECK_THAT(contents, Catch::Matchers::ContainsSubstring("first marker"));
+    CHECK_THAT(contents, Catch::Matchers::ContainsSubstring("second marker"));
+    // Sharing one sink means one file offset, so neither write leaves a hole in the other's records.
+    CHECK(contents.find('\0') == std::string::npos);
+  }
+
   SECTION("verbosity 2 reports the debug records")
   {
     const auto folder = root / "v2";
