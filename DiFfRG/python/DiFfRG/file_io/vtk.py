@@ -1,22 +1,18 @@
-import numpy as np
 import glob
 import json
-import pandas
+import os
 import xml.etree.ElementTree as ET
+from multiprocessing import Pool
+
+import numpy as np
+import pandas
 import vtk
 from vtk.util.numpy_support import vtk_to_numpy
-from tqdm import tqdm
-import os
-from functools import partial
-from multiprocessing import Pool
-from scipy import optimize
-from scipy.interpolate import make_interp_spline
 
 from DiFfRG.utilities import globalize
-from DiFfRG.utilities import get_all_sims
 
 # A class to read in .pvd files
-class FEMData:
+class PVDData:
     def __read_pvd(self, only_one: bool = False, at_t: int = -1, pool_size: int = 32):
         @globalize
         def load_one_step(i):
@@ -83,7 +79,7 @@ class FEMData:
 
     def get_full_data(self):
         if not self.data:
-            self.data = FEMData.__read_pvd(self.filename)
+            self.data = PVDData.__read_pvd(self.filename)
         return self.data
 
     def get_data_slice(self, t : float = -1):
@@ -95,7 +91,7 @@ class FEMData:
         self.slice_cache[t] = self.__read_pvd(only_one=True, at_t=t)
         return self.slice_cache[t]
 
-class FEMData1D(FEMData):
+class PVDData1D(PVDData):
     def __init__(self, filename : str, cs=0, mass_name="u"):
         super().__init__(filename)
 
@@ -125,12 +121,15 @@ class FEMData1D(FEMData):
         y = np.delete(y, duplicates + 1)
         return y
     
-class SimulationData1D(FEMData1D):
+class SimulationData1D(PVDData1D):
     def __init__(self, name):
         self.pvd_file = name + ".pvd"
         super().__init__(self.pvd_file)
 
-        self.params = json.load(open(name + ".log.json"))
+        # Only written when there is no HDF5 output to carry the configuration, or when
+        # /output/json is set. A run with HDF5 on keeps it in the .h5 file's /config group.
+        log_json = name + ".log.json"
+        self.params = json.load(open(log_json)) if os.path.exists(log_json) else None
 
         # find all associated csv files
         self.csv_files = glob.glob(name + "_*.csv")
@@ -144,48 +143,6 @@ class SimulationData1D(FEMData1D):
             if name in f:
                 return self.csv_data[f]
         return None
-
-def mkdir(path: str):
-    """Creates a directory if it does not exist.
-
-    Args:
-        path (str): The path to the directory to be created.
-    """
-    if not os.path.exists(path):
-        os.makedirs(path)
-
-def get_parameters_from_name(name: str) -> dict:
-    if name[-1] == "/":
-        raise Exception("cannot read params from folder name")
-    if name[-4:] == ".pvd" or name[-4:] == ".csv":
-        raw_filename = name.split("/")[-1][:-4]
-    else:
-        raw_filename = name.split("/")[-1]
-
-    params = {}
-    splits = raw_filename.split("_")
-    # merge a split with the next one if it does not contain a "="
-    i = 0
-    while i < len(splits):
-        if not ":" in splits[i]:
-            if i == len(splits) - 1:
-                splits.pop(i)
-            else:
-                splits[i] = splits[i] + "_" + splits[i + 1]
-                splits.pop(i + 1)
-        i += 1
-
-    for p in splits:
-        if len(p.split(":")) == 1:
-            continue
-        if not len(p.split(":")) == 2:
-            raise Exception(
-                "naming for file " + raw_filename + " could not be understood!"
-            )
-        param = p.split(":")[0]
-        value = float(p.split(":")[1])
-        params[param] = value
-    return params
 
 
 def get_vtk_data(vtkdata):
@@ -207,62 +164,3 @@ def get_vtk_data(vtkdata):
         data[name] = vtk_to_numpy(vtkdata.GetPointData().GetAbstractArray(name))
 
     return nodes, data
-
-def read_csv(csv, delim=",", header="infer"):
-    """Reads a csv file and returns a pandas dataframe.
-
-    Args:
-        csv (str): The path to the csv file.
-        delim (str, optional): Delimiter used in the csv file. Defaults to ",".
-        header (str, optional): Header argument for pandas. Use None if no header exists. Defaults to "infer".
-
-    Returns:
-        pandas.DataFrame: The data in the csv file.
-    """
-    data = pandas.read_csv(csv, comment="#", delimiter=delim, header=header)
-    return data
-
-
-def read_k_csv(filename, delim=",", kName="kGeV"):
-    """Reads a csv file which contains data for different values of k and returns the data split into separate csvs for each value of k.
-
-    Args:
-        filename (str): The path to the csv file.
-        delim (str, optional): Delimiter used in the csv file. Defaults to ",".
-        kName (str, optional): The name of the column which contains the values of k. Defaults to "kGeV".
-
-    Returns:
-        tuple: A tuple containing a list with the unique values of k and a list of pandas dataframes for each value of k.
-
-    """
-
-    csv = read_csv(filename, delim=delim)
-    # We need to split the data into separate csvs for each value of k
-    ks = csv[kName]
-    k_values = np.unique(ks)
-    data = []
-    for k in k_values:
-        mask = ks == k
-        data.append(csv[mask])
-    return k_values, data
-
-def split_csv(csv, name="kGeV"):
-    """Reads a csv file which contains data for different values of k and returns the data split into separate csvs for each value of k.
-
-    Args:
-        filename (str): The path to the csv file.
-        delim (str, optional): Delimiter used in the csv file. Defaults to ",".
-        kName (str, optional): The name of the column which contains the values of k. Defaults to "kGeV".
-
-    Returns:
-        tuple: A tuple containing a list with the unique values of k and a list of pandas dataframes for each value of k.
-
-    """
-
-    vs = csv[name]
-    v_values = np.unique(vs)
-    data = []
-    for v in v_values:
-        mask = vs == v
-        data.append(csv[mask])
-    return v_values, data

@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: DiFfRG
-Version: 1.0.1
+Version: 1.1.0
 Summary: The python subpackage of DiFfRG, for processing datra created from DiFfRG simulations.
 Author-email: Franz Richard Sattler <sattler@thphys.uni-heidelberg.de>
 Project-URL: Homepage, https://github.com/satfra/DiFfRG
@@ -15,6 +15,7 @@ Requires-Dist: scipy
 Requires-Dist: matplotlib
 Requires-Dist: adaptive[notebook]
 Requires-Dist: pandas
+Requires-Dist: h5py
 Requires-Dist: seaborn
 Requires-Dist: jupyter_bokeh
 Requires-Dist: vtk

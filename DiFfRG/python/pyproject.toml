@@ -1,6 +1,6 @@
 [project]
 name = "DiFfRG"
-version = "1.0.1"
+version = "1.1.0"
 authors = [
   { name = "Franz Richard Sattler", email = "sattler@thphys.uni-heidelberg.de" },
 ]
@@ -18,6 +18,7 @@ dependencies = [
   "matplotlib",
   "adaptive[notebook]",
   "pandas",
+  "h5py",
   "seaborn",
   "jupyter_bokeh",
   "vtk",
