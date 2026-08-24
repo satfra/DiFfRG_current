@@ -4,6 +4,14 @@
 
 ### Changed
 
+- The `QuadratureProvider`'s quadrature inventory is written into the run log, `<output name>.log`, rather than into a
+  separate `<output name>_quadrature.log`. Its records carry the `quadrature` logger name, so they stay
+  distinguishable from the session's. `/output/quadrature_log: false` now means "do not report the inventory at all"
+  rather than "do not open the side-channel file". `RunLogger`'s log file sink is shared process-wide per path, so the
+  `OutputSession` opening the same file after the provider appends to it instead of truncating it away.
+- **Breaking:** `RunLoggerOptions::file_suffix` is removed, along with the leading positional argument it occupied.
+  **Migration**: drop the suffix, e.g. `RunLoggerOptions{"_quadrature", "quadrature", false}` becomes
+  `RunLoggerOptions{"quadrature", false}`. Every `RunLogger` now writes into the run log.
 - `/output/verbosity` now also governs the run log's console echo, which previously ignored it and
   printed everything at `/output/log_level`: at 0 the console shows only warnings and errors, at 1
   the ordinary messages, from 2 upwards also `debug` records. The `.log` file is unaffected and

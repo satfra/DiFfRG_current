@@ -241,11 +241,11 @@ namespace DiFfRG
     /**
      * @brief Construct a provider that reports the quadratures it builds.
      *
-     * If no port is passed, the provider opens its own side-channel log at
-     * <output folder>/<output name>_quadrature.log. It has to own that logger rather than borrow one from an
-     * OutputSession, because integrators request their quadratures inside their constructors -- typically before
+     * If no port is passed, the provider opens its own logger on the run log, <output folder>/<output name>.log,
+     * writing its records under the "quadrature" logger name. It has to own that logger rather than borrow one from
+     * an OutputSession, because integrators request their quadratures inside their constructors -- typically before
      * any output session exists -- and because the provider is a process-level cache that outlives a single run.
-     * Set /output/quadrature_log to false to suppress the file.
+     * Set /output/quadrature_log to false to keep the quadrature inventory out of the log.
      */
     explicit QuadratureProvider(const ConfigTree &config, LogPort log = {});
 

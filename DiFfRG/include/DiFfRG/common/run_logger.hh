@@ -89,19 +89,19 @@ namespace DiFfRG
     }
   } // namespace internal
 
-  /** Sink layout of a RunLogger: which file it writes to and whether it also echoes to the console. */
+  /** Sink layout of a RunLogger: how it identifies itself and whether it also echoes to the console. */
   struct RunLoggerOptions {
-    /** Inserted between the run name and ".log", e.g. "_quadrature" for "output_quadrature.log". */
-    std::string file_suffix;
-    /** spdlog logger name, written to the "[%n]" field of the file records. */
+    /** spdlog logger name, written to the "[%n]" field of the file records. Several RunLoggers share one run log
+     * file, so this is what tells their records apart. */
     std::string logger_name = "run";
-    /** Whether records are echoed to stdout. Side-channel logs keep this off so they do not
-     * interleave with the timestepper progress report. When on, how much reaches the console is decided by
-     * `/output/verbosity`; the file sink is unaffected. */
+    /** Whether records are echoed to stdout. High-volume loggers keep this off so they do not interleave with the
+     * timestepper progress report. When on, how much reaches the console is decided by `/output/verbosity`; the file
+     * sink is unaffected. */
     bool console = true;
   };
 
-  /** Owns a private bounded asynchronous logger for one simulation run. */
+  /** Owns a bounded asynchronous logger writing into the run log. The file sink is shared process-wide per path,
+   * so several RunLoggers on the same run may write into one file without clobbering each other. */
   class RunLogger
   {
   public:

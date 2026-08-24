@@ -106,13 +106,14 @@ The run log is written by an asynchronous logger whose file sink is otherwise on
 would show a log file lagging by a full stdio buffer and a killed job would lose its tail. `log_flush_interval` is the
 period in seconds at which the log file is flushed from a dedicated thread; set it to `0` to disable periodic flushing.
 
-A `QuadratureProvider` constructed from the configuration reports every quadrature it builds to its own side-channel
-log, `<output name>_quadrature.log`, written next to the run log and sharing its queue, level and flush settings. It
-owns that logger instead of borrowing the session's: integrators request their quadratures from within their
-constructors, usually before any `OutputSession` exists, and the provider is a process-level cache that outlives a
-single run. The file has no console sink, so the quadrature inventory does not interleave with the timestepper
-progress report. Set `quadrature_log` to `false` to suppress the file, or pass an explicit `LogPort` as the second
-constructor argument to route the messages into a log of your own.
+A `QuadratureProvider` constructed from the configuration reports every quadrature it builds into the run log,
+under the `quadrature` logger name, sharing the run log's queue, level and flush settings. It owns that logger
+instead of borrowing the session's: integrators request their quadratures from within their constructors, usually
+before any `OutputSession` exists, and the provider is a process-level cache that outlives a single run. The log file
+sink is shared process-wide per path, so the session opening the same file later appends to the quadrature inventory
+instead of truncating it. The quadrature logger has no console sink, so the inventory does not interleave with the
+timestepper progress report. Set `quadrature_log` to `false` to keep it out of the log entirely, or pass an explicit
+`LogPort` as the second constructor argument to route the messages into a log of your own.
 
 Debugging and process-memory policy stay in C++ rather than simulation configuration. Set
 `Config::OutputSettings::asynchronous` to `false` for synchronous field writes. The default pending-byte limit is 2

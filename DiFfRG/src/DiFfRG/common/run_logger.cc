@@ -9,12 +9,47 @@
 #include <algorithm>
 #include <chrono>
 #include <condition_variable>
+#include <filesystem>
+#include <map>
 #include <mutex>
 #include <thread>
 #include <vector>
 
 namespace DiFfRG
 {
+  namespace
+  {
+    /**
+     * @brief Process-wide registry of log file sinks, keyed by the resolved path.
+     *
+     * Several RunLoggers legitimately target the same file: a QuadratureProvider opens the run log from within the
+     * integrator constructors, long before the OutputSession that later writes into it. Two independent sinks on one
+     * path would each keep their own file offset and overwrite each other, so they share a single sink, which
+     * serializes their records behind its own mutex.
+     *
+     * A path is truncated the first time it is opened in a process and appended to afterwards, so a second session
+     * writing the same file does not discard what the first one recorded.
+     */
+    spdlog::sink_ptr shared_file_sink(const std::filesystem::path &file)
+    {
+      static std::mutex mutex;
+      static std::map<std::string, std::weak_ptr<spdlog::sinks::basic_file_sink_mt>> sinks;
+
+      const auto key = std::filesystem::weakly_canonical(file).string();
+
+      const std::lock_guard<std::mutex> lock(mutex);
+      const auto it = sinks.find(key);
+      if (it != sinks.end())
+        if (auto live = it->second.lock()) return live;
+
+      // A known key that no longer resolves was opened earlier in this process and must not be truncated again.
+      const bool truncate = it == sinks.end();
+      auto sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(file.string(), truncate);
+      sinks[key] = sink;
+      return sink;
+    }
+  } // namespace
+
   struct RunLogger::PeriodicFlusher {
     PeriodicFlusher(std::shared_ptr<spdlog::logger> logger, const std::chrono::milliseconds interval)
         : logger(std::move(logger)), interval(interval), worker([this] { run(); })
@@ -84,8 +119,7 @@ namespace DiFfRG
       // The logger level filters ahead of every sink, so it has to admit whatever the console asks for.
       level = std::min(level, console_level);
     }
-    sinks.push_back(
-        std::make_shared<spdlog::sinks::basic_file_sink_mt>(path.run_file(options.file_suffix, ".log").string(), true));
+    sinks.push_back(shared_file_sink(path.run_file(".log")));
 
     logger = std::make_shared<spdlog::async_logger>(options.logger_name, sinks.begin(), sinks.end(), thread_pool,
                                                     spdlog::async_overflow_policy::block);
