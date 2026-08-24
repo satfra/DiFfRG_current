@@ -535,9 +535,9 @@ namespace DiFfRG
   };
 
   template <int dim, typename NT, typename KERNEL>
-  class QuadratureIntegrator<dim, NT, KERNEL, TBB_exec> : public QuadratureIntegrator<dim, NT, KERNEL, Threads_exec>
+  class QuadratureIntegrator<dim, NT, KERNEL, TBB_exec> : public QuadratureIntegrator<dim, NT, KERNEL, KokkosHost_exec>
   {
-    using Base = QuadratureIntegrator<dim, NT, KERNEL, Threads_exec>;
+    using Base = QuadratureIntegrator<dim, NT, KERNEL, KokkosHost_exec>;
 
   public:
     /**

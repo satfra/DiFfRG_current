@@ -22,7 +22,7 @@ tests = {
      ],
      TestCreate[
           TemplateParameterGeneration[<|"d" -> 1, "Name" -> "Test", "ctype" -> "float", "Device" -> "Threads"|>],
-          {"1", "float", "Test_kernel<Regulator>", "DiFfRG::Threads_exec"}
+          {"1", "float", "Test_kernel<Regulator>", "DiFfRG::KokkosHost_exec"}
      ],
      TestCreate[
           TemplateParameterGeneration[<|"d" -> 4, "Name" -> "DefaultType", "Device" -> "TBB"|>],

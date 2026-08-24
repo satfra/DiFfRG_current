@@ -123,8 +123,13 @@ TEST_CASE("HDF5 output layout is stable", "[output][hdf5][layout][golden]")
 
   constexpr uint n_frames = 3;
 
+  // Exercises every json::kind a configuration can hold, so the leaf mapping into /config is
+  // pinned alongside the rest of the layout.
+  const std::string configuration_json =
+      R"({"golden":true,"a_double":1.5,"an_int":-7,"a_string":"text","an_array":[1,2,3],)"
+      R"("nothing":null,"physical":{"Lambda":1e5,"nested":{"depth":2}}})";
+
   {
-    const std::string configuration_json = "{\"golden\": true}";
     HDF5Output hdf5_output(tmp.string(), h5_name, configuration_json);
     FEOutput<dim, VectorType> fe_output(tmp.string(), "layout", "fields", Config::OutputSettings(config));
     {
@@ -162,8 +167,35 @@ TEST_CASE("HDF5 output layout is stable", "[output][hdf5][layout][golden]")
 
   SECTION("root")
   {
-    require_children(root, {"FE", "coordinates", "maps", "scalars"}, {});
-    CHECK(root.read_attribute<std::string>("configuration_json") == "{\"golden\": true}");
+    require_children(root, {"FE", "config", "coordinates", "maps", "scalars"}, {});
+    // The configuration lives in /config; the raw JSON string is deliberately not duplicated here.
+    CHECK_FALSE(root.has_attribute("configuration_json"));
+
+    // Written at creation and only set by mark_finished(), which nothing above calls -- this is
+    // what a killed run leaves behind.
+    CHECK(root.read_attribute<int>("finished") == 0);
+    CHECK(root.read_attribute<int>("crashed") == 0);
+  }
+
+  SECTION("the configuration is mirrored as a browsable group tree")
+  {
+    auto config_group = root.open_group("config");
+    require_children(config_group, {"physical"}, {});
+
+    // HDF5 has no boolean type, so a bool lands as a 0/1 int.
+    CHECK(config_group.read_attribute<int>("golden") == 1);
+    CHECK(config_group.read_attribute<double>("a_double") == 1.5);
+    CHECK(config_group.read_attribute<long long>("an_int") == -7);
+    CHECK(config_group.read_attribute<std::string>("a_string") == "text");
+    // Arrays are kept as their serialized JSON rather than becoming a second leaf kind.
+    CHECK(config_group.read_attribute<std::string>("an_array") == "[1,2,3]");
+    // A null carries no value, so no attribute is written for it.
+    CHECK_FALSE(config_group.has_attribute("nothing"));
+
+    auto physical = config_group.open_group("physical");
+    require_children(physical, {"nested"}, {});
+    CHECK(physical.read_attribute<double>("Lambda") == 1e5);
+    CHECK(physical.open_group("nested").read_attribute<long long>("depth") == 2);
   }
 
   SECTION("scalars are one appendable dataset per name, one element per frame")

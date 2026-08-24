@@ -9,9 +9,12 @@
 
 // standard libraries
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <cstring>
+#include <iomanip>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -35,8 +38,259 @@ namespace DiFfRG
     /// Length of the PCI bus id string CUDA returns, e.g. "0000:65:00.0".
     constexpr int bus_id_len = 16;
 
+    // ------------------------------------------------------------------------------------------
+    // The resolved CPU thread budget
+    // ------------------------------------------------------------------------------------------
+
+    /// 0 until something resolves it; see DiFfRG::n_threads().
+    unsigned int resolved_threads = 0;
+    ThreadSource resolved_source = ThreadSource::automatic;
+
     /**
-     * @brief This rank's CPU budget: how many threads it may start, and why.
+     * @brief Install a thread limit and record it as the process' budget.
+     *
+     * deal.II owns the tbb::global_control that actually caps the arena, so it has to be told; but
+     * it also takes the minimum with DEAL_II_NUM_THREADS while doing so. Reading the number back
+     * out of deal.II afterwards is what keeps DiFfRG::n_threads() and
+     * dealii::MultithreadInfo::n_threads() from ever disagreeing.
+     */
+    void install_thread_limit(const unsigned int threads, const ThreadSource source)
+    {
+      dealii::MultithreadInfo::set_thread_limit(threads == 0 ? dealii::numbers::invalid_unsigned_int : threads);
+      resolved_threads = dealii::MultithreadInfo::n_threads();
+      resolved_source = source;
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Reading thread counts out of the environment
+    // ------------------------------------------------------------------------------------------
+
+    /// The leading integer of @p text, if it starts with one. Returns nothing for 0 or garbage.
+    std::optional<unsigned int> parse_leading_count(const char *text)
+    {
+      size_t i = 0;
+      while (text[i] != '\0' && std::isspace(static_cast<unsigned char>(text[i])))
+        ++i;
+      size_t j = i;
+      while (text[j] != '\0' && std::isdigit(static_cast<unsigned char>(text[j])))
+        ++j;
+      if (j == i) return std::nullopt;
+      unsigned long value = 0;
+      try {
+        value = std::stoul(std::string(text + i, j - i));
+      } catch (...) {
+        return std::nullopt;
+      }
+      // An implausibly large count is far more likely to be a misparse than an intention.
+      if (value == 0 || value > 100000) return std::nullopt;
+      return static_cast<unsigned int>(value);
+    }
+
+    /**
+     * @brief A thread count set by the user, which must be exactly a positive number.
+     *
+     * Anything else is a typo worth reporting rather than silently reinterpreting.
+     */
+    std::optional<unsigned int> env_count_strict(const char *name)
+    {
+      const char *text = std::getenv(name);
+      if (text == nullptr || *text == '\0') return std::nullopt;
+      const auto parsed = parse_leading_count(text);
+      // Reject trailing junk: "8" is a count, "8x" is a mistake.
+      if (parsed) {
+        const std::string digits = std::to_string(*parsed);
+        std::string trimmed(text);
+        trimmed.erase(0, trimmed.find_first_not_of(" \t"));
+        trimmed.erase(trimmed.find_last_not_of(" \t") + 1);
+        if (trimmed == digits) return parsed;
+      }
+      std::cerr << "WARNING: " << name << "='" << text << "' is not a positive thread count; ignoring it."
+                << std::endl;
+      return std::nullopt;
+    }
+
+    /**
+     * @brief A thread count set by Slurm, which uses compressed list syntax.
+     *
+     * SLURM_JOB_CPUS_PER_NODE is e.g. "72", "72(x2)" or "36,72" -- the first entry describes this
+     * node, and the rest is not ours to interpret.
+     */
+    std::optional<unsigned int> env_count_leading(const char *name)
+    {
+      const char *text = std::getenv(name);
+      if (text == nullptr || *text == '\0') return std::nullopt;
+      return parse_leading_count(text);
+    }
+
+    /// CPUs in this process' affinity mask, or 0 where that cannot be asked.
+    unsigned int affinity_cpu_count()
+    {
+#ifdef __linux__
+      cpu_set_t mask;
+      CPU_ZERO(&mask);
+      if (sched_getaffinity(0, sizeof(mask), &mask) != 0) return 0;
+      return static_cast<unsigned int>(CPU_COUNT(&mask));
+#else
+      return 0;
+#endif
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Precedence
+    // ------------------------------------------------------------------------------------------
+
+    /// One place that had an opinion about the thread count. Names are string literals.
+    struct Candidate {
+      const char *name;
+      unsigned int value;
+      ThreadSource tier;
+    };
+
+    struct Resolution {
+      /// False when nothing was set anywhere, i.e. the automatic tier applies.
+      bool resolved = false;
+      unsigned int threads = 0;
+      ThreadSource source = ThreadSource::automatic;
+      const char *winner = "";
+      std::vector<Candidate> seen;
+      /// DEAL_II_NUM_THREADS was removed from the environment; see resolve_threads().
+      bool dealii_env_discarded = false;
+    };
+
+    /**
+     * @brief What this process was allocated by whoever launched it.
+     *
+     * The affinity mask is authoritative and is checked first: it is the only thing that describes
+     * the CPUs this process may actually run on, and it covers taskset, cgroups and every launcher
+     * rather than just Slurm. It is meaningful only when it is a *strict* subset of the machine --
+     * an unrestricted mask is what an ordinary workstation looks like, and must not be mistaken for
+     * an allocation. Note that n_cores() is std::thread::hardware_concurrency(), which ignores the
+     * mask, so this comparison is between the mask and the whole machine, as intended.
+     *
+     * Slurm's variables are the fallback for the case where a job did not pin its tasks.
+     */
+    std::optional<Candidate> launcher_allocation()
+    {
+      const unsigned int cpus = affinity_cpu_count();
+      if (cpus > 0 && cpus < dealii::MultithreadInfo::n_cores())
+        return Candidate{"CPU affinity mask", cpus, ThreadSource::launcher};
+
+      if (const auto v = env_count_leading("SLURM_CPUS_PER_TASK"))
+        return Candidate{"SLURM_CPUS_PER_TASK", *v, ThreadSource::launcher};
+
+      // The per-node counts have to be shared out among the tasks placed on the node.
+      const unsigned int tasks = std::max(1u, env_count_leading("SLURM_NTASKS_PER_NODE").value_or(1u));
+      for (const char *name : {"SLURM_JOB_CPUS_PER_NODE", "SLURM_CPUS_ON_NODE"})
+        if (const auto v = env_count_leading(name))
+          return Candidate{name, std::max(1u, *v / tasks), ThreadSource::launcher};
+
+      return std::nullopt;
+    }
+
+    /**
+     * @brief Apply the precedence order documented at ThreadSource.
+     *
+     * Everything here is knowable before MPI_Init: it is environment and parameter file only. The
+     * automatic tier is not, because it needs the node-local rank count, so this reports
+     * `resolved == false` and leaves that case to automatic_budget().
+     */
+    Resolution resolve_threads(const unsigned int configured_threads)
+    {
+      Resolution r;
+
+      // Tier 1: an explicit DiFfRG setting. Both spellings are accepted; the documented one wins.
+      if (const auto v = env_count_strict("DiFfRG_NUM_THREADS"))
+        r.seen.push_back({"DiFfRG_NUM_THREADS", *v, ThreadSource::diffrg_env});
+      if (const auto v = env_count_strict("DIFFRG_NUM_THREADS"))
+        r.seen.push_back({"DIFFRG_NUM_THREADS", *v, ThreadSource::diffrg_env});
+
+      // Tier 2: the CPUs this process was actually given.
+      if (const auto c = launcher_allocation()) r.seen.push_back(*c);
+
+      // Tier 3: the parameter file.
+      if (configured_threads > 0)
+        r.seen.push_back({"/discretization/threads", configured_threads, ThreadSource::config});
+
+      // Tier 4: thread counts meant for somebody else, which we honour only if nothing better said
+      // anything. DEAL_II_NUM_THREADS is read here rather than left to deal.II -- see
+      // discard_dealii_env_override().
+      const auto dealii_env = env_count_strict("DEAL_II_NUM_THREADS");
+      if (const auto v = env_count_strict("OMP_NUM_THREADS"))
+        r.seen.push_back({"OMP_NUM_THREADS", *v, ThreadSource::other_env});
+      if (dealii_env) r.seen.push_back({"DEAL_II_NUM_THREADS", *dealii_env, ThreadSource::other_env});
+      if (const auto v = env_count_strict("KOKKOS_NUM_THREADS"))
+        r.seen.push_back({"KOKKOS_NUM_THREADS", *v, ThreadSource::other_env});
+
+      // min_element returns the *first* smallest, so within a tier the order above breaks ties.
+      const auto winner = std::min_element(r.seen.begin(), r.seen.end(),
+                                           [](const Candidate &a, const Candidate &b) { return a.tier < b.tier; });
+      if (winner == r.seen.end()) return r;
+
+      r.resolved = true;
+      r.threads = winner->value;
+      r.source = winner->tier;
+      r.winner = winner->name;
+
+      return r;
+    }
+
+    /**
+     * @brief Take DEAL_II_NUM_THREADS out of the environment where it would undercut the winner.
+     *
+     * dealii::MultithreadInfo::set_thread_limit() takes the minimum with DEAL_II_NUM_THREADS on
+     * every call, so unless the variable is itself the winner it would quietly override whatever
+     * won from below and make the whole precedence order a lie -- including inside tier 4, where a
+     * larger OMP_NUM_THREADS ought to win. Where that would happen, remove the variable and say so;
+     * it is listed in the conflict warning either way.
+     *
+     * Kept out of resolve_threads() so that resolution stays free of side effects and can be
+     * called from a test as often as it likes.
+     */
+    void discard_dealii_env_override(Resolution &r)
+    {
+      if (!r.resolved || std::strcmp(r.winner, "DEAL_II_NUM_THREADS") == 0) return;
+      const char *text = std::getenv("DEAL_II_NUM_THREADS");
+      if (text == nullptr || *text == '\0') return;
+      const auto value = parse_leading_count(text);
+      if (!value || *value >= r.threads) return;
+      ::unsetenv("DEAL_II_NUM_THREADS");
+      r.dealii_env_discarded = true;
+    }
+
+    /// Print every setting that had an opinion, once, when they do not all agree.
+    void warn_about_conflicts(const Resolution &r, const unsigned int threads)
+    {
+      const bool disagree =
+          std::any_of(r.seen.begin(), r.seen.end(), [&](const Candidate &c) { return c.value != threads; });
+      if (!disagree) return;
+
+      // stderr on purpose: timestepper progress is stdout-only, and a cluster launcher may well
+      // swallow one of the two streams.
+      std::cerr << "\n"
+                << "================================ WARNING ================================\n"
+                << " Several thread-count settings disagree:\n";
+      for (const auto &c : r.seen) {
+        std::cerr << "   " << std::left << std::setw(26) << c.name << "= " << c.value;
+        if (std::strcmp(c.name, r.winner) == 0)
+          std::cerr << "   <-- used";
+        else if (r.dealii_env_discarded && std::strcmp(c.name, "DEAL_II_NUM_THREADS") == 0)
+          std::cerr << "   (removed from the environment: deal.II would have capped the above)";
+        std::cerr << "\n";
+      }
+      std::cerr << " Running with " << threads << " CPU threads, from " << r.winner << ".\n"
+                << " Precedence: DiFfRG_NUM_THREADS > launcher allocation (CPU affinity, then\n"
+                << " SLURM_*) > /discretization/threads > OMP_NUM_THREADS / DEAL_II_NUM_THREADS\n"
+                << " > automatic.\n"
+                << "=========================================================================\n"
+                << std::endl;
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // The automatic tier
+    // ------------------------------------------------------------------------------------------
+
+    /**
+     * @brief This rank's CPU budget when nothing was configured, and why.
      */
     struct CpuBudget {
       unsigned int threads;
@@ -47,7 +301,7 @@ namespace DiFfRG
     };
 
     /**
-     * @brief Work out how many CPU threads this rank may start.
+     * @brief Work out how many CPU threads this rank may start when nobody said.
      *
      * The naive version of this -- take the machine's core count and divide by the number of
      * node-local ranks -- is wrong on exactly the systems that matter, and wrong in both directions:
@@ -64,18 +318,13 @@ namespace DiFfRG
      * competing for *my* CPUs". That is answered by intersecting the affinity masks, the same way
      * GPU sharing is answered by comparing bus ids rather than counting devices.
      */
-    CpuBudget cpu_budget([[maybe_unused]] const unsigned int local_size, const unsigned int configured_threads)
+    CpuBudget automatic_budget([[maybe_unused]] const unsigned int local_size)
     {
-      // An explicit /discretization/threads is a statement about one process. Honour it verbatim:
-      // silently dividing it would make the setting mean "threads per node", which is neither what
-      // it says nor what it means in a serial run.
-      if (configured_threads > 0) return CpuBudget{configured_threads, 1, false};
-
 #ifdef __linux__
       cpu_set_t mask;
       CPU_ZERO(&mask);
       if (sched_getaffinity(0, sizeof(mask), &mask) != 0)
-        return CpuBudget{std::max(1u, dealii::MultithreadInfo::n_threads() / std::max(1u, local_size)), local_size,
+        return CpuBudget{std::max(1u, dealii::MultithreadInfo::n_cores() / std::max(1u, local_size)), local_size,
                          false};
 
       const unsigned int my_cpus = static_cast<unsigned int>(CPU_COUNT(&mask));
@@ -106,13 +355,14 @@ namespace DiFfRG
         if (sharing == 0) sharing = 1; // cannot happen: a mask always overlaps itself
       }
 
-      // Cap by whatever limit is already in force (DEAL_II_NUM_THREADS, an application's own
-      // global_control), so this only ever lowers the budget.
-      const unsigned int budget = std::max(1u, my_cpus / sharing);
-      return CpuBudget{std::min(budget, dealii::MultithreadInfo::n_threads()), sharing, sharing == 1 && local_size > 1};
+      // The mask is already a subset of the machine, so no further capping is needed -- and none is
+      // wanted: capping against the limit currently in force would make repeated calls ratchet the
+      // budget down instead of recomputing it. An embedder's own tbb::global_control still applies
+      // regardless of what deal.II is told, because TBB takes the minimum over all live instances.
+      return CpuBudget{std::max(1u, my_cpus / sharing), sharing, sharing == 1 && local_size > 1};
 #else
       // No portable way to read an affinity mask; fall back to an even split of the node.
-      return CpuBudget{std::max(1u, dealii::MultithreadInfo::n_threads() / std::max(1u, local_size)), local_size,
+      return CpuBudget{std::max(1u, dealii::MultithreadInfo::n_cores() / std::max(1u, local_size)), local_size,
                        false};
 #endif
     }
@@ -181,13 +431,52 @@ namespace DiFfRG
     }
   } // namespace
 
-  void set_thread_limit(const unsigned int threads)
+  const char *to_string(const ThreadSource source)
   {
-    // invalid_unsigned_int is deal.II's "decide for me", which resolves to the core count.
-    dealii::MultithreadInfo::set_thread_limit(threads == 0 ? dealii::numbers::invalid_unsigned_int : threads);
+    switch (source) {
+    case ThreadSource::diffrg_env:
+      return "DiFfRG_NUM_THREADS";
+    case ThreadSource::launcher:
+      return "the launcher's CPU allocation";
+    case ThreadSource::config:
+      return "/discretization/threads";
+    case ThreadSource::other_env:
+      return "OMP_NUM_THREADS / DEAL_II_NUM_THREADS";
+    case ThreadSource::automatic:
+      return "the available CPUs";
+    }
+    return "an unknown source";
   }
 
-  void set_thread_limit(const ConfigTree &config) { set_thread_limit(config.get_uint("/discretization/threads", 0)); }
+  ThreadResolution resolve_thread_count(const unsigned int configured_threads)
+  {
+    const Resolution r = resolve_threads(configured_threads);
+    return ThreadResolution{r.resolved ? r.threads : 0u, r.source, r.winner};
+  }
+
+  unsigned int n_threads()
+  {
+    if (resolved_threads > 0) return resolved_threads;
+    // Nothing has resolved a budget yet, so report what TBB would actually run with.
+    return static_cast<unsigned int>(tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism));
+  }
+
+  ThreadSource n_threads_source() { return resolved_source; }
+
+  void set_thread_limit(const unsigned int threads) { install_thread_limit(threads, ThreadSource::config); }
+
+  void set_thread_limit(const ConfigTree &config)
+  {
+    Resolution r = resolve_threads(config.get_uint("/discretization/threads", 0));
+    if (r.resolved) {
+      discard_dealii_env_override(r);
+      install_thread_limit(r.threads, r.source);
+      warn_about_conflicts(r, n_threads());
+    } else {
+      const CpuBudget budget = automatic_budget(1);
+      install_thread_limit(budget.threads, ThreadSource::automatic);
+    }
+  }
 
   bool Init::initialized = false;
 
@@ -199,20 +488,16 @@ namespace DiFfRG
     if (!initialized) {
       // The thread count has to be known *before* the libraries come up: dealii::InitFinalize
       // forwards it to MultithreadInfo::set_thread_limit(), which installs the process-wide
-      // tbb::global_control that caps every TBB pipeline in deal.II and DiFfRG. Kokkos also reads
-      // MultithreadInfo::n_threads() exactly once below, so both thread counts must be available
-      // here. probe() therefore takes an early, silent look at the parameter file; the
-      // application's own ConfigurationHelper does the authoritative parse.
+      // tbb::global_control that caps every TBB pipeline in deal.II and DiFfRG. probe() therefore
+      // takes an early, silent look at the parameter file; the application's own
+      // ConfigurationHelper does the authoritative parse.
       const ConfigTree config = ConfigurationHelper::probe(argc, argv, parameter_file);
-      const unsigned int configured_threads = config.get_uint("/discretization/threads", 0);
-      const unsigned int configured_kokkos_threads = config.get_uint("/discretization/kokkos_threads", 0);
 
-      if (config.contains("/discretization/threads") && configured_threads > 0)
-        std::cerr << "WARNING: '/discretization/threads' has changed meaning. It used to set the length of the\n"
-                     "         assembly pipeline; the pipeline is now sized automatically.\n"
-                     "         It now sets the number of CPU threads the whole program may use, so this run is\n"
-                     "         limited to "
-                  << configured_threads << " threads. Set '/discretization/threads' to 0 to use all available cores.\n"
+      if (config.contains("/discretization/kokkos_threads"))
+        std::cerr << "WARNING: '/discretization/kokkos_threads' has been removed and is ignored.\n"
+                     "         Kokkos' host backend is Serial: DiFfRG's CPU work runs on TBB, and a second\n"
+                     "         thread pool only contended with it. '/discretization/threads' now sizes the\n"
+                     "         one pool there is. Please delete the entry from your parameter file.\n"
                   << std::endl;
 
       if (config.contains("/discretization/mesh_workers") || config.contains("/discretization/batch_size"))
@@ -227,12 +512,15 @@ namespace DiFfRG
                      "         file unless you are deliberately benchmarking the schedule itself.\n"
                   << std::endl;
 
-      // A configured count is handed to deal.II, which takes the minimum with DEAL_II_NUM_THREADS.
-      // 0 means "keep whatever is already in force", i.e. the machine's core count unless the
-      // application installed a tbb::global_control of its own before constructing us.
+      // Everything except the automatic tier is knowable here, before MPI is up. Resolving now is
+      // what lets the answer be handed straight to dealii::InitFinalize; it also has to happen
+      // before the first set_thread_limit() call, because that is where a stale DEAL_II_NUM_THREADS
+      // would otherwise silently cap us.
+      Resolution resolution = resolve_threads(config.get_uint("/discretization/threads", 0));
+      discard_dealii_env_override(resolution);
       const unsigned int max_num_threads =
-          configured_threads > 0 ? configured_threads
-                                 : tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
+          resolution.resolved ? resolution.threads
+                              : tbb::global_control::active_value(tbb::global_control::max_allowed_parallelism);
 
       // We initialize every library that deal.II's MPI_InitFinalize would, *except* Kokkos, and then
       // hand the Kokkos lifecycle to deal.II via ensure_kokkos_initialized() below. The reason is a
@@ -265,40 +553,33 @@ namespace DiFfRG
       });
 
       // From here on MPI_Init has run, so the node-local rank is finally knowable -- which is why
-      // none of the following could be folded into max_num_threads above.
+      // the automatic tier could not be folded into max_num_threads above.
       MPI_Comm node_comm = MPI::split_shared(MPI_COMM_WORLD);
       const unsigned int local_rank = MPI::rank(node_comm);
       const unsigned int local_size = MPI::size(node_comm);
       MPI::free_comm(node_comm);
 
-      // Without a per-rank cap, N ranks each start a full-width TBB arena on the same cores and
-      // spend their time fighting each other. cpu_budget() works out the right cap from the affinity
-      // masks rather than by dividing a machine-wide count -- see its comment for why the obvious
-      // version is wrong in both directions.
-      const CpuBudget budget = cpu_budget(local_size, configured_threads);
-      if (budget.threads != dealii::MultithreadInfo::n_threads()) {
-        dealii::MultithreadInfo::set_thread_limit(budget.threads);
-        // deal.II's limit governs its own pipelines; DiFfRG's TBB integrators need the arena capped
-        // too, and that is a separate global_control.
-        static tbb::global_control rank_parallelism(tbb::global_control::max_allowed_parallelism, budget.threads);
-        (void)rank_parallelism;
+      CpuBudget budget{max_num_threads, 1, false};
+      if (resolution.resolved) {
+        install_thread_limit(resolution.threads, resolution.source);
+      } else {
+        // Without a per-rank cap, N ranks each start a full-width TBB arena on the same cores and
+        // spend their time fighting each other. automatic_budget() works out the right cap from the
+        // affinity masks rather than by dividing a machine-wide count -- see its comment for why the
+        // obvious version is wrong in both directions.
+        budget = automatic_budget(local_size);
+        install_thread_limit(budget.threads, ThreadSource::automatic);
       }
-      if (local_size > 1 && MPI::rank(MPI_COMM_WORLD) == 0)
-        std::cerr << "DiFfRG: " << local_size << " ranks per node, " << budget.threads << " CPU threads each ("
-                  << (configured_threads > 0 ? "from /discretization/threads, applied per rank"
-                      : budget.pinned        ? "the launcher pinned each rank to its own CPUs"
-                                             : std::to_string(budget.sharing) + " ranks share one CPU set")
-                  << ")." << std::endl;
 
-      // Keep the two host-side thread resources independent. The application count is captured
-      // only after MPI affinity budgeting, because it is the persistent TBB/deal.II limit for this
-      // rank. Kokkos may temporarily see a different count while its host backend is initialized:
-      // expensive CPU integrals can use a wider pool, while cheap ones can avoid nested-parallel
-      // overhead with a single worker. An absent or zero kokkos_threads keeps the historical
-      // behaviour and uses the resolved per-rank application count.
-      const unsigned int application_threads = dealii::MultithreadInfo::n_threads();
-      const unsigned int kokkos_threads =
-          configured_kokkos_threads > 0 ? configured_kokkos_threads : application_threads;
+      if (MPI::rank(MPI_COMM_WORLD) == 0) {
+        warn_about_conflicts(resolution, n_threads());
+        if (local_size > 1)
+          std::cerr << "DiFfRG: " << local_size << " ranks per node, " << n_threads() << " CPU threads each ("
+                    << (resolution.resolved ? std::string(resolution.winner) + ", applied per rank"
+                        : budget.pinned     ? std::string("the launcher pinned each rank to its own CPUs")
+                                            : std::to_string(budget.sharing) + " ranks share one CPU set")
+                    << ")." << std::endl;
+      }
 
       const int device = select_device(local_rank, local_size);
 
@@ -314,25 +595,17 @@ namespace DiFfRG
       // above: GrowingVectorMemory installs a Kokkos finalize-hook into an already-destroyed
       // static, and nothing ever finalizes Kokkos.
       //
-      // num_threads configures only Kokkos's host execution backend; it does not restrict CUDA
-      // kernel parallelism. Device selection and host-pool sizing are therefore orthogonal settings
-      // and belong in the same initialization. Temporarily publish kokkos_threads through deal.II,
-      // then restore the persistent application count even if initialization fails.
-      dealii::MultithreadInfo::set_thread_limit(kokkos_threads);
-      try {
-        if (device >= 0 && local_size > 1 && !Kokkos::is_initialized() && !Kokkos::is_finalized()) {
-          dealii::internal::dealii_initialized_kokkos = true;
-          Kokkos::initialize(Kokkos::InitializationSettings().set_device_id(device).set_num_threads(
-              dealii::MultithreadInfo::n_threads()));
-          std::atexit([]() { Kokkos::finalize(); });
-        } else {
-          dealii::internal::ensure_kokkos_initialized();
-        }
-      } catch (...) {
-        dealii::MultithreadInfo::set_thread_limit(application_threads);
-        throw;
+      // num_threads configures only Kokkos' host execution backend, which is Serial unless the
+      // build enabled KOKKOS_THREADS; it never restricts CUDA kernel parallelism. It is passed
+      // anyway so that a build which does enable that backend still respects the budget.
+      if (device >= 0 && local_size > 1 && !Kokkos::is_initialized() && !Kokkos::is_finalized()) {
+        dealii::internal::dealii_initialized_kokkos = true;
+        Kokkos::initialize(Kokkos::InitializationSettings().set_device_id(device).set_num_threads(
+            static_cast<int>(n_threads())));
+        std::atexit([]() { Kokkos::finalize(); });
+      } else {
+        dealii::internal::ensure_kokkos_initialized();
       }
-      dealii::MultithreadInfo::set_thread_limit(application_threads);
 
       // The scheduler defaults are fine for most runs; expose them anyway, since the split width is
       // the one knob a scaling study may want to turn.

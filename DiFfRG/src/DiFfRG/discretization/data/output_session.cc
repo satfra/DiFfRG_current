@@ -7,6 +7,7 @@
 #include <deal.II/lac/vector.h>
 
 #include <cmath>
+#include <exception>
 #include <fstream>
 #include <memory>
 #include <sstream>
@@ -29,7 +30,10 @@ namespace DiFfRG
   {
     set_Lambda(this->settings.Lambda);
     diagnostics_port = DiagnosticPort::create(path, Lambda, active);
-    if (active) diagnostics_port.write_text(this->output_name + ".log.json", this->settings.configuration_log);
+    // With HDF5 on, the configuration already travels with the data in the file's /config group,
+    // so the separate copy is only written when asked for or when nothing else records it.
+    if (active && (this->settings.write_json || !use_hdf5))
+      diagnostics_port.write_text(this->output_name + ".log.json", this->settings.configuration_log);
 
     if (active && use_hdf5) {
       h5_files.emplace(filename_h5, HDF5Output(this->top_folder, filename_h5, this->settings.configuration_json));
@@ -50,8 +54,12 @@ namespace DiFfRG
 
   template <uint dim, typename VectorType> OutputSession_impl<dim, VectorType>::~OutputSession_impl() noexcept
   {
+    // A destructor runs both at the end of a successful scope and while an exception unwinds one.
+    // Either way the session closes in an orderly fashion, so the files are marked finished; the
+    // unwinding case is what `crashed` records -- a timestepper that gave up still flushed and
+    // closed its output, it just stopped early.
     try {
-      finish();
+      finish_impl(/* crashed = */ std::uncaught_exceptions() > 0);
     } catch (...) {
       deferred_error = std::current_exception();
     }
@@ -261,7 +269,7 @@ namespace DiFfRG
     }
   }
 
-  template <uint dim, typename VectorType> void OutputSession_impl<dim, VectorType>::finish()
+  template <uint dim, typename VectorType> void OutputSession_impl<dim, VectorType>::finish_impl(const bool crashed)
   {
     std::scoped_lock lock(submission_mutex);
     if (finished) {
@@ -292,6 +300,15 @@ namespace DiFfRG
         hdf5_writer.finish();
       } catch (...) {
         if (!terminal_error) terminal_error = std::current_exception();
+      }
+
+      // After the writer is joined, so the mark cannot land before the last frame it describes.
+      for (auto &[name, hdf] : h5_files) {
+        try {
+          hdf.mark_finished(crashed);
+        } catch (...) {
+          if (!terminal_error) terminal_error = std::current_exception();
+        }
       }
 
       // Reported only after the writer has been joined, so its totals are complete.

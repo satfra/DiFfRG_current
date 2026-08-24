@@ -125,7 +125,7 @@ TEMPLATE_TEST_CASE_SIG("Test finite temperature quadrature integrals", "[integra
   // Check on TBB
   SECTION("TBB") { check(TBB_exec(), (double)0); }
   // Check on Threads
-  SECTION("Threads") { check(Threads_exec(), (double)0); }
+  SECTION("Threads") { check(KokkosHost_exec(), (double)0); }
   // Check on GPU
   SECTION("GPU") { check(GPU_exec(), (double)0); }
 }
@@ -199,7 +199,7 @@ TEST_CASE("Finite-T device maps stage through pinned memory and defer", "[integr
   };
 
   SECTION("GPU") { check(GPU_exec()); }
-  SECTION("Threads") { check(Threads_exec()); }
+  SECTION("Threads") { check(KokkosHost_exec()); }
   SECTION("TBB") { check(TBB_exec()); }
 }
 

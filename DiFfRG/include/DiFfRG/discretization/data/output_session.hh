@@ -214,8 +214,8 @@ namespace DiFfRG
     /** Join pending writers and surface their first error without closing the session. */
     void drain();
 
-    /** Drain pending writers and permanently close the session. */
-    void finish();
+    /** Drain pending writers and permanently close the session, marking its HDF5 files finished. */
+    void finish() { finish_impl(/* crashed = */ false); }
     void set_Lambda(double Lambda);
     const std::string &run_name() const noexcept { return output_name; }
     const OutputPath &path() const noexcept { return output_path; }
@@ -237,6 +237,10 @@ namespace DiFfRG
 
     const OutputPath &output_path;
     Config::OutputSettings settings;
+    /** Shared by finish() and the destructor. `crashed` only selects the value recorded in the
+     * HDF5 files' `crashed` attribute; everything else happens either way. */
+    void finish_impl(bool crashed);
+
     const std::string top_folder;
     const std::string output_name;
     const std::string output_folder;

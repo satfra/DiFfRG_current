@@ -211,6 +211,118 @@ TEST_CASE("OutputPath child shares its temporary root owner", "[output][path][te
   CHECK_FALSE(std::filesystem::exists(root));
 }
 
+TEST_CASE("The configuration copy is only written when nothing else records it", "[output][session][json]")
+{
+  using Session = DiFfRG::OutputSession_impl<0, dealii::Vector<double>>;
+
+  const auto log_json = [](const DiFfRG::OutputPath &path) { return path.root() / (path.run_name() + ".log.json"); };
+
+  SECTION("HDF5 off: the configuration has nowhere else to go, so it is written")
+  {
+    auto path = DiFfRG::OutputPath::temporary();
+    auto settings = output_settings();
+    REQUIRE_FALSE(settings.write_hdf5);
+    {
+      Session output(path, settings);
+    }
+    CHECK(std::filesystem::exists(log_json(path)));
+  }
+
+  SECTION("HDF5 on: the configuration travels in /config, so no separate copy")
+  {
+    auto path = DiFfRG::OutputPath::temporary();
+    auto settings = output_settings();
+    settings.write_hdf5 = true;
+    {
+      Session output(path, settings);
+    }
+    CHECK_FALSE(std::filesystem::exists(log_json(path)));
+  }
+
+  SECTION("/output/json forces the copy even with HDF5 on")
+  {
+    auto path = DiFfRG::OutputPath::temporary();
+    auto settings = output_settings();
+    settings.write_hdf5 = true;
+    settings.write_json = true;
+    {
+      Session output(path, settings);
+    }
+    CHECK(std::filesystem::exists(log_json(path)));
+  }
+
+  SECTION("/output/json is read from the configuration and defaults to off")
+  {
+    auto parent = DiFfRG::OutputPath::temporary();
+    auto json = output_json(parent.root());
+    CHECK_FALSE(DiFfRG::Config::OutputSettings(json).write_json);
+
+    json().as_object().at("output").as_object()["json"] = true;
+    CHECK(DiFfRG::Config::OutputSettings(json).write_json);
+  }
+}
+
+TEST_CASE("The session records how the run ended", "[output][session][hdf5][status]")
+{
+  using Session = DiFfRG::OutputSession_impl<0, dealii::Vector<double>>;
+
+  const auto status = [](const DiFfRG::OutputPath &path) {
+    auto file =
+        DiFfRG::hdf5::File::open((path.root() / (path.run_name() + ".h5")).string(), DiFfRG::hdf5::Access::ReadOnly);
+    auto root = file.root();
+    return std::pair{root.read_attribute<int>("finished"), root.read_attribute<int>("crashed")};
+  };
+
+  const auto hdf5_settings = [] {
+    auto settings = output_settings();
+    settings.write_hdf5 = true;
+    return settings;
+  };
+
+  SECTION("an explicit finish() is a clean end")
+  {
+    auto path = DiFfRG::OutputPath::temporary();
+    {
+      Session output(path, hdf5_settings());
+      output.finish();
+    }
+    CHECK(status(path) == std::pair{1, 0});
+  }
+
+  SECTION("falling off the end of the scope is also a clean end")
+  {
+    auto path = DiFfRG::OutputPath::temporary();
+    {
+      Session output(path, hdf5_settings());
+    }
+    CHECK(status(path) == std::pair{1, 0});
+  }
+
+  SECTION("unwinding through the destructor is finished, but crashed")
+  {
+    auto path = DiFfRG::OutputPath::temporary();
+    try {
+      Session output(path, hdf5_settings());
+      throw std::runtime_error("the timestepper gave up");
+    } catch (const std::runtime_error &) {
+    }
+    // The session still flushed and closed its files -- that is the point of the distinction.
+    CHECK(status(path) == std::pair{1, 1});
+  }
+
+  SECTION("an explicit finish() before the throw still counts as clean")
+  {
+    auto path = DiFfRG::OutputPath::temporary();
+    try {
+      Session output(path, hdf5_settings());
+      output.finish();
+      throw std::runtime_error("thrown after the outputs were closed");
+    } catch (const std::runtime_error &) {
+    }
+    CHECK(status(path) == std::pair{1, 0});
+  }
+}
+
 TEST_CASE("OutputSettings keeps debugging and memory policy in C++", "[output][settings][json]")
 {
   auto parent = DiFfRG::OutputPath::temporary();

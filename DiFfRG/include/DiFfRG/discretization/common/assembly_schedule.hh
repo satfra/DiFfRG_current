@@ -9,6 +9,7 @@
 
 // DiFfRG
 #include <DiFfRG/common/config_tree.hh>
+#include <DiFfRG/common/threads.hh>
 #include <DiFfRG/common/types.hh>
 
 // std
@@ -107,14 +108,15 @@ namespace DiFfRG
    * cheap ones a small mesh is measurably faster assembled serially than split up.
    *
    * @param n_local_cells cells this rank assembles, i.e. the length of locally_owned_cells().
+   * @param thread_budget CPU threads this rank may use, i.e. DiFfRG::n_threads().
    * @param cost_ns estimated cost of one cell, in nanoseconds; see namespace assembly_cost.
    */
-  inline AssemblySchedule make_assembly_schedule(const uint n_local_cells, const uint n_threads,
+  inline AssemblySchedule make_assembly_schedule(const uint n_local_cells, const uint thread_budget,
                                                  const double cost_ns, const AssemblyScheduleOverrides &overrides = {})
   {
     using namespace assembly_schedule_defaults;
 
-    const uint threads = std::max(1u, n_threads);
+    const uint threads = std::max(1u, thread_budget);
     const double cost = std::max(1.0, cost_ns);
 
     uint chunk =

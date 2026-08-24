@@ -280,14 +280,31 @@ the GPU bus-id comparison below, and for the same reason. Disjoint masks ⇒ the
 partitioned the node, divisor 1. Identical masks ⇒ the ranks share it, divisor = the number that
 overlap. `Init` prints which case it took.
 
-**The knobs, in precedence order:**
+**The knobs, in precedence order.** Highest first; the first one that says anything wins outright,
+and DiFfRG prints a loud warning on stderr whenever several of them disagree.
 
-| knob | effect |
-|---|---|
-| `/discretization/threads` | Taken **verbatim, per rank**, with no division. Silently dividing it would make the setting mean "threads per node", which is neither what it says nor what it means in a serial run. This is the escape hatch when the automatic answer is wrong. |
-| launcher pinning — `srun --cpus-per-task=N`, `mpirun --bind-to`, `taskset` | The preferred mechanism. It is now *detected* rather than fought: the mask is authoritative and is not divided again. |
-| `DEAL_II_NUM_THREADS` | deal.II takes the minimum with it, so it can only lower the budget further. |
-| nothing set, no pinning | The node is split evenly among the ranks that share it. |
+| # | knob | effect |
+|---|---|---|
+| 1 | `DiFfRG_NUM_THREADS` (or `DIFFRG_NUM_THREADS`) | Taken **verbatim, per rank**. The escape hatch: it beats even a cluster allocation, on the grounds that someone who sets it means it. |
+| 2 | the launcher's allocation — `srun --cpus-per-task=N`, `mpirun --bind-to`, `taskset`, a cgroup | Taken verbatim, per rank. The **CPU affinity mask is authoritative** and is checked first: it is the only thing that describes the CPUs this process may actually run on, and it covers every launcher rather than just Slurm. It counts only when it is a *strict subset* of the machine — an unrestricted mask is what a workstation looks like, not an allocation. Where the job did not pin its tasks, `SLURM_CPUS_PER_TASK` is used, then `SLURM_JOB_CPUS_PER_NODE` / `SLURM_CPUS_ON_NODE` divided by `SLURM_NTASKS_PER_NODE`. |
+| 3 | `/discretization/threads` | Taken **verbatim, per rank**, with no division. Silently dividing it would make the setting mean "threads per node", which is neither what it says nor what it means in a serial run. |
+| 4 | `OMP_NUM_THREADS`, `DEAL_II_NUM_THREADS`, `KOKKOS_NUM_THREADS` | Thread counts meant for somebody else, honoured only when nothing above said anything. |
+| 5 | nothing set, no pinning | The CPUs this rank can see, split evenly among the node-local ranks that share them. |
+
+`DEAL_II_NUM_THREADS` needs one note. `dealii::MultithreadInfo::set_thread_limit()` takes the
+minimum with it on *every* call, so left alone it would silently cap tiers 1–3 from below and make
+the ordering above a lie. Where that would happen, `Init` removes it from the environment before the
+first `set_thread_limit()` call and says so in the warning.
+
+The resolved number is published as `DiFfRG::n_threads()` (`DiFfRG/common/threads.hh`), which is
+what the assembly schedule and the map scheduler's host/device split size themselves against. Read
+it from there rather than from `dealii::MultithreadInfo::n_threads()`: the latter is a mutable
+static that any `set_thread_limit()` call rewrites, so it is not necessarily the number DiFfRG
+resolved. The two are kept in agreement by construction.
+
+There is exactly **one CPU thread pool**, TBB's. Kokkos' host execution space is `Kokkos::Serial`
+(build option `KOKKOS_THREADS`, default `OFF`), so nothing spins beside the TBB arena — see
+`CMakeLists.txt` for why that matters even when no DiFfRG code uses the Kokkos host backend.
 
 #### GPUs per rank
 

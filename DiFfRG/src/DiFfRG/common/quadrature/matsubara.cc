@@ -15,55 +15,63 @@ namespace DiFfRG
      * @brief How far, in units of typical_E, the Monien rule is asked to reach in frequency.
      *
      * The Monien rule with N nodes resolves frequencies up to x_max ~ pi^2 T N^2 / 4, so this
-     * constant is what sets N. It exists purely to cover structure ABOVE typical_E: anything
-     * within a decade of typical_E (including the shape of a 4D-regulated kernel) is already at
-     * machine precision for a reach of ~50. What costs reach is a second, heavier scale in the
-     * frequency direction -- which only reaches the sum when the regulator does not cut p0.
+     * constant is what sets N.
      *
-     * Measured worst-case relative error (tests/common/quadrature/matsubara_convergence.cc,
-     * `[.study]`), over E/T in [0.3, 78], for a heavy mode 100x above typical_E:
+     * It is NOT merely a tail multiplier that a compactly supported summand could do without.
+     * Measured on the assembled 3+1D integrand of a 4D-regulated kernel -- which vanishes
+     * identically past R = sqrt(x_extent) k -- against the exact sum
+     * (tests/common/quadrature/matsubara_convergence.cc, `[.study]`, Part 13, PolynomialExp<8>,
+     * m^2 = -0.9 k^2; cell = nodes -> relative error):
      *
-     *   reach   2000 -> 8.4e-10     400 -> 1.1e-08     200 -> 1.3e-05     100 -> 3.5e-04
+     *   k/T     reach R (=1.23k)      reach 20k        reach 100k       reach 400k
+     *    30      8 -> 4.1e-05      20 -> 1.8e-16    40 -> 1.8e-16    74 -> 1.8e-16
+     *   100     12 -> 3.7e-03      34 -> 2.1e-15    68 -> 4.4e-15   128 -> 1.8e-15
+     *   300     18 -> 2.5e-02      54 -> 1.5e-08   116 -> 4.4e-15   128 -> 1.4e-15
      *
-     * and for everything within a decade of typical_E, all of these stay at ~1e-15.
+     * Sizing the rule to just SPAN the support fails by four to seven orders and gets worse with
+     * k/T: at T = k/300 the summand carries 58 significant Matsubara modes and an 18-node rule
+     * cannot reproduce them. The reach is what buys node DENSITY, not just extent, so it applies
+     * to a compact summand exactly as it does to an algebraic tail.
      *
-     * 400 keeps a 4x margin over a two-decade scale separation at ~1e-8 -- comfortably under the
-     * tolerances the stiff timesteppers run at -- for about half the nodes of the old 2000.
+     * 200 was picked on the real QCD_Nf2/avatars_3Dquark kernels, driven statically across the
+     * handover and compared against a converged reference (worst relative error over k/T < 46):
+     *
+     *   flow      reach 100   reach 200   reach 400   nodes @200 / @400
+     *   ZA3        2.6e-15     1.2e-15     2.1e-15         77 / 103
+     *   ZAqbq1     7.8e-05     1.1e-05     4.5e-06         77 / 103
+     *   Zq         3.6e-06     4.6e-07     1.3e-07         77 / 103
+     *
+     * The gluon and ghost flows are at machine precision for every reach; the two quark flows are
+     * not, because the 3D quark regulator leaves a genuine algebraic tail in p0 with a mass scale
+     * above k that the model does not report through set_typical_E. 200 is the smallest reach that
+     * stays below what the shipped code achieves on those flows while costing fewer nodes than it.
+     *
+     * The predecessor 400 was calibrated on Part 8, whose stressor is a mode two decades ABOVE
+     * typical_E -- i.e. on the sizing scale being wrong. With the heaviest scale reported honestly,
+     * Part 8b finds every reach from 20 to 400 indistinguishable on that stressor; the residual
+     * 8.4e-10 at E/T = 78 is the max_matsubara_size clamp, which all of them hit. A model that
+     * carries a scale far above k should say so through set_typical_E, which now survives set_k.
+     *
+     * Reach also decides where the rule stops fitting max_matsubara_size and the vacuum rule takes
+     * over: k/T = 187 at 200, against 93 at 400. It does NOT decide the accuracy of that handover,
+     * which is the 64-node tangent map's own quadrature error, 2.6e-8 on the assembled 3+1D
+     * integrand (Part 5) -- raise /integration/vacuum_quad_size to improve it (96 nodes: 4.4e-10).
+     *
      * The user-facing dial is /integration/matsubara_precision_factor, which multiplies this;
-     * setting it to 5 restores the pre-2026-08 *reach* of 2000 (it does not restore the old
-     * handover point, which is now decided by thermal_negligible_ratio below).
+     * setting it to 2 restores the pre-2026-08 reach of 400.
      */
-    constexpr double monien_reach = 400.;
-
-    /**
-     * @brief Above this E/T there is no thermal content left to resolve.
-     *
-     * The relative thermal correction to a pole at E is 2(coth(E/2T) - 1) ~ 4 exp(-E/T):
-     * 4.1e-9 at E/T = 20, 1.9e-13 at E/T = 30, 1.3e-15 at E/T = 35 (measured, same study).
-     * Past that the vacuum rule is the better answer, and with the tangent map it is also an
-     * accurate one.
-     */
-    constexpr double thermal_negligible_ratio = 30.;
+    constexpr double monien_reach = 200.;
   } // namespace
 
-  template <typename NT> int MatsubaraQuadrature<NT>::predict_size(const NT T, const NT typical_E, const int step)
+  template <typename NT>
+  int MatsubaraQuadrature<NT>::predict_size(const NT T, const NT typical_E, const double precision_factor,
+                                            const int step)
   {
-    if (is_close(T, NT{})) return -vacuum_quad_size;
-
-    const NT ratio = std::fabs(typical_E) / (std::fabs(T) + NT(1e-16)); // E/T
+    if (!(std::fabs(T) > NT(0))) return 0; // no sum to size; the T = 0 rule is an integral
 
     const NT E_max = monien_reach * precision_factor * std::fabs(typical_E);
-    int size = 5 + int(std::sqrt(4. * E_max / (M_PI * M_PI * std::fabs(T))));
-    size = (int)std::ceil(size / (double)step) * step;
-
-    // Hand over to the vacuum rule once the thermal content is gone -- but never to a rule that
-    // costs MORE than the one it replaces. Deciding this on physics rather than on the node
-    // ceiling matters: with a smaller reach the old `size > 2 * max_size` test would not fire
-    // until E/T ~ 390, and the band below it would run a clamped 128-node sum where a 64-node
-    // vacuum rule is both cheaper and, thermally, indistinguishable.
-    if (ratio > thermal_negligible_ratio && size > vacuum_quad_size) return -vacuum_quad_size;
-
-    return size;
+    const int size = 5 + int(std::sqrt(4. * E_max / (M_PI * M_PI * std::fabs(T))));
+    return (int)std::ceil(size / (double)step) * step;
   }
 
   template <typename NT>
@@ -74,7 +82,15 @@ namespace DiFfRG
     reinit(T, typical_E, step, min_size, max_size, vacuum_quad_size, precision_factor);
   }
 
-  template <typename NT> MatsubaraQuadrature<NT>::MatsubaraQuadrature() : m_size(0), vacuum_quad_size(64) {}
+  // Fully initialised: predict_size() and the rule builders read precision_factor, T and
+  // typical_E, so a default-constructed object that leaves them indeterminate answers questions
+  // with garbage rather than with the shipped defaults. These match the ConfigTree defaults, as
+  // the reinit() overloads' do.
+  template <typename NT>
+  MatsubaraQuadrature<NT>::MatsubaraQuadrature()
+      : T(0), typical_E(1), m_size(0), vacuum_quad_size(64), precision_factor(1)
+  {
+  }
 
   template <typename NT>
   void MatsubaraQuadrature<NT>::reinit(const NT T, const NT typical_E, const int step, const int min_size,
@@ -101,37 +117,34 @@ namespace DiFfRG
     this->T = T;
     this->typical_E = typical_E;
 
-    // Determine the number of nodes in the quadrature rule.
-    m_size = predict_size(T, typical_E, step);
-    // If m_size is negative, we use the vacuum quadrature
-    if (m_size < 0) {
-      m_size = abs(m_size);
+    // T = 0 is the caller's way of asking for the vacuum rule. Nothing else selects it: which
+    // rule a summand deserves is a question about the summand's spectrum, and the only scale
+    // handed in here is the one that sizes the reach. See QuadratureIntegrator_fT::refresh_matsubara.
+    if (is_close(T, NT{})) {
+      m_size = this->vacuum_quad_size;
       reinit_0();
       return;
     }
-    // If predict_size wants far more nodes than max_size allows, the truncated Monien
-    // quadrature would be less accurate than the vacuum fallback.
-    if (m_size > 2 * max_size) {
-      m_size = abs(vacuum_quad_size);
-      reinit_0();
-      return;
-    }
-    // Truncating to max_size silently violates the resolution law E_max ~ pi^2 N^2 T / 4 -- the
-    // rule then reaches (max_size/predicted)^2 less far in frequency than it was asked to, with
-    // no other symptom. Say so once; it means max_matsubara_size (or precision_factor) is
-    // fighting the sizing rather than bounding it.
-    if (m_size > max_size) {
+
+    const int wanted = predict_size(T, typical_E, this->precision_factor, step);
+    // Clamping violates the resolution law E_max ~ pi^2 N^2 T / 4 -- the rule then reaches
+    // (max_size/wanted)^2 less far in frequency than it was asked to, with no other symptom.
+    //
+    // QuadratureIntegrator_fT never gets here: it asks for the vacuum rule as soon as the Monien
+    // rule stops fitting the budget, which is the same test. This is the floor for a caller that
+    // reaches the storage directly and so makes no such choice. Say so once.
+    if (wanted > max_size) {
       static bool warned = false;
       if (!warned) {
         warned = true;
-        std::cerr << "MatsubaraQuadrature: requested size " << m_size << " exceeds max_matsubara_size " << max_size
+        std::cerr << "MatsubaraQuadrature: requested size " << wanted << " exceeds max_matsubara_size " << max_size
                   << " (T = " << T << ", typical_E = " << typical_E << "); the rule reaches "
-                  << (double(m_size) / max_size) * (double(m_size) / max_size)
+                  << (double(wanted) / max_size) * (double(wanted) / max_size)
                   << "x less far in frequency than the sizing asked for. Raise max_matsubara_size, or lower "
                      "matsubara_precision_factor if that reach is not needed. (warned once)\n";
       }
     }
-    m_size = std::max(min_size, std::min(max_size, m_size));
+    m_size = std::max(min_size, std::min(max_size, wanted));
 
     build_monien();
   }
