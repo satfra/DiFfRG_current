@@ -1,6 +1,7 @@
 import sys
 import uuid
 import glob
+import numpy as np
 
 def globalize(func):
   def result(*args, **kwargs):
@@ -9,5 +10,9 @@ def globalize(func):
   setattr(sys.modules[result.__module__], result.__name__, result)
   return result
 
-def get_all_sims(folder) -> list:
-    return glob.glob(folder + "*.pvd")
+def is_close(a, b):
+   # for strings, just compare them
+   if isinstance(a, str) or isinstance(b, str):
+       return a == b
+   # for numbers, use numpy's isclose
+   return np.isclose(a, b)

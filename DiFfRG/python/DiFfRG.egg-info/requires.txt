@@ -3,6 +3,7 @@ scipy
 matplotlib
 adaptive[notebook]
 pandas
+h5py
 seaborn
 jupyter_bokeh
 vtk
