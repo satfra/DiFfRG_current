@@ -96,7 +96,8 @@ namespace DiFfRG
     /** spdlog logger name, written to the "[%n]" field of the file records. */
     std::string logger_name = "run";
     /** Whether records are echoed to stdout. Side-channel logs keep this off so they do not
-     * interleave with the timestepper progress report. */
+     * interleave with the timestepper progress report. When on, how much reaches the console is decided by
+     * `/output/verbosity`; the file sink is unaffected. */
     bool console = true;
   };
 

@@ -376,4 +376,72 @@ TEST_CASE("Test HDF5 output", "[output][hdf5]")
       // Skip the explicit data verification here, we just wanted to know that the convenience method worked.
     }
   }
+
+  SECTION("Configuration tree")
+  {
+    // The path a real run takes: OutputSession hands OutputSettings::configuration_json to
+    // HDF5Output, which mirrors it into /config. This is what would catch OutputSettings ever
+    // narrowing what it serializes.
+    {
+      HDF5Output hdf5_output(tmp.string(), hdf5FileName, Config::OutputSettings(config).configuration_json);
+    }
+
+    auto file = DiFfRG::hdf5::File::open((tmp / hdf5FileName).string(), DiFfRG::hdf5::Access::ReadOnly);
+    auto root = file.root();
+
+    REQUIRE(root.has_group("config"));
+    auto config_group = root.open_group("config");
+
+    auto discretization = config_group.open_group("discretization");
+    CHECK(discretization.read_attribute<long long>("fe_order") == 3);
+    CHECK(discretization.read_attribute<double>("EoM_abs_tol") == 1e-10);
+    CHECK(discretization.open_group("grid").read_attribute<std::string>("x_grid") == "0:0.0001:1");
+    CHECK(discretization.open_group("adaptivity").read_attribute<double>("adapt_dt") == 1e-1);
+
+    CHECK(config_group.open_group("integration").read_attribute<long long>("x_quadrature_order") == 32);
+    CHECK(config_group.open_group("timestepping").read_attribute<double>("final_time") == 1.);
+    CHECK(config_group.open_group("timestepping").open_group("implicit").read_attribute<double>("rel_tol") == 1e-8);
+
+    // /config is the whole record; the raw JSON string is not duplicated alongside it.
+    CHECK_FALSE(root.has_attribute("configuration_json"));
+  }
+
+  SECTION("Run status attributes")
+  {
+    const auto status = [&](const std::string &file) {
+      auto h5 = DiFfRG::hdf5::File::open((tmp / file).string(), DiFfRG::hdf5::Access::ReadOnly);
+      auto root = h5.root();
+      return std::pair{root.read_attribute<int>("finished"), root.read_attribute<int>("crashed")};
+    };
+
+    SECTION("a file starts out unfinished")
+    {
+      {
+        HDF5Output hdf5_output(tmp.string(), hdf5FileName, Config::OutputSettings(config).configuration_json);
+      }
+      CHECK(status(hdf5FileName) == std::pair{0, 0});
+    }
+
+    SECTION("mark_finished records a clean end")
+    {
+      {
+        HDF5Output hdf5_output(tmp.string(), hdf5FileName, Config::OutputSettings(config).configuration_json);
+        hdf5_output.scalar("d", 1.0);
+        hdf5_output.flush(0.0);
+        hdf5_output.mark_finished(/* crashed = */ false);
+      }
+      CHECK(status(hdf5FileName) == std::pair{1, 0});
+    }
+
+    SECTION("a crashed run is still finished, and says so")
+    {
+      {
+        HDF5Output hdf5_output(tmp.string(), hdf5FileName, Config::OutputSettings(config).configuration_json);
+        hdf5_output.scalar("d", 1.0);
+        hdf5_output.flush(0.0);
+        hdf5_output.mark_finished(/* crashed = */ true);
+      }
+      CHECK(status(hdf5FileName) == std::pair{1, 1});
+    }
+  }
 }

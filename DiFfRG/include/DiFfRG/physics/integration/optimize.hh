@@ -46,9 +46,9 @@ namespace DiFfRG
     }
 
     while (eps1 > x_extent_tolerance || eps2 > x_extent_tolerance) {
-      const double I1 = LoopIntegrals::integrate<double, 4>(optimize_x, quadrature_1, x_extent, 1.);
-      const double I2 = LoopIntegrals::integrate<double, 4>(optimize_x, quadrature_2, 2. * x_extent, 1.);
-      const double I3 = LoopIntegrals::integrate<double, 4>(optimize_x, quadrature_3, 10. * x_extent, 1.);
+      const double I1 = LoopIntegrals::integrate<double, dim>(optimize_x, quadrature_1, x_extent, 1.);
+      const double I2 = LoopIntegrals::integrate<double, dim>(optimize_x, quadrature_2, 2. * x_extent, 1.);
+      const double I3 = LoopIntegrals::integrate<double, dim>(optimize_x, quadrature_3, 10. * x_extent, 1.);
 
       if (std::abs((I2 - I1) / I1) > eps1 && std::abs((I2 - I3) / I2) > eps2)
         decrease_counter++;

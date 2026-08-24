@@ -1,5 +1,6 @@
 // DiFfRG
 #include <DiFfRG/common/complex_math.hh>
+#include <DiFfRG/common/config_tree.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/data/hdf5_output.hh>
 
@@ -13,6 +14,48 @@
 
 namespace DiFfRG
 {
+  void write_config_tree(DiFfRG::hdf5::Group &group, const json::value &value)
+  {
+    if (!value.is_object()) return;
+
+    for (const auto &entry : value.get_object()) {
+      const std::string key(entry.key());
+      const json::value &child = entry.value();
+
+      switch (child.kind()) {
+      case json::kind::object: {
+        // Attribute names are not path-resolved, so only a subgroup's name is constrained.
+        if (key.find('/') != std::string::npos)
+          throw std::runtime_error("write_config_tree: the configuration key '" + key +
+                                   "' contains '/', which cannot be an HDF5 group name.");
+        auto subgroup = group.create_group(key);
+        write_config_tree(subgroup, child);
+        break;
+      }
+      case json::kind::double_:
+        group.write_attribute(key, child.get_double());
+        break;
+      case json::kind::int64:
+        group.write_attribute(key, static_cast<long long>(child.get_int64()));
+        break;
+      case json::kind::uint64:
+        group.write_attribute(key, static_cast<unsigned long long>(child.get_uint64()));
+        break;
+      case json::kind::string:
+        group.write_attribute(key, std::string(child.get_string()));
+        break;
+      case json::kind::bool_:
+        group.write_attribute(key, static_cast<int>(child.get_bool()));
+        break;
+      case json::kind::array:
+        group.write_attribute(key, json::serialize(child));
+        break;
+      case json::kind::null:
+        break;
+      }
+    }
+  }
+
   HDF5Output::HDF5Output(const std::string top_folder, const std::string _output_name,
                          const std::string &configuration_json)
       : top_folder(make_folder(top_folder)),
@@ -25,7 +68,17 @@ namespace DiFfRG
     h5_file = DiFfRG::hdf5::File::open(path.string(), DiFfRG::hdf5::Access::Truncate);
 
     auto root = h5_file.root();
-    root.write_attribute("configuration_json", configuration_json);
+    // Both are set by mark_finished() when the session closes. Written here so that a reader
+    // never meets a missing key, and so that a run that never gets to close -- SIGKILL, OOM, a
+    // node eviction -- is left saying finished = 0, which an absent attribute could not
+    // distinguish from a file written before these existed.
+    root.write_attribute("finished", 0);
+    root.write_attribute("crashed", 0);
+    // The configuration, as a browsable group tree.
+    {
+      auto config_group = root.create_group("config");
+      write_config_tree(config_group, json::parse(configuration_json));
+    }
     // Created once, here. Frames reopen them through their own HDF5FrameContext, so no handle
     // is retained between frames.
     root.create_group("scalars");
@@ -112,6 +165,18 @@ namespace DiFfRG
   void HDF5Output::drain()
   {
     if (writer != nullptr) writer->drain();
+  }
+
+  void HDF5Output::mark_finished(const bool crashed)
+  {
+    // Opening the file is an HDF5 call, so no frame may be in flight -- HDF5 is not thread safe
+    // in this build.
+    drain();
+    open_file();
+    auto root = h5_file.root();
+    root.overwrite_attribute("finished", 1);
+    root.overwrite_attribute("crashed", crashed ? 1 : 0);
+    close_file();
   }
 
   DiFfRG::hdf5::File &HDF5Output::get_file()

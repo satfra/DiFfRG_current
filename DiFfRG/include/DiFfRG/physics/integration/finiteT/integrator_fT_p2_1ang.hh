@@ -31,7 +31,8 @@ namespace DiFfRG
       static constexpr bool matsubara_split = kernel_has_matsubara_split<KERNEL>;
 
       template <typename... T>
-      static KOKKOS_FORCEINLINE_FUNCTION NT kernel_finite_extent(const ctype q, const ctype cos, const ctype q0, const T &...t)
+      static KOKKOS_FORCEINLINE_FUNCTION NT kernel_finite_extent(const ctype q, const ctype cos, const ctype q0,
+                                                                 const T &...t)
       {
         using namespace DiFfRG::compute;
 
@@ -47,7 +48,6 @@ namespace DiFfRG
         const ctype int_element = powr<sdim - 1>(q); // from p integral
         return int_prefactor * int_element * KERNEL::kernel_tail(q, cos, q0, t...);
       }
-
 
       template <typename... T>
       static KOKKOS_FORCEINLINE_FUNCTION NT kernel(const ctype q, const ctype cos, const ctype q0, const T &...t)
@@ -111,10 +111,6 @@ namespace DiFfRG
         Base::set_allow_exact_matsubara_sum(config.get_bool("/integration/force_exact_matsubara_sum", false));
       if (config.contains("/integration/matsubara_extent_margin"))
         Base::set_matsubara_extent_margin(config.get_double("/integration/matsubara_extent_margin", 1.));
-      // Default is the flow's own x_order; this only exists to raise it if the frequency direction
-      // turns out to need more resolution than the radial one.
-      if (config.contains("/integration/matsubara_freq_order"))
-        Base::set_frequency_order(config.get_uint("/integration/matsubara_freq_order", 0));
     }
 
     Integrator_fT_p2_1ang(QuadratureProvider &quadrature_provider, const ConfigTree &config)
@@ -152,7 +148,7 @@ namespace DiFfRG
     {
       this->k = k;
       Base::set_grid_extents({0, 0.}, {std::sqrt(x_extent) * k, 1.});
-      Base::set_typical_E(k); // update typical energy
+      Base::set_k(k);
       // The spatial grid is already cut at sqrt(x_extent) * k because the regulator dies there;
       // the summand's support in FREQUENCY is the same ball, so the exact Matsubara sum can be cut
       // at the same radius. See QuadratureIntegrator_fT::set_frequency_cutoff.

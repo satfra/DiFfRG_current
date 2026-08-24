@@ -315,7 +315,7 @@ TEST_CASE("GMRES leaves factorization-only diagnostics unavailable", "[timestepp
   solver.init(system.matrix);
   JacobianFactorizationDiagnostics diagnostics;
 
-  factorize_with_diagnostics(solver, system.matrix, diagnostics);
+  factorize_with_diagnostics(solver, system.matrix, diagnostics, true);
 
   CHECK(std::isnan(diagnostics.factorization_ms));
   CHECK(std::isnan(diagnostics.factorization_success));
@@ -340,7 +340,7 @@ TEST_CASE("Failed UMFPack factorization is recorded", "[timestepping][jacobian_d
   solver.init(matrix);
   JacobianFactorizationDiagnostics diagnostics;
 
-  CHECK_THROWS(factorize_with_diagnostics(solver, matrix, diagnostics));
+  CHECK_THROWS(factorize_with_diagnostics(solver, matrix, diagnostics, true));
   CHECK(diagnostics.factorization_ms >= 0.);
   CHECK(diagnostics.factorization_success == 0.);
   CHECK(std::isnan(diagnostics.scaled_rcond_estimate));

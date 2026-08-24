@@ -96,7 +96,8 @@ bool run_hybrid(const std::string &test_name, double expected_precision, double 
                        {"minimal_dt", 1e-7},
                        {"maximal_dt", impl_max_dt},
                        {"abs_tol", 1e-10},
-                       {"rel_tol", impl_rel_tol}}}}},
+                       {"rel_tol", impl_rel_tol},
+                       {"jacobian_diagnostics", true}}}}},
                    {"output", {{"verbosity", 0}, {"vtk", false}}}});
 
   try {

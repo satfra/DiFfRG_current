@@ -96,7 +96,7 @@ TEST_CASE("Stress test p0 sums/integrals", "[integration][quadrature]")
   // Check on TBB
   SECTION("TBB") { check(TBB_exec(), (double)0); }
   // Check on Threads
-  SECTION("Threads") { check(Threads_exec(), (double)0); }
+  SECTION("Threads") { check(KokkosHost_exec(), (double)0); }
   // Check on GPU
   SECTION("GPU") { check(GPU_exec(), (double)0); }
 }

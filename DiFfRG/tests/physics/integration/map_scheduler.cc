@@ -238,12 +238,25 @@ TEST_CASE("Fill thresholds are hardware-derived and picked per execution space",
 
   // The selector keys on memory_space, so the host-backed spaces must all agree with each other and
   // GPU_exec must follow whichever space it actually resolves to in this build.
-  CHECK(map_fill_threshold<Threads_exec>() == host);
+  CHECK(map_fill_threshold<KokkosHost_exec>() == host);
   CHECK(map_fill_threshold<TBB_exec>() == host);
   if constexpr (std::is_same_v<typename GPU_exec::memory_space, CPU_memory>)
     CHECK(map_fill_threshold<GPU_exec>() == host); // CUDA-less build: GPU_exec *is* the host space
   else
     CHECK(map_fill_threshold<GPU_exec>() == device);
+
+  // The host threshold counts TBB workers, so it must track DiFfRG's thread budget -- and must
+  // keep tracking it after the first call. Caching it in a function-local static would freeze
+  // whatever value the first caller happened to see, which for a caller running before Init would
+  // be the wrong one for the rest of the process.
+  const unsigned int budget = n_threads();
+  if (budget > 1) {
+    set_thread_limit(budget / 2);
+    CHECK(internal::host_fill_threshold() < host);
+    CHECK(internal::host_fill_threshold() == double(n_threads()) * internal::host_grain);
+    set_thread_limit(budget);
+    CHECK(internal::host_fill_threshold() == host);
+  }
 
   // An explicit override replaces both, which is what DIFFRG_MAP_QUANTUM has to mean.
   auto &scheduler = MapScheduler::instance();

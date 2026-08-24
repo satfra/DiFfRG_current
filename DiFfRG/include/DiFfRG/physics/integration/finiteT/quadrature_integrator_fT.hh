@@ -73,7 +73,7 @@ namespace DiFfRG
                             const std::array<QuadratureType, sdim> quadrature_type, const ctype T = 1,
                             const ctype typical_E = 1)
         : space(quadrature_provider.template next_execution_space<ExecutionSpace>()),
-          quadrature_provider(quadrature_provider), T(T), typical_E(typical_E),
+          quadrature_provider(quadrature_provider), T(T), m_k(typical_E),
           // A SPLIT kernel does not carry `matsubara_finite_extent` -- only its finite-extent HALF
           // has that property -- so it has to opt in here too, or its expensive half would keep
           // running the Gaussian rule and the split would be pure overhead.
@@ -109,11 +109,45 @@ namespace DiFfRG
       refresh_matsubara();
     }
 
+    /**
+     * @brief The RG scale, which is the DEFAULT frequency scale.
+     *
+     * Called by the wrappers on every RG step. It no longer overwrites a model-supplied
+     * `typical_E` -- it is only consulted when none was set -- so a model may set `typical_E`
+     * once, at construction, and have it survive. Before, it could not: `set_typical_E` was public
+     * on every wrapper but `set_k` clobbered it on the next RG step, with no diagnostic.
+     */
+    void set_k(const ctype k)
+    {
+      if (is_close(m_k, k, 1e-6 * std::fabs(k))) return;
+      m_k = k;
+      refresh_matsubara();
+    }
+
+    /**
+     * @brief The heaviest scale the summand carries, if the model knows it. Zero means "only k".
+     *
+     * This REPLACES `k` as the scale the frequency rule is built from; `k` is only the default
+     * for a model that never says. It sizes the Monien rule (which must reach past it), scales the
+     * vacuum rule's tangent map (which spends its nodes around it), and decides between the two.
+     *
+     * Report the scale whose thermal content matters, not simply the largest one present: a
+     * summand carrying a scale below `typical_E` has its thermal content silently discarded when
+     * the rule hands over to the integral, and nothing here can know it was there.
+     *
+     * Set it from replicated or all-reduced data only. It sizes the frequency rule, so a value
+     * derived from rank-local data on a distributed grid makes the node count differ between
+     * ranks and the result stop being reproducible across decompositions.
+     */
     void set_typical_E(const ctype typical_E)
     {
-      if (is_close(this->typical_E, typical_E, 1e-4 * T + std::numeric_limits<ctype>::epsilon() * 10)) return;
+      // Relative to the quantity compared, and matched to the tolerance the provider's cache uses
+      // to decide two rules are the same. The old guard scaled with T, an unrelated scale: at
+      // small T it collapsed to ~1e-15 and rebuilt on every step, and at T >> typical_E it
+      // swallowed real changes and made typical_E a staircase in k.
+      if (is_close(m_typical_E_user, typical_E, 1e-6 * std::fabs(typical_E))) return;
 
-      this->typical_E = typical_E;
+      m_typical_E_user = typical_E;
       refresh_matsubara();
     }
 
@@ -150,24 +184,6 @@ namespace DiFfRG
       refresh_matsubara();
     }
 
-    /**
-     * @brief Order of the finite-interval frequency rule; 0 (the default) means the SPATIAL order.
-     *
-     * A summand of finite extent has no tail, and for a 4D regulator `p0` and `|q|` sit in
-     * `p0^2 + |q|^2 <= x_extent k^2` symmetrically -- so the order that resolves the spatial radius
-     * is the natural one for the frequency too, and `grid_size[0]` (the flow's `x_order`) is the
-     * default rather than the `vacuum_quad_size` that sized the tangent map.
-     */
-    void set_frequency_order(const size_t order)
-    {
-      if (m_freq_order == order) return;
-      m_freq_order = order;
-      refresh_matsubara();
-    }
-
-    /// The order actually in use for the finite-interval rule.
-    size_t frequency_order() const { return m_freq_order != 0 ? m_freq_order : grid_size[0]; }
-
     void set_matsubara_extent_margin(const ctype margin)
     {
       if (!(margin > ctype(0)) || is_close(m_extent_margin, margin)) return;
@@ -200,8 +216,8 @@ namespace DiFfRG
      * QuadratureIntegrator::map). Applying an lvalue tuple binds references instead.
      */
     template <typename XArr, typename PosArr, typename ArgTuple>
-    KOKKOS_INLINE_FUNCTION static NT node_value(const XArr &x, const PosArr &pos, const ArgTuple &args,
-                                                     const ctype xt, const ctype wt, const bool is_tail)
+    KOKKOS_INLINE_FUNCTION static NT node_value(const XArr &x, const PosArr &pos, const ArgTuple &args, const ctype xt,
+                                                const ctype wt, const bool is_tail)
     {
       NT out{};
       device::apply(
@@ -590,12 +606,35 @@ namespace DiFfRG
 
   private:
     /**
-     * @brief Re-select and re-fetch the frequency rule after T, typical_E or the cutoff changed.
+     * @brief Re-select and re-fetch the frequency rule after T, k, typical_E or the cutoff changed.
      *
-     * Two rules are on offer and the choice is purely one of cost: for a summand of finite extent
-     * the exact sum is never *less* accurate than the Gaussian rule -- it is the sum
-     * itself -- so whichever has fewer nodes wins. That crossover is crossed during a flow (the
-     * exact sum shrinks with k while the Monien rule grows), which is why this is decided per RG step.
+     * Three rules are on offer, and every choice between them is made here rather than inside
+     * MatsubaraQuadrature, because they are questions about the summand's SPECTRUM and only this
+     * class is told about it (through `k` and `typical_E`).
+     *
+     * 1. Sum or integral, and with how many nodes -- one question, decided on cost alone. Size the
+     *    Monien rule to reach past `typical_E`; if that fits `max_matsubara_size`, sum. If it does
+     *    not, a clamped sum would no longer reach the structure it was sized for, so integrate
+     *    instead. The error that switch commits is then bounded by a budget the user sets, rather
+     *    than by a constant claiming the thermal content has died away -- a claim that was wrong
+     *    by nine orders for a 4D-regulated summand, which has no pole for the `4 exp(-E/T)` law to
+     *    apply to (Part 13 of the convergence study: 3.1e-4 measured against 1.9e-13 claimed).
+     *
+     *    What the switch still cannot see is a scale in the summand LIGHTER than `typical_E`: the
+     *    integral discards its thermal content and nothing here knows it is there. That is the
+     *    reason `typical_E` is worth setting, and the reason it should be the scale that matters
+     *    rather than the largest one present.
+     *
+     * 2. Which scale to size against. The reach must cover `typical_E` with a multiplier well
+     *    above one, or the rule places no nodes where the structure lives. This is not a tail
+     *    multiplier a compactly supported summand could do without: sizing a rule to merely SPAN
+     *    the support of a 4D-regulated kernel is wrong by 4e-5 at k/T = 30 and by 2.5e-2 at
+     *    k/T = 300 (Part 13). Reach buys node density. See `monien_reach`.
+     *
+     * 3. Exact or Gaussian, for a summand of finite extent. Purely cost: the exact sum is never
+     *    *less* accurate than the Gaussian rule -- it is the sum itself -- so whichever has fewer
+     *    nodes wins. The crossover is crossed during a flow (the exact sum shrinks with k while
+     *    the Monien rule grows), which is why this is decided per RG step.
      */
     void refresh_matsubara()
     {
@@ -613,7 +652,20 @@ namespace DiFfRG
 
       using mem_space = typename ExecutionSpace::memory_space;
 
-      const auto &standard = quadrature_provider.template matsubara_rule<ctype>(T, typical_E);
+      // The one scale the frequency rule is built from: what the model said, or k if it never
+      // said anything. `k` is the DEFAULT, not a floor -- a model that reports a scale is reporting
+      // the summand's spectrum, and the integrator must not second-guess it. `max(k, typical_E)`
+      // was tried and is wrong: it makes the budget test below fire on a scale the summand does
+      // not have, sending a genuinely thermal sum to the vacuum rule.
+      const ctype E = m_typical_E_user > ctype(0) ? m_typical_E_user : m_k;
+
+      // Choice 1: build the Monien rule if it fits the budget, otherwise integrate. A T of zero is
+      // how the provider is asked for the vacuum rule; it takes the same scale, since its tangent
+      // map spends its nodes around E and covers the algebraic tail by construction.
+      const bool vacuum = !(T > ctype(0)) || quadrature_provider.template matsubara_predicted_size<ctype>(T, E) >
+                                                 quadrature_provider.max_matsubara_size();
+
+      const auto &standard = quadrature_provider.template matsubara_rule<ctype>(vacuum ? ctype(0) : T, E);
       m_using_exact = false;
 
       // Which rule the finite-extent side should run on. Never *less* accurate than the Gaussian
@@ -642,9 +694,11 @@ namespace DiFfRG
           // an exact zero, and weights those most heavily. Over a finite interval there is nothing
           // to reach for, so plain Gauss-Legendre at the SPATIAL order is both cheaper and more
           // accurate. (If `standard` is the Monien rule instead, the sum is genuinely thermal and
-          // must not be replaced by an integral, so leave it alone.)
+          // must not be replaced by an integral, so leave it alone.) The order is the SPATIAL one:
+          // for a 4D regulator p0 and |q| enter the support p0^2 + |q|^2 <= x_extent k^2 on the
+          // same footing, so the order that resolves the radius resolves the frequency too.
           fe_rule = &quadrature_provider.template matsubara_finite_interval<ctype>(m_extent_margin * m_freq_cutoff,
-                                                                                   frequency_order());
+                                                                                   grid_size[0]);
         }
       }
 
@@ -747,7 +801,11 @@ namespace DiFfRG
     device::array<Kokkos::View<const ctype *, typename ExecutionSpace::memory_space>, sdim> nodes;
     device::array<Kokkos::View<const ctype *, typename ExecutionSpace::memory_space>, sdim> weights;
 
-    ctype T, typical_E;
+    ctype T;
+    /// The RG scale, which is the frequency scale unless the model set one; see set_k().
+    ctype m_k;
+    /// The model's heaviest scale, or zero if it never said; see set_typical_E().
+    ctype m_typical_E_user = 0;
     /// Support boundary in frequency; zero means "unknown", which disables the exact sum.
     ctype m_freq_cutoff = 0;
     /// Nodes before the boundary of the concatenated axis of a split kernel; 0 when not split.
@@ -757,8 +815,6 @@ namespace DiFfRG
     Kokkos::View<ctype *, typename ExecutionSpace::memory_space> m_split_nodes, m_split_weights;
     bool m_allow_exact = false;
     bool m_using_exact = false;
-    /// 0 = follow the spatial order; see set_frequency_order().
-    size_t m_freq_order = 0;
     ctype m_extent_margin = 1;
 
     Kokkos::View<const ctype *, typename ExecutionSpace::memory_space> matsubara_nodes;
@@ -783,9 +839,9 @@ namespace DiFfRG
 
   template <int dim, typename NT, typename KERNEL>
   class QuadratureIntegrator_fT<dim, NT, KERNEL, TBB_exec>
-      : public QuadratureIntegrator_fT<dim, NT, KERNEL, Threads_exec>
+      : public QuadratureIntegrator_fT<dim, NT, KERNEL, KokkosHost_exec>
   {
-    using Base = QuadratureIntegrator_fT<dim, NT, KERNEL, Threads_exec>;
+    using Base = QuadratureIntegrator_fT<dim, NT, KERNEL, KokkosHost_exec>;
 
   public:
     /**
@@ -909,8 +965,8 @@ namespace DiFfRG
     using Base::nodes;
     using Base::weights;
 
+    using Base::m_k;
     using Base::T;
-    using Base::typical_E;
   };
 
 } // namespace DiFfRG

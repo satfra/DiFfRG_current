@@ -62,9 +62,11 @@ The same injection works for a model pre-assembly hook: store a `DiagnosticPort`
 coefficient when the hook computes it. The port is thread-safe and serializes a complete record atomically. It should
 not be used for high-volume field output; add that data to an `OutputFrame` instead.
 
-All implicit time steppers write one record per Jacobian callback to `<run>_jacobian_diagnostics.csv`. Runs with a
-separate dense variable Jacobian also write `<run>_variable_jacobian_diagnostics.csv`; both records use the same
-`jacobian_build_id`. The numeric `stepper_kind` values are `0=IDA`, `1=IDA+Boost RK`, `2=IDA+Boost ABM`, `3=implicit
+With `/timestepping/implicit/jacobian_diagnostics` set to `true` (it defaults to `false`), all implicit time steppers
+write one record per Jacobian callback to `<run>_jacobian_diagnostics.csv`. Runs with a separate dense variable Jacobian
+also write `<run>_variable_jacobian_diagnostics.csv`; both records use the same `jacobian_build_id`. The switch is off by
+default because the records are not free: each one costs a full sweep over the assembled Jacobian, and a factorizing
+linear solver additionally estimates the condition number, which takes several extra triangular solves per build. The numeric `stepper_kind` values are `0=IDA`, `1=IDA+Boost RK`, `2=IDA+Boost ABM`, `3=implicit
 Euler`, and `4=TRBDF2`. The `stage` values are `0=main`, `1=TR`, and `2=BDF2`.
 
 For implicit Euler and TRBDF2, `step` counts accepted steps and `retry_index` counts rejected attempts at the same step.
@@ -143,6 +145,10 @@ Each run reports where its output time went, at `info` level, when the session f
 the potential reconstructions inside it, `build_patches`, the data filter, the HDF5 write and open/close, queue
 waiting, and the writer thread's own total, which is listed separately because it is off the critical path. Set
 `/output/verbosity` to 3 or more to additionally get one line and one `output_timings.csv` row per frame.
+
+`/output/verbosity` also decides how much of the run log reaches the console: at 0 only warnings and errors, at 1 the
+ordinary `info` messages, from 2 upwards also `debug` records such as the per-frame timing line. The `.log` file is
+never gated this way and always receives everything `/output/log_level` admits.
 
 Only MPI rank zero creates sinks. A full queue blocks the producer rather than dropping scientific data. At the end of
 each timestepper `run()`, the session drains pending writers and reports worker errors without closing, so the same

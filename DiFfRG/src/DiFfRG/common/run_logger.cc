@@ -70,17 +70,26 @@ namespace DiFfRG
     thread_pool = std::make_shared<spdlog::details::thread_pool>(queue_size, 1);
 
     std::vector<spdlog::sink_ptr> sinks;
+    auto level = settings.log_level;
     if (options.console) {
+      // The console follows /output/verbosity: at 0 only problems are reported, at 1 the ordinary run messages, from
+      // 2 upwards also the per-frame diagnostics. The file sink is never gated this way and keeps everything.
+      const auto console_level = settings.verbosity <= 0   ? spdlog::level::warn
+                                 : settings.verbosity == 1 ? spdlog::level::info
+                                                           : spdlog::level::debug;
       auto console = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
       console->set_pattern("[%v]");
+      console->set_level(console_level);
       sinks.push_back(console);
+      // The logger level filters ahead of every sink, so it has to admit whatever the console asks for.
+      level = std::min(level, console_level);
     }
-    sinks.push_back(std::make_shared<spdlog::sinks::basic_file_sink_mt>(
-        path.run_file(options.file_suffix, ".log").string(), true));
+    sinks.push_back(
+        std::make_shared<spdlog::sinks::basic_file_sink_mt>(path.run_file(options.file_suffix, ".log").string(), true));
 
     logger = std::make_shared<spdlog::async_logger>(options.logger_name, sinks.begin(), sinks.end(), thread_pool,
                                                     spdlog::async_overflow_policy::block);
-    logger->set_level(settings.log_level);
+    logger->set_level(level);
 
     // The file sink is only flushed on shutdown, so without this a killed job loses the tail of its log and a running
     // job shows a log file that lags by a full stdio buffer.

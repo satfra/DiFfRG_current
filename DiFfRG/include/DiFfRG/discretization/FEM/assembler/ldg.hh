@@ -133,7 +133,7 @@ namespace DiFfRG
       /// @see FEMAssembler::schedule_for
       AssemblySchedule schedule_for(const double cost_ns) const
       {
-        return make_assembly_schedule(n_owned_cells, dealii::MultithreadInfo::n_threads(), cost_ns,
+        return make_assembly_schedule(n_owned_cells, DiFfRG::n_threads(), cost_ns,
                                       schedule_overrides);
       }
 
@@ -145,12 +145,12 @@ namespace DiFfRG
         n_owned_cells = n_owned;
         if (unchanged) return;
 
-        const uint n_threads = dealii::MultithreadInfo::n_threads();
+        const uint threads = DiFfRG::n_threads();
         const auto cheap = schedule_for(assembly_cost::local_fe);
         const auto integral = schedule_for(assembly_cost::momentum_integral);
         log_port.info("FEM: Assembling {} cells on {} threads -- {}x{} workers/cells for a cheap cell loop, "
                       "{}x{} for an integral one.",
-                      n_owned_cells, n_threads, cheap.queue_length, cheap.chunk_size, integral.queue_length,
+                      n_owned_cells, threads, cheap.queue_length, cheap.chunk_size, integral.queue_length,
                       integral.chunk_size);
       }
 
