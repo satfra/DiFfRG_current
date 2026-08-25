@@ -24,6 +24,7 @@
 #include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
 #include <DiFfRG/discretization/common/assembly_schedule.hh>
 #include <DiFfRG/discretization/common/eom.hh>
+#include <DiFfRG/discretization/common/solution_sample.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
 
 namespace DiFfRG
@@ -79,6 +80,7 @@ namespace DiFfRG
           schedule_overrides(AssemblyScheduleOverrides::from_config(config)),
           EoM_cell(*(dof_handler.active_cell_iterators().end())),
           old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
+          old_extractor_cell(*(dof_handler.active_cell_iterators().end())),
           EoM_config(DiFfRG::internal::resolve_eom_config(dof_handler, Config::EoMConfig(config)))
     {
       // reinit() refreshes this, but a derived assembler is not obliged to call it before its
@@ -166,6 +168,35 @@ namespace DiFfRG
       timings_variable_jacobian.push_back(timer.wall_time());
     };
 
+    /// The FE solution and the reconstructed raw potential at one point.
+    struct PointEvaluation {
+      std::vector<Vector<NumberType>> values{Vector<NumberType>(Components::count_fe_functions())};
+      std::vector<std::vector<Tensor<1, dim, NumberType>>> gradients{
+          std::vector<Tensor<1, dim, NumberType>>(Components::count_fe_functions())};
+      std::vector<std::vector<Tensor<2, dim, NumberType>>> hessians{
+          std::vector<Tensor<2, dim, NumberType>>(Components::count_fe_functions())};
+      RawPotentialEvaluation<dim, NumberType> potential;
+      /// Kept for the shape values the extractor jacobian needs.
+      std::shared_ptr<FEValues<dim>> fe_values;
+    };
+
+    /// @brief Evaluate the FE solution and the raw potential at @p x, which lies in @p cell.
+    template <typename RawPotential>
+    PointEvaluation evaluate_at(const Point<dim> &x, const typename DoFHandler<dim>::cell_iterator &cell,
+                                const VectorType &solution_global, const RawPotential &raw_potential) const
+    {
+      PointEvaluation evaluation;
+      evaluation.fe_values = std::make_shared<FEValues<dim>>(
+          mapping, fe, mapping.transform_real_to_unit_cell(cell, x),
+          update_values | update_gradients | update_quadrature_points | update_JxW_values | update_hessians);
+      evaluation.fe_values->reinit(cell);
+      evaluation.fe_values->get_function_values(solution_global, evaluation.values);
+      evaluation.fe_values->get_function_gradients(solution_global, evaluation.gradients);
+      evaluation.fe_values->get_function_hessians(solution_global, evaluation.hessians);
+      evaluation.potential = evaluate_raw_potential(raw_potential, mapping, x);
+      return evaluation;
+    }
+
     void readouts(OutputFrame<dim, VectorType> &data_out, const VectorType &solution_global,
                   const VectorType &variables) const
     {
@@ -182,37 +213,28 @@ namespace DiFfRG
               EoM_config, EoM_minimum_guess);
           if (EoM_result.potential) EoM_minimum_guess = EoM_result.potential->minimum;
           const auto EoM = EoM_result.point;
-          auto EoM_unit = mapping.transform_real_to_unit_cell(EoM_cell, EoM);
 
-          Vector<typename VectorType::value_type> values(dof_handler.get_fe().n_components());
-          std::vector<Tensor<1, dim, typename VectorType::value_type>> gradients(dof_handler.get_fe().n_components());
-
-          FEValues<dim> fe_v(mapping, fe, EoM_unit,
-                             update_values | update_gradients | update_quadrature_points | update_JxW_values |
-                                 update_hessians);
-          fe_v.reinit(EoM_cell);
-
-          std::vector<Vector<NumberType>> solution{Vector<NumberType>(Components::count_fe_functions())};
-          std::vector<std::vector<Tensor<1, dim, NumberType>>> solution_grad{
-              std::vector<Tensor<1, dim, NumberType>>(Components::count_fe_functions())};
-          std::vector<std::vector<Tensor<2, dim, NumberType>>> solution_hess{
-              std::vector<Tensor<2, dim, NumberType>>(Components::count_fe_functions())};
-          fe_v.get_function_values(solution_global, solution);
-          fe_v.get_function_gradients(solution_global, solution_grad);
-          fe_v.get_function_hessians(solution_global, solution_hess);
-
-          const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
+          // The readout is always at this readout's EoM. The extractors may not be: a model that
+          // defines extractor_point reads them elsewhere, and dt_variables must see the same values
+          // here as it does during assembly.
+          const auto readout_solution = evaluate_at(EoM, EoM_cell, solution_global, raw_potential);
+          const auto &potential = readout_solution.potential;
 
           std::array<NumberType, Components::count_extractors()> __extracted_data{{}};
-          if constexpr (Components::count_extractors() > 0)
-            model.extract(__extracted_data, EoM,
-                          e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables, potential.value,
-                                potential.gradient, potential.hessian));
+          if constexpr (Components::count_extractors() > 0) {
+            const auto [x, cell] = resolve_extractor_point(EoM, EoM_cell, solution_global);
+            const auto extractor_solution = evaluate_at(x, cell, solution_global, raw_potential);
+            model.extract(__extracted_data, x,
+                          e_tie(extractor_solution.values[0], extractor_solution.gradients[0],
+                                extractor_solution.hessians[0], nothing, variables,
+                                extractor_solution.potential.value, extractor_solution.potential.gradient,
+                                extractor_solution.potential.hessian));
+          }
           const auto &extracted_data = __extracted_data;
 
           outputter(data_out, EoM,
-                    e_tie(solution[0], solution_grad[0], solution_hess[0], extracted_data, variables, potential.value,
-                          potential.gradient, potential.hessian));
+                    e_tie(readout_solution.values[0], readout_solution.gradients[0], readout_solution.hessians[0],
+                          extracted_data, variables, potential.value, potential.gradient, potential.hessian));
           data_out.attach_eom_potential(std::move(EoM_result));
         } else {
           internal::validate_readout_helper_arity<decltype(args)...>();
@@ -220,6 +242,25 @@ namespace DiFfRG
       };
       model.readouts_multiple(helper, data_out);
       data_out.attach_raw_potential(std::move(raw_potential));
+    }
+
+    /**
+     * @brief Where the model wants its extractors evaluated, and the cell holding that point.
+     *
+     * The EoM itself when the model does not define `extractor_point` -- and then this costs
+     * nothing, because building the SolutionSample is inside the `if constexpr`.
+     */
+    std::pair<Point<dim>, typename DoFHandler<dim>::cell_iterator>
+    resolve_extractor_point(const Point<dim> &EoM_point, const typename DoFHandler<dim>::cell_iterator &EoM_cell_,
+                            [[maybe_unused]] const VectorType &solution_global) const
+    {
+      if constexpr (HasExtractorPoint<Model, dim, NumberType>) {
+        const auto sample = make_solution_sample(solution_global, dof_handler, mapping);
+        const auto point = model.template extractor_point<dim, NumberType>(EoM_point, sample);
+        if (point == EoM_point) return {EoM_point, EoM_cell_};
+        return {point, GridTools::find_active_cell_around_point(dof_handler, point)};
+      } else
+        return {EoM_point, EoM_cell_};
     }
 
     void extract(std::array<NumberType, Components::count_extractors()> &data, const VectorType &solution_global,
@@ -240,32 +281,16 @@ namespace DiFfRG
         this->EoM = EoM;
         this->EoM_cell = EoM_cell;
       }
-      auto EoM_unit = mapping.transform_real_to_unit_cell(EoM_cell, EoM);
-
-      Vector<typename VectorType::value_type> values(dof_handler.get_fe().n_components());
-      std::vector<Tensor<1, dim, typename VectorType::value_type>> gradients(dof_handler.get_fe().n_components());
-
-      FEValues<dim> fe_v(mapping, fe, EoM_unit,
-                         update_values | update_gradients | update_quadrature_points | update_JxW_values |
-                             update_hessians);
-      fe_v.reinit(EoM_cell);
-
-      std::vector<Vector<NumberType>> solution{Vector<NumberType>(Components::count_fe_functions())};
-      std::vector<std::vector<Tensor<1, dim, NumberType>>> solution_grad{
-          std::vector<Tensor<1, dim, NumberType>>(Components::count_fe_functions())};
-      std::vector<std::vector<Tensor<2, dim, NumberType>>> solution_hess{
-          std::vector<Tensor<2, dim, NumberType>>(Components::count_fe_functions())};
-      fe_v.get_function_values(solution_global, solution);
-      fe_v.get_function_gradients(solution_global, solution_grad);
-      fe_v.get_function_hessians(solution_global, solution_hess);
 
       const auto raw_potential = reconstruct_raw_potential(
           solution_global, dof_handler, mapping,
           [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
-      const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
-      model.extract(data, EoM,
-                    e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables, potential.value,
-                          potential.gradient, potential.hessian));
+
+      const auto [x, cell] = resolve_extractor_point(EoM, EoM_cell, solution_global);
+      const auto e = evaluate_at(x, cell, solution_global, raw_potential);
+      model.extract(data, x,
+                    e_tie(e.values[0], e.gradients[0], e.hessians[0], nothing, variables, e.potential.value,
+                          e.potential.gradient, e.potential.hessian));
     }
 
     bool jacobian_extractors(FullMatrix<NumberType> &extractor_jacobian, const VectorType &solution_global,
@@ -290,56 +315,45 @@ namespace DiFfRG
           EoM_minimum_guess);
       EoM = EoM_result.point;
       if (EoM_result.potential) EoM_minimum_guess = EoM_result.potential->minimum;
-      auto EoM_unit = mapping.transform_real_to_unit_cell(EoM_cell, EoM);
+
+      // The extractor jacobian couples to the dofs of the cell the extractors are actually
+      // evaluated in, which is the extractor point's cell, not the EoM's.
+      const auto [x, cell] = resolve_extractor_point(EoM, EoM_cell, solution_global);
       // Agreed, not rank-local: new_cell gates rebuild_jacobian_sparsity(), which is now
       // collective (SparsityTools::distribute_sparsity_pattern). A rank that skipped the rebuild
       // while another performed it would sit out a collective the others are inside, and the run
       // would hang rather than fail. any_of, not all_of: if ANY rank needs the rebuild, every rank
       // must enter it. On a replicated mesh the ranks agree anyway -- this makes that a guarantee
       // rather than a coincidence, and costs one bool reduction per EoM update.
-      bool new_cell = MPI::any_of(discretization.get_communicator(), old_EoM_cell != EoM_cell);
+      bool new_cell = MPI::any_of(discretization.get_communicator(), old_extractor_cell != cell);
       old_EoM_cell = EoM_cell;
-
-      Vector<typename VectorType::value_type> values(dof_handler.get_fe().n_components());
-      std::vector<Tensor<1, dim, typename VectorType::value_type>> gradients(dof_handler.get_fe().n_components());
-
-      FEValues<dim> fe_v(mapping, fe, EoM_unit,
-                         update_values | update_gradients | update_quadrature_points | update_JxW_values |
-                             update_hessians);
-      fe_v.reinit(EoM_cell);
-
-      const uint n_dofs = fe_v.get_fe().n_dofs_per_cell();
-      if (new_cell) {
-        extractor_dof_indices.resize(n_dofs);
-        EoM_cell->get_dof_indices(extractor_dof_indices);
-        rebuild_jacobian_sparsity();
-      }
-
-      std::vector<Vector<NumberType>> solution{Vector<NumberType>(Components::count_fe_functions())};
-      std::vector<std::vector<Tensor<1, dim, NumberType>>> solution_grad{
-          std::vector<Tensor<1, dim, NumberType>>(Components::count_fe_functions())};
-      std::vector<std::vector<Tensor<2, dim, NumberType>>> solution_hess{
-          std::vector<Tensor<2, dim, NumberType>>(Components::count_fe_functions())};
-      fe_v.get_function_values(solution_global, solution);
-      fe_v.get_function_gradients(solution_global, solution_grad);
-      fe_v.get_function_hessians(solution_global, solution_hess);
+      old_extractor_cell = cell;
 
       const auto raw_potential = reconstruct_raw_potential(
           solution_global, dof_handler, mapping,
           [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
-      const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
+      const auto e = evaluate_at(x, cell, solution_global, raw_potential);
+      const auto &fe_v = *e.fe_values;
+      const auto &potential = e.potential;
+
+      const uint n_dofs = fe_v.get_fe().n_dofs_per_cell();
+      if (new_cell) {
+        extractor_dof_indices.resize(n_dofs);
+        cell->get_dof_indices(extractor_dof_indices);
+        rebuild_jacobian_sparsity();
+      }
 
       extractor_jacobian_u = 0;
       extractor_jacobian_du = 0;
       extractor_jacobian_ddu = 0;
-      model.template jacobian_extractors<0>(extractor_jacobian_u, EoM,
-                                            e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables,
+      model.template jacobian_extractors<0>(extractor_jacobian_u, x,
+                                            e_tie(e.values[0], e.gradients[0], e.hessians[0], nothing, variables,
                                                   potential.value, potential.gradient, potential.hessian));
-      model.template jacobian_extractors<1>(extractor_jacobian_du, EoM,
-                                            e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables,
+      model.template jacobian_extractors<1>(extractor_jacobian_du, x,
+                                            e_tie(e.values[0], e.gradients[0], e.hessians[0], nothing, variables,
                                                   potential.value, potential.gradient, potential.hessian));
-      model.template jacobian_extractors<2>(extractor_jacobian_ddu, EoM,
-                                            e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables,
+      model.template jacobian_extractors<2>(extractor_jacobian_ddu, x,
+                                            e_tie(e.values[0], e.gradients[0], e.hessians[0], nothing, variables,
                                                   potential.value, potential.gradient, potential.hessian));
 
       if (extractor_jacobian.m() != Components::count_extractors() || extractor_jacobian.n() != n_dofs)
@@ -434,6 +448,8 @@ namespace DiFfRG
     const Config::EoMConfig EoM_config;
     mutable Point<dim> EoM;
     mutable std::optional<Point<dim>> EoM_minimum_guess;
+    /// Where the extractors are evaluated. Equal to EoM unless the model defines extractor_point.
+    typename DoFHandler<dim>::cell_iterator old_extractor_cell;
     FullMatrix<NumberType> extractor_jacobian;
     FullMatrix<NumberType> extractor_jacobian_u;
     FullMatrix<NumberType> extractor_jacobian_du;

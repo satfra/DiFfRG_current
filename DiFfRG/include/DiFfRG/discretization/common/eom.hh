@@ -27,6 +27,7 @@
 #include <deal.II/meshworker/mesh_loop.h>
 #include <deal.II/numerics/fe_field_function.h>
 
+#include <DiFfRG/discretization/common/cell_geometry.hh>
 #include <DiFfRG/discretization/common/eom_config.hh>
 #include <DiFfRG/discretization/common/serial_mirror.hh>
 #include <DiFfRG/discretization/data/output_timings.hh>
@@ -185,32 +186,6 @@ namespace DiFfRG
       for (uint d = 0; d < dim; ++d)
         distance += std::abs(a[d] - b[d]);
       return distance;
-    }
-
-    template <int dim>
-    double face_normal_cell_width(const typename dealii::DoFHandler<dim>::active_cell_iterator &cell,
-                                  const uint face_no)
-    {
-      const double face_measure = cell->face(face_no)->measure();
-      if (!(face_measure > 0.) || !std::isfinite(face_measure))
-        throw std::runtime_error("EoM potential reconstruction encountered an invalid face measure.");
-
-      const double width = cell->measure() / face_measure;
-      if (!(width > 0.) || !std::isfinite(width))
-        throw std::runtime_error("EoM potential reconstruction encountered an invalid face-normal cell width.");
-      return width;
-    }
-
-    template <int dim> double minimum_face_normal_cell_width(const dealii::DoFHandler<dim> &dof_handler)
-    {
-      double minimum_width = std::numeric_limits<double>::max();
-      for (const auto &cell : dof_handler.active_cell_iterators())
-        for (uint face_no = 0; face_no < cell->n_faces(); ++face_no)
-          minimum_width = std::min(minimum_width, face_normal_cell_width<dim>(cell, face_no));
-
-      if (!(minimum_width < std::numeric_limits<double>::max()))
-        throw std::runtime_error("EoM potential reconstruction could not determine an initial cell width.");
-      return minimum_width;
     }
 
     template <int dim>

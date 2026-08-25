@@ -13,6 +13,7 @@
 
 // DiFfRG
 #include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
+#include <DiFfRG/discretization/common/solution_sample.hh>
 #include <DiFfRG/model/ad.hh>
 #include <DiFfRG/model/component_descriptor.hh>
 #include <DiFfRG/model/fv_boundaries.hh>
@@ -283,6 +284,15 @@ namespace DiFfRG
        */
       //@{
 
+      /**
+       * @brief Read data off the FE solution at a single point and hand it to the Variables.
+       *
+       * This is the only bridge from the field-space (FE) sector into the Variables sector: the
+       * values stored in @p result are what `dt_variables` sees under `get<"extractors">(sol)`.
+       *
+       * @param x The point the extractors are evaluated at. By default this is the EoM; a model can
+       *          choose otherwise by defining `extractor_point` (see DiFfRG::HasExtractorPoint).
+       */
       template <int dim, typename Vector, typename Solutions>
       void extract([[maybe_unused]] Vector &result, [[maybe_unused]] const Point<dim> &x,
                    [[maybe_unused]] const Solutions &sol) const
@@ -387,6 +397,14 @@ namespace DiFfRG
         return gradient;
       }
 
+      /**
+       * @brief Relocate the point found by the EoM search, given the solution values there.
+       *
+       * Pointwise, and therefore limited to decisions that can be made from the located point alone
+       * -- e.g. freezing the EoM once it jumps backwards. A model that has to inspect the solution
+       * profile as a whole to decide where its extractors should be read instead defines
+       * `extractor_point`; see DiFfRG::HasExtractorPoint.
+       */
       template <int dim, typename Vector> Point<dim> EoM_postprocess(const Point<dim> &EoM, const Vector &) const
       {
         return EoM;

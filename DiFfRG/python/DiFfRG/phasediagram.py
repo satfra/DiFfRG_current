@@ -8,13 +8,13 @@ from DiFfRG.utilities import globalize
 from DiFfRG.utilities import is_close
 import DiFfRG.file_io as io
 
-def get_all_sims(folder) -> list:
+def get_all_sims(folder, pool_size=16) -> list:
     files_hdf5 = glob.glob(folder + "*.h5")
-    sims = [io.SimulationData(f) for f in files_hdf5]
-    return sims
+    pool = Pool(pool_size)
+    return pool.map(io.SimulationData, files_hdf5)
 
-def get_all_finished_sims(folder) -> list:
-    sims = get_all_sims(folder)
+def get_all_finished_sims(folder, pool_size=16) -> list:
+    sims = get_all_sims(folder, pool_size)
     finished_sims = [s for s in sims if s.is_finished()]
     return finished_sims
 
