@@ -40,6 +40,7 @@
 #include <DiFfRG/discretization/common/assembly_schedule.hh>
 #include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
 #include <DiFfRG/discretization/common/eom.hh>
+#include <DiFfRG/discretization/common/solution_sample.hh>
 #include <DiFfRG/discretization/common/la_policy.hh>
 #include <DiFfRG/physics/integration/map_scheduler.hh>
 
@@ -753,14 +754,19 @@ namespace DiFfRG
               auto solution = reconstruct_readout_solution(EoM_cell, solution_global, EoM);
               const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
 
+              // The readout is always at this readout's EoM. The extractors may not be: a model that
+              // defines extractor_point reads them elsewhere, and dt_variables must see the same
+              // values here as it does during assembly.
               std::array<NumberType, Components::count_extractors()> extracted_data{{}};
               if constexpr (Components::count_extractors() > 0) {
+                const auto [x, cell] = resolve_extractor_point(EoM, EoM_cell, solution_global);
                 const auto extractor_solution =
-                    reconstruct_readout_solution(EoM_cell, solution_global, EoM, /*with_hessians=*/true);
-                model.extract(extracted_data, EoM,
+                    reconstruct_readout_solution(cell, solution_global, x, /*with_hessians=*/true);
+                const auto extractor_potential = evaluate_raw_potential(raw_potential, mapping, x);
+                model.extract(extracted_data, x,
                               e_tie(extractor_solution.values, extractor_solution.gradients,
-                                    extractor_solution.hessians, nothing, variables, potential.value,
-                                    potential.gradient, potential.hessian));
+                                    extractor_solution.hessians, nothing, variables, extractor_potential.value,
+                                    extractor_potential.gradient, extractor_potential.hessian));
               }
               outputter(data_out, EoM,
                         e_tie(solution.values, solution.gradients, solution.hessians, extracted_data, variables,
@@ -779,6 +785,44 @@ namespace DiFfRG
          * single EoM-point evaluation in extract(): it is a plain unlimited difference, not part of the
          * scheme, and must not be wired into the flux path.
          */
+        /**
+         * @brief Where the model wants its extractors evaluated, and the cell holding that point.
+         *
+         * The EoM itself when the model does not define `extractor_point` -- and then this costs
+         * nothing, because building the SolutionSample is inside the `if constexpr`.
+         *
+         * Values are read straight off the dofs -- with one dof per cell they are the cell averages
+         * already -- and gradients are recovered by central differences afterwards. Deliberately not
+         * the Reconstructor's limited slopes: reconstructing per cell means a stencil fill over the
+         * whole mesh on every residual evaluation, which is serial work that dominates the assembly
+         * (it cost a factor of four here). The limited slope stays where it belongs, in the flux
+         * path. The FE path in make_solution_sample() is no use for either, since DG0 shape
+         * functions have zero gradient.
+         */
+        std::pair<Point, Iterator> resolve_extractor_point(const Point &EoM_point, const Iterator &EoM_cell_,
+                                                           [[maybe_unused]] const VectorType &solution_global) const
+        {
+          if constexpr (HasExtractorPoint<Model, dim, NumberType>) {
+            // One dof per cell, so the value at the cell centre is that dof -- no reconstruction
+            // needed, and none wanted: this runs on every residual evaluation, and a per-cell
+            // stencil fill over the whole mesh is serial work that would dominate the assembly.
+            std::vector<types::global_dof_index> cell_dofs(n_components);
+            auto sample = make_solution_sample<dim, NumberType>(
+                dof_handler, mapping, n_components,
+                [&](const Iterator &cell, const Point &, std::vector<NumberType> &values,
+                    std::vector<Tensor<1, dim, NumberType>> &) {
+                  cell->get_dof_indices(cell_dofs);
+                  for (uint c = 0; c < n_components; ++c)
+                    values[c] = solution_global[cell_dofs[c]];
+                });
+            sample.compute_central_difference_gradients();
+            const auto point = model.template extractor_point<dim, NumberType>(EoM_point, sample);
+            if (point == EoM_point) return {EoM_point, EoM_cell_};
+            return {point, GridTools::find_active_cell_around_point(dof_handler, point)};
+          } else
+            return {EoM_point, EoM_cell_};
+        }
+
         ReadoutSolution reconstruct_readout_solution(const Iterator &cell, const VectorType &solution_global,
                                                      const Point &x, bool with_hessians = false) const
         {
@@ -857,12 +901,13 @@ namespace DiFfRG
             this->EoM_cell = EoM_cell;
           }
 
-          auto solution = reconstruct_readout_solution(EoM_cell, solution_global, EoM, /*with_hessians=*/true);
+          const auto [x, cell] = resolve_extractor_point(EoM, EoM_cell, solution_global);
+          auto solution = reconstruct_readout_solution(cell, solution_global, x, /*with_hessians=*/true);
           const auto raw_potential = reconstruct_raw_potential(
               solution_global, dof_handler, mapping,
               [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
-          const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
-          model.extract(data, EoM,
+          const auto potential = evaluate_raw_potential(raw_potential, mapping, x);
+          model.extract(data, x,
                         e_tie(solution.values, solution.gradients, solution.hessians, nothing, variables,
                               potential.value, potential.gradient, potential.hessian));
         }
