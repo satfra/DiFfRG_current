@@ -116,60 +116,111 @@ if(DiFfRG_TEST)
   enable_testing()
   add_subdirectory(tests)
 
-  # Mathematica tests — detect Wolfram executable
-  set(WOLFRAM_EXE "")
-  execute_process(
-    COMMAND bash -c "which wolframscript"
-    OUTPUT_VARIABLE WOLFRAM_EXE
-    ERROR_QUIET)
-  if(WOLFRAM_EXE STREQUAL "")
-    execute_process(
-      COMMAND bash -c "which wolfram"
-      OUTPUT_VARIABLE WOLFRAM_EXE
-      ERROR_QUIET)
-  endif()
-  if(WOLFRAM_EXE STREQUAL "")
-    execute_process(
-      COMMAND bash -c "which math"
-      OUTPUT_VARIABLE WOLFRAM_EXE
-      ERROR_QUIET)
-  endif()
-  if(DEFINED ENV{WOLFRAM_SCRIPT})
-    set(WOLFRAM_EXE $ENV{WOLFRAM_SCRIPT})
-  endif()
-  string(REPLACE "\n" "" WOLFRAM_EXE "${WOLFRAM_EXE}")
+  # AUMP launches every test leaf in a fresh wolframscript process, so a
+  # wolfram/math kernel executable alone is not sufficient.
+  # On macOS, find_program otherwise prefers the application-bundle launcher
+  # over the command-line executable on PATH. The launcher aborts when used as
+  # a script runner outside Finder.
+  set(_AUMP_CMAKE_FIND_APPBUNDLE ${CMAKE_FIND_APPBUNDLE})
+  set(CMAKE_FIND_APPBUNDLE NEVER)
+  find_program(AUMP_WOLFRAMSCRIPT_EXECUTABLE NAMES wolframscript)
+  set(CMAKE_FIND_APPBUNDLE ${_AUMP_CMAKE_FIND_APPBUNDLE})
+  unset(_AUMP_CMAKE_FIND_APPBUNDLE)
 
-  if(NOT WOLFRAM_EXE STREQUAL "")
-    message(STATUS "Found Wolfram executable: ${WOLFRAM_EXE}")
+  if(AUMP_WOLFRAMSCRIPT_EXECUTABLE)
+    message(STATUS "Found wolframscript: ${AUMP_WOLFRAMSCRIPT_EXECUTABLE}")
 
-    set(MATHEMATICA_TEST_RUNNER
-        ${CMAKE_CURRENT_SOURCE_DIR}/Mathematica/DiFfRG/Tests/TestRunner.m)
+    # Preserve an explicitly configured kernel. Otherwise probe the common
+    # install layouts also recognized by AUMP's command-line wrapper.
+    set(AUMP_WOLFRAM_ENVIRONMENT "")
+    set(AUMP_SHELL_ENVIRONMENT "")
+    if(DEFINED ENV{WOLFRAMSCRIPT_KERNELPATH})
+      set(AUMP_WOLFRAM_KERNEL "$ENV{WOLFRAMSCRIPT_KERNELPATH}")
+    elseif(DEFINED ENV{WolframKernel})
+      set(AUMP_WOLFRAM_KERNEL "$ENV{WolframKernel}")
+    else()
+      find_program(
+        AUMP_WOLFRAM_KERNEL
+        NAMES WolframKernel
+        HINTS
+          /Applications/Wolfram.app/Contents/MacOS
+          /Applications/Mathematica.app/Contents/MacOS
+          /usr/local/Wolfram/WolframEngine/14.3/Executables
+          /usr/local/Wolfram/WolframEngine/14.2/Executables
+          /usr/local/Wolfram/WolframEngine/14.1/Executables
+          /usr/local/Wolfram/WolframEngine/14.0/Executables
+          /usr/local/Wolfram/Mathematica/14.3/Executables
+          /usr/local/Wolfram/Mathematica/14.2/Executables
+          /usr/local/Wolfram/Mathematica/14.1/Executables
+          /usr/local/Wolfram/Mathematica/14.0/Executables)
+    endif()
+    if(AUMP_WOLFRAM_KERNEL)
+      set(AUMP_WOLFRAM_ENVIRONMENT
+          "WOLFRAMSCRIPT_KERNELPATH=${AUMP_WOLFRAM_KERNEL}")
+      set(AUMP_SHELL_ENVIRONMENT
+          "\"WOLFRAMSCRIPT_KERNELPATH=${AUMP_WOLFRAM_KERNEL}\" ")
+      message(STATUS "AUMP Wolfram kernel: ${AUMP_WOLFRAM_KERNEL}")
+    endif()
 
+    set(AUMP_RUNNER
+        ${CMAKE_CURRENT_SOURCE_DIR}/Mathematica/AUMP/Runner.wls)
+    set(AUMP_RUNTIME
+        ${CMAKE_CURRENT_SOURCE_DIR}/Mathematica/AUMP/AUMP.m
+        ${CMAKE_CURRENT_SOURCE_DIR}/Mathematica/AUMP/CreateTest.m
+        ${AUMP_RUNNER}
+        ${CMAKE_CURRENT_SOURCE_DIR}/Mathematica/AUMP/Worker.wls
+        ${CMAKE_CURRENT_SOURCE_DIR}/Mathematica/AUMP/aump
+        ${CMAKE_CURRENT_SOURCE_DIR}/Mathematica/AUMP/LICENSE
+        ${CMAKE_CURRENT_SOURCE_DIR}/Mathematica/AUMP/VENDORED.md)
+    set(MATHEMATICA_TEST_DIR
+        ${CMAKE_CURRENT_SOURCE_DIR}/Mathematica/DiFfRG/Tests)
+    set(MATHEMATICA_TEST_INIT ${MATHEMATICA_TEST_DIR}/init.m)
+    set(MATHEMATICA_TEST_LOG
+        ${CMAKE_CURRENT_BINARY_DIR}/mathematica-test.log)
+    file(GLOB MATHEMATICA_TEST_FILES CONFIGURE_DEPENDS
+         ${MATHEMATICA_TEST_DIR}/*Tests.m)
+
+    set(AUMP_TEST_ARGUMENTS
+        --project-root ${CMAKE_CURRENT_SOURCE_DIR}
+        --wl-path ${CMAKE_CURRENT_SOURCE_DIR}/Mathematica
+        --init ${MATHEMATICA_TEST_INIT}
+        --pattern *Tests.m
+        --timeout 300)
+
+    # bash pipefail preserves AUMP's non-zero status while tee keeps the
+    # existing human-readable build log.
     add_custom_target(
       mathematica-test
-      COMMAND ${WOLFRAM_EXE} -script ${MATHEMATICA_TEST_RUNNER} | tee
-              ${CMAKE_CURRENT_BINARY_DIR}/mathematica-test.log
-      DEPENDS ${MATHEMATICA_TEST_RUNNER}
-      COMMENT "Running Mathematica tests"
+      COMMAND
+        bash -o pipefail -c
+        "\"${CMAKE_COMMAND}\" -E env ${AUMP_SHELL_ENVIRONMENT}\"${AUMP_WOLFRAMSCRIPT_EXECUTABLE}\" -script \"${AUMP_RUNNER}\" --path \"${MATHEMATICA_TEST_DIR}\" --project-root \"${CMAKE_CURRENT_SOURCE_DIR}\" --wl-path \"${CMAKE_CURRENT_SOURCE_DIR}/Mathematica\" --init \"${MATHEMATICA_TEST_INIT}\" --pattern '*Tests.m' --timeout 300 2>&1 | tee \"${MATHEMATICA_TEST_LOG}\""
+      DEPENDS ${AUMP_RUNTIME} ${MATHEMATICA_TEST_INIT}
+              ${MATHEMATICA_TEST_FILES}
+      COMMENT "Running Mathematica tests with AUMP"
       VERBATIM)
 
     # Run a single test file or directory:
     #   make mathematica-test-single FILE=ExportTests.m
-    # Note: $(FILE) is expanded by Make at build time, not by CMake at
-    # configure time. VERBATIM is intentionally omitted so Make resolves it.
+    # Note: $(FILE) is expanded by Make at build time.
     add_custom_target(
       mathematica-test-single
-      COMMAND ${WOLFRAM_EXE} -script ${MATHEMATICA_TEST_RUNNER} $(FILE) | tee
-              ${CMAKE_CURRENT_BINARY_DIR}/mathematica-test.log
-      DEPENDS ${MATHEMATICA_TEST_RUNNER}
-      COMMENT "Running Mathematica test")
+      COMMAND
+        bash -o pipefail -c
+        "\"${CMAKE_COMMAND}\" -E env ${AUMP_SHELL_ENVIRONMENT}\"${AUMP_WOLFRAMSCRIPT_EXECUTABLE}\" -script \"${AUMP_RUNNER}\" --path \"${MATHEMATICA_TEST_DIR}/$(FILE)\" --project-root \"${CMAKE_CURRENT_SOURCE_DIR}\" --wl-path \"${CMAKE_CURRENT_SOURCE_DIR}/Mathematica\" --init \"${MATHEMATICA_TEST_INIT}\" --pattern '*Tests.m' --timeout 300 2>&1 | tee \"${MATHEMATICA_TEST_LOG}\""
+      DEPENDS ${AUMP_RUNTIME} ${MATHEMATICA_TEST_INIT}
+              ${MATHEMATICA_TEST_FILES}
+      COMMENT "Running Mathematica test with AUMP"
+      VERBATIM)
 
     add_test(
       NAME mathematica_tests
-      COMMAND ${WOLFRAM_EXE} -script ${MATHEMATICA_TEST_RUNNER}
-      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/Mathematica/DiFfRG/Tests)
+      COMMAND ${CMAKE_COMMAND} -E env ${AUMP_WOLFRAM_ENVIRONMENT}
+              ${AUMP_WOLFRAMSCRIPT_EXECUTABLE} -script ${AUMP_RUNNER}
+              --path ${MATHEMATICA_TEST_DIR} ${AUMP_TEST_ARGUMENTS}
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    set_tests_properties(mathematica_tests PROPERTIES TIMEOUT 1800)
   else()
-    message(STATUS "wolframscript/wolfram/math not found — Mathematica tests disabled")
+    message(STATUS "wolframscript not found — Mathematica tests disabled")
   endif()
 endif()
 

@@ -1,53 +1,33 @@
+Needs["AUMP`"];
 Needs["DiFfRG`CodeTools`Directory`"];
 
-tests = {};
-
-AppendTo[tests,
-    TestCreate[
+AUMPTestCase["flowDir uses the default flow name", {"directory"},
+    AUMPCHECKEqual[
         DiFfRG`CodeTools`Directory`flowDir,
-        If[$Notebooks, NotebookDirectory[], Directory[]] <> "/flows",
-        TestID -> "Test flowDir default value"
-    ]
+        If[$Notebooks, NotebookDirectory[], Directory[]] <> "/flows"
+    ];
 ];
 
-AppendTo[tests,
-    TestCreate[
-        (
-            DiFfRG`CodeTools`Directory`SetFlowName["myNewFlows"];
-            DiFfRG`CodeTools`Directory`flowDir
-        ),
-        If[$Notebooks, NotebookDirectory[], Directory[]] <> "/" <> "myNewFlows",
-        TestID -> "Test SetFlowName"
-    ]
+AUMPTestCase["SetFlowName updates flowDir", {"directory"},
+    DiFfRG`CodeTools`Directory`SetFlowName["myNewFlows"];
+    AUMPCHECKEqual[
+        DiFfRG`CodeTools`Directory`flowDir,
+        If[$Notebooks, NotebookDirectory[], Directory[]] <> "/myNewFlows"
+    ];
 ];
 
-AppendTo[tests,
-    TestCreate[
-        Quiet[CheckAbort[DiFfRG`CodeTools`Directory`SetFlowName[123]; "no-abort", "aborted"]],
-        "aborted",
-        TestID -> "SetFlowName with non-String argument should abort"
-    ]
+AUMPTestCase["SetFlowName rejects a non-String argument", {"directory", "abort"},
+    AUMPCHECKAbort[DiFfRG`CodeTools`Directory`SetFlowName[123]];
 ];
 
-AppendTo[tests,
-    TestCreate[
-        Quiet[CheckAbort[DiFfRG`CodeTools`Directory`SetFlowDirectory[123]; "no-abort", "aborted"]],
-        "aborted",
-        TestID -> "SetFlowDirectory with non-String argument should abort"
-    ]
+AUMPTestCase["SetFlowDirectory rejects a non-String argument", {"directory", "abort"},
+    AUMPCHECKAbort[DiFfRG`CodeTools`Directory`SetFlowDirectory[123]];
 ];
 
-(* flowName is global package state and every test file shares one kernel session, so the
-   SetFlowName test above would otherwise leak "myNewFlows" into every file that sorts after
-   this one -- MakeKernelSecondOrderADTests then writes its kernel to <tmp>/myNewFlows/ while
-   looking for it under <tmp>/flows/. Restore the default. *)
-AppendTo[tests,
-    TestCreate[
-        (
-            DiFfRG`CodeTools`Directory`SetFlowName["flows"];
-            DiFfRG`CodeTools`Directory`flowDir
-        ),
-        If[$Notebooks, NotebookDirectory[], Directory[]] <> "/flows",
-        TestID -> "SetFlowName restores the default flow name for later test files"
-    ]
+AUMPTestCase["SetFlowName restores the default flow name", {"directory"},
+    DiFfRG`CodeTools`Directory`SetFlowName["flows"];
+    AUMPCHECKEqual[
+        DiFfRG`CodeTools`Directory`flowDir,
+        If[$Notebooks, NotebookDirectory[], Directory[]] <> "/flows"
+    ];
 ];
