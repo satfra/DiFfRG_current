@@ -1,55 +1,73 @@
-Needs["DiFfRG`CodeTools`TemplateParameterGeneration`"]
+Needs["AUMP`"];
+Needs["DiFfRG`CodeTools`TemplateParameterGeneration`"];
 
-sortList[l_] := Sort[l];
+AUMPTestCase["TemplateParameterGeneration supports GPU float kernels", {"template-parameters"},
+    AUMPCHECKEqual[
+        TemplateParameterGeneration[<|"d" -> 2, "Name" -> "MyKernel", "ctype" -> "float", "Device" -> "GPU"|>],
+        {"2", "float", "MyKernel_kernel<Regulator>", "DiFfRG::GPU_exec"}
+    ];
+];
 
-tests = {
-     TestCreate[
-          TemplateParameterGeneration[<|"d" -> 2, "Name" -> "MyKernel", "ctype" -> "float", "Device" -> "GPU"|>],
-          {"2", "float", "MyKernel_kernel<Regulator>", "DiFfRG::GPU_exec"}
-     ],
-     TestCreate[
-          TemplateParameterGeneration[<|"d" -> 3, "Name" -> "Integrator", "ctype" -> "double", "Device" -> "TBB"|>],
-          {"3", "double", "Integrator_kernel<Regulator>", "DiFfRG::TBB_exec"}
-     ],
-     TestCreate[
-          TemplateParameterGeneration[<|"d" -> 3, "Name" -> "Integrator", "ctype" -> "double", "Device" -> "TBB"|>, {"double" -> "autodiff::real"}],
-          {"3", "autodiff::real", "Integrator_kernel<Regulator>", "DiFfRG::TBB_exec"}
-     ],
-     TestCreate[
-          TemplateParameterGeneration[<|"d" -> 3, "Name" -> "pion", "ctype" -> "DiFfRG::complex<double>", "Device" -> "TBB"|>, {"DiFfRG::complex<double>" -> "cxReal<2, double>"}],
-          {"3", "cxReal<2, double>", "pion_kernel<Regulator>", "DiFfRG::TBB_exec"},
-          TestID -> "Second-order complex AD template parameter generation"
-     ],
-     TestCreate[
-          TemplateParameterGeneration[<|"d" -> 1, "Name" -> "Test", "ctype" -> "float", "Device" -> "Threads"|>],
-          {"1", "float", "Test_kernel<Regulator>", "DiFfRG::Threads_exec"}
-     ],
-     TestCreate[
-          TemplateParameterGeneration[<|"d" -> 4, "Name" -> "DefaultType", "Device" -> "TBB"|>],
-          {"4", "double", "DefaultType_kernel<Regulator>", "DiFfRG::TBB_exec"}
-     ],
-     TestCreate[
-          TemplateParameterGeneration[<|"d" -> 2, "Name" -> "DefaultDevice", "ctype" -> "double"|>],
-          {"2", "double", "DefaultDevice_kernel<Regulator>", "DiFfRG::TBB_exec"}
-     ],
-     TestCreate[
-          Quiet[CheckAbort[TemplateParameterGeneration[<|"Name" -> "X", "Device" -> "TBB"|>]; "no-abort", "aborted"]],
-          "aborted",
-          TestID -> "Missing d key should abort"
-     ],
-     TestCreate[
-          Quiet[CheckAbort[TemplateParameterGeneration[<|"d" -> 2, "Device" -> "TBB"|>]; "no-abort", "aborted"]],
-          "aborted",
-          TestID -> "Missing Name key should abort"
-     ],
-     TestCreate[
-          Quiet[CheckAbort[TemplateParameterGeneration[<|"d" -> 2, "Name" -> "X", "Device" -> "BadDevice"|>]; "no-abort", "aborted"]],
-          "aborted",
-          TestID -> "Invalid Device should abort"
-     ],
-     TestCreate[
-          Quiet[CheckAbort[TemplateParameterGeneration["not an association"]; "no-abort", "aborted"]],
-          "aborted",
-          TestID -> "Wrong arg type should abort"
-     ]
-};
+AUMPTestCase["TemplateParameterGeneration supports TBB double kernels", {"template-parameters"},
+    AUMPCHECKEqual[
+        TemplateParameterGeneration[<|"d" -> 3, "Name" -> "Integrator", "ctype" -> "double", "Device" -> "TBB"|>],
+        {"3", "double", "Integrator_kernel<Regulator>", "DiFfRG::TBB_exec"}
+    ];
+];
+
+AUMPTestCase["TemplateParameterGeneration applies real AD replacements", {"template-parameters", "ad"},
+    AUMPCHECKEqual[
+        TemplateParameterGeneration[
+            <|"d" -> 3, "Name" -> "Integrator", "ctype" -> "double", "Device" -> "TBB"|>,
+            {"double" -> "autodiff::real"}
+        ],
+        {"3", "autodiff::real", "Integrator_kernel<Regulator>", "DiFfRG::TBB_exec"}
+    ];
+];
+
+AUMPTestCase["TemplateParameterGeneration applies second-order complex AD replacements", {"template-parameters", "ad"},
+    AUMPCHECKEqual[
+        TemplateParameterGeneration[
+            <|"d" -> 3, "Name" -> "pion", "ctype" -> "DiFfRG::complex<double>", "Device" -> "TBB"|>,
+            {"DiFfRG::complex<double>" -> "cxReal<2, double>"}
+        ],
+        {"3", "cxReal<2, double>", "pion_kernel<Regulator>", "DiFfRG::TBB_exec"}
+    ];
+];
+
+AUMPTestCase["TemplateParameterGeneration supports Threads execution", {"template-parameters"},
+    AUMPCHECKEqual[
+        TemplateParameterGeneration[<|"d" -> 1, "Name" -> "Test", "ctype" -> "float", "Device" -> "Threads"|>],
+        {"1", "float", "Test_kernel<Regulator>", "DiFfRG::Threads_exec"}
+    ];
+];
+
+AUMPTestCase["TemplateParameterGeneration defaults ctype to double", {"template-parameters", "defaults"},
+    AUMPCHECKEqual[
+        TemplateParameterGeneration[<|"d" -> 4, "Name" -> "DefaultType", "Device" -> "TBB"|>],
+        {"4", "double", "DefaultType_kernel<Regulator>", "DiFfRG::TBB_exec"}
+    ];
+];
+
+AUMPTestCase["TemplateParameterGeneration defaults Device to TBB", {"template-parameters", "defaults"},
+    AUMPCHECKEqual[
+        TemplateParameterGeneration[<|"d" -> 2, "Name" -> "DefaultDevice", "ctype" -> "double"|>],
+        {"2", "double", "DefaultDevice_kernel<Regulator>", "DiFfRG::TBB_exec"}
+    ];
+];
+
+AUMPTestCase["TemplateParameterGeneration requires d", {"template-parameters", "abort"},
+    AUMPCHECKAbort[TemplateParameterGeneration[<|"Name" -> "X", "Device" -> "TBB"|>]];
+];
+
+AUMPTestCase["TemplateParameterGeneration requires Name", {"template-parameters", "abort"},
+    AUMPCHECKAbort[TemplateParameterGeneration[<|"d" -> 2, "Device" -> "TBB"|>]];
+];
+
+AUMPTestCase["TemplateParameterGeneration rejects an invalid Device", {"template-parameters", "abort"},
+    AUMPCHECKAbort[TemplateParameterGeneration[<|"d" -> 2, "Name" -> "X", "Device" -> "BadDevice"|>]];
+];
+
+AUMPTestCase["TemplateParameterGeneration requires an Association", {"template-parameters", "abort"},
+    AUMPCHECKAbort[TemplateParameterGeneration["not an association"]];
+];
