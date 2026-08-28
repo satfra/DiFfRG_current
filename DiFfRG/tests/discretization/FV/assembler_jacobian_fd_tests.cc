@@ -962,3 +962,179 @@ TEST_CASE("KT 2D boundary Jacobian uses model-owned tangential ghost derivatives
   CHECK(missing_sparsity_mismatches == 0);
   REQUIRE(pass);
 }
+
+/**
+ * A source that reads "fe_derivatives" is nonlocal: it reaches the whole 2*dim stencil through the
+ * reconstruction. Flux and diffusion flux are identically zero here, so the source is the ONLY
+ * contribution to the Jacobian and a missing chain-rule term cannot hide behind the face blocks.
+ *
+ * The boundary rows are checked too: FVDefaultBoundaries extrapolates the ghosts from interior dofs,
+ * so the gradient in the first and last cell depends on them.
+ */
+class GradientSourceKTModel
+    : public def::AbstractModel<GradientSourceKTModel, ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>>>,
+      public def::Time,
+      public def::LLFFlux<GradientSourceKTModel>,
+      public def::FlowBoundaries<GradientSourceKTModel>,
+      public def::FVDefaultBoundaries<GradientSourceKTModel>,
+      public def::AD<GradientSourceKTModel>
+{
+public:
+  template <typename Vector> void initial_condition(const Point<1> &pos, Vector &values) const
+  {
+    values[0] = 1.0 + 0.2 * pos[0] + 0.4 * pos[0] * pos[0];
+  }
+
+  template <typename NT, typename Solution>
+  void flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution & /*sol*/) const
+  {
+    F_i[0][0] = NT(0);
+  }
+
+  template <typename NT, typename Solution>
+  void diffusion_flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution & /*sol*/) const
+  {
+    F_i[0][0] = NT(0);
+  }
+
+  template <typename NT, typename Solution>
+  void source(std::array<NT, 1> &s_i, const Point<1> &pos, const Solution &sol) const
+  {
+    const auto &u = get<"fe_functions">(sol);
+    const auto &grad_u = get<"fe_derivatives">(sol);
+    s_i[0] = NT(0.3) * u[0] * u[0] + NT(0.8) * grad_u[0][0] + NT(0.5) * u[0] * grad_u[0][0] + NT(0.25 * pos[0]);
+  }
+};
+
+class GradientSource2DModel
+    : public def::AbstractModel<GradientSource2DModel, ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>>>,
+      public def::Time,
+      public def::LLFFlux<GradientSource2DModel>,
+      public def::FlowBoundaries<GradientSource2DModel>,
+      public def::FVDefaultBoundaries<GradientSource2DModel>,
+      public def::AD<GradientSource2DModel>
+{
+public:
+  template <typename Vector> void initial_condition(const Point<2> &pos, Vector &values) const
+  {
+    values[0] = 1.0 + 0.2 * pos[0] + 0.35 * pos[1] + 0.3 * pos[0] * pos[0] + 0.15 * pos[1] * pos[1];
+  }
+
+  template <typename NT, typename Solution>
+  void flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/, const Solution & /*sol*/) const
+  {
+    F_i[0] = Tensor<1, 2, NT>();
+  }
+
+  template <typename NT, typename Solution>
+  void diffusion_flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/, const Solution & /*sol*/) const
+  {
+    F_i[0] = Tensor<1, 2, NT>();
+  }
+
+  template <typename NT, typename Solution>
+  void source(std::array<NT, 1> &s_i, const Point<2> & /*pos*/, const Solution &sol) const
+  {
+    const auto &u = get<"fe_functions">(sol);
+    const auto &grad_u = get<"fe_derivatives">(sol);
+    s_i[0] = NT(0.3) * u[0] * u[0] + NT(0.8) * grad_u[0][0] - NT(0.6) * grad_u[0][1] +
+             NT(0.5) * u[0] * grad_u[0][1];
+  }
+};
+
+namespace
+{
+  /**
+   * @brief Compare the assembled Jacobian against a central difference of residual() on every row.
+   */
+  template <typename Assembler, typename VectorType>
+  bool jacobian_matches_fd(Assembler &assembler, const VectorType &sol, double eps, double tol, const char *label)
+  {
+    const int n_dofs = static_cast<int>(sol.size());
+    VectorType sol_dot(n_dofs);
+
+    const SparsityPattern &sp = assembler.get_sparsity_pattern_jacobian();
+    SparseMatrix<double> J_analytic(sp);
+    assembler.jacobian(J_analytic, sol, 1.0, sol_dot, 0.0, 0.0);
+
+    bool pass = true;
+    for (int j = 0; j < n_dofs; ++j) {
+      VectorType u_p = sol, u_m = sol;
+      u_p[j] += eps;
+      u_m[j] -= eps;
+
+      VectorType r_p(n_dofs), r_m(n_dofs);
+      assembler.residual(r_p, u_p, 1.0, sol_dot, 0.0);
+      assembler.residual(r_m, u_m, 1.0, sol_dot, 0.0);
+
+      for (int i = 0; i < n_dofs; ++i) {
+        const double fd = (r_p[i] - r_m[i]) / (2.0 * eps);
+        const double analytic = J_analytic.el(i, j);
+        const double err = std::abs(analytic - fd);
+        const double scale = std::max(1.0, std::abs(fd));
+        if (err > tol * scale) {
+          std::cout << label << " Jacobian mismatch at [" << i << "," << j << "]: analytic=" << analytic
+                    << "  fd=" << fd << "  rel_err=" << err / scale << "\n";
+          pass = false;
+        }
+      }
+    }
+    return pass;
+  }
+} // namespace
+
+TEST_CASE("KT gradient-dependent source Jacobian matches FD", "[FV][KT][gradient][source]")
+{
+  using Model = GradientSourceKTModel;
+  using Discretization = FV::Discretization<Model, RectangularMesh<1>, double>;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+  const ConfigTree json = make_json();
+
+  Model model;
+  RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+
+  FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+  VectorType sol = state.spatial_data();
+  const int n_dofs = static_cast<int>(sol.size());
+  REQUIRE(n_dofs > 8);
+
+  // Strictly convex and increasing, so the minmod branch is the same on both sides of the FD
+  // perturbation and the comparison is not sitting on the limiter's kink.
+  for (int i = 0; i < n_dofs; ++i)
+    sol[i] = 1.0 + 0.05 * static_cast<double>(i) + 0.004 * static_cast<double>(i * i);
+
+  REQUIRE(jacobian_matches_fd(assembler, sol, 1e-7, 2e-4, "gradient source"));
+}
+
+TEST_CASE("KT 2D gradient-dependent source Jacobian matches FD", "[FV][KT][gradient][source][2d]")
+{
+  using Model = GradientSource2DModel;
+  using Discretization = FV::Discretization<Model, RectangularMesh<2>, double>;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+  const ConfigTree json = make_json_2d();
+
+  Model model;
+  RectangularMesh<2> mesh{Config::ConfigurationMesh<2>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+
+  FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+  VectorType sol = state.spatial_data();
+  const int n_dofs = static_cast<int>(sol.size());
+  REQUIRE(n_dofs > 8);
+
+  for (int i = 0; i < n_dofs; ++i)
+    sol[i] = 1.0 + 0.05 * static_cast<double>(i) + 0.004 * static_cast<double>(i * i);
+
+  REQUIRE(jacobian_matches_fd(assembler, sol, 1e-7, 2e-4, "2D gradient source"));
+}

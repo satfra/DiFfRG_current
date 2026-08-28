@@ -6,6 +6,7 @@
 // DiFfRG
 #include <DiFfRG/common/linear_algebra.hh>
 #include <DiFfRG/discretization/FEM/assembler/common.hh>
+#include <DiFfRG/discretization/common/cell_geometry.hh>
 #include <DiFfRG/discretization/common/types.hh>
 #include <DiFfRG/physics/integration/map_scheduler.hh>
 
@@ -18,9 +19,8 @@ namespace DiFfRG
 
     template <typename... T> auto fe_tie(T &&...t)
     {
-      return named_tuple<std::tuple<T &...>,
-                         StringSet<"fe_functions", "fe_derivatives", "fe_hessians", "extractors", "variables">>(
-          std::tie(t...));
+      return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "fe_derivatives", "fe_hessians", "extractors",
+                                                       "variables", "cell_width">>(std::tie(t...));
     }
 
     template <typename... T> auto i_tie(T &&...t)
@@ -389,8 +389,8 @@ namespace DiFfRG
         // map() is collective and each rank visits only its own cells; see NoMapsHere.
         const NoMapsHere no_maps_during_assembly;
         const auto schedule = schedule_for(assembly_cost::local_fe);
-        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data,
-                              copy_data, flags, nullptr, face_worker, schedule.queue_length, schedule.chunk_size);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data, flags,
+                              nullptr, face_worker, schedule.queue_length, schedule.chunk_size);
       }
 
       virtual void mass(VectorType &mass, const VectorType &solution_global, const VectorType &solution_global_dot,
@@ -444,8 +444,8 @@ namespace DiFfRG
         // map() is collective and each rank visits only its own cells; see NoMapsHere.
         const NoMapsHere no_maps_during_assembly;
         const auto schedule = schedule_for(assembly_cost::local_fe);
-        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data,
-                              copy_data, flags, nullptr, nullptr, schedule.queue_length, schedule.chunk_size);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data, flags,
+                              nullptr, nullptr, schedule.queue_length, schedule.chunk_size);
         // Resolve contributions this rank made to rows it does not own. A partition-boundary
         // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
         // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
@@ -469,6 +469,7 @@ namespace DiFfRG
         const auto &extracted_data = __extracted_data;
 
         const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
+          const double cell_width = DiFfRG::internal::cell_width(cell);
           scratch_data.fe_values.reinit(cell);
           const auto &fe_v = scratch_data.fe_values;
           const uint n_dofs = fe_v.get_fe().n_dofs_per_cell();
@@ -496,12 +497,12 @@ namespace DiFfRG
           array<NumberType, Components::count_fe_functions()> mass{};
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
-            model.flux(
-                flux, x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
-            model.source(
-                source, x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
+            model.flux(flux, x_q,
+                       fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data,
+                              variables, cell_width));
+            model.source(source, x_q,
+                         fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data,
+                                variables, cell_width));
             model.mass(mass, x_q, solution[q_index], solution_dot[q_index]);
 
             for (uint i = 0; i < n_dofs; ++i) {
@@ -519,6 +520,7 @@ namespace DiFfRG
         };
         const auto boundary_worker = [&](const Iterator &cell, const uint &face_no, Scratch &scratch_data,
                                          CopyData &copy_data) {
+          const double cell_width = DiFfRG::internal::cell_width(cell);
           scratch_data.fe_interface_values.reinit(cell, face_no);
           const auto &fe_fv = scratch_data.fe_interface_values.get_fe_face_values(0);
           const uint n_dofs = fe_fv.get_fe().n_dofs_per_cell();
@@ -542,9 +544,9 @@ namespace DiFfRG
           array<Tensor<1, dim, NumberType>, Components::count_fe_functions()> numflux{};
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
-            model.boundary_numflux(
-                numflux, normals[q_index], x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
+            model.boundary_numflux(numflux, normals[q_index], x_q,
+                                   fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index],
+                                          extracted_data, variables, cell_width));
 
             for (uint i = 0; i < n_dofs; ++i) {
               const auto component_i = comp[i];
@@ -558,6 +560,8 @@ namespace DiFfRG
         const auto face_worker = [&](const Iterator &cell, const uint &f, const unsigned int &sf, const Iterator &ncell,
                                      const unsigned int &nf, const unsigned int &nsf, Scratch &scratch_data,
                                      CopyData &copy_data) {
+          const double cell_width = DiFfRG::internal::cell_width(cell);
+          const double ncell_width = DiFfRG::internal::cell_width(ncell);
           scratch_data.fe_interface_values.reinit(cell, f, sf, ncell, nf, nsf);
           const auto &fe_iv = scratch_data.fe_interface_values;
           const auto &fe_iv_s = scratch_data.fe_interface_values.get_fe_face_values(0);
@@ -599,9 +603,9 @@ namespace DiFfRG
             const auto &x_q = q_points[q_index];
             model.numflux(numflux, normals[q_index], x_q,
                           fe_tie(solution_s[q_index], solution_grad_s[q_index], solution_hess_s[q_index],
-                                 extracted_data, variables),
+                                 extracted_data, variables, cell_width),
                           fe_tie(solution_n[q_index], solution_grad_n[q_index], solution_hess_n[q_index],
-                                 extracted_data, variables));
+                                 extracted_data, variables, ncell_width));
 
             for (uint i = 0; i < n_dofs; ++i) {
               const auto component_i = comp[i];
@@ -698,8 +702,8 @@ namespace DiFfRG
         // map() is collective and each rank visits only its own cells; see NoMapsHere.
         const NoMapsHere no_maps_during_assembly;
         const auto schedule = schedule_for(assembly_cost::local_fe);
-        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data,
-                              copy_data, flags, nullptr, nullptr, schedule.queue_length, schedule.chunk_size);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data, flags,
+                              nullptr, nullptr, schedule.queue_length, schedule.chunk_size);
         // Resolve contributions this rank made to rows it does not own. A partition-boundary
         // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
         // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
@@ -728,6 +732,7 @@ namespace DiFfRG
         const auto &extracted_data = __extracted_data;
 
         const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
+          const double cell_width = DiFfRG::internal::cell_width(cell);
           scratch_data.fe_values.reinit(cell);
           const auto &fe_v = scratch_data.fe_values;
           const uint n_dofs = fe_v.get_fe().n_dofs_per_cell();
@@ -769,19 +774,23 @@ namespace DiFfRG
 
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
-            model.template jacobian_flux_source<0, 0>(
-                j_flux, j_source, x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
-            model.template jacobian_flux_source_grad<1>(
-                j_grad_flux, j_grad_source, x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
-            model.template jacobian_flux_source_hess<2>(
-                j_hess_flux, j_hess_source, x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
+            model.template jacobian_flux_source<0, 0>(j_flux, j_source, x_q,
+                                                      fe_tie(solution[q_index], solution_grad[q_index],
+                                                             solution_hess[q_index], extracted_data, variables,
+                                                             cell_width));
+            model.template jacobian_flux_source_grad<1>(j_grad_flux, j_grad_source, x_q,
+                                                        fe_tie(solution[q_index], solution_grad[q_index],
+                                                               solution_hess[q_index], extracted_data, variables,
+                                                               cell_width));
+            model.template jacobian_flux_source_hess<2>(j_hess_flux, j_hess_source, x_q,
+                                                        fe_tie(solution[q_index], solution_grad[q_index],
+                                                               solution_hess[q_index], extracted_data, variables,
+                                                               cell_width));
             if constexpr (Components::count_extractors() > 0) {
-              model.template jacobian_flux_source_extr<3>(
-                  j_extr_flux, j_extr_source, x_q,
-                  fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
+              model.template jacobian_flux_source_extr<3>(j_extr_flux, j_extr_source, x_q,
+                                                          fe_tie(solution[q_index], solution_grad[q_index],
+                                                                 solution_hess[q_index], extracted_data, variables,
+                                                                 cell_width));
             }
             model.template jacobian_mass<0>(j_mass, x_q, solution[q_index], solution_dot[q_index]);
             model.template jacobian_mass<1>(j_mass_dot, x_q, solution[q_index], solution_dot[q_index]);
@@ -830,6 +839,7 @@ namespace DiFfRG
         };
         const auto boundary_worker = [&](const Iterator &cell, const uint &face_no, Scratch &scratch_data,
                                          CopyData &copy_data) {
+          const double cell_width = DiFfRG::internal::cell_width(cell);
           scratch_data.fe_interface_values.reinit(cell, face_no);
           const auto &fe_fv = scratch_data.fe_interface_values.get_fe_face_values(0);
           const uint n_dofs = fe_fv.get_fe().n_dofs_per_cell();
@@ -863,19 +873,23 @@ namespace DiFfRG
               j_extr_boundary_numflux;
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
-            model.template jacobian_boundary_numflux<0, 0>(
-                j_boundary_numflux, normals[q_index], x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
-            model.template jacobian_boundary_numflux_grad<1>(
-                j_grad_boundary_numflux, normals[q_index], x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
-            model.template jacobian_boundary_numflux_hess<2>(
-                j_hess_boundary_numflux, normals[q_index], x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
+            model.template jacobian_boundary_numflux<0, 0>(j_boundary_numflux, normals[q_index], x_q,
+                                                           fe_tie(solution[q_index], solution_grad[q_index],
+                                                                  solution_hess[q_index], extracted_data, variables,
+                                                                  cell_width));
+            model.template jacobian_boundary_numflux_grad<1>(j_grad_boundary_numflux, normals[q_index], x_q,
+                                                             fe_tie(solution[q_index], solution_grad[q_index],
+                                                                    solution_hess[q_index], extracted_data, variables,
+                                                                    cell_width));
+            model.template jacobian_boundary_numflux_hess<2>(j_hess_boundary_numflux, normals[q_index], x_q,
+                                                             fe_tie(solution[q_index], solution_grad[q_index],
+                                                                    solution_hess[q_index], extracted_data, variables,
+                                                                    cell_width));
             if constexpr (Components::count_extractors() > 0) {
-              model.template jacobian_boundary_numflux_extr<3>(
-                  j_extr_boundary_numflux, normals[q_index], x_q,
-                  fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
+              model.template jacobian_boundary_numflux_extr<3>(j_extr_boundary_numflux, normals[q_index], x_q,
+                                                               fe_tie(solution[q_index], solution_grad[q_index],
+                                                                      solution_hess[q_index], extracted_data, variables,
+                                                                      cell_width));
             }
 
             // Cache shape values, gradients, and hessians for all DoFs at this quadrature point
@@ -918,6 +932,8 @@ namespace DiFfRG
         };
         const auto face_worker = [&](const Iterator &cell, const uint &f, const uint &sf, const Iterator &ncell,
                                      const uint &nf, const uint &nsf, Scratch &scratch_data, CopyData &copy_data) {
+          const double cell_width = DiFfRG::internal::cell_width(cell);
+          const double ncell_width = DiFfRG::internal::cell_width(ncell);
           scratch_data.fe_interface_values.reinit(cell, f, sf, ncell, nf, nsf);
           const auto &fe_iv = scratch_data.fe_interface_values;
           const auto &fe_iv_s = scratch_data.fe_interface_values.get_fe_face_values(0);
@@ -976,27 +992,31 @@ namespace DiFfRG
               j_extr_numflux;
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
-            model.template jacobian_numflux<0, 0>(j_numflux, normals[q_index], x_q,
-                                                  fe_tie(solution_s[q_index], solution_grad_s[q_index],
-                                                         solution_hess_s[q_index], extracted_data, variables),
-                                                  fe_tie(solution_n[q_index], solution_grad_n[q_index],
-                                                         solution_hess_n[q_index], extracted_data, variables));
-            model.template jacobian_numflux_grad<1>(j_grad_numflux, normals[q_index], x_q,
-                                                    fe_tie(solution_s[q_index], solution_grad_s[q_index],
-                                                           solution_hess_s[q_index], extracted_data, variables),
-                                                    fe_tie(solution_n[q_index], solution_grad_n[q_index],
-                                                           solution_hess_n[q_index], extracted_data, variables));
-            model.template jacobian_numflux_hess<2>(j_hess_numflux, normals[q_index], x_q,
-                                                    fe_tie(solution_s[q_index], solution_grad_s[q_index],
-                                                           solution_hess_s[q_index], extracted_data, variables),
-                                                    fe_tie(solution_n[q_index], solution_grad_n[q_index],
-                                                           solution_hess_n[q_index], extracted_data, variables));
+            model.template jacobian_numflux<0, 0>(
+                j_numflux, normals[q_index], x_q,
+                fe_tie(solution_s[q_index], solution_grad_s[q_index], solution_hess_s[q_index], extracted_data,
+                       variables, cell_width),
+                fe_tie(solution_n[q_index], solution_grad_n[q_index], solution_hess_n[q_index], extracted_data,
+                       variables, ncell_width));
+            model.template jacobian_numflux_grad<1>(
+                j_grad_numflux, normals[q_index], x_q,
+                fe_tie(solution_s[q_index], solution_grad_s[q_index], solution_hess_s[q_index], extracted_data,
+                       variables, cell_width),
+                fe_tie(solution_n[q_index], solution_grad_n[q_index], solution_hess_n[q_index], extracted_data,
+                       variables, ncell_width));
+            model.template jacobian_numflux_hess<2>(
+                j_hess_numflux, normals[q_index], x_q,
+                fe_tie(solution_s[q_index], solution_grad_s[q_index], solution_hess_s[q_index], extracted_data,
+                       variables, cell_width),
+                fe_tie(solution_n[q_index], solution_grad_n[q_index], solution_hess_n[q_index], extracted_data,
+                       variables, ncell_width));
             if constexpr (Components::count_extractors() > 0) {
-              model.template jacobian_numflux_extr<3>(j_extr_numflux, normals[q_index], x_q,
-                                                      fe_tie(solution_s[q_index], solution_grad_s[q_index],
-                                                             solution_hess_s[q_index], extracted_data, variables),
-                                                      fe_tie(solution_n[q_index], solution_grad_n[q_index],
-                                                             solution_hess_n[q_index], extracted_data, variables));
+              model.template jacobian_numflux_extr<3>(
+                  j_extr_numflux, normals[q_index], x_q,
+                  fe_tie(solution_s[q_index], solution_grad_s[q_index], solution_hess_s[q_index], extracted_data,
+                         variables, cell_width),
+                  fe_tie(solution_n[q_index], solution_grad_n[q_index], solution_hess_n[q_index], extracted_data,
+                         variables, ncell_width));
             }
 
             // Cache shape values, gradients, and hessians for all interface DoFs at this quadrature point

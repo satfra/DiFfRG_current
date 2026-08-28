@@ -169,23 +169,23 @@ namespace DiFfRG
     };
 
     /// The FE solution and the reconstructed raw potential at one point.
-    struct PointEvaluation {
+    template <typename PotentialEvaluation = RawPotentialEvaluation<dim, NumberType>> struct PointEvaluation {
       std::vector<Vector<NumberType>> values{Vector<NumberType>(Components::count_fe_functions())};
       std::vector<std::vector<Tensor<1, dim, NumberType>>> gradients{
           std::vector<Tensor<1, dim, NumberType>>(Components::count_fe_functions())};
       std::vector<std::vector<Tensor<2, dim, NumberType>>> hessians{
           std::vector<Tensor<2, dim, NumberType>>(Components::count_fe_functions())};
-      RawPotentialEvaluation<dim, NumberType> potential;
+      PotentialEvaluation potential;
       /// Kept for the shape values the extractor jacobian needs.
       std::shared_ptr<FEValues<dim>> fe_values;
     };
 
     /// @brief Evaluate the FE solution and the raw potential at @p x, which lies in @p cell.
     template <typename RawPotential>
-    PointEvaluation evaluate_at(const Point<dim> &x, const typename DoFHandler<dim>::cell_iterator &cell,
-                                const VectorType &solution_global, const RawPotential &raw_potential) const
+    auto evaluate_at(const Point<dim> &x, const typename DoFHandler<dim>::cell_iterator &cell,
+                     const VectorType &solution_global, const RawPotential &raw_potential) const
     {
-      PointEvaluation evaluation;
+      PointEvaluation<decltype(evaluate_raw_potential(raw_potential, mapping, x))> evaluation;
       evaluation.fe_values = std::make_shared<FEValues<dim>>(
           mapping, fe, mapping.transform_real_to_unit_cell(cell, x),
           update_values | update_gradients | update_quadrature_points | update_JxW_values | update_hessians);
@@ -197,12 +197,30 @@ namespace DiFfRG
       return evaluation;
     }
 
+    /**
+     * @brief The raw potential for the extractors, or an inert placeholder if the model does not read it.
+     *
+     * Reconstructing it is a direct solve over the whole mesh, and extract() runs on every residual and every
+     * jacobian -- so a model that never touches the potential slots should say so and skip it.
+     */
+    auto extractor_raw_potential(const VectorType &solution_global) const
+    {
+      if constexpr (Model::extract_uses_potential)
+        return reconstruct_raw_potential(
+            solution_global, dof_handler, mapping,
+            [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config,
+            &potential_cache);
+      else
+        return UnusedPotential{};
+    }
+
     void readouts(OutputFrame<dim, VectorType> &data_out, const VectorType &solution_global,
                   const VectorType &variables) const
     {
       auto raw_potential = reconstruct_raw_potential(
           solution_global, dof_handler, mapping,
-          [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
+          [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config,
+          &potential_cache);
       auto helper = [&](auto &&...args) {
         if constexpr (sizeof...(args) == 3) {
           auto &&[id, EoMfun, outputter] = std::forward_as_tuple(std::forward<decltype(args)>(args)...);
@@ -210,7 +228,7 @@ namespace DiFfRG
           auto EoM_cell = this->EoM_cell;
           auto EoM_result = get_EoM_point_with_potential(
               EoM_cell, solution_global, dof_handler, mapping, EoMfun, [&](const auto &p, const auto &) { return p; },
-              EoM_config, EoM_minimum_guess);
+              EoM_config, EoM_minimum_guess, &potential_cache);
           if (EoM_result.potential) EoM_minimum_guess = EoM_result.potential->minimum;
           const auto EoM = EoM_result.point;
 
@@ -273,7 +291,7 @@ namespace DiFfRG
             EoM_cell, solution_global, dof_handler, mapping,
             [&](const auto &p, const auto &values) { return model.EoM(p, values); },
             [&](const auto &p, const auto &values) { return postprocess ? model.EoM_postprocess(p, values) : p; },
-            EoM_config, EoM_minimum_guess);
+            EoM_config, EoM_minimum_guess, &potential_cache);
         EoM = EoM_result.point;
         if (EoM_result.potential) EoM_minimum_guess = EoM_result.potential->minimum;
       }
@@ -282,9 +300,7 @@ namespace DiFfRG
         this->EoM_cell = EoM_cell;
       }
 
-      const auto raw_potential = reconstruct_raw_potential(
-          solution_global, dof_handler, mapping,
-          [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
+      const auto raw_potential = extractor_raw_potential(solution_global);
 
       const auto [x, cell] = resolve_extractor_point(EoM, EoM_cell, solution_global);
       const auto e = evaluate_at(x, cell, solution_global, raw_potential);
@@ -312,7 +328,7 @@ namespace DiFfRG
           EoM_cell, solution_global, dof_handler, mapping,
           [&](const auto &p, const auto &values) { return model.EoM(p, values); },
           [&](const auto &p, const auto &values) { return model.EoM_postprocess(p, values); }, EoM_config,
-          EoM_minimum_guess);
+          EoM_minimum_guess, &potential_cache);
       EoM = EoM_result.point;
       if (EoM_result.potential) EoM_minimum_guess = EoM_result.potential->minimum;
 
@@ -329,9 +345,7 @@ namespace DiFfRG
       old_EoM_cell = EoM_cell;
       old_extractor_cell = cell;
 
-      const auto raw_potential = reconstruct_raw_potential(
-          solution_global, dof_handler, mapping,
-          [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
+      const auto raw_potential = extractor_raw_potential(solution_global);
       const auto e = evaluate_at(x, cell, solution_global, raw_potential);
       const auto &fe_v = *e.fe_values;
       const auto &potential = e.potential;
@@ -448,6 +462,8 @@ namespace DiFfRG
     const Config::EoMConfig EoM_config;
     mutable Point<dim> EoM;
     mutable std::optional<Point<dim>> EoM_minimum_guess;
+    /// Mesh-dependent half of the potential reconstructions, built once and reused; see PotentialSystemCache.
+    mutable DiFfRG::internal::PotentialSystemCache<dim, NumberType> potential_cache;
     /// Where the extractors are evaluated. Equal to EoM unless the model defines extractor_point.
     typename DoFHandler<dim>::cell_iterator old_extractor_cell;
     FullMatrix<NumberType> extractor_jacobian;

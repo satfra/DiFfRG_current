@@ -133,6 +133,29 @@ Again, it is necessary to leave the `NumberType` and `Solution` templates, where
 `s_i` has $N_f$ components, `x` gives the coordinate in field space and `sol` contains all other arguments of the flux function, with the layout as explained above in the flux case.
 The standard implementation of this method simply sets $s_i = 0$.
 
+Which entries `sol` actually carries depends on the assembler, and the entries are addressed by name:
+
+| assembler | entries of `sol` in `source` |
+| --- | --- |
+| CG, dDG | `"fe_functions"`, `"fe_derivatives"`, `"fe_hessians"`, `"extractors"`, `"variables"` |
+| DG | `"fe_functions"`, `"extractors"`, `"variables"` |
+| KT-FV | `"fe_functions"`, `"fe_derivatives"`, `"extractors"`, `"variables"` |
+
+`flux` gets the same entries as `source` in every scheme, and KT-FV's `diffusion_flux` gets them with
+`"fe_third_derivatives"` inserted after `"fe_derivatives"`. All of them additionally carry
+`"cell_width"`.
+
+A model that reads an entry its assembler does not provide fails to compile. For KT-FV, `"fe_derivatives"`
+is the scheme's own reconstructed cell gradient (the limited slope at the cell centre), and there are no
+hessians.
+
+`"extractors"` holds the result of the model's own `extract()`, run once before the residual and once
+before the jacobian. It is a plain number even inside the assembler's AD loops, so an extractor's
+dependence on the FE solution does not appear in the flux or source jacobian -- extractors are frozen
+within a Newton step. A model that solves something at the EoM in `extract()` and reads it back in
+`flux()` is the intended use of this, and it gets an approximate jacobian: that costs Newton iterations,
+not accuracy, because the extraction is redone for every residual.
+
 Picking up the example from above, we can now sketch the implementation of the numerical model as follows:
 ```cpp
 using namespace DiFfRG;
@@ -512,6 +535,16 @@ std::array<double, dim> raw_potential_gradient(const Point<dim> &, const Vector 
   return {{values[idxf("u")]}}; // unmodified dU/drho, without the physical-EoM correction
 }
 ```
+
+Reconstructing that potential is a direct solve over the whole mesh, and the extractors are evaluated on every
+residual and every jacobian -- so a model whose extractors never read the three potential entries should say so:
+
+```cpp
+static constexpr bool extract_uses_potential = false;
+```
+
+The entries are then filled with a type that has no operations, so reading one is a compile error rather than a
+silent zero. Readouts are unaffected either way: the potential is written to the spatial output regardless.
 
 The readout-specific EoM callback reconstructs a separate scalar CG2 potential and selects the evaluation point. The
 raw-potential fields and extractors are then evaluated at that same point for CG, DG, dDG, LDG, and KT-FV. Existing

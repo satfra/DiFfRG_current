@@ -20,9 +20,7 @@ namespace DiFfRG
      * diameter is dominated by the long direction, while this reports the short one when asked
      * about the face that spans it.
      */
-    template <int dim>
-    double face_normal_cell_width(const typename dealii::DoFHandler<dim>::active_cell_iterator &cell,
-                                  const uint face_no)
+    template <typename CellIterator> double face_normal_cell_width(const CellIterator &cell, const uint face_no)
     {
       const double face_measure = cell->face(face_no)->measure();
       if (!(face_measure > 0.) || !std::isfinite(face_measure))
@@ -34,13 +32,18 @@ namespace DiFfRG
       return width;
     }
 
-    /// @brief The smallest face-normal width over all faces of @p cell.
-    template <int dim>
-    double cell_width(const typename dealii::DoFHandler<dim>::active_cell_iterator &cell)
+    /**
+     * @brief The smallest face-normal width over all faces of @p cell.
+     *
+     * Templated on the iterator rather than on the dimension: the only thing needed of a cell is
+     * that it can measure itself and its faces, and the assemblers hand out several different
+     * accessor types.
+     */
+    template <typename CellIterator> double cell_width(const CellIterator &cell)
     {
       double width = std::numeric_limits<double>::max();
       for (uint face_no = 0; face_no < cell->n_faces(); ++face_no)
-        width = std::min(width, face_normal_cell_width<dim>(cell, face_no));
+        width = std::min(width, face_normal_cell_width(cell, face_no));
       return width;
     }
 
@@ -49,7 +52,7 @@ namespace DiFfRG
     {
       double minimum_width = std::numeric_limits<double>::max();
       for (const auto &cell : dof_handler.active_cell_iterators())
-        minimum_width = std::min(minimum_width, cell_width<dim>(cell));
+        minimum_width = std::min(minimum_width, cell_width(cell));
 
       if (!(minimum_width < std::numeric_limits<double>::max()))
         throw std::runtime_error("minimum_face_normal_cell_width: the mesh has no active cells.");
