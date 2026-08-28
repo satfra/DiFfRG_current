@@ -52,11 +52,6 @@ add_migration_contract_test(
   migration_affine_diagnostic migration_affine_failure FALSE
   "apply_boundary_affine_constraints|apply_affine_constraints|AffineConstraintContext")
 
-add_migration_probe(migration_assembler_log_failure assembler_log_failure.cc)
-add_migration_contract_test(
-  migration_assembler_log_diagnostic migration_assembler_log_failure FALSE
-  "Construct the assembler with output.log_port() and call log() instead")
-
 add_migration_probe(migration_readout_failure readout_failure.cc)
 add_migration_contract_test(
   migration_readout_diagnostic migration_readout_failure FALSE
@@ -77,20 +72,10 @@ add_migration_contract_test(
   migration_output_frame_fields_diagnostic migration_output_frame_fields_failure FALSE
   "auto fields = output.fields()|fields.attach(...)")
 
-add_migration_probe(migration_inherited_log_port_constructor inherited_log_port_constructor.cc)
-add_migration_contract_test(
-  migration_inherited_log_port_constructor_diagnostic migration_inherited_log_port_constructor TRUE
-  "Pass output.log_port() or an intentional LogPort{}")
-
-add_migration_probe(migration_direct_log_port_constructor direct_log_port_constructor.cc)
-add_migration_contract_test(
-  migration_direct_log_port_constructor_diagnostic migration_direct_log_port_constructor TRUE
-  "Pass output.log_port() or an intentional LogPort{}")
-
-add_migration_probe(migration_explicit_log_port_constructor explicit_log_port_constructor.cc)
+add_migration_probe(migration_default_report_port_constructor default_report_port_constructor.cc)
 add_clean_migration_contract_test(
-  migration_explicit_log_port_constructor_clean migration_explicit_log_port_constructor
-  "deprecated-declarations|warning: 'legacy_default_log_port")
+  migration_default_report_port_constructor_clean migration_default_report_port_constructor
+  "deprecated-declarations")
 
 add_migration_probe(migration_json_value_alias json_value_alias.cc)
 add_migration_contract_test(

@@ -130,8 +130,8 @@ namespace
   {
     auto json = make_json(fe_order);
     RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
-    Discretization discretization(mesh, json, LogPort{});
-    Assembler assembler(discretization, model, json, LogPort{});
+    Discretization discretization(mesh, json);
+    Assembler assembler(discretization, model, json);
     FE::FlowingVariables state(discretization);
     state.interpolate(model);
 

@@ -559,16 +559,8 @@ namespace DiFfRG
           std::vector<Point> quadrature_points;
           std::vector<NumberType> jxw;
         };
-        [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Assembler(
-            Discretization &discretization, Model &model,
-            DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, ConfigTree> config)
-            : Assembler(discretization, model, config.value(),
-                        DiFfRG::internal::legacy_default_log_port<Discretization>())
-        {
-        }
-
-        Assembler(Discretization &discretization, Model &model, const ConfigTree &config, LogPort log_port)
-            : discretization(discretization), model(model), log_port(std::move(log_port)),
+        Assembler(Discretization &discretization, Model &model, const ConfigTree &config)
+            : discretization(discretization), model(model), report_port(discretization.report_port()),
               dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
               triangulation(discretization.get_triangulation()), config(config), fe(discretization.get_fe()),
               mesh_workers(config.get_uint("/discretization/mesh_workers", 8)),
@@ -581,7 +573,7 @@ namespace DiFfRG
               diagnose_flux_conditioning(config.get_bool("/discretization/diagnose_flux_conditioning", false))
         {
           if (this->mesh_workers == 0) this->mesh_workers = std::max(1u, dealii::MultithreadInfo::n_threads() / 2);
-          log_port.info("FV: Using {} mesh workers for assembly.", mesh_workers);
+          report_port.info("FV: Using {} mesh workers for assembly.", mesh_workers);
 
           AssertThrow(fe.dofs_per_cell == n_components,
                       ExcMessage("FV Kurganov-Tadmor assembler expects one dof per component."));
@@ -1390,13 +1382,7 @@ namespace DiFfRG
                 "the zero-gradient value analytically inside diffusion_flux().",
                 c, max_baseline[c], max_variation[c], relative_noise);
 
-            // Deliberately not silenceable by an unattached LogPort: this only fires when the
-            // model is measurably losing digits, and it is precisely the kind of thing that
-            // must not disappear in a run that did not wire up a logger.
-            if (log_port)
-              log_port.warn("{}", message);
-            else
-              spdlog::warn("{}", message);
+            report_port.warn("{}", message);
           }
         }
 
@@ -2308,24 +2294,13 @@ namespace DiFfRG
           AssertIndexRange(cell_index, cell_topology_cache.size());
           return cell_topology_cache[cell_index];
         }
-
-        template <typename String>
-          requires std::convertible_to<String, std::string>
-        [[deprecated("Construct the assembler with output.log_port() and call log() instead")]] void log(String &&)
+        SummaryEvent summary() const override
         {
-          DiFfRG::internal::reject_named_assembler_log<String>();
-        }
-
-        void log()
-        {
-          std::stringstream ss;
-          ss << "FV Assembler: " << std::endl;
-          ss << "        Reinit: " << average_time_reinit() * 1000 << "ms (" << num_reinits() << ")" << std::endl;
-          ss << "        Residual: " << average_time_residual_assembly() * 1000 << "ms (" << num_residuals() << ")"
-             << std::endl;
-          ss << "        Jacobian: " << average_time_jacobian_assembly() * 1000 << "ms (" << num_jacobians() << ")"
-             << std::endl;
-          log_port.info(ss.str());
+          SummaryEvent result{.component = "FV"};
+          result.timing("reinit", average_time_reinit() * 1000, num_reinits())
+              .timing("residual", average_time_residual_assembly() * 1000, num_residuals())
+              .timing("jac", average_time_jacobian_assembly() * 1000, num_jacobians());
+          return result;
         }
 
         double average_time_reinit() const
@@ -2361,7 +2336,7 @@ namespace DiFfRG
       protected:
         Discretization &discretization;
         Model &model;
-        LogPort log_port;
+        ReportPort report_port;
         const DoFHandler<dim> &dof_handler;
         const Mapping<dim> &mapping;
         const Triangulation<dim> &triangulation;

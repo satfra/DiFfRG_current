@@ -249,7 +249,11 @@ or from the CLI,
 ```bash
 $ ./my_simulation -si /output/verbosity=1
 ```
-Level 1 gives plain progress lines. From level 2 upwards these are accompanied by the solver diagnostics (accepted steps, precision rejects, nonlinear failures, step widths, ...) as well as jacobian and linear solver timings.
+Levels 1--4 use compact, aggregated progress output: the console is updated at most once per second for each topic,
+and the run log receives the corresponding aggregate every ten seconds. Level 2 adds Jacobian, linear-solver, and
+solver-specific diagnostics; level 3 adds factorization and output timings. Level 4 remains rate-limited. Level 5 is
+the explicit debugging mode: every progress event is printed and may substantially slow a run. Progress records are
+kept to 100 columns, with detailed diagnostics on at most one continuation line.
 
 
 ## Modifying parameters from the CLI

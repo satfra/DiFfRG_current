@@ -19,7 +19,7 @@ DiFfRG follows a **Model → Discretization → Assembler → TimeStepper → Ou
    - *Implicit*: SUNDIALS IDA, implicit Euler, TRBDF2
    - Linear/nonlinear solvers are configured underneath (UMFPack, GMRES, Newton, KINSOL).
 
-5. **Output** — A move-only `OutputPath` owns the run location and a borrowing `OutputSession` writes complete `OutputFrame`s to CSV, HDF5, or VTK at configurable intervals. Independent algorithms receive a copyable `DiagnosticPort`; no output registry is global.
+5. **Output** — An `OutputSession` owns a copyable `OutputPath` handle and writes complete `OutputFrame`s to CSV, HDF5, or VTK at configurable intervals. Missing output paths use automatically cleaned temporary storage. Independent algorithms receive copyable diagnostic and reporting ports; no named output registry is global.
 
 ## Directory Layout
 

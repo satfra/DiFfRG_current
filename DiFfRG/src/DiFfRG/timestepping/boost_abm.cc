@@ -21,13 +21,11 @@ namespace DiFfRG
 
   template <typename VectorType, typename SparseMatrixType, uint dim>
   void
-  TimeStepperBoostABM<VectorType, SparseMatrixType, dim>::run(AbstractFlowingVariables<NumberType> *initial_condition,
+  TimeStepperBoostABM<VectorType, SparseMatrixType, dim>::run(AbstractFlowingVariables<NumberType> &initial_condition,
                                                               const double t_start, const double t_stop)
   {
-    this->data_out = this->get_data_out();
-    this->adaptor = this->get_adaptor();
 
-    auto &full_data = initial_condition->data();
+    auto &full_data = initial_condition.data();
     if constexpr (dim == 0)
       run_vars(full_data.block(1), t_start, t_stop);
     else {
@@ -42,7 +40,7 @@ namespace DiFfRG
   void TimeStepperBoostABM<VectorType, SparseMatrixType, dim>::run(VectorType &initial_data, const double t_start,
                                                                    const double t_stop)
   {
-    const SparseMatrixType &mass_matrix = assembler->get_mass_matrix();
+    const SparseMatrixType &mass_matrix = assembler.get_mass_matrix();
     InverseSparseMatrixType inverse_mass_matrix;
     inverse_mass_matrix.initialize(mass_matrix);
 
@@ -74,13 +72,13 @@ namespace DiFfRG
           sol_save = alpha * output_vec[output_times.size() - 1] + (1. - alpha) * output_vec[output_times.size() - 2];
         }
 
-        console_out(t_save, "output", 3);
+        this->log.progress({.topic = progress_topics::output, .time = t_save, .minimum_verbosity = 3});
         eigen_to_dealii(sol_save, output_dealii);
 
-        assembler->set_time(t_save);
+        assembler.set_time(t_save);
 
-        data_out->write_frame(t_save, [&](auto &frame) {
-          assembler->attach_data_output(frame, output_dealii, Vector<double>(), dy_dealii);
+        data_out.write_frame(t_save, [&](auto &frame) {
+          assembler.attach_data_output(frame, output_dealii, Vector<double>(), dy_dealii);
         });
       }
     };
@@ -101,8 +99,8 @@ namespace DiFfRG
 
       dy_dealii = 0;
 
-      assembler->set_time(t);
-      assembler->residual(dy_dealii, y_dealii, -1., 0.);
+      assembler.set_time(t);
+      assembler.residual(dy_dealii, y_dealii, -1., 0.);
       inverse_mass_matrix.solve(dy_dealii);
 
       if (!std::isfinite(dy_dealii.l2_norm()))
@@ -110,7 +108,10 @@ namespace DiFfRG
 
       dealii_to_eigen(dy_dealii, dxdt);
 
-      console_out(t, "explicit residual", 1, nullptr, calc_timer.lap());
+      this->log.progress({.topic = progress_topics::explicit_residual,
+                          .time = t,
+                          .duration_ms = calc_timer.lap(),
+                          .minimum_verbosity = 1});
     };
 
     // Initialize initial condition
@@ -145,7 +146,7 @@ namespace DiFfRG
     if (initial_data.block(1).size() == 0)
       throw std::runtime_error("TimeStepperBoostRK::run: y contains no variables, use a different timestepper!");
 
-    const SparseMatrixType &mass_matrix = assembler->get_mass_matrix();
+    const SparseMatrixType &mass_matrix = assembler.get_mass_matrix();
     InverseSparseMatrixType inverse_mass_matrix;
     inverse_mass_matrix.initialize(mass_matrix);
 
@@ -177,13 +178,13 @@ namespace DiFfRG
           sol_save = alpha * output_vec[output_times.size() - 1] + (1. - alpha) * output_vec[output_times.size() - 2];
         }
 
-        console_out(t_save, "output", 3);
+        this->log.progress({.topic = progress_topics::output, .time = t_save, .minimum_verbosity = 3});
         eigen_to_dealii(sol_save, output_dealii);
 
-        assembler->set_time(t_save);
+        assembler.set_time(t_save);
 
-        data_out->write_frame(t_save, [&](auto &frame) {
-          assembler->attach_data_output(frame, output_dealii.block(0), output_dealii.block(1), dy_dealii.block(0));
+        data_out.write_frame(t_save, [&](auto &frame) {
+          assembler.attach_data_output(frame, output_dealii.block(0), output_dealii.block(1), dy_dealii.block(0));
         });
       }
     };
@@ -203,10 +204,10 @@ namespace DiFfRG
       eigen_to_dealii(x, y_dealii);
 
       dy_dealii = 0;
-      assembler->set_time(t);
-      assembler->residual_variables(dy_dealii.block(1), y_dealii.block(1), y_dealii.block(0));
+      assembler.set_time(t);
+      assembler.residual_variables(dy_dealii.block(1), y_dealii.block(1), y_dealii.block(0));
       dy_dealii.block(1) *= -1;
-      assembler->residual(dy_dealii.block(0), y_dealii.block(0), -1., 0., y_dealii.block(1));
+      assembler.residual(dy_dealii.block(0), y_dealii.block(0), -1., 0., y_dealii.block(1));
       inverse_mass_matrix.solve(dy_dealii.block(0));
 
       if (!std::isfinite(dy_dealii.l2_norm()))
@@ -214,7 +215,10 @@ namespace DiFfRG
 
       dealii_to_eigen(dy_dealii, dxdt);
 
-      console_out(t, "explicit residual", 1, nullptr, calc_timer.lap());
+      this->log.progress({.topic = progress_topics::explicit_residual,
+                          .time = t,
+                          .duration_ms = calc_timer.lap(),
+                          .minimum_verbosity = 1});
     };
 
     // Initialize initial condition
@@ -272,13 +276,13 @@ namespace DiFfRG
           sol_save = alpha * output_vec[output_times.size() - 1] + (1. - alpha) * output_vec[output_times.size() - 2];
         }
 
-        console_out(t_save, "output", 3);
+        this->log.progress({.topic = progress_topics::output, .time = t_save, .minimum_verbosity = 3});
         eigen_to_dealii(sol_save, output_dealii);
 
-        assembler->set_time(t_save);
+        assembler.set_time(t_save);
 
-        data_out->write_frame(t_save,
-                              [&](auto &frame) { assembler->attach_data_output(frame, Vector<double>(), output_dealii); });
+        data_out.write_frame(
+            t_save, [&](auto &frame) { assembler.attach_data_output(frame, Vector<double>(), output_dealii); });
       }
     };
 
@@ -306,8 +310,8 @@ namespace DiFfRG
 
       dy_dealii = 0;
 
-      assembler->set_time(t);
-      assembler->residual_variables(dy_dealii, y_dealii, Vector<double>());
+      assembler.set_time(t);
+      assembler.residual_variables(dy_dealii, y_dealii, Vector<double>());
 
       if (!std::isfinite(dy_dealii.l2_norm()))
         throw std::runtime_error("TimeStepperBoostABM::run_vars: dy is not finite!");
@@ -315,7 +319,10 @@ namespace DiFfRG
       dealii_to_eigen(dy_dealii, dxdt);
       dxdt *= -1;
 
-      console_out(t, "explicit residual", 1, nullptr, calc_timer.lap());
+      this->log.progress({.topic = progress_topics::explicit_residual,
+                          .time = t,
+                          .duration_ms = calc_timer.lap(),
+                          .minimum_verbosity = 1});
     };
 
     using namespace boost::numeric::odeint;

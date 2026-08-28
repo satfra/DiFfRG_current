@@ -580,14 +580,14 @@ namespace
     const ConfigTree json = make_json(flow_case, threads);
     ModelType model(json, flow_case, grid_settings);
     Mesh mesh(make_mesh_config(grid_settings));
-    Discretization discretization(mesh, json, DiFfRG::LogPort{});
-    Assembler<ModelType> assembler(discretization, model, json, DiFfRG::LogPort{});
+    Discretization discretization(mesh, json);
+    Assembler<ModelType> assembler(discretization, model, json);
 
     auto data_out_path =
         OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_model_kt_regression", "output");
     OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
-    ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+    ImplicitTimeStepper time_stepper(json, assembler, data_out, *adaptor);
 
     FV::FlowingVariables<Discretization> state(discretization);
     state.interpolate(model);
@@ -613,7 +613,7 @@ namespace
       REQUIRE(target_time >= current_time - 1e-12);
       if (target_time > current_time + 1e-12) {
         try {
-          time_stepper.run(&state, current_time, target_time);
+          time_stepper.run(state, current_time, target_time);
         } catch (const std::exception &exception) {
           FAIL(std::string("O(N) KT regression solve failed at t=") + std::to_string(target_time) + ": " +
                exception.what());
@@ -635,14 +635,14 @@ namespace
     const ConfigTree json = make_json(flow_case, threads);
     ModelType model(json, flow_case, grid_settings);
     Mesh mesh(make_mesh_config(grid_settings));
-    Discretization discretization(mesh, json, DiFfRG::LogPort{});
-    Assembler<ModelType> assembler(discretization, model, json, DiFfRG::LogPort{});
+    Discretization discretization(mesh, json);
+    Assembler<ModelType> assembler(discretization, model, json);
 
     auto data_out_path =
         OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_model_kt_regression", "output");
     OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
-    ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+    ImplicitTimeStepper time_stepper(json, assembler, data_out, *adaptor);
 
     FV::FlowingVariables<Discretization> state(discretization);
     state.interpolate(model);
@@ -650,7 +650,7 @@ namespace
     const auto &support_points = discretization.get_support_points();
     REQUIRE(support_points.size() == grid_settings.cells);
 
-    time_stepper.run(&state, 0.0, target_time);
+    time_stepper.run(state, 0.0, target_time);
   }
 
   template <typename FlowParam> struct ONFlowFixture {

@@ -333,17 +333,17 @@ namespace
     const ConfigTree json = make_run_json(params);
     GaussianModel model(json, scenario);
     Mesh mesh(make_mesh_config(params));
-    Discretization discretization(mesh, json, DiFfRG::LogPort{});
-    GaussianAssembler assembler(discretization, model, json, DiFfRG::LogPort{});
+    Discretization discretization(mesh, json);
+    GaussianAssembler assembler(discretization, model, json);
     auto data_out_path =
         OutputPath::temporary(TemporaryRetention::remove_on_destruction, "zero_dim_2d_kt_gaussian", "output");
     OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
-    ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+    ImplicitTimeStepper time_stepper(json, assembler, data_out, *adaptor);
     FV::FlowingVariables<Discretization> state(discretization);
     state.interpolate(model);
     discretization.get_constraints().distribute(state.spatial_data());
-    time_stepper.run(&state, 0.0, params.final_time);
+    time_stepper.run(state, 0.0, params.final_time);
     if (!model.last_automatic_eom()) throw std::runtime_error("KT readout did not compute the Gaussian model EoM.");
     return extract_observables(sample_final_grid(state, discretization, params), scenario, *model.last_automatic_eom());
   }

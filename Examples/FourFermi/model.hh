@@ -51,7 +51,7 @@ class FourFermi : public def::AbstractModel<FourFermi, Components>,
   ExternalDataInterpolator external_data;
 
 public:
-  FourFermi(const ConfigTree &json, LogPort log = {})
+  FourFermi(const ConfigTree &json, ReportPort log = {})
       : def::fRG(json.get_double("/physical/Lambda")), prm(json), coordinates1D(8, 0., 20., 5.), MQ(coordinates1D),
         flow_equations(json)
   {

@@ -345,8 +345,8 @@ TEST_CASE("KT Jacobian matches FD Jacobian for traveling wave model (detects mis
 
   Model model(p_prm);
   RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   FV::FlowingVariables<Discretization> state(discretization);
   state.interpolate(model);
@@ -413,8 +413,8 @@ TEST_CASE("KT Jacobian matches FD Jacobian for third-derivative diffusion model 
 
   Model model;
   RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   FV::FlowingVariables<Discretization> state(discretization);
   state.interpolate(model);
@@ -484,8 +484,8 @@ TEST_CASE("KT Jacobian matches FD Jacobian for pure advection Burgers model", "[
 
   Model model(p_prm);
   RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   FV::FlowingVariables<Discretization> state(discretization);
   state.interpolate(model);
@@ -543,8 +543,8 @@ TEST_CASE("KT gradient-dependent flux and separate diffusion Jacobian match FD",
   const ConfigTree json = make_json();
   Model model;
   RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   FV::FlowingVariables<Discretization> state(discretization);
   state.interpolate(model);
@@ -606,8 +606,8 @@ TEST_CASE("KT Jacobian for x-dependent source-only model is diagonal", "[FV][KT]
 
   Model model;
   RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   FV::FlowingVariables<Discretization> state(discretization);
   state.interpolate(model);
@@ -655,9 +655,9 @@ TEST_CASE("KT first-order Jacobian strategy does not use reconstruction-neighbor
 
   Model model(p_prm);
   RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  ExactAssembler exact_assembler(discretization, model, json, DiFfRG::LogPort{});
-  ApproxJacobianAssembler approx_assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  ExactAssembler exact_assembler(discretization, model, json);
+  ApproxJacobianAssembler approx_assembler(discretization, model, json);
 
   FV::FlowingVariables<Discretization> state(discretization);
   state.interpolate(model);
@@ -713,8 +713,8 @@ TEST_CASE("KT TVD Jacobian strategy keeps reconstruction-neighbor columns", "[FV
 
   Model model(p_prm);
   RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   FV::FlowingVariables<Discretization> state(discretization);
   state.interpolate(model);
@@ -760,8 +760,8 @@ TEST_CASE("KT 2D Jacobian matches FD Jacobian for diagonal Burgers model", "[FV]
 
   Model model(p_prm);
   RectangularMesh<2> mesh{Config::ConfigurationMesh<2>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   FV::FlowingVariables<Discretization> state(discretization);
   state.interpolate(model);
@@ -824,8 +824,8 @@ TEST_CASE("KT 2D boundary Jacobian matches FD for affine ghost diffusion", "[FV]
   const ConfigTree json = make_json_2d();
   Model model;
   RectangularMesh<2> mesh{Config::ConfigurationMesh<2>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   FV::FlowingVariables<Discretization> state(discretization);
   state.interpolate(model);
@@ -902,8 +902,8 @@ TEST_CASE("KT 2D boundary Jacobian uses model-owned tangential ghost derivatives
   const ConfigTree json = make_json_2d();
   Model model;
   RectangularMesh<2> mesh{Config::ConfigurationMesh<2>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   FV::FlowingVariables<Discretization> state(discretization);
   state.interpolate(model);

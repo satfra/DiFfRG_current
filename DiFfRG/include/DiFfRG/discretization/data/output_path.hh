@@ -11,7 +11,7 @@ namespace DiFfRG
 {
   enum class TemporaryRetention { remove_on_destruction, keep };
 
-  /** Move-only owner and validated filesystem layout for one output run. */
+  /** Shared immutable owner and validated filesystem layout for one output run. */
   class OutputPath
   {
   public:
@@ -22,8 +22,8 @@ namespace DiFfRG
     static OutputPath temporary(TemporaryRetention retention = TemporaryRetention::remove_on_destruction,
                                 std::string run_name = "output", std::filesystem::path field_directory = "output");
 
-    OutputPath(const OutputPath &) = delete;
-    OutputPath &operator=(const OutputPath &) = delete;
+    OutputPath(const OutputPath &) = default;
+    OutputPath &operator=(const OutputPath &) = default;
     OutputPath(OutputPath &&) noexcept = default;
     OutputPath &operator=(OutputPath &&) noexcept = default;
 

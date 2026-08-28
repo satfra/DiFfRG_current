@@ -72,7 +72,7 @@
  * -# **Output.** Results are written through run-owned \ref DiFfRG::OutputSession
  *    "OutputSession" instances and scoped \ref DiFfRG::OutputFrame "OutputFrame" events
  *    (CSV / HDF5 / VTK) below an \ref DiFfRG::OutputPath "OutputPath"; diagnostic messages go
- *    to the \ref DiFfRG::LogPort "LogPort" the session hands out. The mesh can be refined
+ *    to the \ref DiFfRG::ReportPort "ReportPort" the session hands out. The mesh can be refined
  *    adaptively with \ref DiFfRG::HAdaptivity "HAdaptivity".
  *
  * \section mainpage_integration Momentum-space integration
@@ -102,7 +102,7 @@
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/minimization.hh>
 #include <DiFfRG/common/root_finding.hh>
-#include <DiFfRG/common/run_logger.hh>
+#include <DiFfRG/common/run_reporter.hh>
 #include <DiFfRG/common/utils.hh>
 
 // Model

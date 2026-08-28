@@ -13,8 +13,8 @@
 #include <deal.II/base/utilities.h>
 
 // DiFfRG
-#include <DiFfRG/common/fixed_string.hh>
 #include <DiFfRG/common/config_tree.hh>
+#include <DiFfRG/common/fixed_string.hh>
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/tuples.hh>
@@ -68,13 +68,6 @@ namespace DiFfRG
    * @param name The name of the file.
    */
   bool file_exists(const std::string &name);
-
-  template <typename Name, typename Filename>
-  [[deprecated("Use a run-owned RunLogger and pass its LogPort instead")]] void build_logger(Name &&, Filename &&)
-  {
-    static_assert(!std::is_same_v<Name, Name>,
-                  "build_logger(name, filename) was removed. Use a run-owned RunLogger and pass its LogPort instead");
-  }
 
   /**
    * @brief Return number with fixed significant digits

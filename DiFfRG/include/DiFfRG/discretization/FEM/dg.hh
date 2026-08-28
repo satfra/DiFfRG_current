@@ -11,7 +11,7 @@
 #include <deal.II/lac/affine_constraints.h>
 
 // DiFfRG
-#include <DiFfRG/common/run_logger.hh>
+#include <DiFfRG/common/run_reporter.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/FEM/assembler/ddg.hh>
 #include <DiFfRG/discretization/FEM/assembler/dg.hh>
@@ -38,15 +38,8 @@ namespace DiFfRG
       using SparseMatrixType = SparseMatrix<NumberType>;
       using Mesh = Mesh_;
       static constexpr uint dim = Mesh::dim;
-
-      [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Discretization(
-          Mesh &mesh, DiFfRG::internal::LegacyDefaultLogPortArgument<Mesh, ConfigTree> config)
-          : Discretization(mesh, config.value(), DiFfRG::internal::legacy_default_log_port<Mesh>())
-      {
-      }
-
-      Discretization(Mesh &mesh, const ConfigTree &config, LogPort log_port)
-          : mesh(mesh), config(config), log_port(std::move(log_port)),
+      Discretization(Mesh &mesh, const ConfigTree &config, ReportPort report_port = {})
+          : mesh(mesh), config(config), log(std::move(report_port)),
             fe(std::make_shared<FESystem<dim>>(FE_DGQ<dim>(config.get_uint_or_warn("/discretization/fe_order", 3)),
                                                Components::count_fe_functions(0))),
             dof_handler(mesh.get_triangulation())
@@ -85,6 +78,7 @@ namespace DiFfRG
       const Point<dim> &get_support_point(const uint &dof) const { return support_points[dof]; }
       const auto &get_support_points() const { return support_points; }
       const auto &get_config() const { return config; }
+      ReportPort report_port() const { return log; }
 
       void reinit() { setup_dofs(); }
 
@@ -114,8 +108,8 @@ namespace DiFfRG
       {
         dof_handler.distribute_dofs(*fe);
 
-        log_port.info("FEM: Number of active cells: {}", mesh.get_triangulation().n_active_cells());
-        log_port.info("FEM: Number of degrees of freedom: {}", dof_handler.n_dofs());
+        log.info("FEM: Number of active cells: {}", mesh.get_triangulation().n_active_cells());
+        log.info("FEM: Number of degrees of freedom: {}", dof_handler.n_dofs());
 
         constraints.clear();
         DoFTools::make_hanging_node_constraints(dof_handler, constraints);
@@ -127,7 +121,7 @@ namespace DiFfRG
 
       Mesh &mesh;
       ConfigTree config;
-      LogPort log_port;
+      ReportPort log;
 
       std::shared_ptr<FESystem<dim>> fe;
       DoFHandler<dim> dof_handler;

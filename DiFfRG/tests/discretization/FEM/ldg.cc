@@ -83,8 +83,8 @@ TEST_CASE("Test LDG on Constant model", "[discretization][ldg]")
   // Define the objects needed to run the simulation
   Model model(p_prm);
   RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   // Set up the initial condition
   FE::FlowingVariables initial_condition(discretization);

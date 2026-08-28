@@ -38,12 +38,7 @@ namespace DiFfRG
       dealii::SolverControl solver_control(std::max<std::size_t>(1000, src.size() / 10), tol);
       dealii::SolverGMRES<VectorType> solver(solver_control);
 
-      try {
-        solver.solve(*matrix, dst, src, preconditioner);
-      } catch (std::exception &e) {
-        std::cerr << "GMRES linear solver failed: " << e.what() << std::endl;
-        throw;
-      }
+      solver.solve(*matrix, dst, src, preconditioner);
 
       int steps = solver_control.last_step();
       return steps;

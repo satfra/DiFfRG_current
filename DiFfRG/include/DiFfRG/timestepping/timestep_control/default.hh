@@ -4,7 +4,7 @@
 #include <iomanip>
 #include <sstream>
 
-#include <DiFfRG/common/run_logger.hh>
+#include <DiFfRG/common/run_reporter.hh>
 
 namespace DiFfRG
 {
@@ -20,7 +20,7 @@ namespace DiFfRG
   {
   public:
     TC_Default(NEWT &newton_, unsigned int alg_order_, double t_, double max_t_, double dt_, double min_dt_,
-               double max_dt_, double output_dt_, LogPort log = {})
+               double max_dt_, double output_dt_, ReportPort log = {})
         : newton(newton_), alg_order(alg_order_), t(t_), max_t(max_t_), sug_dt(dt_), min_dt(min_dt_), max_dt(max_dt_),
           output_dt(output_dt_), cur_dt(sug_dt), last_save(t), last_t(t_), stuck(0), fin(false), log(std::move(log))
     {
@@ -127,6 +127,6 @@ namespace DiFfRG
     unsigned int stuck;
 
     bool fin;
-    LogPort log;
+    ReportPort log;
   };
 } // namespace DiFfRG

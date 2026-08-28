@@ -20,11 +20,10 @@ int main(int argc, char *argv[])
 
   // Define the objects needed to run the simulation
   Model model(json);
-  OutputPath output_path(json);
-  OutputSession<0, VectorType> data_out(output_path, json);
-  const auto log = data_out.log_port();
-  Assembler assembler(model, json, log);
-  TimeStepper time_stepper(json, &assembler, &data_out);
+  OutputSession<0, VectorType> data_out(json);
+  const auto log = data_out.report_port();
+  Assembler assembler(model, json);
+  TimeStepper time_stepper(json, assembler, data_out);
 
   // Set up the initial condition
   FlowingVariables initial_condition;
@@ -32,14 +31,14 @@ int main(int argc, char *argv[])
 
   // Start the timestepping
   try {
-    time_stepper.run(&initial_condition, 0., json.get_double("/timestepping/final_time"));
+    time_stepper.run(initial_condition, 0., json.get_double("/timestepping/final_time"));
   } catch (std::exception &e) {
     log.error("Timestepping finished with exception {}", e.what());
     return -1;
   }
 
   // Read the gluon mass and the ghost dressing at vanishing momentum back from the output.
-  HDF5Input hdf5_input(output_path.run_file(".h5").string());
+  HDF5Input hdf5_input(data_out.path().run_file(".h5").string());
   const auto m2A = hdf5_input.load_scalar<double>("m2A").back();
   std::vector<double> Zc(p_grid_size);
   hdf5_input.load_map("Zc", Zc.data());

@@ -23,13 +23,11 @@ namespace DiFfRG
   }
 
   template <typename VectorType, typename SparseMatrixType, uint dim>
-  void TimeStepperRK<VectorType, SparseMatrixType, dim>::run(AbstractFlowingVariables<NumberType> *initial_condition,
+  void TimeStepperRK<VectorType, SparseMatrixType, dim>::run(AbstractFlowingVariables<NumberType> &initial_condition,
                                                              const double t_start, const double t_stop)
   {
-    this->data_out = this->get_data_out();
-    this->adaptor = this->get_adaptor();
 
-    auto &full_data = initial_condition->data();
+    auto &full_data = initial_condition.data();
     if constexpr (dim == 0)
       run_vars(full_data.block(1), t_start, t_stop);
     else {
@@ -65,10 +63,9 @@ namespace DiFfRG
     double last_save = -1.;
     auto output_step = [&](const double t, const VectorType &sol) {
       if (!is_close(last_save, t, 1e-10)) {
-        assembler->set_time(t);
+        assembler.set_time(t);
 
-        data_out->write_frame(t,
-                              [&](auto &frame) { assembler->attach_data_output(frame, Vector<double>(), sol); });
+        data_out.write_frame(t, [&](auto &frame) { assembler.attach_data_output(frame, Vector<double>(), sol); });
 
         last_save = t;
       }
@@ -108,11 +105,14 @@ namespace DiFfRG
 
             typename VectorMemory<VectorType>::Pointer f(mem);
             f->reinit(y);
-            assembler->set_time(t);
-            assembler->residual_variables(*f, y, Vector<double>());
+            assembler.set_time(t);
+            assembler.residual_variables(*f, y, Vector<double>());
             *f *= -1.;
 
-            console_out(t, "explicit residual", 1, nullptr, calc_timer.lap());
+            this->log.progress({.topic = progress_topics::explicit_residual,
+                                .time = t,
+                                .duration_ms = calc_timer.lap(),
+                                .minimum_verbosity = 1});
 
             return *f;
           },

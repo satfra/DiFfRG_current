@@ -11,7 +11,7 @@
 #include <deal.II/lac/affine_constraints.h>
 
 // DiFfRG
-#include <DiFfRG/common/run_logger.hh>
+#include <DiFfRG/common/run_reporter.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/FV/assembler/KurganovTadmor.hh>
 #include <DiFfRG/discretization/data/data.hh>
@@ -42,15 +42,8 @@ namespace DiFfRG
       using Mesh = Mesh_;
       static constexpr uint dim = Mesh::dim;
       static constexpr bool is_fv_discretization = true;
-
-      [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Discretization(
-          Mesh &mesh, DiFfRG::internal::LegacyDefaultLogPortArgument<Mesh, ConfigTree> config)
-          : Discretization(mesh, config.value(), DiFfRG::internal::legacy_default_log_port<Mesh>())
-      {
-      }
-
-      Discretization(Mesh &mesh, const ConfigTree &config, LogPort log_port)
-          : mesh(mesh), config(config), log_port(std::move(log_port)),
+      Discretization(Mesh &mesh, const ConfigTree &config, ReportPort report_port = {})
+          : mesh(mesh), config(config), log(std::move(report_port)),
             fe(std::make_shared<FESystem<dim>>(FE_DGQ<dim>(0), Components::count_fe_functions(0))),
             dof_handler(mesh.get_triangulation())
       {
@@ -89,6 +82,7 @@ namespace DiFfRG
       const Point<dim> &get_support_point(const uint &dof) const { return support_points[dof]; }
       const auto &get_support_points() const { return support_points; }
       const auto &get_config() const { return config; }
+      ReportPort report_port() const { return log; }
 
       void reinit() { setup_dofs(); }
 
@@ -127,16 +121,15 @@ namespace DiFfRG
             "FV: /discretization/fe_order = " + std::to_string(fe_order) +
             " is ignored. The finite volume discretization always uses piecewise constants (fe_order = 0); "
             "reconstruction order is set by the choice of reconstructor and limiter instead.";
-        std::cerr << "WARNING: " << message << std::endl;
-        log_port.warn("{}", message);
+        log.warn("{}", message);
       }
 
       void setup_dofs()
       {
         dof_handler.distribute_dofs(*fe);
 
-        log_port.info("FV: Number of active cells: {}", mesh.get_triangulation().n_active_cells());
-        log_port.info("FV: Number of degrees of freedom: {}", dof_handler.n_dofs());
+        log.info("FV: Number of active cells: {}", mesh.get_triangulation().n_active_cells());
+        log.info("FV: Number of degrees of freedom: {}", dof_handler.n_dofs());
 
         constraints.clear();
         DoFTools::make_hanging_node_constraints(dof_handler, constraints);
@@ -148,7 +141,7 @@ namespace DiFfRG
 
       Mesh &mesh;
       ConfigTree config;
-      LogPort log_port;
+      ReportPort log;
 
       std::shared_ptr<FESystem<dim>> fe;
       DoFHandler<dim> dof_handler;

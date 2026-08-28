@@ -168,14 +168,15 @@ int main(int argc, char *argv[])
   const auto config_helper = DiFfRG::Init(argc, argv).get_configuration_helper();
   const auto json = config_helper.get_json();
 
+  OutputSession<0, VectorType> output(json);
   Model model(json);
   Assembler assembler(model, json);
-  TimeStepper time_stepper(json, &assembler);
+  TimeStepper time_stepper(json, assembler, output);
 
   FlowingVariables initial_condition;          // no discretization argument
   initial_condition.interpolate(model);        // calls initial_condition_variables
 
-  time_stepper.run(&initial_condition, 0., json.get_double("/timestepping/final_time"));
+  time_stepper.run(initial_condition, 0., json.get_double("/timestepping/final_time"));
 }
 ```
 

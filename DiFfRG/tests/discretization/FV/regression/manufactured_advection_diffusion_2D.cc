@@ -277,21 +277,21 @@ namespace
     const ConfigTree json = make_run_json(n_cells);
     ManufacturedAdvectionDiffusion2DModel model;
     Mesh mesh(make_mesh_config(n_cells));
-    Discretization discretization(mesh, json, DiFfRG::LogPort{});
-    Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+    Discretization discretization(mesh, json);
+    Assembler assembler(discretization, model, json);
 
     const std::string output_name =
         "manufactured_advection_diffusion_2D_" + std::to_string(n_cells) + "x" + std::to_string(n_cells);
     auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, output_name, "output");
     OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
-    TimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+    TimeStepper time_stepper(json, assembler, data_out, *adaptor);
 
     FV::FlowingVariables<Discretization> state(discretization);
     state.interpolate(model);
     discretization.get_constraints().distribute(state.spatial_data());
 
-    time_stepper.run(&state, 0.0, final_time);
+    time_stepper.run(state, 0.0, final_time);
 
     ConvergenceRow row;
     row.n_cells = n_cells;

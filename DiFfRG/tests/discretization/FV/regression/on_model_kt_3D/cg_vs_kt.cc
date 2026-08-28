@@ -183,18 +183,18 @@ TEST_CASE("CG-vs-KT: KT-ρ uniform grid, VanAlbada limiter + differentiated wave
   const ConfigTree json = make_json(/*threads=*/uthreads);
   LSM_rho_integrator_PolyExp model(json, grid);
   Mesh mesh(make_mesh_config(grid));
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  AssemblerVA assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  AssemblerVA assembler(discretization, model, json);
 
   auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_kt_3D", "output");
   OutputSession<dim, VectorType> data_out(data_out_path, json);
   auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
-  ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+  ImplicitTimeStepper time_stepper(json, assembler, data_out, *adaptor);
 
   FV::FlowingVariables<Discretization> state(discretization);
   state.interpolate(model);
 
-  time_stepper.run(&state, 0.0, final_time);
+  time_stepper.run(state, 0.0, final_time);
 }
 
 TEST_CASE("CG-vs-KT: KT-ρ uniform grid, Central limiter + differentiated wave speed (NOT TVD)",
@@ -211,16 +211,16 @@ TEST_CASE("CG-vs-KT: KT-ρ uniform grid, Central limiter + differentiated wave s
   const ConfigTree json = make_json(/*threads=*/uthreads);
   LSM_rho_integrator_PolyExp model(json, grid);
   Mesh mesh(make_mesh_config(grid));
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  AssemblerC assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  AssemblerC assembler(discretization, model, json);
 
   auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_kt_3D", "output");
   OutputSession<dim, VectorType> data_out(data_out_path, json);
   auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
-  ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+  ImplicitTimeStepper time_stepper(json, assembler, data_out, *adaptor);
 
   FV::FlowingVariables<Discretization> state(discretization);
   state.interpolate(model);
 
-  time_stepper.run(&state, 0.0, final_time);
+  time_stepper.run(state, 0.0, final_time);
 }

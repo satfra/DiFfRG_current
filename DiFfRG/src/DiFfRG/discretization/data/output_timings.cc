@@ -65,10 +65,10 @@ namespace DiFfRG
     out << "Output timings over " << n_frames << " frame" << (n_frames == 1 ? "" : "s") << ":";
 
     const auto row = [&](const char *name, const double total, const double maximum) {
-      out << "\n  " << std::left << std::setw(20) << name << std::right                    //
-          << " total " << std::setw(9) << std::setprecision(3) << total << "s"             //
-          << " | mean " << std::setw(9) << std::setprecision(4) << total / frames << "s"   //
-          << " | max " << std::setw(9) << std::setprecision(4) << maximum << "s"           //
+      out << "\n  " << std::left << std::setw(20) << name << std::right                  //
+          << " total " << std::setw(9) << std::setprecision(3) << total << "s"           //
+          << " | mean " << std::setw(9) << std::setprecision(4) << total / frames << "s" //
+          << " | max " << std::setw(9) << std::setprecision(4) << maximum << "s"         //
           << " | " << std::setw(5) << std::setprecision(1) << 100. * total / reference << "%";
     };
 
@@ -86,16 +86,16 @@ namespace DiFfRG
     row("  csv", sum.csv, max.csv);
 
     if (writer_asynchronous) {
-      out << "\n  " << std::left << std::setw(20) << "writer thread" << std::right
-          << " total " << std::setw(9) << std::setprecision(3)
-          << writer.hdf5_write + writer.hdf5_open_close << "s"
-          << " (write " << std::setprecision(3) << writer.hdf5_write << "s, open/close "
-          << writer.hdf5_open_close << "s) -- off the critical path, not part of the frame total";
+      out << "\n  " << std::left << std::setw(20) << "writer thread" << std::right << " total " << std::setw(9)
+          << std::setprecision(3) << writer.hdf5_write + writer.hdf5_open_close << "s | off critical path";
+      out << "\n    write " << std::setprecision(3) << writer.hdf5_write << "s | open/close " << writer.hdf5_open_close
+          << "s | excluded from frame total";
     }
 
     out << "\n  " << std::left << std::setw(20) << "counts" << std::right //
-        << " potential solves " << sum.potential_solve_count             //
-        << " (" << std::setprecision(1) << sum.potential_solve_count / frames << "/frame)"
+        << " potential solves " << sum.potential_solve_count              //
+        << " (" << std::setprecision(1) << sum.potential_solve_count / frames
+        << "/frame)"
         // Includes the writer thread's opens, which are the bulk of them once it is running.
         << ", hdf5 opens " << sum.hdf5_open_count + writer.hdf5_open_count //
         << " (" << std::setprecision(1) << (sum.hdf5_open_count + writer.hdf5_open_count) / frames << "/frame)";

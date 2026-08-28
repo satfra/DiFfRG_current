@@ -791,8 +791,8 @@ TEST_CASE("KT 1D FV readouts use EoM potential reconstruction and write a time s
 
   Model model(prm);
   DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   DiFfRG::FV::FlowingVariables<Discretization> state(discretization);
   state.interpolate(model);
@@ -858,8 +858,8 @@ TEST_CASE("KT reconstruction cache recomputes cell stencil values per solution",
   auto json = make_fv_test_json();
   Model model;
   DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   VectorType first(discretization.get_dof_handler().n_dofs());
   VectorType second(first.size());
@@ -917,8 +917,8 @@ TEST_CASE("KT solution reconstruction cache stores reversed interior face orient
   auto json = make_fv_test_json();
   Model model;
   DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   VectorType solution(discretization.get_dof_handler().n_dofs());
   for (unsigned int i = 0; i < solution.size(); ++i)
@@ -955,8 +955,8 @@ TEST_CASE("KT solution reconstruction cache matches direct interior reconstructi
   auto json = make_fv_test_json();
   Model model;
   DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   VectorType solution(discretization.get_dof_handler().n_dofs());
   for (unsigned int i = 0; i < solution.size(); ++i)
@@ -997,8 +997,8 @@ TEST_CASE("KT solution reconstruction cache matches direct boundary reconstructi
   auto json = make_fv_test_json();
   Model model;
   DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   VectorType solution(discretization.get_dof_handler().n_dofs());
   for (unsigned int i = 0; i < solution.size(); ++i)
@@ -1034,8 +1034,8 @@ TEST_CASE("KT boundary stencil cache recomputes values per solution", "[FV][KT][
   auto json = make_fv_test_json();
   Model model;
   DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   VectorType first(discretization.get_dof_handler().n_dofs());
   VectorType second(first.size());
@@ -1075,8 +1075,8 @@ TEST_CASE("KT 2D topology cache stores four face neighbours for an interior cell
 
   Model model(prm);
   DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   auto cell = find_2d_interior_cell(discretization.get_dof_handler());
   REQUIRE(cell != discretization.get_dof_handler().end());
@@ -1115,8 +1115,8 @@ TEST_CASE("KT 2D boundary stencil cache stores two interior cells behind boundar
 
   Model model(prm);
   DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   typename Discretization::VectorType solution(discretization.get_dof_handler().n_dofs());
   for (unsigned int i = 0; i < solution.size(); ++i)
@@ -1170,8 +1170,8 @@ TEST_CASE("KT 2D solution reconstruction cache recomputes values per solution", 
 
   Model model(prm);
   DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   VectorType first(discretization.get_dof_handler().n_dofs());
   VectorType second(first.size());
@@ -1224,8 +1224,8 @@ TEST_CASE("KT 2D solution reconstruction cache matches direct interior reconstru
 
   Model model(prm);
   DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   VectorType solution(discretization.get_dof_handler().n_dofs());
   for (unsigned int i = 0; i < solution.size(); ++i)
@@ -1272,8 +1272,8 @@ TEST_CASE("KT 2D boundary reconstruction cache reconstructs affine ghost side", 
 
   Model model(prm);
   DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   VectorType solution(discretization.get_dof_handler().n_dofs());
   const auto &support_points = discretization.get_support_points();
@@ -1323,8 +1323,8 @@ TEST_CASE("KT 2D boundary reconstruction cache derives tangential ghost side fro
   auto json = make_kt_boundary_json();
   Model model;
   DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   VectorType solution(discretization.get_dof_handler().n_dofs());
   const auto &support_points = discretization.get_support_points();
@@ -1366,8 +1366,8 @@ TEST_CASE("KT 2D boundary reconstruction cache uses model-owned tangential ghost
   auto json = make_kt_boundary_json();
   Model model;
   DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   VectorType solution(discretization.get_dof_handler().n_dofs());
   const auto &support_points = discretization.get_support_points();
@@ -1412,8 +1412,8 @@ TEST_CASE("KT origin-odd boundary reconstruction remains curl-free", "[FV][KT][c
   Model model;
   const DiFfRG::Config::ConfigurationMesh<2> mesh_config(json);
   DiFfRG::RectangularMesh<2> mesh(mesh_config);
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   DiFfRG::FV::FlowingVariables<Discretization> state(discretization);
   state.interpolate(model);
@@ -1471,8 +1471,8 @@ TEST_CASE("KT 2D solution reconstruction cache stores reversed interior face ori
 
   Model model(prm);
   DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   VectorType solution(discretization.get_dof_handler().n_dofs());
   for (unsigned int i = 0; i < solution.size(); ++i)
@@ -1507,8 +1507,8 @@ TEST_CASE("KT face hook exposes cached reconstruction before residual flux", "[F
   auto json = make_fv_test_json();
   Model model;
   DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   DiFfRG::FV::FlowingVariables<Discretization> state(discretization);
   state.interpolate(model);
@@ -1561,8 +1561,8 @@ TEST_CASE("KT diffusion flux receives reconstructed third derivatives", "[FV][KT
   auto json = make_fv_test_json();
   Model model;
   DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   DiFfRG::FV::FlowingVariables<Discretization> state(discretization);
   state.interpolate(model);

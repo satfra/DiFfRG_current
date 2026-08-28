@@ -21,35 +21,38 @@ namespace DiFfRG
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver>
   void TimeStepperImplicitEuler<VectorType, SparseMatrixType, dim, LinearSolver>::run(
-      AbstractFlowingVariables<NumberType> *initial_condition, double start, double stop)
+      AbstractFlowingVariables<NumberType> &initial_condition, double start, double stop)
   {
-    this->data_out = this->get_data_out();
-    this->adaptor = this->get_adaptor();
 
     // make some local copies of the initial condition which we use for stepping
-    VectorType old_solution = initial_condition->spatial_data();
-    VectorType solution = initial_condition->spatial_data();
+    VectorType old_solution = initial_condition.spatial_data();
+    VectorType solution = initial_condition.spatial_data();
 
     // newton algorithm
     Newton<VectorType> newton(impl.abs_tol, impl.rel_tol, 2e-1, 11, 21);
+    newton.set_report_port(this->log);
 
     // create time controller instance
     TC_PI tc(newton, 1, start, stop, impl.dt, impl.minimal_dt, impl.maximal_dt, output_dt, this->log);
-    assembler->set_time(start);
+    assembler.set_time(start);
 
     // create jacobian and solver for inverse jacobian
-    SparseMatrixType jacobian(assembler->get_sparsity_pattern_jacobian());
+    SparseMatrixType jacobian(assembler.get_sparsity_pattern_jacobian());
     LinearSolver<SparseMatrixType, VectorType> linSolver;
-    const DiagnosticPort jacobian_diagnostic_port = data_out ? data_out->diagnostic_port() : DiagnosticPort{};
+    linSolver.set_report_port(this->log);
+    const DiagnosticPort jacobian_diagnostic_port = data_out.diagnostic_port();
 
     // all functions for assembly of the problem and linear solving
     newton.residual = [&](VectorType &res, const VectorType &u) {
       CalcDtTimer calc_timer;
       res = 0;
-      assembler->residual(res, u, tc.get_dt(), 1);
-      assembler->mass(res, old_solution, -1.);
+      assembler.residual(res, u, tc.get_dt(), 1);
+      assembler.mass(res, old_solution, -1.);
 
-      console_out(tc.get_t(), "implicit residual", 1, nullptr, calc_timer.lap());
+      this->log.progress({.topic = progress_topics::implicit_residual,
+                          .time = tc.get_t(),
+                          .duration_ms = calc_timer.lap(),
+                          .minimum_verbosity = 1});
     };
 
     newton.update_jacobian = [&](const VectorType &u) {
@@ -70,15 +73,21 @@ namespace DiFfRG
 
       try {
         jacobian = 0;
-        assembler->jacobian(jacobian, u, tc.get_dt(), 1);
+        assembler.jacobian(jacobian, u, tc.get_dt(), 1);
         matrix_diagnostics = analyze_jacobian_matrix(jacobian);
         linSolver.init(jacobian);
 
-        console_out(tc.get_t(), "jacobian construction", 2, nullptr, calc_timer.lap());
+        this->log.progress({.topic = progress_topics::jacobian,
+                            .time = tc.get_t(),
+                            .duration_ms = calc_timer.lap(),
+                            .minimum_verbosity = 2});
 
         factorize_with_diagnostics(linSolver, jacobian, factorization_diagnostics);
         if (factorization_diagnostics.factorization_success == 1.)
-          console_out(tc.get_t(), "jacobian inversion", 3, nullptr, calc_timer.lap());
+          this->log.progress({.topic = progress_topics::factorization,
+                              .time = tc.get_t(),
+                              .duration_ms = calc_timer.lap(),
+                              .minimum_verbosity = 3});
         record_diagnostics();
       } catch (...) {
         if constexpr (decltype(linSolver)::performs_factorization)
@@ -93,8 +102,11 @@ namespace DiFfRG
       CalcDtTimer calc_timer;
       const auto sol_iterations = linSolver.solve(res, Du, std::min(impl.abs_tol, impl.rel_tol * res.l2_norm()));
       if (sol_iterations >= 0) {
-        console_out(tc.get_t(), "linear solver (" + std::to_string(sol_iterations) + " it)", 2, nullptr,
-                    calc_timer.lap());
+        this->log.progress({.topic = progress_topics::implicit_linear_solve,
+                            .time = tc.get_t(),
+                            .duration_ms = calc_timer.lap(),
+                            .iterations = sol_iterations,
+                            .minimum_verbosity = 2});
       }
     };
 
@@ -102,17 +114,17 @@ namespace DiFfRG
 
     // saving and stepping helper functions
     auto save_data = [&](double t) {
-      assembler->set_time(t);
+      assembler.set_time(t);
 
-      data_out->write_frame(t, [&](auto &frame) {
+      data_out.write_frame(t, [&](auto &frame) {
         if (t > start)
-          assembler->attach_data_output(frame, solution, newton.get_residual());
+          assembler.attach_data_output(frame, solution, newton.get_residual());
         else
-          assembler->attach_data_output(frame, solution);
+          assembler.attach_data_output(frame, solution);
       });
     };
     auto dt_step = [&](double t, double dt) {
-      assembler->set_time(t + dt);
+      assembler.set_time(t + dt);
       solution = old_solution;
       newton(solution);
       old_solution = solution;
@@ -121,14 +133,14 @@ namespace DiFfRG
     // the actual time loop
     save_data(start);
     while (!tc.finished()) {
-      if ((*adaptor)(tc.get_t(), old_solution)) solution = old_solution;
+      if (adaptor(tc.get_t(), old_solution)) solution = old_solution;
       const double t_before_attempt = tc.get_t();
       const double attempted_h = tc.get_dt();
       tc.advance(dt_step, save_data);
       this->jacobian_diagnostics_state.finish_attempt(tc.get_t() > t_before_attempt, attempted_h);
     }
 
-    initial_condition->spatial_data() = solution;
+    initial_condition.spatial_data() = solution;
     this->drain_output();
   }
 } // namespace DiFfRG

@@ -3,7 +3,7 @@
 #include <DiFfRG/common/minimization.hh>
 #include <DiFfRG/common/mpi.hh>
 #include <DiFfRG/common/root_finding.hh>
-#include <DiFfRG/common/run_logger.hh>
+#include <DiFfRG/common/run_reporter.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/data/output_path.hh>
 #include <DiFfRG/discretization/data/output_settings.hh>
@@ -20,7 +20,7 @@ double tune_m2A(ConfigTree &json, const OutputPath &output_path, const FUN &run,
   double lower_m2A, upper_m2A;
 
   const auto tuning_path = output_path.child(output_path.run_name() + "_m2A_tuning", "tuning");
-  RunLogger tuning_logger(tuning_path, OutputSettings(json), MPI::rank(MPI_COMM_WORLD) == 0);
+  RunReporter tuning_logger(tuning_path, OutputSettings(json), MPI::rank(MPI_COMM_WORLD) == 0);
   const auto log = tuning_logger.port();
   std::filesystem::path last_sim_folder;
   const auto run_at = [&](const double value) {
@@ -184,7 +184,7 @@ double tune_m2A(ConfigTree &json, const OutputPath &output_path, const FUN &run,
 template <typename FUN> void tune_STI(ConfigTree &json, const OutputPath &output_path, const FUN &run)
 {
   const auto tuning_path = output_path.child(output_path.run_name() + "_STI_tuning", "tuning");
-  RunLogger tuning_logger(tuning_path, OutputSettings(json), MPI::rank(MPI_COMM_WORLD) == 0);
+  RunReporter tuning_logger(tuning_path, OutputSettings(json), MPI::rank(MPI_COMM_WORLD) == 0);
   const auto log = tuning_logger.port();
 
   const double original_final_time = json.get_double("/timestepping/final_time");

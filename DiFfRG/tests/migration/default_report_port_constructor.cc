@@ -52,10 +52,10 @@ namespace
 void probe(FVDiscretization &fv_discretization, FVModel &fv_model, FEMDiscretization &fem_discretization,
            FEMModel &fem_model, VariablesModel &variables_model, const DiFfRG::ConfigTree &json)
 {
-  FVBaseAssembler fv_direct(fv_discretization, fv_model, json, DiFfRG::LogPort{});
-  FVApplicationAssembler fv_inherited(fv_discretization, fv_model, json, DiFfRG::LogPort{});
-  FEMBaseAssembler fem_direct(fem_discretization, fem_model, json, DiFfRG::LogPort{});
-  FEMApplicationAssembler fem_inherited(fem_discretization, fem_model, json, DiFfRG::LogPort{});
-  VariablesBaseAssembler variables_direct(variables_model, json, DiFfRG::LogPort{});
-  VariablesApplicationAssembler variables_inherited(variables_model, json, DiFfRG::LogPort{});
+  FVBaseAssembler fv_direct(fv_discretization, fv_model, json);
+  FVApplicationAssembler fv_inherited(fv_discretization, fv_model, json);
+  FEMBaseAssembler fem_direct(fem_discretization, fem_model, json);
+  FEMApplicationAssembler fem_inherited(fem_discretization, fem_model, json);
+  VariablesBaseAssembler variables_direct(variables_model, json);
+  VariablesApplicationAssembler variables_inherited(variables_model, json);
 }
