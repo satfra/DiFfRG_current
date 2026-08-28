@@ -124,7 +124,7 @@ The progress policy is deliberately fixed in C++ and has no JSON controls:
 - verbosity 4 remains aggregated;
 - verbosity 5 emits every event and prints a performance warning.
 
-At levels 1--4, each topic produces at most one console update per second and one run-log update per ten seconds.
+At levels 1--4, each topic produces at most one update per second in both the console and the run log.
 Each progress record is at most 100 columns and uses at most two lines: a stable summary line followed, when needed, by
 one solver-diagnostic line. The reporter writes the final pending aggregates during shutdown. These intervals and the
 line width are intentionally not configurable.

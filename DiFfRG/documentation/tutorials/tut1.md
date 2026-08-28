@@ -433,7 +433,7 @@ After the simulation has run, which should take (depending on your computer) a f
 ```bash
 $ ls -l
 ```
-- `output.log` contains the same structured progress (aggregated every ten seconds), severity messages, and final assembler summaries:
+- `output.log` contains the same structured progress (aggregated every second), severity messages, and final assembler summaries:
 ```bash
 $ cat output.log
 [YYYY-MM-DD HH:MM:SS.sss] [run.file] [info] FEM: Number of active cells: 100

@@ -24,7 +24,6 @@ namespace DiFfRG::internal
   namespace
   {
     constexpr auto console_interval = std::chrono::seconds(1);
-    constexpr unsigned int file_interval_ticks = 10;
     constexpr int unthrottled_verbosity = 5;
 
     struct Aggregate {
@@ -119,7 +118,6 @@ namespace DiFfRG::internal
 
     struct Destination {
       std::shared_ptr<spdlog::logger> logger;
-      unsigned int cadence_ticks;
       std::map<ProgressTopic, Aggregate> pending;
     };
 
@@ -221,7 +219,7 @@ namespace DiFfRG::internal
       auto logger = std::make_shared<spdlog::async_logger>(options.reporter_name + ".console", sink, thread_pool,
                                                            spdlog::async_overflow_policy::block);
       logger->set_level(settings.log_level);
-      destinations.push_back({std::move(logger), 1, {}});
+      destinations.push_back({std::move(logger), {}});
       if (path != nullptr) {
         log_file_ = path->run_file(options.file_suffix, ".log");
         auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(log_file_->string(), true);
@@ -229,7 +227,7 @@ namespace DiFfRG::internal
                                                                   thread_pool, spdlog::async_overflow_policy::block);
         file_logger->set_level(settings.log_level);
         file_logger->flush_on(spdlog::level::warn);
-        destinations.push_back({std::move(file_logger), file_interval_ticks, {}});
+        destinations.push_back({std::move(file_logger), {}});
       }
 
       progress_strategy =
@@ -254,9 +252,7 @@ namespace DiFfRG::internal
       std::vector<PendingBatch> batches;
       {
         std::scoped_lock lock(mutex);
-        ++ticks;
         for (auto &destination : destinations) {
-          if (!final && ticks % destination.cadence_ticks != 0) continue;
           batches.push_back({destination.logger, {}});
           batches.back().events.swap(destination.pending);
         }
@@ -301,7 +297,6 @@ namespace DiFfRG::internal
     std::atomic_bool accepting = false;
     bool stopped = false;
     bool finished = false;
-    unsigned int ticks = 0;
     ProgressStrategy progress_strategy = &ReporterState::submit_aggregated;
     std::shared_ptr<spdlog::details::thread_pool> thread_pool;
     std::vector<Destination> destinations;
