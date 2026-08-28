@@ -11,6 +11,7 @@
 #include <fstream>
 #include <iterator>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <thread>
@@ -37,6 +38,21 @@ namespace
          {"discretization", {{"output_subdivisions", 1}}},
          {"output",
           {{"folder", path.string()}, {"name", "run"}, {"vtk", false}, {"hdf5", false}, {"max_pending_frames", 2}}}});
+  }
+
+  std::string read_file(const std::filesystem::path &path)
+  {
+    std::ifstream stream(path);
+    return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
+  }
+
+  std::size_t count_occurrences(const std::string &text, const std::string &needle)
+  {
+    std::size_t count = 0;
+    for (std::size_t position = 0; (position = text.find(needle, position)) != std::string::npos;
+         position += needle.size())
+      ++count;
+    return count;
   }
 } // namespace
 
@@ -129,19 +145,16 @@ TEST_CASE("OutputSession drain keeps the session writable until finish", "[outpu
                     Catch::Matchers::ContainsSubstring("already been finished"));
 }
 
-TEST_CASE("Run log reaches disk while the session is alive", "[output][session][log]")
+TEST_CASE("Run log can be flushed while the session is alive", "[output][session][log]")
 {
   auto path = DiFfRG::OutputPath::temporary();
   const auto log_file = path.run_file(".log");
 
-  auto settings = output_settings();
-  settings.log_flush_interval = 0.1;
+  DiFfRG::OutputSession<0, dealii::Vector<double>> output(path, output_settings());
+  output.report_port().info("periodic flush marker");
+  output.report_port().flush();
 
-  DiFfRG::OutputSession<0, dealii::Vector<double>> output(path, settings);
-  output.log_port().info("periodic flush marker");
-
-  // A single short line stays inside the file sink's stdio buffer, so this only passes if the flusher runs.
-  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
   bool found = false;
   while (!found && std::chrono::steady_clock::now() < deadline) {
     std::ifstream stream(log_file);
@@ -152,13 +165,154 @@ TEST_CASE("Run log reaches disk while the session is alive", "[output][session][
   CHECK(found);
 }
 
-TEST_CASE("OutputPath has explicit move-only ownership", "[output][path]")
+TEST_CASE("Default ReportPort logs to the console without creating a file", "[output][reporter][default]")
+{
+  DiFfRG::ReportPort report;
+  REQUIRE(report);
+  CHECK(report.verbosity() == 1);
+  CHECK_FALSE(report.log_file().has_value());
+  CHECK_NOTHROW(report.info("automatic console fallback marker"));
+  CHECK_NOTHROW(report.flush());
+}
+
+TEST_CASE("OutputSession owns a temporary default path", "[output][session][default]")
+{
+  std::filesystem::path root;
+  {
+    DiFfRG::OutputSession<0, dealii::Vector<double>> output;
+    root = output.path().root();
+    CHECK(std::filesystem::is_directory(root));
+    const auto log_file = output.report_port().log_file();
+    REQUIRE(log_file.has_value());
+    CHECK(log_file->parent_path() == root);
+  }
+  CHECK_FALSE(std::filesystem::exists(root));
+}
+
+TEST_CASE("Configured OutputSession keeps data and logs in one path", "[output][session][layout]")
+{
+  auto parent = DiFfRG::OutputPath::temporary();
+  const auto root = parent.root() / "configured";
+  const auto json = output_json(root);
+  {
+    DiFfRG::OutputSession<0, dealii::Vector<double>> output(json);
+    CHECK(output.path().root() == std::filesystem::absolute(root).lexically_normal());
+    CHECK(output.report_port().log_file() == std::optional(output.path().run_file(".log")));
+    output.write_frame(0., [](auto &frame) { frame.table("values.csv").value("value", 1.); });
+  }
+  CHECK(std::filesystem::exists(root / "run.log"));
+  CHECK(std::filesystem::exists(root / "run_values.csv"));
+}
+
+TEST_CASE("RunReporter aggregates progress below verbosity five", "[output][reporter][rate-limit]")
+{
+  auto path = DiFfRG::OutputPath::temporary();
+  auto settings = output_settings();
+  settings.verbosity = 2;
+
+  {
+    DiFfRG::RunReporter reporter(path, settings, true);
+    auto report = reporter.port();
+    for (int i = 0; i < 3; ++i) {
+      DiFfRG::ProgressEvent event;
+      event.topic = DiFfRG::progress_topics::implicit_residual;
+      event.time = 0.1 * i;
+      event.duration_ms = 2. + i;
+      event.field("rejects", i, 2).field("debug_only", i, 5);
+      report.progress(event);
+    }
+    DiFfRG::ProgressEvent hidden;
+    hidden.topic = DiFfRG::progress_topics::output;
+    hidden.minimum_verbosity = 3;
+    report.progress(hidden);
+    DiFfRG::SummaryEvent summary{.component = "custom"};
+    summary.timing("setup", 1.25, 2).timing("solve", 3.5, 4);
+    report.summary(summary);
+  }
+
+  const auto content = read_file(path.run_file(".log"));
+  CHECK(count_occurrences(content, "[res ]") == 1);
+  CHECK_THAT(content, Catch::Matchers::ContainsSubstring("n=3"));
+  CHECK_THAT(content, Catch::Matchers::ContainsSubstring("avg=3"));
+  CHECK_THAT(content, Catch::Matchers::ContainsSubstring("rejects="));
+  CHECK(content.find("debug_only=") == std::string::npos);
+  CHECK(content.find("[out ]") == std::string::npos);
+  CHECK_THAT(content, Catch::Matchers::ContainsSubstring("[sum] custom setup=1.25000ms(2) solve=3.50000ms(4)"));
+  for (std::istringstream lines(content); lines;) {
+    std::string line;
+    std::getline(lines, line);
+    CHECK(line.size() <= 100);
+  }
+}
+
+TEST_CASE("RunReporter leaves verbosity five unthrottled", "[output][reporter][verbosity]")
+{
+  auto path = DiFfRG::OutputPath::temporary();
+  auto settings = output_settings();
+  settings.verbosity = 5;
+
+  {
+    DiFfRG::RunReporter reporter(path, settings, true);
+    for (int i = 0; i < 3; ++i) {
+      DiFfRG::ProgressEvent event;
+      event.topic = {"kry", "custom"};
+      event.time = i;
+      event.iterations = i + 1;
+      reporter.port().progress(event);
+    }
+  }
+
+  const auto content = read_file(path.run_file(".log"));
+  CHECK(count_occurrences(content, "[kry ]") == 3);
+  CHECK(count_occurrences(content, "custom") == 3);
+  CHECK_THAT(content, Catch::Matchers::ContainsSubstring("unthrottled diagnostic output"));
+}
+
+TEST_CASE("RunReporter shutdown is safe during concurrent submissions", "[output][reporter][thread-safe]")
+{
+  auto path = DiFfRG::OutputPath::temporary();
+  auto settings = output_settings();
+  settings.verbosity = 2;
+
+  DiFfRG::RunReporter reporter(path, settings, true);
+  auto report = reporter.port();
+  std::jthread producer([report] {
+    for (int i = 0; i < 1000; ++i)
+      report.progress(
+          {.topic = DiFfRG::progress_topics::jacobian, .time = static_cast<double>(i), .minimum_verbosity = 2});
+  });
+  std::vector<std::jthread> finishers;
+  for (int i = 0; i < 4; ++i)
+    finishers.emplace_back([&reporter] { reporter.finish(); });
+
+  producer.join();
+  finishers.clear();
+  CHECK_FALSE(report);
+  CHECK_NOTHROW(report.info("ignored after shutdown"));
+  CHECK_NOTHROW(reporter.finish());
+}
+
+TEST_CASE("OutputPath is a shared immutable ownership handle", "[output][path]")
 {
   STATIC_CHECK_FALSE(std::is_default_constructible_v<DiFfRG::OutputPath>);
-  STATIC_CHECK_FALSE(std::is_copy_constructible_v<DiFfRG::OutputPath>);
-  STATIC_CHECK_FALSE(std::is_copy_assignable_v<DiFfRG::OutputPath>);
+  STATIC_CHECK(std::is_copy_constructible_v<DiFfRG::OutputPath>);
+  STATIC_CHECK(std::is_copy_assignable_v<DiFfRG::OutputPath>);
   STATIC_CHECK(std::is_move_constructible_v<DiFfRG::OutputPath>);
   STATIC_CHECK(std::is_move_assignable_v<DiFfRG::OutputPath>);
+}
+
+TEST_CASE("OutputPath copies share temporary cleanup ownership", "[output][path][temporary]")
+{
+  std::filesystem::path root;
+  std::optional<DiFfRG::OutputPath> copy;
+  {
+    auto original = DiFfRG::OutputPath::temporary();
+    root = original.root();
+    copy = original;
+  }
+  CHECK(std::filesystem::is_directory(root));
+  copy.reset();
+  CHECK_FALSE(std::filesystem::exists(root));
 }
 
 TEST_CASE("OutputPath temporary cleanup and retention are explicit", "[output][path][temporary]")

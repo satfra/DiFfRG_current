@@ -246,7 +246,7 @@ namespace
 
     auto json = make_json(fe_order);
     RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
-    Discretization discretization(mesh, json, DiFfRG::LogPort{});
+    Discretization discretization(mesh, json);
     FE::FlowingVariables state(discretization);
     state.interpolate(model);
 
@@ -275,7 +275,7 @@ namespace
 
     auto json = make_json(fe_order, refinement);
     RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
-    Discretization discretization(mesh, json, DiFfRG::LogPort{});
+    Discretization discretization(mesh, json);
 
     FE::FlowingVariables initial_condition(discretization);
     initial_condition.interpolate(model);
@@ -383,7 +383,7 @@ TEST_CASE("Detailed EoM reconstruction owns the scalar potential and its gauge",
     auto json = make_json(2);
     Model model(parameters_with_minimum(expected));
     RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
-    Discretization discretization(mesh, json, DiFfRG::LogPort{});
+    Discretization discretization(mesh, json);
     FE::FlowingVariables initial_condition(discretization);
     initial_condition.interpolate(model);
 
@@ -432,7 +432,7 @@ TEST_CASE("Raw potential evaluation stays independent of the EoM used to select 
   auto json = make_json(2);
   Model model(Point<dim>(0.2), {{{2.}}});
   RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
   FE::FlowingVariables state(discretization);
   state.interpolate(model);
 
@@ -478,7 +478,7 @@ TEST_CASE("Origin-centred FV vacuum keeps the diquark EoM near zero and its raw 
   json.set_string("/discretization/grid/y_grid", "0:0.005:0.2");
   Model model;
   RectangularMesh<dim> mesh(Config::ConfigurationMesh<dim>(json), RectangularMeshOptions{.origin_cell_centered = true});
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
   FE::FlowingVariables state(discretization);
   state.interpolate(model);
 
@@ -711,7 +711,7 @@ TEST_CASE("CG2 EoM potential refinement handles indefinite and singular Hessians
   const Model model(saddle, {{{1., 0.}, {0., -1.}}});
   auto json = make_json(2);
   RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
   FE::FlowingVariables initial_condition(discretization);
   initial_condition.interpolate(model);
   const auto &mapping = discretization.get_mapping();
@@ -1168,7 +1168,7 @@ TEST_CASE("EoM max-iteration zero keeps the origin bypass", "[discretization][Eo
   auto json = make_json(1);
   Model model(parameters_with_boundary_minimum());
   RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
   FE::FlowingVariables initial_condition(discretization);
   initial_condition.interpolate(model);
 

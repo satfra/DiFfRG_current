@@ -48,26 +48,17 @@ namespace DiFfRG
 
       using Components = typename Discretization::Components;
       static constexpr uint dim = Discretization::dim;
-
-      [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] LDGAssemblerBase(
-          Discretization &discretization, Model &model,
-          DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, ConfigTree> config)
-          : LDGAssemblerBase(discretization, model, config.value(),
-                             DiFfRG::internal::legacy_default_log_port<Discretization>())
-      {
-      }
-
-      LDGAssemblerBase(Discretization &discretization, Model &model, const ConfigTree &config, LogPort log_port)
-          : discretization(discretization), model(model), log_port(std::move(log_port)), fe(discretization.get_fe()),
-            dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
-            mesh_workers(config.get_uint("/discretization/mesh_workers", 8)),
+      LDGAssemblerBase(Discretization &discretization, Model &model, const ConfigTree &config)
+          : discretization(discretization), model(model), report_port(discretization.report_port()),
+            fe(discretization.get_fe()), dof_handler(discretization.get_dof_handler()),
+            mapping(discretization.get_mapping()), mesh_workers(config.get_uint("/discretization/mesh_workers", 8)),
             batch_size(config.get_uint("/discretization/batch_size", 16)),
             EoM_cell(*(dof_handler.active_cell_iterators().end())),
             old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
             EoM_config(DiFfRG::internal::resolve_eom_config(dof_handler, Config::EoMConfig(config)))
       {
         if (this->mesh_workers == 0) this->mesh_workers = std::max(1u, dealii::MultithreadInfo::n_threads() / 2);
-        log_port.info("FEM: Using {} mesh workers for assembly.", mesh_workers);
+        report_port.info("FEM: Using {} mesh workers for assembly.", mesh_workers);
       }
 
       virtual IndexSet get_differential_indices() const override
@@ -120,7 +111,7 @@ namespace DiFfRG
     protected:
       Discretization &discretization;
       Model &model;
-      LogPort log_port;
+      ReportPort report_port;
       const FiniteElement<dim> &fe;
       const DoFHandler<dim> &dof_handler;
       const Mapping<dim> &mapping;
@@ -453,16 +444,8 @@ namespace DiFfRG
       }
 
     public:
-      [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Assembler(
-          Discretization &discretization, Model &model,
-          DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, ConfigTree> config)
-          : Assembler(discretization, model, config.value(),
-                      DiFfRG::internal::legacy_default_log_port<Discretization>())
-      {
-      }
-
-      Assembler(Discretization &discretization, Model &model, const ConfigTree &config, LogPort log_port)
-          : Base(discretization, model, config, std::move(log_port)),
+      Assembler(Discretization &discretization, Model &model, const ConfigTree &config)
+          : Base(discretization, model, config),
             quadrature(fe.degree + 1 + config.get_uint("/discretization/overintegration", 0)),
             quadrature_face(fe.degree + 1 + config.get_uint("/discretization/overintegration", 0)),
             dof_handler_list(discretization.get_dof_handler_list())
@@ -1278,24 +1261,13 @@ namespace DiFfRG
 
         timings_jacobian.push_back(timer.wall_time());
       }
-
-      template <typename String>
-        requires std::convertible_to<String, std::string>
-      [[deprecated("Construct the assembler with output.log_port() and call log() instead")]] void log(String &&)
+      SummaryEvent summary() const override
       {
-        DiFfRG::internal::reject_named_assembler_log<String>();
-      }
-
-      void log()
-      {
-        std::stringstream ss;
-        ss << "LDG Assembler: " << std::endl;
-        ss << "        Reinit: " << average_time_reinit() * 1000 << "ms (" << num_reinits() << ")" << std::endl;
-        ss << "        Residual: " << average_time_residual_assembly() * 1000 << "ms (" << num_residuals() << ")"
-           << std::endl;
-        ss << "        Jacobian: " << average_time_jacobian_assembly() * 1000 << "ms (" << num_jacobians() << ")"
-           << std::endl;
-        this->log_port.info(ss.str());
+        SummaryEvent result{.component = "LDG"};
+        result.timing("reinit", average_time_reinit() * 1000, num_reinits())
+            .timing("residual", average_time_residual_assembly() * 1000, num_residuals())
+            .timing("jac", average_time_jacobian_assembly() * 1000, num_jacobians());
+        return result;
       }
 
       double average_time_reinit() const

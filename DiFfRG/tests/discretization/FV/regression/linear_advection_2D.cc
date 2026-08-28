@@ -215,20 +215,20 @@ namespace
     LinearAdvection2DModel model;
     Mesh mesh(make_mesh_config());
 
-    Discretization discretization(mesh, json, DiFfRG::LogPort{});
-    Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+    Discretization discretization(mesh, json);
+    Assembler assembler(discretization, model, json);
 
     auto data_out_path =
         OutputPath::temporary(TemporaryRetention::remove_on_destruction, "linear_advection_2D", "output");
     OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
-    TimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+    TimeStepper time_stepper(json, assembler, data_out, *adaptor);
 
     FV::FlowingVariables<Discretization> state(discretization);
     state.interpolate(model);
     discretization.get_constraints().distribute(state.spatial_data());
 
-    time_stepper.run(&state, 0.0, final_time);
+    time_stepper.run(state, 0.0, final_time);
     return compute_error(state.spatial_data(), exact_cell_averages(discretization, model, final_time));
   }
 } // namespace

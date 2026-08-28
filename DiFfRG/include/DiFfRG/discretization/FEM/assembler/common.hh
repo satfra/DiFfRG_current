@@ -61,26 +61,17 @@ namespace DiFfRG
 
     using Components = typename Discretization::Components;
     static constexpr uint dim = Discretization::dim;
-
-    [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] FEMAssembler(
-        Discretization &discretization, Model &model,
-        DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, ConfigTree> config)
-        : FEMAssembler(discretization, model, config.value(),
-                       DiFfRG::internal::legacy_default_log_port<Discretization>())
-    {
-    }
-
-    FEMAssembler(Discretization &discretization, Model &model, const ConfigTree &config, LogPort log_port)
-        : discretization(discretization), model(model), log_port(std::move(log_port)), fe(discretization.get_fe()),
-          dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
-          mesh_workers(config.get_uint("/discretization/mesh_workers", 8)),
+    FEMAssembler(Discretization &discretization, Model &model, const ConfigTree &config)
+        : discretization(discretization), model(model), report_port(discretization.report_port()),
+          fe(discretization.get_fe()), dof_handler(discretization.get_dof_handler()),
+          mapping(discretization.get_mapping()), mesh_workers(config.get_uint("/discretization/mesh_workers", 8)),
           batch_size(config.get_uint("/discretization/batch_size", 16)),
           EoM_cell(*(dof_handler.active_cell_iterators().end())),
           old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
           EoM_config(DiFfRG::internal::resolve_eom_config(dof_handler, Config::EoMConfig(config)))
     {
       if (this->mesh_workers == 0) this->mesh_workers = std::max(1u, dealii::MultithreadInfo::n_threads() / 2);
-      log_port.info("FEM: Using {} mesh workers for assembly.", mesh_workers);
+      report_port.info("FEM: Using {} mesh workers for assembly.", mesh_workers);
     }
 
     virtual IndexSet get_differential_indices() const override
@@ -370,7 +361,7 @@ namespace DiFfRG
   protected:
     Discretization &discretization;
     Model &model;
-    LogPort log_port;
+    ReportPort report_port;
     const FiniteElement<dim> &fe;
     const DoFHandler<dim> &dof_handler;
     const Mapping<dim> &mapping;

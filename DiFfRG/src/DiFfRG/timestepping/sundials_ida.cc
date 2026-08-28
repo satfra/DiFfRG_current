@@ -52,6 +52,7 @@ namespace DiFfRG
       uint max_lines = 200;
       bool trace_successes = false;
       double Lambda = -1.;
+      ReportPort report;
 
       size_t call_index = 0;
       size_t printed_lines = 0;
@@ -59,8 +60,9 @@ namespace DiFfRG
       size_t same_t_index = 0;
 
       IDACallbackTrace(const bool enabled, const double min_t, const uint max_lines, const bool trace_successes,
-                       const double Lambda)
-          : enabled(enabled), min_t(min_t), max_lines(max_lines), trace_successes(trace_successes), Lambda(Lambda)
+                       const double Lambda, ReportPort report)
+          : enabled(enabled), min_t(min_t), max_lines(max_lines), trace_successes(trace_successes), Lambda(Lambda),
+            report(std::move(report))
       {
       }
 
@@ -77,7 +79,7 @@ namespace DiFfRG
           last_t = t;
         }
 
-        if (!enabled || t < min_t) return;
+        if (!enabled || report.verbosity() < 5 || t < min_t) return;
         const bool failure = std::string(outcome) != "success";
         if (!failure && printed_lines >= max_lines) return;
         if (!trace_successes && !failure) return;
@@ -91,18 +93,19 @@ namespace DiFfRG
                << " t=" << t;
         if (Lambda > 0.) stream << " k=" << std::exp(-t) * Lambda;
         stream << " failure_counter=" << failure_counter;
-        if (diagnostics.has_ida) {
-          stream << " ida_steps=" << diagnostics.ida_steps << " residual_evals=" << diagnostics.ida_residual_evaluations
-                 << " precision_rejects=" << diagnostics.ida_error_test_failures
-                 << " nonlinear_iterations=" << diagnostics.ida_nonlinear_iterations
-                 << " nonlinear_failures=" << diagnostics.ida_nonlinear_convergence_failures
-                 << " step_solve_failures=" << diagnostics.ida_step_solve_failures
-                 << " last_h=" << diagnostics.ida_last_step_size << " current_h=" << diagnostics.ida_current_step_size;
+        if (diagnostics.ida) {
+          const auto &ida = *diagnostics.ida;
+          stream << " ida_steps=" << ida.ida_steps << " residual_evals=" << ida.ida_residual_evaluations
+                 << " precision_rejects=" << ida.ida_error_test_failures
+                 << " nonlinear_iterations=" << ida.ida_nonlinear_iterations
+                 << " nonlinear_failures=" << ida.ida_nonlinear_convergence_failures
+                 << " step_solve_failures=" << ida.ida_step_solve_failures << " last_h=" << ida.ida_last_step_size
+                 << " current_h=" << ida.ida_current_step_size;
         }
         stream << " y_l1=" << l1_norm_or_nan(y) << " ydot_l1=" << l1_norm_or_nan(y_dot)
                << " residual_l1=" << l1_norm_or_nan(residual);
         if (!detail.empty()) stream << " detail=\"" << detail << "\"";
-        std::clog << stream.str() << '\n';
+        report.info(stream.str());
         ++printed_lines;
       }
 
@@ -119,8 +122,8 @@ namespace DiFfRG
     template <typename VectorType> class IDAErrorDofMonitor
     {
     public:
-      IDAErrorDofMonitor(const bool enabled, const uint top_n, const double Lambda)
-          : enabled(enabled), top_n(top_n), Lambda(Lambda)
+      IDAErrorDofMonitor(const bool enabled, const uint top_n, const double Lambda, ReportPort report)
+          : enabled(enabled), top_n(top_n), Lambda(Lambda), report(std::move(report))
       {
       }
 
@@ -128,12 +131,13 @@ namespace DiFfRG
       void observe(const double t, const IDAType &time_stepper, const TimesteppingDiagnostics &diagnostics,
                    const VectorType &solution, const Callback &callback)
       {
-        if (!diagnostics.has_ida) return;
+        if (!diagnostics.ida) return;
+        const auto &ida = *diagnostics.ida;
 
         const long int previous_error_test_failures = initialized ? last_error_test_failures : 0;
         initialized = true;
-        const long int reject_delta = diagnostics.ida_error_test_failures - previous_error_test_failures;
-        last_error_test_failures = diagnostics.ida_error_test_failures;
+        const long int reject_delta = ida.ida_error_test_failures - previous_error_test_failures;
+        last_error_test_failures = ida.ida_error_test_failures;
         if (!enabled || reject_delta <= 0) return;
 
         if constexpr (requires(const IDAType &ida, VectorType &errors, VectorType &weights) {
@@ -143,8 +147,7 @@ namespace DiFfRG
           error_weights.reinit(solution);
 
           if (!time_stepper.get_error_test_vectors(estimated_local_errors, error_weights)) {
-            std::clog << "[IDA ERROR DOF DIAG] precision rejects +" << reject_delta << " at t=" << t
-                      << ": failed to query IDA local-error vectors\n";
+            report.warn("[IDA error DOF] rejects +{} at t={}: failed to query local-error vectors", reject_delta, t);
             return;
           }
 
@@ -152,11 +155,11 @@ namespace DiFfRG
           report.t = t;
           report.k = Lambda > 0. ? std::exp(-t) * Lambda : std::numeric_limits<double>::quiet_NaN();
           report.reject_delta = reject_delta;
-          report.total_rejects = diagnostics.ida_error_test_failures;
-          report.ida_steps = diagnostics.ida_steps;
-          report.ida_last_step_size = diagnostics.ida_last_step_size;
-          report.ida_current_step_size = diagnostics.ida_current_step_size;
-          report.ida_current_time = diagnostics.ida_current_time;
+          report.total_rejects = ida.ida_error_test_failures;
+          report.ida_steps = ida.ida_steps;
+          report.ida_last_step_size = ida.ida_last_step_size;
+          report.ida_current_step_size = ida.ida_current_step_size;
+          report.ida_current_time = ida.ida_current_time;
 
           const std::size_t n_dofs = solution.size();
           report.top_dofs.reserve(std::min<std::size_t>(top_n, n_dofs));
@@ -184,8 +187,7 @@ namespace DiFfRG
             log_generic_report(report);
           }
         } else {
-          std::clog << "[IDA ERROR DOF DIAG] precision rejects +" << reject_delta << " at t=" << t
-                    << ": IDA local-error vectors are not available in this build\n";
+          report.warn("[IDA error DOF] rejects +{} at t={}: local-error vectors unavailable", reject_delta, t);
         }
       }
 
@@ -193,22 +195,22 @@ namespace DiFfRG
       bool enabled = false;
       uint top_n = 0;
       double Lambda = -1.;
+      ReportPort report;
       bool initialized = false;
       long int last_error_test_failures = 0;
       VectorType estimated_local_errors;
       VectorType error_weights;
 
-      static void log_generic_report(const IDAErrorDofDiagnostics &report)
+      void log_generic_report(const IDAErrorDofDiagnostics &diagnostics) const
       {
-        std::clog << std::setprecision(17) << "[IDA ERROR DOF DIAG] precision rejects +" << report.reject_delta
-                  << " at t=" << report.t << ", k=" << report.k << ", total_rejects=" << report.total_rejects
-                  << ", ida_steps=" << report.ida_steps << ", last_h=" << report.ida_last_step_size
-                  << ", current_h=" << report.ida_current_step_size << ", wrms=" << report.wrms << '\n';
-        for (std::size_t rank = 0; rank < report.top_dofs.size(); ++rank) {
-          const auto &record = report.top_dofs[rank];
-          std::clog << std::setprecision(17) << "[IDA ERROR DOF DIAG] rank=" << rank << " dof=" << record.dof
-                    << " y=" << record.value << " ele=" << record.estimated_local_error
-                    << " ewt=" << record.error_weight << " abs_ele_ewt=" << record.contribution << '\n';
+        report.warn("[IDA error DOF] rejects +{} t={} k={} total={} steps={} last_h={} h={} wrms={}",
+                    diagnostics.reject_delta, diagnostics.t, diagnostics.k, diagnostics.total_rejects,
+                    diagnostics.ida_steps, diagnostics.ida_last_step_size, diagnostics.ida_current_step_size,
+                    diagnostics.wrms);
+        for (std::size_t rank = 0; rank < diagnostics.top_dofs.size(); ++rank) {
+          const auto &record = diagnostics.top_dofs[rank];
+          report.warn("[IDA error DOF] rank={} dof={} y={} ele={} ewt={} contribution={}", rank, record.dof,
+                      record.value, record.estimated_local_error, record.error_weight, record.contribution);
         }
       }
     };
@@ -217,12 +219,10 @@ namespace DiFfRG
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver>
   void TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, LinearSolver>::run(
-      AbstractFlowingVariables<NumberType> *initial_condition, const double t_start, const double t_stop)
+      AbstractFlowingVariables<NumberType> &initial_condition, const double t_start, const double t_stop)
   {
-    this->data_out = this->get_data_out();
-    this->adaptor = this->get_adaptor();
 
-    auto &full_data = initial_condition->data();
+    auto &full_data = initial_condition.data();
     if constexpr (dim == 0)
       run_vars(full_data.block(1), t_start, t_stop);
     else {
@@ -241,9 +241,10 @@ namespace DiFfRG
   {
     // Start by setting up all needed matrices, i.e. jacobian, inverse of jacobian and the mass matrix (with two
     // sparsity patterns)
-    SparseMatrixType jacobian(assembler->get_sparsity_pattern_jacobian());
+    SparseMatrixType jacobian(assembler.get_sparsity_pattern_jacobian());
     LinearSolver<SparseMatrixType, VectorType> linSolver;
-    const DiagnosticPort jacobian_diagnostic_port = data_out ? data_out->diagnostic_port() : DiagnosticPort{};
+    linSolver.set_report_port(this->log);
+    const DiagnosticPort jacobian_diagnostic_port = data_out.diagnostic_port();
 
     // Create a SUNDIALS IDA object with the right settings
     typename SUNDIALS::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
@@ -257,9 +258,10 @@ namespace DiFfRG
     uint failure_counter = 0;
     IDACallbackDiagnostics callback_diagnostics;
     IDACallbackTrace callback_trace(impl.ida_callback_trace, impl.ida_callback_trace_min_t,
-                                    impl.ida_callback_trace_max_lines, impl.ida_callback_trace_successes, this->Lambda);
-    IDAErrorDofMonitor<VectorType> error_dof_monitor(impl.ida_error_dof_diagnostics,
-                                                     impl.ida_error_dof_diagnostics_top_n, this->Lambda);
+                                    impl.ida_callback_trace_max_lines, impl.ida_callback_trace_successes,
+                                    this->log.Lambda(), this->log);
+    IDAErrorDofMonitor<VectorType> error_dof_monitor(
+        impl.ida_error_dof_diagnostics, impl.ida_error_dof_diagnostics_top_n, this->log.Lambda(), this->log);
     bool output_after_failure = false;
 
     // Initialize initial condition
@@ -279,27 +281,27 @@ namespace DiFfRG
 
     // Tells SUNDIALS to do an internal reset, e.g. if we do local refinement
     time_stepper.solver_should_restart = [&](const double t, VectorType &sol, VectorType &sol_dot) -> bool {
-      if ((*adaptor)(t, sol)) {
-        assembler->reinit_vector(sol_dot);
-        jacobian.reinit(assembler->get_sparsity_pattern_jacobian());
+      if (adaptor(t, sol)) {
+        assembler.reinit_vector(sol_dot);
+        jacobian.reinit(assembler.get_sparsity_pattern_jacobian());
         return true;
       }
       return false;
     };
 
-    time_stepper.differential_components = [&]() { return assembler->get_differential_indices(); };
+    time_stepper.differential_components = [&]() { return assembler.get_differential_indices(); };
 
     // Called whenever a vector needs to initalized
-    time_stepper.reinit_vector = [&](VectorType &v) { assembler->reinit_vector(v); };
+    time_stepper.reinit_vector = [&](VectorType &v) { assembler.reinit_vector(v); };
 
     // At output_dt intervals this function saves intermediate solutions
     double last_save = -1.;
     time_stepper.output_step = [&](const double t, const VectorType &sol, const VectorType &sol_dot,
                                    unsigned int /*step_number*/) {
       if (!is_close(last_save, t, 1e-10)) {
-        assembler->set_time(t);
-        data_out->write_frame(
-            t, [&](auto &frame) { assembler->attach_data_output(frame, sol, Vector<double>(), sol_dot, (*residual)); });
+        assembler.set_time(t);
+        data_out.write_frame(
+            t, [&](auto &frame) { assembler.attach_data_output(frame, sol, Vector<double>(), sol_dot, (*residual)); });
 
         last_save = t;
       }
@@ -321,7 +323,9 @@ namespace DiFfRG
 
       if (failure_counter == 0 && !is_close(t, 0.) && stuck > 100) {
         const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-        console_out(t, "implicit residual", 1, &current_diagnostics);
+        ProgressEvent event{.topic = progress_topics::implicit_residual, .time = t, .minimum_verbosity = 1};
+        current_diagnostics.append_to(event);
+        this->log.progress(event);
         callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "stuck", &y, &y_dot,
                               &res);
         throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
@@ -344,10 +348,10 @@ namespace DiFfRG
         return recoverable_ida_callback_failure;
       }
 
-      assembler->set_time(t);
+      assembler.set_time(t);
 
       res = 0;
-      assembler->residual(res, y, 1., y_dot, 1.);
+      assembler.residual(res, y, 1., y_dot, 1.);
       residual = &res;
 
       if (!std::isfinite(res.l1_norm())) {
@@ -358,7 +362,12 @@ namespace DiFfRG
         return recoverable_ida_callback_failure;
       }
       const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-      console_out(t, "implicit residual", 1, &current_diagnostics, calc_timer.lap());
+      ProgressEvent event{.topic = progress_topics::implicit_residual,
+                          .time = t,
+                          .duration_ms = calc_timer.lap(),
+                          .minimum_verbosity = 1};
+      current_diagnostics.append_to(event);
+      this->log.progress(event);
       callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "success", &y, &y_dot,
                             &res);
 
@@ -383,7 +392,7 @@ namespace DiFfRG
                                     matrix_diagnostics, factorization_diagnostics);
       };
 
-      assembler->set_time(t);
+      assembler.set_time(t);
 
       try {
         if (!is_finite_vector(y) || !is_finite_vector(y_dot)) {
@@ -395,7 +404,7 @@ namespace DiFfRG
         }
 
         jacobian = 0;
-        assembler->jacobian(jacobian, y, 1., y_dot, alpha, 1.);
+        assembler.jacobian(jacobian, y, 1., y_dot, alpha, 1.);
         matrix_diagnostics = analyze_jacobian_matrix(jacobian);
         if (!std::isfinite(jacobian.frobenius_norm())) {
           factorization_diagnostics.factorization_success = 0.;
@@ -409,12 +418,20 @@ namespace DiFfRG
         linSolver.init(jacobian);
 
         const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-        console_out(t, "jacobian construction", 2, &current_diagnostics, calc_timer.lap());
+        ProgressEvent jacobian_event{
+            .topic = progress_topics::jacobian, .time = t, .duration_ms = calc_timer.lap(), .minimum_verbosity = 2};
+        current_diagnostics.append_to(jacobian_event);
+        this->log.progress(jacobian_event);
 
         factorize_with_diagnostics(linSolver, jacobian, factorization_diagnostics);
         if (factorization_diagnostics.factorization_success == 1.) {
           const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-          console_out(t, "jacobian inversion", 3, &current_diagnostics, calc_timer.lap());
+          ProgressEvent event{.topic = progress_topics::factorization,
+                              .time = t,
+                              .duration_ms = calc_timer.lap(),
+                              .minimum_verbosity = 3};
+          current_diagnostics.append_to(event);
+          this->log.progress(event);
         }
         record_diagnostics();
       } catch (std::exception &e) {
@@ -458,8 +475,13 @@ namespace DiFfRG
         }
         if (sol_iterations >= 0) {
           const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-          console_out(stuck_t, "linear solver (" + std::to_string(sol_iterations) + " it)", 2, &current_diagnostics,
-                      calc_timer.lap());
+          ProgressEvent event{.topic = progress_topics::implicit_linear_solve,
+                              .time = stuck_t,
+                              .duration_ms = calc_timer.lap(),
+                              .iterations = sol_iterations,
+                              .minimum_verbosity = 2};
+          current_diagnostics.append_to(event);
+          this->log.progress(event);
         }
       } catch (std::exception &) {
         callback_diagnostics.linear_solver_failures++;
@@ -500,13 +522,14 @@ namespace DiFfRG
           "TimeStepperSUNDIALS_ARKode_vars::run: y contains no variables, use a different timestepper!");
     // Start by setting up all needed matrices, i.e. jacobian, inverse of jacobian and the mass matrix (with two
     // sparsity patterns)
-    SparseMatrixType spatial_jacobian(assembler->get_sparsity_pattern_jacobian());
+    SparseMatrixType spatial_jacobian(assembler.get_sparsity_pattern_jacobian());
     LinearSolver<SparseMatrixType, VectorType> linSolver;
+    linSolver.set_report_port(this->log);
     const uint n_FE_dofs = initial_data.block(0).size();
     const uint n_vars = initial_data.block(1).size();
     FullMatrix<NumberType> variable_jacobian(n_vars);
     FullMatrix<NumberType> variable_jacobian_inverse(n_vars);
-    const DiagnosticPort jacobian_diagnostic_port = data_out ? data_out->diagnostic_port() : DiagnosticPort{};
+    const DiagnosticPort jacobian_diagnostic_port = data_out.diagnostic_port();
 
     // Create a SUNDIALS IDA object with the right settings
     typename SUNDIALS::IDA<BlockVectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt,
@@ -520,7 +543,8 @@ namespace DiFfRG
     uint failure_counter = 0;
     IDACallbackDiagnostics callback_diagnostics;
     IDACallbackTrace callback_trace(impl.ida_callback_trace, impl.ida_callback_trace_min_t,
-                                    impl.ida_callback_trace_max_lines, impl.ida_callback_trace_successes, this->Lambda);
+                                    impl.ida_callback_trace_max_lines, impl.ida_callback_trace_successes,
+                                    this->log.Lambda(), this->log);
 
     // Initialize initial condition
     BlockVectorType y = initial_data;
@@ -536,16 +560,16 @@ namespace DiFfRG
 
     // Tells SUNDIALS to do an internal reset, e.g. if we do local refinement
     time_stepper.solver_should_restart = [&](const double t, BlockVectorType &sol, BlockVectorType &sol_dot) -> bool {
-      if ((*adaptor)(t, sol.block(0))) {
-        assembler->reinit_vector(sol_dot.block(0));
-        spatial_jacobian.reinit(assembler->get_sparsity_pattern_jacobian());
+      if (adaptor(t, sol.block(0))) {
+        assembler.reinit_vector(sol_dot.block(0));
+        spatial_jacobian.reinit(assembler.get_sparsity_pattern_jacobian());
         return true;
       }
       return false;
     };
 
     time_stepper.differential_components = [&]() {
-      IndexSet dof_indices = assembler->get_differential_indices();
+      IndexSet dof_indices = assembler.get_differential_indices();
       IndexSet differential_indices(n_FE_dofs + n_vars);
       differential_indices.add_indices(dof_indices.begin(), dof_indices.end());
       differential_indices.add_range(n_FE_dofs, n_FE_dofs + n_vars);
@@ -555,7 +579,7 @@ namespace DiFfRG
     // Called whenever a vector needs to initalized
     time_stepper.reinit_vector = [&](BlockVectorType &v) {
       v.reinit(2);
-      assembler->reinit_vector(v.block(0));
+      assembler.reinit_vector(v.block(0));
       v.block(1).reinit(n_vars);
       v.collect_sizes();
     };
@@ -565,9 +589,9 @@ namespace DiFfRG
     time_stepper.output_step = [&](const double t, const BlockVectorType &sol, const BlockVectorType &sol_dot,
                                    unsigned int /*step_number*/) {
       if (!is_close(last_save, t, 1e-10)) {
-        assembler->set_time(t);
-        data_out->write_frame(t, [&](auto &frame) {
-          assembler->attach_data_output(frame, sol.block(0), sol.block(1), sol_dot.block(0), (*residual).block(0));
+        assembler.set_time(t);
+        data_out.write_frame(t, [&](auto &frame) {
+          assembler.attach_data_output(frame, sol.block(0), sol.block(1), sol_dot.block(0), (*residual).block(0));
         });
 
         last_save = t;
@@ -596,7 +620,6 @@ namespace DiFfRG
         throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
       }
       if (failure_counter > 200) {
-        std::cerr << "timestep failure, at t = " << t << std::endl;
         callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "failure-limit", &y,
                               &y_dot, &res);
         throw std::runtime_error("timestep failure, at t = " + std::to_string(t));
@@ -611,14 +634,13 @@ namespace DiFfRG
 
       try {
         res = 0;
-        assembler->set_time(t);
-        assembler->residual_variables(res.block(1), y.block(1), y.block(0));
-        assembler->residual(res.block(0), y.block(0), 1., y_dot.block(0), 1., y.block(1));
+        assembler.set_time(t);
+        assembler.residual_variables(res.block(1), y.block(1), y.block(0));
+        assembler.residual(res.block(0), y.block(0), 1., y_dot.block(0), 1., y.block(1));
         res.block(1) += y_dot.block(1);
         residual = &res;
       } catch (std::exception &e) {
         callback_diagnostics.residual_exceptions++;
-        std::cerr << e.what() << std::endl;
         ++failure_counter;
         callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "exception", &y,
                               &y_dot, &res, e.what());
@@ -634,7 +656,12 @@ namespace DiFfRG
       }
 
       const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-      console_out(t, "implicit residual", 1, &current_diagnostics, calc_timer.lap());
+      ProgressEvent event{.topic = progress_topics::implicit_residual,
+                          .time = t,
+                          .duration_ms = calc_timer.lap(),
+                          .minimum_verbosity = 1};
+      current_diagnostics.append_to(event);
+      this->log.progress(event);
       callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "success", &y, &y_dot,
                             &res);
 
@@ -679,9 +706,9 @@ namespace DiFfRG
 
         spatial_jacobian = 0;
         variable_jacobian = 0;
-        assembler->set_time(t);
-        assembler->jacobian(spatial_jacobian, y.block(0), 1., y_dot.block(0), alpha, 1., y.block(1));
-        assembler->jacobian_variables(variable_jacobian, y.block(1), y.block(0));
+        assembler.set_time(t);
+        assembler.jacobian(spatial_jacobian, y.block(0), 1., y_dot.block(0), alpha, 1., y.block(1));
+        assembler.jacobian_variables(variable_jacobian, y.block(1), y.block(0));
         variable_jacobian *= -1.;
         variable_jacobian.diagadd(alpha);
         spatial_matrix_diagnostics = analyze_jacobian_matrix(spatial_jacobian);
@@ -702,7 +729,10 @@ namespace DiFfRG
         linSolver.init(spatial_jacobian);
 
         const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-        console_out(t, "jacobian construction", 2, &current_diagnostics, calc_timer.lap());
+        ProgressEvent jacobian_event{
+            .topic = progress_topics::jacobian, .time = t, .duration_ms = calc_timer.lap(), .minimum_verbosity = 2};
+        current_diagnostics.append_to(jacobian_event);
+        this->log.progress(jacobian_event);
 
         factorize_with_diagnostics(linSolver, spatial_jacobian, spatial_factorization_diagnostics);
         const auto variable_factorization_start = std::chrono::steady_clock::now();
@@ -721,7 +751,12 @@ namespace DiFfRG
                 .count();
         const auto current_diagnostics_after_inversion =
             make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-        console_out(t, "jacobian inversion", 3, &current_diagnostics_after_inversion, calc_timer.lap());
+        ProgressEvent factorization_event{.topic = progress_topics::factorization,
+                                          .time = t,
+                                          .duration_ms = calc_timer.lap(),
+                                          .minimum_verbosity = 3};
+        current_diagnostics_after_inversion.append_to(factorization_event);
+        this->log.progress(factorization_event);
         record_diagnostics();
       } catch (std::exception &e) {
         if constexpr (decltype(linSolver)::performs_factorization)
@@ -731,7 +766,6 @@ namespace DiFfRG
           variable_factorization_diagnostics.factorization_success = 0.;
         record_diagnostics();
         callback_diagnostics.jacobian_failures++;
-        std::cerr << e.what() << std::endl;
         ++failure_counter;
         callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "exception", &y,
                               &y_dot, nullptr, e.what());
@@ -767,11 +801,13 @@ namespace DiFfRG
         }
 
         const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-        if (sol_iterations >= 0)
-          console_out(stuck_t, "linear solver (" + std::to_string(sol_iterations) + " it)", 2, &current_diagnostics,
-                      calc_timer.lap());
-        else
-          console_out(stuck_t, "linear solver", 2, &current_diagnostics, calc_timer.lap());
+        ProgressEvent event{.topic = progress_topics::implicit_linear_solve,
+                            .time = stuck_t,
+                            .duration_ms = calc_timer.lap(),
+                            .iterations = sol_iterations,
+                            .minimum_verbosity = 2};
+        current_diagnostics.append_to(event);
+        this->log.progress(event);
       } catch (std::exception &) {
         callback_diagnostics.linear_solver_failures++;
         ++failure_counter;
@@ -810,7 +846,7 @@ namespace DiFfRG
     const uint n_vars = initial_data.size();
     FullMatrix<NumberType> variable_jacobian(n_vars);
     FullMatrix<NumberType> variable_jacobian_inverse(n_vars);
-    const DiagnosticPort jacobian_diagnostic_port = data_out ? data_out->diagnostic_port() : DiagnosticPort{};
+    const DiagnosticPort jacobian_diagnostic_port = data_out.diagnostic_port();
 
     // Create a SUNDIALS IDA object with the right settings
     typename SUNDIALS::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
@@ -824,9 +860,10 @@ namespace DiFfRG
     uint failure_counter = 0;
     IDACallbackDiagnostics callback_diagnostics;
     IDACallbackTrace callback_trace(impl.ida_callback_trace, impl.ida_callback_trace_min_t,
-                                    impl.ida_callback_trace_max_lines, impl.ida_callback_trace_successes, this->Lambda);
-    IDAErrorDofMonitor<VectorType> error_dof_monitor(impl.ida_error_dof_diagnostics,
-                                                     impl.ida_error_dof_diagnostics_top_n, this->Lambda);
+                                    impl.ida_callback_trace_max_lines, impl.ida_callback_trace_successes,
+                                    this->log.Lambda(), this->log);
+    IDAErrorDofMonitor<VectorType> error_dof_monitor(
+        impl.ida_error_dof_diagnostics, impl.ida_error_dof_diagnostics_top_n, this->log.Lambda(), this->log);
     bool output_after_failure = false;
 
     // Initialize initial condition
@@ -842,8 +879,8 @@ namespace DiFfRG
     time_stepper.output_step = [&](const double t, const VectorType &sol, const VectorType & /*sol_dot*/,
                                    uint /*step_number*/) {
       if (!is_close(last_save, t, 1e-10)) {
-        assembler->set_time(t);
-        data_out->write_frame(t, [&](auto &frame) { assembler->attach_data_output(frame, Vector<double>(), sol); });
+        assembler.set_time(t);
+        data_out.write_frame(t, [&](auto &frame) { assembler.attach_data_output(frame, Vector<double>(), sol); });
 
         last_save = t;
       }
@@ -874,7 +911,6 @@ namespace DiFfRG
         throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
       }
       if (failure_counter > 200) {
-        std::cerr << "timestep failure, at t = " << t << std::endl;
         callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "failure-limit", &y,
                               &y_dot, &res);
         throw std::runtime_error("timestep failure, at t = " + std::to_string(t));
@@ -889,12 +925,11 @@ namespace DiFfRG
 
       try {
         res = 0;
-        assembler->set_time(t);
-        assembler->residual_variables(res, y, Vector<double>());
+        assembler.set_time(t);
+        assembler.residual_variables(res, y, Vector<double>());
         res += y_dot;
       } catch (std::exception &e) {
         callback_diagnostics.residual_exceptions++;
-        std::cerr << e.what() << std::endl;
         ++failure_counter;
         callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "exception", &y,
                               &y_dot, &res, e.what());
@@ -910,7 +945,12 @@ namespace DiFfRG
       }
 
       const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-      console_out(t, "implicit residual", 1, &current_diagnostics, calc_timer.lap());
+      ProgressEvent event{.topic = progress_topics::implicit_residual,
+                          .time = t,
+                          .duration_ms = calc_timer.lap(),
+                          .minimum_verbosity = 1};
+      current_diagnostics.append_to(event);
+      this->log.progress(event);
       callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "success", &y, &y_dot,
                             &res);
 
@@ -948,8 +988,8 @@ namespace DiFfRG
         }
 
         variable_jacobian = 0;
-        assembler->set_time(t);
-        assembler->jacobian_variables(variable_jacobian, y, Vector<double>());
+        assembler.set_time(t);
+        assembler.jacobian_variables(variable_jacobian, y, Vector<double>());
         variable_jacobian *= -1.;
         variable_jacobian.diagadd(alpha);
         matrix_diagnostics = analyze_jacobian_matrix(variable_jacobian);
@@ -982,7 +1022,6 @@ namespace DiFfRG
           factorization_diagnostics.factorization_success = 0.;
         record_diagnostics();
         callback_diagnostics.jacobian_failures++;
-        std::cerr << e.what() << std::endl;
         ++failure_counter;
         callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "exception", &y,
                               &y_dot, nullptr, e.what());
@@ -990,7 +1029,10 @@ namespace DiFfRG
       }
 
       const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-      console_out(t, "jacobian", 2, &current_diagnostics, calc_timer.lap());
+      ProgressEvent event{
+          .topic = progress_topics::jacobian, .time = t, .duration_ms = calc_timer.lap(), .minimum_verbosity = 2};
+      current_diagnostics.append_to(event);
+      this->log.progress(event);
       callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "success", &y, &y_dot,
                             nullptr);
 

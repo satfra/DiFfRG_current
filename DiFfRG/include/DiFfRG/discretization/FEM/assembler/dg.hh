@@ -176,17 +176,8 @@ namespace DiFfRG
       using Components = typename Discretization::Components;
       static constexpr uint n_components = Components::count_fe_functions(0);
       static constexpr uint dim = Discretization::dim;
-
-      [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Assembler(
-          Discretization &discretization, Model &model,
-          DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, ConfigTree> config)
-          : Assembler(discretization, model, config.value(),
-                      DiFfRG::internal::legacy_default_log_port<Discretization>())
-      {
-      }
-
-      Assembler(Discretization &discretization, Model &model, const ConfigTree &config, LogPort log_port)
-          : Base(discretization, model, config, std::move(log_port)),
+      Assembler(Discretization &discretization, Model &model, const ConfigTree &config)
+          : Base(discretization, model, config),
             quadrature(fe.degree + 1 + config.get_uint("/discretization/overintegration", 0)),
             quadrature_face(fe.degree + 1 + config.get_uint("/discretization/overintegration", 0))
       {
@@ -835,24 +826,13 @@ namespace DiFfRG
                               copy_data, flags, boundary_worker, face_worker, mesh_workers, batch_size);
         timings_jacobian.push_back(timer.wall_time());
       }
-
-      template <typename String>
-        requires std::convertible_to<String, std::string>
-      [[deprecated("Construct the assembler with output.log_port() and call log() instead")]] void log(String &&)
+      SummaryEvent summary() const override
       {
-        DiFfRG::internal::reject_named_assembler_log<String>();
-      }
-
-      void log()
-      {
-        std::stringstream ss;
-        ss << "DG Assembler: " << std::endl;
-        ss << "        Reinit: " << average_time_reinit() * 1000 << "ms (" << num_reinits() << ")" << std::endl;
-        ss << "        Residual: " << average_time_residual_assembly() * 1000 << "ms (" << num_residuals() << ")"
-           << std::endl;
-        ss << "        Jacobian: " << average_time_jacobian_assembly() * 1000 << "ms (" << num_jacobians() << ")"
-           << std::endl;
-        this->log_port.info(ss.str());
+        SummaryEvent result{.component = "DG"};
+        result.timing("reinit", average_time_reinit() * 1000, num_reinits())
+            .timing("residual", average_time_residual_assembly() * 1000, num_residuals())
+            .timing("jac", average_time_jacobian_assembly() * 1000, num_jacobians());
+        return result;
       }
 
       double average_time_reinit() const
@@ -865,7 +845,7 @@ namespace DiFfRG
       }
       uint num_reinits() const { return timings_reinit.size(); }
 
-      double average_time_residual_assembly()
+      double average_time_residual_assembly() const
       {
         double t = 0.;
         double n = timings_residual.size();
@@ -875,7 +855,7 @@ namespace DiFfRG
       }
       uint num_residuals() const { return timings_residual.size(); }
 
-      double average_time_jacobian_assembly()
+      double average_time_jacobian_assembly() const
       {
         double t = 0.;
         double n = timings_jacobian.size();

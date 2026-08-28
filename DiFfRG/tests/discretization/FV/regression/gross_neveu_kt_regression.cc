@@ -428,14 +428,14 @@ namespace
     const ConfigTree json = make_json(flow_case);
     Model model(json, flow_case);
     Mesh mesh(make_mesh_config());
-    Discretization discretization(mesh, json, DiFfRG::LogPort{});
-    Assembler<Model> assembler(discretization, model, json, DiFfRG::LogPort{});
+    Discretization discretization(mesh, json);
+    Assembler<Model> assembler(discretization, model, json);
 
     auto data_out_path =
         OutputPath::temporary(TemporaryRetention::remove_on_destruction, "gross_neveu_kt_regression", "output");
     OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
-    Stepper time_stepper(json, &assembler, &data_out, adaptor.get());
+    Stepper time_stepper(json, assembler, data_out, *adaptor);
 
     FV::FlowingVariables<Discretization> state(discretization);
     state.interpolate(model);
@@ -453,7 +453,7 @@ namespace
       REQUIRE(initial_support_points[i] == Catch::Approx(static_cast<double>(i) * delta_sigma).margin(grid_tol));
 
     try {
-      time_stepper.run(&state, 0.0, final_time);
+      time_stepper.run(state, 0.0, final_time);
     } catch (const std::exception &exception) {
       FAIL(std::string("Gross-Neveu KT regression solve failed: ") + exception.what());
     }

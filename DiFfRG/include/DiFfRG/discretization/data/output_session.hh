@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DiFfRG/common/run_logger.hh>
+#include <DiFfRG/common/run_reporter.hh>
 #include <DiFfRG/discretization/common/eom.hh>
 #include <DiFfRG/discretization/data/csv_output.hh>
 #include <DiFfRG/discretization/data/diagnostic_port.hh>
@@ -166,9 +166,13 @@ namespace DiFfRG
   template <uint dim, typename VectorType> class OutputSession
   {
   public:
-    explicit OutputSession(const OutputPath &path, Config::OutputSettings settings = {});
-    OutputSession(const OutputPath &path, const ConfigTree &config)
-        : OutputSession(path, Config::OutputSettings(config))
+    OutputSession() : OutputSession(OutputPath::temporary(), Config::OutputSettings{}) {}
+    explicit OutputSession(const ConfigTree &config) : OutputSession(path_from(config), Config::OutputSettings(config))
+    {
+    }
+    explicit OutputSession(OutputPath path, Config::OutputSettings settings = {});
+    OutputSession(OutputPath path, const ConfigTree &config)
+        : OutputSession(std::move(path), Config::OutputSettings(config))
     {
     }
     ~OutputSession() noexcept;
@@ -209,7 +213,7 @@ namespace DiFfRG
     }
 
     DiagnosticPort diagnostic_port() const { return diagnostics_port; }
-    LogPort log_port() const { return run_logger.port(); }
+    ReportPort report_port() const { return run_reporter.port(); }
 
     /** Join pending writers and surface their first error without closing the session. */
     void drain();
@@ -222,6 +226,14 @@ namespace DiFfRG
     bool is_writer_rank() const noexcept { return active; }
 
   private:
+    static OutputPath path_from(const ConfigTree &config)
+    {
+      if (config.contains("/output/folder")) return OutputPath(config);
+      const auto name = config.get_string("/output/name", "output");
+      return OutputPath::temporary(TemporaryRetention::remove_on_destruction, name,
+                                   config.get_string("/output/field_directory", name));
+    }
+
     FEOutput<dim, VectorType> &fe_output() { return fe_out; }
     void attach_raw_potential(ReconstructedRawPotential<dim, typename VectorType::value_type> potential);
     void attach_eom_potential(EoMResult<dim, typename VectorType::value_type> result);
@@ -235,7 +247,7 @@ namespace DiFfRG
                      const std::vector<std::string> &header);
     void rethrow_deferred_error();
 
-    const OutputPath &output_path;
+    OutputPath output_path;
     Config::OutputSettings settings;
     const std::string top_folder;
     const std::string output_name;
@@ -247,7 +259,7 @@ namespace DiFfRG
     std::exception_ptr terminal_error;
     mutable std::mutex submission_mutex;
 
-    RunLogger run_logger;
+    RunReporter run_reporter;
     /** Declared before every sink that submits to it, so it is destroyed last. finish() joins
      * it explicitly before h5_files goes away, because ~HDF5Output closes the file and that
      * must not race the worker. */

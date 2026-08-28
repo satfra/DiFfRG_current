@@ -15,10 +15,11 @@
 namespace DiFfRG
 {
   template <uint dim, typename VectorType>
-  OutputSession<dim, VectorType>::OutputSession(const OutputPath &path, Config::OutputSettings settings)
-      : output_path(path), settings(std::move(settings)), top_folder(make_folder(path.root().string())),
-        output_name(path.run_name()), output_folder(make_folder(path.field_directory().generic_string())),
-        active(MPI::rank(MPI_COMM_WORLD) == 0), run_logger(path, this->settings, active),
+  OutputSession<dim, VectorType>::OutputSession(OutputPath path, Config::OutputSettings settings)
+      : output_path(std::move(path)), settings(std::move(settings)),
+        top_folder(make_folder(output_path.root().string())), output_name(output_path.run_name()),
+        output_folder(make_folder(output_path.field_directory().generic_string())),
+        active(MPI::rank(MPI_COMM_WORLD) == 0), run_reporter(output_path, this->settings, active),
         hdf5_writer(this->settings.asynchronous && active ? this->settings.hdf5_queue_depth : 0u),
         fe_out(this->top_folder, this->output_name, this->output_folder, this->settings, active),
         potential_fe_out(this->top_folder, this->output_name + "_potential", this->output_folder, this->settings,
@@ -28,7 +29,7 @@ namespace DiFfRG
         use_hdf5(this->settings.write_hdf5), filename_h5(this->output_name + ".h5")
   {
     set_Lambda(this->settings.Lambda);
-    diagnostics_port = DiagnosticPort::create(path, Lambda, active);
+    diagnostics_port = DiagnosticPort::create(output_path, Lambda, active);
     if (active) diagnostics_port.write_text(this->output_name + ".log.json", this->settings.configuration_log);
 
     if (active && use_hdf5) {
@@ -161,14 +162,13 @@ namespace DiFfRG
 
     if (settings.verbosity < 3) return;
 
-    run_logger.port().debug("output frame t = {:.6e}: total {:.4f}s (contributor {:.4f}s, of which {} potential "
-                            "solve(s) {:.4f}s; build_patches {:.4f}s, filter {:.4f}s, hdf5 write {:.4f}s, hdf5 "
-                            "open/close {:.4f}s in {} open(s), fe attach {:.4f}s, fe flush {:.4f}s, csv {:.4f}s)",
-                            time, current_frame.total, current_frame.contributor,
-                            current_frame.potential_solve_count, current_frame.potential_solves,
-                            current_frame.build_patches, current_frame.data_filter, current_frame.hdf5_write,
-                            current_frame.hdf5_open_close, current_frame.hdf5_open_count, current_frame.fe_attach,
-                            current_frame.fe_flush, current_frame.csv);
+    run_reporter.port().debug("output frame t = {:.6e}: total {:.4f}s (contributor {:.4f}s, of which {} potential "
+                              "solve(s) {:.4f}s; build_patches {:.4f}s, filter {:.4f}s, hdf5 write {:.4f}s, hdf5 "
+                              "open/close {:.4f}s in {} open(s), fe attach {:.4f}s, fe flush {:.4f}s, csv {:.4f}s)",
+                              time, current_frame.total, current_frame.contributor, current_frame.potential_solve_count,
+                              current_frame.potential_solves, current_frame.build_patches, current_frame.data_filter,
+                              current_frame.hdf5_write, current_frame.hdf5_open_close, current_frame.hdf5_open_count,
+                              current_frame.fe_attach, current_frame.fe_flush, current_frame.csv);
 
     diagnostics_port.record("output_timings.csv", time,
                             {{"total", current_frame.total},
@@ -298,8 +298,9 @@ namespace DiFfRG
       // thought to switch something on beforehand.
       timings.set_writer_totals(hdf5_writer.worker_totals(), hdf5_writer.asynchronous());
       const std::string report = timings.format();
-      if (!report.empty()) run_logger.port().info(report);
+      if (!report.empty()) run_reporter.port().info(report);
     }
+    run_reporter.finish();
     rethrow_deferred_error();
     if (terminal_error) std::rethrow_exception(terminal_error);
   }

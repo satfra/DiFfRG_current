@@ -11,7 +11,6 @@ namespace DiFfRG::Config
         verbosity(config.get_int("/output/verbosity", 0)),
         log_queue_size(config.get_uint("/output/log_queue_size", 8192)),
         log_level(static_cast<spdlog::level::level_enum>(config.get_int("/output/log_level", SPDLOG_LEVEL_INFO))),
-        log_flush_interval(config.get_double("/output/log_flush_interval", 10.)),
         Lambda(config.get_double("/physical/Lambda", -1.)),
         configuration_json(json::serialize(static_cast<json::value>(config)))
   {

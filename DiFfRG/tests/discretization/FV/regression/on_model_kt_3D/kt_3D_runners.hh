@@ -28,13 +28,13 @@ namespace on_kt_3D
     const ConfigTree json = make_json(threads);
     ModelType model(json, grid);
     Mesh mesh(make_mesh_config(grid));
-    Discretization discretization(mesh, json, DiFfRG::LogPort{});
-    Assembler<ModelType> assembler(discretization, model, json, DiFfRG::LogPort{});
+    Discretization discretization(mesh, json);
+    Assembler<ModelType> assembler(discretization, model, json);
 
     auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_kt_3D", "output");
     OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
-    ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+    ImplicitTimeStepper time_stepper(json, assembler, data_out, *adaptor);
 
     FV::FlowingVariables<Discretization> state(discretization);
     state.interpolate(model);
@@ -42,7 +42,7 @@ namespace on_kt_3D
     const auto &support_points = discretization.get_support_points();
     REQUIRE(support_points.size() == grid.cells);
 
-    time_stepper.run(&state, 0.0, target_time);
+    time_stepper.run(state, 0.0, target_time);
   }
 
   // Wave-speed-strategy-parameterised runner for deliberately different
@@ -55,13 +55,13 @@ namespace on_kt_3D
     const ConfigTree json = make_json(threads);
     ModelType model(json, grid);
     Mesh mesh(make_mesh_config(grid));
-    Discretization discretization(mesh, json, DiFfRG::LogPort{});
-    AssemblerWS assembler(discretization, model, json, DiFfRG::LogPort{});
+    Discretization discretization(mesh, json);
+    AssemblerWS assembler(discretization, model, json);
 
     auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_kt_3D", "output");
     OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
-    ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+    ImplicitTimeStepper time_stepper(json, assembler, data_out, *adaptor);
 
     FV::FlowingVariables<Discretization> state(discretization);
     state.interpolate(model);
@@ -69,7 +69,7 @@ namespace on_kt_3D
     const auto &support_points = discretization.get_support_points();
     REQUIRE(support_points.size() == grid.cells);
 
-    time_stepper.run(&state, 0.0, target_time);
+    time_stepper.run(state, 0.0, target_time);
   }
 
   // Solver-tolerance-parameterised runner. Used by the Example-settings
@@ -83,13 +83,13 @@ namespace on_kt_3D
     const ConfigTree json = make_json(threads, /*fe_order=*/0, /*x_order=*/32, abs_tol, rel_tol);
     ModelType model(json, grid);
     Mesh mesh(make_mesh_config(grid));
-    Discretization discretization(mesh, json, DiFfRG::LogPort{});
-    AssemblerTol assembler(discretization, model, json, DiFfRG::LogPort{});
+    Discretization discretization(mesh, json);
+    AssemblerTol assembler(discretization, model, json);
 
     auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_kt_3D", "output");
     OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
-    ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+    ImplicitTimeStepper time_stepper(json, assembler, data_out, *adaptor);
 
     FV::FlowingVariables<Discretization> state(discretization);
     state.interpolate(model);
@@ -97,7 +97,7 @@ namespace on_kt_3D
     const auto &support_points = discretization.get_support_points();
     REQUIRE(support_points.size() == grid.cells);
 
-    time_stepper.run(&state, 0.0, target_time);
+    time_stepper.run(state, 0.0, target_time);
   }
 
   // CG-discretisation runner. Used by LSM_CG; lets us run an integrator-based
@@ -114,18 +114,18 @@ namespace on_kt_3D
     const ConfigTree json = make_json(threads, fe_order, /*x_order=*/32, abs_tol, rel_tol);
     ModelType model(json, grid);
     Mesh mesh(make_mesh_config(grid));
-    CGDiscretization discretization(mesh, json, DiFfRG::LogPort{});
-    CGAssembler assembler(discretization, model, json, DiFfRG::LogPort{});
+    CGDiscretization discretization(mesh, json);
+    CGAssembler assembler(discretization, model, json);
 
     auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_kt_3D_cg", "output");
     OutputSession<dim, typename CGDiscretization::VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<typename CGDiscretization::VectorType>>();
-    CGTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+    CGTimeStepper time_stepper(json, assembler, data_out, *adaptor);
 
     FE::FlowingVariables state(discretization);
     state.interpolate(model);
 
-    time_stepper.run(&state, 0.0, target_time);
+    time_stepper.run(state, 0.0, target_time);
   }
 
   // KT runner on a non-uniform (adaptive) initial grid. Tests whether KT's
@@ -142,19 +142,19 @@ namespace on_kt_3D
     GridSettings grid{n_cells_in_grid, subranges.front().min, subranges.back().max};
     ModelType model(json, grid);
     Mesh mesh(make_adaptive_mesh_config(subranges));
-    Discretization discretization(mesh, json, DiFfRG::LogPort{});
-    AssemblerAd assembler(discretization, model, json, DiFfRG::LogPort{});
+    Discretization discretization(mesh, json);
+    AssemblerAd assembler(discretization, model, json);
 
     auto data_out_path =
         OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_kt_3D_adaptive", "output");
     OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
-    ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+    ImplicitTimeStepper time_stepper(json, assembler, data_out, *adaptor);
 
     FV::FlowingVariables<Discretization> state(discretization);
     state.interpolate(model);
 
-    time_stepper.run(&state, 0.0, target_time);
+    time_stepper.run(state, 0.0, target_time);
   }
 
   // CG counterpart on the adaptive grid.
@@ -173,19 +173,19 @@ namespace on_kt_3D
     GridSettings grid{n_cells_in_grid, subranges.front().min, subranges.back().max};
     ModelType model(json, grid);
     Mesh mesh(make_adaptive_mesh_config(subranges));
-    CGDiscretization discretization(mesh, json, DiFfRG::LogPort{});
-    CGAssembler assembler(discretization, model, json, DiFfRG::LogPort{});
+    CGDiscretization discretization(mesh, json);
+    CGAssembler assembler(discretization, model, json);
 
     auto data_out_path =
         OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_kt_3D_cg_adaptive", "output");
     OutputSession<dim, typename CGDiscretization::VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<typename CGDiscretization::VectorType>>();
-    CGTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+    CGTimeStepper time_stepper(json, assembler, data_out, *adaptor);
 
     FE::FlowingVariables state(discretization);
     state.interpolate(model);
 
-    time_stepper.run(&state, 0.0, target_time);
+    time_stepper.run(state, 0.0, target_time);
   }
 
 } // namespace on_kt_3D

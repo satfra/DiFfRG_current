@@ -86,8 +86,8 @@ TEST_CASE("Test FE output on Constant model", "[output][cg]")
   // Define the objects needed to run the simulation
   Model model(p_prm);
   RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   // Set up the initial condition
   FE::FlowingVariables initial_condition(discretization);
@@ -143,7 +143,7 @@ TEST_CASE("FEOutput spawns no writer thread when VTK is disabled", "[output][cg]
   Testing::PhysicalParameters p_prm = {0., 1.};
   Model model(p_prm);
   RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
   FE::FlowingVariables initial_condition(discretization);
   initial_condition.interpolate(model);
 
@@ -209,7 +209,7 @@ TEST_CASE("FEOutput async drain preserves reuse and publication order", "[output
 
   Model model(p_prm);
   RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
 
   FE::FlowingVariables initial_condition(discretization);
   initial_condition.interpolate(model);

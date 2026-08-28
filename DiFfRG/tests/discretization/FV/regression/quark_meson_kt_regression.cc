@@ -422,14 +422,14 @@ namespace
     kt_regression::ensure_diffrg_initialized();
     QuarkMesonKTModel<Case> model(json);
     Mesh mesh(make_mesh_config<Case>());
-    Discretization discretization(mesh, json, DiFfRG::LogPort{});
-    AssemblerType assembler(discretization, model, json, DiFfRG::LogPort{});
+    Discretization discretization(mesh, json);
+    AssemblerType assembler(discretization, model, json);
 
     auto data_out_path = OutputPath::temporary(TemporaryRetention::keep, output_prefix, "output");
     std::clog << "[QM DIAG] retaining output directory " << data_out_path.root() << '\n';
     OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
-    TimeStepperType time_stepper(json, &assembler, &data_out, adaptor.get());
+    TimeStepperType time_stepper(json, assembler, data_out, *adaptor);
 
     FV::FlowingVariables<Discretization> state(discretization);
     state.interpolate(model);
@@ -438,7 +438,7 @@ namespace
     REQUIRE(support_points.size() == Case::n_cells());
     discretization.get_constraints().distribute(state.spatial_data());
 
-    time_stepper.run(&state, 0.0, final_time);
+    time_stepper.run(state, 0.0, final_time);
 
     return kt_regression::sample_sorted_profile(state, discretization, grid_tol);
   }

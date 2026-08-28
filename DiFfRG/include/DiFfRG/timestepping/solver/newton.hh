@@ -1,8 +1,9 @@
 #pragma once
 
+#include <DiFfRG/common/run_reporter.hh>
+
 // standard library
 #include <functional>
-#include <iostream>
 
 // external libraries
 #include <deal.II/base/config.h>
@@ -28,6 +29,8 @@ namespace DiFfRG
           n_stepsize_iterations(n_stepsize_iterations_), ignore_nonconv(false)
     {
     }
+
+    void set_report_port(ReportPort port) { report_port = std::move(port); }
 
     /**
      * @brief Should it be necessary, one can force a recalculation of the jacobian hereby.
@@ -87,10 +90,7 @@ namespace DiFfRG
 
         residual(residual_vector, u);
         res_l2 = residual_vector.l2_norm();
-        if (!std::isfinite(res_l2)) {
-          std::cerr << "Residual non-finite!" << std::endl;
-          throw std::runtime_error("Residual non-finite!");
-        }
+        if (!std::isfinite(res_l2)) throw std::runtime_error("Residual non-finite!");
 
         // Simple line search: use cheap l2_norm comparisons instead of full get_EEst()
         uint step_size = 0;
@@ -187,6 +187,7 @@ namespace DiFfRG
     uint step, jacobians;
 
     std::vector<double> timings_newton;
+    ReportPort report_port;
 
     /**
      * @brief Calculate the current error estimate

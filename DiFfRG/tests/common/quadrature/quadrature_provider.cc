@@ -15,10 +15,9 @@ using namespace DiFfRG;
 
 namespace
 {
-  DiFfRG::ConfigTree quadrature_log_json(const std::filesystem::path &folder, const bool quadrature_log)
+  DiFfRG::ConfigTree quadrature_log_json(const std::filesystem::path &folder)
   {
-    return DiFfRG::json::value(
-        {{"output", {{"folder", folder.string()}, {"name", "run"}, {"quadrature_log", quadrature_log}}}});
+    return DiFfRG::json::value({{"output", {{"folder", folder.string()}, {"name", "run"}}}});
   }
 
   std::string read_file(const std::filesystem::path &path)
@@ -78,17 +77,27 @@ TEST_CASE("Test quadrature provider", "[double][quadrature]")
   }
 }
 
-TEST_CASE("Quadrature provider writes its own quadrature log", "[quadrature][output]")
+TEST_CASE("Quadrature provider without an output folder remains console-only", "[quadrature][output][default]")
+{
+  DiFfRG::Init();
+
+  const DiFfRG::ConfigTree config(DiFfRG::json::value({{"output", {{"name", "run"}}}}));
+  DiFfRG::QuadratureProvider quadrature_provider(config);
+  const auto nodes = quadrature_provider.template nodes<double, CPU_memory>(32);
+  REQUIRE(nodes.size() == 32);
+}
+
+TEST_CASE("Quadrature provider writes its own quadrature log when a folder is configured", "[quadrature][output]")
 {
   DiFfRG::Init();
 
   auto path = DiFfRG::OutputPath::temporary(TemporaryRetention::remove_on_destruction, "run", "run");
   const auto log_file = path.run_file("_quadrature", ".log");
 
-  SECTION("Enabled by default")
+  SECTION("Enabled by the configured output folder")
   {
     {
-      DiFfRG::QuadratureProvider quadrature_provider(quadrature_log_json(path.root(), true));
+      DiFfRG::QuadratureProvider quadrature_provider(quadrature_log_json(path.root()));
       // Requesting a quadrature has to be reported, since this is what the file exists for. The provider owns the
       // logger, so the records are only guaranteed on disk once it has been destroyed.
       const auto nodes = quadrature_provider.template nodes<double, CPU_memory>(32);
@@ -101,24 +110,13 @@ TEST_CASE("Quadrature provider writes its own quadrature log", "[quadrature][out
     CHECK_THAT(contents, Catch::Matchers::ContainsSubstring("order = 32"));
   }
 
-  SECTION("Suppressed by /output/quadrature_log")
-  {
-    {
-      DiFfRG::QuadratureProvider quadrature_provider(quadrature_log_json(path.root(), false));
-      const auto nodes = quadrature_provider.template nodes<double, CPU_memory>(32);
-      REQUIRE(nodes.size() == 32);
-    }
-
-    CHECK_FALSE(std::filesystem::exists(log_file));
-  }
-
   SECTION("An explicit port takes precedence over the own log")
   {
     {
       Config::OutputSettings settings;
-      RunLogger run_logger(path, settings, true, RunLoggerOptions{"", "run", false});
+      RunReporter run_reporter(path, settings, true);
 
-      DiFfRG::QuadratureProvider quadrature_provider(quadrature_log_json(path.root(), true), run_logger.port());
+      DiFfRG::QuadratureProvider quadrature_provider(quadrature_log_json(path.root()), run_reporter.port());
       const auto nodes = quadrature_provider.template nodes<double, CPU_memory>(32);
       REQUIRE(nodes.size() == 32);
     }

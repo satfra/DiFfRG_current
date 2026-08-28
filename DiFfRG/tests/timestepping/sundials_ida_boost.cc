@@ -98,18 +98,18 @@ bool run_hybrid(const std::string &test_name, double expected_precision, double 
   Testing::PhysicalParameters p_prm = {};
   Model model(p_prm);
   RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
   auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, test_name, test_name);
   OutputSession<dim, VectorType> data_out(data_out_path, json);
   HAdaptivity mesh_adaptor(assembler, json);
-  TimeStepper time_stepper(json, &assembler, &data_out, &mesh_adaptor);
+  TimeStepper time_stepper(json, assembler, data_out, mesh_adaptor);
 
   FE::FlowingVariables initial_condition(discretization);
   initial_condition.interpolate(model);
 
   try {
-    time_stepper.run(&initial_condition, 0., final_time);
+    time_stepper.run(initial_condition, 0., final_time);
   } catch (std::exception &e) {
     std::cout << test_name << ": simulation finished with exception " << e.what() << std::endl;
     return false;

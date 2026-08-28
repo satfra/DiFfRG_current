@@ -45,15 +45,14 @@ namespace DiFfRG
 
     using Base::assembler, Base::data_out, Base::config, Base::adaptor;
     using Base::Base;
-    using Base::console_out;
-    using Base::verbosity, Base::output_dt, Base::impl, Base::expl;
+    using Base::output_dt, Base::impl, Base::expl;
 
     using error_stepper_type = typename stepperChoice<prec>::value;
 
     /**
      * @brief Run the time stepping algorithm.
      */
-    virtual void run(AbstractFlowingVariables<NumberType> *initial_condition, const double t_start,
+    virtual void run(AbstractFlowingVariables<NumberType> &initial_condition, const double t_start,
                      const double t_stop) override;
 
   private:

@@ -104,7 +104,7 @@ TEST_CASE("HDF5 output layout is stable", "[output][hdf5][layout][golden]")
   Testing::PhysicalParameters p_prm = {/*x0_initial = */ 0., /*x1_initial = */ 1.};
   Model model(p_prm);
   RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(config)};
-  Discretization discretization(mesh, config, DiFfRG::LogPort{});
+  Discretization discretization(mesh, config);
   FE::FlowingVariables initial_condition(discretization);
   initial_condition.interpolate(model);
   const VectorType &solution = initial_condition.spatial_data();

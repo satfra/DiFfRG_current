@@ -418,13 +418,12 @@ int main(int argc, char *argv[])
   // Define the objects needed to run the simulation
   Model model(json);
   RectangularMesh<dim> mesh(json);
-  OutputPath output_path(json);
-  OutputSession<dim, VectorType> output(output_path, Config::OutputSettings(json));
-  const auto log = output.log_port();
+  OutputSession<dim, VectorType> output(json);
+  const auto log = output.report_port();
   Discretization discretization(mesh, json, log);
-  Assembler assembler(discretization, model, json, log);
+  Assembler assembler(discretization, model, json);
   HAdaptivity mesh_adaptor(assembler, json);
-  TimeStepper time_stepper(json, &assembler, &output, &mesh_adaptor);
+  TimeStepper time_stepper(json, assembler, output, mesh_adaptor);
 
   // Set up the initial condition
   FE::FlowingVariables initial_condition(discretization);
@@ -432,10 +431,9 @@ int main(int argc, char *argv[])
 
   // Start the timestepping
   Timer timer;
-  time_stepper.run(&initial_condition, 0., json.get_double("/timestepping/final_time"));
+  time_stepper.run(initial_condition, 0., json.get_double("/timestepping/final_time"));
 
-  // Print a bit of exit information to the logger.
-  assembler.log();
+  // Print a bit of exit information through the run-owned reporter.
   log.info("Simulation finished after " + time_format(timer.wall_time()));
   return 0;
 }

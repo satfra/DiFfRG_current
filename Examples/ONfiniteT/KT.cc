@@ -30,14 +30,13 @@ int main(int argc, char *argv[])
   // Define the objects needed to run the simulation
   Model model(json);
   RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
-  OutputPath output_path(json);
-  OutputSession<dim, VectorType> data_out(output_path, json);
-  const auto log = data_out.log_port();
+  OutputSession<dim, VectorType> data_out(json);
+  const auto log = data_out.report_port();
   Discretization discretization(mesh, json, log);
-  Assembler assembler(discretization, model, json, log);
+  Assembler assembler(discretization, model, json);
   // KT requires a fixed rectangular mesh; no h-adaptivity.
   NoAdaptivity<VectorType> mesh_adaptor;
-  TimeStepper time_stepper(json, &assembler, &data_out, &mesh_adaptor);
+  TimeStepper time_stepper(json, assembler, data_out, mesh_adaptor);
 
   // Set up the initial condition
   FV::FlowingVariables<Discretization> initial_condition(discretization);
@@ -46,13 +45,12 @@ int main(int argc, char *argv[])
   // Now we start the timestepping
   Timer timer;
   try {
-    time_stepper.run(&initial_condition, 0., json.get_double("/timestepping/final_time"));
+    time_stepper.run(initial_condition, 0., json.get_double("/timestepping/final_time"));
   } catch (std::exception &e) {
     log.error("Simulation finished with exception {}", e.what());
     return -1;
   }
   auto time = timer.wall_time();
-  assembler.log();
   log.info("Simulation finished after " + time_format(time));
   return 0;
 }

@@ -62,7 +62,7 @@ TEST_CASE("FV FlowingVariables stores cell averages", "[FV][data]")
   QuadraticInitialConditionModel model;
   const Config::GridAxis x_axis(0.0, 1.0, 2.0);
   Mesh mesh(Config::ConfigurationMesh<1>(0u, std::vector<Config::GridAxis>{x_axis}));
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
   FV::FlowingVariables<Discretization> state(discretization);
   state.interpolate(model);
 

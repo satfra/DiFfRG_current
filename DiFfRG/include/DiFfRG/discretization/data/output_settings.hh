@@ -39,9 +39,6 @@ namespace DiFfRG
       int verbosity = 0;
       std::size_t log_queue_size = 8192;
       spdlog::level::level_enum log_level = spdlog::level::info;
-      /** Interval in seconds at which the run log file is flushed to disk. Values <= 0 disable periodic flushing, in
-       * which case the log file is only complete after a clean shutdown. */
-      double log_flush_interval = 10.;
       double Lambda = -1.;
       std::string configuration_json = "{}";
       std::string configuration_log = "{}";

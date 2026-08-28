@@ -221,13 +221,13 @@ namespace
     BuckleyLeverett2DExample12Model model;
     Mesh mesh(make_mesh_config(n_cells));
 
-    Discretization discretization(mesh, json, DiFfRG::LogPort{});
-    Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+    Discretization discretization(mesh, json);
+    Assembler assembler(discretization, model, json);
 
     auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, run_name, "output");
     OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
-    TimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+    TimeStepper time_stepper(json, assembler, data_out, *adaptor);
 
     FV::FlowingVariables<Discretization> state(discretization);
     state.interpolate(model);
@@ -237,7 +237,7 @@ namespace
     result.initial_values = row_major_cell_values(discretization, state.spatial_data(), n_cells);
     result.initial_mass = integrated_mass(result.initial_values, n_cells);
 
-    time_stepper.run(&state, 0.0, final_time);
+    time_stepper.run(state, 0.0, final_time);
 
     result.final_values = row_major_cell_values(discretization, state.spatial_data(), n_cells);
     result.final_mass = integrated_mass(result.final_values, n_cells);

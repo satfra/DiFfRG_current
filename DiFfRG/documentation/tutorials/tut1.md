@@ -143,12 +143,11 @@ Note that the TimeStepper takes an additional argument, where we can choose the 
   // Define the objects needed to run the simulation
   Model model(json);
   RectangularMesh<dim> mesh(json);
-  OutputPath output_path(json);
-  OutputSession<dim, VectorType> output(output_path, Config::OutputSettings(json));
-  const auto log = output.log_port();
+  OutputSession<dim, VectorType> output(json);
+  const auto log = output.report_port();
   Discretization discretization(mesh, json, log);
-  Assembler assembler(discretization, model, json, log);
-  TimeStepper time_stepper(json, &assembler, &output);
+  Assembler assembler(discretization, model, json);
+  TimeStepper time_stepper(json, assembler, output);
 ```
 We now use the types we defined above to construct objects of all the classes described above.
 
@@ -163,7 +162,7 @@ and use it to run the time-stepper from RG-time 0 to the final RG-time, which we
   // Now we start the timestepping
   Timer timer;
   try {
-    time_stepper.run(&initial_condition, 0., json.get_double("/timestepping/final_time"));
+    time_stepper.run(initial_condition, 0., json.get_double("/timestepping/final_time"));
   } catch (std::exception &e) {
     log.error("Simulation finished with exception {}", e.what());
     return -1;
@@ -184,10 +183,9 @@ t_- = \ln k / \Lambda
 
 Furthermore, we recorded the time the simulation took using the `dealii::Timer` class.
 
-We finish the program by printing a bit of information to the log file, in particular the performance and utilization of the `Assembler`.
+We finish the program by reporting the elapsed time. The timestepper automatically emits the assembler's compact performance summary when it drains the run output.
 ```cpp
   // We print a bit of exit information.
-  assembler.log();
   log.info("Simulation finished after " + time_format(time));
   return 0;
 }
@@ -412,7 +410,7 @@ For more information about timesteppers and their relationship with spontaneous 
 }
 ```
 The `output` section defines:
-- `verbosity` sets how much information is being written to console while running. If at 0, no information is written at all, whereas at 1 the system gives updates at every timestep. From 2 upwards, the progress lines are accompanied by the solver diagnostics (accepted steps, precision rejects, step widths, ...) and by timings for the jacobian and the linear solver.
+- `verbosity` controls structured runtime progress. At 0 no progress is shown; 1 reports residual/timestep work; 2 adds Jacobian, linear-solver, and solver diagnostics; 3 adds factorization and output work. Levels 1--4 are aggregated to at most one update per operation per second. Level 5 prints every event and is intended only for debugging because it can slow the run substantially.
 - `folder` sets the base folder where data is stored. This is useful to not clutter your current directory ("./") with output, or if you run a large amount of simulations.
 - `name` sets the beginning of all filenames of the output, i.e. in this case all files created by the simulation start with "output".
 
@@ -435,19 +433,17 @@ After the simulation has run, which should take (depending on your computer) a f
 ```bash
 $ ls -l
 ```
-- `output.log` contains logging information:
+- `output.log` contains the same structured progress (aggregated every ten seconds), severity messages, and final assembler summaries:
 ```bash
 $ cat output.log
-[2024/10/11] [23:01:31] [DiFfRG Application started]
-[2024/10/11] [23:01:31] [FEM: Number of active cells: 100]
-[2024/10/11] [23:01:31] [FEM: Number of degrees of freedom: 301]
-[2024/10/11] [23:01:31] [FEM: Using 8 mesh workers for assembly.]
-[2024/10/11] [23:01:32] [CG Assembler: 
-        Reinit: 4.36692ms (1)
-        Residual: 0.184398ms (3557)
-        Jacobian: 1.24521ms (17)
-]
-[2024/10/11] [23:01:32] [Simulation finished after 1s]
+[YYYY-MM-DD HH:MM:SS.sss] [run.file] [info] FEM: Number of active cells: 100
+[YYYY-MM-DD HH:MM:SS.sss] [run.file] [info] FEM: Number of degrees of freedom: 301
+[YYYY-MM-DD HH:MM:SS.sss] [run.file] [info] FEM: Using 8 mesh workers for assembly.
+[YYYY-MM-DD HH:MM:SS.sss] [run.file] [info] [sum] CG reinit=...ms(1) residual=...ms(...) jac=...ms(...)
+[YYYY-MM-DD HH:MM:SS.sss] [run.file] [info] Simulation finished after ...
+[YYYY-MM-DD HH:MM:SS.sss] [run.file] [info] Output timings over ... frames:
+  ...
+[YYYY-MM-DD HH:MM:SS.sss] [run.file] [info] [res ] t=10.00000 k=4.540e-05 implicit n=... avg=...ms
 ```
 - `output.log.json` contains a copy of the JSON parameters used.
 - `output.pvd` contains links to the FEM output data of the simulation and can be now visualized in `Paraview`.

@@ -108,8 +108,8 @@ bool run(std::string test_name, double expected_precision, const std::string &re
   // Define the objects needed to run the simulation
   Model model(p_prm);
   RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(config)};
-  Discretization discretization(mesh, config, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, config, DiFfRG::LogPort{});
+  Discretization discretization(mesh, config);
+  Assembler assembler(discretization, model, config);
   auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, test_name, test_name);
   OutputSession<dim, VectorType> data_out(data_out_path, config);
 
@@ -121,7 +121,7 @@ bool run(std::string test_name, double expected_precision, const std::string &re
   else
     adaptor = std::make_unique<NoAdaptivity<VectorType>>();
 
-  TimeStepper time_stepper(config, &assembler, &data_out, adaptor.get());
+  TimeStepper time_stepper(config, assembler, data_out, *adaptor);
 
   // Set up the initial condition
   FlowingVariablesFor<Discretization> initial_condition(discretization);
@@ -130,9 +130,9 @@ bool run(std::string test_name, double expected_precision, const std::string &re
   // Now we start the timestepping
   try {
     if constexpr (expl)
-      time_stepper.run_explicit(&initial_condition, 0., final_time);
+      time_stepper.run_explicit(initial_condition, 0., final_time);
     else
-      time_stepper.run(&initial_condition, 0., final_time);
+      time_stepper.run(initial_condition, 0., final_time);
   } catch (std::exception &e) {
     std::cout << "Simulation finished with exception " << e.what() << std::endl;
     return false;

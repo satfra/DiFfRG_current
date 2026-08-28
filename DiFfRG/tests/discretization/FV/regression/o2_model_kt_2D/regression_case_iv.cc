@@ -346,8 +346,8 @@ namespace
     const ConfigTree json = make_run_json(params, grid);
     O2_Model_VI_B_IV model(json);
     Mesh mesh(make_mesh_config(grid));
-    Discretization discretization(mesh, json, DiFfRG::LogPort{});
-    O2Assembler<O2_Model_VI_B_IV> assembler(discretization, model, json, DiFfRG::LogPort{});
+    Discretization discretization(mesh, json);
+    O2Assembler<O2_Model_VI_B_IV> assembler(discretization, model, json);
 
     auto data_out_path = OutputPath::temporary(params.retain_output ? TemporaryRetention::keep
                                                                     : TemporaryRetention::remove_on_destruction,
@@ -356,13 +356,13 @@ namespace
               << data_out_path.root() << '\n';
     OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
-    ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+    ImplicitTimeStepper time_stepper(json, assembler, data_out, *adaptor);
 
     FV::FlowingVariables<Discretization> state(discretization);
     state.interpolate(model);
     discretization.get_constraints().distribute(state.spatial_data());
 
-    time_stepper.run(&state, 0.0, params.final_time);
+    time_stepper.run(state, 0.0, params.final_time);
     return extract_origin_gamma2(sample_final_grid(state, discretization, grid));
   }
 
@@ -378,21 +378,21 @@ namespace
     const ConfigTree json = make_run_json(params, grid);
     O2_Model_VI_B_IV_OriginCentered model(json);
     Mesh mesh(make_mesh_config(grid));
-    Discretization discretization(mesh, json, DiFfRG::LogPort{});
-    O2Assembler<O2_Model_VI_B_IV_OriginCentered> assembler(discretization, model, json, DiFfRG::LogPort{});
+    Discretization discretization(mesh, json);
+    O2Assembler<O2_Model_VI_B_IV_OriginCentered> assembler(discretization, model, json);
 
     auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction,
                                                "o2_model_kt_2D_case_iv_origin_centered_quarter_domain", "output");
     std::clog << "[O2 DIAG] using temporary output directory " << data_out_path.root() << '\n';
     OutputSession<dim, VectorType> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
-    ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+    ImplicitTimeStepper time_stepper(json, assembler, data_out, *adaptor);
 
     FV::FlowingVariables<Discretization> state(discretization);
     state.interpolate(model);
     discretization.get_constraints().distribute(state.spatial_data());
 
-    time_stepper.run(&state, 0.0, params.final_time);
+    time_stepper.run(state, 0.0, params.final_time);
     return extract_origin_centered_gamma2(sample_final_grid(state, discretization, grid));
   }
 } // namespace

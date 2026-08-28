@@ -1,27 +1,26 @@
 # Runtime output
 
-Runtime output uses one move-only `OutputPath` and one `OutputSession` at the application boundary. The path owner must
-outlive the session, which owns the scientific sinks, bounded asynchronous VTK queue, effective-configuration snapshot,
-and run logger. Both are explicitly constructed; there is no global output or logger registry and no hidden path
-fallback in a timestepper.
+Runtime output uses one value-owned `OutputPath` inside an `OutputSession`. The session owns the scientific sinks,
+bounded asynchronous VTK queue, effective-configuration snapshot, and run reporter. There is no global named-logger
+registry and required timestepper dependencies are passed by reference.
 
 Applications may adapt their JSON configuration at the boundary:
 
 ```cpp
-OutputPath path(json);
-OutputSession<dim, VectorType> output(path, Config::OutputSettings(json));
+OutputSession<dim, VectorType> output(json);
 ```
 
-Unit tests request an automatically cleaned system-temporary directory without constructing output JSON:
+If `/output/folder` is present, the run log, configuration record, HDF5 file, CSV tables, and field directory all use
+that configured root. Without `/output/folder`, the session creates a unique system-temporary root and removes it at
+destruction. A completely default session therefore needs no output configuration:
 
 ```cpp
-OutputPath path = OutputPath::temporary();
-OutputSession<dim, VectorType> output(path, Config::OutputSettings{});
+OutputSession<dim, VectorType> output;
 ```
 
-Use `OutputPath::temporary(TemporaryRetention::keep)` while debugging a test. `OutputPath` has no default constructor,
-is not copyable, and transfers its cleanup responsibility when moved. Persistent typed and JSON-created paths are never
-deleted automatically.
+Use `OutputPath::temporary(TemporaryRetention::keep)` and pass it to the session while debugging a test. `OutputPath`
+is a copyable immutable ownership handle: copies share temporary-root lifetime, and cleanup occurs after the last copy
+or owning session is destroyed. Explicitly configured paths are persistent and are never deleted automatically.
 
 Each scheduled output event is collected in one scoped `OutputFrame`:
 
@@ -89,24 +88,74 @@ JSON is only an adapter for the typed `Config::OutputSettings`. The correspondin
 {
   "output": {
     "max_pending_frames": 2,
-    "log_queue_size": 8192,
-    "log_flush_interval": 10.0,
-    "quadrature_log": true
+    "log_queue_size": 8192
   }
 }
 ```
 
-The run log is written by an asynchronous logger whose file sink is otherwise only flushed on shutdown, so a long run
-would show a log file lagging by a full stdio buffer and a killed job would lose its tail. `log_flush_interval` is the
-period in seconds at which the log file is flushed from a dedicated thread; set it to `0` to disable periodic flushing.
+`OutputSession::report_port()` returns a cheap, copyable `ReportPort`. Assemblers, timesteppers, solvers, and models use
+that port for `info`, `warn`, `error`, and structured `progress` records; they neither construct loggers nor inspect
+output JSON. A default-constructed `ReportPort` also works immediately and lazily creates a console-only reporter on
+its first message; it does not create a directory or file. No setup or named spdlog logger is required.
+`ReportPort::log_file()` returns an optional path that is empty for console-only ports.
 
-A `QuadratureProvider` constructed from the configuration reports every quadrature it builds to its own side-channel
-log, `<output name>_quadrature.log`, written next to the run log and sharing its queue, level and flush settings. It
-owns that logger instead of borrowing the session's: integrators request their quadratures from within their
-constructors, usually before any `OutputSession` exists, and the provider is a process-level cache that outlives a
-single run. The file has no console sink, so the quadrature inventory does not interleave with the timestepper
-progress report. Set `quadrature_log` to `false` to suppress the file, or pass an explicit `LogPort` as the second
-constructor argument to route the messages into a log of your own.
+Spatial discretizations accept an optional port and assemblers inherit it from their discretization:
+
+```cpp
+OutputSession<dim, VectorType> output(json);
+Discretization discretization(mesh, json, output.report_port());
+Assembler assembler(discretization, model, json);
+TimeStepper timestepper(json, assembler, output);
+```
+
+Standalone discretizations may simply use `Discretization(mesh, json)`; their constructor diagnostics go to the
+automatic console-only fallback. Required timestepper dependencies and initial conditions are references, so `run` is
+called as `timestepper.run(initial_condition, start, stop)`.
+
+Warnings and errors are flushed promptly, and callers can request an explicit flush. Progress is coalesced by topic before it reaches
+the asynchronous sinks, so tight callback loops cannot fill the terminal or make logging dominate the calculation.
+
+The progress policy is deliberately fixed in C++ and has no JSON controls:
+
+- verbosity 0 suppresses progress;
+- verbosity 1 reports residual/timestep work;
+- verbosity 2 adds Jacobian, linear-solver, and solver-specific diagnostics;
+- verbosity 3 adds factorization and output work;
+- verbosity 4 remains aggregated;
+- verbosity 5 emits every event and prints a performance warning.
+
+At levels 1--4, each topic produces at most one console update per second and one run-log update per ten seconds.
+Each progress record is at most 100 columns and uses at most two lines: a stable summary line followed, when needed, by
+one solver-diagnostic line. The reporter writes the final pending aggregates during shutdown. These intervals and the
+line width are intentionally not configurable.
+
+Custom solvers can add numeric diagnostics without formatting their own console text:
+
+```cpp
+static constexpr ProgressTopic krylov_solve{"kry", "restarted"};
+ProgressEvent event{.topic = krylov_solve,
+                    .time = time,
+                    .duration_ms = elapsed_ms,
+                    .iterations = iterations,
+                    .minimum_verbosity = 2};
+event.field("restart", restart_count, 2).field("residual", final_residual, 2);
+report.progress(event);
+```
+
+Built-in timesteppers require and call `set_report_port(ReportPort)` on their linear solver. Solvers derived from
+`AbstractLinearSolver` receive the implementation automatically and may use its protected `report_port`; independently
+composed solvers must provide the same explicit reporting contract.
+
+Topic labels and field names must be string literals (or otherwise have static storage duration). Standard topics live
+in `progress_topics`, while custom solvers can define their own `constexpr ProgressTopic` without changing the central
+reporter. The reporter copies all numeric data, aggregates repeated events, and renders the stable `[step]`, `[res ]`,
+`[jac ]`, `[fac ]`, `[lin ]`, `[vars]`, and `[out ]` tags. Assemblers return a structured `SummaryEvent` from
+`summary()`; timesteppers submit it automatically while draining output at the end of a run.
+
+A `QuadratureProvider` constructed from the configuration always reports the quadratures it builds to the console. If
+`/output/folder` is configured, it additionally owns a side-channel reporter writing
+`<output name>_quadrature.log` next to the run log. Without a configured folder it creates no file. Pass an explicit
+`ReportPort` as the second constructor argument to route the messages into an existing run reporter instead.
 
 Debugging and process-memory policy stay in C++ rather than simulation configuration. Set
 `Config::OutputSettings::asynchronous` to `false` for synchronous field writes. The default pending-byte limit is 2

@@ -27,12 +27,10 @@ namespace DiFfRG
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver>
   void TimeStepperSUNDIALS_IDA_BoostABM<VectorType, SparseMatrixType, dim, LinearSolver>::run(
-      AbstractFlowingVariables<NumberType> *initial_condition, const double t_start, const double t_stop)
+      AbstractFlowingVariables<NumberType> &initial_condition, const double t_start, const double t_stop)
   {
-    this->data_out = this->get_data_out();
-    this->adaptor = this->get_adaptor();
 
-    auto &full_data = initial_condition->data();
+    auto &full_data = initial_condition.data();
     if (full_data.n_blocks() == 2)
       run(full_data, t_start, t_stop);
     else
@@ -52,9 +50,10 @@ namespace DiFfRG
           "TimeStepperSUNDIALS_BoostABM::run: y contains no variables, use a different timestepper!");
     // Start by setting up all needed matrices, i.e. jacobian, inverse of jacobian and the mass matrix (with two
     // sparsity patterns)
-    SparseMatrixType spatial_jacobian(assembler->get_sparsity_pattern_jacobian());
+    SparseMatrixType spatial_jacobian(assembler.get_sparsity_pattern_jacobian());
     LinearSolver<SparseMatrixType, VectorType> linSolver;
-    const DiagnosticPort jacobian_diagnostic_port = data_out ? data_out->diagnostic_port() : DiagnosticPort{};
+    linSolver.set_report_port(this->log);
+    const DiagnosticPort jacobian_diagnostic_port = data_out.diagnostic_port();
     const uint n_FE_dofs = initial_data.block(0).size();
 
     // Create a SUNDIALS IDA object with the right settings for spatial data
@@ -169,8 +168,8 @@ namespace DiFfRG
         spatial_y_dealii = spatial_ckpts.empty() ? spatial_lo : spatial_ckpts.back();
       }
 
-      assembler->set_time(t);
-      assembler->residual_variables(variable_dy_dealii, variable_y_dealii, spatial_y_dealii);
+      assembler.set_time(t);
+      assembler.residual_variables(variable_dy_dealii, variable_y_dealii, spatial_y_dealii);
 
       if (!std::isfinite(variable_dy_dealii.l2_norm()))
         throw std::runtime_error("TimeStepperBoostABM::run_vars: dy is not finite!");
@@ -178,7 +177,10 @@ namespace DiFfRG
       dealii_to_eigen(variable_dy_dealii, dxdt);
       dxdt *= -1;
 
-      console_out(t, "explicit residual", 1, nullptr, calc_timer.lap());
+      this->log.progress({.topic = progress_topics::explicit_residual,
+                          .time = t,
+                          .duration_ms = calc_timer.lap(),
+                          .minimum_verbosity = 1});
     };
 
     Eigen::VectorXd variable_sol;
@@ -295,8 +297,8 @@ namespace DiFfRG
       eigen_to_dealii(variable_buffer[N - 1], variable_y_dealii);
       variable_dy_dealii = 0;
       spatial_y_dealii = spatial_lo; // = accepted spatial at t_committed
-      assembler->set_time(t_committed);
-      assembler->residual_variables(variable_dy_dealii, variable_y_dealii, spatial_y_dealii);
+      assembler.set_time(t_committed);
+      assembler.residual_variables(variable_dy_dealii, variable_y_dealii, spatial_y_dealii);
       if (dv_committed.size() != static_cast<Eigen::Index>(variable_dy_dealii.size()))
         dv_committed.resize(variable_dy_dealii.size());
       dealii_to_eigen(variable_dy_dealii, dv_committed);
@@ -533,7 +535,7 @@ namespace DiFfRG
         // the only dt_variables call that does not double up with one inside an ABM
         // substep.
         refresh_dv_committed_from_buffer();
-        assembler->set_time(t);
+        assembler.set_time(t);
         return;
       }
 
@@ -589,7 +591,7 @@ namespace DiFfRG
         eval_predictor(variable_ret, t);
         eigen_to_dealii(variable_ret, variable_y);
       }
-      assembler->set_time(t);
+      assembler.set_time(t);
     };
 
     // Sample the explicit variables at an accepted time t (called from output_step and
@@ -612,7 +614,7 @@ namespace DiFfRG
         t_accepted = std::max(t_accepted, t);
         advance_lead_to(t);
         interpolate_buffer(variable_y, t);
-        assembler->set_time(t);
+        assembler.set_time(t);
         return;
       }
       if (frontier > t_committed && !is_close(frontier, t_committed)) commit_segment_to(spatial_hi, frontier);
@@ -630,7 +632,7 @@ namespace DiFfRG
       } else {
         interpolate_buffer(variable_y, t);
       }
-      assembler->set_time(t);
+      assembler.set_time(t);
     };
 
     // Define some variables for monitoring
@@ -646,23 +648,23 @@ namespace DiFfRG
 
     // Tells SUNDIALS to do an internal reset, e.g. if we do local refinement
     time_stepper.solver_should_restart = [&](const double t, VectorType &sol, VectorType &sol_dot) -> bool {
-      if ((*adaptor)(t, sol)) {
-        assembler->reinit_vector(sol_dot);
-        spatial_jacobian.reinit(assembler->get_sparsity_pattern_jacobian());
+      if (adaptor(t, sol)) {
+        assembler.reinit_vector(sol_dot);
+        spatial_jacobian.reinit(assembler.get_sparsity_pattern_jacobian());
         return true;
       }
       return false;
     };
 
     time_stepper.differential_components = [&]() {
-      IndexSet dof_indices = assembler->get_differential_indices();
+      IndexSet dof_indices = assembler.get_differential_indices();
       IndexSet differential_indices(n_FE_dofs);
       differential_indices.add_indices(dof_indices.begin(), dof_indices.end());
       return differential_indices;
     };
 
     // Called whenever a vector needs to initalized
-    time_stepper.reinit_vector = [&](VectorType &v) { assembler->reinit_vector(v); };
+    time_stepper.reinit_vector = [&](VectorType &v) { assembler.reinit_vector(v); };
 
     // At output_dt intervals this function saves intermediate solutions
     double last_save = -1.;
@@ -670,10 +672,10 @@ namespace DiFfRG
                                    uint /*step_number*/) {
       if (t < t_start) return;
       if (!is_close(last_save, t, 1e-10)) {
-        assembler->set_time(t);
+        assembler.set_time(t);
         commit_variables(variable_y, sol, t);
-        data_out->write_frame(
-            t, [&](auto &frame) { assembler->attach_data_output(frame, sol, variable_y, sol_dot, (*residual)); });
+        data_out.write_frame(
+            t, [&](auto &frame) { assembler.attach_data_output(frame, sol, variable_y, sol_dot, (*residual)); });
 
         last_save = t;
       }
@@ -691,7 +693,6 @@ namespace DiFfRG
 
       if (stuck > 200) throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
       if (failure_counter > 200) {
-        std::cerr << "timestep failure, at t = " << t << std::endl;
         throw std::runtime_error("timestep failure, at t = " + std::to_string(t));
       }
       if (!std::isfinite(y.l1_norm())) {
@@ -701,15 +702,16 @@ namespace DiFfRG
 
       try {
         res = 0;
-        assembler->set_time(t);
+        assembler.set_time(t);
         const auto request_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-        console_out(t, "requesting variables", 2, &request_diagnostics);
+        ProgressEvent variables_event{.topic = progress_topics::variables, .time = t, .minimum_verbosity = 2};
+        request_diagnostics.append_to(variables_event);
+        this->log.progress(variables_event);
         request_variables(variable_y, y, t);
-        assembler->residual(res, y, 1., y_dot, 1., variable_y);
+        assembler.residual(res, y, 1., y_dot, 1., variable_y);
         residual = &res;
       } catch (std::exception &e) {
         callback_diagnostics.residual_exceptions++;
-        std::cerr << e.what() << std::endl;
         return ++failure_counter;
       }
 
@@ -719,7 +721,12 @@ namespace DiFfRG
       }
 
       const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-      console_out(t, "implicit residual", 1, &current_diagnostics, calc_timer.lap());
+      ProgressEvent residual_event{.topic = progress_topics::implicit_residual,
+                                   .time = t,
+                                   .duration_ms = calc_timer.lap(),
+                                   .minimum_verbosity = 1};
+      current_diagnostics.append_to(residual_event);
+      this->log.progress(residual_event);
 
       failure_counter = 0;
       return 0;
@@ -745,21 +752,31 @@ namespace DiFfRG
 
       try {
         spatial_jacobian = 0;
-        assembler->set_time(t);
+        assembler.set_time(t);
         const auto request_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-        console_out(t, "requesting variables", 2, &request_diagnostics);
+        ProgressEvent variables_event{.topic = progress_topics::variables, .time = t, .minimum_verbosity = 2};
+        request_diagnostics.append_to(variables_event);
+        this->log.progress(variables_event);
         request_variables(variable_y, y, t);
-        assembler->jacobian(spatial_jacobian, y, 1., y_dot, alpha, 1., variable_y);
+        assembler.jacobian(spatial_jacobian, y, 1., y_dot, alpha, 1., variable_y);
         matrix_diagnostics = analyze_jacobian_matrix(spatial_jacobian);
         linSolver.init(spatial_jacobian);
 
         const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-        console_out(t, "jacobian construction", 2, &current_diagnostics, calc_timer.lap());
+        ProgressEvent jacobian_event{
+            .topic = progress_topics::jacobian, .time = t, .duration_ms = calc_timer.lap(), .minimum_verbosity = 2};
+        current_diagnostics.append_to(jacobian_event);
+        this->log.progress(jacobian_event);
 
         factorize_with_diagnostics(linSolver, spatial_jacobian, factorization_diagnostics);
         if (factorization_diagnostics.factorization_success == 1.) {
           const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-          console_out(t, "jacobian inversion", 3, &current_diagnostics, calc_timer.lap());
+          ProgressEvent factorization_event{.topic = progress_topics::factorization,
+                                            .time = t,
+                                            .duration_ms = calc_timer.lap(),
+                                            .minimum_verbosity = 3};
+          current_diagnostics.append_to(factorization_event);
+          this->log.progress(factorization_event);
         }
         record_diagnostics();
       } catch (std::exception &e) {
@@ -768,7 +785,6 @@ namespace DiFfRG
             factorization_diagnostics.factorization_success = 0.;
         record_diagnostics();
         callback_diagnostics.jacobian_failures++;
-        std::cerr << e.what() << std::endl;
         return ++failure_counter;
       }
 
@@ -783,8 +799,13 @@ namespace DiFfRG
         const auto sol_iterations = linSolver.solve(src, dst, tol);
         if (sol_iterations >= 0) {
           const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-          console_out(stuck_t, "linear solver (" + std::to_string(sol_iterations) + " it)", 2, &current_diagnostics,
-                      calc_timer.lap());
+          ProgressEvent solve_event{.topic = progress_topics::implicit_linear_solve,
+                                    .time = stuck_t,
+                                    .duration_ms = calc_timer.lap(),
+                                    .iterations = sol_iterations,
+                                    .minimum_verbosity = 2};
+          current_diagnostics.append_to(solve_event);
+          this->log.progress(solve_event);
         }
       } catch (std::exception &) {
         callback_diagnostics.linear_solver_failures++;
