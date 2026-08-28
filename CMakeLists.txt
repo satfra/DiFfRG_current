@@ -237,14 +237,49 @@ if(NOT BUILD_OpenBLAS)
     # Pin PETSc to the same BLAS/LAPACK deal.II gets. Left to itself PETSc searches
     # independently and can land on a different library entirely (MKL via MKLROOT,
     # say), which is how an ILP64 BLAS gets into the build on a machine whose
-    # default BLAS is LP64. PETSc takes the list as --with-blaslapack-lib=[a,b,c],
-    # so anything CMake could put in it that a comma-separated list cannot carry --
-    # generator expressions, embedded separators -- means falling back to PETSc's
-    # own search rather than handing it something malformed.
+    # default BLAS is LP64. PETSc takes the list as --with-blaslapack-lib=[a,b,c].
     set(_system_blaslapack ${LAPACK_LIBRARIES} ${BLAS_LIBRARIES})
     list(REMOVE_DUPLICATES _system_blaslapack)
-    if(NOT "${_system_blaslapack}" MATCHES "[$,]")
-      list(JOIN _system_blaslapack "," PETSC_BLASLAPACK_LIB)
+
+    # Hand the libraries over as -L/-l rather than as absolute paths. PETSc forwards
+    # whatever it is given to --download-scalapack as a single quoted CMake variable,
+    #   -DLAPACK_LIBRARIES="<the entire link line>"
+    # and ScaLAPACK puts that straight into target_link_libraries(). CMake then has
+    # to classify the whole spaces-and-all string as one link item: leading '-' makes
+    # it a link flag and everything works, but a leading path makes it a library
+    # *file*, so make ends up looking for a file whose name is the entire link line:
+    #   No rule to make target '/usr/lib64/libopenblas.so -lm -ldl ...'
+    # PETSc already performs this rewrite for libraries outside /usr/lib{,64} and
+    # /lib{,64} (config/BuildSystem/config/libraries.py, sysDirs) -- it is only a
+    # BLAS in one of those system directories that reaches ScaLAPACK as a bare path.
+    # Doing the rewrite here puts every case on the flag side of that classification;
+    # PETSc drops the -L for a system directory and re-adds an rpath for any other.
+    set(_petsc_blaslapack)
+    foreach(_lib IN LISTS _system_blaslapack)
+      if(_lib MATCHES "^(.+)/lib([^/]+)\\.(so|a)$")
+        list(APPEND _petsc_blaslapack "-L${CMAKE_MATCH_1}" "-l${CMAKE_MATCH_2}")
+      else()
+        list(APPEND _petsc_blaslapack "${_lib}")
+      endif()
+    endforeach()
+
+    # Two things still make the list unusable: a path the rewrite above cannot put
+    # into -L/-l form (a versioned /usr/lib64/liblapack.so.3, say) leading the link
+    # line lands back on the file side of that classification, and a value a
+    # comma-separated list cannot carry -- generator expressions, embedded
+    # separators -- would reach PETSc malformed. Either way, hand it nothing and
+    # let it search for itself rather than hand it something that breaks later.
+    set(_petsc_blaslapack_first "")
+    if(_petsc_blaslapack)
+      list(GET _petsc_blaslapack 0 _petsc_blaslapack_first)
+    endif()
+    if(NOT "${_petsc_blaslapack}" MATCHES "[$,]" AND NOT IS_ABSOLUTE "${_petsc_blaslapack_first}")
+      list(JOIN _petsc_blaslapack "," PETSC_BLASLAPACK_LIB)
+    else()
+      message(
+        STATUS
+          "Cannot express ${_system_blaslapack} as a PETSc library list; leaving the BLAS/LAPACK search to PETSc."
+      )
     endif()
   endif()
 else()
