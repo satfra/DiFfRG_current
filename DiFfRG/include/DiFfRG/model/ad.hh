@@ -34,10 +34,13 @@ namespace DiFfRG
           return x;
         }
 
-        template <uint n, int dim, int r, typename NT>
-        static std::array<dealii::Tensor<r, dim, autodiff::dual>, n>
-        ten_to_AD(const std::vector<dealii::Tensor<r, dim, NT>> &v)
+        // Any indexable container of dealii::Tensor works: CG hands in a std::vector, the KT-FV
+        // assembler a std::array. Rank and dimension are read off the element type.
+        template <uint n, typename Container> static auto ten_to_AD(const Container &v)
         {
+          using TensorType = std::decay_t<decltype(v[0])>;
+          constexpr int r = static_cast<int>(TensorType::rank);
+          constexpr int dim = static_cast<int>(TensorType::dimension);
           static_assert(r >= 1 && r <= 2, "Only rank 1 and 2 tensors are supported.");
           std::array<dealii::Tensor<r, dim, autodiff::dual>, n> x;
           for (uint i = 0; i < n; ++i) {
@@ -63,10 +66,13 @@ namespace DiFfRG
           return x;
         }
 
-        template <uint n, int dim, int r, typename NT>
-        static std::array<dealii::Tensor<r, dim, autodiff::real>, n>
-        ten_to_AD(const std::vector<dealii::Tensor<r, dim, NT>> &v)
+        // Any indexable container of dealii::Tensor works: CG hands in a std::vector, the KT-FV
+        // assembler a std::array. Rank and dimension are read off the element type.
+        template <uint n, typename Container> static auto ten_to_AD(const Container &v)
         {
+          using TensorType = std::decay_t<decltype(v[0])>;
+          constexpr int r = static_cast<int>(TensorType::rank);
+          constexpr int dim = static_cast<int>(TensorType::dimension);
           static_assert(r >= 1 && r <= 2, "Only rank 1 and 2 tensors are supported.");
           std::array<dealii::Tensor<r, dim, autodiff::real>, n> x;
           for (uint i = 0; i < n; ++i) {

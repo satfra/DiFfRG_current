@@ -161,7 +161,7 @@ namespace DiFfRG
     for (const auto &cell : dof_handler.active_cell_iterators()) {
       SolutionSampleEntry<dim, NumberType> entry;
       entry.point = mapping.transform_unit_to_real_cell(cell, unit_cell_centre<dim>());
-      entry.cell_width = internal::cell_width<dim>(cell);
+      entry.cell_width = internal::cell_width(cell);
       entry.values.resize(n_components);
       entry.gradients.resize(n_components);
       fill(cell, entry.point, entry.values, entry.gradients);

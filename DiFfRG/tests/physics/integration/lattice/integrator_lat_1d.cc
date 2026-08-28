@@ -1,8 +1,8 @@
 #include <Kokkos_Core.hpp>
-#include <limits>
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 
+#include "../boilerplate/lattice_sum_tolerance.hh"
 #include "../boilerplate/poly_integrand.hh"
 #include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/math.hh>
@@ -30,16 +30,23 @@ TEMPLATE_TEST_CASE("Test 1D lattice integrals on host", "[lattice][double][float
   {
     const ctype reference_integral = 1 / a;
 
+    const std::size_t n_terms = lattice_sum_terms(1, size, 0, q0_symmetric);
+    const ctype expected_precision = lattice_sum_tolerance<ctype>(n_terms);
+    if (expected_precision > lattice_sum_meaningful_tolerance)
+      SKIP("summing " << n_terms << " weights in this precision leaves a round-off bound of "
+                      << expected_precision << ", too coarse to test anything");
+
     T integral{};
     integrator.get(integral, 0., 1., 0., 0., 0.);
 
-    if (!is_close(reference_integral, integral, std::numeric_limits<ctype>::epsilon() * 1e2)) {
+    if (!is_close(reference_integral, integral, expected_precision)) {
       std::cerr << "reference: " << reference_integral << "| integral: " << integral
                 << "| relative error: " << abs(reference_integral - integral) / std::abs(reference_integral)
-                << std::endl;
+                << "| tolerance: " << expected_precision << "| terms: " << n_terms
+                << "| size: " << size << "| a: " << a
+                << "| symm: " << q0_symmetric << std::endl;
     }
-
-    CHECK(is_close(reference_integral, integral, 1e-6));
+    CHECK(is_close(reference_integral, integral, expected_precision));
   }
 }
 /*

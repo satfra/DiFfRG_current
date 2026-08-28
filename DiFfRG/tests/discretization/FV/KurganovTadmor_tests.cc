@@ -32,6 +32,16 @@ using NumberType = double;
 using VectorType = dealii::Vector<NumberType>;
 using namespace dealii;
 namespace KT = DiFfRG::FV::KurganovTadmor;
+
+/// Cell width handed to the flux helpers below. None of the test models reads it; it is here so the
+/// calls match the signature that carries the local grid spacing through to a model's flux.
+static constexpr double test_cell_width = 1.0;
+
+/// Empty extractor / variable data for the direct helper calls below. The models used there declare
+/// neither, so their fluxes never read them; they are here because the helpers take them
+/// unconditionally.
+static const std::array<double, 0> no_extractors{};
+static const VectorType no_variables{};
 using WaveSpeedStrategy = DiFfRG::FV::KurganovTadmor::MaxEigenvalueWaveSpeed;
 using KT::internal::compute_diffusion_flux;
 using KT::internal::compute_diffusion_flux_jacobian;
@@ -697,11 +707,13 @@ TEST_CASE("KT diffusion flux averages nonlinear side fluxes", "[FV][KT][diffusio
   grad_plus[0][1] = 1.0;
 
   const auto D = compute_diffusion_flux<NonlinearDiffusionProbeModel, double, 2, 1>(
-      u_minus, u_plus, grad_minus, grad_plus, third_minus, third_plus, Point<2>(), model);
+      u_minus, u_plus, grad_minus, grad_plus, third_minus, third_plus, Point<2>(), test_cell_width, test_cell_width,
+      no_extractors, no_variables, model);
   CHECK(D[0][0] == Catch::Approx(0.625).margin(1.0e-14));
 
   const auto J = compute_diffusion_flux_jacobian<NonlinearDiffusionProbeModel, double, 2, 1>(
-      u_minus, u_plus, grad_minus, grad_plus, third_minus, third_plus, Point<2>(), model);
+      u_minus, u_plus, grad_minus, grad_plus, third_minus, third_plus, Point<2>(), test_cell_width, test_cell_width,
+      no_extractors, no_variables, model);
   CHECK(J.grad[0](0, 0)[0][1] == Catch::Approx(0.5).margin(1.0e-14));
   CHECK(J.grad[1](0, 0)[0][1] == Catch::Approx(1.0).margin(1.0e-14));
 }
@@ -1840,8 +1852,8 @@ TEST_CASE("Test compute_kt_flux_and_speeds with Burgers flux in 1D", "[FV][KT]")
     const std::array<NumberType, n_components> u_plus = {2.0};
     const std::array<NumberType, n_components> u_minus = {1.0};
 
-    const auto [F_plus, F_minus, a_half] =
-        KT::internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(u_plus, u_minus, x_q, model);
+    const auto [F_plus, F_minus, a_half] = KT::internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(
+        u_plus, u_minus, x_q, test_cell_width, test_cell_width, no_extractors, no_variables, model);
     CHECK(F_plus[0][0] == Catch::Approx(2.5));
     CHECK(F_minus[0][0] == Catch::Approx(1.0));
     CHECK(a_half[0][0] == Catch::Approx(2.0));
@@ -1856,8 +1868,8 @@ TEST_CASE("Test compute_kt_flux_and_speeds with Burgers flux in 1D", "[FV][KT]")
     const std::array<NumberType, n_components> u_plus = {3.0};
     const std::array<NumberType, n_components> u_minus = {3.0};
 
-    const auto [F_plus, F_minus, a_half] =
-        KT::internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(u_plus, u_minus, x_q, model);
+    const auto [F_plus, F_minus, a_half] = KT::internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(
+        u_plus, u_minus, x_q, test_cell_width, test_cell_width, no_extractors, no_variables, model);
     CHECK(F_plus[0][0] == Catch::Approx(5.5));
     CHECK(F_minus[0][0] == Catch::Approx(5.5));
     CHECK(a_half[0][0] == Catch::Approx(3.0));
@@ -1874,8 +1886,8 @@ TEST_CASE("Test compute_kt_flux_and_speeds with Burgers flux in 1D", "[FV][KT]")
     const std::array<NumberType, n_components> u_plus = {-1.0};
     const std::array<NumberType, n_components> u_minus = {-3.0};
 
-    const auto [F_plus, F_minus, a_half] =
-        KT::internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(u_plus, u_minus, x_q, model);
+    const auto [F_plus, F_minus, a_half] = KT::internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(
+        u_plus, u_minus, x_q, test_cell_width, test_cell_width, no_extractors, no_variables, model);
     CHECK(F_plus[0][0] == Catch::Approx(0.5));
     CHECK(F_minus[0][0] == Catch::Approx(4.5));
     CHECK(a_half[0][0] == Catch::Approx(3.0));
@@ -1890,8 +1902,8 @@ TEST_CASE("Test compute_kt_flux_and_speeds with Burgers flux in 1D", "[FV][KT]")
     const std::array<NumberType, n_components> u_plus = {2.0};
     const std::array<NumberType, n_components> u_minus = {1.0};
 
-    const auto [F_plus, F_minus, a_half] =
-        KT::internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(u_plus, u_minus, x_q, model);
+    const auto [F_plus, F_minus, a_half] = KT::internal::compute_kt_flux_and_speeds<WaveSpeedStrategy>(
+        u_plus, u_minus, x_q, test_cell_width, test_cell_width, no_extractors, no_variables, model);
     const auto H = compute_numerical_flux(F_plus, F_minus, a_half, u_plus, u_minus);
     CHECK(H[0][0] == Catch::Approx(0.75));
   }
@@ -2135,4 +2147,320 @@ TEST_CASE("make_tagged_neighbors 2D single component — 4 faces, one matching",
 
   // dof_indices preserved
   CHECK(result.dof_indices[2][0] == 300);
+}
+
+// -----------------------------------------------------------------------------
+// The source's fv_tie() slots.
+// -----------------------------------------------------------------------------
+
+/**
+ * @brief A source that IS the reconstructed gradient, so the residual reads it back directly.
+ *
+ * Both fluxes vanish and the mass is excluded (weight_mass = 0), hence residual[cell] == JxW * du/dx
+ * as the scheme sees it.
+ */
+class SourceGradientProbeModel : public DiFfRG::def::AbstractModel<SourceGradientProbeModel, Components>,
+                                 public DiFfRG::def::Time,
+                                 public DiFfRG::def::LLFFlux<SourceGradientProbeModel>,
+                                 public DiFfRG::def::FlowBoundaries<SourceGradientProbeModel>,
+                                 public DiFfRG::def::FVDefaultBoundaries<SourceGradientProbeModel>,
+                                 public DiFfRG::def::AD<SourceGradientProbeModel>
+{
+public:
+  template <typename Vector> void initial_condition(const Point<1> &pos, Vector &values) const
+  {
+    values[0] = 1.0 + 0.25 * pos[0];
+  }
+
+  template <typename NT, typename Solution>
+  void flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution & /*sol*/) const
+  {
+    F_i[0][0] = NT(0);
+  }
+
+  template <typename NT, typename Solution>
+  void diffusion_flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution & /*sol*/) const
+  {
+    F_i[0][0] = NT(0);
+  }
+
+  template <typename NT, typename Solution>
+  void source(std::array<NT, 1> &s_i, const Point<1> & /*pos*/, const Solution &sol) const
+  {
+    s_i[0] = get<"fe_derivatives">(sol)[0][0];
+  }
+};
+
+using ExtractorSourceComponents = DiFfRG::ComponentDescriptor<DiFfRG::FEFunctionDescriptor<DiFfRG::Scalar<"u">>,
+                                                              DiFfRG::VariableDescriptor<DiFfRG::Scalar<"v">>,
+                                                              DiFfRG::ExtractorDescriptor<DiFfRG::Scalar<"e">>>;
+
+/**
+ * @brief A source that reads the "extractors" and "variables" slots, with a constant extractor so the
+ * expected residual is known without reproducing the EoM search.
+ */
+class SourceExtractorProbeModel
+    : public DiFfRG::def::AbstractModel<SourceExtractorProbeModel, ExtractorSourceComponents>,
+      public DiFfRG::def::Time,
+      public DiFfRG::def::LLFFlux<SourceExtractorProbeModel>,
+      public DiFfRG::def::FlowBoundaries<SourceExtractorProbeModel>,
+      public DiFfRG::def::FVDefaultBoundaries<SourceExtractorProbeModel>,
+      public DiFfRG::def::AD<SourceExtractorProbeModel>
+{
+public:
+  static constexpr double extractor_value = 2.5;
+
+  template <typename Vector> void initial_condition(const Point<1> &pos, Vector &values) const
+  {
+    values[0] = 1.0 + 0.25 * pos[0];
+  }
+
+  template <typename NT, typename Solution>
+  void extract(std::array<NT, 1> &extractors, const Point<1> & /*x*/, const Solution & /*sol*/) const
+  {
+    extractors[0] = NT(extractor_value);
+  }
+
+  template <typename NT, typename Solution>
+  void flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution & /*sol*/) const
+  {
+    F_i[0][0] = NT(0);
+  }
+
+  template <typename NT, typename Solution>
+  void diffusion_flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution & /*sol*/) const
+  {
+    F_i[0][0] = NT(0);
+  }
+
+  template <typename NT, typename Solution>
+  void source(std::array<NT, 1> &s_i, const Point<1> & /*pos*/, const Solution &sol) const
+  {
+    s_i[0] = get<"extractors">(sol)[0] + NT(3.0) * get<"variables">(sol)[0];
+  }
+};
+
+static double minmod(const double a, const double b)
+{
+  if (a * b <= 0.0) return 0.0;
+  return std::abs(a) < std::abs(b) ? a : b;
+}
+
+TEST_CASE("KT source receives the reconstructed cell gradient", "[FV][KT][source][gradient]")
+{
+  using Model = SourceGradientProbeModel;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+
+  ensure_logger();
+
+  auto json = make_fv_test_json();
+  json.set_string("/discretization/grid/x_grid", "0:0.1:1");
+  Model model;
+  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+
+  const auto &dof_handler = discretization.get_dof_handler();
+  const double dx = 0.1;
+  const unsigned int n_dofs = dof_handler.n_dofs();
+  REQUIRE(n_dofs == 10);
+
+  // Cells are addressed by their centre, not by an assumed dof numbering.
+  std::vector<dealii::types::global_dof_index> dof_of_cell(n_dofs);
+  std::vector<double> center_of_cell(n_dofs);
+  std::vector<dealii::types::global_dof_index> cell_dofs(1);
+  for (const auto &cell : dof_handler.active_cell_iterators()) {
+    cell->get_dof_indices(cell_dofs);
+    const auto index = cell->active_cell_index();
+    dof_of_cell[index] = cell_dofs[0];
+    center_of_cell[index] = cell->center()[0];
+  }
+
+  VectorType sol_dot(n_dofs), residual(n_dofs);
+
+  SECTION("linear field: every one-sided slope agrees, ghosts included")
+  {
+    const double a = 0.7, b = 1.3;
+    VectorType sol(n_dofs);
+    for (unsigned int i = 0; i < n_dofs; ++i)
+      sol[dof_of_cell[i]] = a + b * center_of_cell[i];
+
+    assembler.residual(residual, sol, 1.0, sol_dot, 0.0);
+    for (unsigned int i = 0; i < n_dofs; ++i)
+      CHECK(residual[dof_of_cell[i]] == Catch::Approx(dx * b).margin(1e-12));
+  }
+
+  SECTION("curved field: the interior cells see the limited slope")
+  {
+    VectorType sol(n_dofs);
+    std::vector<double> u(n_dofs);
+    for (unsigned int i = 0; i < n_dofs; ++i) {
+      const double x = center_of_cell[i];
+      u[i] = 0.4 + 0.9 * x - 1.7 * x * x + 2.3 * x * x * x;
+      sol[dof_of_cell[i]] = u[i];
+    }
+
+    assembler.residual(residual, sol, 1.0, sol_dot, 0.0);
+    // Interior only: the boundary cells' slopes involve the ghost stencil, which is what the
+    // FD jacobian tests cover.
+    for (unsigned int i = 1; i + 1 < n_dofs; ++i) {
+      const double expected = dx * minmod((u[i] - u[i - 1]) / dx, (u[i + 1] - u[i]) / dx);
+      CHECK(residual[dof_of_cell[i]] == Catch::Approx(expected).margin(1e-12));
+    }
+  }
+}
+
+TEST_CASE("KT source receives extractors and variables", "[FV][KT][source][extractors]")
+{
+  using Model = SourceExtractorProbeModel;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+
+  ensure_logger();
+
+  auto json = make_fv_test_json();
+  Model model;
+  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+
+  const auto &dof_handler = discretization.get_dof_handler();
+  const double dx = 0.25;
+  const unsigned int n_dofs = dof_handler.n_dofs();
+  REQUIRE(n_dofs == 4);
+
+  VectorType sol(n_dofs), sol_dot(n_dofs), residual(n_dofs);
+  for (unsigned int i = 0; i < n_dofs; ++i)
+    sol[i] = 1.0 + 0.25 * static_cast<double>(i);
+
+  VectorType variables(1);
+  variables[0] = 0.75;
+
+  assembler.residual(residual, sol, 1.0, sol_dot, 0.0, variables);
+
+  const double expected = dx * (Model::extractor_value + 3.0 * variables[0]);
+  for (unsigned int i = 0; i < n_dofs; ++i)
+    CHECK(residual[i] == Catch::Approx(expected).margin(1e-12));
+}
+
+/**
+ * @brief A flux and a diffusion flux that read the "extractors" and "variables" slots.
+ *
+ * The point of the pair below is that FluxHardcodedProbeModel is the same model with the two
+ * numbers written in, so residual and jacobian have to agree entry for entry. That makes the check
+ * independent of the KT reconstruction: it only asserts that what reaches flux()/diffusion_flux()
+ * through the tuple is what extract() and the variables vector put there.
+ */
+template <bool ReadFromTuple>
+class FluxExtractorProbeModelT
+    : public DiFfRG::def::AbstractModel<FluxExtractorProbeModelT<ReadFromTuple>, ExtractorSourceComponents>,
+      public DiFfRG::def::Time,
+      public DiFfRG::def::LLFFlux<FluxExtractorProbeModelT<ReadFromTuple>>,
+      public DiFfRG::def::FlowBoundaries<FluxExtractorProbeModelT<ReadFromTuple>>,
+      public DiFfRG::def::FVDefaultBoundaries<FluxExtractorProbeModelT<ReadFromTuple>>,
+      public DiFfRG::def::AD<FluxExtractorProbeModelT<ReadFromTuple>>
+{
+public:
+  static constexpr double extractor_value = 2.5;
+  static constexpr double variable_value = 0.75;
+
+  template <typename Vector> void initial_condition(const Point<1> &pos, Vector &values) const
+  {
+    values[0] = 1.0 + 0.25 * pos[0];
+  }
+
+  template <typename Vector> void initial_condition_variables(Vector &values) const { values[0] = variable_value; }
+
+  template <typename NT, typename Solution>
+  void extract(std::array<NT, 1> &extractors, const Point<1> & /*x*/, const Solution & /*sol*/) const
+  {
+    extractors[0] = NT(extractor_value);
+  }
+
+  /// The advection speed, either read out of the tuple or written in.
+  template <typename Solution> double speed(const Solution &sol) const
+  {
+    if constexpr (ReadFromTuple)
+      return get<"extractors">(sol)[0] + 3.0 * get<"variables">(sol)[0];
+    else
+      return extractor_value + 3.0 * variable_value;
+  }
+
+  template <typename NT, typename Solution>
+  void flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution &sol) const
+  {
+    F_i[0][0] = NT(speed(sol)) * get<"fe_functions">(sol)[0];
+  }
+
+  template <typename NT, typename Solution>
+  void diffusion_flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution &sol) const
+  {
+    F_i[0][0] = NT(-0.1 * speed(sol)) * get<"fe_derivatives">(sol)[0][0];
+  }
+
+  template <typename NT, typename Solution>
+  void source(std::array<NT, 1> &s_i, const Point<1> & /*pos*/, const Solution & /*sol*/) const
+  {
+    s_i[0] = NT(0);
+  }
+};
+
+using FluxExtractorProbeModel = FluxExtractorProbeModelT<true>;
+using FluxHardcodedProbeModel = FluxExtractorProbeModelT<false>;
+
+/// Assemble residual and jacobian for one of the two probe models above.
+template <typename Model>
+static void assemble_flux_probe(VectorType &residual, dealii::SparsityPattern &sp,
+                                dealii::SparseMatrix<NumberType> &jacobian)
+{
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+
+  auto json = make_fv_test_json();
+  Model model;
+  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  Discretization discretization(mesh, json, DiFfRG::LogPort{});
+  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+
+  const unsigned int n_dofs = discretization.get_dof_handler().n_dofs();
+  VectorType sol(n_dofs), sol_dot(n_dofs);
+  for (unsigned int i = 0; i < n_dofs; ++i)
+    sol[i] = 1.0 + 0.25 * static_cast<double>(i);
+
+  VectorType variables(1);
+  variables[0] = Model::variable_value;
+
+  residual.reinit(n_dofs);
+  assembler.residual(residual, sol, 1.0, sol_dot, 0.0, variables);
+
+  sp.copy_from(assembler.get_sparsity_pattern_jacobian());
+  jacobian.reinit(sp);
+  assembler.jacobian(jacobian, sol, 1.0, sol_dot, 0.0, 0.0, variables);
+}
+
+TEST_CASE("KT flux and diffusion_flux receive extractors and variables", "[FV][KT][flux][extractors]")
+{
+  ensure_logger();
+
+  VectorType r_tuple, r_hard;
+  dealii::SparsityPattern sp_tuple, sp_hard;
+  dealii::SparseMatrix<NumberType> j_tuple, j_hard;
+
+  assemble_flux_probe<FluxExtractorProbeModel>(r_tuple, sp_tuple, j_tuple);
+  assemble_flux_probe<FluxHardcodedProbeModel>(r_hard, sp_hard, j_hard);
+
+  REQUIRE(r_tuple.size() == r_hard.size());
+  // A zero residual would pass this trivially, so make sure the flux actually moved something.
+  REQUIRE(r_hard.l2_norm() > 1e-6);
+  for (unsigned int i = 0; i < r_tuple.size(); ++i)
+    CHECK(r_tuple[i] == Catch::Approx(r_hard[i]).margin(1e-14));
+
+  // The jacobian is assembled through a separate AD path, so it has to be checked separately: a
+  // thread-through that reaches residual() but not jacobian() would pass the check above.
+  REQUIRE(j_tuple.n_nonzero_elements() == j_hard.n_nonzero_elements());
+  REQUIRE(j_hard.frobenius_norm() > 1e-6);
+  for (unsigned int row = 0; row < j_tuple.m(); ++row)
+    for (auto it = j_tuple.begin(row); it != j_tuple.end(row); ++it)
+      CHECK(it->value() == Catch::Approx(j_hard(row, it->column())).margin(1e-14));
 }
