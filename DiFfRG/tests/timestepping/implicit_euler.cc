@@ -26,6 +26,20 @@ TEST_CASE("Test implicit euler with DG constant model", "[timestepping][constant
       "test_implicit_euler_constant_dg", 5e-2, "jacobian_diagnostics.csv",
       static_cast<double>(ImplicitTimestepperKind::implicit_euler), {0.}));
 }
+TEST_CASE("Jacobian diagnostics are off unless switched on", "[timestepping][implicit_euler][jacobian_diagnostics]")
+{
+  constexpr uint dim = 1;
+  using Model = Testing::ModelConstant<dim>;
+  using NumberType = double;
+  using Discretization = DG::Discretization<Model, RectangularMesh<dim>, NumberType>;
+  using VectorType = typename Discretization::VectorType;
+  using SparseMatrixType = typename Discretization::SparseMatrixType;
+  using Assembler = DG::Assembler<Discretization>;
+  using TimeStepper = TimeStepperImplicitEuler<Assembler>;
+  REQUIRE(run<Model, Discretization, Assembler, TimeStepper>(
+      "test_implicit_euler_no_jacobian_diagnostics", 5e-2, "jacobian_diagnostics.csv",
+      std::numeric_limits<double>::quiet_NaN(), {}, /*jacobian_diagnostics = */ false));
+}
 TEST_CASE("Test implicit euler with DG exponential model", "[timestepping][exponential][explicit_euler][dg]")
 {
   constexpr uint dim = 1;

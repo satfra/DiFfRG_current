@@ -139,8 +139,7 @@ namespace DiFfRG
       new_it->second.reinit_exact_sum(T_it->first, 2. * M_PI * (n + 0.5) * T_it->first);
 
       if (verbosity >= 0)
-        log.info("Created exact MatsubaraQuadrature<double> sum with T = {:.4} and {} positive modes", T_it->first,
-                 n);
+        log.info("Created exact MatsubaraQuadrature<double> sum with T = {:.4} and {} positive modes", T_it->first, n);
 
       return new_it->second;
     }
@@ -210,8 +209,7 @@ namespace DiFfRG
       return intervals_f.insert(std::make_pair(order, std::map<double, MatsubaraQuadrature<float>>())).first;
     }
 
-    MatsubaraQuadrature<float> &MatsubaraStorage::find_interval_f(const float cutoff,
-                                                                  IntervalOrderIterator<float> o_it,
+    MatsubaraQuadrature<float> &MatsubaraStorage::find_interval_f(const float cutoff, IntervalOrderIterator<float> o_it,
                                                                   const Kokkos::View<const float *, CPU_memory> n,
                                                                   const Kokkos::View<const float *, CPU_memory> w)
     {
@@ -340,9 +338,9 @@ namespace DiFfRG
 
     verbosity = config.get_int("/output/verbosity", 0);
 
-    // Without an explicit port every quadrature message would be dropped into an empty LogPort, so open the
-    // side-channel log the provider is named after. Only the log-transport settings are read here; building a full
-    // OutputSettings would serialize the whole configuration for no reason.
+    // Without an explicit port every quadrature message would be dropped into an empty LogPort, so open a second
+    // handle on the run log. Only the log-transport settings are read here; building a full OutputSettings would
+    // serialize the whole configuration for no reason.
     if (verbosity >= 0 && !log && config.get_bool("/output/quadrature_log", true)) {
       Config::OutputSettings log_settings;
       log_settings.log_queue_size = config.get_uint("/output/log_queue_size", 8192);
@@ -350,8 +348,9 @@ namespace DiFfRG
           static_cast<spdlog::level::level_enum>(config.get_int("/output/log_level", SPDLOG_LEVEL_INFO));
       log_settings.log_flush_interval = config.get_double("/output/log_flush_interval", 10.);
 
+      // No console sink: the quadrature inventory would drown the timestepper progress report.
       own_logger = RunLogger(OutputPath(config), log_settings, MPI::rank(MPI_COMM_WORLD) == 0,
-                             RunLoggerOptions{"_quadrature", "quadrature", false});
+                             RunLoggerOptions{"quadrature", false});
       log = own_logger.port();
     }
 

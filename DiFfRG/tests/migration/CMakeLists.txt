@@ -45,7 +45,7 @@ add_migration_contract_test(
 add_migration_probe(migration_data_output_failure data_output_failure.cc)
 add_migration_contract_test(
   migration_data_output_diagnostic migration_data_output_failure FALSE
-  "Construct OutputPath, then OutputSession<dim, VectorType>, and pass the session to the timestepper|attach_data_output(OutputFrame<dim, VectorType>&, ...)|auto fields = output.fields(); fields.attach(...)")
+  "Construct OutputPath, then OutputSession<Assembler>, and pass the session to the timestepper|attach_data_output(OutputFrame<dim, VectorType>&, ...)|auto fields = output.fields(); fields.attach(...)")
 
 add_migration_probe(migration_affine_failure affine_failure.cc)
 add_migration_contract_test(

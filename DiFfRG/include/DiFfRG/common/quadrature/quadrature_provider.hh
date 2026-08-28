@@ -99,6 +99,21 @@ namespace DiFfRG
       void set_max_matsubara_size(const int value);
       void set_matsubara_precision_factor(const double value);
 
+      /// The node ceiling every rule built here is clamped to.
+      int get_max_matsubara_size() const { return max_matsubara_size; }
+
+      /**
+       * @brief Nodes the Monien rule would want at (T, typical_E) under THIS provider's dials.
+       *
+       * Exposed because choosing between a sum and an integral is the caller's decision (see
+       * QuadratureIntegrator_fT::refresh_matsubara) but the numbers that price it -- the reach
+       * multiplier and matsubara_precision_factor -- live here.
+       */
+      template <typename NT = double> int predicted_size(const NT T, const NT typical_E) const
+      {
+        return MatsubaraQuadrature<NT>::predict_size(T, typical_E, matsubara_precision_factor);
+      }
+
     private:
       MatsubaraQuadrature<double> &get_matsubara_quadrature_d(const double T, const double E);
       MatsubaraQuadrature<float> &get_matsubara_quadrature_f(const float T, const float E);
@@ -226,11 +241,11 @@ namespace DiFfRG
     /**
      * @brief Construct a provider that reports the quadratures it builds.
      *
-     * If no port is passed, the provider opens its own side-channel log at
-     * <output folder>/<output name>_quadrature.log. It has to own that logger rather than borrow one from an
-     * OutputSession, because integrators request their quadratures inside their constructors -- typically before
+     * If no port is passed, the provider opens its own logger on the run log, <output folder>/<output name>.log,
+     * writing its records under the "quadrature" logger name. It has to own that logger rather than borrow one from
+     * an OutputSession, because integrators request their quadratures inside their constructors -- typically before
      * any output session exists -- and because the provider is a process-level cache that outlives a single run.
-     * Set /output/quadrature_log to false to suppress the file.
+     * Set /output/quadrature_log to false to keep the quadrature inventory out of the log.
      */
     explicit QuadratureProvider(const ConfigTree &config, LogPort log = {});
 
@@ -290,6 +305,17 @@ namespace DiFfRG
     template <typename NT = double> const MatsubaraQuadrature<NT> &matsubara_rule(const NT T, const NT typical_E)
     {
       return matsubara_storage.get_matsubara_quadrature<NT>(T, typical_E);
+    }
+
+    /// The node ceiling /integration/max_matsubara_size, i.e. the budget the rule choice is made against.
+    int max_matsubara_size() const { return matsubara_storage.get_max_matsubara_size(); }
+
+    /**
+     * @brief Nodes the Monien rule would want at (T, typical_E). See MatsubaraStorage::predicted_size.
+     */
+    template <typename NT = double> int matsubara_predicted_size(const NT T, const NT typical_E) const
+    {
+      return matsubara_storage.template predicted_size<NT>(T, typical_E);
     }
 
     /**

@@ -56,7 +56,7 @@ namespace DiFfRG
    *
    * @tparam NT numerical type of the result
    * @tparam KERNEL kernel to be integrated, which must provide the static methods `kernel` and `constant`
-   * @tparam ExecutionSpace can be any execution space, e.g. GPU_exec, TBB_exec, or Threads_exec.
+   * @tparam ExecutionSpace can be any execution space, e.g. GPU_exec, TBB_exec, or KokkosHost_exec.
    */
   template <int dim, typename NT, typename KERNEL, typename ExecutionSpace>
     requires(dim == 4)

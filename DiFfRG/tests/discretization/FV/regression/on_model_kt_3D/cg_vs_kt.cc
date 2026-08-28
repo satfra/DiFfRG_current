@@ -52,7 +52,6 @@
 namespace
 {
   using namespace on_kt_3D;
-  static constexpr int uthreads = 16;
 } // namespace
 
 // ============================================================================
@@ -66,7 +65,7 @@ TEST_CASE("CG-vs-KT: CG on KT-Example uniform grid + default tolerance", "[cg-vs
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
-  run_flow_to_time_cg<LSM_CG>(default_rho_grid(), final_time, /*threads=*/uthreads, /*fe_order=*/4,
+  run_flow_to_time_cg<LSM_CG>(default_rho_grid(), final_time, /*fe_order=*/4,
                               /*abs_tol=*/1.0e-7, /*rel_tol=*/1.0e-7);
 }
 
@@ -81,7 +80,7 @@ TEST_CASE("CG-vs-KT: CG on KT-Example uniform grid + tight tolerance", "[cg-vs-k
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
-  run_flow_to_time_cg<LSM_CG>(default_rho_grid(), final_time, /*threads=*/uthreads, /*fe_order=*/4,
+  run_flow_to_time_cg<LSM_CG>(default_rho_grid(), final_time, /*fe_order=*/4,
                               /*abs_tol=*/1.0e-13, /*rel_tol=*/1.0e-7);
 }
 
@@ -180,14 +179,14 @@ TEST_CASE("CG-vs-KT: KT-ρ uniform grid, VanAlbada limiter + differentiated wave
                                                     FV::KurganovTadmor::MaxEigenvalueWaveSpeed>;
 
   const auto grid = default_rho_grid();
-  const ConfigTree json = make_json(/*threads=*/uthreads);
+  const ConfigTree json = make_json();
   LSM_rho_integrator_PolyExp model(json, grid);
   Mesh mesh(make_mesh_config(grid));
   Discretization discretization(mesh, json, DiFfRG::LogPort{});
   AssemblerVA assembler(discretization, model, json, DiFfRG::LogPort{});
 
   auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_kt_3D", "output");
-  OutputSession<dim, VectorType> data_out(data_out_path, json);
+  OutputSession<Discretization> data_out(data_out_path, json);
   auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
   ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 
@@ -208,14 +207,14 @@ TEST_CASE("CG-vs-KT: KT-ρ uniform grid, Central limiter + differentiated wave s
                                                    FV::KurganovTadmor::MaxEigenvalueWaveSpeed>;
 
   const auto grid = default_rho_grid();
-  const ConfigTree json = make_json(/*threads=*/uthreads);
+  const ConfigTree json = make_json();
   LSM_rho_integrator_PolyExp model(json, grid);
   Mesh mesh(make_mesh_config(grid));
   Discretization discretization(mesh, json, DiFfRG::LogPort{});
   AssemblerC assembler(discretization, model, json, DiFfRG::LogPort{});
 
   auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_kt_3D", "output");
-  OutputSession<dim, VectorType> data_out(data_out_path, json);
+  OutputSession<Discretization> data_out(data_out_path, json);
   auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
   ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 

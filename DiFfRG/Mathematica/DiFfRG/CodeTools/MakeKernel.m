@@ -11,7 +11,8 @@ Make a kernel from a given flow equation, parmeter list and kernel. The kernel m
 This Function creates an integrator that evaluates (constantFlow + \[Integral]integrandFlow). One can prepend additional c++ definitions to the flow equation by using the integrandDefinitions and constantDefinitions parameters.
 These are prepended to the respective methods of the integration kernel, allowing one to e.g. define specific angles one needs for the flow code.
 
-The options \"KernelReturnTransform\" and \"ConstantReturnTransform\" (default Identity) accept a Mathematica function applied to the optimized expression before code generation, which lets you wrap the return value, e.g. \"KernelReturnTransform\" -> Re renders the kernel return as real(...).";
+The options \"KernelReturnTransform\" and \"ConstantReturnTransform\" (default Identity) accept a Mathematica function applied to the optimized expression before code generation, which lets you wrap the return value, e.g. \"KernelReturnTransform\" -> Re renders the kernel return as real(...).
+The option \"KernelTraits\" declares integrator traits on the emitted kernel class, as a list of names or name -> Boolean rules, e.g. \"KernelTraits\" -> {\"matsubara_finite_extent\"} or {\"matsubara_split\" -> True}. Each becomes a `static constexpr bool <name> = <value>;` member. \"MatsubaraEven\" stays a separate option because it carries a symbolic evenness check that a generic mechanism cannot.";
 
 MakeKernel::Invalid = "The given arguments are invalid. See MakeKernel::usage";
 
@@ -28,6 +29,8 @@ MakeKernel::InvalidKey = "The key \"`1`\" is invalid: `2`";
 MakeKernel::exportFailed = "Export of sources.m to `1` failed.";
 
 MakeKernel::notEven = "MatsubaraEven requested for kernel \"`1`\" but it is not even in \"`2`\"; emitting the standard kernel (the integrator keeps the explicit kernel(+f0)+kernel(-f0) form). This is expected when the loop contains fermionic dressings evaluated at f0-shifted arguments.";
+
+MakeKernel::InvalidTrait = "KernelTraits entry `1` is not a C++ identifier optionally followed by -> True|False.";
 
 Begin["`Private`"]
 
@@ -73,9 +76,45 @@ KernelSpecQ[spec_Association] :=
 GetStandardKernelDefinitions[] :=
     $StandardKernelDefinitions
 
+(* Emit arbitrary integrator traits as class members. The traits are what the finite-T
+   integrator branches on (matsubara_even, matsubara_finite_extent, matsubara_split), and a
+   `requires { requires K::trait; }` detector reads FALSE for anything it cannot see -- a
+   substitution failure, not an error. So a mistyped name is silently a disabled trait and a
+   wrong right-hand side with no diagnostic; validate the name here instead. *)
+kernelTraitMembers[traits_] :=
+    Module[{list, entries},
+        list =
+            If[ListQ[traits],
+                traits
+                ,
+                {traits}
+            ];
+        entries =
+            Map[
+                Function[t,
+                    Module[{name, value},
+                        {name, value} =
+                            Switch[t,
+                                _String, {t, True},
+                                _Rule, {First[t], Last[t]},
+                                _, {None, None}
+                            ];
+                        If[Not[StringQ[name]] || Not[StringMatchQ[name, RegularExpression["[A-Za-z_][A-Za-z0-9_]*"]]] || Not[BooleanQ[value]],
+                            Message[MakeKernel::InvalidTrait, t];
+                            Abort[]
+                        ];
+                        "static constexpr bool " <> name <> " = " <> If[TrueQ[value], "true", "false"] <> ";"
+                    ]
+                ]
+                ,
+                list
+            ];
+        DeleteDuplicates[entries]
+    ];
+
 (* Internal functions added here with Internal`*::usage *)
 
-Options[MakeKernel] = {"Coordinates" -> {}, "CoordinateArguments" -> {}, "IntegrationVariables" -> {}, "KernelDefinitions" -> $StandardKernelDefinitions, "Regulator" -> "DiFfRG::PolynomialExpRegulator", "RegulatorOpts" -> {"", ""}, "KernelBody" -> "", "KernelReturnType" -> "auto", "KernelReturnTransform" -> Identity, "ConstantBody" -> "", "ConstantReturnType" -> "auto", "ConstantReturnTransform" -> Identity, "Parameters" -> {}, "Name" -> "", "d" -> -1, "Integrator" -> "", "AD" -> False, "ctype" -> "double", "Device" -> "TBB", "Type" -> "double", "SplitKernel" -> False, "SeparateLookups" -> False, "Decorator" -> "static KOKKOS_FUNCTION", "MatsubaraEven" -> False};
+Options[MakeKernel] = {"Coordinates" -> {}, "CoordinateArguments" -> {}, "IntegrationVariables" -> {}, "KernelDefinitions" -> $StandardKernelDefinitions, "Regulator" -> "DiFfRG::PolynomialExpRegulator", "RegulatorOpts" -> {"", ""}, "KernelBody" -> "", "KernelReturnType" -> "auto", "KernelReturnTransform" -> Identity, "ConstantBody" -> "", "ConstantReturnType" -> "auto", "ConstantReturnTransform" -> Identity, "Parameters" -> {}, "Name" -> "", "d" -> -1, "Integrator" -> "", "AD" -> False, "ctype" -> "double", "Device" -> "TBB", "Type" -> "double", "SplitKernel" -> False, "SeparateLookups" -> False, "Decorator" -> "static KOKKOS_FUNCTION", "MatsubaraEven" -> False, "KernelTraits" -> {}};
 
 MakeKernel[__] :=
     (
@@ -87,7 +126,7 @@ MakeKernel[kernelExpr_, OptionsPattern[]] :=
     MakeKernel @@ (Join[{kernelExpr, 0}, Thread[Rule @@ {#, OptionValue[MakeKernel, #]}]& @ Keys[Options[MakeKernel]]]);
 
 MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
-    Module[{expr, const, exec, kernel, constant, kernelClass, kernelHeader, integratorHeader, integratorCpp, integratorTemplateParams, tparams = <|"Name" -> "...t", "Type" -> "auto&&", "Reference" -> False, "Const" -> False|>, kernelDefs = OptionValue["KernelDefinitions"], coordinates = OptionValue["Coordinates"], getArgs = OptionValue["CoordinateArguments"], intVariables = OptionValue["IntegrationVariables"], preArguments, regulator, params, adSpecs, explParamAD, arguments, outputPath, sources, returnType, returnTypePointer, spec, parameters, parametersKernel, matsubaraEvenTrait},
+    Module[{expr, const, exec, kernel, constant, kernelClass, kernelHeader, integratorHeader, integratorCpp, integratorTemplateParams, tparams = <|"Name" -> "...t", "Type" -> "auto&&", "Reference" -> False, "Const" -> False|>, kernelDefs = OptionValue["KernelDefinitions"], coordinates = OptionValue["Coordinates"], getArgs = OptionValue["CoordinateArguments"], intVariables = OptionValue["IntegrationVariables"], preArguments, regulator, params, adSpecs, explParamAD, arguments, outputPath, sources, returnType, returnTypePointer, spec, parameters, parametersKernel, matsubaraEvenTrait, kernelTraits},
         spec = Association @@ Thread[Rule @@ {#, OptionValue[MakeKernel, #]}]& @ Keys[Options[MakeKernel]];
         If[Not @ KernelSpecQ[spec],
             Message[MakeKernel::InvalidSpec];
@@ -156,7 +195,8 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
                 FunKit`MakeCppFunction[expr, "Name" -> "kernel", "Return" -> OptionValue["KernelReturnType"], "Suffix" -> "", "Prefix" -> "static KOKKOS_INLINE_FUNCTION", "Parameters" -> Join[intVariables, getArgs, parametersKernel], "Body" -> StringTemplate["using namespace DiFfRG;using namespace DiFfRG::compute;\n`1`"][OptionValue["KernelBody"]], "ReturnTransform" -> OptionValue["KernelReturnTransform"]]
             ];
         constant = FunKit`MakeCppFunction[constExpr, "Name" -> "constant", "Return" -> OptionValue["ConstantReturnType"], "Suffix" -> "", "Prefix" -> "static KOKKOS_INLINE_FUNCTION", "Parameters" -> Join[getArgs, parametersKernel], "Body" -> StringTemplate["using namespace DiFfRG;using namespace DiFfRG::compute;\n`1`"][OptionValue["ConstantBody"]], "ReturnTransform" -> OptionValue["ConstantReturnTransform"]];
-        kernelClass = FunKit`MakeCppClass["TemplateTypes" -> {"_Regulator"}, "Name" -> OptionValue["Name"] <> "_kernel", "MembersPublic" -> Join[{"using Regulator = _Regulator;"}, matsubaraEvenTrait, {kernel, constant}], "MembersPrivate" -> kernelDefs];
+        kernelTraits = kernelTraitMembers[OptionValue["KernelTraits"]];
+        kernelClass = FunKit`MakeCppClass["TemplateTypes" -> {"_Regulator"}, "Name" -> OptionValue["Name"] <> "_kernel", "MembersPublic" -> Join[{"using Regulator = _Regulator;"}, matsubaraEvenTrait, kernelTraits, {kernel, constant}], "MembersPrivate" -> kernelDefs];
         kernelHeader = FunKit`MakeCppHeader["Includes" -> {"DiFfRG/physics/interpolation.hh", "DiFfRG/physics/physics.hh"}, "Body" -> {"namespace DiFfRG {", kernelClass, StringTemplate["} using DiFfRG::`1`_kernel;"][spec["Name"]]}];
         (********************************************************************)
         (* Next, the corresponding class holding the map and get functions *)

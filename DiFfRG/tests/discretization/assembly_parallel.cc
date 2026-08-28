@@ -52,8 +52,6 @@ namespace
          {"integration", {{"x_quadrature_order", 8}, {"x_extent_tolerance", 1e-3}}},
          {"discretization",
           {{"fe_order", 2},
-           {"mesh_workers", 0},
-           {"batch_size", 16},
            {"overintegration", 0},
            {"output_subdivisions", 1},
            {"EoM_abs_tol", 1e-10},

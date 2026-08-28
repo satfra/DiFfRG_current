@@ -7,7 +7,6 @@ using namespace DiFfRG;
 using Model = ON_finiteT;
 constexpr uint dim = Model::dim;
 using Discretization = CG::Discretization<Model, RectangularMesh<dim>>;
-using VectorType = typename Discretization::VectorType;
 using Assembler = CG::Assembler<Discretization>;
 using TimeStepper = TimeStepperSUNDIALS_IDA<Assembler>;
 
@@ -22,7 +21,7 @@ int main(int argc, char *argv[])
   Model model(json);
   RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
   OutputPath output_path(json);
-  OutputSession<dim, VectorType> data_out(output_path, json);
+  OutputSession<Assembler> data_out(output_path, json);
   const auto log = data_out.log_port();
   Discretization discretization(mesh, json, log);
   Assembler assembler(discretization, model, json, log);

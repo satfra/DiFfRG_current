@@ -42,7 +42,7 @@ namespace DiFfRG
   void TimeStepperTRBDF2_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(
       AbstractFlowingVariables<NumberType, VectorType> *initial_condition, double start, double stop)
   {
-    OutputSession<dim, VectorType> *data_out = this->get_data_out();
+    OutputSession_impl<dim, VectorType> *data_out = this->get_data_out();
 
     const double gamma = 2. - std::sqrt(2.);
 
@@ -64,7 +64,9 @@ namespace DiFfRG
     // shared jacobian matrix and linear solver (TR and BDF2 stages are sequential, never simultaneous)
     SparseMatrixType jacobian(assembler->get_sparsity_pattern_jacobian());
     LinearSolver<SparseMatrixType, VectorType> linSolver;
-    const DiagnosticPort jacobian_diagnostic_port = data_out ? data_out->diagnostic_port() : DiagnosticPort{};
+    const bool jacobian_diagnostics_enabled = impl.jacobian_diagnostics && data_out != nullptr;
+    const DiagnosticPort jacobian_diagnostic_port =
+        jacobian_diagnostics_enabled ? data_out->diagnostic_port() : DiagnosticPort{};
 
     // all functions for assembly of the problem and linear solving
     newton_TR.residual = [&](VectorType &res, const VectorType &u) {
@@ -101,12 +103,12 @@ namespace DiFfRG
 
         assembler->set_time(t + dt * gamma);
         assembler->jacobian(jacobian, u, residual_weight, 1.);
-        matrix_diagnostics = analyze_jacobian_matrix(jacobian);
+        if (jacobian_diagnostics_enabled) matrix_diagnostics = analyze_jacobian_matrix(jacobian);
 
         if (verbosity > 0) std::cout << "jacobian TR: " << std::endl;
 
         linSolver.init(jacobian);
-        factorize_with_diagnostics(linSolver, jacobian, factorization_diagnostics);
+        factorize_with_diagnostics(linSolver, jacobian, factorization_diagnostics, jacobian_diagnostics_enabled);
         record_diagnostics();
       } catch (...) {
         if constexpr (decltype(linSolver)::performs_factorization)
@@ -159,12 +161,12 @@ namespace DiFfRG
 
         assembler->set_time(t + dt);
         assembler->jacobian(jacobian, u, residual_weight, mass_weight);
-        matrix_diagnostics = analyze_jacobian_matrix(jacobian);
+        if (jacobian_diagnostics_enabled) matrix_diagnostics = analyze_jacobian_matrix(jacobian);
 
         if (verbosity > 0) std::cout << "jacobian BDF2: " << std::endl;
 
         linSolver.init(jacobian);
-        factorize_with_diagnostics(linSolver, jacobian, factorization_diagnostics);
+        factorize_with_diagnostics(linSolver, jacobian, factorization_diagnostics, jacobian_diagnostics_enabled);
         record_diagnostics();
       } catch (...) {
         if constexpr (decltype(linSolver)::performs_factorization)

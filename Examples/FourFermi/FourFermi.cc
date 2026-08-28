@@ -14,7 +14,6 @@ using namespace DiFfRG;
 
 // Choices for types
 using Model = FourFermi;
-using VectorType = Vector<double>;
 using Assembler = Variables::Assembler<Model>;
 using TimeStepper = TimeStepperBoostABM<Assembler>;
 
@@ -29,7 +28,7 @@ int main(int argc, char *argv[])
 
   // Define the objects needed to run the simulation
   OutputPath output_path(json);
-  OutputSession<0, VectorType> data_out(output_path, json);
+  OutputSession<Assembler> data_out(output_path, json);
   const auto log = data_out.log_port();
   Model model(json, log);
   Assembler assembler(model, json, log);

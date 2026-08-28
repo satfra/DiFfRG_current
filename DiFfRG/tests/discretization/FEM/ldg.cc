@@ -46,8 +46,6 @@ TEST_CASE("Test LDG on Constant model", "[discretization][ldg]")
          {"jacobian_quadrature_factor", 0.5}}},
        {"discretization",
         {{"fe_order", GENERATE(0, 1, 3, 5)},
-         {"mesh_workers", 8},
-         {"batch_size", 64},
          {"overintegration", 0},
          {"output_subdivisions", 2},
 

@@ -4,7 +4,6 @@
 #include <sstream>
 
 // external libraries
-#include <deal.II/base/multithread_info.h>
 #include <deal.II/base/timer.h>
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/lac/full_matrix.h>
@@ -52,13 +51,11 @@ namespace DiFfRG
       {
       }
 
-      Assembler(Model &model, const ConfigTree &config, LogPort log_port)
-          : model(model), log_port(std::move(log_port)),
-            mesh_workers(config.get_uint("/discretization/mesh_workers", 0))
+      /// This assembler has no FE space at all (dim == 0) and never runs a mesh_loop, so it takes
+      /// no assembly schedule; the config is unused.
+      Assembler(Model &model, const ConfigTree & /*config*/, LogPort log_port)
+          : model(model), log_port(std::move(log_port))
       {
-        // Default 0 = derive from the thread count; see FEM/assembler/common.hh for why a fixed
-        // constant is wrong here (mesh_workers is mesh_loop's queue_length).
-        if (mesh_workers == 0) mesh_workers = std::max(1u, dealii::MultithreadInfo::n_threads() / 2);
         static_assert(Components::count_fe_functions() == 0, "The pure variable assembler cannot handle FE functions!");
         reinit();
       }
@@ -192,10 +189,6 @@ namespace DiFfRG
     private:
       Model &model;
       LogPort log_port;
-
-      /// Number of cells kept in flight in the MeshWorker assembly pipeline (its queue length).
-      /// This is not a thread count - see /discretization/threads for that.
-      uint mesh_workers;
 
       SparsityPattern sparsity_pattern_mass;
       SparsityPattern sparsity_pattern_jacobian;

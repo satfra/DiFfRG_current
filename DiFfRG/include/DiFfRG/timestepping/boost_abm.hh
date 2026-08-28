@@ -31,7 +31,7 @@ namespace DiFfRG
     /// know which /timestepping/ section to read, and it cannot ask a virtual function for that
     /// from inside its own constructor.
     TimeStepperBoostABM_impl(const ConfigTree &config, AbstractAssembler<VectorType, SparseMatrixType, dim> *assembler,
-                             OutputSession<dim, VectorType> *data_out, AbstractAdaptor<VectorType> *adaptor = nullptr)
+                             OutputSession_impl<dim, VectorType> *data_out, AbstractAdaptor<VectorType> *adaptor = nullptr)
         : Base(config, assembler, data_out, adaptor, /*implicit=*/false, /*explicit=*/true)
     {
     }

@@ -25,27 +25,29 @@ namespace DiFfRG
   {
   public:
     /**
-     * @brief Calculate the number of nodes needed for a given temperature and typical energy scale.
+     * @brief Nodes the Monien rule needs to reach past `typical_E` at this temperature.
      *
-     * @param T The temperature.
-     * @param typical_E A typical energy scale.
+     * The sizing law and nothing else: no ceiling, no floor, and no choice of rule. Which rule a
+     * summand deserves depends on its whole spectrum, and `typical_E` is only the top of it --
+     * that decision belongs to the caller, which is QuadratureIntegrator_fT::refresh_matsubara.
+     *
+     * @param T The temperature. Zero returns zero: the vacuum rule is an integral, not a sum.
+     * @param typical_E The LARGEST scale the rule has to cover; the reach is a fixed multiple of it.
+     * @param precision_factor Multiplies the reach; the user-facing dial.
      * @param step The step size of considered node sizes (e.g. step=2 implies only even numbers of nodes).
-     * @return int The number of nodes needed. A negative return means the vacuum (T=0) rule should be used
-     * instead, and |return| is its size. That happens at T == 0, and once the thermal content
-     * (~4 exp(-typical_E/T)) has died away while the Monien rule would cost more than the vacuum
-     * rule -- with the shipped constants, around typical_E / T > 30.
      */
-    int predict_size(const NT T, const NT typical_E = 1., const int step = 2);
+    static int predict_size(const NT T, const NT typical_E = 1., const double precision_factor = 1.,
+                            const int step = 2);
 
     /**
      * @brief Create a new quadrature rule for Matsubara frequencies.
      *
-     * @param T The temperature.
-     * @param typical_E A typical energy scale, which determines the number of nodes in the quadrature rule.
+     * @param T The temperature. Zero selects the vacuum rule; this is the only thing that does.
+     * @param typical_E The largest scale to cover, which determines the number of nodes.
      * @param step The step size of considered node sizes (e.g. step=2 implies only even numbers of nodes).
      * @param min_size Minimum number of nodes.
-     * @param max_size Maximum number of nodes. Exceeding it truncates the rule and warns once.
-     * @param vacuum_quad_size Size of the T=0 rule used when predict_size hands over to it.
+     * @param max_size Node ceiling. A rule that wants more is clamped to it, and warns once.
+     * @param vacuum_quad_size Size of the vacuum rule, which a T of zero selects.
      * @param precision_factor Multiplies the reach; the user-facing dial.
      *
      * @note These defaults are kept equal to the ConfigTree defaults read by QuadratureProvider
@@ -64,8 +66,8 @@ namespace DiFfRG
      * @param typical_E A typical energy scale, which determines the number of nodes in the quadrature rule.
      * @param step The step size of considered node sizes (e.g. step=2 implies only even numbers of nodes).
      * @param min_size Minimum number of nodes.
-     * @param max_size Maximum number of nodes. Exceeding it truncates the rule and warns once.
-     * @param vacuum_quad_size Size of the T=0 rule used when predict_size hands over to it.
+     * @param max_size Node ceiling. A rule that wants more is clamped to it, and warns once.
+     * @param vacuum_quad_size Size of the vacuum rule, which a T of zero selects.
      * @param precision_factor Multiplies the reach; the user-facing dial.
      *
      * @note These defaults are kept equal to the ConfigTree defaults read by QuadratureProvider
@@ -122,20 +124,26 @@ namespace DiFfRG
     /**
      * @brief Gauss-Legendre over the FINITE interval the summand actually lives on.
      *
-     * The third rule, for a summand of finite extent in a regime where the sum may still be
-     * replaced by an integral (`typical_E / T` large). The T=0 rule reaches that regime by the
+     * The third rule, for a summand of finite extent in a regime where the caller has decided the
+     * sum may be replaced by an integral. The T=0 rule reaches that regime by the
      * tangent map `p0 = E tan(theta)`, which is built to cover an algebraic `1/p0^2` tail out to
-     * ~1e15 E -- and for a summand that is identically zero past `R = sqrt(x_extent) k` that is a
+     * ~1e15 E -- and for a summand that dies out past `R = sqrt(x_extent) k` that is a
      * poor use of nodes twice over: only `atan(R/E) / (pi/2) = 57%` of the theta range carries any
      * integrand at all (28 of 64 nodes evaluate an exact zero), and the ones that are wasted are
      * the HEAVY ones, since the tangent map's weights `~ 1/cos^2(theta)` grow towards the end it is
      * throwing away. It also converges badly, being asked to resolve a near-discontinuity at the
      * support edge with the ~36 nodes that remain.
      *
-     * Over `[-R, R]` there is no tail to cover, so plain Gauss-Legendre is both cheaper and more
-     * accurate, and the frequency direction becomes just another radial direction: for a 4D
+     * Over `[-R, R]` there is no tail worth covering, so plain Gauss-Legendre is both cheaper and
+     * more accurate, and the frequency direction becomes just another radial direction: for a 4D
      * regulator `p0` and `|q|` enter the support on the same footing, which is why the natural
      * order for this rule is the SPATIAL `x_order` rather than `vacuum_quad_size`.
+     *
+     * `R` is not a true support boundary but the radius `optimize_x_extent()` converged to, so
+     * cutting there is a systematic error in its own right. Measured on the assembled 3+1D
+     * integrand (Part 13 of the convergence study): 3.5e-10 for `PolynomialExp<8>`, 3.0e-10 for
+     * `Exponential<2>`, at the shipped `x_extent_tolerance`. That is well below the aliasing error
+     * this rule exists to avoid, but it is not zero.
      *
      * Caller convention as in sum(): \f$\sum_i w_i (f(x_i)+f(-x_i)) = \frac{1}{2\pi}\int_{-R}^{R} f\,dp_0\f$,
      * i.e. \f$x_i = R u_i\f$ and \f$w_i = R v_i / 2\pi\f$ for Gauss-Legendre nodes/weights
