@@ -355,7 +355,14 @@ if(GPU
             "  To silence this warning, configure with -DGPU=OFF\n")
 endif()
 
-set(HAVE_THREADS ON)
+# DiFfRG's CPU parallelism is TBB: deal.II's MeshWorker drives a tbb::parallel_pipeline, and every
+# production flow instantiates its integrators with TBB_exec. A Kokkos std::threads host backend
+# would be a *second* pool of spinning workers on the same cores -- and not an idle one, since
+# deal.II routes its own vector kernels through Kokkos::DefaultHostExecutionSpace
+# (lac/vector.templates.h, lac/la_parallel_vector.templates.h). Off by default so the host space is
+# Kokkos::Serial and there is exactly one CPU thread pool.
+option(KOKKOS_THREADS "Build Kokkos' std::threads host backend (contends with TBB; see comment)" OFF)
+set(HAVE_THREADS ${KOKKOS_THREADS})
 
 option(MPI "Enable MPI support" OFF)
 if(MPI)
@@ -399,10 +406,11 @@ if(HAVE_HIP)
 else()
   message("  ${BoldYellow}HIP: ${HAVE_HIP}${ColourReset}")
 endif()
+# CPU work always runs on TBB; this line says which Kokkos host backend sits beside it.
 if(HAVE_THREADS)
-  message("  ${BoldGreen}Threads: ${HAVE_THREADS}${ColourReset}")
+  message("  ${BoldYellow}CPU: TBB + Kokkos::Threads (two pools -- they contend)${ColourReset}")
 else()
-  message("  ${BoldYellow}Threads: ${HAVE_THREADS}${ColourReset}")
+  message("  ${BoldGreen}CPU: TBB (Kokkos host backend is Serial)${ColourReset}")
 endif()
 message("")
 

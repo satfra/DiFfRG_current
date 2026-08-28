@@ -11,7 +11,6 @@
 namespace
 {
   using namespace on_kt_3D;
-  constexpr int uthreads = 16;
 }
 
 // --- σ-coords --------------------------------------------------------------
@@ -20,7 +19,7 @@ TEST_CASE("LSM σ-coords analytic Litim T=0 reaches t=3.6",
           "[smoke][lsm-physical][sigma][analytic]")
 {
   kt_regression::ensure_logger();
-  run_flow_to_time<LSM_sigma_analytic>(default_sigma_grid(), smoke_target_time, uthreads);
+  run_flow_to_time<LSM_sigma_analytic>(default_sigma_grid(), smoke_target_time);
 }
 
 TEST_CASE("LSM σ-coords integrator Litim T=0 reaches t=3.6",
@@ -28,7 +27,7 @@ TEST_CASE("LSM σ-coords integrator Litim T=0 reaches t=3.6",
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
-  run_flow_to_time<LSM_sigma_integrator_Litim>(default_sigma_grid(), smoke_target_time, uthreads);
+  run_flow_to_time<LSM_sigma_integrator_Litim>(default_sigma_grid(), smoke_target_time);
 }
 
 TEST_CASE("LSM σ-coords integrator PolyExp T=0.05 reaches t=3.6",
@@ -36,7 +35,7 @@ TEST_CASE("LSM σ-coords integrator PolyExp T=0.05 reaches t=3.6",
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
-  run_flow_to_time<LSM_sigma_integrator_PolyExp>(default_sigma_grid(), smoke_target_time, uthreads);
+  run_flow_to_time<LSM_sigma_integrator_PolyExp>(default_sigma_grid(), smoke_target_time);
 }
 
 // --- ρ-coords --------------------------------------------------------------
@@ -45,7 +44,7 @@ TEST_CASE("LSM ρ-coords analytic Litim T=0 reaches final time",
           "[smoke][lsm-physical][rho][analytic]")
 {
   kt_regression::ensure_logger();
-  run_flow_to_time<LSM_rho_analytic>(default_rho_grid(), final_time, uthreads);
+  run_flow_to_time<LSM_rho_analytic>(default_rho_grid(), final_time);
 }
 
 TEST_CASE("LSM ρ-coords integrator Litim T=0 reaches final time",
@@ -53,7 +52,7 @@ TEST_CASE("LSM ρ-coords integrator Litim T=0 reaches final time",
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
-  run_flow_to_time<LSM_rho_integrator_Litim>(default_rho_grid(), final_time, uthreads);
+  run_flow_to_time<LSM_rho_integrator_Litim>(default_rho_grid(), final_time);
 }
 
 TEST_CASE("LSM ρ-coords integrator PolyExp T=0.05 reaches final time",
@@ -61,7 +60,7 @@ TEST_CASE("LSM ρ-coords integrator PolyExp T=0.05 reaches final time",
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
-  run_flow_to_time<LSM_rho_integrator_PolyExp>(default_rho_grid(), final_time, uthreads);
+  run_flow_to_time<LSM_rho_integrator_PolyExp>(default_rho_grid(), final_time);
 }
 
 // --- CG --------------------------------------------------------------------
@@ -71,5 +70,5 @@ TEST_CASE("LSM CG integrator PolyExp T=0.05 reaches final time",
 {
   kt_regression::ensure_logger();
   kt_regression::ensure_diffrg_initialized();
-  run_flow_to_time_cg<LSM_CG>(default_rho_grid(), final_time, uthreads);
+  run_flow_to_time_cg<LSM_CG>(default_rho_grid(), final_time);
 }

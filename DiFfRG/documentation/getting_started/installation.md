@@ -118,6 +118,12 @@ The most important options to pass to the top-level `cmake` invocation are:
 - `-DDiFfRG_DOCUMENTATION=ON` — build this documentation (default `ON`).
 - `-DBUILD_OpenBLAS=ON` — additionally build OpenBLAS (default `OFF`).
 
+  The BLAS/LAPACK in use must have 32-bit integer indices (LP64): deal.II's `types::blas_int` is
+  a plain `int` and PETSc is built `--with-64-bit-indices=0`. Configure probes the library it
+  found and stops with an explanation if it turns out to be ILP64 — on a cluster that usually
+  means an MKL or OpenBLAS module was loaded in its `ilp64` variant. Load the `lp64` one, or
+  pass `-DBUILD_OpenBLAS=ON` and let DiFfRG build its own.
+
 #### PETSc and distributed linear algebra
 
 - `-DBUILD_PETSC=ON/OFF` — build PETSc (**default: follows `-DMPI`**). PETSc provides the

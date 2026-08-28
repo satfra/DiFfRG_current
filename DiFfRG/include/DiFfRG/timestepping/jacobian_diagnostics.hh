@@ -258,9 +258,12 @@ namespace DiFfRG
                         {"scaled_rcond_estimate", factorization.scaled_rcond_estimate}});
   }
 
+  /** Factorizes and records how it went. The condition estimate costs several extra triangular
+   * solves per call, so `estimate_condition` switches it off when the diagnostics are not written;
+   * the success flag and the timing are always filled, as callers branch on them. */
   template <typename LinearSolver, typename MatrixType>
   void factorize_with_diagnostics(LinearSolver &solver, const MatrixType &matrix,
-                                  JacobianFactorizationDiagnostics &diagnostics)
+                                  JacobianFactorizationDiagnostics &diagnostics, const bool estimate_condition)
   {
     if constexpr (LinearSolver::performs_factorization) {
       const auto start = std::chrono::steady_clock::now();
@@ -274,7 +277,7 @@ namespace DiFfRG
       }
       diagnostics.factorization_ms =
           std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-      if (diagnostics.factorization_success == 1.) {
+      if (estimate_condition && diagnostics.factorization_success == 1.) {
         try {
           diagnostics.scaled_rcond_estimate = solver.estimate_scaled_rcond(matrix, 5);
         } catch (...) {

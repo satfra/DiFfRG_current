@@ -105,6 +105,7 @@ namespace DiFfRG
    * - /timestepping/implicit/rel_tol: The relative tolerance for an implicit timestepping algorithm.
    * - /timestepping/implicit/max_steps: The maximal number of internal SUNDIALS steps between outputs.
    * - /timestepping/implicit/max_non_linear_iterations: The maximal number of nonlinear IDA iterations.
+   * - /timestepping/implicit/jacobian_diagnostics: Whether the Jacobian diagnostics tables are written (default false).
    * - /timestepping/explicit/dt: The timestep size for an explicit timestepping algorithm.
    * - /timestepping/explicit/minimal_dt: The minimal timestep size for an explicit timestepping algorithm.
    * - /timestepping/explicit/maximal_dt: The maximal timestep size for an explicit timestepping algorithm.
@@ -113,10 +114,10 @@ namespace DiFfRG
    * - /timestepping/explicit/detect_stuck: Whether repeated-time callback detection is enabled.
    *
    * Additionally, the following parameters are being used:
-   * - /output/verbosity: The verbosity level of the output. At 0 nothing is printed, at 1 the progress lines for
-   * residual evaluations, at 2 additionally the jacobian/linear solver lines and the IDA step/failure diagnostics
-   * line, at 3 additionally jacobian inversion and output frames. From 4 upwards the per-second aggregation is
-   * disabled and every call is printed.
+   * - /output/verbosity: The verbosity level of the output. At 0 only warnings and errors are printed, at 1 the
+   * progress lines for residual evaluations, at 2 additionally the jacobian/linear solver lines and the IDA
+   * step/failure diagnostics line, at 3 additionally jacobian inversion and output frames. From 4 upwards the
+   * per-second aggregation is disabled and every call is printed.
    * - /physical/Lambda: The RG scale parameter Lambda. If not present, no RG scale is given when console_out is called.
    *
    * The console_out method is used to print information about the current time, the calculation time and the current
@@ -159,7 +160,7 @@ namespace DiFfRG
      * @param implicit_stepper, explicit_stepper which /timestepping/ sections this stepper reads.
      */
     AbstractTimestepper(const ConfigTree &config, AbstractAssembler<VectorType, SparseMatrixType, dim> *assembler,
-                        OutputSession<dim, VectorType> *data_out, AbstractAdaptor<VectorType> *adaptor,
+                        OutputSession_impl<dim, VectorType> *data_out, AbstractAdaptor<VectorType> *adaptor,
                         const bool implicit_stepper, const bool explicit_stepper)
         : config(config), assembler(assembler), data_out(data_out), adaptor(adaptor),
           log(data_out ? data_out->log_port() : LogPort{}), start_time(std::chrono::high_resolution_clock::now()),
@@ -179,6 +180,7 @@ namespace DiFfRG
         impl.maximal_dt = config.get_double("/timestepping/implicit/maximal_dt", 1.);
         impl.max_steps = config.get_uint("/timestepping/implicit/max_steps", 1e6);
         impl.max_non_linear_iterations = config.get_uint("/timestepping/implicit/max_non_linear_iterations", 10);
+        impl.jacobian_diagnostics = config.get_bool("/timestepping/implicit/jacobian_diagnostics", false);
         impl.ida_callback_trace = config.get_bool("/timestepping/implicit/ida_callback_trace", false);
         impl.ida_callback_trace_min_t = config.get_double("/timestepping/implicit/ida_callback_trace_min_t", 0.0);
         impl.ida_callback_trace_max_lines = config.get_uint("/timestepping/implicit/ida_callback_trace_max_lines", 200);
@@ -226,12 +228,12 @@ namespace DiFfRG
     /**
      * @brief Obtain the run-owned output session supplied by the application.
      *
-     * @return OutputSession<dim, VectorType>* The active output session.
+     * @return OutputSession_impl<dim, VectorType>* The active output session.
      */
-    OutputSession<dim, VectorType> *get_data_out()
+    OutputSession_impl<dim, VectorType> *get_data_out()
     {
       if (data_out == nullptr)
-        throw std::invalid_argument("AbstractTimestepper: an OutputSession must be supplied explicitly.");
+        throw std::invalid_argument("AbstractTimestepper: an OutputSession_impl must be supplied explicitly.");
       return data_out;
     }
 
@@ -299,7 +301,7 @@ namespace DiFfRG
   protected:
     const ConfigTree config;
     AbstractAssembler<VectorType, SparseMatrixType, dim> *assembler;
-    OutputSession<dim, VectorType> *data_out;
+    OutputSession_impl<dim, VectorType> *data_out;
     AbstractAdaptor<VectorType> *adaptor;
     LogPort log;
 
@@ -321,6 +323,10 @@ namespace DiFfRG
       double rel_tol;
       uint max_steps;
       uint max_non_linear_iterations;
+      /** Enables the `<run>_jacobian_diagnostics.csv` tables. Off by default because the records
+       * are not free: each one costs a full sweep over the assembled Jacobian and, for factorizing
+       * solvers, a condition estimate worth several extra triangular solves. */
+      bool jacobian_diagnostics;
       bool ida_callback_trace;
       double ida_callback_trace_min_t;
       uint ida_callback_trace_max_lines;

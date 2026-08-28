@@ -50,11 +50,14 @@ namespace DiFfRG
          * The gradient is held fixed while extracting dF/du. The Hessian and mixed derivatives are used by the
          * wave-speed strategy to differentiate the physical KT speed.
          */
-        template <typename Model, typename NumberType, int dim, size_t n_components>
+        template <typename Model, typename NumberType, int dim, size_t n_components, typename ExtractorArray,
+                  typename VariableVector>
         FluxDerivativeData<NumberType, dim, n_components>
         compute_flux_derivatives_ad(const std::array<NumberType, n_components> &u,
                                     const std::array<dealii::Tensor<1, dim, NumberType>, n_components> &grad_u,
-                                    const dealii::Point<dim> &x_q, const Model &model)
+                                    const dealii::Point<dim> &x_q, const double cell_width,
+                                    const ExtractorArray &extractors, const VariableVector &variables,
+                                    const Model &model)
         {
           using ADNumberType = autodiff::Real<2, NumberType>;
           using autodiff::detail::derivative;
@@ -74,7 +77,7 @@ namespace DiFfRG
           FluxGradientJacobian<NumberType, dim, n_components> grad_diagonal_H{};
           std::array<dealii::Tensor<1, dim, ADNumberType>, n_components> F_AD{};
 
-          model.flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD));
+          model.flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD, extractors, variables, cell_width));
           for (size_t i = 0; i < n_components; ++i)
             for (size_t d_out = 0; d_out < dim; ++d_out)
               result.F[i][d_out] = F_AD[i][d_out].val();
@@ -83,7 +86,7 @@ namespace DiFfRG
           for (size_t j = 0; j < n_components; ++j) {
             seed<1>(u_AD[j], NumberType(1));
             F_AD = {};
-            model.flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD));
+            model.flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD, extractors, variables, cell_width));
             for (size_t i = 0; i < n_components; ++i)
               for (size_t d_out = 0; d_out < dim; ++d_out) {
                 result.J[d_out][i][j] = derivative<1>(F_AD[i][d_out]);
@@ -98,12 +101,11 @@ namespace DiFfRG
               seed<1>(u_AD[j], NumberType(1));
               seed<1>(u_AD[c], NumberType(1));
               F_AD = {};
-              model.flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD));
+              model.flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD, extractors, variables, cell_width));
               for (size_t i = 0; i < n_components; ++i)
                 for (size_t d_out = 0; d_out < dim; ++d_out) {
                   const NumberType cross =
-                      (derivative<2>(F_AD[i][d_out]) - result.H[d_out][i][j][j] -
-                       result.H[d_out][i][c][c]) /
+                      (derivative<2>(F_AD[i][d_out]) - result.H[d_out][i][j][j] - result.H[d_out][i][c][c]) /
                       NumberType(2);
                   result.H[d_out][i][j][c] = result.H[d_out][i][c][j] = cross;
                 }
@@ -116,7 +118,7 @@ namespace DiFfRG
             for (size_t d_in = 0; d_in < dim; ++d_in) {
               seed<1>(grad_u_AD[c][d_in], NumberType(1));
               F_AD = {};
-              model.flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD));
+              model.flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD, extractors, variables, cell_width));
               for (size_t i = 0; i < n_components; ++i)
                 for (size_t d_out = 0; d_out < dim; ++d_out) {
                   result.grad_J[i][c][d_out][d_in] = derivative<1>(F_AD[i][d_out]);
@@ -132,13 +134,12 @@ namespace DiFfRG
                 seed<1>(u_AD[j], NumberType(1));
                 seed<1>(grad_u_AD[c][d_in], NumberType(1));
                 F_AD = {};
-                model.flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD));
+                model.flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD, extractors, variables, cell_width));
                 for (size_t i = 0; i < n_components; ++i)
                   for (size_t d_out = 0; d_out < dim; ++d_out)
-                    result.mixed_H[d_in][d_out][i][j][c] =
-                        (derivative<2>(F_AD[i][d_out]) - result.H[d_out][i][j][j] -
-                         grad_diagonal_H[i][c][d_out][d_in]) /
-                        NumberType(2);
+                    result.mixed_H[d_in][d_out][i][j][c] = (derivative<2>(F_AD[i][d_out]) - result.H[d_out][i][j][j] -
+                                                            grad_diagonal_H[i][c][d_out][d_in]) /
+                                                           NumberType(2);
                 unseed(u_AD[j]);
                 unseed(grad_u_AD[c][d_in]);
               }
@@ -152,13 +153,16 @@ namespace DiFfRG
          * This is intentionally not a second derivative strategy: it calls
          * compute_flux_derivatives_ad with a zero gradient and returns its F/J/H subset.
          */
-        template <typename Model, typename NumberType, int dim, size_t n_components>
+        template <typename Model, typename NumberType, int dim, size_t n_components, typename ExtractorArray,
+                  typename VariableVector>
         auto compute_flux_jacobian_and_hessian(const std::array<NumberType, n_components> &u,
-                                               const dealii::Point<dim> &x_q, const Model &model)
+                                               const dealii::Point<dim> &x_q, const double cell_width,
+                                               const ExtractorArray &extractors, const VariableVector &variables,
+                                               const Model &model)
         {
           const std::array<dealii::Tensor<1, dim, NumberType>, n_components> grad_u{};
-          const auto derivatives =
-              compute_flux_derivatives_ad<Model, NumberType, dim, n_components>(u, grad_u, x_q, model);
+          const auto derivatives = compute_flux_derivatives_ad<Model, NumberType, dim, n_components>(
+              u, grad_u, x_q, cell_width, extractors, variables, model);
           return std::make_tuple(derivatives.F, derivatives.J, derivatives.H);
         }
 

@@ -72,7 +72,7 @@ If no parameter file is given with `-p` and the default `parameter.json` does no
 ## Key Design Patterns
 
 - **CRTP** (Curiously Recurring Template Pattern) for zero-overhead polymorphism in models and assemblers.
-- **Kokkos execution spaces** (`GPU_exec`, `TBB_exec`, `Threads_exec`) abstract the CPU/GPU backend.
+- **Kokkos execution spaces** (`GPU_exec`, `TBB_exec`, `KokkosHost_exec`) abstract the CPU/GPU backend.
 - **C++20 concepts** constrain template parameters with clear diagnostics.
 - **Automatic differentiation** computes Jacobians without hand-coded derivatives.
 
@@ -81,7 +81,7 @@ If no parameter file is given with `-p` and the default `parameter.json` does no
 DiFfRG uses [Kokkos](https://kokkos.org/) as a performance-portability layer, so the same kernel code runs on different backends selected through *execution spaces*:
 
 - `TBB_exec` — CPU parallelization via [oneTBB](https://github.com/uxlfoundation/oneTBB).
-- `Threads_exec` — CPU parallelization via Kokkos' native C++ threads backend.
+- `KokkosHost_exec` — the Kokkos host backend. This is `Kokkos::Serial` by default: DiFfRG's CPU work runs on the single TBB pool above, and a second pool of spinning workers on the same cores would only contend with it. Building with `-DKOKKOS_THREADS=ON` makes it Kokkos' native C++ threads backend instead.
 - `GPU_exec` — GPU execution via Kokkos' CUDA (NVIDIA) or HIP (AMD) backend.
 
 The GPU backend is enabled at configure time with `-DGPU=ON` (the default; see the [installation](installation.md) page). Whether a particular computation runs on the CPU or the GPU is chosen per execution space: the **FEM assemblers always run on the CPU (`TBB_exec`)**, because they interact with deal.II's data structures, while the **momentum-space integrators can target the GPU** for a large speedup on fully momentum-dependent flows. The integrator's execution space is fixed when its kernel is generated (the `"Device"` option of `MakeKernel`, see [Tutorial 3](../tutorials/tut3.md)); `TBB` is the default and is required when an integrator is called from within an assembler.

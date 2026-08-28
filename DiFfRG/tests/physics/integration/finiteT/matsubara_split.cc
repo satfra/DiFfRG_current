@@ -60,7 +60,7 @@ namespace
 } // namespace
 
 TEMPLATE_TEST_CASE("Split Matsubara kernel reproduces the unsplit one", "[integration][quadrature][matsubara-split]",
-                   Threads_exec, GPU_exec)
+                   KokkosHost_exec, GPU_exec)
 {
   DiFfRG::Init();
   using ExecutionSpace = TestType;
@@ -154,7 +154,7 @@ namespace
 } // namespace
 
 TEMPLATE_TEST_CASE("Split survives the measure adapter and the p2_1ang wrapper",
-                   "[integration][quadrature][matsubara-split]", Threads_exec, GPU_exec)
+                   "[integration][quadrature][matsubara-split]", KokkosHost_exec, GPU_exec)
 {
   DiFfRG::Init();
   using ExecutionSpace = TestType;

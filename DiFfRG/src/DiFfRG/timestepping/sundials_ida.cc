@@ -271,7 +271,9 @@ namespace DiFfRG
     SparseMatrixType jacobian;
     assembler->reinit_matrix(jacobian);
     LinearSolver<SparseMatrixType, VectorType> linSolver;
-    const DiagnosticPort jacobian_diagnostic_port = data_out ? data_out->diagnostic_port() : DiagnosticPort{};
+    const bool jacobian_diagnostics_enabled = impl.jacobian_diagnostics && data_out != nullptr;
+    const DiagnosticPort jacobian_diagnostic_port =
+        jacobian_diagnostics_enabled ? data_out->diagnostic_port() : DiagnosticPort{};
 
     // Create a SUNDIALS IDA object with the right settings
     typename SUNDIALS::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
@@ -454,7 +456,7 @@ namespace DiFfRG
         y_state.refresh(y);
         y_dot_state.refresh(y_dot);
         assembler->jacobian(jacobian, y_state.get(), 1., y_dot_state.get(), alpha, 1.);
-        matrix_diagnostics = analyze_jacobian_matrix(jacobian);
+        if (jacobian_diagnostics_enabled) matrix_diagnostics = analyze_jacobian_matrix(jacobian);
         if (!std::isfinite(jacobian.frobenius_norm())) {
           factorization_diagnostics.factorization_success = 0.;
           record_diagnostics();
@@ -469,14 +471,15 @@ namespace DiFfRG
         const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
         console_out(t, "jacobian construction", 2, &current_diagnostics, calc_timer.lap());
 
-        factorize_with_diagnostics(linSolver, jacobian, factorization_diagnostics);
+        factorize_with_diagnostics(linSolver, jacobian, factorization_diagnostics, jacobian_diagnostics_enabled);
         if (factorization_diagnostics.factorization_success == 1.) {
           const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
           console_out(t, "jacobian inversion", 3, &current_diagnostics, calc_timer.lap());
         }
         record_diagnostics();
       } catch (std::exception &e) {
-        if (matrix_diagnostics.n_rows == 0.) matrix_diagnostics = analyze_jacobian_matrix(jacobian);
+        if (jacobian_diagnostics_enabled && matrix_diagnostics.n_rows == 0.)
+          matrix_diagnostics = analyze_jacobian_matrix(jacobian);
         if constexpr (decltype(linSolver)::performs_factorization)
           if (std::isnan(factorization_diagnostics.factorization_success))
             factorization_diagnostics.factorization_success = 0.;
@@ -565,7 +568,9 @@ namespace DiFfRG
     const uint n_vars = initial_data.block(1).size();
     FullMatrix<NumberType> variable_jacobian(n_vars);
     FullMatrix<NumberType> variable_jacobian_inverse(n_vars);
-    const DiagnosticPort jacobian_diagnostic_port = data_out ? data_out->diagnostic_port() : DiagnosticPort{};
+    const bool jacobian_diagnostics_enabled = impl.jacobian_diagnostics && data_out != nullptr;
+    const DiagnosticPort jacobian_diagnostic_port =
+        jacobian_diagnostics_enabled ? data_out->diagnostic_port() : DiagnosticPort{};
 
     // Create a SUNDIALS IDA object with the right settings
     typename SUNDIALS::IDA<BlockVectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt,
@@ -789,11 +794,12 @@ namespace DiFfRG
         assembler->jacobian_variables(variable_jacobian, y_vars_state.get(), y_state.get());
         variable_jacobian *= -1.;
         variable_jacobian.diagadd(alpha);
-        spatial_matrix_diagnostics = analyze_jacobian_matrix(spatial_jacobian);
-        variable_matrix_diagnostics = analyze_jacobian_matrix(variable_jacobian);
+        if (jacobian_diagnostics_enabled) {
+          spatial_matrix_diagnostics = analyze_jacobian_matrix(spatial_jacobian);
+          variable_matrix_diagnostics = analyze_jacobian_matrix(variable_jacobian);
+        }
 
-        if (!std::isfinite(spatial_matrix_diagnostics.frobenius_norm) ||
-            !std::isfinite(variable_matrix_diagnostics.frobenius_norm)) {
+        if (!std::isfinite(spatial_jacobian.frobenius_norm()) || !std::isfinite(variable_jacobian.frobenius_norm())) {
           spatial_factorization_diagnostics.factorization_success = 0.;
           variable_factorization_diagnostics.factorization_success = 0.;
           record_diagnostics();
@@ -809,7 +815,8 @@ namespace DiFfRG
         const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
         console_out(t, "jacobian construction", 2, &current_diagnostics, calc_timer.lap());
 
-        factorize_with_diagnostics(linSolver, spatial_jacobian, spatial_factorization_diagnostics);
+        factorize_with_diagnostics(linSolver, spatial_jacobian, spatial_factorization_diagnostics,
+                                   jacobian_diagnostics_enabled);
         const auto variable_factorization_start = std::chrono::steady_clock::now();
         try {
           variable_jacobian_inverse.invert(variable_jacobian);
@@ -916,7 +923,9 @@ namespace DiFfRG
     const uint n_vars = initial_data.size();
     FullMatrix<NumberType> variable_jacobian(n_vars);
     FullMatrix<NumberType> variable_jacobian_inverse(n_vars);
-    const DiagnosticPort jacobian_diagnostic_port = data_out ? data_out->diagnostic_port() : DiagnosticPort{};
+    const bool jacobian_diagnostics_enabled = impl.jacobian_diagnostics && data_out != nullptr;
+    const DiagnosticPort jacobian_diagnostic_port =
+        jacobian_diagnostics_enabled ? data_out->diagnostic_port() : DiagnosticPort{};
 
     // Create a SUNDIALS IDA object with the right settings
     typename SUNDIALS::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
@@ -1062,9 +1071,9 @@ namespace DiFfRG
         assembler->jacobian_variables(variable_jacobian, y, VectorType());
         variable_jacobian *= -1.;
         variable_jacobian.diagadd(alpha);
-        matrix_diagnostics = analyze_jacobian_matrix(variable_jacobian);
+        if (jacobian_diagnostics_enabled) matrix_diagnostics = analyze_jacobian_matrix(variable_jacobian);
 
-        if (!std::isfinite(matrix_diagnostics.frobenius_norm)) {
+        if (!std::isfinite(variable_jacobian.frobenius_norm())) {
           factorization_diagnostics.factorization_success = 0.;
           record_diagnostics();
           callback_diagnostics.jacobian_failures++;

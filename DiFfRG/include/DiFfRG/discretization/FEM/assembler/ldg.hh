@@ -26,6 +26,8 @@
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
+#include <DiFfRG/discretization/common/assembly_schedule.hh>
+#include <DiFfRG/discretization/common/cell_geometry.hh>
 #include <DiFfRG/discretization/common/eom.hh>
 #include <DiFfRG/discretization/common/types.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
@@ -62,16 +64,15 @@ namespace DiFfRG
       LDGAssemblerBase(Discretization &discretization, Model &model, const ConfigTree &config, LogPort log_port)
           : discretization(discretization), model(model), log_port(std::move(log_port)), fe(discretization.get_fe()),
             dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
-            mesh_workers(config.get_uint("/discretization/mesh_workers", 0)),
-            batch_size(config.get_uint("/discretization/batch_size", 16)),
+            schedule_overrides(AssemblyScheduleOverrides::from_config(config)),
             EoM_cell(*(dof_handler.active_cell_iterators().end())),
             old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
+            old_extractor_cell(*(dof_handler.active_cell_iterators().end())),
             EoM_config(DiFfRG::internal::resolve_eom_config(dof_handler, Config::EoMConfig(config)))
       {
-        // Default 0 = derive from the thread count; see FEM/assembler/common.hh for why a fixed
-        // constant is wrong here (mesh_workers is mesh_loop's queue_length).
-        if (this->mesh_workers == 0) this->mesh_workers = std::max(1u, dealii::MultithreadInfo::n_threads() / 2);
-        log_port.info("FEM: Using {} mesh workers for assembly.", mesh_workers);
+        // reinit() refreshes this, but a derived assembler is not obliged to call it before its
+        // first mesh_loop, and an unset schedule would be a zero queue length.
+        update_assembly_schedules();
       }
 
       virtual IndexSet get_differential_indices() const override
@@ -93,6 +94,8 @@ namespace DiFfRG
         DoFTools::make_hanging_node_constraints(dof_handler, constraints);
         DiFfRG::internal::apply_model_affine_constraints(model, constraints, context);
         constraints.close();
+
+        update_assembly_schedules();
       }
 
       virtual void rebuild_jacobian_sparsity() = 0;
@@ -129,16 +132,68 @@ namespace DiFfRG
       const DoFHandler<dim> &dof_handler;
       const Mapping<dim> &mapping;
 
-      /// Number of cells kept in flight in the MeshWorker assembly pipeline (its queue length).
-      /// This is not a thread count - see /discretization/threads for that.
-      uint mesh_workers;
-      uint batch_size;
+      /// @see FEMAssembler::schedule_for
+      AssemblySchedule schedule_for(const double cost_ns) const
+      {
+        return make_assembly_schedule(n_owned_cells, DiFfRG::n_threads(), cost_ns, schedule_overrides);
+      }
+
+      /// @see FEMAssembler::update_assembly_schedules
+      void update_assembly_schedules()
+      {
+        const uint n_owned = n_locally_owned_cells(discretization);
+        const bool unchanged = n_owned == n_owned_cells;
+        n_owned_cells = n_owned;
+        if (unchanged) return;
+
+        const uint threads = DiFfRG::n_threads();
+        const auto cheap = schedule_for(assembly_cost::local_fe);
+        const auto integral = schedule_for(assembly_cost::momentum_integral);
+        log_port.info("FEM: Assembling {} cells on {} threads -- {}x{} workers/cells for a cheap cell loop, "
+                      "{}x{} for an integral one.",
+                      n_owned_cells, threads, cheap.queue_length, cheap.chunk_size, integral.queue_length,
+                      integral.chunk_size);
+      }
+
+      /// @see FEMAssembler::extractor_raw_potential
+      auto extractor_raw_potential(const VectorType &solution_global) const
+      {
+        if constexpr (Model::extract_uses_potential)
+          return reconstruct_raw_potential(
+              solution_global, dof_handler, mapping,
+              [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config,
+              &potential_cache);
+        else
+          return UnusedPotential{};
+      }
+
+      /// @see FEMAssembler::resolve_extractor_point
+      std::pair<Point<dim>, typename DoFHandler<dim>::cell_iterator>
+      resolve_extractor_point(const Point<dim> &EoM_point, const typename DoFHandler<dim>::cell_iterator &EoM_cell_,
+                              [[maybe_unused]] const VectorType &solution_global) const
+      {
+        if constexpr (HasExtractorPoint<Model, dim, NumberType>) {
+          const auto sample = make_solution_sample(solution_global, dof_handler, mapping);
+          const auto point = model.template extractor_point<dim, NumberType>(EoM_point, sample);
+          if (point == EoM_point) return {EoM_point, EoM_cell_};
+          return {point, GridTools::find_active_cell_around_point(dof_handler, point)};
+        } else
+          return {EoM_point, EoM_cell_};
+      }
+
+      /// @see FEMAssembler::n_owned_cells
+      uint n_owned_cells = 0;
+      const AssemblyScheduleOverrides schedule_overrides;
 
       mutable typename DoFHandler<dim>::cell_iterator EoM_cell;
       typename DoFHandler<dim>::cell_iterator old_EoM_cell;
+      /// @see FEMAssembler::old_extractor_cell
+      typename DoFHandler<dim>::cell_iterator old_extractor_cell;
       const Config::EoMConfig EoM_config;
       mutable Point<dim> EoM;
       mutable std::optional<Point<dim>> EoM_minimum_guess;
+      /// @see FEMAssembler::potential_cache
+      mutable DiFfRG::internal::PotentialSystemCache<dim, NumberType> potential_cache;
       FullMatrix<NumberType> extractor_jacobian;
       FullMatrix<NumberType> extractor_jacobian_u;
       FullMatrix<NumberType> extractor_jacobian_du;
@@ -385,8 +440,8 @@ namespace DiFfRG
           std::array<double, 2> values;
         };
         std::vector<CopyFaceData_I> face_data;
-        double value;
-        uint cell_index;
+        double value = 0.;
+        uint cell_index = 0;
       };
     } // namespace internal
 
@@ -417,13 +472,14 @@ namespace DiFfRG
       template <typename... T> auto fe_conv(std::tuple<T &...> &t) const
       {
         if constexpr (stencil == 2)
-          return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "LDG1", "extractors", "variables">>(t);
-        else if constexpr (stencil == 3)
-          return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "LDG1", "LDG2", "extractors", "variables">>(
-              t);
-        else if constexpr (stencil == 4)
           return named_tuple<std::tuple<T &...>,
-                             StringSet<"fe_functions", "LDG1", "LDG2", "LDG3", "extractors", "variables">>(t);
+                             StringSet<"fe_functions", "LDG1", "extractors", "variables", "cell_width">>(t);
+        else if constexpr (stencil == 3)
+          return named_tuple<std::tuple<T &...>,
+                             StringSet<"fe_functions", "LDG1", "LDG2", "extractors", "variables", "cell_width">>(t);
+        else if constexpr (stencil == 4)
+          return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "LDG1", "LDG2", "LDG3", "extractors",
+                                                           "variables", "cell_width">>(t);
         else
           throw std::runtime_error("Only <= 3 LDG subsystems are supported.");
       }
@@ -683,8 +739,9 @@ namespace DiFfRG
             MeshWorker::assemble_own_cells | MeshWorker::assemble_own_interior_faces_once;
 
         rebuild_ldg_vectors(solution_global);
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, nullptr, face_worker, mesh_workers, batch_size);
+        const auto schedule = schedule_for(assembly_cost::local_fe);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data,
+                              assemble_flags, nullptr, face_worker, schedule.queue_length, schedule.chunk_size);
       }
 
       virtual const BlockSparsityPattern &get_sparsity_pattern_jacobian() const override
@@ -745,8 +802,9 @@ namespace DiFfRG
         Scratch scratch_data(mapping, dof_handler_list, quadrature, quadrature_face, update_flags);
         CopyData copy_data;
 
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, nullptr, nullptr, mesh_workers, batch_size);
+        const auto schedule = schedule_for(assembly_cost::local_fe);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data,
+                              assemble_flags, nullptr, nullptr, schedule.queue_length, schedule.chunk_size);
       }
 
       /**
@@ -772,6 +830,7 @@ namespace DiFfRG
         const auto &extracted_data = __extracted_data;
 
         const auto cell_worker = [&](const Iterator &t_cell, Scratch &scratch_data, CopyData &copy_data) {
+          const double cell_width = DiFfRG::internal::cell_width(t_cell);
           const auto &fe_v = scratch_data.new_fe_values(t_cell);
           const uint n_dofs = fe_v[0]->get_fe().n_dofs_per_cell();
           copy_data.reinit(scratch_data.cell[0], n_dofs);
@@ -793,7 +852,8 @@ namespace DiFfRG
           array<NumberType, Components::count_fe_functions(0)> source{};
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
-            auto sol_q = std::tuple_cat(local_sol_q(solution, q_index), std::tie(extracted_data, variables));
+            auto sol_q =
+                std::tuple_cat(local_sol_q(solution, q_index), std::tie(extracted_data, variables, cell_width));
             model.mass(mass, x_q, solution[0][q_index], solution_dot[q_index]);
             model.flux(flux, x_q, fe_conv(sol_q));
             model.source(source, x_q, fe_conv(sol_q));
@@ -813,6 +873,7 @@ namespace DiFfRG
         };
         const auto boundary_worker = [&](const Iterator &t_cell, const uint &face_no, Scratch &scratch_data,
                                          CopyData &copy_data) {
+          const double cell_width = DiFfRG::internal::cell_width(t_cell);
           const auto &fe_fv = scratch_data.new_fe_boundary_values(t_cell, face_no);
           const uint n_dofs = fe_fv[0]->get_fe().n_dofs_per_cell();
 
@@ -830,7 +891,8 @@ namespace DiFfRG
           array<Tensor<1, dim, NumberType>, Components::count_fe_functions(0)> numflux{};
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
-            auto sol_q = std::tuple_cat(local_sol_q(solution, q_index), std::tie(extracted_data, variables));
+            auto sol_q =
+                std::tuple_cat(local_sol_q(solution, q_index), std::tie(extracted_data, variables, cell_width));
             model.boundary_numflux(numflux, normals[q_index], x_q, fe_conv(sol_q));
 
             for (uint i = 0; i < n_dofs; ++i) {
@@ -845,6 +907,8 @@ namespace DiFfRG
         const auto face_worker = [&](const Iterator &t_cell, const uint &f, const uint &sf, const Iterator &t_ncell,
                                      const uint &nf, const unsigned int &nsf, Scratch &scratch_data,
                                      CopyData &copy_data) {
+          const double cell_width = DiFfRG::internal::cell_width(t_cell);
+          const double ncell_width = DiFfRG::internal::cell_width(t_ncell);
           const auto &fe_iv = scratch_data.new_fe_interface_values(t_cell, f, sf, t_ncell, nf, nsf);
           const uint n_dofs = fe_iv[0]->n_current_interface_dofs();
           auto &copy_data_face = copy_data.new_face_data(*(fe_iv[0]));
@@ -874,8 +938,10 @@ namespace DiFfRG
           array<Tensor<1, dim, NumberType>, Components::count_fe_functions(0)> numflux{};
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
-            auto sol_q_s = std::tuple_cat(local_sol_q(solution[0], q_index), std::tie(extracted_data, variables));
-            auto sol_q_n = std::tuple_cat(local_sol_q(solution[1], q_index), std::tie(extracted_data, variables));
+            auto sol_q_s =
+                std::tuple_cat(local_sol_q(solution[0], q_index), std::tie(extracted_data, variables, cell_width));
+            auto sol_q_n =
+                std::tuple_cat(local_sol_q(solution[1], q_index), std::tie(extracted_data, variables, ncell_width));
             model.numflux(numflux, normals[q_index], x_q, fe_conv(sol_q_s), fe_conv(sol_q_n));
 
             for (uint i = 0; i < n_dofs; ++i) {
@@ -906,8 +972,9 @@ namespace DiFfRG
         Timer timer;
 
         rebuild_ldg_vectors(solution_global);
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, boundary_worker, face_worker, mesh_workers, batch_size);
+        const auto schedule = schedule_for(assembly_cost::momentum_integral);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data,
+                              assemble_flags, boundary_worker, face_worker, schedule.queue_length, schedule.chunk_size);
 
         timings_residual.push_back(timer.wall_time());
       }
@@ -969,8 +1036,9 @@ namespace DiFfRG
         Scratch scratch_data(mapping, dof_handler_list, quadrature, quadrature_face, update_flags);
         CopyData copy_data;
 
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, nullptr, nullptr, mesh_workers, batch_size);
+        const auto schedule = schedule_for(assembly_cost::local_fe);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data,
+                              assemble_flags, nullptr, nullptr, schedule.queue_length, schedule.chunk_size);
       }
 
       /**
@@ -1003,6 +1071,7 @@ namespace DiFfRG
         bool exception = false;
 
         const auto cell_worker = [&](const Iterator &t_cell, Scratch &scratch_data, CopyData &copy_data) {
+          const double cell_width = DiFfRG::internal::cell_width(t_cell);
           const auto &fe_v = scratch_data.new_fe_values(t_cell);
           const uint to_n_dofs = fe_v[0]->get_fe().n_dofs_per_cell();
           copy_data.reinit(scratch_data.cell, Components::count_extractors());
@@ -1032,7 +1101,8 @@ namespace DiFfRG
             const uint from_n_dofs = fe_v[k]->get_fe().n_dofs_per_cell();
             for (const auto &q_index : q_indices) {
               const auto &x_q = q_points[q_index];
-              auto sol_q = std::tuple_cat(local_sol_q(solution, q_index), std::tie(extracted_data, variables));
+              auto sol_q =
+                  std::tuple_cat(local_sol_q(solution, q_index), std::tie(extracted_data, variables, cell_width));
 
               if constexpr (k == 0) {
                 this->model.template jacobian_mass<0>(j_mass, x_q, solution[0][q_index], solution_dot[q_index]);
@@ -1087,6 +1157,7 @@ namespace DiFfRG
         };
         const auto boundary_worker = [&](const Iterator &t_cell, const uint &face_no, Scratch &scratch_data,
                                          CopyData &copy_data) {
+          const double cell_width = DiFfRG::internal::cell_width(t_cell);
           const auto &fe_fv = scratch_data.new_fe_boundary_values(t_cell, face_no);
           const uint to_n_dofs = fe_fv[0]->get_fe().n_dofs_per_cell();
 
@@ -1105,7 +1176,8 @@ namespace DiFfRG
             if (jacobian_tmp_built[k] && model.get_components().jacobians_constant(0, k)) return;
             for (const auto &q_index : q_indices) {
               const auto &x_q = q_points[q_index];
-              auto sol_q = std::tuple_cat(local_sol_q(solution, q_index), std::tie(extracted_data, variables));
+              auto sol_q =
+                  std::tuple_cat(local_sol_q(solution, q_index), std::tie(extracted_data, variables, cell_width));
 
               const uint from_n_dofs = fe_fv[k]->get_fe().n_dofs_per_cell();
 
@@ -1135,6 +1207,8 @@ namespace DiFfRG
         const auto face_worker = [&](const Iterator &t_cell, const uint &f, const uint &sf, const Iterator &t_ncell,
                                      const uint &nf, const unsigned int &nsf, Scratch &scratch_data,
                                      CopyData &copy_data) {
+          const double cell_width = DiFfRG::internal::cell_width(t_cell);
+          const double ncell_width = DiFfRG::internal::cell_width(t_ncell);
           const auto &fe_iv = scratch_data.new_fe_interface_values(t_cell, f, sf, t_ncell, nf, nsf);
           const uint to_n_dofs = fe_iv[0]->n_current_interface_dofs();
           auto &copy_data_face = copy_data.new_face_data(fe_iv, Components::count_extractors());
@@ -1178,8 +1252,10 @@ namespace DiFfRG
 
             for (const auto &q_index : q_indices) {
               const auto &x_q = q_points[q_index];
-              auto sol_q_s = std::tuple_cat(local_sol_q(solution[0], q_index), std::tie(extracted_data, variables));
-              auto sol_q_n = std::tuple_cat(local_sol_q(solution[1], q_index), std::tie(extracted_data, variables));
+              auto sol_q_s =
+                  std::tuple_cat(local_sol_q(solution[0], q_index), std::tie(extracted_data, variables, cell_width));
+              auto sol_q_n =
+                  std::tuple_cat(local_sol_q(solution[1], q_index), std::tie(extracted_data, variables, ncell_width));
 
               model.template jacobian_numflux<k, 0>(std::get<k>(j_numflux), normals[q_index], x_q, fe_conv(sol_q_s),
                                                     fe_conv(sol_q_n));
@@ -1259,8 +1335,9 @@ namespace DiFfRG
         });
         rebuild_ldg_vectors(solution_global);
 
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, boundary_worker, face_worker, mesh_workers, batch_size);
+        const auto schedule = schedule_for(assembly_cost::momentum_integral);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data,
+                              assemble_flags, boundary_worker, face_worker, schedule.queue_length, schedule.chunk_size);
 
         if (exception) throw std::runtime_error("Infinity encountered in jacobian construction");
 
@@ -1355,8 +1432,7 @@ namespace DiFfRG
 
       QGauss<dim> quadrature;
       QGauss<dim - 1> quadrature_face;
-      using Base::batch_size;
-      using Base::mesh_workers;
+      using Base::schedule_for;
 
       std::vector<const DoFHandler<dim> *> dof_handler_list;
 
@@ -1547,8 +1623,9 @@ namespace DiFfRG
         CopyData copy_data;
 
         ldg_vector_tmp = 0;
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, boundary_worker, face_worker, mesh_workers, batch_size);
+        const auto schedule = schedule_for(assembly_cost::algebraic);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data,
+                              assemble_flags, boundary_worker, face_worker, schedule.queue_length, schedule.chunk_size);
 
         for (uint i = 0; i < Components::count_fe_functions(to); ++i)
           component_mass_matrix_inverse.vmult(ldg_vector.block(i), ldg_vector_tmp.block(i));
@@ -1700,8 +1777,9 @@ namespace DiFfRG
 
         ldg_jacobian_tmp = 0;
         ldg_jacobian = 0;
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, boundary_worker, face_worker, mesh_workers, batch_size);
+        const auto schedule = schedule_for(assembly_cost::algebraic);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data,
+                              assemble_flags, boundary_worker, face_worker, schedule.queue_length, schedule.chunk_size);
         for (const auto &c : model.get_components().ldg_couplings(to, from))
           component_mass_matrix_inverse.mmult(ldg_jacobian.block(c[0], c[1]), ldg_jacobian_tmp.block(c[0], c[1]),
                                               Vector<NumberType>(), false);
@@ -1826,13 +1904,68 @@ namespace DiFfRG
       using Base::EoM_minimum_guess;
       using Base::extractor_jacobian_u;
       using Base::old_EoM_cell;
+      using Base::old_extractor_cell;
+
+      /// The LDG solution across all subsystems, its gradients and hessians, and the raw potential,
+      /// all at one point. Built by evaluate_at() and consumed by readouts/extract/jacobian_extractors.
+      template <typename PotentialEvaluation = RawPotentialEvaluation<dim, NumberType>> struct PointEvaluation {
+        std::vector<Vector<NumberType>> solutions;
+        std::vector<std::vector<Tensor<1, dim, NumberType>>> gradients{
+            std::vector<Tensor<1, dim, NumberType>>(Components::count_fe_functions())};
+        std::vector<std::vector<Tensor<2, dim, NumberType>>> hessians{
+            std::vector<Tensor<2, dim, NumberType>>(Components::count_fe_functions())};
+        PotentialEvaluation potential;
+        /// Subsystem 0's FEValues at the point, kept for the shape values the extractor jacobian needs.
+        std::shared_ptr<FEValues<dim>> fe_values;
+      };
+
+      /**
+       * @brief Evaluate every LDG subsystem at @p x, which lies in @p x_cell.
+       *
+       * Each subsystem carries its own DoFHandler over the same triangulation, so the cell has to be
+       * re-addressed per subsystem before its FEValues can be reinit'ed. Only subsystem 0 (the
+       * solution proper) has gradients and hessians read off it; the LDG levels are values only.
+       */
+      template <typename RawPotential>
+      auto evaluate_at(const Point<dim> &x, const typename DoFHandler<dim>::cell_iterator &x_cell,
+                       const VectorType &solution_global, const RawPotential &raw_potential) const
+      {
+        using t_Iterator = typename Triangulation<dim>::active_cell_iterator;
+        const auto x_unit = mapping.transform_real_to_unit_cell(x_cell, x);
+
+        std::vector<std::shared_ptr<FEValues<dim>>> fe_v;
+        for (uint k = 0; k < Components::count_fe_subsystems(); ++k) {
+          fe_v.emplace_back(std::make_shared<FEValues<dim>>(
+              mapping, discretization.get_fe(k), x_unit,
+              update_values | update_gradients | update_quadrature_points | update_JxW_values | update_hessians));
+          auto cell = dof_handler_list[k]->begin_active();
+          cell->copy_from(*t_Iterator(x_cell));
+          fe_v[k]->reinit(cell);
+        }
+
+        PointEvaluation<decltype(evaluate_raw_potential(raw_potential, mapping, x))> evaluation;
+        for (uint k = 0; k < Components::count_fe_subsystems(); ++k) {
+          std::vector<Vector<NumberType>> values{Vector<NumberType>(Components::count_fe_functions(k))};
+          if (k == 0)
+            fe_v[0]->get_function_values(solution_global, values);
+          else
+            fe_v[k]->get_function_values(sol_vector[k], values);
+          evaluation.solutions.push_back(values[0]);
+        }
+        fe_v[0]->get_function_gradients(solution_global, evaluation.gradients);
+        fe_v[0]->get_function_hessians(solution_global, evaluation.hessians);
+        evaluation.potential = evaluate_raw_potential(raw_potential, mapping, x);
+        evaluation.fe_values = fe_v[0];
+        return evaluation;
+      }
 
       void readouts(OutputFrame<dim, VectorType> &data_out, const VectorType &solution_global,
                     const VectorType &variables) const
       {
         auto raw_potential = reconstruct_raw_potential(
             solution_global, dof_handler, mapping,
-            [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
+            [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config,
+            &this->potential_cache);
         auto helper = [&](auto &&...args) {
           if constexpr (sizeof...(args) == 3) {
             auto &&[id, EoMfun, outputter] = std::forward_as_tuple(std::forward<decltype(args)>(args)...);
@@ -1840,60 +1973,34 @@ namespace DiFfRG
             auto EoM_cell = this->EoM_cell;
             auto EoM_result = get_EoM_point_with_potential(
                 EoM_cell, solution_global, this->dof_handler, this->mapping, EoMfun,
-                [&](const auto &p, const auto &) { return p; }, this->EoM_config, this->EoM_minimum_guess);
+                [&](const auto &p, const auto &) { return p; }, this->EoM_config, this->EoM_minimum_guess,
+                &this->potential_cache);
             if (EoM_result.potential) this->EoM_minimum_guess = EoM_result.potential->minimum;
             const auto EoM = EoM_result.point;
-            auto EoM_unit = this->mapping.transform_real_to_unit_cell(EoM_cell, EoM);
-
-            using t_Iterator = typename Triangulation<dim>::active_cell_iterator;
-
-            std::vector<std::shared_ptr<FEValues<dim>>> fe_v;
-            for (uint k = 0; k < Components::count_fe_subsystems(); ++k) {
-              fe_v.emplace_back(std::make_shared<FEValues<dim>>(
-                  this->mapping, this->discretization.get_fe(k), EoM_unit,
-                  update_values | update_gradients | update_quadrature_points | update_JxW_values | update_hessians));
-
-              auto cell = dof_handler_list[k]->begin_active();
-              cell->copy_from(*t_Iterator(EoM_cell));
-              fe_v[k]->reinit(cell);
-            }
-
-            std::vector<std::vector<Vector<NumberType>>> solutions;
-            for (uint k = 0; k < Components::count_fe_subsystems(); ++k) {
-              solutions.push_back({Vector<NumberType>(Components::count_fe_functions(k))});
-              if (k == 0)
-                fe_v[0]->get_function_values(solution_global, solutions[k]);
-              else
-                fe_v[k]->get_function_values(sol_vector[k], solutions[k]);
-            }
-            std::vector<Vector<NumberType>> solutions_vector;
-            for (uint k = 0; k < Components::count_fe_subsystems(); ++k)
-              solutions_vector.push_back(solutions[k][0]);
-
-            std::array<NumberType, Components::count_extractors()> __extracted_data{{}};
-            const auto &extracted_data = __extracted_data;
-
-            std::vector<std::vector<Tensor<1, dim, NumberType>>> solution_grad{
-                std::vector<Tensor<1, dim, NumberType>>(Components::count_fe_functions())};
-            std::vector<std::vector<Tensor<2, dim, NumberType>>> solution_hess{
-                std::vector<Tensor<2, dim, NumberType>>(Components::count_fe_functions())};
-            fe_v[0]->get_function_gradients(solution_global, solution_grad);
-            fe_v[0]->get_function_hessians(solution_global, solution_hess);
 
             // GCC 16 does not find dependent-base members from inside this variadic lambda; keep `this->`.
-            const auto potential = evaluate_raw_potential(raw_potential, this->mapping, EoM);
+            const auto readout_solution = this->evaluate_at(EoM, EoM_cell, solution_global, raw_potential);
+            const auto &potential = readout_solution.potential;
 
+            // The readout is always at this readout's EoM. The extractors may not be: a model that
+            // defines extractor_point reads them elsewhere, and dt_variables must see the same
+            // values here as it does during assembly.
+            std::array<NumberType, Components::count_extractors()> __extracted_data{{}};
             if constexpr (Components::count_extractors() > 0) {
-              auto extractor_tuple =
-                  std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(solutions_vector),
-                                 std::tie(solution_grad[0], solution_hess[0], this->nothing, variables, potential.value,
-                                          potential.gradient, potential.hessian));
-              this->model.extract(__extracted_data, EoM, fe_more_conv(extractor_tuple));
+              const auto [x, cell] = this->resolve_extractor_point(EoM, EoM_cell, solution_global);
+              const auto evaluation = this->evaluate_at(x, cell, solution_global, raw_potential);
+              auto extractor_tuple = std::tuple_cat(
+                  vector_to_tuple<Components::count_fe_subsystems()>(evaluation.solutions),
+                  std::tie(evaluation.gradients[0], evaluation.hessians[0], this->nothing, variables,
+                           evaluation.potential.value, evaluation.potential.gradient, evaluation.potential.hessian));
+              this->model.extract(__extracted_data, x, fe_more_conv(extractor_tuple));
             }
+            const auto &extracted_data = __extracted_data;
 
-            auto solution_tuple = std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(solutions_vector),
-                                                 std::tie(solution_grad[0], solution_hess[0], extracted_data, variables,
-                                                          potential.value, potential.gradient, potential.hessian));
+            auto solution_tuple =
+                std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(readout_solution.solutions),
+                               std::tie(readout_solution.gradients[0], readout_solution.hessians[0], extracted_data,
+                                        variables, potential.value, potential.gradient, potential.hessian));
 
             outputter(data_out, EoM, fe_more_conv(solution_tuple));
             data_out.attach_eom_potential(std::move(EoM_result));
@@ -1915,7 +2022,7 @@ namespace DiFfRG
               EoM_cell, solution_global, dof_handler, mapping,
               [&](const auto &p, const auto &values) { return model.EoM(p, values); },
               [&](const auto &p, const auto &values) { return postprocess ? model.EoM_postprocess(p, values) : p; },
-              EoM_config, EoM_minimum_guess);
+              EoM_config, EoM_minimum_guess, &this->potential_cache);
           EoM = EoM_result.point;
           if (EoM_result.potential) EoM_minimum_guess = EoM_result.potential->minimum;
         }
@@ -1923,52 +2030,19 @@ namespace DiFfRG
           this->EoM = EoM;
           this->EoM_cell = EoM_cell;
         }
-        auto EoM_unit = mapping.transform_real_to_unit_cell(EoM_cell, EoM);
-
         rebuild_ldg_vectors(solution_global);
 
-        using t_Iterator = typename Triangulation<dim>::active_cell_iterator;
+        const auto raw_potential = this->extractor_raw_potential(solution_global);
 
-        std::vector<std::shared_ptr<FEValues<dim>>> fe_v;
-        for (uint k = 0; k < Components::count_fe_subsystems(); ++k) {
-          fe_v.emplace_back(std::make_shared<FEValues<dim>>(
-              mapping, discretization.get_fe(k), EoM_unit,
-              update_values | update_gradients | update_quadrature_points | update_JxW_values | update_hessians));
+        const auto [x, cell] = this->resolve_extractor_point(EoM, EoM_cell, solution_global);
+        const auto evaluation = evaluate_at(x, cell, solution_global, raw_potential);
 
-          auto cell = dof_handler_list[k]->begin_active();
-          cell->copy_from(*t_Iterator(EoM_cell));
-          fe_v[k]->reinit(cell);
-        }
+        auto solution_tuple = std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(evaluation.solutions),
+                                             std::tie(evaluation.gradients[0], evaluation.hessians[0], this->nothing,
+                                                      variables, evaluation.potential.value,
+                                                      evaluation.potential.gradient, evaluation.potential.hessian));
 
-        std::vector<std::vector<Vector<NumberType>>> solutions;
-        for (uint k = 0; k < Components::count_fe_subsystems(); ++k) {
-          solutions.push_back({Vector<NumberType>(Components::count_fe_functions(k))});
-          if (k == 0)
-            fe_v[0]->get_function_values(solution_global, solutions[k]);
-          else
-            fe_v[k]->get_function_values(sol_vector[k], solutions[k]);
-        }
-        std::vector<Vector<NumberType>> solutions_vector;
-        for (uint k = 0; k < Components::count_fe_subsystems(); ++k)
-          solutions_vector.push_back(solutions[k][0]);
-
-        std::vector<std::vector<Tensor<1, dim, NumberType>>> solution_grad{
-            std::vector<Tensor<1, dim, NumberType>>(Components::count_fe_functions())};
-        std::vector<std::vector<Tensor<2, dim, NumberType>>> solution_hess{
-            std::vector<Tensor<2, dim, NumberType>>(Components::count_fe_functions())};
-        fe_v[0]->get_function_gradients(solution_global, solution_grad);
-        fe_v[0]->get_function_hessians(solution_global, solution_hess);
-
-        const auto raw_potential = reconstruct_raw_potential(
-            solution_global, dof_handler, mapping,
-            [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
-        const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
-
-        auto solution_tuple = std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(solutions_vector),
-                                             std::tie(solution_grad[0], solution_hess[0], this->nothing, variables,
-                                                      potential.value, potential.gradient, potential.hessian));
-
-        model.extract(data, EoM, fe_more_conv(solution_tuple));
+        model.extract(data, x, fe_more_conv(solution_tuple));
       }
 
       bool jacobian_extractors(FullMatrix<NumberType> &extractor_jacobian, const VectorType &solution_global,
@@ -1983,72 +2057,43 @@ namespace DiFfRG
             EoM_cell, solution_global, dof_handler, mapping,
             [&](const auto &p, const auto &values) { return model.EoM(p, values); },
             [&](const auto &p, const auto &values) { return model.EoM_postprocess(p, values); }, EoM_config,
-            EoM_minimum_guess);
+            EoM_minimum_guess, &this->potential_cache);
         EoM = EoM_result.point;
         if (EoM_result.potential) EoM_minimum_guess = EoM_result.potential->minimum;
-        auto EoM_unit = mapping.transform_real_to_unit_cell(EoM_cell, EoM);
-        bool new_cell = (old_EoM_cell != EoM_cell);
+        const auto raw_potential = this->extractor_raw_potential(solution_global);
+
+        // The extractor jacobian couples to the dofs of the cell the extractors are actually
+        // evaluated in, which is the extractor point's cell, not the EoM's.
+        const auto [x, cell] = this->resolve_extractor_point(EoM, EoM_cell, solution_global);
+        bool new_cell = (old_extractor_cell != cell);
         old_EoM_cell = EoM_cell;
+        old_extractor_cell = cell;
 
-        using t_Iterator = typename Triangulation<dim>::active_cell_iterator;
-
-        std::vector<std::shared_ptr<FEValues<dim>>> fe_v;
-        for (uint k = 0; k < Components::count_fe_subsystems(); ++k) {
-          fe_v.emplace_back(std::make_shared<FEValues<dim>>(
-              mapping, discretization.get_fe(k), EoM_unit,
-              update_values | update_gradients | update_quadrature_points | update_JxW_values | update_hessians));
-
-          auto cell = dof_handler_list[k]->begin_active();
-          cell->copy_from(*t_Iterator(EoM_cell));
-          fe_v[k]->reinit(cell);
-        }
-
-        const uint n_dofs = fe_v[0]->get_fe().n_dofs_per_cell();
+        const auto evaluation = evaluate_at(x, cell, solution_global, raw_potential);
+        const auto &fe_v = *evaluation.fe_values;
+        const uint n_dofs = fe_v.get_fe().n_dofs_per_cell();
         if (new_cell) {
           extractor_dof_indices.resize(n_dofs);
-          EoM_cell->get_dof_indices(extractor_dof_indices);
+          cell->get_dof_indices(extractor_dof_indices);
           rebuild_jacobian_sparsity();
         }
 
-        std::vector<std::vector<Vector<NumberType>>> solutions;
-        for (uint k = 0; k < Components::count_fe_subsystems(); ++k) {
-          solutions.push_back({Vector<NumberType>(Components::count_fe_functions(k))});
-          if (k == 0)
-            fe_v[0]->get_function_values(solution_global, solutions[k]);
-          else
-            fe_v[k]->get_function_values(sol_vector[k], solutions[k]);
-        }
-        std::vector<Vector<NumberType>> solutions_vector;
-        for (uint k = 0; k < Components::count_fe_subsystems(); ++k)
-          solutions_vector.push_back(solutions[k][0]);
-
-        std::vector<std::vector<Tensor<1, dim, NumberType>>> solution_grad{
-            std::vector<Tensor<1, dim, NumberType>>(Components::count_fe_functions())};
-        std::vector<std::vector<Tensor<2, dim, NumberType>>> solution_hess{
-            std::vector<Tensor<2, dim, NumberType>>(Components::count_fe_functions())};
-        fe_v[0]->get_function_gradients(solution_global, solution_grad);
-        fe_v[0]->get_function_hessians(solution_global, solution_hess);
-
-        const auto raw_potential = reconstruct_raw_potential(
-            solution_global, dof_handler, mapping,
-            [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config);
-        const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
-
-        auto solution_tuple = std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(solutions_vector),
-                                             std::tie(solution_grad[0], solution_hess[0], this->nothing, variables,
-                                                      potential.value, potential.gradient, potential.hessian));
+        auto solution_tuple = std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(evaluation.solutions),
+                                             std::tie(evaluation.gradients[0], evaluation.hessians[0], this->nothing,
+                                                      variables, evaluation.potential.value,
+                                                      evaluation.potential.gradient, evaluation.potential.hessian));
 
         extractor_jacobian_u = 0;
-        model.template jacobian_extractors<0>(extractor_jacobian_u, EoM, fe_more_conv(solution_tuple));
+        model.template jacobian_extractors<0>(extractor_jacobian_u, x, fe_more_conv(solution_tuple));
 
         if (extractor_jacobian.m() != Components::count_extractors() || extractor_jacobian.n() != n_dofs)
           extractor_jacobian = FullMatrix<NumberType>(Components::count_extractors(), n_dofs);
 
         for (uint e = 0; e < Components::count_extractors(); ++e)
           for (uint i = 0; i < n_dofs; ++i) {
-            const auto component_i = fe_v[0]->get_fe().system_to_component_index(i).first;
+            const auto component_i = fe_v.get_fe().system_to_component_index(i).first;
             extractor_jacobian(e, i) =
-                extractor_jacobian_u(e, component_i) * fe_v[0]->shape_value_component(i, 0, component_i);
+                extractor_jacobian_u(e, component_i) * fe_v.shape_value_component(i, 0, component_i);
           }
 
         return new_cell;

@@ -64,3 +64,52 @@ If[Length@PacletFind["FunKit"] > 0,
     ,
     Print["  [SKIP] FunKit not available — skipping GetStandardKernelDefinitions test"];
 ];
+
+(* KernelTraits — the trait emitter. Asserted rather than trusted: every trait detector on the
+   C++ side is `requires { requires K::trait; }`, which reads FALSE for a trait it cannot see, so
+   a name that never fired is silently a disabled trait and a wrong right-hand side. *)
+If[Length@PacletFind["FunKit"] > 0,
+    Needs["DiFfRG`CodeTools`MakeKernel`"];
+    With[{emit = DiFfRG`CodeTools`MakeKernel`Private`kernelTraitMembers},
+        AppendTo[tests,
+            TestCreate[
+                emit[{"matsubara_finite_extent"}],
+                {"static constexpr bool matsubara_finite_extent = true;"},
+                TestID -> "KernelTraits emits a bare name as a true trait"
+            ]
+        ];
+        AppendTo[tests,
+            TestCreate[
+                emit[{"matsubara_split" -> True, "matsubara_even" -> False}],
+                {"static constexpr bool matsubara_split = true;", "static constexpr bool matsubara_even = false;"},
+                TestID -> "KernelTraits honours an explicit Boolean"
+            ]
+        ];
+        AppendTo[tests,
+            TestCreate[emit[{}], {}, TestID -> "KernelTraits emits nothing by default"]
+        ];
+        AppendTo[tests,
+            TestCreate[
+                emit[{"matsubara_split", "matsubara_split"}],
+                {"static constexpr bool matsubara_split = true;"},
+                TestID -> "KernelTraits deduplicates"
+            ]
+        ];
+        AppendTo[tests,
+            TestCreate[
+                Quiet[CheckAbort[emit[{"not an identifier"}]; "no-abort", "aborted"]],
+                "aborted",
+                TestID -> "KernelTraits aborts on a name that is not a C++ identifier"
+            ]
+        ];
+        AppendTo[tests,
+            TestCreate[
+                Quiet[CheckAbort[emit[{"matsubara_split" -> "yes"}]; "no-abort", "aborted"]],
+                "aborted",
+                TestID -> "KernelTraits aborts on a non-Boolean value"
+            ]
+        ];
+    ];
+    ,
+    Print["  [SKIP] FunKit not available — skipping KernelTraits tests"];
+];

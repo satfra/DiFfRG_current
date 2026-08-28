@@ -23,16 +23,16 @@ namespace on_kt_3D
   // Default-strategy runner: MinMod limiter, MaxEigenvalueWaveSpeed.
   // Used by every smoke and diagnostic test that doesn't sweep KT internals.
   template <typename ModelType>
-  void run_flow_to_time(const GridSettings &grid, const double target_time, const int threads = 1)
+  void run_flow_to_time(const GridSettings &grid, const double target_time)
   {
-    const ConfigTree json = make_json(threads);
+    const ConfigTree json = make_json();
     ModelType model(json, grid);
     Mesh mesh(make_mesh_config(grid));
     Discretization discretization(mesh, json, DiFfRG::LogPort{});
     Assembler<ModelType> assembler(discretization, model, json, DiFfRG::LogPort{});
 
     auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_kt_3D", "output");
-    OutputSession<dim, VectorType> data_out(data_out_path, json);
+    OutputSession<Discretization> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 
@@ -48,18 +48,18 @@ namespace on_kt_3D
   // Wave-speed-strategy-parameterised runner for deliberately different
   // physical speed definitions. Derivatives of the standard speed are AD-backed.
   template <typename ModelType, typename WaveSpeedStrategy>
-  void run_flow_to_time_ws(const GridSettings &grid, const double target_time, const int threads = 1)
+  void run_flow_to_time_ws(const GridSettings &grid, const double target_time)
   {
     using AssemblerWS = FV::KurganovTadmor::Assembler<Discretization, ModelType, Reconstructor, WaveSpeedStrategy>;
 
-    const ConfigTree json = make_json(threads);
+    const ConfigTree json = make_json();
     ModelType model(json, grid);
     Mesh mesh(make_mesh_config(grid));
     Discretization discretization(mesh, json, DiFfRG::LogPort{});
     AssemblerWS assembler(discretization, model, json, DiFfRG::LogPort{});
 
     auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_kt_3D", "output");
-    OutputSession<dim, VectorType> data_out(data_out_path, json);
+    OutputSession<Discretization> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 
@@ -76,18 +76,18 @@ namespace on_kt_3D
   // comparison tests (abs_tol = 1e-16, rel_tol = 1e-4 vs default abs/rel = 1e-7).
   template <typename ModelType, typename WaveSpeedStrategy = FV::KurganovTadmor::MaxEigenvalueWaveSpeed>
   void run_flow_to_time_tol(const GridSettings &grid, const double target_time, const double abs_tol,
-                            const double rel_tol, const int threads = 1)
+                            const double rel_tol)
   {
     using AssemblerTol = FV::KurganovTadmor::Assembler<Discretization, ModelType, Reconstructor, WaveSpeedStrategy>;
 
-    const ConfigTree json = make_json(threads, /*fe_order=*/0, /*x_order=*/32, abs_tol, rel_tol);
+    const ConfigTree json = make_json(/*fe_order=*/0, /*x_order=*/32, abs_tol, rel_tol);
     ModelType model(json, grid);
     Mesh mesh(make_mesh_config(grid));
     Discretization discretization(mesh, json, DiFfRG::LogPort{});
     AssemblerTol assembler(discretization, model, json, DiFfRG::LogPort{});
 
     auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_kt_3D", "output");
-    OutputSession<dim, VectorType> data_out(data_out_path, json);
+    OutputSession<Discretization> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 
@@ -103,21 +103,21 @@ namespace on_kt_3D
   // CG-discretisation runner. Used by LSM_CG; lets us run an integrator-based
   // model on the SAME physics as the KT cases for direct CG-vs-KT comparison.
   template <typename ModelType>
-  void run_flow_to_time_cg(const GridSettings &grid, const double target_time, const int threads = 1,
+  void run_flow_to_time_cg(const GridSettings &grid, const double target_time,
                            const int fe_order = 4, const double abs_tol = 1.0e-7, const double rel_tol = 1.0e-7)
   {
     using CGDiscretization = CG::Discretization<Components, Mesh, NumberType>;
     using CGAssembler = CG::Assembler<CGDiscretization, ModelType>;
     using CGTimeStepper = TimeStepperSUNDIALS_IDA<CGDiscretization>;
 
-    const ConfigTree json = make_json(threads, fe_order, /*x_order=*/32, abs_tol, rel_tol);
+    const ConfigTree json = make_json(fe_order, /*x_order=*/32, abs_tol, rel_tol);
     ModelType model(json, grid);
     Mesh mesh(make_mesh_config(grid));
     CGDiscretization discretization(mesh, json, DiFfRG::LogPort{});
     CGAssembler assembler(discretization, model, json, DiFfRG::LogPort{});
 
     auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_kt_3D_cg", "output");
-    OutputSession<dim, typename CGDiscretization::VectorType> data_out(data_out_path, json);
+    OutputSession<CGDiscretization> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<typename CGDiscretization::VectorType>>();
     CGTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 
@@ -132,11 +132,11 @@ namespace on_kt_3D
   // KT-discretisation issue).
   template <typename ModelType, typename WaveSpeedStrategy = FV::KurganovTadmor::MaxEigenvalueWaveSpeed>
   void run_flow_to_time_kt_adaptive(const std::vector<GridSubrange> &subranges, const double target_time,
-                                    const int threads = 1, const double abs_tol = 1.0e-7, const double rel_tol = 1.0e-7)
+                                    const double abs_tol = 1.0e-7, const double rel_tol = 1.0e-7)
   {
     using AssemblerAd = FV::KurganovTadmor::Assembler<Discretization, ModelType, Reconstructor, WaveSpeedStrategy>;
 
-    const ConfigTree json = make_json(threads, /*fe_order=*/0, /*x_order=*/32, abs_tol, rel_tol);
+    const ConfigTree json = make_json(/*fe_order=*/0, /*x_order=*/32, abs_tol, rel_tol);
     const std::size_t n_cells_in_grid = total_cells(subranges);
     GridSettings grid{n_cells_in_grid, subranges.front().min, subranges.back().max};
     ModelType model(json, grid);
@@ -146,7 +146,7 @@ namespace on_kt_3D
 
     auto data_out_path =
         OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_kt_3D_adaptive", "output");
-    OutputSession<dim, VectorType> data_out(data_out_path, json);
+    OutputSession<Discretization> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 
@@ -159,14 +159,14 @@ namespace on_kt_3D
   // CG counterpart on the adaptive grid.
   template <typename ModelType>
   void run_flow_to_time_cg_adaptive(const std::vector<GridSubrange> &subranges, const double target_time,
-                                    const int threads = 1, const int fe_order = 4, const double abs_tol = 1.0e-7,
+                                    const int fe_order = 4, const double abs_tol = 1.0e-7,
                                     const double rel_tol = 1.0e-7)
   {
     using CGDiscretization = CG::Discretization<Components, Mesh, NumberType>;
     using CGAssembler = CG::Assembler<CGDiscretization, ModelType>;
     using CGTimeStepper = TimeStepperSUNDIALS_IDA<CGDiscretization>;
 
-    const ConfigTree json = make_json(threads, fe_order, /*x_order=*/32, abs_tol, rel_tol);
+    const ConfigTree json = make_json(fe_order, /*x_order=*/32, abs_tol, rel_tol);
     const std::size_t n_cells_in_grid = total_cells(subranges);
     GridSettings grid{n_cells_in_grid, subranges.front().min, subranges.back().max};
     ModelType model(json, grid);
@@ -176,7 +176,7 @@ namespace on_kt_3D
 
     auto data_out_path =
         OutputPath::temporary(TemporaryRetention::remove_on_destruction, "on_kt_3D_cg_adaptive", "output");
-    OutputSession<dim, typename CGDiscretization::VectorType> data_out(data_out_path, json);
+    OutputSession<CGDiscretization> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<typename CGDiscretization::VectorType>>();
     CGTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 

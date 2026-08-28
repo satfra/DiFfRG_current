@@ -144,7 +144,7 @@ Note that the TimeStepper takes an additional argument, where we can choose the 
   Model model(json);
   RectangularMesh<dim> mesh(json);
   OutputPath output_path(json);
-  OutputSession<dim, VectorType> output(output_path, Config::OutputSettings(json));
+  OutputSession<Assembler> output(output_path, Config::OutputSettings(json));
   const auto log = output.log_port();
   Discretization discretization(mesh, json, log);
   Assembler assembler(discretization, model, json, log);
@@ -323,7 +323,6 @@ These sections are just the parameters we also use in the numerical model, i.e. 
   "discretization": {
     "fe_order": 3,
     "threads": 0,
-    "kokkos_threads": 0,
     "overintegration": 0,
     "output_subdivisions": 2,
 
@@ -343,8 +342,8 @@ These sections are just the parameters we also use in the numerical model, i.e. 
 ```
 The discretization section configures the FEM setup of our simulation:
 - `fe_order` sets the polynomial order of the local function space on the finite elements
-- `threads` sets the persistent TBB/deal.II application thread limit, covering FEM assembly and TBB momentum integration. `0` means all available cores. This is read by `DiFfRG::Init` before the libraries come up.
-- `kokkos_threads` independently sets the Kokkos host-backend thread count when positive. If it is absent or `0`, Kokkos uses the resolved `threads` count, preserving the historical behavior. Kokkos reads this value only during process-global initialization; later changes to `threads` do not resize its host pool. If `DEAL_II_NUM_THREADS` is set, it remains an upper bound for both limits.
+- `threads` sets the CPU thread limit, covering FEM assembly and TBB momentum integration alike -- there is a single TBB pool and this sizes it. `0` means "decide from the CPUs this process actually has". It is read by `DiFfRG::Init` before the libraries come up.
+  It is not the only thing that can set the count. In decreasing precedence: `DiFfRG_NUM_THREADS`, then the launcher's allocation (the CPU affinity mask, or `SLURM_*` where the job did not pin its tasks), then this key, then `OMP_NUM_THREADS` / `DEAL_II_NUM_THREADS`. DiFfRG prints a loud warning when several of these disagree, naming each one and which it used. See `documentation/multi_gpu.md` for the full table.
   The assembly pipeline is sized from this together with the number of cells the rank owns, separately for every `mesh_loop`: a mass matrix costs a fraction of a microsecond per cell while a residual calls the momentum integrals and costs microseconds, so they get different numbers of workers and different batch sizes. Using the keys `mesh_workers` and `batch_size` one can override automatic sizing, but they pin every loop to one pair and are discouraged; DiFfRG warns if it finds them.
 - `overintegration` can be used to increase the order of the quadratures used in assembly when constructing the [weak form](https://en.wikipedia.org/wiki/Weak_formulation) of the PDE. It is seldom necessary to increase beyond 0.
 - `output_subdivisions` gives the precision with which the grids in the output data are written. This goes exponentially, so don't choose it too high.
@@ -409,7 +408,7 @@ For more information about timesteppers and their relationship with spontaneous 
 }
 ```
 The `output` section defines:
-- `verbosity` sets how much information is being written to console while running. If at 0, no information is written at all, whereas at 1 the system gives updates at every timestep. From 2 upwards, the progress lines are accompanied by the solver diagnostics (accepted steps, precision rejects, step widths, ...) and by timings for the jacobian and the linear solver.
+- `verbosity` sets how much information is being written to console while running. If at 0, only warnings and errors are written, whereas at 1 the system gives updates at every timestep. From 2 upwards, the progress lines are accompanied by the solver diagnostics (accepted steps, precision rejects, step widths, ...) and by timings for the jacobian and the linear solver. The same setting gates the run log: at 0 the console only shows warnings and errors, at 1 the ordinary messages, from 2 upwards also debug records. The `.log` file always receives everything.
 - `folder` sets the base folder where data is stored. This is useful to not clutter your current directory ("./") with output, or if you run a large amount of simulations.
 - `name` sets the beginning of all filenames of the output, i.e. in this case all files created by the simulation start with "output".
 
@@ -446,7 +445,13 @@ $ cat output.log
 ]
 [2024/10/11] [23:01:32] [Simulation finished after 1s]
 ```
-- `output.log.json` contains a copy of the JSON parameters used.
+- `output.h5` contains the simulation data, and the parameters used under its `/config` group. Its
+  root `finished` and `crashed` attributes say how the run ended: `(1, 0)` ran to completion,
+  `(1, 1)` stopped early on an error but closed its output cleanly, `(0, 0)` was killed outright
+  (or is still running).
+- `output.log.json` contains a copy of the JSON parameters used. It is only written when HDF5
+  output is off -- with HDF5 on, `/config` already records the parameters. Set `/output/json` to
+  `true` to get it in either case.
 - `output.pvd` contains links to the FEM output data of the simulation and can be now visualized in `Paraview`.
 
 After invoking `$ paraview output.pvd`, we open a new tab and choose line chart view:

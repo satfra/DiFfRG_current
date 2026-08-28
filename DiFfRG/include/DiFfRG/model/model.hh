@@ -13,6 +13,7 @@
 
 // DiFfRG
 #include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
+#include <DiFfRG/discretization/common/solution_sample.hh>
 #include <DiFfRG/model/ad.hh>
 #include <DiFfRG/model/component_descriptor.hh>
 #include <DiFfRG/model/fv_boundaries.hh>
@@ -28,6 +29,9 @@ namespace DiFfRG
    */
   namespace def
   {
+    /// Block id for a component that carries no hyperbolic flux. @see AbstractModel::wave_speed_blocks.
+    inline constexpr int no_wave_speed = -1;
+
     /**
      * @brief The abstract interface for any numerical model.
      * Most methods have a standard implementation, which can be overwritten if needed.
@@ -153,8 +157,16 @@ namespace DiFfRG
        * @param sol a `std::tuple<...>` which contains
        * 1. the array u_j
        * 2. the array of arrays \f$\partial_x u_j\f$
-       * 3. the array of arrays of arrays \f$\partial_x^2 u_j\f$ (CG/DG/LDG only)
-       * 4. the array of extractors \f$e_b\f$ (CG/DG/LDG only)
+       * 3. the array of arrays of arrays \f$\partial_x^2 u_j\f$ (CG/dDG only)
+       * 4. the array of extractors \f$e_b\f$
+       * 5. the array of variables \f$v_a\f$
+       *
+       * @note The extractors are those of the last extract() call, i.e. of the state the assembler is
+       * currently linearising about, and they are plain numbers rather than AD types. Their dependence
+       * on the FE solution is therefore absent from the flux jacobian -- extractors are frozen within a
+       * Newton step, exactly as they are for source(). A model that solves for something at the EoM in
+       * extract() and reads it back here gets an approximate jacobian, which costs iterations rather
+       * than accuracy: the extraction is redone for every residual.
        */
       template <int dim, typename NumberType, typename Solutions, size_t n_fe_functions>
       void flux([[maybe_unused]] std::array<Tensor<1, dim, NumberType>, n_fe_functions> &F_i,
@@ -185,6 +197,10 @@ namespace DiFfRG
        * 1. the array u_j
        * 2. the array of arrays \f$\partial_x u_j\f$
        * 3. the array of arrays of arrays \f$\partial_x^3 u_j\f$
+       * 4. the array of extractors \f$e_b\f$
+       * 5. the array of variables \f$v_a\f$
+       *
+       * @note Extractors are frozen w.r.t. the FE solution here too. @see flux.
        */
       template <int dim, typename NumberType, typename Solutions, size_t n_fe_functions>
       void diffusion_flux([[maybe_unused]] std::array<Tensor<1, dim, NumberType>, n_fe_functions> &F_i,
@@ -206,11 +222,15 @@ namespace DiFfRG
        * @param s_i the resulting source function \f$s_i\f$, with \f$N_f\f$ components.
        * This method should fill this argument with the desired structure of the flow equation.
        * @param x a d-dimensional dealii::Point<dim> representing field coordinates.
-       * @param sol a `std::tuple<...>` which contains
-       * 1. the array u_j
-       * 2. the array of arrays \f$\partial_x u_j\f$
-       * 3. the array of arrays of arrays \f$\partial_x^2 u_j\f$
-       * 4. the array of extractors \f$e_b\f$
+       * @param sol a named tuple; which entries it carries depends on the assembler:
+       * - CG and dDG: `"fe_functions"` \f$u_j\f$, `"fe_derivatives"` \f$\partial_x u_j\f$,
+       *   `"fe_hessians"` \f$\partial_x^2 u_j\f$, `"extractors"` \f$e_b\f$, `"variables"` \f$v_a\f$
+       * - DG: `"fe_functions"`, `"extractors"`, `"variables"`
+       * - KT-FV: `"fe_functions"`, `"fe_derivatives"`, `"extractors"`, `"variables"` -- no hessians, and
+       *   the derivatives are the scheme's reconstructed cell gradient
+       *
+       * Access the entries by name (`get<"fe_derivatives">(sol)`); a model that reads an entry its
+       * assembler does not provide fails to compile.
        */
       template <int dim, typename NumberType, typename Solutions, size_t n_fe_functions>
       void source([[maybe_unused]] std::array<NumberType, n_fe_functions> &s_i, [[maybe_unused]] const Point<dim> &x,
@@ -260,6 +280,50 @@ namespace DiFfRG
         return differential_components;
       }
 
+      /**
+       * @brief Which FE components share a wave speed, and which carry no hyperbolic flux at all.
+       *
+       * Only the Kurganov-Tadmor assembler consults this. KT adds a dissipation term
+       * -a/2 (u^+ - u^-) to the numerical flux of every component, with `a` a wave speed read off
+       * the flux jacobian. Which jacobian, and whether a component is dissipated at all, is what
+       * this declares: components sharing a block id share one speed, computed as the spectral
+       * radius of the flux jacobian *restricted to that block*, and a component marked
+       * `no_wave_speed` is not dissipated.
+       *
+       * Two things go wrong when the whole system shares one speed, and a model that mixes a
+       * conservation law with constraints needs both fixed.
+       *
+       * A component whose flux is identically zero is dissipated all the same. For a differential
+       * component that is harmless: its diagonal carries c_j * JxW, which swamps the dissipation. An
+       * algebraic component has no such term, so the dissipation becomes the leading entry of its
+       * row -- and drags the reconstruction's slope limiter into the newton jacobian with it, where
+       * a limiter kink stalls the iteration outright. `no_wave_speed` drops the dissipation instead,
+       * leaving the row exactly as the model wrote it.
+       *
+       * A component that *does* carry a flux, but a much slower one than the fastest in the system,
+       * is over-dissipated by the ratio of the two speeds. That is worse than inaccurate when the
+       * row is algebraic. Its own terms are integrated over the cell and so carry a factor of the
+       * cell width, while the dissipation is a face quantity and does not; the row's diagonal
+       * dominance is then O(dx) and the row *degenerates under refinement*, so the scheme fails when
+       * the grid is made finer. Giving such a component its own block restores the balance: both the
+       * diagonal and the off-diagonal scale as a/dx and their difference stays finite.
+       *
+       * Blocking is a statement that the cross-couplings between blocks do not carry characteristics
+       * -- true when the off-block rows are constraints rather than conservation laws, which is the
+       * case this exists for. It is not a licence to split a genuinely hyperbolic system, where the
+       * full spectral radius is the safe choice and is what one block gives.
+       *
+       * This is a structural property of the model, not a function of the state: it is queried per
+       * face, and blocks that varied with the solution would be both a cost and a discontinuity.
+       *
+       * The default puts every component in one block, i.e. the scheme as it was before this hook
+       * existed.
+       */
+      template <size_t n_fe_functions> void wave_speed_blocks(std::array<int, n_fe_functions> &blocks) const
+      {
+        blocks.fill(0);
+      }
+
       //@}
       /**
        * @name Other variables
@@ -283,6 +347,15 @@ namespace DiFfRG
        */
       //@{
 
+      /**
+       * @brief Read data off the FE solution at a single point and hand it to the Variables.
+       *
+       * This is the only bridge from the field-space (FE) sector into the Variables sector: the
+       * values stored in @p result are what `dt_variables` sees under `get<"extractors">(sol)`.
+       *
+       * @param x The point the extractors are evaluated at. By default this is the EoM; a model can
+       *          choose otherwise by defining `extractor_point` (see DiFfRG::HasExtractorPoint).
+       */
       template <int dim, typename Vector, typename Solutions>
       void extract([[maybe_unused]] Vector &result, [[maybe_unused]] const Point<dim> &x,
                    [[maybe_unused]] const Solutions &sol) const
@@ -371,6 +444,18 @@ namespace DiFfRG
       }
 
       /**
+       * @brief Whether extract() reads the reconstructed potential handed to it.
+       *
+       * The potential slots of the tuple passed to extract() are filled by reconstructing a scalar potential
+       * from raw_potential_gradient() over the whole mesh -- a direct solve, run on every residual and
+       * jacobian evaluation, and wasted on the many models whose extractors need only the solution. A model
+       * that never reads those slots should set this to false; the slots are then filled with a type that has
+       * no operations, so reading one is a compile error rather than a silent zero. Readouts are unaffected:
+       * the potential is written to the output there regardless.
+       */
+      static constexpr bool extract_uses_potential = true;
+
+      /**
        * @brief The unmodified gradient of the scalar potential reconstructed for readouts and extractors.
        *
        * This is deliberately separate from the EoM callback supplied by readouts_multiple(): a physical EoM may
@@ -387,6 +472,14 @@ namespace DiFfRG
         return gradient;
       }
 
+      /**
+       * @brief Relocate the point found by the EoM search, given the solution values there.
+       *
+       * Pointwise, and therefore limited to decisions that can be made from the located point alone
+       * -- e.g. freezing the EoM once it jumps backwards. A model that has to inspect the solution
+       * profile as a whole to decide where its extractors should be read instead defines
+       * `extractor_point`; see DiFfRG::HasExtractorPoint.
+       */
       template <int dim, typename Vector> Point<dim> EoM_postprocess(const Point<dim> &EoM, const Vector &) const
       {
         return EoM;
@@ -561,7 +654,10 @@ namespace DiFfRG
       const double &get_time() const;
 
     protected:
-      double t;
+      // Initialized, like fRG::t below: a model is routinely built and read before the timestepper
+      // first calls set_time(), and an indeterminate t is a bug that only shows up once the memory
+      // happens to be dirty.
+      double t = 0.;
     };
 
     /**

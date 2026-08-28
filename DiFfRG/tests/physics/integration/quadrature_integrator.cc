@@ -136,10 +136,10 @@ TEMPLATE_TEST_CASE_SIG("Test ND quadrature integrals", "[integration][quadrature
 
   SECTION("Threads integrals")
   {
-    check(Threads_exec(), (double)0);
-    check(Threads_exec(), (complex<double>)0);
-    check(Threads_exec(), (float)0);
-    check(Threads_exec(), (autodiff::real)0);
+    check(KokkosHost_exec(), (double)0);
+    check(KokkosHost_exec(), (complex<double>)0);
+    check(KokkosHost_exec(), (float)0);
+    check(KokkosHost_exec(), (autodiff::real)0);
   };
   SECTION("TBB integrals")
   {

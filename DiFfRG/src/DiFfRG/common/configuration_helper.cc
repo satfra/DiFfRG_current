@@ -234,9 +234,6 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
          {"discretization",
           {{"fe_order", 3},
            {"threads", 0},
-           {"kokkos_threads", 0},
-           {"mesh_workers", 8},
-           {"batch_size", 16},
            {"overintegration", 0},
            {"output_subdivisions", 2},
 
@@ -301,14 +298,15 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
               << "    max_matsubara_size            Maximum Matsubara frequency size\n"
               << "  /discretization    Spatial discretization settings\n"
               << "    fe_order                      Finite element polynomial order\n"
-              << "    threads                       TBB/deal.II application thread limit. 0 = all\n"
-              << "                                  available cores\n"
-              << "    kokkos_threads                Kokkos host-backend thread count. 0 or absent =\n"
-              << "                                  resolved application thread count\n"
-              << "                                  DEAL_II_NUM_THREADS, if set, caps both counts.\n"
-              << "    mesh_workers                  Number of in-flight cells in the assembly\n"
-              << "                                  pipeline (MeshWorker queue length)\n"
-              << "    batch_size                    Batch size for GPU kernel launches\n"
+              << "    threads                       CPU thread limit (one TBB pool). 0 = decide from\n"
+              << "                                  the available CPUs.\n"
+              << "                                  Overruled, in this order, by DiFfRG_NUM_THREADS\n"
+              << "                                  and by the launcher's allocation (CPU affinity\n"
+              << "                                  mask, then SLURM_*); overrules OMP_NUM_THREADS\n"
+              << "                                  and DEAL_II_NUM_THREADS. DiFfRG warns when\n"
+              << "                                  several of these disagree.\n"
+              << "                                  The assembly pipeline is sized from this and the\n"
+              << "                                  cell count; there is nothing to tune by hand.\n"
               << "    overintegration               Extra quadrature points beyond FE order\n"
               << "    output_subdivisions           VTK output subdivisions per cell\n"
               << "    EoM_abs_tol / EoM_max_iter    In-cell EoM minimizer tolerance and iteration limit\n"

@@ -9,14 +9,18 @@ Applications may adapt their JSON configuration at the boundary:
 
 ```cpp
 OutputPath path(json);
-OutputSession<dim, VectorType> output(path, Config::OutputSettings(json));
+OutputSession<Assembler> output(path, Config::OutputSettings(json));
 ```
+
+The session is keyed on the assembler so that its spatial dimension and vector type cannot drift from the ones the
+timestepper is built on. Anything exposing `dim` and `VectorType` works — pass the `Discretization` instead wherever
+there is no single assembler type, e.g. a test that runs one discretization against several models.
 
 Unit tests request an automatically cleaned system-temporary directory without constructing output JSON:
 
 ```cpp
 OutputPath path = OutputPath::temporary();
-OutputSession<dim, VectorType> output(path, Config::OutputSettings{});
+OutputSession<Assembler> output(path, Config::OutputSettings{});
 ```
 
 Use `OutputPath::temporary(TemporaryRetention::keep)` while debugging a test. `OutputPath` has no default constructor,
@@ -58,9 +62,11 @@ The same injection works for a model pre-assembly hook: store a `DiagnosticPort`
 coefficient when the hook computes it. The port is thread-safe and serializes a complete record atomically. It should
 not be used for high-volume field output; add that data to an `OutputFrame` instead.
 
-All implicit time steppers write one record per Jacobian callback to `<run>_jacobian_diagnostics.csv`. Runs with a
-separate dense variable Jacobian also write `<run>_variable_jacobian_diagnostics.csv`; both records use the same
-`jacobian_build_id`. The numeric `stepper_kind` values are `0=IDA`, `1=IDA+Boost RK`, `2=IDA+Boost ABM`, `3=implicit
+With `/timestepping/implicit/jacobian_diagnostics` set to `true` (it defaults to `false`), all implicit time steppers
+write one record per Jacobian callback to `<run>_jacobian_diagnostics.csv`. Runs with a separate dense variable Jacobian
+also write `<run>_variable_jacobian_diagnostics.csv`; both records use the same `jacobian_build_id`. The switch is off by
+default because the records are not free: each one costs a full sweep over the assembled Jacobian, and a factorizing
+linear solver additionally estimates the condition number, which takes several extra triangular solves per build. The numeric `stepper_kind` values are `0=IDA`, `1=IDA+Boost RK`, `2=IDA+Boost ABM`, `3=implicit
 Euler`, and `4=TRBDF2`. The `stage` values are `0=main`, `1=TR`, and `2=BDF2`.
 
 For implicit Euler and TRBDF2, `step` counts accepted steps and `retry_index` counts rejected attempts at the same step.
@@ -100,13 +106,14 @@ The run log is written by an asynchronous logger whose file sink is otherwise on
 would show a log file lagging by a full stdio buffer and a killed job would lose its tail. `log_flush_interval` is the
 period in seconds at which the log file is flushed from a dedicated thread; set it to `0` to disable periodic flushing.
 
-A `QuadratureProvider` constructed from the configuration reports every quadrature it builds to its own side-channel
-log, `<output name>_quadrature.log`, written next to the run log and sharing its queue, level and flush settings. It
-owns that logger instead of borrowing the session's: integrators request their quadratures from within their
-constructors, usually before any `OutputSession` exists, and the provider is a process-level cache that outlives a
-single run. The file has no console sink, so the quadrature inventory does not interleave with the timestepper
-progress report. Set `quadrature_log` to `false` to suppress the file, or pass an explicit `LogPort` as the second
-constructor argument to route the messages into a log of your own.
+A `QuadratureProvider` constructed from the configuration reports every quadrature it builds into the run log,
+under the `quadrature` logger name, sharing the run log's queue, level and flush settings. It owns that logger
+instead of borrowing the session's: integrators request their quadratures from within their constructors, usually
+before any `OutputSession` exists, and the provider is a process-level cache that outlives a single run. The log file
+sink is shared process-wide per path, so the session opening the same file later appends to the quadrature inventory
+instead of truncating it. The quadrature logger has no console sink, so the inventory does not interleave with the
+timestepper progress report. Set `quadrature_log` to `false` to keep it out of the log entirely, or pass an explicit
+`LogPort` as the second constructor argument to route the messages into a log of your own.
 
 Debugging and process-memory policy stay in C++ rather than simulation configuration. Set
 `Config::OutputSettings::asynchronous` to `false` for synchronous field writes. The default pending-byte limit is 2
@@ -139,6 +146,10 @@ Each run reports where its output time went, at `info` level, when the session f
 the potential reconstructions inside it, `build_patches`, the data filter, the HDF5 write and open/close, queue
 waiting, and the writer thread's own total, which is listed separately because it is off the critical path. Set
 `/output/verbosity` to 3 or more to additionally get one line and one `output_timings.csv` row per frame.
+
+`/output/verbosity` also decides how much of the run log reaches the console: at 0 only warnings and errors, at 1 the
+ordinary `info` messages, from 2 upwards also `debug` records such as the per-frame timing line. The `.log` file is
+never gated this way and always receives everything `/output/log_level` admits.
 
 Only MPI rank zero creates sinks. A full queue blocks the producer rather than dropping scientific data. At the end of
 each timestepper `run()`, the session drains pending writers and reports worker errors without closing, so the same

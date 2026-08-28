@@ -1,5 +1,8 @@
 #include <DiFfRG/physics/integration/map_scheduler.hh>
 
+// DiFfRG
+#include <DiFfRG/common/init.hh>
+
 // std
 #include <algorithm>
 #include <atomic>
@@ -48,7 +51,14 @@ namespace DiFfRG
     {
       // Workers, not threads-per-evaluation: each worker loops over many evaluations, so it takes a
       // grain of them to amortize one parallel_for spawn.
-      static const double t = double(Kokkos::DefaultHostExecutionSpace().concurrency()) * host_grain;
+      //
+      // The workers are TBB's, so the count comes from DiFfRG's resolved budget. Asking Kokkos'
+      // host backend would answer 1, because that backend is Serial and does no work here.
+      //
+      // Deliberately not cached in a function-local static: the budget is resolved by DiFfRG::Init,
+      // and a caller that got here first would otherwise freeze a pre-resolution value for the rest
+      // of the process. The multiplication is free next to what it gates.
+      const double t = double(n_threads()) * host_grain;
       return t > 0. ? t : host_grain;
     }
   } // namespace internal

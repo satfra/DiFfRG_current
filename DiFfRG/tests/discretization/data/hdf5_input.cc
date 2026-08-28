@@ -27,8 +27,6 @@ TEST_CASE("Test HDF5 input", "[input][hdf5]")
                                 {"integration", {{"x_quadrature_order", 32}, {"angle_quadrature_order", 8}}},
                                 {"discretization",
                                  {{"fe_order", 3},
-                                  {"mesh_workers", 8},
-                                  {"batch_size", 64},
                                   {"grid", {{"x_grid", "0:0.1:1"}, {"y_grid", "0:0.1:1"}}}}},
                                 {"timestepping", {{"final_time", 1.}, {"output_dt", 1e-1}}},
                                 {"output", {{"live_plot", false}, {"verbosity", 0}}}});

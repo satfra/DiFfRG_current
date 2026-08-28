@@ -7,6 +7,7 @@
 #include <deal.II/lac/vector.h>
 
 #include <cmath>
+#include <exception>
 #include <fstream>
 #include <memory>
 #include <sstream>
@@ -15,7 +16,7 @@
 namespace DiFfRG
 {
   template <uint dim, typename VectorType>
-  OutputSession<dim, VectorType>::OutputSession(const OutputPath &path, Config::OutputSettings settings)
+  OutputSession_impl<dim, VectorType>::OutputSession_impl(const OutputPath &path, Config::OutputSettings settings)
       : output_path(path), settings(std::move(settings)), top_folder(make_folder(path.root().string())),
         output_name(path.run_name()), output_folder(make_folder(path.field_directory().generic_string())),
         active(MPI::rank(MPI_COMM_WORLD) == 0), run_logger(path, this->settings, active),
@@ -29,7 +30,10 @@ namespace DiFfRG
   {
     set_Lambda(this->settings.Lambda);
     diagnostics_port = DiagnosticPort::create(path, Lambda, active);
-    if (active) diagnostics_port.write_text(this->output_name + ".log.json", this->settings.configuration_log);
+    // With HDF5 on, the configuration already travels with the data in the file's /config group,
+    // so the separate copy is only written when asked for or when nothing else records it.
+    if (active && (this->settings.write_json || !use_hdf5))
+      diagnostics_port.write_text(this->output_name + ".log.json", this->settings.configuration_log);
 
     if (active && use_hdf5) {
       h5_files.emplace(filename_h5, HDF5Output(this->top_folder, filename_h5, this->settings.configuration_json));
@@ -48,17 +52,21 @@ namespace DiFfRG
     }
   }
 
-  template <uint dim, typename VectorType> OutputSession<dim, VectorType>::~OutputSession() noexcept
+  template <uint dim, typename VectorType> OutputSession_impl<dim, VectorType>::~OutputSession_impl() noexcept
   {
+    // A destructor runs both at the end of a successful scope and while an exception unwinds one.
+    // Either way the session closes in an orderly fashion, so the files are marked finished; the
+    // unwinding case is what `crashed` records -- a timestepper that gave up still flushed and
+    // closed its output, it just stopped early.
     try {
-      finish();
+      finish_impl(/* crashed = */ std::uncaught_exceptions() > 0);
     } catch (...) {
       deferred_error = std::current_exception();
     }
   }
 
   template <uint dim, typename VectorType>
-  void OutputSession<dim, VectorType>::attach_raw_potential(
+  void OutputSession_impl<dim, VectorType>::attach_raw_potential(
       ReconstructedRawPotential<dim, typename VectorType::value_type> potential)
   {
     if constexpr (dim > 0) {
@@ -74,7 +82,7 @@ namespace DiFfRG
   }
 
   template <uint dim, typename VectorType>
-  void OutputSession<dim, VectorType>::attach_eom_potential(EoMResult<dim, typename VectorType::value_type> result)
+  void OutputSession_impl<dim, VectorType>::attach_eom_potential(EoMResult<dim, typename VectorType::value_type> result)
   {
     if constexpr (dim > 0) {
       if (!result.potential.has_value()) return;
@@ -88,7 +96,7 @@ namespace DiFfRG
     }
   }
 
-  template <uint dim, typename VectorType> CsvOutput &OutputSession<dim, VectorType>::csv(const std::string &name)
+  template <uint dim, typename VectorType> CsvOutput &OutputSession_impl<dim, VectorType>::csv(const std::string &name)
   {
     const auto found = csv_files.find(name);
     if (found != csv_files.end()) return found->second;
@@ -99,7 +107,7 @@ namespace DiFfRG
     return it->second;
   }
 
-  template <uint dim, typename VectorType> HDF5Output &OutputSession<dim, VectorType>::hdf5(const std::string &name)
+  template <uint dim, typename VectorType> HDF5Output &OutputSession_impl<dim, VectorType>::hdf5(const std::string &name)
   {
     const auto found = h5_files.find(name);
     if (found != h5_files.end()) return found->second;
@@ -114,13 +122,13 @@ namespace DiFfRG
     return created;
   }
 
-  template <uint dim, typename VectorType> HDF5Output &OutputSession<dim, VectorType>::hdf5()
+  template <uint dim, typename VectorType> HDF5Output &OutputSession_impl<dim, VectorType>::hdf5()
   {
     if (!use_hdf5) throw std::logic_error("OutputSession::hdf5: HDF5 output is disabled.");
     return h5_files.at(filename_h5);
   }
 
-  template <uint dim, typename VectorType> void OutputSession<dim, VectorType>::flush_frame(const double time)
+  template <uint dim, typename VectorType> void OutputSession_impl<dim, VectorType>::flush_frame(const double time)
   {
     for (const auto &[name, csv] : csv_files)
       csv.validate_frame();
@@ -155,7 +163,7 @@ namespace DiFfRG
       current_frame += hdf.take_frame_timings();
   }
 
-  template <uint dim, typename VectorType> void OutputSession<dim, VectorType>::record_frame(const double time)
+  template <uint dim, typename VectorType> void OutputSession_impl<dim, VectorType>::record_frame(const double time)
   {
     timings.add(current_frame);
 
@@ -186,7 +194,7 @@ namespace DiFfRG
   }
 
   template <uint dim, typename VectorType>
-  void OutputSession<dim, VectorType>::dump_to_csv(const std::string &name,
+  void OutputSession_impl<dim, VectorType>::dump_to_csv(const std::string &name,
                                                    const std::vector<std::vector<double>> &values, const bool append,
                                                    const std::vector<std::string> &header)
   {
@@ -212,14 +220,14 @@ namespace DiFfRG
     if (!stream) throw std::runtime_error("OutputSession::dump_table: write failed for '" + path.string() + "'.");
   }
 
-  template <uint dim, typename VectorType> void OutputSession<dim, VectorType>::set_Lambda(const double Lambda)
+  template <uint dim, typename VectorType> void OutputSession_impl<dim, VectorType>::set_Lambda(const double Lambda)
   {
     this->Lambda = Lambda;
     for (auto &[name, csv] : csv_files)
       csv.set_Lambda(Lambda);
   }
 
-  template <uint dim, typename VectorType> void OutputSession<dim, VectorType>::rethrow_deferred_error()
+  template <uint dim, typename VectorType> void OutputSession_impl<dim, VectorType>::rethrow_deferred_error()
   {
     if (!deferred_error) return;
     auto error = deferred_error;
@@ -227,7 +235,7 @@ namespace DiFfRG
     std::rethrow_exception(error);
   }
 
-  template <uint dim, typename VectorType> void OutputSession<dim, VectorType>::drain()
+  template <uint dim, typename VectorType> void OutputSession_impl<dim, VectorType>::drain()
   {
     std::scoped_lock lock(submission_mutex);
     rethrow_deferred_error();
@@ -261,7 +269,7 @@ namespace DiFfRG
     }
   }
 
-  template <uint dim, typename VectorType> void OutputSession<dim, VectorType>::finish()
+  template <uint dim, typename VectorType> void OutputSession_impl<dim, VectorType>::finish_impl(const bool crashed)
   {
     std::scoped_lock lock(submission_mutex);
     if (finished) {
@@ -294,6 +302,15 @@ namespace DiFfRG
         if (!terminal_error) terminal_error = std::current_exception();
       }
 
+      // After the writer is joined, so the mark cannot land before the last frame it describes.
+      for (auto &[name, hdf] : h5_files) {
+        try {
+          hdf.mark_finished(crashed);
+        } catch (...) {
+          if (!terminal_error) terminal_error = std::current_exception();
+        }
+      }
+
       // Reported only after the writer has been joined, so its totals are complete.
       if (settings.verbosity >= 3) {
         timings.set_writer_totals(hdf5_writer.worker_totals(), hdf5_writer.asynchronous());
@@ -305,18 +322,18 @@ namespace DiFfRG
     if (terminal_error) std::rethrow_exception(terminal_error);
   }
 
-  template class OutputSession<0, dealii::Vector<double>>;
-  template class OutputSession<1, dealii::Vector<double>>;
-  template class OutputSession<2, dealii::Vector<double>>;
-  template class OutputSession<3, dealii::Vector<double>>;
-  template class OutputSession<1, dealii::BlockVector<double>>;
-  template class OutputSession<2, dealii::BlockVector<double>>;
-  template class OutputSession<3, dealii::BlockVector<double>>;
+  template class OutputSession_impl<0, dealii::Vector<double>>;
+  template class OutputSession_impl<1, dealii::Vector<double>>;
+  template class OutputSession_impl<2, dealii::Vector<double>>;
+  template class OutputSession_impl<3, dealii::Vector<double>>;
+  template class OutputSession_impl<1, dealii::BlockVector<double>>;
+  template class OutputSession_impl<2, dealii::BlockVector<double>>;
+  template class OutputSession_impl<3, dealii::BlockVector<double>>;
 
 #ifdef DEAL_II_WITH_PETSC
-  template class OutputSession<0, dealii::PETScWrappers::MPI::Vector>;
-  template class OutputSession<1, dealii::PETScWrappers::MPI::Vector>;
-  template class OutputSession<2, dealii::PETScWrappers::MPI::Vector>;
-  template class OutputSession<3, dealii::PETScWrappers::MPI::Vector>;
+  template class OutputSession_impl<0, dealii::PETScWrappers::MPI::Vector>;
+  template class OutputSession_impl<1, dealii::PETScWrappers::MPI::Vector>;
+  template class OutputSession_impl<2, dealii::PETScWrappers::MPI::Vector>;
+  template class OutputSession_impl<3, dealii::PETScWrappers::MPI::Vector>;
 #endif
 } // namespace DiFfRG

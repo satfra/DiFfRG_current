@@ -114,8 +114,8 @@ TEST_CASE("Test distributed integration", "[integration][quadrature][mpi]")
   };
   SECTION("Threads integrals")
   {
-    check(Threads_exec(), (double)0);
-    check(Threads_exec(), (float)0);
+    check(KokkosHost_exec(), (double)0);
+    check(KokkosHost_exec(), (float)0);
   };
   SECTION("GPU integrals")
   {
@@ -272,7 +272,7 @@ TEST_CASE("A two-dimensional external grid is split, and stays bitwise exact",
   };
 
   SECTION("TBB") { check(TBB_exec(), (double)0); }
-  SECTION("Threads") { check(Threads_exec(), (double)0); }
+  SECTION("Threads") { check(KokkosHost_exec(), (double)0); }
   SECTION("GPU") { check(GPU_exec(), (double)0); }
 }
 

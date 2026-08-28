@@ -20,6 +20,19 @@
 namespace DiFfRG
 {
   /**
+   * @brief Mirror a JSON configuration value into `group` as a browsable tree: one subgroup per
+   * object, one attribute per leaf.
+   *
+   * This is how a run's configuration is recorded in its HDF5 file, so that it reads with the same
+   * tools as its data. HDF5 has no boolean type, so booleans become 0/1 ints, arrays are stored as
+   * their serialized JSON, and nulls are skipped; set /output/json to also get the verbatim
+   * `<name>.log.json` copy alongside.
+   *
+   * @throws std::runtime_error if an object key contains '/', which is not a legal HDF5 link name.
+   */
+  void write_config_tree(DiFfRG::hdf5::Group &group, const json::value &value);
+
+  /**
    * @brief A class to output data to a CSV file.
    *
    * In every time step, the user can add values to the output, which will be written to the file when flush is called.
@@ -250,6 +263,17 @@ namespace DiFfRG
 
     /** Wait for this sink's queued frames to reach disk and surface any writer error. */
     void drain();
+
+    /**
+     * @brief Record how the run ended: sets the root `finished` attribute to 1, and `crashed` to
+     * whether it ended by throwing.
+     *
+     * Call once, after the last frame. Files start at `finished = 0`, so a run that never gets
+     * here -- SIGKILL, OOM, a node eviction -- stays marked unfinished. A run that threw still
+     * reaches this and is marked finished, with `crashed = 1`: its output was flushed and closed
+     * properly, it just stopped early.
+     */
+    void mark_finished(bool crashed);
 
     void open_file();
     void close_file();

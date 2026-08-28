@@ -27,6 +27,7 @@
 #include <deal.II/meshworker/mesh_loop.h>
 #include <deal.II/numerics/fe_field_function.h>
 
+#include <DiFfRG/discretization/common/cell_geometry.hh>
 #include <DiFfRG/discretization/common/eom_config.hh>
 #include <DiFfRG/discretization/common/serial_mirror.hh>
 #include <DiFfRG/discretization/data/output_timings.hh>
@@ -80,20 +81,23 @@ namespace DiFfRG
    */
   template <int dim, typename NumberType> struct ReconstructedEoMPotential {
     dealii::Point<dim> minimum;
-    std::unique_ptr<dealii::FiniteElement<dim>> finite_element;
-    std::unique_ptr<dealii::DoFHandler<dim>> dof_handler;
+    std::shared_ptr<dealii::FiniteElement<dim>> finite_element;
+    std::shared_ptr<dealii::DoFHandler<dim>> dof_handler;
     dealii::Vector<NumberType> values;
   };
 
   /**
-   * @brief An owning scalar potential reconstructed from a model-provided raw gradient.
+   * @brief A scalar potential reconstructed from a model-provided raw gradient.
+   *
+   * The element and DoF handler are shared with DiFfRG::internal::PotentialSystemCache, which retains them
+   * across calls; only the coefficient vector belongs to this result alone.
    *
    * Its additive gauge is fixed at the mesh origin. Consequently, value differences and all derivatives are
    * gauge-independent, while the absolute value uses the convention U(origin) = 0.
    */
   template <int dim, typename NumberType> struct ReconstructedRawPotential {
-    std::unique_ptr<dealii::FiniteElement<dim>> finite_element;
-    std::unique_ptr<dealii::DoFHandler<dim>> dof_handler;
+    std::shared_ptr<dealii::FiniteElement<dim>> finite_element;
+    std::shared_ptr<dealii::DoFHandler<dim>> dof_handler;
     dealii::Vector<NumberType> values;
   };
 
@@ -107,6 +111,27 @@ namespace DiFfRG
     dealii::Tensor<1, dim, NumberType> gradient;
     dealii::Tensor<2, dim, NumberType> hessian;
   };
+
+  /**
+   * @brief Stand-in for a raw potential that a model has declared it does not read.
+   *
+   * Deliberately without operations, so a model that sets extract_uses_potential to false and then reads one
+   * of the potential slots fails to compile instead of quietly receiving a zero potential.
+   */
+  struct UnusedPotential {
+  };
+
+  /** @brief Evaluating an unread potential: the same three slots, all inert. */
+  struct UnusedPotentialEvaluation {
+    UnusedPotential value, gradient, hessian;
+  };
+
+  template <int dim>
+  UnusedPotentialEvaluation evaluate_raw_potential(const UnusedPotential &, const dealii::Mapping<dim> &,
+                                                   const dealii::Point<dim> &)
+  {
+    return {};
+  }
 
   template <typename NumberType> struct ReconstructedEoMPotential<0, NumberType> {
     dealii::Point<0> minimum;
@@ -188,32 +213,6 @@ namespace DiFfRG
     }
 
     template <int dim>
-    double face_normal_cell_width(const typename dealii::DoFHandler<dim>::active_cell_iterator &cell,
-                                  const uint face_no)
-    {
-      const double face_measure = cell->face(face_no)->measure();
-      if (!(face_measure > 0.) || !std::isfinite(face_measure))
-        throw std::runtime_error("EoM potential reconstruction encountered an invalid face measure.");
-
-      const double width = cell->measure() / face_measure;
-      if (!(width > 0.) || !std::isfinite(width))
-        throw std::runtime_error("EoM potential reconstruction encountered an invalid face-normal cell width.");
-      return width;
-    }
-
-    template <int dim> double minimum_face_normal_cell_width(const dealii::DoFHandler<dim> &dof_handler)
-    {
-      double minimum_width = std::numeric_limits<double>::max();
-      for (const auto &cell : dof_handler.active_cell_iterators())
-        for (uint face_no = 0; face_no < cell->n_faces(); ++face_no)
-          minimum_width = std::min(minimum_width, face_normal_cell_width<dim>(cell, face_no));
-
-      if (!(minimum_width < std::numeric_limits<double>::max()))
-        throw std::runtime_error("EoM potential reconstruction could not determine an initial cell width.");
-      return minimum_width;
-    }
-
-    template <int dim>
     double resolve_potential_smoothing_length(const dealii::DoFHandler<dim> &dof_handler,
                                               const double configured_length)
     {
@@ -235,13 +234,10 @@ namespace DiFfRG
     }
 
     template <int dim, typename NumberType>
-    dealii::types::global_dof_index select_gauge_dof(const dealii::DoFHandler<dim> &potential_dof_handler,
-                                                     const dealii::AffineConstraints<NumberType> &constraints,
-                                                     const dealii::Mapping<dim> &mapping,
-                                                     const dealii::Point<dim> &origin)
+    dealii::types::global_dof_index
+    select_gauge_dof(const dealii::AffineConstraints<NumberType> &constraints, const dealii::Point<dim> &origin,
+                     const std::map<dealii::types::global_dof_index, dealii::Point<dim>> &support_points)
     {
-      const auto support_points = DoFTools::map_dofs_to_support_points(mapping, potential_dof_handler);
-
       dealii::types::global_dof_index best_dof = numbers::invalid_dof_index;
       double best_distance = std::numeric_limits<double>::max();
       for (const auto &dof_and_point : support_points) {
@@ -270,6 +266,107 @@ namespace DiFfRG
     {
       return std::make_unique<FE_Q<dim>>(2);
     }
+
+    /** @brief Which of the two potentials a reconstruction is for; they are cached separately. */
+    enum class PotentialKind : uint { eom = 0, raw = 1 };
+    inline constexpr uint n_potential_kinds = 2;
+
+    template <int dim> std::unique_ptr<dealii::FiniteElement<dim>> make_potential_fe(const PotentialKind kind)
+    {
+      return kind == PotentialKind::eom ? make_eom_potential_fe<dim>() : make_raw_potential_fe<dim>();
+    }
+
+    /**
+     * @brief The mesh-dependent half of solve_potential, retained across calls.
+     *
+     * The potential system is a least-squares projection of a gradient field onto a continuous element, and
+     * its matrix depends only on the mesh, that element and the smoothing length -- the solution enters
+     * through the right-hand side alone. Rebuilt per call, as it was, every reconstruction distributes a
+     * fresh DoF handler, builds a flux sparsity pattern, constructs quadratures and runs a direct sparse
+     * factorisation. Every residual and jacobian evaluation of a model carrying extractors pays that twice.
+     * Cached, all of it happens once per mesh and a reconstruction costs one right-hand side assembly plus a
+     * back-substitution.
+     *
+     * A cache is owned by the assembler that reconstructs, so it cannot outlive the mesh it describes, and
+     * is used from whichever thread drives assembly or readouts. It is not internally synchronised and must
+     * not be shared between threads that run concurrently.
+     */
+    template <int dim, typename NumberType> class PotentialSystemCache
+    {
+      static constexpr int face_dim = dim > 0 ? dim - 1 : 0;
+
+    public:
+      struct Entry {
+        std::shared_ptr<dealii::FiniteElement<dim>> finite_element;
+        std::shared_ptr<dealii::DoFHandler<dim>> dof_handler;
+        dealii::AffineConstraints<NumberType> constraints;
+        dealii::SparsityPattern sparsity_pattern;
+        dealii::SparseMatrix<NumberType> matrix;
+        dealii::SparseDirectUMFPACK factorization;
+        dealii::Quadrature<dim> quadrature;
+        dealii::Quadrature<face_dim> face_quadrature;
+        /// Where each potential DoF sits; needed by the gauge choice and by every minimum search.
+        std::map<dealii::types::global_dof_index, dealii::Point<dim>> support_points;
+
+        /**
+         * @brief Whether this entry still describes the system that would be built now.
+         *
+         * `stale` is set from the triangulation's change signal, which also covers the refinement that
+         * leaves the cell count untouched; the counters catch a mesh that was swapped wholesale. A
+         * disconnected signal means the triangulation this entry was built for is gone -- destroying one
+         * disconnects its slots -- so the address may now belong to a different mesh entirely.
+         */
+        bool describes(const dealii::Triangulation<dim> &tria, const dealii::DoFHandler<dim> &solution_dof_handler,
+                       const double smoothing) const
+        {
+          return !stale && connection.connected() && triangulation == &tria &&
+                 solution_dofs == &solution_dof_handler && n_active_cells == tria.n_active_cells() &&
+                 n_levels == tria.n_levels() && n_vertices == tria.n_vertices() &&
+                 solution_fe_degree == solution_dof_handler.get_fe().degree && smoothing_length == smoothing;
+        }
+
+        void note_built_for(const dealii::Triangulation<dim> &tria,
+                            const dealii::DoFHandler<dim> &solution_dof_handler, const double smoothing)
+        {
+          triangulation = &tria;
+          solution_dofs = &solution_dof_handler;
+          n_active_cells = tria.n_active_cells();
+          n_levels = tria.n_levels();
+          n_vertices = tria.n_vertices();
+          solution_fe_degree = solution_dof_handler.get_fe().degree;
+          smoothing_length = smoothing;
+          connection = tria.signals.any_change.connect([this]() { stale = true; });
+          stale = false;
+        }
+
+      private:
+        const void *triangulation = nullptr;
+        const void *solution_dofs = nullptr;
+        std::size_t n_active_cells = 0;
+        uint n_levels = 0;
+        std::size_t n_vertices = 0;
+        uint solution_fe_degree = 0;
+        double smoothing_length = 0.;
+        boost::signals2::scoped_connection connection;
+        bool stale = true;
+      };
+
+      /**
+       * @brief The entry for one kind of potential, created empty on first use.
+       *
+       * Held indirectly because a SparseMatrix points at its own SparsityPattern: the entries must not move
+       * once a matrix has been attached to one.
+       */
+      Entry &entry(const PotentialKind kind)
+      {
+        auto &slot = entries[static_cast<uint>(kind)];
+        if (!slot) slot = std::make_unique<Entry>();
+        return *slot;
+      }
+
+    private:
+      std::array<std::unique_ptr<Entry>, n_potential_kinds> entries;
+    };
 
     template <int dim, typename EoMValue> dealii::Tensor<1, dim> eom_to_tensor(const EoMValue &eom)
     {
@@ -462,7 +559,8 @@ namespace DiFfRG
                                    const dealii::Quadrature<dim - 1> &face_quadrature,
                                    const dealii::AffineConstraints<typename VectorType::value_type> &constraints,
                                    dealii::SparseMatrix<typename VectorType::value_type> &matrix,
-                                   dealii::Vector<typename VectorType::value_type> &rhs, const double smoothing_length)
+                                   dealii::Vector<typename VectorType::value_type> &rhs,
+                                   const double smoothing_length, const bool assemble_matrix)
     {
       using NumberType = typename VectorType::value_type;
       using Iterator = typename dealii::DoFHandler<dim>::active_cell_iterator;
@@ -500,6 +598,7 @@ namespace DiFfRG
             const auto grad_i = scratch.potential_fe_values.shape_grad(i, q);
             copy.cell_rhs(i) += scratch.potential_fe_values.JxW(q) * scalar_product(eom, grad_i);
 
+            if (!assemble_matrix) continue;
             for (uint j = 0; j < dofs_per_cell; ++j)
               copy.cell_matrix(i, j) += scratch.potential_fe_values.JxW(q) *
                                         scalar_product(scratch.potential_fe_values.shape_grad(j, q), grad_i);
@@ -508,10 +607,18 @@ namespace DiFfRG
       };
       const auto boundary_worker = []([[maybe_unused]] const Iterator &cell, [[maybe_unused]] const uint &face_no,
                                       [[maybe_unused]] Scratch &scratch, [[maybe_unused]] Copy &copy) {};
+      // Every constraint on the potential is homogeneous -- hanging nodes, plus the gauge DoF pinned to
+      // zero -- so distributing the right-hand side alone needs no local matrix to carry an inhomogeneity.
       const auto copier = [&](const Copy &copy) {
-        constraints.distribute_local_to_global(copy.cell_matrix, copy.cell_rhs, copy.cell_dof_indices, matrix, rhs);
-        for (const auto &face : copy.face_data)
-          constraints.distribute_local_to_global(face.matrix, face.rhs, face.dof_indices, matrix, rhs);
+        if (assemble_matrix) {
+          constraints.distribute_local_to_global(copy.cell_matrix, copy.cell_rhs, copy.cell_dof_indices, matrix, rhs);
+          for (const auto &face : copy.face_data)
+            constraints.distribute_local_to_global(face.matrix, face.rhs, face.dof_indices, matrix, rhs);
+        } else {
+          constraints.distribute_local_to_global(copy.cell_rhs, copy.cell_dof_indices, rhs);
+          for (const auto &face : copy.face_data)
+            constraints.distribute_local_to_global(face.rhs, face.dof_indices, rhs);
+        }
       };
       const auto face_worker = [&](const Iterator &potential_cell, const uint &face_no, const uint &subface_no,
                                    const Iterator &potential_neighbor, const uint &neighbor_face_no,
@@ -540,8 +647,8 @@ namespace DiFfRG
         solution_fe_values_n.get_function_values(sol, solution_values_n);
 
         const double h_face = std::min(solution_cell->diameter(), solution_neighbor->diameter());
-        const double h_normal = std::min(face_normal_cell_width<dim>(solution_cell, face_no),
-                                         face_normal_cell_width<dim>(solution_neighbor, neighbor_face_no));
+        const double h_normal = std::min(face_normal_cell_width(solution_cell, face_no),
+                                         face_normal_cell_width(solution_neighbor, neighbor_face_no));
         const uint degree = potential_fe.degree;
         const double tau = 10. * (degree + 1.) * (degree + 1.) / h_face;
         const double gradient_jump_weight = smoothing_length * smoothing_length / h_normal;
@@ -560,6 +667,7 @@ namespace DiFfRG
 
             face_data.rhs(i) += -potential_fe_interface_values.JxW(q) * rhs_flux * jump_i;
 
+            if (!assemble_matrix) continue;
             for (uint j = 0; j < n_interface_dofs; ++j) {
               const double jump_j = potential_view.jump_in_values(j, q);
               const Tensor<1, dim> average_grad_j = potential_view.average_of_gradients(j, q);
@@ -786,11 +894,16 @@ namespace DiFfRG
                            const dealii::FiniteElement<dim> &potential_fe, const dealii::Mapping<dim> &mapping,
                            const dealii::Vector<NumberType> &potential, const dealii::Quadrature<dim> &quadrature,
                            const Config::EoMConfig &config,
-                           const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt)
+                           const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt,
+                           const std::map<dealii::types::global_dof_index, dealii::Point<dim>> *cached_support_points =
+                               nullptr)
     {
       PotentialMinimum<dim, NumberType> minimum;
 
-      const auto support_points = DoFTools::map_dofs_to_support_points(mapping, potential_dof_handler);
+      const auto own_support_points = cached_support_points != nullptr
+                                          ? std::map<dealii::types::global_dof_index, dealii::Point<dim>>{}
+                                          : DoFTools::map_dofs_to_support_points(mapping, potential_dof_handler);
+      const auto &support_points = cached_support_points != nullptr ? *cached_support_points : own_support_points;
       for (const auto &dof_and_point : support_points) {
         const auto dof = dof_and_point.first;
         if ((double)potential[dof] < minimum.value) {
@@ -871,7 +984,8 @@ namespace DiFfRG
     ReconstructedRawPotential<dim, typename VectorType::value_type>
     solve_potential(const VectorType &sol, const dealii::DoFHandler<dim> &solution_dof_handler,
                     const dealii::Mapping<dim> &mapping, const GradientFUN &get_gradient,
-                    const Config::EoMConfig &config, std::unique_ptr<dealii::FiniteElement<dim>> potential_fe)
+                    const Config::EoMConfig &config, const PotentialKind kind,
+                    PotentialSystemCache<dim, typename VectorType::value_type> *cache)
     {
       using NumberType = typename VectorType::value_type;
 
@@ -895,46 +1009,58 @@ namespace DiFfRG
       //    at zero -- a singular matrix handed to UMFPACK, or silently wrong readouts.
       //
       // The mesh is replicated at this rung and the solution is a full replica, so a serial copy is
-      // complete and every rank would compute the identical potential from it. The copy costs far
-      // less than the direct factorisation this function already performs on every call.
+      // complete and every rank would compute the identical potential from it.
       const auto &potential_triangulation = serial_mirror(solution_dof_handler.get_triangulation());
 
-      auto potential_dof_handler = std::make_unique<DoFHandler<dim>>(potential_triangulation);
-      potential_dof_handler->distribute_dofs(*potential_fe);
+      // Callers that pass no cache get one that lives for this call only, which is the behaviour this
+      // function had throughout: build everything, factorize, solve, throw it all away.
+      PotentialSystemCache<dim, NumberType> uncached;
+      auto &system = (cache != nullptr ? *cache : uncached).entry(kind);
 
-      AffineConstraints<NumberType> constraints;
-      DoFTools::make_hanging_node_constraints(*potential_dof_handler, constraints);
-      const auto gauge_dof = select_gauge_dof(*potential_dof_handler, constraints, mapping, origin);
-      constraints.add_line(gauge_dof);
-      constraints.set_inhomogeneity(gauge_dof, 0.);
-      constraints.close();
+      const bool rebuild = !system.describes(potential_triangulation, solution_dof_handler, smoothing_length);
+      if (rebuild) {
+        system.finite_element = make_potential_fe<dim>(kind);
+        system.dof_handler = std::make_shared<DoFHandler<dim>>(potential_triangulation);
+        system.dof_handler->distribute_dofs(*system.finite_element);
 
-      DynamicSparsityPattern dsp(potential_dof_handler->n_dofs());
-      DoFTools::make_flux_sparsity_pattern(*potential_dof_handler, dsp, constraints,
-                                           /*keep_constrained_dofs = */ true);
+        system.support_points = DoFTools::map_dofs_to_support_points(mapping, *system.dof_handler);
 
-      SparsityPattern sparsity_pattern;
-      sparsity_pattern.copy_from(dsp);
-      SparseMatrix<NumberType> matrix(sparsity_pattern);
-      Vector<NumberType> rhs(potential_dof_handler->n_dofs());
+        system.constraints.clear();
+        DoFTools::make_hanging_node_constraints(*system.dof_handler, system.constraints);
+        const auto gauge_dof = select_gauge_dof(system.constraints, origin, system.support_points);
+        system.constraints.add_line(gauge_dof);
+        system.constraints.set_inhomogeneity(gauge_dof, 0.);
+        system.constraints.close();
 
-      const uint quadrature_order =
-          std::max<uint>(std::max<uint>(solution_dof_handler.get_fe().degree, potential_fe->degree) + 2, 2);
-      QGauss<dim> quadrature(quadrature_order);
-      QGauss<dim - 1> face_quadrature(quadrature_order);
+        DynamicSparsityPattern dsp(system.dof_handler->n_dofs());
+        DoFTools::make_flux_sparsity_pattern(*system.dof_handler, dsp, system.constraints,
+                                             /*keep_constrained_dofs = */ true);
+        system.matrix.clear();
+        system.sparsity_pattern.copy_from(dsp);
+        system.matrix.reinit(system.sparsity_pattern);
 
-      assemble_potential_system(sol, solution_dof_handler, *potential_dof_handler, *potential_fe, mapping, get_gradient,
-                                quadrature, face_quadrature, constraints, matrix, rhs, smoothing_length);
+        const uint quadrature_order = std::max<uint>(
+            std::max<uint>(solution_dof_handler.get_fe().degree, system.finite_element->degree) + 2, 2);
+        system.quadrature = QGauss<dim>(quadrature_order);
+        system.face_quadrature = QGauss<dim - 1>(quadrature_order);
+      }
 
-      SparseDirectUMFPACK solver;
-      solver.initialize(matrix);
+      Vector<NumberType> rhs(system.dof_handler->n_dofs());
+      assemble_potential_system(sol, solution_dof_handler, *system.dof_handler, *system.finite_element, mapping,
+                                get_gradient, system.quadrature, system.face_quadrature, system.constraints,
+                                system.matrix, rhs, smoothing_length, /*assemble_matrix = */ rebuild);
 
-      Vector<NumberType> potential(potential_dof_handler->n_dofs());
-      solver.vmult(potential, rhs);
-      constraints.distribute(potential);
+      if (rebuild) {
+        system.factorization.initialize(system.matrix);
+        system.note_built_for(potential_triangulation, solution_dof_handler, smoothing_length);
+      }
 
-      return {.finite_element = std::move(potential_fe),
-              .dof_handler = std::move(potential_dof_handler),
+      Vector<NumberType> potential(system.dof_handler->n_dofs());
+      system.factorization.vmult(potential, rhs);
+      system.constraints.distribute(potential);
+
+      return {.finite_element = system.finite_element,
+              .dof_handler = system.dof_handler,
               .values = std::move(potential)};
     }
 
@@ -943,17 +1069,25 @@ namespace DiFfRG
     reconstruct_potential(typename dealii::DoFHandler<dim>::cell_iterator &EoM_cell, const VectorType &sol,
                           const dealii::DoFHandler<dim> &solution_dof_handler, const dealii::Mapping<dim> &mapping,
                           const EoMFUN &get_EoM, const Config::EoMConfig &config,
-                          const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt)
+                          const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt,
+                          PotentialSystemCache<dim, typename VectorType::value_type> *cache = nullptr)
     {
       auto potential =
-          solve_potential(sol, solution_dof_handler, mapping, get_EoM, config, make_eom_potential_fe<dim>());
+          solve_potential(sol, solution_dof_handler, mapping, get_EoM, config, PotentialKind::eom, cache);
 
+      // The minimum search wants the same quadrature the system was assembled with, and the same support
+      // points the gauge choice used. Both come from the cache when there is one: deal.II builds Gauss
+      // points by Newton iteration in long double, and the support point map is one node per DoF.
       const uint quadrature_order =
           std::max<uint>(std::max<uint>(solution_dof_handler.get_fe().degree, potential.finite_element->degree) + 2, 2);
-      QGauss<dim> quadrature(quadrature_order);
+      const std::optional<QGauss<dim>> own_quadrature =
+          cache != nullptr ? std::nullopt : std::optional<QGauss<dim>>(quadrature_order);
+      const auto *system = cache != nullptr ? &cache->entry(PotentialKind::eom) : nullptr;
 
-      const auto minimum = find_potential_minimum(*potential.dof_handler, *potential.finite_element, mapping,
-                                                  potential.values, quadrature, config, initial_guess);
+      const auto minimum = find_potential_minimum(
+          *potential.dof_handler, *potential.finite_element, mapping, potential.values,
+          system != nullptr ? system->quadrature : *own_quadrature, config, initial_guess,
+          system != nullptr ? &system->support_points : nullptr);
       EoM_cell = GridTools::find_active_cell_around_point(solution_dof_handler, minimum.point);
       return {.minimum = minimum.point,
               .finite_element = std::move(potential.finite_element),
@@ -973,12 +1107,13 @@ namespace DiFfRG
   ReconstructedRawPotential<dim, typename VectorType::value_type>
   reconstruct_raw_potential(const VectorType &sol, const dealii::DoFHandler<dim> &dof_handler,
                             const dealii::Mapping<dim> &mapping, const GradientFUN &get_gradient,
-                            const Config::EoMConfig &config)
+                            const Config::EoMConfig &config,
+                            internal::PotentialSystemCache<dim, typename VectorType::value_type> *cache = nullptr)
   {
     static_assert(dim > 0, "A raw spatial potential cannot be reconstructed in zero dimensions.");
     config.validate();
-    return internal::solve_potential(sol, dof_handler, mapping, get_gradient, config,
-                                     internal::make_raw_potential_fe<dim>());
+    return internal::solve_potential(sol, dof_handler, mapping, get_gradient, config, internal::PotentialKind::raw,
+                                     cache);
   }
 
   /** @brief Evaluate a reconstructed raw potential and its first two derivatives at a real-space point. */
@@ -1011,13 +1146,14 @@ namespace DiFfRG
   get_EoM_point_with_potential(typename dealii::DoFHandler<dim>::cell_iterator &EoM_cell, const VectorType &sol,
                                const dealii::DoFHandler<dim> &dof_handler, const dealii::Mapping<dim> &mapping,
                                const EoMFUN &get_EoM, const EoMPFUN &EoM_postprocess, const Config::EoMConfig &config,
-                               const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt)
+                               const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt,
+                               internal::PotentialSystemCache<dim, typename VectorType::value_type> *cache = nullptr)
   {
     config.validate();
     if (config.max_iter == 0) return {.point = internal::get_origin(dof_handler, EoM_cell), .potential = std::nullopt};
 
     auto potential =
-        internal::reconstruct_potential(EoM_cell, sol, dof_handler, mapping, get_EoM, config, initial_guess);
+        internal::reconstruct_potential(EoM_cell, sol, dof_handler, mapping, get_EoM, config, initial_guess, cache);
     auto EoM = potential.minimum;
 
     dealii::Vector<typename VectorType::value_type> values(dof_handler.get_fe().n_components());
@@ -1040,10 +1176,12 @@ namespace DiFfRG
       const double EoM_abs_tol = Config::EoMConfig::default_abs_tol,
       const uint max_iter = Config::EoMConfig::default_max_iter,
       const double EoM_smoothing_length = Config::EoMConfig::default_smoothing_length,
-      const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt)
+      const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt,
+      internal::PotentialSystemCache<dim, typename VectorType::value_type> *cache = nullptr)
   {
     return get_EoM_point_with_potential(EoM_cell, sol, dof_handler, mapping, get_EoM, EoM_postprocess,
-                                        Config::EoMConfig(EoM_abs_tol, max_iter, EoM_smoothing_length), initial_guess);
+                                        Config::EoMConfig(EoM_abs_tol, max_iter, EoM_smoothing_length), initial_guess,
+                                        cache);
   }
 
   /**
@@ -1055,10 +1193,12 @@ namespace DiFfRG
                                    const dealii::DoFHandler<dim> &dof_handler, const dealii::Mapping<dim> &mapping,
                                    const EoMFUN &get_EoM, const EoMPFUN &EoM_postprocess,
                                    const Config::EoMConfig &config,
-                                   const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt)
+                                   const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt,
+                                   internal::PotentialSystemCache<dim, typename VectorType::value_type> *cache =
+                                       nullptr)
   {
     return get_EoM_point_with_potential(EoM_cell, sol, dof_handler, mapping, get_EoM, EoM_postprocess, config,
-                                        initial_guess)
+                                        initial_guess, cache)
         .point;
   }
 

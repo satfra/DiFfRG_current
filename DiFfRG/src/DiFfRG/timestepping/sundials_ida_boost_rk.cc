@@ -53,7 +53,9 @@ namespace DiFfRG
     // sparsity patterns)
     SparseMatrixType spatial_jacobian(assembler->get_sparsity_pattern_jacobian());
     LinearSolver<SparseMatrixType, VectorType> linSolver;
-    const DiagnosticPort jacobian_diagnostic_port = data_out ? data_out->diagnostic_port() : DiagnosticPort{};
+    const bool jacobian_diagnostics_enabled = impl.jacobian_diagnostics && data_out != nullptr;
+    const DiagnosticPort jacobian_diagnostic_port =
+        jacobian_diagnostics_enabled ? data_out->diagnostic_port() : DiagnosticPort{};
     const uint n_FE_dofs = initial_data.block(0).size();
 
     // Create a SUNDIALS IDA object with the right settings for spatial data
@@ -446,13 +448,14 @@ namespace DiFfRG
         console_out(t, "requesting variables", 2, &request_diagnostics);
         request_variables(variable_y, y, t);
         assembler->jacobian(spatial_jacobian, y, 1., y_dot, alpha, 1., variable_y);
-        matrix_diagnostics = analyze_jacobian_matrix(spatial_jacobian);
+        if (jacobian_diagnostics_enabled) matrix_diagnostics = analyze_jacobian_matrix(spatial_jacobian);
         linSolver.init(spatial_jacobian);
 
         const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
         console_out(t, "jacobian construction", 2, &current_diagnostics, calc_timer.lap());
 
-        factorize_with_diagnostics(linSolver, spatial_jacobian, factorization_diagnostics);
+        factorize_with_diagnostics(linSolver, spatial_jacobian, factorization_diagnostics,
+                                   jacobian_diagnostics_enabled);
         if (factorization_diagnostics.factorization_success == 1.) {
           const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
           console_out(t, "jacobian inversion", 3, &current_diagnostics, calc_timer.lap());

@@ -186,6 +186,7 @@ TEST_CASE("solve_scaling_shift recovers the shift exactly", "[common][root_findi
     for (int e = -3; e <= 17; ++e) {
       const double s = std::pow(10., -e);
       const double got = shift_of(s);
+      CAPTURE(e, s, got);
       REQUIRE(std::isfinite(got));
       CHECK(std::abs(got - s) <= 1e-6 * s);
     }
@@ -195,8 +196,13 @@ TEST_CASE("solve_scaling_shift recovers the shift exactly", "[common][root_findi
   {
     // s >> d2 means all three points are clustered far from x_c, where the power law is locally
     // a straight line and the defining difference cancels to noise. The solver must say so.
-    for (int e = 4; e <= 18; ++e)
+    // The call stays inline inside the CHECK_FALSE. Hoisting it into a named double changes
+    // codegen enough under -ffast-math to make e == 4 pass on its own, which would leave this
+    // section green while the guard it exists to check was reverted.
+    for (int e = 4; e <= 18; ++e) {
+      CAPTURE(e);
       CHECK_FALSE(std::isfinite(shift_of(std::pow(10., e))));
+    }
   }
 }
 

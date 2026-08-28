@@ -40,7 +40,9 @@ namespace DiFfRG
     // create jacobian and solver for inverse jacobian
     SparseMatrixType jacobian(assembler->get_sparsity_pattern_jacobian());
     LinearSolver<SparseMatrixType, VectorType> linSolver;
-    const DiagnosticPort jacobian_diagnostic_port = data_out ? data_out->diagnostic_port() : DiagnosticPort{};
+    const bool jacobian_diagnostics_enabled = impl.jacobian_diagnostics && data_out != nullptr;
+    const DiagnosticPort jacobian_diagnostic_port =
+        jacobian_diagnostics_enabled ? data_out->diagnostic_port() : DiagnosticPort{};
 
     // all functions for assembly of the problem and linear solving
     newton.residual = [&](VectorType &res, const VectorType &u) {
@@ -71,12 +73,12 @@ namespace DiFfRG
       try {
         jacobian = 0;
         assembler->jacobian(jacobian, u, tc.get_dt(), 1);
-        matrix_diagnostics = analyze_jacobian_matrix(jacobian);
+        if (jacobian_diagnostics_enabled) matrix_diagnostics = analyze_jacobian_matrix(jacobian);
         linSolver.init(jacobian);
 
         console_out(tc.get_t(), "jacobian construction", 2, nullptr, calc_timer.lap());
 
-        factorize_with_diagnostics(linSolver, jacobian, factorization_diagnostics);
+        factorize_with_diagnostics(linSolver, jacobian, factorization_diagnostics, jacobian_diagnostics_enabled);
         if (factorization_diagnostics.factorization_success == 1.)
           console_out(tc.get_t(), "jacobian inversion", 3, nullptr, calc_timer.lap());
         record_diagnostics();

@@ -117,7 +117,7 @@ namespace DiFfRG
   };
 
   struct ExponentialRegulatorOpts {
-    static constexpr double b = 2.;
+    static constexpr int b = 2;
   };
   /**
    * @brief Implements one of the standard exponential regulators, i.e.
@@ -136,7 +136,10 @@ namespace DiFfRG
    * @tparam b The exponent in the regulator.
    */
   template <class OPTS = ExponentialRegulatorOpts> struct ExponentialRegulator {
-    static constexpr double b = OPTS::b;
+    // INTEGER: every use below goes through powr<b>, whose exponent is a non-type int parameter.
+    // As a double this template never instantiated -- and nothing in the tree instantiated it, so
+    // it never had to.
+    static constexpr int b = OPTS::b;
 
     template <typename NT1, typename NT2> static KOKKOS_INLINE_FUNCTION auto RB(const NT1 k2, const NT2 q2)
     {

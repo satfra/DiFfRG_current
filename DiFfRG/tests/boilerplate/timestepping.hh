@@ -4,6 +4,7 @@
 #include "DiFfRG/discretization/mesh/h_adaptivity.hh"
 #include "DiFfRG/discretization/mesh/no_adaptivity.hh"
 #include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <limits>
@@ -42,7 +43,7 @@ template <typename Model, typename Discretization, typename Assembler, typename 
           bool adapt = false>
 bool run(std::string test_name, double expected_precision, const std::string &required_diagnostic_table = {},
          const double expected_stepper_kind = std::numeric_limits<double>::quiet_NaN(),
-         const std::vector<double> &required_stages = {})
+         const std::vector<double> &required_stages = {}, const bool jacobian_diagnostics = true)
 {
   using namespace dealii;
   using namespace DiFfRG;
@@ -67,8 +68,6 @@ bool run(std::string test_name, double expected_precision, const std::string &re
          {"jacobian_quadrature_factor", 0.5}}},
        {"discretization",
         {{"fe_order", 3},
-         {"mesh_workers", 8},
-         {"batch_size", 64},
          {"overintegration", 0},
          {"output_subdivisions", 2},
 
@@ -88,7 +87,12 @@ bool run(std::string test_name, double expected_precision, const std::string &re
          {"explicit",
           {{"dt", 1e-4}, {"minimal_dt", 1e-6}, {"maximal_dt", 1e-1}, {"abs_tol", 1e-16}, {"rel_tol", 1e-12}}},
          {"implicit",
-          {{"dt", 1e-4}, {"minimal_dt", 1e-6}, {"maximal_dt", 1e-1}, {"abs_tol", 1e-16}, {"rel_tol", 1e-12}}}}},
+          {{"dt", 1e-4},
+           {"minimal_dt", 1e-6},
+           {"maximal_dt", 1e-1},
+           {"abs_tol", 1e-16},
+           {"rel_tol", 1e-12},
+           {"jacobian_diagnostics", jacobian_diagnostics}}}}},
        {"output", {{"verbosity", 0}, {"vtk", false}}}});
 
   const double final_time = config.get_double("/timestepping/final_time");
@@ -111,7 +115,7 @@ bool run(std::string test_name, double expected_precision, const std::string &re
   Discretization discretization(mesh, config, DiFfRG::LogPort{});
   Assembler assembler(discretization, model, config, DiFfRG::LogPort{});
   auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, test_name, test_name);
-  OutputSession<dim, VectorType> data_out(data_out_path, config);
+  OutputSession<Assembler> data_out(data_out_path, config);
 
   const int n_components = Model::Components::count_fe_functions(0);
 
@@ -141,8 +145,12 @@ bool run(std::string test_name, double expected_precision, const std::string &re
   // Validate the results
   bool valid = true;
 
-  if (!required_diagnostic_table.empty()) {
-    const auto table_path = data_out_path.root() / (data_out_path.run_name() + "_" + required_diagnostic_table);
+  const auto table_path = data_out_path.root() / (data_out_path.run_name() + "_" + required_diagnostic_table);
+
+  if (!required_diagnostic_table.empty() && !jacobian_diagnostics) {
+    // Switching the diagnostics off has to suppress the table itself, not just its contents.
+    valid &= !std::filesystem::exists(table_path);
+  } else if (!required_diagnostic_table.empty()) {
     std::ifstream table(table_path);
     std::string header_line, data_line;
     const bool has_header = static_cast<bool>(std::getline(table, header_line));

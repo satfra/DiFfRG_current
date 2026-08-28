@@ -152,8 +152,6 @@ namespace
     return json::value({{"physical", {{"Lambda", 1.0}}},
                         {"discretization",
                          {{"fe_order", 0},
-                          {"mesh_workers", 1},
-                          {"batch_size", 64},
                           {"overintegration", 0},
                           {"output_subdivisions", 1},
                           {"EoM_abs_tol", 1.0e-10},
@@ -283,7 +281,7 @@ namespace
     const std::string output_name =
         "manufactured_advection_diffusion_2D_" + std::to_string(n_cells) + "x" + std::to_string(n_cells);
     auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, output_name, "output");
-    OutputSession<dim, VectorType> data_out(data_out_path, json);
+    OutputSession<Discretization> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     TimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
 

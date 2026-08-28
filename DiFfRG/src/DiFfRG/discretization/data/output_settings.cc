@@ -6,6 +6,7 @@ namespace DiFfRG::Config
 {
   OutputSettings::OutputSettings(const ConfigTree &config)
       : write_vtk(config.get_bool("/output/vtk", true)), write_hdf5(config.get_bool("/output/hdf5", true)),
+        write_json(config.get_bool("/output/json", false)),
         max_pending_frames(config.get_uint("/output/max_pending_frames", 2)),
         subdivisions(config.get_uint("/discretization/output_subdivisions", 1)),
         verbosity(config.get_int("/output/verbosity", 0)),
