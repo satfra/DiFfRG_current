@@ -204,33 +204,41 @@ TEST_CASE("Configured OutputSession keeps data and logs in one path", "[output][
   CHECK(std::filesystem::exists(root / "run_values.csv"));
 }
 
-TEST_CASE("RunReporter aggregates progress below verbosity five", "[output][reporter][rate-limit]")
+TEST_CASE("RunReporter aggregates progress every second below verbosity five", "[output][reporter][rate-limit]")
 {
   auto path = DiFfRG::OutputPath::temporary();
   auto settings = output_settings();
   settings.verbosity = 2;
 
-  {
-    DiFfRG::RunReporter reporter(path, settings, true);
-    auto report = reporter.port();
-    for (int i = 0; i < 3; ++i) {
-      DiFfRG::ProgressEvent event;
-      event.topic = DiFfRG::progress_topics::implicit_residual;
-      event.time = 0.1 * i;
-      event.duration_ms = 2. + i;
-      event.field("rejects", i, 2).field("debug_only", i, 5);
-      report.progress(event);
-    }
-    DiFfRG::ProgressEvent hidden;
-    hidden.topic = DiFfRG::progress_topics::output;
-    hidden.minimum_verbosity = 3;
-    report.progress(hidden);
-    DiFfRG::SummaryEvent summary{.component = "custom"};
-    summary.timing("setup", 1.25, 2).timing("solve", 3.5, 4);
-    report.summary(summary);
+  DiFfRG::RunReporter reporter(path, settings, true);
+  auto report = reporter.port();
+  for (int i = 0; i < 3; ++i) {
+    DiFfRG::ProgressEvent event;
+    event.topic = DiFfRG::progress_topics::implicit_residual;
+    event.time = 0.1 * i;
+    event.duration_ms = 2. + i;
+    event.field("rejects", i, 2).field("debug_only", i, 5);
+    report.progress(event);
   }
+  DiFfRG::ProgressEvent hidden;
+  hidden.topic = DiFfRG::progress_topics::output;
+  hidden.minimum_verbosity = 3;
+  report.progress(hidden);
+  DiFfRG::SummaryEvent summary{.component = "custom"};
+  summary.timing("setup", 1.25, 2).timing("solve", 3.5, 4);
+  report.summary(summary);
 
-  const auto content = read_file(path.run_file(".log"));
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(2500);
+  std::string content;
+  do {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    content = read_file(path.run_file(".log"));
+  } while (content.find("[res ]") == std::string::npos && std::chrono::steady_clock::now() < deadline);
+
+  REQUIRE_THAT(content, Catch::Matchers::ContainsSubstring("[res ]"));
+  reporter.finish();
+
+  content = read_file(path.run_file(".log"));
   CHECK(count_occurrences(content, "[res ]") == 1);
   CHECK_THAT(content, Catch::Matchers::ContainsSubstring("n=3"));
   CHECK_THAT(content, Catch::Matchers::ContainsSubstring("avg=3"));
