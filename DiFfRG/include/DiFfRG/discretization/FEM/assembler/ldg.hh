@@ -1841,13 +1841,13 @@ namespace DiFfRG
               auto extractor_tuple =
                   std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(solutions_vector),
                                  std::tie(solution_grad[0], solution_hess[0], this->nothing, variables, potential.value,
-                                          potential.gradient, potential.hessian));
+                                          potential.gradient, potential.mass_hessian));
               this->model.extract(__extracted_data, EoM, fe_more_conv(extractor_tuple));
             }
 
             auto solution_tuple = std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(solutions_vector),
                                                  std::tie(solution_grad[0], solution_hess[0], extracted_data, variables,
-                                                          potential.value, potential.gradient, potential.hessian));
+                                                          potential.value, potential.gradient, potential.mass_hessian));
 
             outputter(data_out, EoM, fe_more_conv(solution_tuple));
             data_out.attach_eom_potential(std::move(EoM_result));
@@ -1920,7 +1920,7 @@ namespace DiFfRG
 
         auto solution_tuple = std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(solutions_vector),
                                              std::tie(solution_grad[0], solution_hess[0], this->nothing, variables,
-                                                      potential.value, potential.gradient, potential.hessian));
+                                                      potential.value, potential.gradient, potential.mass_hessian));
 
         model.extract(data, EoM, fe_more_conv(solution_tuple));
       }
@@ -1990,7 +1990,7 @@ namespace DiFfRG
 
         auto solution_tuple = std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(solutions_vector),
                                              std::tie(solution_grad[0], solution_hess[0], this->nothing, variables,
-                                                      potential.value, potential.gradient, potential.hessian));
+                                                      potential.value, potential.gradient, potential.mass_hessian));
 
         extractor_jacobian_u = 0;
         model.template jacobian_extractors<0>(extractor_jacobian_u, EoM, fe_more_conv(solution_tuple));

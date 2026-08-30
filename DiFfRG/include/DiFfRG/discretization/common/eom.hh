@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <deque>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -85,21 +86,39 @@ namespace DiFfRG
    * Its additive gauge is fixed at the mesh origin. Consequently, value differences and all derivatives are
    * gauge-independent, while the absolute value uses the convention U(origin) = 0.
    */
+  /** @brief Optional auxiliary field used only for mass extraction from FV data. */
+  template <int dim, typename NumberType> struct RecoveredMassHessian {
+    std::unique_ptr<dealii::FiniteElement<dim>> finite_element;
+    std::unique_ptr<dealii::DoFHandler<dim>> dof_handler;
+    std::array<dealii::Vector<NumberType>, dim * dim> values;
+    std::vector<dealii::Point<dim>> sample_centers;
+    std::vector<dealii::Tensor<2, dim, NumberType>> samples;
+    std::vector<std::vector<uint>> neighbors;
+    std::vector<std::vector<double>> face_weights;
+    std::vector<std::vector<uint>> kink_faces_by_cell;
+    std::vector<dealii::Point<dim>> kink_face_centers;
+    std::vector<dealii::Tensor<1, dim>> kink_face_normals;
+    std::vector<double> kink_face_widths;
+    std::vector<double> kink_face_strengths;
+  };
+
   template <int dim, typename NumberType> struct ReconstructedRawPotential {
     std::unique_ptr<dealii::FiniteElement<dim>> finite_element;
     std::unique_ptr<dealii::DoFHandler<dim>> dof_handler;
     dealii::Vector<NumberType> values;
+    std::unique_ptr<RecoveredMassHessian<dim, NumberType>> recovered_mass_hessian;
   };
 
   template <typename NumberType> struct ReconstructedRawPotential<0, NumberType> {
     dealii::Vector<NumberType> values;
   };
 
-  /** @brief Value and first two derivatives of a reconstructed raw scalar potential at one point. */
+  /** @brief Reconstructed potential data and the explicitly separate Hessian used for mass extraction. */
   template <int dim, typename NumberType> struct RawPotentialEvaluation {
     NumberType value{};
     dealii::Tensor<1, dim, NumberType> gradient;
-    dealii::Tensor<2, dim, NumberType> hessian;
+    dealii::Tensor<2, dim, NumberType> potential_hessian;
+    dealii::Tensor<2, dim, NumberType> mass_hessian;
   };
 
   template <typename NumberType> struct ReconstructedEoMPotential<0, NumberType> {
@@ -255,9 +274,9 @@ namespace DiFfRG
       return std::make_unique<FE_Q<dim>>(2);
     }
 
-    template <int dim> std::unique_ptr<dealii::FiniteElement<dim>> make_raw_potential_fe()
+    template <int dim> std::unique_ptr<dealii::FiniteElement<dim>> make_raw_potential_fe(const uint order = 2)
     {
-      return std::make_unique<FE_Q<dim>>(2);
+      return std::make_unique<FE_Q<dim>>(order);
     }
 
     template <int dim, typename EoMValue> dealii::Tensor<1, dim> eom_to_tensor(const EoMValue &eom)
@@ -356,6 +375,284 @@ namespace DiFfRG
         for (uint d = 0; d < dim; ++d)
           value[component] += model.jacobian[component][d] * (point[d] - model.center[d]);
       return value;
+    }
+
+    template <int dim, typename NumberType>
+    dealii::Tensor<2, dim, NumberType> symmetric_jacobian(const DG0GradientModel<dim, NumberType> &model)
+    {
+      dealii::Tensor<2, dim, NumberType> hessian;
+      for (uint d = 0; d < dim; ++d)
+        for (uint e = 0; e < dim; ++e)
+          hessian[d][e] = 0.5 * (model.jacobian[d][e] + model.jacobian[e][d]);
+      return hessian;
+    }
+
+    template <int dim> struct HessianJumpCompatibility {
+      double relative_jump = 0.;
+      double rank_one_confidence = 0.;
+      bool is_rank_one = false;
+      dealii::Tensor<1, dim> normal;
+    };
+
+    inline constexpr double minimum_rank_one_confidence = 0.5;
+
+    /** Measure whether a Hessian jump is compatible with a C1 scalar potential across a smooth interface. */
+    template <int dim, typename NumberType>
+    HessianJumpCompatibility<dim> hessian_jump_compatibility(const dealii::Tensor<2, dim, NumberType> &left,
+                                                             const dealii::Tensor<2, dim, NumberType> &right,
+                                                             const dealii::Tensor<1, dim> &coordinate_scale)
+    {
+      Eigen::Matrix<double, dim, dim> jump;
+      Eigen::Matrix<double, dim, dim> average;
+      for (uint d = 0; d < dim; ++d)
+        for (uint e = 0; e < dim; ++e) {
+          jump(d, e) = coordinate_scale[d] * static_cast<double>(right[d][e] - left[d][e]) * coordinate_scale[e];
+          average(d, e) =
+              0.5 * coordinate_scale[d] * static_cast<double>(right[d][e] + left[d][e]) * coordinate_scale[e];
+        }
+
+      Eigen::SelfAdjointEigenSolver<Eigen::Matrix<double, dim, dim>> eigensolver(jump);
+      if (eigensolver.info() != Eigen::Success) return {};
+
+      uint leading = 0;
+      double leading_value = 0.;
+      double remainder_square = 0.;
+      for (uint i = 0; i < dim; ++i) {
+        const double value = std::abs(eigensolver.eigenvalues()[i]);
+        if (value > leading_value) {
+          remainder_square += leading_value * leading_value;
+          leading_value = value;
+          leading = i;
+        } else {
+          remainder_square += value * value;
+        }
+      }
+
+      HessianJumpCompatibility<dim> result;
+      const double epsilon = std::numeric_limits<double>::epsilon();
+      result.relative_jump = jump.norm() / std::max(average.norm(), epsilon);
+      result.rank_one_confidence =
+          std::clamp(1. - std::sqrt(remainder_square) / std::max(leading_value, epsilon), 0., 1.);
+      result.is_rank_one = leading_value > epsilon && result.rank_one_confidence >= minimum_rank_one_confidence;
+      for (uint d = 0; d < dim; ++d)
+        result.normal[d] = eigensolver.eigenvectors()(d, leading) / std::max(coordinate_scale[d], epsilon);
+      const double normal_norm = result.normal.norm();
+      if (normal_norm > 0.) result.normal /= normal_norm;
+      return result;
+    }
+
+    template <int dim, typename NumberType>
+    void prepare_eom_side_hessian_recovery(ReconstructedRawPotential<dim, NumberType> &potential,
+                                           const std::vector<DG0GradientModel<dim, NumberType>> &models,
+                                           const dealii::DoFHandler<dim> &solution_dof_handler,
+                                           const double jump_threshold)
+    {
+      using Iterator = typename dealii::DoFHandler<dim>::active_cell_iterator;
+      const uint n_cells = models.size();
+      std::vector<Iterator> cells(n_cells);
+      std::vector<dealii::Tensor<1, dim>> coordinate_scales(n_cells);
+      auto &recovery = *potential.recovered_mass_hessian;
+
+      recovery.sample_centers.resize(n_cells);
+      recovery.samples.resize(n_cells);
+      recovery.neighbors.resize(n_cells);
+      recovery.face_weights.resize(n_cells);
+      recovery.kink_faces_by_cell.resize(n_cells);
+
+      for (const auto &cell : solution_dof_handler.active_cell_iterators()) {
+        const uint index = cell->active_cell_index();
+        cells[index] = cell;
+        recovery.sample_centers[index] = models[index].center;
+        recovery.samples[index] = symmetric_jacobian(models[index]);
+        for (uint d = 0; d < dim; ++d) {
+          double lower = std::numeric_limits<double>::max();
+          double upper = -std::numeric_limits<double>::max();
+          for (uint vertex = 0; vertex < cell->n_vertices(); ++vertex) {
+            lower = std::min(lower, cell->vertex(vertex)[d]);
+            upper = std::max(upper, cell->vertex(vertex)[d]);
+          }
+          coordinate_scales[index][d] = std::max(upper - lower, std::numeric_limits<double>::epsilon());
+        }
+      }
+
+      for (uint index = 0; index < n_cells; ++index) {
+        std::vector<Iterator> neighbors;
+        dealii::GridTools::get_active_neighbors<dealii::DoFHandler<dim>>(cells[index], neighbors);
+        for (const auto &neighbor : neighbors) {
+          const uint neighbor_index = neighbor->active_cell_index();
+          dealii::Tensor<1, dim> scale;
+          for (uint d = 0; d < dim; ++d)
+            scale[d] = 0.5 * (coordinate_scales[index][d] + coordinate_scales[neighbor_index][d]);
+          const auto compatibility =
+              hessian_jump_compatibility(recovery.samples[index], recovery.samples[neighbor_index], scale);
+          const double strength =
+              compatibility.is_rank_one ? compatibility.relative_jump * compatibility.rank_one_confidence : 0.;
+          const double ratio = strength / std::max(jump_threshold, std::numeric_limits<double>::epsilon());
+          const double face_weight = jump_threshold <= 0. ? (strength > 0. ? 0. : 1.) : 1. / (1. + std::pow(ratio, 6.));
+          recovery.neighbors[index].push_back(neighbor_index);
+          recovery.face_weights[index].push_back(face_weight);
+          if (index < neighbor_index && face_weight < 1. - 1e-8) {
+            const auto separation = recovery.sample_centers[neighbor_index] - recovery.sample_centers[index];
+            const double width = separation.norm();
+            if (width > 0.) {
+              const uint face_index = recovery.kink_face_centers.size();
+              recovery.kink_face_centers.push_back(
+                  0.5 * (recovery.sample_centers[index] + recovery.sample_centers[neighbor_index]));
+              recovery.kink_face_normals.push_back(compatibility.normal);
+              recovery.kink_face_widths.push_back(width);
+              recovery.kink_face_strengths.push_back(1. - face_weight);
+              recovery.kink_faces_by_cell[index].push_back(face_index);
+              recovery.kink_faces_by_cell[neighbor_index].push_back(face_index);
+            }
+          }
+        }
+      }
+    }
+
+    template <int dim> struct EoMSideHessianBlend {
+      double weight = 0.;
+      dealii::Tensor<1, dim> normal;
+    };
+
+    /** Smoothly localize the one-sided recovery to the detected non-analytic faces. */
+    template <int dim, typename NumberType>
+    EoMSideHessianBlend<dim> eom_side_hessian_blend(const ReconstructedRawPotential<dim, NumberType> &potential,
+                                                    const uint root_cell, const dealii::Point<dim> &point)
+    {
+      EoMSideHessianBlend<dim> result;
+      if (!potential.recovered_mass_hessian) return result;
+      const auto &recovery = *potential.recovered_mass_hessian;
+      if (root_cell >= recovery.kink_faces_by_cell.size()) return result;
+      for (const uint face : recovery.kink_faces_by_cell[root_cell]) {
+        const double width = recovery.kink_face_widths[face];
+        const double distance = point.distance(recovery.kink_face_centers[face]);
+        const double radius = 1.5 * width;
+        const double weight =
+            recovery.kink_face_strengths[face] * std::exp(-0.5 * distance * distance / (radius * radius));
+        if (weight > result.weight) {
+          result.weight = weight;
+          result.normal = recovery.kink_face_normals[face];
+        }
+      }
+      result.weight = std::clamp(result.weight, 0., 1.);
+      return result;
+    }
+
+    /**
+     * Recover the cellwise FV Hessians into a continuous Q1 tensor field.
+     *
+     * Each vertex receives the unbiased mean of all incident-cell Hessians. This removes
+     * cell-face resets without introducing a preferred coordinate direction.
+     */
+    template <int dim, typename NumberType>
+    void recover_continuous_hessian_field(ReconstructedRawPotential<dim, NumberType> &potential,
+                                          const std::vector<DG0GradientModel<dim, NumberType>> &models,
+                                          const dealii::DoFHandler<dim> &solution_dof_handler)
+    {
+      potential.recovered_mass_hessian = std::make_unique<RecoveredMassHessian<dim, NumberType>>();
+      auto &recovery = *potential.recovered_mass_hessian;
+      recovery.finite_element = std::make_unique<dealii::FE_Q<dim>>(1);
+      recovery.dof_handler = std::make_unique<dealii::DoFHandler<dim>>(solution_dof_handler.get_triangulation());
+      recovery.dof_handler->distribute_dofs(*recovery.finite_element);
+
+      const auto n_dofs = recovery.dof_handler->n_dofs();
+      std::vector<std::vector<uint>> incident_cells(n_dofs);
+      std::vector<dealii::types::global_dof_index> local_dof_indices(recovery.finite_element->n_dofs_per_cell());
+      for (const auto &cell : recovery.dof_handler->active_cell_iterators()) {
+        cell->get_dof_indices(local_dof_indices);
+        for (const auto dof : local_dof_indices)
+          incident_cells[dof].push_back(cell->active_cell_index());
+      }
+
+      for (auto &values : recovery.values)
+        values.reinit(n_dofs);
+
+      for (dealii::types::global_dof_index dof = 0; dof < n_dofs; ++dof) {
+        const auto &cells = incident_cells[dof];
+        if (cells.empty()) continue;
+
+        for (uint derivative_direction = 0; derivative_direction < dim; ++derivative_direction) {
+          dealii::Tensor<1, dim, NumberType> mean_trace;
+
+          for (const auto cell_index : cells) {
+            const auto hessian = symmetric_jacobian(models[cell_index]);
+            dealii::Tensor<1, dim, NumberType> trace;
+            for (uint component = 0; component < dim; ++component)
+              trace[component] = hessian[component][derivative_direction];
+            mean_trace += trace;
+          }
+          mean_trace /= static_cast<double>(cells.size());
+          for (uint component = 0; component < dim; ++component)
+            recovery.values[component * dim + derivative_direction][dof] = mean_trace[component];
+        }
+      }
+
+      dealii::AffineConstraints<NumberType> constraints;
+      dealii::DoFTools::make_hanging_node_constraints(*recovery.dof_handler, constraints);
+      constraints.close();
+      for (auto &values : recovery.values)
+        constraints.distribute(values);
+    }
+
+    /** Average a symmetric Hessian over the face-connected smooth component containing the evaluation point. */
+    template <int dim, typename NumberType>
+    std::optional<dealii::Tensor<2, dim, NumberType>>
+    evaluate_eom_side_hessian(const ReconstructedRawPotential<dim, NumberType> &potential, const uint root_cell,
+                              const dealii::Point<dim> &point)
+    {
+      if (!potential.recovered_mass_hessian) return std::nullopt;
+      const auto &recovery = *potential.recovered_mass_hessian;
+      if (root_cell >= recovery.neighbors.size()) return std::nullopt;
+
+      struct ConnectedCell {
+        uint index;
+        uint depth;
+        double connectivity;
+      };
+      std::vector<ConnectedCell> connected_cells{{root_cell, 0, 1.}};
+      std::deque<uint> frontier{0};
+      constexpr uint max_depth = 3;
+      while (!frontier.empty()) {
+        const uint connected_index = frontier.front();
+        frontier.pop_front();
+        const auto current = connected_cells[connected_index];
+        if (current.depth == max_depth) continue;
+        for (uint edge = 0; edge < recovery.neighbors[current.index].size(); ++edge) {
+          const uint neighbor = recovery.neighbors[current.index][edge];
+          const double candidate = current.connectivity * recovery.face_weights[current.index][edge];
+          const auto existing = std::find_if(connected_cells.begin(), connected_cells.end(),
+                                             [neighbor](const auto &cell) { return cell.index == neighbor; });
+          if (existing != connected_cells.end()) {
+            if (candidate <= existing->connectivity + 1e-12) continue;
+            existing->depth = current.depth + 1;
+            existing->connectivity = candidate;
+            frontier.push_back(std::distance(connected_cells.begin(), existing));
+          } else if (candidate >= 1e-6) {
+            connected_cells.push_back({neighbor, current.depth + 1, candidate});
+            frontier.push_back(connected_cells.size() - 1);
+          }
+        }
+      }
+
+      double nearest_distance = std::numeric_limits<double>::max();
+      for (const uint neighbor : recovery.neighbors[root_cell])
+        nearest_distance =
+            std::min(nearest_distance, recovery.sample_centers[root_cell].distance(recovery.sample_centers[neighbor]));
+      if (!std::isfinite(nearest_distance)) return std::nullopt;
+      const double fit_radius = 1.5 * nearest_distance;
+      dealii::Tensor<2, dim, NumberType> hessian;
+      double weight_sum = 0.;
+      for (const auto &cell : connected_cells) {
+        const double distance = point.distance(recovery.sample_centers[cell.index]);
+        const double spatial_weight = std::exp(-0.5 * distance * distance / (fit_radius * fit_radius));
+        const double weight = cell.connectivity * spatial_weight;
+        if (weight < 1e-8) continue;
+        hessian += weight * recovery.samples[cell.index];
+        weight_sum += weight;
+      }
+      if (!(weight_sum > 0.)) return std::nullopt;
+      hessian /= weight_sum;
+      return hessian;
     }
 
     template <int dim, typename NumberType> struct PotentialAssemblyScratch {
@@ -943,11 +1240,24 @@ namespace DiFfRG
   {
     static_assert(dim > 0, "A raw spatial potential cannot be reconstructed in zero dimensions.");
     config.validate();
-    return internal::solve_potential(sol, dof_handler, mapping, get_gradient, config,
-                                     internal::make_raw_potential_fe<dim>());
+    auto potential = internal::solve_potential(sol, dof_handler, mapping, get_gradient, config,
+                                               internal::make_raw_potential_fe<dim>(config.raw_potential_order));
+    if (config.raw_potential_recover_mass_hessian && dof_handler.get_fe().degree == 0) {
+      const auto models = internal::recover_dg0_gradient_models(sol, dof_handler, mapping, get_gradient);
+      internal::recover_continuous_hessian_field(potential, models, dof_handler);
+      if (config.raw_potential_mass_hessian_jump_threshold >= 0.)
+        internal::prepare_eom_side_hessian_recovery(potential, models, dof_handler,
+                                                    config.raw_potential_mass_hessian_jump_threshold);
+    }
+    return potential;
   }
 
-  /** @brief Evaluate a reconstructed raw potential and its first two derivatives at a real-space point. */
+  /**
+   * @brief Evaluate a reconstructed raw potential and its mass-extraction Hessian at a real-space point.
+   *
+   * `potential_hessian` is exactly the second derivative of `value`. `mass_hessian` equals it unless FV mass-Hessian
+   * recovery was requested, in which case it contains the independently recovered tensor intended for observables.
+   */
   template <int dim, typename NumberType>
   RawPotentialEvaluation<dim, NumberType>
   evaluate_raw_potential(const ReconstructedRawPotential<dim, NumberType> &potential,
@@ -961,11 +1271,35 @@ namespace DiFfRG
 
     std::vector<NumberType> values(1);
     std::vector<dealii::Tensor<1, dim, NumberType>> gradients(1);
-    std::vector<dealii::Tensor<2, dim, NumberType>> hessians(1);
+    std::vector<dealii::Tensor<2, dim, NumberType>> potential_hessians(1);
     fe_values.get_function_values(potential.values, values);
     fe_values.get_function_gradients(potential.values, gradients);
-    fe_values.get_function_hessians(potential.values, hessians);
-    return {.value = values[0], .gradient = gradients[0], .hessian = hessians[0]};
+    fe_values.get_function_hessians(potential.values, potential_hessians);
+    auto mass_hessian = potential_hessians[0];
+    if (potential.recovered_mass_hessian) {
+      const auto &recovery = *potential.recovered_mass_hessian;
+      const auto hessian_cell = internal::matching_dof_cell(*recovery.dof_handler, cell);
+      dealii::FEValues<dim> hessian_fe_values(mapping, *recovery.finite_element, unit_point, dealii::update_values);
+      hessian_fe_values.reinit(hessian_cell);
+      for (uint d = 0; d < dim; ++d)
+        for (uint e = 0; e < dim; ++e) {
+          std::vector<NumberType> component_values(1);
+          hessian_fe_values.get_function_values(recovery.values[d * dim + e], component_values);
+          mass_hessian[d][e] = component_values[0];
+        }
+      mass_hessian = 0.5 * (mass_hessian + transpose(mass_hessian));
+      if (const auto eom_side_hessian =
+              internal::evaluate_eom_side_hessian(potential, cell->active_cell_index(), point)) {
+        const auto blend = internal::eom_side_hessian_blend(potential, cell->active_cell_index(), point);
+        const auto correction = *eom_side_hessian - mass_hessian;
+        const double normal_correction = blend.normal * correction * blend.normal;
+        mass_hessian += blend.weight * normal_correction * outer_product(blend.normal, blend.normal);
+      }
+    }
+    return {.value = values[0],
+            .gradient = gradients[0],
+            .potential_hessian = potential_hessians[0],
+            .mass_hessian = mass_hessian};
   }
 
   /**

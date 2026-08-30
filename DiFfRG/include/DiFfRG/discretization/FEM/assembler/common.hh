@@ -189,12 +189,12 @@ namespace DiFfRG
           if constexpr (Components::count_extractors() > 0)
             model.extract(__extracted_data, EoM,
                           e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables, potential.value,
-                                potential.gradient, potential.hessian));
+                                potential.gradient, potential.mass_hessian));
           const auto &extracted_data = __extracted_data;
 
           outputter(data_out, EoM,
                     e_tie(solution[0], solution_grad[0], solution_hess[0], extracted_data, variables, potential.value,
-                          potential.gradient, potential.hessian));
+                          potential.gradient, potential.mass_hessian));
           data_out.attach_eom_potential(std::move(EoM_result));
         } else {
           internal::validate_readout_helper_arity<decltype(args)...>();
@@ -247,7 +247,7 @@ namespace DiFfRG
       const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
       model.extract(data, EoM,
                     e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables, potential.value,
-                          potential.gradient, potential.hessian));
+                          potential.gradient, potential.mass_hessian));
     }
 
     bool jacobian_extractors(FullMatrix<NumberType> &extractor_jacobian, const VectorType &solution_global,
@@ -310,13 +310,13 @@ namespace DiFfRG
       extractor_jacobian_ddu = 0;
       model.template jacobian_extractors<0>(extractor_jacobian_u, EoM,
                                             e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables,
-                                                  potential.value, potential.gradient, potential.hessian));
+                                                  potential.value, potential.gradient, potential.mass_hessian));
       model.template jacobian_extractors<1>(extractor_jacobian_du, EoM,
                                             e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables,
-                                                  potential.value, potential.gradient, potential.hessian));
+                                                  potential.value, potential.gradient, potential.mass_hessian));
       model.template jacobian_extractors<2>(extractor_jacobian_ddu, EoM,
                                             e_tie(solution[0], solution_grad[0], solution_hess[0], nothing, variables,
-                                                  potential.value, potential.gradient, potential.hessian));
+                                                  potential.value, potential.gradient, potential.mass_hessian));
 
       if (extractor_jacobian.m() != Components::count_extractors() || extractor_jacobian.n() != n_dofs)
         extractor_jacobian = FullMatrix<NumberType>(Components::count_extractors(), n_dofs);

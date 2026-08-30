@@ -717,11 +717,11 @@ namespace DiFfRG
                 model.extract(extracted_data, EoM,
                               e_tie(extractor_solution.values, extractor_solution.gradients,
                                     extractor_solution.hessians, nothing, variables, potential.value,
-                                    potential.gradient, potential.hessian));
+                                    potential.gradient, potential.mass_hessian));
               }
               outputter(data_out, EoM,
                         e_tie(solution.values, solution.gradients, solution.hessians, extracted_data, variables,
-                              potential.value, potential.gradient, potential.hessian));
+                              potential.value, potential.gradient, potential.mass_hessian));
               data_out.attach_eom_potential(std::move(EoM_result));
             } else {
               DiFfRG::internal::validate_readout_helper_arity<decltype(args)...>();
@@ -821,7 +821,7 @@ namespace DiFfRG
           const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
           model.extract(data, EoM,
                         e_tie(solution.values, solution.gradients, solution.hessians, nothing, variables,
-                              potential.value, potential.gradient, potential.hessian));
+                              potential.value, potential.gradient, potential.mass_hessian));
         }
 
         virtual void mass(VectorType &mass, const VectorType &solution_global, const VectorType &solution_global_dot,
