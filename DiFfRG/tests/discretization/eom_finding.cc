@@ -4,7 +4,10 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <iostream>
 #include <limits>
+#include <string_view>
+#include <vector>
 
 #include <deal.II/grid/grid_generator.h>
 
@@ -239,6 +242,94 @@ namespace
     }
   };
 
+  class CubicGradientModel : public def::AbstractModel<CubicGradientModel, typename Testing::compFactory<1>::value>,
+                             public def::Time,
+                             public def::NoNumFlux<CubicGradientModel>,
+                             public def::FlowBoundaries<CubicGradientModel>,
+                             public def::AD<CubicGradientModel>
+  {
+  public:
+    template <typename Vector> void initial_condition(const Point<1> &point, Vector &values) const
+    {
+      values[0] = point[0] * point[0] * point[0];
+    }
+  };
+
+  class KinkedRadialPotentialGradientModel
+      : public def::AbstractModel<KinkedRadialPotentialGradientModel, typename Testing::compFactory<2>::value>,
+        public def::Time,
+        public def::NoNumFlux<KinkedRadialPotentialGradientModel>,
+        public def::FlowBoundaries<KinkedRadialPotentialGradientModel>,
+        public def::AD<KinkedRadialPotentialGradientModel>
+  {
+  public:
+    static constexpr double mass_square = 0.08;
+    static constexpr double inner_slope = 0.15;
+    static constexpr double outer_slope = 1.6;
+    static constexpr double kink_radius = 0.437;
+    static constexpr double kink_rho = 0.5 * kink_radius * kink_radius;
+
+    template <typename Vector> void initial_condition(const Point<2> &point, Vector &values) const
+    {
+      const double radius_square = point[0] * point[0] + point[1] * point[1];
+      const double transverse_mass = transverse_mass_square(radius_square);
+      values[0] = transverse_mass * point[0];
+      values[1] = transverse_mass * point[1];
+    }
+
+    static double transverse_mass_square(const double radius_square)
+    {
+      const double rho = 0.5 * radius_square;
+      if (rho <= kink_rho) return mass_square + inner_slope * rho;
+      return mass_square + inner_slope * kink_rho + outer_slope * (rho - kink_rho);
+    }
+
+    static double radial_mass_square(const double radius_square)
+    {
+      const double rho = 0.5 * radius_square;
+      const double slope = rho <= kink_rho ? inner_slope : outer_slope;
+      return transverse_mass_square(radius_square) + 2. * rho * slope;
+    }
+  };
+
+  struct AccuracyMetrics {
+    double rms = 0.;
+    double max_abs = 0.;
+    double bias = 0.;
+    double roughness_rms = 0.;
+  };
+
+  AccuracyMetrics accuracy_metrics(const std::vector<double> &values, const std::vector<double> &exact)
+  {
+    REQUIRE(values.size() == exact.size());
+    REQUIRE(values.size() >= 3);
+
+    AccuracyMetrics metrics;
+    std::vector<double> error(values.size());
+    for (uint i = 0; i < values.size(); ++i) {
+      error[i] = values[i] - exact[i];
+      metrics.rms += error[i] * error[i];
+      metrics.max_abs = std::max(metrics.max_abs, std::abs(error[i]));
+      metrics.bias += error[i];
+    }
+    metrics.rms = std::sqrt(metrics.rms / static_cast<double>(error.size()));
+    metrics.bias /= static_cast<double>(error.size());
+    for (uint i = 1; i + 1 < error.size(); ++i) {
+      const double second_difference = error[i + 1] - 2. * error[i] + error[i - 1];
+      metrics.roughness_rms += second_difference * second_difference;
+    }
+    metrics.roughness_rms = std::sqrt(metrics.roughness_rms / static_cast<double>(error.size() - 2));
+    return metrics;
+  }
+
+  void print_accuracy(const std::string_view profile, const uint refinement, const std::string_view method,
+                      const AccuracyMetrics &metrics)
+  {
+    std::cout << "mass accuracy | " << profile << " | refinement " << refinement << " | " << method
+              << " | rms=" << metrics.rms << " max=" << metrics.max_abs << " bias=" << metrics.bias
+              << " roughness=" << metrics.roughness_rms << '\n';
+  }
+
   template <int dim, template <typename, typename, typename> typename DiscretizationTemplate, typename Model>
   void check_raw_potential_is_scalar_cg2(const Model &model, const int fe_order)
   {
@@ -453,7 +544,8 @@ TEST_CASE("Raw potential evaluation stays independent of the EoM used to select 
   CHECK(EoM_result.point[0] == Catch::Approx(0.5).margin(1e-8));
   CHECK(raw.value == Catch::Approx(0.05).margin(1e-8));
   CHECK(raw.gradient[0] == Catch::Approx(0.6).margin(1e-8));
-  CHECK(raw.hessian[0][0] == Catch::Approx(2.).margin(1e-8));
+  CHECK(raw.potential_hessian[0][0] == Catch::Approx(2.).margin(1e-8));
+  CHECK(raw.mass_hessian[0][0] == raw.potential_hessian[0][0]);
 
   auto origin_config = config;
   origin_config.max_iter = 0;
@@ -471,7 +563,6 @@ TEST_CASE("Origin-centred FV vacuum keeps the diquark EoM near zero and its raw 
   constexpr uint dim = 2;
   using Model = QMDVacuumModel;
   using Discretization = FV::Discretization<typename Model::Components, double, RectangularMesh<dim>>;
-
   setup_logger();
   auto json = make_json(0);
   json.set_string("/discretization/grid/x_grid", "0:0.005:0.2");
@@ -497,7 +588,7 @@ TEST_CASE("Origin-centred FV vacuum keeps the diquark EoM near zero and its raw 
   const auto raw = evaluate_raw_potential(raw_potential, mapping, EoM_result.point);
   const double h = dof_handler.begin_active()->extent_in_direction(1);
   const double origin_tolerance = 1e-5 * h;
-  const double current_mass_square = raw.hessian[1][1];
+  const double current_mass_square = raw.mass_hessian[1][1];
   const double goldstone_mass_square =
       std::abs(EoM_result.point[1]) <= origin_tolerance ? current_mass_square : raw.gradient[1] / EoM_result.point[1];
 
@@ -505,7 +596,7 @@ TEST_CASE("Origin-centred FV vacuum keeps the diquark EoM near zero and its raw 
   CHECK(EoM_result.point[0] == Catch::Approx(Model::explicit_breaking / Model::sigma_mass_square).margin(h));
   CHECK(std::isfinite(raw.value));
   CHECK(std::isfinite(raw.gradient[1]));
-  CHECK(std::isfinite(raw.hessian[1][1]));
+  CHECK(std::isfinite(raw.mass_hessian[1][1]));
   CHECK(current_mass_square == Catch::Approx(Model::diquark_mass_square).epsilon(0.05));
   CHECK(goldstone_mass_square == Catch::Approx(Model::diquark_mass_square).epsilon(0.05));
 }
@@ -530,8 +621,9 @@ TEST_CASE("Raw-potential reconstruction preserves signed negative curvature",
       [](const Point<dim> &point, const auto &) { return std::array<double, dim>{{-2. * point[0]}}; }, config);
   const auto value = evaluate_raw_potential(raw_potential, mapping, Point<dim>(0.5));
 
-  CHECK(value.hessian[0][0] == Catch::Approx(-2.).margin(1e-10));
-  CHECK(value.hessian[0][0] < 0.);
+  CHECK(value.potential_hessian[0][0] == Catch::Approx(-2.).margin(1e-10));
+  CHECK(value.mass_hessian[0][0] == value.potential_hessian[0][0]);
+  CHECK(value.potential_hessian[0][0] < 0.);
 }
 
 TEST_CASE("Default raw potential gradient copies solution components instead of the physical EoM",
@@ -955,6 +1047,10 @@ TEST_CASE("EoM configuration provides validated typed defaults", "[discretizatio
   CHECK(defaults.bound_tolerance == Config::EoMConfig::default_bound_tolerance);
   CHECK(defaults.armijo_coefficient == Config::EoMConfig::default_armijo_coefficient);
   CHECK(defaults.max_backtracks == Config::EoMConfig::default_max_backtracks);
+  CHECK(defaults.raw_potential_order == Config::EoMConfig::default_raw_potential_order);
+  CHECK(defaults.raw_potential_recover_mass_hessian == Config::EoMConfig::default_raw_potential_recover_mass_hessian);
+  CHECK(defaults.raw_potential_mass_hessian_jump_threshold ==
+        Config::EoMConfig::default_raw_potential_mass_hessian_jump_threshold);
 
   const ConfigTree empty_json = json::value({});
   const Config::EoMConfig from_empty_json(empty_json);
@@ -964,6 +1060,10 @@ TEST_CASE("EoM configuration provides validated typed defaults", "[discretizatio
   CHECK(from_empty_json.bound_tolerance == defaults.bound_tolerance);
   CHECK(from_empty_json.armijo_coefficient == defaults.armijo_coefficient);
   CHECK(from_empty_json.max_backtracks == defaults.max_backtracks);
+  CHECK(from_empty_json.raw_potential_order == defaults.raw_potential_order);
+  CHECK(from_empty_json.raw_potential_recover_mass_hessian == defaults.raw_potential_recover_mass_hessian);
+  CHECK(from_empty_json.raw_potential_mass_hessian_jump_threshold ==
+        defaults.raw_potential_mass_hessian_jump_threshold);
 
   const auto parsed_defaults = json::parse(Config::EoMConfig::get_defaults());
   const Config::EoMConfig from_default_json(parsed_defaults);
@@ -973,14 +1073,21 @@ TEST_CASE("EoM configuration provides validated typed defaults", "[discretizatio
   CHECK(from_default_json.bound_tolerance == defaults.bound_tolerance);
   CHECK(from_default_json.armijo_coefficient == defaults.armijo_coefficient);
   CHECK(from_default_json.max_backtracks == defaults.max_backtracks);
+  CHECK(from_default_json.raw_potential_order == defaults.raw_potential_order);
+  CHECK(from_default_json.raw_potential_recover_mass_hessian == defaults.raw_potential_recover_mass_hessian);
+  CHECK(from_default_json.raw_potential_mass_hessian_jump_threshold ==
+        defaults.raw_potential_mass_hessian_jump_threshold);
 
   const ConfigTree custom_json = json::value({{"discretization",
-                                              {{"EoM_abs_tol", 1e-9},
-                                               {"EoM_max_iter", 17},
-                                               {"EoM_smoothing_length", 0.25},
-                                               {"EoM_bound_tolerance", 1e-10},
-                                               {"EoM_armijo_coefficient", 1e-3},
-                                               {"EoM_max_backtracks", 12}}}});
+                                               {{"EoM_abs_tol", 1e-9},
+                                                {"EoM_max_iter", 17},
+                                                {"EoM_smoothing_length", 0.25},
+                                                {"EoM_bound_tolerance", 1e-10},
+                                                {"EoM_armijo_coefficient", 1e-3},
+                                                {"EoM_max_backtracks", 12},
+                                                {"raw_potential_order", 3},
+                                                {"raw_potential_recover_mass_hessian", true},
+                                                {"raw_potential_mass_hessian_jump_threshold", 0.6}}}});
   const Config::EoMConfig from_custom_json(custom_json);
   CHECK(from_custom_json.abs_tol == 1e-9);
   CHECK(from_custom_json.max_iter == 17);
@@ -988,6 +1095,9 @@ TEST_CASE("EoM configuration provides validated typed defaults", "[discretizatio
   CHECK(from_custom_json.bound_tolerance == 1e-10);
   CHECK(from_custom_json.armijo_coefficient == 1e-3);
   CHECK(from_custom_json.max_backtracks == 12);
+  CHECK(from_custom_json.raw_potential_order == 3);
+  CHECK(from_custom_json.raw_potential_recover_mass_hessian);
+  CHECK(from_custom_json.raw_potential_mass_hessian_jump_threshold == 0.6);
 
   const Config::EoMConfig explicit_config(1e-9, 17, 0.25, 1e-10, 1e-3, 12);
   CHECK(explicit_config.abs_tol == 1e-9);
@@ -1005,6 +1115,258 @@ TEST_CASE("EoM configuration provides validated typed defaults", "[discretizatio
   CHECK_THROWS_AS(Config::EoMConfig(1e-12, 100, -1., 1e-12, 0.), std::invalid_argument);
   CHECK_THROWS_AS(Config::EoMConfig(1e-12, 100, -1., 1e-12, 1.), std::invalid_argument);
   CHECK_THROWS_AS(Config::EoMConfig(1e-12, 100, -1., 1e-12, 1e-4, 0), std::invalid_argument);
+
+  auto invalid_raw_config = defaults;
+  invalid_raw_config.raw_potential_order = 1;
+  CHECK_THROWS_AS(invalid_raw_config.validate(), std::invalid_argument);
+  invalid_raw_config = defaults;
+  invalid_raw_config.raw_potential_mass_hessian_jump_threshold = -0.5;
+  CHECK_THROWS_AS(invalid_raw_config.validate(), std::invalid_argument);
+}
+
+TEST_CASE("Raw-potential mass-Hessian recovery damps FV face resets without changing the potential Hessian",
+          "[discretization][EoM][raw-potential][hessian][fv]")
+{
+  constexpr uint dim = 1;
+  using Model = CubicGradientModel;
+  using Discretization = FV::Discretization<typename Model::Components, double, RectangularMesh<dim>>;
+
+  setup_logger();
+  auto json = make_json(0);
+  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  Discretization discretization(mesh, json);
+  FE::FlowingVariables state(discretization);
+  state.interpolate(Model{});
+
+  const auto gradient = [](const auto &, const auto &values) { return std::array<double, 1>{{values[0]}}; };
+  Config::EoMConfig default_config;
+  default_config.smoothing_length = 0.2;
+  const auto default_potential = reconstruct_raw_potential(state.spatial_data(), discretization.get_dof_handler(),
+                                                           discretization.get_mapping(), gradient, default_config);
+
+  auto regularized_config = default_config;
+  regularized_config.raw_potential_recover_mass_hessian = true;
+  regularized_config.raw_potential_mass_hessian_jump_threshold = 0.35;
+  regularized_config.validate();
+  const auto regularized_potential =
+      reconstruct_raw_potential(state.spatial_data(), discretization.get_dof_handler(), discretization.get_mapping(),
+                                gradient, regularized_config);
+
+  auto continuous_config = regularized_config;
+  continuous_config.raw_potential_mass_hessian_jump_threshold = -1.;
+  const auto continuous_potential =
+      reconstruct_raw_potential(state.spatial_data(), discretization.get_dof_handler(), discretization.get_mapping(),
+                                gradient, continuous_config);
+
+  REQUIRE(default_potential.finite_element->degree == 2);
+  REQUIRE(regularized_potential.finite_element->degree == 2);
+
+  constexpr double epsilon = 1e-7;
+  double max_default_jump = 0.;
+  double max_regularized_jump = 0.;
+  double max_continuous_jump = 0.;
+  double max_potential_hessian_change = 0.;
+  for (uint face = 1; face < 10; ++face) {
+    const double x = 0.1 * face;
+    const auto default_left =
+        evaluate_raw_potential(default_potential, discretization.get_mapping(), Point<dim>(x - epsilon));
+    const auto default_right =
+        evaluate_raw_potential(default_potential, discretization.get_mapping(), Point<dim>(x + epsilon));
+    const auto regularized_left =
+        evaluate_raw_potential(regularized_potential, discretization.get_mapping(), Point<dim>(x - epsilon));
+    const auto regularized_right =
+        evaluate_raw_potential(regularized_potential, discretization.get_mapping(), Point<dim>(x + epsilon));
+    const auto continuous_left =
+        evaluate_raw_potential(continuous_potential, discretization.get_mapping(), Point<dim>(x - epsilon));
+    const auto continuous_right =
+        evaluate_raw_potential(continuous_potential, discretization.get_mapping(), Point<dim>(x + epsilon));
+    max_default_jump =
+        std::max(max_default_jump, std::abs(default_right.mass_hessian[0][0] - default_left.mass_hessian[0][0]));
+    max_regularized_jump = std::max(
+        max_regularized_jump, std::abs(regularized_right.mass_hessian[0][0] - regularized_left.mass_hessian[0][0]));
+    max_continuous_jump = std::max(max_continuous_jump,
+                                   std::abs(continuous_right.mass_hessian[0][0] - continuous_left.mass_hessian[0][0]));
+    max_potential_hessian_change =
+        std::max(max_potential_hessian_change,
+                 std::abs(regularized_right.potential_hessian[0][0] - default_right.potential_hessian[0][0]));
+  }
+
+  CAPTURE(max_default_jump, max_regularized_jump, max_continuous_jump, max_potential_hessian_change);
+  CHECK(max_default_jump > 1e-3);
+  CHECK(max_regularized_jump < max_default_jump);
+  CHECK(max_continuous_jump < 1e-4);
+  CHECK(max_potential_hessian_change < 1e-12);
+}
+
+TEST_CASE("Analytical two-field Hessian-jump potential benchmarks masses beyond the non-analytic surface",
+          "[discretization][EoM][raw-potential][hessian][fv][accuracy][multifield][nonanalytic]")
+{
+  constexpr uint dim = 2;
+  constexpr double angle = 0.35;
+  using Model = KinkedRadialPotentialGradientModel;
+  using Discretization = FV::Discretization<typename Model::Components, double, RectangularMesh<dim>>;
+
+  setup_logger();
+  const auto gradient = [](const auto &, const auto &values) {
+    return std::array<double, dim>{{values[0], values[1]}};
+  };
+  const auto eigenmasses = [](const Tensor<2, dim> &hessian) {
+    const double discriminant = std::sqrt((hessian[0][0] - hessian[1][1]) * (hessian[0][0] - hessian[1][1]) +
+                                          4. * hessian[0][1] * hessian[0][1]);
+    return std::array<double, 2>{
+        {0.5 * (hessian[0][0] + hessian[1][1] - discriminant), 0.5 * (hessian[0][0] + hessian[1][1] + discriminant)}};
+  };
+
+  Tensor<1, dim> analytical_normal;
+  analytical_normal[0] = std::cos(angle);
+  analytical_normal[1] = std::sin(angle);
+  Tensor<2, dim> inner_hessian;
+  Tensor<2, dim> outer_hessian;
+  const double kink_mass = Model::transverse_mass_square(Model::kink_radius * Model::kink_radius);
+  for (uint d = 0; d < dim; ++d)
+    for (uint e = 0; e < dim; ++e) {
+      const double identity = d == e ? kink_mass : 0.;
+      const double position_product =
+          Model::kink_radius * Model::kink_radius * analytical_normal[d] * analytical_normal[e];
+      inner_hessian[d][e] = identity + Model::inner_slope * position_product;
+      outer_hessian[d][e] = identity + Model::outer_slope * position_product;
+    }
+  Tensor<1, dim> unit_scale;
+  for (uint d = 0; d < dim; ++d)
+    unit_scale[d] = 1.;
+  const auto analytical_compatibility =
+      DiFfRG::internal::hessian_jump_compatibility(inner_hessian, outer_hessian, unit_scale);
+  const double normal_alignment = std::abs(analytical_compatibility.normal * analytical_normal);
+
+  auto full_rank_outer_hessian = outer_hessian;
+  full_rank_outer_hessian[0][0] += 0.4;
+  full_rank_outer_hessian[1][1] -= 0.4;
+  const auto full_rank_compatibility =
+      DiFfRG::internal::hessian_jump_compatibility(inner_hessian, full_rank_outer_hessian, unit_scale);
+
+  std::array<AccuracyMetrics, 2> cg2_radial_metrics;
+  std::array<AccuracyMetrics, 2> unbiased_radial_metrics;
+  std::array<AccuracyMetrics, 2> eom_side_radial_metrics;
+  std::array<AccuracyMetrics, 2> gradient_transverse_metrics;
+  std::array<AccuracyMetrics, 2> cg2_transverse_metrics;
+  std::array<AccuracyMetrics, 2> unbiased_transverse_metrics;
+  std::array<AccuracyMetrics, 2> eom_side_transverse_metrics;
+  std::array<AccuracyMetrics, 2> near_cg2_radial_metrics;
+  std::array<AccuracyMetrics, 2> near_unbiased_radial_metrics;
+  std::array<AccuracyMetrics, 2> near_eom_side_radial_metrics;
+
+  constexpr uint near_samples = 46;
+  for (uint refinement = 0; refinement <= 1; ++refinement) {
+    auto json = make_json(0);
+    RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+    mesh.get_triangulation().refine_global(refinement);
+    Discretization discretization(mesh, json);
+    FE::FlowingVariables state(discretization);
+    state.interpolate(Model{});
+
+    Config::EoMConfig cg2_config;
+    const auto cg2 = reconstruct_raw_potential(state.spatial_data(), discretization.get_dof_handler(),
+                                               discretization.get_mapping(), gradient, cg2_config);
+    auto unbiased_config = cg2_config;
+    unbiased_config.raw_potential_recover_mass_hessian = true;
+    unbiased_config.raw_potential_mass_hessian_jump_threshold = -1.;
+    const auto unbiased = reconstruct_raw_potential(state.spatial_data(), discretization.get_dof_handler(),
+                                                    discretization.get_mapping(), gradient, unbiased_config);
+    auto eom_side_config = unbiased_config;
+    eom_side_config.raw_potential_mass_hessian_jump_threshold = 0.35;
+    const auto eom_side = reconstruct_raw_potential(state.spatial_data(), discretization.get_dof_handler(),
+                                                    discretization.get_mapping(), gradient, eom_side_config);
+
+    std::vector<double> exact_radial;
+    std::vector<double> exact_transverse;
+    std::vector<double> cg2_radial;
+    std::vector<double> unbiased_radial;
+    std::vector<double> eom_side_radial;
+    std::vector<double> gradient_transverse;
+    std::vector<double> cg2_transverse;
+    std::vector<double> unbiased_transverse;
+    std::vector<double> eom_side_transverse;
+    for (uint sample = 0; sample <= 200; ++sample) {
+      // This point is the exact EoM of U(phi) - J(phi_EoM) . phi, with
+      // J(phi_EoM) chosen parallel to phi_EoM. The source does not alter either mass.
+      const double radius = Model::kink_radius + 0.01 + 0.002 * sample;
+      const Point<dim> point(radius * std::cos(angle), radius * std::sin(angle));
+      const double radius_square = radius * radius;
+      exact_radial.push_back(Model::radial_mass_square(radius_square));
+      exact_transverse.push_back(Model::transverse_mass_square(radius_square));
+
+      const auto cg2_value = evaluate_raw_potential(cg2, discretization.get_mapping(), point);
+      const auto unbiased_value = evaluate_raw_potential(unbiased, discretization.get_mapping(), point);
+      const auto eom_side_value = evaluate_raw_potential(eom_side, discretization.get_mapping(), point);
+      const auto cg2_masses = eigenmasses(cg2_value.mass_hessian);
+      const auto unbiased_masses = eigenmasses(unbiased_value.mass_hessian);
+      const auto eom_side_masses = eigenmasses(eom_side_value.mass_hessian);
+      cg2_transverse.push_back(cg2_masses[0]);
+      cg2_radial.push_back(cg2_masses[1]);
+      unbiased_transverse.push_back(unbiased_masses[0]);
+      unbiased_radial.push_back(unbiased_masses[1]);
+      eom_side_transverse.push_back(eom_side_masses[0]);
+      eom_side_radial.push_back(eom_side_masses[1]);
+      gradient_transverse.push_back(cg2_value.gradient[0] / point[0]);
+    }
+
+    cg2_radial_metrics[refinement] = accuracy_metrics(cg2_radial, exact_radial);
+    unbiased_radial_metrics[refinement] = accuracy_metrics(unbiased_radial, exact_radial);
+    eom_side_radial_metrics[refinement] = accuracy_metrics(eom_side_radial, exact_radial);
+    gradient_transverse_metrics[refinement] = accuracy_metrics(gradient_transverse, exact_transverse);
+    cg2_transverse_metrics[refinement] = accuracy_metrics(cg2_transverse, exact_transverse);
+    unbiased_transverse_metrics[refinement] = accuracy_metrics(unbiased_transverse, exact_transverse);
+    eom_side_transverse_metrics[refinement] = accuracy_metrics(eom_side_transverse, exact_transverse);
+
+    const auto near_end = [&](const std::vector<double> &values) {
+      return std::vector<double>(values.begin(), values.begin() + near_samples);
+    };
+    const auto near_exact_radial = near_end(exact_radial);
+    near_cg2_radial_metrics[refinement] = accuracy_metrics(near_end(cg2_radial), near_exact_radial);
+    near_unbiased_radial_metrics[refinement] = accuracy_metrics(near_end(unbiased_radial), near_exact_radial);
+    near_eom_side_radial_metrics[refinement] = accuracy_metrics(near_end(eom_side_radial), near_exact_radial);
+
+    print_accuracy("2D post-kink radial", refinement, "CG2 eigenmass", cg2_radial_metrics[refinement]);
+    print_accuracy("2D post-kink radial", refinement, "continuous unbiased eigenmass",
+                   unbiased_radial_metrics[refinement]);
+    print_accuracy("2D post-kink radial", refinement, "EoM-side eigenmass", eom_side_radial_metrics[refinement]);
+    print_accuracy("2D near-kink radial", refinement, "CG2 eigenmass", near_cg2_radial_metrics[refinement]);
+    print_accuracy("2D near-kink radial", refinement, "continuous unbiased eigenmass",
+                   near_unbiased_radial_metrics[refinement]);
+    print_accuracy("2D near-kink radial", refinement, "EoM-side eigenmass", near_eom_side_radial_metrics[refinement]);
+    print_accuracy("2D post-kink transverse", refinement, "gradient/sigma", gradient_transverse_metrics[refinement]);
+    print_accuracy("2D post-kink transverse", refinement, "CG2 eigenmass", cg2_transverse_metrics[refinement]);
+    print_accuracy("2D post-kink transverse", refinement, "continuous unbiased eigenmass",
+                   unbiased_transverse_metrics[refinement]);
+    print_accuracy("2D post-kink transverse", refinement, "EoM-side eigenmass",
+                   eom_side_transverse_metrics[refinement]);
+  }
+
+  const double radial_jump = Model::radial_mass_square(Model::kink_radius * Model::kink_radius + 1e-10) -
+                             Model::radial_mass_square(Model::kink_radius * Model::kink_radius - 1e-10);
+  CAPTURE(radial_jump, analytical_compatibility.relative_jump, analytical_compatibility.rank_one_confidence,
+          normal_alignment, cg2_radial_metrics[0].rms, unbiased_radial_metrics[0].rms, eom_side_radial_metrics[0].rms,
+          near_cg2_radial_metrics[0].rms, near_unbiased_radial_metrics[0].rms, near_eom_side_radial_metrics[0].rms,
+          gradient_transverse_metrics[1].rms, cg2_transverse_metrics[1].rms, unbiased_transverse_metrics[1].rms,
+          eom_side_transverse_metrics[1].rms);
+  CHECK(radial_jump > 0.2);
+  CHECK(analytical_compatibility.is_rank_one);
+  CHECK_FALSE(full_rank_compatibility.is_rank_one);
+  CHECK(analytical_compatibility.rank_one_confidence > 1. - 1e-12);
+  CHECK(normal_alignment > 1. - 1e-12);
+  // The one-sided recovery needs the interface to be resolved: on the coarse mesh the unbiased field can be better.
+  // Require convergence and compare methods only on the refined mesh instead of hiding this resolution limit.
+  CHECK(cg2_radial_metrics[1].rms < cg2_radial_metrics[0].rms);
+  CHECK(unbiased_radial_metrics[1].rms < unbiased_radial_metrics[0].rms);
+  CHECK(eom_side_radial_metrics[1].rms < eom_side_radial_metrics[0].rms);
+  CHECK(unbiased_radial_metrics[1].rms < cg2_radial_metrics[1].rms);
+  CHECK(eom_side_radial_metrics[1].rms < unbiased_radial_metrics[1].rms);
+  CHECK(unbiased_radial_metrics[1].roughness_rms < cg2_radial_metrics[1].roughness_rms);
+  CHECK(eom_side_radial_metrics[1].roughness_rms < cg2_radial_metrics[1].roughness_rms);
+  CHECK(near_eom_side_radial_metrics[1].rms < near_cg2_radial_metrics[1].rms);
+  CHECK(near_eom_side_radial_metrics[1].rms < near_unbiased_radial_metrics[1].rms);
+  CHECK(gradient_transverse_metrics[1].rms < gradient_transverse_metrics[0].rms);
+  CHECK(eom_side_transverse_metrics[1].rms < 1.01 * unbiased_transverse_metrics[1].rms);
 }
 
 TEST_CASE("DG0 gradient recovery gives FV sources off-support moving minima with either smoothing policy",

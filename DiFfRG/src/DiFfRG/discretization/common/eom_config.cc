@@ -22,6 +22,12 @@ namespace DiFfRG::Config
                   config.get_double("/discretization/EoM_armijo_coefficient", default_armijo_coefficient),
                   config.get_uint("/discretization/EoM_max_backtracks", default_max_backtracks))
   {
+    raw_potential_order = config.get_uint("/discretization/raw_potential_order", default_raw_potential_order);
+    raw_potential_recover_mass_hessian = config.get_bool("/discretization/raw_potential_recover_mass_hessian",
+                                                         default_raw_potential_recover_mass_hessian);
+    raw_potential_mass_hessian_jump_threshold = config.get_double(
+        "/discretization/raw_potential_mass_hessian_jump_threshold", default_raw_potential_mass_hessian_jump_threshold);
+    validate();
   }
 
   std::string EoMConfig::get_defaults()
@@ -33,11 +39,15 @@ namespace DiFfRG::Config
     "EoM_smoothing_length": {},
     "EoM_bound_tolerance": {},
     "EoM_armijo_coefficient": {},
-    "EoM_max_backtracks": {}
+    "EoM_max_backtracks": {},
+    "raw_potential_order": {},
+    "raw_potential_recover_mass_hessian": {},
+    "raw_potential_mass_hessian_jump_threshold": {}
   }}
 }})",
                        default_abs_tol, default_max_iter, default_smoothing_length, default_bound_tolerance,
-                       default_armijo_coefficient, default_max_backtracks);
+                       default_armijo_coefficient, default_max_backtracks, default_raw_potential_order,
+                       default_raw_potential_recover_mass_hessian, default_raw_potential_mass_hessian_jump_threshold);
   }
 
   void EoMConfig::validate() const
@@ -51,5 +61,13 @@ namespace DiFfRG::Config
     if (!std::isfinite(armijo_coefficient) || !(armijo_coefficient > 0. && armijo_coefficient < 1.))
       throw std::invalid_argument("EoM_armijo_coefficient must be finite and strictly between zero and one.");
     if (max_backtracks == 0) throw std::invalid_argument("EoM_max_backtracks must be positive.");
+    if (raw_potential_order != 2 && raw_potential_order != 3)
+      throw std::invalid_argument("raw_potential_order must be either 2 or 3.");
+    const auto valid_jump_threshold = [](const double value) {
+      return std::isfinite(value) && (value == -1. || value >= 0.);
+    };
+    if (!valid_jump_threshold(raw_potential_mass_hessian_jump_threshold))
+      throw std::invalid_argument(
+          "raw_potential_mass_hessian_jump_threshold must be -1 (disabled), zero, or positive.");
   }
 } // namespace DiFfRG::Config
