@@ -515,9 +515,13 @@ The readout-specific EoM callback reconstructs a separate scalar CG2 potential a
 raw-potential fields and extractors are then evaluated at that same point for CG, DG, dDG, LDG, and KT-FV. Existing
 `"fe_functions"`, `"fe_derivatives"`, and `"fe_hessians"` entries keep their assembler-specific meanings.
 
-Spatial output writes this common raw reconstruction to `<run>_potential.pvd` with field name `potential`. The
-separate potentials reconstructed from the readout-specific physical EoM callbacks are written to
-`<run>_eom_potential.pvd` with fields `eom_potential`, `eom_potential_1`, and so on.
+Spatial potential output follows the run's common `/output/vtk` and `/output/hdf5` settings. With VTK enabled, the
+common raw reconstruction is written to `<run>_potential.pvd` with field name `potential`; the separate potentials
+reconstructed from the readout-specific physical EoM callbacks are written to `<run>_eom_potential.pvd` with fields
+`eom_potential`, `eom_potential_1`, and so on. With HDF5 enabled, both series share the run's single `<run>.h5` file:
+raw-potential frames are stored under `/potential/<six-digit frame>` and EoM-potential frames under
+`/eom_potential/<six-digit frame>`. Disabling VTK therefore does not disable either potential series when HDF5 remains
+enabled.
 
 A system that consists of variables only (no FE functions) is assembled by `DiFfRG::Variables::Assembler` (spatial dimension `0`) and carried by `DiFfRG::FlowingVariables`; when FE functions are also present the two sectors are coupled and the FEM assembler handles both. Momentum grids are represented by coordinate systems (e.g. `DiFfRG::LogarithmicCoordinates1D`) and evaluated through interpolators (e.g. `DiFfRG::SplineInterpolator1D`); the flow kernels are generated as grid `map` integrators.
 

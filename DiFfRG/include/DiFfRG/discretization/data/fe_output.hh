@@ -69,8 +69,9 @@ namespace DiFfRG
      * owner to close it once per frame -- which is what OutputSession does, since it flushes
      * its HDF5Output sinks after this one. Standalone users, who may never call
      * HDF5Output::flush() at all, keep the default and get a close per frame.
+     * @param group_name Top-level HDF5 group that owns this field series.
      */
-    void set_hdf5_output(HDF5Output *output, bool session_closes_file = false);
+    void set_hdf5_output(HDF5Output *output, bool session_closes_file = false, std::string group_name = "FE");
 
     /** True when flush() would throw everything attached to it away. */
     bool will_discard() const { return !save_vtk && hdf5_output == nullptr; }
@@ -153,6 +154,7 @@ namespace DiFfRG
 
     HDF5Output *hdf5_output = nullptr;
     bool hdf5_closed_by_session = false;
+    std::string hdf5_group_name = "FE";
 
     bool save_vtk;
 

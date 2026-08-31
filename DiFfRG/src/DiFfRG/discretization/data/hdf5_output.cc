@@ -34,14 +34,14 @@ namespace DiFfRG
     h5_file.close();
   }
 
-  void HDF5Output::stage_fe_frame(const unsigned int series_number, const double time,
-                                  const std::string &fe_output_name, const unsigned int dim,
-                                  const std::size_t n_nodes, std::vector<double> node_data,
+  void HDF5Output::stage_fe_frame(const unsigned int series_number, const double time, const std::string &group_name,
+                                  const std::string &fe_output_name, const unsigned int dim, const std::size_t n_nodes,
+                                  std::vector<double> node_data,
                                   std::vector<std::pair<std::string, std::vector<double>>> data_sets)
   {
-    staged.actions.emplace_back([series_number, time, fe_output_name, dim, n_nodes, nodes = std::move(node_data),
-                                 sets = std::move(data_sets)](HDF5FrameContext &context) {
-      auto group = context.group("FE").create_group(dealii::Utilities::int_to_string(series_number, 6));
+    staged.actions.emplace_back([series_number, time, group_name, fe_output_name, dim, n_nodes,
+                                 nodes = std::move(node_data), sets = std::move(data_sets)](HDF5FrameContext &context) {
+      auto group = context.group(group_name).create_group(dealii::Utilities::int_to_string(series_number, 6));
       group.write_attribute("time", time);
       group.write_attribute("series_number", static_cast<int>(series_number));
       group.write_attribute("output_name", fe_output_name);

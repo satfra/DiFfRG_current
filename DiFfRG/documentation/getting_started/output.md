@@ -30,6 +30,21 @@ output.write_frame(time, [&](auto &frame) {
 });
 ```
 
+`frame.fields()` collects the primary field series. Additional field series can be kept separate by giving them a
+name:
+
+```cpp
+output.write_frame(time, [&](auto &frame) {
+  auto auxiliary = frame.fields("auxiliary");
+  auxiliary.attach(dof_handler, auxiliary_solution, "auxiliary_u");
+});
+```
+
+Named series follow the same `/output/vtk` and `/output/hdf5` settings as the primary fields. With VTK enabled, the
+example writes `<run>_auxiliary.pvd` and its VTU frames. With HDF5 enabled, it writes
+`/auxiliary/<six-digit frame>` inside the run's single `<run>.h5` file. A series name must be one safe path component;
+`FE`, `potential`, `eom_potential`, `scalars`, `maps`, and `coordinates` are reserved by the standard file layout.
+
 All assembler families retain the familiar `attach_data_output` seam. Model `readouts` receive the frame through it.
 `readouts_multiple` assigns every readout a stable ID so duplicate contributions fail immediately. A frame error makes
 the session fail-stop, preventing staged data from contaminating a later timestep. Existing CSV, HDF5, PVD, and VTU
@@ -162,6 +177,12 @@ Debugging and process-memory policy stay in C++ rather than simulation configura
 GiB and can be changed through `Config::OutputSettings::max_pending_bytes` when constructing the session.
 
 ## HDF5 writing
+
+A spatial run stores all field series in one `<run>.h5` file. The primary fields use `/FE/<six-digit frame>`, the
+common raw-potential reconstruction uses `/potential/<six-digit frame>`, and readout-specific EoM reconstructions use
+`/eom_potential/<six-digit frame>`. A series created with `frame.fields(name)` uses `/<name>/<six-digit frame>`.
+Separate `<run>_potential.h5`, `<run>_eom_potential.h5`, or named-series HDF5 files are not created. Existing scalar,
+map, and coordinate data remain under `/scalars`, `/maps`, and `/coordinates`.
 
 `scalar()`, `map()` and the finite-element field data do not touch the file when they are called. They validate their
 arguments, copy their payload, and stage the write. `flush()` then commits the whole frame in a single

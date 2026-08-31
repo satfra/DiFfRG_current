@@ -15,6 +15,27 @@
 namespace DiFfRG
 {
   template <uint dim, typename VectorType>
+  template <typename FieldVectorType>
+  void OutputSession<dim, VectorType>::configure_field_output(FEOutput<dim, FieldVectorType> &sink,
+                                                              const std::string &group_name)
+  {
+    if constexpr (dim > 0) {
+      if (!active || !use_hdf5) return;
+
+      // A previous frame may still be using the non-thread-safe HDF5 library. Registration is
+      // rare and happens on the submitting thread, so wait once before extending the file layout.
+      hdf5_writer.drain();
+      auto &h5 = h5_files.at(filename_h5);
+      {
+        auto root_group = h5.get_file().root();
+        root_group.create_group(group_name);
+      }
+      h5.close_file();
+      sink.set_hdf5_output(&h5, /*session_closes_file = */ true, group_name);
+    }
+  }
+
+  template <uint dim, typename VectorType>
   OutputSession<dim, VectorType>::OutputSession(OutputPath path, Config::OutputSettings settings)
       : output_path(std::move(path)), settings(std::move(settings)),
         top_folder(make_folder(output_path.root().string())), output_name(output_path.run_name()),
@@ -35,17 +56,12 @@ namespace DiFfRG
     if (active && use_hdf5) {
       h5_files.emplace(filename_h5, HDF5Output(this->top_folder, filename_h5, this->settings.configuration_json));
       auto &h5 = h5_files.at(filename_h5);
-      if constexpr (dim > 0) {
-        {
-          auto root_group = h5.get_file().root();
-          root_group.create_group("FE");
-        }
-        // Without this the file stays open -- and its lock held -- from session construction
-        // until the first frame is flushed, which can be a long way into a run.
-        h5.close_file();
-        fe_out.set_hdf5_output(&h5, /*session_closes_file = */ true);
-      }
       h5.set_writer(&hdf5_writer);
+      if constexpr (dim > 0) {
+        configure_field_output(fe_out, "FE");
+        configure_field_output(potential_fe_out, "potential");
+        configure_field_output(eom_potential_fe_out, "eom_potential");
+      }
     }
   }
 
@@ -65,9 +81,6 @@ namespace DiFfRG
     if constexpr (dim > 0) {
       if (pending_raw_potential)
         throw std::logic_error("OutputSession::attach_raw_potential: a raw potential is already attached.");
-      // The potential sinks have no HDF5Output, so with VTK off their flush() discards
-      // everything. Attaching anyway would still copy the whole potential vector and charge it
-      // against the pending-byte budget, once per frame, for nothing.
       if (potential_fe_out.will_discard()) return;
       potential_fe_out.attach(*potential.dof_handler, potential.values, "potential");
       pending_raw_potential.emplace(std::move(potential));
@@ -79,7 +92,7 @@ namespace DiFfRG
   {
     if constexpr (dim > 0) {
       if (!result.potential.has_value()) return;
-      if (eom_potential_fe_out.will_discard()) return; // see attach_raw_potential
+      if (eom_potential_fe_out.will_discard()) return;
       auto &potential = result.potential.value();
       const std::string name = pending_eom_potentials.empty()
                                    ? "eom_potential"
@@ -98,6 +111,29 @@ namespace DiFfRG
     auto [it, inserted] = csv_files.emplace(name, CsvOutput(top_folder, filename));
     if (inserted) it->second.set_Lambda(Lambda);
     return it->second;
+  }
+
+  template <uint dim, typename VectorType>
+  FEOutput<dim, VectorType> &OutputSession<dim, VectorType>::field_output(const std::string &name)
+  {
+    const auto checked = OutputPath::checked_relative(name, "field-series name");
+    if (checked.has_parent_path())
+      throw std::invalid_argument("OutputSession::field_output: field-series name must be one path component.");
+    const std::string series_name = checked.generic_string();
+    if (series_name == "FE" || series_name == "potential" || series_name == "eom_potential" ||
+        series_name == "scalars" || series_name == "maps" || series_name == "coordinates")
+      throw std::invalid_argument("OutputSession::field_output: reserved field-series name '" + series_name + "'.");
+
+    auto found = named_fe_outs.find(series_name);
+    if (found == named_fe_outs.end()) {
+      found =
+          named_fe_outs
+              .try_emplace(series_name, top_folder, output_name + "_" + series_name, output_folder, settings, active)
+              .first;
+      configure_field_output(found->second, series_name);
+    }
+    pending_named_fe_outs.insert(series_name);
+    return found->second;
   }
 
   template <uint dim, typename VectorType> HDF5Output &OutputSession<dim, VectorType>::hdf5(const std::string &name)
@@ -136,6 +172,8 @@ namespace DiFfRG
         eom_potential_fe_out.flush(time);
         pending_eom_potentials.clear();
       }
+      for (const auto &name : pending_named_fe_outs)
+        named_fe_outs.at(name).flush(time);
     }
     {
       ScopedTimer csv_timer(current_frame.csv);
@@ -151,6 +189,9 @@ namespace DiFfRG
       current_frame += fe_out.take_frame_timings();
       current_frame += potential_fe_out.take_frame_timings();
       current_frame += eom_potential_fe_out.take_frame_timings();
+      for (const auto &name : pending_named_fe_outs)
+        current_frame += named_fe_outs.at(name).take_frame_timings();
+      pending_named_fe_outs.clear();
     }
     for (auto &[name, hdf] : h5_files)
       current_frame += hdf.take_frame_timings();
@@ -250,6 +291,13 @@ namespace DiFfRG
     } catch (...) {
       if (!drain_error) drain_error = std::current_exception();
     }
+    for (auto &[name, output] : named_fe_outs) {
+      try {
+        output.drain();
+      } catch (...) {
+        if (!drain_error) drain_error = std::current_exception();
+      }
+    }
     try {
       hdf5_writer.drain();
     } catch (...) {
@@ -285,6 +333,13 @@ namespace DiFfRG
         eom_potential_fe_out.finish();
       } catch (...) {
         if (!terminal_error) terminal_error = std::current_exception();
+      }
+      for (auto &[name, output] : named_fe_outs) {
+        try {
+          output.finish();
+        } catch (...) {
+          if (!terminal_error) terminal_error = std::current_exception();
+        }
       }
       // Must happen before h5_files is destroyed: ~HDF5Output closes the file, and that call
       // may not race the worker.

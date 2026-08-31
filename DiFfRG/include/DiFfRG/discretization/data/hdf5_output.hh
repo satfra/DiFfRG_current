@@ -145,13 +145,11 @@ namespace DiFfRG
 
       coord_identifiers[name] = coordinates.to_string();
 
-      staged.actions.emplace_back(
-          [name, dims, grid = std::move(grid_data)](HDF5FrameContext &context) {
-            auto space = DiFfRG::hdf5::Dataspace::simple(dims);
-            auto dataset =
-                context.group("coordinates").create_dataset(name, DiFfRG::hdf5::type_of<coord_type>(), space);
-            dataset.write(grid);
-          });
+      staged.actions.emplace_back([name, dims, grid = std::move(grid_data)](HDF5FrameContext &context) {
+        auto space = DiFfRG::hdf5::Dataspace::simple(dims);
+        auto dataset = context.group("coordinates").create_dataset(name, DiFfRG::hdf5::type_of<coord_type>(), space);
+        dataset.write(grid);
+      });
     }
 
     template <typename COORD, typename T>
@@ -215,8 +213,9 @@ namespace DiFfRG
      * Called by FEOutput, which owns the DataOut and the filtering, but not the file. The
      * arrays are moved in; nothing here touches HDF5.
      */
-    void stage_fe_frame(unsigned int series_number, double time, const std::string &fe_output_name,
-                        unsigned int dim, std::size_t n_nodes, std::vector<double> node_data,
+    void stage_fe_frame(unsigned int series_number, double time, const std::string &group_name,
+                        const std::string &fe_output_name, unsigned int dim, std::size_t n_nodes,
+                        std::vector<double> node_data,
                         std::vector<std::pair<std::string, std::vector<double>>> data_sets);
 
     /**
@@ -279,19 +278,19 @@ namespace DiFfRG
       const bool create_parent = created_map_groups.insert(name).second;
 
       written_map_series.emplace_back(name, series);
-      staged.actions.emplace_back([name, coord_name, dims, series, create_parent,
-                                   data = std::move(payload)](HDF5FrameContext &context) {
-        auto &maps_group = context.group("maps");
-        auto parent = create_parent ? maps_group.create_group(name) : maps_group.open_group(name);
-        auto group = parent.create_group(std::to_string(series));
-        write_series_record(group, static_cast<int>(series));
+      staged.actions.emplace_back(
+          [name, coord_name, dims, series, create_parent, data = std::move(payload)](HDF5FrameContext &context) {
+            auto &maps_group = context.group("maps");
+            auto parent = create_parent ? maps_group.create_group(name) : maps_group.open_group(name);
+            auto group = parent.create_group(std::to_string(series));
+            write_series_record(group, static_cast<int>(series));
 
-        auto space = DiFfRG::hdf5::Dataspace::simple(dims);
-        auto dataset = group.create_dataset("data", DiFfRG::hdf5::type_of<T>(), space);
-        dataset.write(data);
+            auto space = DiFfRG::hdf5::Dataspace::simple(dims);
+            auto dataset = group.create_dataset("data", DiFfRG::hdf5::type_of<T>(), space);
+            dataset.write(data);
 
-        group.create_soft_link("coordinates", "/coordinates/" + coord_name);
-      });
+            group.create_soft_link("coordinates", "/coordinates/" + coord_name);
+          });
     }
 
     const std::string top_folder;
