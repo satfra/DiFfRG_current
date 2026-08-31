@@ -23,6 +23,7 @@
 #include <oneapi/tbb/parallel_reduce.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -803,10 +804,15 @@ TEST_CASE("KT 1D FV readouts use EoM potential reconstruction and write a time s
   const auto output_dir = data_out_path.root();
   {
     DiFfRG::OutputSession<1, VectorType> data_out(data_out_path, json);
-    data_out.write_frame(0.25,
-                         [&](auto &frame) { assembler.attach_data_output(frame, state.spatial_data(), VectorType()); });
-    data_out.write_frame(0.5,
-                         [&](auto &frame) { assembler.attach_data_output(frame, state.spatial_data(), VectorType()); });
+    const auto write_frame = [&](const double time) {
+      data_out.write_frame(time, [&](auto &frame) {
+        assembler.attach_data_output(frame, state.spatial_data(), VectorType());
+        auto auxiliary = frame.fields("auxiliary");
+        auxiliary.attach(discretization.get_dof_handler(), state.spatial_data(), "auxiliary_u");
+      });
+    };
+    write_frame(0.25);
+    write_frame(0.5);
   }
 
   const auto main_pvd = output_dir / (output_name + ".pvd");
@@ -816,6 +822,9 @@ TEST_CASE("KT 1D FV readouts use EoM potential reconstruction and write a time s
   const auto eom_potential_pvd = output_dir / (output_name + "_eom_potential.pvd");
   const auto eom_potential_vtu_0 = output_dir / "output" / (output_name + "_eom_potential_000000.vtu");
   const auto eom_potential_vtu_1 = output_dir / "output" / (output_name + "_eom_potential_000001.vtu");
+  const auto auxiliary_pvd = output_dir / (output_name + "_auxiliary.pvd");
+  const auto auxiliary_vtu_0 = output_dir / "output" / (output_name + "_auxiliary_000000.vtu");
+  const auto auxiliary_vtu_1 = output_dir / "output" / (output_name + "_auxiliary_000001.vtu");
 
   REQUIRE(std::filesystem::exists(main_pvd));
   REQUIRE(std::filesystem::exists(potential_pvd));
@@ -824,6 +833,9 @@ TEST_CASE("KT 1D FV readouts use EoM potential reconstruction and write a time s
   REQUIRE(std::filesystem::exists(eom_potential_pvd));
   REQUIRE(std::filesystem::exists(eom_potential_vtu_0));
   REQUIRE(std::filesystem::exists(eom_potential_vtu_1));
+  REQUIRE(std::filesystem::exists(auxiliary_pvd));
+  REQUIRE(std::filesystem::exists(auxiliary_vtu_0));
+  REQUIRE(std::filesystem::exists(auxiliary_vtu_1));
 
   const auto pvd_contents = read_text_file(potential_pvd);
   CHECK(pvd_contents.find("timestep=\"0.25\"") != std::string::npos);
@@ -844,6 +856,76 @@ TEST_CASE("KT 1D FV readouts use EoM potential reconstruction and write a time s
   CHECK(eom_pvd_contents.find("kt_eom_eom_potential_000001.vtu") != std::string::npos);
   CHECK(read_text_file(eom_potential_vtu_0).find("Name=\"eom_potential\"") != std::string::npos);
   CHECK(read_text_file(eom_potential_vtu_1).find("Name=\"eom_potential\"") != std::string::npos);
+  CHECK(read_text_file(auxiliary_vtu_0).find("Name=\"auxiliary_u\"") != std::string::npos);
+  CHECK(read_text_file(auxiliary_vtu_1).find("Name=\"auxiliary_u\"") != std::string::npos);
+}
+
+TEST_CASE("KT HDF5-only output keeps all field series in one file", "[FV][KT][EoM][output][hdf5]")
+{
+  using Model = DiFfRG::Testing::ModelBurgersKT<1>;
+  using Discretization = DiFfRG::FV::Discretization<typename Model::Components, NumberType, DiFfRG::RectangularMesh<1>>;
+  using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+
+  auto json = make_fv_eom_potential_output_json();
+  json.set_bool("/output/vtk", false);
+  json.set_bool("/output/hdf5", true);
+
+  DiFfRG::Testing::PhysicalParameters prm;
+  prm.initial_x0[0] = -1.0;
+  prm.initial_x1[0] = 2.5;
+
+  Model model(prm);
+  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  DiFfRG::FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+
+  const std::string output_name = "kt_eom_hdf5";
+  auto data_out_path =
+      DiFfRG::OutputPath::temporary(DiFfRG::TemporaryRetention::remove_on_destruction, output_name, "output");
+  const auto output_dir = data_out_path.root();
+  {
+    DiFfRG::OutputSession<1, VectorType> data_out(data_out_path, json);
+    const auto write_frame = [&](const double time) {
+      data_out.write_frame(time, [&](auto &frame) {
+        assembler.attach_data_output(frame, state.spatial_data(), VectorType());
+        auto auxiliary = frame.fields("auxiliary");
+        auxiliary.attach(discretization.get_dof_handler(), state.spatial_data(), "auxiliary_u");
+      });
+    };
+    write_frame(0.25);
+    write_frame(0.5);
+  }
+
+  const auto hdf5_path = output_dir / (output_name + ".h5");
+  REQUIRE(std::filesystem::exists(hdf5_path));
+  CHECK_FALSE(std::filesystem::exists(output_dir / (output_name + ".pvd")));
+  CHECK_FALSE(std::filesystem::exists(output_dir / (output_name + "_potential.h5")));
+  CHECK_FALSE(std::filesystem::exists(output_dir / (output_name + "_eom_potential.h5")));
+  CHECK_FALSE(std::filesystem::exists(output_dir / (output_name + "_auxiliary.h5")));
+
+  auto file = DiFfRG::hdf5::File::open(hdf5_path.string(), DiFfRG::hdf5::Access::ReadOnly);
+  auto root = file.root();
+  for (const auto &[group_name, field_name, series_name] :
+       std::vector<std::tuple<std::string, std::string, std::string>>{
+           {"FE", "u", output_name},
+           {"potential", "potential", output_name + "_potential"},
+           {"eom_potential", "eom_potential", output_name + "_eom_potential"},
+           {"auxiliary", "auxiliary_u", output_name + "_auxiliary"}}) {
+    auto series = root.open_group(group_name);
+    for (unsigned int frame = 0; frame < 2; ++frame) {
+      auto entry = series.open_group(Utilities::int_to_string(frame, 6));
+      CHECK(entry.read_attribute<double>("time") == Catch::Approx(frame == 0 ? 0.25 : 0.5));
+      CHECK(entry.read_attribute<std::string>("output_name") == series_name);
+      CHECK_NOTHROW(entry.open_dataset("nodes"));
+      CHECK_NOTHROW(entry.open_dataset(field_name));
+    }
+  }
 }
 
 TEST_CASE("KT reconstruction cache recomputes cell stencil values per solution", "[FV][KT][cache]")

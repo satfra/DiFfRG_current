@@ -40,10 +40,12 @@ namespace DiFfRG
   }
 
   template <uint dim, typename VectorType>
-  void FEOutput<dim, VectorType>::set_hdf5_output(HDF5Output *output, const bool session_closes_file)
+  void FEOutput<dim, VectorType>::set_hdf5_output(HDF5Output *output, const bool session_closes_file,
+                                                  std::string group_name)
   {
     this->hdf5_output = output;
     this->hdf5_closed_by_session = session_closes_file;
+    this->hdf5_group_name = std::move(group_name);
   }
 
   template <uint dim, typename VectorType> void FEOutput<dim, VectorType>::update_buffers()
@@ -224,7 +226,7 @@ namespace DiFfRG
         }
       }
 
-      hdf5_output->stage_fe_frame(series_number, time, output_name, dim, data_filter.n_nodes(),
+      hdf5_output->stage_fe_frame(series_number, time, hdf5_group_name, output_name, dim, data_filter.n_nodes(),
                                   std::move(node_data), std::move(data_sets));
       // Under a session, HDF5Output::flush() runs the frame -- after the model's scalars and
       // maps have been staged too, so the whole frame is one open/write/flush/close. Standalone

@@ -88,7 +88,16 @@ namespace DiFfRG
     OutputFrame(OutputFrame &&) = delete;
     OutputFrame &operator=(OutputFrame &&) = delete;
 
+    /** Collect fields for the run's primary field series. */
     FieldCollector fields() { return FieldCollector(session.fe_out); }
+    /**
+     * Collect fields for an additional named series owned by this session.
+     *
+     * The series is created on first use and automatically follows the run's
+     * `/output/vtk` and `/output/hdf5` settings. VTK uses `<run>_<name>.pvd`
+     * plus its VTU frames; HDF5 uses `/<name>/<frame>` in the run's single file.
+     */
+    FieldCollector fields(const std::string &name) { return FieldCollector(session.field_output(name)); }
     TableRecord table(const std::string &name) { return TableRecord(session.csv(name)); }
     Hdf5Record hdf5(const std::string &name) { return Hdf5Record(session.hdf5(name)); }
     Hdf5Record hdf5() { return Hdf5Record(session.hdf5()); }
@@ -235,6 +244,9 @@ namespace DiFfRG
     }
 
     FEOutput<dim, VectorType> &fe_output() { return fe_out; }
+    FEOutput<dim, VectorType> &field_output(const std::string &name);
+    template <typename FieldVectorType>
+    void configure_field_output(FEOutput<dim, FieldVectorType> &sink, const std::string &group_name);
     void attach_raw_potential(ReconstructedRawPotential<dim, typename VectorType::value_type> potential);
     void attach_eom_potential(EoMResult<dim, typename VectorType::value_type> result);
     CsvOutput &csv(const std::string &name);
@@ -269,6 +281,8 @@ namespace DiFfRG
     FEOutput<dim, dealii::Vector<typename VectorType::value_type>> potential_fe_out;
     std::vector<ReconstructedEoMPotential<dim, typename VectorType::value_type>> pending_eom_potentials;
     FEOutput<dim, dealii::Vector<typename VectorType::value_type>> eom_potential_fe_out;
+    std::map<std::string, FEOutput<dim, VectorType>> named_fe_outs;
+    std::set<std::string> pending_named_fe_outs;
     std::map<std::string, CsvOutput> csv_files;
 
     bool use_hdf5;
