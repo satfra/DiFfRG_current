@@ -16,7 +16,10 @@ import importlib
 
 from DiFfRG.file_io import csv, hdf5, paths
 from DiFfRG.file_io.csv import read_csv, read_k_csv, split_csv
-from DiFfRG.file_io.hdf5 import SimulationData, get_config_from_hdf5
+from DiFfRG.file_io.hdf5 import (LazyFEMData, SimulationData,
+                                 get_config_from_hdf5, get_fem_frame_from_hdf5,
+                                 get_fem_frames_from_hdf5, get_fem_from_hdf5,
+                                 get_scalars_from_hdf5, read_meta)
 from DiFfRG.file_io.paths import get_parameters_from_name, mkdir
 
 # The vtk submodule is imported on first use only, so that the rest of the package

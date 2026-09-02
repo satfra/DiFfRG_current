@@ -1,5 +1,6 @@
 pyproject.toml
 DiFfRG/__init__.py
+DiFfRG/parallel.py
 DiFfRG/phasediagram.py
 DiFfRG/plot.py
 DiFfRG/utilities.py

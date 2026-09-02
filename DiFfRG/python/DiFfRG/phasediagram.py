@@ -1,22 +1,40 @@
 import glob
 import os
 import shutil
-from multiprocessing import Pool
 import subprocess
 
 from DiFfRG.utilities import globalize
 from DiFfRG.utilities import is_close
+from DiFfRG.parallel import pmap, read_metas, sim_map
 import DiFfRG.file_io as io
 
-def get_all_sims(folder, pool_size=16) -> list:
-    files_hdf5 = glob.glob(folder + "*.h5")
-    pool = Pool(pool_size)
-    return pool.map(io.SimulationData, files_hdf5)
+def get_all_sims(folder, pool_size=None, cache=True) -> list:
+    """Reads every simulation in a folder.
 
-def get_all_finished_sims(folder, pool_size=16) -> list:
-    sims = get_all_sims(folder, pool_size)
-    finished_sims = [s for s in sims if s.is_finished()]
-    return finished_sims
+    Only the config and the scalars are read here, in parallel; the fem frames
+    of a run stay on disk until they are indexed (see `DiFfRG.file_io.hdf5`).
+    A scan of long runs is mostly fem frames, and an analysis of it usually
+    looks at the last frame of each or at none at all, so reading them all up
+    front costs orders of magnitude more time and memory than the answer needs.
+
+    Args:
+        folder (str): The folder to read, with a trailing separator.
+        pool_size (int, optional): The number of worker processes. Defaults to
+            the number of cores this process may run on.
+        cache (bool, optional): Whether to reuse what previous calls read of
+            files that have not changed since. Defaults to True.
+
+    Returns:
+        list: One `SimulationData` per readable file. A file that cannot be read
+        -- a run writing its output at this very moment, most likely -- is
+        skipped and reported.
+    """
+    files_hdf5 = sorted(glob.glob(folder + "*.h5"))
+    metas = read_metas(files_hdf5, workers=pool_size, cache=cache)
+    if len(metas) != len(files_hdf5):
+        print(f"{len(files_hdf5) - len(metas)} of {len(files_hdf5)} files in {folder} "
+              "could not be read and are skipped")
+    return [io.SimulationData(f, meta=metas[f]) for f in files_hdf5 if f in metas]
 
 def sim_exists(sim_set, param_list) -> bool:
     for sim in sim_set:
