@@ -1064,11 +1064,71 @@ math(EXPR _max_threads_by_ram "${_total_ram_mb} / 2000")
 if(_max_threads_by_ram LESS 1)
   set(_max_threads_by_ram 1)
 endif()
-include(ProcessorCount)
-ProcessorCount(_nproc)
+# Core count. ProcessorCount() is not trustworthy on its own: on Linux it shells
+# out to a bare `nproc`, and GNU nproc reports OMP_NUM_THREADS whenever that is
+# set. Batch schedulers and HPC module systems routinely export
+# OMP_NUM_THREADS=1, so ProcessorCount() returns 1 on a 128-core node and every
+# dependency below silently builds with -j1. Probe in order of decreasing
+# trustworthiness instead.
+set(BUILD_JOBS
+    ""
+    CACHE STRING
+          "Cores to assume when sizing dependency builds (empty = autodetect)")
+
+set(_nproc "")
+set(_nproc_source "")
+
+if(BUILD_JOBS)
+  set(_nproc ${BUILD_JOBS})
+  set(_nproc_source "BUILD_JOBS")
+endif()
+
+# A scheduler allocation is authoritative: it is what we are allowed to run on,
+# which on a shared node is not what the hardware reports.
+if(NOT _nproc AND DEFINED ENV{SLURM_CPUS_PER_TASK})
+  set(_nproc $ENV{SLURM_CPUS_PER_TASK})
+  set(_nproc_source "SLURM_CPUS_PER_TASK")
+endif()
+
+# nproc with the OpenMP knobs scrubbed: still affinity- and cgroup-aware, so a
+# partial allocation is still respected, but no longer answering the question
+# "how many OpenMP threads should a solver use" in place of "how many cores do I
+# have to compile on". --unset needs CMake 3.24.
+if(NOT _nproc AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
+  execute_process(
+    COMMAND ${CMAKE_COMMAND} -E env --unset=OMP_NUM_THREADS
+            --unset=OMP_THREAD_LIMIT nproc
+    OUTPUT_VARIABLE _nproc_out
+    RESULT_VARIABLE _nproc_result
+    ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+  if(_nproc_result EQUAL 0 AND _nproc_out MATCHES "^[0-9]+$")
+    set(_nproc ${_nproc_out})
+    set(_nproc_source "nproc")
+  endif()
+endif()
+
+# Fallback. On macOS this reads sysctl hw.ncpu and is unaffected by the above.
+if(NOT _nproc)
+  include(ProcessorCount)
+  ProcessorCount(_nproc)
+  set(_nproc_source "ProcessorCount")
+endif()
+
 if(_nproc LESS 1)
   set(_nproc 1)
+  set(_nproc_source "fallback")
 endif()
+
+# A single core is far more often a misdetection than a real single-core host,
+# and the symptom -- a dependency build taking hours instead of minutes -- is
+# otherwise indistinguishable from "deal.II is just slow". Say it out loud.
+if(_nproc EQUAL 1 AND NOT BUILD_JOBS)
+  message(
+    WARNING
+      "Only 1 core detected (via ${_nproc_source}); deal.II and PETSc will build "
+      "serially. If this machine has more cores, re-run with -DBUILD_JOBS=<n>.")
+endif()
+
 math(EXPR _half_cores "${_nproc} / 2")
 if(_half_cores LESS 1)
   set(_half_cores 1)
@@ -1180,7 +1240,7 @@ if(BUILD_PETSC)
     set(_petsc_jobs ${PETSC_MAX_JOBS})
   endif()
   message(
-    "  ${BoldGreen}[PETSc] build parallelism: ${_petsc_jobs} jobs (hypre: ${PETSC_GMRES}, MUMPS: ${PETSC_MUMPS}).${ColourReset}"
+    "  ${BoldGreen}[PETSc] build parallelism: ${_petsc_jobs} jobs (${_nproc} cores via ${_nproc_source}, hypre: ${PETSC_GMRES}, MUMPS: ${PETSC_MUMPS}).${ColourReset}"
   )
 
   ExternalProject_Add(
@@ -1250,7 +1310,7 @@ if(_dealii_jobs GREATER ${DEALII_MAX_JOBS})
   set(_dealii_jobs ${DEALII_MAX_JOBS})
 endif()
 message(
-  "  ${BoldGreen}[deal.II] build parallelism: ${_dealii_jobs} threads (${_total_ram_mb} MB RAM, ${_nproc} cores).${ColourReset}"
+  "  ${BoldGreen}[deal.II] build parallelism: ${_dealii_jobs} threads (${_total_ram_mb} MB RAM, ${_nproc} cores via ${_nproc_source}).${ColourReset}"
 )
 
 option(DEVEL "Enable development mode (deal.II DebugRelease build)" OFF)
