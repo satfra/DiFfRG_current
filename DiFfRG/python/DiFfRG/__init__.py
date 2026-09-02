@@ -25,5 +25,6 @@ The DiFfRG python package provides a number of modules that can be used to analy
 - `DiFfRG.file_io`: read DiFfRG simulation results from files
 - `DiFfRG.plot`: plotting tools
 - `DiFfRG.phasediagram`: tools to run DiFfRG simulations with different parameters directly from python
+- `DiFfRG.parallel`: run an analysis over many simulations at once, and remember the results
 
 '''

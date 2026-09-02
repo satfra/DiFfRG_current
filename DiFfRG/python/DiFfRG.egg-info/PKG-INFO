@@ -16,6 +16,8 @@ Requires-Dist: matplotlib
 Requires-Dist: adaptive[notebook]
 Requires-Dist: pandas
 Requires-Dist: h5py
+Requires-Dist: loky
+Requires-Dist: cloudpickle
 Requires-Dist: seaborn
 Requires-Dist: jupyter_bokeh
 Requires-Dist: vtk
