@@ -73,7 +73,18 @@ If using other environments, e.g. [ENROOT](https://github.com/NVIDIA/enroot), th
 
 ## Setup
 
-### Quick install (recommended)
+### Interactive installer (recommended)
+
+From the shell, run
+```bash
+$ bash <(curl -s -L https://github.com/satfra/DiFfRG_current/raw/refs/heads/main/install_diffrg.sh)
+```
+
+A short wizard walks through the typical choices — pre-built dependency bundle or full self-build, install prefix, build folder, features (MPI, GPU, ...), and an optional copy of the examples and tutorials — then performs the complete installation. Every question also has a command-line flag (`--help`) for scripted use.
+
+The **pre-built dependency bundle** downloads deal.II, Kokkos, Boost, TBB, SUNDIALS, HDF5 and friends as a ~50 MB binary from [GitHub Releases](https://github.com/satfra/DiFfRG_current/releases) instead of compiling them for hours; only the DiFfRG library itself is compiled locally (minutes). Bundles are CPU-only without MPI and require a CPU with AVX2 (any consumer CPU from ~2013 on) and glibc ≥ 2.34 (Rocky/Alma 9+, Ubuntu 22.04+, Debian 12+, Fedora, Arch). For CUDA, MPI, other CPUs, or other platforms the wizard's self-build path covers the full feature set. The bundle step alone is also available non-interactively as `install-diffrg-deps.sh` (`--help` for options).
+
+### Quick install from source
 
 From the shell, run (this requires `curl` to be available on your system):
 ```bash

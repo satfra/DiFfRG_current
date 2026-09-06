@@ -3,9 +3,11 @@
 # in-container CMake build needs (dependencies/, DiFfRG/, patches/, CMakeLists)
 # is fetched fresh or lives in the tracked tree.
 build/
+build_mpi/
 bin/
 **/bin/
 **/build/
+containers/release/dist/
 .git/
 .venv/
 .cache/

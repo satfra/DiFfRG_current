@@ -31,16 +31,28 @@ endforeach()
 if(NOT DEFINED NATIVE)
   set(NATIVE ON CACHE BOOL "Optimize for the build machine's CPU (-march=native)")
 endif()
+if(NOT DEFINED MARCH)
+  set(MARCH "" CACHE STRING "Explicit -march target (e.g. x86-64-v3, native, none). Overrides NATIVE.")
+endif()
 if(NOT DEFINED PETSC_JOBS OR PETSC_JOBS LESS 1)
   # Standalone fallback only. The superbuild passes a RAM-aware value; never use a
   # bare -j/-j$(nproc) here, PETSc's make will happily exhaust memory.
   set(PETSC_JOBS 4)
 endif()
 
-if(NATIVE)
-  set(PETSC_MARCH "-march=native")
+# Same MARCH/NATIVE resolution as the superbuild (see DiFfRG/cmake/common.cmake):
+# a non-empty MARCH wins; empty falls back to the NATIVE bool; "none" = no flag.
+if(NOT MARCH STREQUAL "")
+  set(_march_value "${MARCH}")
+elseif(NATIVE)
+  set(_march_value "native")
 else()
+  set(_march_value "none")
+endif()
+if(_march_value STREQUAL "none")
   set(PETSC_MARCH "")
+else()
+  set(PETSC_MARCH "-march=${_march_value}")
 endif()
 
 # ----------------------------------------------------------------- download ---
