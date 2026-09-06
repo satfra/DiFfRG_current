@@ -4,8 +4,8 @@
 # CUDA/ to check that the build system works across distributions, and run the
 # test suite in each.
 #
-# Each image builds the local working tree via a cmake superbuild (no install.sh
-# / build.sh). Per-image logs in containers/logs/:
+# Each image builds the local working tree via a cmake superbuild (no installer
+# scripts involved). Per-image logs in containers/logs/:
 #   <image>.log         build (compile) output, incl. system-vs-bundled deps
 #   <image>_ctest.log   ctest results (CUDA images: only when a host GPU exists)
 # Docker images are removed after each build to reclaim disk space; Singularity

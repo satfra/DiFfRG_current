@@ -54,9 +54,9 @@ cp "$SRC/DiFfRG/cmake/verify_install.cmake" "$BUNDLE/share/DiFfRG/verify_install
 for f in "$BUNDLE"/lib/cmake/deal.II/deal.IITargets.cmake \
          "$BUNDLE"/lib/cmake/deal.II/deal.IIConfig.cmake; do
   [ -f "$f" ] || continue
-  sed -i -E 's#/usr/(lib64|lib)(/[A-Za-z0-9_.-]+-linux-gnu[A-Za-z0-9_.-]*)?/lib([A-Za-z0-9_+.-]+)\.so#-l\3#g' "$f"
+  sed -i -E 's#/usr/(lib64|lib)(/[A-Za-z0-9_.-]+-linux-gnu[A-Za-z0-9_.-]*)?/lib([A-Za-z0-9_+.-]+)\.(so|a)#-l\3#g' "$f"
 done
-if grep -nE '/usr/(lib64|lib)[^;"]*\.so' "$BUNDLE"/lib/cmake/deal.II/deal.II*.cmake; then
+if grep -nE '/usr/(lib64|lib)[^;"]*\.(so|a)' "$BUNDLE"/lib/cmake/deal.II/deal.II*.cmake; then
   fail "absolute system library paths survived the -l rewrite (above)"
 fi
 
@@ -135,6 +135,14 @@ dep_versions() {
   printf '\n'
 }
 
+# The accelerator is the variant's last component (cpu, cuda12, ...); CUDA
+# variants additionally rely on the host's CUDA runtime and driver.
+ACCEL="${VARIANT##*-}"
+CUDA_ALLOW=''
+if [ "$ACCEL" != cpu ]; then
+  CUDA_ALLOW='"libcudart", "libcuda", "libnvrtc", '
+fi
+
 BOOST_VER="$(grep -m1 -oE 'DiFfRG_PINNED_BOOST_VERSION "[0-9.]+"' "$BUNDLE/DiFfRG_bundled_config.cmake" | grep -oE '[0-9.]+' || echo unknown)"
 # In the release container .git is dockerignored; the SHA arrives via env from
 # the build driver instead.
@@ -149,7 +157,7 @@ cat > "$BUNDLE/BUNDLE_MANIFEST.json" <<EOF
   "os": "linux",
   "arch": "x86_64",
   "isa": "${MARCH}",
-  "accel": "cpu",
+  "accel": "${ACCEL}",
   "mpi": "none",
   "diffrg_version": "${DIFFRG_VERSION}",
   "diffrg_git_sha": "${GIT_SHA}",
@@ -157,12 +165,15 @@ cat > "$BUNDLE/BUNDLE_MANIFEST.json" <<EOF
   "build_prefix": "/opt/diffrg",
   "glibc_floor": "${GLIBC_FLOOR}",
   "compiler": "${COMPILER_ID}",
+  "builder_cxx": "$(command -v c++ || true)",
+  "builder_cc": "$(command -v cc || true)",
+  "builder_fc": "$(command -v gfortran || true)",
   "boost_version": "${BOOST_VER}",
   "dependency_versions": {
 $(dep_versions)
   },
   "allowed_external_libs": [
-    "linux-vdso", "ld-linux-x86-64", "libc", "libm", "libpthread", "libdl",
+    ${CUDA_ALLOW}"linux-vdso", "ld-linux-x86-64", "libc", "libm", "libpthread", "libdl",
     "librt", "libgcc_s", "libstdc++", "libgfortran", "libquadmath", "libgomp",
     "libz", "libopenblas"
   ]

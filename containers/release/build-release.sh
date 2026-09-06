@@ -7,8 +7,10 @@
 # performs all relocation fixups and hard audits (ISA guard, symbol-version
 # caps, linkage self-containment); a tarball only appears here if they passed.
 #
-# Usage: build-release.sh -v <bundle_version> [-j <threads>] [-o <outdir>]
+# Usage: build-release.sh -v <bundle_version> [-V <variant>] [-j <threads>] [-o <outdir>]
 #   -v <version>  bundle version, e.g. 1.0.0 (required; becomes the deps-v<version> tag)
+#   -V <variant>  bundle variant with a <variant>.Dockerfile in this directory
+#                 (default: linux-x86_64-v3-cpu; also: linux-x86_64-v3-cuda12)
 #   -j <threads>  build threads (default: 6 -- deal.II TUs are RAM-hungry)
 #   -o <outdir>   where to place the tarball (default: containers/release/dist)
 #
@@ -28,9 +30,10 @@ version=''
 threads=6
 outdir="${scriptpath}/dist"
 
-while getopts v:j:o: flag; do
+while getopts v:V:j:o: flag; do
   case "${flag}" in
   v) version=${OPTARG} ;;
+  V) variant=${OPTARG} ;;
   j) threads=${OPTARG} ;;
   o) outdir=${OPTARG} ;;
   *)
@@ -39,6 +42,9 @@ while getopts v:j:o: flag; do
     ;;
   esac
 done
+
+[[ -f "${scriptpath}/${variant}.Dockerfile" ]] \
+  || { echo "Unknown variant '${variant}' (no ${scriptpath}/${variant}.Dockerfile)" >&2; exit 1; }
 
 if [[ -z ${version} ]]; then
   echo "A bundle version is required: build-release.sh -v 1.0.0" >&2

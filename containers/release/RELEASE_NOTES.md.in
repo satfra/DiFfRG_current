@@ -20,7 +20,7 @@ The installer verifies the checksum, relocates the bundle to your prefix
 - a CPU supporting x86-64-v3 (AVX2+FMA -- any consumer CPU from ~2013 on)
 - to build DiFfRG against it: a C++20 compiler, CMake >= 3.20, BLAS/LAPACK, GSL, zlib, gfortran
 
-CPU-only, no MPI. For CUDA, MPI, other CPUs, or other platforms, build from
-source with `install.sh`.
+For configurations a bundle does not cover (MPI, other CPUs or platforms),
+build from source with `install_diffrg.sh --mode source`.
 
 `sha256(diffrg-deps-@VERSION@-@VARIANT@.tar.zst) = @SHA256@`

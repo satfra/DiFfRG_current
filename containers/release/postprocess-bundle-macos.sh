@@ -110,6 +110,9 @@ cat > "$BUNDLE/BUNDLE_MANIFEST.json" <<EOF
   "build_prefix": "/opt/diffrg",
   "min_macos": "${MIN_MACOS}",
   "compiler": "$(cc --version | head -1)",
+  "builder_cxx": "$(command -v c++ || true)",
+  "builder_cc": "$(command -v cc || true)",
+  "builder_fc": "$(command -v gfortran || true)",
   "boost_version": "${BOOST_VER}",
   "dependency_versions": {
 $(dep_versions)

@@ -72,17 +72,27 @@ anywhere, AVX present in the heavyweight libraries -- catches both a
 and a linkage audit in a bare runtime container without any of the bundled
 libraries' dev packages.
 
-## Adding variants later
+## Variants
 
-The naming scheme `diffrg-deps-<version>-<os>-<arch>[-<isa>][-<accel>]`
-anticipates them:
+The full set is `cpu` and `cuda12` (plus the experimental macOS build). There
+are deliberately **no MPI variants**, now or planned: MPI's audience is
+clusters, and a cluster build must link the site's fabric- and
+Slurm-integrated MPI -- that is inherently a source build (the wizard's
+self-build path with `-DMPI=ON`).
 
-- **CUDA**: `...-linux-x86_64-v3-cuda12.x.tar.zst` -- new Dockerfile on a Rocky 9
-  CUDA base, pinned `Kokkos_ARCH_LIST`; prerequisites: install the
-  `dealii_nvcc_wrapper.sh` shim into `bundled/bin` (the superbuild currently
-  records its build-tree path in `deal.IIConfig.cmake`) and allow `libcuda.so.1`
-  in the linkage allowlist.
-- **Apple Silicon**: `...-macos-arm64-cpu` -- no containers; `-mcpu` instead of
-  `-march`, `install_name_tool`/`@loader_path` instead of patchelf.
-- **MPI**: stays source-build for now (MPI implementations are not
-  ABI-compatible); the manifest carries `"mpi": "none"` so a variant slot exists.
+- **cpu** (`linux-x86_64-v3-cpu`): the baseline, described above.
+- **cuda12** (`linux-x86_64-v3-cuda12`, `build-release.sh -V ...`): CUDA-enabled
+  Kokkos at the sm_80/Ampere floor -- Kokkos allows exactly one CUDA arch per
+  build, and sm_80 embeds compute_80 PTX so every newer GPU runs via JIT
+  (cached after first launch). Consumers need the CUDA 12 toolkit anyway (their
+  apps compile device code), so the bundle resolves the host's libcudart. The
+  host compiler must be **GCC 12 or >= 14** (never 13: nvcc's frontend
+  miscompiles GCC 13's libstdc++ in C++20 mode -- the `iterator_traits<char*>`
+  bug; both 12 and 14 are validated). On gcc-13 distros install g++-14 and run
+  the installer with `CXX=g++-14`. The deal.II nvcc-wrapper shim ships in
+  `bundled/bin` and self-relocates. The CPU bundles have no such constraint:
+  any C++20 compiler, GCC >= 12, works.
+  GPU-executed validation needs a GPU host: `test-tarball.sh -g` (uses the
+  `*-cuda` test images; CI does build-only).
+- **macOS arm64** (`macos-arm64-cpu.sh`): experimental, see above; no `-march`
+  pinning needed (all M-series share Apple clang's arm64 baseline).

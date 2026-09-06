@@ -13,11 +13,15 @@
 #   5. install the tarball a SECOND time at another prefix and check no
 #      build-prefix references survive (move-prefix/relocatability test).
 #
-# Usage: test-tarball.sh -f <tarball> [-j <threads>] [-d <distro>[,<distro>...]] [-s]
+# Usage: test-tarball.sh -f <tarball> [-j <threads>] [-d <distro>[,<distro>...]] [-s] [-g]
 #   -f <tarball>  the diffrg-deps-*.tar.zst to validate (required)
 #   -j <threads>  build threads inside each container (default: 6)
 #   -d <list>     comma-separated subset of: ubuntu24.04 debian13 fedora41 rockylinux9
+#                 (with -g: ubuntu24.04-cuda rockylinux9-cuda)
 #   -s            skip ctest (build-only validation; also automatic on non-v3 hosts)
+#   -g            CUDA bundle: use the -cuda test images, pass the host GPU
+#                 through (docker --gpus), allow CUDA libs in the linkage audit;
+#                 without a host GPU ctest is skipped automatically
 #
 # On success writes <tarball>.tested (consumed by publish-release.sh).
 # Logs land in containers/release/logs/.
@@ -32,21 +36,29 @@ repo="$(cd -- "${scriptpath}/../.." >/dev/null 2>&1 && pwd -P)"
 
 tarball=''
 threads=6
-distros="ubuntu24.04 debian13 fedora41 rockylinux9"
+distros=''
 skip_tests=0
+gpu=0
 
-while getopts f:j:d:s flag; do
+while getopts f:j:d:sg flag; do
   case "${flag}" in
   f) tarball=${OPTARG} ;;
   j) threads=${OPTARG} ;;
   d) distros="${OPTARG//,/ }" ;;
   s) skip_tests=1 ;;
+  g) gpu=1 ;;
   *)
     echo "Unknown flag." >&2
     exit 1
     ;;
   esac
 done
+
+if [[ -z ${distros} ]]; then
+  # CUDA test images exist only where NVIDIA publishes devel bases.
+  [[ ${gpu} -eq 1 ]] && distros="ubuntu24.04-cuda rockylinux9-cuda" \
+    || distros="ubuntu24.04 debian13 fedora41 rockylinux9"
+fi
 
 [[ -n ${tarball} && -f ${tarball} ]] || {
   echo "A tarball is required: test-tarball.sh -f dist/diffrg-deps-....tar.zst" >&2
@@ -56,12 +68,15 @@ tarball="$(readlink -f "${tarball}")"
 tarname="$(basename "${tarball}")"
 
 # Running the built tests executes x86-64-v3 code from the bundle; degrade to
-# build-only on a host without AVX2/FMA.
+# build-only on a host without AVX2/FMA. CUDA tests additionally need a GPU.
 run_tests=1
 if [[ ${skip_tests} -eq 1 ]]; then
   run_tests=0
 elif ! grep -qm1 avx2 /proc/cpuinfo || ! grep -qm1 fma /proc/cpuinfo; then
   echo "Host CPU lacks x86-64-v3 (AVX2+FMA): building only, skipping ctest."
+  run_tests=0
+elif [[ ${gpu} -eq 1 ]] && ! command -v nvidia-smi >/dev/null 2>&1; then
+  echo "No host GPU (nvidia-smi): building only, skipping ctest."
   run_tests=0
 fi
 
@@ -80,13 +95,15 @@ run_in_image() { # <image> <bind>... -- <script>
   local -a binds=("${@:2:$#-3}")
   if [[ ${runtime} == singularity ]]; then
     local -a args=()
+    [[ ${gpu} -eq 1 && ${run_tests} -eq 1 ]] && args+=(-g)
     for b in "${binds[@]}"; do args+=(-b "${b}"); done
     bash "${scriptpath}/../singularity-run.sh" "${args[@]}" \
       "docker-daemon://${image}" bash -lc "${script}"
   else
     local -a args=()
+    [[ ${gpu} -eq 1 && ${run_tests} -eq 1 ]] && args+=(--gpus all)
     for b in "${binds[@]}"; do args+=(-v "${b}"); done
-    docker run --rm "${args[@]}" "${image}" bash -lc "${script}"
+    docker run --rm -e "CHECK_LINKAGE_CUDA=${gpu}" "${args[@]}" "${image}" bash -lc "${script}"
   fi
 }
 
@@ -120,6 +137,14 @@ for distro in ${distros}; do
   if run_in_image "${image}" \
     "${repo}:/src" "$(dirname "${tarball}"):/dist" "${workdir}:/work" -- "
       set -ex
+      # CUDA bundles reference the driver's libcuda.so.1; without a GPU mounted
+      # (build-only validation) satisfy the ldd audit with the toolkit's stub.
+      if [[ \${CHECK_LINKAGE_CUDA:-0} == 1 ]] && ! ldconfig -p | grep -q libcuda.so.1; then
+        stub=\$(find /usr/local/cuda* -name libcuda.so -path '*stubs*' 2>/dev/null | head -1)
+        [[ -n \$stub ]] && ln -sf \$stub /usr/lib64/libcuda.so.1 2>/dev/null \
+          || ln -sf \$stub /usr/lib/x86_64-linux-gnu/libcuda.so.1
+        ldconfig || true
+      fi
       bash /src/install-diffrg-deps.sh --file /dist/${tarname} \
           --prefix /work/diffrg --skip-cpu-check
       bash /src/containers/release/check-linkage.sh /work/diffrg/bundled
