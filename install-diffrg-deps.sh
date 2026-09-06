@@ -23,9 +23,9 @@
 #                     running inside a DiFfRG checkout)
 #   -h, --help        this text
 #
-# For CPUs without AVX2 (pre-2013), CUDA builds, MPI builds, or any other
-# configuration the binary bundles do not cover, use the source installer
-# instead: install.sh in the same repository.
+# For CPUs without AVX2 (pre-2013), MPI builds, or any other configuration
+# the binary bundles do not cover, use the self-build path instead:
+# install_diffrg.sh --mode source (in the same repository).
 # ##############################################################################
 set -euo pipefail
 
@@ -49,9 +49,9 @@ Options:
                     running inside a DiFfRG checkout)
   -h, --help        this text
 
-For CPUs without AVX2 (pre-2013), CUDA builds, MPI builds, or any other
-configuration the binary bundles do not cover, use the source installer
-instead: install.sh in the same repository.
+For CPUs without AVX2 (pre-2013), MPI builds, or any other configuration
+the binary bundles do not cover, use the self-build path instead:
+install_diffrg.sh --mode source (in the same repository).
 EOF
 }
 
@@ -110,7 +110,7 @@ esac
 
 # ------------------------------------------------------------ platform gate --
 [[ -n $DEFAULT_VARIANT ]] \
-  || err "Pre-built bundles exist for Linux x86_64 and macOS arm64 only ($(uname -s) $(uname -m) detected). Use install.sh to build from source."
+  || err "Pre-built bundles exist for Linux x86_64 and macOS arm64 only ($(uname -s) $(uname -m) detected). Use install_diffrg.sh --mode source to build from source."
 
 [[ -z $variant ]] && variant="$DEFAULT_VARIANT"
 if [[ $skip_cpu_check -eq 0 && ${os_name} == Linux ]]; then
@@ -119,10 +119,10 @@ if [[ $skip_cpu_check -eq 0 && ${os_name} == Linux ]]; then
   if ld.so --help 2>/dev/null | grep -q 'x86-64-v3'; then
     ld.so --help 2>/dev/null | grep 'x86-64-v3' | grep -q supported \
       || err "This CPU does not support x86-64-v3 (AVX2+FMA), which the pre-built bundles require.
-Use the source installer instead: install.sh"
+Use the self-build path instead: install_diffrg.sh --mode source"
   elif ! grep -qm1 avx2 /proc/cpuinfo || ! grep -qm1 fma /proc/cpuinfo; then
     err "This CPU does not support x86-64-v3 (AVX2+FMA), which the pre-built bundles require.
-Use the source installer instead: install.sh"
+Use the self-build path instead: install_diffrg.sh --mode source"
   fi
 fi
 
@@ -182,7 +182,7 @@ if [[ ${os_name} == Linux ]]; then
     glibc_have="$(ldd --version | head -1 | grep -oE '[0-9]+\.[0-9]+$' || echo '')"
     if [[ -n $glibc_have && "$(printf '%s\n%s\n' "$glibc_floor" "$glibc_have" | sort -V | head -1)" != "$glibc_floor" ]]; then
       err "This system's glibc ($glibc_have) is older than the bundle requires ($glibc_floor).
-Use the source installer instead: install.sh"
+Use the self-build path instead: install_diffrg.sh --mode source"
     fi
   fi
 else
@@ -191,7 +191,7 @@ else
     macos_have="$(sw_vers -productVersion 2>/dev/null || echo '')"
     if [[ -n $macos_have && "$(printf '%s\n%s\n' "$min_macos" "$macos_have" | sort -V | head -1)" != "$min_macos" ]]; then
       err "This macOS ($macos_have) is older than the bundle requires ($min_macos).
-Use the source installer instead: install.sh"
+Use the self-build path instead: install_diffrg.sh --mode source"
     fi
   fi
 fi
@@ -238,17 +238,25 @@ if [[ ${os_name} == Darwin ]]; then
   done
 fi
 
-# deal.II records the compilers of the build container; point the records at
-# this machine's toolchain instead (DiFfRG's own build ignores them, but
-# deal.II-style consumer projects and tooling read them).
-dealii_config="$prefix/bundled/lib/cmake/deal.II/deal.IIConfig.cmake"
-if [[ -f $dealii_config ]]; then
-  for pair in "CXX:c++" "C:cc" "Fortran:gfortran"; do
-    lang="${pair%%:*}"
-    comp="$(command -v "${pair##*:}" || true)"
-    [[ -n $comp ]] && sed -i -E "s#^set\(DEAL_II_${lang}_COMPILER \"[^\"]*\"\)#set(DEAL_II_${lang}_COMPILER \"${comp}\")#" "$dealii_config"
-  done
-fi
+# Several tools record the build container's compilers by absolute path
+# (Kokkos_CXX_COMPILER, kokkos_launch_compiler's default, deal.II's records,
+# the nvcc-wrapper shim's pinned GCC, h5cc). Those paths do not exist on this
+# machine and would surface later as baffling "compiler not found" failures --
+# nvcc's host-compiler error being the classic. Rewrite every text occurrence
+# to this machine's toolchain, as recorded by the manifest.
+# CC/CXX/FC env vars select the host compilers written into the records --
+# needed e.g. on distros whose default GCC is unsuitable for the CUDA variant.
+sed_escape() { printf '%s' "$1" | sed 's/[][\.*^$#]/\\&/g'; }
+for pair in "builder_cxx:${CXX:-c++}" "builder_cc:${CC:-cc}" "builder_fc:${FC:-gfortran}"; do
+  field="${pair%%:*}"
+  builder_path="$(grep -oE "\"${field}\": *\"[^\"]*\"" "$prefix/bundled/BUNDLE_MANIFEST.json" | sed -E 's/.*: *"([^"]*)"/\1/' || true)"
+  host_path="$(command -v "${pair##*:}" || true)"
+  [[ -n $builder_path && -n $host_path && $builder_path != "$host_path" ]] || continue
+  while IFS= read -r f; do
+    [[ -n $f ]] || continue
+    sed_inplace "s#$(sed_escape "$builder_path")#${host_path}#g" "$f"
+  done < <(grep -rIl --exclude='*.log' --exclude=BUNDLE_MANIFEST.json -F "$builder_path" "$prefix/bundled" 2>/dev/null || true)
+done
 
 cat > "$prefix/bundled/INSTALL_RECEIPT.json" <<EOF
 {
@@ -282,6 +290,20 @@ else
 fi
 command -v gfortran >/dev/null \
   || missing+=("gfortran (package 'gfortran' / 'gcc-gfortran'; 'brew install gcc' on macOS)")
+
+# CUDA bundles: nvcc's frontend miscompiles GCC 13's libstdc++ in C++20 mode
+# (the iterator_traits<char*> bug); GCC 12 and >= 14 are fine.
+if [[ $variant == *cuda* ]]; then
+  cxx_bin="${CXX:-c++}"
+  cxx_major="$("$cxx_bin" -dumpversion 2>/dev/null | cut -d. -f1 || echo 0)"
+  if [[ ! $cxx_major =~ ^[0-9]+$ ]] || ((cxx_major == 13)) || ((cxx_major < 12)); then
+    warn "CUDA bundles need GCC 12 or >= 14 as nvcc's host compiler (13's libstdc++
+triggers an nvcc bug); '$cxx_bin' reports version '${cxx_major}'.
+Install a suitable g++ and re-run this installer with e.g. CXX=g++-14 (the
+compiler is recorded into the bundle), then configure DiFfRG with
+-DCMAKE_CXX_COMPILER=g++-14."
+  fi
+fi
 
 if [[ ${#missing[@]} -gt 0 ]]; then
   warn "The bundle is installed, but building DiFfRG will additionally need:"

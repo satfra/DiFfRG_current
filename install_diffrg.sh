@@ -20,6 +20,8 @@
 #   --prefix DIR               install prefix        (default ~/.local/share/DiFfRG)
 #   --build-dir DIR            temporary build dir   (default /tmp/diffrg-build)
 #   --deps-version X.Y.Z       prebuilt bundle version (default: latest)
+#   --deps-variant NAME        prebuilt bundle variant (default: platform CPU
+#                              bundle; wizard offers the CUDA one when a GPU is found)
 #   --deps-file TARBALL        prebuilt: install from a local bundle tarball
 #   --threads N                build threads         (default 6)
 #   --mpi / --no-mpi           self-build: MPI support
@@ -48,6 +50,7 @@ complete installation. Flags for non-interactive use:
   --prefix DIR               install prefix        (default ~/.local/share/DiFfRG)
   --build-dir DIR            temporary build dir   (default /tmp/diffrg-build)
   --deps-version X.Y.Z       prebuilt bundle version (default: latest)
+  --deps-variant NAME        prebuilt bundle variant (default: platform CPU bundle)
   --deps-file TARBALL        prebuilt: install from a local bundle tarball
   --threads N                build threads         (default 6)
   --mpi / --no-mpi           self-build: MPI support
@@ -74,6 +77,7 @@ mode=''
 prefix="${FOLDER:-$HOME/.local/share/DiFfRG}"
 build_dir="/tmp/diffrg-build"
 deps_version=''
+deps_variant=''
 deps_file=''
 threads="${THREADS:-6}"
 opt_mpi=0
@@ -91,6 +95,7 @@ while [[ $# -gt 0 ]]; do
   --prefix) prefix="$2"; shift 2 ;;
   --build-dir) build_dir="$2"; shift 2 ;;
   --deps-version) deps_version="$2"; shift 2 ;;
+  --deps-variant) deps_variant="$2"; shift 2 ;;
   --deps-file) deps_file="$2"; shift 2 ;;
   --threads) threads="$2"; shift 2 ;;
   --mpi) opt_mpi=1; shift ;;
@@ -232,6 +237,16 @@ ask build_dir "Temporary build folder" "${build_dir}"
 case "${prefix}" in /*) ;; *) prefix="$(pwd)/${prefix}" ;; esac
 case "${build_dir}" in /*) ;; *) build_dir="$(pwd)/${build_dir}" ;; esac
 
+# With an NVIDIA GPU present, offer the CUDA bundle (Ampere/sm_80 or newer;
+# needs the CUDA 12 toolkit installed to build applications).
+if [[ ${mode} == prebuilt && -z ${deps_variant} && -z ${deps_file} && "$(uname -s)" == Linux ]] \
+  && command -v nvidia-smi >/dev/null 2>&1; then
+  choose _c "An NVIDIA GPU was detected -- which bundle?" \
+    "CPU bundle -- no GPU support" \
+    "CUDA bundle -- GPU-enabled (Ampere/RTX 30xx or newer; requires the CUDA 12 toolkit)"
+  [[ ${_c} -eq 1 ]] && deps_variant="linux-x86_64-v3-cuda12"
+fi
+
 if [[ ${mode} == prebuilt && -z ${deps_version} && -z ${deps_file} ]]; then
   info "Fetching available dependency bundles..."
   mapfile -t versions < <(curl -fsSL "${REPO_API}/releases?per_page=100" 2>/dev/null |
@@ -282,7 +297,7 @@ ask threads "Build threads" "${threads}"
 echo
 echo "  ---------------------------------------------"
 echo "   Mode:            ${mode}"
-[[ ${mode} == prebuilt ]] && echo "   Bundle:          ${deps_file:-deps-v${deps_version}}"
+[[ ${mode} == prebuilt ]] && echo "   Bundle:          ${deps_file:-deps-v${deps_version}} (${deps_variant:-platform default})"
 if [[ ${mode} == source ]]; then
   echo "   MPI:             $([[ ${opt_mpi} -eq 1 ]] && echo on || echo off)"
   echo "   GPU (CUDA):      $([[ ${opt_gpu} -eq 1 ]] && echo on || echo off)"
@@ -331,10 +346,12 @@ if [[ ${mode} == prebuilt ]]; then
   fi
 
   info "Installing the pre-built dependency bundle..."
+  variant_arg=''
+  [[ -n ${deps_variant} ]] && variant_arg="--variant ${deps_variant}"
   if [[ -n ${deps_file} ]]; then
-    bash "${src}/install-diffrg-deps.sh" --file "${deps_file}" --prefix "${prefix}" ${force_arg}
+    bash "${src}/install-diffrg-deps.sh" --file "${deps_file}" --prefix "${prefix}" ${variant_arg} ${force_arg}
   else
-    bash "${src}/install-diffrg-deps.sh" --version "${deps_version}" --prefix "${prefix}" ${force_arg}
+    bash "${src}/install-diffrg-deps.sh" --version "${deps_version}" --prefix "${prefix}" ${variant_arg} ${force_arg}
   fi
 
   info "Building the DiFfRG library against the bundle..."
