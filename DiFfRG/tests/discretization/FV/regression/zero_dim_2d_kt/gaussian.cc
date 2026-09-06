@@ -44,12 +44,12 @@ namespace
   using NumberType = double;
   using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">, Scalar<"v">>;
   using Components = ComponentDescriptor<FEFunctionDesc>;
-  using Mesh = RectangularMesh<dim>;
-  using Discretization = FV::Discretization<Components, NumberType, Mesh>;
+  using Mesh = RectangularMeshSerial<dim>;
+  using Discretization = FV::Discretization<Components, Mesh, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
-  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
+  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<Discretization>;
 
   struct GaussianScenario {
     std::string name;
@@ -171,8 +171,6 @@ namespace
         {{"physical", {{"Lambda", 1.0e12}}},
          {"discretization",
           {{"fe_order", 0},
-           {"mesh_workers", static_cast<std::int64_t>(dealii::MultithreadInfo::n_threads())},
-           {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
            {"EoM_abs_tol", 1.0e-10},
@@ -337,7 +335,7 @@ namespace
     GaussianAssembler assembler(discretization, model, json);
     auto data_out_path =
         OutputPath::temporary(TemporaryRetention::remove_on_destruction, "zero_dim_2d_kt_gaussian", "output");
-    OutputSession<dim, VectorType> data_out(data_out_path, json);
+    OutputSession<Discretization> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     ImplicitTimeStepper time_stepper(json, assembler, data_out, *adaptor);
     FV::FlowingVariables<Discretization> state(discretization);
@@ -423,7 +421,8 @@ TEST_CASE("Zero-dimensional KT Gaussian exposes analytic affine fields and diago
   }
 }
 
-TEST_CASE("Zero-dimensional KT Gaussian 40x40 matrix preserves analytic observables", "[2d][FV][KT][gaussian][coarse][slow]")
+TEST_CASE("Zero-dimensional KT Gaussian 40x40 matrix preserves analytic observables",
+          "[2d][FV][KT][gaussian][coarse][slow]")
 {
   for (const auto &scenario : gaussian_scenarios()) {
     DYNAMIC_SECTION(scenario.name)

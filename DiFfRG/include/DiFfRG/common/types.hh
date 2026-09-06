@@ -5,12 +5,16 @@
 
 // external libraries
 #include <autodiff/forward/real.hpp>
-#include <deal.II/lac/block_sparse_matrix.h>
-#include <deal.II/lac/block_sparsity_pattern.h>
-#include <deal.II/lac/block_vector.h>
-#include <deal.II/lac/sparse_direct.h>
 
+// std
 #include <type_traits>
+
+// NOTE: the linear-algebra type map (get_type::NumberType / SparsityPattern /
+// InverseSparseMatrixType / BlockVectorType, is_distributed_la, SupportedVectorType and
+// the build-configuration defaults) lives in DiFfRG/common/linear_algebra.hh. It is
+// deliberately not included here: everything under physics/ needs only get_type::ctype,
+// and pulling deal.II's sparse_direct.h, block_sparse_matrix.h and the PETSc headers into
+// every Kokkos/CUDA translation unit through this file cost real compile time.
 
 namespace DiFfRG
 {
@@ -42,55 +46,6 @@ namespace DiFfRG
 
   namespace get_type
   {
-    namespace internal
-    {
-      //--------------------------------------------------
-      // Hidden unspecified type helpers
-      //--------------------------------------------------
-
-      template <typename VectorType> struct _NumberType;
-
-      template <typename SparseMatrixType> struct _SparsityPattern;
-
-      template <typename SparseMatrixType> struct _InverseSparseMatrixType;
-
-      //--------------------------------------------------
-      // Specified type helpers for standard vectors
-      //--------------------------------------------------
-
-      template <typename NT> struct _NumberType<dealii::Vector<NT>> {
-        using value = NT;
-      };
-      template <typename NT> struct _SparsityPattern<dealii::SparseMatrix<NT>> {
-        using value = dealii::SparsityPattern;
-      };
-      template <typename NT> struct _InverseSparseMatrixType<dealii::SparseMatrix<NT>> {
-        using value = dealii::SparseDirectUMFPACK;
-      };
-
-      //--------------------------------------------------
-      // Specified type helpers for block vectors
-      //--------------------------------------------------
-
-      template <typename NT> struct _NumberType<dealii::BlockVector<NT>> {
-        using value = NT;
-      };
-      template <typename NT> struct _SparsityPattern<dealii::BlockSparseMatrix<NT>> {
-        using value = dealii::BlockSparsityPattern;
-      };
-      template <typename NT> struct _InverseSparseMatrixType<dealii::BlockSparseMatrix<NT>> {
-        using value = dealii::SparseDirectUMFPACK;
-      };
-    } // namespace internal
-
-    template <typename VectorType> using NumberType = typename internal::_NumberType<VectorType>::value;
-
-    template <typename SparseMatrixType>
-    using SparsityPattern = typename internal::_SparsityPattern<SparseMatrixType>::value;
-
-    template <typename SparseMatrixType>
-    using InverseSparseMatrixType = typename internal::_InverseSparseMatrixType<SparseMatrixType>::value;
-
     namespace internal
     {
       template <typename CT> struct _ctype;

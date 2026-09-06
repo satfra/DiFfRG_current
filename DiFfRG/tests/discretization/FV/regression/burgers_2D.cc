@@ -15,14 +15,14 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <limits>
 #include <memory>
 #include <sstream>
-#include <cstdint>
-#include <filesystem>
-#include <fstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -74,13 +74,13 @@ namespace
   using NumberType = double;
   using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">>;
   using Components = ComponentDescriptor<FEFunctionDesc>;
-  using Mesh = RectangularMesh<dim>;
-  using Discretization = FV::Discretization<Components, NumberType, Mesh>;
+  using Mesh = RectangularMeshSerial<dim>;
+  using Discretization = FV::Discretization<Components, Mesh, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, class Burgers2DExample11Model, Reconstructor>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA<Assembler>;
 
   bool inside_disk(const Point<dim> &pos, const double center_x, const double center_y)
   {
@@ -142,8 +142,6 @@ namespace
         {{"physical", {{"Lambda", 1.0}}},
          {"discretization",
           {{"fe_order", 0},
-           {"mesh_workers", 1},
-           {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
            {"EoM_abs_tol", 1.0e-10},
@@ -217,7 +215,7 @@ namespace
     Assembler assembler(discretization, model, json);
 
     auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, run_name, "output");
-    OutputSession<dim, VectorType> data_out(data_out_path, json);
+    OutputSession<Discretization> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     TimeStepper time_stepper(json, assembler, data_out, *adaptor);
 
@@ -257,7 +255,6 @@ namespace
     }
     return target;
   }
-
 
   std::filesystem::path reference_fixture_path()
   {
@@ -389,13 +386,13 @@ TEST_CASE("2D Burgers disk benchmark matches downsampled fine-grid run", "[2d][F
   const auto medium = run_burgers(n_medium_cells, "burgers_2D_medium_grid");
   const RegressionMetrics medium_metrics = compute_metrics(n_medium_cells, medium, downsampled_fine_medium);
 
-  std::cout << std::scientific << std::setprecision(8)
-            << "2D Burgers " << n_coarse_cells << "x" << n_coarse_cells << " vs downsampled "
-            << n_fine_cells << "x" << n_fine_cells << ": L1=" << coarse_metrics.l1 << ", L2=" << coarse_metrics.l2
-            << ", Linf=" << coarse_metrics.linf << ", mass=" << coarse_metrics.mass << ", min=" << coarse_metrics.min
-            << ", max=" << coarse_metrics.max << ", antisymmetry=" << coarse_metrics.antisymmetry << '\n'
-            << "2D Burgers " << n_medium_cells << "x" << n_medium_cells << " vs downsampled "
-            << n_fine_cells << "x" << n_fine_cells << ": L1=" << medium_metrics.l1 << ", L2=" << medium_metrics.l2
+  std::cout << std::scientific << std::setprecision(8) << "2D Burgers " << n_coarse_cells << "x" << n_coarse_cells
+            << " vs downsampled " << n_fine_cells << "x" << n_fine_cells << ": L1=" << coarse_metrics.l1
+            << ", L2=" << coarse_metrics.l2 << ", Linf=" << coarse_metrics.linf << ", mass=" << coarse_metrics.mass
+            << ", min=" << coarse_metrics.min << ", max=" << coarse_metrics.max
+            << ", antisymmetry=" << coarse_metrics.antisymmetry << '\n'
+            << "2D Burgers " << n_medium_cells << "x" << n_medium_cells << " vs downsampled " << n_fine_cells << "x"
+            << n_fine_cells << ": L1=" << medium_metrics.l1 << ", L2=" << medium_metrics.l2
             << ", Linf=" << medium_metrics.linf << ", mass=" << medium_metrics.mass << ", min=" << medium_metrics.min
             << ", max=" << medium_metrics.max << ", antisymmetry=" << medium_metrics.antisymmetry << '\n';
 

@@ -28,12 +28,12 @@ namespace DiFfRG
     template <typename...> inline constexpr bool output_frame_api_removed = false;
   }
 
-  template <uint dim, typename VectorType> class OutputSession;
+  template <uint dim, typename VectorType> class OutputSession_impl;
 
   /**
    * Scoped collection surface for one complete output event.
    *
-   * Frames cannot be copied, stored, or committed independently. OutputSession
+   * Frames cannot be copied, stored, or committed independently. OutputSession_impl
    * creates one inside write_frame() and validates the complete contribution
    * before flushing the frame sinks. A contribution or flush error makes the
    * session fail-stop so partially staged state can never leak into a later frame.
@@ -159,10 +159,10 @@ namespace DiFfRG
     }
 
   private:
-    explicit OutputFrame(OutputSession<dim, VectorType> &session) : session(session) {}
-    OutputSession<dim, VectorType> &session;
+    explicit OutputFrame(OutputSession_impl<dim, VectorType> &session) : session(session) {}
+    OutputSession_impl<dim, VectorType> &session;
     std::set<std::string> readout_ids;
-    friend class OutputSession<dim, VectorType>;
+    friend class OutputSession_impl<dim, VectorType>;
   };
 
   /**
@@ -172,24 +172,25 @@ namespace DiFfRG
    * frame submissions are serialized; VTK writing remains bounded and
    * asynchronous inside FEOutput. No process-global output state is used.
    */
-  template <uint dim, typename VectorType> class OutputSession
+  template <uint dim, typename VectorType> class OutputSession_impl
   {
   public:
-    OutputSession() : OutputSession(OutputPath::temporary(), Config::OutputSettings{}) {}
-    explicit OutputSession(const ConfigTree &config) : OutputSession(path_from(config), Config::OutputSettings(config))
+    OutputSession_impl() : OutputSession_impl(OutputPath::temporary(), Config::OutputSettings{}) {}
+    explicit OutputSession_impl(const ConfigTree &config)
+        : OutputSession_impl(path_from(config), Config::OutputSettings(config))
     {
     }
-    explicit OutputSession(OutputPath path, Config::OutputSettings settings = {});
-    OutputSession(OutputPath path, const ConfigTree &config)
-        : OutputSession(std::move(path), Config::OutputSettings(config))
+    explicit OutputSession_impl(OutputPath path, Config::OutputSettings settings = {});
+    OutputSession_impl(OutputPath path, const ConfigTree &config)
+        : OutputSession_impl(std::move(path), Config::OutputSettings(config))
     {
     }
-    ~OutputSession() noexcept;
+    ~OutputSession_impl() noexcept;
 
-    OutputSession(const OutputSession &) = delete;
-    OutputSession &operator=(const OutputSession &) = delete;
-    OutputSession(OutputSession &&) = delete;
-    OutputSession &operator=(OutputSession &&) = delete;
+    OutputSession_impl(const OutputSession_impl &) = delete;
+    OutputSession_impl &operator=(const OutputSession_impl &) = delete;
+    OutputSession_impl(OutputSession_impl &&) = delete;
+    OutputSession_impl &operator=(OutputSession_impl &&) = delete;
 
     template <typename Contributor> void write_frame(const double time, Contributor &&contributor)
     {
@@ -227,8 +228,8 @@ namespace DiFfRG
     /** Join pending writers and surface their first error without closing the session. */
     void drain();
 
-    /** Drain pending writers and permanently close the session. */
-    void finish();
+    /** Drain pending writers and permanently close the session, marking its HDF5 files finished. */
+    void finish() { finish_impl(/* crashed = */ false); }
     void set_Lambda(double Lambda);
     const std::string &run_name() const noexcept { return output_name; }
     const OutputPath &path() const noexcept { return output_path; }
@@ -261,6 +262,10 @@ namespace DiFfRG
 
     OutputPath output_path;
     Config::OutputSettings settings;
+    /** Shared by finish() and the destructor. `crashed` only selects the value recorded in the
+     * HDF5 files' `crashed` attribute; everything else happens either way. */
+    void finish_impl(bool crashed);
+
     const std::string top_folder;
     const std::string output_name;
     const std::string output_folder;
@@ -296,4 +301,21 @@ namespace DiFfRG
 
     friend class OutputFrame<dim, VectorType>;
   };
+
+  // ##############################################################################
+  // Application-facing spelling
+  // ##############################################################################
+  //
+  // The class above takes the linear algebra spelled out because it is compiled out of line: the
+  // set of valid arguments is closed by the explicit instantiations in src/. Applications name
+  // the assembler instead and let this alias project it onto that fixed parameter list. That
+  // projection is also what keeps the session in step with the timestepper, which holds an
+  // OutputSession_impl<dim, VectorType> * taken from the very same assembler.
+  //
+  // The argument is anything exposing dim and VectorType -- an Assembler, or a Discretization
+  // where the assembler type is not a single type (e.g. a test running one discretization
+  // against several models).
+  template <typename AssemblerOrDiscretization>
+  using OutputSession =
+      OutputSession_impl<AssemblerOrDiscretization::dim, typename AssemblerOrDiscretization::VectorType>;
 } // namespace DiFfRG

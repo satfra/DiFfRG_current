@@ -57,13 +57,13 @@ namespace
   using NumberType = double;
   using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">>;
   using Components = ComponentDescriptor<FEFunctionDesc>;
-  using Mesh = RectangularMesh<dim>;
-  using Discretization = FV::Discretization<Components, NumberType, Mesh>;
+  using Mesh = RectangularMeshSerial<dim>;
+  using Discretization = FV::Discretization<Components, Mesh, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, class BuckleyLeverett2DExample12Model, Reconstructor>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA<Assembler>;
 
   double initial_value(const Point<dim> &pos) { return pos.square() < disk_radius_squared ? 1.0 : 0.0; }
 
@@ -126,8 +126,6 @@ namespace
         {{"physical", {{"Lambda", 1.0}}},
          {"discretization",
           {{"fe_order", 0},
-           {"mesh_workers", 1},
-           {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
            {"EoM_abs_tol", 1.0e-10},
@@ -225,7 +223,7 @@ namespace
     Assembler assembler(discretization, model, json);
 
     auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, run_name, "output");
-    OutputSession<dim, VectorType> data_out(data_out_path, json);
+    OutputSession<Discretization> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     TimeStepper time_stepper(json, assembler, data_out, *adaptor);
 
@@ -276,7 +274,6 @@ namespace
     }
     return target;
   }
-
 
   std::filesystem::path reference_fixture_path()
   {

@@ -27,9 +27,9 @@ TEST_CASE("Test LDG on Constant model", "[discretization][ldg]")
   constexpr uint dim = 1;
   using Model = Testing::LDGModelConstant<dim>;
   using NumberType = double;
-  using Discretization = LDG::Discretization<typename Model::Components, NumberType, RectangularMesh<dim>>;
+  using Discretization = LDG::Discretization<Model, RectangularMeshSerial<dim>, NumberType>;
   using VectorType = typename Discretization::VectorType;
-  using Assembler = LDG::Assembler<Discretization, Model>;
+  using Assembler = LDG::Assembler<Discretization>;
 
   ConfigTree json = json::value(
       {{"physical", {}},
@@ -46,8 +46,6 @@ TEST_CASE("Test LDG on Constant model", "[discretization][ldg]")
          {"jacobian_quadrature_factor", 0.5}}},
        {"discretization",
         {{"fe_order", GENERATE(0, 1, 3, 5)},
-         {"mesh_workers", 8},
-         {"batch_size", 64},
          {"overintegration", 0},
          {"output_subdivisions", 2},
 
@@ -82,7 +80,7 @@ TEST_CASE("Test LDG on Constant model", "[discretization][ldg]")
 
   // Define the objects needed to run the simulation
   Model model(p_prm);
-  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  RectangularMeshSerial<dim> mesh{Config::ConfigurationMesh<dim>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 

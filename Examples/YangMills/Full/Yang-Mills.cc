@@ -8,14 +8,13 @@ using namespace DiFfRG;
 
 // Choices for types
 using Model = YangMills;
-using VectorType = Vector<double>;
 using Assembler = Variables::Assembler<Model>;
-using TimeStepper = TimeStepperBoostABM<VectorType, dealii::SparseMatrix<get_type::NumberType<VectorType>>, 0>;
+using TimeStepper = TimeStepperBoostABM<Assembler>;
 
 bool run(const ConfigTree &json, const OutputPath &output_path, std::optional<ReportPort> external_log = std::nullopt)
 {
   // Define the objects needed to run the simulation
-  OutputSession<0, VectorType> data_out(output_path, json);
+  OutputSession<Assembler> data_out(output_path, json);
   const auto log = external_log.value_or(data_out.report_port());
   Model model(json);
   Assembler assembler(model, json);

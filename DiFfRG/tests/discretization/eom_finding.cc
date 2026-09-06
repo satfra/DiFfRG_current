@@ -45,8 +45,6 @@ namespace
            {"jacobian_quadrature_factor", 0.5}}},
          {"discretization",
           {{"fe_order", fe_order},
-           {"mesh_workers", 1},
-           {"batch_size", 16},
            {"overintegration", 0},
            {"output_subdivisions", 2},
            {"EoM_abs_tol", 1e-12},
@@ -330,10 +328,10 @@ namespace
               << " roughness=" << metrics.roughness_rms << '\n';
   }
 
-  template <int dim, template <typename, typename, typename> typename DiscretizationTemplate, typename Model>
+  template <int dim, template <typename...> typename DiscretizationTemplate, typename Model>
   void check_raw_potential_is_scalar_cg2(const Model &model, const int fe_order)
   {
-    using Discretization = DiscretizationTemplate<typename Model::Components, double, RectangularMesh<dim>>;
+    using Discretization = DiscretizationTemplate<Model, RectangularMesh<dim>>;
 
     auto json = make_json(fe_order);
     RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
@@ -353,13 +351,13 @@ namespace
     CHECK(raw.finite_element->conforms(FiniteElementData<dim>::H1));
   }
 
-  template <int dim, template <typename, typename, typename> typename DiscretizationTemplate, typename Model>
+  template <int dim, template <typename...> typename DiscretizationTemplate, typename Model>
   auto reconstruct_with_potential_with_model(const Model &model, const int fe_order,
                                              const double smoothing_length = -1., const uint refinement = 0,
                                              const std::optional<Point<dim>> &initial_guess = std::nullopt)
   {
     using NumberType = double;
-    using Discretization = DiscretizationTemplate<typename Model::Components, NumberType, RectangularMesh<dim>>;
+    using Discretization = DiscretizationTemplate<Model, RectangularMesh<dim>, NumberType>;
     using VectorType = typename Discretization::VectorType;
 
     setup_logger();
@@ -384,7 +382,7 @@ namespace
         [&](const auto &p, const auto &) { return p; }, EoM_config, initial_guess);
   }
 
-  template <int dim, template <typename, typename, typename> typename DiscretizationTemplate, typename Model>
+  template <int dim, template <typename...> typename DiscretizationTemplate, typename Model>
   Point<dim> reconstruct_minimum_with_model(const Model &model, const int fe_order, const double smoothing_length = -1.,
                                             const uint refinement = 0,
                                             const std::optional<Point<dim>> &initial_guess = std::nullopt)
@@ -394,7 +392,7 @@ namespace
         .point;
   }
 
-  template <int dim, template <typename, typename, typename> typename DiscretizationTemplate>
+  template <int dim, template <typename...> typename DiscretizationTemplate>
   Point<dim> reconstruct_minimum(const Testing::PhysicalParameters &prm, const int fe_order,
                                  const double smoothing_length = -1., const uint refinement = 0)
   {
@@ -469,7 +467,7 @@ TEST_CASE("Detailed EoM reconstruction owns the scalar potential and its gauge",
     }();
 
     using Model = Testing::ModelConstant<dim, dim>;
-    using Discretization = CG::Discretization<typename Model::Components, double, RectangularMesh<dim>>;
+    using Discretization = CG::Discretization<Model, RectangularMesh<dim>>;
 
     auto json = make_json(2);
     Model model(parameters_with_minimum(expected));
@@ -517,7 +515,7 @@ TEST_CASE("Raw potential evaluation stays independent of the EoM used to select 
 {
   constexpr uint dim = 1;
   using Model = ModelAffineEoM<dim>;
-  using Discretization = CG::Discretization<typename Model::Components, double, RectangularMesh<dim>>;
+  using Discretization = CG::Discretization<Model, RectangularMesh<dim>>;
 
   setup_logger();
   auto json = make_json(2);
@@ -562,7 +560,8 @@ TEST_CASE("Origin-centred FV vacuum keeps the diquark EoM near zero and its raw 
 {
   constexpr uint dim = 2;
   using Model = QMDVacuumModel;
-  using Discretization = FV::Discretization<typename Model::Components, double, RectangularMesh<dim>>;
+  using Discretization = FV::Discretization<Model, RectangularMesh<dim>>;
+
   setup_logger();
   auto json = make_json(0);
   json.set_string("/discretization/grid/x_grid", "0:0.005:0.2");
@@ -798,7 +797,7 @@ TEST_CASE("CG2 EoM potential refinement handles indefinite and singular Hessians
   CHECK_FALSE(DiFfRG::internal::projected_newton_direction<dim>(non_finite_hessian, gradient, free, direction));
 
   using Model = ModelAffineEoM<dim>;
-  using Discretization = CG::Discretization<typename Model::Components, double, RectangularMesh<dim>>;
+  using Discretization = CG::Discretization<Model, RectangularMesh<dim>>;
   const Point<dim> saddle(0.437, 0.583);
   const Model model(saddle, {{{1., 0.}, {0., -1.}}});
   auto json = make_json(2);
@@ -1129,7 +1128,7 @@ TEST_CASE("Raw-potential mass-Hessian recovery damps FV face resets without chan
 {
   constexpr uint dim = 1;
   using Model = CubicGradientModel;
-  using Discretization = FV::Discretization<typename Model::Components, double, RectangularMesh<dim>>;
+  using Discretization = FV::Discretization<Model, RectangularMesh<dim>>;
 
   setup_logger();
   auto json = make_json(0);
@@ -1204,7 +1203,7 @@ TEST_CASE("Analytical two-field Hessian-jump potential benchmarks masses beyond 
   constexpr uint dim = 2;
   constexpr double angle = 0.35;
   using Model = KinkedRadialPotentialGradientModel;
-  using Discretization = FV::Discretization<typename Model::Components, double, RectangularMesh<dim>>;
+  using Discretization = FV::Discretization<Model, RectangularMesh<dim>>;
 
   setup_logger();
   const auto gradient = [](const auto &, const auto &values) {
@@ -1473,10 +1472,10 @@ TEST_CASE("EoM gradient-jump damping is symmetric positive semidefinite on adapt
 
   DiFfRG::internal::assemble_potential_system(solution, solution_dof_handler, potential_dof_handler, potential_fe,
                                               mapping, zero_eom, quadrature, face_quadrature, constraints, undamped,
-                                              undamped_rhs, 0.);
+                                              undamped_rhs, 0., /*assemble_matrix = */ true);
   DiFfRG::internal::assemble_potential_system(solution, solution_dof_handler, potential_dof_handler, potential_fe,
                                               mapping, zero_eom, quadrature, face_quadrature, constraints, damped,
-                                              damped_rhs, 0.25);
+                                              damped_rhs, 0.25, /*assemble_matrix = */ true);
 
   double penalty_norm = 0.;
   double symmetry_error = 0.;
@@ -1523,7 +1522,7 @@ TEST_CASE("EoM max-iteration zero keeps the origin bypass", "[discretization][Eo
 {
   constexpr uint dim = 2;
   using Model = Testing::ModelConstant<dim, dim>;
-  using Discretization = CG::Discretization<typename Model::Components, double, RectangularMesh<dim>>;
+  using Discretization = CG::Discretization<Model, RectangularMesh<dim>>;
 
   setup_logger();
 

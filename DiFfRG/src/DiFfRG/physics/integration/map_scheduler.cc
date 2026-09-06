@@ -1,7 +1,11 @@
 #include <DiFfRG/physics/integration/map_scheduler.hh>
 
+// DiFfRG
+#include <DiFfRG/common/init.hh>
+
 // std
 #include <algorithm>
+#include <atomic>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -47,7 +51,14 @@ namespace DiFfRG
     {
       // Workers, not threads-per-evaluation: each worker loops over many evaluations, so it takes a
       // grain of them to amortize one parallel_for spawn.
-      static const double t = double(Kokkos::DefaultHostExecutionSpace().concurrency()) * host_grain;
+      //
+      // The workers are TBB's, so the count comes from DiFfRG's resolved budget. Asking Kokkos'
+      // host backend would answer 1, because that backend is Serial and does no work here.
+      //
+      // Deliberately not cached in a function-local static: the budget is resolved by DiFfRG::Init,
+      // and a caller that got here first would otherwise freeze a pre-resolution value for the rest
+      // of the process. The multiplication is free next to what it gates.
+      const double t = double(n_threads()) * host_grain;
       return t > 0. ? t : host_grain;
     }
   } // namespace internal
@@ -74,6 +85,8 @@ namespace DiFfRG
       m_quantum_pinned = true;
     }
     m_verbose = env_flag("DIFFRG_MAP_VERBOSE");
+    const double verify_every = env_double("DIFFRG_MAP_VERIFY_EVERY", double(m_verify_every));
+    m_verify_every = verify_every < 0. ? m_verify_every : static_cast<size_t>(verify_every);
     reset_load();
   }
 
@@ -110,17 +123,48 @@ namespace DiFfRG
     return owners;
   }
 
+  namespace
+  {
+    std::atomic<int> no_maps_depth{0};
+  }
+
+  NoMapsHere::NoMapsHere() { no_maps_depth.fetch_add(1, std::memory_order_relaxed); }
+  NoMapsHere::~NoMapsHere() { no_maps_depth.fetch_sub(1, std::memory_order_relaxed); }
+  bool NoMapsHere::active() { return no_maps_depth.load(std::memory_order_relaxed) > 0; }
+
   MapSlice MapScheduler::schedule(const size_t integrator_id, void *dest, const size_t elem_size,
                                   const size_t grid_size, const size_t quadrature_volume, const bool splittable,
                                   const MapTarget target)
   {
+    // Checked before the early-out on purpose: a map() from inside FE assembly is a bug in a
+    // serial run too (it is simply not yet fatal there), and reporting it only under MPI would let
+    // it be introduced during single-rank development and surface as a hang in production.
+    if (NoMapsHere::active())
+      MPI::abort(m_comm, "map() was called from inside a distributed FE assembly scope (integrator id " +
+                             std::to_string(integrator_id) +
+                             "). map() is collective and must be issued identically on every rank, but a cell "
+                             "worker only visits this rank's cells. Move the map() out of the assembly loop -- "
+                             "compute it once before assembly and read the result inside.");
+
     if (!active() || grid_size == 0) return MapSlice{0, grid_size};
 
     const double S = double(grid_size) * double(quadrature_volume);
-    // An explicit override applies to every execution space; otherwise each map() is split against
-    // the threshold of the resource it actually runs on. The override replaces the threshold only:
-    // the resource still selects which budget the slices are charged to.
-    const double quantum = m_quantum_override > 0. ? m_quantum_override : target.fill_threshold;
+    // An explicit override applies to every execution space and to both cases below; the user
+    // pinned it. The override replaces the threshold only: the resource still selects which budget
+    // the slices are charged to.
+    //
+    // Otherwise the threshold depends on whether anything else can use the ranks this map leaves
+    // out. Inside a batch, that is the *fill* threshold of the resource the map runs on: splitting
+    // past it buys nothing, because the other maps in the batch will take those ranks, and the
+    // packing is what spreads a block of cheap flows across ranks instead of slivering each one.
+    // Unbatched, map() flushes on return, so this map *is* the batch -- every rank that does not
+    // own a slice sits in the Allgatherv until the owners finish. There the only reason left not to
+    // split is that a slice must still cover its own launch.
+    const double quantum =
+        m_quantum_override > 0.
+            ? m_quantum_override
+            : (m_batched ? target.fill_threshold
+                         : std::min(target.fill_threshold, internal::launch_threshold));
 
     size_t r = 1;
     if (splittable && grid_size > 1 && quantum > 0.) {
@@ -232,15 +276,37 @@ namespace DiFfRG
 
     if (m_plan.empty()) return false;
 
+    // Counts batches that actually get exchanged, which is what the verification schedule below is
+    // spaced against. In a healthy run every rank increments it on the same batches.
+    ++m_batch_index;
+
     if (m_verbose && !m_logged) {
       if (m_rank == 0) log_plan();
       m_logged = true;
     }
 
     // -- 1. Agree that every rank built the same plan. -------------------------------------------
-    // A mismatch here would otherwise present as a hang inside the Allgatherv below (mismatched
+    // A mismatch here would otherwise present as a hang or a corrupt gather below (mismatched
     // counts), which is close to undiagnosable on a cluster.
-    if (!m_simulated && !MPI::agree(m_comm, plan_hash()))
+    //
+    // This is one MPI_Allreduce (already the cheap single-collective form -- see MPI::agree), but
+    // at several hundred ranks it is latency-bound and comparable to the Allgatherv it guards, and
+    // with no deferral scope open it is paid once per flow per residual evaluation. So it runs on
+    // the first verify_head batches and every m_verify_every-th batch after that.
+    // DIFFRG_MAP_VERIFY_EVERY=1 restores it on every batch.
+    //
+    // Be clear about what this gives up. The head window still catches the failure that actually
+    // happens -- a model whose flow sequence is wrong from the start -- immediately. But a
+    // divergence appearing later is only diagnosed at the next verified batch, and until then a
+    // malformed Allgatherv runs instead. Worse, the same bug class can desynchronise m_batch_index
+    // itself (a rank that skips a flow also skips its batch), and then one rank can enter this
+    // Allreduce while another goes straight to the gather -- a hang, which is precisely what the
+    // check exists to prevent. In other words, skipping degrades the guarantee to what it was
+    // before the check existed; it never makes things worse than having no check at all. Anyone
+    // debugging a hang or a wrong distributed result should set DIFFRG_MAP_VERIFY_EVERY=1 first.
+    const bool verify_plan =
+        m_batch_index <= verify_head || m_verify_every == 0 || (m_batch_index % m_verify_every) == 0;
+    if (!m_simulated && verify_plan && !MPI::agree(m_comm, plan_hash()))
       MPI::abort(m_comm, "ranks disagree about the map schedule. Every rank must issue the same sequence of map() "
                          "calls; a rank-local branch around a flow evaluation is the usual cause.");
 

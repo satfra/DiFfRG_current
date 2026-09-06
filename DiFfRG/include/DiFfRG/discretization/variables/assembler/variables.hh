@@ -4,7 +4,6 @@
 #include <sstream>
 
 // external libraries
-#include <deal.II/base/multithread_info.h>
 #include <deal.II/base/timer.h>
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/lac/full_matrix.h>
@@ -41,18 +40,34 @@ namespace DiFfRG
       using Model = Model_;
       using NumberType = double;
       using VectorType = Vector<double>;
+      using SparseMatrixType = SparseMatrix<double>;
 
       using Components = typename Model_::Components;
       static constexpr uint dim = 0;
-      Assembler(Model &model, const ConfigTree &config)
-          : model(model), mesh_workers(config.get_uint("/discretization/mesh_workers", 8))
+
+      /// This assembler has no FE space at all (dim == 0) and never runs a mesh_loop, so it
+      /// needs neither an assembly schedule nor a report port; the config is unused.
+      Assembler(Model &model, const ConfigTree & /*config*/)
+          : model(model)
       {
-        if (mesh_workers == 0) mesh_workers = std::max(1u, dealii::MultithreadInfo::n_threads() / 2);
         static_assert(Components::count_fe_functions() == 0, "The pure variable assembler cannot handle FE functions!");
         reinit();
       }
 
       virtual void reinit_vector(VectorType &vec) const override { vec.reinit(0); }
+      // Serial by construction: this assembler has no FE space at all (dim == 0) and hard-codes
+      // dealii::Vector/SparseMatrix in its base-class list, so there is no distributed policy here.
+      virtual void reinit_matrix(SparseMatrixType &matrix) const override
+      {
+        matrix.reinit(get_sparsity_pattern_jacobian());
+      }
+      virtual MPI_Comm get_communicator() const override { return MPI_COMM_SELF; }
+      // dim == 0: no FE space, and the vector type is serial by construction, so the view is a
+      // passthrough and the layout arguments are ignored.
+      virtual void reinit_solution_view(SolutionView<VectorType> &view) const override
+      {
+        view.reinit(dealii::IndexSet(), dealii::IndexSet(), MPI_COMM_SELF);
+      }
 
       virtual IndexSet get_differential_indices() const override { return IndexSet(); }
 
@@ -156,9 +171,6 @@ namespace DiFfRG
 
     private:
       Model &model;
-      /// Number of cells kept in flight in the MeshWorker assembly pipeline (its queue length).
-      /// This is not a thread count - see /discretization/threads for that.
-      uint mesh_workers;
 
       SparsityPattern sparsity_pattern_mass;
       SparsityPattern sparsity_pattern_jacobian;

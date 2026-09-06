@@ -21,6 +21,10 @@ namespace DiFfRG
       bool asynchronous = true;
       bool write_vtk = true;
       bool write_hdf5 = true;
+      /** Mirrors /output/json. Forces the `<name>.log.json` copy of the configuration to be
+       * written; without it the file is only produced when there is no HDF5 output to carry the
+       * configuration in its `/config` group. */
+      bool write_json = false;
       unsigned int max_pending_frames = 2;
       /** Frames the HDF5 writer thread may have in flight. Deliberately separate from
        * `max_pending_frames`, which bounds VTK/DataOut memory and has nothing to do with this.
@@ -33,9 +37,12 @@ namespace DiFfRG
       unsigned int hdf5_queue_depth = 1;
       std::size_t max_pending_bytes = default_max_pending_bytes;
       unsigned int subdivisions = 1;
-      /** Mirrors /output/verbosity, which the timesteppers already read. At 3 and above the
-       * output sinks emit one per-frame timing line and one output_timings.csv row. The
-       * aggregate timing report at the end of a run is always emitted, independent of this. */
+      /** Mirrors /output/verbosity, which the timesteppers already read. It sets how much of the run log
+       * reaches the console: at 0 only warnings and errors, at 1 the ordinary messages, from 2 upwards also
+       * debug records. The log file always receives everything, independent of this.
+       *
+       * At 3 and above the output sinks additionally emit one per-frame timing line and one
+       * output_timings.csv row. The aggregate timing report at the end of a run is always emitted. */
       int verbosity = 0;
       std::size_t log_queue_size = 8192;
       spdlog::level::level_enum log_level = spdlog::level::info;

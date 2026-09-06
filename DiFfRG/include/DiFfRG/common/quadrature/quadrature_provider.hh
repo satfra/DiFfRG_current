@@ -44,6 +44,54 @@ namespace DiFfRG
                       "Unknown type requested of MatsubaraStorage::get_matsubara_quadrature");
       }
 
+      /**
+       * @brief The exact Matsubara sum for a summand of finite extent in the frequency.
+       *
+       * Keyed on (T, node count) rather than on the cutoff, because that is all the rule depends
+       * on: the cutoff enters only through floor(cutoff / 2 pi T). Neighbouring RG steps therefore
+       * share an entry instead of each building their own, and the map stays bounded by the number
+       * of distinct mode counts the flow visits.
+       */
+      template <typename NT = double> MatsubaraQuadrature<NT> &get_matsubara_exact_sum(const NT T, const NT freq_cutoff)
+      {
+        std::lock_guard<std::mutex> lock(m_mutex);
+
+        const int n = MatsubaraQuadrature<NT>::modes_below(T, freq_cutoff);
+
+        if constexpr (std::is_same_v<NT, double>) {
+          return find_exact_d(n, find_exact_T_d(T));
+        } else if constexpr (std::is_same_v<NT, float>) {
+          return find_exact_f(n, find_exact_T_f(T));
+        }
+        static_assert(std::is_same_v<NT, double> || std::is_same_v<NT, float>,
+                      "Unknown type requested of MatsubaraStorage::get_matsubara_exact_sum");
+      }
+
+      /**
+       * @brief Gauss-Legendre over [-cutoff, cutoff] for a summand of finite extent; see
+       * MatsubaraQuadrature::reinit_finite_interval.
+       *
+       * Keyed on (order, cutoff). The cutoff is continuous -- it tracks k -- so this rebuilds once
+       * per RG step, exactly as the T=0 rule it replaces already did. The Gauss-Legendre rule
+       * itself is NOT rebuilt: it comes from QuadratureStorage and only the O(N) scaling by the
+       * cutoff happens here.
+       */
+      template <typename NT = double>
+      MatsubaraQuadrature<NT> &get_finite_interval(const NT cutoff, const size_t order,
+                                                   const Kokkos::View<const NT *, CPU_memory> gl_nodes,
+                                                   const Kokkos::View<const NT *, CPU_memory> gl_weights)
+      {
+        std::lock_guard<std::mutex> lock(m_mutex);
+
+        if constexpr (std::is_same_v<NT, double>) {
+          return find_interval_d(cutoff, find_interval_order_d(order), gl_nodes, gl_weights);
+        } else if constexpr (std::is_same_v<NT, float>) {
+          return find_interval_f(cutoff, find_interval_order_f(order), gl_nodes, gl_weights);
+        }
+        static_assert(std::is_same_v<NT, double> || std::is_same_v<NT, float>,
+                      "Unknown type requested of MatsubaraStorage::get_finite_interval");
+      }
+
       void set_verbosity(int v);
       void set_report_port(ReportPort port) { log = std::move(port); }
 
@@ -51,6 +99,21 @@ namespace DiFfRG
       void set_min_matsubara_size(const int value);
       void set_max_matsubara_size(const int value);
       void set_matsubara_precision_factor(const double value);
+
+      /// The node ceiling every rule built here is clamped to.
+      int get_max_matsubara_size() const { return max_matsubara_size; }
+
+      /**
+       * @brief Nodes the Monien rule would want at (T, typical_E) under THIS provider's dials.
+       *
+       * Exposed because choosing between a sum and an integral is the caller's decision (see
+       * QuadratureIntegrator_fT::refresh_matsubara) but the numbers that price it -- the reach
+       * multiplier and matsubara_precision_factor -- live here.
+       */
+      template <typename NT = double> int predicted_size(const NT T, const NT typical_E) const
+      {
+        return MatsubaraQuadrature<NT>::predict_size(T, typical_E, matsubara_precision_factor);
+      }
 
     private:
       MatsubaraQuadrature<double> &get_matsubara_quadrature_d(const double T, const double E);
@@ -68,8 +131,37 @@ namespace DiFfRG
       EnergyIterator<double> find_E_d(const double E, TemperatureIterator<double> T_it);
       EnergyIterator<float> find_E_f(const float E, TemperatureIterator<float> T_it);
 
+      template <typename NT = double> using ExactStorageType = std::map<double, std::map<int, MatsubaraQuadrature<NT>>>;
+      template <typename NT = double> using ExactTemperatureIterator = typename ExactStorageType<NT>::iterator;
+
+      ExactTemperatureIterator<double> find_exact_T_d(const double T);
+      ExactTemperatureIterator<float> find_exact_T_f(const float T);
+
+      MatsubaraQuadrature<double> &find_exact_d(const int n, ExactTemperatureIterator<double> T_it);
+      MatsubaraQuadrature<float> &find_exact_f(const int n, ExactTemperatureIterator<float> T_it);
+
       StorageType<double> quadratures_d;
       StorageType<float> quadratures_f;
+
+      ExactStorageType<double> exact_sums_d;
+      ExactStorageType<float> exact_sums_f;
+
+      template <typename NT = double>
+      using IntervalStorageType = std::map<size_t, std::map<double, MatsubaraQuadrature<NT>>>;
+      template <typename NT = double> using IntervalOrderIterator = typename IntervalStorageType<NT>::iterator;
+
+      IntervalOrderIterator<double> find_interval_order_d(const size_t order);
+      IntervalOrderIterator<float> find_interval_order_f(const size_t order);
+
+      MatsubaraQuadrature<double> &find_interval_d(const double cutoff, IntervalOrderIterator<double> o_it,
+                                                   const Kokkos::View<const double *, CPU_memory> n,
+                                                   const Kokkos::View<const double *, CPU_memory> w);
+      MatsubaraQuadrature<float> &find_interval_f(const float cutoff, IntervalOrderIterator<float> o_it,
+                                                  const Kokkos::View<const float *, CPU_memory> n,
+                                                  const Kokkos::View<const float *, CPU_memory> w);
+
+      IntervalStorageType<double> intervals_d;
+      IntervalStorageType<float> intervals_f;
 
       int verbosity = 0;
       // These must agree with the ConfigTree defaults read in QuadratureProvider's
@@ -150,8 +242,13 @@ namespace DiFfRG
     /**
      * @brief Construct a provider that reports the quadratures it builds.
      *
-     * The standalone overload reports to the console and additionally opens a file when
-     * /output/folder is present. Passing a port joins an existing run reporter.
+     * The standalone overload reports into the run log, <output folder>/<output name>.log, under the
+     * "quadrature" tag when /output/folder is present. It owns that reporter rather than borrow one
+     * from an OutputSession, because integrators request their quadratures inside their constructors
+     * -- typically before any session exists; the file sink is shared process-wide per path, so the
+     * session opening the same file later appends to the quadrature inventory instead of truncating
+     * it. The inventory never echoes to the console, where it would drown the timestepper progress
+     * report. Passing a port joins an existing run reporter.
      */
     explicit QuadratureProvider(const ConfigTree &config);
     QuadratureProvider(const ConfigTree &config, ReportPort log);
@@ -205,12 +302,45 @@ namespace DiFfRG
     }
 
     /**
-     * @brief Get the effective temperature for the Matsubara zero-mode weight.
-     * Returns 0 for vacuum (T=0) quadratures and the physical T for Monien quadratures.
+     * @brief The Matsubara rule itself, for callers that need more than nodes and weights -- its
+     * size, or the zero-mode-inclusive node list of sum_nodes(). The reference is into a
+     * node-based map and stays valid for the lifetime of the provider.
      */
-    template <typename NT = double> NT matsubara_T(const NT T, const NT typical_E)
+    template <typename NT = double> const MatsubaraQuadrature<NT> &matsubara_rule(const NT T, const NT typical_E)
     {
-      return matsubara_storage.get_matsubara_quadrature<NT>(T, typical_E).get_T();
+      return matsubara_storage.get_matsubara_quadrature<NT>(T, typical_E);
+    }
+
+    /// The node ceiling /integration/max_matsubara_size, i.e. the budget the rule choice is made against.
+    int max_matsubara_size() const { return matsubara_storage.get_max_matsubara_size(); }
+
+    /**
+     * @brief Nodes the Monien rule would want at (T, typical_E). See MatsubaraStorage::predicted_size.
+     */
+    template <typename NT = double> int matsubara_predicted_size(const NT T, const NT typical_E) const
+    {
+      return matsubara_storage.template predicted_size<NT>(T, typical_E);
+    }
+
+    /**
+     * @brief The exact Matsubara sum for a summand that vanishes above `freq_cutoff`.
+     * See MatsubaraQuadrature::reinit_exact_sum.
+     */
+    template <typename NT = double> const MatsubaraQuadrature<NT> &matsubara_exact_sum(const NT T, const NT freq_cutoff)
+    {
+      return matsubara_storage.get_matsubara_exact_sum<NT>(T, freq_cutoff);
+    }
+
+    /**
+     * @brief Gauss-Legendre over the finite frequency interval a compactly supported summand lives
+     * on, at the given order. See MatsubaraQuadrature::reinit_finite_interval.
+     */
+    template <typename NT = double>
+    const MatsubaraQuadrature<NT> &matsubara_finite_interval(const NT cutoff, const size_t order)
+    {
+      auto &gl = quadrature_storage.get_quadrature<NT>(order, QuadratureType::legendre);
+      return matsubara_storage.template get_finite_interval<NT>(cutoff, order, gl.template nodes<CPU_memory>(),
+                                                                gl.template weights<CPU_memory>());
     }
 
     /**

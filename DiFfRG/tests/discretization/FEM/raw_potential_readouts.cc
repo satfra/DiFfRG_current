@@ -115,7 +115,6 @@ namespace
                         {"discretization",
                          {{"fe_order", fe_order},
                           {"threads", 1},
-                          {"batch_size", 8},
                           {"overintegration", 0},
                           {"output_subdivisions", 1},
                           {"EoM_abs_tol", 1e-12},
@@ -129,14 +128,14 @@ namespace
   void check_raw_potential_readout(Model &model, const int fe_order)
   {
     auto json = make_json(fe_order);
-    RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
+    RectangularMeshSerial<1> mesh{Config::ConfigurationMesh<1>(json)};
     Discretization discretization(mesh, json);
     Assembler assembler(discretization, model, json);
     FE::FlowingVariables state(discretization);
     state.interpolate(model);
 
     auto output_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "raw_potential", "output");
-    OutputSession<1, typename Discretization::VectorType> output(output_path, json);
+    OutputSession<Discretization> output(output_path, json);
     output.write_frame(0., [&](auto &frame) {
       assembler.attach_data_output(frame, state.spatial_data(), typename Discretization::VectorType());
     });
@@ -167,32 +166,32 @@ TEST_CASE("Spatial assemblers expose one raw-potential view to readouts and extr
   SECTION("CG")
   {
     RawPotentialProbe model;
-    using Discretization = CG::Discretization<ProbeComponents, double, RectangularMesh<1>>;
-    check_raw_potential_readout<Discretization, CG::Assembler<Discretization, RawPotentialProbe>>(model, 2);
+    using Discretization = CG::Discretization<RawPotentialProbe, RectangularMeshSerial<1>>;
+    check_raw_potential_readout<Discretization, CG::Assembler<Discretization>>(model, 2);
   }
   SECTION("DG")
   {
     RawPotentialProbe model;
-    using Discretization = DG::Discretization<ProbeComponents, double, RectangularMesh<1>>;
-    check_raw_potential_readout<Discretization, DG::Assembler<Discretization, RawPotentialProbe>>(model, 1);
+    using Discretization = DG::Discretization<RawPotentialProbe, RectangularMeshSerial<1>>;
+    check_raw_potential_readout<Discretization, DG::Assembler<Discretization>>(model, 1);
   }
   SECTION("dDG")
   {
     RawPotentialProbe model;
-    using Discretization = DG::Discretization<ProbeComponents, double, RectangularMesh<1>>;
-    check_raw_potential_readout<Discretization, dDG::Assembler<Discretization, RawPotentialProbe>>(model, 1);
+    using Discretization = DG::Discretization<RawPotentialProbe, RectangularMeshSerial<1>>;
+    check_raw_potential_readout<Discretization, dDG::Assembler<Discretization>>(model, 1);
   }
   SECTION("LDG")
   {
     RawPotentialLDGProbe model;
-    using Discretization = LDG::Discretization<LDGProbeComponents, double, RectangularMesh<1>>;
-    check_raw_potential_readout<Discretization, LDG::Assembler<Discretization, RawPotentialLDGProbe>>(model, 1);
+    using Discretization = LDG::Discretization<RawPotentialLDGProbe, RectangularMeshSerial<1>>;
+    check_raw_potential_readout<Discretization, LDG::Assembler<Discretization>>(model, 1);
   }
   SECTION("KT-FV")
   {
     RawPotentialProbe model;
-    using Discretization = FV::Discretization<ProbeComponents, double, RectangularMesh<1>>;
-    using Assembler = FV::KurganovTadmor::Assembler<Discretization, RawPotentialProbe>;
+    using Discretization = FV::Discretization<RawPotentialProbe, RectangularMeshSerial<1>>;
+    using Assembler = FV::KurganovTadmor::Assembler<Discretization>;
     check_raw_potential_readout<Discretization, Assembler>(model, 0);
   }
 }

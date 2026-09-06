@@ -13,11 +13,15 @@
 
 // DiFfRG
 #include <DiFfRG/common/eigen.hh>
+#include <DiFfRG/common/mpi.hh>
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
+#include <DiFfRG/discretization/common/la_policy.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/timestepping/linear_solver/GMRES.hh>
+#include <DiFfRG/timestepping/linear_solver/PETScDirect.hh>
+#include <DiFfRG/timestepping/linear_solver/PETScKrylov.hh>
 #include <DiFfRG/timestepping/linear_solver/ScaledGMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/UMFPack.hh>
 #include <DiFfRG/timestepping/sundials_diagnostics.hh>
@@ -25,11 +29,34 @@
 
 namespace DiFfRG
 {
+
   using namespace dealii;
 
   namespace
   {
     constexpr int recoverable_ida_callback_failure = 1;
+
+    /**
+     * @brief Agree across ranks on whether an IDA callback failed.
+     *
+     * IDA reacts to a recoverable failure by cutting the step and retrying. That decision must be
+     * unanimous: if one rank reports failure and another success, they take different step
+     * sequences, and the next collective -- an assembly compress(), a norm, this very agreement --
+     * is entered by different numbers of ranks. The symptom is a hang, not a wrong number, and it
+     * appears only for the input that first made the ranks disagree.
+     *
+     * Disagreement is easy to produce. The vector/matrix finiteness probes happen to be safe by
+     * themselves, because l1_norm() and frobenius_norm() are collective for PETSc and already
+     * return a global answer. The exception handlers are not: a model that throws on one cell makes
+     * exactly the rank owning that cell return failure.
+     *
+     * Every exit path of every callback routes through here exactly once, success and failure
+     * alike, so the collectives always match up.
+     */
+    inline int agreed_ida_result(MPI_Comm comm, const bool failed)
+    {
+      return DiFfRG::MPI::any_of(comm, failed) ? recoverable_ida_callback_failure : 0;
+    }
 
     template <typename VectorType> double l1_norm_or_nan(const VectorType *vector)
     {
@@ -218,8 +245,8 @@ namespace DiFfRG
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver>
-  void TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, LinearSolver>::run(
-      AbstractFlowingVariables<NumberType> &initial_condition, const double t_start, const double t_stop)
+  void TimeStepperSUNDIALS_IDA_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(
+      AbstractFlowingVariables<NumberType, VectorType> &initial_condition, const double t_start, const double t_stop)
   {
 
     auto &full_data = initial_condition.data();
@@ -235,16 +262,19 @@ namespace DiFfRG
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver>
-  void TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, LinearSolver>::run(VectorType &initial_data,
-                                                                                     const double t_start,
-                                                                                     const double t_stop)
+  void TimeStepperSUNDIALS_IDA_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(VectorType &initial_data,
+                                                                                          const double t_start,
+                                                                                          const double t_stop)
   {
     // Start by setting up all needed matrices, i.e. jacobian, inverse of jacobian and the mass matrix (with two
     // sparsity patterns)
-    SparseMatrixType jacobian(assembler.get_sparsity_pattern_jacobian());
+    SparseMatrixType jacobian;
+    assembler.reinit_matrix(jacobian);
     LinearSolver<SparseMatrixType, VectorType> linSolver;
     linSolver.set_report_port(this->log);
-    const DiagnosticPort jacobian_diagnostic_port = data_out.diagnostic_port();
+    const bool jacobian_diagnostics_enabled = impl.jacobian_diagnostics;
+    const DiagnosticPort jacobian_diagnostic_port =
+        jacobian_diagnostics_enabled ? data_out.diagnostic_port() : DiagnosticPort{};
 
     // Create a SUNDIALS IDA object with the right settings
     typename SUNDIALS::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
@@ -283,7 +313,7 @@ namespace DiFfRG
     time_stepper.solver_should_restart = [&](const double t, VectorType &sol, VectorType &sol_dot) -> bool {
       if (adaptor(t, sol)) {
         assembler.reinit_vector(sol_dot);
-        jacobian.reinit(assembler.get_sparsity_pattern_jacobian());
+        assembler.reinit_matrix(jacobian);
         return true;
       }
       return false;
@@ -294,14 +324,40 @@ namespace DiFfRG
     // Called whenever a vector needs to initalized
     time_stepper.reinit_vector = [&](VectorType &v) { assembler.reinit_vector(v); };
 
+    // Fully-replicated read-only views for the output path; see SolutionView.
+    SolutionView<VectorType> sol_view, sol_dot_view, residual_view;
+    assembler.reinit_solution_view(sol_view);
+    assembler.reinit_solution_view(sol_dot_view);
+    assembler.reinit_solution_view(residual_view);
+
+    // Replicated views of the state handed to the assemblers.
+    //
+    // IDA's vectors hold only this rank's rows. An assembler visiting one of its own cells reads
+    // EVERY dof of that cell, and on a partition boundary some of those belong to a neighbour.
+    // deal.II's non-ghosted read path is `ptr[index - local_begin]` with no bounds check, so such a
+    // read does not fail -- it silently returns whatever is next in memory. The matrix survives
+    // that (for a linear flux the Jacobian does not depend on the state at all, which is exactly
+    // why the Jacobian diagnostics matched across rank counts while the residual did not), but the
+    // residual is quietly wrong and IDA's Newton then fails to converge.
+    SolutionView<VectorType> y_state, y_dot_state;
+    assembler.reinit_solution_view(y_state);
+    assembler.reinit_solution_view(y_dot_state);
+
     // At output_dt intervals this function saves intermediate solutions
     double last_save = -1.;
     time_stepper.output_step = [&](const double t, const VectorType &sol, const VectorType &sol_dot,
                                    unsigned int /*step_number*/) {
       if (!is_close(last_save, t, 1e-10)) {
         assembler.set_time(t);
-        data_out.write_frame(
-            t, [&](auto &frame) { assembler.attach_data_output(frame, sol, Vector<double>(), sol_dot, (*residual)); });
+        // Refreshed here, OUTSIDE write_frame: refreshing a ghosted replica communicates, while
+        // write_frame runs its contributor on rank 0 only. Doing it inside would have rank 0 enter a
+        // collective the other ranks never reach.
+        sol_view.refresh(sol);
+        sol_dot_view.refresh(sol_dot);
+        residual_view.refresh(*residual);
+        data_out.write_frame(t, [&](auto &frame) {
+          assembler.attach_data_output(frame, sol_view.get(), VectorType(), sol_dot_view.get(), residual_view.get());
+        });
 
         last_save = t;
       }
@@ -345,13 +401,15 @@ namespace DiFfRG
         ++failure_counter;
         callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "nonfinite-y", &y,
                               &y_dot, &res);
-        return recoverable_ida_callback_failure;
+        return agreed_ida_result(assembler.get_communicator(), true);
       }
 
       assembler.set_time(t);
 
       res = 0;
-      assembler.residual(res, y, 1., y_dot, 1.);
+      y_state.refresh(y);
+      y_dot_state.refresh(y_dot);
+      assembler.residual(res, y_state.get(), 1., y_dot_state.get(), 1.);
       residual = &res;
 
       if (!std::isfinite(res.l1_norm())) {
@@ -359,7 +417,7 @@ namespace DiFfRG
         ++failure_counter;
         callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "nonfinite-residual",
                               &y, &y_dot, &res);
-        return recoverable_ida_callback_failure;
+        return agreed_ida_result(assembler.get_communicator(), true);
       }
       const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
       ProgressEvent event{.topic = progress_topics::implicit_residual,
@@ -372,7 +430,7 @@ namespace DiFfRG
                             &res);
 
       failure_counter = 0;
-      return 0;
+      return agreed_ida_result(assembler.get_communicator(), false);
     };
     // Calculate the jacobian d(y_dot + F(y))/dy + d(y_dot*alpha)/dy_dot
     time_stepper.setup_jacobian = [&](const double t, const VectorType &y, const VectorType &y_dot,
@@ -400,12 +458,14 @@ namespace DiFfRG
           ++failure_counter;
           callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "nonfinite-state",
                                 &y, &y_dot, nullptr);
-          return recoverable_ida_callback_failure;
+          return agreed_ida_result(assembler.get_communicator(), true);
         }
 
         jacobian = 0;
-        assembler.jacobian(jacobian, y, 1., y_dot, alpha, 1.);
-        matrix_diagnostics = analyze_jacobian_matrix(jacobian);
+        y_state.refresh(y);
+        y_dot_state.refresh(y_dot);
+        assembler.jacobian(jacobian, y_state.get(), 1., y_dot_state.get(), alpha, 1.);
+        if (jacobian_diagnostics_enabled) matrix_diagnostics = analyze_jacobian_matrix(jacobian);
         if (!std::isfinite(jacobian.frobenius_norm())) {
           factorization_diagnostics.factorization_success = 0.;
           record_diagnostics();
@@ -413,7 +473,7 @@ namespace DiFfRG
           ++failure_counter;
           callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics,
                                 "nonfinite-jacobian", &y, &y_dot, nullptr);
-          return recoverable_ida_callback_failure;
+          return agreed_ida_result(assembler.get_communicator(), true);
         }
         linSolver.init(jacobian);
 
@@ -423,7 +483,7 @@ namespace DiFfRG
         current_diagnostics.append_to(jacobian_event);
         this->log.progress(jacobian_event);
 
-        factorize_with_diagnostics(linSolver, jacobian, factorization_diagnostics);
+        factorize_with_diagnostics(linSolver, jacobian, factorization_diagnostics, jacobian_diagnostics_enabled);
         if (factorization_diagnostics.factorization_success == 1.) {
           const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
           ProgressEvent event{.topic = progress_topics::factorization,
@@ -435,7 +495,8 @@ namespace DiFfRG
         }
         record_diagnostics();
       } catch (std::exception &e) {
-        if (matrix_diagnostics.n_rows == 0.) matrix_diagnostics = analyze_jacobian_matrix(jacobian);
+        if (jacobian_diagnostics_enabled && matrix_diagnostics.n_rows == 0.)
+          matrix_diagnostics = analyze_jacobian_matrix(jacobian);
         if constexpr (decltype(linSolver)::performs_factorization)
           if (std::isnan(factorization_diagnostics.factorization_success))
             factorization_diagnostics.factorization_success = 0.;
@@ -444,13 +505,13 @@ namespace DiFfRG
         ++failure_counter;
         callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "exception", &y,
                               &y_dot, nullptr, e.what());
-        return recoverable_ida_callback_failure;
+        return agreed_ida_result(assembler.get_communicator(), true);
       }
 
       callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "success", &y, &y_dot,
                             nullptr);
       failure_counter = 0;
-      return 0;
+      return agreed_ida_result(assembler.get_communicator(), false);
     };
 
     // Solve the linear system J dst = src
@@ -462,7 +523,7 @@ namespace DiFfRG
           ++failure_counter;
           callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics,
                                 "nonfinite-source", &src, &dst, nullptr);
-          return recoverable_ida_callback_failure;
+          return agreed_ida_result(assembler.get_communicator(), true);
         }
 
         const auto sol_iterations = linSolver.solve(src, dst, tol);
@@ -471,7 +532,7 @@ namespace DiFfRG
           ++failure_counter;
           callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics,
                                 "nonfinite-solution", &src, &dst, nullptr);
-          return recoverable_ida_callback_failure;
+          return agreed_ida_result(assembler.get_communicator(), true);
         }
         if (sol_iterations >= 0) {
           const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
@@ -488,11 +549,11 @@ namespace DiFfRG
         ++failure_counter;
         callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics, "exception",
                               &src, &dst, nullptr);
-        return recoverable_ida_callback_failure;
+        return agreed_ida_result(assembler.get_communicator(), true);
       }
       callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics, "success",
                             &src, &dst, nullptr);
-      return 0;
+      return agreed_ida_result(assembler.get_communicator(), false);
     };
 
     // Start the time loop
@@ -511,9 +572,9 @@ namespace DiFfRG
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver>
-  void TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, LinearSolver>::run(BlockVectorType &initial_data,
-                                                                                     const double t_start,
-                                                                                     const double t_stop)
+  void TimeStepperSUNDIALS_IDA_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(BlockVectorType &initial_data,
+                                                                                          const double t_start,
+                                                                                          const double t_stop)
   {
     if (initial_data.n_blocks() != 2)
       throw std::runtime_error("TimeStepperSUNDIALS_ARKode_vars::run: y must have two blocks!");
@@ -522,14 +583,17 @@ namespace DiFfRG
           "TimeStepperSUNDIALS_ARKode_vars::run: y contains no variables, use a different timestepper!");
     // Start by setting up all needed matrices, i.e. jacobian, inverse of jacobian and the mass matrix (with two
     // sparsity patterns)
-    SparseMatrixType spatial_jacobian(assembler.get_sparsity_pattern_jacobian());
+    SparseMatrixType spatial_jacobian;
+    assembler.reinit_matrix(spatial_jacobian);
     LinearSolver<SparseMatrixType, VectorType> linSolver;
     linSolver.set_report_port(this->log);
     const uint n_FE_dofs = initial_data.block(0).size();
     const uint n_vars = initial_data.block(1).size();
     FullMatrix<NumberType> variable_jacobian(n_vars);
     FullMatrix<NumberType> variable_jacobian_inverse(n_vars);
-    const DiagnosticPort jacobian_diagnostic_port = data_out.diagnostic_port();
+    const bool jacobian_diagnostics_enabled = impl.jacobian_diagnostics;
+    const DiagnosticPort jacobian_diagnostic_port =
+        jacobian_diagnostics_enabled ? data_out.diagnostic_port() : DiagnosticPort{};
 
     // Create a SUNDIALS IDA object with the right settings
     typename SUNDIALS::IDA<BlockVectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt,
@@ -562,7 +626,7 @@ namespace DiFfRG
     time_stepper.solver_should_restart = [&](const double t, BlockVectorType &sol, BlockVectorType &sol_dot) -> bool {
       if (adaptor(t, sol.block(0))) {
         assembler.reinit_vector(sol_dot.block(0));
-        spatial_jacobian.reinit(assembler.get_sparsity_pattern_jacobian());
+        assembler.reinit_matrix(spatial_jacobian);
         return true;
       }
       return false;
@@ -580,9 +644,39 @@ namespace DiFfRG
     time_stepper.reinit_vector = [&](BlockVectorType &v) {
       v.reinit(2);
       assembler.reinit_vector(v.block(0));
-      v.block(1).reinit(n_vars);
+      reinit_la_variables_vector(v.block(1), n_vars, assembler.get_communicator());
       v.collect_sizes();
     };
+
+    // Fully-replicated read-only views for the output path; see SolutionView. The variables block
+    // needs its own layout -- rank 0 owns it outright, so a dof-shaped view would not fit it.
+    SolutionView<VectorType> sol_view, vars_view, sol_dot_view, residual_view;
+    assembler.reinit_solution_view(sol_view);
+    assembler.reinit_solution_view(sol_dot_view);
+    assembler.reinit_solution_view(residual_view);
+    reinit_variables_view(vars_view, n_vars, assembler.get_communicator());
+
+    // Replicated views of the state handed to the assemblers.
+    //
+    // IDA's vectors hold only this rank's rows. An assembler visiting one of its own cells reads
+    // EVERY dof of that cell, and on a partition boundary some of those belong to a neighbour.
+    // deal.II's non-ghosted read path is `ptr[index - local_begin]` with no bounds check, so such a
+    // read does not fail -- it silently returns whatever is next in memory. The matrix survives
+    // that (for a linear flux the Jacobian does not depend on the state at all, which is exactly
+    // why the Jacobian diagnostics matched across rank counts while the residual did not), but the
+    // residual is quietly wrong and IDA's Newton then fails to converge.
+    //
+    // The variables block needs the same treatment for a different reason: rank 0 owns it outright,
+    // so on every other rank y.block(1) is locally *empty* and the model cannot read a single one of
+    // its own variables from it.
+    SolutionView<VectorType> y_state, y_dot_state, y_vars_state;
+    assembler.reinit_solution_view(y_state);
+    assembler.reinit_solution_view(y_dot_state);
+    reinit_variables_view(y_vars_state, n_vars, assembler.get_communicator());
+
+    // Scratch for the redundant variables computation; see compute_variables_into.
+    VectorType vars_scratch;
+    reinit_local_variables_vector(vars_scratch, n_vars);
 
     // At output_dt intervals this function saves intermediate solutions
     double last_save = -1.;
@@ -590,8 +684,16 @@ namespace DiFfRG
                                    unsigned int /*step_number*/) {
       if (!is_close(last_save, t, 1e-10)) {
         assembler.set_time(t);
+        // Refreshed here, OUTSIDE write_frame: refreshing a ghosted replica communicates, while
+        // write_frame runs its contributor on rank 0 only. Doing it inside would have rank 0 enter a
+        // collective the other ranks never reach.
+        sol_view.refresh(sol.block(0));
+        vars_view.refresh(sol.block(1));
+        sol_dot_view.refresh(sol_dot.block(0));
+        residual_view.refresh((*residual).block(0));
         data_out.write_frame(t, [&](auto &frame) {
-          assembler.attach_data_output(frame, sol.block(0), sol.block(1), sol_dot.block(0), (*residual).block(0));
+          assembler.attach_data_output(frame, sol_view.get(), vars_view.get(), sol_dot_view.get(),
+                                        residual_view.get());
         });
 
         last_save = t;
@@ -629,14 +731,19 @@ namespace DiFfRG
         ++failure_counter;
         callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "nonfinite-y", &y,
                               &y_dot, &res);
-        return recoverable_ida_callback_failure;
+        return agreed_ida_result(assembler.get_communicator(), true);
       }
 
       try {
         res = 0;
         assembler.set_time(t);
-        assembler.residual_variables(res.block(1), y.block(1), y.block(0));
-        assembler.residual(res.block(0), y.block(0), 1., y_dot.block(0), 1., y.block(1));
+        y_state.refresh(y.block(0));
+        y_dot_state.refresh(y_dot.block(0));
+        y_vars_state.refresh(y.block(1));
+        compute_variables_into(res.block(1), vars_scratch, [&](VectorType &out) {
+          assembler.residual_variables(out, y_vars_state.get(), y_state.get());
+        });
+        assembler.residual(res.block(0), y_state.get(), 1., y_dot_state.get(), 1., y_vars_state.get());
         res.block(1) += y_dot.block(1);
         residual = &res;
       } catch (std::exception &e) {
@@ -644,7 +751,7 @@ namespace DiFfRG
         ++failure_counter;
         callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "exception", &y,
                               &y_dot, &res, e.what());
-        return recoverable_ida_callback_failure;
+        return agreed_ida_result(assembler.get_communicator(), true);
       }
 
       if (!std::isfinite(res.l1_norm())) {
@@ -652,7 +759,7 @@ namespace DiFfRG
         ++failure_counter;
         callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "nonfinite-residual",
                               &y, &y_dot, &res);
-        return recoverable_ida_callback_failure;
+        return agreed_ida_result(assembler.get_communicator(), true);
       }
 
       const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
@@ -666,7 +773,7 @@ namespace DiFfRG
                             &res);
 
       failure_counter = 0;
-      return 0;
+      return agreed_ida_result(assembler.get_communicator(), false);
     };
     // Calculate the jacobian d(y_dot + F(y))/dy + d(y_dot*alpha)/dy_dot
     time_stepper.setup_jacobian = [&](const double t, const BlockVectorType &y, const BlockVectorType &y_dot,
@@ -701,21 +808,25 @@ namespace DiFfRG
           ++failure_counter;
           callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "nonfinite-state",
                                 &y, &y_dot, nullptr);
-          return recoverable_ida_callback_failure;
+          return agreed_ida_result(assembler.get_communicator(), true);
         }
 
         spatial_jacobian = 0;
         variable_jacobian = 0;
         assembler.set_time(t);
-        assembler.jacobian(spatial_jacobian, y.block(0), 1., y_dot.block(0), alpha, 1., y.block(1));
-        assembler.jacobian_variables(variable_jacobian, y.block(1), y.block(0));
+        y_state.refresh(y.block(0));
+        y_dot_state.refresh(y_dot.block(0));
+        y_vars_state.refresh(y.block(1));
+        assembler.jacobian(spatial_jacobian, y_state.get(), 1., y_dot_state.get(), alpha, 1., y_vars_state.get());
+        assembler.jacobian_variables(variable_jacobian, y_vars_state.get(), y_state.get());
         variable_jacobian *= -1.;
         variable_jacobian.diagadd(alpha);
-        spatial_matrix_diagnostics = analyze_jacobian_matrix(spatial_jacobian);
-        variable_matrix_diagnostics = analyze_jacobian_matrix(variable_jacobian);
+        if (jacobian_diagnostics_enabled) {
+          spatial_matrix_diagnostics = analyze_jacobian_matrix(spatial_jacobian);
+          variable_matrix_diagnostics = analyze_jacobian_matrix(variable_jacobian);
+        }
 
-        if (!std::isfinite(spatial_matrix_diagnostics.frobenius_norm) ||
-            !std::isfinite(variable_matrix_diagnostics.frobenius_norm)) {
+        if (!std::isfinite(spatial_jacobian.frobenius_norm()) || !std::isfinite(variable_jacobian.frobenius_norm())) {
           spatial_factorization_diagnostics.factorization_success = 0.;
           variable_factorization_diagnostics.factorization_success = 0.;
           record_diagnostics();
@@ -723,7 +834,7 @@ namespace DiFfRG
           ++failure_counter;
           callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics,
                                 "nonfinite-jacobian", &y, &y_dot, nullptr);
-          return recoverable_ida_callback_failure;
+          return agreed_ida_result(assembler.get_communicator(), true);
         }
 
         linSolver.init(spatial_jacobian);
@@ -734,7 +845,8 @@ namespace DiFfRG
         current_diagnostics.append_to(jacobian_event);
         this->log.progress(jacobian_event);
 
-        factorize_with_diagnostics(linSolver, spatial_jacobian, spatial_factorization_diagnostics);
+        factorize_with_diagnostics(linSolver, spatial_jacobian, spatial_factorization_diagnostics,
+                                   jacobian_diagnostics_enabled);
         const auto variable_factorization_start = std::chrono::steady_clock::now();
         try {
           variable_jacobian_inverse.invert(variable_jacobian);
@@ -769,13 +881,13 @@ namespace DiFfRG
         ++failure_counter;
         callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "exception", &y,
                               &y_dot, nullptr, e.what());
-        return recoverable_ida_callback_failure;
+        return agreed_ida_result(assembler.get_communicator(), true);
       }
 
       callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "success", &y, &y_dot,
                             nullptr);
       failure_counter = 0;
-      return 0;
+      return agreed_ida_result(assembler.get_communicator(), false);
     };
 
     // Solve the linear system J dst = src
@@ -787,17 +899,17 @@ namespace DiFfRG
           ++failure_counter;
           callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics,
                                 "nonfinite-source", &src, &dst, nullptr);
-          return recoverable_ida_callback_failure;
+          return agreed_ida_result(assembler.get_communicator(), true);
         }
 
         const auto sol_iterations = linSolver.solve(src.block(0), dst.block(0), tol);
-        variable_jacobian_inverse.vmult(dst.block(1), src.block(1));
+        dense_vmult_variables(variable_jacobian_inverse, dst.block(1), src.block(1), assembler.get_communicator());
         if (!is_finite_vector(dst)) {
           callback_diagnostics.linear_solver_failures++;
           ++failure_counter;
           callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics,
                                 "nonfinite-solution", &src, &dst, nullptr);
-          return recoverable_ida_callback_failure;
+          return agreed_ida_result(assembler.get_communicator(), true);
         }
 
         const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
@@ -813,11 +925,11 @@ namespace DiFfRG
         ++failure_counter;
         callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics, "exception",
                               &src, &dst, nullptr);
-        return recoverable_ida_callback_failure;
+        return agreed_ida_result(assembler.get_communicator(), true);
       }
       callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics, "success",
                             &src, &dst, nullptr);
-      return 0;
+      return agreed_ida_result(assembler.get_communicator(), false);
     };
 
     // Start the time loop
@@ -835,18 +947,21 @@ namespace DiFfRG
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver>
-  void TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, LinearSolver>::run_vars(VectorType &initial_data,
-                                                                                          const double t_start,
-                                                                                          const double t_stop)
+  void TimeStepperSUNDIALS_IDA_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run_vars(VectorType &initial_data,
+                                                                                               const double t_start,
+                                                                                               const double t_stop)
   {
     if (initial_data.size() == 0)
-      throw std::runtime_error("TimeStepperSUNDIALS_IDA::run: y contains no variables, use a different timestepper!");
+      throw std::runtime_error(
+          "TimeStepperSUNDIALS_IDA_impl::run: y contains no variables, use a different timestepper!");
     // Start by setting up all needed matrices, i.e. jacobian, inverse of jacobian and the mass matrix (with two
     // sparsity patterns)
     const uint n_vars = initial_data.size();
     FullMatrix<NumberType> variable_jacobian(n_vars);
     FullMatrix<NumberType> variable_jacobian_inverse(n_vars);
-    const DiagnosticPort jacobian_diagnostic_port = data_out.diagnostic_port();
+    const bool jacobian_diagnostics_enabled = impl.jacobian_diagnostics;
+    const DiagnosticPort jacobian_diagnostic_port =
+        jacobian_diagnostics_enabled ? data_out.diagnostic_port() : DiagnosticPort{};
 
     // Create a SUNDIALS IDA object with the right settings
     typename SUNDIALS::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
@@ -872,7 +987,9 @@ namespace DiFfRG
     y_dot *= 0.;
 
     // Called whenever a vector needs to initalized
-    time_stepper.reinit_vector = [&](VectorType &v) { v.reinit(n_vars); };
+    time_stepper.reinit_vector = [&](VectorType &v) {
+      reinit_la_variables_vector(v, n_vars, assembler.get_communicator());
+    };
 
     // At output_dt intervals this function saves intermediate solutions
     double last_save = -1.;
@@ -880,7 +997,9 @@ namespace DiFfRG
                                    uint /*step_number*/) {
       if (!is_close(last_save, t, 1e-10)) {
         assembler.set_time(t);
-        data_out.write_frame(t, [&](auto &frame) { assembler.attach_data_output(frame, Vector<double>(), sol); });
+        // dim == 0 has no FE space and the variables vector is serial by construction, so no
+        // gather is needed here -- the view would be a passthrough.
+        data_out.write_frame(t, [&](auto &frame) { assembler.attach_data_output(frame, VectorType(), sol); });
 
         last_save = t;
       }
@@ -920,20 +1039,20 @@ namespace DiFfRG
         ++failure_counter;
         callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "nonfinite-y", &y,
                               &y_dot, &res);
-        return recoverable_ida_callback_failure;
+        return agreed_ida_result(assembler.get_communicator(), true);
       }
 
       try {
         res = 0;
         assembler.set_time(t);
-        assembler.residual_variables(res, y, Vector<double>());
+        assembler.residual_variables(res, y, VectorType());
         res += y_dot;
       } catch (std::exception &e) {
         callback_diagnostics.residual_exceptions++;
         ++failure_counter;
         callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "exception", &y,
                               &y_dot, &res, e.what());
-        return recoverable_ida_callback_failure;
+        return agreed_ida_result(assembler.get_communicator(), true);
       }
 
       if (!std::isfinite(res.l1_norm())) {
@@ -941,7 +1060,7 @@ namespace DiFfRG
         ++failure_counter;
         callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "nonfinite-residual",
                               &y, &y_dot, &res);
-        return recoverable_ida_callback_failure;
+        return agreed_ida_result(assembler.get_communicator(), true);
       }
 
       const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
@@ -955,7 +1074,7 @@ namespace DiFfRG
                             &res);
 
       failure_counter = 0;
-      return 0;
+      return agreed_ida_result(assembler.get_communicator(), false);
     };
     // Calculate the jacobian d(y_dot + F(y))/dy + d(y_dot*alpha)/dy_dot
     time_stepper.setup_jacobian = [&](const double t, const VectorType &y, const VectorType &y_dot,
@@ -984,24 +1103,24 @@ namespace DiFfRG
           ++failure_counter;
           callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "nonfinite-state",
                                 &y, &y_dot, nullptr);
-          return recoverable_ida_callback_failure;
+          return agreed_ida_result(assembler.get_communicator(), true);
         }
 
         variable_jacobian = 0;
         assembler.set_time(t);
-        assembler.jacobian_variables(variable_jacobian, y, Vector<double>());
+        assembler.jacobian_variables(variable_jacobian, y, VectorType());
         variable_jacobian *= -1.;
         variable_jacobian.diagadd(alpha);
-        matrix_diagnostics = analyze_jacobian_matrix(variable_jacobian);
+        if (jacobian_diagnostics_enabled) matrix_diagnostics = analyze_jacobian_matrix(variable_jacobian);
 
-        if (!std::isfinite(matrix_diagnostics.frobenius_norm)) {
+        if (!std::isfinite(variable_jacobian.frobenius_norm())) {
           factorization_diagnostics.factorization_success = 0.;
           record_diagnostics();
           callback_diagnostics.jacobian_failures++;
           ++failure_counter;
           callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics,
                                 "nonfinite-variable-jacobian", &y, &y_dot, nullptr);
-          return recoverable_ida_callback_failure;
+          return agreed_ida_result(assembler.get_communicator(), true);
         }
 
         const auto factorization_start = std::chrono::steady_clock::now();
@@ -1025,7 +1144,7 @@ namespace DiFfRG
         ++failure_counter;
         callback_trace.record("jacobian", t, failure_counter, time_stepper, callback_diagnostics, "exception", &y,
                               &y_dot, nullptr, e.what());
-        return recoverable_ida_callback_failure;
+        return agreed_ida_result(assembler.get_communicator(), true);
       }
 
       const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
@@ -1037,7 +1156,7 @@ namespace DiFfRG
                             nullptr);
 
       failure_counter = 0;
-      return 0;
+      return agreed_ida_result(assembler.get_communicator(), false);
     };
 
     // Solve the linear system J dst = src
@@ -1048,27 +1167,27 @@ namespace DiFfRG
           ++failure_counter;
           callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics,
                                 "nonfinite-source", &src, &dst, nullptr);
-          return recoverable_ida_callback_failure;
+          return agreed_ida_result(assembler.get_communicator(), true);
         }
 
-        variable_jacobian_inverse.vmult(dst, src);
+        dense_vmult_variables(variable_jacobian_inverse, dst, src, assembler.get_communicator());
         if (!is_finite_vector(dst)) {
           callback_diagnostics.linear_solver_failures++;
           ++failure_counter;
           callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics,
                                 "nonfinite-solution", &src, &dst, nullptr);
-          return recoverable_ida_callback_failure;
+          return agreed_ida_result(assembler.get_communicator(), true);
         }
       } catch (std::exception &) {
         callback_diagnostics.linear_solver_failures++;
         ++failure_counter;
         callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics, "exception",
                               &src, &dst, nullptr);
-        return recoverable_ida_callback_failure;
+        return agreed_ida_result(assembler.get_communicator(), true);
       }
       callback_trace.record("linear-solve", stuck_t, failure_counter, time_stepper, callback_diagnostics, "success",
                             &src, &dst, nullptr);
-      return 0;
+      return agreed_ida_result(assembler.get_communicator(), false);
     };
 
     // Start the time loop
@@ -1086,70 +1205,153 @@ namespace DiFfRG
   }
 } // namespace DiFfRG
 
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 0,
-                                               DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
-                                               DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
-                                               DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
-                                               DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 0,
+                                                    DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                                    DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                                    DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                                    DiFfRG::UMFPack>;
 
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
-                                               DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
-                                               DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
-                                               DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
-                                               DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
+                                                    DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                                    DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                                    DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                                    DiFfRG::UMFPack>;
 
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 0, DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 1, DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 2, DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 3, DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 0,
+                                                    DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                                    DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                                    DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                                    DiFfRG::GMRES>;
 
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 0,
-                                               DiFfRG::ScaledUMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
-                                               DiFfRG::ScaledUMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
-                                               DiFfRG::ScaledUMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
-                                               DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 0,
+                                                    DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                                    DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                                    DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                                    DiFfRG::ScaledUMFPack>;
 
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
-                                               DiFfRG::ScaledUMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
-                                               DiFfRG::ScaledUMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
-                                               DiFfRG::ScaledUMFPack>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
-                                               DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
+                                                    DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                                    DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                                    DiFfRG::ScaledUMFPack>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                                    DiFfRG::ScaledUMFPack>;
 
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 0,
-                                               DiFfRG::ScaledGMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
-                                               DiFfRG::ScaledGMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
-                                               DiFfRG::ScaledGMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
-                                               DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 0,
+                                                    DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                                    DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                                    DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                                    DiFfRG::ScaledGMRES>;
 
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
-                                               DiFfRG::ScaledGMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
-                                               DiFfRG::ScaledGMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
-                                               DiFfRG::ScaledGMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
-                                               DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
+                                                    DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                                    DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                                    DiFfRG::ScaledGMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                                    DiFfRG::ScaledGMRES>;
 
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
-                                               DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
-                                               DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
-                                               DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperSUNDIALS_IDA<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
-                                               DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
+                                                    DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                                    DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                                    DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                                    DiFfRG::GMRES>;
+
+// ##############################################################################
+// Distributed (PETSc-backed) instantiations
+// ##############################################################################
+//
+// These compile and link as of Stage E+F. The route from 12.3 compiler errors per instantiation to
+// zero, measured after each change:
+//
+//     after Stage B                    10.0   eager InverseSparseMatrixType alias; AbstractFlowingVariables
+//     after the D2 discretization work 10.0   prerequisite only -- see below
+//     assembler.reinit_matrix()        6.0   a PETSc matrix has no constructor from a bare pattern
+//     reinit_la_variables_vector()      4.0   a PETSc vector needs (owned IndexSet, comm), not a size
+//     VectorType() for empty arguments  2.0   four `Vector<double>()` literals in generic code
+//     dense_vmult_variables()           0.0   FullMatrix applied to the rank-0-owned variables block
+//
+// The flat step is worth remembering: the whole discretization layer (index sets, the la_policy
+// seam, all four assemblers) moved this number not at all, because every blocked line was in THIS
+// file, constructing its own matrices and vectors rather than asking the assembler for them. The
+// count measures the timestepper body, not the work that unblocked it.
+//
+// Only the implicit path is instantiated, and only PETScKrylov. The explicit and Boost-hybrid
+// steppers stay serial deliberately: they are not viable for these stiff flows anyway, and they
+// route through common/eigen.hh, which assumes contiguous serial storage. dim == 0 is pure
+// variables and has no FE space to distribute.
+
+#ifdef DEAL_II_WITH_PETSC
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::PETScWrappers::MPI::Vector,
+                                                    dealii::PETScWrappers::MPI::SparseMatrix, 1, DiFfRG::PETScKrylov>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::PETScWrappers::MPI::Vector,
+                                                    dealii::PETScWrappers::MPI::SparseMatrix, 2, DiFfRG::PETScKrylov>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::PETScWrappers::MPI::Vector,
+                                                    dealii::PETScWrappers::MPI::SparseMatrix, 3, DiFfRG::PETScKrylov>;
+#endif
+
+// The default-solver spelling. DefaultLinearSolver is deliberately an indirect alias and so
+// stays a distinct template argument from UMFPack on every compiler, which means
+// TimeStepper<Assembler> needs its own instantiations alongside TimeStepper<Assembler, UMFPack>.
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 0,
+                                                    DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                                    DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                                    DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                                    DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0,
+                                                    DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                                    DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                                    DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                                    DiFfRG::DefaultLinearSolver>;
+
+// ##############################################################################
+// Distributed instantiations for the default solver
+// ##############################################################################
+//
+// An MPI build's default mesh is partitioned and its default linear algebra is PETSc-backed, so
+// TimeStepperSUNDIALS_IDA<Assembler> resolves here rather than to any of the serial rows above.
+// PETScDirect is instantiated in its own right as well: DefaultLinearSolver names it where PETSc
+// was built with MUMPS, but an application may also ask for it explicitly.
+#ifdef DEAL_II_WITH_PETSC
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 1, DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 2, DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 3, DiFfRG::DefaultLinearSolver>;
+
+#ifdef DEAL_II_PETSC_WITH_MUMPS
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::PETScWrappers::MPI::Vector,
+                                                    dealii::PETScWrappers::MPI::SparseMatrix, 1, DiFfRG::PETScDirect>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::PETScWrappers::MPI::Vector,
+                                                    dealii::PETScWrappers::MPI::SparseMatrix, 2, DiFfRG::PETScDirect>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::PETScWrappers::MPI::Vector,
+                                                    dealii::PETScWrappers::MPI::SparseMatrix, 3, DiFfRG::PETScDirect>;
+#endif
+#endif

@@ -185,6 +185,28 @@ def plot_1D(
         plt.savefig(file)
     clear_fig()
 
+def scaled_triangulation(x, y, log_x=False, log_y=False):
+    """Delaunay-triangulate (x, y) in the coordinates the plot actually shows.
+
+    A Delaunay triangulation of the raw coordinates degenerates into sliver
+    triangles whenever the two axes span very different ranges, which shows up
+    as jagged, streaky structure in the plot. Rescaling both axes to unit range
+    (in log space for logarithmic axes) first avoids this; the connectivity
+    found there is then used with the original coordinates.
+    """
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+
+    u = np.log10(x) if log_x else x
+    v = np.log10(y) if log_y else y
+    scale_u = np.ptp(u)
+    scale_v = np.ptp(v)
+    if not np.isfinite(scale_u) or not np.isfinite(scale_v) or scale_u <= 0 or scale_v <= 0:
+        return tri.Triangulation(x, y)
+
+    triangles = tri.Triangulation(u / scale_u, v / scale_v).triangles
+    return tri.Triangulation(x, y, triangles)
+
 def plot_2D(
     data,
     cmap=cmap2,
@@ -218,8 +240,12 @@ def plot_2D(
     
     if style == "triplot":
         # create the basic plot elements
-        triangulation = tri.Triangulation(data["x"], data["y"])
+        triangulation = scaled_triangulation(data["x"], data["y"], log_x, log_y)
         tripc = ax.tripcolor(triangulation, data["z"], shading="flat", cmap=cmap, norm = norm)
+        # draw each triangle with its own color as edge, so that no background
+        # shines through the seams between them in vector output
+        tripc.set_edgecolor("face")
+        tripc.set_linewidth(0.0)
         cbar = fig.colorbar(tripc)
         
         # Set a grid, if desired
@@ -236,7 +262,7 @@ def plot_2D(
         xi = np.linspace(x.min(), x.max(), ngridx)
         yi = np.linspace(y.min(), y.max(), ngridy)
         # Linearly interpolate the data (x, y) on a grid defined by (xi, yi).
-        triang = tri.Triangulation(x, y)
+        triang = scaled_triangulation(x, y, log_x, log_y)
         interpolator = tri.LinearTriInterpolator(triang, z)
         Xi, Yi = np.meshgrid(xi, yi)
         zi = interpolator(Xi, Yi)

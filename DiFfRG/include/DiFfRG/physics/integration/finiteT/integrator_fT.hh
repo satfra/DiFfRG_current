@@ -34,10 +34,7 @@ namespace DiFfRG
     {
     }
 
-    void set_k(ctype k)
-    {
-      Base::set_typical_E(k); // update typical energy
-    }
+    void set_k(ctype k) { Base::set_k(k); }
 
     void set_typical_E(ctype typical_E) { Base::set_typical_E(typical_E); }
   };

@@ -1,7 +1,7 @@
 #pragma once
 
 // DiFfRG
-#include <DiFfRG/common/types.hh>
+#include <DiFfRG/common/linear_algebra.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
@@ -128,6 +128,7 @@ namespace DiFfRG
    * - /timestepping/implicit/rel_tol: The relative tolerance for an implicit timestepping algorithm.
    * - /timestepping/implicit/max_steps: The maximal number of internal SUNDIALS steps between outputs.
    * - /timestepping/implicit/max_non_linear_iterations: The maximal number of nonlinear IDA iterations.
+   * - /timestepping/implicit/jacobian_diagnostics: Whether the Jacobian diagnostics tables are written (default false).
    * - /timestepping/explicit/dt: The timestep size for an explicit timestepping algorithm.
    * - /timestepping/explicit/minimal_dt: The minimal timestep size for an explicit timestepping algorithm.
    * - /timestepping/explicit/maximal_dt: The maximal timestep size for an explicit timestepping algorithm.
@@ -143,8 +144,9 @@ namespace DiFfRG
    * Output settings, including the optional RG scale, are obtained from the typed ReportPort owned by the
    * OutputSession. Timesteppers submit ProgressEvents directly; they never write to a stream.
    *
-   * @tparam VectorType_ The type of the vector used in the timestepping algorithm.. Currently only Vector<double> is
-   * supported.
+   * @tparam VectorType_ The type of the vector used in the timestepping algorithm. Must satisfy
+   * SupportedVectorType: dealii::Vector<double> and dealii::BlockVector<double>, plus the PETSc MPI
+   * vectors in an MPI build.
    * @tparam SparseMatrixType_ The type of the sparse matrix used in the timestepping algorithm. This depends on the
    * assembler used in the computation.
    * @tparam dim_ The dimensionality of the spatial discretization.
@@ -156,31 +158,42 @@ namespace DiFfRG
     using VectorType = VectorType_;
     using NumberType = typename get_type::NumberType<VectorType>;
     using SparseMatrixType = SparseMatrixType_;
-    using InverseSparseMatrixType = typename get_type::InverseSparseMatrixType<SparseMatrixType>;
-    static_assert(std::is_same_v<VectorType, Vector<NumberType>>, "VectorType must not be Vector<double>!");
-    using BlockVectorType = dealii::BlockVector<NumberType>;
+    // NOTE: InverseSparseMatrixType is deliberately NOT declared here. A member alias of a
+    // class template is instantiated with the class, so declaring it in the common base forces
+    // every timestepper to have a mass-matrix inverse type -- including the implicit ones,
+    // which never invert a mass matrix. That made the whole hierarchy unusable with any matrix
+    // type lacking a SparseDirectUMFPACK-shaped inverse (i.e. every distributed matrix). It now
+    // lives only in the explicit steppers that actually use it.
+    static_assert(SupportedVectorType<VectorType>,
+                  "VectorType is not a vector type DiFfRG supports; see get_type in common/types.hh.");
+    using BlockVectorType = typename get_type::BlockVectorType<VectorType>;
 
   public:
     /**
      * @brief Construct a new Abstract Timestepper object
      *
      * @param config The ConfigTree object must contain a /timestepping/ section with all necessary parameters.
-     * @param assembler
-     * @param data_out
-     * @param adaptor
+     * @param assembler The assembler object is used to assemble the system matrices and vectors for the timestepping
+     * algorithm.
+     * @param data_out The data output object is used to write the output data to disk.
+     * @param adaptor The adaptor object is used to adapt the mesh and the solution vector to the new mesh. The
+     * overload without it uses NoAdaptivity, i.e. no mesh adaptation.
+     * @param implicit_stepper, explicit_stepper which /timestepping/ sections this stepper reads.
      */
     AbstractTimestepper(const ConfigTree &config, AbstractAssembler<VectorType, SparseMatrixType, dim> &assembler,
-                        OutputSession<dim, VectorType> &data_out)
+                        OutputSession_impl<dim, VectorType> &data_out, const bool implicit_stepper,
+                        const bool explicit_stepper)
         : config(config), adaptor_default(), assembler(assembler), data_out(data_out), adaptor(adaptor_default),
-          log(data_out.report_port())
+          log(data_out.report_port()), m_is_implicit(implicit_stepper), m_is_explicit(explicit_stepper)
     {
       read_parameters();
     }
 
     AbstractTimestepper(const ConfigTree &config, AbstractAssembler<VectorType, SparseMatrixType, dim> &assembler,
-                        OutputSession<dim, VectorType> &data_out, AbstractAdaptor<VectorType> &adaptor)
+                        OutputSession_impl<dim, VectorType> &data_out, AbstractAdaptor<VectorType> &adaptor,
+                        const bool implicit_stepper, const bool explicit_stepper)
         : config(config), adaptor_default(), assembler(assembler), data_out(data_out), adaptor(adaptor),
-          log(data_out.report_port())
+          log(data_out.report_port()), m_is_implicit(implicit_stepper), m_is_explicit(explicit_stepper)
     {
       read_parameters();
     }
@@ -190,27 +203,56 @@ namespace DiFfRG
     {
       output_dt = config.get_double("/timestepping/output_dt", 1e-1);
 
-      impl.dt = config.get_double("/timestepping/implicit/dt", 1e-4);
-      impl.minimal_dt = config.get_double("/timestepping/implicit/minimal_dt", 1e-6);
-      impl.maximal_dt = config.get_double("/timestepping/implicit/maximal_dt", 1e-1);
-      impl.abs_tol = config.get_double_or_warn("/timestepping/implicit/abs_tol", 1e-13);
-      impl.rel_tol = config.get_double_or_warn("/timestepping/implicit/rel_tol", 1e-7);
-      impl.max_steps = config.get_uint("/timestepping/implicit/max_steps", 1000000);
-      impl.max_non_linear_iterations = config.get_uint("/timestepping/implicit/max_non_linear_iterations", 10);
-      impl.ida_callback_trace = config.get_bool("/timestepping/implicit/ida_callback_trace", false);
-      impl.ida_callback_trace_min_t = config.get_double("/timestepping/implicit/ida_callback_trace_min_t", 0.0);
-      impl.ida_callback_trace_max_lines = config.get_uint("/timestepping/implicit/ida_callback_trace_max_lines", 200);
-      impl.ida_callback_trace_successes = config.get_bool("/timestepping/implicit/ida_callback_trace_successes", false);
-      impl.ida_error_dof_diagnostics = config.get_bool("/timestepping/implicit/ida_error_dof_diagnostics", false);
-      impl.ida_error_dof_diagnostics_top_n =
-          config.get_uint("/timestepping/implicit/ida_error_dof_diagnostics_top_n", 8);
+      if (m_is_implicit) {
+        // Stuff you should really set
+        impl.abs_tol = config.get_double_or_warn("/timestepping/implicit/abs_tol", 1e-13);
+        impl.rel_tol = config.get_double_or_warn("/timestepping/implicit/rel_tol", 1e-7);
 
-      expl.dt = config.get_double("/timestepping/explicit/dt", 1e-2);
-      expl.minimal_dt = config.get_double("/timestepping/explicit/minimal_dt", 1e-6);
-      expl.maximal_dt = config.get_double("/timestepping/explicit/maximal_dt", 1e-1);
-      expl.abs_tol = config.get_double_or_warn("/timestepping/explicit/abs_tol", 1e-4);
-      expl.rel_tol = config.get_double_or_warn("/timestepping/explicit/rel_tol", 1e-4);
-      expl.detect_stuck = config.get_bool("/timestepping/explicit/detect_stuck", true);
+        // Stuff you can set, but defaults are reasonable
+        impl.dt = config.get_double("/timestepping/implicit/dt", 1e-4);
+        impl.minimal_dt = config.get_double("/timestepping/implicit/minimal_dt", 1e-8);
+        impl.maximal_dt = config.get_double("/timestepping/implicit/maximal_dt", 1.);
+        impl.max_steps = config.get_uint("/timestepping/implicit/max_steps", 1e6);
+        impl.max_non_linear_iterations = config.get_uint("/timestepping/implicit/max_non_linear_iterations", 10);
+        impl.jacobian_diagnostics = config.get_bool("/timestepping/implicit/jacobian_diagnostics", false);
+        impl.ida_callback_trace = config.get_bool("/timestepping/implicit/ida_callback_trace", false);
+        impl.ida_callback_trace_min_t = config.get_double("/timestepping/implicit/ida_callback_trace_min_t", 0.0);
+        impl.ida_callback_trace_max_lines = config.get_uint("/timestepping/implicit/ida_callback_trace_max_lines", 200);
+        impl.ida_callback_trace_successes =
+            config.get_bool("/timestepping/implicit/ida_callback_trace_successes", false);
+        impl.ida_error_dof_diagnostics = config.get_bool("/timestepping/implicit/ida_error_dof_diagnostics", false);
+        impl.ida_error_dof_diagnostics_top_n =
+            config.get_uint("/timestepping/implicit/ida_error_dof_diagnostics_top_n", 8);
+
+        // Sanity checks:
+        if (impl.minimal_dt <= 0.0) throw std::invalid_argument("Minimal timestep size must be positive.");
+        if (impl.maximal_dt <= 0.0) throw std::invalid_argument("Maximal timestep size must be positive.");
+        if (impl.minimal_dt > impl.maximal_dt)
+          throw std::invalid_argument("Minimal timestep size must be smaller than maximal timestep size.");
+        if (impl.dt < impl.minimal_dt || impl.dt > impl.maximal_dt)
+          throw std::invalid_argument("Initial timestep size must be within the minimal and maximal timestep size.");
+        if (impl.abs_tol <= 0.0) throw std::invalid_argument("Absolute tolerance must be > 0.");
+        if (impl.rel_tol <= 0.0) throw std::invalid_argument("Relative tolerance must be > 0.");
+      }
+
+      if (m_is_explicit) {
+        expl.dt = config.get_double_or_warn("/timestepping/explicit/dt", 1e-2);
+        expl.minimal_dt = config.get_double("/timestepping/explicit/minimal_dt", 1e-16);
+        expl.maximal_dt = config.get_double("/timestepping/explicit/maximal_dt", 1e16);
+        expl.abs_tol = config.get_double_or_warn("/timestepping/explicit/abs_tol", 1e-3);
+        expl.rel_tol = config.get_double_or_warn("/timestepping/explicit/rel_tol", 1e-3);
+        expl.detect_stuck = config.get_bool("/timestepping/explicit/detect_stuck", true);
+
+        // Sanity checks:
+        if (expl.minimal_dt <= 0.0) throw std::invalid_argument("Minimal timestep size must be positive.");
+        if (expl.maximal_dt <= 0.0) throw std::invalid_argument("Maximal timestep size must be positive.");
+        if (expl.minimal_dt > expl.maximal_dt)
+          throw std::invalid_argument("Minimal timestep size must be smaller than maximal timestep size.");
+        if (expl.dt < expl.minimal_dt || expl.dt > expl.maximal_dt)
+          throw std::invalid_argument("Initial timestep size must be within the minimal and maximal timestep size.");
+        if (expl.abs_tol <= 0.0) throw std::invalid_argument("Absolute tolerance must be > 0.");
+        if (expl.rel_tol <= 0.0) throw std::invalid_argument("Relative tolerance must be > 0.");
+      }
     }
 
   protected:
@@ -255,16 +297,23 @@ namespace DiFfRG
      * @param t_start The start time of the simulation.
      * @param t_stop The run method will evolve the system from t_start to t_stop.
      */
-    virtual void run(AbstractFlowingVariables<NumberType> &initial_condition, const double t_start,
+    virtual void run(AbstractFlowingVariables<NumberType, VectorType> &initial_condition, const double t_start,
                      const double t_stop) = 0;
+
+    bool is_implicit() const { return m_is_implicit; }
+    bool is_explicit() const { return m_is_explicit; }
 
   protected:
     const ConfigTree config;
     NoAdaptivity<VectorType> adaptor_default;
     AbstractAssembler<VectorType, SparseMatrixType, dim> &assembler;
-    OutputSession<dim, VectorType> &data_out;
+    OutputSession_impl<dim, VectorType> &data_out;
     AbstractAdaptor<VectorType> &adaptor;
     ReportPort log;
+
+    const bool m_is_implicit;
+    const bool m_is_explicit;
+
 
     double output_dt;
     struct ImplicitParameters {
@@ -275,6 +324,10 @@ namespace DiFfRG
       double rel_tol;
       uint max_steps;
       uint max_non_linear_iterations;
+      /** Enables the `<run>_jacobian_diagnostics.csv` tables. Off by default because the records
+       * are not free: each one costs a full sweep over the assembled Jacobian and, for factorizing
+       * solvers, a condition estimate worth several extra triangular solves. */
+      bool jacobian_diagnostics;
       bool ida_callback_trace;
       double ida_callback_trace_min_t;
       uint ida_callback_trace_max_lines;

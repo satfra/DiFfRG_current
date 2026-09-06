@@ -2,6 +2,7 @@
 #define CATCH_CONFIG_MAIN
 #include <catch2/catch_all.hpp>
 
+#include "../boilerplate/lattice_sum_tolerance.hh"
 #include "../boilerplate/poly_integrand.hh"
 #include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/math.hh>
@@ -25,21 +26,27 @@ TEMPLATE_TEST_CASE("Test 3D lattice integrals on host", "[lattice][double][float
   const uint size1 = GENERATE(16, 32, 64, 128);
   const bool q0_symmetric = GENERATE(false, true);
 
-  IntegratorLat3D<T, PolyIntegrand<3, T>, Threads_exec> integrator({{size0, size1}}, {{a0, a1}}, q0_symmetric);
+  IntegratorLat3D<T, PolyIntegrand<3, T>, KokkosHost_exec> integrator({{size0, size1}}, {{a0, a1}}, q0_symmetric);
 
   SECTION("Volume integral")
   {
     const ctype reference_integral = 1. / a0 / a1 / a1;
 
+    const std::size_t n_terms = lattice_sum_terms(3, size0, size1, q0_symmetric);
+    const ctype expected_precision = lattice_sum_tolerance<ctype>(n_terms);
+    if (expected_precision > lattice_sum_meaningful_tolerance)
+      SKIP("summing " << n_terms << " weights in this precision leaves a round-off bound of "
+                      << expected_precision << ", too coarse to test anything");
+
     T integral{};
     integrator.get(integral, 0., 1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0.);
 
-    const ctype expected_precision =
-        std::max(1e-10, std::numeric_limits<ctype>::epsilon() * powr<2>(size1) * size0 / 10.);
     if (!is_close(reference_integral, integral, expected_precision)) {
       std::cerr << "reference: " << reference_integral << "| integral: " << integral
                 << "| relative error: " << abs(reference_integral - integral) / std::abs(reference_integral)
-                << std::endl;
+                << "| tolerance: " << expected_precision << "| terms: " << n_terms
+                << "| sizes: " << size0 << "," << size1 << "| a: " << a0 << "," << a1
+                << "| symm: " << q0_symmetric << std::endl;
     }
     CHECK(is_close(reference_integral, integral, expected_precision));
   }

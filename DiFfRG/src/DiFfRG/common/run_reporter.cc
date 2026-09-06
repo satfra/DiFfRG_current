@@ -26,6 +26,38 @@ namespace DiFfRG::internal
     constexpr auto console_interval = std::chrono::seconds(1);
     constexpr int unthrottled_verbosity = 5;
 
+    /**
+     * One file sink per path, shared process-wide. A QuadratureProvider opens the run log from
+     * within the integrator constructors, long before the OutputSession that later writes into
+     * it; two independent sinks on one path would each keep their own file offset and overwrite
+     * each other. The shared _mt sink serializes their records behind its own mutex.
+     *
+     * A path is truncated the first time it is opened in a process and appended to afterwards, so
+     * a second reporter (or session) writing the same file does not discard what the first one
+     * recorded.
+     */
+    spdlog::sink_ptr shared_file_sink(const std::filesystem::path &file)
+    {
+      static std::mutex mutex;
+      static std::map<std::string, std::weak_ptr<spdlog::sinks::basic_file_sink_mt>> sinks;
+
+      std::error_code ec;
+      auto key = std::filesystem::weakly_canonical(file, ec).string();
+      if (ec) key = file.string();
+
+      const std::lock_guard<std::mutex> lock(mutex);
+      const auto it = sinks.find(key);
+      if (it != sinks.end())
+        if (auto live = it->second.lock()) return live;
+
+      // A known key that no longer resolves was opened earlier in this process and must not be
+      // truncated again.
+      const bool truncate = it == sinks.end();
+      auto sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(file.string(), truncate);
+      sinks[key] = sink;
+      return sink;
+    }
+
     struct Aggregate {
       ProgressEvent latest;
       std::size_t calls = 0;
@@ -214,16 +246,24 @@ namespace DiFfRG::internal
       const auto queue_size = std::max<std::size_t>(256, settings.log_queue_size);
       thread_pool = std::make_shared<spdlog::details::thread_pool>(queue_size, 1);
 
-      auto sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-      sink->set_pattern("%v");
-      auto logger = std::make_shared<spdlog::async_logger>(options.reporter_name + ".console", sink, thread_pool,
-                                                           spdlog::async_overflow_policy::block);
-      logger->set_level(settings.log_level);
-      destinations.push_back({std::move(logger), {}});
+      if (options.console) {
+        auto sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+        sink->set_pattern("%v");
+        auto logger = std::make_shared<spdlog::async_logger>(options.reporter_name + ".console", sink, thread_pool,
+                                                             spdlog::async_overflow_policy::block);
+        // The console follows /output/verbosity; only the file destination keeps the full log_level record.
+        const auto console_level = verbosity_ <= 0   ? spdlog::level::warn
+                                   : verbosity_ == 1 ? spdlog::level::info
+                                                     : spdlog::level::debug;
+        logger->set_level(console_level);
+        destinations.push_back({std::move(logger), {}});
+      }
       if (path != nullptr) {
-        log_file_ = path->run_file(options.file_suffix, ".log");
-        auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(log_file_->string(), true);
-        auto file_logger = std::make_shared<spdlog::async_logger>(options.reporter_name + ".file", file_sink,
+        log_file_ = path->run_file(".log");
+        // Named after the reporter, not "<name>.file": the shared sink's default pattern stamps
+        // the logger name on every line, which is what keeps e.g. [quadrature] records
+        // distinguishable from the session's inside the one run log.
+        auto file_logger = std::make_shared<spdlog::async_logger>(options.reporter_name, shared_file_sink(*log_file_),
                                                                   thread_pool, spdlog::async_overflow_policy::block);
         file_logger->set_level(settings.log_level);
         file_logger->flush_on(spdlog::level::warn);
