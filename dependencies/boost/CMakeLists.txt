@@ -47,6 +47,13 @@ if(PARALLEL_JOBS EQUAL 0)
   set(PARALLEL_JOBS 1)
 endif()
 
+# Extra arch flags (e.g. -march=x86-64-v3 or -march=native), forwarded by the
+# superbuild so bundled Boost is compiled for the same target CPU as every
+# other dependency.
+set(BOOST_ARCH_FLAGS
+    ""
+    CACHE STRING "Extra architecture flags appended to b2 cxxflags/cflags")
+
 if(NOT EXISTS "${BOOST_ARCHIVE}")
   message(
     FATAL_ERROR
@@ -141,7 +148,8 @@ add_custom_target(
         --with-system \
         --with-thread \
         -j ${PARALLEL_JOBS} \
-        cxxflags=\"-fPIC -O3 -ffat-lto-objects -std=c++20\" \
+        cxxflags=\"-fPIC -O3 -ffat-lto-objects -std=c++20 ${BOOST_ARCH_FLAGS}\" \
+        cflags=\"-fPIC -O3 ${BOOST_ARCH_FLAGS}\" \
         install > '${CMAKE_CURRENT_BINARY_DIR}/04_build.log' 2>&1"
   VERBATIM
   WORKING_DIRECTORY "${BOOST_SOURCE_DIR}"

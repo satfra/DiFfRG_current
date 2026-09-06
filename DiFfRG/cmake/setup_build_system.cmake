@@ -21,12 +21,26 @@ else()
   set(BASE_DIR ${DiFfRG_BASE_DIR})
 endif()
 
-# Whether to optimize for the build machine's CPU (-march=native). Defaults ON;
-# the superbuild forwards -DNATIVE=OFF for portable/CI builds. Kept in sync with
-# the top-level option so a standalone library build behaves identically.
+# Target CPU architecture. MARCH selects an explicit -march= value
+# ("x86-64-v3", "native", or "none" for no arch flag); when empty (default) the
+# legacy NATIVE bool decides. The superbuild forwards both so a standalone
+# library build behaves identically. Resolved inline (not via
+# diffrg_resolve_march) because consumer projects include this file without
+# common.cmake.
 option(NATIVE "Optimize for the build machine's CPU (-march=native). Disable for portable binaries." ON)
-if(COMMAND diffrg_report_native)
-  diffrg_report_native(${NATIVE} "${CMAKE_CXX_COMPILER}")
+set(MARCH
+    ""
+    CACHE STRING
+          "Explicit -march target (e.g. x86-64-v3, native, none). Overrides NATIVE.")
+if(NOT MARCH STREQUAL "")
+  set(DiFfRG_MARCH_VALUE "${MARCH}")
+elseif(NATIVE)
+  set(DiFfRG_MARCH_VALUE "native")
+else()
+  set(DiFfRG_MARCH_VALUE "none")
+endif()
+if(COMMAND diffrg_report_arch)
+  diffrg_report_arch("${DiFfRG_MARCH_VALUE}" "${CMAKE_CXX_COMPILER}")
 endif()
 
 # ##############################################################################
@@ -567,12 +581,13 @@ function(setup_target TARGET)
   endif()
 
   if(NOT ${CMAKE_BUILD_TYPE} STREQUAL Debug)
-    # -march=native only when NATIVE is set (default ON); the fast-math flags are
-    # CPU-portable and always applied in non-Debug builds.
-    if(NATIVE)
-      set(_arch_flag -march=native)
-    else()
+    # -march follows the resolved MARCH/NATIVE value (see the option block at the
+    # top of this file); the fast-math flags are CPU-portable and always applied
+    # in non-Debug builds.
+    if(DiFfRG_MARCH_VALUE STREQUAL "none")
       set(_arch_flag)
+    else()
+      set(_arch_flag -march=${DiFfRG_MARCH_VALUE})
     endif()
     target_compile_options(
       ${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:${_arch_flag} -ffast-math

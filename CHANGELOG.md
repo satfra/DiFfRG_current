@@ -61,6 +61,23 @@
 
 ### Added
 
+- An interactive installer, `install_diffrg.sh`: a curl-able wizard covering the typical
+  choices (pre-built dependency bundle vs. full self-build, prefix, build folder, MPI/GPU/
+  MUMPS/documentation features, optional copy of examples and tutorials) with command-line
+  flags for scripted use.
+- On-demand release workflows (`release-deps-linux`, `release-deps-macos`): build the
+  pre-built dependency bundles on GitHub runners with the same scripts as a local release
+  build, validate them, and upload workflow artifacts (optionally attached to a draft
+  `deps-v*` release for manual publishing). The macOS/Apple-Silicon path is experimental.
+- Pre-built binary dependency bundles: `install-diffrg-deps.sh` downloads a relocatable
+  tarball of the full dependency superbuild (deal.II, Kokkos, Boost, TBB, SUNDIALS, HDF5, ...)
+  from GitHub Releases (`deps-v*` tags), so only the DiFfRG library itself is compiled locally.
+  Linux x86_64, CPU-only, compiled for `x86-64-v3` (AVX2+FMA), glibc ≥ 2.34. The release
+  pipeline lives in `containers/release/`.
+- A `MARCH` string option supersedes the binary `NATIVE` switch: `-DMARCH=x86-64-v3` (or any
+  `-march=` value, or `none`) is threaded through every bundled dependency — including Boost,
+  which previously received no architecture flag at all, so `NATIVE=ON` source builds now
+  compile bundled Boost with `-march=native` too. `NATIVE=ON/OFF` keeps working unchanged.
 - MPI support: FEM and FV flows can be distributed over ranks. In an MPI build a plain
   `RectangularMesh<dim>` is a partitioned triangulation and the linear algebra follows it (PETSc
   vectors and matrices); `RectangularMeshSerial<dim>` pins a mesh serial and
