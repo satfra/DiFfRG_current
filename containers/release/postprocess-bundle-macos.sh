@@ -34,8 +34,15 @@ cp "$SRC/DiFfRG/cmake/verify_install.cmake" "$BUNDLE/share/DiFfRG/verify_install
 for f in "$BUNDLE"/lib/cmake/deal.II/deal.IITargets.cmake \
          "$BUNDLE"/lib/cmake/deal.II/deal.IIConfig.cmake; do
   [ -f "$f" ] || continue
+  # Three shapes of SDK path: framework references become -framework flags,
+  # SDK libs become -l flags, and SDK include dirs are dropped outright (every
+  # consumer compiler supplies its own SDK sysroot). Then tidy the ;-separated
+  # lists the removals may have dented.
   sed -i '' -E \
+    -e 's#[^;"]*/SDKs/[^;"]*/System/Library/Frameworks/([A-Za-z0-9_]+)\.framework#-framework \1#g' \
     -e 's#(/Applications/Xcode[^;"]*|/Library/Developer/CommandLineTools[^;"]*)/usr/lib/lib([A-Za-z0-9_+.-]+)\.(tbd|dylib)#-l\2#g' \
+    -e 's#(/Applications/Xcode[^;"]*|/Library/Developer/CommandLineTools[^;"]*)/usr/include##g' \
+    -e 's#;;+#;#g' -e 's#";#"#g' -e 's#;"#"#g' \
     "$f"
 done
 if grep -nE '(/Applications/Xcode|/Library/Developer/CommandLineTools)' \
