@@ -1,0 +1,146 @@
+# On-demand build of the pre-built CUDA dependency bundle
+# (diffrg-deps-<version>-linux-x86_64-v3-cuda12.tar.zst, sm_80/Ampere floor,
+# newer GPUs via embedded PTX).
+#
+# GitHub-hosted runners have no GPU, so validation here is build-only: the
+# container jobs install the bundle, audit linkage (driver stub), and compile
+# the DiFfRG library + tests against it. Run the actual test suite on a GPU
+# machine before publishing:
+#   containers/release/test-tarball.sh -g -f dist/diffrg-deps-<v>-linux-x86_64-v3-cuda12.tar.zst
+name: release-deps-linux-cuda
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_version:
+        description: "Bundle version (X.Y.Z, becomes tag deps-vX.Y.Z)"
+        required: true
+      cuda_arch:
+        description: "Kokkos CUDA architecture (one per build; PTX covers newer)"
+        default: AMPERE80
+      draft_release:
+        description: "Attach the result to a draft release deps-v<version>"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write # only used when draft_release=true
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: release-deps-linux-cuda
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+                      /usr/local/.ghcup /usr/local/share/boost
+          df -h /
+
+      - name: Build the bundle
+        run: |
+          # cuda_arch is consumed by the Dockerfile; forward it explicitly.
+          docker buildx build --load \
+            -t diffrg-deps-release:cuda \
+            -f containers/release/linux-x86_64-v3-cuda12.Dockerfile \
+            --build-arg threads=4 \
+            --build-arg "bundle_version=${{ inputs.bundle_version }}" \
+            --build-arg "cuda_arch=${{ inputs.cuda_arch }}" \
+            --build-arg "git_sha=${GITHUB_SHA}" \
+            --progress=plain .
+          mkdir -p containers/release/dist
+          cid="$(docker create diffrg-deps-release:cuda)"
+          docker cp "${cid}:/dist/." containers/release/dist/
+          docker rm "${cid}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: diffrg-deps-${{ inputs.bundle_version }}-linux-x86_64-v3-cuda12
+          path: containers/release/dist/
+          if-no-files-found: error
+
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [ubuntu24.04-cuda, rockylinux9-cuda]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+                      /usr/local/.ghcup /usr/local/share/boost
+          df -h /
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: diffrg-deps-${{ inputs.bundle_version }}-linux-x86_64-v3-cuda12
+          path: containers/release/dist/
+
+      - name: Validate on ${{ matrix.distro }} (build-only, no GPU)
+        run: |
+          ./containers/release/test-tarball.sh \
+            -f "containers/release/dist/diffrg-deps-${{ inputs.bundle_version }}-linux-x86_64-v3-cuda12.tar.zst" \
+            -j 4 -d "${{ matrix.distro }}" -g -s
+
+      - name: Upload distro log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-log-${{ matrix.distro }}
+          path: containers/release/logs/${{ matrix.distro }}.log
+
+  finalize:
+    needs: [build, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: diffrg-deps-${{ inputs.bundle_version }}-linux-x86_64-v3-cuda12
+          path: dist/
+
+      # Build-only here: GPU-executed ctest must happen on a real GPU machine,
+      # which upgrades the stamp before publishing.
+      - name: Write the tested stamp
+        run: |
+          name="diffrg-deps-${{ inputs.bundle_version }}-linux-x86_64-v3-cuda12"
+          echo "tested-build-only" > "dist/${name}.tar.zst.tested"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: diffrg-deps-${{ inputs.bundle_version }}-linux-x86_64-v3-cuda12
+          path: dist/
+          overwrite: true
+
+      - name: Attach to draft release
+        if: inputs.draft_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="deps-v${{ inputs.bundle_version }}"
+          gh release view "${tag}" --repo "${{ github.repository }}" >/dev/null 2>&1 \
+            || gh release create "${tag}" --repo "${{ github.repository }}" \
+                 --draft --title "DiFfRG dependency bundle ${{ inputs.bundle_version }}" \
+                 --notes "Draft -- assets uploaded by the release-deps workflows." \
+                 --target "${GITHUB_SHA}"
+          gh release upload "${tag}" dist/* --clobber --repo "${{ github.repository }}"
+
+      - name: Summary
+        run: |
+          echo "## diffrg-deps ${{ inputs.bundle_version }} (linux-x86_64-v3-cuda12)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- CUDA arch: ${{ inputs.cuda_arch }} (+ PTX for newer GPUs)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- validation: BUILD-ONLY (no GPU on hosted runners) -- run test-tarball.sh -g on a GPU machine before publishing" >> "$GITHUB_STEP_SUMMARY"

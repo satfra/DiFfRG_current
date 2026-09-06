@@ -28,6 +28,12 @@ permissions:
   contents: read
   packages: write
 
+# Inside a job container the runner defaults run steps to `sh` (dash), which
+# breaks `set -o pipefail` and ${PIPESTATUS[@]}; force bash everywhere.
+defaults:
+  run:
+    shell: bash
+
 env:
   DIFFRG_DEPS_REPOSITORY: ghcr.io/satfra/diffrg-deps
   DIFFRG_DEPS_STABLE_TAG: ubuntu24.04
@@ -52,7 +58,6 @@ jobs:
 
       - name: Detect dependency image changes
         id: detect
-        shell: bash
         run: |
           set -euo pipefail
 
@@ -86,7 +91,6 @@ jobs:
 
       - name: Reject fork dependency image changes
         if: steps.detect.outputs.rebuild == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
-        shell: bash
         run: |
           echo "::error::This pull request changes dependency image inputs, but fork PRs cannot push test images to GHCR. Re-run from a branch in this repository or update the dependency image manually."
           exit 1
@@ -116,7 +120,6 @@ jobs:
 
       - name: Select image
         id: select
-        shell: bash
         run: |
           set -euo pipefail
 
@@ -416,7 +419,6 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Promote tested dependency image
-        shell: bash
         run: |
           set -euo pipefail
           docker buildx imagetools create \

@@ -19,40 +19,47 @@ if(NOT WIN32)
 endif()
 
 # ##############################################################################
-# Native-architecture reporting
+# Target-architecture reporting
 # ##############################################################################
 #
-# Announce whether the build targets the local CPU (-march=native) or a generic,
-# portable baseline. When native, probe the C++ compiler's predefined macros to
-# list which ISA extensions -march=native actually enables (AVX-512, AVX2, FMA,
-# ...), so it is clear what the resulting binaries will require to run -- e.g. an
-# AVX-512 build will SIGILL on a machine without AVX-512.
-function(diffrg_report_native _native _cxx)
-  if(NOT _native)
+# Announce which CPU architecture the build targets: "native" (the build
+# machine's CPU), "none" (no -march flag, generic baseline), or an explicit
+# -march value such as "x86-64-v3". For any real -march, probe the C++
+# compiler's predefined macros to list which ISA extensions it enables
+# (AVX-512, AVX2, FMA, ...), so it is clear what the resulting binaries will
+# require to run -- e.g. an AVX-512 build will SIGILL on a machine without
+# AVX-512.
+function(diffrg_report_arch _march _cxx)
+  if(_march STREQUAL "none" OR _march STREQUAL "")
     message(
-      "  ${BoldYellow}[NATIVE=OFF] Portable build: -march=native disabled; targeting a generic CPU.${ColourReset}"
+      "  ${BoldYellow}[arch] Portable build: no -march flag; targeting a generic CPU.${ColourReset}"
     )
     return()
   endif()
 
-  message(
-    "  ${BoldGreen}[NATIVE=ON] Optimizing for the build machine's CPU (-march=native).${ColourReset}"
-  )
+  if(_march STREQUAL "native")
+    message(
+      "  ${BoldGreen}[arch] Optimizing for the build machine's CPU (-march=native).${ColourReset}"
+    )
+  else()
+    message(
+      "  ${BoldGreen}[arch] Targeting -march=${_march}.${ColourReset}")
+  endif()
 
   if(NOT _cxx)
     return()
   endif()
-  # Dump the compiler's predefined macros under -march=native. Works for
-  # GCC/Clang/AppleClang; on anything else (or if -march=native is rejected,
+  # Dump the compiler's predefined macros under -march=<value>. Works for
+  # GCC/Clang/AppleClang; on anything else (or if the flag is rejected,
   # e.g. some Apple-silicon toolchains) we simply skip the capability list.
   execute_process(
-    COMMAND ${_cxx} -march=native -dM -E -x c++ /dev/null
+    COMMAND ${_cxx} -march=${_march} -dM -E -x c++ /dev/null
     OUTPUT_VARIABLE _macros
     ERROR_QUIET
     RESULT_VARIABLE _rv)
   if(NOT _rv EQUAL 0)
     message(
-      "  ${BoldYellow}    (could not probe -march=native capabilities for this compiler)${ColourReset}"
+      "  ${BoldYellow}    (could not probe -march=${_march} capabilities for this compiler)${ColourReset}"
     )
     return()
   endif()
@@ -76,3 +83,32 @@ function(diffrg_report_native _native _cxx)
       "  ${BoldGreen}    Enabled CPU features: ${_enabled_str}${ColourReset}")
   endif()
 endfunction()
+
+# ##############################################################################
+# Target-architecture resolution
+# ##############################################################################
+#
+# Resolve the MARCH/NATIVE pair into a single march value and compiler flag.
+# MARCH (string) wins when non-empty: any value gcc accepts ("x86-64-v3",
+# "znver4", "native"), or "none" for no arch flag. An empty MARCH falls back to
+# the legacy NATIVE bool: ON => "native", OFF => "none". Sets <out_march> to the
+# resolved value and <out_flag> to "-march=<value>" or "" for "none".
+macro(diffrg_resolve_march out_march out_flag)
+  if(NOT MARCH STREQUAL "")
+    set(${out_march} "${MARCH}")
+    if(NOT NATIVE)
+      message(
+        "  ${BoldYellow}[arch] Both -DMARCH=${MARCH} and -DNATIVE=OFF given; MARCH wins.${ColourReset}"
+      )
+    endif()
+  elseif(NATIVE)
+    set(${out_march} "native")
+  else()
+    set(${out_march} "none")
+  endif()
+  if(${out_march} STREQUAL "none")
+    set(${out_flag} "")
+  else()
+    set(${out_flag} "-march=${${out_march}}")
+  endif()
+endmacro()

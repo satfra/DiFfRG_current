@@ -25,7 +25,10 @@ library test path:
 
 This contrasts with `containers/Base/` and `containers/CUDA/`, which rebuild
 *everything* from scratch and are driven by `containers/test_all.sh` /
-`build-container.sh` for occasional multi-distro and GPU compatibility sweeps.
+`build-container.sh` for occasional multi-distro and GPU compatibility sweeps,
+and with `containers/release/`, which builds the *user-facing* relocatable
+binary dependency tarballs published on GitHub Releases (force-bundled
+Boost/TBB/HDF5/SUNDIALS, portable `x86-64-v3` ISA, not pinned to any distro).
 
 ## Files
 
