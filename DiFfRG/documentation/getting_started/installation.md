@@ -86,17 +86,12 @@ The **pre-built dependency bundle** downloads deal.II, Kokkos, Boost, TBB, SUNDI
 
 ### Quick install from source
 
-From the shell, run (this requires `curl` to be available on your system):
+The wizard's self-build path compiles the full dependency superbuild with your choice of features:
 ```bash
-$ bash <(curl -s -L https://github.com/satfra/DiFfRG_current/raw/refs/heads/main/install.sh)
+$ bash <(curl -s -L https://github.com/satfra/DiFfRG_current/raw/refs/heads/main/install_diffrg.sh) --mode source
 ```
 
-You can optionally specify the installation folder or the number of threads:
-```bash
-$ THREADS=6 FOLDER=${HOME}/.local/share/DiFfRG/ bash <(curl -s -L https://github.com/satfra/DiFfRG_current/raw/refs/heads/main/install.sh)
-```
-
-Run `bash install.sh --help` for more options.
+Add e.g. `--mpi --gpu --threads 6 --prefix ${HOME}/.local/share/DiFfRG --yes` for a non-interactive run; `install_diffrg.sh --help` lists all options. Experts can drive the superbuild directly with CMake, as described next.
 
 ### Manual installation
 
@@ -152,6 +147,26 @@ The most important options to pass to the top-level `cmake` invocation are:
 deal.II detects what PETSc was actually built with and exports `DEAL_II_PETSC_WITH_HYPRE` /
 `DEAL_II_PETSC_WITH_MUMPS`, which is what DiFfRG's solver wrappers gate on.
 
+#### Offline CUDA builds on clusters (driverless build nodes)
+
+Building CUDA code needs no GPU — but a build node without the NVIDIA *driver* has no real `libcuda.so.1`, so the linker must resolve the CUDA driver API against the toolkit's **stub** (`$CUDA_HOME/lib64/stubs/libcuda.so`). That is harmless in itself: dynamic linking records only the name `libcuda.so.1`, and on the compute node the loader finds the driver's real library under that name.
+
+The trap is letting the stubs *directory* into a runtime search path — then the loader picks the stub over the driver and every CUDA call fails (`CUDA_ERROR_STUB_LIBRARY`). Expose the stubs to the linker only in ways that are never recorded:
+
+```bash
+export LIBRARY_PATH=$CUDA_HOME/lib64/stubs     # link-time only, or:
+#   -Wl,-rpath-link,$CUDA_HOME/lib64/stubs
+```
+
+Never `-Wl,-rpath,...stubs`, and never leave `.../stubs` in `LD_LIBRARY_PATH` in the job environment (cluster CUDA modules often export it — check!). Verify a build with:
+
+```bash
+readelf -d ./my_app | grep -E 'RPATH|RUNPATH'          # must not mention "stubs"
+echo $LD_LIBRARY_PATH | tr : '\n' | grep stubs          # in the job env: must be empty
+```
+
+An already-poisoned binary is repaired without rebuilding: `patchelf --set-rpath '<rpath without the stubs entry>' ./my_app`. DiFfRG's build system additionally refuses to configure against bundled libraries whose RUNPATH contains a stubs entry.
+
 #### Bounding build parallelism
 
 The dependency builds each run their own nested `make`, which the outer `make -jN` never
@@ -161,8 +176,8 @@ reaches. Two caps control them:
 - `-DPETSC_MAX_JOBS=<n>` (default 8) — PETSc's build *and*, via `--with-make-np`, the builds
   of the packages PETSc downloads.
 
-Both are additionally clamped by available RAM (roughly one job per 2 GB). `install.sh`
-forwards its own thread count to both. Raise them only if you have the memory: linking deal.II
+Both are additionally clamped by available RAM (roughly one job per 2 GB). `install_diffrg.sh`
+forwards its thread count to both. Raise them only if you have the memory: linking deal.II
 is what usually triggers an OOM.
 
 Boost, TBB, HDF5 and SUNDIALS are taken from the system when a viable version is found, and otherwise built from the bundled, pinned sources. For each library `<LIB>` ∈ {`BOOST`, `TBB`, `HDF5`, `SUNDIALS`} you can override this:

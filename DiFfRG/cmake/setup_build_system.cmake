@@ -263,6 +263,52 @@ endif()
 diffrg_find_package(Kokkos HINTS ${BUNDLED_DIR})
 message(STATUS "Found Kokkos in ${Kokkos_DIR}")
 
+# CUDA stub-RUNPATH guard. Offline (driverless) builds link the CUDA driver
+# API against the toolkit's *stub* libcuda.so; that is fine -- dynamic linking
+# records only the SONAME -- unless the stubs directory leaks into a RUNPATH,
+# in which case the runtime loader picks the stub over the real driver and
+# every CUDA call fails (CUDA_ERROR_STUB_LIBRARY). That poisoning is silent at
+# build time and only explodes on the compute node, so refuse it here.
+if(UNIX
+   AND NOT APPLE
+   AND Kokkos_ENABLE_CUDA)
+  find_program(_diffrg_readelf readelf)
+  if(_diffrg_readelf)
+    file(GLOB _diffrg_bundle_sos "${BUNDLED_DIR}/lib/*.so*"
+         "${BUNDLED_DIR}/lib64/*.so*")
+    set(_diffrg_stub_poisoned "")
+    foreach(_so ${_diffrg_bundle_sos})
+      if(NOT IS_SYMLINK "${_so}")
+        execute_process(
+          COMMAND ${_diffrg_readelf} -d "${_so}"
+          OUTPUT_VARIABLE _dyn
+          ERROR_QUIET)
+        if(_dyn MATCHES "(RPATH|RUNPATH)[^\n]*stubs")
+          list(APPEND _diffrg_stub_poisoned "${_so}")
+        endif()
+      endif()
+    endforeach()
+    if(_diffrg_stub_poisoned)
+      list(JOIN _diffrg_stub_poisoned "\n    " _diffrg_stub_poisoned)
+      message(
+        FATAL_ERROR
+          "\n"
+          "======================================================================\n"
+          "  CUDA stub directory found in the RUNPATH of bundled libraries:\n"
+          "    ${_diffrg_stub_poisoned}\n"
+          "======================================================================\n"
+          "  At runtime the loader would pick the CUDA driver *stub* over the\n"
+          "  real driver and every CUDA call would fail. Fix the libraries with\n"
+          "    patchelf --set-rpath '<rpath without the stubs entry>' <lib>\n"
+          "  and, when building offline, expose the stubs to the linker only\n"
+          "  via LIBRARY_PATH or -Wl,-rpath-link -- never -Wl,-rpath or\n"
+          "  LD_LIBRARY_PATH (see the installation documentation).\n"
+          "======================================================================\n"
+      )
+    endif()
+  endif()
+endif()
+
 # Find Boost. find_package also honors BOOST_ROOT/Boost_DIR and standard system
 # paths, so a system Boost (selected via BOOST_DIR/BUILD_BOOST in the top-level
 # build) is picked up here when BUNDLED_DIR does not contain one. Use Boost's own

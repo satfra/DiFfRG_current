@@ -49,7 +49,7 @@ jobs:
           sudo mkdir -p /opt/diffrg && sudo chown "$(id -u)" /opt/diffrg
 
       - name: Build the bundle
-        run: ./containers/release/macos-arm64-cpu.sh -v "${{ inputs.bundle_version }}" -j 3
+        run: bash ./containers/release/macos-arm64-cpu.sh -v "${{ inputs.bundle_version }}" -j 3
 
       # Same validation shape as one Linux matrix leg: install the tarball to
       # a fresh prefix through the real installer (exercises the relocation

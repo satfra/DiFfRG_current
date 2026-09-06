@@ -93,7 +93,7 @@ jobs:
 
       - name: Validate on ${{ matrix.distro }} (build-only, no GPU)
         run: |
-          ./containers/release/test-tarball.sh \
+          bash ./containers/release/test-tarball.sh \
             -f "containers/release/dist/diffrg-deps-${{ inputs.bundle_version }}-linux-x86_64-v3-cuda12.tar.zst" \
             -j 4 -d "${{ matrix.distro }}" -g -s
 

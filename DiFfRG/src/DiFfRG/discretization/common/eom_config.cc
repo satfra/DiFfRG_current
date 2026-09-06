@@ -1,8 +1,11 @@
 #include <DiFfRG/discretization/common/eom_config.hh>
 
 #include <cmath>
-#include <format>
 #include <stdexcept>
+
+// fmt::format instead of std::format: libstdc++ ships <format> only from GCC
+// 13, and spdlog's fmt is bundled anyway -- this keeps GCC 12 viable.
+#include <spdlog/fmt/fmt.h>
 
 namespace DiFfRG::Config
 {
@@ -32,7 +35,7 @@ namespace DiFfRG::Config
 
   std::string EoMConfig::get_defaults()
   {
-    return std::format(R"({{
+    return fmt::format(R"({{
   "discretization": {{
     "EoM_abs_tol": {},
     "EoM_max_iter": {},

@@ -61,10 +61,22 @@
 
 ### Added
 
+- **Breaking:** the old `install.sh` is removed (its former curl one-liner URL now 404s).
+  `install_diffrg.sh` replaces it entirely: the wizard for easy installs, its
+  `--mode source` path (or driving the superbuild directly with CMake) for everything
+  `install.sh` did, including the `THREADS`/`FOLDER`/`MPI` knobs as flags.
 - An interactive installer, `install_diffrg.sh`: a curl-able wizard covering the typical
   choices (pre-built dependency bundle vs. full self-build, prefix, build folder, MPI/GPU/
   MUMPS/documentation features, optional copy of examples and tutorials) with command-line
   flags for scripted use.
+- `std::format` replaced by `fmt::format` (spdlog's bundled fmt) in the two places it was
+  used, restoring GCC 12 compatibility: the compiler floor is GCC >= 12 everywhere, except
+  nvcc host compilation where GCC 13 is excluded by an nvcc/libstdc++-13 bug (12 and >= 14
+  both validated against the CUDA bundle).
+- A CUDA dependency bundle variant (`linux-x86_64-v3-cuda12`, sm_80/Ampere floor with PTX
+  forward-compatibility for newer GPUs) plus its `release-deps-linux-cuda` workflow;
+  the wizard offers it when an NVIDIA GPU is detected. deal.II's nvcc-wrapper shim now
+  installs into `bundled/bin` and self-relocates instead of recording a build-tree path.
 - On-demand release workflows (`release-deps-linux`, `release-deps-macos`): build the
   pre-built dependency bundles on GitHub runners with the same scripts as a local release
   build, validate them, and upload workflow artifacts (optionally attached to a draft
