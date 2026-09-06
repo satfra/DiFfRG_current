@@ -302,26 +302,29 @@ if(USE_CCACHE)
 endif()
 
 # ##############################################################################
-# Native architecture optimization
+# Target CPU architecture
 # ##############################################################################
-# Whether to optimize for the CPU of the build machine (-march=native). ON gives
-# the fastest binaries but they only run on CPUs with the same instruction set;
-# turn OFF for portable builds (e.g. CI images that must run on other hardware).
+# MARCH selects an explicit -march= target ("x86-64-v3" for portable binary
+# bundles, "native" for the build machine, "none" for no arch flag). When empty
+# (the default) the legacy NATIVE bool decides: ON => native, OFF => none.
 option(NATIVE "Optimize for the build machine's CPU (-march=native). Disable for portable binaries." ON)
-diffrg_report_native(${NATIVE} "${CMAKE_CXX_COMPILER}")
+set(MARCH
+    ""
+    CACHE STRING
+          "Explicit -march target (e.g. x86-64-v3, native, none). Overrides NATIVE.")
+diffrg_resolve_march(_march_value _arch_flag)
+diffrg_report_arch("${_march_value}" "${CMAKE_CXX_COMPILER}")
 
 # Per-language flag fragments forwarded to the dependency ExternalProjects. Empty
-# when NATIVE=OFF, so the corresponding CMAKE_CACHE_ARGS entry simply vanishes.
-if(NATIVE)
-  set(_native_cxx_arg "-DCMAKE_CXX_FLAGS:STRING=-march=native")
-  set(_native_c_arg "-DCMAKE_C_FLAGS:STRING=-march=native")
-  set(_native_dealii_arg "-DDEAL_II_CXX_FLAGS:STRING=-march=native")
-  set(_native_petsc_flag "-march=native")
+# for "none", so the corresponding CMAKE_CACHE_ARGS entry simply vanishes.
+if(_arch_flag)
+  set(_native_cxx_arg "-DCMAKE_CXX_FLAGS:STRING=${_arch_flag}")
+  set(_native_c_arg "-DCMAKE_C_FLAGS:STRING=${_arch_flag}")
+  set(_native_dealii_arg "-DDEAL_II_CXX_FLAGS:STRING=${_arch_flag}")
 else()
   set(_native_cxx_arg "")
   set(_native_c_arg "")
   set(_native_dealii_arg "")
-  set(_native_petsc_flag "")
 endif()
 
 option(GPU "Enable/Disable GPU support" ON)
@@ -904,6 +907,14 @@ ExternalProject_Add(
     ${_native_cxx_arg}
     -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+    # Uniform bundle layout: everything in lib/, never lib64/. Debian-family
+    # CMake does not search <prefix>/lib64 for package configs, so a bundle
+    # built on an EL-family host would otherwise be unusable there.
+    -DCMAKE_INSTALL_LIBDIR:STRING=lib
+    # Static archives (spdlog, ...) must be PIC: distros with default-PIE
+    # executables (Debian-family, Arch) cannot link non-PIC archives built by
+    # a non-default-PIE toolchain (EL gcc-toolset).
+    -DCMAKE_POSITION_INDEPENDENT_CODE:BOOL=ON
     -DCPM_SOURCE_CACHE:PATH=${CMAKE_CURRENT_BINARY_DIR}/cpm-cache
     ${CCACHE_CMAKE_ARGS}
     -DBUILD_OpenBLAS:BOOL=${BUILD_OpenBLAS}
@@ -941,6 +952,9 @@ if(_build_sundials)
       ${_native_cxx_arg}
       ${_native_c_arg}
       -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+      # lib/ never lib64/, PIC archives -- see general_dep.
+      -DCMAKE_INSTALL_LIBDIR:STRING=lib
+      -DCMAKE_POSITION_INDEPENDENT_CODE:BOOL=ON
       ${CCACHE_CMAKE_ARGS}
       -DMPI:BOOL=${MPI})
 endif()
@@ -958,6 +972,8 @@ ExternalProject_Add(
   # Propagate DEPEND_INSTALL_PREFIX to the dependencies
   CMAKE_CACHE_ARGS
     -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
+    # lib/ never lib64/ -- see general_dep.
+    -DCMAKE_INSTALL_LIBDIR:STRING=lib
     -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX} ${CCACHE_CMAKE_ARGS})
 
 message("${BoldCyan}[5/8] Configuring Boost...${ColourReset}")
@@ -977,6 +993,7 @@ if(_build_boost)
                -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
     # Propagate DEPEND_INSTALL_PREFIX to the dependencies
     CMAKE_CACHE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
+                     "-DBOOST_ARCH_FLAGS:STRING=${_arch_flag}"
                      -DCCACHE_PROGRAM:STRING=${CCACHE_PROGRAM})
 else()
   message(${_boost_status})
@@ -990,9 +1007,9 @@ message("${BoldCyan}[6/8] Configuring Kokkos...${ColourReset}")
 
 # Kokkos_ARCH_NATIVE is Kokkos' *host* -march=native switch (cmake/kokkos_arch.cmake:
 # it adds -march=native -mtune=native to the host compiler), so it must follow the
-# NATIVE option -- otherwise the bundled Kokkos objects bake in the build machine's
+# resolved arch -- otherwise the bundled Kokkos objects bake in the build machine's
 # ISA (e.g. AVX-512) and crash on lesser hardware. GPU archs come from Kokkos_ARCH_LIST.
-if(NATIVE AND NOT DEFINED Kokkos_ARCH)
+if(_march_value STREQUAL "native" AND NOT DEFINED Kokkos_ARCH)
   set(Kokkos_ARCH_NATIVE
       ON
       CACHE BOOL "Enable Kokkos native architecture")
@@ -1000,6 +1017,14 @@ else()
   set(Kokkos_ARCH_NATIVE
       OFF
       CACHE BOOL "Enable Kokkos native architecture")
+endif()
+
+# Kokkos has no arch key for generic -march targets (x86-64-v3 & co.), so a
+# non-native MARCH goes in through plain compiler flags instead.
+if(_arch_flag AND NOT _march_value STREQUAL "native")
+  set(_kokkos_cxx_flags "-fPIC ${_arch_flag}")
+else()
+  set(_kokkos_cxx_flags "-fPIC")
 endif()
 
 if(NOT DEFINED Kokkos_ARCH_LIST)
@@ -1028,7 +1053,7 @@ ExternalProject_Add(
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/kokkos
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
   # DEPENDS general_dep sundials_dep autodiff_dep
-  CMAKE_ARGS -DCMAKE_CXX_FLAGS=-fPIC
+  CMAKE_ARGS "-DCMAKE_CXX_FLAGS=${_kokkos_cxx_flags}"
   CMAKE_CACHE_ARGS
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
     -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
@@ -1040,6 +1065,8 @@ ExternalProject_Add(
     # -> "corrupted size vs. prev_size" / "double free" in __cxa_finalize. A single shared
     # libkokkoscore.so gives one copy of that state across all consumers.
     -DBUILD_SHARED_LIBS:BOOL=ON
+    # lib/ never lib64/ -- see general_dep.
+    -DCMAKE_INSTALL_LIBDIR:STRING=lib
     -DKokkos_ARCH_NATIVE:BOOL=${Kokkos_ARCH_NATIVE}
     ${Kokkos_ARCH_LIST}
     -DCMAKE_CUDA_COMPILER:STRING=${CMAKE_CUDA_COMPILER}
@@ -1259,6 +1286,7 @@ if(BUILD_PETSC)
     CMAKE_CACHE_ARGS
       -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
       -DNATIVE:BOOL=${NATIVE}
+      -DMARCH:STRING=${MARCH}
       -DOpenBLAS_LIBRARY:STRING=${BLAS_LIBRARY_PATH}
       -DPETSC_BLASLAPACK_LIB:STRING=${PETSC_BLASLAPACK_LIB}
       -DBLAS_INDEX_SIZE:STRING=${BLAS_INDEX_SIZE}
@@ -1286,6 +1314,12 @@ message("${BoldCyan}[7/8] Configuring deal.II...${ColourReset}")
 if(BUILD_OpenBLAS)
   set(dealii_lapack "-DLAPACK_LIBRARIES:STRING=${BLAS_LIBRARY_PATH}")
 endif()
+
+# DiFfRG itself never uses deal.II's GSL features (it links GSL directly), so
+# deal.II's GSL support is optional. Portable binary bundles turn it OFF: a
+# host-GSL-linked libdeal_II.so pins a distro-specific libgsl soname that
+# cannot be fixed up after the fact.
+option(DEAL_II_GSL "Allow deal.II to use the system GSL" ON)
 
 # Only hand deal.II the PETSc hints when we actually built PETSc. PETSC_ARCH is
 # deliberately empty: `configure --prefix=` installs a flat tree with no arch
@@ -1409,6 +1443,7 @@ ExternalProject_Add(
     -DDEAL_II_WITH_LAPACK:BOOL=ON
     -DDEAL_II_WITH_HDF5:BOOL=OFF
     -DDEAL_II_WITH_VTK:BOOL=OFF
+    -DDEAL_II_WITH_GSL:BOOL=${DEAL_II_GSL}
     # PETSc: enable it explicitly -- passing only PETSC_DIR/PETSC_ARCH (as this did
     # before) leaves DEAL_II_WITH_PETSC off, so even a successful PETSc build had no
     # effect at all. PETSC_ARCH must be *empty* for a --prefix= install: the
@@ -1458,6 +1493,26 @@ file(MAKE_DIRECTORY ${DEPEND_INSTALL_PREFIX}/include/deal.II/bundled)
 # correct pin. Pinned hint variables are guarded with if(NOT DEFINED ...) so an
 # explicit -DBOOST_ROOT=/-DTBB_DIR=/-DHDF5_DIR= on the command line still wins.
 
+# Paths inside the bundle are pinned relative to the pin file itself (which
+# lives at the bundle root), so a relocated or pre-built bundle stays
+# self-consistent without any text fixup. System paths stay absolute.
+string(REGEX REPLACE "/+$" "" _pin_prefix "${DEPEND_INSTALL_PREFIX}")
+function(_diffrg_pin_path _in _outvar)
+  string(REGEX REPLACE "/+$" "" _path "${_in}")
+  if(_path STREQUAL _pin_prefix)
+    set(${_outvar} "\${CMAKE_CURRENT_LIST_DIR}" PARENT_SCOPE)
+    return()
+  endif()
+  string(FIND "${_path}" "${_pin_prefix}/" _pos)
+  if(_pos EQUAL 0)
+    string(LENGTH "${_pin_prefix}/" _len)
+    string(SUBSTRING "${_path}" ${_len} -1 _rel)
+    set(${_outvar} "\${CMAKE_CURRENT_LIST_DIR}/${_rel}" PARENT_SCOPE)
+  else()
+    set(${_outvar} "${_in}" PARENT_SCOPE)
+  endif()
+endfunction()
+
 # A bundled Boost build compiles Boost itself, so its version is not yet known
 # via find_package; read it from the bundled-Boost wrapper CMakeLists. For a
 # system Boost we already have Boost_VERSION.
@@ -1487,8 +1542,9 @@ set(_pin_content
 # BoostConfig.cmake dir (Boost_DIR) -- with CMP0167 NEW, config-mode
 # find_package then resolves straight to it and ignores HINTS/CMAKE_PREFIX_PATH,
 # so a stray Boost in the bundle dir is never picked up.
+_diffrg_pin_path("${_boost_root}" _pin_boost_root)
 string(APPEND _pin_content
-       "if(NOT DEFINED BOOST_ROOT)\n  set(BOOST_ROOT \"${_boost_root}\")\nendif()\n")
+       "if(NOT DEFINED BOOST_ROOT)\n  set(BOOST_ROOT \"${_pin_boost_root}\")\nendif()\n")
 if(NOT _build_boost)
   string(APPEND _pin_content
          "if(NOT DEFINED Boost_DIR)\n  set(Boost_DIR \"${Boost_DIR}\")\nendif()\n")
@@ -1496,9 +1552,26 @@ endif()
 string(APPEND _pin_content
        "set(DiFfRG_PINNED_BOOST_VERSION \"${_pinned_boost_version}\")\n\n")
 
-# TBB: pin the config dir (bundled prefix or discovered TBBConfig.cmake dir).
-string(APPEND _pin_content
-       "if(NOT DEFINED TBB_DIR)\n  set(TBB_DIR \"${_tbb_dir}\")\nendif()\n")
+# TBB: pin the config dir. A system TBB's TBBConfig.cmake dir is known here;
+# the bundled TBB is not built yet at superbuild-configure time, so the pin
+# resolves its config dir by glob when consumed (lib* also tolerates lib64
+# bundles from before the CMAKE_INSTALL_LIBDIR=lib pinning) -- TBB_DIR must
+# point at the directory holding TBBConfig.cmake, a wrong value makes
+# find_package(TBB) fail outright instead of falling back.
+if(_build_tbb)
+  string(
+    APPEND
+    _pin_content
+    "if(NOT DEFINED TBB_DIR)
+  file(GLOB _diffrg_pin_tbb_dir \"\${CMAKE_CURRENT_LIST_DIR}/lib*/cmake/TBB\")
+  if(_diffrg_pin_tbb_dir)
+    list(GET _diffrg_pin_tbb_dir 0 TBB_DIR)
+  endif()
+endif()\n")
+else()
+  string(APPEND _pin_content
+         "if(NOT DEFINED TBB_DIR)\n  set(TBB_DIR \"${_tbb_dir}\")\nendif()\n")
+endif()
 if(NOT _build_tbb)
   string(APPEND _pin_content
          "set(DiFfRG_PINNED_TBB_VERSION \"${TBB_VERSION}\")\n")
@@ -1519,6 +1592,10 @@ if(NOT _build_hdf5)
   string(APPEND _pin_content
          "set(DiFfRG_PINNED_HDF5_VERSION \"${HDF5_VERSION}\")\n")
 endif()
+
+# Record the target CPU architecture the bundle was compiled for (informational;
+# consumed by packaging manifests and diagnostics, not by find_package).
+string(APPEND _pin_content "\nset(DiFfRG_PINNED_MARCH \"${_march_value}\")\n")
 
 file(WRITE "${DEPEND_INSTALL_PREFIX}/DiFfRG_bundled_config.cmake" "${_pin_content}")
 message(
@@ -1567,8 +1644,12 @@ ExternalProject_Add(
     ${_hdf5_extra_args}
     -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
     -DNATIVE:BOOL=${NATIVE}
+    -DMARCH:STRING=${MARCH}
     -DDiFfRG_TEST:BOOL=${DiFfRG_TEST}
     -DDiFfRG_DOCUMENTATION:BOOL=${DiFfRG_DOCUMENTATION}
+    # lib/ never lib64/ (see general_dep): keeps DiFfRGConfig.cmake at
+    # <prefix>/lib/cmake/DiFfRG on every distro, as the docs advertise.
+    -DCMAKE_INSTALL_LIBDIR:STRING=lib
     -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_INSTALL_PREFIX})
 
 # ##############################################################################
