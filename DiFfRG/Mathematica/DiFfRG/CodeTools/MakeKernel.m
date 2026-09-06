@@ -218,7 +218,7 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
             If[KeyFreeQ[spec, "Device"] || FreeQ[{"GPU", "Threads"}, spec["Device"]],
                 "DiFfRG::TBB_exec"
                 ,
-                "DiFfRG::" <> spec["Device"] <> "_exec"
+                DeviceExecSpace[spec["Device"]]
             ];
         integratorTemplateParams = TemplateParameterGeneration[spec];
         integratorTemplateParams = StringRiffle[integratorTemplateParams, ", "];

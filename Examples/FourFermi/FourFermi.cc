@@ -27,12 +27,11 @@ int main(int argc, char *argv[])
   auto json = config_helper.get_json();
 
   // Define the objects needed to run the simulation
-  OutputPath output_path(json);
-  OutputSession<Assembler> data_out(output_path, json);
-  const auto log = data_out.log_port();
+  OutputSession<Assembler> data_out(json);
+  const auto log = data_out.report_port();
   Model model(json, log);
-  Assembler assembler(model, json, log);
-  TimeStepper time_stepper(json, &assembler, &data_out);
+  Assembler assembler(model, json);
+  TimeStepper time_stepper(json, assembler, data_out);
 
   // Set up the initial condition
   FlowingVariables initial_condition;
@@ -40,7 +39,7 @@ int main(int argc, char *argv[])
 
   // Start the timestepping
   try {
-    time_stepper.run(&initial_condition, 0., json.get_double("/timestepping/final_time"));
+    time_stepper.run(initial_condition, 0., json.get_double("/timestepping/final_time"));
   } catch (std::exception &e) {
     log.error("Timestepping finished with exception {}", e.what());
     log.flush();

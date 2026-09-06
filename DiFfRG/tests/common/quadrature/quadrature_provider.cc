@@ -15,10 +15,9 @@ using namespace DiFfRG;
 
 namespace
 {
-  DiFfRG::ConfigTree quadrature_log_json(const std::filesystem::path &folder, const bool quadrature_log)
+  DiFfRG::ConfigTree quadrature_log_json(const std::filesystem::path &folder)
   {
-    return DiFfRG::json::value(
-        {{"output", {{"folder", folder.string()}, {"name", "run"}, {"quadrature_log", quadrature_log}}}});
+    return DiFfRG::json::value({{"output", {{"folder", folder.string()}, {"name", "run"}}}});
   }
 
   std::string read_file(const std::filesystem::path &path)
@@ -78,6 +77,16 @@ TEST_CASE("Test quadrature provider", "[double][quadrature]")
   }
 }
 
+TEST_CASE("Quadrature provider without an output folder stays silent", "[quadrature][output][default]")
+{
+  DiFfRG::Init();
+
+  const DiFfRG::ConfigTree config(DiFfRG::json::value({{"output", {{"name", "run"}}}}));
+  DiFfRG::QuadratureProvider quadrature_provider(config);
+  const auto nodes = quadrature_provider.template nodes<double, CPU_memory>(32);
+  REQUIRE(nodes.size() == 32);
+}
+
 TEST_CASE("Quadrature provider reports into the run log", "[quadrature][output]")
 {
   DiFfRG::Init();
@@ -85,12 +94,12 @@ TEST_CASE("Quadrature provider reports into the run log", "[quadrature][output]"
   auto path = DiFfRG::OutputPath::temporary(TemporaryRetention::remove_on_destruction, "run", "run");
   const auto run_log = path.run_file(".log");
 
-  SECTION("Enabled by default")
+  SECTION("Enabled by the configured output folder")
   {
     {
-      DiFfRG::QuadratureProvider quadrature_provider(quadrature_log_json(path.root(), true));
+      DiFfRG::QuadratureProvider quadrature_provider(quadrature_log_json(path.root()));
       // Requesting a quadrature has to be reported, since this is what the records exist for. The provider owns the
-      // logger, so they are only guaranteed on disk once it has been destroyed.
+      // reporter, so they are only guaranteed on disk once it has been destroyed.
       const auto nodes = quadrature_provider.template nodes<double, CPU_memory>(32);
       REQUIRE(nodes.size() == 32);
     }
@@ -99,51 +108,40 @@ TEST_CASE("Quadrature provider reports into the run log", "[quadrature][output]"
     const auto contents = read_file(run_log);
     CHECK_THAT(contents, Catch::Matchers::ContainsSubstring("Initialized quadrature provider"));
     CHECK_THAT(contents, Catch::Matchers::ContainsSubstring("order = 32"));
-    // The records carry their own logger name, so they stay distinguishable from the session's.
+    // The records carry their own reporter name, so they stay distinguishable from the session's.
     CHECK_THAT(contents, Catch::Matchers::ContainsSubstring("[quadrature]"));
     // No side-channel companion is left behind.
     CHECK_FALSE(std::filesystem::exists(path.run_file("_quadrature", ".log")));
   }
 
-  SECTION("Suppressed by /output/quadrature_log")
-  {
-    {
-      DiFfRG::QuadratureProvider quadrature_provider(quadrature_log_json(path.root(), false));
-      const auto nodes = quadrature_provider.template nodes<double, CPU_memory>(32);
-      REQUIRE(nodes.size() == 32);
-    }
-
-    CHECK_FALSE(std::filesystem::exists(run_log));
-  }
-
-  SECTION("An explicit port takes precedence over the own logger")
+  SECTION("An explicit port takes precedence over the own reporter")
   {
     {
       Config::OutputSettings settings;
-      RunLogger run_logger(path, settings, true, RunLoggerOptions{"run", false});
+      RunReporter run_reporter(path, settings, true);
 
-      DiFfRG::QuadratureProvider quadrature_provider(quadrature_log_json(path.root(), true), run_logger.port());
+      DiFfRG::QuadratureProvider quadrature_provider(quadrature_log_json(path.root()), run_reporter.port());
       const auto nodes = quadrature_provider.template nodes<double, CPU_memory>(32);
       REQUIRE(nodes.size() == 32);
     }
 
     const auto contents = read_file(run_log);
     CHECK_THAT(contents, Catch::Matchers::ContainsSubstring("order = 32"));
-    // The messages belong to the port that was handed in, so the provider never opens a logger of its own.
+    // The messages belong to the port that was handed in, so the provider never opens a reporter of its own.
     CHECK_THAT(contents, !Catch::Matchers::ContainsSubstring("[quadrature]"));
   }
 
   SECTION("A session opened afterwards does not truncate the quadrature records")
   {
     {
-      DiFfRG::QuadratureProvider quadrature_provider(quadrature_log_json(path.root(), true));
+      DiFfRG::QuadratureProvider quadrature_provider(quadrature_log_json(path.root()));
       const auto nodes = quadrature_provider.template nodes<double, CPU_memory>(32);
       REQUIRE(nodes.size() == 32);
 
       // This is the ordering of every example main: the provider is built with the flows, the session only later.
       Config::OutputSettings settings;
-      RunLogger session_logger(path, settings, true);
-      session_logger.port().info("session marker");
+      RunReporter session_reporter(path, settings, true);
+      session_reporter.port().info("session marker");
     }
 
     const auto contents = read_file(run_log);

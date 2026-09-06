@@ -34,7 +34,7 @@ set(DiFfRG_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/eigen.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/mpi.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/polynomials.cc
-    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/run_logger.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/run_reporter.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/common/utils.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/csv_output.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/diagnostic_port.cc

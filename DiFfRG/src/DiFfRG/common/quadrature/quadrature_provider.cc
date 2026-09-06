@@ -332,34 +332,42 @@ namespace DiFfRG
     quadrature_storage.set_verbosity(verbosity);
   }
 
-  QuadratureProvider::QuadratureProvider(const ConfigTree &config, LogPort log)
+  QuadratureProvider::QuadratureProvider(const ConfigTree &config)
   {
     if (!DiFfRG::Init::is_initialized()) throw std::runtime_error("QuadratureProvider: DiFfRG is not initialized.");
 
-    verbosity = config.get_int("/output/verbosity", 0);
-
-    // Without an explicit port every quadrature message would be dropped into an empty LogPort, so open a second
-    // handle on the run log. Only the log-transport settings are read here; building a full OutputSettings would
-    // serialize the whole configuration for no reason.
-    if (verbosity >= 0 && !log && config.get_bool("/output/quadrature_log", true)) {
-      Config::OutputSettings log_settings;
-      log_settings.log_queue_size = config.get_uint("/output/log_queue_size", 8192);
-      log_settings.log_level =
-          static_cast<spdlog::level::level_enum>(config.get_int("/output/log_level", SPDLOG_LEVEL_INFO));
-      log_settings.log_flush_interval = config.get_double("/output/log_flush_interval", 10.);
-
-      // No console sink: the quadrature inventory would drown the timestepper progress report.
-      own_logger = RunLogger(OutputPath(config), log_settings, MPI::rank(MPI_COMM_WORLD) == 0,
-                             RunLoggerOptions{"quadrature", false});
-      log = own_logger.port();
+    if (config.contains("/output/folder")) {
+      // Written into the shared run log under the "quadrature" tag; the reporter has to be owned
+      // here rather than borrowed from an OutputSession, because integrators request their
+      // quadratures inside their constructors -- typically before any session exists. No console
+      // echo: the quadrature inventory would drown the timestepper progress report.
+      own_logger.emplace(OutputPath(config), Config::OutputSettings(config), MPI::rank(MPI_COMM_WORLD) == 0,
+                         RunReporterOptions{.reporter_name = "quadrature", .console = false});
+      initialize(config, own_logger->port());
+    } else {
+      // No folder means no file destination, and the quadrature inventory never goes to the
+      // console; a default RunReporter's port drops every message.
+      initialize(config, RunReporter().port());
     }
+  }
+
+  QuadratureProvider::QuadratureProvider(const ConfigTree &config, ReportPort log)
+  {
+    if (!DiFfRG::Init::is_initialized()) throw std::runtime_error("QuadratureProvider: DiFfRG is not initialized.");
+    initialize(config, std::move(log));
+  }
+
+  void QuadratureProvider::initialize(const ConfigTree &config, ReportPort log)
+  {
+    const Config::OutputSettings output_settings(config);
+    verbosity = output_settings.verbosity;
 
     if (verbosity >= 0) log.info("QuadratureProvider: Initialized quadrature provider.");
 
     matsubara_storage.set_verbosity(verbosity);
-    matsubara_storage.set_log_port(log);
+    matsubara_storage.set_report_port(log);
     quadrature_storage.set_verbosity(verbosity);
-    quadrature_storage.set_log_port(log);
+    quadrature_storage.set_report_port(log);
 
     const int vacuum_quad_size = config.get_uint("/integration/vacuum_quad_size", 64);
     matsubara_storage.set_vacuum_quad_size(vacuum_quad_size);

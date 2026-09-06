@@ -5,10 +5,11 @@
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/quadrature/matsubara.hh>
 #include <DiFfRG/common/quadrature/quadrature.hh>
-#include <DiFfRG/common/run_logger.hh>
+#include <DiFfRG/common/run_reporter.hh>
 
 // standard library
 #include <mutex>
+#include <optional>
 
 namespace DiFfRG
 {
@@ -92,7 +93,7 @@ namespace DiFfRG
       }
 
       void set_verbosity(int v);
-      void set_log_port(LogPort port) { log = std::move(port); }
+      void set_report_port(ReportPort port) { log = std::move(port); }
 
       void set_vacuum_quad_size(const int size);
       void set_min_matsubara_size(const int value);
@@ -172,7 +173,7 @@ namespace DiFfRG
       int max_matsubara_size = 128;
 
       std::mutex m_mutex;
-      LogPort log;
+      ReportPort log;
     };
 
     /**
@@ -201,7 +202,7 @@ namespace DiFfRG
       }
 
       void set_verbosity(int v);
-      void set_log_port(LogPort port) { log = std::move(port); }
+      void set_report_port(ReportPort port) { log = std::move(port); }
 
     private:
       Quadrature<double> &get_quadrature_d(const size_t order, const QuadratureType type);
@@ -225,7 +226,7 @@ namespace DiFfRG
       int verbosity = 0;
 
       std::mutex m_mutex;
-      LogPort log;
+      ReportPort log;
     };
   } // namespace internal
 
@@ -241,13 +242,16 @@ namespace DiFfRG
     /**
      * @brief Construct a provider that reports the quadratures it builds.
      *
-     * If no port is passed, the provider opens its own logger on the run log, <output folder>/<output name>.log,
-     * writing its records under the "quadrature" logger name. It has to own that logger rather than borrow one from
-     * an OutputSession, because integrators request their quadratures inside their constructors -- typically before
-     * any output session exists -- and because the provider is a process-level cache that outlives a single run.
-     * Set /output/quadrature_log to false to keep the quadrature inventory out of the log.
+     * The standalone overload reports into the run log, <output folder>/<output name>.log, under the
+     * "quadrature" tag when /output/folder is present. It owns that reporter rather than borrow one
+     * from an OutputSession, because integrators request their quadratures inside their constructors
+     * -- typically before any session exists; the file sink is shared process-wide per path, so the
+     * session opening the same file later appends to the quadrature inventory instead of truncating
+     * it. The inventory never echoes to the console, where it would drown the timestepper progress
+     * report. Passing a port joins an existing run reporter.
      */
-    explicit QuadratureProvider(const ConfigTree &config, LogPort log = {});
+    explicit QuadratureProvider(const ConfigTree &config);
+    QuadratureProvider(const ConfigTree &config, ReportPort log);
 
     /**
      * @brief Get the quadrature points for a quadrature of size quadrature_size.
@@ -371,11 +375,11 @@ namespace DiFfRG
     }
 
   private:
+    void initialize(const ConfigTree &config, ReportPort log);
+
+    std::optional<RunReporter> own_logger;
     internal::MatsubaraStorage matsubara_storage;
     internal::QuadratureStorage quadrature_storage;
-
-    /** Only engaged when the provider opens its own quadrature log; empty when a port was handed in. */
-    RunLogger own_logger;
 
     int verbosity;
   };

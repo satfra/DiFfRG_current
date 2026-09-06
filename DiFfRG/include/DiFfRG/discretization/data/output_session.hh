@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DiFfRG/common/run_logger.hh>
+#include <DiFfRG/common/run_reporter.hh>
 #include <DiFfRG/discretization/common/eom.hh>
 #include <DiFfRG/discretization/data/csv_output.hh>
 #include <DiFfRG/discretization/data/diagnostic_port.hh>
@@ -88,7 +88,16 @@ namespace DiFfRG
     OutputFrame(OutputFrame &&) = delete;
     OutputFrame &operator=(OutputFrame &&) = delete;
 
+    /** Collect fields for the run's primary field series. */
     FieldCollector fields() { return FieldCollector(session.fe_out); }
+    /**
+     * Collect fields for an additional named series owned by this session.
+     *
+     * The series is created on first use and automatically follows the run's
+     * `/output/vtk` and `/output/hdf5` settings. VTK uses `<run>_<name>.pvd`
+     * plus its VTU frames; HDF5 uses `/<name>/<frame>` in the run's single file.
+     */
+    FieldCollector fields(const std::string &name) { return FieldCollector(session.field_output(name)); }
     TableRecord table(const std::string &name) { return TableRecord(session.csv(name)); }
     Hdf5Record hdf5(const std::string &name) { return Hdf5Record(session.hdf5(name)); }
     Hdf5Record hdf5() { return Hdf5Record(session.hdf5()); }
@@ -166,9 +175,14 @@ namespace DiFfRG
   template <uint dim, typename VectorType> class OutputSession_impl
   {
   public:
-    explicit OutputSession_impl(const OutputPath &path, Config::OutputSettings settings = {});
-    OutputSession_impl(const OutputPath &path, const ConfigTree &config)
-        : OutputSession_impl(path, Config::OutputSettings(config))
+    OutputSession_impl() : OutputSession_impl(OutputPath::temporary(), Config::OutputSettings{}) {}
+    explicit OutputSession_impl(const ConfigTree &config)
+        : OutputSession_impl(path_from(config), Config::OutputSettings(config))
+    {
+    }
+    explicit OutputSession_impl(OutputPath path, Config::OutputSettings settings = {});
+    OutputSession_impl(OutputPath path, const ConfigTree &config)
+        : OutputSession_impl(std::move(path), Config::OutputSettings(config))
     {
     }
     ~OutputSession_impl() noexcept;
@@ -209,7 +223,7 @@ namespace DiFfRG
     }
 
     DiagnosticPort diagnostic_port() const { return diagnostics_port; }
-    LogPort log_port() const { return run_logger.port(); }
+    ReportPort report_port() const { return run_reporter.port(); }
 
     /** Join pending writers and surface their first error without closing the session. */
     void drain();
@@ -222,7 +236,18 @@ namespace DiFfRG
     bool is_writer_rank() const noexcept { return active; }
 
   private:
+    static OutputPath path_from(const ConfigTree &config)
+    {
+      if (config.contains("/output/folder")) return OutputPath(config);
+      const auto name = config.get_string("/output/name", "output");
+      return OutputPath::temporary(TemporaryRetention::remove_on_destruction, name,
+                                   config.get_string("/output/field_directory", name));
+    }
+
     FEOutput<dim, VectorType> &fe_output() { return fe_out; }
+    FEOutput<dim, VectorType> &field_output(const std::string &name);
+    template <typename FieldVectorType>
+    void configure_field_output(FEOutput<dim, FieldVectorType> &sink, const std::string &group_name);
     void attach_raw_potential(ReconstructedRawPotential<dim, typename VectorType::value_type> potential);
     void attach_eom_potential(EoMResult<dim, typename VectorType::value_type> result);
     CsvOutput &csv(const std::string &name);
@@ -235,7 +260,7 @@ namespace DiFfRG
                      const std::vector<std::string> &header);
     void rethrow_deferred_error();
 
-    const OutputPath &output_path;
+    OutputPath output_path;
     Config::OutputSettings settings;
     /** Shared by finish() and the destructor. `crashed` only selects the value recorded in the
      * HDF5 files' `crashed` attribute; everything else happens either way. */
@@ -251,7 +276,7 @@ namespace DiFfRG
     std::exception_ptr terminal_error;
     mutable std::mutex submission_mutex;
 
-    RunLogger run_logger;
+    RunReporter run_reporter;
     /** Declared before every sink that submits to it, so it is destroyed last. finish() joins
      * it explicitly before h5_files goes away, because ~HDF5Output closes the file and that
      * must not race the worker. */
@@ -261,6 +286,8 @@ namespace DiFfRG
     FEOutput<dim, dealii::Vector<typename VectorType::value_type>> potential_fe_out;
     std::vector<ReconstructedEoMPotential<dim, typename VectorType::value_type>> pending_eom_potentials;
     FEOutput<dim, dealii::Vector<typename VectorType::value_type>> eom_potential_fe_out;
+    std::map<std::string, FEOutput<dim, VectorType>> named_fe_outs;
+    std::set<std::string> pending_named_fe_outs;
     std::map<std::string, CsvOutput> csv_files;
 
     bool use_hdf5;

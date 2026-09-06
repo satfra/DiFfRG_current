@@ -73,8 +73,8 @@ TEST_CASE("Benchmark LDG Constant", "[benchmark][ldg]")
   Testing::apply_benchmark_sweep(json);
 
   RectangularMeshSerial<dim> mesh{Config::ConfigurationMesh<dim>(json)};
-  Discretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   FE::FlowingVariables initial_condition(discretization);
   initial_condition.interpolate(model);

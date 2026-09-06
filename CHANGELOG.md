@@ -4,20 +4,18 @@
 
 ### Changed
 
+- **Breaking:** the application-facing discretization, assembler, timestepper and output-session
+  types are keyed on one another instead of repeating the linear algebra:
+  `CG::Discretization<Model, RectangularMesh<dim>>`, `CG::Assembler<Discretization>`,
+  `TimeStepperSUNDIALS_IDA<Assembler>`, `OutputSession<Assembler>`. The spelled-out parameter
+  lists live on the `_impl` classes, whose instantiations stay closed in the library.
+  **Migration:** collapse the aliases, e.g.
+  `TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>` becomes
+  `TimeStepperSUNDIALS_IDA<Assembler>`; `OutputSession<dim, VectorType>` becomes
+  `OutputSession<Assembler>` (anything exposing `dim` and `VectorType` works, e.g. the
+  discretization).
 - The `QuadratureProvider`'s quadrature inventory is written into the run log, `<output name>.log`, rather than into a
-  separate `<output name>_quadrature.log`. Its records carry the `quadrature` logger name, so they stay
-  distinguishable from the session's. `/output/quadrature_log: false` now means "do not report the inventory at all"
-  rather than "do not open the side-channel file". `RunLogger`'s log file sink is shared process-wide per path, so the
-  `OutputSession` opening the same file after the provider appends to it instead of truncating it away.
-- **Breaking:** `RunLoggerOptions::file_suffix` is removed, along with the leading positional argument it occupied.
-  **Migration**: drop the suffix, e.g. `RunLoggerOptions{"_quadrature", "quadrature", false}` becomes
-  `RunLoggerOptions{"quadrature", false}`. Every `RunLogger` now writes into the run log.
-- `/output/verbosity` now also governs the run log's console echo, which previously ignored it and
-  printed everything at `/output/log_level`: at 0 the console shows only warnings and errors, at 1
-  the ordinary messages, from 2 upwards also `debug` records. The `.log` file is unaffected and
-  still receives everything. As a side effect the per-frame output timing line, which is emitted at
-  `debug` level from `/output/verbosity` 3, actually reaches the console now instead of being
-  dropped by the default `info` logger level.
+  separate `<output name>_quadrature.log`.
 - **Breaking:** Kokkos' host execution space is now `Kokkos::Serial`. DiFfRG's CPU parallelism is
   TBB -- deal.II's `MeshWorker` drives a `tbb::parallel_pipeline`, and every production flow
   instantiates its CPU integrators with `TBB_exec` -- so the Kokkos `std::threads` backend was a
@@ -25,8 +23,9 @@
   own vector kernels into. Build with `-DKOKKOS_THREADS=ON` to restore it.
 - **Breaking:** `Threads_exec` / `Threads_memory` are renamed to `KokkosHost_exec` /
   `KokkosHost_memory`, which is what they are now that the backend behind them is Serial.
-  **Migration:** rename the alias; nothing else changes. Generated flows are unaffected -- codegen
-  only ever emits `TBB_exec` and `GPU_exec`.
+  **Migration:** rename the alias; nothing else changes. Generated flows follow automatically --
+  codegen maps a `"Device" -> "Threads"` kernel to `KokkosHost_exec` (via `DeviceExecSpace[]` in
+  the `TemplateParameterGeneration` package); `TBB` and `GPU` kernels are unchanged.
 - **Breaking:** `/discretization/kokkos_threads` is removed. There is one CPU thread pool and
   `/discretization/threads` sizes it. DiFfRG warns if the key is still present.
 - The CPU thread count is resolved from a documented precedence order, and DiFfRG warns loudly on
@@ -53,9 +52,47 @@
 - **Breaking:** Interpolator's `data()` is now `const` and returns `const NT *`. Writing through it would have left
   the device buffers (and, for the splines, the coefficients) stale, and there is no longer a public
   way to push such an edit. Route mutations through `update()`.
+- `update()` is now a single overload taking a raw pointer; the `Kokkos::View` overload had no
+  callers outside the removed twin refresh. It performs one host-side fill and one device copy
+  behind a single fence, instead of the previous two fences per call.
+- `operator[]` on the rank-2 and rank-3 interpolators is now explicitly row-major, matching the
+  order `update()` takes its input in, independently of the mirror's Kokkos layout.
+- `other_memory_space_t` is removed from `common/kokkos.hh`; the interpolators were its only users.
 
 ### Added
 
+- MPI support: FEM and FV flows can be distributed over ranks. In an MPI build a plain
+  `RectangularMesh<dim>` is a partitioned triangulation and the linear algebra follows it (PETSc
+  vectors and matrices); `RectangularMeshSerial<dim>` pins a mesh serial and
+  `RectangularMeshParallel<dim>` names the partitioned one explicitly. Mesh and vector type must
+  agree -- a mismatch would be silently wrong at runtime, so it is rejected at compile time with a
+  `static_assert` naming the cause. LDG is structurally serial and requires
+  `RectangularMeshSerial<dim>`. Output stays on rank 0: the timesteppers refresh ghosted
+  `SolutionView` replicas outside `write_frame`, so no rank enters a collective the others never
+  reach. Momentum integration distributes over ranks (and GPUs) through the SPMD `MapScheduler`,
+  which splits the external grid plan-driven and bitwise-reproducibly.
+- Structured runtime progress reporting: timesteppers, solvers and assemblers submit
+  `ProgressEvent`s through their `ReportPort` instead of formatting console text.
+  `/output/verbosity` selects what is shown -- 0 nothing, 1 residual/timestep work, 2 adds
+  Jacobian, linear-solver and solver diagnostics, 3 adds factorization and output work. Levels
+  1--4 are aggregated to at most one line per topic per second in both the console and the run
+  log; 5 prints every event. Assemblers return a structured `SummaryEvent` from `summary()`,
+  reported automatically when a run drains its output.
+- Additional field series can be written next to the primary fields: `frame.fields("name")`
+  returns a sink whose data goes to `<run>_name.pvd`/VTUs and, with HDF5 on, to
+  `/name/<six-digit frame>` groups inside the single `<run>.h5`. Series names are one safe path
+  component; `FE`, `potential`, `eom_potential`, `scalars`, `maps` and `coordinates` are reserved.
+- FV runs can recover a continuous mass Hessian at nonanalytic interfaces:
+  `/discretization/raw_potential_recover_mass_hessian` (default off) reconstructs it from the
+  DG0 gradient models, with `/discretization/raw_potential_mass_hessian_jump_threshold` enabling
+  one-sided recovery across Hessian jumps and `/discretization/raw_potential_order` selecting the
+  reconstruction order. The order is also honored on the cached reconstruction path and
+  invalidates the cached potential system when it changes (previously the cached path silently
+  used order 2).
+- The Mathematica tests run on AUMP (vendored under `Mathematica/AUMP`), which launches every test
+  leaf in a fresh `wolframscript` kernel; the old `TestRunner.m` is gone. Run them via the
+  `mathematica-test` build target (registered with ctest as `mathematica_tests`) or directly
+  through `AUMP/Runner.wls` with `--init Mathematica/DiFfRG/Tests/init.m`.
 - Every HDF5 file a run writes now carries its configuration as a browsable `/config` group -- one
   subgroup per configuration section, one attribute per leaf -- so a run's parameters can be read
   with the same tools that read its data (`h5ls -r out.h5/config`,

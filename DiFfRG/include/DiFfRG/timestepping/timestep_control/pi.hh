@@ -18,7 +18,7 @@ namespace DiFfRG
   public:
     using Base = TC_Default<NEWT>;
     TC_PI(NEWT &newton_, unsigned int alg_order_, double t_, double max_t_, double dt_, double min_dt_, double max_dt_,
-          double output_dt_, LogPort log = {})
+          double output_dt_, ReportPort log = {})
         : Base(newton_, alg_order_, t_, max_t_, dt_, min_dt_, max_dt_, output_dt_, std::move(log))
     {
       // these are magic numbers, inspired by the implementation of the PI controller in DifferentialEquations.jl,

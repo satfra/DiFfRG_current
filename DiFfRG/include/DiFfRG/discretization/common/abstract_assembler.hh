@@ -20,12 +20,6 @@ namespace DiFfRG
                     "The readout helper now requires a stable readout ID: helper(id, EoM, outputter)");
     }
 
-    template <typename String> constexpr void reject_named_assembler_log()
-    {
-      static_assert(!std::is_same_v<String, String>,
-                    "assembler.log(name) was removed. Construct the assembler with output.log_port() and call log() "
-                    "instead");
-    }
   } // namespace internal
 
   /**
@@ -60,6 +54,9 @@ namespace DiFfRG
   {
   public:
     using NumberType = typename get_type::NumberType<VectorType>;
+
+    /** Return aggregate assembly statistics for the run summary. */
+    virtual SummaryEvent summary() const { return {}; }
 
     /**
      * @brief Contribute the assembler's fields and model readouts to one scoped output frame.

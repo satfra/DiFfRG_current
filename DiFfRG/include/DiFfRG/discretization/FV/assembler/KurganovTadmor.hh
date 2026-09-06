@@ -726,16 +726,8 @@ namespace DiFfRG
           /// @see DiFfRG::internal::cell_width, DiFfRG::FV::KurganovTadmor::internal::flux_tie.
           double cell_width = 0.;
         };
-        [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Assembler(
-            Discretization &discretization, Model &model,
-            DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, ConfigTree> config)
-            : Assembler(discretization, model, config.value(),
-                        DiFfRG::internal::legacy_default_log_port<Discretization>())
-        {
-        }
-
-        Assembler(Discretization &discretization, Model &model, const ConfigTree &config, LogPort log_port)
-            : discretization(discretization), model(model), log_port(std::move(log_port)),
+        Assembler(Discretization &discretization, Model &model, const ConfigTree &config)
+            : discretization(discretization), model(model), report_port(discretization.report_port()),
               dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
               triangulation(discretization.get_triangulation()), fe(discretization.get_fe()),
               schedule_overrides(AssemblyScheduleOverrides::from_config(config)),
@@ -922,11 +914,11 @@ namespace DiFfRG
                 model.extract(extracted_data, x,
                               e_tie(extractor_solution.values, extractor_solution.gradients,
                                     extractor_solution.hessians, nothing, variables, extractor_potential.value,
-                                    extractor_potential.gradient, extractor_potential.hessian));
+                                    extractor_potential.gradient, extractor_potential.mass_hessian));
               }
               outputter(data_out, EoM,
                         e_tie(solution.values, solution.gradients, solution.hessians, extracted_data, variables,
-                              potential.value, potential.gradient, potential.hessian));
+                              potential.value, potential.gradient, potential.mass_hessian));
               data_out.attach_eom_potential(std::move(EoM_result));
             } else {
               DiFfRG::internal::validate_readout_helper_arity<decltype(args)...>();
@@ -1080,7 +1072,7 @@ namespace DiFfRG
           const auto potential = evaluate_raw_potential(raw_potential, mapping, x);
           model.extract(data, x,
                         e_tie(solution.values, solution.gradients, solution.hessians, nothing, variables,
-                              potential.value, potential.gradient, potential.hessian));
+                              potential.value, potential.gradient, potential.mass_hessian));
         }
 
         virtual void mass(VectorType &mass, const VectorType &solution_global, const VectorType &solution_global_dot,
@@ -1655,13 +1647,7 @@ namespace DiFfRG
                 "the zero-gradient value analytically inside diffusion_flux().",
                 c, max_baseline[c], max_variation[c], relative_noise);
 
-            // Deliberately not silenceable by an unattached LogPort: this only fires when the
-            // model is measurably losing digits, and it is precisely the kind of thing that
-            // must not disappear in a run that did not wire up a logger.
-            if (log_port)
-              log_port.warn("{}", message);
-            else
-              spdlog::warn("{}", message);
+            report_port.warn("{}", message);
           }
         }
 
@@ -2710,24 +2696,13 @@ namespace DiFfRG
           AssertIndexRange(cell_index, cell_topology_cache.size());
           return cell_topology_cache[cell_index];
         }
-
-        template <typename String>
-          requires std::convertible_to<String, std::string>
-        [[deprecated("Construct the assembler with output.log_port() and call log() instead")]] void log(String &&)
+        SummaryEvent summary() const override
         {
-          DiFfRG::internal::reject_named_assembler_log<String>();
-        }
-
-        void log()
-        {
-          std::stringstream ss;
-          ss << "FV Assembler: " << std::endl;
-          ss << "        Reinit: " << average_time_reinit() * 1000 << "ms (" << num_reinits() << ")" << std::endl;
-          ss << "        Residual: " << average_time_residual_assembly() * 1000 << "ms (" << num_residuals() << ")"
-             << std::endl;
-          ss << "        Jacobian: " << average_time_jacobian_assembly() * 1000 << "ms (" << num_jacobians() << ")"
-             << std::endl;
-          log_port.info(ss.str());
+          SummaryEvent result{.component = "FV"};
+          result.timing("reinit", average_time_reinit() * 1000, num_reinits())
+              .timing("residual", average_time_residual_assembly() * 1000, num_residuals())
+              .timing("jac", average_time_jacobian_assembly() * 1000, num_jacobians());
+          return result;
         }
 
         double average_time_reinit() const
@@ -2763,7 +2738,7 @@ namespace DiFfRG
       protected:
         Discretization &discretization;
         Model &model;
-        LogPort log_port;
+        ReportPort report_port;
         const DoFHandler<dim> &dof_handler;
         const Mapping<dim> &mapping;
         const Triangulation<dim> &triangulation;
@@ -2786,7 +2761,7 @@ namespace DiFfRG
           const uint threads = DiFfRG::n_threads();
           const auto cheap = schedule_for(assembly_cost::local_fe);
           const auto integral = schedule_for(assembly_cost::momentum_integral);
-          log_port.info("FV: Assembling {} cells on {} threads -- {}x{} workers/cells for a cheap cell loop, "
+          report_port.info("FV: Assembling {} cells on {} threads -- {}x{} workers/cells for a cheap cell loop, "
                         "{}x{} for an integral one.",
                         n_owned_cells, threads, cheap.queue_length, cheap.chunk_size, integral.queue_length,
                         integral.chunk_size);
