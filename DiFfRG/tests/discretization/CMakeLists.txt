@@ -13,7 +13,12 @@ add_subdirectory(coordinates)
 # ##############################################################################
 
 setup_test(mesh.cc)
+setup_mpi_test(mesh_parallel.cc)
+setup_mpi_test(assembly_parallel.cc)
 setup_test(mesh_adaptor.cc)
 setup_test(mesh_configuration_test.cpp)
 setup_test(eom_finding.cc)
+setup_test(extractor_point.cc)
+setup_test(solution_sample.cc)
 setup_test(affine_constraint_metadata.cc)
+setup_test(assembly_schedule.cc)

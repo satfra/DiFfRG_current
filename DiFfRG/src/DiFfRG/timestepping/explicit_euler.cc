@@ -10,8 +10,8 @@
 namespace DiFfRG
 {
   template <typename VectorType, typename SparseMatrixType, uint dim>
-  void TimeStepperExplicitEuler<VectorType, SparseMatrixType, dim>::run(
-      AbstractFlowingVariables<NumberType> &initial_condition, double start, double stop)
+  void TimeStepperExplicitEuler_impl<VectorType, SparseMatrixType, dim>::run(
+      AbstractFlowingVariables<NumberType, VectorType> &initial_condition, double start, double stop)
   {
 
     const SparseMatrixType &mass_matrix = assembler.get_mass_matrix();
@@ -59,10 +59,10 @@ namespace DiFfRG
   }
 } // namespace DiFfRG
 
-template class DiFfRG::TimeStepperExplicitEuler<dealii::Vector<double>, dealii::SparseMatrix<double>, 1>;
-template class DiFfRG::TimeStepperExplicitEuler<dealii::Vector<double>, dealii::SparseMatrix<double>, 2>;
-template class DiFfRG::TimeStepperExplicitEuler<dealii::Vector<double>, dealii::SparseMatrix<double>, 3>;
+template class DiFfRG::TimeStepperExplicitEuler_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1>;
+template class DiFfRG::TimeStepperExplicitEuler_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2>;
+template class DiFfRG::TimeStepperExplicitEuler_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3>;
 
-template class DiFfRG::TimeStepperExplicitEuler<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1>;
-template class DiFfRG::TimeStepperExplicitEuler<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2>;
-template class DiFfRG::TimeStepperExplicitEuler<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3>;
+template class DiFfRG::TimeStepperExplicitEuler_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1>;
+template class DiFfRG::TimeStepperExplicitEuler_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2>;
+template class DiFfRG::TimeStepperExplicitEuler_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3>;

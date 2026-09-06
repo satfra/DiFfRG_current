@@ -20,8 +20,8 @@ namespace DiFfRG
 {
   template <typename VectorType, typename SparseMatrixType, uint dim,
             template <typename, typename> typename LinearSolver>
-  void TimeStepperImplicitEuler<VectorType, SparseMatrixType, dim, LinearSolver>::run(
-      AbstractFlowingVariables<NumberType> &initial_condition, double start, double stop)
+  void TimeStepperImplicitEuler_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(
+      AbstractFlowingVariables<NumberType, VectorType> &initial_condition, double start, double stop)
   {
 
     // make some local copies of the initial condition which we use for stepping
@@ -40,7 +40,9 @@ namespace DiFfRG
     SparseMatrixType jacobian(assembler.get_sparsity_pattern_jacobian());
     LinearSolver<SparseMatrixType, VectorType> linSolver;
     linSolver.set_report_port(this->log);
-    const DiagnosticPort jacobian_diagnostic_port = data_out.diagnostic_port();
+    const bool jacobian_diagnostics_enabled = impl.jacobian_diagnostics;
+    const DiagnosticPort jacobian_diagnostic_port =
+        jacobian_diagnostics_enabled ? data_out.diagnostic_port() : DiagnosticPort{};
 
     // all functions for assembly of the problem and linear solving
     newton.residual = [&](VectorType &res, const VectorType &u) {
@@ -74,7 +76,7 @@ namespace DiFfRG
       try {
         jacobian = 0;
         assembler.jacobian(jacobian, u, tc.get_dt(), 1);
-        matrix_diagnostics = analyze_jacobian_matrix(jacobian);
+        if (jacobian_diagnostics_enabled) matrix_diagnostics = analyze_jacobian_matrix(jacobian);
         linSolver.init(jacobian);
 
         this->log.progress({.topic = progress_topics::jacobian,
@@ -82,7 +84,7 @@ namespace DiFfRG
                             .duration_ms = calc_timer.lap(),
                             .minimum_verbosity = 2});
 
-        factorize_with_diagnostics(linSolver, jacobian, factorization_diagnostics);
+        factorize_with_diagnostics(linSolver, jacobian, factorization_diagnostics, jacobian_diagnostics_enabled);
         if (factorization_diagnostics.factorization_success == 1.)
           this->log.progress({.topic = progress_topics::factorization,
                               .time = tc.get_t(),
@@ -145,27 +147,46 @@ namespace DiFfRG
   }
 } // namespace DiFfRG
 
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
-                                                DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
-                                                DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
-                                                DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                                     DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                                     DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                                     DiFfRG::UMFPack>;
 
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
-                                                DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
-                                                DiFfRG::UMFPack>;
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
-                                                DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                                     DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                                     DiFfRG::UMFPack>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                                     DiFfRG::UMFPack>;
 
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::SparseMatrix<double>, 1, DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::SparseMatrix<double>, 2, DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::SparseMatrix<double>, 3, DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                                     DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                                     DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                                     DiFfRG::GMRES>;
 
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
-                                                DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
-                                                DiFfRG::GMRES>;
-template class DiFfRG::TimeStepperImplicitEuler<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
-                                                DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                                     DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                                     DiFfRG::GMRES>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                                     DiFfRG::GMRES>;
+
+// The default-solver spelling. DefaultLinearSolver is deliberately an indirect alias and so
+// stays a distinct template argument from UMFPack on every compiler, which means
+// TimeStepper<Assembler> needs its own instantiations alongside TimeStepper<Assembler, UMFPack>.
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1,
+                                                     DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2,
+                                                     DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3,
+                                                     DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1,
+                                                     DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2,
+                                                     DiFfRG::DefaultLinearSolver>;
+template class DiFfRG::TimeStepperImplicitEuler_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3,
+                                                     DiFfRG::DefaultLinearSolver>;

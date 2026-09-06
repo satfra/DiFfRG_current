@@ -116,6 +116,29 @@ namespace DiFfRG::hdf5
       write_attribute(name, std::string(value));
     }
 
+    bool has_attribute(const std::string &name) const
+    {
+      htri_t e = H5Aexists(h_.get(), name.c_str());
+      throw_if_negative(e, "H5Aexists failed");
+      return e > 0;
+    }
+
+    void delete_attribute(const std::string &name)
+    {
+      throw_if_negative(H5Adelete(h_.get(), name.c_str()), "H5Adelete failed");
+    }
+
+    /// Write an attribute, replacing any existing one of that name.
+    ///
+    /// Deliberately separate from write_attribute, which fails on a name that is already taken --
+    /// for most attributes a second write is a bug, and that throw is the only thing that catches
+    /// it. Use this only where a value is meant to change over the file's life.
+    template <class T> void overwrite_attribute(const std::string &name, const T &value)
+    {
+      if (has_attribute(name)) delete_attribute(name);
+      write_attribute(name, value);
+    }
+
     template <class T>
       requires(!std::is_same_v<std::decay_t<T>, std::string>)
     T read_attribute(const std::string &name) const

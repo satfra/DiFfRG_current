@@ -21,8 +21,8 @@ namespace DiFfRG
   using namespace dealii;
 
   template <typename VectorType, typename SparseMatrixType, uint dim, int prec>
-  void TimeStepperBoostRK<VectorType, SparseMatrixType, dim, prec>::run(
-      AbstractFlowingVariables<NumberType> &initial_condition, const double t_start, const double t_stop)
+  void TimeStepperBoostRK_impl<VectorType, SparseMatrixType, dim, prec>::run(
+      AbstractFlowingVariables<NumberType, VectorType> &initial_condition, const double t_start, const double t_stop)
   {
 
     auto &full_data = initial_condition.data();
@@ -37,8 +37,8 @@ namespace DiFfRG
   }
 
   template <typename VectorType, typename SparseMatrixType, uint dim, int prec>
-  void TimeStepperBoostRK<VectorType, SparseMatrixType, dim, prec>::run(VectorType &initial_data, const double t_start,
-                                                                        const double t_stop)
+  void TimeStepperBoostRK_impl<VectorType, SparseMatrixType, dim, prec>::run(VectorType &initial_data,
+                                                                             const double t_start, const double t_stop)
   {
     const SparseMatrixType &mass_matrix = assembler.get_mass_matrix();
     InverseSparseMatrixType inverse_mass_matrix;
@@ -110,7 +110,7 @@ namespace DiFfRG
       inverse_mass_matrix.solve(dy_dealii);
 
       if (!std::isfinite(dy_dealii.l2_norm()))
-        throw std::runtime_error("TimeStepperBoostRK::run_vars: dy is not finite!");
+        throw std::runtime_error("TimeStepperBoostRK_impl::run_vars: dy is not finite!");
 
       dealii_to_eigen(dy_dealii, dxdt);
 
@@ -133,12 +133,12 @@ namespace DiFfRG
   }
 
   template <typename VectorType, typename SparseMatrixType, uint dim, int prec>
-  void TimeStepperBoostRK<VectorType, SparseMatrixType, dim, prec>::run(BlockVectorType &initial_data,
-                                                                        const double t_start, const double t_stop)
+  void TimeStepperBoostRK_impl<VectorType, SparseMatrixType, dim, prec>::run(BlockVectorType &initial_data,
+                                                                             const double t_start, const double t_stop)
   {
-    if (initial_data.n_blocks() != 2) throw std::runtime_error("TimeStepperBoostRK::run: y must have two blocks!");
+    if (initial_data.n_blocks() != 2) throw std::runtime_error("TimeStepperBoostRK_impl::run: y must have two blocks!");
     if (initial_data.block(1).size() == 0)
-      throw std::runtime_error("TimeStepperBoostRK::run: y contains no variables, use a different timestepper!");
+      throw std::runtime_error("TimeStepperBoostRK_impl::run: y contains no variables, use a different timestepper!");
 
     const SparseMatrixType &mass_matrix = assembler.get_mass_matrix();
     InverseSparseMatrixType inverse_mass_matrix;
@@ -211,7 +211,7 @@ namespace DiFfRG
       inverse_mass_matrix.solve(dy_dealii.block(0));
 
       if (!std::isfinite(dy_dealii.l2_norm()))
-        throw std::runtime_error("TimeStepperBoostRK::run_vars: dy is not finite!");
+        throw std::runtime_error("TimeStepperBoostRK_impl::run_vars: dy is not finite!");
 
       dealii_to_eigen(dy_dealii, dxdt);
 
@@ -234,11 +234,12 @@ namespace DiFfRG
   }
 
   template <typename VectorType, typename SparseMatrixType, uint dim, int prec>
-  void TimeStepperBoostRK<VectorType, SparseMatrixType, dim, prec>::run_vars(VectorType &initial_data,
-                                                                             const double t_start, const double t_stop)
+  void TimeStepperBoostRK_impl<VectorType, SparseMatrixType, dim, prec>::run_vars(VectorType &initial_data,
+                                                                                  const double t_start,
+                                                                                  const double t_stop)
   {
     if (initial_data.size() == 0)
-      throw std::runtime_error("TimeStepperRK::run: y contains no variables, use a different timestepper!");
+      throw std::runtime_error("TimeStepperRK_impl::run: y contains no variables, use a different timestepper!");
 
     // At output_dt intervals this function saves intermediate solutions
     dealii::Vector<double> output_dealii(initial_data.size());
@@ -308,7 +309,7 @@ namespace DiFfRG
       assembler.residual_variables(dy_dealii, y_dealii, Vector<double>());
 
       if (!std::isfinite(dy_dealii.l2_norm()))
-        throw std::runtime_error("TimeStepperBoostRK::run_vars: dy is not finite!");
+        throw std::runtime_error("TimeStepperBoostRK_impl::run_vars: dy is not finite!");
 
       dealii_to_eigen(dy_dealii, dxdt);
       dxdt *= -1;
@@ -340,29 +341,29 @@ namespace DiFfRG
       fail_checker.reset(); // if we reach here, the step was successful -> reset fail checker
     }
 
-    this->log.info("TimeStepperBoostRK::run_vars: finished after {} steps", step);
+    this->log.info("TimeStepperBoostRK_impl::run_vars: finished after {} steps", step);
 
     eigen_to_dealii(y_eigen, initial_data);
     this->drain_output();
   }
 } // namespace DiFfRG
 
-template class DiFfRG::TimeStepperBoostRK<dealii::Vector<double>, dealii::SparseMatrix<double>, 0, 0>;
-template class DiFfRG::TimeStepperBoostRK<dealii::Vector<double>, dealii::SparseMatrix<double>, 1, 0>;
-template class DiFfRG::TimeStepperBoostRK<dealii::Vector<double>, dealii::SparseMatrix<double>, 2, 0>;
-template class DiFfRG::TimeStepperBoostRK<dealii::Vector<double>, dealii::SparseMatrix<double>, 3, 0>;
+template class DiFfRG::TimeStepperBoostRK_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 0, 0>;
+template class DiFfRG::TimeStepperBoostRK_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1, 0>;
+template class DiFfRG::TimeStepperBoostRK_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2, 0>;
+template class DiFfRG::TimeStepperBoostRK_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3, 0>;
 
-template class DiFfRG::TimeStepperBoostRK<dealii::Vector<double>, dealii::SparseMatrix<double>, 0, 1>;
-template class DiFfRG::TimeStepperBoostRK<dealii::Vector<double>, dealii::SparseMatrix<double>, 1, 1>;
-template class DiFfRG::TimeStepperBoostRK<dealii::Vector<double>, dealii::SparseMatrix<double>, 2, 1>;
-template class DiFfRG::TimeStepperBoostRK<dealii::Vector<double>, dealii::SparseMatrix<double>, 3, 1>;
+template class DiFfRG::TimeStepperBoostRK_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 0, 1>;
+template class DiFfRG::TimeStepperBoostRK_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 1, 1>;
+template class DiFfRG::TimeStepperBoostRK_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 2, 1>;
+template class DiFfRG::TimeStepperBoostRK_impl<dealii::Vector<double>, dealii::SparseMatrix<double>, 3, 1>;
 
-template class DiFfRG::TimeStepperBoostRK<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0, 0>;
-template class DiFfRG::TimeStepperBoostRK<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1, 0>;
-template class DiFfRG::TimeStepperBoostRK<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2, 0>;
-template class DiFfRG::TimeStepperBoostRK<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3, 0>;
+template class DiFfRG::TimeStepperBoostRK_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0, 0>;
+template class DiFfRG::TimeStepperBoostRK_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1, 0>;
+template class DiFfRG::TimeStepperBoostRK_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2, 0>;
+template class DiFfRG::TimeStepperBoostRK_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3, 0>;
 
-template class DiFfRG::TimeStepperBoostRK<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0, 1>;
-template class DiFfRG::TimeStepperBoostRK<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1, 1>;
-template class DiFfRG::TimeStepperBoostRK<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2, 1>;
-template class DiFfRG::TimeStepperBoostRK<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3, 1>;
+template class DiFfRG::TimeStepperBoostRK_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 0, 1>;
+template class DiFfRG::TimeStepperBoostRK_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 1, 1>;
+template class DiFfRG::TimeStepperBoostRK_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 2, 1>;
+template class DiFfRG::TimeStepperBoostRK_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>, 3, 1>;

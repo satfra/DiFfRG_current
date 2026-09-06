@@ -138,11 +138,20 @@ namespace DiFfRG
   };
 
   struct RunReporterOptions {
-    std::string file_suffix;
+    /** Tags this reporter's lines in the shared run log, e.g. `[quadrature]`. */
     std::string reporter_name = "run";
+    /** Whether to echo to the console. Reporters that would interleave with the run progress
+     * display (e.g. the quadrature log) set this to false and write only to the run log. */
+    bool console = true;
   };
 
-  /** Owns the ordered severity sinks and coalesced progress state for one simulation run. */
+  /**
+   * Owns the ordered severity sinks and coalesced progress state for one simulation run.
+   *
+   * Every file-backed reporter writes into the one `<run name>.log`; reporters on the same path
+   * share a single process-wide file sink, so a reporter opened before the session (the
+   * QuadratureProvider's, typically) is appended to rather than truncated away.
+   */
   class RunReporter
   {
   public:

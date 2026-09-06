@@ -28,16 +28,19 @@ TEST_CASE("Benchmark cpu momentum integrals", "[integration][quadrature integrat
       GENERATE(take(1, random(-1., 1.)))  // x3
   });
 
+  // The "kokkos-host" rows use KokkosHost_exec, which is Kokkos::Serial unless the build sets
+  // KOKKOS_THREADS=ON -- so they are a *serial* CPU baseline, not DiFfRG's CPU path. The threaded
+  // CPU path is TBB_exec; benchmark_gpu_vs_tbb.cc is the one that contrasts it with the device.
   constexpr_for<5, 9, 1>([&](auto j) {
     constexpr_for<5, 9, 1>([&](auto i) {
       constexpr uint rsize = powr<j>(2);
       constexpr uint isize = powr<i>(2);
       {
-        QuadratureIntegrator<1, double, PolyIntegrand<1, double>, Threads_exec> integrator(
+        QuadratureIntegrator<1, double, PolyIntegrand<1, double>, KokkosHost_exec> integrator(
             quadrature_provider, {isize}, {x_min}, {x_max}, {QuadratureType::legendre});
-        Kokkos::View<double *, Threads_memory> integral_view("cpu_integral_results", rsize);
+        Kokkos::View<double *, KokkosHost_memory> integral_view("cpu_integral_results", rsize);
 
-        BENCHMARK_ADVANCED("host isize=" + std::to_string(isize) +
+        BENCHMARK_ADVANCED("kokkos-host isize=" + std::to_string(isize) +
                            " rsize=" + std::to_string(rsize))(Catch::Benchmark::Chronometer meter)
         {
           meter.measure([&] {
@@ -69,12 +72,12 @@ TEST_CASE("Benchmark cpu momentum integrals", "[integration][quadrature integrat
         };
       }
       {
-        QuadratureIntegrator<1, double, PolyIntegrand<1, double>, Threads_exec> integrator(
+        QuadratureIntegrator<1, double, PolyIntegrand<1, double>, KokkosHost_exec> integrator(
             quadrature_provider, {isize}, {x_min}, {x_max}, {QuadratureType::legendre});
         std::vector<double> integral_view(rsize);
         LinearCoordinates1D<double> coordinates(rsize, 0., 1.);
 
-        BENCHMARK_ADVANCED("host nested isize=" + std::to_string(isize) +
+        BENCHMARK_ADVANCED("kokkos-host nested isize=" + std::to_string(isize) +
                            " rsize=" + std::to_string(rsize))(Catch::Benchmark::Chronometer meter)
         {
           meter.measure(

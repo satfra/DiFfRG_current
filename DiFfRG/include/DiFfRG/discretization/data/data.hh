@@ -8,8 +8,10 @@
 #include <deal.II/lac/vector.h>
 
 // DiFfRG
+#include <DiFfRG/common/linear_algebra.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/common/abstract_data.hh>
+#include <DiFfRG/discretization/common/la_policy.hh>
 #include <deal.II/numerics/vector_tools.h>
 
 #include <algorithm>
@@ -104,10 +106,13 @@ namespace DiFfRG
      * @tparam Discretization Spatial Discretization used in the system
      */
     template <typename Discretization>
-    class FlowingVariables : public AbstractFlowingVariables<typename Discretization::NumberType>
+    class FlowingVariables
+        : public AbstractFlowingVariables<typename Discretization::NumberType, typename Discretization::VectorType>
     {
     public:
       using NumberType = typename Discretization::NumberType;
+      using VectorType = typename Discretization::VectorType;
+      using BlockVectorType = get_type::BlockVectorType<VectorType>;
       using Components = typename Discretization::Components;
       static constexpr uint dim = Discretization::dim;
 
@@ -130,7 +135,8 @@ namespace DiFfRG
       template <typename Model> void interpolate(const Model &model)
       {
         auto block_structure = discretization.get_block_structure();
-        m_data = (block_structure);
+        reinit_la_block_vector(m_data, block_structure, discretization.get_locally_owned_dofs(),
+                               discretization.get_communicator());
 
         if constexpr (Model::Components::count_fe_functions() > 0) {
           auto interpolating_function = [&model](const auto &p, auto &values) { model.initial_condition(p, values); };
@@ -144,31 +150,31 @@ namespace DiFfRG
       /**
        * @brief Obtain the data vector holding both spatial (block 0) and variable (block 1) data.
        *
-       * @return BlockVector<NumberType>& The data vector.
+       * @return BlockVectorType& The data vector.
        */
-      virtual BlockVector<NumberType> &data() override { return m_data; }
-      virtual const BlockVector<NumberType> &data() const override { return m_data; }
+      virtual BlockVectorType &data() override { return m_data; }
+      virtual const BlockVectorType &data() const override { return m_data; }
 
       /**
        * @brief Obtain the spatial data vector.
        *
-       * @return Vector<NumberType>& The spatial data vector.
+       * @return VectorType& The spatial data vector.
        */
-      virtual Vector<NumberType> &spatial_data() override { return m_data.block(0); }
-      virtual const Vector<NumberType> &spatial_data() const override { return m_data.block(0); }
+      virtual VectorType &spatial_data() override { return m_data.block(0); }
+      virtual const VectorType &spatial_data() const override { return m_data.block(0); }
 
       /**
        * @brief Obtain the variable data vector.
        *
-       * @return Vector<NumberType>& The variable data vector.
+       * @return VectorType& The variable data vector.
        */
-      virtual Vector<NumberType> &variable_data() override { return m_data.block(1); }
-      virtual const Vector<NumberType> &variable_data() const override { return m_data.block(1); }
+      virtual VectorType &variable_data() override { return m_data.block(1); }
+      virtual const VectorType &variable_data() const override { return m_data.block(1); }
 
     private:
       const Discretization &discretization;
       const DoFHandler<dim> &dof_handler;
-      BlockVector<NumberType> m_data;
+      BlockVectorType m_data;
     };
   } // namespace FE
 
@@ -181,10 +187,13 @@ namespace DiFfRG
      * integrates the model's pointwise initial condition over each active cell.
      */
     template <typename Discretization>
-    class FlowingVariables : public AbstractFlowingVariables<typename Discretization::NumberType>
+    class FlowingVariables
+        : public AbstractFlowingVariables<typename Discretization::NumberType, typename Discretization::VectorType>
     {
     public:
       using NumberType = typename Discretization::NumberType;
+      using VectorType = typename Discretization::VectorType;
+      using BlockVectorType = get_type::BlockVectorType<VectorType>;
       using Components = typename Discretization::Components;
       static constexpr uint dim = Discretization::dim;
 
@@ -207,7 +216,8 @@ namespace DiFfRG
       template <typename Model> void interpolate(const Model &model)
       {
         auto block_structure = discretization.get_block_structure();
-        m_data = (block_structure);
+        reinit_la_block_vector(m_data, block_structure, discretization.get_locally_owned_dofs(),
+                               discretization.get_communicator());
 
         if constexpr (Model::Components::count_fe_functions() > 0) {
           const auto &fe = discretization.get_fe();
@@ -222,6 +232,11 @@ namespace DiFfRG
           std::vector<NumberType> averaged_values(n_components);
 
           for (const auto &cell : dof_handler.active_cell_iterators()) {
+            // Always true on a serial mesh, so this costs the serial path nothing. On a
+            // partitioned one it stops every rank writing every cell average: those writes go
+            // through a single-valued insert, so without the filter the result is only correct by
+            // accident, and the compress() below would have nothing well-defined to do.
+            if (!cell->is_locally_owned()) continue;
             fe_values.reinit(cell);
             cell->get_dof_indices(dof_indices);
             std::fill(averaged_values.begin(), averaged_values.end(), NumberType(0.0));
@@ -247,6 +262,9 @@ namespace DiFfRG
               m_data.block(0)[dof_indices[local_dof]] = averaged_values[component];
             }
           }
+          // insert, not add: each owned cell's average is written exactly once by its owner. A
+          // no-op for the serial vector types.
+          m_data.block(0).compress(dealii::VectorOperation::insert);
         }
         if (m_data.n_blocks() > 1) model.initial_condition_variables(m_data.block(1));
       }
@@ -254,31 +272,31 @@ namespace DiFfRG
       /**
        * @brief Obtain the data vector holding both spatial (block 0) and variable (block 1) data.
        *
-       * @return BlockVector<NumberType>& The data vector.
+       * @return BlockVectorType& The data vector.
        */
-      virtual BlockVector<NumberType> &data() override { return m_data; }
-      virtual const BlockVector<NumberType> &data() const override { return m_data; }
+      virtual BlockVectorType &data() override { return m_data; }
+      virtual const BlockVectorType &data() const override { return m_data; }
 
       /**
        * @brief Obtain the spatial data vector.
        *
-       * @return Vector<NumberType>& The spatial data vector.
+       * @return VectorType& The spatial data vector.
        */
-      virtual Vector<NumberType> &spatial_data() override { return m_data.block(0); }
-      virtual const Vector<NumberType> &spatial_data() const override { return m_data.block(0); }
+      virtual VectorType &spatial_data() override { return m_data.block(0); }
+      virtual const VectorType &spatial_data() const override { return m_data.block(0); }
 
       /**
        * @brief Obtain the variable data vector.
        *
-       * @return Vector<NumberType>& The variable data vector.
+       * @return VectorType& The variable data vector.
        */
-      virtual Vector<NumberType> &variable_data() override { return m_data.block(1); }
-      virtual const Vector<NumberType> &variable_data() const override { return m_data.block(1); }
+      virtual VectorType &variable_data() override { return m_data.block(1); }
+      virtual const VectorType &variable_data() const override { return m_data.block(1); }
 
     private:
       const Discretization &discretization;
       const DoFHandler<dim> &dof_handler;
-      BlockVector<NumberType> m_data;
+      BlockVectorType m_data;
     };
   } // namespace FV
 

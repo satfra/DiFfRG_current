@@ -169,7 +169,122 @@ if(NOT BUILD_OpenBLAS)
           "  The LAPACK installation may be incomplete or broken.\n"
           "  If the deal.II build fails, try: cmake .. -DBUILD_OpenBLAS=ON\n")
     endif()
+
+    # The whole stack assumes 32-bit BLAS/LAPACK indices: deal.II's types::blas_int
+    # is a plain int and PETSc is configured --with-64-bit-indices=0. A cluster
+    # module that provides an ILP64 BLAS (MKL's ilp64 layer, an OpenBLAS built with
+    # INTERFACE64=1) links fine and then reads every dimension argument as garbage,
+    # so establish the index size here instead of letting it through.
+    #
+    # Knowing the answer is also what keeps PETSc's own detection honest: its probe
+    # has to *run* a test binary, and where it cannot -- batch nodes, restricted
+    # login nodes -- it assumes 64-bit and then refuses ScaLAPACK, i.e. MUMPS, with
+    #   Cannot use scalapack with 64-bit BLAS/LAPACK indices
+    # We forward the verdict as --known-64-bit-blas-indices only when the probe
+    # below actually produced one.
+    set(_blas_probe_src ${CMAKE_CURRENT_BINARY_DIR}/blas_index_probe.c)
+    file(
+      WRITE ${_blas_probe_src}
+      "extern double ddot_(const int *, const double *, const int *, const double *, const int *);\n"
+      "int main(void)\n"
+      "{\n"
+      "  double x[4] = {3.0, 5.0, 7.0, 9.0};\n"
+      "  int n = 2, one = 1;\n"
+      "  /* 32-bit indices: 3*3 + 5*5 = 34. With 64-bit indices n and one are read as garbage. */\n"
+      "  return ddot_(&n, x, &one, x, &one) == 34.0 ? 0 : 1;\n"
+      "}\n")
+    try_run(
+      _blas_probe_run _blas_probe_compiled ${CMAKE_CURRENT_BINARY_DIR}/blas_index_probe
+      ${_blas_probe_src} LINK_LIBRARIES ${LAPACK_LIBRARIES} ${BLAS_LIBRARIES})
+
+    if(_blas_probe_compiled AND _blas_probe_run STREQUAL "0")
+      set(BLAS_INDEX_SIZE 32)
+    elseif(_blas_probe_compiled AND _blas_probe_run STREQUAL "1")
+      set(BLAS_INDEX_SIZE 64)
+    else()
+      # Did not compile, or did not run (cross-compilation, a crash inside the
+      # BLAS). No verdict; PETSc falls back to its own detection.
+      set(BLAS_INDEX_SIZE unknown)
+    endif()
+
+    if(BLAS_INDEX_SIZE STREQUAL "64")
+      message(
+        FATAL_ERROR
+          "\n"
+          "======================================================================\n"
+          "  The BLAS/LAPACK found here uses 64-bit integer indices (ILP64)\n"
+          "======================================================================\n"
+          "  Found: ${LAPACK_LIBRARIES}\n"
+          "\n"
+          "  deal.II and PETSc are both built with 32-bit indices here, and an\n"
+          "  ILP64 BLAS links against them without complaint while silently\n"
+          "  misreading every matrix dimension. PETSc additionally refuses to\n"
+          "  build ScaLAPACK/MUMPS against it.\n"
+          "\n"
+          "  Either point the build at an LP64 BLAS -- on a cluster that usually\n"
+          "  means loading the module's lp64 variant rather than the ilp64 one --\n"
+          "  or let DiFfRG build its own:\n"
+          "    cmake .. -DBUILD_OpenBLAS=ON\n"
+          "======================================================================\n")
+    endif()
+
+    if(BLAS_INDEX_SIZE STREQUAL "unknown")
+      message(
+        STATUS
+          "Could not determine the BLAS/LAPACK index size; leaving the detection to PETSc.")
+    endif()
+
+    # Pin PETSc to the same BLAS/LAPACK deal.II gets. Left to itself PETSc searches
+    # independently and can land on a different library entirely (MKL via MKLROOT,
+    # say), which is how an ILP64 BLAS gets into the build on a machine whose
+    # default BLAS is LP64. PETSc takes the list as --with-blaslapack-lib=[a,b,c].
+    set(_system_blaslapack ${LAPACK_LIBRARIES} ${BLAS_LIBRARIES})
+    list(REMOVE_DUPLICATES _system_blaslapack)
+
+    # Hand the libraries over as -L/-l rather than as absolute paths. PETSc forwards
+    # whatever it is given to --download-scalapack as a single quoted CMake variable,
+    #   -DLAPACK_LIBRARIES="<the entire link line>"
+    # and ScaLAPACK puts that straight into target_link_libraries(). CMake then has
+    # to classify the whole spaces-and-all string as one link item: leading '-' makes
+    # it a link flag and everything works, but a leading path makes it a library
+    # *file*, so make ends up looking for a file whose name is the entire link line:
+    #   No rule to make target '/usr/lib64/libopenblas.so -lm -ldl ...'
+    # PETSc already performs this rewrite for libraries outside /usr/lib{,64} and
+    # /lib{,64} (config/BuildSystem/config/libraries.py, sysDirs) -- it is only a
+    # BLAS in one of those system directories that reaches ScaLAPACK as a bare path.
+    # Doing the rewrite here puts every case on the flag side of that classification;
+    # PETSc drops the -L for a system directory and re-adds an rpath for any other.
+    set(_petsc_blaslapack)
+    foreach(_lib IN LISTS _system_blaslapack)
+      if(_lib MATCHES "^(.+)/lib([^/]+)\\.(so|a)$")
+        list(APPEND _petsc_blaslapack "-L${CMAKE_MATCH_1}" "-l${CMAKE_MATCH_2}")
+      else()
+        list(APPEND _petsc_blaslapack "${_lib}")
+      endif()
+    endforeach()
+
+    # Two things still make the list unusable: a path the rewrite above cannot put
+    # into -L/-l form (a versioned /usr/lib64/liblapack.so.3, say) leading the link
+    # line lands back on the file side of that classification, and a value a
+    # comma-separated list cannot carry -- generator expressions, embedded
+    # separators -- would reach PETSc malformed. Either way, hand it nothing and
+    # let it search for itself rather than hand it something that breaks later.
+    set(_petsc_blaslapack_first "")
+    if(_petsc_blaslapack)
+      list(GET _petsc_blaslapack 0 _petsc_blaslapack_first)
+    endif()
+    if(NOT "${_petsc_blaslapack}" MATCHES "[$,]" AND NOT IS_ABSOLUTE "${_petsc_blaslapack_first}")
+      list(JOIN _petsc_blaslapack "," PETSC_BLASLAPACK_LIB)
+    else()
+      message(
+        STATUS
+          "Cannot express ${_system_blaslapack} as a PETSc library list; leaving the BLAS/LAPACK search to PETSc."
+      )
+    endif()
   endif()
+else()
+  # The bundled OpenBLAS is built without INTERFACE64, so its indices are 32-bit.
+  set(BLAS_INDEX_SIZE 32)
 endif()
 
 message("${BoldGreen}All pre-flight checks passed.${ColourReset}")
@@ -240,7 +355,14 @@ if(GPU
             "  To silence this warning, configure with -DGPU=OFF\n")
 endif()
 
-set(HAVE_THREADS ON)
+# DiFfRG's CPU parallelism is TBB: deal.II's MeshWorker drives a tbb::parallel_pipeline, and every
+# production flow instantiates its integrators with TBB_exec. A Kokkos std::threads host backend
+# would be a *second* pool of spinning workers on the same cores -- and not an idle one, since
+# deal.II routes its own vector kernels through Kokkos::DefaultHostExecutionSpace
+# (lac/vector.templates.h, lac/la_parallel_vector.templates.h). Off by default so the host space is
+# Kokkos::Serial and there is exactly one CPU thread pool.
+option(KOKKOS_THREADS "Build Kokkos' std::threads host backend (contends with TBB; see comment)" OFF)
+set(HAVE_THREADS ${KOKKOS_THREADS})
 
 option(MPI "Enable MPI support" OFF)
 if(MPI)
@@ -284,10 +406,11 @@ if(HAVE_HIP)
 else()
   message("  ${BoldYellow}HIP: ${HAVE_HIP}${ColourReset}")
 endif()
+# CPU work always runs on TBB; this line says which Kokkos host backend sits beside it.
 if(HAVE_THREADS)
-  message("  ${BoldGreen}Threads: ${HAVE_THREADS}${ColourReset}")
+  message("  ${BoldYellow}CPU: TBB + Kokkos::Threads (two pools -- they contend)${ColourReset}")
 else()
-  message("  ${BoldYellow}Threads: ${HAVE_THREADS}${ColourReset}")
+  message("  ${BoldGreen}CPU: TBB (Kokkos host backend is Serial)${ColourReset}")
 endif()
 message("")
 
@@ -933,14 +1056,193 @@ ExternalProject_Add(
     -DKokkos_ENABLE_SERIAL:BOOL=ON
     -DKokkos_ENABLE_TESTS:BOOL=OFF)
 
+# Machine-capability probe, shared by every heavy dependency build (deal.II and
+# PETSc). Linking deal.II can OOM and PETSc's own make is unbounded, so both are
+# capped against RAM as well as core count -- never a bare -j/-j$(nproc).
+cmake_host_system_information(RESULT _total_ram_mb QUERY TOTAL_PHYSICAL_MEMORY)
+math(EXPR _max_threads_by_ram "${_total_ram_mb} / 2000")
+if(_max_threads_by_ram LESS 1)
+  set(_max_threads_by_ram 1)
+endif()
+# Core count. ProcessorCount() is not trustworthy on its own: on Linux it shells
+# out to a bare `nproc`, and GNU nproc reports OMP_NUM_THREADS whenever that is
+# set. Batch schedulers and HPC module systems routinely export
+# OMP_NUM_THREADS=1, so ProcessorCount() returns 1 on a 128-core node and every
+# dependency below silently builds with -j1. Probe in order of decreasing
+# trustworthiness instead.
+set(BUILD_JOBS
+    ""
+    CACHE STRING
+          "Cores to assume when sizing dependency builds (empty = autodetect)")
+
+set(_nproc "")
+set(_nproc_source "")
+
+if(BUILD_JOBS)
+  set(_nproc ${BUILD_JOBS})
+  set(_nproc_source "BUILD_JOBS")
+endif()
+
+# A scheduler allocation is authoritative: it is what we are allowed to run on,
+# which on a shared node is not what the hardware reports.
+if(NOT _nproc AND DEFINED ENV{SLURM_CPUS_PER_TASK})
+  set(_nproc $ENV{SLURM_CPUS_PER_TASK})
+  set(_nproc_source "SLURM_CPUS_PER_TASK")
+endif()
+
+# nproc with the OpenMP knobs scrubbed: still affinity- and cgroup-aware, so a
+# partial allocation is still respected, but no longer answering the question
+# "how many OpenMP threads should a solver use" in place of "how many cores do I
+# have to compile on". --unset needs CMake 3.24.
+if(NOT _nproc AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
+  execute_process(
+    COMMAND ${CMAKE_COMMAND} -E env --unset=OMP_NUM_THREADS
+            --unset=OMP_THREAD_LIMIT nproc
+    OUTPUT_VARIABLE _nproc_out
+    RESULT_VARIABLE _nproc_result
+    ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+  if(_nproc_result EQUAL 0 AND _nproc_out MATCHES "^[0-9]+$")
+    set(_nproc ${_nproc_out})
+    set(_nproc_source "nproc")
+  endif()
+endif()
+
+# Fallback. On macOS this reads sysctl hw.ncpu and is unaffected by the above.
+if(NOT _nproc)
+  include(ProcessorCount)
+  ProcessorCount(_nproc)
+  set(_nproc_source "ProcessorCount")
+endif()
+
+if(_nproc LESS 1)
+  set(_nproc 1)
+  set(_nproc_source "fallback")
+endif()
+
+# A single core is far more often a misdetection than a real single-core host,
+# and the symptom -- a dependency build taking hours instead of minutes -- is
+# otherwise indistinguishable from "deal.II is just slow". Say it out loud.
+if(_nproc EQUAL 1 AND NOT BUILD_JOBS)
+  message(
+    WARNING
+      "Only 1 core detected (via ${_nproc_source}); deal.II and PETSc will build "
+      "serially. If this machine has more cores, re-run with -DBUILD_JOBS=<n>.")
+endif()
+
+math(EXPR _half_cores "${_nproc} / 2")
+if(_half_cores LESS 1)
+  set(_half_cores 1)
+endif()
+
 # ##############################################################################
 # PETSc
 # ##############################################################################
 
-option(BUILD_PETSC "Build PETSc" OFF)
+# PETSc supplies the distributed linear algebra (PETScWrappers::MPI::{Vector,
+# SparseMatrix}) and, via deal.II, the only MPI-capable SUNDIALS::IDA
+# instantiation that does not drag in Trilinos: deal.II instantiates IDA for
+# Vector, BlockVector, TrilinosWrappers::MPI::* and PETScWrappers::MPI::* only --
+# notably *not* for LinearAlgebra::distributed::Vector (that one gets KINSOL but
+# not IDA). PETSc is therefore required for a distributed FE/FV run, and useless
+# without MPI, hence the default.
+option(BUILD_PETSC "Build PETSc (distributed linear algebra and solvers)" ${MPI})
+
+# Solver capability. Both cost build time -- MUMPS a great deal of it -- so each is
+# its own switch. deal.II detects what PETSc was actually built with and exports
+# DEAL_II_PETSC_WITH_HYPRE / DEAL_II_PETSC_WITH_MUMPS (see its
+# cmake/configure/configure_20_petsc.cmake); DiFfRG's solver wrappers gate on
+# those macros rather than on these options, so a mismatch degrades rather than
+# miscompiles.
+option(PETSC_GMRES
+       "PETSc with hypre -> PreconditionBoomerAMG for Krylov solves (no Fortran required)"
+       ON)
+# MUMPS defaults to ON under MPI so that a distributed run keeps the *direct* solve a serial
+# run has: DefaultLinearSolver picks PETScDirect where deal.II reports MUMPS, and falls back to
+# the iterative PETScKrylov where it does not. That fallback changes the character of the solve,
+# which a fine-tuned flow can notice, so the default is worth the build time -- and MUMPS is the
+# bulk of it (it pulls the ScaLAPACK chain and needs Fortran). Turning it off is supported and
+# only costs the direct solver.
+#
+# It is a hard error only when asked for explicitly. Defaulted on and unbuildable, it degrades to
+# PETSC_GMRES with a warning, so a machine without MPI Fortran can still configure.
+if(NOT DEFINED PETSC_MUMPS_WAS_DEFAULTED)
+  if(DEFINED PETSC_MUMPS)
+    set(PETSC_MUMPS_WAS_DEFAULTED FALSE CACHE INTERNAL "PETSC_MUMPS was set explicitly")
+  else()
+    set(PETSC_MUMPS_WAS_DEFAULTED TRUE CACHE INTERNAL "PETSC_MUMPS came from the MPI default")
+  endif()
+endif()
+option(PETSC_MUMPS
+       "PETSc with MUMPS -> SparseDirectMUMPS distributed direct solves (requires Fortran; long build)"
+       ${MPI})
 
 if(BUILD_PETSC)
-  # build PETSc
+  if(NOT MPI)
+    message(
+      WARNING
+        "BUILD_PETSC=ON with MPI=OFF: PETSc will be built serial, which buys nothing "
+        "over the existing UMFPACK path. Set -DMPI=ON for distributed linear algebra.")
+  endif()
+
+  # MUMPS' PETSc recipe raises a hard error without an F90 compiler, so resolve one up front
+  # rather than failing 20 minutes into the build. Both probes live here, in the superbuild:
+  # dependencies/petsc/CMakeLists.txt needs an MPI Fortran *wrapper* as well, and it runs inside
+  # the ExternalProject configure step with LOG_CONFIGURE ON, so a failure there lands in a log
+  # file rather than on the terminal.
+  set(_petsc_fc "${CMAKE_Fortran_COMPILER}")
+  if(NOT _petsc_fc)
+    find_program(_petsc_fc NAMES gfortran flang f95)
+  endif()
+
+  set(_mumps_viable TRUE)
+  set(_mumps_why "")
+  if(NOT _petsc_fc)
+    set(_mumps_viable FALSE)
+    set(_mumps_why "no Fortran compiler (gfortran/flang/f95) was found")
+  endif()
+  if(MPI)
+    find_program(_petsc_mpifc NAMES mpifort mpif90)
+    if(NOT _petsc_mpifc)
+      set(_mumps_viable FALSE)
+      set(_mumps_why "no MPI Fortran wrapper (mpifort/mpif90) was found on PATH")
+    endif()
+  endif()
+
+  if(PETSC_MUMPS AND NOT _mumps_viable)
+    if(PETSC_MUMPS_WAS_DEFAULTED)
+      message(
+        WARNING
+          "MUMPS was enabled by default because MPI=ON, but ${_mumps_why}. Falling back to the "
+          "hypre/BoomerAMG Krylov path. Distributed runs will use PETScKrylov instead of "
+          "PETScDirect, which is iterative rather than direct. Install your MPI's Fortran "
+          "support and reconfigure in a fresh build directory to get MUMPS, or pass "
+          "-DPETSC_MUMPS=ON explicitly to make this a hard error instead.")
+      set(PETSC_MUMPS OFF CACHE BOOL "" FORCE)
+      set(PETSC_GMRES ON CACHE BOOL "" FORCE)
+    else()
+      message(
+        FATAL_ERROR
+          "PETSC_MUMPS=ON was requested explicitly, but ${_mumps_why}. Install gfortran/flang "
+          "and your MPI's Fortran wrapper, or use -DPETSC_MUMPS=OFF and rely on PETSC_GMRES "
+          "(hypre/BoomerAMG), which needs no Fortran.")
+    endif()
+  endif()
+
+  # Bound PETSc's own make the same way deal.II's build is bounded: never a bare -j.
+  set(PETSC_MAX_JOBS
+      8
+      CACHE STRING "Maximum parallel jobs for the PETSc build")
+  set(_petsc_jobs ${_half_cores})
+  if(_max_threads_by_ram LESS _petsc_jobs)
+    set(_petsc_jobs ${_max_threads_by_ram})
+  endif()
+  if(_petsc_jobs GREATER ${PETSC_MAX_JOBS})
+    set(_petsc_jobs ${PETSC_MAX_JOBS})
+  endif()
+  message(
+    "  ${BoldGreen}[PETSc] build parallelism: ${_petsc_jobs} jobs (${_nproc} cores via ${_nproc_source}, hypre: ${PETSC_GMRES}, MUMPS: ${PETSC_MUMPS}).${ColourReset}"
+  )
+
   ExternalProject_Add(
     petsc_dep
     LOG_CONFIGURE ON
@@ -957,7 +1259,21 @@ if(BUILD_PETSC)
     CMAKE_CACHE_ARGS
       -DCMAKE_INSTALL_PREFIX:PATH=${DEPEND_INSTALL_PREFIX}
       -DNATIVE:BOOL=${NATIVE}
-      -DOpenBLAS_LIBRARY:STRING=${BLAS_LIBRARY_PATH} -DHAVE_MPI:BOOL=${MPI})
+      -DOpenBLAS_LIBRARY:STRING=${BLAS_LIBRARY_PATH}
+      -DPETSC_BLASLAPACK_LIB:STRING=${PETSC_BLASLAPACK_LIB}
+      -DBLAS_INDEX_SIZE:STRING=${BLAS_INDEX_SIZE}
+      -DHAVE_MPI:BOOL=${MPI}
+      -DPETSC_GMRES:BOOL=${PETSC_GMRES}
+      -DPETSC_MUMPS:BOOL=${PETSC_MUMPS}
+      -DPETSC_JOBS:STRING=${_petsc_jobs}
+      -DMPI_C_COMPILER:STRING=${MPI_C_COMPILER}
+      -DMPI_CXX_COMPILER:STRING=${MPI_CXX_COMPILER}
+      -DPETSC_Fortran_COMPILER:STRING=${_petsc_fc}
+      # PETSc must be built with the *same* compilers as deal.II and DiFfRG. The
+      # MPI wrappers alone are not enough: mpicc/mpicxx wrap whichever compiler is
+      # the system default, which need not be the one this superbuild selected.
+      -DPETSC_C_COMPILER:STRING=${CMAKE_C_COMPILER}
+      -DPETSC_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER})
   set(is_petsc_dep petsc_dep)
 endif()
 
@@ -971,21 +1287,17 @@ if(BUILD_OpenBLAS)
   set(dealii_lapack "-DLAPACK_LIBRARIES:STRING=${BLAS_LIBRARY_PATH}")
 endif()
 
-# RAM-aware thread cap for deal.II (linking can OOM)
-cmake_host_system_information(RESULT _total_ram_mb QUERY TOTAL_PHYSICAL_MEMORY)
-math(EXPR _max_threads_by_ram "${_total_ram_mb} / 2000")
-if(_max_threads_by_ram LESS 1)
-  set(_max_threads_by_ram 1)
+# Only hand deal.II the PETSc hints when we actually built PETSc. PETSC_ARCH is
+# deliberately empty: `configure --prefix=` installs a flat tree with no arch
+# subdirectory, and deal.II's FindPETSC joins PETSC_DIR/PETSC_ARCH when the latter
+# is non-empty.
+if(BUILD_PETSC)
+  set(_dealii_petsc_args "-DPETSC_DIR:PATH=${DEPEND_INSTALL_PREFIX}"
+                         "-DPETSC_ARCH:STRING=")
+else()
+  set(_dealii_petsc_args "")
 endif()
-include(ProcessorCount)
-ProcessorCount(_nproc)
-if(_nproc LESS 1)
-  set(_nproc 1)
-endif()
-math(EXPR _half_cores "${_nproc} / 2")
-if(_half_cores LESS 1)
-  set(_half_cores 1)
-endif()
+
 # Use the lesser of half cores, RAM-based limit, and hard cap
 set(DEALII_MAX_JOBS
     16
@@ -998,7 +1310,7 @@ if(_dealii_jobs GREATER ${DEALII_MAX_JOBS})
   set(_dealii_jobs ${DEALII_MAX_JOBS})
 endif()
 message(
-  "  ${BoldGreen}[deal.II] build parallelism: ${_dealii_jobs} threads (${_total_ram_mb} MB RAM, ${_nproc} cores).${ColourReset}"
+  "  ${BoldGreen}[deal.II] build parallelism: ${_dealii_jobs} threads (${_total_ram_mb} MB RAM, ${_nproc} cores via ${_nproc_source}).${ColourReset}"
 )
 
 option(DEVEL "Enable development mode (deal.II DebugRelease build)" OFF)
@@ -1097,8 +1409,18 @@ ExternalProject_Add(
     -DDEAL_II_WITH_LAPACK:BOOL=ON
     -DDEAL_II_WITH_HDF5:BOOL=OFF
     -DDEAL_II_WITH_VTK:BOOL=OFF
-    -DPETSC_DIR:PATH=${DEPEND_INSTALL_PREFIX}
-    -DPETSC_ARCH:STRING=arch-linux-c-opt
+    # PETSc: enable it explicitly -- passing only PETSC_DIR/PETSC_ARCH (as this did
+    # before) leaves DEAL_II_WITH_PETSC off, so even a successful PETSc build had no
+    # effect at all. PETSC_ARCH must be *empty* for a --prefix= install: the
+    # installed tree has no arch subdirectory, and a stale "arch-linux-c-opt" sends
+    # deal.II's FindPETSC looking in a path that does not exist.
+    -DDEAL_II_WITH_PETSC:BOOL=${BUILD_PETSC}
+    ${_dealii_petsc_args}
+    # DEAL_II_ALLOW_AUTODETECTION defaults to ON, so a system p4est or Trilinos would
+    # otherwise be picked up silently and change what the bundled deal.II supports.
+    # Pin them off; P4EST flips on when the mesh itself becomes distributed.
+    -DDEAL_II_WITH_P4EST:BOOL=OFF
+    -DDEAL_II_WITH_TRILINOS:BOOL=OFF
     -DCMAKE_CXX_STANDARD:STRING=20
     -DCMAKE_CXX_EXTENSIONS:BOOL=OFF
     -DKOKKOS_DIR:STRING=${DEPEND_INSTALL_PREFIX}
@@ -1210,6 +1532,15 @@ message(
 option(DiFfRG_TEST "Build DiFfRG tests" OFF)
 option(DiFfRG_DOCUMENTATION "Build DiFfRG documentation" ON)
 
+# Only forward a CUDA compiler if one was resolved; passing an empty value would pin the
+# cache entry to nothing and break the sub-build's own detection.
+if(CMAKE_CUDA_COMPILER)
+  set(_diffrg_cuda_compiler_arg
+      "-DCMAKE_CUDA_COMPILER:STRING=${CMAKE_CUDA_COMPILER}")
+else()
+  set(_diffrg_cuda_compiler_arg "")
+endif()
+
 message("${BoldCyan}[8/8] Configuring DiFfRG...${ColourReset}")
 ExternalProject_Add(
   DiFfRG
@@ -1218,6 +1549,15 @@ ExternalProject_Add(
   INSTALL_DIR ${CMAKE_INSTALL_PREFIX}
   DEPENDS general_dep ${_boost_dep} deal.II_dep kokkos_dep autodiff_dep
   CMAKE_CACHE_ARGS
+    # Forward the toolchain. Without this the sub-build silently falls back to CMake's
+    # default compiler (/usr/bin/cc, /usr/bin/c++), which need not be -- and on a machine
+    # with a newer system GCC usually is not -- the compiler deal.II and Kokkos were built
+    # with. Every other dependency here already gets the compiler passed explicitly; DiFfRG
+    # itself did not, so its toolchain depended on whether CC/CXX happened to be exported
+    # in the caller's environment.
+    -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
+    -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
+    ${_diffrg_cuda_compiler_arg}
     -DMPI:BOOL=${MPI}
     -DHDF5:BOOL=ON
     -DBUNDLED_DIR:PATH=${DEPEND_INSTALL_PREFIX}

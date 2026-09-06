@@ -1,7 +1,9 @@
 #pragma once
 
 // DiFfRG
-#include <DiFfRG/common/types.hh>
+#include <DiFfRG/common/linear_algebra.hh>
+#include <DiFfRG/common/mpi.hh>
+#include <DiFfRG/discretization/common/solution_view.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
 
 namespace DiFfRG
@@ -105,6 +107,33 @@ namespace DiFfRG
      * @param vector The vector to be reinitialized
      */
     virtual void reinit_vector(VectorType &vector) const = 0;
+
+    /**
+     * @brief Reinitialize a matrix to the jacobian's sparsity pattern.
+     *
+     * The counterpart of reinit_vector, and it exists for the same reason: callers must not build
+     * the object themselves. `SparseMatrixType m(get_sparsity_pattern_jacobian())` is fine for a
+     * serial matrix and impossible for a distributed one, which needs the owned row set and a
+     * communicator as well -- neither of which a timestepper has any business knowing. Routing
+     * this through the assembler keeps the timesteppers policy-agnostic.
+     */
+    virtual void reinit_matrix(SparseMatrixType &matrix) const = 0;
+
+    /**
+     * @brief The communicator this assembler's linear algebra lives on.
+     *
+     * MPI_COMM_SELF for a serial discretization, so callers never branch on the build type.
+     */
+    virtual MPI_Comm get_communicator() const = 0;
+
+    /**
+     * @brief Establish the layout of a fully-replicated read-only view of the solution.
+     *
+     * Output, the EoM search and the potential solves all read arbitrary global dof indices, which
+     * a vector holding only this rank's rows cannot answer. Refreshing one of these before handing
+     * it to them keeps all of that code unchanged. See SolutionView.
+     */
+    virtual void reinit_solution_view(SolutionView<VectorType> &view) const = 0;
 
     /**
      * @brief Obtain the mass matrix.

@@ -31,9 +31,10 @@ permissions:
 env:
   DIFFRG_DEPS_REPOSITORY: ghcr.io/satfra/diffrg-deps
   DIFFRG_DEPS_STABLE_TAG: ubuntu24.04
-  DIFFRG_BUILD_JOBS: 8
-  DIFFRG_TEST_JOBS: 8
-  DIFFRG_EXAMPLE_JOBS: 8
+  # GitHub-hosted ubuntu-latest runners for public repos have 4 vCPUs.
+  DIFFRG_BUILD_JOBS: 4
+  DIFFRG_TEST_JOBS: 4
+  DIFFRG_EXAMPLE_JOBS: 4
 
 jobs:
   deps-image:
@@ -135,48 +136,22 @@ jobs:
   build-and-test:
     name: Build and test
     needs: deps-image
-    runs-on: [self-hosted, linux, x64]
-    env:
-      DIFFRG_DEPS_IMAGE: ${{ needs.deps-image.outputs.image_ref }}
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.deps-image.outputs.docker_ref }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure container cache dirs
-        run: |
-          {
-            echo "SINGULARITY_CACHEDIR=${RUNNER_TEMP}/singularity-cache"
-            echo "APPTAINER_CACHEDIR=${RUNNER_TEMP}/apptainer-cache"
-            echo "SINGULARITY_RUN_CACHE=${RUNNER_TEMP}/singularity-run-cache"
-          } >> "$GITHUB_ENV"
-          mkdir -p \
-            "${RUNNER_TEMP}/singularity-cache" \
-            "${RUNNER_TEMP}/apptainer-cache" \
-            "${RUNNER_TEMP}/singularity-run-cache"
-
-      - name: Pull dependency image
-        id: deps
-        env:
-          SINGULARITY_DOCKER_USERNAME: ${{ github.actor }}
-          SINGULARITY_DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check dependency bundle
         run: |
           set -euo pipefail
-          if command -v singularity >/dev/null 2>&1; then
-            singularity_bin=singularity
-          elif command -v apptainer >/dev/null 2>&1; then
-            singularity_bin=apptainer
-          else
-            echo "Neither singularity nor apptainer was found on PATH." >&2
-            exit 127
-          fi
-          sif="${RUNNER_TEMP}/diffrg-deps.sif"
-          echo "Pulling ${DIFFRG_DEPS_IMAGE}"
-          "${singularity_bin}" pull --force "${sif}" "${DIFFRG_DEPS_IMAGE}"
-          echo "sif=${sif}" >> "$GITHUB_OUTPUT"
-
-          bundle_dir="$("${singularity_bin}" exec --cleanenv "${sif}" bash -lc 'printf "%s" "${DiFfRG_BUNDLED_DIR:-/opt/diffrg/bundled}"')"
-          if ! "${singularity_bin}" exec --cleanenv "${sif}" bash -lc 'test -r "${DiFfRG_BUNDLED_DIR:-/opt/diffrg/bundled}"'; then
-            echo "::error::Dependency image ${DIFFRG_DEPS_IMAGE} does not expose a readable dependency bundle at ${bundle_dir}."
+          bundle_dir="${DiFfRG_BUNDLED_DIR:-/opt/diffrg/bundled}"
+          if [ ! -r "${bundle_dir}" ]; then
+            echo "::error::Dependency image does not expose a readable dependency bundle at ${bundle_dir}."
             exit 1
           fi
 
@@ -184,20 +159,13 @@ jobs:
         id: build
         run: |
           set -euo pipefail
-          bash containers/singularity-run.sh \
-            -b "${GITHUB_WORKSPACE}:/work" \
-            -w /work \
-            "${{ steps.deps.outputs.sif }}" \
-            bash -lc '
-              set -euo pipefail
-              cmake -S DiFfRG -B DiFfRG/bin \
-                -DBUNDLED_DIR="${DiFfRG_BUNDLED_DIR:-/opt/diffrg/bundled}" \
-                -DCMAKE_BUILD_TYPE=Release \
-                -DDiFfRG_TEST=ON \
-                -DDiFfRG_DOCUMENTATION=OFF \
-                -DNATIVE=OFF
-              cmake --build DiFfRG/bin -j "${{ env.DIFFRG_BUILD_JOBS }}"
-            '
+          cmake -S DiFfRG -B DiFfRG/bin \
+            -DBUNDLED_DIR="${DiFfRG_BUNDLED_DIR:-/opt/diffrg/bundled}" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DDiFfRG_TEST=ON \
+            -DDiFfRG_DOCUMENTATION=OFF \
+            -DNATIVE=OFF
+          cmake --build DiFfRG/bin -j "${{ env.DIFFRG_BUILD_JOBS }}"
 
       # Runs only when the build succeeded (default fail-fast). Uses `set +e` so a
       # test failure doesn't abort here -- we record the result, publish the badge,
@@ -228,11 +196,7 @@ jobs:
           echo "CTest filter: ${ctest_filter:-<none>}"
 
           set +e
-          bash containers/singularity-run.sh \
-            -b "${GITHUB_WORKSPACE}:/work" \
-            -w /work \
-            "${{ steps.deps.outputs.sif }}" \
-            bash -lc "ctest --test-dir DiFfRG/bin -j '${{ env.DIFFRG_TEST_JOBS }}' ${ctest_filter} --output-on-failure" | tee "${RUNNER_TEMP}/ctest.log"
+          ctest --test-dir DiFfRG/bin -j "${{ env.DIFFRG_TEST_JOBS }}" ${ctest_filter} --output-on-failure | tee "${RUNNER_TEMP}/ctest.log"
           ctest_status=${PIPESTATUS[0]}
           set -e
 
@@ -286,11 +250,6 @@ jobs:
           message: ${{ steps.badge.outputs.message }}
           color: ${{ steps.badge.outputs.color }}
 
-      - name: Clean container caches
-        if: always()
-        run: |
-          rm -rf "${SINGULARITY_CACHEDIR}" "${APPTAINER_CACHEDIR}" "${SINGULARITY_RUN_CACHE}"
-
       # Reflect build/test failures in the job conclusion (the test step swallows
       # ctest's exit code on purpose; the build step's failure is preserved here too).
       - name: Fail the job if the build or any test failed
@@ -311,57 +270,27 @@ jobs:
 
   examples:
     name: Build Examples
+    # Disabled for now: too slow for the standard GitHub-hosted runners. Remove
+    # this gate to re-enable; the job itself is already set up for ubuntu-latest.
+    if: false
     needs: deps-image
-    runs-on: [self-hosted, linux, x64]
-    env:
-      DIFFRG_DEPS_IMAGE: ${{ needs.deps-image.outputs.image_ref }}
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ needs.deps-image.outputs.docker_ref }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure container cache dirs
-        run: |
-          {
-            echo "SINGULARITY_CACHEDIR=${RUNNER_TEMP}/singularity-cache"
-            echo "APPTAINER_CACHEDIR=${RUNNER_TEMP}/apptainer-cache"
-            echo "SINGULARITY_RUN_CACHE=${RUNNER_TEMP}/singularity-run-cache"
-          } >> "$GITHUB_ENV"
-          mkdir -p \
-            "${RUNNER_TEMP}/singularity-cache" \
-            "${RUNNER_TEMP}/apptainer-cache" \
-            "${RUNNER_TEMP}/singularity-run-cache"
-
-      - name: Pull dependency image
-        id: deps
-        env:
-          SINGULARITY_DOCKER_USERNAME: ${{ github.actor }}
-          SINGULARITY_DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          if command -v singularity >/dev/null 2>&1; then
-            singularity_bin=singularity
-          elif command -v apptainer >/dev/null 2>&1; then
-            singularity_bin=apptainer
-          else
-            echo "Neither singularity nor apptainer was found on PATH." >&2
-            exit 127
-          fi
-          sif="${RUNNER_TEMP}/diffrg-deps-examples.sif"
-          echo "Pulling ${DIFFRG_DEPS_IMAGE}"
-          "${singularity_bin}" pull --force "${sif}" "${DIFFRG_DEPS_IMAGE}"
-          echo "sif=${sif}" >> "$GITHUB_OUTPUT"
-
       - name: Build all current Examples
+        env:
+          DIFFRG_BUILD_JOBS: ${{ env.DIFFRG_EXAMPLE_JOBS }}
+          WORKSPACE: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          env \
-            SINGULARITYENV_DIFFRG_BUILD_JOBS="${DIFFRG_EXAMPLE_JOBS}" \
-            APPTAINERENV_DIFFRG_BUILD_JOBS="${DIFFRG_EXAMPLE_JOBS}" \
-            bash containers/singularity-run.sh \
-            -b "${GITHUB_WORKSPACE}:/work" \
-            -w /work \
-            "${{ steps.deps.outputs.sif }}" \
-            bash containers/ci/build-examples.sh
+          bash containers/ci/build-examples.sh
 
       - name: Add example summary
         if: always()
@@ -378,13 +307,12 @@ jobs:
           path: .ci/logs/examples/**
           if-no-files-found: ignore
 
-      - name: Clean container caches
-        if: always()
-        run: |
-          rm -rf "${SINGULARITY_CACHEDIR}" "${APPTAINER_CACHEDIR}" "${SINGULARITY_RUN_CACHE}"
-
   wolfram-examples:
     name: Wolfram Examples in container
+    # Disabled for now: requires a Wolfram-capable self-hosted runner, and the
+    # previous self-hosted runners are gone. Remove this gate (and provide such
+    # a runner) to re-enable.
+    if: false
     needs: deps-image
     runs-on: [self-hosted, linux, x64]
     env:

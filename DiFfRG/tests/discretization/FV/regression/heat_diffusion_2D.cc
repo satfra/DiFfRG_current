@@ -60,14 +60,14 @@ namespace
   using NumberType = double;
   using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">>;
   using Components = ComponentDescriptor<FEFunctionDesc>;
-  using Mesh = RectangularMesh<dim>;
-  using Discretization = FV::Discretization<Components, NumberType, Mesh>;
+  using Mesh = RectangularMeshSerial<dim>;
+  using Discretization = FV::Discretization<Components, Mesh, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, class HeatDiffusion2DModel, Reconstructor,
                                                   FV::KurganovTadmor::MaxEigenvalueWaveSpeed>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA<Assembler>;
 
   class GaussianHeatKernel2D
   {
@@ -165,8 +165,6 @@ namespace
         {{"physical", {{"Lambda", 1.0}}},
          {"discretization",
           {{"fe_order", 0},
-           {"mesh_workers", 1},
-           {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
            {"EoM_abs_tol", 1.0e-10},
@@ -394,7 +392,7 @@ namespace
     const std::string output_name = "heat_diffusion_2D_" + std::to_string(n_cells) + "x" + std::to_string(n_cells);
     const std::filesystem::path output_dir = artifact_root / output_name;
     OutputPath data_out_path(output_dir.string(), output_name, "output");
-    OutputSession<dim, VectorType> data_out(data_out_path, json);
+    OutputSession<Discretization> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     TimeStepper time_stepper(json, assembler, data_out, *adaptor);
 

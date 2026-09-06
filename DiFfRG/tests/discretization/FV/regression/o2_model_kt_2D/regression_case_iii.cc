@@ -46,12 +46,12 @@ namespace
   using NumberType = double;
   using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">, Scalar<"v">>;
   using Components = ComponentDescriptor<FEFunctionDesc>;
-  using Mesh = RectangularMesh<dim>;
-  using Discretization = FV::Discretization<Components, NumberType, Mesh>;
+  using Mesh = RectangularMeshSerial<dim>;
+  using Discretization = FV::Discretization<Components, Mesh, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
-  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
+  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<Discretization>;
 
   template <template <typename> class BoundaryPolicy>
   class O2_Model_VI_B_III_Base : public def::AbstractModel<O2_Model_VI_B_III_Base<BoundaryPolicy>, Components>,
@@ -160,8 +160,6 @@ namespace
         {{"physical", {{"Lambda", 1.0e12}}},
          {"discretization",
           {{"fe_order", 0},
-           {"mesh_workers", static_cast<std::int64_t>(dealii::MultithreadInfo::n_threads())},
-           {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
            {"EoM_abs_tol", 1.0e-10},
@@ -342,7 +340,7 @@ namespace
                                                "o2_model_kt_2D_case_iii_regression", "output");
     std::clog << "[O2 DIAG] " << (params.retain_output ? "retaining" : "using temporary") << " output directory "
               << data_out_path.root() << '\n';
-    OutputSession<dim, VectorType> data_out(data_out_path, json);
+    OutputSession<Discretization> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     ImplicitTimeStepper time_stepper(json, assembler, data_out, *adaptor);
 
@@ -372,7 +370,7 @@ namespace
     auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction,
                                                "o2_model_kt_2D_case_iii_origin_centered_quarter_domain", "output");
     std::clog << "[O2 DIAG] using temporary output directory " << data_out_path.root() << '\n';
-    OutputSession<dim, VectorType> data_out(data_out_path, json);
+    OutputSession<Discretization> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     ImplicitTimeStepper time_stepper(json, assembler, data_out, *adaptor);
 
@@ -467,7 +465,8 @@ TEST_CASE("O2 Model VI_B_III run extracts Gamma2 at the origin", "[2d][FV][KT][O
   CHECK_THAT(gamma.gamma_12, Catch::Matchers::WithinAbs(0.0, gamma_tolerance));
 }
 
-TEST_CASE("O2 Model VI_B_III coarse 40x40 run extracts Gamma2 at the origin", "[2d][FV][KT][O2][VI_B_III][coarse][slow]")
+TEST_CASE("O2 Model VI_B_III coarse 40x40 run extracts Gamma2 at the origin",
+          "[2d][FV][KT][O2][VI_B_III][coarse][slow]")
 {
   const Gamma2 gamma = run_o2_vi_b_iii_gamma_regression(
       {.n_cells_per_direction = 40, .final_time = default_final_time, .retain_output = false});

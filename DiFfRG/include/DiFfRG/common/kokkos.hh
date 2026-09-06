@@ -20,8 +20,16 @@
 namespace DiFfRG
 {
   /**
-   * @brief This execution space is optimal when used in conjunction with the FE discretizations.
+   * @brief The CPU execution space: TBB, the one host thread pool DiFfRG runs on.
    *
+   * Not a Kokkos backend but a tag that routes an integrator through tbb::parallel_for instead, so
+   * that its work is stolen by the same arena deal.II's MeshWorker pipeline uses. This is what every
+   * production flow's CPU integrators are instantiated with, and it is optimal in conjunction with
+   * the FE discretizations, whose cell workers it nests inside.
+   *
+   * Its sibling KokkosHost_exec is the *Kokkos* host backend, which is Kokkos::Serial unless the
+   * build sets KOKKOS_THREADS=ON. Keeping it serial is deliberate: a second pool of spinning
+   * workers on the same cores only contends with this one.
    */
   struct TBB_ExecutionSpace {
     using memory_space = Kokkos::DefaultHostExecutionSpace::memory_space;
@@ -34,15 +42,15 @@ namespace DiFfRG
     using GPU_exec_space = Kokkos::DefaultExecutionSpace;
     using GPU_memory_space = GPU_exec_space::memory_space;
 
-    using Threads_exec_space = Kokkos::DefaultHostExecutionSpace;
-    using Threads_memory_space = Threads_exec_space::memory_space;
+    using KokkosHost_exec_space = Kokkos::DefaultHostExecutionSpace;
+    using KokkosHost_memory_space = KokkosHost_exec_space::memory_space;
 
     using TBB_exec_space = TBB_ExecutionSpace;
     using TBB_memory_space = TBB_exec_space::memory_space;
   };
 
   using GPU_memory = ExecutionSpaces::GPU_memory_space;
-  using Threads_memory = ExecutionSpaces::Threads_memory_space;
+  using KokkosHost_memory = ExecutionSpaces::KokkosHost_memory_space;
   using TBB_memory = ExecutionSpaces::TBB_memory_space;
 
   using CPU_memory = Kokkos::DefaultHostExecutionSpace::memory_space;
@@ -62,13 +70,13 @@ namespace DiFfRG
 #endif
 
   using GPU_exec = ExecutionSpaces::GPU_exec_space;
-  using Threads_exec = ExecutionSpaces::Threads_exec_space;
+  using KokkosHost_exec = ExecutionSpaces::KokkosHost_exec_space;
   using TBB_exec = ExecutionSpaces::TBB_exec_space;
 
-  // Ensure that CPU memory space is the same as Threads memory space and TBB memory space
+  // Ensure that CPU memory space is the same as the Kokkos host and TBB memory spaces.
   // We assume that this is true, and when switching to a different memory space, it is always unique.
-  static_assert(std::is_same_v<CPU_memory, Threads_memory>,
-                "CPU memory space must be the same as Threads memory space");
+  static_assert(std::is_same_v<CPU_memory, KokkosHost_memory>,
+                "CPU memory space must be the same as the Kokkos host memory space");
   static_assert(std::is_same_v<CPU_memory, TBB_memory>, "CPU memory space must be the same as TBB memory space");
 
   /**

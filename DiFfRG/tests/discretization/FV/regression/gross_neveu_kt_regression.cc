@@ -50,14 +50,14 @@ namespace
   using Components = ComponentDescriptor<FEFunctionDesc>;
   template <typename Model> using ConstrainUAtOrigin = def::ConstrainOriginSupportPointToZero<"u", Model>;
   using NumberType = double;
-  using Mesh = RectangularMesh<dim>;
-  using Discretization = FV::Discretization<Components, NumberType, Mesh>;
+  using Mesh = RectangularMeshSerial<dim>;
+  using Discretization = FV::Discretization<Components, Mesh, NumberType>;
   using SampledProfile = kt_regression::SampledProfile;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
   template <typename Model> using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor>;
-  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
+  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<Discretization>;
 
   struct FlowCase {
     std::string relative_path;
@@ -333,8 +333,6 @@ namespace
         {{"physical", {{"Lambda", Lambda}}},
          {"discretization",
           {{"fe_order", 0},
-           {"mesh_workers", 8},
-           {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
            {"EoM_abs_tol", 1e-10},
@@ -433,7 +431,7 @@ namespace
 
     auto data_out_path =
         OutputPath::temporary(TemporaryRetention::remove_on_destruction, "gross_neveu_kt_regression", "output");
-    OutputSession<dim, VectorType> data_out(data_out_path, json);
+    OutputSession<Discretization> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
     Stepper time_stepper(json, assembler, data_out, *adaptor);
 

@@ -53,13 +53,13 @@ namespace
   using NumberType = double;
   using FEFunctionDesc = FEFunctionDescriptor<Scalar<"u">, Scalar<"v">>;
   using Components = ComponentDescriptor<FEFunctionDesc>;
-  using Mesh = RectangularMesh<dim>;
-  using Discretization = FV::Discretization<Components, NumberType, Mesh>;
+  using Mesh = RectangularMeshSerial<dim>;
+  using Discretization = FV::Discretization<Components, Mesh, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
-  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
-  using ExplicitTimeStepper = TimeStepperBoostRK54<VectorType, SparseMatrixType, dim>;
+  using ImplicitTimeStepper = TimeStepperSUNDIALS_IDA<Discretization>;
+  using ExplicitTimeStepper = TimeStepperBoostRK54<Discretization>;
 
   enum class GammaTimeStepper { IDA, RK45 };
 
@@ -193,8 +193,6 @@ namespace
         {{"physical", {{"Lambda", 1.0e12}}},
          {"discretization",
           {{"fe_order", 0},
-           {"mesh_workers", static_cast<std::int64_t>(dealii::MultithreadInfo::n_threads())},
-           {"batch_size", 64},
            {"overintegration", 0},
            {"output_subdivisions", 1},
            {"EoM_abs_tol", 1.0e-10},
@@ -742,7 +740,7 @@ namespace
                                                "zero_dim_2d_kt_case_v_regression", "output");
     std::clog << "[CASE V DIAG] " << (params.retain_output ? "retaining" : "using temporary") << " output directory "
               << data_out_path.root() << '\n';
-    OutputSession<dim, VectorType> data_out(data_out_path, json);
+    OutputSession<Discretization> data_out(data_out_path, json);
     auto adaptor = std::make_unique<NoAdaptivity<VectorType>>();
 
     FV::FlowingVariables<Discretization> state(discretization);

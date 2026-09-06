@@ -4,7 +4,11 @@
 #include <sstream>
 
 // DiFfRG
+#include <DiFfRG/common/linear_algebra.hh>
 #include <DiFfRG/discretization/FEM/assembler/common.hh>
+#include <DiFfRG/discretization/common/cell_geometry.hh>
+#include <DiFfRG/discretization/common/types.hh>
+#include <DiFfRG/physics/integration/map_scheduler.hh>
 
 namespace DiFfRG
 {
@@ -15,9 +19,8 @@ namespace DiFfRG
 
     template <typename... T> auto fe_tie(T &&...t)
     {
-      return named_tuple<std::tuple<T &...>,
-                         StringSet<"fe_functions", "fe_derivatives", "fe_hessians", "extractors", "variables">>(
-          std::tie(t...));
+      return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "fe_derivatives", "fe_hessians", "extractors",
+                                                       "variables", "cell_width">>(std::tie(t...));
     }
 
     template <typename... T> auto i_tie(T &&...t)
@@ -151,8 +154,8 @@ namespace DiFfRG
           std::array<double, 2> values;
         };
         std::vector<CopyFaceData_I> face_data;
-        double value;
-        uint cell_index;
+        double value = 0.;
+        uint cell_index = 0;
       };
     } // namespace internal
 
@@ -161,7 +164,9 @@ namespace DiFfRG
      *
      * @tparam Model The model class which contains the physical equations.
      */
-    template <typename Discretization_, typename Model_> class Assembler : public FEMAssembler<Discretization_, Model_>
+    template <typename Discretization_,
+              typename Model_ = typename DiFfRG::internal::assembler_model_of<Discretization_>::type>
+    class Assembler : public FEMAssembler<Discretization_, Model_>
     {
       using Base = FEMAssembler<Discretization_, Model_>;
 
@@ -170,6 +175,7 @@ namespace DiFfRG
       using Model = Model_;
       using NumberType = typename Discretization::NumberType;
       using VectorType = typename Discretization::VectorType;
+      using SparseMatrixType = typename Discretization::SparseMatrixType;
 
       using Components = typename Discretization::Components;
       static constexpr uint dim = Discretization::dim;
@@ -182,7 +188,22 @@ namespace DiFfRG
         reinit();
       }
 
-      virtual void reinit_vector(VectorType &vec) const override { vec.reinit(dof_handler.n_dofs()); }
+      virtual void reinit_vector(VectorType &vec) const override
+      {
+        reinit_la_vector(vec, discretization.get_locally_owned_dofs(), discretization.get_communicator());
+      }
+      virtual void reinit_matrix(SparseMatrixType &matrix) const override
+      {
+        reinit_la_matrix(matrix, get_sparsity_pattern_jacobian(), discretization.get_locally_owned_dofs(),
+                         discretization.get_communicator());
+      }
+
+      virtual MPI_Comm get_communicator() const override { return discretization.get_communicator(); }
+      virtual void reinit_solution_view(SolutionView<VectorType> &view) const override
+      {
+        view.reinit(discretization.get_locally_owned_dofs(), discretization.get_locally_relevant_dofs(),
+                    discretization.get_communicator());
+      }
 
       virtual void reinit() override
       {
@@ -192,20 +213,25 @@ namespace DiFfRG
 
         // Mass sparsity pattern
         {
-          DynamicSparsityPattern dsp(dof_handler.n_dofs());
+          DynamicSparsityPattern dsp(discretization.get_locally_relevant_dofs());
           DoFTools::make_sparsity_pattern(dof_handler, dsp, discretization.get_constraints(),
                                           /*keep_constrained_dofs = */ true);
-          sparsity_pattern_mass.copy_from(dsp);
-          mass_matrix.reinit(sparsity_pattern_mass);
+          finalize_la_sparsity<SparseMatrixType>(dsp, sparsity_pattern_mass, discretization.get_locally_owned_dofs(),
+                                                 discretization.get_locally_relevant_dofs(),
+                                                 discretization.get_communicator());
+          reinit_la_matrix(mass_matrix, sparsity_pattern_mass, discretization.get_locally_owned_dofs(),
+                           discretization.get_communicator());
           MatrixCreator::create_mass_matrix(dof_handler, quadrature, mass_matrix, (Function<dim, NumberType> *)nullptr,
                                             discretization.get_constraints());
         }
         // Jacobian sparsity pattern
         {
-          DynamicSparsityPattern dsp(dof_handler.n_dofs());
+          DynamicSparsityPattern dsp(discretization.get_locally_relevant_dofs());
           DoFTools::make_sparsity_pattern(dof_handler, dsp, discretization.get_constraints(),
                                           /*keep_constrained_dofs = */ true);
-          sparsity_pattern_jacobian.copy_from(dsp);
+          finalize_la_sparsity<SparseMatrixType>(
+              dsp, sparsity_pattern_jacobian, discretization.get_locally_owned_dofs(),
+              discretization.get_locally_relevant_dofs(), discretization.get_communicator());
         }
         timings_reinit.push_back(timer.wall_time());
 
@@ -222,20 +248,22 @@ namespace DiFfRG
       virtual void rebuild_jacobian_sparsity() override
       {
         // Jacobian sparsity pattern
-        DynamicSparsityPattern dsp(dof_handler.n_dofs());
+        DynamicSparsityPattern dsp(discretization.get_locally_relevant_dofs());
         DoFTools::make_sparsity_pattern(dof_handler, dsp, discretization.get_constraints(),
                                         /*keep_constrained_dofs = */ true);
-        for (uint row = 0; row < dsp.n_rows(); ++row)
+        for (const auto &row : discretization.get_locally_relevant_dofs())
           for (const auto &col : extractor_dof_indices)
             dsp.add(row, col);
-        sparsity_pattern_jacobian.copy_from(dsp);
+        finalize_la_sparsity<SparseMatrixType>(dsp, sparsity_pattern_jacobian, discretization.get_locally_owned_dofs(),
+                                               discretization.get_locally_relevant_dofs(),
+                                               discretization.get_communicator());
       }
 
-      virtual const SparsityPattern &get_sparsity_pattern_jacobian() const override
+      virtual const get_type::SparsityPattern<SparseMatrixType> &get_sparsity_pattern_jacobian() const override
       {
         return sparsity_pattern_jacobian;
       }
-      virtual const SparseMatrix<NumberType> &get_mass_matrix() const override { return mass_matrix; }
+      virtual const SparseMatrixType &get_mass_matrix() const override { return mass_matrix; }
 
       /**
        * @brief refinement indicator for adaptivity. Only calls the model's cell_indicator function, as in CG schemes
@@ -281,8 +309,11 @@ namespace DiFfRG
         CopyData copy_data;
         MeshWorker::AssembleFlags assemble_flags = MeshWorker::assemble_own_cells;
 
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, assemble_flags, nullptr, nullptr, mesh_workers, batch_size);
+        // map() is collective and each rank visits only its own cells; see NoMapsHere.
+        const NoMapsHere no_maps_during_assembly;
+        const auto schedule = schedule_for(assembly_cost::local_fe);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data,
+                              assemble_flags, nullptr, nullptr, schedule.queue_length, schedule.chunk_size);
       }
 
       virtual void mass(VectorType &mass, const VectorType &solution_global, const VectorType &solution_global_dot,
@@ -331,8 +362,16 @@ namespace DiFfRG
         CopyData copy_data;
         MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
 
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, flags, nullptr, nullptr, mesh_workers, batch_size);
+        // map() is collective and each rank visits only its own cells; see NoMapsHere.
+        const NoMapsHere no_maps_during_assembly;
+        const auto schedule = schedule_for(assembly_cost::local_fe);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data, flags,
+                              nullptr, nullptr, schedule.queue_length, schedule.chunk_size);
+        // Resolve contributions this rank made to rows it does not own. A partition-boundary
+        // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
+        // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
+        // arrive here. A no-op for the serial types.
+        mass.compress(dealii::VectorOperation::add);
       }
 
       virtual void residual(VectorType &residual, const VectorType &solution_global, NumberType weight,
@@ -351,6 +390,7 @@ namespace DiFfRG
         const auto &extracted_data = __extracted_data;
 
         const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
+          const double cell_width = DiFfRG::internal::cell_width(cell);
           scratch_data.fe_values.reinit(cell);
           const auto &fe_v = scratch_data.fe_values;
           const uint n_dofs = fe_v.get_fe().n_dofs_per_cell();
@@ -378,12 +418,12 @@ namespace DiFfRG
           array<NumberType, Components::count_fe_functions()> mass{};
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
-            model.flux(
-                flux, x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
-            model.source(
-                source, x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
+            model.flux(flux, x_q,
+                       fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data,
+                              variables, cell_width));
+            model.source(source, x_q,
+                         fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data,
+                                variables, cell_width));
             model.mass(mass, x_q, solution[q_index], solution_dot[q_index]);
 
             for (uint i = 0; i < n_dofs; ++i) {
@@ -400,6 +440,7 @@ namespace DiFfRG
         };
         const auto boundary_worker = [&](const Iterator &cell, const uint &face_no, Scratch &scratch_data,
                                          CopyData &copy_data) {
+          const double cell_width = DiFfRG::internal::cell_width(cell);
           scratch_data.fe_interface_values.reinit(cell, face_no);
           const auto &fe_fv = scratch_data.fe_interface_values.get_fe_face_values(0);
           const uint n_dofs = fe_fv.get_fe().n_dofs_per_cell();
@@ -423,9 +464,9 @@ namespace DiFfRG
           array<Tensor<1, dim, NumberType>, Components::count_fe_functions()> numflux{};
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
-            model.boundary_numflux(
-                numflux, normals[q_index], x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
+            model.boundary_numflux(numflux, normals[q_index], x_q,
+                                   fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index],
+                                          extracted_data, variables, cell_width));
 
             for (uint i = 0; i < n_dofs; ++i) {
               const auto &ci = comp[i];
@@ -445,12 +486,20 @@ namespace DiFfRG
         MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells | MeshWorker::assemble_boundary_faces;
 
         Timer timer;
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, flags, boundary_worker, nullptr, mesh_workers, batch_size);
+        // map() is collective and each rank visits only its own cells; see NoMapsHere.
+        const NoMapsHere no_maps_during_assembly;
+        const auto schedule = schedule_for(assembly_cost::momentum_integral);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data, flags,
+                              boundary_worker, nullptr, schedule.queue_length, schedule.chunk_size);
+        // Resolve contributions this rank made to rows it does not own. A partition-boundary
+        // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
+        // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
+        // arrive here. A no-op for the serial types.
+        residual.compress(dealii::VectorOperation::add);
         timings_residual.push_back(timer.wall_time());
       }
 
-      virtual void jacobian_mass(SparseMatrix<NumberType> &jacobian, const VectorType &solution_global,
+      virtual void jacobian_mass(SparseMatrixType &jacobian, const VectorType &solution_global,
                                  const VectorType &solution_global_dot, NumberType alpha, NumberType beta) override
       {
         using Iterator = typename DoFHandler<dim>::active_cell_iterator;
@@ -504,12 +553,20 @@ namespace DiFfRG
         MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
 
         Timer timer;
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, flags, nullptr, nullptr, mesh_workers, batch_size);
+        // map() is collective and each rank visits only its own cells; see NoMapsHere.
+        const NoMapsHere no_maps_during_assembly;
+        const auto schedule = schedule_for(assembly_cost::local_fe);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data, flags,
+                              nullptr, nullptr, schedule.queue_length, schedule.chunk_size);
+        // Resolve contributions this rank made to rows it does not own. A partition-boundary
+        // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
+        // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
+        // arrive here. A no-op for the serial types.
+        jacobian.compress(dealii::VectorOperation::add);
         timings_jacobian.push_back(timer.wall_time());
       }
 
-      virtual void jacobian(SparseMatrix<NumberType> &jacobian, const VectorType &solution_global, NumberType weight,
+      virtual void jacobian(SparseMatrixType &jacobian, const VectorType &solution_global, NumberType weight,
                             const VectorType &solution_global_dot, NumberType alpha, NumberType beta,
                             const VectorType &variables = VectorType()) override
       {
@@ -523,10 +580,12 @@ namespace DiFfRG
         if constexpr (Components::count_extractors() > 0) {
           this->extract(extracted_data, solution_global, variables, true, true, true);
           if (this->jacobian_extractors(this->extractor_jacobian, solution_global, variables))
-            jacobian.reinit(sparsity_pattern_jacobian);
+            reinit_la_matrix(jacobian, sparsity_pattern_jacobian, discretization.get_locally_owned_dofs(),
+                             discretization.get_communicator());
         }
 
         const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
+          const double cell_width = DiFfRG::internal::cell_width(cell);
           scratch_data.fe_values.reinit(cell);
           const auto &fe_v = scratch_data.fe_values;
           const uint n_dofs = fe_v.get_fe().n_dofs_per_cell();
@@ -564,19 +623,23 @@ namespace DiFfRG
 
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
-            model.template jacobian_flux_source<0, 0>(
-                j_flux, j_source, x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
-            model.template jacobian_flux_source_grad<1>(
-                j_grad_flux, j_grad_source, x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
-            model.template jacobian_flux_source_hess<2>(
-                j_hess_flux, j_hess_source, x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
+            model.template jacobian_flux_source<0, 0>(j_flux, j_source, x_q,
+                                                      fe_tie(solution[q_index], solution_grad[q_index],
+                                                             solution_hess[q_index], extracted_data, variables,
+                                                             cell_width));
+            model.template jacobian_flux_source_grad<1>(j_grad_flux, j_grad_source, x_q,
+                                                        fe_tie(solution[q_index], solution_grad[q_index],
+                                                               solution_hess[q_index], extracted_data, variables,
+                                                               cell_width));
+            model.template jacobian_flux_source_hess<2>(j_hess_flux, j_hess_source, x_q,
+                                                        fe_tie(solution[q_index], solution_grad[q_index],
+                                                               solution_hess[q_index], extracted_data, variables,
+                                                               cell_width));
             if constexpr (Components::count_extractors() > 0) {
-              model.template jacobian_flux_source_extr<3>(
-                  j_extr_flux, j_extr_source, x_q,
-                  fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
+              model.template jacobian_flux_source_extr<3>(j_extr_flux, j_extr_source, x_q,
+                                                          fe_tie(solution[q_index], solution_grad[q_index],
+                                                                 solution_hess[q_index], extracted_data, variables,
+                                                                 cell_width));
             }
             model.template jacobian_mass<0>(j_mass, x_q, solution[q_index], solution_dot[q_index]);
             model.template jacobian_mass<1>(j_mass_dot, x_q, solution[q_index], solution_dot[q_index]);
@@ -635,6 +698,7 @@ namespace DiFfRG
 
         const auto boundary_worker = [&](const Iterator &cell, const uint &face_no, Scratch &scratch_data,
                                          CopyData &copy_data) {
+          const double cell_width = DiFfRG::internal::cell_width(cell);
           scratch_data.fe_interface_values.reinit(cell, face_no);
           const auto &fe_fv = scratch_data.fe_interface_values.get_fe_face_values(0);
           const uint n_dofs = fe_fv.get_fe().n_dofs_per_cell();
@@ -664,19 +728,23 @@ namespace DiFfRG
               j_extr_boundary_numflux;
           for (const auto &q_index : q_indices) {
             const auto &x_q = q_points[q_index];
-            model.template jacobian_boundary_numflux<0, 0>(
-                j_boundary_numflux, normals[q_index], x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
-            model.template jacobian_boundary_numflux_grad<1>(
-                j_grad_boundary_numflux, normals[q_index], x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
-            model.template jacobian_boundary_numflux_hess<2>(
-                j_hess_boundary_numflux, normals[q_index], x_q,
-                fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
+            model.template jacobian_boundary_numflux<0, 0>(j_boundary_numflux, normals[q_index], x_q,
+                                                           fe_tie(solution[q_index], solution_grad[q_index],
+                                                                  solution_hess[q_index], extracted_data, variables,
+                                                                  cell_width));
+            model.template jacobian_boundary_numflux_grad<1>(j_grad_boundary_numflux, normals[q_index], x_q,
+                                                             fe_tie(solution[q_index], solution_grad[q_index],
+                                                                    solution_hess[q_index], extracted_data, variables,
+                                                                    cell_width));
+            model.template jacobian_boundary_numflux_hess<2>(j_hess_boundary_numflux, normals[q_index], x_q,
+                                                             fe_tie(solution[q_index], solution_grad[q_index],
+                                                                    solution_hess[q_index], extracted_data, variables,
+                                                                    cell_width));
             if constexpr (Components::count_extractors() > 0) {
-              model.template jacobian_boundary_numflux_extr<3>(
-                  j_extr_boundary_numflux, normals[q_index], x_q,
-                  fe_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index], extracted_data, variables));
+              model.template jacobian_boundary_numflux_extr<3>(j_extr_boundary_numflux, normals[q_index], x_q,
+                                                               fe_tie(solution[q_index], solution_grad[q_index],
+                                                                      solution_hess[q_index], extracted_data, variables,
+                                                                      cell_width));
             }
 
             // Cache per-DoF shape function data for boundary
@@ -743,8 +811,16 @@ namespace DiFfRG
         MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells | MeshWorker::assemble_boundary_faces;
 
         Timer timer;
-        MeshWorker::mesh_loop(dof_handler.begin_active(), dof_handler.end(), cell_worker, copier, scratch_data,
-                              copy_data, flags, boundary_worker, nullptr, mesh_workers, batch_size);
+        // map() is collective and each rank visits only its own cells; see NoMapsHere.
+        const NoMapsHere no_maps_during_assembly;
+        const auto schedule = schedule_for(assembly_cost::momentum_integral);
+        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data, flags,
+                              boundary_worker, nullptr, schedule.queue_length, schedule.chunk_size);
+        // Resolve contributions this rank made to rows it does not own. A partition-boundary
+        // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
+        // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
+        // arrive here. A no-op for the serial types.
+        jacobian.compress(dealii::VectorOperation::add);
         timings_jacobian.push_back(timer.wall_time());
       }
       SummaryEvent summary() const override
@@ -795,12 +871,11 @@ namespace DiFfRG
 
       QGauss<dim> quadrature;
       QGauss<dim - 1> quadrature_face;
-      using Base::batch_size;
-      using Base::mesh_workers;
+      using Base::schedule_for;
 
-      SparsityPattern sparsity_pattern_mass;
-      SparsityPattern sparsity_pattern_jacobian;
-      SparseMatrix<NumberType> mass_matrix;
+      get_type::SparsityPattern<SparseMatrixType> sparsity_pattern_mass;
+      get_type::SparsityPattern<SparseMatrixType> sparsity_pattern_jacobian;
+      SparseMatrixType mass_matrix;
 
       std::vector<double> timings_reinit;
       std::vector<double> timings_residual;

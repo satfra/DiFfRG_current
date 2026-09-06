@@ -112,6 +112,126 @@ namespace DiFfRG
       return new_it;
     }
 
+    MatsubaraStorage::ExactTemperatureIterator<double> MatsubaraStorage::find_exact_T_d(const double T)
+    {
+      auto it = exact_sums_d.lower_bound(T);
+
+      if (it != exact_sums_d.end()) {
+        if (is_close(it->first, T, 1e-6 * T)) return it;
+        if (it != exact_sums_d.begin() && is_close(std::prev(it)->first, T, 1e-6 * T)) return std::prev(it);
+      }
+
+      return exact_sums_d.insert(std::make_pair(T, std::map<int, MatsubaraQuadrature<double>>())).first;
+    }
+
+    MatsubaraQuadrature<double> &MatsubaraStorage::find_exact_d(const int n, ExactTemperatureIterator<double> T_it)
+    {
+      auto &map = T_it->second;
+
+      // Integer key: an exact lookup, unlike the (T, E) maps above, which is the whole point of
+      // keying on the node count instead of the continuous cutoff.
+      auto it = map.find(n);
+      if (it != map.end()) return it->second;
+
+      auto new_it = map.insert(std::make_pair(n, MatsubaraQuadrature<double>())).first;
+      // 2 pi (n + 1/2) T is the midpoint between mode n and mode n+1, so it reproduces exactly n
+      // positive modes -- reinit_exact_sum re-derives the count from the cutoff it is given.
+      new_it->second.reinit_exact_sum(T_it->first, 2. * M_PI * (n + 0.5) * T_it->first);
+
+      if (verbosity >= 0)
+        log.info("Created exact MatsubaraQuadrature<double> sum with T = {:.4} and {} positive modes", T_it->first, n);
+
+      return new_it->second;
+    }
+
+    MatsubaraStorage::ExactTemperatureIterator<float> MatsubaraStorage::find_exact_T_f(const float T)
+    {
+      auto it = exact_sums_f.lower_bound(T);
+
+      if (it != exact_sums_f.end()) {
+        if (is_close(it->first, (double)T, 1e-6 * T)) return it;
+        if (it != exact_sums_f.begin() && is_close(std::prev(it)->first, (double)T, 1e-6 * T)) return std::prev(it);
+      }
+
+      return exact_sums_f.insert(std::make_pair((double)T, std::map<int, MatsubaraQuadrature<float>>())).first;
+    }
+
+    MatsubaraQuadrature<float> &MatsubaraStorage::find_exact_f(const int n, ExactTemperatureIterator<float> T_it)
+    {
+      auto &map = T_it->second;
+
+      auto it = map.find(n);
+      if (it != map.end()) return it->second;
+
+      auto new_it = map.insert(std::make_pair(n, MatsubaraQuadrature<float>())).first;
+      new_it->second.reinit_exact_sum((float)T_it->first, (float)(2. * M_PI * (n + 0.5) * T_it->first));
+
+      if (verbosity >= 0)
+        log.info("Created exact MatsubaraQuadrature<float> sum with T = {:.4} and {} positive modes", T_it->first, n);
+
+      return new_it->second;
+    }
+
+    MatsubaraStorage::IntervalOrderIterator<double> MatsubaraStorage::find_interval_order_d(const size_t order)
+    {
+      auto it = intervals_d.find(order);
+      if (it != intervals_d.end()) return it;
+      return intervals_d.insert(std::make_pair(order, std::map<double, MatsubaraQuadrature<double>>())).first;
+    }
+
+    MatsubaraQuadrature<double> &MatsubaraStorage::find_interval_d(const double cutoff,
+                                                                   IntervalOrderIterator<double> o_it,
+                                                                   const Kokkos::View<const double *, CPU_memory> n,
+                                                                   const Kokkos::View<const double *, CPU_memory> w)
+    {
+      auto &map = o_it->second;
+
+      auto it = map.lower_bound(cutoff);
+      if (it != map.end()) {
+        if (is_close(it->first, cutoff, 1e-6 * cutoff)) return it->second;
+        if (it != map.begin() && is_close(std::prev(it)->first, cutoff, 1e-6 * cutoff)) return std::prev(it)->second;
+      }
+
+      auto new_it = map.insert(std::make_pair(cutoff, MatsubaraQuadrature<double>())).first;
+      new_it->second.reinit_finite_interval(cutoff, n, w);
+
+      if (verbosity >= 0)
+        log.info("Created finite-interval MatsubaraQuadrature<double> with cutoff = {:.4} and order = {}", cutoff,
+                 o_it->first);
+
+      return new_it->second;
+    }
+
+    MatsubaraStorage::IntervalOrderIterator<float> MatsubaraStorage::find_interval_order_f(const size_t order)
+    {
+      auto it = intervals_f.find(order);
+      if (it != intervals_f.end()) return it;
+      return intervals_f.insert(std::make_pair(order, std::map<double, MatsubaraQuadrature<float>>())).first;
+    }
+
+    MatsubaraQuadrature<float> &MatsubaraStorage::find_interval_f(const float cutoff, IntervalOrderIterator<float> o_it,
+                                                                  const Kokkos::View<const float *, CPU_memory> n,
+                                                                  const Kokkos::View<const float *, CPU_memory> w)
+    {
+      auto &map = o_it->second;
+
+      auto it = map.lower_bound((double)cutoff);
+      if (it != map.end()) {
+        if (is_close(it->first, (double)cutoff, 1e-6 * cutoff)) return it->second;
+        if (it != map.begin() && is_close(std::prev(it)->first, (double)cutoff, 1e-6 * cutoff))
+          return std::prev(it)->second;
+      }
+
+      auto new_it = map.insert(std::make_pair((double)cutoff, MatsubaraQuadrature<float>())).first;
+      new_it->second.reinit_finite_interval(cutoff, n, w);
+
+      if (verbosity >= 0)
+        log.info("Created finite-interval MatsubaraQuadrature<float> with cutoff = {:.4} and order = {}", cutoff,
+                 o_it->first);
+
+      return new_it->second;
+    }
+
     void MatsubaraStorage::set_verbosity(int v) { verbosity = v; }
     void MatsubaraStorage::set_vacuum_quad_size(const int size)
     {
@@ -217,11 +337,17 @@ namespace DiFfRG
     if (!DiFfRG::Init::is_initialized()) throw std::runtime_error("QuadratureProvider: DiFfRG is not initialized.");
 
     if (config.contains("/output/folder")) {
+      // Written into the shared run log under the "quadrature" tag; the reporter has to be owned
+      // here rather than borrowed from an OutputSession, because integrators request their
+      // quadratures inside their constructors -- typically before any session exists. No console
+      // echo: the quadrature inventory would drown the timestepper progress report.
       own_logger.emplace(OutputPath(config), Config::OutputSettings(config), MPI::rank(MPI_COMM_WORLD) == 0,
-                         RunReporterOptions{.file_suffix = "_quadrature", .reporter_name = "quadrature"});
+                         RunReporterOptions{.reporter_name = "quadrature", .console = false});
       initialize(config, own_logger->port());
     } else {
-      initialize(config, ReportPort{});
+      // No folder means no file destination, and the quadrature inventory never goes to the
+      // console; a default RunReporter's port drops every message.
+      initialize(config, RunReporter().port());
     }
   }
 

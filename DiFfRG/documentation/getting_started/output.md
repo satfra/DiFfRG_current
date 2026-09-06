@@ -7,15 +7,26 @@ registry and required timestepper dependencies are passed by reference.
 Applications may adapt their JSON configuration at the boundary:
 
 ```cpp
-OutputSession<dim, VectorType> output(json);
+OutputSession<Assembler> output(json);
 ```
+
+The session is keyed on the assembler so that its spatial dimension and vector type cannot drift from the ones the
+timestepper is built on. Anything exposing `dim` and `VectorType` works — pass the `Discretization` instead wherever
+there is no single assembler type, e.g. a test that runs one discretization against several models.
 
 If `/output/folder` is present, the run log, configuration record, HDF5 file, CSV tables, and field directory all use
 that configured root. Without `/output/folder`, the session creates a unique system-temporary root and removes it at
 destruction. A completely default session therefore needs no output configuration:
 
 ```cpp
-OutputSession<dim, VectorType> output;
+OutputSession<Assembler> output;
+```
+
+Unit tests request an automatically cleaned system-temporary directory without constructing output JSON:
+
+```cpp
+OutputPath path = OutputPath::temporary();
+OutputSession<Assembler> output(path, Config::OutputSettings{});
 ```
 
 Use `OutputPath::temporary(TemporaryRetention::keep)` and pass it to the session while debugging a test. `OutputPath`
@@ -72,9 +83,11 @@ The same injection works for a model pre-assembly hook: store a `DiagnosticPort`
 coefficient when the hook computes it. The port is thread-safe and serializes a complete record atomically. It should
 not be used for high-volume field output; add that data to an `OutputFrame` instead.
 
-All implicit time steppers write one record per Jacobian callback to `<run>_jacobian_diagnostics.csv`. Runs with a
-separate dense variable Jacobian also write `<run>_variable_jacobian_diagnostics.csv`; both records use the same
-`jacobian_build_id`. The numeric `stepper_kind` values are `0=IDA`, `1=IDA+Boost RK`, `2=IDA+Boost ABM`, `3=implicit
+With `/timestepping/implicit/jacobian_diagnostics` set to `true` (it defaults to `false`), all implicit time steppers
+write one record per Jacobian callback to `<run>_jacobian_diagnostics.csv`. Runs with a separate dense variable Jacobian
+also write `<run>_variable_jacobian_diagnostics.csv`; both records use the same `jacobian_build_id`. The switch is off by
+default because the records are not free: each one costs a full sweep over the assembled Jacobian, and a factorizing
+linear solver additionally estimates the condition number, which takes several extra triangular solves per build. The numeric `stepper_kind` values are `0=IDA`, `1=IDA+Boost RK`, `2=IDA+Boost ABM`, `3=implicit
 Euler`, and `4=TRBDF2`. The `stage` values are `0=main`, `1=TR`, and `2=BDF2`.
 
 For implicit Euler and TRBDF2, `step` counts accepted steps and `retry_index` counts rejected attempts at the same step.
@@ -117,7 +130,7 @@ its first message; it does not create a directory or file. No setup or named spd
 Spatial discretizations accept an optional port and assemblers inherit it from their discretization:
 
 ```cpp
-OutputSession<dim, VectorType> output(json);
+OutputSession<Assembler> output(json);
 Discretization discretization(mesh, json, output.report_port());
 Assembler assembler(discretization, model, json);
 TimeStepper timestepper(json, assembler, output);
@@ -167,9 +180,12 @@ reporter. The reporter copies all numeric data, aggregates repeated events, and 
 `[jac ]`, `[fac ]`, `[lin ]`, `[vars]`, and `[out ]` tags. Assemblers return a structured `SummaryEvent` from
 `summary()`; timesteppers submit it automatically while draining output at the end of a run.
 
-A `QuadratureProvider` constructed from the configuration always reports the quadratures it builds to the console. If
-`/output/folder` is configured, it additionally owns a side-channel reporter writing
-`<output name>_quadrature.log` next to the run log. Without a configured folder it creates no file. Pass an explicit
+A `QuadratureProvider` constructed from the configuration reports every quadrature it builds into the run log,
+tagged `[quadrature]`, whenever `/output/folder` is configured. It owns that reporter instead of borrowing the
+session's: integrators request their quadratures from within their constructors, usually before any `OutputSession`
+exists. The log file sink is shared process-wide per path, so the session opening the same file later appends to the
+quadrature inventory instead of truncating it. The inventory never echoes to the console, where it would interleave
+with the timestepper progress report; without a configured folder the provider stays silent. Pass an explicit
 `ReportPort` as the second constructor argument to route the messages into an existing run reporter instead.
 
 Debugging and process-memory policy stay in C++ rather than simulation configuration. Set
@@ -209,6 +225,10 @@ Each run reports where its output time went, at `info` level, when the session f
 the potential reconstructions inside it, `build_patches`, the data filter, the HDF5 write and open/close, queue
 waiting, and the writer thread's own total, which is listed separately because it is off the critical path. Set
 `/output/verbosity` to 3 or more to additionally get one line and one `output_timings.csv` row per frame.
+
+`/output/verbosity` also decides how much of the run log reaches the console: at 0 only warnings and errors, at 1 the
+ordinary `info` messages, from 2 upwards also `debug` records such as the per-frame timing line. The `.log` file is
+never gated this way and always receives everything `/output/log_level` admits.
 
 Only MPI rank zero creates sinks. A full queue blocks the producer rather than dropping scientific data. At the end of
 each timestepper `run()`, the session drains pending writers and reports worker errors without closing, so the same

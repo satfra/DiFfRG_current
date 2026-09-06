@@ -6,9 +6,8 @@ using namespace DiFfRG;
 // Choices for types. This is a pure variable system (no FE functions), so we use the
 // Variables assembler (spatial dimension 0) and an explicit Adams-Bashforth-Moulton stepper.
 using Model = YangMills;
-using VectorType = Vector<double>;
 using Assembler = Variables::Assembler<Model>;
-using TimeStepper = TimeStepperBoostABM<VectorType, dealii::SparseMatrix<get_type::NumberType<VectorType>>, 0>;
+using TimeStepper = TimeStepperBoostABM<Assembler>;
 
 int main(int argc, char *argv[])
 {
@@ -20,7 +19,7 @@ int main(int argc, char *argv[])
 
   // Define the objects needed to run the simulation
   Model model(json);
-  OutputSession<0, VectorType> data_out(json);
+  OutputSession<Assembler> data_out(json);
   const auto log = data_out.report_port();
   Assembler assembler(model, json);
   TimeStepper time_stepper(json, assembler, data_out);

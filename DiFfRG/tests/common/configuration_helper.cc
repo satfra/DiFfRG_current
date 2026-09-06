@@ -3,6 +3,10 @@
 #include <deal.II/base/multithread_info.h>
 #include <fstream>
 
+#ifdef __linux__
+#include <sched.h>
+#endif
+
 #include <DiFfRG/common/configuration_helper.hh>
 #include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/utils.hh>
@@ -108,7 +112,7 @@ verbosity = 0
 
 TEST_CASE("probe() reads the configuration without diagnostics or exiting", "[config][common][threads]")
 {
-  const std::string document = R"JSON({"discretization": {"threads": 3, "kokkos_threads": 2, "mesh_workers": 7}})JSON";
+  const std::string document = R"JSON({"discretization": {"threads": 3, "fe_order": 2, "mesh_workers": 7}})JSON";
 
   SECTION("A -p file and CLI overrides are honoured just like the normal parse")
   {
@@ -122,11 +126,11 @@ TEST_CASE("probe() reads the configuration without diagnostics or exiting", "[co
                     (char *)"-si",
                     (char *)"/discretization/threads=5",
                     (char *)"-si",
-                    (char *)"/discretization/kokkos_threads=1"};
+                    (char *)"/discretization/fe_order=1"};
     const ConfigTree config = ConfigurationHelper::probe(argc, argv);
 
     CHECK(config.get_uint("/discretization/threads", 0) == 5);
-    CHECK(config.get_uint("/discretization/kokkos_threads", 0) == 1);
+    CHECK(config.get_uint("/discretization/fe_order", 0) == 1);
     CHECK(config.get_uint("/discretization/mesh_workers", 0) == 7);
 
     std::filesystem::remove(filename);
@@ -165,6 +169,20 @@ TEST_CASE("contains() distinguishes a missing key from a present one", "[config]
   CHECK(config.get_uint("/discretization/mesh_workers", 99) == 99);
 }
 
+namespace
+{
+  /// CPUs this process may run on: what the automatic thread budget is derived from.
+  unsigned int available_cpus()
+  {
+#ifdef __linux__
+    cpu_set_t mask;
+    CPU_ZERO(&mask);
+    if (sched_getaffinity(0, sizeof(mask), &mask) == 0) return static_cast<unsigned int>(CPU_COUNT(&mask));
+#endif
+    return dealii::MultithreadInfo::n_cores();
+  }
+} // namespace
+
 TEST_CASE("set_thread_limit caps the process thread count", "[config][common][threads]")
 {
   const unsigned int original = dealii::MultithreadInfo::n_threads();
@@ -172,9 +190,11 @@ TEST_CASE("set_thread_limit caps the process thread count", "[config][common][th
   set_thread_limit(2);
   CHECK(dealii::MultithreadInfo::n_threads() == 2);
 
-  // A tree without the key leaves the limit at "all cores".
+  // A tree without the key means "decide from the CPUs this process actually has", which is the
+  // affinity mask -- the whole machine unless a launcher or taskset narrowed it. Notably it must
+  // recompute rather than inherit the cap set just above.
   set_thread_limit(ConfigTree(json::value{{"discretization", {{"mesh_workers", 8}}}}));
-  CHECK(dealii::MultithreadInfo::n_threads() == dealii::MultithreadInfo::n_cores());
+  CHECK(dealii::MultithreadInfo::n_threads() == available_cpus());
 
   set_thread_limit(ConfigTree(json::value{{"discretization", {{"threads", 3}}}}));
   CHECK(dealii::MultithreadInfo::n_threads() == 3);

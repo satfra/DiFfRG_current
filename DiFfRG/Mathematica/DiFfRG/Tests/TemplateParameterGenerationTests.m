@@ -38,7 +38,7 @@ AUMPTestCase["TemplateParameterGeneration applies second-order complex AD replac
 AUMPTestCase["TemplateParameterGeneration supports Threads execution", {"template-parameters"},
     AUMPCHECKEqual[
         TemplateParameterGeneration[<|"d" -> 1, "Name" -> "Test", "ctype" -> "float", "Device" -> "Threads"|>],
-        {"1", "float", "Test_kernel<Regulator>", "DiFfRG::Threads_exec"}
+        {"1", "float", "Test_kernel<Regulator>", "DiFfRG::KokkosHost_exec"}
     ];
 ];
 

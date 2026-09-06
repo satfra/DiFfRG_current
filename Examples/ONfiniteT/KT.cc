@@ -13,12 +13,10 @@
 // Choices for types
 using Model = ON_finiteT_KT;
 constexpr uint dim = Model::dim;
-using Discretization = FV::Discretization<Model::Components, double, RectangularMesh<dim>>;
-using VectorType = typename Discretization::VectorType;
-using SparseMatrixType = typename Discretization::SparseMatrixType;
+using Discretization = FV::Discretization<Model, RectangularMesh<dim>>;
 using Reconstructor = def::TVDReconstructor<dim, def::MinModLimiter, double>;
 using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model, Reconstructor>;
-using TimeStepper = TimeStepperSUNDIALS_IDA<VectorType, SparseMatrixType, dim, UMFPack>;
+using TimeStepper = TimeStepperSUNDIALS_IDA<Assembler>;
 
 int main(int argc, char *argv[])
 {
@@ -30,12 +28,12 @@ int main(int argc, char *argv[])
   // Define the objects needed to run the simulation
   Model model(json);
   RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
-  OutputSession<dim, VectorType> data_out(json);
+  OutputSession<Assembler> data_out(json);
   const auto log = data_out.report_port();
   Discretization discretization(mesh, json, log);
   Assembler assembler(discretization, model, json);
   // KT requires a fixed rectangular mesh; no h-adaptivity.
-  NoAdaptivity<VectorType> mesh_adaptor;
+  NoAdaptivity mesh_adaptor(assembler);
   TimeStepper time_stepper(json, assembler, data_out, mesh_adaptor);
 
   // Set up the initial condition

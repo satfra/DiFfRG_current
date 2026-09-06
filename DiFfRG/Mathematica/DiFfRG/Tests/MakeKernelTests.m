@@ -95,3 +95,51 @@ AUMPTestCase["GetStandardKernelDefinitions returns compiler-inlineable definitio
             AllTrue[GetStandardKernelDefinitions[], FreeQ[#, "static KOKKOS_FORCEINLINE_FUNCTION"] &]
     ];
 ];
+
+(* KernelTraits — the trait emitter. Asserted rather than trusted: every trait detector on the
+   C++ side is `requires { requires K::trait; }`, which reads FALSE for a trait it cannot see, so
+   a name that never fired is silently a disabled trait and a wrong right-hand side. *)
+AUMPTestCase["KernelTraits emits a bare name as a true trait", {"make-kernel", "kernel-traits"},
+    AUMPAssume[Length @ PacletFind["FunKit"] > 0, "FunKit is not installed"];
+    Needs["DiFfRG`CodeTools`MakeKernel`"];
+    AUMPCHECKEqual[
+        DiFfRG`CodeTools`MakeKernel`Private`kernelTraitMembers[{"matsubara_finite_extent"}],
+        {"static constexpr bool matsubara_finite_extent = true;"}
+    ];
+];
+
+AUMPTestCase["KernelTraits honours an explicit Boolean", {"make-kernel", "kernel-traits"},
+    AUMPAssume[Length @ PacletFind["FunKit"] > 0, "FunKit is not installed"];
+    Needs["DiFfRG`CodeTools`MakeKernel`"];
+    AUMPCHECKEqual[
+        DiFfRG`CodeTools`MakeKernel`Private`kernelTraitMembers[{"matsubara_split" -> True, "matsubara_even" -> False}],
+        {"static constexpr bool matsubara_split = true;", "static constexpr bool matsubara_even = false;"}
+    ];
+];
+
+AUMPTestCase["KernelTraits emits nothing by default", {"make-kernel", "kernel-traits"},
+    AUMPAssume[Length @ PacletFind["FunKit"] > 0, "FunKit is not installed"];
+    Needs["DiFfRG`CodeTools`MakeKernel`"];
+    AUMPCHECKEqual[DiFfRG`CodeTools`MakeKernel`Private`kernelTraitMembers[{}], {}];
+];
+
+AUMPTestCase["KernelTraits deduplicates", {"make-kernel", "kernel-traits"},
+    AUMPAssume[Length @ PacletFind["FunKit"] > 0, "FunKit is not installed"];
+    Needs["DiFfRG`CodeTools`MakeKernel`"];
+    AUMPCHECKEqual[
+        DiFfRG`CodeTools`MakeKernel`Private`kernelTraitMembers[{"matsubara_split", "matsubara_split"}],
+        {"static constexpr bool matsubara_split = true;"}
+    ];
+];
+
+AUMPTestCase["KernelTraits aborts on a name that is not a C++ identifier", {"make-kernel", "kernel-traits", "abort"},
+    AUMPAssume[Length @ PacletFind["FunKit"] > 0, "FunKit is not installed"];
+    Needs["DiFfRG`CodeTools`MakeKernel`"];
+    AUMPCHECKAbort[DiFfRG`CodeTools`MakeKernel`Private`kernelTraitMembers[{"not an identifier"}]];
+];
+
+AUMPTestCase["KernelTraits aborts on a non-Boolean value", {"make-kernel", "kernel-traits", "abort"},
+    AUMPAssume[Length @ PacletFind["FunKit"] > 0, "FunKit is not installed"];
+    Needs["DiFfRG`CodeTools`MakeKernel`"];
+    AUMPCHECKAbort[DiFfRG`CodeTools`MakeKernel`Private`kernelTraitMembers[{"matsubara_split" -> "yes"}]];
+];
