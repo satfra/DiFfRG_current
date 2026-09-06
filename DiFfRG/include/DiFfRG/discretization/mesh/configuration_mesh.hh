@@ -6,6 +6,10 @@
 #include <string>
 #include <vector>
 
+// fmt::format instead of std::format: libstdc++ ships <format> only from GCC
+// 13, and spdlog's fmt is bundled anyway -- this keeps GCC 12 viable.
+#include <spdlog/fmt/fmt.h>
+
 namespace DiFfRG
 {
 
@@ -101,7 +105,7 @@ namespace DiFfRG
       {
         bool condition = (min < max) && (0.0 < step) && (step <= (max - min));
         if (!condition) {
-          throw std::runtime_error(std::format(
+          throw std::runtime_error(fmt::format(
               "invalid range: min={}, step={}, max={} (require min < max and 0 < step <= max-min)", min, step, max));
         }
       }

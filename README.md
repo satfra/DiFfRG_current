@@ -125,14 +125,11 @@ The **pre-built dependency bundle** downloads deal.II, Kokkos, Boost, TBB, SUNDI
 
 ### From source
 
-From the shell, run (this requires curl to be available on your system)
+The wizard's self-build path compiles the full dependency superbuild with your choice of features:
 ```bash
-bash <(curl -s -L https://github.com/satfra/DiFfRG_current/raw/refs/heads/main/install.sh)
+bash <(curl -s -L https://github.com/satfra/DiFfRG_current/raw/refs/heads/main/install_diffrg.sh) --mode source
 ```
-or, if you want to specify either the installation folder or the number of threads used for building the library,
-```bash
-THREADS=6 FOLDER=${HOME}/.local/share/DiFfRG/ bash <(curl -s https://github.com/satfra/DiFfRG_current/raw/refs/heads/main/install.sh)
-```
+Add e.g. `--mpi --gpu --threads 6 --prefix ${HOME}/.local/share/DiFfRG --yes` for a non-interactive run (`--help` lists all options). Experts can drive the superbuild directly with CMake — see *Manual installation* below.
 
 ### CMake
 
