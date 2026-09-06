@@ -14,6 +14,11 @@ shift || true
 fail() { echo "check-linkage: FAIL: $*" >&2; exit 1; }
 
 ALLOW='linux-vdso|ld-linux-x86-64|libc\.so|libm\.so|libpthread\.so|libdl\.so|librt\.so|libgcc_s\.so|libstdc\+\+\.so|libgfortran\.so|libquadmath\.so|libgomp\.so|libz\.so|libopenblas'
+# CUDA variants additionally resolve the host CUDA runtime/driver; enable with
+# CHECK_LINKAGE_CUDA=1 (set by the cuda Dockerfile and test driver).
+if [ "${CHECK_LINKAGE_CUDA:-0}" = 1 ]; then
+  ALLOW="${ALLOW}|libcudart\.so|libcuda\.so|libnvrtc\.so"
+fi
 
 libdirs=("$BUNDLE/lib")
 [ -d "$BUNDLE/lib64" ] && libdirs+=("$BUNDLE/lib64")
