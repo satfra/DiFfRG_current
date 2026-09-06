@@ -367,7 +367,7 @@ deal.II/DiFfRG mismatch and a `#error` in `common/mpi.hh` as a backstop, but the
 same: turn MPI on for the superbuild.
 
 ```bash
-MPI=ON bash install.sh              # installer route
+bash install_diffrg.sh --mode source --mpi   # installer route
 # or, configuring the superbuild directly:
 cmake <src> -DMPI=ON -DCMAKE_INSTALL_PREFIX=<prefix>
 ```

@@ -52,7 +52,7 @@ jobs:
           df -h /
 
       - name: Build the bundle
-        run: ./containers/release/build-release.sh -v "${{ inputs.bundle_version }}" -j 4
+        run: bash ./containers/release/build-release.sh -v "${{ inputs.bundle_version }}" -j 4
 
       - uses: actions/upload-artifact@v4
         with:
@@ -86,7 +86,7 @@ jobs:
         run: |
           extra=''
           [[ "${{ inputs.run_tests }}" == build-only ]] && extra='-s'
-          ./containers/release/test-tarball.sh \
+          bash ./containers/release/test-tarball.sh \
             -f "containers/release/dist/diffrg-deps-${{ inputs.bundle_version }}-linux-x86_64-v3-cpu.tar.zst" \
             -j 4 -d "${{ matrix.distro }}" ${extra}
 
