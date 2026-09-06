@@ -143,8 +143,8 @@ TEST_CASE("DG refinement indicator sees face contributions", "[discretization][d
   const auto json = make_json();
   Model model(nontrivial_parameters());
   RectangularMeshSerial<dim> mesh{Config::ConfigurationMesh<dim>(json)};
-  DGDiscretization discretization(mesh, json, DiFfRG::LogPort{});
-  Assembler assembler(discretization, model, json, DiFfRG::LogPort{});
+  DGDiscretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
 
   FE::FlowingVariables<DGDiscretization> initial_condition(discretization);
   initial_condition.interpolate(model);
@@ -195,8 +195,8 @@ namespace
     constexpr uint dim = SerialDisc::dim;
 
     RectangularMeshSerial<dim> serial_mesh{Config::ConfigurationMesh<dim>(json)};
-    SerialDisc serial_disc(serial_mesh, json, DiFfRG::LogPort{});
-    SerialAssembler serial_assembler(serial_disc, model, json, DiFfRG::LogPort{});
+    SerialDisc serial_disc(serial_mesh, json);
+    SerialAssembler serial_assembler(serial_disc, model, json);
     SerialVars serial_ic(serial_disc);
     serial_ic.interpolate(model);
     typename SerialDisc::VectorType serial_residual(serial_ic.spatial_data());
@@ -204,8 +204,8 @@ namespace
     serial_assembler.residual(serial_residual, serial_ic.spatial_data(), 1., serial_ic.spatial_data(), 1.);
 
     ParallelMesh<dim> parallel_mesh{Config::ConfigurationMesh<dim>(json)};
-    ParallelDisc parallel_disc(parallel_mesh, json, DiFfRG::LogPort{});
-    ParallelAssembler parallel_assembler(parallel_disc, model, json, DiFfRG::LogPort{});
+    ParallelDisc parallel_disc(parallel_mesh, json);
+    ParallelAssembler parallel_assembler(parallel_disc, model, json);
     ParallelVars parallel_ic(parallel_disc);
     parallel_ic.interpolate(model);
 
@@ -327,8 +327,8 @@ TEST_CASE("HAdaptivity transfers the solution identically under distribution", "
   Model model(nontrivial_parameters());
 
   RectangularMeshSerial<dim> serial_mesh{Config::ConfigurationMesh<dim>(json)};
-  SerialDisc serial_disc(serial_mesh, json, DiFfRG::LogPort{});
-  CG::Assembler<SerialDisc> serial_assembler(serial_disc, model, json, DiFfRG::LogPort{});
+  SerialDisc serial_disc(serial_mesh, json);
+  CG::Assembler<SerialDisc> serial_assembler(serial_disc, model, json);
   FE::FlowingVariables<SerialDisc> serial_ic(serial_disc);
   serial_ic.interpolate(model);
   typename SerialDisc::VectorType serial_sol(serial_ic.spatial_data());
@@ -338,8 +338,8 @@ TEST_CASE("HAdaptivity transfers the solution identically under distribution", "
   REQUIRE(serial_adaptor.adapt(serial_sol));
 
   ParallelMesh<dim> parallel_mesh{Config::ConfigurationMesh<dim>(json)};
-  ParallelDisc parallel_disc(parallel_mesh, json, DiFfRG::LogPort{});
-  CG::Assembler<ParallelDisc> parallel_assembler(parallel_disc, model, json, DiFfRG::LogPort{});
+  ParallelDisc parallel_disc(parallel_mesh, json);
+  CG::Assembler<ParallelDisc> parallel_assembler(parallel_disc, model, json);
   FE::FlowingVariables<ParallelDisc> parallel_ic(parallel_disc);
   parallel_ic.interpolate(model);
   ParVector parallel_sol(parallel_ic.spatial_data());

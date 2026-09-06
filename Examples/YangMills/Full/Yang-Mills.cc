@@ -1,4 +1,6 @@
 #include <DiFfRG/DiFfRG.hh>
+
+#include <optional>
 using namespace DiFfRG;
 
 #include "model.hh"
@@ -9,14 +11,14 @@ using Model = YangMills;
 using Assembler = Variables::Assembler<Model>;
 using TimeStepper = TimeStepperBoostABM<Assembler>;
 
-bool run(const ConfigTree &json, const OutputPath &output_path, LogPort external_log = {})
+bool run(const ConfigTree &json, const OutputPath &output_path, std::optional<ReportPort> external_log = std::nullopt)
 {
   // Define the objects needed to run the simulation
   OutputSession<Assembler> data_out(output_path, json);
-  const auto log = external_log ? external_log : data_out.log_port();
+  const auto log = external_log.value_or(data_out.report_port());
   Model model(json);
-  Assembler assembler(model, json, log);
-  TimeStepper time_stepper(json, &assembler, &data_out);
+  Assembler assembler(model, json);
+  TimeStepper time_stepper(json, assembler, data_out);
 
   // Set up the initial condition
   FlowingVariables initial_condition;
@@ -24,7 +26,7 @@ bool run(const ConfigTree &json, const OutputPath &output_path, LogPort external
 
   // Start the timestepping
   try {
-    time_stepper.run(&initial_condition, 0., json.get_double("/timestepping/final_time"));
+    time_stepper.run(initial_condition, 0., json.get_double("/timestepping/final_time"));
   } catch (std::exception &e) {
     log.error("Timestepping finished with exception {}", e.what());
     log.flush();

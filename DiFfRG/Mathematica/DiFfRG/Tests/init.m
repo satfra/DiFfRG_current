@@ -1,10 +1,5 @@
 (* init.m — Test initialization for DiFfRG Mathematica tests *)
 
-(* TestCreate was introduced in 12.0; alias to VerificationTest for older versions *)
-If[$VersionNumber < 12.0 && !ValueQ[TestCreate],
-    TestCreate = VerificationTest;
-];
-
 (* Find the DiFfRG package directory (parent of Tests/) and put it at the FRONT of $Path.
    Prepending is essential: $UserBaseDirectory/Applications is searched earlier than any
    appended entry, and a DiFfRG symlink installed there (pointing at another checkout) would

@@ -1,42 +1,31 @@
+Needs["AUMP`"];
 Needs["DiFfRG`CodeTools`Regulator`"];
-tests = {};
 
-AppendTo[tests,
-    TestCreate[
+AUMPTestCase["getRegulator generates standard names", {"regulator"},
+    AUMPCHECKEqual[
         DiFfRG`CodeTools`Regulator`getRegulator["MyRegulator", {"MyOptions", "default"}],
-        "default\nusing Regulator = MyRegulator<MyOptions>;",
-        TestID -> "Test getRegulator with standard names"
-    ]
+        "default\nusing Regulator = MyRegulator<MyOptions>;"
+    ];
 ];
 
-AppendTo[tests,
-    TestCreate[
+AUMPTestCase["getRegulator generates alternate names", {"regulator"},
+    AUMPCHECKEqual[
         DiFfRG`CodeTools`Regulator`getRegulator["AnotherReg", {"OtherOptions", "default"}],
-        "default\nusing Regulator = AnotherReg<OtherOptions>;",
-        TestID -> "Test getRegulator with different names"
-    ]
+        "default\nusing Regulator = AnotherReg<OtherOptions>;"
+    ];
 ];
 
-AppendTo[tests,
-    TestCreate[
-        Quiet[CheckAbort[DiFfRG`CodeTools`Regulator`getRegulator[123, {"a", "b"}]; "no-abort", "aborted"]],
-        "aborted",
-        TestID -> "getRegulator with non-String name should abort"
-    ]
+AUMPTestCase["getRegulator rejects a non-String regulator name", {"regulator", "abort"},
+    AUMPCHECKAbort[DiFfRG`CodeTools`Regulator`getRegulator[123, {"a", "b"}]];
 ];
 
-AppendTo[tests,
-    TestCreate[
-        Quiet[CheckAbort[DiFfRG`CodeTools`Regulator`getRegulator["x", {1, "b"}]; "no-abort", "aborted"]],
-        "aborted",
-        TestID -> "getRegulator with non-String optName should abort"
-    ]
+AUMPTestCase["getRegulator rejects a non-String options name", {"regulator", "abort"},
+    AUMPCHECKAbort[DiFfRG`CodeTools`Regulator`getRegulator["x", {1, "b"}]];
 ];
 
-AppendTo[tests,
-    TestCreate[
+AUMPTestCase["getRegulator supports empty template options", {"regulator"},
+    AUMPCHECKEqual[
         DiFfRG`CodeTools`Regulator`getRegulator["MyReg", {"", ""}],
-        "\nusing Regulator = MyReg<>;",
-        TestID -> "getRegulator with empty options produces empty template args"
-    ]
+        "\nusing Regulator = MyReg<>;"
+    ];
 ];

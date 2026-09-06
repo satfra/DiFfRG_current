@@ -52,19 +52,10 @@ namespace DiFfRG
 
       using Components = typename Discretization::Components;
       static constexpr uint dim = Discretization::dim;
-
-      [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] LDGAssemblerBase(
-          Discretization &discretization, Model &model,
-          DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, ConfigTree> config)
-          : LDGAssemblerBase(discretization, model, config.value(),
-                             DiFfRG::internal::legacy_default_log_port<Discretization>())
-      {
-      }
-
-      LDGAssemblerBase(Discretization &discretization, Model &model, const ConfigTree &config, LogPort log_port)
-          : discretization(discretization), model(model), log_port(std::move(log_port)), fe(discretization.get_fe()),
-            dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
-            schedule_overrides(AssemblyScheduleOverrides::from_config(config)),
+      LDGAssemblerBase(Discretization &discretization, Model &model, const ConfigTree &config)
+          : discretization(discretization), model(model), report_port(discretization.report_port()),
+            fe(discretization.get_fe()), dof_handler(discretization.get_dof_handler()),
+            mapping(discretization.get_mapping()), schedule_overrides(AssemblyScheduleOverrides::from_config(config)),
             EoM_cell(*(dof_handler.active_cell_iterators().end())),
             old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
             old_extractor_cell(*(dof_handler.active_cell_iterators().end())),
@@ -127,7 +118,7 @@ namespace DiFfRG
     protected:
       Discretization &discretization;
       Model &model;
-      LogPort log_port;
+      ReportPort report_port;
       const FiniteElement<dim> &fe;
       const DoFHandler<dim> &dof_handler;
       const Mapping<dim> &mapping;
@@ -149,7 +140,7 @@ namespace DiFfRG
         const uint threads = DiFfRG::n_threads();
         const auto cheap = schedule_for(assembly_cost::local_fe);
         const auto integral = schedule_for(assembly_cost::momentum_integral);
-        log_port.info("FEM: Assembling {} cells on {} threads -- {}x{} workers/cells for a cheap cell loop, "
+        report_port.info("FEM: Assembling {} cells on {} threads -- {}x{} workers/cells for a cheap cell loop, "
                       "{}x{} for an integral one.",
                       n_owned_cells, threads, cheap.queue_length, cheap.chunk_size, integral.queue_length,
                       integral.chunk_size);
@@ -515,16 +506,8 @@ namespace DiFfRG
       }
 
     public:
-      [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Assembler(
-          Discretization &discretization, Model &model,
-          DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, ConfigTree> config)
-          : Assembler(discretization, model, config.value(),
-                      DiFfRG::internal::legacy_default_log_port<Discretization>())
-      {
-      }
-
-      Assembler(Discretization &discretization, Model &model, const ConfigTree &config, LogPort log_port)
-          : Base(discretization, model, config, std::move(log_port)),
+      Assembler(Discretization &discretization, Model &model, const ConfigTree &config)
+          : Base(discretization, model, config),
             quadrature(fe.degree + 1 + config.get_uint("/discretization/overintegration", 0)),
             quadrature_face(fe.degree + 1 + config.get_uint("/discretization/overintegration", 0)),
             dof_handler_list(discretization.get_dof_handler_list())
@@ -1373,24 +1356,13 @@ namespace DiFfRG
 
         timings_jacobian.push_back(timer.wall_time());
       }
-
-      template <typename String>
-        requires std::convertible_to<String, std::string>
-      [[deprecated("Construct the assembler with output.log_port() and call log() instead")]] void log(String &&)
+      SummaryEvent summary() const override
       {
-        DiFfRG::internal::reject_named_assembler_log<String>();
-      }
-
-      void log()
-      {
-        std::stringstream ss;
-        ss << "LDG Assembler: " << std::endl;
-        ss << "        Reinit: " << average_time_reinit() * 1000 << "ms (" << num_reinits() << ")" << std::endl;
-        ss << "        Residual: " << average_time_residual_assembly() * 1000 << "ms (" << num_residuals() << ")"
-           << std::endl;
-        ss << "        Jacobian: " << average_time_jacobian_assembly() * 1000 << "ms (" << num_jacobians() << ")"
-           << std::endl;
-        this->log_port.info(ss.str());
+        SummaryEvent result{.component = "LDG"};
+        result.timing("reinit", average_time_reinit() * 1000, num_reinits())
+            .timing("residual", average_time_residual_assembly() * 1000, num_residuals())
+            .timing("jac", average_time_jacobian_assembly() * 1000, num_jacobians());
+        return result;
       }
 
       double average_time_reinit() const
@@ -1992,7 +1964,7 @@ namespace DiFfRG
               auto extractor_tuple = std::tuple_cat(
                   vector_to_tuple<Components::count_fe_subsystems()>(evaluation.solutions),
                   std::tie(evaluation.gradients[0], evaluation.hessians[0], this->nothing, variables,
-                           evaluation.potential.value, evaluation.potential.gradient, evaluation.potential.hessian));
+                           evaluation.potential.value, evaluation.potential.gradient, evaluation.potential.mass_hessian));
               this->model.extract(__extracted_data, x, fe_more_conv(extractor_tuple));
             }
             const auto &extracted_data = __extracted_data;
@@ -2000,7 +1972,7 @@ namespace DiFfRG
             auto solution_tuple =
                 std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(readout_solution.solutions),
                                std::tie(readout_solution.gradients[0], readout_solution.hessians[0], extracted_data,
-                                        variables, potential.value, potential.gradient, potential.hessian));
+                                        variables, potential.value, potential.gradient, potential.mass_hessian));
 
             outputter(data_out, EoM, fe_more_conv(solution_tuple));
             data_out.attach_eom_potential(std::move(EoM_result));
@@ -2040,7 +2012,7 @@ namespace DiFfRG
         auto solution_tuple = std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(evaluation.solutions),
                                              std::tie(evaluation.gradients[0], evaluation.hessians[0], this->nothing,
                                                       variables, evaluation.potential.value,
-                                                      evaluation.potential.gradient, evaluation.potential.hessian));
+                                                      evaluation.potential.gradient, evaluation.potential.mass_hessian));
 
         model.extract(data, x, fe_more_conv(solution_tuple));
       }
@@ -2081,7 +2053,7 @@ namespace DiFfRG
         auto solution_tuple = std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(evaluation.solutions),
                                              std::tie(evaluation.gradients[0], evaluation.hessians[0], this->nothing,
                                                       variables, evaluation.potential.value,
-                                                      evaluation.potential.gradient, evaluation.potential.hessian));
+                                                      evaluation.potential.gradient, evaluation.potential.mass_hessian));
 
         extractor_jacobian_u = 0;
         model.template jacobian_extractors<0>(extractor_jacobian_u, x, fe_more_conv(solution_tuple));

@@ -159,23 +159,23 @@ A pure variable system uses the `Variables::Assembler` (spatial dimension `0`, n
 
 ```cpp
 using Model = YangMills;
-using VectorType = Vector<double>;
 using Assembler = Variables::Assembler<Model>;
-using TimeStepper = TimeStepperBoostABM<VectorType, dealii::SparseMatrix<get_type::NumberType<VectorType>>, 0>;
+using TimeStepper = TimeStepperBoostABM<Assembler>;
 
 int main(int argc, char *argv[])
 {
   const auto config_helper = DiFfRG::Init(argc, argv).get_configuration_helper();
   const auto json = config_helper.get_json();
 
+  OutputSession<Assembler> output(json);
   Model model(json);
   Assembler assembler(model, json);
-  TimeStepper time_stepper(json, &assembler);
+  TimeStepper time_stepper(json, assembler, output);
 
   FlowingVariables initial_condition;          // no discretization argument
   initial_condition.interpolate(model);        // calls initial_condition_variables
 
-  time_stepper.run(&initial_condition, 0., json.get_double("/timestepping/final_time"));
+  time_stepper.run(initial_condition, 0., json.get_double("/timestepping/final_time"));
 }
 ```
 

@@ -10,6 +10,8 @@ namespace DiFfRG
   template <typename VectorType> class AbstractAdaptor
   {
   public:
+    virtual ~AbstractAdaptor() = default;
+
     /**
      * @brief Check if an adaptation step should be done and tranfer the given solution to the new mesh.
      *

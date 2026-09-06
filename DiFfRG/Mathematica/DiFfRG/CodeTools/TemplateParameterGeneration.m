@@ -3,9 +3,15 @@ BeginPackage["DiFfRG`CodeTools`TemplateParameterGeneration`"]
 TemplateParameterGeneration::usage = "";
 TemplateParameterGeneration::wrongArgs = "TemplateParameterGeneration expects an Association (and optionally a List of AD replacements), but got: `1`";
 
+DeviceExecSpace::usage = "DeviceExecSpace[device] returns the C++ execution-space type for a kernel \"Device\" specification (\"TBB\", \"GPU\" or \"Threads\").";
+
 Begin["`Private`"]
 
 allowedDevices = {"TBB", "GPU", "Threads"};
+
+(* "Threads" runs on the Kokkos host backend: kokkos.hh defines TBB_exec, GPU_exec and
+   KokkosHost_exec; there is no Threads_exec type on the C++ side. *)
+DeviceExecSpace[device_String] := "DiFfRG::" <> (device /. "Threads" -> "KokkosHost") <> "_exec";
 
 appendKeyDimension::missingKey = "The key `1` is missing in the template parameters.";
 
@@ -54,7 +60,7 @@ appendKeyDevice[templateParameter_List, params_Association] :=
     Module[{},
         If[KeyExistsQ[params, "Device"],
             If[MemberQ[allowedDevices, params["Device"]],
-                Append[templateParameter, "DiFfRG::" <> ToString[params["Device"]] <> "_exec"],
+                Append[templateParameter, DeviceExecSpace[ToString[params["Device"]]]],
                 Message[appendKeyDevice::wrongDevice, params["Device"], allowedDevices];
                 Abort[]
             ],

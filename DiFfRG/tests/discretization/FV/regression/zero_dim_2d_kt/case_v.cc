@@ -732,8 +732,8 @@ namespace
     const ConfigTree json = make_run_json(params);
     ZeroDim2DKTCaseVModel model(json, params.interaction_strength);
     Mesh mesh(make_mesh_config(params));
-    Discretization discretization(mesh, json, DiFfRG::LogPort{});
-    CaseVAssembler assembler(discretization, model, json, DiFfRG::LogPort{});
+    Discretization discretization(mesh, json);
+    CaseVAssembler assembler(discretization, model, json);
 
     auto data_out_path = OutputPath::temporary(params.retain_output ? TemporaryRetention::keep
                                                                     : TemporaryRetention::remove_on_destruction,
@@ -750,11 +750,11 @@ namespace
     try {
       if (params.time_stepper == GammaTimeStepper::RK45) {
         std::clog << "[CASE V DIAG] using RK45 time stepper\n";
-        ExplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
-        time_stepper.run(&state, 0.0, params.final_time);
+        ExplicitTimeStepper time_stepper(json, assembler, data_out, *adaptor);
+        time_stepper.run(state, 0.0, params.final_time);
       } else {
         std::clog << "[CASE V DIAG] using IDA time stepper\n";
-        ImplicitTimeStepper time_stepper(json, &assembler, &data_out, adaptor.get());
+        ImplicitTimeStepper time_stepper(json, assembler, data_out, *adaptor);
         if (params.inspect_ida_error_dofs) {
           auto ida_error_dof_locations = build_case_v_ida_error_dof_locations(discretization, params);
           time_stepper.set_ida_error_dof_callback(
@@ -762,7 +762,7 @@ namespace
                 log_case_v_ida_error_dof_diagnostics(diagnostics, locations);
               });
         }
-        time_stepper.run(&state, 0.0, params.final_time);
+        time_stepper.run(state, 0.0, params.final_time);
       }
     } catch (const std::exception &error) {
       if (params.inspect_reconstruction)

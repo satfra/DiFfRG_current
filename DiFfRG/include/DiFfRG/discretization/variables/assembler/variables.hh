@@ -45,16 +45,10 @@ namespace DiFfRG
       using Components = typename Model_::Components;
       static constexpr uint dim = 0;
 
-      [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] Assembler(
-          Model &model, DiFfRG::internal::LegacyDefaultLogPortArgument<Model, ConfigTree> config)
-          : Assembler(model, config.value(), DiFfRG::internal::legacy_default_log_port<Model>())
-      {
-      }
-
-      /// This assembler has no FE space at all (dim == 0) and never runs a mesh_loop, so it takes
-      /// no assembly schedule; the config is unused.
-      Assembler(Model &model, const ConfigTree & /*config*/, LogPort log_port)
-          : model(model), log_port(std::move(log_port))
+      /// This assembler has no FE space at all (dim == 0) and never runs a mesh_loop, so it
+      /// needs neither an assembly schedule nor a report port; the config is unused.
+      Assembler(Model &model, const ConfigTree & /*config*/)
+          : model(model)
       {
         static_assert(Components::count_fe_functions() == 0, "The pure variable assembler cannot handle FE functions!");
         reinit();
@@ -147,26 +141,15 @@ namespace DiFfRG
       {
         (void)variables;
       }
-
-      template <typename String>
-        requires std::convertible_to<String, std::string>
-      [[deprecated("Construct the assembler with output.log_port() and call log() instead")]] void log(String &&) const
+      SummaryEvent summary() const override
       {
-        DiFfRG::internal::reject_named_assembler_log<String>();
+        SummaryEvent result{.component = "variables"};
+        result.timing("residual", average_time_residual_assembly() * 1000, num_residuals())
+            .timing("jac", average_time_jacobian_assembly() * 1000, num_jacobians());
+        return result;
       }
 
-      void log() const
-      {
-        std::stringstream ss;
-        ss << "Variable Assembler: " << std::endl;
-        ss << "        Residual: " << average_time_residual_assembly() * 1000 << "ms (" << num_residuals() << ")"
-           << std::endl;
-        ss << "        Jacobian: " << average_time_jacobian_assembly() * 1000 << "ms (" << num_jacobians() << ")"
-           << std::endl;
-        log_port.info(ss.str());
-      }
-
-      double average_time_residual_assembly()
+      double average_time_residual_assembly() const
       {
         double t = 0.;
         double n = timings_residual.size();
@@ -176,7 +159,7 @@ namespace DiFfRG
       }
       uint num_residuals() const { return timings_residual.size(); }
 
-      double average_time_jacobian_assembly()
+      double average_time_jacobian_assembly() const
       {
         double t = 0.;
         double n = timings_jacobian.size();
@@ -188,7 +171,6 @@ namespace DiFfRG
 
     private:
       Model &model;
-      LogPort log_port;
 
       SparsityPattern sparsity_pattern_mass;
       SparsityPattern sparsity_pattern_jacobian;

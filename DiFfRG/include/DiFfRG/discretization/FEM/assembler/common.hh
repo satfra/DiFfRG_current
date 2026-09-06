@@ -65,19 +65,10 @@ namespace DiFfRG
 
     using Components = typename Discretization::Components;
     static constexpr uint dim = Discretization::dim;
-
-    [[deprecated("Pass output.log_port() or an intentional LogPort{}")]] FEMAssembler(
-        Discretization &discretization, Model &model,
-        DiFfRG::internal::LegacyDefaultLogPortArgument<Discretization, ConfigTree> config)
-        : FEMAssembler(discretization, model, config.value(),
-                       DiFfRG::internal::legacy_default_log_port<Discretization>())
-    {
-    }
-
-    FEMAssembler(Discretization &discretization, Model &model, const ConfigTree &config, LogPort log_port)
-        : discretization(discretization), model(model), log_port(std::move(log_port)), fe(discretization.get_fe()),
-          dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
-          schedule_overrides(AssemblyScheduleOverrides::from_config(config)),
+    FEMAssembler(Discretization &discretization, Model &model, const ConfigTree &config)
+        : discretization(discretization), model(model), report_port(discretization.report_port()),
+          fe(discretization.get_fe()), dof_handler(discretization.get_dof_handler()),
+          mapping(discretization.get_mapping()), schedule_overrides(AssemblyScheduleOverrides::from_config(config)),
           EoM_cell(*(dof_handler.active_cell_iterators().end())),
           old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
           old_extractor_cell(*(dof_handler.active_cell_iterators().end())),
@@ -246,13 +237,13 @@ namespace DiFfRG
                           e_tie(extractor_solution.values[0], extractor_solution.gradients[0],
                                 extractor_solution.hessians[0], nothing, variables,
                                 extractor_solution.potential.value, extractor_solution.potential.gradient,
-                                extractor_solution.potential.hessian));
+                                extractor_solution.potential.mass_hessian));
           }
           const auto &extracted_data = __extracted_data;
 
           outputter(data_out, EoM,
                     e_tie(readout_solution.values[0], readout_solution.gradients[0], readout_solution.hessians[0],
-                          extracted_data, variables, potential.value, potential.gradient, potential.hessian));
+                          extracted_data, variables, potential.value, potential.gradient, potential.mass_hessian));
           data_out.attach_eom_potential(std::move(EoM_result));
         } else {
           internal::validate_readout_helper_arity<decltype(args)...>();
@@ -306,7 +297,7 @@ namespace DiFfRG
       const auto e = evaluate_at(x, cell, solution_global, raw_potential);
       model.extract(data, x,
                     e_tie(e.values[0], e.gradients[0], e.hessians[0], nothing, variables, e.potential.value,
-                          e.potential.gradient, e.potential.hessian));
+                          e.potential.gradient, e.potential.mass_hessian));
     }
 
     bool jacobian_extractors(FullMatrix<NumberType> &extractor_jacobian, const VectorType &solution_global,
@@ -362,13 +353,13 @@ namespace DiFfRG
       extractor_jacobian_ddu = 0;
       model.template jacobian_extractors<0>(extractor_jacobian_u, x,
                                             e_tie(e.values[0], e.gradients[0], e.hessians[0], nothing, variables,
-                                                  potential.value, potential.gradient, potential.hessian));
+                                                  potential.value, potential.gradient, potential.mass_hessian));
       model.template jacobian_extractors<1>(extractor_jacobian_du, x,
                                             e_tie(e.values[0], e.gradients[0], e.hessians[0], nothing, variables,
-                                                  potential.value, potential.gradient, potential.hessian));
+                                                  potential.value, potential.gradient, potential.mass_hessian));
       model.template jacobian_extractors<2>(extractor_jacobian_ddu, x,
                                             e_tie(e.values[0], e.gradients[0], e.hessians[0], nothing, variables,
-                                                  potential.value, potential.gradient, potential.hessian));
+                                                  potential.value, potential.gradient, potential.mass_hessian));
 
       if (extractor_jacobian.m() != Components::count_extractors() || extractor_jacobian.n() != n_dofs)
         extractor_jacobian = FullMatrix<NumberType>(Components::count_extractors(), n_dofs);
@@ -413,7 +404,7 @@ namespace DiFfRG
   protected:
     Discretization &discretization;
     Model &model;
-    LogPort log_port;
+    ReportPort report_port;
     const FiniteElement<dim> &fe;
     const DoFHandler<dim> &dof_handler;
     const Mapping<dim> &mapping;
@@ -447,7 +438,7 @@ namespace DiFfRG
       const uint threads = DiFfRG::n_threads();
       const auto cheap = schedule_for(assembly_cost::local_fe);
       const auto integral = schedule_for(assembly_cost::momentum_integral);
-      log_port.info("FEM: Assembling {} cells on {} threads -- {}x{} workers/cells for a cheap cell loop, "
+      report_port.info("FEM: Assembling {} cells on {} threads -- {}x{} workers/cells for a cheap cell loop, "
                     "{}x{} for an integral one.",
                     n_owned_cells, threads, cheap.queue_length, cheap.chunk_size, integral.queue_length,
                     integral.chunk_size);
