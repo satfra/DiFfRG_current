@@ -22,6 +22,22 @@
 
 namespace
 {
+  // Apple's libc++ ships no std::jthread; this test only needs the
+  // join-on-destruction behavior, so use a minimal stand-in.
+  struct joining_thread {
+    template <typename... Args>
+    explicit joining_thread(Args &&...args) : t(std::forward<Args>(args)...)
+    {
+    }
+    joining_thread(joining_thread &&) = default;
+    ~joining_thread()
+    {
+      if (t.joinable()) t.join();
+    }
+    void join() { t.join(); }
+    std::thread t;
+  };
+
   DiFfRG::Config::OutputSettings output_settings()
   {
     DiFfRG::Config::OutputSettings settings;
@@ -82,7 +98,7 @@ TEST_CASE("DiagnosticPort serializes concurrent records", "[output][diagnostics]
     DiFfRG::OutputSession_impl<0, dealii::Vector<double>> output(path, output_settings());
     const auto diagnostics = output.diagnostic_port();
 
-    std::vector<std::jthread> writers;
+    std::vector<joining_thread> writers;
     for (int i = 0; i < 16; ++i)
       writers.emplace_back([diagnostics, i]() { diagnostics.scalar("eigenvalues.csv", "lambda_max", i, i * 0.5); });
   }
@@ -284,12 +300,12 @@ TEST_CASE("RunReporter shutdown is safe during concurrent submissions", "[output
 
   DiFfRG::RunReporter reporter(path, settings, true);
   auto report = reporter.port();
-  std::jthread producer([report] {
+  joining_thread producer([report] {
     for (int i = 0; i < 1000; ++i)
       report.progress(
           {.topic = DiFfRG::progress_topics::jacobian, .time = static_cast<double>(i), .minimum_verbosity = 2});
   });
-  std::vector<std::jthread> finishers;
+  std::vector<joining_thread> finishers;
   for (int i = 0; i < 4; ++i)
     finishers.emplace_back([&reporter] { reporter.finish(); });
 
@@ -502,7 +518,7 @@ TEST_CASE("OutputPath creates unique temporary roots concurrently", "[output][pa
 {
   std::mutex mutex;
   std::vector<std::filesystem::path> roots;
-  std::vector<std::jthread> threads;
+  std::vector<joining_thread> threads;
   for (unsigned int i = 0; i < 16; ++i)
     threads.emplace_back([&]() {
       auto path = DiFfRG::OutputPath::temporary();
