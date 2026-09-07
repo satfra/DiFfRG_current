@@ -17,20 +17,20 @@
 namespace DiFfRG
 {
   template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename, typename> typename LinearSolver>
+            template <typename...> typename LinearSolver>
   uint TimeStepperTRBDF2_impl<VectorType, SparseMatrixType, dim, LinearSolver>::get_jacobians()
   {
     return ptr_newton_TR->get_jacobians() + ptr_newton_BDF2->get_jacobians();
   }
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename, typename> typename LinearSolver>
+            template <typename...> typename LinearSolver>
   double TimeStepperTRBDF2_impl<VectorType, SparseMatrixType, dim, LinearSolver>::get_error()
   {
     return std::sqrt(powr<2>(ptr_newton_TR->get_error()) + powr<2>(ptr_newton_BDF2->get_error()));
   }
   template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename, typename> typename LinearSolver>
+            template <typename...> typename LinearSolver>
   void TimeStepperTRBDF2_impl<VectorType, SparseMatrixType, dim, LinearSolver>::set_ignore_nonconv(bool x)
   {
     ptr_newton_TR->set_ignore_nonconv(x);
@@ -38,7 +38,7 @@ namespace DiFfRG
   }
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename, typename> typename LinearSolver>
+            template <typename...> typename LinearSolver>
   void TimeStepperTRBDF2_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(
       AbstractFlowingVariables<NumberType, VectorType> &initial_condition, double start, double stop)
   {

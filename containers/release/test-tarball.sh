@@ -139,11 +139,16 @@ for distro in ${distros}; do
       set -ex
       # CUDA bundles reference the driver's libcuda.so.1; without a GPU mounted
       # (build-only validation) satisfy the ldd audit with the toolkit's stub.
+      # Register the stub's own directory with the loader rather than guessing
+      # a lib dir -- /usr/lib64 exists on Ubuntu but is not in its ldconfig
+      # path, which made a symlink there succeed yet stay invisible.
       if [[ \${CHECK_LINKAGE_CUDA:-0} == 1 ]] && ! ldconfig -p | grep -q libcuda.so.1; then
         stub=\$(find /usr/local/cuda* -name libcuda.so -path '*stubs*' 2>/dev/null | head -1)
-        [[ -n \$stub ]] && ln -sf \$stub /usr/lib64/libcuda.so.1 2>/dev/null \
-          || ln -sf \$stub /usr/lib/x86_64-linux-gnu/libcuda.so.1
-        ldconfig || true
+        if [[ -n \$stub ]]; then
+          ln -sf \"\$stub\" \"\${stub%/*}/libcuda.so.1\"
+          echo \"\${stub%/*}\" > /etc/ld.so.conf.d/zz-cuda-stubs.conf
+          ldconfig
+        fi
       fi
       bash /src/install-diffrg-deps.sh --file /dist/${tarname} \
           --prefix /work/diffrg --skip-cpu-check

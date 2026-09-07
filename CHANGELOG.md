@@ -69,6 +69,10 @@
   choices (pre-built dependency bundle vs. full self-build, prefix, build folder, MPI/GPU/
   MUMPS/documentation features, optional copy of examples and tutorials) with command-line
   flags for scripted use.
+- The timestepper `LinearSolver` template-template parameters are variadic
+  (`template <typename...>`) instead of two-argument: `GMRES` carries a defaulted third
+  parameter, which GCC's relaxed matching (P0522) tolerated but AppleClang rejects.
+  Fixes compilation on macOS.
 - `std::format` replaced by `fmt::format` (spdlog's bundled fmt) in the two places it was
   used, restoring GCC 12 compatibility: the compiler floor is GCC >= 12 everywhere, except
   nvcc host compilation where GCC 13 is excluded by an nvcc/libstdc++-13 bug (12 and >= 14

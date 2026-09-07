@@ -23,7 +23,7 @@ namespace DiFfRG
    * @tparam prec Algorithm choice: 0 for Cash-Karp54 (5th order), 1 for Fehlberg78 (8th order)
    */
   template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename, typename> typename LinearSolver, int prec>
+            template <typename...> typename LinearSolver, int prec>
   class TimeStepperSUNDIALS_IDA_BoostRK_impl : public AbstractTimestepper<VectorType, SparseMatrixType, dim>
   {
     using Base = AbstractTimestepper<VectorType, SparseMatrixType, dim>;
@@ -70,7 +70,7 @@ namespace DiFfRG
   // Discretization where the assembler type is not a single type (e.g. a test that runs one
   // discretization against several models).
 
-  template <typename Assembler, template <typename, typename> typename LinearSolver, int prec>
+  template <typename Assembler, template <typename...> typename LinearSolver, int prec>
   using TimeStepperSUNDIALS_IDA_BoostRK =
       TimeStepperSUNDIALS_IDA_BoostRK_impl<typename Assembler::VectorType, typename Assembler::SparseMatrixType,
                                            Assembler::dim, LinearSolver, prec>;
@@ -80,12 +80,12 @@ namespace DiFfRG
    *
    * IDA is the controller; the Boost RK stepper solves the explicit part on demand.
    */
-  template <typename Assembler, template <typename, typename> typename LinearSolver = DefaultLinearSolver>
+  template <typename Assembler, template <typename...> typename LinearSolver = DefaultLinearSolver>
   using TimeStepperSUNDIALS_IDA_BoostRK54 = TimeStepperSUNDIALS_IDA_BoostRK<Assembler, LinearSolver, 0>;
 
   /**
    * @brief Boost Fehlberg78 for the explicit part, SUNDIALS IDA for the implicit part.
    */
-  template <typename Assembler, template <typename, typename> typename LinearSolver = DefaultLinearSolver>
+  template <typename Assembler, template <typename...> typename LinearSolver = DefaultLinearSolver>
   using TimeStepperSUNDIALS_IDA_BoostRK78 = TimeStepperSUNDIALS_IDA_BoostRK<Assembler, LinearSolver, 1>;
 } // namespace DiFfRG
