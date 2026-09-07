@@ -43,8 +43,14 @@ jobs:
 
       - name: Free disk space
         run: |
+          # CUDA legs are disk-hungry (devel base image + nvcc build tree);
+          # reclaim everything reasonable (~40 GB).
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
-                      /usr/local/.ghcup /usr/local/share/boost
+                      /usr/local/.ghcup /usr/local/share/boost \
+                      /opt/hostedtoolcache /usr/share/swift /usr/local/julia* \
+                      /usr/local/share/powershell /usr/lib/google-cloud-sdk \
+                      /usr/local/lib/node_modules
+          sudo docker system prune -af >/dev/null 2>&1 || true
           df -h /
 
       - name: Build the bundle
@@ -82,8 +88,14 @@ jobs:
 
       - name: Free disk space
         run: |
+          # CUDA legs are disk-hungry (devel base image + nvcc build tree);
+          # reclaim everything reasonable (~40 GB).
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
-                      /usr/local/.ghcup /usr/local/share/boost
+                      /usr/local/.ghcup /usr/local/share/boost \
+                      /opt/hostedtoolcache /usr/share/swift /usr/local/julia* \
+                      /usr/local/share/powershell /usr/lib/google-cloud-sdk \
+                      /usr/local/lib/node_modules
+          sudo docker system prune -af >/dev/null 2>&1 || true
           df -h /
 
       - uses: actions/download-artifact@v4
@@ -96,6 +108,12 @@ jobs:
           bash ./containers/release/test-tarball.sh \
             -f "containers/release/dist/diffrg-deps-${{ inputs.bundle_version }}-linux-x86_64-v3-cuda12.tar.zst" \
             -j 4 -d "${{ matrix.distro }}" -g -s
+
+      # Runs even after a wedge, and the disk report distinguishes exhaustion
+      # from other kills when a leg dies with SIGTERM.
+      - name: Disk state after validation
+        if: always()
+        run: df -h / && sudo docker system df || true
 
       - name: Upload distro log on failure
         if: failure()
