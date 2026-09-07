@@ -28,6 +28,9 @@ CXXABI_CEIL="1.3.13"
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
+# The accelerator is the variant's last component (cpu, cuda12, ...).
+ACCEL="${VARIANT##*-}"
+
 fail() { echo "postprocess: FAIL: $*" >&2; exit 1; }
 note() { echo "postprocess: $*"; }
 
@@ -58,6 +61,24 @@ for f in "$BUNDLE"/lib/cmake/deal.II/deal.IITargets.cmake \
 done
 if grep -nE '/usr/(lib64|lib)[^;"]*\.(so|a)' "$BUNDLE"/lib/cmake/deal.II/deal.II*.cmake; then
   fail "absolute system library paths survived the -l rewrite (above)"
+fi
+
+# CUDA variants: deal.II bakes toolkit paths (include dir, libcudart, the
+# link-time driver stub) under both /usr/local/cuda and its versioned resolve.
+# Canonicalize everything to the unversioned root here; the installer then
+# rewrites that single form to wherever the consumer's toolkit lives (e.g.
+# /opt/cuda on Arch).
+BUILDER_CUDA_ROOT=''
+if [ "$ACCEL" != cpu ]; then
+  BUILDER_CUDA_ROOT=/usr/local/cuda
+  _cuda_versioned="$(readlink -f /usr/local/cuda 2>/dev/null || true)"
+  if [ -n "$_cuda_versioned" ] && [ "$_cuda_versioned" != "$BUILDER_CUDA_ROOT" ]; then
+    for f in "$BUNDLE"/lib/cmake/deal.II/deal.II*.cmake; do
+      [ -f "$f" ] || continue
+      sed -i "s#${_cuda_versioned}#${BUILDER_CUDA_ROOT}#g" "$f"
+    done
+  fi
+  note "CUDA toolkit paths canonicalized to ${BUILDER_CUDA_ROOT}"
 fi
 
 # ------------------------------------------------------------------ 3. strip --
@@ -135,9 +156,7 @@ dep_versions() {
   printf '\n'
 }
 
-# The accelerator is the variant's last component (cpu, cuda12, ...); CUDA
-# variants additionally rely on the host's CUDA runtime and driver.
-ACCEL="${VARIANT##*-}"
+# CUDA variants additionally rely on the host's CUDA runtime and driver.
 CUDA_ALLOW=''
 if [ "$ACCEL" != cpu ]; then
   CUDA_ALLOW='"libcudart", "libcuda", "libnvrtc", '
@@ -168,6 +187,7 @@ cat > "$BUNDLE/BUNDLE_MANIFEST.json" <<EOF
   "builder_cxx": "$(command -v c++ || true)",
   "builder_cc": "$(command -v cc || true)",
   "builder_fc": "$(command -v gfortran || true)",
+  "builder_cuda_root": "${BUILDER_CUDA_ROOT}",
   "boost_version": "${BOOST_VER}",
   "dependency_versions": {
 $(dep_versions)
