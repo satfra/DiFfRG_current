@@ -30,6 +30,8 @@
 #   --docs / --no-docs         build the documentation
 #   --march VALUE              self-build: native | x86-64-v3 | none
 #   --examples DIR             copy Examples/Tutorials (and docs) there
+#   --mathematica DIR          install the DiFfRG Mathematica package there
+#   --no-mathematica           skip the Mathematica package
 #   --force                    replace an existing <prefix>/bundled without asking
 #   --yes                      accept all remaining defaults, no prompts
 # ##############################################################################
@@ -59,6 +61,8 @@ complete installation. Flags for non-interactive use:
   --docs / --no-docs         build the documentation
   --march VALUE              self-build: native | x86-64-v3 | none
   --examples DIR             copy Examples/Tutorials (and docs) there
+  --mathematica DIR          install the DiFfRG Mathematica package there
+  --no-mathematica           skip the Mathematica package
   --force                    replace an existing <prefix>/bundled without asking
   --yes                      accept all remaining defaults, no prompts
 EOF
@@ -86,6 +90,8 @@ opt_mumps=2 # 2 = follow MPI
 opt_docs=0
 march="native"
 examples_dir=''
+mathematica_dir=''
+mathematica_asked=0
 assume_yes=0
 force=0
 
@@ -108,6 +114,8 @@ while [[ $# -gt 0 ]]; do
   --no-docs) opt_docs=0; shift ;;
   --march) march="$2"; shift 2 ;;
   --examples) examples_dir="$2"; shift 2 ;;
+  --mathematica) mathematica_dir="$2"; mathematica_asked=1; shift 2 ;;
+  --no-mathematica) mathematica_dir=''; mathematica_asked=1; shift ;;
   --force) force=1; shift ;;
   --yes) assume_yes=1; shift ;;
   -h | --help) usage; exit 0 ;;
@@ -290,6 +298,28 @@ if [[ -z ${examples_dir} ]]; then
     "Yes -- choose a folder"
   [[ ${_c} -eq 1 ]] && ask examples_dir "Examples/docs folder" "${HOME}/DiFfRG-examples"
 fi
+
+# Mathematica package (flow-equation derivation). Offer it whenever a Wolfram
+# installation is detectable; the default destination is the per-user Wolfram
+# applications directory.
+if [[ ${mathematica_asked} -eq 0 ]]; then
+  if [[ "$(uname -s)" == Darwin ]]; then
+    wolfram_apps="${HOME}/Library/Mathematica/Applications"
+  else
+    wolfram_apps="${HOME}/.Wolfram/Applications"
+  fi
+  if command -v wolframscript >/dev/null 2>&1 || command -v wolfram >/dev/null 2>&1 \
+    || [[ -d ${wolfram_apps%/*} ]]; then
+    choose _c "Install the DiFfRG Mathematica package (flow-equation derivation)?" \
+      "Yes -- into the Wolfram applications directory" \
+      "Yes -- choose a folder" \
+      "No"
+    case ${_c} in
+    0) mathematica_dir="${wolfram_apps}" ;;
+    1) ask mathematica_dir "Mathematica package folder" "${wolfram_apps}" ;;
+    esac
+  fi
+fi
 ask threads "Build threads" "${threads}"
 [[ ${threads} =~ ^[0-9]+$ ]] || err "Threads must be a number."
 
@@ -308,6 +338,7 @@ fi
 echo "   Install prefix:  ${prefix}"
 echo "   Build folder:    ${build_dir}"
 echo "   Examples/docs:   ${examples_dir:-not copied}"
+echo "   Mathematica:     ${mathematica_dir:-not installed}"
 echo "   Threads:         ${threads}"
 echo "  ---------------------------------------------"
 if [[ ${interactive} -eq 1 ]]; then
@@ -363,6 +394,7 @@ if [[ ${mode} == prebuilt ]]; then
     -DBUNDLED_DIR="${prefix}/bundled" \
     -DCMAKE_INSTALL_PREFIX="${prefix}" \
     -DCMAKE_INSTALL_LIBDIR=lib \
+    ${mathematica_dir:+-DDiFfRG_MATHEMATICA_INSTALL_DIR="${mathematica_dir}"} \
     -DDiFfRG_DOCUMENTATION="$([[ ${opt_docs} -eq 1 ]] && echo ON || echo OFF)"
   cmake --build "${build_dir}/library-build" -j "${threads}"
   cmake --install "${build_dir}/library-build"
@@ -379,6 +411,7 @@ else
     -DPETSC_MUMPS="$([[ ${opt_mumps} -eq 1 ]] && echo ON || echo OFF)" \
     -DDiFfRG_DOCUMENTATION="$([[ ${opt_docs} -eq 1 ]] && echo ON || echo OFF)" \
     -DMARCH="${march}" \
+    ${mathematica_dir:+-DDiFfRG_MATHEMATICA_INSTALL_DIR="${mathematica_dir}"} \
     -DBUILD_JOBS=$((2 * threads)) \
     -DDEALII_MAX_JOBS="${threads}" \
     -DPETSC_MAX_JOBS="${threads}"

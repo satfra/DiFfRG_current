@@ -1630,6 +1630,15 @@ else()
   set(_diffrg_cuda_compiler_arg "")
 endif()
 
+# Optional Mathematica package destination, forwarded to the library build
+# (which owns the install rule -- see DiFfRG/cmake/install_bundled.cmake).
+if(DiFfRG_MATHEMATICA_INSTALL_DIR)
+  set(_diffrg_mathematica_arg
+      "-DDiFfRG_MATHEMATICA_INSTALL_DIR:PATH=${DiFfRG_MATHEMATICA_INSTALL_DIR}")
+else()
+  set(_diffrg_mathematica_arg "")
+endif()
+
 message("${BoldCyan}[8/8] Configuring DiFfRG...${ColourReset}")
 ExternalProject_Add(
   DiFfRG
@@ -1647,6 +1656,7 @@ ExternalProject_Add(
     -DCMAKE_C_COMPILER:STRING=${CMAKE_C_COMPILER}
     -DCMAKE_CXX_COMPILER:STRING=${CMAKE_CXX_COMPILER}
     ${_diffrg_cuda_compiler_arg}
+    ${_diffrg_mathematica_arg}
     -DMPI:BOOL=${MPI}
     -DHDF5:BOOL=ON
     -DBUNDLED_DIR:PATH=${DEPEND_INSTALL_PREFIX}
