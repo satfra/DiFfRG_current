@@ -23,42 +23,26 @@ using TimeStepper = TimeStepperSUNDIALS_IDA<Assembler>;
 int main(int argc, char *argv[])
 {
   // Initialize DiFfRG and thus the MPI and Kokkos environments.
-  const auto config_helper = DiFfRG::Init(argc, argv, "parameter_KT_sigma.json").get_configuration_helper();
-  const auto json = config_helper.get_json();
+  const auto config_helper = DiFfRG::Init(argc, argv, "parameter_KT_sigma.toml").get_configuration_helper();
+  const auto config = config_helper.get_config();
 
   // Define the objects needed to run the simulation
-  Model model(json);
-  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
-  OutputSession<Assembler> data_out(json);
+  Model model(config);
+  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(config)};
+  OutputSession<Assembler> data_out(config);
   const auto log = data_out.report_port();
-  Discretization discretization(mesh, json, log);
-  Assembler assembler(discretization, model, json);
+  Discretization discretization(mesh, config, log);
+  Assembler assembler(discretization, model, config);
   NoAdaptivity mesh_adaptor(assembler);
-  TimeStepper time_stepper(json, assembler, data_out, mesh_adaptor);
+  TimeStepper time_stepper(config, assembler, data_out, mesh_adaptor);
 
   // Set up the initial condition
   FV::FlowingVariables<Discretization> initial_condition(discretization);
   initial_condition.interpolate(model);
 
-  // EXPERIMENT: mirror the test's initialize_exact_cell_averages — override
-  // each cell with the exact cell-averaged value of V_init. If this fixes
-  // the IDA failure, the difference is that interpolate() does NOT produce
-  // the same values as model.initial_condition for FV.
-  {
-    const auto &support_points = discretization.get_support_points();
-    auto &u = initial_condition.data().block(0);
-    const double dx = 1.16e-3; // matches parameter_sigma.json grid step
-    const double m2 = -0.1, lam = 71.6;
-    auto V = [&](double s) { return 0.5 * m2 * s * s + (lam / 8.0) * s * s * s * s; };
-    for (unsigned int i = 0; i < u.size(); ++i) {
-      const double sigma = support_points[i][0];
-      u[i] = (V(sigma + 0.5 * dx) - V(sigma - 0.5 * dx)) / dx;
-    }
-  }
-
   Timer timer;
   try {
-    time_stepper.run(initial_condition, 0., json.get_double("/timestepping/final_time"));
+    time_stepper.run(initial_condition, 0., config.get_double("/timestepping/final_time"));
   } catch (std::exception &e) {
     log.error("Simulation finished with exception {}", e.what());
     return -1;

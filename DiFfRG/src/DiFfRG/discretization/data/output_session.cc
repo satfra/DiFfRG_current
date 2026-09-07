@@ -366,12 +366,12 @@ namespace DiFfRG
         }
       }
 
-      // Reported only after the writer has been joined, so its totals are complete. Emitted
-      // unconditionally: knowing what a run spent on output should never require having
-      // thought to switch something on beforehand.
+      // Reported only after the writer has been joined, so its totals are complete. Always
+      // written to the run log; echoed to the console only at verbosity 2+, since the split is
+      // a diagnostic rather than something every run needs to scroll past.
       timings.set_writer_totals(hdf5_writer.worker_totals(), hdf5_writer.asynchronous());
       const std::string report = timings.format();
-      if (!report.empty()) run_reporter.port().info(report);
+      if (!report.empty()) run_reporter.port().debug(report);
     }
     run_reporter.finish();
     rethrow_deferred_error();

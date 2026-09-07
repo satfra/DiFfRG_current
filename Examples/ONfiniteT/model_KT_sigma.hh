@@ -6,14 +6,14 @@ using namespace DiFfRG;
 #include "flows/flows.hh"
 
 struct ParametersSigma {
-  ParametersSigma(const ConfigTree &value)
+  ParametersSigma(const ConfigTree &config)
   {
     try {
-      Lambda = value.get_double("/physical/Lambda");
-      N = value.get_double("/physical/N");
-      T = value.get_double("/physical/T");
-      lambda = value.get_double("/physical/lambda");
-      m2 = value.get_double("/physical/m2");
+      Lambda = config.get_double("/physical/Lambda");
+      N = config.get_double("/physical/N");
+      T = config.get_double("/physical/T");
+      lambda = config.get_double("/physical/lambda");
+      m2 = config.get_double("/physical/m2");
 
       std::cout << "Parameters (sigma): " << Lambda << " " << N << " " << T << " " << lambda << " " << m2 << std::endl;
     } catch (std::exception &e) {
@@ -71,13 +71,13 @@ protected:
   }
 
 public:
-  ON_finiteT_KT_sigma(const ConfigTree &json) : def::fRG(json.get_double("/physical/Lambda")), prm(json), flow_equations(json)
+  ON_finiteT_KT_sigma(const ConfigTree &config) : def::fRG(config.get_double("/physical/Lambda")), prm(config), flow_equations(config)
   {
     flow_equations.set_k(Lambda);
     flow_equations.set_T(prm.T);
     // Parse cell width from the x_grid string "lo:dx:hi"; assume uniform spacing.
     // Fallback: leave at zero and let initial_condition fall back to point evaluation.
-    const std::string grid = json.get_string("/discretization/grid/x_grid");
+    const std::string grid = config.get_string("/discretization/grid/x_grid");
     const auto first_colon = grid.find(':');
     const auto second_colon = grid.find(':', first_colon + 1);
     if (first_colon != std::string::npos && second_colon != std::string::npos) {

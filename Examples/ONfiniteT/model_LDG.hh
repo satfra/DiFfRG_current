@@ -6,15 +6,15 @@ using namespace DiFfRG;
 #include "flows/flows.hh"
 
 struct Parameters {
-  Parameters(const ConfigTree &value)
+  Parameters(const ConfigTree &config)
   {
     try {
-      Lambda = value.get_double("/physical/Lambda");
-      N = value.get_double("/physical/N");
-      T = value.get_double("/physical/T");
-      lambda2 = value.get_double("/physical/lambda2");
-      lambda4 = value.get_double("/physical/lambda4");
-      lambda6 = value.get_double("/physical/lambda6");
+      Lambda = config.get_double("/physical/Lambda");
+      N = config.get_double("/physical/N");
+      T = config.get_double("/physical/T");
+      lambda2 = config.get_double("/physical/lambda2");
+      lambda4 = config.get_double("/physical/lambda4");
+      lambda6 = config.get_double("/physical/lambda6");
     } catch (std::exception &e) {
       std::cout << "Error in reading parameters: " << e.what() << std::endl;
     }
@@ -57,7 +57,7 @@ protected:
   // initialization
   // ----------------------------------------------------------------------------------------------------
 public:
-  ON_finiteT(const ConfigTree &json) : def::fRG(json.get_double("/physical/Lambda")), prm(json), flow_equations(json)
+  ON_finiteT(const ConfigTree &config) : def::fRG(config.get_double("/physical/Lambda")), prm(config), flow_equations(config)
   {
     flow_equations.set_k(Lambda);
     flow_equations.set_T(prm.T);
