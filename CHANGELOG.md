@@ -67,8 +67,10 @@
   `install.sh` did, including the `THREADS`/`FOLDER`/`MPI` knobs as flags.
 - An interactive installer, `install_diffrg.sh`: a curl-able wizard covering the typical
   choices (pre-built dependency bundle vs. full self-build, prefix, build folder, MPI/GPU/
-  MUMPS/documentation features, optional copy of examples and tutorials) with command-line
-  flags for scripted use.
+  MUMPS/documentation features, optional copy of examples and tutorials, optional install
+  of the Mathematica package into the Wolfram applications directory) with command-line
+  flags for scripted use. The superbuild now forwards `DiFfRG_MATHEMATICA_INSTALL_DIR`
+  to the library build so the package installs in one pass.
 - The timestepper `LinearSolver` template-template parameters are variadic
   (`template <typename...>`) instead of two-argument: `GMRES` carries a defaulted third
   parameter, which GCC's relaxed matching (P0522) tolerated but AppleClang rejects.
