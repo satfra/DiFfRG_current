@@ -42,7 +42,8 @@ namespace DiFfRG
        * debug records. The log file always receives everything, independent of this.
        *
        * At 3 and above the output sinks additionally emit one per-frame timing line and one
-       * output_timings.csv row. The aggregate timing report at the end of a run is always emitted. */
+       * output_timings.csv row. The aggregate timing report at the end of a run is a debug record:
+       * it is always written to the log file, and reaches the console from verbosity 2 upwards. */
       int verbosity = 0;
       std::size_t log_queue_size = 8192;
       spdlog::level::level_enum log_level = spdlog::level::info;

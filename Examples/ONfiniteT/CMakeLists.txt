@@ -11,7 +11,7 @@ find_package(DiFfRG REQUIRED HINTS ${DiFfRG_DIR} $ENV{HOME}/.local/share/DiFfRG/
 add_subdirectory(flows)
 
 # ##############################################################################
-# FE discretizations (model.hh / model_LDG.hh, parameter.json)
+# FE discretizations (model.hh / model_LDG.hh, parameter.toml)
 # ##############################################################################
 
 add_executable(LDG LDG.cc)
@@ -37,7 +37,7 @@ target_link_libraries(KT_sigma PRIVATE DiFfRG::DiFfRG ONFiniteTFlows)
 # Symlink the parameter files into the build directory
 # ##############################################################################
 
-foreach(pfile parameter.json parameter_KT.json parameter_KT_sigma.json)
+foreach(pfile parameter.toml parameter_KT.toml parameter_KT_sigma.toml)
   execute_process(
     COMMAND ${CMAKE_COMMAND} "-E" "create_symlink"
             "${CMAKE_CURRENT_SOURCE_DIR}/${pfile}"

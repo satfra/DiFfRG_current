@@ -21,20 +21,20 @@ using TimeStepper = TimeStepperSUNDIALS_IDA<Assembler>;
 int main(int argc, char *argv[])
 {
   // Initialize DiFfRG and thus the MPI and Kokkos environments
-  const auto config_helper = DiFfRG::Init(argc, argv, "parameter_KT.json").get_configuration_helper();
+  const auto config_helper = DiFfRG::Init(argc, argv, "parameter_KT.toml").get_configuration_helper();
   // get all needed parameters and parse from the CLI
-  const auto json = config_helper.get_json();
+  const auto config = config_helper.get_config();
 
   // Define the objects needed to run the simulation
-  Model model(json);
-  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
-  OutputSession<Assembler> data_out(json);
+  Model model(config);
+  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(config)};
+  OutputSession<Assembler> data_out(config);
   const auto log = data_out.report_port();
-  Discretization discretization(mesh, json, log);
-  Assembler assembler(discretization, model, json);
+  Discretization discretization(mesh, config, log);
+  Assembler assembler(discretization, model, config);
   // KT requires a fixed rectangular mesh; no h-adaptivity.
   NoAdaptivity mesh_adaptor(assembler);
-  TimeStepper time_stepper(json, assembler, data_out, mesh_adaptor);
+  TimeStepper time_stepper(config, assembler, data_out, mesh_adaptor);
 
   // Set up the initial condition
   FV::FlowingVariables<Discretization> initial_condition(discretization);
@@ -43,7 +43,7 @@ int main(int argc, char *argv[])
   // Now we start the timestepping
   Timer timer;
   try {
-    time_stepper.run(initial_condition, 0., json.get_double("/timestepping/final_time"));
+    time_stepper.run(initial_condition, 0., config.get_double("/timestepping/final_time"));
   } catch (std::exception &e) {
     log.error("Simulation finished with exception {}", e.what());
     return -1;

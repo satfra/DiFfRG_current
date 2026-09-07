@@ -6,14 +6,14 @@ using namespace DiFfRG;
 #include "flows/flows.hh"
 
 struct Parameters {
-  Parameters(const ConfigTree &value)
+  Parameters(const ConfigTree &config)
   {
     try {
-      Lambda = value.get_double("/physical/Lambda");
-      N = value.get_double("/physical/N");
-      T = value.get_double("/physical/T");
-      lambda = value.get_double("/physical/lambda");
-      m2 = value.get_double("/physical/m2");
+      Lambda = config.get_double("/physical/Lambda");
+      N = config.get_double("/physical/N");
+      T = config.get_double("/physical/T");
+      lambda = config.get_double("/physical/lambda");
+      m2 = config.get_double("/physical/m2");
 
       std::cout << "Parameters: " << Lambda << " " << N << " " << T << " " << lambda << " " << m2 << std::endl;
     } catch (std::exception &e) {
@@ -54,7 +54,7 @@ protected:
   mutable ONFiniteTFlows flow_equations;
 
 public:
-  ON_finiteT_KT(const ConfigTree &json) : def::fRG(json.get_double("/physical/Lambda")), prm(json), flow_equations(json)
+  ON_finiteT_KT(const ConfigTree &config) : def::fRG(config.get_double("/physical/Lambda")), prm(config), flow_equations(config)
   {
     flow_equations.set_k(Lambda);
     flow_equations.set_T(prm.T);
