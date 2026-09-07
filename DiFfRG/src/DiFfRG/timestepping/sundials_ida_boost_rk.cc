@@ -24,7 +24,7 @@ namespace DiFfRG
   using namespace dealii;
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename, typename> typename LinearSolver, int prec>
+            template <typename...> typename LinearSolver, int prec>
   void TimeStepperSUNDIALS_IDA_BoostRK_impl<VectorType, SparseMatrixType, dim, LinearSolver, prec>::run(
       AbstractFlowingVariables<NumberType, VectorType> &initial_condition, const double t_start, const double t_stop)
   {
@@ -38,7 +38,7 @@ namespace DiFfRG
   }
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename, typename> typename LinearSolver, int prec>
+            template <typename...> typename LinearSolver, int prec>
   void TimeStepperSUNDIALS_IDA_BoostRK_impl<VectorType, SparseMatrixType, dim, LinearSolver, prec>::run(
       BlockVectorType &initial_data, const double t_start, const double t_stop)
   {

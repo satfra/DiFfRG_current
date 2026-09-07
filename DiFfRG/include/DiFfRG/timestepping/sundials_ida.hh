@@ -23,7 +23,7 @@ namespace DiFfRG
    * @tparam dim Dimension of the problem
    */
   template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename, typename> typename LinearSolver>
+            template <typename...> typename LinearSolver>
   class TimeStepperSUNDIALS_IDA_impl : public AbstractTimestepper<VectorType, SparseMatrixType, dim>
   {
     using Base = AbstractTimestepper<VectorType, SparseMatrixType, dim>;
@@ -79,7 +79,7 @@ namespace DiFfRG
   // is serial, a distributed direct solve when it is not. Note that <Assembler> and
   // <Assembler, UMFPack> are *different types* even in a serial build -- see the comment on
   // DefaultLinearSolver -- so both need their own explicit instantiation.
-  template <typename Assembler, template <typename, typename> typename LinearSolver = DefaultLinearSolver>
+  template <typename Assembler, template <typename...> typename LinearSolver = DefaultLinearSolver>
   using TimeStepperSUNDIALS_IDA =
       TimeStepperSUNDIALS_IDA_impl<typename Assembler::VectorType, typename Assembler::SparseMatrixType, Assembler::dim,
                                    LinearSolver>;

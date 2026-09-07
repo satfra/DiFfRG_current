@@ -244,7 +244,7 @@ namespace DiFfRG
   } // namespace
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename, typename> typename LinearSolver>
+            template <typename...> typename LinearSolver>
   void TimeStepperSUNDIALS_IDA_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(
       AbstractFlowingVariables<NumberType, VectorType> &initial_condition, const double t_start, const double t_stop)
   {
@@ -261,7 +261,7 @@ namespace DiFfRG
   }
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename, typename> typename LinearSolver>
+            template <typename...> typename LinearSolver>
   void TimeStepperSUNDIALS_IDA_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(VectorType &initial_data,
                                                                                           const double t_start,
                                                                                           const double t_stop)
@@ -571,7 +571,7 @@ namespace DiFfRG
   }
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename, typename> typename LinearSolver>
+            template <typename...> typename LinearSolver>
   void TimeStepperSUNDIALS_IDA_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(BlockVectorType &initial_data,
                                                                                           const double t_start,
                                                                                           const double t_stop)
@@ -946,7 +946,7 @@ namespace DiFfRG
   }
 
   template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename, typename> typename LinearSolver>
+            template <typename...> typename LinearSolver>
   void TimeStepperSUNDIALS_IDA_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run_vars(VectorType &initial_data,
                                                                                                const double t_start,
                                                                                                const double t_stop)
