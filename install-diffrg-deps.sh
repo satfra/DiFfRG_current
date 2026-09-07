@@ -247,16 +247,45 @@ fi
 # CC/CXX/FC env vars select the host compilers written into the records --
 # needed e.g. on distros whose default GCC is unsuitable for the CUDA variant.
 sed_escape() { printf '%s' "$1" | sed 's/[][\.*^$#]/\\&/g'; }
-for pair in "builder_cxx:${CXX:-c++}" "builder_cc:${CC:-cc}" "builder_fc:${FC:-gfortran}"; do
-  field="${pair%%:*}"
-  builder_path="$(grep -oE "\"${field}\": *\"[^\"]*\"" "$prefix/bundled/BUNDLE_MANIFEST.json" | sed -E 's/.*: *"([^"]*)"/\1/' || true)"
-  host_path="$(command -v "${pair##*:}" || true)"
-  [[ -n $builder_path && -n $host_path && $builder_path != "$host_path" ]] || continue
+manifest_field() {
+  grep -oE "\"$1\": *\"[^\"]*\"" "$prefix/bundled/BUNDLE_MANIFEST.json" | sed -E 's/.*: *"([^"]*)"/\1/' || true
+}
+rewrite_bundle_path() { # <builder-path> <host-path>
+  [[ -n $1 && -n $2 && $1 != "$2" ]] || return 0
   while IFS= read -r f; do
     [[ -n $f ]] || continue
-    sed_inplace "s#$(sed_escape "$builder_path")#${host_path}#g" "$f"
-  done < <(grep -rIl --exclude='*.log' --exclude=BUNDLE_MANIFEST.json -F "$builder_path" "$prefix/bundled" 2>/dev/null || true)
+    sed_inplace "s#$(sed_escape "$1")#$2#g" "$f"
+  done < <(grep -rIl --exclude='*.log' --exclude=BUNDLE_MANIFEST.json -F "$1" "$prefix/bundled" 2>/dev/null || true)
+}
+
+for pair in "builder_cxx:${CXX:-c++}" "builder_cc:${CC:-cc}" "builder_fc:${FC:-gfortran}"; do
+  rewrite_bundle_path "$(manifest_field "${pair%%:*}")" "$(command -v "${pair##*:}" || true)"
 done
+
+# CUDA variants record toolkit paths (deal.II's include dir, libcudart, the
+# link-time driver stub) under the canonical builder root; point them at this
+# machine's toolkit, located from nvcc, CUDA_HOME, or the usual roots.
+builder_cuda_root="$(manifest_field builder_cuda_root)"
+if [[ -n $builder_cuda_root ]]; then
+  host_cuda_root=''
+  if command -v nvcc >/dev/null 2>&1; then
+    nvcc_path="$(command -v nvcc)"
+    nvcc_path="$(readlink -f "$nvcc_path" 2>/dev/null || echo "$nvcc_path")"
+    host_cuda_root="${nvcc_path%/bin/nvcc}"
+  elif [[ -n ${CUDA_HOME:-} && -d ${CUDA_HOME:-} ]]; then
+    host_cuda_root="$CUDA_HOME"
+  else
+    for c in /usr/local/cuda /opt/cuda; do [[ -d $c ]] && { host_cuda_root="$c"; break; }; done
+  fi
+  if [[ -n $host_cuda_root ]]; then
+    rewrite_bundle_path "$builder_cuda_root" "$host_cuda_root"
+    info "CUDA toolkit paths point at $host_cuda_root"
+  else
+    warn "No CUDA toolkit found (nvcc/CUDA_HOME); the bundle's recorded toolkit
+paths were left at $builder_cuda_root and configuring DiFfRG will fail until
+a CUDA 12 toolkit is installed."
+  fi
+fi
 
 cat > "$prefix/bundled/INSTALL_RECEIPT.json" <<EOF
 {
