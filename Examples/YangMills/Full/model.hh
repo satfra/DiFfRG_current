@@ -5,31 +5,35 @@ using namespace DiFfRG;
 
 #include "flows/flows.hh"
 
+#include <flow_abort.hh>
+
 struct Parameters {
-  Parameters(const ConfigTree &json)
+  Parameters(const ConfigTree &config)
   {
     try {
-      Lambda = json.get_double("/physical/Lambda");
+      Lambda = config.get_double("/physical/Lambda");
 
-      alphaA3 = json.get_double("/physical/alphaA3");
-      alphaA4 = json.get_double("/physical/alphaA4");
-      alphaAcbc = json.get_double("/physical/alphaAcbc");
+      alphaA3 = config.get_double("/physical/alphaA3");
+      alphaA4 = config.get_double("/physical/alphaA4");
+      alphaAcbc = config.get_double("/physical/alphaAcbc");
 
-      tilt_A3 = json.get_double("/physical/tilt_A3");
-      tilt_A4 = json.get_double("/physical/tilt_A4");
-      tilt_Acbc = json.get_double("/physical/tilt_Acbc");
+      tilt_A3 = config.get_double("/physical/tilt_A3");
+      tilt_A4 = config.get_double("/physical/tilt_A4");
+      tilt_Acbc = config.get_double("/physical/tilt_Acbc");
 
-      m2A = json.get_double("/physical/m2A");
+      m2A = config.get_double("/physical/m2A");
 
-      p_grid_min = json.get_double("/discretization/p_grid_min");
-      p_grid_max = json.get_double("/discretization/p_grid_max");
-      p_grid_bias = json.get_double("/discretization/p_grid_bias");
+      p_grid_min = config.get_double("/discretization/p_grid_min");
+      p_grid_max = config.get_double("/discretization/p_grid_max");
+      p_grid_center = config.get_double("/discretization/p_grid_center");
+      p_grid_focus = config.get_double("/discretization/p_grid_focus");
 
-      eta_iter_max = json.get_int("/physical/eta_iter_max");
-      eta_tol = json.get_double("/physical/eta_tol");
+      eta_iter_max = config.get_int("/physical/eta_iter_max");
+      eta_tol = config.get_double("/physical/eta_tol");
 
     } catch (std::exception &e) {
-      std::cout << "Error in reading parameters: " << e.what() << std::endl;
+      std::cerr << "Error in reading parameters: " << e.what() << std::endl;
+      throw;
     }
   }
 
@@ -41,7 +45,11 @@ struct Parameters {
   int eta_iter_max;
   double eta_tol;
 
-  double p_grid_min, p_grid_max, p_grid_bias;
+  // Momentum grid: logarithmic, but with the points clustered around p_grid_center so that the
+  // ~1 GeV structure of the dressings is resolved rather than smeared over two or three cells.
+  // The same clustering is applied to the S0 (overall scale) axis of the vertex grid.
+  // p_grid_focus = 0 recovers a plain logarithmic grid.
+  double p_grid_min, p_grid_max, p_grid_center, p_grid_focus;
 };
 
 // Size of the 1D (propagator / symmetric-point) momentum grid.
@@ -84,9 +92,9 @@ class YangMills : public def::AbstractModel<YangMills, Components>,
 {
   const Parameters prm;
 
-  using Coordinates1D = LogarithmicCoordinates1D<double>;
-  // CoordinatePackND<Log, Lin, LinPeriodic> over (S0, S1, SPhi)
-  using Coordinates3D = LogLinLinPeriodicCoordinates;
+  using Coordinates1D = FocusedLogCoordinates1D<double>;
+  // CoordinatePackND<FocusedLog, Lin, LinPeriodic> over (S0, S1, SPhi)
+  using Coordinates3D = FocusedLogLinLinPeriodicCoordinates;
 
   const Coordinates1D coordinates1D;
   const Coordinates1D S0_coordinates;
@@ -100,13 +108,13 @@ class YangMills : public def::AbstractModel<YangMills, Components>,
   mutable LinearInterpolatorND<double, Coordinates3D> ZA3, ZAcbc, ZA4tadpole;
 
 public:
-  YangMills(const ConfigTree &json)
-      : def::fRG(json.get_double("/physical/Lambda")), prm(json),
-        coordinates1D(p_grid_size, prm.p_grid_min, prm.p_grid_max, prm.p_grid_bias),
-        S0_coordinates(S0_grid_size, prm.p_grid_min, prm.p_grid_max, prm.p_grid_bias),
+  YangMills(const ConfigTree &config)
+      : def::fRG(config.get_double("/physical/Lambda")), prm(config),
+        coordinates1D(p_grid_size, prm.p_grid_min, prm.p_grid_max, prm.p_grid_center, prm.p_grid_focus),
+        S0_coordinates(S0_grid_size, prm.p_grid_min, prm.p_grid_max, prm.p_grid_center, prm.p_grid_focus),
         S1_coordinates(S1_grid_size, 0.0, 0.9999),       // shape variable, [0,1)
         SPhi_coordinates(SPhi_grid_size, -M_PI, M_PI),   // periodic angle, matches the atan2 feed range (-pi, pi]
-        coordinates3D(S0_coordinates, S1_coordinates, SPhi_coordinates), flow_equations(json),
+        coordinates3D(S0_coordinates, S1_coordinates, SPhi_coordinates), flow_equations(config),
         dtZc(coordinates1D), dtZA(coordinates1D), ZA(coordinates1D), Zc(coordinates1D), ZA4SP(coordinates1D),
         ZA3(coordinates3D), ZAcbc(coordinates3D), ZA4tadpole(coordinates3D)
   {
@@ -151,6 +159,23 @@ public:
   {
     const auto &variables = get<"variables">(data);
 
+    // Early abort, on the INCOMING state and before any kernel is launched. The placement is the
+    // whole safety argument, not a convenience: Variables::Assembler::residual_variables calls
+    // dt_variables() and only then fences, so throwing after a .map() would unwind past buffers
+    // with kernels still in flight. Here nothing has been launched in this call and the previous
+    // call already fenced.
+    //
+    // The criterion is shared with the tuner's post-hoc trajectory scan, so a probe is classified
+    // the same way however it was stopped, and the RG time travels out inside the exception --
+    // which is precisely the residual the divergent-branch fit consumes.
+    {
+      const double m2A_t = variables.data()[idxv("ZA")] * powr<2>(prm.p_grid_min) - powr<2>(prm.p_grid_min);
+      double zc_min = std::numeric_limits<double>::infinity();
+      for (uint i = 0; i < p_grid_size; ++i)
+        zc_min = std::min(zc_min, variables.data()[idxv("Zc") + i]);
+      if (flow_has_run_away(m2A_t, prm.m2A, zc_min)) throw FlowAbort(t);
+    }
+
     ZA3.update(&variables.data()[idxv("ZA3")]);
     ZAcbc.update(&variables.data()[idxv("ZAcbc")]);
     ZA4SP.update(&variables.data()[idxv("ZA4SP")]);
@@ -162,11 +187,9 @@ public:
     // set up arguments for the integrators (order matches the generated map() signature)
     const auto arguments = device::tie(k, ZA3, ZAcbc, ZA4SP, ZA4tadpole, dtZc, Zc, dtZA, ZA);
 
-    // copy the propagators for comparison
-    std::vector<double> old_dtZA(p_grid_size);
-    std::vector<double> old_dtZc(p_grid_size);
-
-    // start by solving the equations for the propagators self-consistently in their anomalous dimensions
+    // Self-consistent solve for the propagator anomalous dimensions: dtZA and dtZc appear inside
+    // their own regulator insertions, so the previous iterate is kept to measure convergence.
+    std::vector<double> old_dtZA(p_grid_size), old_dtZc(p_grid_size);
     bool eta_converged = false;
     int n_iter = 0;
     while (!eta_converged) {
@@ -175,8 +198,12 @@ public:
         old_dtZc[i] = dtZc[i];
       }
 
-      flow_equations.ZA.map(&residual[idxv("ZA")], coordinates1D, arguments);
-      flow_equations.Zc.map(&residual[idxv("Zc")], coordinates1D, arguments);
+      // ZA and Zc do not read each other's result, so issue both before waiting for either.
+      {
+        DeferredMaps defer;
+        flow_equations.ZA.map(&residual[idxv("ZA")], coordinates1D, arguments);
+        flow_equations.Zc.map(&residual[idxv("Zc")], coordinates1D, arguments);
+      } // both land here
 
       dtZA.update(&residual[idxv("ZA")]);
       dtZc.update(&residual[idxv("Zc")]);
@@ -186,29 +213,30 @@ public:
         dist = std::max(dist, std::abs(dtZA[i] - old_dtZA[i]) / std::abs(dtZA[i]));
         dist = std::max(dist, std::abs(dtZc[i] - old_dtZc[i]) / std::abs(dtZc[i]));
       }
-      if (dist < prm.eta_tol || n_iter > prm.eta_iter_max) eta_converged = true;
       n_iter++;
+      if (dist < prm.eta_tol || n_iter >= prm.eta_iter_max) eta_converged = true;
     }
-    std::cout << "Converged after " << n_iter << " iterations." << std::endl;
 
-    // vertices
-    flow_equations.ZA3.map(&residual[idxv("ZA3")], coordinates3D, arguments);
-    flow_equations.ZAcbc.map(&residual[idxv("ZAcbc")], coordinates3D, arguments);
-    flow_equations.ZA4SP.map(&residual[idxv("ZA4SP")], coordinates1D, arguments);
-    flow_equations.ZA4tadpole.map(&residual[idxv("ZA4tadpole")], coordinates3D, arguments);
+    // The vertices are mutually independent and nothing here reads them back, so the host issues
+    // all four and only then waits.
+    {
+      DeferredMaps defer;
+      flow_equations.ZA3.map(&residual[idxv("ZA3")], coordinates3D, arguments);
+      flow_equations.ZAcbc.map(&residual[idxv("ZAcbc")], coordinates3D, arguments);
+      flow_equations.ZA4SP.map(&residual[idxv("ZA4SP")], coordinates1D, arguments);
+      flow_equations.ZA4tadpole.map(&residual[idxv("ZA4tadpole")], coordinates3D, arguments);
+    }
   }
 
   template <int dim, typename DataOut, typename Solutions>
   void readouts(DataOut &output, const Point<dim> &, const Solutions &sol) const
   {
     const auto &variables = get<"variables">(sol);
-
-    Zc.update(&variables.data()[idxv("Zc")]);
-
-    // sanity check: make sure 0 < Zc[0] < 1
-    if (Zc[0] < 0 || Zc[0] > 1) throw std::runtime_error("Diverging result: Zc(0) = " + std::to_string(Zc[0]));
-
     auto hdf = output.hdf5();
+
+    // No health check here: whether a flow is usable is the driver's decision, taken once on the
+    // finished trajectory. Throwing from a readout would abort the run at an arbitrary output
+    // step and leave the tuner with a truncated file instead of a classified probe.
     hdf.map("ZA", coordinates1D, &(variables.data()[idxv("ZA")]));
     hdf.map("Zc", coordinates1D, &(variables.data()[idxv("Zc")]));
     hdf.map("ZA4SP", coordinates1D, &(variables.data()[idxv("ZA4SP")]));
@@ -219,13 +247,21 @@ public:
     hdf.map("ZA3", coordinates3D, &(variables.data()[idxv("ZA3")]));
     hdf.map("ZAcbc", coordinates3D, &(variables.data()[idxv("ZAcbc")]));
 
-    // Extract the gluon mass gap m2A from the deep-IR shape of ZA. In the IR the gluon
-    // acquires a mass gap, ZA(p) = 1 + m2A/p² + (corrections), so the per-point estimate
-    // m2A_i := (ZA(p_i) − 1)·p_i² obeys m2A_i = m2A + b·p_i² + … and extrapolates to m2A at
-    // p = 0. A single deepest point is fragile to grid noise; instead least-squares fit a
-    // straight line m2A_i = m2A + b·p² over the n_fit deepest-IR grid points and report the
-    // intercept (the genuine p → 0 limit, not a window average). Ported from
-    // qcd-codes/vacuum/QCD_vacuum_4F.
+    // The scalar trajectories the tuner reads back: m2A is the observable it tunes, and the two
+    // p_min values are what the runaway criterion is evaluated on, sample by sample. m2A is taken
+    // at the lowest grid point, the same definition the in-flow abort uses -- the least-squares
+    // extrapolation below is the better physical estimate but a worse classifier, since it can
+    // stay finite while the flow is already running away.
+    hdf.scalar("k", k);
+    hdf.scalar("m2A", variables[idxv("ZA")] * powr<2>(prm.p_grid_min) - powr<2>(prm.p_grid_min));
+    hdf.scalar("Zc_pmin", variables[idxv("Zc")]);
+    hdf.scalar("ZA_pmin", variables[idxv("ZA")]);
+
+    // The gluon mass gap extrapolated to p = 0. In the IR the gluon acquires a mass gap,
+    // ZA(p) = 1 + m2A/p^2 + (corrections), so the per-point estimate m2A_i := (ZA(p_i) - 1) p_i^2
+    // obeys m2A_i = m2A + b p_i^2 + ... A single deepest point is fragile to grid noise; instead
+    // least-squares fit a straight line in p^2 over the n_fit deepest-IR grid points and report
+    // the intercept -- the genuine p -> 0 limit, not a window average.
     const uint n_fit = std::min<uint>(6u, p_grid_size);
     const double *ZA_data = &(variables.data()[idxv("ZA")]);
     double sx = 0, sy = 0, sxx = 0, sxy = 0;
@@ -240,9 +276,6 @@ public:
     // Intercept of the least-squares line; fall back to the mean of the deep-IR points if
     // they are degenerate in p² (denom == 0).
     const double denom = n_fit * sxx - sx * sx;
-    const double m2A = std::abs(denom) > 0.0 ? (sy * sxx - sx * sxy) / denom : sy / n_fit;
-
-    hdf.scalar("k", k);
-    hdf.scalar("m2A", m2A);
+    hdf.scalar("m2A_fit", std::abs(denom) > 0.0 ? (sy * sxx - sx * sxy) / denom : sy / n_fit);
   }
 };

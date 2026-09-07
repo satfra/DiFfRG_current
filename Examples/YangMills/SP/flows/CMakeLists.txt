@@ -1,4 +1,4 @@
-set(YangMillsFlows_SOURCES
+set(YangMillsFlows_SOURCES 
     ${CMAKE_CURRENT_SOURCE_DIR}/ZA/src/constructor.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/ZA/src/CT_get.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/ZA/src/CT_map_1.cc
@@ -18,6 +18,5 @@ set(YangMillsFlows_SOURCES
 
 add_library(YangMillsFlows STATIC ${YangMillsFlows_SOURCES})
 add_library(YangMillsFlows_nowarn INTERFACE)
-target_compile_options(YangMillsFlows_nowarn INTERFACE -Wno-unused-parameter
-                                                       -Wno-unused-variable)
+target_compile_options(YangMillsFlows_nowarn INTERFACE -Wno-unused-parameter -Wno-unused-variable)
 target_link_libraries(YangMillsFlows DiFfRG::DiFfRG YangMillsFlows_nowarn)

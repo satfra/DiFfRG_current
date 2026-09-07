@@ -11,7 +11,7 @@
 class YangMillsFlows
 {
 public:
-  YangMillsFlows(const DiFfRG::ConfigTree &json);
+  YangMillsFlows(const DiFfRG::ConfigTree &config);
 
   void set_k(const double k);
 
