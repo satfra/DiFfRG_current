@@ -647,9 +647,15 @@ function(setup_target TARGET)
   # Workaround: spdlog's bundled fmt uses consteval for format-string checking,
   # which breaks on newer compilers. constexpr is functionally equivalent.
   target_compile_definitions(${TARGET} PUBLIC FMT_CONSTEVAL=constexpr)
-  # Workaround: deal.II's tensor.h uses assert() without including <cassert>.
+  # Force-include the workaround prelude (a missing <cassert> in deal.II's
+  # tensor.h, and an nvcc defect around std::iterator_traits<char *>; see the
+  # header for the details). It has to be a single -include: CMake de-duplicates
+  # the repeated "-include" token of a second one and orphans its file name,
+  # which the compiler then treats as an additional input file. The header
+  # resolves through the DiFfRG include directory, which precedes the flags on
+  # the command line in both the build and the install interface.
   target_compile_options(
-    ${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-include cassert>)
+    ${TARGET} PUBLIC $<$<COMPILE_LANGUAGE:CXX>:-include DiFfRG/common/prelude.hh>)
 
   if(HDF5)
     target_compile_definitions(${TARGET} PUBLIC H5CPP)
