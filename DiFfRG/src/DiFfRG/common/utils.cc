@@ -7,16 +7,6 @@
 
 namespace DiFfRG
 {
-  std::vector<double> string_to_double_array(const std::string &str)
-  {
-    std::vector<double> array;
-    std::istringstream ss(str);
-    std::string buf;
-    while (std::getline(ss, buf, ','))
-      array.push_back(std::stod(buf));
-    return array;
-  }
-
   std::string strip_name(const std::string &name)
   {
     std::string stripped_name = name;

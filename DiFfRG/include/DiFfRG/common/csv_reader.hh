@@ -1,16 +1,19 @@
 #pragma once
 
 // standard library
-#include "rapidcsv.h"
 #include <cstddef>
-#include <memory>
 #include <string>
+
+// DiFfRG
+#include <DiFfRG/common/csv.hh>
 
 namespace DiFfRG
 {
   /**
    * @brief This class reads a .csv file and allows to access the data.
    *
+   * Follows the dialect described in CsvDialect: cells that are not numbers read back as NaN, and
+   * '#' comment lines are skipped.
    */
   class CSVReader
   {
@@ -58,6 +61,6 @@ namespace DiFfRG
 
   private:
     std::string input_file;
-    std::unique_ptr<rapidcsv::Document> document;
+    CsvTable table;
   };
 } // namespace DiFfRG

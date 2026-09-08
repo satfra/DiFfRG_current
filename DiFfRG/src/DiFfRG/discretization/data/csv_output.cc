@@ -2,6 +2,7 @@
 #include <filesystem>
 
 // DiFfRG
+#include <DiFfRG/common/csv.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/data/csv_output.hh>
 
@@ -53,28 +54,27 @@ namespace DiFfRG
       for (const auto &entry : insertion_order)
         header.push_back(entry);
 
-      // Write the header to the file.
-      for (std::size_t i = 0; i < header.size(); ++i) {
-        output_stream << strip_name(header[i]);
-        if (i + 1 != header.size()) output_stream << ",";
-      }
-      output_stream << std::endl;
-    } else {
+      // strip_name keeps the written names free of separators and quotes.
+      std::vector<std::string> names;
+      names.reserve(header.size());
+      for (const auto &entry : header)
+        names.push_back(strip_name(entry));
+      write_csv_header(output_stream, names);
     }
 
     time_values.push_back(time);
     k_values.push_back(std::exp(-time) * Lambda);
 
-    // Write the values to the file.
-    output_stream << time << ",";
-    if (Lambda > 0) output_stream << k_values.back() << ",";
+    // Collect this frame's values in header order and write them as one row.
+    std::vector<double> row;
+    row.reserve(header.size());
+    row.push_back(time);
+    if (Lambda > 0) row.push_back(k_values.back());
     for (const auto &entry : header) {
       if (entry == "t" || entry == "k [GeV]") continue;
-
-      output_stream << values[entry].back();
-      if (entry != header.back()) output_stream << ",";
+      row.push_back(values[entry].back());
     }
-    output_stream << std::endl;
+    write_csv_row(output_stream, row);
     if (!output_stream) throw std::runtime_error("CsvOutput::flush: write failed for '" + output_name + "'.");
     written_this_frame.clear();
   }

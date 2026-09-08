@@ -1,6 +1,6 @@
 # On-demand build of the pre-built CUDA dependency bundle
-# (diffrg-deps-<version>-linux-x86_64-v3-cuda12.tar.zst, sm_80/Ampere floor,
-# newer GPUs via embedded PTX).
+# (diffrg-deps-<version>-linux-x86_64-v3-cuda12.tar.zst, sm_75/Turing floor;
+# applications retarget themselves to the local GPU via DiFfRG_CUDA_ARCH).
 #
 # GitHub-hosted runners have no GPU, so validation here is build-only: the
 # container jobs install the bundle, audit linkage (driver stub), and compile
@@ -16,8 +16,8 @@ on:
         description: "Bundle version (X.Y.Z, becomes tag deps-vX.Y.Z)"
         required: true
       cuda_arch:
-        description: "Kokkos CUDA architecture (one per build; PTX covers newer)"
-        default: AMPERE80
+        description: "Kokkos CUDA architecture floor (applications retarget via DiFfRG_CUDA_ARCH)"
+        default: TURING75
       draft_release:
         description: "Attach the result to a draft release deps-v<version>"
         type: boolean
@@ -160,5 +160,5 @@ jobs:
       - name: Summary
         run: |
           echo "## diffrg-deps ${{ inputs.bundle_version }} (linux-x86_64-v3-cuda12)" >> "$GITHUB_STEP_SUMMARY"
-          echo "- CUDA arch: ${{ inputs.cuda_arch }} (+ PTX for newer GPUs)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- CUDA arch floor: ${{ inputs.cuda_arch }} (+ PTX for newer GPUs; applications retarget via DiFfRG_CUDA_ARCH)" >> "$GITHUB_STEP_SUMMARY"
           echo "- validation: BUILD-ONLY (no GPU on hosted runners) -- run test-tarball.sh -g on a GPU machine before publishing" >> "$GITHUB_STEP_SUMMARY"

@@ -29,6 +29,8 @@
 #   --mumps / --no-mumps       self-build: PETSc MUMPS solver (default: follow MPI)
 #   --docs / --no-docs         build the documentation
 #   --march VALUE              self-build: native | x86-64-v3 | none
+#   --cuda-arch LIST           GPU compute capabilities to compile for, e.g.
+#                              "9.0" or "8.0;9.0" (default: the GPUs found here)
 #   --examples DIR             copy Examples/Tutorials (and docs) there
 #   --mathematica DIR          install the DiFfRG Mathematica package there
 #   --no-mathematica           skip the Mathematica package
@@ -60,6 +62,8 @@ complete installation. Flags for non-interactive use:
   --mumps / --no-mumps       self-build: PETSc MUMPS solver (default: follow MPI)
   --docs / --no-docs         build the documentation
   --march VALUE              self-build: native | x86-64-v3 | none
+  --cuda-arch LIST           GPU compute capabilities to compile for, e.g.
+                             "9.0" or "8.0;9.0" (default: the GPUs found here)
   --examples DIR             copy Examples/Tutorials (and docs) there
   --mathematica DIR          install the DiFfRG Mathematica package there
   --no-mathematica           skip the Mathematica package
@@ -76,6 +80,27 @@ err() { echo -e "\033[1;31mERROR:\033[0m $*" >&2; exit 1; }
 info() { echo -e "\033[1;32m==>\033[0m $*"; }
 warn() { echo -e "\033[1;33mWARNING:\033[0m $*" >&2; }
 
+# reset_stale_build <build-subdir> <expected-install-prefix>
+#
+# The build folder is reused between runs on purpose -- that is what makes
+# re-running this script cheap. But a CMake cache remembers absolute paths that
+# CMake will not re-derive once they are set: deal.II_DIR above all. Reusing a
+# tree that was configured for a *different* prefix therefore builds the library
+# against the previous install's deal.II while installing into the new one, and
+# bakes that deal.II's flags (-Xcudafe on a CUDA build, its -march, ...) into
+# DiFfRGTargets.cmake. Nothing fails here; the first application built against
+# the result fails instead, far from the cause.
+#
+# So keep the cache when the prefix is unchanged, and drop it when it is not.
+reset_stale_build() {
+  local dir="$1" want="$2" cache="$1/CMakeCache.txt" had
+  [[ -f ${cache} ]] || return 0
+  had="$(sed -n 's/^CMAKE_INSTALL_PREFIX:PATH=//p' "${cache}" | head -1)"
+  [[ -n ${had} && ${had} != "${want}" ]] || return 0
+  info "Build folder was configured for ${had}; starting it fresh for ${want}."
+  rm -rf "${dir}"
+}
+
 # ------------------------------------------------------------------ defaults --
 mode=''
 prefix="${FOLDER:-$HOME/.local/share/DiFfRG}"
@@ -89,6 +114,7 @@ opt_gpu=2 # 2 = auto (on when nvcc is found)
 opt_mumps=2 # 2 = follow MPI
 opt_docs=0
 march="native"
+cuda_arch=''
 examples_dir=''
 mathematica_dir=''
 mathematica_asked=0
@@ -113,6 +139,7 @@ while [[ $# -gt 0 ]]; do
   --docs) opt_docs=1; shift ;;
   --no-docs) opt_docs=0; shift ;;
   --march) march="$2"; shift 2 ;;
+  --cuda-arch) cuda_arch="$2"; shift 2 ;;
   --examples) examples_dir="$2"; shift 2 ;;
   --mathematica) mathematica_dir="$2"; mathematica_asked=1; shift 2 ;;
   --no-mathematica) mathematica_dir=''; mathematica_asked=1; shift ;;
@@ -199,6 +226,108 @@ toggles() {
     done
   fi
   for i in "${!names[@]}"; do echo "${names[${i}]}=${states[${i}]}"; done
+}
+
+# --------------------------------------------------------------- CUDA arches --
+# The GPU architecture is not a detail that can be left to the dependency
+# bundle. Whatever it was built for is what nvcc targets for the *library and
+# every application built against it*, and a mismatch means the driver has to
+# JIT-compile each kernel at startup -- unusable for DiFfRG's generated flow
+# kernels, which overflow the driver's JIT cache and are then recompiled on
+# every run. So ask, defaulting to the GPUs actually present.
+
+# Compute capabilities of the local GPUs, one "8.9" per line; empty on a
+# driverless build node.
+detect_cuda_arch() {
+  command -v nvidia-smi >/dev/null 2>&1 || return 0
+  nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null |
+    tr -d '[:blank:]' | grep -E '^[0-9]+\.[0-9]+$' | sort -u -V
+}
+
+# Fill ${cuda_arch} with a ";"-separated capability list. Everything detected is
+# pre-selected; the remaining common families are offered so that a node without
+# a visible GPU can still be configured for the one it will run on.
+ask_cuda_arch() {
+  local caps=(7.5 8.0 8.6 8.9 9.0 10.0 12.0)
+  local labels=(
+    "7.5   Turing        (RTX 20xx, T4, Quadro RTX)"
+    "8.0   Ampere        (A100)"
+    "8.6   Ampere        (RTX 30xx, A10, A40)"
+    "8.9   Ada Lovelace  (RTX 40xx, L4, L40)"
+    "9.0   Hopper        (H100, H200, GH200)"
+    "10.0  Blackwell     (B100, B200, GB200)"
+    "12.0  Blackwell     (RTX 50xx, RTX PRO)"
+  )
+  local detected=() cap i found
+  mapfile -t detected < <(detect_cuda_arch)
+
+  # A capability we have no label for (a Jetson, or hardware newer than this
+  # script) still has to be offerable, so append it rather than dropping it.
+  for cap in "${detected[@]}"; do
+    found=0
+    for i in "${!caps[@]}"; do [[ ${caps[${i}]} == "${cap}" ]] && found=1; done
+    [[ ${found} -eq 0 ]] && { caps+=("${cap}"); labels+=("${cap}   (detected)"); }
+  done
+
+  local specs=() state suffix
+  for i in "${!caps[@]}"; do
+    state=0 suffix=''
+    for cap in "${detected[@]}"; do
+      [[ ${caps[${i}]} == "${cap}" ]] && { state=1; suffix='  <- in this machine'; }
+    done
+    specs+=("${labels[${i}]}${suffix}:${state}")
+  done
+
+  local selected=() line i=0
+  while IFS= read -r line; do
+    [[ ${line##*=} -eq 1 ]] && selected+=("${caps[${i}]//./}")
+    i=$((i + 1))
+  done < <(toggles "Which NVIDIA GPUs will DiFfRG run on?" "${specs[@]}")
+
+  if [[ ${#selected[@]} -eq 0 ]]; then
+    warn "No GPU architecture selected; the build will target the one it detects at configure time."
+    return 0
+  fi
+  cuda_arch="$(IFS=';'; echo "${selected[*]}")"
+  info "Compiling CUDA kernels for: ${cuda_arch//;/, }"
+}
+
+# Rewrite ${cuda_arch} in sorted two-digit form, so that "9.0;8.0" and "80;90"
+# both become "80;90" and the lowest capability is always first. Done in place
+# rather than through a command substitution so that a bad value can abort.
+normalize_cuda_arch() {
+  local caps=() out=() cap
+  IFS=';' read -r -a caps <<<"${cuda_arch//,/;}"
+  for cap in "${caps[@]}"; do
+    cap="${cap//[[:blank:].]/}"
+    [[ -z ${cap} ]] && continue
+    [[ ${cap} =~ ^[0-9][0-9]+$ ]] ||
+      err "--cuda-arch: '${cap}' is not a compute capability (expected e.g. 90 or 9.0)."
+    out+=("${cap}")
+  done
+  if [[ ${#out[@]} -eq 0 ]]; then
+    cuda_arch=''
+    return 0
+  fi
+  cuda_arch="$(printf '%s\n' "${out[@]}" | sort -u -n | paste -sd';' -)"
+}
+
+# Kokkos accepts exactly one GPU architecture, so the dependency bundle is built
+# for the lowest capability asked for: a bundle compiled for an architecture
+# *above* the device aborts at startup, while the other direction only costs the
+# JIT of Kokkos' and deal.II's own (small) kernels.
+kokkos_arch_of() {
+  case "${1%%;*}" in
+  60) echo PASCAL60 ;; 61) echo PASCAL61 ;;
+  70) echo VOLTA70 ;;  72) echo VOLTA72 ;;
+  75) echo TURING75 ;;
+  80) echo AMPERE80 ;; 86) echo AMPERE86 ;; 87) echo AMPERE87 ;;
+  89) echo ADA89 ;;
+  90) echo HOPPER90 ;;
+  100) echo BLACKWELL100 ;; 103) echo BLACKWELL103 ;;
+  120) echo BLACKWELL120 ;; 121) echo BLACKWELL121 ;;
+  *) echo '' ;;
+  esac
 }
 
 # ------------------------------------------------------------------ preflight --
@@ -290,6 +419,13 @@ if [[ ${mode} == source ]]; then
     "x86-64-v3 -- portable to consumer CPUs from ~2013 on" \
     "none -- fully generic (slowest)"
   march=$(sed -n "$((_c + 1))p" <<<$'native\nx86-64-v3\nnone')
+fi
+
+# Ask for the GPU architectures once both paths know whether CUDA is in play.
+if [[ ${mode} == source && ${opt_gpu} -eq 1 ]] \
+  || [[ ${mode} == prebuilt && ${deps_variant} == *cuda* ]]; then
+  [[ -z ${cuda_arch} ]] && ask_cuda_arch
+  normalize_cuda_arch
 fi
 
 if [[ -z ${examples_dir} ]]; then
@@ -389,20 +525,31 @@ if [[ ${mode} == prebuilt ]]; then
   # CMAKE_INSTALL_LIBDIR=lib keeps the library's cmake config at
   # <prefix>/lib/cmake/DiFfRG on every distro (EL-family GNUInstallDirs would
   # otherwise choose lib64), matching the find_package hint printed below.
+  reset_stale_build "${build_dir}/library-build" "${prefix}"
   cmake -S "${src}/DiFfRG" -B "${build_dir}/library-build" \
     -DCMAKE_BUILD_TYPE=Release \
     -DBUNDLED_DIR="${prefix}/bundled" \
     -DCMAKE_INSTALL_PREFIX="${prefix}" \
     -DCMAKE_INSTALL_LIBDIR=lib \
     ${mathematica_dir:+-DDiFfRG_MATHEMATICA_INSTALL_DIR="${mathematica_dir}"} \
+    ${cuda_arch:+-DDiFfRG_CUDA_ARCH="${cuda_arch}"} \
     -DDiFfRG_DOCUMENTATION="$([[ ${opt_docs} -eq 1 ]] && echo ON || echo OFF)"
   cmake --build "${build_dir}/library-build" -j "${threads}"
   cmake --install "${build_dir}/library-build"
 else
   info "Configuring the full superbuild (this will take a while)..."
   [[ ${opt_mumps} -eq 2 ]] && opt_mumps=${opt_mpi}
+  # Without this, Kokkos falls back to auto-detection, which needs a GPU on the
+  # build host and so fails on a driverless build node.
+  kokkos_arch=''
+  if [[ -n ${cuda_arch} ]]; then
+    kokkos_arch="$(kokkos_arch_of "${cuda_arch}")"
+    [[ -z ${kokkos_arch} ]] &&
+      warn "No Kokkos architecture name is known for compute capability ${cuda_arch%%;*}; leaving the bundle to auto-detect."
+  fi
   # BUILD_JOBS is a core-count hint the superbuild halves for its sub-builds;
   # 2x threads makes those sub-builds use exactly ${threads} jobs.
+  reset_stale_build "${build_dir}/superbuild" "${prefix}"
   cmake -S "${src}" -B "${build_dir}/superbuild" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="${prefix}" \
@@ -411,6 +558,8 @@ else
     -DPETSC_MUMPS="$([[ ${opt_mumps} -eq 1 ]] && echo ON || echo OFF)" \
     -DDiFfRG_DOCUMENTATION="$([[ ${opt_docs} -eq 1 ]] && echo ON || echo OFF)" \
     -DMARCH="${march}" \
+    ${cuda_arch:+-DDiFfRG_CUDA_ARCH="${cuda_arch}"} \
+    ${kokkos_arch:+-DKokkos_ARCH="${kokkos_arch}" -DKokkos_ARCH_LIST="${kokkos_arch}"} \
     ${mathematica_dir:+-DDiFfRG_MATHEMATICA_INSTALL_DIR="${mathematica_dir}"} \
     -DBUILD_JOBS=$((2 * threads)) \
     -DDEALII_MAX_JOBS="${threads}" \

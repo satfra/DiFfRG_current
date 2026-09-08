@@ -61,6 +61,23 @@ All assembler families retain the familiar `attach_data_output` seam. Model `rea
 the session fail-stop, preventing staged data from contaminating a later timestep. Existing CSV, HDF5, PVD, and VTU
 names and schemas remain unchanged.
 
+## The CSV format
+
+`CsvOutput` writes one header row and then one row per output step, comma-separated, with numbers in
+scientific notation. `DiFfRG/common/csv.hh` defines the same format for reading it back, and the
+Julia (`julia/src/io/csv.jl`) and Python (`DiFfRG.file_io.csv`) helpers follow it too, so a file a
+run wrote loads identically in all three languages:
+
+- `#` comment lines and blank lines are skipped.
+- A cell that is not a finite number reads back as `NaN` rather than raising, so a run that wrote an
+  inf or left a gap still loads and the gap stays visible in the data.
+- Rows whose field count does not match the header are skipped.
+- Column names may be quoted, which is the only way a name can contain the separator. Names written
+  by `CsvOutput` pass through `strip_name` and so never need it.
+- A UTF-8 byte order mark, CRLF line endings and a missing final newline are all accepted.
+
+Numbers are parsed with `std::from_chars`, so reading does not depend on the global locale.
+
 Code which runs independently of scheduled frames receives a `DiagnosticPort` by value. For example, a timestepper can
 export Jacobian eigenvalues without knowing a filename or owning a writer:
 
@@ -151,6 +168,9 @@ The progress policy is deliberately fixed in C++ and has no JSON controls:
 - verbosity 3 adds factorization and output work;
 - verbosity 4 remains aggregated;
 - verbosity 5 emits every event and prints a performance warning.
+
+Every progress line carries `wall=`, the total wall time elapsed since the reporter was constructed; the per-event
+`avg=` column instead reports the mean cost of the operation being logged.
 
 At levels 1--4, each topic produces at most one update per second in both the console and the run log.
 Each progress record is at most 100 columns and uses at most two lines: a stable summary line followed, when needed, by

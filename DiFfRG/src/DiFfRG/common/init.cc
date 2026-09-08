@@ -4,6 +4,7 @@
 #include <DiFfRG/common/configuration_helper.hh>
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/mpi.hh>
+#include <DiFfRG/common/stream_filter.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/physics/integration/map_scheduler.hh>
 
@@ -16,6 +17,7 @@
 #include <iostream>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // external libraries
@@ -37,6 +39,20 @@ namespace DiFfRG
   {
     /// Length of the PCI bus id string CUDA returns, e.g. "0000:65:00.0".
     constexpr int bus_id_len = 16;
+
+#if defined(DiFfRG_KERNEL_ARCH) && defined(DiFfRG_BUNDLE_ARCH)
+    // Kokkos determines "the" compiled architecture by launching a probe kernel that reads
+    // __CUDA_ARCH__. That kernel lives in libkokkoscore, so on a dependency bundle built for an
+    // older architecture than the device it reports the *bundle's*, and warns that kernels will run
+    // below their potential. For DiFfRG that is misleading twice over: the statement covers only a
+    // few hundred Kokkos and deal.II plumbing kernels, and everything carrying the physics is
+    // compiled natively for this GPU (see DiFfRG_CUDA_ARCH). Init() suppresses the line and prints
+    // an accurate one instead.
+    //
+    // Kokkos::show_warnings() would also silence it, but takes every other Kokkos warning with it.
+    constexpr std::string_view kokkos_arch_warning =
+        "Kokkos::Cuda::initialize WARNING: running kernels compiled for compute capability";
+#endif
 
     // ------------------------------------------------------------------------------------------
     // The resolved CPU thread budget
@@ -598,6 +614,13 @@ namespace DiFfRG
       // num_threads configures only Kokkos' host execution backend, which is Serial unless the
       // build enabled KOKKOS_THREADS; it never restricts CUDA kernel parallelism. It is passed
       // anyway so that a build which does enable that backend still respects the budget.
+#if defined(DiFfRG_KERNEL_ARCH) && defined(DiFfRG_BUNDLE_ARCH)
+      // Drop Kokkos' architecture warning while it initializes; see kokkos_arch_warning above for why.
+      const bool arch_differs = std::string(DiFfRG_KERNEL_ARCH) != DiFfRG_BUNDLE_ARCH;
+      std::optional<ScopedLineFilter> arch_warning_filter;
+      if (arch_differs) arch_warning_filter.emplace(std::cerr, kokkos_arch_warning);
+#endif
+
       if (device >= 0 && local_size > 1 && !Kokkos::is_initialized() && !Kokkos::is_finalized()) {
         dealii::internal::dealii_initialized_kokkos = true;
         Kokkos::initialize(Kokkos::InitializationSettings().set_device_id(device).set_num_threads(
@@ -606,6 +629,15 @@ namespace DiFfRG
       } else {
         dealii::internal::ensure_kokkos_initialized();
       }
+
+#if defined(DiFfRG_KERNEL_ARCH) && defined(DiFfRG_BUNDLE_ARCH)
+      arch_warning_filter.reset();
+      // Say once what the suppressed warning was trying to say, correctly.
+      if (arch_differs && device >= 0 && MPI::rank(MPI_COMM_WORLD) == 0)
+        std::cerr << "DiFfRG: kernels compiled for " << DiFfRG_KERNEL_ARCH << "; the bundled Kokkos and deal.II are "
+                  << "built for " << DiFfRG_BUNDLE_ARCH << " and are the only ones this GPU has to JIT-compile."
+                  << std::endl;
+#endif
 
       // The scheduler defaults are fine for most runs; expose them anyway, since the split width is
       // the one knob a scaling study may want to turn.

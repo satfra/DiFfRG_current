@@ -1,11 +1,12 @@
 // standard library
-#include <iostream>
-
-// external libraries
-#include <rapidcsv.h>
+#include <algorithm>
+#include <cmath>
+#include <stdexcept>
 
 // DiFfRG
+#include <DiFfRG/common/csv.hh>
 #include <DiFfRG/common/external_data_interpolator.hh>
+#include <DiFfRG/common/run_reporter.hh>
 
 namespace DiFfRG
 {
@@ -29,13 +30,10 @@ namespace DiFfRG
                                        char separator, bool has_header, uint x_column, uint order)
   {
     for (const auto &file : input_files) {
-      // Open the file
-      int label_0 = has_header ? 0 : -1;
-      rapidcsv::Document doc(file, rapidcsv::LabelParams(label_0, -1), rapidcsv::SeparatorParams(separator));
-
-      // Now we read all columns into the vector
-      for (uint i = 0; i < doc.GetColumnCount(); ++i)
-        file_data.emplace_back(doc.GetColumn<double>(i));
+      // Read the file and append all its columns to the ones gathered so far.
+      auto table = read_csv(file, {separator, has_header});
+      for (auto &column : table.columns)
+        file_data.emplace_back(std::move(column));
     }
 
     // Find rows that contain NaN in any column
@@ -52,8 +50,10 @@ namespace DiFfRG
       }
     }
 
-    if (n_removed != 0)
-      std::cout << "ExternalDataInterpolator::setup: Removed " << n_removed << " rows with NaN values." << std::endl;
+    if (n_removed != 0) {
+      ReportPort report;
+      report.warn("ExternalDataInterpolator::setup: removed {} row(s) with NaN values.", n_removed);
+    }
 
     // Remove NaN rows using copy-if pattern (O(n) per column instead of O(n*removed))
     if (n_removed > 0) {
@@ -83,29 +83,25 @@ namespace DiFfRG
     }
 
     // Check consistency
-    if (!check_consistency(1e-4))
+    if (!check_consistency(1e-4, x_column))
       throw std::runtime_error("ExternalDataInterpolator::setup: Interpolator "
                                "is not consistent with the original data!");
   }
 
-  bool ExternalDataInterpolator::check_consistency(double tolerance) const
+  bool ExternalDataInterpolator::check_consistency(double tolerance, uint x_column) const
   {
+    ReportPort report;
     for (uint i = 0; i < file_data.size(); ++i)
-      for (uint j = 0; j < file_data[i].size(); ++j)
-        if (std::abs(interpolators[i](file_data[0][j]) - file_data[i][j]) > tolerance * std::abs(file_data[i][j])) {
-          std::cout << "ExternalDataInterpolator::check_consistency: "
-                       "Interpolator is not consistent with the original data!"
-                    << std::endl;
-          std::cout << "ExternalDataInterpolator::check_consistency: "
-                       "Interpolator value: "
-                    << interpolators[i](file_data[0][j]) << std::endl;
-          std::cout << "ExternalDataInterpolator::check_consistency: Original value: " << file_data[i][j] << std::endl;
-          std::cout << "ExternalDataInterpolator::check_consistency: Relative "
-                       "difference: "
-                    << std::abs(interpolators[i](file_data[0][j]) - file_data[i][j]) / std::abs(file_data[i][j])
-                    << std::endl;
+      for (uint j = 0; j < file_data[i].size(); ++j) {
+        const double interpolated = interpolators[i](file_data[x_column][j]);
+        const double original = file_data[i][j];
+        if (std::abs(interpolated - original) > tolerance * std::abs(original)) {
+          report.error("ExternalDataInterpolator::check_consistency: column {}, row {} is not reproduced: "
+                       "interpolated {}, original {}, relative difference {}.",
+                       i, j, interpolated, original, std::abs(interpolated - original) / std::abs(original));
           return false;
         }
+      }
     return true;
   }
 

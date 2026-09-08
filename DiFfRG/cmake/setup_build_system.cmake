@@ -263,6 +263,114 @@ endif()
 diffrg_find_package(Kokkos HINTS ${BUNDLED_DIR})
 message(STATUS "Found Kokkos in ${Kokkos_DIR}")
 
+# ##############################################################################
+# CUDA architecture selection
+# ##############################################################################
+#
+# The bundled Kokkos bakes its GPU architecture into its interface as
+# "-arch=sm_XX", and deal.II flattens that into dealii::interface_kokkos. Left
+# alone, every application therefore compiles for whatever architecture the
+# *dependency bundle* was built with -- typically not the GPU it will run on.
+# nvcc then emits no loadable SASS for the local device and the driver falls
+# back to JIT-compiling the embedded PTX at module load. DiFfRG's generated flow
+# kernels are far too large for that to be acceptable: they overflow the
+# driver's 256 MB JIT cache (~/.nv/ComputeCache), so the compile is repeated on
+# every single run.
+#
+# DiFfRG_CUDA_ARCH retargets that inherited flag, so the library and every
+# application are compiled as native SASS for the GPUs actually in use, while
+# the bundle stays one portable prebuilt artifact. Only the bundle's own (small)
+# Kokkos and deal.II kernels are left to JIT.
+#
+# A lower-arch bundle on a newer GPU is a supported combination: Kokkos aborts
+# only when its compiled architecture *exceeds* the device
+# (Kokkos_Cuda_Instance.cpp), and merely warns in the other direction.
+
+set(DiFfRG_CUDA_ARCH
+    ""
+    CACHE
+      STRING
+      "CUDA compute capabilities to compile for, e.g. \"90\" or \"80;90\". Also accepts \"native\" (detect the local GPUs) and \"bundled\" (keep the dependency bundle's architecture)."
+)
+
+include(${CMAKE_CURRENT_LIST_DIR}/cuda_arch.cmake)
+
+# The inherited flag is also how we tell whether this bundle has CUDA at all --
+# there is no other record of it in the installed dependency tree.
+set(DiFfRG_CUDA_ARCH_RESOLVED "")
+set(DiFfRG_CUDA_ARCH_BUNDLED "")
+get_target_property(_diffrg_kokkos_opts dealii::interface_kokkos
+                    INTERFACE_COMPILE_OPTIONS)
+if(_diffrg_kokkos_opts MATCHES "-arch=sm_([0-9]+)")
+  set(DiFfRG_CUDA_ARCH_BUNDLED "${CMAKE_MATCH_1}")
+
+  set(_requested "${DiFfRG_CUDA_ARCH}")
+  if(_requested STREQUAL "")
+    # An application defaults to whatever the library it links was built for, so
+    # the two always agree without probing again; the library itself detects.
+    if(DEFINED DiFfRG_CUDA_ARCH_LIBRARY AND NOT DiFfRG_CUDA_ARCH_LIBRARY
+                                            STREQUAL "")
+      set(_requested "${DiFfRG_CUDA_ARCH_LIBRARY}")
+    else()
+      set(_requested "native")
+    endif()
+  endif()
+
+  if(_requested STREQUAL "native")
+    _diffrg_detect_cuda_arch(_requested)
+    if(_requested STREQUAL "")
+      message(
+        STATUS
+          "${BoldYellow}[CUDA] No GPU could be queried on this machine, so the dependency bundle's "
+          "sm_${DiFfRG_CUDA_ARCH_BUNDLED} is used. Kernels will be JIT-compiled at startup on any other "
+          "GPU -- pass -DDiFfRG_CUDA_ARCH=<capability> (e.g. 90) to compile for the target directly.${ColourReset}"
+      )
+      set(_requested "bundled")
+    endif()
+  endif()
+
+  if(NOT _requested STREQUAL "bundled")
+    _diffrg_normalize_cuda_arch(DiFfRG_CUDA_ARCH_RESOLVED ${_requested})
+
+    # Retargeting moves DiFfRG's kernels but not the bundle's, and Kokkos aborts
+    # rather than JITs when its own architecture is above the device. Asking for
+    # a GPU older than the bundle therefore builds cleanly and then fails at
+    # startup with a Kokkos abort, well away from the cause.
+    list(GET DiFfRG_CUDA_ARCH_RESOLVED 0 _diffrg_arch_min)
+    if(_diffrg_arch_min LESS DiFfRG_CUDA_ARCH_BUNDLED)
+      message(
+        WARNING
+          "DiFfRG_CUDA_ARCH asks for sm_${_diffrg_arch_min}, but the dependency bundle was built for "
+          "sm_${DiFfRG_CUDA_ARCH_BUNDLED}. DiFfRG's own kernels will be correct, but Kokkos aborts at "
+          "startup on a GPU older than the architecture it was compiled for, so this build will not run "
+          "there. Install a bundle whose architecture is at most sm_${_diffrg_arch_min} (the pre-built "
+          "CUDA bundle is sm_75), or build the dependencies from source with -DKokkos_ARCH_LIST=.")
+    endif()
+
+    _diffrg_cuda_arch_flags(_diffrg_arch_flags ${DiFfRG_CUDA_ARCH_RESOLVED})
+    foreach(_target dealii::interface_kokkos Kokkos::kokkoscore)
+      foreach(_property INTERFACE_COMPILE_OPTIONS INTERFACE_LINK_OPTIONS)
+        _diffrg_retarget_cuda_arch(${_target} ${_property}
+                                   "${_diffrg_arch_flags}")
+      endforeach()
+    endforeach()
+  else()
+    set(DiFfRG_CUDA_ARCH_RESOLVED "${DiFfRG_CUDA_ARCH_BUNDLED}")
+  endif()
+
+  # "sm_80,sm_90" -- for the summary table and for DiFfRG::Init()'s startup
+  # line, which has to correct Kokkos' own architecture warning: Kokkos probes
+  # with a kernel that lives in libkokkoscore, so it reports the bundle's
+  # architecture and says nothing about the kernels that actually matter.
+  # No spaces: this also becomes a preprocessor define, and a space would split
+  # the compiler argument in two.
+  set(_diffrg_arch_names "")
+  foreach(_cc IN LISTS DiFfRG_CUDA_ARCH_RESOLVED)
+    list(APPEND _diffrg_arch_names "sm_${_cc}")
+  endforeach()
+  list(JOIN _diffrg_arch_names "," DiFfRG_CUDA_ARCH_DISPLAY)
+endif()
+
 # CUDA stub-RUNPATH guard. Offline (driverless) builds link the CUDA driver
 # API against the toolkit's *stub* libcuda.so; that is fine -- dynamic linking
 # records only the SONAME -- unless the stubs directory leaks into a RUNPATH,
@@ -528,6 +636,10 @@ _diffrg_summary_row("HDF5"     "${HDF5_VERSION}"     "${_hdf5_path}" "[static]")
 if(${DiFfRG_MPI})
   _diffrg_summary_row("MPI"    "${MPI_CXX_VERSION}"  "${MPI_CXX_INCLUDE_DIRS}")
 endif()
+if(NOT DiFfRG_CUDA_ARCH_BUNDLED STREQUAL "")
+  _diffrg_summary_row("CUDA arch" "${DiFfRG_CUDA_ARCH_DISPLAY}"
+                      "bundled Kokkos: sm_${DiFfRG_CUDA_ARCH_BUNDLED}")
+endif()
 message(
   "${BoldWhite}======================================================================${ColourReset}"
 )
@@ -643,6 +755,13 @@ function(setup_target TARGET)
   endif()
 
   target_compile_definitions(${TARGET} PUBLIC _HAS_AUTO_PTR_ETC=0)
+
+  if(NOT DiFfRG_CUDA_ARCH_BUNDLED STREQUAL "")
+    target_compile_definitions(
+      ${TARGET}
+      PUBLIC DiFfRG_KERNEL_ARCH="${DiFfRG_CUDA_ARCH_DISPLAY}"
+             DiFfRG_BUNDLE_ARCH="sm_${DiFfRG_CUDA_ARCH_BUNDLED}")
+  endif()
 
   # Workaround: spdlog's bundled fmt uses consteval for format-string checking,
   # which breaks on newer compilers. constexpr is functionally equivalent.

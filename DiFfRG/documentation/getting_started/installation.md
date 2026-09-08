@@ -82,7 +82,7 @@ $ bash <(curl -s -L https://github.com/satfra/DiFfRG_current/raw/refs/heads/main
 
 A short wizard walks through the typical choices — pre-built dependency bundle or full self-build, install prefix, build folder, features (MPI, GPU, ...), and an optional copy of the examples and tutorials — then performs the complete installation. Every question also has a command-line flag (`--help`) for scripted use.
 
-The **pre-built dependency bundle** downloads deal.II, Kokkos, Boost, TBB, SUNDIALS, HDF5 and friends as a ~50 MB binary from [GitHub Releases](https://github.com/satfra/DiFfRG_current/releases) instead of compiling them for hours; only the DiFfRG library itself is compiled locally (minutes). Bundles are CPU-only without MPI and require a CPU with AVX2 (any consumer CPU from ~2013 on) and glibc ≥ 2.34 (Rocky/Alma 9+, Ubuntu 22.04+, Debian 12+, Fedora, Arch). For CUDA, MPI, other CPUs, or other platforms the wizard's self-build path covers the full feature set. The bundle step alone is also available non-interactively as `install-diffrg-deps.sh` (`--help` for options).
+The **pre-built dependency bundle** downloads deal.II, Kokkos, Boost, TBB, SUNDIALS, HDF5 and friends as a ~50 MB binary from [GitHub Releases](https://github.com/satfra/DiFfRG_current/releases) instead of compiling them for hours; only the DiFfRG library itself is compiled locally (minutes). Bundles come in a CPU-only and a CUDA variant (the wizard offers the latter when it finds an NVIDIA GPU), both without MPI, and require a CPU with AVX2 (any consumer CPU from ~2013 on) and glibc ≥ 2.34 (Rocky/Alma 9+, Ubuntu 22.04+, Debian 12+, Fedora, Arch). For MPI, other CPUs, or other platforms the wizard's self-build path covers the full feature set. The bundle step alone is also available non-interactively as `install-diffrg-deps.sh` (`--help` for options).
 
 ### Quick install from source
 
@@ -120,6 +120,7 @@ The most important options to pass to the top-level `cmake` invocation are:
 - `-DGPU=ON/OFF` — GPU support via the Kokkos CUDA/HIP backend (default `ON`).
 - `-DMPI=ON/OFF` — MPI support (default `OFF`). This is a single switch for the whole superbuild: deal.II, SUNDIALS, PETSc and DiFfRG must all agree about MPI, so it cannot be enabled for DiFfRG alone afterwards.
 - `-DNATIVE=ON/OFF` — optimize for the build machine's CPU (`-march=native`). Disable for portable binaries (default `ON`).
+- `-DDiFfRG_CUDA_ARCH=<list>` — the GPU compute capabilities to compile for, e.g. `90` or `80;90` (also accepted in dotted form, `9.0`). Defaults to the GPUs found on the build machine via `nvidia-smi`; `bundled` keeps whatever the dependency bundle was built for. See [Choosing the GPU architecture](#choosing-the-gpu-architecture).
 - `-DDiFfRG_TEST=ON` — build the test suite (default `OFF`).
 - `-DDiFfRG_DOCUMENTATION=ON` — build this documentation (default `ON`).
 - `-DBUILD_OpenBLAS=ON` — additionally build OpenBLAS (default `OFF`).
@@ -146,6 +147,28 @@ The most important options to pass to the top-level `cmake` invocation are:
 
 deal.II detects what PETSc was actually built with and exports `DEAL_II_PETSC_WITH_HYPRE` /
 `DEAL_II_PETSC_WITH_MUMPS`, which is what DiFfRG's solver wrappers gate on.
+
+#### Choosing the GPU architecture
+
+CUDA code is compiled for a specific *compute capability*. If the compiled architecture does not match the GPU, one of two things happens: an architecture **above** the device aborts at startup (Kokkos refuses to run), and one **below** it still runs, but only because the driver JIT-compiles the embedded PTX every time a module is loaded. DiFfRG's generated flow kernels are far too large for that second case to be acceptable — they overflow the driver's 256 MB JIT cache (`~/.nv/ComputeCache`), so the compilation is repeated on every run.
+
+`-DDiFfRG_CUDA_ARCH` therefore decides what the library *and every application built against it* target, independently of the dependency bundle:
+
+```bash
+cmake .. -DDiFfRG_CUDA_ARCH=90        # H100
+cmake .. -DDiFfRG_CUDA_ARCH="80;90"   # one binary for both A100 and H100
+```
+
+Left unset it detects the GPUs of the build machine, which is the right answer whenever you build where you run. Set it by hand on a driverless build node, or when the compute nodes have different GPUs than the login node. An application inherits the value the library was built with, so the two always agree unless the application overrides it.
+
+The pre-built CUDA bundle is deliberately built for the *oldest* supported architecture (`sm_75`, Turing), which is what lets one download serve everything from Turing to Blackwell. Only the bundle's own Kokkos and deal.II kernels are affected by that floor — a few hundred small plumbing kernels, JIT-compiled once and cached. Nothing you compile is: the setting above retargets it all natively.
+
+The one direction that does not work is asking for a GPU *older* than the bundle: DiFfRG's kernels would be right, but Kokkos' own would be above the device and abort. Configure warns about that; the fix is a bundle with a low enough floor, or a source install with `-DKokkos_ARCH_LIST=` (the installer's `--cuda-arch` sets both).
+
+Two consequences of that split are worth knowing:
+
+- Kokkos would print `running kernels compiled for compute capability 7.5 on device with compute capability 9.0` at startup. It detects this with a probe kernel that lives inside the bundled `libkokkoscore`, so the warning is about the bundle and says nothing about DiFfRG's kernels. `DiFfRG::Init()` suppresses that one line and prints an accurate one instead; every other Kokkos warning is untouched.
+- `KOKKOS_IMPL_ARCH_NVIDIA_GPU` is baked into the bundle's installed headers and stays at the bundle's floor. It gates only half-precision conversions and 16-byte lock-free atomics, neither of which DiFfRG's double-precision kernels use. A source install (`--mode source`, which builds Kokkos for the architecture you choose) removes even that.
 
 #### Offline CUDA builds on clusters (driverless build nodes)
 

@@ -93,12 +93,14 @@ namespace DiFfRG::internal
     }
 
     std::vector<std::string> render(const Aggregate &aggregate, const double Lambda, const int verbosity,
-                                    const bool individual)
+                                    const bool individual, const std::size_t wall_ms)
     {
       const auto &event = aggregate.latest;
       std::ostringstream line;
       line << '[' << std::setw(4) << std::left << event.topic.tag << "] t=" << compact_number(event.time);
       if (Lambda > 0.) line << " k=" << compact_number(std::exp(-event.time) * Lambda);
+      // Total wall time of the run, not the cost of the reported operation (that is avg=).
+      line << " wall=" << time_format_ms(wall_ms);
       if (!event.topic.stage.empty()) line << " " << event.topic.stage;
       if (!individual && aggregate.calls > 1) line << " n=" << aggregate.calls;
       if (aggregate.duration_samples > 0) {
@@ -322,8 +324,14 @@ namespace DiFfRG::internal
 
     void emit(const std::shared_ptr<spdlog::logger> &logger, const Aggregate &aggregate, const bool individual) const
     {
-      for (const auto &line : render(aggregate, Lambda_, verbosity_, individual))
+      for (const auto &line : render(aggregate, Lambda_, verbosity_, individual, elapsed_ms()))
         logger->info(line);
+    }
+
+    std::size_t elapsed_ms() const
+    {
+      return static_cast<std::size_t>(
+          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count());
     }
 
     using ProgressStrategy = void (ReporterState::*)(const ProgressEvent &);
@@ -332,6 +340,7 @@ namespace DiFfRG::internal
     // is destroyed after every sink has been flushed and released.
     std::optional<OutputPath> owned_path;
     std::optional<std::filesystem::path> log_file_;
+    const std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
     int verbosity_ = 0;
     double Lambda_ = -1.;
     std::atomic_bool accepting = false;

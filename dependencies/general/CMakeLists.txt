@@ -145,23 +145,6 @@ else()
   message(STATUS "GSL found: ${GSL_INCLUDE_DIR}")
 endif()
 
-# Get rapidcsv
-message(STATUS "Adding rapidcsv...")
-cpmaddpackage(
-  NAME
-  rapidcsv
-  GITHUB_REPOSITORY
-  d99kris/rapidcsv
-  VERSION
-  8.84
-  DOWNLOAD_ONLY
-  YES)
-include_directories(SYSTEM ${rapidcsv_SOURCE_DIR}/src)
-install(
-  DIRECTORY ${rapidcsv_SOURCE_DIR}/src/
-  DESTINATION include
-  COMPONENT Development)
-
 # Get spdlog
 message(STATUS "Adding spdlog...")
 cpmaddpackage(

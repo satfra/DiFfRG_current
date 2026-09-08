@@ -1,10 +1,12 @@
 # Relocatable DiFfRG dependency bundle: linux x86_64, -march=x86-64-v3,
-# CUDA 12 (sm_80/Ampere floor), no MPI.
+# CUDA 12 (sm_75/Turing floor), no MPI.
 #
-# Mirrors linux-x86_64-v3-cpu.Dockerfile with a CUDA-enabled Kokkos. One CUDA
-# arch per Kokkos build; AMPERE80 embeds sm_80 SASS plus compute_80 PTX, so
-# newer GPUs (Ada, Hopper, Blackwell, ...) run via JIT (cached after first
-# launch). Older GPUs (Turing and before) are not covered -- self-build.
+# Mirrors linux-x86_64-v3-cpu.Dockerfile with a CUDA-enabled Kokkos. Kokkos
+# takes one CUDA arch per build, so the bundle is compiled for the oldest
+# architecture DiFfRG supports and runs on everything from Turing to Blackwell
+# via its embedded PTX. Only the bundle's own kernels are affected by that:
+# libDiFfRG and every application retarget themselves to the local GPU through
+# DiFfRG_CUDA_ARCH, so no user code is ever JIT-compiled.
 #
 # Consumers need the CUDA toolkit anyway (their applications compile device
 # code), so the bundle does not ship CUDA: its libraries resolve the host's
@@ -35,10 +37,17 @@ WORKDIR /src
 COPY . /src
 
 ARG threads=6
-ARG cuda_arch=AMPERE80
+ARG cuda_arch=TURING75
 
 # GPU=ON with a pinned Kokkos arch: no GPU is present at build time, so the
 # arch cannot be auto-detected and MUST be given explicitly.
+#
+# The floor is deliberately the oldest architecture DiFfRG supports. Kokkos
+# aborts at startup when its compiled architecture is *above* the device, so
+# this is what makes one bundle usable from Turing to Blackwell; the cost is
+# only that its own (small) kernels are JIT-compiled on newer GPUs. Nothing the
+# user compiles is affected -- DiFfRG_CUDA_ARCH retargets the library and every
+# application to the GPU actually in use.
 RUN cmake -S /src -B /build \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/opt/diffrg \

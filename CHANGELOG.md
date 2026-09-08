@@ -4,6 +4,18 @@
 
 ### Changed
 
+- CSV reading and writing are unified in `DiFfRG/common/csv.hh`, which documents the one dialect
+  DiFfRG uses and which `CsvOutput`, `CSVReader` and `ExternalDataInterpolator` all go through. The
+  Julia and Python analysis readers follow the same rules, so a file written by a run loads
+  identically in all three languages: `#` comment lines and blank lines are skipped, a cell that is
+  not a finite number reads back as `NaN` instead of raising, rows whose field count does not match
+  the header are skipped, and quoted header names, CRLF endings and a UTF-8 BOM are accepted.
+  Numbers are parsed with `std::from_chars`, so read-in no longer depends on the global locale.
+- **Removed:** the third-party `rapidcsv` dependency, together with the CPM fetch that installed it
+  into the bundle. It was also the last third-party header in the public include path pulled in by
+  `csv_reader.hh`, so every translation unit including `DiFfRG.hh` compiles less.
+- **Removed:** `string_to_double_array` from `DiFfRG/common/utils.hh`, a fourth ad-hoc CSV line
+  parser with no callers. Use `split_csv_line` and `parse_csv_cell` from `DiFfRG/common/csv.hh`.
 - **Breaking:** the application-facing discretization, assembler, timestepper and output-session
   types are keyed on one another instead of repeating the linear algebra:
   `CG::Discretization<Model, RectangularMesh<dim>>`, `CG::Assembler<Discretization>`,
@@ -14,6 +26,8 @@
   `TimeStepperSUNDIALS_IDA<Assembler>`; `OutputSession<dim, VectorType>` becomes
   `OutputSession<Assembler>` (anything exposing `dim` and `VectorType` works, e.g. the
   discretization).
+- Every progress line of the run reporter carries a `wall=` column with the total wall time elapsed
+  in the run, restoring the cumulative timing that the old `calc_t` column reported.
 - The `QuadratureProvider`'s quadrature inventory is written into the run log, `<output name>.log`, rather than into a
   separate `<output name>_quadrature.log`.
 - **Breaking:** Kokkos' host execution space is now `Kokkos::Serial`. DiFfRG's CPU parallelism is
@@ -61,6 +75,17 @@
 
 ### Added
 
+- `-DDiFfRG_CUDA_ARCH=<list>` selects the GPU compute capabilities the library and every
+  application are compiled for (`90`, or `80;90` for one binary covering both), independently
+  of the dependency bundle. It defaults to the GPUs found on the build machine, and the
+  installer asks for it (`--cuda-arch`). Previously the architecture was whatever the bundle
+  happened to be built with, so on any other GPU the driver JIT-compiled every kernel at
+  startup — which DiFfRG's generated flow kernels cannot afford, being large enough to
+  overflow the driver's JIT cache and be recompiled on every run. The shipped CUDA bundle's
+  floor moved to sm_75 accordingly: it now only sets the architecture of Kokkos' and deal.II's
+  own kernels, not of anything the user compiles.
+  `DiFfRG::Init()` reports the resolved architecture and suppresses Kokkos' now-misleading
+  startup warning about it -- that one line only; other Kokkos warnings still appear.
 - **Breaking:** the old `install.sh` is removed (its former curl one-liner URL now 404s).
   `install_diffrg.sh` replaces it entirely: the wizard for easy installs, its
   `--mode source` path (or driving the superbuild directly with CMake) for everything
@@ -79,7 +104,7 @@
   used, restoring GCC 12 compatibility: the compiler floor is GCC >= 12 everywhere, except
   nvcc host compilation where GCC 13 is excluded by an nvcc/libstdc++-13 bug (12 and >= 14
   both validated against the CUDA bundle).
-- A CUDA dependency bundle variant (`linux-x86_64-v3-cuda12`, sm_80/Ampere floor with PTX
+- A CUDA dependency bundle variant (`linux-x86_64-v3-cuda12`, sm_75/Turing floor with PTX
   forward-compatibility for newer GPUs) plus its `release-deps-linux-cuda` workflow;
   the wizard offers it when an NVIDIA GPU is detected. deal.II's nvcc-wrapper shim now
   installs into `bundled/bin` and self-relocates instead of recording a build-tree path.

@@ -1,7 +1,7 @@
 # DiFfRG dependency image (Ubuntu 24.04, CPU / GPU=OFF).
 #
 # This image bakes the *bundled* dependencies (deal.II, Kokkos, autodiff, GSL,
-# Eigen, spdlog, rapidcsv, ...) so that CI only has to rebuild the DiFfRG library
+# Eigen, spdlog, ...) so that CI only has to rebuild the DiFfRG library
 # itself -- the slow superbuild (deal.II dominates, ~2-3 h) is paid once, here,
 # instead of on every PR. Refresh and push with containers/ci/build-and-push.sh.
 #

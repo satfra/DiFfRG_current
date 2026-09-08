@@ -258,6 +258,7 @@ TEST_CASE("RunReporter aggregates progress every second below verbosity five", "
   CHECK(count_occurrences(content, "[res ]") == 1);
   CHECK_THAT(content, Catch::Matchers::ContainsSubstring("n=3"));
   CHECK_THAT(content, Catch::Matchers::ContainsSubstring("avg=3"));
+  CHECK_THAT(content, Catch::Matchers::ContainsSubstring("wall="));
   CHECK_THAT(content, Catch::Matchers::ContainsSubstring("rejects="));
   CHECK(content.find("debug_only=") == std::string::npos);
   CHECK(content.find("[out ]") == std::string::npos);

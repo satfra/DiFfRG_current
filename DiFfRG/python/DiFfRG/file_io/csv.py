@@ -4,6 +4,11 @@ import numpy as np
 def read_csv(csv, delim=",", header="infer"):
     """Reads a csv file and returns a pandas dataframe.
 
+    Follows the same dialect as the C++ reader in DiFfRG/common/csv.hh and the
+    Julia reader in julia/src/io/csv.jl: "#" comment lines and blank lines are
+    skipped, cells that are not finite numbers read back as NaN, and rows whose
+    field count does not match the header are skipped.
+
     Args:
         csv (str): The path to the csv file.
         delim (str, optional): Delimiter used in the csv file. Defaults to ",".
@@ -12,8 +17,17 @@ def read_csv(csv, delim=",", header="infer"):
     Returns:
         pandas.DataFrame: The data in the csv file.
     """
-    data = pandas.read_csv(csv, comment="#", delimiter=delim, header=header)
-    return data
+    data = pandas.read_csv(
+        csv,
+        comment="#",
+        delimiter=delim,
+        header=header,
+        skip_blank_lines=True,
+        on_bad_lines="skip",
+    )
+    # Match the other readers, which collapse infinities into NaN so that every
+    # gap in the data looks the same downstream.
+    return data.replace([np.inf, -np.inf], np.nan)
 
 
 def read_k_csv(filename, delim=",", kName="kGeV"):

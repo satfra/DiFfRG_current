@@ -45,14 +45,6 @@ namespace DiFfRG
   std::string strip_name(const std::string &name);
 
   /**
-   * @brief Takes a string of comma-separated numbers and outputs it as a vector.
-   *
-   * @param str The string of comma-separated numbers
-   * @return std::vector<double>
-   */
-  std::vector<double> string_to_double_array(const std::string &str);
-
-  /**
    * @brief Return number with fixed precision after the decimal point
    */
   template <typename T> std::string getWithPrecision(uint precision, T number)

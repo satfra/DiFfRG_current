@@ -439,7 +439,7 @@ $ cat output.log
 [YYYY-MM-DD HH:MM:SS.sss] [run.file] [info] Simulation finished after ...
 [YYYY-MM-DD HH:MM:SS.sss] [run.file] [info] Output timings over ... frames:
   ...
-[YYYY-MM-DD HH:MM:SS.sss] [run.file] [info] [res ] t=10.00000 k=4.540e-05 implicit n=... avg=...ms
+[YYYY-MM-DD HH:MM:SS.sss] [run.file] [info] [res ] t=10.00000 k=4.540e-05 wall=... implicit n=... avg=...ms
 ```
 - `output.h5` contains the simulation data, and the parameters used under its `/config` group. Its
   root `finished` and `crashed` attributes say how the run ended: `(1, 0)` ran to completion,

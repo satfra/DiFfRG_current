@@ -4,7 +4,7 @@ CI for DiFfRG keeps the expensive dependency superbuild out of the regular
 library test path:
 
 1. **Dependency image** (this directory) — bakes the bundled superbuild
-   dependencies (deal.II, Kokkos, autodiff, GSL, Eigen, spdlog, rapidcsv, …) into
+   dependencies (deal.II, Kokkos, autodiff, GSL, Eigen, spdlog, …) into
    `/opt/diffrg/bundled` (exposed as `$DiFfRG_BUNDLED_DIR`). The stable image is
    built rarely and pushed to GHCR as a Docker/OCI image.
 2. **Library build + tests** (`.github/workflows/ci.yml`) — on every push to a main

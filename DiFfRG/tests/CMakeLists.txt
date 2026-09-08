@@ -78,6 +78,28 @@ include(CTest)
 include(Catch)
 
 # ##############################################################################
+# Build-system tests
+# ##############################################################################
+#
+# The DiFfRG_CUDA_ARCH helpers decide which nvcc architecture flags the library
+# and every application are compiled with, and getting them wrong is invisible
+# until an application either fails to compile or silently falls back to
+# JIT-compiling every kernel. They are pure CMake, so `cmake -P` exercises them
+# without a GPU or a configured build tree.
+foreach(_case normalize flags replace)
+  add_test(NAME cuda_arch_${_case}
+           COMMAND ${CMAKE_COMMAND} -DCASE=${_case} -P
+                   ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_cuda_arch.cmake)
+endforeach()
+# Nonsense must abort rather than being passed on to nvcc.
+foreach(_bad sm_90 9 abc)
+  add_test(NAME cuda_arch_reject_${_bad}
+           COMMAND ${CMAKE_COMMAND} -DCASE=invalid -DBAD=${_bad} -P
+                   ${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_cuda_arch.cmake)
+  set_tests_properties(cuda_arch_reject_${_bad} PROPERTIES WILL_FAIL TRUE)
+endforeach()
+
+# ##############################################################################
 # Add subdirectories
 # ##############################################################################
 
