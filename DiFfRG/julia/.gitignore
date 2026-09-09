@@ -1,0 +1,3 @@
+# Resolved per-machine; the package pins compat bounds in Project.toml instead.
+Manifest.toml
+test/schemes_probe/

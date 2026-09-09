@@ -12,6 +12,29 @@ install(
   MESSAGE_NEVER)
 
 # ##############################################################################
+# Copy the Julia package
+# ##############################################################################
+
+install(
+  DIRECTORY ${CMAKE_SOURCE_DIR}/julia
+  DESTINATION ./
+  MESSAGE_NEVER
+  PATTERN "Manifest.toml" EXCLUDE)
+
+# ##############################################################################
+# Copy the frontend type table
+# ##############################################################################
+#
+# schemes.toml describes which C++ types a scheme is spelled with, which headers
+# it needs and in which order. Code generators read it instead of hardcoding the
+# vocabulary, so it has to travel with the install.
+
+install(
+  DIRECTORY ${CMAKE_SOURCE_DIR}/frontend
+  DESTINATION ./
+  MESSAGE_NEVER)
+
+# ##############################################################################
 # Install the Mathematica package (optional)
 # ##############################################################################
 #

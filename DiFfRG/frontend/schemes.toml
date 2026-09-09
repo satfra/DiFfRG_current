@@ -1,0 +1,475 @@
+# The type vocabulary of a DiFfRG application, as data.
+#
+# A code generator that emits a DiFfRG `main()` has to know which C++ types a
+# scheme is spelled with, which headers they need and in which order, and which
+# combinations are legal. That knowledge lives here rather than in the generator
+# so that adding a discretization updates the frontends in the same commit that
+# adds it.
+#
+# Type strings are templates. The placeholders are:
+#
+#   {dim}            spatial dimension, from the model
+#   {model}          the model class name
+#   {mesh}           the resolved mesh type
+#   {discretization} the resolved discretization type
+#   {assembler}      the resolved assembler type
+#   {linear_solver}  the resolved linear-solver template name
+#   {reconstructor}  FV only, the resolved reconstructor type
+#   {wave_speed}     FV only, the resolved wave-speed type
+#   {limiter}        FV only, the resolved limiter type
+#   {prec}           Boost RK only, the integer precision selector
+#
+# Verified against the headers at the version below; `DiFfRG::` is left implicit
+# because every generated `main()` opens with `using namespace DiFfRG`.
+
+version = 1
+
+# ##############################################################################
+# Meshes
+# ##############################################################################
+#
+# RectangularMesh<dim> resolves its triangulation from the build:
+# parallel::shared::Triangulation in an MPI+PETSc build, plain Triangulation
+# otherwise. A scheme that cannot cope with a distributed triangulation has to
+# name the serial one, which is why `mesh_requirement` exists below.
+
+[meshes.RectangularMesh]
+type = "RectangularMesh<{dim}>"
+headers = ["DiFfRG/discretization/mesh/rectangular_mesh.hh"]
+kind = "default"
+doc = "Build-dependent: shared-parallel under MPI+PETSc, serial otherwise."
+
+[meshes.RectangularMeshSerial]
+type = "RectangularMeshSerial<{dim}>"
+headers = ["DiFfRG/discretization/mesh/rectangular_mesh.hh"]
+kind = "serial"
+doc = "Pins dealii::Triangulation regardless of the build."
+
+[meshes.RectangularMeshParallel]
+type = "RectangularMeshParallel<{dim}>"
+headers = ["DiFfRG/discretization/mesh/rectangular_mesh.hh"]
+kind = "parallel"
+doc = "Pins dealii::parallel::shared::Triangulation regardless of the build."
+
+# ##############################################################################
+# Adaptivity
+# ##############################################################################
+
+[adaptivity.HAdaptivity]
+type = "HAdaptivity"
+headers = ["DiFfRG/discretization/mesh/h_adaptivity.hh"]
+construct = "HAdaptivity {name}(assembler, config);"
+
+[adaptivity.NoAdaptivity]
+type = "NoAdaptivity"
+headers = ["DiFfRG/discretization/mesh/no_adaptivity.hh"]
+construct = "NoAdaptivity {name}(assembler);"
+
+# ##############################################################################
+# Discretizations
+# ##############################################################################
+#
+# `solution` lists the entries the assembler puts in the bundle handed to the
+# model. Reading one that is absent is a compile error deep in a template, so a
+# generator should reject the mismatch against this list instead.
+#
+# `main_shape` selects the shape of the generated main(): "fem" builds a mesh, a
+# discretization and an assembler; "variables" has no FE space at all and
+# constructs the assembler straight from the model.
+
+[discretizations.CG]
+description = "Continuous Galerkin finite elements."
+main_shape = "fem"
+namespace = "CG"
+discretization = "CG::Discretization<{model}, {mesh}>"
+assembler = "CG::Assembler<{discretization}>"
+flowing_variables = "FE::FlowingVariables"
+flowing_variables_arg = "discretization"
+headers = ["DiFfRG/discretization/FEM/cg.hh"]
+solution = ["fe_functions", "fe_derivatives", "fe_hessians", "extractors", "variables"]
+default_mesh = "RectangularMesh"
+default_adaptivity = "HAdaptivity"
+default_boundary = "FlowBoundaries"
+numflux = false
+
+[discretizations.DG]
+description = "Discontinuous Galerkin finite elements."
+main_shape = "fem"
+namespace = "DG"
+discretization = "DG::Discretization<{model}, {mesh}>"
+assembler = "DG::Assembler<{discretization}>"
+flowing_variables = "FE::FlowingVariables"
+flowing_variables_arg = "discretization"
+headers = ["DiFfRG/discretization/FEM/dg.hh"]
+solution = ["fe_functions", "extractors", "variables"]
+default_mesh = "RectangularMesh"
+default_adaptivity = "HAdaptivity"
+default_boundary = "FlowBoundaries"
+numflux = true
+doc = "No derivatives in the bundle: a DG model cannot read fe_derivatives or fe_hessians."
+
+[discretizations.dDG]
+description = "Direct discontinuous Galerkin: the DG space with the dDG assembler."
+main_shape = "fem"
+namespace = "dDG"
+discretization = "DG::Discretization<{model}, {mesh}>"
+assembler = "dDG::Assembler<{discretization}>"
+flowing_variables = "FE::FlowingVariables"
+flowing_variables_arg = "discretization"
+headers = ["DiFfRG/discretization/FEM/dg.hh"]
+solution = ["fe_functions", "fe_derivatives", "fe_hessians", "extractors", "variables"]
+default_mesh = "RectangularMesh"
+default_adaptivity = "HAdaptivity"
+default_boundary = "FlowBoundaries"
+numflux = true
+doc = "The discretization comes from namespace DG; only the assembler is dDG."
+
+[discretizations.LDG]
+description = "Local discontinuous Galerkin."
+main_shape = "fem"
+namespace = "LDG"
+discretization = "LDG::Discretization<{model}, {mesh}>"
+assembler = "LDG::Assembler<{discretization}>"
+flowing_variables = "FE::FlowingVariables"
+flowing_variables_arg = "discretization"
+headers = ["DiFfRG/discretization/FEM/ldg.hh"]
+solution = ["fe_functions", "fe_derivatives", "fe_hessians", "extractors", "variables"]
+mesh_requirement = "serial"
+default_mesh = "RectangularMeshSerial"
+default_adaptivity = "HAdaptivity"
+default_boundary = "FlowBoundaries"
+numflux = true
+doc = "Requires a serial triangulation; RectangularMesh<dim> is wrong here in an MPI build."
+
+[discretizations.KT]
+description = "Kurganov-Tadmor finite volume."
+main_shape = "fem"
+namespace = "FV::KurganovTadmor"
+discretization = "FV::Discretization<{model}, {mesh}>"
+assembler = "FV::KurganovTadmor::Assembler<{discretization}, {model}, {reconstructor}, {wave_speed}>"
+flowing_variables = "FV::FlowingVariables<{discretization}>"
+flowing_variables_arg = "discretization"
+solution = ["fe_functions", "fe_derivatives", "extractors", "variables"]
+solution_diffusion_flux = ["fe_functions", "fe_derivatives", "fe_third_derivatives", "extractors", "variables"]
+mesh_requirement = "rectangular"
+default_mesh = "RectangularMesh"
+adaptivity_requirement = "NoAdaptivity"
+default_adaptivity = "NoAdaptivity"
+# FlowBoundaries is a face-flux boundary for the FEM family; a finite-volume
+# scheme needs one of the fv_boundaries.hh stencils instead. The physics models
+# in the tree pick RhoSymmetricLinearExtrapolationBoundaries; this is the
+# neutral default.
+default_boundary = "FVDefaultBoundaries"
+numflux = false
+fe_order = 0
+# These must precede anything that pulls in DiFfRG::Quadrature<NT>, or the
+# unqualified Quadrature<dim> inside KurganovTadmor.hh resolves to the wrong
+# template. The order of this list is significant.
+headers = [
+  "DiFfRG/discretization/FV/assembler/KurganovTadmor.hh",
+  "DiFfRG/discretization/FV/discretization.hh",
+  "DiFfRG/discretization/FV/limiter/minmod_limiter.hh",
+  "DiFfRG/discretization/FV/reconstructor/advection/tvd_reconstructor.hh",
+  "DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed.hh",
+  "DiFfRG/model/fv_boundaries.hh",
+]
+doc = """
+fe_derivatives is the reconstructed cell gradient, not a finite-element \
+derivative, and u is a cell average (fe_order = 0). The flux/source form differs \
+from the FEM family, so a KT model is generally a different model class -- \
+Examples/ONfiniteT ships model.hh for CG/dDG and model_KT.hh for KT, with \
+different component names and a different parameterization."""
+
+[discretizations.Variables]
+description = "No field space at all: only variables, integrated as an ODE system."
+main_shape = "variables"
+namespace = "Variables"
+assembler = "Variables::Assembler<{model}>"
+flowing_variables = "FlowingVariables"
+flowing_variables_arg = ""
+headers = ["DiFfRG/discretization/variables/variables.hh"]
+solution = ["variables"]
+dim = 0
+doc = """
+dim == 0 and count_fe_functions() must be zero (a static_assert enforces it). \
+The generated main() builds no mesh and no discretization, constructs \
+Assembler(model, config), and uses the unnamespaced FlowingVariables."""
+
+# ##############################################################################
+# Finite-volume policies
+# ##############################################################################
+
+[reconstructors.TVD]
+type = "def::TVDReconstructor<{dim}, {limiter}, double>"
+headers = ["DiFfRG/discretization/FV/reconstructor/advection/tvd_reconstructor.hh"]
+takes_limiter = true
+default = true
+
+[reconstructors.FirstOrder]
+type = "def::FirstOrderReconstructor<{dim}, double>"
+headers = ["DiFfRG/discretization/FV/reconstructor/advection/first_order_reconstructor.hh"]
+takes_limiter = false
+
+[limiters.MinMod]
+type = "def::MinModLimiter"
+headers = ["DiFfRG/discretization/FV/limiter/minmod_limiter.hh"]
+default = true
+
+[limiters.Central]
+type = "def::CentralLimiter"
+headers = ["DiFfRG/discretization/FV/limiter/central_limiter.hh"]
+
+[limiters.Superbee]
+type = "def::SuperbeeLimiter"
+headers = ["DiFfRG/discretization/FV/limiter/superbee_limiter.hh"]
+
+[limiters.VanAlbada]
+type = "def::VanAlbadaLimiter"
+headers = ["DiFfRG/discretization/FV/limiter/van_albada_limiter.hh"]
+
+[wave_speeds.MaxEigenvalue]
+type = "FV::KurganovTadmor::MaxEigenvalueWaveSpeed"
+headers = ["DiFfRG/discretization/FV/wave_speed/max_eigenvalue_wave_speed.hh"]
+default = true
+
+# ##############################################################################
+# Timesteppers
+# ##############################################################################
+#
+# `linear_solver` says whether the stepper takes one as a template template
+# argument; where it does, omitting it selects DefaultLinearSolver, which is a
+# *different type* from naming UMFPack explicitly even in a serial build.
+#
+# `adaptor` says whether the constructor takes a mesh adaptor as a fourth
+# argument.
+
+[steppers.SUNDIALS_IDA]
+type = "TimeStepperSUNDIALS_IDA<{assembler}, {linear_solver}>"
+type_no_solver = "TimeStepperSUNDIALS_IDA<{assembler}>"
+headers = ["DiFfRG/timestepping/sundials_ida.hh"]
+linear_solver = "optional"
+adaptor = true
+implicit = true
+default = true
+doc = "The DAE-capable default; handles algebraic components."
+
+[steppers.TRBDF2]
+type = "TimeStepperTRBDF2<{assembler}, {linear_solver}>"
+type_no_solver = "TimeStepperTRBDF2<{assembler}>"
+headers = ["DiFfRG/timestepping/trbdf2.hh"]
+linear_solver = "optional"
+adaptor = true
+implicit = true
+
+[steppers.ImplicitEuler]
+type = "TimeStepperImplicitEuler<{assembler}, {linear_solver}>"
+type_no_solver = "TimeStepperImplicitEuler<{assembler}>"
+headers = ["DiFfRG/timestepping/implicit_euler.hh"]
+linear_solver = "optional"
+adaptor = true
+implicit = true
+
+[steppers.ExplicitEuler]
+type = "TimeStepperExplicitEuler<{assembler}>"
+headers = ["DiFfRG/timestepping/explicit_euler.hh"]
+linear_solver = "none"
+adaptor = true
+implicit = false
+
+[steppers.RK]
+type = "TimeStepperRK<{assembler}>"
+headers = ["DiFfRG/timestepping/rk.hh"]
+linear_solver = "none"
+adaptor = true
+implicit = false
+
+[steppers.BoostRK]
+type = "TimeStepperBoostRK<{assembler}, {prec}>"
+headers = ["DiFfRG/timestepping/boost_rk.hh"]
+linear_solver = "none"
+adaptor = true
+implicit = false
+prec = "required"
+default_prec = 0
+doc = "prec has no default in the alias and must be supplied."
+
+[steppers.BoostABM]
+type = "TimeStepperBoostABM<{assembler}>"
+headers = ["DiFfRG/timestepping/boost_abm.hh"]
+linear_solver = "none"
+adaptor = true
+implicit = false
+
+[steppers.SUNDIALS_IDA_BoostABM]
+type = "TimeStepperSUNDIALS_IDA_BoostABM<{assembler}, {linear_solver}>"
+type_no_solver = "TimeStepperSUNDIALS_IDA_BoostABM<{assembler}>"
+headers = ["DiFfRG/timestepping/sundials_ida_boost_abm.hh"]
+linear_solver = "optional"
+adaptor = true
+implicit = true
+mixed = true
+doc = "IDA on the stiff FE sector, explicit ABM on the variables."
+
+[steppers.SUNDIALS_IDA_BoostRK]
+type = "TimeStepperSUNDIALS_IDA_BoostRK<{assembler}, {linear_solver}, {prec}>"
+headers = ["DiFfRG/timestepping/sundials_ida_boost_rk.hh"]
+linear_solver = "required"
+adaptor = true
+implicit = true
+mixed = true
+prec = "required"
+default_prec = 0
+doc = "Neither the linear solver nor prec has a default in the alias; both must be supplied."
+
+# ##############################################################################
+# Linear solvers
+# ##############################################################################
+#
+# Passed as template *template* arguments, so these are bare template names.
+
+[linear_solvers.Default]
+type = "DefaultLinearSolver"
+headers = ["DiFfRG/timestepping/default_linear_solver.hh"]
+default = true
+doc = "UMFPack in a serial build, a distributed direct solve otherwise."
+
+[linear_solvers.UMFPack]
+type = "UMFPack"
+headers = ["DiFfRG/timestepping/linear_solver/UMFPack.hh"]
+
+[linear_solvers.GMRES]
+type = "GMRES"
+headers = ["DiFfRG/timestepping/linear_solver/GMRES.hh"]
+
+[linear_solvers.ScaledGMRES]
+type = "ScaledGMRES"
+headers = ["DiFfRG/timestepping/linear_solver/ScaledGMRES.hh"]
+
+[linear_solvers.ScaledUMFPack]
+type = "ScaledUMFPack"
+headers = ["DiFfRG/timestepping/linear_solver/ScaledGMRES.hh"]
+
+[linear_solvers.PETScDirect]
+type = "PETScDirect"
+headers = ["DiFfRG/timestepping/linear_solver/PETScDirect.hh"]
+requires_petsc = true
+
+[linear_solvers.PETScKrylov]
+type = "PETScKrylov"
+headers = ["DiFfRG/timestepping/linear_solver/PETScKrylov.hh"]
+requires_petsc = true
+
+# ##############################################################################
+# Model mixins
+# ##############################################################################
+#
+# The CRTP bases a model class derives from. `type` is a template: most take the
+# model itself, `fRG` and `NoJacobians` take nothing, and the origin constraints
+# take a component name as well.
+#
+# `category` lets a generator enforce that at most one choice is made per role
+# and fill in a default per discretization. `ctor` is the base-class initializer
+# the constructor must run, where one is needed.
+
+[mixins.fRG]
+type = "def::fRG"
+category = "time"
+headers = ["DiFfRG/model/model.hh"]
+ctor = "def::fRG(config.get_double(\"/physical/Lambda\"))"
+default = true
+doc = "Tracks RG time and cutoff: t, k and its powers, with k = exp(-t) * Lambda."
+
+[mixins.Time]
+type = "def::Time"
+category = "time"
+headers = ["DiFfRG/model/model.hh"]
+doc = "Plain time tracking, for a model that is not an RG flow."
+
+[mixins.AD]
+type = "def::AD<{model}>"
+category = "jacobian"
+headers = ["DiFfRG/model/ad.hh"]
+default = true
+doc = "All jacobians by forward AD with autodiff::real. Alias for AD_real."
+
+[mixins.AD_real]
+type = "def::AD_real<{model}>"
+category = "jacobian"
+headers = ["DiFfRG/model/ad.hh"]
+
+[mixins.AD_dual]
+type = "def::AD_dual<{model}>"
+category = "jacobian"
+headers = ["DiFfRG/model/ad.hh"]
+
+[mixins.FE_AD]
+type = "def::FE_AD<{model}>"
+category = "jacobian"
+headers = ["DiFfRG/model/ad.hh"]
+doc = "AD for the FE jacobians only; the variable sector supplies its own."
+
+[mixins.NoJacobians]
+type = "def::NoJacobians"
+category = "jacobian"
+headers = ["DiFfRG/model/ad.hh"]
+doc = "For explicit-only systems. Takes no template argument."
+
+[mixins.LLFFlux]
+type = "def::LLFFlux<{model}>"
+category = "numflux"
+headers = ["DiFfRG/model/numflux.hh"]
+doc = "Local Lax-Friedrichs numerical flux, for the schemes that need one."
+
+[mixins.NoNumFlux]
+type = "def::NoNumFlux<{model}>"
+category = "numflux"
+headers = ["DiFfRG/model/numflux.hh"]
+
+[mixins.FlowBoundaries]
+type = "def::FlowBoundaries<{model}>"
+category = "boundary"
+headers = ["DiFfRG/model/numflux.hh"]
+default = true
+doc = "Inflow/outflow: evaluate the model's own flux at the boundary."
+
+[mixins.FVDefaultBoundaries]
+type = "def::FVDefaultBoundaries<{model}>"
+category = "boundary"
+headers = ["DiFfRG/model/fv_boundaries.hh"]
+finite_volume = true
+
+[mixins.RhoSymmetricLinearExtrapolationBoundaries]
+type = "def::RhoSymmetricLinearExtrapolationBoundaries<{model}>"
+category = "boundary"
+headers = ["DiFfRG/model/fv_boundaries.hh"]
+finite_volume = true
+doc = "Even about rho = 0."
+
+[mixins.OriginOddLinearExtrapolationBoundaries]
+type = "def::OriginOddLinearExtrapolationBoundaries<{model}>"
+category = "boundary"
+headers = ["DiFfRG/model/fv_boundaries.hh"]
+finite_volume = true
+
+[mixins.OriginShiftedOddLinearExtrapolationBoundaries]
+type = "def::OriginShiftedOddLinearExtrapolationBoundaries<{model}>"
+category = "boundary"
+headers = ["DiFfRG/model/fv_boundaries.hh"]
+finite_volume = true
+
+[mixins.NoAffineConstraints]
+type = "def::NoAffineConstraints<{model}>"
+category = "constraints"
+headers = ["DiFfRG/model/model.hh"]
+
+[mixins.ConstrainOriginBoundaryPointToZero]
+type = "def::ConstrainOriginBoundaryPointToZero<\"{component}\", {model}>"
+category = "constraints"
+headers = ["DiFfRG/model/model.hh"]
+takes_component = true
+
+[mixins.ConstrainOriginSupportPointToZero]
+type = "def::ConstrainOriginSupportPointToZero<\"{component}\", {model}>"
+category = "constraints"
+headers = ["DiFfRG/model/model.hh"]
+takes_component = true

@@ -1,0 +1,19 @@
+name = "DiFfRG"
+uuid = "c1ae8d1b-fd27-400e-b5a3-7d23b66fa20f"
+authors = ["Franz R. Sattler <sattler@thphys.uni-heidelberg.de>"]
+version = "0.1.0"
+
+[deps]
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
+HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
+SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+Scratch = "6c6a2e73-6563-6170-7368-637461726353"
+TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+
+[compat]
+HDF5 = "0.17"
+JSON3 = "1"
+Scratch = "1"
+julia = "1.9"
