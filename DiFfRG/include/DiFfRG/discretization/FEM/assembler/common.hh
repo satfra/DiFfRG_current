@@ -12,7 +12,6 @@
 #include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/vector.h>
 #include <deal.II/meshworker/mesh_loop.h>
-#include <deal.II/numerics/fe_field_function.h>
 #include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/vector_tools.h>
 #include <spdlog/spdlog.h>

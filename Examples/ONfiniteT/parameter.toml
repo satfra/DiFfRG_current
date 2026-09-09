@@ -39,6 +39,6 @@ rel_tol = 1e-7
 [output]
 vtk = true
 hdf5 = true
-verbosity = 2
+verbosity = 1
 folder = "./"
 name = "output"

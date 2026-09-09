@@ -16,7 +16,8 @@
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/FEM/assembler/ldg.hh>
 #include <DiFfRG/discretization/common/types.hh>
-#include <DiFfRG/discretization/discretization.hh>
+#include <DiFfRG/discretization/data/data.hh>
+#include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
 
 namespace DiFfRG
 {

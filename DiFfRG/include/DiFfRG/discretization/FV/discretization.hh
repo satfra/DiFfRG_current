@@ -19,7 +19,7 @@
 #include <DiFfRG/discretization/common/parallel_dofs.hh>
 #include <DiFfRG/discretization/common/types.hh>
 #include <DiFfRG/discretization/data/data.hh>
-// #include <DiFfRG/discretization/discretization.hh>
+#include <DiFfRG/discretization/mesh/rectangular_mesh.hh>
 
 #include <iostream>
 #include <string>

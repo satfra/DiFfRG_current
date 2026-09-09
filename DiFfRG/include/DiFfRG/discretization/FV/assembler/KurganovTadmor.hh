@@ -22,7 +22,6 @@
 #include <deal.II/lac/vector.h>
 #include <deal.II/meshworker/assemble_flags.h>
 #include <deal.II/meshworker/mesh_loop.h>
-#include <deal.II/numerics/fe_field_function.h>
 #include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/vector_tools.h>
 #include <iomanip>

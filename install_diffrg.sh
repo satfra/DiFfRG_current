@@ -76,7 +76,10 @@ REPO_URL="${DIFFRG_REPO_URL:-https://github.com/satfra/DiFfRG_current.git}"
 REPO_API="https://api.github.com/repos/satfra/DiFfRG_current"
 DOCS_URL="https://satfra.github.io/DiFfRG_current"
 
-err() { echo -e "\033[1;31mERROR:\033[0m $*" >&2; exit 1; }
+err() {
+  echo -e "\033[1;31mERROR:\033[0m $*" >&2
+  exit 1
+}
 info() { echo -e "\033[1;32m==>\033[0m $*"; }
 warn() { echo -e "\033[1;33mWARNING:\033[0m $*" >&2; }
 
@@ -110,7 +113,7 @@ deps_variant=''
 deps_file=''
 threads="${THREADS:-6}"
 opt_mpi=0
-opt_gpu=2 # 2 = auto (on when nvcc is found)
+opt_gpu=2   # 2 = auto (on when nvcc is found)
 opt_mumps=2 # 2 = follow MPI
 opt_docs=0
 march="native"
@@ -123,29 +126,100 @@ force=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-  --mode) mode="$2"; shift 2 ;;
-  --prefix) prefix="$2"; shift 2 ;;
-  --build-dir) build_dir="$2"; shift 2 ;;
-  --deps-version) deps_version="$2"; shift 2 ;;
-  --deps-variant) deps_variant="$2"; shift 2 ;;
-  --deps-file) deps_file="$2"; shift 2 ;;
-  --threads) threads="$2"; shift 2 ;;
-  --mpi) opt_mpi=1; shift ;;
-  --no-mpi) opt_mpi=0; shift ;;
-  --gpu) opt_gpu=1; shift ;;
-  --no-gpu) opt_gpu=0; shift ;;
-  --mumps) opt_mumps=1; shift ;;
-  --no-mumps) opt_mumps=0; shift ;;
-  --docs) opt_docs=1; shift ;;
-  --no-docs) opt_docs=0; shift ;;
-  --march) march="$2"; shift 2 ;;
-  --cuda-arch) cuda_arch="$2"; shift 2 ;;
-  --examples) examples_dir="$2"; shift 2 ;;
-  --mathematica) mathematica_dir="$2"; mathematica_asked=1; shift 2 ;;
-  --no-mathematica) mathematica_dir=''; mathematica_asked=1; shift ;;
-  --force) force=1; shift ;;
-  --yes) assume_yes=1; shift ;;
-  -h | --help) usage; exit 0 ;;
+  --mode)
+    mode="$2"
+    shift 2
+    ;;
+  --prefix)
+    prefix="$2"
+    shift 2
+    ;;
+  --build-dir)
+    build_dir="$2"
+    shift 2
+    ;;
+  --deps-version)
+    deps_version="$2"
+    shift 2
+    ;;
+  --deps-variant)
+    deps_variant="$2"
+    shift 2
+    ;;
+  --deps-file)
+    deps_file="$2"
+    shift 2
+    ;;
+  --threads)
+    threads="$2"
+    shift 2
+    ;;
+  --mpi)
+    opt_mpi=1
+    shift
+    ;;
+  --no-mpi)
+    opt_mpi=0
+    shift
+    ;;
+  --gpu)
+    opt_gpu=1
+    shift
+    ;;
+  --no-gpu)
+    opt_gpu=0
+    shift
+    ;;
+  --mumps)
+    opt_mumps=1
+    shift
+    ;;
+  --no-mumps)
+    opt_mumps=0
+    shift
+    ;;
+  --docs)
+    opt_docs=1
+    shift
+    ;;
+  --no-docs)
+    opt_docs=0
+    shift
+    ;;
+  --march)
+    march="$2"
+    shift 2
+    ;;
+  --cuda-arch)
+    cuda_arch="$2"
+    shift 2
+    ;;
+  --examples)
+    examples_dir="$2"
+    shift 2
+    ;;
+  --mathematica)
+    mathematica_dir="$2"
+    mathematica_asked=1
+    shift 2
+    ;;
+  --no-mathematica)
+    mathematica_dir=''
+    mathematica_asked=1
+    shift
+    ;;
+  --force)
+    force=1
+    shift
+    ;;
+  --yes)
+    assume_yes=1
+    shift
+    ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
   *) err "Unknown option: $1 (see --help)" ;;
   esac
 done
@@ -163,13 +237,18 @@ _c=0 # menu-selection result of choose()
 # numbered prompt on terminals without ANSI support). Sets <varname> to the
 # 0-based selected index; the first option is the default.
 choose() {
-  local __var="$1" title="$2"; shift 2
+  local __var="$1" title="$2"
+  shift 2
   local opts=("$@") cur=0 key i
-  if [[ ${interactive} -eq 0 ]]; then printf -v "${__var}" 0; return; fi
+  if [[ ${interactive} -eq 0 ]]; then
+    printf -v "${__var}" 0
+    return
+  fi
   printf '\n\033[1m%s\033[0m  (arrows + enter, or number)\n' "${title}" >&4
   while true; do
     for i in "${!opts[@]}"; do
-      if [[ ${i} -eq ${cur} ]]; then printf '  \033[7m %s \033[0m\n' "${opts[${i}]}" >&4
+      if [[ ${i} -eq ${cur} ]]; then
+        printf '  \033[7m %s \033[0m\n' "${opts[${i}]}" >&4
       else printf '   %s\n' "${opts[${i}]}" >&4; fi
     done
     IFS= read -rsn1 key <&3 || { key=''; }
@@ -178,13 +257,17 @@ choose() {
     '[A') [[ ${cur} -gt 0 ]] && cur=$((cur - 1)) ;;
     '[B') [[ ${cur} -lt $((${#opts[@]} - 1)) ]] && cur=$((cur + 1)) ;;
     '') break ;;
-    [1-9]) [[ ${key} -le ${#opts[@]} ]] && { cur=$((key - 1)); break; } ;;
+    [1-9]) [[ ${key} -le ${#opts[@]} ]] && {
+      cur=$((key - 1))
+      break
+    } ;;
     esac
     printf '\033[%dA' "${#opts[@]}" >&4
   done
   printf '\033[%dA' "${#opts[@]}" >&4
   for i in "${!opts[@]}"; do
-    if [[ ${i} -eq ${cur} ]]; then printf '  \033[1m> %s\033[0m\033[K\n' "${opts[${i}]}" >&4
+    if [[ ${i} -eq ${cur} ]]; then
+      printf '  \033[1m> %s\033[0m\033[K\n' "${opts[${i}]}" >&4
     else printf '   %s\033[K\n' "${opts[${i}]}" >&4; fi
   done
   printf -v "${__var}" '%s' "${cur}"
@@ -203,15 +286,21 @@ ask() {
 # toggles <title> <name:state>... -- multi-select; echoes final states as
 # "name=0/1" lines on stdout. Space toggles, enter confirms.
 toggles() {
-  local title="$1"; shift
+  local title="$1"
+  shift
   local names=() states=() cur=0 key i spec
-  for spec in "$@"; do names+=("${spec%%:*}"); states+=("${spec##*:}"); done
+  for spec in "$@"; do
+    names+=("${spec%%:*}")
+    states+=("${spec##*:}")
+  done
   if [[ ${interactive} -eq 1 ]]; then
     printf '\n\033[1m%s\033[0m  (arrows, space toggles, enter confirms)\n' "${title}" >&4
     while true; do
       for i in "${!names[@]}"; do
-        local box='[ ]'; [[ ${states[${i}]} -eq 1 ]] && box='[x]'
-        if [[ ${i} -eq ${cur} ]]; then printf '  \033[7m %s %s \033[0m\n' "${box}" "${names[${i}]}" >&4
+        local box='[ ]'
+        [[ ${states[${i}]} -eq 1 ]] && box='[x]'
+        if [[ ${i} -eq ${cur} ]]; then
+          printf '  \033[7m %s %s \033[0m\n' "${box}" "${names[${i}]}" >&4
         else printf '   %s %s\n' "${box}" "${names[${i}]}" >&4; fi
       done
       IFS= read -rsn1 key <&3 || key=''
@@ -266,14 +355,20 @@ ask_cuda_arch() {
   for cap in "${detected[@]}"; do
     found=0
     for i in "${!caps[@]}"; do [[ ${caps[${i}]} == "${cap}" ]] && found=1; done
-    [[ ${found} -eq 0 ]] && { caps+=("${cap}"); labels+=("${cap}   (detected)"); }
+    [[ ${found} -eq 0 ]] && {
+      caps+=("${cap}")
+      labels+=("${cap}   (detected)")
+    }
   done
 
   local specs=() state suffix
   for i in "${!caps[@]}"; do
     state=0 suffix=''
     for cap in "${detected[@]}"; do
-      [[ ${caps[${i}]} == "${cap}" ]] && { state=1; suffix='  <- in this machine'; }
+      [[ ${caps[${i}]} == "${cap}" ]] && {
+        state=1
+        suffix='  <- in this machine'
+      }
     done
     specs+=("${labels[${i}]}${suffix}:${state}")
   done
@@ -288,7 +383,10 @@ ask_cuda_arch() {
     warn "No GPU architecture selected; the build will target the one it detects at configure time."
     return 0
   fi
-  cuda_arch="$(IFS=';'; echo "${selected[*]}")"
+  cuda_arch="$(
+    IFS=';'
+    echo "${selected[*]}"
+  )"
   info "Compiling CUDA kernels for: ${cuda_arch//;/, }"
 }
 
@@ -319,7 +417,7 @@ normalize_cuda_arch() {
 kokkos_arch_of() {
   case "${1%%;*}" in
   60) echo PASCAL60 ;; 61) echo PASCAL61 ;;
-  70) echo VOLTA70 ;;  72) echo VOLTA72 ;;
+  70) echo VOLTA70 ;; 72) echo VOLTA72 ;;
   75) echo TURING75 ;;
   80) echo AMPERE80 ;; 86) echo AMPERE86 ;; 87) echo AMPERE87 ;;
   89) echo ADA89 ;;
@@ -334,8 +432,8 @@ kokkos_arch_of() {
 for tool in git cmake curl tar make; do
   command -v "${tool}" >/dev/null || err "'${tool}' is required but not installed."
 done
-command -v c++ >/dev/null || command -v g++ >/dev/null \
-  || warn "No C++ compiler found on PATH -- the build will fail until one is installed."
+command -v c++ >/dev/null || command -v g++ >/dev/null ||
+  warn "No C++ compiler found on PATH -- the build will fail until one is installed."
 
 prebuilt_ok=1
 prebuilt_reason=''
@@ -376,11 +474,11 @@ case "${build_dir}" in /*) ;; *) build_dir="$(pwd)/${build_dir}" ;; esac
 
 # With an NVIDIA GPU present, offer the CUDA bundle (Ampere/sm_80 or newer;
 # needs the CUDA 12 toolkit installed to build applications).
-if [[ ${mode} == prebuilt && -z ${deps_variant} && -z ${deps_file} && "$(uname -s)" == Linux ]] \
-  && command -v nvidia-smi >/dev/null 2>&1; then
+if [[ ${mode} == prebuilt && -z ${deps_variant} && -z ${deps_file} && "$(uname -s)" == Linux ]] &&
+  command -v nvidia-smi >/dev/null 2>&1; then
   choose _c "An NVIDIA GPU was detected -- which bundle?" \
     "CPU bundle -- no GPU support" \
-    "CUDA bundle -- GPU-enabled (Ampere/RTX 30xx or newer; requires the CUDA 12 toolkit)"
+    "CUDA bundle -- GPU-enabled (Turing/RTX 20xx or newer; requires the CUDA >=12 toolkit)"
   [[ ${_c} -eq 1 ]] && deps_variant="linux-x86_64-v3-cuda12"
 fi
 
@@ -422,8 +520,8 @@ if [[ ${mode} == source ]]; then
 fi
 
 # Ask for the GPU architectures once both paths know whether CUDA is in play.
-if [[ ${mode} == source && ${opt_gpu} -eq 1 ]] \
-  || [[ ${mode} == prebuilt && ${deps_variant} == *cuda* ]]; then
+if [[ ${mode} == source && ${opt_gpu} -eq 1 ]] ||
+  [[ ${mode} == prebuilt && ${deps_variant} == *cuda* ]]; then
   [[ -z ${cuda_arch} ]] && ask_cuda_arch
   normalize_cuda_arch
 fi
@@ -444,8 +542,8 @@ if [[ ${mathematica_asked} -eq 0 ]]; then
   else
     wolfram_apps="${HOME}/.Wolfram/Applications"
   fi
-  if command -v wolframscript >/dev/null 2>&1 || command -v wolfram >/dev/null 2>&1 \
-    || [[ -d ${wolfram_apps%/*} ]]; then
+  if command -v wolframscript >/dev/null 2>&1 || command -v wolfram >/dev/null 2>&1 ||
+    [[ -d ${wolfram_apps%/*} ]]; then
     choose _c "Install the DiFfRG Mathematica package (flow-equation derivation)?" \
       "Yes -- into the Wolfram applications directory" \
       "Yes -- choose a folder" \
@@ -480,7 +578,10 @@ echo "  ---------------------------------------------"
 if [[ ${interactive} -eq 1 ]]; then
   printf '\033[1mProceed?\033[0m [Y/n]: ' >&4
   IFS= read -r _go <&3 || _go=''
-  [[ -z ${_go} || ${_go} == y || ${_go} == Y ]] || { echo "Aborted."; exit 0; }
+  [[ -z ${_go} || ${_go} == y || ${_go} == Y ]] || {
+    echo "Aborted."
+    exit 0
+  }
 fi
 
 # ------------------------------------------------------------------ checkout --
@@ -579,8 +680,8 @@ fi
 
 # -------------------------------------------------------------------- verify --
 info "Verifying the installation..."
-cmake -DBUNDLED_DIR="${prefix}/bundled" -P "${prefix}/cmake/verify_install.cmake" \
-  || err "Verification failed -- see output above."
+cmake -DBUNDLED_DIR="${prefix}/bundled" -P "${prefix}/cmake/verify_install.cmake" ||
+  err "Verification failed -- see output above."
 
 echo
 info "DiFfRG is installed at ${prefix}."
