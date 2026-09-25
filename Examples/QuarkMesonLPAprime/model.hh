@@ -288,6 +288,24 @@ public:
   mutable double last_EoM = 0.;
   mutable bool lock_EoM = false;
 
+  // The EoM lock above is history: once set, it stays set, and nothing in the state or the RG time
+  // says whether it was. These two let a flow restarted from a snapshot (/restart/file) continue
+  // with the lock as it was. cSigma is recomputed in dt_variables, but only once the first residual
+  // of the restarted run has been assembled, so it travels along as well.
+  void save_state(DiFfRG::ModelState &state) const
+  {
+    state.set("last_EoM", last_EoM);
+    state.set("lock_EoM", lock_EoM);
+    state.set("cSigma", cSigma);
+  }
+
+  void load_state(const DiFfRG::ModelState &state)
+  {
+    last_EoM = state.get<double>("last_EoM");
+    lock_EoM = state.get<bool>("lock_EoM");
+    cSigma = state.get<double>("cSigma");
+  }
+
   template <int dim, typename Vector> Point<dim> EoM_postprocess(const Point<dim> &EoM, const Vector &) const
   {
     //std::cout << "EoM change: " << last_EoM - EoM[0] << std::endl;

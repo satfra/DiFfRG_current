@@ -56,6 +56,36 @@ TEST_CASE("Test configuration helper", "[config][common]")
   }
 }
 
+TEST_CASE("The snapshot flags create their keys", "[config][common][snapshot]")
+{
+  // The parameter file mentions neither /restart nor /timestepping/snapshots: unlike -sd & co.,
+  // these flags must create the keys rather than fail on them.
+  const std::string filename = "test_config_helper_snapshots.json";
+  {
+    std::ofstream file(filename);
+    file << json::value({{"timestepping", {{"final_time", 1.}}}, {"output", {{"verbosity", 0}}}});
+  }
+  char *argv[] = {(char *)"test",
+                  (char *)"-p",
+                  (char *)filename.c_str(),
+                  (char *)"--restart",
+                  (char *)"seed_snapshot_000.h5",
+                  (char *)"--snapshots-k",
+                  (char *)"2,0.5",
+                  (char *)"--snapshots-t",
+                  (char *)"1.5",
+                  (char *)"--stop-after-last-snapshot"};
+  ConfigurationHelper helper(10, argv);
+  const auto &config = helper.get_config();
+
+  REQUIRE(config.get_string("/restart/file") == "seed_snapshot_000.h5");
+  REQUIRE(config.get_double("/timestepping/final_time") == 1.);
+  REQUIRE(config.get_bool("/timestepping/snapshots/stop_after_last"));
+  const json::value root = config;
+  REQUIRE(root.at_pointer("/timestepping/snapshots/k") == json::value(json::array{2., 0.5}));
+  REQUIRE(root.at_pointer("/timestepping/snapshots/t") == json::value(json::array{1.5}));
+}
+
 TEST_CASE("Test configuration helper with TOML", "[config][common][toml]")
 {
   const std::string document = R"TOML(

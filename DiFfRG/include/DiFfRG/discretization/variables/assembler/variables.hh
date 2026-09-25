@@ -84,6 +84,29 @@ namespace DiFfRG
 
       virtual void set_time(double t) override { model.set_time(t); }
 
+      /// There is no spatial part: a snapshot of a variables-only flow holds just the variables.
+      virtual SnapshotSpatialState capture_snapshot_state(const Vector<double> & /*spatial_replica*/) const override
+      {
+        return {};
+      }
+
+      virtual void restore_snapshot_state(const SnapshotSpatialState &state, Vector<double> & /*spatial*/) override
+      {
+        if (!state.empty())
+          throw std::runtime_error("Snapshot restore: the snapshot holds a spatial discretization, but this is a "
+                                   "variables-only (dim = 0) flow.");
+      }
+
+      virtual void save_model_state(ModelState &state) const override
+      {
+        DiFfRG::internal::save_model_state(model, state);
+      }
+
+      virtual bool load_model_state(const ModelState &state) override
+      {
+        return DiFfRG::internal::load_model_state(model, state);
+      }
+
       virtual const SparsityPattern &get_sparsity_pattern_jacobian() const override
       {
         return sparsity_pattern_jacobian;

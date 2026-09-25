@@ -3,6 +3,7 @@
 // standard library
 #include <list>
 #include <string>
+#include <utility>
 
 // DiFfRG
 #include <DiFfRG/common/config_tree.hh>
@@ -96,6 +97,8 @@ namespace DiFfRG
 
     std::list<std::string> args;
     std::list<std::pair<std::string, std::string>> cli_parameters;
+    /// Set by the snapshot flags; unlike -sd & co. these create their key if the parameter file lacks it.
+    std::list<std::pair<std::string, json::value>> cli_created_parameters;
 
     ConfigTree config;
 

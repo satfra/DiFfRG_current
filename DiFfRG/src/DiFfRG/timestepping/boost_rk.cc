@@ -1,5 +1,7 @@
 // standard library
+#include <algorithm>
 #include <array>
+#include <cmath>
 
 // external libraries
 #include <boost/numeric/odeint.hpp>
@@ -21,7 +23,7 @@ namespace DiFfRG
   using namespace dealii;
 
   template <typename VectorType, typename SparseMatrixType, uint dim, int prec>
-  void TimeStepperBoostRK_impl<VectorType, SparseMatrixType, dim, prec>::run(
+  void TimeStepperBoostRK_impl<VectorType, SparseMatrixType, dim, prec>::run_segment(
       AbstractFlowingVariables<NumberType, VectorType> &initial_condition, const double t_start, const double t_stop)
   {
 
@@ -328,9 +330,11 @@ namespace DiFfRG
     double cur_dt = expl.dt;
     double step_time = t_start;
     failed_step_checker fail_checker; // to throw a runtime_error if step size adjustment fails
-    while (step_time < t_stop) {
+    output_step(y_eigen, step_time);
+    while (t_stop - step_time > 1e-12 * std::max(1., std::abs(t_stop))) {
       controlled_step_result res;
-      cur_dt = std::min(cur_dt, expl.maximal_dt);
+      // Never step past t_stop: run() hands the state at t_stop to the next segment or a snapshot.
+      cur_dt = std::min({cur_dt, expl.maximal_dt, t_stop - step_time});
       do {
         res = stepper.try_step(residual, y_eigen, step_time, cur_dt);
         fail_checker(); // check number of failed steps

@@ -18,9 +18,8 @@
 
 namespace DiFfRG
 {
-  template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename...> typename LinearSolver>
-  void TimeStepperImplicitEuler_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(
+  template <typename VectorType, typename SparseMatrixType, uint dim, template <typename...> typename LinearSolver>
+  void TimeStepperImplicitEuler_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run_segment(
       AbstractFlowingVariables<NumberType, VectorType> &initial_condition, double start, double stop)
   {
 

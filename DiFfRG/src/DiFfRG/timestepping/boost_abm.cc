@@ -1,4 +1,6 @@
 // standard library
+#include <algorithm>
+#include <cmath>
 #include <random>
 
 // external libraries
@@ -19,8 +21,26 @@ namespace DiFfRG
 {
   using namespace dealii;
 
+  namespace
+  {
+    /**
+     * @brief The largest step <= dt that divides [t_start, t_stop] into equal steps.
+     *
+     * ABM is a fixed-step multistep method, so the last step cannot simply be shortened. Stepping
+     * with dt itself would overshoot t_stop by up to one step whenever the interval is not a
+     * multiple of it, and run() relies on the state at t_stop being exactly that.
+     */
+    double uniform_step(const double t_start, const double t_stop, const double dt)
+    {
+      const double length = t_stop - t_start;
+      if (!(length > 0.)) return dt;
+      const double n_steps = std::max(1., std::ceil(length / dt - 1e-9));
+      return length / n_steps;
+    }
+  } // namespace
+
   template <typename VectorType, typename SparseMatrixType, uint dim>
-  void TimeStepperBoostABM_impl<VectorType, SparseMatrixType, dim>::run(
+  void TimeStepperBoostABM_impl<VectorType, SparseMatrixType, dim>::run_segment(
       AbstractFlowingVariables<NumberType, VectorType> &initial_condition, const double t_start, const double t_stop)
   {
 
@@ -119,7 +139,7 @@ namespace DiFfRG
 
     using namespace boost::numeric::odeint;
     adams_bashforth_moulton<8, Eigen::VectorXd> abm;
-    double cur_dt = expl.dt;
+    const double cur_dt = uniform_step(t_start, t_stop, expl.dt);
     double step_time = t_start;
     output_step(y_eigen, step_time);
 
@@ -226,7 +246,7 @@ namespace DiFfRG
 
     using namespace boost::numeric::odeint;
     adams_bashforth_moulton<8, Eigen::VectorXd> abm;
-    double cur_dt = expl.dt;
+    const double cur_dt = uniform_step(t_start, t_stop, expl.dt);
     double step_time = t_start;
     output_step(y_eigen, step_time);
 
@@ -326,7 +346,7 @@ namespace DiFfRG
 
     using namespace boost::numeric::odeint;
     adams_bashforth_moulton<8, Eigen::VectorXd> abm;
-    double cur_dt = expl.dt;
+    const double cur_dt = uniform_step(t_start, t_stop, expl.dt);
     double step_time = t_start;
     output_step(y_eigen, step_time);
 

@@ -7,6 +7,7 @@
 #include <deal.II/lac/block_vector.h>
 #include <deal.II/sundials/ida.h>
 #include <limits>
+#include <utility>
 
 // DiFfRG
 #include <DiFfRG/common/eigen.hh>
@@ -23,9 +24,9 @@ namespace DiFfRG
 {
   using namespace dealii;
 
-  template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename...> typename LinearSolver, int prec>
-  void TimeStepperSUNDIALS_IDA_BoostRK_impl<VectorType, SparseMatrixType, dim, LinearSolver, prec>::run(
+  template <typename VectorType, typename SparseMatrixType, uint dim, template <typename...> typename LinearSolver,
+            int prec>
+  void TimeStepperSUNDIALS_IDA_BoostRK_impl<VectorType, SparseMatrixType, dim, LinearSolver, prec>::run_segment(
       AbstractFlowingVariables<NumberType, VectorType> &initial_condition, const double t_start, const double t_stop)
   {
 
@@ -330,7 +331,7 @@ namespace DiFfRG
 
     // Define some variables for monitoring
     uint stuck = 0;
-    double stuck_t = 0.;
+    double stuck_t = t_start;
     uint failure_counter = 0;
     IDACallbackDiagnostics callback_diagnostics;
 
@@ -361,9 +362,12 @@ namespace DiFfRG
 
     // At output_dt intervals this function saves intermediate solutions
     double last_save = -1.;
-    time_stepper.output_step = [&](const double t, const VectorType &sol, const VectorType &sol_dot,
+    // SUNDIALS::IDA::solve_dae reports the initial condition as t = 0, whatever the start time is.
+    // The first call is always that one, so it is relabelled to the actual start of the run.
+    bool initial_output = true;
+    time_stepper.output_step = [&](const double t_reported, const VectorType &sol, const VectorType &sol_dot,
                                    uint /*step_number*/) {
-      if (t < t_start) return;
+      const double t = std::exchange(initial_output, false) ? t_start : t_reported;
       if (!is_close(last_save, t, 1e-10)) {
         assembler.set_time(t);
 

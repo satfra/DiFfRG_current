@@ -1,6 +1,7 @@
 #pragma once
 
 // standard library
+#include <cmath>
 #include <iomanip>
 #include <sstream>
 
@@ -22,7 +23,8 @@ namespace DiFfRG
     TC_Default(NEWT &newton_, unsigned int alg_order_, double t_, double max_t_, double dt_, double min_dt_,
                double max_dt_, double output_dt_, ReportPort log = {})
         : newton(newton_), alg_order(alg_order_), t(t_), max_t(max_t_), sug_dt(dt_), min_dt(min_dt_), max_dt(max_dt_),
-          output_dt(output_dt_), cur_dt(sug_dt), last_save(t), last_t(t_), stuck(0), fin(false), log(std::move(log))
+          output_dt(output_dt_), cur_dt(sug_dt), last_save(t), last_t(t_), t_start(t_), stuck(0), fin(false),
+          log(std::move(log))
     {
     }
 
@@ -63,7 +65,8 @@ namespace DiFfRG
       // check if the stepper should output data
       if (t > last_save + output_dt) {
         of(t);
-        last_save = int(t / output_dt) * output_dt;
+        // Anchored at the start, like the output grids of the other steppers.
+        last_save = t_start + std::floor((t - t_start) / output_dt) * output_dt;
       }
 
       // should the suggested timestep be below the minimum timestep, tell the solver that it should
@@ -124,6 +127,7 @@ namespace DiFfRG
     NEWT &newton;
     unsigned int alg_order;
     double t, max_t, sug_dt, min_dt, max_dt, output_dt, cur_dt, last_save, last_t;
+    const double t_start;
     unsigned int stuck;
 
     bool fin;

@@ -4,6 +4,14 @@
 
 ### Changed
 
+- **Breaking** for custom timesteppers: `AbstractTimestepper::run(ic, t_start, t_stop)` is now a
+  non-virtual driver (it implements snapshots and restarts), and the time stepping itself moves to
+  the pure virtual `run_segment(ic, t_start, t_stop)`, which must return the accepted state at
+  exactly `t_stop`. **Migration:** rename the `run(AbstractFlowingVariables&, ...)` override to
+  `run_segment` and add `using Base::run;` if the class declares other `run` overloads. Calling
+  `time_stepper.run(...)` is unchanged.
+- `OutputSession::write_frame` drops a frame whose time equals that of the previous frame, so a
+  flow split into segments does not write its boundary frames twice.
 - CSV reading and writing are unified in `DiFfRG/common/csv.hh`, which documents the one dialect
   DiFfRG uses and which `CsvOutput`, `CSVReader` and `ExternalDataInterpolator` all go through. The
   Julia and Python analysis readers follow the same rules, so a file written by a run loads
@@ -75,6 +83,22 @@
 
 ### Added
 
+- Flow snapshots and restarts. `/timestepping/snapshots/k` (or `/t`) makes a run write its complete
+  state at those RG scales to `<run>_snapshot_<nnn>.h5`, and `/restart/file` (or `--restart <file>`)
+  makes a later run continue from such a snapshot instead of starting at Λ, possibly with a changed
+  configuration, whose differences to the snapshot's are logged. This is meant for parameter scans
+  whose parameters only matter below some scale (T and μ in a phase diagram), for IR debugging, and
+  for continuing runs cut off by a wall-time limit. A snapshot holds the spatial state cell by cell,
+  so it is independent of the dof numbering and of the MPI rank count and can rebuild an adapted
+  mesh; it also holds the variables, the adaptation schedule, and history-dependent model state
+  through the new optional model methods `save_state(ModelState&)` / `load_state(const ModelState&)`.
+  Snapshots are taken at segment boundaries -- `run()` splits the flow there -- because only there
+  does every stepper, including the IDA + explicit hybrids, hold its exact accepted state. New CLI
+  flags `--restart`, `--snapshots-k`, `--snapshots-t`, `--stop-after-last-snapshot`; Python helpers
+  `DiFfRG.file_io.list_snapshots/find_snapshot/snapshot_info` and `phasediagram.make_seed` /
+  `run_point(..., restart=)`; Mathematica `SnapshotInfo`, `ListSnapshots`. See
+  `documentation/getting_started/snapshots.md`, including when a restart with a changed
+  configuration is physically meaningful.
 - `-DDiFfRG_CUDA_ARCH=<list>` selects the GPU compute capabilities the library and every
   application are compiled for (`90`, or `80;90` for one binary covering both), independently
   of the dependency bundle. It defaults to the GPUs found on the build machine, and the
@@ -189,6 +213,21 @@
   `/output/json` to `true` to get the file back. `SimulationData1D.params`
   (`DiFfRG/python/DiFfRG/file_io/vtk.py`) is `None` when the file is absent rather than raising.
 
+
+### Fixed
+
+- Starting a flow at `t_start > 0` now works with every stepper. SUNDIALS IDA labelled the initial
+  frame t = 0 and applied its t = 0 special cases (stuck detection, error-dof monitor) to
+  `t_start`; the IDA + BoostRK/ABM hybrids wrote no initial frame at all; TRBDF2 set the time to 0;
+  and ImplicitEuler/TRBDF2 anchored their output grid at 0 instead of `t_start`.
+- The explicit steppers end exactly at `t_stop`: ExplicitEuler overshot by up to one step and
+  returned the state of the step *before* the last one, BoostABM overshot whenever `t_stop - t_start`
+  was not a multiple of `dt` (it now uses the largest equal step `<= dt`), and BoostRK's
+  variables-only path overshot and labelled its first post-step state as `t_start`.
+- `HAdaptivity` read its uninitialised `last_adapt` on the first adaptation check; it now starts at
+  -inf, so the first adaptation happens as soon as `start_adapt_at` is reached.
+- `DiFfRG.phasediagram.get_command` without a folder passed the run name as `-o`, which the
+  executables ignore; it now sets `/output/name`.
 
 ## Version 1.1.0
 

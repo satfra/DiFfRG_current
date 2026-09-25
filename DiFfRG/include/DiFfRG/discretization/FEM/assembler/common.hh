@@ -113,6 +113,26 @@ namespace DiFfRG
     const auto &get_discretization() const { return discretization; }
     auto &get_discretization() { return discretization; }
 
+    virtual SnapshotSpatialState capture_snapshot_state(const VectorType &spatial_replica) const override
+    {
+      return DiFfRG::internal::capture_cellwise_state(dof_handler, spatial_replica);
+    }
+
+    virtual void restore_snapshot_state(const SnapshotSpatialState &state, VectorType &spatial) override
+    {
+      DiFfRG::internal::restore_spatial_state(state, discretization, *this, spatial);
+    }
+
+    virtual void save_model_state(ModelState &state) const override
+    {
+      DiFfRG::internal::save_model_state(model, state);
+    }
+
+    virtual bool load_model_state(const ModelState &state) override
+    {
+      return DiFfRG::internal::load_model_state(model, state);
+    }
+
     virtual void reinit() override
     {
       const auto metadata = internal::build_affine_constraint_metadata<Components, dim>(discretization);

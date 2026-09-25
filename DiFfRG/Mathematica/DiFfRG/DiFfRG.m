@@ -109,6 +109,12 @@ Returns the directory in which either the package file or notebook is located.";
 AutoExport::usage = "AutoExport[]
 Turns on automatic export of the current notebook to a .m file.";
 
+SnapshotInfo::usage = "SnapshotInfo[file_String]
+Reads a DiFfRG flow snapshot, i.e. a file <run name>_snapshot_<nnn>.h5 written by a run with /timestepping/snapshots set, and returns an Association with the RG time \"t\", the scale \"k\" (Indeterminate if the run had no /physical/Lambda), \"Lambda\", \"dim\", the flowing \"Variables\" and the \"Config\" of the run that wrote it. A later run continues from the snapshot with --restart file.";
+
+ListSnapshots::usage = "ListSnapshots[run_String]
+Returns SnapshotInfo for every snapshot of a run, sorted by RG time. run is the path of the run without extension, e.g. \"output/seed\" for the files output/seed_snapshot_*.h5.";
+
 AutoSaveRestore::usage = "AutoSaveRestore[fileName_String,expr_]
 Evaluates expr if the file fileName does not yet exist and saves it to fileName as a .m file. If fileName exists, it does not evaluate expr, but simply loads the contents.";
 
@@ -629,6 +635,32 @@ DiFfRGMap[nKernels_Integer] :=
 				Return[ParallelMap[#1, #2]&]
 			]
 		];
+	];
+
+(* ::Chapter:: *)
+
+(*Flow snapshots*)
+
+SnapshotInfo[file_String] :=
+	Module[{attributes, datasets, config, variables, k},
+		If[Not[FileExistsQ[file]], Message[SnapshotInfo::nofile, file]; Return[$Failed]];
+		attributes = Import[file, {"HDF5", "Attributes", "/"}];
+		datasets = Import[file, {"HDF5", "Datasets"}];
+		config = ImportString[First[Flatten[{Import[file, {"HDF5", "Datasets", "/config_json"}]}]], "RawJSON"];
+		variables = If[MemberQ[datasets, "/state/variables"], Import[file, {"HDF5", "Datasets", "/state/variables"}], {}];
+		(* k is stored as NaN when the run had no Lambda *)
+		k = If[NumericQ[attributes["k"]], attributes["k"], Indeterminate];
+		<|"File" -> file, "t" -> attributes["t"], "k" -> k, "Lambda" -> attributes["Lambda"], "dim" -> attributes["dim"], "Variables" -> variables, "Config" -> config|>
+	];
+
+SnapshotInfo::nofile = "The snapshot file `1` does not exist.";
+
+ListSnapshots[run_String] :=
+	Module[{directory, files},
+		directory = DirectoryName[run];
+		If[directory === "", directory = Directory[]];
+		files = FileNames[FileNameTake[run] <> "_snapshot_*.h5", directory];
+		SortBy[SnapshotInfo /@ files, #["t"]&]
 	];
 
 (* ::Chapter:: *)

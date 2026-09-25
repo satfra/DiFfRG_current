@@ -3,6 +3,7 @@
 // DiFfRG
 #include <DiFfRG/common/linear_algebra.hh>
 #include <DiFfRG/common/mpi.hh>
+#include <DiFfRG/discretization/common/snapshot_state.hh>
 #include <DiFfRG/discretization/common/solution_view.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
 
@@ -141,6 +142,42 @@ namespace DiFfRG
      * @return const SparseMatrixType& The mass matrix
      */
     virtual const SparseMatrixType &get_mass_matrix() const = 0;
+
+    /**
+     * @name Flow snapshots
+     *
+     * Used by AbstractTimestepper::run to write and restore snapshots of a flow. The defaults make
+     * an assembler that does not implement them fail loudly only when snapshots are actually used.
+     */
+    //@{
+
+    /**
+     * @brief Record the spatial state in a dof-numbering independent layout.
+     *
+     * @param spatial_replica A vector from which every global dof can be read (a refreshed
+     * SolutionView). Only reads, so it may be called on the writer rank alone.
+     */
+    virtual SnapshotSpatialState capture_snapshot_state([[maybe_unused]] const VectorType &spatial_replica) const
+    {
+      throw std::runtime_error("This assembler does not support flow snapshots.");
+    }
+
+    /**
+     * @brief Rebuild the snapshot's mesh if it differs from the current one, reinitialize, and
+     * fill @p spatial with the snapshot's values. Collective: called on every rank.
+     */
+    virtual void restore_snapshot_state([[maybe_unused]] const SnapshotSpatialState &state,
+                                        [[maybe_unused]] VectorType &spatial)
+    {
+      throw std::runtime_error("This assembler does not support restarting from flow snapshots.");
+    }
+
+    /** @brief Let the model add its history-dependent state; see ModelState. */
+    virtual void save_model_state([[maybe_unused]] ModelState &state) const {}
+
+    /** @brief Hand restored state to the model. @return whether the model implements load_state. */
+    virtual bool load_model_state([[maybe_unused]] const ModelState &state) { return false; }
+    //@}
 
     /**
      * @name Residual and jacobian functions

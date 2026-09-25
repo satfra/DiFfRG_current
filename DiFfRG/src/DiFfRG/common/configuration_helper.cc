@@ -7,9 +7,60 @@
 // standard library
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 
 namespace DiFfRG
 {
+  namespace
+  {
+    /**
+     * @brief Assign @p value at the JSON pointer @p path, creating missing objects on the way.
+     *
+     * -sd and friends deliberately refuse keys the parameter file does not have, which catches
+     * typos. The snapshot flags set keys most parameter files never mention, so they create them.
+     */
+    void assign_creating(json::value &root, const std::string &path, const json::value &value)
+    {
+      if (path.empty() || path.front() != '/') throw std::runtime_error("Invalid configuration path '" + path + "'.");
+      json::value *node = &root;
+      std::size_t begin = 1;
+      while (true) {
+        if (!node->is_object())
+          throw std::runtime_error("Cannot set '" + path + "': it passes through an entry that is not an object.");
+        const auto end = path.find('/', begin);
+        const std::string key = path.substr(begin, end == std::string::npos ? std::string::npos : end - begin);
+        auto &object = node->get_object();
+        if (end == std::string::npos) {
+          object[key] = value;
+          return;
+        }
+        node = &object[key];
+        if (node->is_null()) *node = json::object();
+        begin = end + 1;
+      }
+    }
+
+    json::value number_list(const std::string &flag, const std::string &text)
+    {
+      json::array values;
+      std::istringstream stream(text);
+      std::string item;
+      while (std::getline(stream, item, ',')) {
+        if (item.empty()) continue;
+        try {
+          std::size_t parsed = 0;
+          values.push_back(std::stod(item, &parsed));
+          if (parsed != item.size()) throw std::invalid_argument(item);
+        } catch (const std::exception &) {
+          throw std::runtime_error("Error: flag '" + flag + "' expects a comma-separated list of numbers, got '" +
+                                   text + "'.");
+        }
+      }
+      if (values.empty()) throw std::runtime_error("Error: flag '" + flag + "' expects at least one number.");
+      return values;
+    }
+  } // namespace
+
   ConfigurationHelper::ConfigurationHelper(int argc, char *argv[], const std::string parameter_file)
       : parsed(false), parameter_file(parameter_file)
   {
@@ -106,6 +157,8 @@ namespace DiFfRG
                                    ": " + e.what());
         }
       }
+      for (const auto &[path, value] : cli_created_parameters)
+        assign_creating(config(), path, value);
     } catch (const std::exception &e) {
       if (quiet) throw;
       std::cerr << "While reading the parameter file an error occurred:\n    " << e.what() << "\n" << std::endl;
@@ -152,6 +205,12 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
   -si                         overwrite an integer parameter. This should be in the format '-si /physical/Nc=1'
   -sb                         overwrite a boolean parameter. This should be in the format '-sb /physical/use_sth=true'
   -ss                         overwrite a string parameter. This should be in the format '-ss /physical/a=hello'
+  --restart <file>            continue the flow from a snapshot instead of starting at the initial scale
+                              (sets /restart/file)
+  --snapshots-k <k1,k2,...>   write flow snapshots at these RG scales (sets /timestepping/snapshots/k)
+  --snapshots-t <t1,t2,...>   write flow snapshots at these RG times (sets /timestepping/snapshots/t)
+  --stop-after-last-snapshot  end the flow after its last snapshot
+                              (sets /timestepping/snapshots/stop_after_last)
 )";
     std::cout << help_text << std::endl;
   }
@@ -202,6 +261,22 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
         args.pop_front();
         cli_parameters.push_back({args.front(), "string"});
         args.pop_front();
+      } else if (args.front() == std::string("--restart")) {
+        if (args.size() == 1) throw std::runtime_error("Error: flag '--restart' must be followed by a snapshot file.");
+        args.pop_front();
+        cli_created_parameters.emplace_back("/restart/file", json::value(json::string(args.front())));
+        args.pop_front();
+      } else if (args.front() == std::string("--snapshots-k") || args.front() == std::string("--snapshots-t")) {
+        const std::string flag = args.front();
+        if (args.size() == 1) throw std::runtime_error("Error: flag '" + flag + "' must be followed by a list.");
+        args.pop_front();
+        cli_created_parameters.emplace_back(flag == "--snapshots-k" ? "/timestepping/snapshots/k"
+                                                                    : "/timestepping/snapshots/t",
+                                            number_list(flag, args.front()));
+        args.pop_front();
+      } else if (args.front() == std::string("--stop-after-last-snapshot")) {
+        args.pop_front();
+        cli_created_parameters.emplace_back("/timestepping/snapshots/stop_after_last", json::value(true));
       } else {
         if (!quiet)
           std::cerr << "WARNING: Unrecognized CLI argument '" << args.front() << "' was ignored. Use --help for usage."
@@ -331,6 +406,11 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
               << "    explicit/*                    Explicit timestepper (dt, tolerances)\n"
               << "    implicit/*                    Implicit timestepper (dt, tolerances)\n"
               << "    explicit/coupling_mode        0: Lag, 1: Stagger (default), 2: Predict\n"
+              << "    snapshots/k, snapshots/t      Lists of RG scales / times at which to write flow snapshots\n"
+              << "    snapshots/snap_to_output_grid Move snapshot times onto the output grid (default true)\n"
+              << "    snapshots/stop_after_last     End the flow after its last snapshot (default false)\n"
+              << "  /restart           Continuing a flow from a snapshot\n"
+              << "    file                          Snapshot file to restart from (or pass --restart <file>)\n"
               << "  /output            Output settings\n"
               << "    verbosity                     Log verbosity level (0 = minimal)\n"
               << "    folder                        Output directory\n"

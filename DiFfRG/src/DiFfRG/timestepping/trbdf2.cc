@@ -37,9 +37,8 @@ namespace DiFfRG
     ptr_newton_BDF2->set_ignore_nonconv(x);
   }
 
-  template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename...> typename LinearSolver>
-  void TimeStepperTRBDF2_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(
+  template <typename VectorType, typename SparseMatrixType, uint dim, template <typename...> typename LinearSolver>
+  void TimeStepperTRBDF2_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run_segment(
       AbstractFlowingVariables<NumberType, VectorType> &initial_condition, double start, double stop)
   {
 
@@ -60,7 +59,7 @@ namespace DiFfRG
 
     // create time controller instance
     TC_PI tc(*this, 2, start, stop, impl.dt, impl.minimal_dt, impl.maximal_dt, output_dt);
-    assembler.set_time(0.);
+    assembler.set_time(start);
 
     // shared jacobian matrix and linear solver (TR and BDF2 stages are sequential, never simultaneous)
     SparseMatrixType jacobian(assembler.get_sparsity_pattern_jacobian());
