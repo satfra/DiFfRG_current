@@ -646,9 +646,10 @@ SnapshotInfo[file_String] :=
 		If[Not[FileExistsQ[file]], Message[SnapshotInfo::nofile, file]; Return[$Failed]];
 		attributes = Import[file, {"HDF5", "Attributes", "/"}];
 		datasets = Import[file, {"HDF5", "Datasets"}];
-		config = ImportString[First[Flatten[{Import[file, {"HDF5", "Datasets", "/config_json"}]}]], "RawJSON"];
+		(* The configuration is written as 2E-2 etc., which RawJSON reads as the exact 1/50 *)
+		config = ImportString[First[Flatten[{Import[file, {"HDF5", "Datasets", "/config_json"}]}]], "RawJSON"] /. r_Rational :> With[{x = N[r]}, x /; True];
 		variables = If[MemberQ[datasets, "/state/variables"], Import[file, {"HDF5", "Datasets", "/state/variables"}], {}];
-		(* k is stored as NaN when the run had no Lambda *)
+		(* k is stored as NaN when the run had no Lambda, which Import returns as $Failed *)
 		k = If[NumericQ[attributes["k"]], attributes["k"], Indeterminate];
 		<|"File" -> file, "t" -> attributes["t"], "k" -> k, "Lambda" -> attributes["Lambda"], "dim" -> attributes["dim"], "Variables" -> variables, "Config" -> config|>
 	];
