@@ -176,6 +176,104 @@ TEST_CASE("Focused logarithmic coordinates: invalid arguments throw", "[1D][coor
   CHECK_NOTHROW(C(32, 1e-3, 10., 1e6, 2.)); // center outside [start, stop] is legal
 }
 
+// prefix(n): the first n points, bit for bit, as the same type -- shared checks for the 1D types.
+template <typename C> void check_prefix(const C &coords)
+{
+  const size_t N = coords.size();
+  const std::string parent_key = coords.to_string();
+  CHECK(coords.parent_size() == N);
+  CHECK(parent_key.find(".prefix(") == std::string::npos);
+
+  const std::set<size_t> ns{size_t(1), size_t(2), N / 3, N / 2, N - 1, N};
+  std::set<std::string> keys{parent_key};
+  for (const size_t n : ns) {
+    const C pre = coords.prefix(n);
+    REQUIRE(pre.size() == n);
+    CHECK(pre.parent_size() == N);
+    for (size_t i = 0; i < n; ++i)
+      CHECK(pre.forward(i) == coords.forward(i)); // exact, not is_close: kernels map over the prefix
+    for (const double x : {0.3, 0.5 * (N - 1)})
+      CHECK(pre.backward(pre.forward(x)) == coords.backward(coords.forward(x)));
+    // prefix of a prefix is a prefix of the parent
+    const C pre2 = pre.prefix((n + 1) / 2);
+    CHECK(pre2 == coords.prefix((n + 1) / 2));
+    CHECK(pre2.to_string() == coords.prefix((n + 1) / 2).to_string());
+    if (n < N) {
+      CHECK(!(pre == coords));
+      CHECK(pre.to_string() == parent_key + ".prefix(" + std::to_string(n) + ")");
+    } else {
+      // the full prefix is the grid itself
+      CHECK(pre == coords);
+      CHECK(pre.to_string() == parent_key);
+    }
+    keys.insert(pre.to_string());
+  }
+  // one key per distinct n, the n = N one being the parent's
+  CHECK(keys.size() == ns.size());
+
+  CHECK_THROWS(coords.prefix(0));
+  CHECK_THROWS(coords.prefix(N + 1));
+}
+
+TEST_CASE("Coordinates prefix(): first n points bit for bit", "[1D][coordinates][prefix]")
+{
+  check_prefix(LinearCoordinates1D<double>(37, -2.5, 11.));
+  check_prefix(LogarithmicCoordinates1D<double>(41, 1e-3, 30., 5.));
+  check_prefix(FocusedLogCoordinates1D<double>(64, 5e-3, 250., 1., 2.));
+  check_prefix(FocusedLogCoordinates1D<double>(50, 1e-4, 100., 0.3, 0.)); // pure-log branch
+  check_prefix(LinearCoordinates1D<float>(20, 0.f, 1.f));
+  check_prefix(LogarithmicCoordinates1D<float>(25, 1e-3f, 10.f, 3.f));
+  check_prefix(FocusedLogCoordinates1D<float>(30, 1e-3f, 10.f, 1.f, 1.f));
+}
+
+TEST_CASE("Coordinates prefix(): identity keys", "[1D][coordinates][prefix]")
+{
+  // A grid that is not a prefix renders exactly as before -- this string is the key of the
+  // momentum-grid datasets in existing HDF5 outputs.
+  CHECK(FocusedLogCoordinates1D<double>(64, 0.005, 250., 1., 2.).to_string() ==
+        "FocusedLogCoordinates1D(64, 0.005, 250, 1, 2)");
+
+  // A prefix is neither its parent nor a genuine grid with its point count. For
+  // LogarithmicCoordinates1D the latter even has different points (forward() divides the index by
+  // the point count), so a shared key would hand one of them the other's cached positions.
+  const LogarithmicCoordinates1D<double> L(40, 1e-3, 30., 5.);
+  const auto Lp = L.prefix(20);
+  const LogarithmicCoordinates1D<double> L20(20, 1e-3, 30., 5.);
+  CHECK(Lp.to_string() != L20.to_string());
+  CHECK(!(Lp == L20));
+  CHECK(Lp.forward(10) != L20.forward(10));
+
+  const FocusedLogCoordinates1D<double> F(64, 0.005, 250., 1., 2.);
+  const auto Fp = F.prefix(40);
+  const FocusedLogCoordinates1D<double> F40(40, 0.005, Fp.forward(39), 1., 2.);
+  CHECK(Fp.to_string() != F40.to_string());
+  CHECK(!(Fp == F40));
+}
+
+TEST_CASE("Coordinates prefix(): conversion between number types keeps the prefix", "[1D][coordinates][prefix]")
+{
+  const FocusedLogCoordinates1D<double> F(64, 0.005, 250., 1., 2.);
+  const FocusedLogCoordinates1D<float> Ff(F.prefix(25));
+  CHECK(Ff.size() == 25);
+  CHECK(Ff.parent_size() == 64);
+  CHECK(Ff == FocusedLogCoordinates1D<float>(F).prefix(25));
+  for (size_t i = 0; i < 25; ++i)
+    CHECK(is_close(double(Ff.forward(i)), F.forward(i), 1e-5 * F.forward(i)));
+
+  const LogarithmicCoordinates1D<double> L(40, 1e-3, 30., 5.);
+  const LogarithmicCoordinates1D<float> Lf(L.prefix(17));
+  CHECK(Lf.size() == 17);
+  CHECK(Lf.parent_size() == 40);
+  for (size_t i = 0; i < 17; ++i)
+    CHECK(is_close(double(Lf.forward(i)), L.forward(i), 1e-5 * (1. + L.forward(i))));
+
+  const LinearCoordinates1D<double> Li(30, -1., 2.);
+  const LinearCoordinates1D<float> Lif(Li.prefix(9));
+  CHECK(Lif.size() == 9);
+  CHECK(Lif.parent_size() == 30);
+  CHECK(is_close(double(Lif.forward(8)), Li.forward(8), 1e-6));
+}
+
 TEST_CASE("Test 1D Linear coordinates", "[1D][coordinates]")
 {
   const float p_start = GENERATE(take(3, random(1e-6, 1e-1)));

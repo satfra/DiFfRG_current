@@ -277,7 +277,7 @@ namespace DiFfRG
     static constexpr size_t dim = 1;
 
     LinearCoordinates1D(size_t grid_extent, double start, double stop)
-        : start(start), stop(stop), grid_extent(grid_extent)
+        : start(start), stop(stop), grid_extent(grid_extent), parent_extent(grid_extent)
     {
       if (grid_extent == 0) throw std::runtime_error("LinearCoordinates1D: grid_extent must be > 0");
       a = (stop - start) / (grid_extent - 1.);
@@ -285,9 +285,37 @@ namespace DiFfRG
 
     template <typename NT2>
     LinearCoordinates1D(const LinearCoordinates1D<NT2> &other)
-        : LinearCoordinates1D(other.size(), other.start, other.stop)
+        : LinearCoordinates1D(LinearCoordinates1D(other.parent_size(), other.start, other.stop), other.size())
     {
     }
+
+    /**
+     * @brief The first n points of this grid, as a grid of the same type.
+     *
+     * forward(i) of the result is bit-identical to forward(i) here for every i < n, and backward()
+     * is unchanged, so a kernel mapped over prefix(n) fills exactly the first n entries it would
+     * fill over the full grid. That is how to skip the upper end of a grid -- e.g. momenta p >> k
+     * whose loops have decoupled -- without a different coordinate type, and hence without
+     * regenerating kernels that take this type by name. (SubCoordinates is the general window,
+     * but a different type.)
+     *
+     * The spacing is copied, not re-derived: a grid rebuilt from n points and the prefix's last
+     * point would put its points elsewhere (by an ulp, or -- where the spacing depends on the
+     * point count -- entirely). A prefix therefore keeps its parent's parameters and point count
+     * (parent_size()), and to_string() renders it as "<parent>.prefix(n)", so the position caches
+     * and HDF5 datasets keyed on it never confuse it with the parent or with a genuine n-point
+     * grid. For a grid that is not a prefix, to_string() and operator== are unchanged.
+     *
+     * @param n number of points kept, 1 <= n <= size()
+     */
+    LinearCoordinates1D prefix(size_t n) const
+    {
+      if (n < 1 || n > grid_extent) throw std::runtime_error("LinearCoordinates1D::prefix: need 1 <= n <= size()");
+      return LinearCoordinates1D(*this, n);
+    }
+
+    /// Number of points of the grid this one is a prefix() of; size() unless it is a prefix.
+    size_t KOKKOS_FORCEINLINE_FUNCTION parent_size() const { return parent_extent; }
 
     device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(size_t i) const
     {
@@ -325,17 +353,25 @@ namespace DiFfRG
     friend bool operator==(const LinearCoordinates1D<NT> &lhs, const LinearCoordinates1D<NT2> &rhs)
     {
       if constexpr (!std::is_same_v<NT, NT2>) return false; // Different types, cannot be equal
-      return lhs.start == rhs.start && lhs.stop == rhs.stop && lhs.grid_extent == rhs.grid_extent;
+      return lhs.start == rhs.start && lhs.stop == rhs.stop && lhs.size() == rhs.size() &&
+             lhs.parent_size() == rhs.parent_size();
     }
 
     std::string to_string() const
     {
-      return "LinearCoordinates1D(" + std::to_string(grid_extent) + ", " + std::to_string(start) + ", " +
-             std::to_string(stop) + ")";
+      return "LinearCoordinates1D(" + std::to_string(parent_extent) + ", " + std::to_string(start) + ", " +
+             std::to_string(stop) + ")" + (grid_extent == parent_extent ? std::string() : ".prefix(" + std::to_string(grid_extent) + ")");
     }
 
   private:
+    // prefix(): the parent's parameters and spacing, fewer points
+    LinearCoordinates1D(const LinearCoordinates1D &parent, size_t n)
+        : start(parent.start), stop(parent.stop), grid_extent(n), parent_extent(parent.parent_extent), a(parent.a)
+    {
+    }
+
     const size_t grid_extent;
+    size_t parent_extent;
     NT a;
   };
 
@@ -442,8 +478,8 @@ namespace DiFfRG
     static constexpr size_t dim = 1;
 
     LogarithmicCoordinates1D(size_t grid_extent, NT start, NT stop, NT bias)
-        : start(start), stop(stop), bias(bias), grid_extent(grid_extent), gem1(grid_extent - 1.),
-          gem1inv(1. / (grid_extent - 1.))
+        : start(start), stop(stop), bias(bias), grid_extent(grid_extent), parent_extent(grid_extent),
+          gem1(grid_extent - 1.), gem1inv(1. / (grid_extent - 1.))
     {
       if (grid_extent == 0) throw std::runtime_error("LogarithmicCoordinates1D: grid_extent must be > 0");
       using Kokkos::expm1;
@@ -454,9 +490,38 @@ namespace DiFfRG
 
     template <typename NT2>
     LogarithmicCoordinates1D(const LogarithmicCoordinates1D<NT2> &other)
-        : LogarithmicCoordinates1D(other.size(), other.start, other.stop, other.bias)
+        : LogarithmicCoordinates1D(LogarithmicCoordinates1D(other.parent_size(), other.start, other.stop, other.bias),
+                                   other.size())
     {
     }
+
+    /**
+     * @brief The first n points of this grid, as a grid of the same type.
+     *
+     * forward(i) of the result is bit-identical to forward(i) here for every i < n, and backward()
+     * is unchanged, so a kernel mapped over prefix(n) fills exactly the first n entries it would
+     * fill over the full grid. That is how to skip the upper end of a grid -- e.g. momenta p >> k
+     * whose loops have decoupled -- without a different coordinate type, and hence without
+     * regenerating kernels that take this type by name. (SubCoordinates is the general window,
+     * but a different type.)
+     *
+     * The spacing is copied, not re-derived: a grid rebuilt from n points and the prefix's last
+     * point would put its points elsewhere (by an ulp, or -- where the spacing depends on the
+     * point count -- entirely). A prefix therefore keeps its parent's parameters and point count
+     * (parent_size()), and to_string() renders it as "<parent>.prefix(n)", so the position caches
+     * and HDF5 datasets keyed on it never confuse it with the parent or with a genuine n-point
+     * grid. For a grid that is not a prefix, to_string() and operator== are unchanged.
+     *
+     * @param n number of points kept, 1 <= n <= size()
+     */
+    LogarithmicCoordinates1D prefix(size_t n) const
+    {
+      if (n < 1 || n > grid_extent) throw std::runtime_error("LogarithmicCoordinates1D::prefix: need 1 <= n <= size()");
+      return LogarithmicCoordinates1D(*this, n);
+    }
+
+    /// Number of points of the grid this one is a prefix() of; size() unless it is a prefix.
+    size_t KOKKOS_FORCEINLINE_FUNCTION parent_size() const { return parent_extent; }
 
     device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(size_t i) const
     {
@@ -504,18 +569,28 @@ namespace DiFfRG
     friend bool operator==(const LogarithmicCoordinates1D<NT> &lhs, const LogarithmicCoordinates1D<NT2> &rhs)
     {
       if constexpr (!std::is_same_v<NT, NT2>) return false; // Different types, cannot be equal
-      return lhs.start == rhs.start && lhs.stop == rhs.stop && lhs.bias == rhs.bias &&
-             lhs.grid_extent == rhs.grid_extent;
+      return lhs.start == rhs.start && lhs.stop == rhs.stop && lhs.bias == rhs.bias && lhs.size() == rhs.size() &&
+             lhs.parent_size() == rhs.parent_size();
     }
 
     std::string to_string() const
     {
       return "LogarithmicCoordinates1D(" + std::to_string(start) + ", " + std::to_string(stop) + ", " +
-             std::to_string(bias) + ", " + std::to_string(grid_extent) + ")";
+             std::to_string(bias) + ", " + std::to_string(parent_extent) + ")" + (grid_extent == parent_extent ? std::string() : ".prefix(" + std::to_string(grid_extent) + ")");
     }
 
   private:
+    // prefix(): the parent's parameters and spacing -- gem1/gem1inv included, which is what fixes
+    // the spacing here, since forward() divides the index by the PARENT's point count -- fewer points
+    LogarithmicCoordinates1D(const LogarithmicCoordinates1D &parent, size_t n)
+        : start(parent.start), stop(parent.stop), bias(parent.bias), grid_extent(n),
+          parent_extent(parent.parent_extent), gem1(parent.gem1), gem1inv(parent.gem1inv), a(parent.a), b(parent.b),
+          c(parent.c)
+    {
+    }
+
     const size_t grid_extent;
+    size_t parent_extent;
     const NT gem1, gem1inv;
     NT a, b, c;
   };
@@ -567,7 +642,7 @@ namespace DiFfRG
      * @param focus clustering strength; 0 gives a pure logarithmic grid
      */
     FocusedLogCoordinates1D(size_t grid_extent, NT start, NT stop, NT center, NT focus)
-        : start(start), stop(stop), center(center), focus(focus), grid_extent(grid_extent)
+        : start(start), stop(stop), center(center), focus(focus), grid_extent(grid_extent), parent_extent(grid_extent)
     {
       if (grid_extent < 2) throw std::runtime_error("FocusedLogCoordinates1D: grid_extent must be > 1");
       if (!(start > NT(0))) throw std::runtime_error("FocusedLogCoordinates1D: start must be > 0");
@@ -605,9 +680,39 @@ namespace DiFfRG
 
     template <typename NT2>
     FocusedLogCoordinates1D(const FocusedLogCoordinates1D<NT2> &other)
-        : FocusedLogCoordinates1D(other.size(), other.start, other.stop, other.center, other.focus)
+        : FocusedLogCoordinates1D(
+              FocusedLogCoordinates1D(other.parent_size(), other.start, other.stop, other.center, other.focus),
+              other.size())
     {
     }
+
+    /**
+     * @brief The first n points of this grid, as a grid of the same type.
+     *
+     * forward(i) of the result is bit-identical to forward(i) here for every i < n, and backward()
+     * is unchanged, so a kernel mapped over prefix(n) fills exactly the first n entries it would
+     * fill over the full grid. That is how to skip the upper end of a grid -- e.g. momenta p >> k
+     * whose loops have decoupled -- without a different coordinate type, and hence without
+     * regenerating kernels that take this type by name. (SubCoordinates is the general window,
+     * but a different type.)
+     *
+     * The spacing is copied, not re-derived: a grid rebuilt from n points and the prefix's last
+     * point would put its points elsewhere (by an ulp, or -- where the spacing depends on the
+     * point count -- entirely). A prefix therefore keeps its parent's parameters and point count
+     * (parent_size()), and to_string() renders it as "<parent>.prefix(n)", so the position caches
+     * and HDF5 datasets keyed on it never confuse it with the parent or with a genuine n-point
+     * grid. For a grid that is not a prefix, to_string() and operator== are unchanged.
+     *
+     * @param n number of points kept, 1 <= n <= size()
+     */
+    FocusedLogCoordinates1D prefix(size_t n) const
+    {
+      if (n < 1 || n > grid_extent) throw std::runtime_error("FocusedLogCoordinates1D::prefix: need 1 <= n <= size()");
+      return FocusedLogCoordinates1D(*this, n);
+    }
+
+    /// Number of points of the grid this one is a prefix() of; size() unless it is a prefix.
+    size_t KOKKOS_FORCEINLINE_FUNCTION parent_size() const { return parent_extent; }
 
     device::array<size_t, 1> KOKKOS_FORCEINLINE_FUNCTION from_linear_index(size_t i) const
     {
@@ -675,13 +780,13 @@ namespace DiFfRG
     {
       if constexpr (!std::is_same_v<NT, NT2>) return false; // Different types, cannot be equal
       return lhs.start == rhs.start && lhs.stop == rhs.stop && lhs.center == rhs.center && lhs.focus == rhs.focus &&
-             lhs.size() == rhs.size();
+             lhs.size() == rhs.size() && lhs.parent_size() == rhs.parent_size();
     }
 
     std::string to_string() const
     {
-      return "FocusedLogCoordinates1D(" + std::to_string(grid_extent) + ", " + round_trip(start) + ", " +
-             round_trip(stop) + ", " + round_trip(center) + ", " + round_trip(focus) + ")";
+      return "FocusedLogCoordinates1D(" + std::to_string(parent_extent) + ", " + round_trip(start) + ", " +
+             round_trip(stop) + ", " + round_trip(center) + ", " + round_trip(focus) + ")" + (grid_extent == parent_extent ? std::string() : ".prefix(" + std::to_string(grid_extent) + ")");
     }
 
   private:
@@ -723,7 +828,16 @@ namespace DiFfRG
       return v >= NT(0) ? log(v + D) : -log(D - v);
     }
 
+    // prefix(): the parent's parameters and spacing, fewer points
+    FocusedLogCoordinates1D(const FocusedLogCoordinates1D &parent, size_t n)
+        : start(parent.start), stop(parent.stop), center(parent.center), focus(parent.focus), grid_extent(n),
+          parent_extent(parent.parent_extent), u0(parent.u0), s_min(parent.s_min), a(parent.a), a_inv(parent.a_inv),
+          c(parent.c), c_inv(parent.c_inv), g_min(parent.g_min), pure_log(parent.pure_log)
+    {
+    }
+
     const size_t grid_extent;
+    size_t parent_extent;
     NT u0, s_min, a, a_inv, c, c_inv, g_min;
     bool pure_log;
   };
