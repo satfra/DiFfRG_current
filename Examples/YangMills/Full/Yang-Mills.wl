@@ -219,7 +219,7 @@ kernelParameterList = {
 commonKernelOptions = {
   "d" -> 4,
   "AD" -> False,
-  "ctype" -> "double",
+  "ComputeType" -> "double",
   "Device" -> "GPU",
   "Type" -> "double",
   "Parameters" -> kernelParameterList

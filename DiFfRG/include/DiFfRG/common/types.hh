@@ -75,6 +75,25 @@ namespace DiFfRG
 
     template <typename CT> using ctype = typename internal::_ctype<CT>::value;
 
+    namespace internal
+    {
+      template <typename T> struct _double_precision {
+        using value = T;
+      };
+
+      template <> struct _double_precision<float> {
+        using value = double;
+      };
+
+      template <> struct _double_precision<complex<float>> {
+        using value = complex<double>;
+      };
+    } // namespace internal
+
+    /// The double-precision counterpart of a single-precision type (float -> double,
+    /// complex<float> -> complex<double>); every other type maps to itself.
+    template <typename T> using double_precision = typename internal::_double_precision<T>::value;
+
     template <typename T> inline constexpr bool is_autodiff = internal::_is_autodiff<T>;
   } // namespace get_type
 } // namespace DiFfRG

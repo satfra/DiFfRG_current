@@ -12,6 +12,7 @@ This Function creates an integrator that evaluates (constantFlow + \[Integral]in
 These are prepended to the respective methods of the integration kernel, allowing one to e.g. define specific angles one needs for the flow code.
 
 The options \"KernelReturnTransform\" and \"ConstantReturnTransform\" (default Identity) accept a Mathematica function applied to the optimized expression before code generation, which lets you wrap the return value, e.g. \"KernelReturnTransform\" -> Re renders the kernel return as real(...).
+The option \"ComputeType\" (default \"double\") is the value type the kernel is evaluated and integrated in: \"double\", \"float\", \"DiFfRG::complex<double>\" or \"DiFfRG::complex<float>\". With a float type the kernel, its literals and the integrator run in single precision, while map()/get() still write double results.
 The option \"KernelTraits\" declares integrator traits on the emitted kernel class, as a list of names or name -> Boolean rules, e.g. \"KernelTraits\" -> {\"matsubara_finite_extent\"} or {\"matsubara_split\" -> True}. Each becomes a `static constexpr bool <name> = <value>;` member. \"MatsubaraEven\" stays a separate option because it carries a symbolic evenness check that a generic mechanism cannot.";
 
 MakeKernel::Invalid = "The given arguments are invalid. See MakeKernel::usage";
@@ -29,6 +30,8 @@ MakeKernel::InvalidKey = "The key \"`1`\" is invalid: `2`";
 MakeKernel::exportFailed = "Export of sources.m to `1` failed.";
 
 MakeKernel::notEven = "MatsubaraEven requested for kernel \"`1`\" but it is not even in \"`2`\"; emitting the standard kernel (the integrator keeps the explicit kernel(+f0)+kernel(-f0) form). This is expected when the loop contains fermionic dressings evaluated at f0-shifted arguments.";
+
+MakeKernel::ctypedeprecated = "The option \"ctype\" is deprecated; use \"ComputeType\" -> `1` instead.";
 
 MakeKernel::InvalidTrait = "KernelTraits entry `1` is not a C++ identifier optionally followed by -> True|False.";
 
@@ -69,12 +72,43 @@ CheckKey[kernel_Association, name_String, test_, msg_String] :=
 
 KernelSpecQ[spec_Association] :=
     Module[{validKeys, validKeyTypes},
-        validKeys = CheckKey[spec, "Name", StringQ[#] && StringLength[#] > 0&, "Cannot be empty"] && CheckKey[spec, "Integrator", StringQ[#] && StringLength[#] > 0&, "Cannot be empty"] && CheckKey[spec, "d", IntegerQ[#] && # >= 0&, "Must be an Integer >= 0"] && CheckKey[spec, "AD", BooleanQ, "Must be a Boolean"] && CheckKey[spec, "Device", MemberQ[{"Threads", "TBB", "GPU"}, #]&, "Must be Threads, TBB or GPU."] && CheckKey[spec, "Type", StringQ[#] && StringLength[#] > 0&, "Cannot be empty"];
+        validKeys = CheckKey[spec, "Name", StringQ[#] && StringLength[#] > 0&, "Cannot be empty"] && CheckKey[spec, "Integrator", StringQ[#] && StringLength[#] > 0&, "Cannot be empty"] && CheckKey[spec, "d", IntegerQ[#] && # >= 0&, "Must be an Integer >= 0"] && CheckKey[spec, "AD", BooleanQ, "Must be a Boolean"] && CheckKey[spec, "Device", MemberQ[{"Threads", "TBB", "GPU"}, #]&, "Must be Threads, TBB or GPU."] && CheckKey[spec, "Type", StringQ[#] && StringLength[#] > 0&, "Cannot be empty"] && CheckKey[spec, "ComputeType", StringQ[#] && StringLength[#] > 0&, "Cannot be empty"];
         Return[validKeys];
     ];
 
 GetStandardKernelDefinitions[] :=
     $StandardKernelDefinitions
+
+(* "ctype" is the old name of "ComputeType"; an explicit ctype still wins so old scripts keep working. *)
+resolveComputeType[spec_Association] :=
+    Module[{s = spec},
+        If[s["ctype"] =!= Automatic,
+            Message[MakeKernel::ctypedeprecated, ToString[s["ctype"], InputForm]];
+            s["ComputeType"] = s["ctype"]
+        ];
+        KeyDrop[s, "ctype"]
+    ];
+
+singlePrecisionQ[spec_Association] :=
+    StringContainsQ[spec["ComputeType"], "float"];
+
+(* Real type of the kernel's arguments. *)
+realType[spec_Association] :=
+    If[singlePrecisionQ[spec], "float", "double"];
+
+(* map()/get() hand results back in double even when the integrator runs in float, so the
+   caller's double state vectors need no staging. *)
+resultType[spec_Association] :=
+    StringReplace[spec["ComputeType"], "float" -> "double"];
+
+(* Print the kernel's literals as float (0.5f, complex<float>) in single precision; a double
+   literal would silently promote the whole expression back to double. *)
+SetAttributes[withComputePrecision, HoldRest];
+
+withComputePrecision[spec_Association, body_] :=
+    Block[{FunKit`Private`$codePrecision = If[singlePrecisionQ[spec], "single", FunKit`Private`$codePrecision]},
+        body
+    ];
 
 (* Emit arbitrary integrator traits as class members. The traits are what the finite-T
    integrator branches on (matsubara_even, matsubara_finite_extent, matsubara_split), and a
@@ -114,7 +148,7 @@ kernelTraitMembers[traits_] :=
 
 (* Internal functions added here with Internal`*::usage *)
 
-Options[MakeKernel] = {"Coordinates" -> {}, "CoordinateArguments" -> {}, "IntegrationVariables" -> {}, "KernelDefinitions" -> $StandardKernelDefinitions, "Regulator" -> "DiFfRG::PolynomialExpRegulator", "RegulatorOpts" -> {"", ""}, "KernelBody" -> "", "KernelReturnType" -> "auto", "KernelReturnTransform" -> Identity, "ConstantBody" -> "", "ConstantReturnType" -> "auto", "ConstantReturnTransform" -> Identity, "Parameters" -> {}, "Name" -> "", "d" -> -1, "Integrator" -> "", "AD" -> False, "ctype" -> "double", "Device" -> "TBB", "Type" -> "double", "SplitKernel" -> False, "SeparateLookups" -> False, "Decorator" -> "static KOKKOS_FUNCTION", "MatsubaraEven" -> False, "KernelTraits" -> {}};
+Options[MakeKernel] = {"Coordinates" -> {}, "CoordinateArguments" -> {}, "IntegrationVariables" -> {}, "KernelDefinitions" -> $StandardKernelDefinitions, "Regulator" -> "DiFfRG::PolynomialExpRegulator", "RegulatorOpts" -> {"", ""}, "KernelBody" -> "", "KernelReturnType" -> "auto", "KernelReturnTransform" -> Identity, "ConstantBody" -> "", "ConstantReturnType" -> "auto", "ConstantReturnTransform" -> Identity, "Parameters" -> {}, "Name" -> "", "d" -> -1, "Integrator" -> "", "AD" -> False, "ComputeType" -> "double", "ctype" -> Automatic, "Device" -> "TBB", "Type" -> "double", "SplitKernel" -> False, "SeparateLookups" -> False, "Decorator" -> "static KOKKOS_FUNCTION", "MatsubaraEven" -> False, "KernelTraits" -> {}};
 
 MakeKernel[__] :=
     (
@@ -128,6 +162,7 @@ MakeKernel[kernelExpr_, OptionsPattern[]] :=
 MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
     Module[{expr, const, exec, kernel, constant, kernelClass, kernelHeader, integratorHeader, integratorCpp, integratorTemplateParams, tparams = <|"Name" -> "...t", "Type" -> "auto&&", "Reference" -> False, "Const" -> False|>, kernelDefs = OptionValue["KernelDefinitions"], coordinates = OptionValue["Coordinates"], getArgs = OptionValue["CoordinateArguments"], intVariables = OptionValue["IntegrationVariables"], preArguments, regulator, params, adSpecs, explParamAD, arguments, outputPath, sources, returnType, returnTypePointer, spec, parameters, parametersKernel, matsubaraEvenTrait, kernelTraits},
         spec = Association @@ Thread[Rule @@ {#, OptionValue[MakeKernel, #]}]& @ Keys[Options[MakeKernel]];
+        spec = resolveComputeType[spec];
         If[Not @ KernelSpecQ[spec],
             Message[MakeKernel::InvalidSpec];
             Abort[]
@@ -166,9 +201,9 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
         const = constExpr;
         While[ListQ[const], const = Plus @@ const];
         intVariables = FunKit`Private`prepParam /@ intVariables;
-        intVariables = Map[Append[#, "Type" -> "double"]&, intVariables];
+        intVariables = Map[Append[#, "Type" -> realType[spec]]&, intVariables];
         getArgs = FunKit`Private`prepParam /@ getArgs;
-        getArgs = Map[Append[#, "Type" -> "double"]&, getArgs];
+        getArgs = Map[Append[#, "Type" -> realType[spec]]&, getArgs];
         (********************************************************************)
         (* First, the kernel itself *)
         (********************************************************************)
@@ -188,13 +223,13 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
                 ,
                 spec["Parameters"]
             ];
-        kernel =
+        kernel = withComputePrecision[spec,
             If[TrueQ[OptionValue["SplitKernel"]] || TrueQ[OptionValue["SeparateLookups"]],
                 FunKit`MakeCppFunctionSplit[expr, "Name" -> "kernel", "Return" -> OptionValue["KernelReturnType"], "Suffix" -> "", "Prefix" -> "static KOKKOS_INLINE_FUNCTION", "Decorator" -> OptionValue["Decorator"], "SeparateLookups" -> OptionValue["SeparateLookups"], "Parameters" -> Join[intVariables, getArgs, parametersKernel], "Body" -> StringTemplate["using namespace DiFfRG;using namespace DiFfRG::compute;\n`1`"][OptionValue["KernelBody"]], "ReturnTransform" -> OptionValue["KernelReturnTransform"]]
                 ,
                 FunKit`MakeCppFunction[expr, "Name" -> "kernel", "Return" -> OptionValue["KernelReturnType"], "Suffix" -> "", "Prefix" -> "static KOKKOS_INLINE_FUNCTION", "Parameters" -> Join[intVariables, getArgs, parametersKernel], "Body" -> StringTemplate["using namespace DiFfRG;using namespace DiFfRG::compute;\n`1`"][OptionValue["KernelBody"]], "ReturnTransform" -> OptionValue["KernelReturnTransform"]]
-            ];
-        constant = FunKit`MakeCppFunction[constExpr, "Name" -> "constant", "Return" -> OptionValue["ConstantReturnType"], "Suffix" -> "", "Prefix" -> "static KOKKOS_INLINE_FUNCTION", "Parameters" -> Join[getArgs, parametersKernel], "Body" -> StringTemplate["using namespace DiFfRG;using namespace DiFfRG::compute;\n`1`"][OptionValue["ConstantBody"]], "ReturnTransform" -> OptionValue["ConstantReturnTransform"]];
+            ]];
+        constant = withComputePrecision[spec, FunKit`MakeCppFunction[constExpr, "Name" -> "constant", "Return" -> OptionValue["ConstantReturnType"], "Suffix" -> "", "Prefix" -> "static KOKKOS_INLINE_FUNCTION", "Parameters" -> Join[getArgs, parametersKernel], "Body" -> StringTemplate["using namespace DiFfRG;using namespace DiFfRG::compute;\n`1`"][OptionValue["ConstantBody"]], "ReturnTransform" -> OptionValue["ConstantReturnTransform"]]];
         kernelTraits = kernelTraitMembers[OptionValue["KernelTraits"]];
         kernelClass = FunKit`MakeCppClass["TemplateTypes" -> {"_Regulator"}, "Name" -> OptionValue["Name"] <> "_kernel", "MembersPublic" -> Join[{"using Regulator = _Regulator;"}, matsubaraEvenTrait, kernelTraits, {kernel, constant}], "MembersPrivate" -> kernelDefs];
         kernelHeader = FunKit`MakeCppHeader["Includes" -> {"DiFfRG/physics/interpolation.hh", "DiFfRG/physics/physics.hh"}, "Body" -> {"namespace DiFfRG {", kernelClass, StringTemplate["} using DiFfRG::`1`_kernel;"][spec["Name"]]}];
@@ -222,11 +257,11 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
             ];
         integratorTemplateParams = TemplateParameterGeneration[spec];
         integratorTemplateParams = StringRiffle[integratorTemplateParams, ", "];
-        returnType = spec["ctype"];
+        returnType = resultType[spec];
         returnTypePointer = StringTemplate["`1`*"][returnType];
         adSpecs =
             If[spec["AD"],
-                Map[Merge[{#, <|"IntegratorTemplateParams" -> StringRiffle[TemplateParameterGeneration[spec, #["Replacements"]], ", "], "ReturnType" -> spec["ctype"] /. #["Replacements"], "Params" -> Last @ processParameters[params, #["Replacements"]]|>}, Last]&, $ADSpecializations]
+                Map[Merge[{#, <|"IntegratorTemplateParams" -> StringRiffle[TemplateParameterGeneration[spec, #["Replacements"]], ", "], "ReturnType" -> resultType[spec] /. #["Replacements"], "Params" -> Last @ processParameters[params, #["Replacements"]]|>}, Last]&, $ADSpecializations]
                 ,
                 {}
             ];

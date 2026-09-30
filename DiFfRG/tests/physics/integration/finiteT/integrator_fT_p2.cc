@@ -132,6 +132,49 @@ TEMPLATE_TEST_CASE_SIG("Test finite T momentum integrals", "[integration][quadra
   SECTION("GPU") { check(GPU_exec(), (double)0); }
 }
 
+TEST_CASE("Integrator_fT_p2 in single precision writes double results", "[integration][quadrature][float]")
+{
+  DiFfRG::Init();
+
+  // The float integrator must agree with the double one to float accuracy, whether it hands its
+  // results back through get() or map() into double destinations.
+  auto check = [](auto execution_space) {
+    using ExecutionSpace = std::decay_t<decltype(execution_space)>;
+    constexpr int dim = 4;
+    const float m2 = 0.5f;
+
+    QuadratureProvider quadrature_provider;
+    Integrator_fT_p2<dim, float, PolyIntegrand<2, float, -1>, ExecutionSpace> integrator_f(quadrature_provider,
+                                                                                           {32}, 2.f);
+    Integrator_fT_p2<dim, double, PolyIntegrand<2, double, -1>, ExecutionSpace> integrator_d(quadrature_provider,
+                                                                                             {32}, 2.);
+    integrator_f.set_T(0.1f);
+    integrator_d.set_T(0.1);
+    integrator_f.set_k(0.8f);
+    integrator_d.set_k(0.8);
+    integrator_f.set_typical_E(1.f);
+    integrator_d.set_typical_E(1.);
+
+    double integral_f = 0., integral_d = 0.;
+    integrator_f.get(integral_f, 0.25f, 1.f, 0.f, 0.f, 0.f, m2, 0.f, 1.f, 0.f);
+    integrator_d.get(integral_d, 0.25, 1., 0., 0., 0., m2, 0., 1., 0.);
+    CHECK(integral_f == Catch::Approx(integral_d).epsilon(1e-5));
+
+    // map() passes the grid position as the kernel's constant term.
+    const LinearCoordinates1D<float> coordinates_f(16, 0.f, 1.f);
+    const LinearCoordinates1D<double> coordinates_d(16, 0., 1.);
+    std::vector<double> mapped_f(coordinates_f.size()), mapped_d(coordinates_d.size());
+    integrator_f.map(mapped_f.data(), coordinates_f, 1.f, 0.f, 0.f, 0.f, m2, 0.f, 1.f, 0.f);
+    integrator_d.map(mapped_d.data(), coordinates_d, 1., 0., 0., 0., m2, 0., 1., 0.);
+    for (size_t i = 0; i < mapped_f.size(); ++i)
+      CHECK(mapped_f[i] == Catch::Approx(mapped_d[i]).epsilon(1e-5));
+  };
+
+  SECTION("TBB") { check(TBB_exec()); }
+  SECTION("Threads") { check(KokkosHost_exec()); }
+  SECTION("GPU") { check(GPU_exec()); }
+}
+
 TEST_CASE("Test integrator_fT_p2 bug", "[integration][quadrature]")
 {
   using NT = double;

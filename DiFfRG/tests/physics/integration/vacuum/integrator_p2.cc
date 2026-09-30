@@ -114,6 +114,43 @@ TEMPLATE_TEST_CASE_SIG("Test 1D momentum integrals", "[integration][quadrature]"
   SECTION("GPU") { check(GPU_exec(), (double)0); }
 }
 
+TEST_CASE("Integrator_p2 in single precision writes double results", "[integration][quadrature][float]")
+{
+  DiFfRG::Init();
+
+  // The float integrator must agree with the double one to float accuracy, whether it hands its
+  // results back through get() or map() into double destinations.
+  auto check = [](auto execution_space) {
+    using ExecutionSpace = std::decay_t<decltype(execution_space)>;
+    constexpr int dim = 4;
+    const std::array<float, 4> x{0.3f, -0.7f, 0.2f, 0.9f};
+
+    QuadratureProvider quadrature_provider;
+    Integrator_p2<dim, float, PolyIntegrand<1, float>, ExecutionSpace> integrator_f(quadrature_provider, {32}, 2.f);
+    Integrator_p2<dim, double, PolyIntegrand<1, double>, ExecutionSpace> integrator_d(quadrature_provider, {32}, 2.);
+    integrator_f.set_k(0.8f);
+    integrator_d.set_k(0.8);
+
+    double integral_f = 0., integral_d = 0.;
+    integrator_f.get(integral_f, 0.25f, x[0], x[1], x[2], x[3]);
+    integrator_d.get(integral_d, 0.25, x[0], x[1], x[2], x[3]);
+    CHECK(integral_f == Catch::Approx(integral_d).epsilon(1e-5));
+
+    // map() passes the grid position as the kernel's constant term.
+    const LinearCoordinates1D<float> coordinates_f(16, 0.f, 1.f);
+    const LinearCoordinates1D<double> coordinates_d(16, 0., 1.);
+    std::vector<double> mapped_f(coordinates_f.size()), mapped_d(coordinates_d.size());
+    integrator_f.map(mapped_f.data(), coordinates_f, x[0], x[1], x[2], x[3]);
+    integrator_d.map(mapped_d.data(), coordinates_d, x[0], x[1], x[2], x[3]);
+    for (size_t i = 0; i < mapped_f.size(); ++i)
+      CHECK(mapped_f[i] == Catch::Approx(mapped_d[i]).epsilon(1e-5));
+  };
+
+  SECTION("TBB") { check(TBB_exec()); }
+  SECTION("Threads") { check(KokkosHost_exec()); }
+  SECTION("GPU") { check(GPU_exec()); }
+}
+
 TEST_CASE("Integrator_p2 propagates second-order complex autodiff through TBB", "[integration][quadrature][autodiff]")
 {
   DiFfRG::Init();
