@@ -34,7 +34,10 @@ model = Model("Burgers";
 )
 
 dir = mktempdir(; prefix="diffrg_dsl_", cleanup=false)
-app = generate(model, dir)
+app = generate(model, dir,
+    # we use the KT discretization, as it can directly handle shocks
+    discretization="KT"
+)
 
 println("the two bodies became:\n")
 hh = read(joinpath(dir, "model.hh"), String)
@@ -47,43 +50,24 @@ println(hh[findfirst("  template <typename NT", hh)[1]:end])
 
 build!(app; verbose=true)
 res = run(app; config=(
-        "/discretization/grid/x_grid" => "0:0.01:1",
-        "/discretization/fe_order" => 3,
-        "/timestepping/final_time" => 0.5
+        "/physical/a" => 0.5,
+        "/physical/b" => 4.5,
+        "/physical/c" => -9.5,
+        "/physical/d" => 4.5,
+        "/discretization/grid/x_grid" => "0:0.002:1.5, 1.5:0.01:2",
+        "/timestepping/final_time" => 1.0
     ), verbose=false)
-u = only(read_h5(res)).fe["FE"].fields["u"][end]
-@printf("max u at t = 0.5 : %.6f   (exact x/(1+t) = %.6f)\n", maximum(u), 1 / 1.5)
+u = only(read_h5(res)).fe["FE"].fields["u"]
+x = only(read_h5(res)).fe["FE"].nodes
 
-# What the DSL refuses, and why.
-println("\nrejected at generation time, with the reason:\n")
-comps = Dict("fe_functions" => ["u"], "variables" => String[], "extractors" => String[])
-DG = ["fe_functions", "extractors", "variables"]      # DG carries no derivatives
-
-for (what, body, available) in (
-    ("reading fe_hessians under a DG assembler",
-        @julia((F, x, sol) -> begin
-            F[:u][1] = sol.fe_hessians[:u][1][1]
-        end), DG),
-    ("branching on a value",
-        @julia((F, x, sol) -> begin
-            u = sol.fe_functions[:u]
-            if u > 0
-                F[:u][1] = u
-            end
-        end), DG),
-    ("pinning the number type",
-        @julia((F, x, sol) -> begin
-            u::Float64 = sol.fe_functions[:u]
-            F[:u][1] = u
-        end), DG),
-    ("a component the model does not have",
-        @julia((F, x, sol) -> begin
-            F[:u][1] = sol.fe_functions[:nope]
-        end), DG))
-    try
-        DiFfRG.render_body(body, "flux"; components=comps, available=available)
-        println("  ", what, ": NOT REJECTED")
-    catch err
-        println("  ", what, ":\n      ", sprint(showerror, err))
+# Plot the solution, if you have Plots.jl installed.
+try
+    using Plots
+    plot(x[1][1, :], u[1], title="Burgers solution", xlabel="x", ylabel="u", legend=false)
+    for i in 2:size(u, 1)-1
+        plot!(x[i][1, :], u[i])
     end
+    plot!(x[end][1, :], u[end])
+catch err
+    @warn "Plots.jl not installed, skipping plot" exception = (err, catch_backtrace())
 end
