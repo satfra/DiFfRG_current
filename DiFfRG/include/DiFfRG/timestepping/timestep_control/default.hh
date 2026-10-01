@@ -4,14 +4,16 @@
 #include <cmath>
 #include <iomanip>
 #include <sstream>
+#include <stdexcept>
+#include <string>
 
-#include <DiFfRG/common/run_reporter.hh>
+#include <DiFfRG/common/math.hh>
 
 namespace DiFfRG
 {
   /**
    * @brief This is a default time controller implementation which should be used as a base class for any other time
-   * controller. It only implements the basic tasks that should be done when advancing time, i.e. saving, logging if the
+   * controller. It only implements the basic tasks that should be done when advancing time, i.e. saving, aborting if the
    * stepper got stuck, checking if the simulation is finished and restricting the minimal timestep.
    *
    * @tparam NEWT the used solver type which should at least explose the methods set_ignore_nonconv(bool)->void and
@@ -21,10 +23,9 @@ namespace DiFfRG
   {
   public:
     TC_Default(NEWT &newton_, unsigned int alg_order_, double t_, double max_t_, double dt_, double min_dt_,
-               double max_dt_, double output_dt_, ReportPort log = {})
+               double max_dt_, double output_dt_)
         : newton(newton_), alg_order(alg_order_), t(t_), max_t(max_t_), sug_dt(dt_), min_dt(min_dt_), max_dt(max_dt_),
-          output_dt(output_dt_), cur_dt(sug_dt), last_save(t), last_t(t_), t_start(t_), stuck(0), fin(false),
-          log(std::move(log))
+          output_dt(output_dt_), cur_dt(sug_dt), last_save(t), last_t(t_), t_start(t_), stuck(0), fin(false)
     {
     }
 
@@ -88,11 +89,10 @@ namespace DiFfRG
         of(t);
         fin = true;
       }
-      // if we got unrecoverably stuck also abort the timestepping
+      // Unrecoverably stuck: throw rather than finish, since callers rely on ending at max_t.
       if (stuck > 10) {
         of(t);
-        fin = true;
-        log.error("Timestepping got stuck at t = {}", t);
+        throw std::runtime_error("Timestepping got stuck at t = " + std::to_string(t));
       }
     }
 
@@ -131,6 +131,5 @@ namespace DiFfRG
     unsigned int stuck;
 
     bool fin;
-    ReportPort log;
   };
 } // namespace DiFfRG

@@ -6,9 +6,12 @@
 
 #include <DiFfRG/common/init.hh>
 #include <DiFfRG/discretization/FEM/assembler/cg.hh>
+#include <DiFfRG/discretization/FEM/assembler/ddg.hh>
 #include <DiFfRG/discretization/FEM/assembler/dg.hh>
+#include <DiFfRG/discretization/FEM/assembler/ldg.hh>
 #include <DiFfRG/discretization/FEM/cg.hh>
 #include <DiFfRG/discretization/FEM/dg.hh>
+#include <DiFfRG/discretization/FEM/ldg.hh>
 #include <DiFfRG/discretization/FV/assembler/KurganovTadmor.hh>
 #include <DiFfRG/discretization/FV/discretization.hh>
 #include <DiFfRG/discretization/common/snapshot_state.hh>
@@ -256,6 +259,22 @@ TEST_CASE("Cell-wise state restores into a fresh discretization", "[snapshot]")
     Model model(linear_profile());
     using Discretization = DG::Discretization<Model, RectangularMesh<2>>;
     require_roundtrip<Discretization, DG::Assembler<Discretization>, FE::FlowingVariables<Discretization>>(
+        config, model, false);
+  }
+  SECTION("dDG")
+  {
+    using Model = Testing::ModelExp<2>;
+    Model model(linear_profile());
+    using Discretization = DG::Discretization<Model, RectangularMesh<2>>;
+    require_roundtrip<Discretization, dDG::Assembler<Discretization>, FE::FlowingVariables<Discretization>>(
+        config, model, false);
+  }
+  SECTION("LDG")
+  {
+    using Model = Testing::LDGModelConstant<1>;
+    Model model(linear_profile());
+    using Discretization = LDG::Discretization<Model, RectangularMesh<1>>;
+    require_roundtrip<Discretization, LDG::Assembler<Discretization>, FE::FlowingVariables<Discretization>>(
         config, model, false);
   }
   SECTION("FV")

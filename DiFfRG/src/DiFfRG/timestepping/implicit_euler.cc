@@ -32,7 +32,7 @@ namespace DiFfRG
     newton.set_report_port(this->log);
 
     // create time controller instance
-    TC_PI tc(newton, 1, start, stop, impl.dt, impl.minimal_dt, impl.maximal_dt, output_dt, this->log);
+    TC_PI tc(newton, 1, start, stop, impl.dt, impl.minimal_dt, impl.maximal_dt, output_dt);
     assembler.set_time(start);
 
     // create jacobian and solver for inverse jacobian

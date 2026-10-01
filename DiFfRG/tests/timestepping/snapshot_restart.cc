@@ -5,6 +5,7 @@
 #include <boilerplate/timestepping.hh>
 
 #include <DiFfRG/discretization/data/snapshot.hh>
+#include <DiFfRG/timestepping/timestep_control/pi.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -222,11 +223,63 @@ namespace
     return worst;
   }
 
+  /// dv/dt = v without any FE space (dim = 0).
+  class ModelVariableExp
+      : public def::AbstractModel<ModelVariableExp, ComponentDescriptor<FEFunctionDescriptor<>,
+                                                                        VariableDescriptor<Scalar<"v">>,
+                                                                        ExtractorDescriptor<>>>,
+        public def::Time,
+        public def::NoJacobians
+  {
+  public:
+    template <typename Vector> void initial_condition_variables(Vector &values) const { values[0] = 1.; }
+    template <typename Vector, typename Solution> void dt_variables(Vector &residual, const Solution &data) const
+    {
+      residual[0] = -get<"variables">(data)[0];
+    }
+  };
+
+  template <template <typename> typename TimeStepperFor>
+  std::vector<double> run_variables_flow(const ConfigTree &config, const OutputPath &path)
+  {
+    ensure_logger();
+    using Assembler = Variables::Assembler<ModelVariableExp>;
+    ModelVariableExp model;
+    Assembler assembler(model, config);
+    OutputSession<Assembler> data_out(path, config);
+    TimeStepperFor<Assembler> time_stepper(config, assembler, data_out);
+    FlowingVariables state;
+    state.interpolate(model);
+    time_stepper.run(state, 0., config.get_double("/timestepping/final_time"));
+    return {state.variable_data().begin(), state.variable_data().end()};
+  }
+
+  /// Seed with a snapshot at t = 0.5, restart from it, and require both runs to end in the same state.
+  template <typename Model, typename Disc, typename Asm, template <typename> typename TimeStepperFor>
+  void require_restart_reproduces(const std::string &name, const double tolerance = 1e-12)
+  {
+    const auto root = OutputPath::temporary(TemporaryRetention::remove_on_destruction, name, name);
+    const auto config = base_config();
+    const auto seed = run_flow<Model, Disc, Asm, TimeStepperFor>(with_snapshots(config, R"({"t": [0.5]})"), root);
+    const auto restarted = run_flow<Model, Disc, Asm, TimeStepperFor>(
+        with_restart(config, root.run_file("_snapshot_000", ".h5")), root.child("restart", "restart"));
+    REQUIRE(max_difference(seed.spatial, restarted.spatial) <= tolerance * max_abs(seed.spatial));
+    REQUIRE(seed.variables.size() == restarted.variables.size());
+    for (std::size_t i = 0; i < seed.variables.size(); ++i)
+      REQUIRE_THAT(restarted.variables[i], Catch::Matchers::WithinAbs(seed.variables[i], tolerance));
+  }
+
   template <typename Model> using DGDisc = DG::Discretization<Model, RectangularMesh<1>>;
   template <typename Model> using DGAsm = DG::Assembler<DGDisc<Model>>;
   template <typename Assembler> using IDA = TimeStepperSUNDIALS_IDA<Assembler>;
   template <typename Assembler> using IDA_ABM = TimeStepperSUNDIALS_IDA_BoostABM<Assembler>;
   template <typename Assembler> using RK54 = TimeStepperBoostRK54<Assembler>;
+  template <typename Assembler> using IDA_RK = TimeStepperSUNDIALS_IDA_BoostRK54<Assembler>;
+  template <typename Assembler> using ImplicitEuler = TimeStepperImplicitEuler<Assembler>;
+  template <typename Assembler> using TRBDF2 = TimeStepperTRBDF2<Assembler>;
+  template <typename Assembler> using ExplicitEuler = TimeStepperExplicitEuler<Assembler>;
+  template <typename Assembler> using ABM = TimeStepperBoostABM<Assembler>;
+  template <typename Assembler> using RK4 = TimeStepperRK<Assembler>;
 } // namespace
 
 TEST_CASE("A restarted flow ends where the snapshotting flow ends", "[snapshot][timestepping]")
@@ -359,4 +412,55 @@ TEST_CASE("Adaptive flow: the restart rebuilds the adapted mesh", "[snapshot][ti
       with_restart(config, root.run_file("_snapshot_000", ".h5")), root.child("restart", "restart"));
   // Same final mesh (the adaptation schedule was restored too) and the same state on it.
   REQUIRE(max_difference(seed.spatial, restarted.spatial) <= 1e-12 * max_abs(seed.spatial));
+}
+
+TEST_CASE("Every stepper restarts exactly where the seed run continues", "[snapshot][timestepping]")
+{
+  // ModelExp grows like e^t, so a restart that ignored the snapshot would end a factor e^{1/2} off.
+  using Model = Testing::ModelExp<1>;
+  SECTION("Implicit Euler") { require_restart_reproduces<Model, DGDisc<Model>, DGAsm<Model>, ImplicitEuler>("ie"); }
+  SECTION("TRBDF2") { require_restart_reproduces<Model, DGDisc<Model>, DGAsm<Model>, TRBDF2>("trbdf2"); }
+  SECTION("Explicit Euler") { require_restart_reproduces<Model, DGDisc<Model>, DGAsm<Model>, ExplicitEuler>("ee"); }
+  SECTION("Boost ABM") { require_restart_reproduces<Model, DGDisc<Model>, DGAsm<Model>, ABM>("abm"); }
+  SECTION("IDA + Boost RK")
+  {
+    using Hybrid = Testing::ModelHybridTwoWay<1>;
+    using Disc = CG::Discretization<Hybrid, RectangularMesh<1>>;
+    require_restart_reproduces<Hybrid, Disc, CG::Assembler<Disc>, IDA_RK>("ida_rk", 1e-10);
+  }
+}
+
+TEST_CASE("Variables-only flow: restart reproduces the flow", "[snapshot][timestepping]")
+{
+  const auto config = base_config();
+  const auto check = [&]<template <typename> typename TimeStepperFor>(const std::string &name) {
+    const auto root = OutputPath::temporary(TemporaryRetention::remove_on_destruction, name, name);
+    const auto seed = run_variables_flow<TimeStepperFor>(with_snapshots(config, R"({"t": [0.5]})"), root);
+    const auto restarted = run_variables_flow<TimeStepperFor>(
+        with_restart(config, root.run_file("_snapshot_000", ".h5")), root.child("restart", "restart"));
+    REQUIRE(restarted.size() == 1);
+    REQUIRE_THAT(restarted[0], Catch::Matchers::WithinAbs(seed[0], 1e-12));
+    REQUIRE_THAT(restarted[0], Catch::Matchers::WithinRel(std::exp(1.), 1e-6));
+  };
+  SECTION("deal.II RK") { check.template operator()<RK4>("vars_rk"); }
+  SECTION("Boost ABM") { check.template operator()<ABM>("vars_abm"); }
+}
+
+TEST_CASE("A stuck timestep controller throws instead of ending early", "[snapshot][timestepping]")
+{
+  // Ending early would hand run() a state short of the segment end, which it would then write as
+  // the snapshot at the segment end.
+  struct FailingSolver {
+    double get_error() const { return 1.; }
+    void set_ignore_nonconv(bool) {}
+  } solver;
+  TC_PI<FailingSolver> tc(solver, 1, 0., 1., 1e-2, 1e-7, 1e-1, 1e-1);
+  auto never_converges = [](double, double) { throw std::runtime_error("no convergence"); };
+  auto no_output = [](double) {};
+  REQUIRE_THROWS_WITH(
+      [&]() {
+        while (!tc.finished())
+          tc.advance(never_converges, no_output);
+      }(),
+      Catch::Matchers::ContainsSubstring("stuck"));
 }

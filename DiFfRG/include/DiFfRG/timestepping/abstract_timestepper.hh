@@ -467,6 +467,14 @@ namespace DiFfRG
         throw std::runtime_error("Restart: the initial condition has no block structure. Set it up as usual, e.g. "
                                  "with interpolate(model), before calling run().");
 
+      // Before the spatial restore: a mesh rebuild reinitializes the assembler, which asks the model for its
+      // constraints, so the model must already be at the snapshot's time and state.
+      assembler.set_time(snapshot.t);
+      if (!snapshot.model.empty() && !assembler.load_model_state(snapshot.model))
+        log.warn("The snapshot carries model state ({} entries), but the model does not implement load_state(); the "
+                 "state is ignored.",
+                 snapshot.model.data().size());
+
       assembler.restore_snapshot_state(snapshot.spatial, data.block(0));
 
       if (data.n_blocks() > 1) {
@@ -482,12 +490,7 @@ namespace DiFfRG
                                  " variables, but this flow has none.");
       data.collect_sizes();
 
-      if (!snapshot.model.empty() && !assembler.load_model_state(snapshot.model))
-        log.warn("The snapshot carries model state ({} entries), but the model does not implement load_state(); the "
-                 "state is ignored.",
-                 snapshot.model.data().size());
       if (std::isfinite(snapshot.last_adaptation_time)) adaptor.set_last_adaptation_time(snapshot.last_adaptation_time);
-      assembler.set_time(snapshot.t);
       return snapshot.t;
     }
 
