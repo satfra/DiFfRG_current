@@ -1,13 +1,18 @@
 // DiFfRG
 #include <DiFfRG/common/configuration_helper.hh>
+#include <DiFfRG/common/mpi.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/common/eom_config.hh>
 #include <DiFfRG/discretization/data/output_path.hh>
+#include <DiFfRG/discretization/data/snapshot.hh>
 
 // standard library
+#include <charconv>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <sstream>
+#include <vector>
 
 namespace DiFfRG
 {
@@ -38,6 +43,17 @@ namespace DiFfRG
         if (node->is_null()) *node = json::object();
         begin = end + 1;
       }
+    }
+
+    /// Numbers in their shortest round-trip form (0.1, not boost::json's 1E-1); everything else as JSON.
+    std::string format_value(const json::value &v)
+    {
+      if (v.is_double()) {
+        char buffer[64];
+        const auto result = std::to_chars(buffer, buffer + sizeof(buffer), v.get_double());
+        return std::string(buffer, result.ptr);
+      }
+      return json::serialize(v);
     }
 
     json::value number_list(const std::string &flag, const std::string &text)
@@ -124,17 +140,24 @@ namespace DiFfRG
     }
 
     try {
-      if (parameter_file.empty()) throw std::runtime_error("No parameter file specified.");
-      // A default parameter file name is only a suggestion: if it is not on disk, but the
-      // same name with a .toml extension is, take that. A file named explicitly with -p is
-      // never second-guessed.
-      if (!parameter_file_explicit && !std::filesystem::exists(parameter_file)) {
-        const auto toml_alternative = std::filesystem::path(parameter_file).replace_extension(".toml");
-        if (std::filesystem::exists(toml_alternative)) parameter_file = toml_alternative.string();
+      if (!restart_file.empty())
+        config = read_restart_configuration();
+      else {
+        if (parameter_file.empty()) throw std::runtime_error("No parameter file specified.");
+        // A default parameter file name is only a suggestion: if it is not on disk, but the
+        // same name with a .toml extension is, take that. A file named explicitly with -p is
+        // never second-guessed.
+        if (!parameter_file_explicit && !std::filesystem::exists(parameter_file)) {
+          const auto toml_alternative = std::filesystem::path(parameter_file).replace_extension(".toml");
+          if (std::filesystem::exists(toml_alternative)) parameter_file = toml_alternative.string();
+        }
+        config = ConfigTree(parameter_file);
+        if (config.contains("/restart"))
+          throw std::runtime_error("The parameter file sets /restart. Restart with --restart <snapshot> instead: a "
+                                   "restarted run takes its whole configuration from the snapshot.");
       }
-      // parse parameter file and CLI, log it to file
-      config = ConfigTree(parameter_file);
 
+      std::vector<std::string> overrides;
       for (const auto &param : cli_parameters) {
         std::string path, value, buf;
 
@@ -144,6 +167,7 @@ namespace DiFfRG
         std::getline(ss1, value, '=');
 
         try {
+          const auto old_value = format_value(config().at_pointer(path));
           if (param.second == "double")
             config().at_pointer(path) = std::stod(value);
           else if (param.second == "bool")
@@ -152,19 +176,67 @@ namespace DiFfRG
             config().at_pointer(path) = std::stoi(value);
           else if (param.second == "string")
             config().at_pointer(path) = value;
+          overrides.push_back(path + ": " + old_value + " -> " + format_value(config().at_pointer(path)));
         } catch (const std::exception &e) {
           throw std::runtime_error("Failed to parse CLI parameter '" + path + "=" + value + "' as " + param.second +
                                    ": " + e.what());
         }
       }
+      // Restarting from one of this run's own snapshots continues the run, which keeps its snapshot
+      // schedule. Any other restart is a new run and writes snapshots only if the command line asks.
+      // Either way, snapshot flags on the command line replace the schedule as a whole.
+      const bool continuing =
+          !restart_file.empty() && own_snapshot_index(OutputPath(config), restart_file).has_value();
+      if (!restart_file.empty() && (!continuing || !cli_created_parameters.empty()))
+        if (auto *timestepping = config().as_object().if_contains("timestepping");
+            timestepping && timestepping->is_object())
+          timestepping->as_object().erase("snapshots");
+
       for (const auto &[path, value] : cli_created_parameters)
         assign_creating(config(), path, value);
+
+      if (!restart_file.empty()) {
+        assign_creating(config(), "/restart/file", json::value(json::string(restart_file)));
+        if (!quiet && MPI::rank(MPI_COMM_WORLD) == 0) print_restart_banner(overrides, continuing);
+      }
     } catch (const std::exception &e) {
       if (quiet) throw;
       std::cerr << "While reading the parameter file an error occurred:\n    " << e.what() << "\n" << std::endl;
       print_usage_message();
       exit(1);
     }
+  }
+
+  ConfigTree ConfigurationHelper::read_restart_configuration() const
+  {
+    if (parameter_file_explicit)
+      throw std::runtime_error("-p can not be combined with --restart: a restarted run takes its configuration from "
+                               "the snapshot. Change parameters with -sd, -si, -sb or -ss.");
+    json::value snapshot_config = read_snapshot_config(restart_file);
+    if (!snapshot_config.is_object())
+      throw std::runtime_error("The snapshot '" + restart_file + "' does not hold a configuration tree.");
+    // Where the seed run itself restarted from; this run's /restart/file is set by parse().
+    snapshot_config.as_object().erase("restart");
+    return ConfigTree(snapshot_config);
+  }
+
+  void ConfigurationHelper::print_restart_banner(const std::vector<std::string> &overrides,
+                                                 const bool continuing) const
+  {
+    const std::string rule(78, '=');
+    std::cout << rule << "\n"
+              << "Restarting from the snapshot '" << restart_file << "'.\n"
+              << "The configuration is the snapshot's; no parameter file is read.\n";
+    if (continuing)
+      std::cout << "This continues the run that wrote the snapshot, with its snapshot schedule.\n";
+    if (overrides.empty())
+      std::cout << "No parameters are overridden on the command line.\n";
+    else {
+      std::cout << "Overridden on the command line (" << overrides.size() << "):\n";
+      for (const auto &line : overrides)
+        std::cout << "    " << line << "\n";
+    }
+    std::cout << rule << std::endl;
   }
 
   void ConfigurationHelper::append(std::string str)
@@ -205,8 +277,10 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
   -si                         overwrite an integer parameter. This should be in the format '-si /physical/Nc=1'
   -sb                         overwrite a boolean parameter. This should be in the format '-sb /physical/use_sth=true'
   -ss                         overwrite a string parameter. This should be in the format '-ss /physical/a=hello'
-  --restart <file>            continue the flow from a snapshot instead of starting at the initial scale
-                              (sets /restart/file)
+  --restart <file>            continue the flow from a snapshot instead of starting at the initial scale.
+                              The configuration is the snapshot's (no parameter file is read, -p is an
+                              error); -sd/-si/-sb/-ss override it. From one of the run's own
+                              snapshots this continues the run, keeping its snapshot schedule.
   --snapshots-k <k1,k2,...>   write flow snapshots at these RG scales (sets /timestepping/snapshots/k)
   --snapshots-t <t1,t2,...>   write flow snapshots at these RG times (sets /timestepping/snapshots/t)
   --stop-after-last-snapshot  end the flow after its last snapshot
@@ -264,7 +338,7 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
       } else if (args.front() == std::string("--restart")) {
         if (args.size() == 1) throw std::runtime_error("Error: flag '--restart' must be followed by a snapshot file.");
         args.pop_front();
-        cli_created_parameters.emplace_back("/restart/file", json::value(json::string(args.front())));
+        restart_file = args.front();
         args.pop_front();
       } else if (args.front() == std::string("--snapshots-k") || args.front() == std::string("--snapshots-t")) {
         const std::string flag = args.front();
@@ -409,8 +483,8 @@ This is a DiFfRG simulation. You can pass the following optional parameters to t
               << "    snapshots/k, snapshots/t      Lists of RG scales / times at which to write flow snapshots\n"
               << "    snapshots/snap_to_output_grid Move snapshot times onto the output grid (default true)\n"
               << "    snapshots/stop_after_last     End the flow after its last snapshot (default false)\n"
-              << "  /restart           Continuing a flow from a snapshot\n"
-              << "    file                          Snapshot file to restart from (or pass --restart <file>)\n"
+              << "  /restart           Set by --restart; never in a parameter file\n"
+              << "    file                          Snapshot file the run continues from\n"
               << "  /output            Output settings\n"
               << "    verbosity                     Log verbosity level (0 = minimal)\n"
               << "    folder                        Output directory\n"

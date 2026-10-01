@@ -11,6 +11,11 @@
 #include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/data/output_path.hh>
+#include <DiFfRG/discretization/data/snapshot.hh>
+
+#include <filesystem>
+#include <iostream>
+#include <sstream>
 
 using namespace DiFfRG;
 
@@ -58,32 +63,129 @@ TEST_CASE("Test configuration helper", "[config][common]")
 
 TEST_CASE("The snapshot flags create their keys", "[config][common][snapshot]")
 {
-  // The parameter file mentions neither /restart nor /timestepping/snapshots: unlike -sd & co.,
-  // these flags must create the keys rather than fail on them.
+  // The parameter file does not mention /timestepping/snapshots: unlike -sd & co., these flags must
+  // create the keys rather than fail on them.
   const std::string filename = "test_config_helper_snapshots.json";
   {
     std::ofstream file(filename);
     file << json::value({{"timestepping", {{"final_time", 1.}}}, {"output", {{"verbosity", 0}}}});
   }
-  char *argv[] = {(char *)"test",
-                  (char *)"-p",
-                  (char *)filename.c_str(),
-                  (char *)"--restart",
-                  (char *)"seed_snapshot_000.h5",
-                  (char *)"--snapshots-k",
-                  (char *)"2,0.5",
-                  (char *)"--snapshots-t",
-                  (char *)"1.5",
-                  (char *)"--stop-after-last-snapshot"};
-  ConfigurationHelper helper(10, argv);
+  char *argv[] = {(char *)"test",          (char *)"-p",  (char *)filename.c_str(),
+                  (char *)"--snapshots-k", (char *)"2,0.5", (char *)"--snapshots-t",
+                  (char *)"1.5",           (char *)"--stop-after-last-snapshot"};
+  ConfigurationHelper helper(8, argv);
   const auto &config = helper.get_config();
 
-  REQUIRE(config.get_string("/restart/file") == "seed_snapshot_000.h5");
   REQUIRE(config.get_double("/timestepping/final_time") == 1.);
   REQUIRE(config.get_bool("/timestepping/snapshots/stop_after_last"));
   const json::value root = config;
   REQUIRE(root.at_pointer("/timestepping/snapshots/k") == json::value(json::array{2., 0.5}));
   REQUIRE(root.at_pointer("/timestepping/snapshots/t") == json::value(json::array{1.5}));
+}
+
+TEST_CASE("A restart takes its configuration from the snapshot", "[config][common][snapshot]")
+{
+  const std::string snapshot_file = "test_config_helper_seed_snapshot.h5";
+  std::filesystem::remove(snapshot_file);
+  SnapshotData seed;
+  seed.config_json = json::serialize(json::value(
+      {{"physical", {{"T", 0.05}, {"Lambda", 1.}}},
+       {"timestepping", {{"final_time", 2.}, {"snapshots", {{"k", json::array{0.5}}, {"stop_after_last", true}}}}},
+       {"restart", {{"file", "older_snapshot.h5"}}},
+       {"output", {{"name", "seed"}, {"verbosity", 0}}}}));
+  write_snapshot(snapshot_file, seed);
+
+  // Not read: a restart must not pick up anything from it.
+  const std::string parameter_file = "test_config_helper_restart.json";
+  std::ofstream(parameter_file) << json::value({{"physical", {{"T", 1.}, {"Lambda", 3.}}}});
+
+  const auto parse = [&](std::vector<std::string> extra) {
+    std::vector<std::string> args{"test", "--restart", snapshot_file};
+    args.insert(args.end(), extra.begin(), extra.end());
+    std::vector<char *> argv;
+    for (auto &arg : args)
+      argv.push_back(arg.data());
+    return ConfigurationHelper::probe(int(argv.size()), argv.data(), parameter_file);
+  };
+
+  SECTION("The snapshot's values, CLI overrides on top")
+  {
+    const auto config = parse({"-sd", "/physical/T=0.1", "-ss", "/output/name=restarted"});
+    REQUIRE(config.get_double("/physical/T") == 0.1);
+    REQUIRE(config.get_double("/physical/Lambda") == 1.);
+    REQUIRE(config.get_double("/timestepping/final_time") == 2.);
+    REQUIRE(config.get_string("/output/name") == "restarted");
+    REQUIRE(config.get_string("/restart/file") == snapshot_file);
+    // The seed run's snapshot schedule is not inherited.
+    REQUIRE_FALSE(config.contains("/timestepping/snapshots"));
+  }
+  SECTION("A restart may request snapshots of its own")
+  {
+    const json::value config = parse({"--snapshots-k", "0.2"});
+    REQUIRE(config.at_pointer("/timestepping/snapshots/k") == json::value(json::array{0.2}));
+    REQUIRE_FALSE(config.as_object().at("timestepping").as_object().at("snapshots").as_object().contains(
+        "stop_after_last"));
+  }
+  SECTION("Every override is printed at the start")
+  {
+    std::ostringstream captured;
+    auto *const previous = std::cout.rdbuf(captured.rdbuf());
+    std::vector<std::string> args{"test", "--restart", snapshot_file, "-sd", "/physical/T=0.1"};
+    std::vector<char *> argv;
+    for (auto &arg : args)
+      argv.push_back(arg.data());
+    ConfigurationHelper helper(int(argv.size()), argv.data(), parameter_file);
+    std::cout.rdbuf(previous);
+    INFO(captured.str());
+    REQUIRE(captured.str().find("Overridden on the command line (1)") != std::string::npos);
+    REQUIRE(captured.str().find("/physical/T: 0.05 -> 0.1") != std::string::npos);
+  }
+  SECTION("Invalid combinations are errors")
+  {
+    // probe() returns an empty tree where the application's own parse would stop with an error.
+    REQUIRE_FALSE(parse({"-sd", "/physical/not_in_the_snapshot=1"}).contains("/physical"));
+    REQUIRE_FALSE(parse({"-p", parameter_file}).contains("/physical"));
+  }
+  SECTION("A restart from the run's own snapshot continues it, with its schedule")
+  {
+    const auto folder = std::filesystem::absolute("test_config_helper_continue");
+    std::filesystem::remove_all(folder);
+    std::filesystem::create_directories(folder);
+    const auto own_snapshot = (folder / "seed_snapshot_000.h5").string();
+    SnapshotData own;
+    own.config_json = json::serialize(
+        json::value({{"timestepping", {{"final_time", 2.}, {"snapshots", {{"t", json::array{0.5, 1.}}}}}},
+                     {"output", {{"name", "seed"}, {"folder", folder.string()}, {"verbosity", 0}}}}));
+    write_snapshot(own_snapshot, own);
+    const auto restart = [&](std::vector<std::string> extra) {
+      std::vector<std::string> args{"test", "--restart", own_snapshot};
+      args.insert(args.end(), extra.begin(), extra.end());
+      std::vector<char *> argv;
+      for (auto &arg : args)
+        argv.push_back(arg.data());
+      return json::value(ConfigurationHelper::probe(int(argv.size()), argv.data(), parameter_file));
+    };
+
+    REQUIRE(restart({}).at_pointer("/timestepping/snapshots/t") == json::value(json::array{0.5, 1.}));
+    // Into another output it is a new run, without the schedule ...
+    REQUIRE_FALSE(restart({"-ss", "/output/name=other"})
+                      .as_object()
+                      .at("timestepping")
+                      .as_object()
+                      .contains("snapshots"));
+    // ... and snapshot flags replace the schedule as a whole.
+    const auto replaced = restart({"--snapshots-k", "0.2"});
+    REQUIRE(replaced.at_pointer("/timestepping/snapshots/k") == json::value(json::array{0.2}));
+    REQUIRE_FALSE(replaced.as_object().at("timestepping").as_object().at("snapshots").as_object().contains("t"));
+    std::filesystem::remove_all(folder);
+  }
+  SECTION("/restart in a parameter file is an error")
+  {
+    const std::string file = "test_config_helper_restart_key.json";
+    std::ofstream(file) << json::value({{"restart", {{"file", snapshot_file}}}});
+    char *argv[] = {(char *)"test"};
+    REQUIRE_FALSE(ConfigurationHelper::probe(1, argv, file).contains("/restart"));
+  }
 }
 
 TEST_CASE("Test configuration helper with TOML", "[config][common][toml]")

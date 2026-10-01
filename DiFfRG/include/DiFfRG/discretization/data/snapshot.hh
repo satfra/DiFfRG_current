@@ -3,10 +3,12 @@
 // DiFfRG
 #include <DiFfRG/common/config_tree.hh>
 #include <DiFfRG/discretization/common/snapshot_state.hh>
+#include <DiFfRG/discretization/data/output_path.hh>
 
 // standard library
 #include <filesystem>
 #include <limits>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -44,11 +46,27 @@ namespace DiFfRG
    * The file is first written as `<path>.tmp` and then renamed, so a reader never sees a partially
    * written snapshot -- which matters when many restarted runs pick up the snapshot of a seed run
    * that is still going.
+   *
+   * @throws std::runtime_error if @p path already exists: snapshots are never overwritten.
    */
   void write_snapshot(const std::filesystem::path &path, const SnapshotData &data);
 
   /** @brief Read a snapshot written by write_snapshot. */
   SnapshotData read_snapshot(const std::filesystem::path &path);
+
+  /** @brief Read only the configuration a snapshot was written with. */
+  json::value read_snapshot_config(const std::filesystem::path &path);
+
+  /** @brief `<run name>_snapshot_<nnn>.h5`, the @p index-th snapshot of the run at @p path. */
+  std::filesystem::path snapshot_file(const OutputPath &path, unsigned int index);
+
+  /**
+   * @brief The index of @p file among the snapshots of the run at @p path, if it is one of them.
+   *
+   * A restart from one of its own run's snapshots is a continuation of that run: it keeps the
+   * snapshot schedule and numbers its snapshots on from there.
+   */
+  std::optional<unsigned int> own_snapshot_index(const OutputPath &path, const std::filesystem::path &file);
 
   /**
    * @brief List the differences between two configurations, one line per differing leaf.

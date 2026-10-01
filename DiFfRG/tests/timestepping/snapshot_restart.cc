@@ -464,3 +464,69 @@ TEST_CASE("A stuck timestep controller throws instead of ending early", "[snapsh
       }(),
       Catch::Matchers::ContainsSubstring("stuck"));
 }
+
+TEST_CASE("Snapshots are never overwritten", "[snapshot][timestepping]")
+{
+  using Model = Testing::ModelExp<1>;
+  const auto root = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "guard", "guard");
+  const auto config = with_snapshots(base_config(), R"({"t": [0.5]})");
+  run_flow<Model, DGDisc<Model>, DGAsm<Model>, IDA>(config, root);
+
+  // A second run into the same output stops before stepping -- also a restart from another run's
+  // snapshot that writes snapshots there.
+  REQUIRE_THROWS_WITH((run_flow<Model, DGDisc<Model>, DGAsm<Model>, IDA>(config, root)),
+                      Catch::Matchers::ContainsSubstring("already exists"));
+  const auto other = root.child("other", "other");
+  run_flow<Model, DGDisc<Model>, DGAsm<Model>, IDA>(config, other);
+  REQUIRE_THROWS_WITH((run_flow<Model, DGDisc<Model>, DGAsm<Model>, IDA>(
+                          with_snapshots(with_restart(base_config(), other.run_file("_snapshot_000", ".h5")),
+                                         R"({"t": [0.75]})"),
+                          root)),
+                      Catch::Matchers::ContainsSubstring("already exists"));
+}
+
+TEST_CASE("Restarts can be chained", "[snapshot][timestepping]")
+{
+  // seed -> snapshot at 0.25 -> restart writes one at 0.5 -> restart from that. Same segment
+  // boundaries as one run with snapshots at 0.25 and 0.5, so the same final state.
+  using Model = ModelLatch<1>;
+  const auto root = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "chain", "chain");
+  const auto config = base_config();
+
+  const auto reference = run_flow<Model, DGDisc<Model>, DGAsm<Model>, IDA>(
+      with_snapshots(config, R"({"t": [0.25, 0.5]})"), root.child("reference", "reference"));
+  run_flow<Model, DGDisc<Model>, DGAsm<Model>, IDA>(with_snapshots(config, R"({"t": [0.25]})"), root);
+  run_flow<Model, DGDisc<Model>, DGAsm<Model>, IDA>(
+      with_snapshots(with_restart(config, root.run_file("_snapshot_000", ".h5")), R"({"t": [0.5]})"),
+      root.child("first", "first"));
+  const auto chained = run_flow<Model, DGDisc<Model>, DGAsm<Model>, IDA>(
+      with_restart(config, root.child("first", "first").run_file("_snapshot_000", ".h5")),
+      root.child("second", "second"));
+
+  REQUIRE(max_difference(reference.spatial, chained.spatial) <= 1e-12 * max_abs(reference.spatial));
+}
+
+TEST_CASE("Restarting from its own snapshot continues an interrupted run", "[snapshot][timestepping]")
+{
+  // A run with snapshots at 0.25 and 0.5 that died in between: its snapshot_001 is missing.
+  using Model = ModelLatch<1>;
+  const auto root = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "cont", "cont");
+  const auto config = with_snapshots(base_config(), R"({"t": [0.25, 0.5]})");
+  const auto uninterrupted = run_flow<Model, DGDisc<Model>, DGAsm<Model>, IDA>(config, root);
+  const auto second = root.run_file("_snapshot_001", ".h5");
+  const auto second_snapshot = read_snapshot(second);
+  std::filesystem::remove(second);
+
+  const auto continued = run_flow<Model, DGDisc<Model>, DGAsm<Model>, IDA>(
+      with_restart(config, root.run_file("_snapshot_000", ".h5")), root);
+  REQUIRE(max_difference(uninterrupted.spatial, continued.spatial) <= 1e-12 * max_abs(uninterrupted.spatial));
+  // The continuation wrote the missing snapshot under its original number.
+  REQUIRE(std::filesystem::exists(second));
+  REQUIRE(max_difference(read_snapshot(second).spatial, second_snapshot.spatial) <=
+          1e-12 * max_abs(second_snapshot.spatial));
+
+  // Continuing again from the first snapshot would overwrite the second.
+  REQUIRE_THROWS_WITH((run_flow<Model, DGDisc<Model>, DGAsm<Model>, IDA>(
+                          with_restart(config, root.run_file("_snapshot_000", ".h5")), root)),
+                      Catch::Matchers::ContainsSubstring("already continued past"));
+}

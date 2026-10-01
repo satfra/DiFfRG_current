@@ -85,7 +85,8 @@ def run_point(exe, param_list, add_params="", folder="", cwdir=os.getcwd(), supp
 
     Args:
         restart (str, optional): A flow snapshot to continue from instead of starting at the initial
-            scale, see `make_seed`. Only meaningful if the parameters that differ from the seed run do
+            scale, see `make_seed`. The run then takes its configuration from the snapshot, and
+            `param_list` overrides it. Only meaningful if the parameters that differ from the seed run do
             not affect the flow above the snapshot's scale.
     """
     name = get_name(param_list)

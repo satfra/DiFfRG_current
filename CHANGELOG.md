@@ -84,9 +84,12 @@
 ### Added
 
 - Flow snapshots and restarts. `/timestepping/snapshots/k` (or `/t`) makes a run write its complete
-  state at those RG scales to `<run>_snapshot_<nnn>.h5`, and `/restart/file` (or `--restart <file>`)
-  makes a later run continue from such a snapshot instead of starting at Λ, possibly with a changed
-  configuration, whose differences to the snapshot's are logged. This is meant for parameter scans
+  state, including the full parameter tree, at those RG scales to `<run>_snapshot_<nnn>.h5`, and
+  `--restart <file>` makes a later run continue from such a snapshot instead of starting at Λ. A
+  restarted run takes its configuration from the snapshot and reads no parameter file; `-sd` & co.
+  override it, and every override is printed at the start. Restarting from one of the run's own
+  snapshots continues that run with its snapshot schedule, e.g. after a wall-time limit; a restart
+  into another output starts without one. No run ever overwrites an existing snapshot. This is meant for parameter scans
   whose parameters only matter below some scale (T and μ in a phase diagram), for IR debugging, and
   for continuing runs cut off by a wall-time limit. A snapshot holds the spatial state cell by cell,
   so it is independent of the dof numbering and of the MPI rank count and can rebuild an adapted

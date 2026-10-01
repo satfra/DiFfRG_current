@@ -54,6 +54,16 @@ amplifies it.
 }
 ```
 
+or, in a `parameter.toml`:
+
+```toml
+[timestepping.snapshots]
+k = [2.0, 1.0]
+t = []
+snap_to_output_grid = true
+stop_after_last = false
+```
+
 - `k`: RG scales, converted to t = ln(Λ/k) using `/physical/Lambda`. `t`: RG times directly. Both
   lists are merged.
 - `snap_to_output_grid` (default `true`): moves each snapshot to the nearest output time
@@ -81,23 +91,53 @@ cost is one solver restart per snapshot, i.e. a few small steps.
 ## Restarting
 
 ```bash
-./QuarkMesonLPAprime --restart output/seed_snapshot_000.h5 -sd /physical/T=0.1
+./QuarkMesonLPAprime --restart output/seed_snapshot_000.h5 -sd /physical/T=0.1 -ss /output/name=T0.1
 ```
 
-or `"restart": {"file": "..."}` in the parameter file. On its first call, `TimeStepper::run`:
+A restarted run takes its whole configuration from the snapshot, which carries the seed run's full
+parameter tree, whether the seed read a JSON or a TOML parameter file. No parameter file is read (`-p` together with `--restart` is an error), and
+`/restart` in a parameter file is an error too. Only the command line changes anything:
+`-sd`, `-si`, `-sb` and `-ss` override entries of the snapshot's configuration, and, as usual, only
+entries that exist there. Every override is printed at the start of the run, with its old and new
+value.
+
+What happens to the snapshot schedule depends on where the restart writes:
+
+- **Continuing the same run.** If the snapshot is one of this run's own, i.e. `--restart` names
+  `<folder>/<name>_snapshot_<nnn>.h5` and `/output` is not overridden, the restart continues that
+  run. It keeps the snapshot schedule and numbers the later snapshots on from `nnn + 1`, exactly as
+  the uninterrupted run would have. A run that died between its snapshots at 0.5 and 1.0 is
+  continued with
+
+  ```bash
+  ./App --restart output/output_snapshot_000.h5
+  ```
+
+  If a later snapshot already exists, the run has been continued before, and the restart stops
+  with an error instead of overwriting it: restart from the latest snapshot.
+- **A new run.** With a different `/output/name` or `/output/folder`, e.g. every point of a
+  phase-diagram scan, the restart starts without a snapshot schedule and writes snapshots only if
+  its command line asks for them. Restarts can be chained this way as well.
+
+In both cases `--snapshots-k`, `--snapshots-t` and `--stop-after-last-snapshot` on the command line
+replace the schedule as a whole.
+
+On its first call, `TimeStepper::run`:
 
 1. reads the snapshot, rebuilds the mesh if it was adapted, and restores the spatial state, the
    variables, the model's history-dependent state (see below) and the adaptation schedule;
-2. logs the differences between the current configuration and the snapshot's. `/output`,
-   `/restart` and `/timestepping/snapshots` are not listed;
+2. logs the differences between the configuration and the snapshot's, i.e. the overrides.
+   `/output`, `/restart` and `/timestepping/snapshots` are not listed;
 3. continues from the snapshot's time. The `t_start` passed to `run()` is ignored.
 
 The application code does not change: set up the initial condition as usual, with
 `initial_condition.interpolate(model)`, and call `time_stepper.run(initial_condition, 0., t_final)`.
 
 A restarted run writes its output from the snapshot's time on. The part of the flow above k_s is in
-the seed run's output. Snapshots requested at later times are written as usual, so restarts can be
-chained.
+the seed run's output. Without `-ss /output/name=...` or `-ss /output/folder=...` it writes to the
+seed run's output name and replaces its `<name>.h5` and friends; the output above the snapshot's
+scale is then lost. Snapshot files are never overwritten: a run that would write one that exists
+stops before it starts stepping.
 
 Differences that make the data impossible to load are errors, not warnings. These are a different
 coarse grid, finite element, number of variables or dimension.

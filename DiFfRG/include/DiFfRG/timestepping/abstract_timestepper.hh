@@ -323,6 +323,10 @@ namespace DiFfRG
      *   time; @p t_start is then ignored. @p initial_condition must still have been set up as usual
      *   (interpolate()), so that its block structure exists.
      *
+     * Snapshots are never overwritten: run() throws before stepping if one it would write exists. A
+     * restart from one of this run's own snapshots continues the run, numbering its snapshots on from
+     * there; finding a later one already on disk then means the run has continued before.
+     *
      * Without either, this is exactly one call to run_segment().
      *
      * @param initial_condition The state; on return it holds the state at the end of the run.
@@ -331,6 +335,7 @@ namespace DiFfRG
      */
     void run(AbstractFlowingVariables<NumberType, VectorType> &initial_condition, double t_start, const double t_stop)
     {
+      const SnapshotSchedule schedule(config, log.Lambda(), output_dt);
       if (!restart_consumed && config.contains("/restart/file") && !config.get_string("/restart/file").empty()) {
         restart_consumed = true;
         t_start = restore_snapshot(initial_condition, t_start);
@@ -339,8 +344,18 @@ namespace DiFfRG
                                    ", which is past the requested final time t = " + std::to_string(t_stop) + ".");
       }
 
-      const SnapshotSchedule schedule(config, log.Lambda(), output_dt);
       const auto snapshot_times = schedule.times_in(t_start, t_stop);
+      // Checked now rather than when the first snapshot is due, which may be most of a flow away.
+      for (std::size_t i = 0; i < snapshot_times.size(); ++i) {
+        const auto path = snapshot_file(data_out.path(), snapshot_count + i);
+        if (!std::filesystem::exists(path)) continue;
+        if (continues_own_run)
+          throw std::runtime_error("This run already continued past the snapshot it restarts from: '" +
+                                   path.string() + "' exists. Restart from the latest snapshot instead.");
+        throw std::runtime_error("The snapshot '" + path.string() +
+                                 "' already exists; snapshots are never overwritten. Choose another /output/name or "
+                                 "/output/folder, or remove the old snapshots.");
+      }
 
       double t = t_start;
       for (const double t_snapshot : snapshot_times) {
@@ -395,7 +410,7 @@ namespace DiFfRG
         variables_view.refresh(data.block(1));
       }
 
-      const auto path = data_out.path().run_file("_snapshot_" + int_to_string(snapshot_count, 3), ".h5");
+      const auto path = snapshot_file(data_out.path(), snapshot_count);
       ++snapshot_count;
 
       bool failed = false;
@@ -444,6 +459,11 @@ namespace DiFfRG
                                  ", but this flow has dim = " + std::to_string(dim) + ".");
 
       log.info("Restarting from the snapshot '{}' at t = {} (k = {}).", path.string(), snapshot.t, snapshot.k);
+      // Continuing this very run: its later snapshots keep the numbers they would have had.
+      if (const auto index = own_snapshot_index(data_out.path(), path)) {
+        continues_own_run = true;
+        snapshot_count = *index + 1;
+      }
       if (!is_close(requested_t_start, snapshot.t, 1e-12))
         log.info("The requested start time t = {} is replaced by the snapshot's time.", requested_t_start);
 
@@ -495,6 +515,7 @@ namespace DiFfRG
     }
 
     bool restart_consumed = false;
+    bool continues_own_run = false;
     unsigned int snapshot_count = 0;
 
   protected:

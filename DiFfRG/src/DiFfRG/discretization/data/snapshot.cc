@@ -69,6 +69,20 @@ namespace DiFfRG
       return group.read_attribute<T>(name);
     }
 
+    /// Open @p path for reading and check that it is a snapshot this DiFfRG can read.
+    hdf5::File open_snapshot(const std::filesystem::path &path)
+    {
+      if (!std::filesystem::exists(path))
+        throw std::runtime_error("The snapshot file '" + path.string() + "' does not exist.");
+      auto file = hdf5::File::open(path.string(), hdf5::Access::ReadOnly);
+      const int version = read_required_attribute<int>(file.root(), "format_version", path);
+      if (version != SnapshotData::format_version)
+        throw std::runtime_error("Snapshot '" + path.string() + "' has format version " + std::to_string(version) +
+                                 ", but this DiFfRG reads version " + std::to_string(SnapshotData::format_version) +
+                                 ".");
+      return file;
+    }
+
     /// Numbers in their shortest round-trip form (0.1, not boost::json's 1E-1); everything else as JSON.
     std::string format_json(const json::value &v)
     {
@@ -135,6 +149,8 @@ namespace DiFfRG
 
   void write_snapshot(const std::filesystem::path &path, const SnapshotData &data)
   {
+    if (std::filesystem::exists(path))
+      throw std::runtime_error("The snapshot '" + path.string() + "' already exists; snapshots are never overwritten.");
     if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path());
     auto tmp_path = path;
     tmp_path += ".tmp";
@@ -179,16 +195,8 @@ namespace DiFfRG
 
   SnapshotData read_snapshot(const std::filesystem::path &path)
   {
-    if (!std::filesystem::exists(path))
-      throw std::runtime_error("The snapshot file '" + path.string() + "' does not exist.");
-
-    auto file = hdf5::File::open(path.string(), hdf5::Access::ReadOnly);
+    auto file = open_snapshot(path);
     auto root = file.root();
-
-    const int version = read_required_attribute<int>(root, "format_version", path);
-    if (version != SnapshotData::format_version)
-      throw std::runtime_error("Snapshot '" + path.string() + "' has format version " + std::to_string(version) +
-                               ", but this DiFfRG reads version " + std::to_string(SnapshotData::format_version) + ".");
 
     SnapshotData data;
     data.t = read_required_attribute<double>(root, "t", path);
@@ -217,10 +225,44 @@ namespace DiFfRG
     for (const auto &name : model.child_names())
       data.model.set(name, read_doubles(model, name));
 
-    auto config_dataset = root.open_dataset("config_json");
-    config_dataset.read(data.config_json);
+    root.open_dataset("config_json").read(data.config_json);
 
     return data;
+  }
+
+  json::value read_snapshot_config(const std::filesystem::path &path)
+  {
+    auto file = open_snapshot(path);
+    std::string config_json;
+    file.root().open_dataset("config_json").read(config_json);
+    return json::parse(config_json);
+  }
+
+  std::filesystem::path snapshot_file(const OutputPath &path, const unsigned int index)
+  {
+    std::string digits = std::to_string(index);
+    if (digits.size() < 3) digits.insert(0, 3 - digits.size(), '0');
+    return path.run_file("_snapshot_" + digits, ".h5");
+  }
+
+  std::optional<unsigned int> own_snapshot_index(const OutputPath &path, const std::filesystem::path &file)
+  {
+    std::error_code error;
+    const auto directory = std::filesystem::weakly_canonical(std::filesystem::absolute(file).parent_path(), error);
+    if (error || directory != std::filesystem::weakly_canonical(path.root(), error) || error) return std::nullopt;
+
+    const std::string name = file.filename().string();
+    const std::string prefix = path.run_name() + "_snapshot_";
+    const std::string extension = ".h5";
+    if (name.size() <= prefix.size() + extension.size() || !name.starts_with(prefix) || !name.ends_with(extension))
+      return std::nullopt;
+    const std::string digits = name.substr(prefix.size(), name.size() - prefix.size() - extension.size());
+    unsigned int index = 0;
+    const auto [end, status] = std::from_chars(digits.data(), digits.data() + digits.size(), index);
+    if (status != std::errc() || end != digits.data() + digits.size()) return std::nullopt;
+    // Only the exact spelling snapshot_file() produces, so that e.g. _snapshot_7 is not taken for _snapshot_007.
+    if (snapshot_file(path, index).filename() != file.filename()) return std::nullopt;
+    return index;
   }
 
   std::vector<std::string> config_diff(const json::value &before, const json::value &after,
