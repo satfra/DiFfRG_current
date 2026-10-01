@@ -6,4 +6,5 @@
 installation
 models
 structure
+snapshots
 ```

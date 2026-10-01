@@ -1,5 +1,6 @@
 import glob
 import os
+import shlex
 import shutil
 import subprocess
 
@@ -60,7 +61,7 @@ def sim_exists(sim_set, param_list) -> bool:
             return True
     return False
 
-def get_command(exe, param_list, folder="", add_params="") -> str:
+def get_command(exe, param_list, folder="", add_params="", restart=None) -> str:
     if len(param_list) < 1:
         raise Exception(
             "When adding a point in the PD, you need to give as argument a list of [name, value] lists."
@@ -73,19 +74,30 @@ def get_command(exe, param_list, folder="", add_params="") -> str:
                 "When adding a point in the PD, you need to give as argument a list of [name, value] lists."
             )
         attach = f"{attach} -sd {param[0]}={param[1]}"
+    if restart is not None:
+        add_params = f"--restart {shlex.quote(os.fspath(restart))} {add_params}"
     if folder != "":
         return f"{exe} -ss /output/name={name} {attach} -ss /output/folder={folder} {add_params}"
-    return f"{exe} -o {name} {attach} {add_params}"
+    return f"{exe} -ss /output/name={name} {attach} {add_params}"
 
-def run_point(exe, param_list, add_params="", folder="", cwdir=os.getcwd(), suppress=True) -> str:
+def run_point(exe, param_list, add_params="", folder="", cwdir=os.getcwd(), suppress=True, restart=None) -> str:
+    """Runs one point of a parameter scan.
+
+    Args:
+        restart (str, optional): A flow snapshot to continue from instead of starting at the initial
+            scale, see `make_seed`. The run then takes its configuration from the snapshot, and
+            `param_list` overrides it. Only meaningful if the parameters that differ from the seed run do
+            not affect the flow above the snapshot's scale.
+    """
     name = get_name(param_list)
+    command = get_command(exe, param_list, folder, add_params, restart)
     if not suppress:
-        print(f"Command: {get_command(exe, param_list, folder, add_params)}")
+        print(f"Command: {command}")
     try:
         # os.system(get_command(exe, param_list, folder, add_params))
         if(suppress):
             subprocess.run(
-                [get_command(exe, param_list, folder, add_params)],
+                [command],
                 shell=True,
                 capture_output=False,
                 text=False,
@@ -95,7 +107,7 @@ def run_point(exe, param_list, add_params="", folder="", cwdir=os.getcwd(), supp
             )
         else:
             subprocess.run(
-                [get_command(exe, param_list, folder, add_params)],
+                [command],
                 shell=True,
                 capture_output=False,
                 text=False,
@@ -121,3 +133,28 @@ def get_name(param_list) -> str:
         else:
             name = f"{param[0].split('/')[-1]}:{param[1]}"
     return name
+
+def make_seed(exe, param_list, k_values, folder, add_params="", cwdir=os.getcwd(), suppress=True) -> list:
+    """Runs a seed flow that writes snapshots at the scales `k_values` and stops after the last one.
+
+    The typical use is a phase diagram: the effects of T and mu are suppressed as long as the RG
+    scale is well above them (for fermions roughly like exp(-(k - mu) / T)), so one seed run, e.g.
+    at low T and mu = 0, can be continued from a snapshot at such a k for every point of the scan:
+
+        seed = pd.make_seed(exe, [["/physical/T", 0.005], ["/physical/muq", 0.0]], [2.0], "seeds/")
+        pd.run_point(exe, [["/physical/T", 0.1], ["/physical/muq", 0.2]], folder="pd/",
+                     restart=seed[0]["path"])
+
+    Args:
+        exe (str): The DiFfRG executable.
+        param_list (list): [name, value] pairs, as for `run_point`.
+        k_values (list): The RG scales of the snapshots; needs /physical/Lambda.
+        folder (str): Where the seed run writes its output and snapshots.
+
+    Returns:
+        list: The `DiFfRG.file_io.snapshot_info` of every snapshot written, sorted by RG time.
+    """
+    ks = ",".join(repr(float(k)) for k in k_values)
+    run_point(exe, param_list, add_params=f"--snapshots-k {ks} --stop-after-last-snapshot {add_params}",
+              folder=folder, cwdir=cwdir, suppress=suppress)
+    return io.list_snapshots(os.path.join(cwdir, folder, get_name(param_list)))

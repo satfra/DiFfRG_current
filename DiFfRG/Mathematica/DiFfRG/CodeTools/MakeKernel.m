@@ -326,32 +326,32 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
                 ,
                 coordinates
             ];
-        outputPath = FileNameJoin[flowDir, spec["Name"]];
-        ExportCode[FileNameJoin[outputPath, spec["Name"] <> ".hh"], integratorHeader];
-        ExportCode[FileNameJoin[outputPath, "kernel.hh"], kernelHeader];
-        sources = {FileNameJoin[outputPath, "src", "constructor.cc"]};
+        outputPath = FileNameJoin[{flowDir, spec["Name"]}];
+        ExportCode[FileNameJoin[{outputPath, spec["Name"] <> ".hh"}], integratorHeader];
+        ExportCode[FileNameJoin[{outputPath, "kernel.hh"}], kernelHeader];
+        sources = {FileNameJoin[{outputPath, "src", "constructor.cc"}]};
         ExportCode[sources[[-1]], integratorCpp["Constructor"]];
-        AppendTo[sources, FileNameJoin[outputPath, "src", "CT_get.cc"]];
+        AppendTo[sources, FileNameJoin[{outputPath, "src", "CT_get.cc"}]];
         ExportCode[sources[[-1]], integratorCpp["CT", "get"]];
         Do[
-            AppendTo[sources, FileNameJoin[outputPath, "src", StringTemplate["CT_map_`1`.cc"][i]]];
+            AppendTo[sources, FileNameJoin[{outputPath, "src", StringTemplate["CT_map_`1`.cc"][i]}]];
             ExportCode[sources[[-1]], integratorCpp["CT", "map"][[i]]]
             ,
             {i, 1, Length[coordinates]}
         ];
         If[spec["AD"],
-            AppendTo[sources, FileNameJoin[outputPath, "src", "AD_get.cc"]];
+            AppendTo[sources, FileNameJoin[{outputPath, "src", "AD_get.cc"}]];
             ExportCode[sources[[-1]], integratorCpp["AD", "get"]];
             Do[
-                AppendTo[sources, FileNameJoin[outputPath, "src", StringTemplate["AD_map_`1`.cc"][i]]];
+                AppendTo[sources, FileNameJoin[{outputPath, "src", StringTemplate["AD_map_`1`.cc"][i]}]];
                 ExportCode[sources[[-1]], integratorCpp["AD", "map"][[i]]]
                 ,
                 {i, 1, Length[coordinates]}
             ];
         ];
         sources = Map[StringReplace[#, outputPath -> StringTemplate["${CMAKE_CURRENT_SOURCE_DIR}/`Name`"][spec]]&, sources];
-        If[Export[FileNameJoin[outputPath, "sources.m"], sources] === $Failed,
-            Message[MakeKernel::exportFailed, FileNameJoin[outputPath, "sources.m"]];
+        If[Export[FileNameJoin[{outputPath, "sources.m"}], sources] === $Failed,
+            Message[MakeKernel::exportFailed, FileNameJoin[{outputPath, "sources.m"}]];
             Abort[]
         ];
         Print["Please run UpdateFlows[] to export an up-to-date CMakeLists.txt"];

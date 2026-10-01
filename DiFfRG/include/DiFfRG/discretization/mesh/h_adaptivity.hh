@@ -42,6 +42,9 @@ namespace DiFfRG
       adapt_lower = config.get_double("/discretization/adaptivity/coarsen_percent", 5e-2);
     }
 
+    virtual double last_adaptation_time() const override { return last_adapt; }
+    virtual void set_last_adaptation_time(const double t) override { last_adapt = t; }
+
     virtual ~HAdaptivity() = default;
 
     /**
@@ -146,7 +149,9 @@ namespace DiFfRG
     Assembler &assembler;
     Discretization &discretization;
 
-    double last_adapt, adapt_t, adapt_dt, adapt_upper, adapt_lower;
+    /// -inf until the first adaptation, so that the first one happens as soon as start_adapt_at is reached.
+    double last_adapt = -std::numeric_limits<double>::infinity();
+    double adapt_t, adapt_dt, adapt_upper, adapt_lower;
     uint adapt_level;
   };
 } // namespace DiFfRG

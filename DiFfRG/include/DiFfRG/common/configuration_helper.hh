@@ -3,6 +3,8 @@
 // standard library
 #include <list>
 #include <string>
+#include <utility>
+#include <vector>
 
 // DiFfRG
 #include <DiFfRG/common/config_tree.hh>
@@ -93,9 +95,16 @@ namespace DiFfRG
     void parse_cli();
     void print_usage_message();
     void generate_parameter_file();
+    /// The snapshot's configuration, without the seed run's own /restart.
+    ConfigTree read_restart_configuration() const;
+    void print_restart_banner(const std::vector<std::string> &overrides, bool continuing) const;
 
     std::list<std::string> args;
     std::list<std::pair<std::string, std::string>> cli_parameters;
+    /// Set by the snapshot flags; unlike -sd & co. these create their key if the parameter file lacks it.
+    std::list<std::pair<std::string, json::value>> cli_created_parameters;
+    /// Set by --restart: the snapshot whose configuration replaces the parameter file.
+    std::string restart_file;
 
     ConfigTree config;
 

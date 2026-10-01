@@ -1,3 +1,6 @@
+// standard library
+#include <algorithm>
+
 // external libraries
 #include <deal.II/lac/block_vector.h>
 
@@ -10,7 +13,7 @@
 namespace DiFfRG
 {
   template <typename VectorType, typename SparseMatrixType, uint dim>
-  void TimeStepperExplicitEuler_impl<VectorType, SparseMatrixType, dim>::run(
+  void TimeStepperExplicitEuler_impl<VectorType, SparseMatrixType, dim>::run_segment(
       AbstractFlowingVariables<NumberType, VectorType> &initial_condition, double start, double stop)
   {
 
@@ -28,20 +31,25 @@ namespace DiFfRG
 
     double last_save = start;
     double t = start;
-    while (t < stop) {
+    // Not `t < stop`: the rounding in t += dt must not leave a last step of size ~1e-17.
+    while (stop - t > 1e-10 * expl.dt) {
       CalcDtTimer calc_timer;
       if (adaptor(t, old_solution)) {
         solution = old_solution;
         inverse_mass_matrix.initialize(mass_matrix);
       }
 
+      // The last step is shortened to land on stop exactly: run() hands the state at stop to the
+      // next segment or writes it to a snapshot.
+      const double dt = std::min(expl.dt, stop - t);
+
       solution = 0.;
       assembler.set_time(t);
-      assembler.residual(solution, old_solution, -expl.dt, 0.);
+      assembler.residual(solution, old_solution, -dt, 0.);
       inverse_mass_matrix.solve(solution);
       solution += old_solution;
 
-      t += expl.dt;
+      t += dt;
       if ((t - last_save + 1e-4 * expl.dt) >= output_dt) {
         data_out.write_frame(t, [&](auto &frame) { assembler.attach_data_output(frame, solution); });
         last_save = t;
@@ -54,7 +62,8 @@ namespace DiFfRG
                           .minimum_verbosity = 1});
     }
 
-    initial_condition.spatial_data() = solution;
+    // After the swap at the end of the loop body, old_solution holds the state at t.
+    initial_condition.spatial_data() = old_solution;
     this->drain_output();
   }
 } // namespace DiFfRG

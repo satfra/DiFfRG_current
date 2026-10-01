@@ -290,7 +290,7 @@ UpdateFlows[varName_:flowName] :=
   ];
 
 updateCMake[varName_:"Flows"] :=
-  Module[{folders, sources, cmake, fileName = FileNameJoin[flowDir, "CMakeLists.txt"], flowFolderName},
+  Module[{folders, sources, cmake, fileName = FileNameJoin[{flowDir, "CMakeLists.txt"}], flowFolderName},
     flowFolderName = StringSplit[flowDir, "/"][[-1]];
     folders = Select[FileNames["*", flowDir, 1], DirectoryQ];
     sources = Flatten @ Join[Map[Get[# <> "/sources.m"]&, folders]];
@@ -323,8 +323,8 @@ updateFlowClass[varName_:"Flows"] :=
           ""
         ];
     flowCpp = FunKit`MakeCppBlock["Includes" -> {"./flows.hh"}, "Body" -> {FunKit`MakeCppFunction["Name" -> varName, "Class" -> varName, "Suffix" -> integratorInitializations, "Body" -> "", "Parameters" -> {<|"Type" -> "DiFfRG::ConfigTree", "Reference" -> True, "Const" -> True, "Name" -> "config"|>}, "Return" -> ""], FunKit`MakeCppFunction["Name" -> "set_k", "Class" -> varName, "Parameters" -> {<|"Type" -> "double", "Const" -> True, "Name" -> "k", "Reference" -> False|>}, "Body" -> StringJoin[Map["DiFfRG::all_set_k(" <> #[[1]] <> ", k);"&, integrators]], "Return" -> "void"], FunKit`MakeCppFunction["Name" -> "set_T", "Class" -> varName, "Parameters" -> {<|"Type" -> "double", "Const" -> True, "Name" -> "T", "Reference" -> False|>}, "Body" -> StringJoin[Map["DiFfRG::all_set_T(" <> #[[1]] <> ", T);"&, integrators]], "Return" -> "void"], FunKit`MakeCppFunction["Name" -> "set_typical_E", "Class" -> varName, "Parameters" -> {<|"Type" -> "double", "Const" -> True, "Name" -> "E", "Reference" -> False|>}, "Body" -> StringJoin[Map["DiFfRG::all_set_typical_E(" <> #[[1]] <> ", E);"&, integrators]], "Return" -> "void"], FunKit`MakeCppFunction["Name" -> "set_x_extent", "Class" -> varName, "Parameters" -> {<|"Type" -> "double", "Const" -> True, "Name" -> "x_extent", "Reference" -> False|>}, "Body" -> StringJoin[Map["DiFfRG::all_set_x_extent(" <> #[[1]] <> ", x_extent);"&, integrators]], "Return" -> "void"]}];
-    ExportCode[FileNameJoin[flowDir, "flows.hh"], flowHeader];
-    ExportCode[FileNameJoin[flowDir, "flows.cc"], flowCpp];
+    ExportCode[FileNameJoin[{flowDir, "flows.hh"}], flowHeader];
+    ExportCode[FileNameJoin[{flowDir, "flows.cc"}], flowCpp];
   ];
 
 (* ::Chapter:: *)

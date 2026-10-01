@@ -2,19 +2,26 @@
 
 // DiFfRG
 #include <DiFfRG/common/linear_algebra.hh>
+#include <DiFfRG/common/mpi.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/common/abstract_data.hh>
+#include <DiFfRG/discretization/common/la_policy.hh>
+#include <DiFfRG/discretization/common/solution_view.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
+#include <DiFfRG/discretization/data/snapshot.hh>
 #include <DiFfRG/discretization/mesh/no_adaptivity.hh>
 #include <DiFfRG/timestepping/jacobian_diagnostics.hh>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <filesystem>
 #include <limits>
 #include <optional>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace DiFfRG
@@ -135,6 +142,13 @@ namespace DiFfRG
    * - /timestepping/explicit/abs_tol: The absolute tolerance for an explicit timestepping algorithm.
    * - /timestepping/explicit/rel_tol: The relative tolerance for an explicit timestepping algorithm.
    * - /timestepping/explicit/detect_stuck: Whether repeated-time callback detection is enabled.
+   *
+   * Flow snapshots and restarts (all optional; see run() and documentation/getting_started/snapshots.md):
+   * - /timestepping/snapshots/k: list of RG scales at which to write a snapshot (needs /physical/Lambda).
+   * - /timestepping/snapshots/t: list of RG times at which to write a snapshot.
+   * - /timestepping/snapshots/snap_to_output_grid: move snapshot times onto the output grid (default true).
+   * - /timestepping/snapshots/stop_after_last: end the run after its last snapshot (default false).
+   * - /restart/file: a snapshot to continue the flow from, instead of starting at t_start.
    *
    * Additionally, the following parameters are being used:
    * - /output/verbosity: At 0 no progress is printed; 1 reports residual work; 2 adds Jacobian, linear-solver, and
@@ -290,18 +304,219 @@ namespace DiFfRG
       }
     }
 
+  public:
     /**
-     * @brief Any derived class must implement this method to run the timestepping algorithm.
+     * @brief Evolve @p initial_condition from @p t_start to @p t_stop.
      *
-     * @param initial_condition The flowing variables object that contains the initial condition.
+     * The time stepping itself is done by the derived class in run_segment(). Around it, run()
+     * provides two optional features, both driven by the configuration:
+     *
+     * - **Snapshots.** At every time of /timestepping/snapshots (see SnapshotSchedule) the flow is
+     *   split into segments, and the state at each boundary is written to
+     *   `<run name>_snapshot_<nnn>.h5` next to the run's other output. Splitting, rather than
+     *   sampling at an output step, is what makes the snapshot exact for every stepper: at an output
+     *   step the hybrid steppers only hold interpolated variables, while every stepper returns its
+     *   accepted state at the end of a segment. The price is one solver restart per snapshot.
+     * - **Restart.** If /restart/file names a snapshot, the first call to run() restores the mesh,
+     *   the state, the model's history-dependent state and the adaptation schedule from it, logs
+     *   every configuration entry that differs from the snapshot's, and starts at the snapshot's
+     *   time; @p t_start is then ignored. @p initial_condition must still have been set up as usual
+     *   (interpolate()), so that its block structure exists.
+     *
+     * Snapshots are never overwritten: run() throws before stepping if one it would write exists. A
+     * restart from one of this run's own snapshots continues the run, numbering its snapshots on from
+     * there; finding a later one already on disk then means the run has continued before.
+     *
+     * Without either, this is exactly one call to run_segment().
+     *
+     * @param initial_condition The state; on return it holds the state at the end of the run.
      * @param t_start The start time of the simulation.
      * @param t_stop The run method will evolve the system from t_start to t_stop.
      */
-    virtual void run(AbstractFlowingVariables<NumberType, VectorType> &initial_condition, const double t_start,
-                     const double t_stop) = 0;
+    void run(AbstractFlowingVariables<NumberType, VectorType> &initial_condition, double t_start, const double t_stop)
+    {
+      const SnapshotSchedule schedule(config, log.Lambda(), output_dt);
+      if (!restart_consumed && config.contains("/restart/file") && !config.get_string("/restart/file").empty()) {
+        restart_consumed = true;
+        t_start = restore_snapshot(initial_condition, t_start);
+        if (t_stop < t_start)
+          throw std::runtime_error("Restart: the snapshot is at t = " + std::to_string(t_start) +
+                                   ", which is past the requested final time t = " + std::to_string(t_stop) + ".");
+      }
+
+      const auto snapshot_times = schedule.times_in(t_start, t_stop);
+      // Checked now rather than when the first snapshot is due, which may be most of a flow away.
+      for (std::size_t i = 0; i < snapshot_times.size(); ++i) {
+        const auto path = snapshot_file(data_out.path(), snapshot_count + i);
+        if (!std::filesystem::exists(path)) continue;
+        if (continues_own_run)
+          throw std::runtime_error("This run already continued past the snapshot it restarts from: '" +
+                                   path.string() + "' exists. Restart from the latest snapshot instead.");
+        throw std::runtime_error("The snapshot '" + path.string() +
+                                 "' already exists; snapshots are never overwritten. Choose another /output/name or "
+                                 "/output/folder, or remove the old snapshots.");
+      }
+
+      double t = t_start;
+      for (const double t_snapshot : snapshot_times) {
+        run_segment(initial_condition, t, t_snapshot);
+        write_snapshot(initial_condition, t_snapshot);
+        t = t_snapshot;
+      }
+      if (!snapshot_times.empty() && schedule.stop_after_last()) {
+        if (!is_close(t, t_stop, 1e-12))
+          log.info("Stopping at t = {} after the last snapshot (/timestepping/snapshots/stop_after_last).", t);
+        return;
+      }
+      if (snapshot_times.empty() || !is_close(t, t_stop, 1e-12)) run_segment(initial_condition, t, t_stop);
+    }
 
     bool is_implicit() const { return m_is_implicit; }
     bool is_explicit() const { return m_is_explicit; }
+
+  protected:
+    /**
+     * @brief Any derived class must implement this method to run the timestepping algorithm.
+     *
+     * It must return the accepted state at exactly @p t_stop in @p initial_condition, because
+     * run() writes snapshots from it. Called once per segment, i.e. possibly several times per
+     * run() with consecutive intervals.
+     *
+     * @param initial_condition The flowing variables object that contains the initial condition.
+     * @param t_start The start time of the segment.
+     * @param t_stop The end time of the segment.
+     */
+    virtual void run_segment(AbstractFlowingVariables<NumberType, VectorType> &initial_condition, const double t_start,
+                             const double t_stop) = 0;
+
+  private:
+    /**
+     * @brief Write the state at time @p t to the next snapshot file.
+     *
+     * Collective: the replicas are gathered on every rank, then the writer rank alone assembles
+     * and writes the file, and the ranks agree on whether that worked.
+     */
+    void write_snapshot(const AbstractFlowingVariables<NumberType, VectorType> &state, const double t)
+    {
+      const auto &data = state.data();
+      const bool has_variables = data.n_blocks() > 1;
+
+      // Gathered here, outside the writer-rank region: a refresh communicates.
+      SolutionView<VectorType> spatial_view, variables_view;
+      assembler.reinit_solution_view(spatial_view);
+      spatial_view.refresh(state.spatial_data());
+      if (has_variables) {
+        reinit_variables_view(variables_view, data.block(1).size(), assembler.get_communicator());
+        variables_view.refresh(data.block(1));
+      }
+
+      const auto path = snapshot_file(data_out.path(), snapshot_count);
+      ++snapshot_count;
+
+      bool failed = false;
+      std::string failure;
+      if (data_out.is_writer_rank()) {
+        try {
+          SnapshotData snapshot;
+          snapshot.t = t;
+          snapshot.Lambda = log.Lambda();
+          if (snapshot.Lambda > 0.) snapshot.k = snapshot.Lambda * std::exp(-t);
+          snapshot.dim = dim;
+          snapshot.spatial = assembler.capture_snapshot_state(spatial_view.get());
+          if (has_variables) {
+            const auto &variables = variables_view.get();
+            snapshot.variables.resize(variables.size());
+            for (std::size_t i = 0; i < snapshot.variables.size(); ++i)
+              snapshot.variables[i] = variables(i);
+          }
+          assembler.save_model_state(snapshot.model);
+          snapshot.last_adaptation_time = adaptor.last_adaptation_time();
+          snapshot.config_json = json::serialize(static_cast<json::value>(config));
+          DiFfRG::write_snapshot(path, snapshot);
+          log.info("Wrote the snapshot at t = {} (k = {}) to '{}'.", t, snapshot.k, path.string());
+        } catch (const std::exception &e) {
+          failed = true;
+          failure = e.what();
+        }
+      }
+      if (DiFfRG::MPI::any_of(MPI_COMM_WORLD, failed))
+        throw std::runtime_error("Writing the snapshot at t = " + std::to_string(t) + " to '" + path.string() +
+                                 "' failed" + (failure.empty() ? std::string(" on the writer rank.") : ": " + failure));
+    }
+
+    /**
+     * @brief Restore @p state from /restart/file. @return the snapshot's time.
+     *
+     * Collective: every rank reads the file and restores the part of the state it owns.
+     */
+    double restore_snapshot(AbstractFlowingVariables<NumberType, VectorType> &state, const double requested_t_start)
+    {
+      const std::filesystem::path path = config.get_string("/restart/file");
+      const SnapshotData snapshot = read_snapshot(path);
+      if (snapshot.dim != int(dim))
+        throw std::runtime_error("Restart: the snapshot '" + path.string() +
+                                 "' was written by a flow in dim = " + std::to_string(snapshot.dim) +
+                                 ", but this flow has dim = " + std::to_string(dim) + ".");
+
+      log.info("Restarting from the snapshot '{}' at t = {} (k = {}).", path.string(), snapshot.t, snapshot.k);
+      // Continuing this very run: its later snapshots keep the numbers they would have had.
+      if (const auto index = own_snapshot_index(data_out.path(), path)) {
+        continues_own_run = true;
+        snapshot_count = *index + 1;
+      }
+      if (!is_close(requested_t_start, snapshot.t, 1e-12))
+        log.info("The requested start time t = {} is replaced by the snapshot's time.", requested_t_start);
+
+      // /output always differs between runs and /restart, /timestepping/snapshots are about the
+      // runs themselves, not the flow; listing them would only bury the entries that matter.
+      const auto differences = config_diff(json::parse(snapshot.config_json), static_cast<json::value>(config),
+                                           {"/output", "/restart", "/timestepping/snapshots"});
+      if (differences.empty())
+        log.info("The configuration matches the snapshot's.");
+      else {
+        log.warn("The configuration differs from the snapshot's in {} entries. The flow above the snapshot's scale "
+                 "was computed with the snapshot's values, so a restart is only meaningful if these changes do not "
+                 "affect it:",
+                 differences.size());
+        for (const auto &difference : differences)
+          log.warn("    {}", difference);
+      }
+
+      auto &data = state.data();
+      if (data.n_blocks() == 0)
+        throw std::runtime_error("Restart: the initial condition has no block structure. Set it up as usual, e.g. "
+                                 "with interpolate(model), before calling run().");
+
+      // Before the spatial restore: a mesh rebuild reinitializes the assembler, which asks the model for its
+      // constraints, so the model must already be at the snapshot's time and state.
+      assembler.set_time(snapshot.t);
+      if (!snapshot.model.empty() && !assembler.load_model_state(snapshot.model))
+        log.warn("The snapshot carries model state ({} entries), but the model does not implement load_state(); the "
+                 "state is ignored.",
+                 snapshot.model.data().size());
+
+      assembler.restore_snapshot_state(snapshot.spatial, data.block(0));
+
+      if (data.n_blocks() > 1) {
+        auto &variables = data.block(1);
+        if (variables.size() != snapshot.variables.size())
+          throw std::runtime_error("Restart: the snapshot holds " + std::to_string(snapshot.variables.size()) +
+                                   " variables, but this flow has " + std::to_string(variables.size()) + ".");
+        for (const auto i : variables.locally_owned_elements())
+          variables(i) = snapshot.variables[i];
+        variables.compress(dealii::VectorOperation::insert);
+      } else if (!snapshot.variables.empty())
+        throw std::runtime_error("Restart: the snapshot holds " + std::to_string(snapshot.variables.size()) +
+                                 " variables, but this flow has none.");
+      data.collect_sizes();
+
+      if (std::isfinite(snapshot.last_adaptation_time)) adaptor.set_last_adaptation_time(snapshot.last_adaptation_time);
+      return snapshot.t;
+    }
+
+    bool restart_consumed = false;
+    bool continues_own_run = false;
+    unsigned int snapshot_count = 0;
 
   protected:
     const ConfigTree config;

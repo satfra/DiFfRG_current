@@ -11,8 +11,11 @@
 #include <DiFfRG/discretization/data/output_settings.hh>
 #include <DiFfRG/discretization/data/output_timings.hh>
 
+#include <algorithm>
+#include <cmath>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -199,6 +202,9 @@ namespace DiFfRG
       if (terminal_error) std::rethrow_exception(terminal_error);
       if (finished) throw std::logic_error("OutputSession::write_frame: session has already been finished.");
       if (!active) return;
+      // A run split into segments (flow snapshots) ends one segment and starts the next at the same
+      // time, and both write that frame. Keep the first: the state is the same.
+      if (last_frame_time && std::abs(time - *last_frame_time) <= 1e-12 * std::max(1., std::abs(time))) return;
 
       try {
         current_frame = FrameTimings{};
@@ -216,6 +222,7 @@ namespace DiFfRG
         flush_frame(time);
         total_timer.stop();
         record_frame(time);
+        last_frame_time = time;
       } catch (...) {
         terminal_error = std::current_exception();
         throw;
@@ -293,6 +300,8 @@ namespace DiFfRG
     bool use_hdf5;
     const std::string filename_h5;
     std::map<std::string, HDF5Output> h5_files;
+    /// Time of the last frame written, to drop an immediate duplicate; see write_frame().
+    std::optional<double> last_frame_time;
     DiagnosticPort diagnostics_port;
 
     /** Cost split of the frame currently being written; folded into `timings` by flush_frame. */

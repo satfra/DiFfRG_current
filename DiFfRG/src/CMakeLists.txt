@@ -48,6 +48,7 @@ set(DiFfRG_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/output_settings.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/output_session.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/output_timings.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/data/snapshot.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/common/eom_config.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/discretization/mesh/rectangular_mesh.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/DiFfRG/model/model.cc

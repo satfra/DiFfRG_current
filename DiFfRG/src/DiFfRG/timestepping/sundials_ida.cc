@@ -9,6 +9,7 @@
 #include <iostream>
 #include <limits>
 #include <sstream>
+#include <utility>
 #include <vector>
 
 // DiFfRG
@@ -243,9 +244,8 @@ namespace DiFfRG
     };
   } // namespace
 
-  template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename...> typename LinearSolver>
-  void TimeStepperSUNDIALS_IDA_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(
+  template <typename VectorType, typename SparseMatrixType, uint dim, template <typename...> typename LinearSolver>
+  void TimeStepperSUNDIALS_IDA_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run_segment(
       AbstractFlowingVariables<NumberType, VectorType> &initial_condition, const double t_start, const double t_stop)
   {
 
@@ -284,7 +284,7 @@ namespace DiFfRG
 
     // Define some variables for monitoring
     uint stuck = 0;
-    double stuck_t = 0.;
+    double stuck_t = t_start;
     uint failure_counter = 0;
     IDACallbackDiagnostics callback_diagnostics;
     IDACallbackTrace callback_trace(impl.ida_callback_trace, impl.ida_callback_trace_min_t,
@@ -345,8 +345,12 @@ namespace DiFfRG
 
     // At output_dt intervals this function saves intermediate solutions
     double last_save = -1.;
-    time_stepper.output_step = [&](const double t, const VectorType &sol, const VectorType &sol_dot,
+    // SUNDIALS::IDA::solve_dae reports the initial condition as t = 0, whatever the start time is.
+    // The first call is always that one, so it is relabelled to the actual start of the run.
+    bool initial_output = true;
+    time_stepper.output_step = [&](const double t_reported, const VectorType &sol, const VectorType &sol_dot,
                                    unsigned int /*step_number*/) {
+      const double t = std::exchange(initial_output, false) ? t_start : t_reported;
       if (!is_close(last_save, t, 1e-10)) {
         assembler.set_time(t);
         // Refreshed here, OUTSIDE write_frame: refreshing a ghosted replica communicates, while
@@ -361,7 +365,7 @@ namespace DiFfRG
 
         last_save = t;
       }
-      if (!output_after_failure && !is_close(t, 0.)) {
+      if (!output_after_failure && !is_close(t, t_start)) {
         const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
         error_dof_monitor.observe(t, time_stepper, current_diagnostics, sol, ida_error_dof_callback);
       }
@@ -377,7 +381,7 @@ namespace DiFfRG
         stuck_t = t;
       }
 
-      if (failure_counter == 0 && !is_close(t, 0.) && stuck > 100) {
+      if (failure_counter == 0 && !is_close(t, t_start) && stuck > 100) {
         const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
         ProgressEvent event{.topic = progress_topics::implicit_residual, .time = t, .minimum_verbosity = 1};
         current_diagnostics.append_to(event);
@@ -386,7 +390,7 @@ namespace DiFfRG
                               &res);
         throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
       }
-      if (failure_counter == 0 && is_close(t, 0.) && stuck > 200) {
+      if (failure_counter == 0 && is_close(t, t_start) && stuck > 200) {
         callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "stuck", &y, &y_dot,
                               &res);
         throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
@@ -603,7 +607,7 @@ namespace DiFfRG
 
     // Define some variables for monitoring
     uint stuck = 0;
-    double stuck_t = 0.;
+    double stuck_t = t_start;
     uint failure_counter = 0;
     IDACallbackDiagnostics callback_diagnostics;
     IDACallbackTrace callback_trace(impl.ida_callback_trace, impl.ida_callback_trace_min_t,
@@ -680,8 +684,12 @@ namespace DiFfRG
 
     // At output_dt intervals this function saves intermediate solutions
     double last_save = -1.;
-    time_stepper.output_step = [&](const double t, const BlockVectorType &sol, const BlockVectorType &sol_dot,
+    // SUNDIALS::IDA::solve_dae reports the initial condition as t = 0, whatever the start time is.
+    // The first call is always that one, so it is relabelled to the actual start of the run.
+    bool initial_output = true;
+    time_stepper.output_step = [&](const double t_reported, const BlockVectorType &sol, const BlockVectorType &sol_dot,
                                    unsigned int /*step_number*/) {
+      const double t = std::exchange(initial_output, false) ? t_start : t_reported;
       if (!is_close(last_save, t, 1e-10)) {
         assembler.set_time(t);
         // Refreshed here, OUTSIDE write_frame: refreshing a ghosted replica communicates, while
@@ -711,12 +719,12 @@ namespace DiFfRG
         stuck_t = t;
       }
 
-      if (failure_counter == 0 && !is_close(t, 0.) && stuck > 100) {
+      if (failure_counter == 0 && !is_close(t, t_start) && stuck > 100) {
         callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "stuck", &y, &y_dot,
                               &res);
         throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
       }
-      if (failure_counter == 0 && is_close(t, 0.) && stuck > 200) {
+      if (failure_counter == 0 && is_close(t, t_start) && stuck > 200) {
         callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "stuck", &y, &y_dot,
                               &res);
         throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
@@ -971,7 +979,7 @@ namespace DiFfRG
 
     // Define some variables for monitoring
     uint stuck = 0;
-    double stuck_t = 0.;
+    double stuck_t = t_start;
     uint failure_counter = 0;
     IDACallbackDiagnostics callback_diagnostics;
     IDACallbackTrace callback_trace(impl.ida_callback_trace, impl.ida_callback_trace_min_t,
@@ -993,8 +1001,12 @@ namespace DiFfRG
 
     // At output_dt intervals this function saves intermediate solutions
     double last_save = -1.;
-    time_stepper.output_step = [&](const double t, const VectorType &sol, const VectorType & /*sol_dot*/,
+    // SUNDIALS::IDA::solve_dae reports the initial condition as t = 0, whatever the start time is.
+    // The first call is always that one, so it is relabelled to the actual start of the run.
+    bool initial_output = true;
+    time_stepper.output_step = [&](const double t_reported, const VectorType &sol, const VectorType & /*sol_dot*/,
                                    uint /*step_number*/) {
+      const double t = std::exchange(initial_output, false) ? t_start : t_reported;
       if (!is_close(last_save, t, 1e-10)) {
         assembler.set_time(t);
         // dim == 0 has no FE space and the variables vector is serial by construction, so no
@@ -1003,7 +1015,7 @@ namespace DiFfRG
 
         last_save = t;
       }
-      if (!output_after_failure && !is_close(t, 0.)) {
+      if (!output_after_failure && !is_close(t, t_start)) {
         const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
         error_dof_monitor.observe(t, time_stepper, current_diagnostics, sol, ida_error_dof_callback);
       }
@@ -1019,12 +1031,12 @@ namespace DiFfRG
         stuck_t = t;
       }
 
-      if (failure_counter == 0 && !is_close(t, 0.) && stuck > 100) {
+      if (failure_counter == 0 && !is_close(t, t_start) && stuck > 100) {
         callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "stuck", &y, &y_dot,
                               &res);
         throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));
       }
-      if (failure_counter == 0 && is_close(t, 0.) && stuck > 200) {
+      if (failure_counter == 0 && is_close(t, t_start) && stuck > 200) {
         callback_trace.record("residual", t, failure_counter, time_stepper, callback_diagnostics, "stuck", &y, &y_dot,
                               &res);
         throw std::runtime_error("timestepping got stuck at t = " + std::to_string(t));

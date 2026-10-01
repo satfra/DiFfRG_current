@@ -23,7 +23,7 @@ namespace DiFfRG
   }
 
   template <typename VectorType, typename SparseMatrixType, uint dim>
-  void TimeStepperRK_impl<VectorType, SparseMatrixType, dim>::run(
+  void TimeStepperRK_impl<VectorType, SparseMatrixType, dim>::run_segment(
       AbstractFlowingVariables<NumberType, VectorType> &initial_condition, const double t_start, const double t_stop)
   {
 
