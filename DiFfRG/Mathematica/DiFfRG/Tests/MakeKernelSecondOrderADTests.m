@@ -33,7 +33,7 @@ generatesSecondOrderComplexAD[] :=
             "Name" -> "pion",
             "Integrator" -> "Integrator_p2",
             "d" -> 3,
-            "ctype" -> "DiFfRG::complex<double>",
+            "ComputeType" -> "DiFfRG::complex<double>",
             "Parameters" -> {
                 <|"Name" -> "k", "Type" -> "double", "Const" -> True, "AD" -> False|>,
                 <|"Name" -> "T", "Type" -> "double", "Const" -> True, "AD" -> False|>,
@@ -79,4 +79,54 @@ AUMPTestCase["MakeKernel emits second-order complex AD get wrappers", {"make-ker
     FormTracer`DefineFormExecutable[formExecutablePath[]];
     Block[{Print}, Get["FunKit`"]];
     AUMPCHECK[Quiet[generatesSecondOrderComplexAD[], OptionValue::nodef]];
+];
+
+(* A float ComputeType must leave no double in the kernel (it would promote the arithmetic back),
+   while map()/get() keep double destinations for the caller's state vectors. *)
+generatesFloatKernel[typeOption_] :=
+    Module[{tmp, header, kernelHeader},
+        tmp = FileNameJoin[{AUMPTestTempDirectory[], "generated"}];
+        CreateDirectory[tmp];
+        SetFlowDirectory[tmp <> "/"];
+        CreateDirectory[FileNameJoin[{tmp, "flows", "fl", "src"}], CreateIntermediateDirectories -> True];
+        MakeKernel[
+            0.5 l1 + 2 k + I l1,
+            "IntegrationVariables" -> {"l1"},
+            "Coordinates" -> {"LinearCoordinates1D<float>"},
+            "Name" -> "fl",
+            "Integrator" -> "Integrator_p2",
+            "d" -> 3,
+            typeOption -> "DiFfRG::complex<float>",
+            "Parameters" -> {<|"Name" -> "k", "Type" -> "float", "Const" -> True|>}
+        ];
+        header = Import[FileNameJoin[{tmp, "flows", "fl", "fl.hh"}], "Text"];
+        kernelHeader = Import[FileNameJoin[{tmp, "flows", "fl", "kernel.hh"}], "Text"];
+        containsAll[
+            header,
+            {
+                "Integrator_p2<3, DiFfRG::complex<float>, fl_kernel<Regulator>, DiFfRG::TBB_exec> integrator;",
+                "map(DiFfRG::complex<double>* dest, const LinearCoordinates1D<float>& coordinates",
+                "void get(DiFfRG::complex<double>& dest"
+            }
+        ] &&
+            containsAll[kernelHeader, {"const float& l1", "0.5f", "complex<float>("}] &&
+            StringFreeQ[kernelHeader, "double"]
+    ];
+
+AUMPTestCase["MakeKernel with a float ComputeType emits a pure-float kernel", {"make-kernel", "precision", "funkit", "form"},
+    AUMPAssume[Length @ PacletFind["FunKit"] > 0, "FunKit is not installed"];
+    AUMPAssume[formAvailableQ[], "FORM is not installed"];
+    Needs["FormTracer`"];
+    FormTracer`DefineFormExecutable[formExecutablePath[]];
+    Block[{Print}, Get["FunKit`"]];
+    AUMPCHECK[Quiet[generatesFloatKernel["ComputeType"], OptionValue::nodef]];
+];
+
+AUMPTestCase["MakeKernel still accepts the deprecated ctype option", {"make-kernel", "precision", "funkit", "form"},
+    AUMPAssume[Length @ PacletFind["FunKit"] > 0, "FunKit is not installed"];
+    AUMPAssume[formAvailableQ[], "FORM is not installed"];
+    Needs["FormTracer`"];
+    FormTracer`DefineFormExecutable[formExecutablePath[]];
+    Block[{Print}, Get["FunKit`"]];
+    AUMPCHECK[Quiet[generatesFloatKernel["ctype"], {OptionValue::nodef, MakeKernel::ctypedeprecated}]];
 ];

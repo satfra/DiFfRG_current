@@ -17,7 +17,7 @@
   u_upper = -1e-3
 
 [tuning.STI]
-  tune      = false
+  tune      = true
   tol       = 0.0001
   step_size = 0.01
 
@@ -33,7 +33,7 @@
   coarse_factor     = 10
 
 [physical]
-  Lambda       = 100
+  Lambda       = 200
   Nc           = 3
   m2A          = -71.98873562456
   alphaA4      = 0.1

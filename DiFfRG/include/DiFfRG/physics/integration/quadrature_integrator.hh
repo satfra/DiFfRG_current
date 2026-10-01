@@ -30,6 +30,62 @@ namespace DiFfRG
     c.forward(c.from_linear_index(size_t(0)));
   };
 
+  namespace internal
+  {
+    /// A single-precision integrator may hand its results back in double precision.
+    template <typename OT, typename NT>
+    inline constexpr bool is_widened_result =
+        !std::is_same_v<OT, NT> && std::is_same_v<OT, get_type::double_precision<NT>>;
+
+    /// Element types an integrator with value type NT can map() into.
+    template <typename OT, typename NT>
+    inline constexpr bool is_map_result = std::is_same_v<OT, NT> || is_widened_result<OT, NT>;
+
+    /// Grow-only result buffers of map(): device scratch, plus page-locked staging so the copy back
+    /// is genuinely asynchronous (see MapCompletion).
+    template <typename T, typename ExecutionSpace> struct MapStaging {
+      Kokkos::View<T *, ExecutionSpace> device;
+      size_t device_size = 0;
+      Kokkos::View<T *, PinnedHost_memory> pinned;
+      size_t pinned_size = 0;
+
+      auto device_view(const ExecutionSpace &space, const size_t n)
+      {
+        if (device_size < n) {
+          device = Kokkos::View<T *, ExecutionSpace>(Kokkos::view_alloc(space, "MapIntegrators_device_view"), n);
+          device_size = n;
+        }
+        return Kokkos::View<T *, ExecutionSpace>(device, Kokkos::make_pair(size_t(0), n));
+      }
+
+      auto pinned_view(const size_t n)
+      {
+        if (pinned_size < n) {
+          pinned = Kokkos::View<T *, PinnedHost_memory>(
+              Kokkos::view_alloc(Kokkos::WithoutInitializing, "MapIntegrators_pinned_view"), n);
+          pinned_size = n;
+        }
+        return Kokkos::View<T *, PinnedHost_memory>(pinned, Kokkos::make_pair(size_t(0), n));
+      }
+    };
+
+    /// map() result buffers for value type NT and, when that is single precision, for its double
+    /// counterpart. The kernel writes each result straight into the destination-typed buffer, so a
+    /// float integrator mapping into double converts on the device.
+    template <typename NT, typename ExecutionSpace> struct MapStagingSet {
+      MapStaging<NT, ExecutionSpace> native;
+      MapStaging<get_type::double_precision<NT>, ExecutionSpace> widened;
+
+      template <typename OT> auto &get()
+      {
+        if constexpr (std::is_same_v<OT, NT>)
+          return native;
+        else
+          return widened;
+      }
+    };
+  } // namespace internal
+
   /**
    * @brief This class performs numerical integration over a d-dimensional hypercube using quadrature rules.
    *
@@ -98,8 +154,18 @@ namespace DiFfRG
       dest = m_result_host();
     }
 
+    /// Single-precision integration handing back a double result.
     template <typename OT, typename... T>
-      requires(!std::is_same_v<OT, NT> && is_valid_kernel<NT, KERNEL, ctype, dim, T...>)
+      requires(internal::is_widened_result<OT, NT> && is_valid_kernel<NT, KERNEL, ctype, dim, T...>)
+    void get(OT &dest, const T &...t) const
+    {
+      NT result;
+      get(result, t...);
+      dest = OT(result);
+    }
+
+    template <typename OT, typename... T>
+      requires(!std::is_same_v<OT, NT> && !internal::is_widened_result<OT, NT> && is_valid_kernel<NT, KERNEL, ctype, dim, T...>)
     void get(OT &dest, const T &...t) const
     {
       ExecutionSpace space;
@@ -107,7 +173,7 @@ namespace DiFfRG
     }
 
     template <typename OT, typename... T>
-      requires(!std::is_same_v<OT, NT> && is_valid_kernel<NT, KERNEL, ctype, dim, T...>)
+      requires(!std::is_same_v<OT, NT> && !internal::is_widened_result<OT, NT> && is_valid_kernel<NT, KERNEL, ctype, dim, T...>)
     void get(ExecutionSpace &space, OT &dest, const T &...t) const
     {
       const auto args = device::make_tuple(t...);
@@ -384,8 +450,9 @@ namespace DiFfRG
       return volume;
     }
 
-    template <typename Coordinates, typename... Args>
-    auto map(NT *dest, const Coordinates &coordinates, const Args &...args)
+    template <typename OT, typename Coordinates, typename... Args>
+      requires internal::is_map_result<OT, NT>
+    auto map(OT *dest, const Coordinates &coordinates, const Args &...args)
     {
       auto &scheduler = MapScheduler::instance();
 
@@ -395,7 +462,7 @@ namespace DiFfRG
       // other ranks perform, leaving the collectives mismatched.
       if (scheduler.active() && scheduler.plan_contains(integrator_id())) MapCompletion::flush();
 
-      const MapSlice slice = scheduler.schedule(integrator_id(), dest, sizeof(NT), coordinates.size(),
+      const MapSlice slice = scheduler.schedule(integrator_id(), dest, sizeof(OT), coordinates.size(),
                                                 quadrature_volume(), /* splittable */ true,
                                                 map_target<ExecutionSpace>());
 
@@ -410,18 +477,12 @@ namespace DiFfRG
       return map_dist(dest + slice.offset, SubCoordinates(coordinates, slice.offset, slice.count), args...);
     }
 
-    template <typename Coordinates, typename... Args>
-    auto map_dist(NT *dest, const Coordinates &coordinates, const Args &...args)
+    template <typename OT, typename Coordinates, typename... Args>
+    auto map_dist(OT *dest, const Coordinates &coordinates, const Args &...args)
     {
       const size_t n = coordinates.size();
-
-      // Reuse cached device view if large enough, otherwise reallocate (grow-only)
-      if (m_dest_device_size < n) {
-        m_dest_device =
-            Kokkos::View<NT *, ExecutionSpace>(Kokkos::view_alloc(space, "MapIntegrators_device_view"), n);
-        m_dest_device_size = n;
-      }
-      auto dest_device_view = Kokkos::View<NT *, ExecutionSpace>(m_dest_device, Kokkos::make_pair(size_t(0), n));
+      auto &stage = m_staging.template get<OT>();
+      auto dest_device_view = stage.device_view(space, n);
 
       if constexpr (std::is_same_v<typename ExecutionSpace::memory_space, CPU_memory>) {
         // Host backend: "device" memory is host memory, so there is nothing to stage. The work is
@@ -435,15 +496,8 @@ namespace DiFfRG
         // One staging buffer per integrator, so a second map() before a flush would clobber the
         // first result. Land the outstanding one first; in the normal call pattern (each flow
         // mapped once per flush interval) this never triggers.
-        if (m_dest_pinned_size > 0 && MapCompletion::has_pending(m_dest_pinned.data())) MapCompletion::flush();
-
-        if (m_dest_pinned_size < n) {
-          m_dest_pinned = Kokkos::View<NT *, PinnedHost_memory>(
-              Kokkos::view_alloc(Kokkos::WithoutInitializing, "MapIntegrators_pinned_view"), n);
-          m_dest_pinned_size = n;
-        }
-        auto pinned_view =
-            Kokkos::View<NT *, PinnedHost_memory>(m_dest_pinned, Kokkos::make_pair(size_t(0), n));
+        if (stage.pinned_size > 0 && MapCompletion::has_pending(stage.pinned.data())) MapCompletion::flush();
+        auto pinned_view = stage.pinned_view(n);
 
         map(space, dest_device_view, coordinates, args...);
 
@@ -452,7 +506,7 @@ namespace DiFfRG
 
         // Caller has promised not to read `dest` until its DeferredMaps scope closes, so leave the
         // result in staging and keep the host running ahead of the device.
-        MapCompletion::record(dest, m_dest_pinned.data(), n * sizeof(NT));
+        MapCompletion::record(dest, stage.pinned.data(), n * sizeof(OT));
         // Original contract outside such a scope: `dest` is valid on return. flush() fences, lands
         // the staged copy and -- under MPI -- exchanges this batch's slices, all of which must
         // happen before the caller looks at `dest`.
@@ -473,8 +527,8 @@ namespace DiFfRG
      *
      * Compiled out entirely in a CUDA-less build, where there is no device to overlap with.
      */
-    template <typename Coordinates, typename... Args>
-    void run_or_queue_host(NT *dest, const Coordinates &coordinates, const Args &...args)
+    template <typename OT, typename Coordinates, typename... Args>
+    void run_or_queue_host(OT *dest, const Coordinates &coordinates, const Args &...args)
     {
       if constexpr (internal::has_device_backend) {
         if (MapCompletion::deferral_enabled()) {
@@ -489,18 +543,13 @@ namespace DiFfRG
     }
 
     /// The host-backend body of map_dist(). Queued jobs run one after another, so the shared
-    /// `m_dest_device` scratch is written and drained before the next job touches it.
-    template <typename Coordinates, typename... Args>
-    void run_host(NT *dest, const Coordinates &coordinates, const Args &...args)
+    /// staging device scratch is written and drained before the next job touches it.
+    template <typename OT, typename Coordinates, typename... Args>
+    void run_host(OT *dest, const Coordinates &coordinates, const Args &...args)
     {
       const size_t n = coordinates.size();
-      if (m_dest_device_size < n) {
-        m_dest_device =
-            Kokkos::View<NT *, ExecutionSpace>(Kokkos::view_alloc(space, "MapIntegrators_device_view"), n);
-        m_dest_device_size = n;
-      }
-      auto dest_device_view = Kokkos::View<NT *, ExecutionSpace>(m_dest_device, Kokkos::make_pair(size_t(0), n));
-      auto dest_view = Kokkos::View<NT *, CPU_memory, Kokkos::MemoryUnmanaged>(dest, n);
+      auto dest_device_view = m_staging.template get<OT>().device_view(space, n);
+      auto dest_view = Kokkos::View<OT *, CPU_memory, Kokkos::MemoryUnmanaged>(dest, n);
       map(space, dest_device_view, coordinates, args...);
       Kokkos::deep_copy(space, dest_view, dest_device_view);
     }
@@ -524,11 +573,7 @@ namespace DiFfRG
     // Keyed on the coordinates' to_string() identity; flat layout [grid_point * cdim + d].
     mutable Kokkos::View<ctype *, typename ExecutionSpace::memory_space> m_positions;
     mutable std::string m_positions_key;
-    mutable Kokkos::View<NT *, ExecutionSpace> m_dest_device;
-    mutable size_t m_dest_device_size = 0;
-    // Page-locked staging for the result copy; see map_dist() and MapCompletion.
-    mutable Kokkos::View<NT *, PinnedHost_memory> m_dest_pinned;
-    mutable size_t m_dest_pinned_size = 0;
+    mutable internal::MapStagingSet<NT, ExecutionSpace> m_staging;
     mutable Kokkos::View<NT, typename ExecutionSpace::memory_space> m_result_view;
     mutable typename Kokkos::View<NT, typename ExecutionSpace::memory_space>::host_mirror_type m_result_host;
     mutable bool m_result_views_initialized = false;
@@ -581,8 +626,18 @@ namespace DiFfRG
       dest = KERNEL::constant(t...) + TBBReduction<dim, NT, decltype(functor)>(grid_size, functor);
     }
 
-    template <typename Coordinates, typename... Args>
-    void map(execution_space &, NT *dest, const Coordinates &coordinates, const Args &...args)
+    template <typename OT, typename... T>
+      requires(internal::is_widened_result<OT, NT> && is_valid_kernel<NT, KERNEL, ctype, dim, T...>)
+    void get(OT &dest, const T &...t) const
+    {
+      NT result;
+      get(result, t...);
+      dest = OT(result);
+    }
+
+    template <typename OT, typename Coordinates, typename... Args>
+      requires internal::is_map_result<OT, NT>
+    void map(execution_space &, OT *dest, const Coordinates &coordinates, const Args &...args)
     {
       const auto m_args = device::tie(args...);
 
@@ -597,8 +652,9 @@ namespace DiFfRG
       });
     }
 
-    template <typename Coordinates, typename... Args>
-    auto map(NT *dest, const Coordinates &coordinates, const Args &...args)
+    template <typename OT, typename Coordinates, typename... Args>
+      requires internal::is_map_result<OT, NT>
+    auto map(OT *dest, const Coordinates &coordinates, const Args &...args)
     {
       auto space = execution_space();
       auto &scheduler = MapScheduler::instance();
@@ -608,7 +664,7 @@ namespace DiFfRG
       // overload for why that distinction is what keeps the collectives matched.
       if (scheduler.active() && scheduler.plan_contains(this->integrator_id())) MapCompletion::flush();
 
-      const MapSlice slice = scheduler.schedule(this->integrator_id(), dest, sizeof(NT), coordinates.size(),
+      const MapSlice slice = scheduler.schedule(this->integrator_id(), dest, sizeof(OT), coordinates.size(),
                                                 Base::quadrature_volume(), /* splittable */ true,
                                                 map_target<execution_space>());
 
@@ -632,8 +688,8 @@ namespace DiFfRG
     /// Run now, or queue for flush time inside a deferral scope. `tbb::parallel_for` is
     /// synchronous, so running it inline would stall the launch of any device map issued after it;
     /// see MapCompletion::record_work. Compiled out in a CUDA-less build.
-    template <typename Coordinates, typename... Args>
-    void run_or_queue(NT *dest, const Coordinates &coordinates, const Args &...args)
+    template <typename OT, typename Coordinates, typename... Args>
+    void run_or_queue(OT *dest, const Coordinates &coordinates, const Args &...args)
     {
       if constexpr (internal::has_device_backend) {
         if (MapCompletion::deferral_enabled()) {
