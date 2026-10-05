@@ -11,7 +11,9 @@ namespace DiFfRG
     if (!std::filesystem::exists(path))
       throw std::runtime_error("HDF5Input: The file '" + this->file_name + "' does not exist.");
 
-    h5_file = DiFfRG::hdf5::File::open(path.string(), DiFfRG::hdf5::Access::ReadWrite);
+    // Read-only: HDF5 takes a shared lock for it, so every MPI rank can read the same file at once.
+    // ReadWrite takes an exclusive lock, and all ranks but one then fail in H5Fopen (EAGAIN).
+    h5_file = DiFfRG::hdf5::File::open(path.string(), DiFfRG::hdf5::Access::ReadOnly);
 
     auto root = h5_file.root();
     if (!root.has_group("scalars"))

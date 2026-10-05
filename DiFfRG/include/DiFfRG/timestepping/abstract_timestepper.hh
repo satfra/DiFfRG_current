@@ -17,6 +17,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <exception>
 #include <filesystem>
 #include <limits>
 #include <optional>
@@ -273,7 +274,18 @@ namespace DiFfRG
     void drain_output()
     {
       log.summary(assembler.summary());
-      data_out.drain();
+      // Only rank 0 writes, but every rank may read the run's files back once run() returns (e.g.
+      // through HDF5Input). Without this barrier the other ranks race ahead of rank 0's last frame:
+      // they read stale data, or fail to open a file the writer still holds locked. The barrier is
+      // reached even if the drain throws, so a write error on rank 0 cannot hang the other ranks.
+      std::exception_ptr drain_error;
+      try {
+        data_out.drain();
+      } catch (...) {
+        drain_error = std::current_exception();
+      }
+      MPI::barrier(MPI_COMM_WORLD);
+      if (drain_error) std::rethrow_exception(drain_error);
     }
 
     /**
@@ -357,18 +369,31 @@ namespace DiFfRG
                                  "/output/folder, or remove the old snapshots.");
       }
 
-      double t = t_start;
-      for (const double t_snapshot : snapshot_times) {
-        run_segment(initial_condition, t, t_snapshot);
-        write_snapshot(initial_condition, t_snapshot);
-        t = t_snapshot;
+      // A failed flow (a FlowAbort from the model, a non-finite residual, a stuck step) leaves the
+      // stepper without draining, but callers routinely read the run's files right after catching
+      // it -- e.g. to find where the flow diverged. Drain here, once for every stepper: this pushes
+      // rank 0's pending frames to disk (its async writer must not race a reader in the same
+      // process; HDF5 is not thread safe in this build) and holds the other ranks until it has.
+      // No extra frame is written: the steppers output every accepted step already, and the state
+      // at the failure is often non-finite. The barrier assumes the failure is collective, which
+      // flow-driven failures are, since every rank computes a bitwise identical flow.
+      try {
+        double t = t_start;
+        for (const double t_snapshot : snapshot_times) {
+          run_segment(initial_condition, t, t_snapshot);
+          write_snapshot(initial_condition, t_snapshot);
+          t = t_snapshot;
+        }
+        if (!snapshot_times.empty() && schedule.stop_after_last()) {
+          if (!is_close(t, t_stop, 1e-12))
+            log.info("Stopping at t = {} after the last snapshot (/timestepping/snapshots/stop_after_last).", t);
+          return;
+        }
+        if (snapshot_times.empty() || !is_close(t, t_stop, 1e-12)) run_segment(initial_condition, t, t_stop);
+      } catch (...) {
+        finalize_output_after_failure([] {});
+        throw;
       }
-      if (!snapshot_times.empty() && schedule.stop_after_last()) {
-        if (!is_close(t, t_stop, 1e-12))
-          log.info("Stopping at t = {} after the last snapshot (/timestepping/snapshots/stop_after_last).", t);
-        return;
-      }
-      if (snapshot_times.empty() || !is_close(t, t_stop, 1e-12)) run_segment(initial_condition, t, t_stop);
     }
 
     bool is_implicit() const { return m_is_implicit; }
