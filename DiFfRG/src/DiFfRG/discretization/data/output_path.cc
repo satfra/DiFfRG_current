@@ -1,7 +1,10 @@
 #include <DiFfRG/discretization/data/output_path.hh>
 
+#include <DiFfRG/common/mpi.hh>
+
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <iostream>
 #include <random>
 #include <stdexcept>
@@ -136,16 +139,31 @@ namespace DiFfRG
 
   void OutputPath::copy_tree_from(const std::filesystem::path &source) const
   {
-    if (!std::filesystem::exists(source))
-      throw std::runtime_error("OutputPath: artifact source does not exist: " + source.string());
-    std::filesystem::create_directories(root_path);
-    try {
-      std::filesystem::copy(source, root_path,
-                            std::filesystem::copy_options::recursive |
-                                std::filesystem::copy_options::overwrite_existing);
-    } catch (const std::filesystem::filesystem_error &error) {
-      throw std::runtime_error("OutputPath: could not copy artifact tree from '" + source.string() + "' to '" +
-                               root_path.string() + "': " + error.what());
+    // Collective. Every rank calls this on the same paths, but only rank 0 may copy: two ranks
+    // copying onto one tree with overwrite_existing truncate and rewrite the same files, and a rank
+    // that finishes first then reads a file the other is still rewriting ("file signature not
+    // found" from HDF5). The other ranks wait for the copy and learn its outcome, so a failure
+    // throws everywhere rather than hanging the ranks that did not see it.
+    std::string error;
+    if (MPI::rank(MPI_COMM_WORLD) == 0) {
+      if (!std::filesystem::exists(source))
+        error = "OutputPath: artifact source does not exist: " + source.string();
+      else
+        try {
+          std::filesystem::create_directories(root_path);
+          std::filesystem::copy(source, root_path,
+                                std::filesystem::copy_options::recursive |
+                                    std::filesystem::copy_options::overwrite_existing);
+        } catch (const std::filesystem::filesystem_error &e) {
+          error = "OutputPath: could not copy artifact tree from '" + source.string() + "' to '" +
+                  root_path.string() + "': " + e.what();
+        }
     }
+    std::uint64_t length = error.size();
+    MPI::bcast(MPI_COMM_WORLD, &length, sizeof(length));
+    if (length == 0) return;
+    error.resize(length);
+    MPI::bcast(MPI_COMM_WORLD, error.data(), length);
+    throw std::runtime_error(error);
   }
 } // namespace DiFfRG

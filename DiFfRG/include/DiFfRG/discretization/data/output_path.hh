@@ -37,6 +37,7 @@ namespace DiFfRG
     std::filesystem::path run_file(std::string_view name_suffix, std::string_view extension) const;
     OutputPath child(std::filesystem::path directory, std::string run_name,
                      std::filesystem::path field_directory = "output") const;
+    /** Collective over MPI_COMM_WORLD: rank 0 copies, every rank returns once the copy is done and throws if it failed. */
     void copy_tree_from(const std::filesystem::path &source) const;
 
     static std::filesystem::path checked_relative(std::filesystem::path path, std::string_view kind = "output path");
