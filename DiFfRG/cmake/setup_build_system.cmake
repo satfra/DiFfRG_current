@@ -126,6 +126,89 @@ message(STATUS "DiFfRG bundle directory: ${BUNDLED_DIR}")
 message(STATUS "MPI support has been set to ${DiFfRG_MPI}")
 
 # ##############################################################################
+# Guard: environment include paths that shadow the bundle
+# ##############################################################################
+#
+# GCC and Clang search the directories named by CPATH / C_INCLUDE_PATH /
+# CPLUS_INCLUDE_PATH *before* every -isystem directory, and setup_target() below
+# adds the bundle with -isystem. So anything on those variables -- a cluster
+# environment module, a conda environment, a hand-set CPATH -- quietly takes
+# precedence over ${BUNDLED_DIR}/include for every header it also provides,
+# while the link still resolves against the bundled libraries. The build then
+# compiles and links cleanly against two different copies of one dependency.
+#
+# Warn here, where it is still cheap to fix, and name the shadowed headers.
+# Only headers the bundle actually provides are reported, so an unrelated CPATH
+# entry stays quiet.
+function(_diffrg_warn_shadowed_includes)
+  set(_sentinels
+      "hdf5.h"
+      "boost/version.hpp"
+      "Eigen/Core"
+      "tbb/version.h"
+      "spdlog/version.h"
+      "deal.II/base/config.h"
+      "autodiff/forward/dual.hpp"
+      "sundials/sundials_version.h"
+      "Kokkos_Core.hpp")
+
+  if(NOT IS_DIRECTORY "${BUNDLED_DIR}/include")
+    return()
+  endif()
+  file(REAL_PATH "${BUNDLED_DIR}" _real_bundle)
+
+  set(_hits "")
+  foreach(_var CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH)
+    if("$ENV{${_var}}" STREQUAL "")
+      continue()
+    endif()
+    string(REPLACE ":" ";" _dirs "$ENV{${_var}}")
+    foreach(_dir IN LISTS _dirs)
+      if("${_dir}" STREQUAL "" OR NOT IS_DIRECTORY "${_dir}")
+        continue()
+      endif()
+      # A directory inside the bundle cannot shadow the bundle.
+      file(REAL_PATH "${_dir}" _real_dir)
+      string(FIND "${_real_dir}" "${_real_bundle}" _inside)
+      if(_inside EQUAL 0)
+        continue()
+      endif()
+      foreach(_s IN LISTS _sentinels)
+        if(EXISTS "${_dir}/${_s}" AND EXISTS "${BUNDLED_DIR}/include/${_s}")
+          list(APPEND _hits
+               "    ${_s}\n        shadowed by ${_dir}/${_s}\n        (via ${_var})")
+        endif()
+      endforeach()
+    endforeach()
+  endforeach()
+
+  if(_hits)
+    list(REMOVE_DUPLICATES _hits)
+    string(REPLACE ";" "\n" _hits "${_hits}")
+    message(
+      WARNING
+        "\n"
+        "======================================================================\n"
+        "  Environment include paths shadow the DiFfRG bundle\n"
+        "======================================================================\n"
+        "  The bundle provides these headers, but the compiler will open the\n"
+        "  copy reached through the environment instead -- CPATH and friends\n"
+        "  are searched before every -isystem directory:\n"
+        "\n"
+        "${_hits}\n"
+        "\n"
+        "  The link still resolves against ${BUNDLED_DIR},\n"
+        "  so the two halves of the build can disagree at runtime.\n"
+        "\n"
+        "  Unload the environment module or deactivate the environment that\n"
+        "  adds these paths, then reconfigure in a clean build directory.\n"
+        "======================================================================\n")
+  endif()
+endfunction()
+
+_diffrg_warn_shadowed_includes()
+
+# ##############################################################################
 # Set standard and language
 # ##############################################################################
 
@@ -540,6 +623,123 @@ if(DEFINED DiFfRG_PINNED_HDF5_VERSION
       "HDF5 version drift: the superbuild pinned ${DiFfRG_PINNED_HDF5_VERSION} but this build "
       "found ${HDF5_VERSION}. The dependency changed since the bundle was built. "
       "If you hit link/ABI errors, rebuild the bundled dependencies.")
+endif()
+
+# ##############################################################################
+# Guard: the hdf5.h the compiler opens must match the HDF5 we link
+# ##############################################################################
+#
+# find_package() above resolved which HDF5 will be *linked*. It says nothing
+# about which hdf5.h the compiler will actually *open*: setup_target() adds the
+# bundle with -isystem, and CPATH / C_INCLUDE_PATH / CPLUS_INCLUDE_PATH are
+# searched first (see the shadowing warning near the top of this file). Nothing
+# goes wrong at compile or link time either, because H5public.h only bakes the
+# header's version numbers into the object file. The mismatch surfaces at
+# *runtime*:
+#
+#   Warning! ***HDF5 library version mismatched error***
+#   Headers are 1.14.6, library is 2.0.0
+#
+# and HDF5 means it -- public struct layouts and the versioned-API macro mapping
+# differ across major versions, so this is an ABI break with data corruption and
+# segfaults as the documented consequences, not a cosmetic banner.
+#
+# So do not trust find_package here: ask the preprocessor what it resolves,
+# using the same -isystem flags setup_target() applies, and refuse to configure
+# when it disagrees with the library. Runs for the library build and, through
+# Config.cmake.in, for every downstream application too.
+option(DiFfRG_CHECK_HDF5_HEADERS
+       "Verify at configure time that the resolved hdf5.h matches the linked HDF5"
+       ON)
+
+if(HDF5
+   AND DiFfRG_CHECK_HDF5_HEADERS
+   AND NOT "${HDF5_VERSION}" STREQUAL "")
+  set(_h5_probe_flags "")
+  foreach(_d "${BUNDLED_DIR}/include" ${HDF5_INCLUDE_DIRS}
+              ${DiFfRG_HDF5_INCLUDE_DIRS})
+    if(IS_DIRECTORY "${_d}")
+      list(APPEND _h5_probe_flags "-isystem" "${_d}")
+    endif()
+  endforeach()
+
+  set(_h5_probe_src "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/diffrg_hdf5_probe.cc")
+  file(WRITE "${_h5_probe_src}" "#include <hdf5.h>\n")
+  execute_process(
+    COMMAND "${CMAKE_CXX_COMPILER}" ${_h5_probe_flags} -E -dM "${_h5_probe_src}"
+    OUTPUT_VARIABLE _h5_macros
+    ERROR_VARIABLE _h5_probe_err
+    RESULT_VARIABLE _h5_probe_rc
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+  if(NOT _h5_probe_rc EQUAL 0)
+    # Fail open: an unusual toolchain must not block the build, and a genuinely
+    # broken <hdf5.h> will produce a far clearer error at compile time.
+    message(
+      STATUS
+        "HDF5 header check skipped: could not preprocess <hdf5.h> "
+        "(exit ${_h5_probe_rc})")
+  else()
+    set(_h5_hdr_version "")
+    if(_h5_macros MATCHES "#define[ \t]+H5_VERS_MAJOR[ \t]+([0-9]+)")
+      set(_h5_major "${CMAKE_MATCH_1}")
+      string(REGEX MATCH "#define[ \t]+H5_VERS_MINOR[ \t]+([0-9]+)" _h5_ignored
+                   "${_h5_macros}")
+      set(_h5_minor "${CMAKE_MATCH_1}")
+      string(REGEX MATCH "#define[ \t]+H5_VERS_RELEASE[ \t]+([0-9]+)" _h5_ignored
+                   "${_h5_macros}")
+      set(_h5_hdr_version "${_h5_major}.${_h5_minor}.${CMAKE_MATCH_1}")
+    endif()
+
+    if("${_h5_hdr_version}" STREQUAL "")
+      message(STATUS "HDF5 header check skipped: <hdf5.h> declared no version")
+    elseif(_h5_hdr_version VERSION_EQUAL "${HDF5_VERSION}")
+      message(STATUS "HDF5 headers resolve to ${_h5_hdr_version} (matches the library)")
+    else()
+      # Name the culprit rather than making the reader hunt for it.
+      set(_h5_culprits "")
+      foreach(_var CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH)
+        if(NOT "$ENV{${_var}}" STREQUAL "")
+          string(REPLACE ":" ";" _dirs "$ENV{${_var}}")
+          foreach(_dir IN LISTS _dirs)
+            if(NOT "${_dir}" STREQUAL "" AND EXISTS "${_dir}/hdf5.h")
+              list(APPEND _h5_culprits "    ${_dir}/hdf5.h  (via ${_var})")
+            endif()
+          endforeach()
+        endif()
+      endforeach()
+      if(_h5_culprits)
+        list(REMOVE_DUPLICATES _h5_culprits)
+        string(REPLACE ";" "\n" _h5_culprits "${_h5_culprits}")
+        set(_h5_culprits
+            "  Reached before any -isystem directory:\n\n${_h5_culprits}\n\n")
+      endif()
+
+      message(
+        FATAL_ERROR
+          "\n"
+          "======================================================================\n"
+          "  HDF5 headers and library disagree\n"
+          "======================================================================\n"
+          "  headers the compiler resolves : ${_h5_hdr_version}\n"
+          "  library that will be linked   : ${HDF5_VERSION}\n"
+          "                                  ${HDF5_INCLUDE_DIRS}\n"
+          "\n"
+          "${_h5_culprits}"
+          "  This would not fail at compile or link time. It produces a binary\n"
+          "  that prints 'HDF5 library version mismatched error' on every run,\n"
+          "  with data corruption and segfaults as the documented consequences.\n"
+          "\n"
+          "  Remove the shadowing HDF5 from the environment, e.g.\n"
+          "      module unload lib/hdf5        # or: conda deactivate\n"
+          "  then reconfigure in a clean build directory. To use that HDF5 on\n"
+          "  purpose instead, point DiFfRG at it:\n"
+          "      -DHDF5_DIR=<prefix containing hdf5-config.cmake>\n"
+          "\n"
+          "  Override with -DDiFfRG_CHECK_HDF5_HEADERS=OFF (not recommended).\n"
+          "======================================================================\n")
+    endif()
+  endif()
 endif()
 
 if(${DiFfRG_MPI})
