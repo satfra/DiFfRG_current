@@ -95,6 +95,8 @@ namespace DiFfRG
           // d(cell-centre gradient)/d(u_j) for the nonlocal part of the source jacobian. Separate from
           // reconstructed_derivatives, which the face workers resize for their own dependency sets.
           std::vector<GradientType<dim, NumberType, n_components>> source_gradient_derivatives;
+          // d(cell-centre hessian)/d(u_j), only filled for models with source_uses_hessians.
+          std::vector<std::array<dealii::Tensor<2, dim, NumberType>, n_components>> source_hessian_derivatives;
           CellStencilData<dim, NumberType, n_components> cell_stencil;
           CellStencilData<dim, NumberType, n_components> ncell_stencil;
           CellStencilData<dim, NumberType, n_components> temporary_stencil;
@@ -626,6 +628,49 @@ namespace DiFfRG
           return result;
         }
 
+        /**
+         * @brief Whether the model reads "fe_hessians" in model.source().
+         *
+         * Opt in with `static constexpr bool source_uses_hessians = true;` in the model. Off by default, so a
+         * model that does not need curvature in its source pays nothing for it.
+         */
+        template <typename Model> consteval bool source_uses_hessians()
+        {
+          if constexpr (requires { Model::source_uses_hessians; })
+            return Model::source_uses_hessians;
+          else
+            return false;
+        }
+
+        /**
+         * @brief Diagonal second derivatives of the cell averages from the cell and its 2*dim face neighbours.
+         *
+         * Second derivative of the quadratic through the same three cell averages the gradient uses: with s
+         * measured from the cell centre and u(s) = u_C + a s + b s^2 through (dx_1, u_1), (0, u_C), (dx_2, u_2),
+         * u'' = 2b = 2 (du_2 - du_1) / (dx_2 - dx_1), where du_i are the one-sided slopes. Constant over the cell.
+         *
+         * Deliberately UNLIMITED: applying the limiter to a curvature would bias it toward zero exactly where the
+         * solution is most curved. The price is that this is the noisiest quantity available near a steep front.
+         *
+         * Only the diagonal d^2/dx_d^2 entries are filled: the 2*dim stencil has no corner neighbours, so mixed
+         * derivatives are not available. Across a physical boundary the neighbour slot holds the model's ghost.
+         */
+        template <int dim, typename NT, size_t n_components>
+        std::array<dealii::Tensor<2, dim, NT>, n_components>
+        stencil_hessians(const CellStencilData<dim, NT, n_components> &stencil)
+        {
+          std::array<dealii::Tensor<2, dim, NT>, n_components> hessians{};
+          for (uint c = 0; c < n_components; ++c)
+            for (int d = 0; d < dim; ++d) {
+              const double dx_1 = stencil.neighbors.x[2 * d][d] - stencil.cell.x[d];
+              const double dx_2 = stencil.neighbors.x[2 * d + 1][d] - stencil.cell.x[d];
+              const NT du_1 = (stencil.neighbors.u[2 * d][c] - stencil.cell.u[c]) / dx_1;
+              const NT du_2 = (stencil.neighbors.u[2 * d + 1][c] - stencil.cell.u[c]) / dx_2;
+              hessians[c][d][d] = NT(2.) * (du_2 - du_1) / (dx_2 - dx_1);
+            }
+          return hessians;
+        }
+
       } // namespace internal
 
       // Model_ keeps its second place and merely gains a default, rather than moving to the end.
@@ -654,16 +699,26 @@ namespace DiFfRG
          * "fe_derivatives" is the Reconstructor's gradient at the quadrature point, not an FE derivative --
          * at the default single quadrature point (the cell centre) that is the scheme's own limited slope.
          *
-         * There is deliberately no "fe_hessians" slot: the only curvature the 2*dim stencil can produce is
-         * the unlimited quadratic fit of reconstruct_readout_solution(), which is not fit for a per-cell
-         * residual path. Omitting the slot makes a model that reads it fail to compile rather than silently
-         * receive zeros.
+         * There is no "fe_hessians" slot here, so a model that reads it without opting in via
+         * source_uses_hessians fails to compile rather than silently receiving zeros. Opted-in models get
+         * fv_tie_hess() instead.
          */
         template <typename... T> auto fv_tie(T &&...t)
         {
           return named_tuple<std::tuple<T &...>,
                              StringSet<"fe_functions", "fe_derivatives", "extractors", "variables", "cell_width">>(
               std::tie(t...));
+        }
+
+        /**
+         * @brief fv_tie() with an additional "fe_hessians" slot, used for models with source_uses_hessians.
+         *
+         * The hessians are the unlimited diagonal curvatures of internal::stencil_hessians().
+         */
+        template <typename... T> auto fv_tie_hess(T &&...t)
+        {
+          return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "fe_derivatives", "fe_hessians",
+                                                           "extractors", "variables", "cell_width">>(std::tie(t...));
         }
 
         template <typename... T> static constexpr auto v_tie(T &&...t)
@@ -681,6 +736,7 @@ namespace DiFfRG
       public:
         using Discretization = Discretization_;
         using Model = Model_;
+        static constexpr bool source_uses_hessians = internal::source_uses_hessians<Model>();
         using Reconstructor = Reconstructor_;
         using WaveSpeedStrategy = WaveSpeedStrategy_;
         using JacobianReconstructor = JacobianReconstructor_;
@@ -1004,29 +1060,7 @@ namespace DiFfRG
           solution.gradients = Reconstructor::template compute_gradient_at_point<n_components>(
               stencil.cell.x, x, stencil.cell.u, stencil.neighbors.x, stencil.neighbors.u);
 
-          if (with_hessians) {
-            // Second derivative from the quadratic through the same three cell averages the gradient uses:
-            // with s measured from the cell centre and u(s) = u_C + a s + b s^2 through (dx_1, u_1), (0, u_C),
-            // (dx_2, u_2), one gets u'' = 2b = 2 (du_2 - du_1) / (dx_2 - dx_1), where du_i are exactly the
-            // one-sided slopes of compute_gradient. Being a quadratic fit, u'' is constant over the cell, so
-            // it does not matter that it is not evaluated at `x` itself.
-            //
-            // Deliberately UNLIMITED: the limiter exists to keep the reconstructed *slope* monotone for the
-            // scheme, and applying it to a curvature would bias it toward zero exactly where the potential is
-            // most curved. The price is that this is the noisiest quantity available near a steep front --
-            // acceptable because nothing in the flux consumes it.
-            //
-            // Only the diagonal d^2/dx_d^2 entries are filled: the 2*dim stencil has no corner neighbours, so
-            // mixed derivatives are not available (harmless for the 1D field-space this assembler targets).
-            for (uint c = 0; c < n_components; ++c)
-              for (int d = 0, i_n_1 = 0, i_n_2 = 1; d < dim; ++d, i_n_1 += 2, i_n_2 += 2) {
-                const auto dx_1 = stencil.neighbors.x[i_n_1][d] - stencil.cell.x[d];
-                const auto dx_2 = stencil.neighbors.x[i_n_2][d] - stencil.cell.x[d];
-                const auto du_1 = (stencil.neighbors.u[i_n_1][c] - stencil.cell.u[c]) / dx_1;
-                const auto du_2 = (stencil.neighbors.u[i_n_2][c] - stencil.cell.u[c]) / dx_2;
-                solution.hessians[c][d][d] = NumberType(2.) * (du_2 - du_1) / (dx_2 - dx_1);
-              }
-          }
+          if (with_hessians) solution.hessians = internal::stencil_hessians(stencil);
           return solution;
         }
 
@@ -1785,9 +1819,15 @@ namespace DiFfRG
               const auto &x_q = cell_geometry.quadrature_points[q_index];
               const auto gradients = source_gradient<Reconstructor>(stencil, x_q);
               model.mass(mass, x_q, scratch_data.solution_values[q_index], scratch_data.solution_dot_values[q_index]);
-              model.source(source, x_q,
-                           fv_tie(scratch_data.solution_values[q_index], gradients, __extracted_data, variables,
-                                  cell_geometry.cell_width));
+              if constexpr (source_uses_hessians) {
+                const auto hessians = internal::stencil_hessians(stencil);
+                model.source(source, x_q,
+                             fv_tie_hess(scratch_data.solution_values[q_index], gradients, hessians, __extracted_data,
+                                         variables, cell_geometry.cell_width));
+              } else
+                model.source(source, x_q,
+                             fv_tie(scratch_data.solution_values[q_index], gradients, __extracted_data, variables,
+                                    cell_geometry.cell_width));
 
               for (uint i = 0; i < n_dofs; ++i) {
                 const auto component_i = local_component_of_dof[i];
@@ -2011,16 +2051,31 @@ namespace DiFfRG
             const uint n_source_from = size(copy_data_source.from_dofs);
             auto &source_grad_deriv = scratch_data.source_gradient_derivatives;
             source_grad_deriv.resize(n_source_from);
+            auto &source_hess_deriv = scratch_data.source_hessian_derivatives;
+            if constexpr (source_uses_hessians) source_hess_deriv.resize(n_source_from);
 
             SimpleMatrix<NumberType, n_components> j_mass;
             SimpleMatrix<NumberType, n_components> j_mass_dot;
             SimpleMatrix<NumberType, n_components> j_source;
             SimpleMatrix<Tensor<1, dim, NumberType>, n_components> j_grad_source;
+            SimpleMatrix<Tensor<2, dim, NumberType>, n_components> j_hess_source;
             for (size_t q_index = 0; q_index < cell_geometry.quadrature_points.size(); ++q_index) {
               const auto &x_q = cell_geometry.quadrature_points[q_index];
               const auto gradients = source_gradient<JacobianReconstructor>(stencil, x_q);
-              const auto source_tie = fv_tie(scratch_data.solution_values[q_index], gradients, __extracted_data,
-                                             variables, cell_geometry.cell_width);
+              [[maybe_unused]] const auto hessians = [&] {
+                if constexpr (source_uses_hessians)
+                  return internal::stencil_hessians(stencil);
+                else
+                  return 0;
+              }();
+              const auto source_tie = [&] {
+                if constexpr (source_uses_hessians)
+                  return fv_tie_hess(scratch_data.solution_values[q_index], gradients, hessians, __extracted_data,
+                                     variables, cell_geometry.cell_width);
+                else
+                  return fv_tie(scratch_data.solution_values[q_index], gradients, __extracted_data, variables,
+                                cell_geometry.cell_width);
+              }();
               model.template jacobian_mass<0>(j_mass, x_q, scratch_data.solution_values[q_index],
                                               scratch_data.solution_dot_values[q_index]);
               model.template jacobian_mass<1>(j_mass_dot, x_q, scratch_data.solution_values[q_index],
@@ -2029,6 +2084,7 @@ namespace DiFfRG
               // No jacobian_source_extr counterpart: KT never assembles extractor_cell_jacobian and
               // jacobian_variables is a no-op, so extractors and variables are frozen within a Newton step.
               model.template jacobian_source_grad<1>(j_grad_source, x_q, source_tie);
+              if constexpr (source_uses_hessians) model.template jacobian_source_hess<2>(j_hess_source, x_q, source_tie);
 
               for (uint i = 0; i < n_dofs; ++i) {
                 const auto component_i = local_component_of_dof[i];
@@ -2050,6 +2106,13 @@ namespace DiFfRG
                 source_grad_deriv[j] =
                     JacobianReconstructor::template compute_gradient_at_point_derivative<n_components>(
                         stencil.cell.x, x_q, stencil_tagged.cell.u, stencil.neighbors.x, stencil_tagged.neighbors.u);
+                if constexpr (source_uses_hessians) {
+                  // The hessian is linear in the stencil values, so forward AD through it is exact.
+                  const auto hessians_tagged = internal::stencil_hessians(stencil_tagged);
+                  for (uint c = 0; c < n_components; ++c)
+                    for (uint d = 0; d < dim; ++d)
+                      source_hess_deriv[j][c][d][d] = autodiff::derivative(hessians_tagged[c][d][d]);
+                }
               }
               for (uint i = 0; i < n_dofs; ++i) {
                 const auto component_i = local_component_of_dof[i];
@@ -2058,6 +2121,10 @@ namespace DiFfRG
                   for (uint c = 0; c < n_components; ++c)
                     for (uint d = 0; d < dim; ++d)
                       contribution += j_grad_source(component_i, c)[d] * source_grad_deriv[j][c][d];
+                  if constexpr (source_uses_hessians)
+                    for (uint c = 0; c < n_components; ++c)
+                      for (uint d = 0; d < dim; ++d)
+                        contribution += j_hess_source(component_i, c)[d][d] * source_hess_deriv[j][c][d][d];
                   copy_data_source.cell_jacobian(i, j) += weight * cell_geometry.jxw[q_index] * contribution;
                 }
               }

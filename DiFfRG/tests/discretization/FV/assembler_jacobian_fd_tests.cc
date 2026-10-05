@@ -1042,6 +1042,87 @@ public:
   }
 };
 
+/**
+ * A source that reads "fe_hessians" (opted in via source_uses_hessians), nonlinear in the curvature so the
+ * chain-rule term dS/du'' * du''/du_j is not a constant. As for the gradient source, flux and diffusion flux
+ * vanish, so the source is the only contribution to the Jacobian.
+ */
+class HessianSourceKTModel
+    : public def::AbstractModel<HessianSourceKTModel, ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>>>,
+      public def::Time,
+      public def::LLFFlux<HessianSourceKTModel>,
+      public def::FlowBoundaries<HessianSourceKTModel>,
+      public def::FVDefaultBoundaries<HessianSourceKTModel>,
+      public def::AD<HessianSourceKTModel>
+{
+public:
+  static constexpr bool source_uses_hessians = true;
+
+  template <typename Vector> void initial_condition(const Point<1> &pos, Vector &values) const
+  {
+    values[0] = 1.0 + 0.2 * pos[0] + 0.4 * pos[0] * pos[0];
+  }
+
+  template <typename NT, typename Solution>
+  void flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution & /*sol*/) const
+  {
+    F_i[0][0] = NT(0);
+  }
+
+  template <typename NT, typename Solution>
+  void diffusion_flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution & /*sol*/) const
+  {
+    F_i[0][0] = NT(0);
+  }
+
+  template <typename NT, typename Solution>
+  void source(std::array<NT, 1> &s_i, const Point<1> & /*pos*/, const Solution &sol) const
+  {
+    const auto &u = get<"fe_functions">(sol);
+    const auto &hess_u = get<"fe_hessians">(sol);
+    s_i[0] = NT(0.3) * u[0] * u[0] + NT(0.7) * hess_u[0][0][0] + NT(0.5) * u[0] * hess_u[0][0][0] +
+             NT(0.2) * hess_u[0][0][0] * hess_u[0][0][0];
+  }
+};
+
+class HessianSource2DModel
+    : public def::AbstractModel<HessianSource2DModel, ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>>>,
+      public def::Time,
+      public def::LLFFlux<HessianSource2DModel>,
+      public def::FlowBoundaries<HessianSource2DModel>,
+      public def::FVDefaultBoundaries<HessianSource2DModel>,
+      public def::AD<HessianSource2DModel>
+{
+public:
+  static constexpr bool source_uses_hessians = true;
+
+  template <typename Vector> void initial_condition(const Point<2> &pos, Vector &values) const
+  {
+    values[0] = 1.0 + 0.2 * pos[0] + 0.35 * pos[1] + 0.3 * pos[0] * pos[0] + 0.15 * pos[1] * pos[1];
+  }
+
+  template <typename NT, typename Solution>
+  void flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/, const Solution & /*sol*/) const
+  {
+    F_i[0] = Tensor<1, 2, NT>();
+  }
+
+  template <typename NT, typename Solution>
+  void diffusion_flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/, const Solution & /*sol*/) const
+  {
+    F_i[0] = Tensor<1, 2, NT>();
+  }
+
+  template <typename NT, typename Solution>
+  void source(std::array<NT, 1> &s_i, const Point<2> & /*pos*/, const Solution &sol) const
+  {
+    const auto &u = get<"fe_functions">(sol);
+    const auto &hess_u = get<"fe_hessians">(sol);
+    s_i[0] = NT(0.3) * u[0] * u[0] + NT(0.7) * hess_u[0][0][0] - NT(0.4) * hess_u[0][1][1] +
+             NT(0.5) * u[0] * hess_u[0][1][1] + NT(0.1) * hess_u[0][0][0] * hess_u[0][1][1];
+  }
+};
+
 namespace
 {
   /**
@@ -1137,4 +1218,63 @@ TEST_CASE("KT 2D gradient-dependent source Jacobian matches FD", "[FV][KT][gradi
     sol[i] = 1.0 + 0.05 * static_cast<double>(i) + 0.004 * static_cast<double>(i * i);
 
   REQUIRE(jacobian_matches_fd(assembler, sol, 1e-7, 2e-4, "2D gradient source"));
+}
+
+TEST_CASE("KT hessian-dependent source Jacobian matches FD", "[FV][KT][hessian][source]")
+{
+  using Model = HessianSourceKTModel;
+  using Discretization = FV::Discretization<Model, RectangularMesh<1>, double>;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+  const ConfigTree json = make_json();
+
+  Model model;
+  RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+  VectorType sol = state.spatial_data();
+  const int n_dofs = static_cast<int>(sol.size());
+  REQUIRE(n_dofs > 8);
+
+  // A cubic term on top of the convex profile, so the curvature varies from cell to cell.
+  for (int i = 0; i < n_dofs; ++i) {
+    const double x = static_cast<double>(i);
+    sol[i] = 1.0 + 0.05 * x + 0.004 * x * x + 0.0007 * x * x * x;
+  }
+
+  REQUIRE(jacobian_matches_fd(assembler, sol, 1e-7, 2e-4, "hessian source"));
+}
+
+TEST_CASE("KT 2D hessian-dependent source Jacobian matches FD", "[FV][KT][hessian][source][2d]")
+{
+  using Model = HessianSource2DModel;
+  using Discretization = FV::Discretization<Model, RectangularMesh<2>, double>;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+  const ConfigTree json = make_json_2d();
+
+  Model model;
+  RectangularMesh<2> mesh{Config::ConfigurationMesh<2>(json)};
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+  VectorType sol = state.spatial_data();
+  const int n_dofs = static_cast<int>(sol.size());
+  REQUIRE(n_dofs > 8);
+
+  for (int i = 0; i < n_dofs; ++i) {
+    const double x = static_cast<double>(i);
+    sol[i] = 1.0 + 0.05 * x + 0.004 * x * x + 0.0007 * x * x * x;
+  }
+
+  REQUIRE(jacobian_matches_fd(assembler, sol, 1e-7, 2e-4, "2D hessian source"));
 }
