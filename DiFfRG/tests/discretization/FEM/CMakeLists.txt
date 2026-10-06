@@ -7,6 +7,7 @@ setup_test(cg_consistency.cc)
 setup_test(dg.cc)
 setup_test(ddg.cc)
 setup_test(ldg.cc)
+setup_test(ldg_consistency.cc)
 setup_test(raw_potential_readouts.cc)
 
 setup_benchmark(benchmark_cg.cc)

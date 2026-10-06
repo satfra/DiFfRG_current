@@ -103,6 +103,25 @@ namespace DiFfRG
     virtual IndexSet get_differential_indices() const = 0;
 
     /**
+     * @brief Per-dof absolute tolerances for an implicit (IDA) time stepper.
+     *
+     * The uniform /timestepping/implicit/abs_tol treats every dof alike. A model whose components live on very
+     * different scales -- e.g. small expansion coefficients that only ever enter added to a much larger
+     * quantity -- can instead set an absolute tolerance per dof through the model hook `abs_tolerances` (see
+     * def::HasAbsTolerances). The tolerances may depend on the state; the IDA steppers re-read them (a warm restart
+     * of IDA) whenever some dof needs a tighter one by more than /timestepping/implicit/local_tolerance_refresh.
+     *
+     * @param atol     Output, sized and filled by the assembler when it returns true.
+     * @param solution The current (spatial) solution.
+     * @return false if the assembler or model does not provide local tolerances; the stepper then uses abs_tol.
+     */
+    virtual bool local_abs_tolerances(VectorType & /*atol*/, const VectorType & /*solution*/, double /*abs_tol*/,
+                                      double /*rel_tol*/) const
+    {
+      return false;
+    }
+
+    /**
      * @brief Reinitialize an arbitrary vector so that it has the correct size and structure.
      *
      * @param vector The vector to be reinitialized

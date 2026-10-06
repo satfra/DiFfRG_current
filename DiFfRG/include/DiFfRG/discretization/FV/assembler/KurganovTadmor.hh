@@ -41,6 +41,7 @@
 #include <DiFfRG/discretization/common/eom.hh>
 #include <DiFfRG/discretization/common/la_policy.hh>
 #include <DiFfRG/discretization/common/solution_sample.hh>
+#include <DiFfRG/model/abs_tolerances.hh>
 #include <DiFfRG/physics/integration/map_scheduler.hh>
 
 #include <DiFfRG/common/linear_algebra.hh>
@@ -826,6 +827,43 @@ namespace DiFfRG
           // See FEMAssembler::get_differential_indices for why this is restricted to owned rows.
           return restrict_to_owned<VectorType>(DoFTools::extract_dofs(dof_handler, component_mask),
                                                discretization.get_locally_owned_dofs());
+        }
+
+        /// The solution handed to Model::abs_tolerances: the readout reconstruction at each cell centre.
+        using AbsTolSolution =
+            named_tuple<std::tuple<std::array<NumberType, n_components> &, GradientType &,
+                                   std::array<Tensor<2, dim, NumberType>, n_components> &>,
+                        StringSet<"fe_functions", "fe_derivatives", "fe_hessians">>;
+
+        /**
+         * @brief Per-dof absolute tolerances from Model::abs_tolerances, evaluated at every cell centre on the
+         * readout reconstruction (values, reconstructed gradient, unlimited 3-point curvature).
+         * @see AbstractAssembler::local_abs_tolerances. Serial vectors only: the reconstruction reads neighbour
+         * cells, which a distributed vector would have to provide as ghosts.
+         */
+        virtual bool local_abs_tolerances(VectorType &atol, const VectorType &solution, double abs_tol,
+                                          double rel_tol) const override
+        {
+          if constexpr (!def::HasAbsTolerances<Model, dim, AbsTolSolution, n_components> ||
+                        !std::is_same_v<VectorType, dealii::Vector<NumberType>>)
+            return false;
+          else {
+            reinit_vector(atol);
+            std::array<double, n_components> cell_atol{};
+            std::vector<types::global_dof_index> dofs(n_components);
+            for (const auto &cell : dof_handler.active_cell_iterators()) {
+              if (!cell->is_locally_owned()) continue;
+              const Point x = cell->center();
+              auto sol = reconstruct_readout_solution(cell, solution, x, /*with_hessians=*/true);
+              cell_atol.fill(abs_tol);
+              model.abs_tolerances(cell_atol, x, AbsTolSolution(std::tie(sol.values, sol.gradients, sol.hessians)),
+                                   abs_tol, rel_tol);
+              cell->get_dof_indices(dofs);
+              for (uint i = 0; i < n_components; ++i)
+                atol[dofs[i]] = cell_atol[local_component_of_dof[i]];
+            }
+            return true;
+          }
         }
 
         virtual void attach_data_output(OutputFrame<dim, VectorType> &data_out, const VectorType &solution,

@@ -6,6 +6,7 @@
 #include <deal.II/base/tensor.h>
 
 // standard library
+#include <array>
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -14,6 +15,7 @@
 // DiFfRG
 #include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
 #include <DiFfRG/discretization/common/solution_sample.hh>
+#include <DiFfRG/model/abs_tolerances.hh>
 #include <DiFfRG/model/ad.hh>
 #include <DiFfRG/model/component_descriptor.hh>
 #include <DiFfRG/model/fv_boundaries.hh>

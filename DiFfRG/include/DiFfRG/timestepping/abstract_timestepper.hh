@@ -133,6 +133,9 @@ namespace DiFfRG
    * - /timestepping/implicit/maximal_dt: The maximal timestep size for an implicit timestepping algorithm.
    * - /timestepping/implicit/abs_tol: The absolute tolerance for an implicit timestepping algorithm.
    * - /timestepping/implicit/rel_tol: The relative tolerance for an implicit timestepping algorithm.
+   * - /timestepping/implicit/local_tolerance_refresh: For models with per-dof absolute tolerances
+   *   (def::HasAbsTolerances), restart IDA with fresh tolerances once some dof needs one tighter by this factor
+   *   (default 4; <= 1 keeps the initial set).
    * - /timestepping/implicit/max_steps: The maximal number of internal SUNDIALS steps between outputs.
    * - /timestepping/implicit/max_non_linear_iterations: The maximal number of nonlinear IDA iterations.
    * - /timestepping/implicit/jacobian_diagnostics: Whether the Jacobian diagnostics tables are written (default false).
@@ -221,6 +224,7 @@ namespace DiFfRG
         // Stuff you should really set
         impl.abs_tol = config.get_double_or_warn("/timestepping/implicit/abs_tol", 1e-13);
         impl.rel_tol = config.get_double_or_warn("/timestepping/implicit/rel_tol", 1e-7);
+        impl.local_tolerance_refresh = config.get_double("/timestepping/implicit/local_tolerance_refresh", 4.);
 
         // Stuff you can set, but defaults are reasonable
         impl.dt = config.get_double("/timestepping/implicit/dt", 1e-4);
@@ -537,6 +541,7 @@ namespace DiFfRG
       double maximal_dt;
       double abs_tol;
       double rel_tol;
+      double local_tolerance_refresh;
       uint max_steps;
       uint max_non_linear_iterations;
       /** Enables the `<run>_jacobian_diagnostics.csv` tables. Off by default because the records

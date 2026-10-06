@@ -219,11 +219,10 @@ namespace DiFfRG
      */
     bool check()
     {
-      if (step > max_steps) return false;
       if (step == 0) return true;
-      double err = get_EEst();
-      converged = err <= 1.;
-      return !converged;
+      // Convergence is tested before the step limit, so that the last allowed step can still converge.
+      converged = get_EEst() <= 1.;
+      return !converged && step <= max_steps;
     }
   };
 } // namespace DiFfRG

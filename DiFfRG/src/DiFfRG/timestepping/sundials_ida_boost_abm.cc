@@ -18,6 +18,7 @@
 #include <DiFfRG/discretization/data/output_session.hh>
 #include <DiFfRG/timestepping/linear_solver/GMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/UMFPack.hh>
+#include <DiFfRG/timestepping/local_tolerances.hh>
 #include <DiFfRG/timestepping/sundials_diagnostics.hh>
 #include <DiFfRG/timestepping/sundials_ida_boost_abm.hh>
 
@@ -648,11 +649,26 @@ namespace DiFfRG
     residual_placeholder *= 0.;
     VectorType *residual = &residual_placeholder;
 
-    // Tells SUNDIALS to do an internal reset, e.g. if we do local refinement
+    // Per-dof absolute tolerances, if the model sets them (def::HasAbsTolerances); see LocalAbsTolerances.
+    LocalAbsTolerances<VectorType, SparseMatrixType, dim> local_tol(assembler, impl.abs_tol, impl.rel_tol,
+                                                                    impl.local_tolerance_refresh);
+    if (local_tol.init(spatial_y)) {
+      time_stepper.get_local_tolerances = [&]() -> VectorType & { return local_tol.get(); };
+      this->log.info("IDA: per-dof absolute tolerances from the model, {:.3e} .. {:.3e}", local_tol.min(),
+                     local_tol.max());
+    }
+
+    // Tells SUNDIALS to do an internal reset, e.g. if we do local refinement, or if the per-dof tolerances drifted
     time_stepper.solver_should_restart = [&](const double t, VectorType &sol, VectorType &sol_dot) -> bool {
       if (adaptor(t, sol)) {
         assembler.reinit_vector(sol_dot);
         spatial_jacobian.reinit(assembler.get_sparsity_pattern_jacobian());
+        local_tol.init(sol);
+        return true;
+      }
+      if (local_tol.refresh_needed(sol)) {
+        this->log.info("IDA: per-dof absolute tolerances refreshed at t = {:.5f} ({:.3e} .. {:.3e}), restarting", t,
+                       local_tol.min(), local_tol.max());
         return true;
       }
       return false;

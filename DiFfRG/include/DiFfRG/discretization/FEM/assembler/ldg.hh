@@ -29,8 +29,10 @@
 #include <DiFfRG/discretization/common/assembly_schedule.hh>
 #include <DiFfRG/discretization/common/cell_geometry.hh>
 #include <DiFfRG/discretization/common/eom.hh>
+#include <DiFfRG/discretization/common/solution_sample.hh>
 #include <DiFfRG/discretization/common/types.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
+#include <DiFfRG/model/abs_tolerances.hh>
 
 namespace DiFfRG
 {
@@ -70,6 +72,62 @@ namespace DiFfRG
       {
         ComponentMask component_mask(model.template differential_components<dim>());
         return DoFTools::extract_dofs(dof_handler, component_mask);
+      }
+
+      /**
+       * @brief Per-dof absolute tolerances from Model::abs_tolerances, evaluated at each dof's support point on
+       * the FE solution (values, gradients, hessians of the primary FE functions; not the LDG auxiliaries).
+       * @see AbstractAssembler::local_abs_tolerances. Serial vectors only.
+       */
+      virtual bool local_abs_tolerances(VectorType &atol, const VectorType &solution, double abs_tol,
+                                        double rel_tol) const override
+      {
+        constexpr uint n = Components::count_fe_functions(0);
+        using Values = std::array<NumberType, n>;
+        using Gradients = std::array<Tensor<1, dim, NumberType>, n>;
+        using Hessians = std::array<Tensor<2, dim, NumberType>, n>;
+        using Solution = named_tuple<std::tuple<Values &, Gradients &, Hessians &>,
+                                     StringSet<"fe_functions", "fe_derivatives", "fe_hessians">>;
+        if constexpr (!def::HasAbsTolerances<Model, dim, Solution, n> ||
+                      !std::is_same_v<VectorType, dealii::Vector<NumberType>>)
+          return false;
+        else {
+          atol.reinit(dof_handler.n_dofs());
+          const Quadrature<dim> support(fe.get_unit_support_points());
+          FEValues<dim> fe_v(mapping, fe, support,
+                             update_values | update_gradients | update_hessians | update_quadrature_points);
+          std::vector<Vector<NumberType>> vals(support.size(), Vector<NumberType>(n));
+          std::vector<std::vector<Tensor<1, dim, NumberType>>> grads(support.size(),
+                                                                     std::vector<Tensor<1, dim, NumberType>>(n));
+          std::vector<std::vector<Tensor<2, dim, NumberType>>> hess(support.size(),
+                                                                    std::vector<Tensor<2, dim, NumberType>>(n));
+          std::vector<types::global_dof_index> dofs(fe.n_dofs_per_cell());
+          Values v{};
+          Gradients g{};
+          Hessians h{};
+          std::array<double, n> point_atol{};
+          for (const auto &cell : dof_handler.active_cell_iterators()) {
+            if (!cell->is_locally_owned()) continue;
+            fe_v.reinit(cell);
+            fe_v.get_function_values(solution, vals);
+            fe_v.get_function_gradients(solution, grads);
+            fe_v.get_function_hessians(solution, hess);
+            cell->get_dof_indices(dofs);
+            // the quadrature is the list of dof support points, so point q belongs to dof q
+            for (uint q = 0; q < support.size(); ++q) {
+              for (uint c = 0; c < n; ++c) {
+                v[c] = vals[q][c];
+                g[c] = grads[q][c];
+                h[c] = hess[q][c];
+              }
+              point_atol.fill(abs_tol);
+              model.abs_tolerances(point_atol, fe_v.quadrature_point(q), Solution(std::tie(v, g, h)), abs_tol,
+                                   rel_tol);
+              atol[dofs[q]] = point_atol[fe.system_to_component_index(q).first];
+            }
+          }
+          return true;
+        }
       }
 
       const auto &get_discretization() const { return discretization; }
@@ -608,6 +666,7 @@ namespace DiFfRG
             MatrixCreator::create_mass_matrix(*(dof_handler_list[0]), quadrature, mass_matrix,
                                               (Function<dim, NumberType> *)nullptr, discretization.get_constraints(0));
             build_inverse(mass_matrix.block(0, 0), component_mass_matrix_inverse);
+            sol_block.reinit(dofs_per_component);
           } else {
             sol_vector[i].reinit(dofs_per_component);
             sol_vector_tmp[i].reinit(dofs_per_component);
@@ -1148,8 +1207,9 @@ namespace DiFfRG
                 if constexpr (k == 0)
                   if constexpr (Components::count_extractors() > 0)
                     for (uint e = 0; e < Components::count_extractors(); ++e)
+                      // no weight here: the whole jacobian is multiplied by it at the end
                       copy_data.extractor_cell_jacobian(i, e) +=
-                          weight * JxW[q_index] * // dx * phi_j * (
+                          JxW[q_index] * // dx * phi_j * (
                           (-scalar_product(fe_v[0]->shape_grad_component(i, q_index, component_i),
                                            j_extr_flux(component_i, e)) // -dphi_i * jflux
                            + fe_v[0]->shape_value_component(i, q_index, component_i) *
@@ -1191,6 +1251,19 @@ namespace DiFfRG
 
               const auto &comp_0 = scratch_data.comp[0];
               const auto &comp_k = scratch_data.comp[k];
+
+              if constexpr (k == 0 && Components::count_extractors() > 0) {
+                SimpleMatrix<Tensor<1, dim, NumberType>, Components::count_fe_functions(),
+                             Components::count_extractors()>
+                    j_boundary_numflux_extr;
+                this->model.template jacobian_boundary_numflux_extr<stencil>(j_boundary_numflux_extr, normals[q_index],
+                                                                       x_q, fe_conv(sol_q));
+                for (uint i = 0; i < to_n_dofs; ++i)
+                  for (uint e = 0; e < Components::count_extractors(); ++e)
+                    copy_data.extractor_cell_jacobian(i, e) +=
+                        JxW[q_index] * fe_fv[0]->shape_value_component(i, q_index, comp_0[i]) *
+                        scalar_product(j_boundary_numflux_extr(comp_0[i], e), normals[q_index]);
+              }
               for (uint i = 0; i < to_n_dofs; ++i) {
                 const auto component_i = comp_0[i];
                 for (uint j = 0; j < from_n_dofs; ++j) {
@@ -1264,6 +1337,23 @@ namespace DiFfRG
                                                     fe_conv(sol_q_n));
 
               if (!std::get<k>(j_numflux)[0].is_finite() || !std::get<k>(j_numflux)[1].is_finite()) exception = true;
+
+              // extractor contribution of the face terms: the extractors are global, so the numerical flux depends
+              // on them through both traces. Without this only the volume terms couple to the extractor dofs.
+              if constexpr (k == 0 && Components::count_extractors() > 0) {
+                std::array<SimpleMatrix<Tensor<1, dim, NumberType>, Components::count_fe_functions(),
+                                        Components::count_extractors()>,
+                           2>
+                    j_numflux_extr{};
+                this->model.template jacobian_numflux_extr<stencil>(j_numflux_extr, normals[q_index], x_q,
+                                                              fe_conv(sol_q_s), fe_conv(sol_q_n));
+                for (uint i = 0; i < to_n_dofs; ++i)
+                  for (uint e = 0; e < Components::count_extractors(); ++e)
+                    copy_data_face.extractor_cell_jacobian(i, e) +=
+                        JxW[q_index] * fe_iv[0]->jump_in_shape_values(i, q_index, iface_comp_0[i]) *
+                        scalar_product(j_numflux_extr[0](iface_comp_0[i], e) + j_numflux_extr[1](iface_comp_0[i], e),
+                                       normals[q_index]);
+              }
 
               for (uint i = 0; i < to_n_dofs; ++i) {
                 const auto component_i = iface_comp_0[i];
@@ -1431,6 +1521,7 @@ namespace DiFfRG
       mutable array<BlockVector<NumberType>, Components::count_fe_subsystems()> sol_vector;
       mutable array<BlockVector<NumberType>, Components::count_fe_subsystems()> sol_vector_tmp;
       mutable array<Vector<NumberType>, Components::count_fe_subsystems()> sol_vector_vec_tmp;
+      mutable BlockVector<NumberType> sol_block; // FE solution in component blocks, for j_gu[k].vmult
 
       BlockSparsityPattern sparsity_pattern_jacobian;
       BlockSparsityPattern sparsity_pattern_mass;
@@ -1468,7 +1559,10 @@ namespace DiFfRG
           } else {
             if (!ldg_matrix_built[k]) rebuild_ldg_jacobian<k>(sol);
 
-            j_gu[k].vmult(sol_vector[k], sol);
+            // sol is a plain Vector; BlockSparseMatrix::vmult(BlockVector, Vector) only uses column block 0,
+            // i.e. FE component 0. Copy into the (component-wise) block structure so all couplings act.
+            sol_block = sol;
+            j_gu[k].vmult(sol_vector[k], sol_block);
           }
         });
       }
