@@ -239,6 +239,29 @@ namespace DiFfRG
       }
 
       /**
+       * @brief Flux and source at all quadrature points of a batch at once; this is what the CG assembler
+       * calls.
+       *
+       * The standard implementation evaluates flux() and source() point by point, in one flat parallel
+       * loop over the batch. Override it to evaluate the expensive part, typically the momentum
+       * integrals, for all points in one go, e.g. with an integrator's map_points(), which also runs on
+       * the GPU. A model that overrides it gets batched jacobians automatically through def::AD.
+       *
+       * @param out the result, a FluxSourceBatch: `out.flux(c, d)` and `out.source(c)` point to the
+       * columns of component c (and direction d) over all points, zero on entry.
+       * @param batch the solution at the points, a PointBatch: columns `values(c)`, `derivatives(c, d)`,
+       * `hessians(c, d1, d2)`, `coordinates(d)` (each a PointArray, directly usable as a per-point argument
+       * of map_points()), plus `extractors()`, `variables()`, `size()`, and `x(i)`, `cell_width(i)`.
+       *
+       * @note Set `static constexpr bool batch_reads_hessians = false` (or `batch_reads_derivatives`) in
+       * the model when neither flux nor source reads them: the assembler then skips computing them.
+       */
+      template <typename Out, typename Batch> void flux_source_batch(Out &out, const Batch &batch) const
+      {
+        DiFfRG::internal::flux_source_per_point(asImp(), out, batch);
+      }
+
+      /**
        * @brief A method to find out which components of the mass function are differential when using a DAE.
        *
        * @note The standard implementation of this method tests whether the mass function changes when changing the time

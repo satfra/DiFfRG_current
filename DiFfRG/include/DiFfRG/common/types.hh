@@ -88,10 +88,15 @@ namespace DiFfRG
       template <> struct _double_precision<complex<float>> {
         using value = complex<double>;
       };
+
+      template <size_t N> struct _double_precision<autodiff::Real<N, float>> {
+        using value = autodiff::Real<N, double>;
+      };
     } // namespace internal
 
     /// The double-precision counterpart of a single-precision type (float -> double,
-    /// complex<float> -> complex<double>); every other type maps to itself.
+    /// complex<float> -> complex<double>, Real<N, float> -> Real<N, double>); every other type maps
+    /// to itself.
     template <typename T> using double_precision = typename internal::_double_precision<T>::value;
 
     template <typename T> inline constexpr bool is_autodiff = internal::_is_autodiff<T>;

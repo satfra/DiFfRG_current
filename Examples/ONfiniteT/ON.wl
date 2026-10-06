@@ -156,3 +156,26 @@ MakeV[flowV,"V",kernelParameterList];                                    (*full 
 MakeV[flowVPion,"V_pion",kernelParameterList[[{1,2,3,4}]]];              (*single pion mode: KT advection flux*)
 MakeV[flowVSigma,"V_sigma",kernelParameterList[[{1,2,3,5}]]];            (*sigma loop: KT diffusion flux*)
 UpdateFlows["ONFiniteTFlows"]
+
+
+(* ::Text:: *)
+(*The batched CG assembler evaluates the flux at all quadrature points in one map_points call. flows_batched holds the full flux for it on the CPU (TBB) and on the GPU, in double and in single precision.*)
+
+
+(* ::Input::Initialization:: *)
+SetFlowName["flows_batched"];
+MakeVBatched[name_,device_,computeType_]:=MakeKernel[SafeFiniteTFunctions[flowV,T],
+	"Name"->name,
+	"Integrator"->"Integrator_p2",
+	"d"->3,
+	"AD"->True,
+	"Device"->device,
+	"ComputeType"->computeType,
+	"MapPoints"->True,
+	"Parameters"->kernelParameterList,
+	"IntegrationVariables"->{"l1"}
+];
+MakeVBatched["V","TBB","double"];
+MakeVBatched["V_GPU","GPU","double"];
+MakeVBatched["V_GPU_f","GPU","float"];
+UpdateFlows["ONFiniteTBatchedFlows"]

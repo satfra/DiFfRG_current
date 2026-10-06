@@ -258,6 +258,76 @@ namespace
     INFO("worst |distributed - serial| = " << worst << ", residual scale = " << scale);
     REQUIRE(worst < 1e-10 * scale);
   }
+
+  /**
+   * @brief Assemble one jacobian serially and one distributed, and require their action on the state,
+   * J u, to agree. Matched cell by cell, as in require_distributed_residual_matches_serial.
+   */
+  template <typename SerialAssembler, typename SerialDisc, typename ParallelAssembler, typename ParallelDisc,
+            typename SerialVars, typename ParallelVars, typename Model>
+  void require_distributed_jacobian_matches_serial(Model &model, const ConfigTree &json)
+  {
+    using namespace dealii;
+    constexpr uint dim = SerialDisc::dim;
+
+    RectangularMeshSerial<dim> serial_mesh{Config::ConfigurationMesh<dim>(json)};
+    SerialDisc serial_disc(serial_mesh, json);
+    SerialAssembler serial_assembler(serial_disc, model, json);
+    SerialVars serial_ic(serial_disc);
+    serial_ic.interpolate(model);
+    const auto &serial_u = serial_ic.spatial_data();
+    typename SerialDisc::SparseMatrixType serial_jacobian(serial_assembler.get_sparsity_pattern_jacobian());
+    serial_jacobian = 0.;
+    serial_assembler.jacobian(serial_jacobian, serial_u, 1., serial_u, 1., 1.);
+    typename SerialDisc::VectorType serial_action(serial_u);
+    serial_jacobian.vmult(serial_action, serial_u);
+
+    ParallelMesh<dim> parallel_mesh{Config::ConfigurationMesh<dim>(json)};
+    ParallelDisc parallel_disc(parallel_mesh, json);
+    ParallelAssembler parallel_assembler(parallel_disc, model, json);
+    ParallelVars parallel_ic(parallel_disc);
+    parallel_ic.interpolate(model);
+
+    using ParVector = typename ParallelDisc::VectorType;
+    SolutionView<ParVector> state;
+    state.reinit(parallel_disc.get_locally_owned_dofs(), parallel_disc.get_locally_relevant_dofs(),
+                 parallel_disc.get_communicator());
+    state.refresh(parallel_ic.spatial_data());
+
+    typename ParallelDisc::SparseMatrixType parallel_jacobian;
+    parallel_assembler.reinit_matrix(parallel_jacobian);
+    parallel_assembler.jacobian(parallel_jacobian, state.get(), 1., state.get(), 1., 1.);
+    ParVector parallel_action(parallel_ic.spatial_data());
+    parallel_jacobian.vmult(parallel_action, parallel_ic.spatial_data());
+
+    SolutionView<ParVector> gathered;
+    gathered.reinit(parallel_disc.get_locally_owned_dofs(), parallel_disc.get_locally_relevant_dofs(),
+                    parallel_disc.get_communicator());
+    gathered.refresh(parallel_action);
+
+    const auto &serial_dh = serial_disc.get_dof_handler();
+    const auto &parallel_dh = parallel_disc.get_dof_handler();
+    REQUIRE(serial_dh.n_dofs() == parallel_dh.n_dofs());
+
+    const double scale = std::max(serial_action.linfty_norm(), 1e-300);
+    std::vector<types::global_dof_index> serial_indices, parallel_indices;
+    double worst = 0.;
+    for (const auto &parallel_cell : parallel_dh.active_cell_iterators()) {
+      const typename DoFHandler<dim>::active_cell_iterator serial_cell(
+          &serial_dh.get_triangulation(), parallel_cell->level(), parallel_cell->index(), &serial_dh);
+      const auto n = parallel_cell->get_fe().n_dofs_per_cell();
+      serial_indices.resize(n);
+      parallel_indices.resize(n);
+      parallel_cell->get_dof_indices(parallel_indices);
+      serial_cell->get_dof_indices(serial_indices);
+      for (unsigned int k = 0; k < n; ++k)
+        worst = std::max(worst, std::abs(gathered[parallel_indices[k]] - serial_action[serial_indices[k]]));
+    }
+
+    REQUIRE(scale > 1e-8);
+    INFO("worst |distributed - serial| = " << worst << ", J u scale = " << scale);
+    REQUIRE(worst < 1e-10 * scale);
+  }
 } // namespace
 
 TEST_CASE("CG residual is unchanged by distribution", "[discretization][cg][mpi]")
@@ -269,6 +339,19 @@ TEST_CASE("CG residual is unchanged by distribution", "[discretization][cg][mpi]
   using ParallelDisc = CG::Discretization<Model, ParallelMesh<dim>>;
   Model model(nontrivial_parameters());
   require_distributed_residual_matches_serial<CG::Assembler<SerialDisc>, SerialDisc, CG::Assembler<ParallelDisc>,
+                                              ParallelDisc, FE::FlowingVariables<SerialDisc>,
+                                              FE::FlowingVariables<ParallelDisc>>(model, make_json());
+}
+
+TEST_CASE("CG jacobian is unchanged by distribution", "[discretization][cg][mpi]")
+{
+  DiFfRG::Init();
+  constexpr uint dim = 1;
+  using Model = Testing::ModelBurgers<dim>;
+  using SerialDisc = CG::Discretization<Model, RectangularMeshSerial<dim>>;
+  using ParallelDisc = CG::Discretization<Model, ParallelMesh<dim>>;
+  Model model(nontrivial_parameters());
+  require_distributed_jacobian_matches_serial<CG::Assembler<SerialDisc>, SerialDisc, CG::Assembler<ParallelDisc>,
                                               ParallelDisc, FE::FlowingVariables<SerialDisc>,
                                               FE::FlowingVariables<ParallelDisc>>(model, make_json());
 }

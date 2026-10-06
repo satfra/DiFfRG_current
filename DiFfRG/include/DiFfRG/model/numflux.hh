@@ -10,6 +10,7 @@
 
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/model/batch.hh>
 
 namespace DiFfRG
 {
@@ -156,6 +157,14 @@ namespace DiFfRG
                       "Internal error: template parameter M must be the same as Model. "
                       "Do not explicitly specify the M template parameter.");
         asImp().flux(F, p, sol);
+      }
+
+      /// Batched boundary_numflux: the model's flux_source_batch at all points of a boundary batch. The
+      /// source columns of @p out are not part of the result.
+      template <typename Out, typename Normals, typename Batch>
+      void boundary_numflux_batch(Out &out, const Normals & /*normals*/, const Batch &batch) const
+      {
+        asImp().flux_source_batch(out, batch);
       }
 
       template <uint dependent, int dim, typename NumberType, typename Solutions, typename M = Model>

@@ -11,9 +11,11 @@
 #include <DiFfRG/discretization/coordinates/coordinates.hh>
 #include <DiFfRG/physics/integration/abstract_integrator.hh>
 #include <DiFfRG/physics/integration/map_completion.hh>
+#include <DiFfRG/physics/integration/point_arg.hh>
 
 // std
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 namespace DiFfRG
@@ -84,7 +86,39 @@ namespace DiFfRG
           return widened;
       }
     };
+
+    /// f(begin, end) over [0, n), in parallel chunks once n is large enough to pay for it.
+    template <typename F> void parallel_chunks(const size_t n, const F &f)
+    {
+      constexpr size_t grain = 1 << 15;
+      if (n < 2 * grain)
+        f(size_t(0), n);
+      else
+        tbb::parallel_for(tbb::blocked_range<size_t>(0, n, grain),
+                          [&](const tbb::blocked_range<size_t> &r) { f(r.begin(), r.end()); });
+    }
+
+    /// Grow-only byte buffer, used to stage the per-point arguments of map_points().
+    template <typename MemorySpace> struct ByteBuffer {
+      Kokkos::View<char *, MemorySpace> view;
+
+      char *reserve(const size_t bytes)
+      {
+        if (view.extent(0) < bytes)
+          view = Kokkos::View<char *, MemorySpace>(Kokkos::view_alloc(Kokkos::WithoutInitializing, "PointArgs"), bytes);
+        return view.data();
+      }
+    };
   } // namespace internal
+
+  /**
+   * @brief How a device map_points() distributes its work.
+   *
+   * thread_per_point: one thread sums all quadrature nodes of one point; only competitive for very
+   * many points with few nodes. team_per_point: one team reduces over the nodes of one point; the
+   * better choice almost everywhere. automatic picks between the two from these sizes.
+   */
+  enum class MapPointsPolicy { automatic, thread_per_point, team_per_point };
 
   /**
    * @brief This class performs numerical integration over a d-dimensional hypercube using quadrature rules.
@@ -137,7 +171,7 @@ namespace DiFfRG
     }
 
     template <typename... T>
-      requires is_valid_kernel<NT, KERNEL, ctype, dim, T...>
+      requires is_valid_kernel<NT, KERNEL, ctype, dim, internal::compute_arg_t<T, ctype>...>
     void get(NT &dest, const T &...t) const
     {
       // create an execution space
@@ -156,7 +190,8 @@ namespace DiFfRG
 
     /// Single-precision integration handing back a double result.
     template <typename OT, typename... T>
-      requires(internal::is_widened_result<OT, NT> && is_valid_kernel<NT, KERNEL, ctype, dim, T...>)
+      requires(internal::is_widened_result<OT, NT> &&
+               is_valid_kernel<NT, KERNEL, ctype, dim, internal::compute_arg_t<T, ctype>...>)
     void get(OT &dest, const T &...t) const
     {
       NT result;
@@ -165,7 +200,8 @@ namespace DiFfRG
     }
 
     template <typename OT, typename... T>
-      requires(!std::is_same_v<OT, NT> && !internal::is_widened_result<OT, NT> && is_valid_kernel<NT, KERNEL, ctype, dim, T...>)
+      requires(!std::is_same_v<OT, NT> && !internal::is_widened_result<OT, NT> &&
+               is_valid_kernel<NT, KERNEL, ctype, dim, internal::compute_arg_t<T, ctype>...>)
     void get(OT &dest, const T &...t) const
     {
       ExecutionSpace space;
@@ -173,10 +209,11 @@ namespace DiFfRG
     }
 
     template <typename OT, typename... T>
-      requires(!std::is_same_v<OT, NT> && !internal::is_widened_result<OT, NT> && is_valid_kernel<NT, KERNEL, ctype, dim, T...>)
+      requires(!std::is_same_v<OT, NT> && !internal::is_widened_result<OT, NT> &&
+               is_valid_kernel<NT, KERNEL, ctype, dim, internal::compute_arg_t<T, ctype>...>)
     void get(ExecutionSpace &space, OT &dest, const T &...t) const
     {
-      const auto args = device::make_tuple(t...);
+      const auto args = device::make_tuple(internal::compute_arg_t<T, ctype>(t)...);
 
       const auto &n = nodes;
       const auto &w = weights;
@@ -441,6 +478,45 @@ namespace DiFfRG
           });
     }
 
+    /**
+     * @brief Evaluate the integral at n points in a single launch: dest[i] is the integral with
+     * every per-point argument taken at index i.
+     *
+     * Each argument is a PointArg, i.e. either one value shared by all points or a PointArray of n
+     * values, so any argument of the kernel may vary between points. The nodes are summed on the fly,
+     * without an intermediate (points x nodes) buffer.
+     *
+     * Rank-local: unlike map(), this is never split across MPI ranks and never touches MapScheduler,
+     * so every rank may call it with its own n, also between collective operations.
+     *
+     * A single-precision integrator receives its arguments converted to single precision.
+     */
+    template <typename OT, typename... T>
+      requires(internal::is_map_result<OT, NT> &&
+               is_valid_kernel<NT, KERNEL, ctype, dim, internal::compute_arg_t<T, ctype>...>)
+    void map_points(OT *dest, const size_t n, const PointArg<T> &...args)
+    {
+      if (n == 0) return;
+      const auto device_args = stage_point_args(n, args...);
+
+      if constexpr (std::is_same_v<typename ExecutionSpace::memory_space, CPU_memory>) {
+        launch_map_points(Kokkos::View<OT *, CPU_memory, Kokkos::MemoryUnmanaged>(dest, n), n, device_args);
+        space.fence();
+      } else {
+        auto &stage = m_points_result.template get<OT>();
+        const auto result = stage.device_view(space, n);
+        const auto pinned = stage.pinned_view(n);
+        launch_map_points(result, n, device_args);
+        Kokkos::deep_copy(space, pinned, result);
+        space.fence();
+        internal::parallel_chunks(n, [&](const size_t begin, const size_t end) {
+          std::memcpy(dest + begin, pinned.data() + begin, (end - begin) * sizeof(OT));
+        });
+      }
+    }
+
+    void set_map_points_policy(const MapPointsPolicy policy) { m_map_points_policy = policy; }
+
     /// Points evaluated per external grid point. Half of the scheduler's cost score.
     size_t quadrature_volume() const
     {
@@ -518,6 +594,187 @@ namespace DiFfRG
 
   private:
     /**
+     * @brief Copy the per-point arguments of map_points() to the device, converted to the compute
+     * precision, and return them as a tuple of DevicePointArg.
+     *
+     * All per-point arrays share one staging buffer, so the upload is a single copy. On a host memory
+     * space an argument that needs no conversion is used in place.
+     */
+    template <typename... T> auto stage_point_args(const size_t n, const PointArg<T> &...args)
+    {
+      constexpr bool host_memory = std::is_same_v<typename ExecutionSpace::memory_space, CPU_memory>;
+      constexpr size_t alignment = 64;
+      constexpr size_t n_args = sizeof...(T);
+
+      // Byte offset of each staged argument; arguments that are broadcast, or used in place, stay unstaged.
+      std::array<size_t, n_args> offsets{};
+      std::array<bool, n_args> staged{};
+      size_t total = 0;
+      {
+        size_t k = 0;
+        (
+            [&] {
+              using U = internal::compute_arg_t<T, ctype>;
+              if (args.per_point()) {
+                if (args.size < n)
+                  throw std::runtime_error("map_points: a per-point argument holds " + std::to_string(args.size) +
+                                           " values for " + std::to_string(n) + " points.");
+                staged[k] = !(host_memory && std::is_same_v<U, T>);
+              }
+              if (staged[k]) {
+                offsets[k] = total;
+                total += (n * sizeof(U) + alignment - 1) / alignment * alignment;
+              }
+              ++k;
+            }(),
+            ...);
+      }
+
+      char *host = nullptr;
+      char *device = nullptr;
+      if (total > 0) {
+        host = m_point_args_host.reserve(total);
+        device = host_memory ? host : m_point_args_device.reserve(total);
+        size_t k = 0;
+        (
+            [&] {
+              using U = internal::compute_arg_t<T, ctype>;
+              if (staged[k]) {
+                U *out = reinterpret_cast<U *>(host + offsets[k]);
+                internal::parallel_chunks(n, [&](const size_t begin, const size_t end) {
+                  for (size_t i = begin; i < end; ++i)
+                    out[i] = static_cast<U>(args.values[i]);
+                });
+              }
+              ++k;
+            }(),
+            ...);
+        if constexpr (!host_memory)
+          Kokkos::deep_copy(space, Kokkos::subview(m_point_args_device.view, Kokkos::make_pair(size_t(0), total)),
+                            Kokkos::subview(m_point_args_host.view, Kokkos::make_pair(size_t(0), total)));
+      }
+
+      return [&]<size_t... I>(std::index_sequence<I...>) {
+        return device::make_tuple([&] {
+          using U = internal::compute_arg_t<T, ctype>;
+          const U *values = staged[I] ? reinterpret_cast<const U *>(device + offsets[I])
+                                      : (args.per_point() ? reinterpret_cast<const U *>(args.values) : nullptr);
+          return internal::DevicePointArg<U>{values, args.per_point() ? U{} : static_cast<U>(args.value)};
+        }()...);
+      }(std::index_sequence_for<T...>{});
+    }
+
+  public:
+    /// The kernel launch of map_points(). Public only because nvcc rejects extended device lambdas
+    /// inside non-public member functions.
+    template <typename ResultView, typename DeviceArgs>
+    void launch_map_points(const ResultView &result, const size_t n, const DeviceArgs &device_args)
+    {
+      using OT = typename ResultView::value_type;
+
+      const auto &nd = nodes;
+      const auto &w = weights;
+      const auto &start = grid_start;
+      const auto &scale = grid_scale;
+      const auto gs = grid_size;
+      const auto args = device_args;
+
+      size_t total = 1;
+      for (int d = 0; d < dim; ++d)
+        total *= grid_size[d];
+
+      // Measured on an RTX 4070 (ONfiniteT, 64..2e5 points, 16..8192 nodes): a team per point wins
+      // nearly everywhere, by up to 18x; a thread per point only pays off for very many cheap points.
+      MapPointsPolicy policy = m_map_points_policy;
+      if (policy == MapPointsPolicy::automatic)
+        policy = (n >= 65536 && total <= 1024) ? MapPointsPolicy::thread_per_point : MapPointsPolicy::team_per_point;
+
+      if (policy == MapPointsPolicy::thread_per_point) {
+        // Row-major node order and the constant added first, as in the serial TBBReduction path.
+        Kokkos::parallel_for(
+            "QuadratureIntegrator_map_points", Kokkos::RangePolicy<ExecutionSpace>(space, 0, n),
+            KOKKOS_LAMBDA(const size_t i) {
+              NT sum = device::apply([&](const auto &...a) { return NT(KERNEL::constant(a(i)...)); }, args);
+              NT integral{};
+              device::array<size_t, dim> idx{};
+              for (size_t flat = 0; flat < total; ++flat) {
+                device::array<ctype, dim> x;
+                ctype weight = 1;
+                for (int d = 0; d < dim; ++d) {
+                  x[d] = Kokkos::fma(scale[d], nd[d][idx[d]], start[d]);
+                  weight *= w[d][idx[d]] * scale[d];
+                }
+                device::apply(
+                    [&](const auto &...xs) {
+                      device::apply([&](const auto &...a) { integral += weight * KERNEL::kernel(xs..., a(i)...); },
+                                    args);
+                    },
+                    x);
+                for (int d = dim - 1; d >= 0; --d) {
+                  if (++idx[d] < gs[d]) break;
+                  idx[d] = 0;
+                }
+              }
+              sum += integral;
+              result(i) = static_cast<OT>(sum);
+            });
+      } else {
+        using TeamType = typename Kokkos::TeamPolicy<ExecutionSpace>::member_type;
+        constexpr int vector_width = 32;
+        const size_t n_outer = (total + vector_width - 1) / vector_width;
+
+        device::array<size_t, dim> strides;
+        strides[dim - 1] = 1;
+        for (int d = dim - 2; d >= 0; --d)
+          strides[d] = strides[d + 1] * grid_size[d + 1];
+
+        Kokkos::parallel_for(
+            "QuadratureIntegrator_map_points_team",
+            Kokkos::TeamPolicy<ExecutionSpace>(space, n, Kokkos::AUTO, vector_width),
+            KOKKOS_LAMBDA(const TeamType &team) {
+              const size_t i = team.league_rank();
+              NT integral{};
+              Kokkos::parallel_reduce(
+                  Kokkos::TeamThreadRange(team, n_outer),
+                  [&](const size_t outer, NT &team_update) {
+                    NT vec_sum{};
+                    Kokkos::parallel_reduce(
+                        Kokkos::ThreadVectorRange(team, vector_width),
+                        [&](const size_t inner, NT &vec_update) {
+                          const size_t flat = outer * vector_width + inner;
+                          if (flat >= total) return;
+                          device::array<ctype, dim> x;
+                          ctype weight = 1;
+                          size_t remainder = flat;
+                          for (int d = 0; d < dim; ++d) {
+                            const size_t id = remainder / strides[d];
+                            remainder -= id * strides[d];
+                            x[d] = Kokkos::fma(scale[d], nd[d][id], start[d]);
+                            weight *= w[d][id] * scale[d];
+                          }
+                          device::apply(
+                              [&](const auto &...xs) {
+                                device::apply(
+                                    [&](const auto &...a) { vec_update += weight * KERNEL::kernel(xs..., a(i)...); },
+                                    args);
+                              },
+                              x);
+                        },
+                        vec_sum);
+                    team_update += vec_sum;
+                  },
+                  integral);
+              Kokkos::single(Kokkos::PerTeam(team), [&]() {
+                NT sum = device::apply([&](const auto &...a) { return NT(KERNEL::constant(a(i)...)); }, args);
+                sum += integral;
+                result(i) = static_cast<OT>(sum);
+              });
+            });
+      }
+    }
+
+  private:
+    /**
      * @brief Run a host-backend map now, or queue it for flush time if a deferral scope is open.
      *
      * A host kernel is synchronous, so running it inline blocks the host thread and delays the
@@ -574,6 +831,11 @@ namespace DiFfRG
     mutable Kokkos::View<ctype *, typename ExecutionSpace::memory_space> m_positions;
     mutable std::string m_positions_key;
     mutable internal::MapStagingSet<NT, ExecutionSpace> m_staging;
+    // map_points() buffers, separate from map()'s, whose staging may still be pending in a DeferredMaps scope.
+    internal::MapStagingSet<NT, ExecutionSpace> m_points_result;
+    internal::ByteBuffer<PinnedHost_memory> m_point_args_host;
+    internal::ByteBuffer<typename ExecutionSpace::memory_space> m_point_args_device;
+    MapPointsPolicy m_map_points_policy = MapPointsPolicy::automatic;
     mutable Kokkos::View<NT, typename ExecutionSpace::memory_space> m_result_view;
     mutable typename Kokkos::View<NT, typename ExecutionSpace::memory_space>::host_mirror_type m_result_host;
     mutable bool m_result_views_initialized = false;
@@ -600,39 +862,61 @@ namespace DiFfRG
     }
 
     template <typename... T>
-      requires is_valid_kernel<NT, KERNEL, ctype, dim, T...>
+      requires is_valid_kernel<NT, KERNEL, ctype, dim, internal::compute_arg_t<T, ctype>...>
     void get(NT &dest, const T &...t) const
     {
-      const auto args = device::tie(t...);
+      // A single-precision integrator evaluates its kernel in single precision.
+      if constexpr (!(std::is_same_v<T, internal::compute_arg_t<T, ctype>> && ...))
+        get(dest, internal::compute_arg_t<T, ctype>(t)...);
+      else {
+        const auto args = device::tie(t...);
 
-      const auto &n = nodes;
-      const auto &w = weights;
-      const auto &start = grid_start;
-      const auto &scale = grid_scale;
+        const auto &n = nodes;
+        const auto &w = weights;
+        const auto &start = grid_start;
+        const auto &scale = grid_scale;
 
-      auto functor = [&](const device::array<size_t, dim> &idx) {
-        device::array<ctype, dim> x;
-        ctype weight = 1;
-        bool is_first = true;
-        for (size_t i = 0; i < dim; ++i) {
-          x[i] = Kokkos::fma(scale[i], n[i][idx[i]], start[i]);
-          weight *= w[i][idx[i]] * scale[i];
-          is_first &= idx[i] == 0;
-        }
-        return device::apply([&](const auto &...iargs) { return weight * KERNEL::kernel(iargs...); },
-                             device::tuple_cat(x, args));
-      };
+        auto functor = [&](const device::array<size_t, dim> &idx) {
+          device::array<ctype, dim> x;
+          ctype weight = 1;
+          for (size_t i = 0; i < dim; ++i) {
+            x[i] = Kokkos::fma(scale[i], n[i][idx[i]], start[i]);
+            weight *= w[i][idx[i]] * scale[i];
+          }
+          return device::apply([&](const auto &...iargs) { return weight * KERNEL::kernel(iargs...); },
+                               device::tuple_cat(x, args));
+        };
 
-      dest = KERNEL::constant(t...) + TBBReduction<dim, NT, decltype(functor)>(grid_size, functor);
+        dest = KERNEL::constant(t...) + TBBReduction<dim, NT, decltype(functor)>(grid_size, functor);
+      }
     }
 
     template <typename OT, typename... T>
-      requires(internal::is_widened_result<OT, NT> && is_valid_kernel<NT, KERNEL, ctype, dim, T...>)
+      requires(internal::is_widened_result<OT, NT> &&
+               is_valid_kernel<NT, KERNEL, ctype, dim, internal::compute_arg_t<T, ctype>...>)
     void get(OT &dest, const T &...t) const
     {
       NT result;
       get(result, t...);
       dest = OT(result);
+    }
+
+    /// See QuadratureIntegrator::map_points. One get() per point inside a flat parallel loop, so every
+    /// result is bitwise identical to the corresponding get().
+    template <typename OT, typename... T>
+      requires(internal::is_map_result<OT, NT> &&
+               is_valid_kernel<NT, KERNEL, ctype, dim, internal::compute_arg_t<T, ctype>...>)
+    void map_points(OT *dest, const size_t n, const PointArg<T> &...args) const
+    {
+      ((args.per_point() && args.size < n
+            ? throw std::runtime_error("map_points: a per-point argument holds " + std::to_string(args.size) +
+                                       " values for " + std::to_string(n) + " points.")
+            : void()),
+       ...);
+      tbb::parallel_for(tbb::blocked_range<size_t>(0, n), [&](const tbb::blocked_range<size_t> &r) {
+        for (size_t i = r.begin(); i != r.end(); ++i)
+          get(dest[i], args[i]...);
+      });
     }
 
     template <typename OT, typename Coordinates, typename... Args>
