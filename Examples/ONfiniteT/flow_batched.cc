@@ -4,17 +4,16 @@ using namespace DiFfRG;
 #include "model_batched.hh"
 
 /**
- * CG.cc with a batched flux. /batched/backend selects how the model evaluates it:
- *   per_point -- per-point flux with the TBB integrator (AbstractModel's default flux_source_batch)
+ * CG.cc / dDG.cc with a batched flux. /batched/assembler is cg or ddg; /batched/backend selects how the model
+ * evaluates the flux:
+ *   per_point -- per-point flux with the TBB integrator (AbstractModel's default evaluate_batch)
  *   tbb       -- one map_points call with the TBB integrator
  *   gpu       -- one map_points call with the GPU integrator in double precision
  *   gpu_float -- one map_points call with the GPU integrator in single precision
  */
-template <typename Model> int run(const ConfigTree &config)
+template <typename Model, typename Discretization, typename Assembler> int run(const ConfigTree &config)
 {
   constexpr uint dim = Model::dim;
-  using Discretization = CG::Discretization<Model, RectangularMesh<dim>>;
-  using Assembler = CG::Assembler<Discretization>;
   using TimeStepper = TimeStepperSUNDIALS_IDA<Assembler>;
 
   Model model(config);
@@ -46,11 +45,20 @@ int main(int argc, char *argv[])
   const auto config = config_helper.get_config();
 
   using namespace ON_batched;
+  const std::string assembler = config.get_string("/batched/assembler", "cg");
+  const auto with_assembler = [&]<typename M>() {
+    using CGD = CG::Discretization<M, RectangularMesh<M::dim>>;
+    using DGD = DG::Discretization<M, RectangularMesh<M::dim>>;
+    if (assembler == "cg") return run<M, CGD, CG::Assembler<CGD>>(config);
+    if (assembler == "ddg") return run<M, DGD, dDG::Assembler<DGD>>(config);
+    std::cerr << "Unknown /batched/assembler: " << assembler << std::endl;
+    return 1;
+  };
   const std::string backend = config.get_string("/batched/backend", "tbb");
-  if (backend == "per_point") return run<Model<Backend::TBB, false>>(config);
-  if (backend == "tbb") return run<Model<Backend::TBB>>(config);
-  if (backend == "gpu") return run<Model<Backend::GPU>>(config);
-  if (backend == "gpu_float") return run<Model<Backend::GPU_float>>(config);
+  if (backend == "per_point") return with_assembler.template operator()<Model<Backend::TBB, false>>();
+  if (backend == "tbb") return with_assembler.template operator()<Model<Backend::TBB>>();
+  if (backend == "gpu") return with_assembler.template operator()<Model<Backend::GPU>>();
+  if (backend == "gpu_float") return with_assembler.template operator()<Model<Backend::GPU_float>>();
   std::cerr << "Unknown /batched/backend: " << backend << std::endl;
   return 1;
 }

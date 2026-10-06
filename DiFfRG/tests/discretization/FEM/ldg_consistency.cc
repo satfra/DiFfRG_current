@@ -24,7 +24,8 @@ namespace
 
   template <typename Model>
   using UpDownFluxes =
-      def::LDGUpDownFluxes<Model, def::UpDownFlux<def::FlowDirections<0, 0>, def::UpDown<def::from_right, def::from_left>>>;
+      def::LDGUpDownFluxes<Model,
+                           def::UpDownFlux<def::FlowDirections<0, 0>, def::UpDown<def::from_right, def::from_left>>>;
 
   /**
    * Two FE functions u, v and one LDG level (lu, lv) = (u', v'). The main flux and source depend nonlinearly on

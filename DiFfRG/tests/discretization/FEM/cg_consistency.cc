@@ -26,7 +26,7 @@ namespace
   /**
    * Two components; flux and source depend nonlinearly on values, derivatives, (optionally) hessians,
    * the position and (optionally) an extractor. With `batched`, the model evaluates them itself in
-   * flux_source_batch from the batch columns; otherwise it uses the default, which calls flux/source.
+   * evaluate_batch from the batch columns; otherwise it uses the default, which calls flux/source.
    */
   template <uint dim, bool batched, bool hessians, bool extractors>
   class ModelRich
@@ -95,10 +95,10 @@ namespace
                as_tensors<NT, 2>(get<"fe_hessians">(sol)), get<"extractors">(sol));
     }
 
-    template <typename Out, typename Batch> void flux_source_batch(Out &out, const Batch &batch) const
+    template <typename Out, typename Batch> void evaluate_batch(Out &out, const Batch &batch) const
     {
       if constexpr (!batched) {
-        def::AbstractModel<ModelRich, RichComponents<extractors>>::flux_source_batch(out, batch);
+        def::AbstractModel<ModelRich, RichComponents<extractors>>::evaluate_batch(out, batch);
         return;
       }
       using NT = typename Batch::number_type;
@@ -123,7 +123,7 @@ namespace
         for (uint c = 0; c < 2; ++c) {
           for (uint d = 0; d < dim; ++d)
             out.flux(c, d)[i] = F[c][d];
-          out.source(c)[i] = S[c];
+          if (out.requested(Term::source)) out.source(c)[i] = S[c];
         }
       }
     }
@@ -354,7 +354,7 @@ TEST_CASE("CG jacobian matches finite differences of the residual", "[discretiza
   }
 }
 
-TEST_CASE("A model's own flux_source_batch matches the per-point default", "[discretization][cg]")
+TEST_CASE("A model's own evaluate_batch matches the per-point default", "[discretization][cg]")
 {
   DiFfRG::Init();
   const auto check = [](auto &batched, auto &per_point) {

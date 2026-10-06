@@ -51,8 +51,7 @@ namespace
     }
 
     template <int dim, typename Solution, size_t n>
-    void abs_tolerances(std::array<double, n> &atol, const Point<dim> &x, const Solution &sol, double,
-                        double) const
+    void abs_tolerances(std::array<double, n> &atol, const Point<dim> &x, const Solution &sol, double, double) const
       requires with_hook
     {
       atol[0] = model_tolerance(0, x[0], get<"fe_functions">(sol)[0]);
@@ -75,8 +74,7 @@ namespace
     }
 
     template <int dim, typename Solution, size_t n>
-    void abs_tolerances(std::array<double, n> &atol, const Point<dim> &x, const Solution &sol, double,
-                        double) const
+    void abs_tolerances(std::array<double, n> &atol, const Point<dim> &x, const Solution &sol, double, double) const
     {
       for (uint c = 0; c < n; ++c)
         atol[c] = model_tolerance(c, x[0], get<"fe_functions">(sol)[c]);
@@ -160,7 +158,8 @@ TEST_CASE("LDG local tolerances sit at each dof's support point", "[timestepping
     much_tighter *= 0.1;
     REQUIRE(tol.refresh_needed(much_tighter));
     for (uint i = 0; i < u.size(); ++i)
-      REQUIRE(tol.get()[i] == Catch::Approx(expected(model_tolerance(0, support[i][0], much_tighter[i]))).epsilon(1e-12));
+      REQUIRE(tol.get()[i] ==
+              Catch::Approx(expected(model_tolerance(0, support[i][0], much_tighter[i]))).epsilon(1e-12));
   }
 }
 

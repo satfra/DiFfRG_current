@@ -1,14 +1,19 @@
 #pragma once
 
-// standard library
-#include <sstream>
-
 // DiFfRG
 #include <DiFfRG/common/linear_algebra.hh>
 #include <DiFfRG/discretization/FEM/assembler/common.hh>
+#include <DiFfRG/discretization/common/batched_scatter.hh>
 #include <DiFfRG/discretization/common/cell_geometry.hh>
 #include <DiFfRG/discretization/common/types.hh>
-#include <DiFfRG/physics/integration/map_scheduler.hh>
+#include <DiFfRG/model/batch.hh>
+
+// external libraries
+#include <tbb/enumerable_thread_specific.h>
+
+// standard library
+#include <memory>
+#include <numeric>
 
 namespace DiFfRG
 {
@@ -16,12 +21,6 @@ namespace DiFfRG
   {
     using namespace dealii;
     using std::array;
-
-    template <typename... T> auto fe_tie(T &&...t)
-    {
-      return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "extractors", "variables", "cell_width">>(
-          std::tie(t...));
-    }
 
     template <typename... T> auto i_tie(T &&...t)
     {
@@ -32,947 +31,906 @@ namespace DiFfRG
     namespace internal
     {
       /**
-       * @brief Class to hold data for each assembly thread, i.e. FEValues for cells, interfaces, as well as
-       * pre-allocated data structures for the solutions
+       * @brief The DG assembler for models with flux, source and numerical flux; DG::Assembler and
+       * dDG::Assembler are its two configurations.
+       *
+       * @tparam with_derivatives false for DG: the model sees only the FE values. true for dDG: it also sees
+       * derivatives and hessians, unless it declares batch_reads_derivatives / batch_reads_hessians = false.
+       *
+       * Residual and jacobian are assembled in three phases, as in CG::Assembler:
+       *  1. gather: the FE solution at every quadrature point of the locally owned cells, their boundary faces,
+       *     and both traces at every interior face adjacent to them, into PointBatches;
+       *  2. evaluate: the model's evaluate_batch at the cell points, its boundary numflux and its numerical
+       *     flux (numflux_batch, see def::LLFFlux) over the whole batches, or their jacobians, see
+       *     model/batch.hh. Each interior face is evaluated once;
+       *  3. scatter: every owned cell contracts its cell term and its share of each of its faces into its own
+       *     rows, so no two cells write the same row (internal::ColoredCells).
+       *
+       * Each MPI rank batches its own cells; a face between two ranks is evaluated on both, and no rank writes
+       * rows it does not own. The results do not depend on the thread count.
+       *
+       * Config: /discretization/batched/max_stacked_points bounds the size of one AD evaluation of the
+       * jacobian (default: 256 MB of AD inputs), see DiFfRG::internal::seed_stacked_jacobian.
        */
-      template <typename Discretization> struct ScratchData {
-        static constexpr int dim = Discretization::dim;
+      template <typename Discretization_, typename Model_, bool with_derivatives>
+      class BatchedAssembler : public FEMAssembler<Discretization_, Model_>
+      {
+        using Base = FEMAssembler<Discretization_, Model_>;
+
+      public:
+        using Discretization = Discretization_;
+        using Model = Model_;
         using NumberType = typename Discretization::NumberType;
-        using VectorType = Vector<NumberType>;
+        using VectorType = typename Discretization::VectorType;
+        using SparseMatrixType = typename Discretization::SparseMatrixType;
+        using Components = typename Discretization::Components;
+        static constexpr uint dim = Discretization::dim;
 
-        ScratchData(const Mapping<dim> &mapping, const FiniteElement<dim> &fe,
-                    const dealii::Quadrature<dim> &quadrature, const dealii::Quadrature<dim - 1> &quadrature_face,
-                    const UpdateFlags update_flags = update_values | update_gradients | update_quadrature_points |
-                                                     update_JxW_values,
-                    const UpdateFlags interface_update_flags = update_values | update_gradients |
-                                                               update_quadrature_points | update_JxW_values |
-                                                               update_normal_vectors)
-            : n_components(fe.n_components()), fe_values(mapping, fe, quadrature, update_flags),
-              fe_interface_values(mapping, fe, quadrature_face, interface_update_flags)
-        {
-          solution.resize(quadrature.size(), VectorType(n_components));
-          solution_dot.resize(quadrature.size(), VectorType(n_components));
-          solution_interface[0].resize(quadrature_face.size(), VectorType(n_components));
-          solution_interface[1].resize(quadrature_face.size(), VectorType(n_components));
-          comp.resize(fe.n_dofs_per_cell());
-          for (uint i = 0; i < comp.size(); ++i)
-            comp[i] = fe.system_to_component_index(i).first;
-        }
+        static constexpr size_t n_fe = Components::count_fe_functions();
+        static constexpr size_t n_extr = Components::count_extractors();
+        using Extractors = std::array<NumberType, n_extr>;
+        using Batch = PointBatch<dim, NumberType, n_fe, Extractors, VectorType>;
 
-        ScratchData(const ScratchData<Discretization> &scratch_data)
-            : n_components(scratch_data.fe_values.get_fe().n_components()),
-              fe_values(scratch_data.fe_values.get_mapping(), scratch_data.fe_values.get_fe(),
-                        scratch_data.fe_values.get_quadrature(), scratch_data.fe_values.get_update_flags()),
-              fe_interface_values(scratch_data.fe_interface_values.get_mapping(),
-                                  scratch_data.fe_interface_values.get_fe(),
-                                  scratch_data.fe_interface_values.get_quadrature(),
-                                  scratch_data.fe_interface_values.get_update_flags())
-        {
-          const auto &fe = scratch_data.fe_values.get_fe();
-          solution.resize(scratch_data.fe_values.get_quadrature().size(), VectorType(n_components));
-          solution_dot.resize(scratch_data.fe_values.get_quadrature().size(), VectorType(n_components));
-          solution_interface[0].resize(scratch_data.fe_interface_values.get_quadrature().size(),
-                                       VectorType(n_components));
-          solution_interface[1].resize(scratch_data.fe_interface_values.get_quadrature().size(),
-                                       VectorType(n_components));
-          comp.resize(fe.n_dofs_per_cell());
-          for (uint i = 0; i < comp.size(); ++i)
-            comp[i] = fe.system_to_component_index(i).first;
-        }
-
-        const uint n_components;
-
-        FEValues<dim> fe_values;
-        FEInterfaceValues<dim> fe_interface_values;
-
-        std::vector<VectorType> solution;
-        std::vector<VectorType> solution_dot;
-        array<std::vector<VectorType>, 2> solution_interface;
-        std::vector<uint> comp;
-      };
-
-      // TODO fewer memory allocations
-      template <typename NumberType> struct CopyData_R {
-        struct CopyDataFace_R {
-          Vector<NumberType> cell_residual;
-          std::vector<types::global_dof_index> joint_dof_indices;
-
-          template <int dim> void reinit(const FEInterfaceValues<dim> &fe_iv)
-          {
-            cell_residual.reinit(fe_iv.n_current_interface_dofs());
-            joint_dof_indices = fe_iv.get_interface_dof_indices();
-          }
+        /// Wall time of the three assembly phases, summed over all calls.
+        struct PhaseTimes {
+          double gather = 0., evaluate = 0., scatter = 0.;
+          uint calls = 0;
         };
 
-        Vector<NumberType> cell_residual;
-        Vector<NumberType> cell_mass;
-        std::vector<types::global_dof_index> local_dof_indices;
-        std::vector<CopyDataFace_R> face_data;
-
-        template <class Iterator> void reinit(const Iterator &cell, uint dofs_per_cell)
+        BatchedAssembler(Discretization &discretization, Model &model, const ConfigTree &config)
+            : Base(discretization, model, config),
+              quadrature(fe.degree + 1 + config.get_uint("/discretization/overintegration", 0)),
+              quadrature_face(fe.degree + 1 + config.get_uint("/discretization/overintegration", 0)),
+              max_stacked_points(
+                  config.get_uint("/discretization/batched/max_stacked_points", default_stacked_points()))
         {
-          cell_residual.reinit(dofs_per_cell);
-          cell_mass.reinit(dofs_per_cell);
-          local_dof_indices.resize(dofs_per_cell);
-          cell->get_dof_indices(local_dof_indices);
-          face_data.reserve(cell->n_faces());
+          static_assert(Components::count_fe_subsystems() == 1, "A DG model cannot have multiple submodels!");
+          reinit();
         }
-      };
 
-      // TODO fewer memory allocations
-      template <typename NumberType> struct CopyData_J {
-        struct CopyDataFace_J {
-          FullMatrix<NumberType> cell_jacobian;
-          FullMatrix<NumberType> extractor_cell_jacobian;
-          std::vector<types::global_dof_index> joint_dof_indices;
-
-          template <int dim> void reinit(const FEInterfaceValues<dim> &fe_iv, uint n_extractors)
-          {
-            uint dofs_per_cell = fe_iv.n_current_interface_dofs();
-            cell_jacobian.reinit(dofs_per_cell, dofs_per_cell);
-            if (n_extractors > 0) extractor_cell_jacobian.reinit(dofs_per_cell, n_extractors);
-            joint_dof_indices = fe_iv.get_interface_dof_indices();
-          }
-        };
-
-        FullMatrix<NumberType> cell_jacobian;
-        FullMatrix<NumberType> extractor_cell_jacobian;
-        FullMatrix<NumberType> cell_mass_jacobian;
-        std::vector<types::global_dof_index> local_dof_indices;
-        std::vector<CopyDataFace_J> face_data;
-
-        template <class Iterator> void reinit(const Iterator &cell, uint dofs_per_cell, uint n_extractors)
+        virtual void reinit_vector(VectorType &vec) const override
         {
-          cell_jacobian.reinit(dofs_per_cell, dofs_per_cell);
-          if (n_extractors > 0) extractor_cell_jacobian.reinit(dofs_per_cell, n_extractors);
-          cell_mass_jacobian.reinit(dofs_per_cell, dofs_per_cell);
-          local_dof_indices.resize(dofs_per_cell);
-          cell->get_dof_indices(local_dof_indices);
-          face_data.reserve(cell->n_faces());
+          reinit_la_vector(vec, discretization.get_locally_owned_dofs(), discretization.get_communicator());
         }
-      };
-
-      template <typename NumberType> struct CopyData_I {
-        struct CopyFaceData_I {
-          std::array<uint, 2> cell_indices;
-          std::array<double, 2> values;
-        };
-        std::vector<CopyFaceData_I> face_data;
-        double value = 0.;
-        uint cell_index = 0;
-      };
-    } // namespace internal
-
-    /**
-     * @brief The basic assembler that can be used for any standard DG scheme with flux and source.
-     *
-     * @tparam Model The model class which contains the physical equations.
-     */
-    template <typename Discretization_,
-              typename Model_ = typename DiFfRG::internal::assembler_model_of<Discretization_>::type>
-    class Assembler : public FEMAssembler<Discretization_, Model_>
-    {
-      using Base = FEMAssembler<Discretization_, Model_>;
-
-    public:
-      using Discretization = Discretization_;
-      using Model = Model_;
-      using NumberType = typename Discretization::NumberType;
-      using VectorType = typename Discretization::VectorType;
-      using SparseMatrixType = typename Discretization::SparseMatrixType;
-
-      using Components = typename Discretization::Components;
-      static constexpr uint n_components = Components::count_fe_functions(0);
-      static constexpr uint dim = Discretization::dim;
-      Assembler(Discretization &discretization, Model &model, const ConfigTree &config)
-          : Base(discretization, model, config),
-            quadrature(fe.degree + 1 + config.get_uint("/discretization/overintegration", 0)),
-            quadrature_face(fe.degree + 1 + config.get_uint("/discretization/overintegration", 0))
-      {
-        static_assert(Components::count_fe_subsystems() == 1, "A DG model cannot have multiple submodels!");
-        reinit();
-      }
-
-      virtual void reinit_vector(VectorType &vec) const override
-      {
-        reinit_la_vector(vec, discretization.get_locally_owned_dofs(), discretization.get_communicator());
-      }
-      virtual void reinit_matrix(SparseMatrixType &matrix) const override
-      {
-        reinit_la_matrix(matrix, get_sparsity_pattern_jacobian(), discretization.get_locally_owned_dofs(),
-                         discretization.get_communicator());
-      }
-
-      virtual MPI_Comm get_communicator() const override { return discretization.get_communicator(); }
-      virtual void reinit_solution_view(SolutionView<VectorType> &view) const override
-      {
-        view.reinit(discretization.get_locally_owned_dofs(), discretization.get_locally_relevant_dofs(),
-                    discretization.get_communicator());
-      }
-
-      virtual void reinit() override
-      {
-        Timer timer;
-
-        Base::reinit();
-
-        // Mass sparsity pattern
+        virtual void reinit_matrix(SparseMatrixType &matrix) const override
         {
-          DynamicSparsityPattern dsp(discretization.get_locally_relevant_dofs());
-          DoFTools::make_sparsity_pattern(dof_handler, dsp, discretization.get_constraints(),
-                                          /*keep_constrained_dofs = */ true);
-          finalize_la_sparsity<SparseMatrixType>(dsp, sparsity_pattern_mass, discretization.get_locally_owned_dofs(),
-                                                 discretization.get_locally_relevant_dofs(),
-                                                 discretization.get_communicator());
-          reinit_la_matrix(mass_matrix, sparsity_pattern_mass, discretization.get_locally_owned_dofs(),
+          reinit_la_matrix(matrix, get_sparsity_pattern_jacobian(), discretization.get_locally_owned_dofs(),
                            discretization.get_communicator());
-          MatrixCreator::create_mass_matrix(dof_handler, quadrature, mass_matrix, (Function<dim, NumberType> *)nullptr,
-                                            discretization.get_constraints());
         }
-        // Jacobian sparsity pattern
+
+        virtual MPI_Comm get_communicator() const override { return discretization.get_communicator(); }
+        virtual void reinit_solution_view(SolutionView<VectorType> &view) const override
+        {
+          view.reinit(discretization.get_locally_owned_dofs(), discretization.get_locally_relevant_dofs(),
+                      discretization.get_communicator());
+        }
+
+        virtual void reinit() override
+        {
+          Timer timer;
+          Base::reinit();
+
+          {
+            DynamicSparsityPattern dsp(discretization.get_locally_relevant_dofs());
+            DoFTools::make_sparsity_pattern(dof_handler, dsp, discretization.get_constraints(),
+                                            /*keep_constrained_dofs = */ true);
+            finalize_la_sparsity<SparseMatrixType>(dsp, sparsity_pattern_mass, discretization.get_locally_owned_dofs(),
+                                                   discretization.get_locally_relevant_dofs(),
+                                                   discretization.get_communicator());
+            reinit_la_matrix(mass_matrix, sparsity_pattern_mass, discretization.get_locally_owned_dofs(),
+                             discretization.get_communicator());
+            MatrixCreator::create_mass_matrix(dof_handler, quadrature, mass_matrix,
+                                              (Function<dim, NumberType> *)nullptr, discretization.get_constraints());
+          }
+          {
+            DynamicSparsityPattern dsp(discretization.get_locally_relevant_dofs());
+            DoFTools::make_flux_sparsity_pattern(dof_handler, dsp, discretization.get_constraints(),
+                                                 /*keep_constrained_dofs = */ true);
+            finalize_la_sparsity<SparseMatrixType>(
+                dsp, sparsity_pattern_jacobian, discretization.get_locally_owned_dofs(),
+                discretization.get_locally_relevant_dofs(), discretization.get_communicator());
+          }
+          setup_faces();
+          timings_reinit.push_back(timer.wall_time());
+        }
+
+        virtual void rebuild_jacobian_sparsity() override
         {
           DynamicSparsityPattern dsp(discretization.get_locally_relevant_dofs());
           DoFTools::make_flux_sparsity_pattern(dof_handler, dsp, discretization.get_constraints(),
                                                /*keep_constrained_dofs = */ true);
+          for (const auto &row : discretization.get_locally_relevant_dofs())
+            for (const auto &col : extractor_dof_indices)
+              dsp.add(row, col);
           finalize_la_sparsity<SparseMatrixType>(
               dsp, sparsity_pattern_jacobian, discretization.get_locally_owned_dofs(),
               discretization.get_locally_relevant_dofs(), discretization.get_communicator());
         }
 
-        timings_reinit.push_back(timer.wall_time());
-      }
+        virtual const get_type::SparsityPattern<SparseMatrixType> &get_sparsity_pattern_jacobian() const override
+        {
+          return sparsity_pattern_jacobian;
+        }
+        virtual const SparseMatrixType &get_mass_matrix() const override { return mass_matrix; }
 
-      virtual void rebuild_jacobian_sparsity() override
-      {
-        // Jacobian sparsity pattern
-        DynamicSparsityPattern dsp(discretization.get_locally_relevant_dofs());
-        DoFTools::make_flux_sparsity_pattern(dof_handler, dsp, discretization.get_constraints(),
-                                             /*keep_constrained_dofs = */ true);
-        for (const auto &row : discretization.get_locally_relevant_dofs())
-          for (const auto &col : extractor_dof_indices)
-            dsp.add(row, col);
-        finalize_la_sparsity<SparseMatrixType>(dsp, sparsity_pattern_jacobian, discretization.get_locally_owned_dofs(),
-                                               discretization.get_locally_relevant_dofs(),
-                                               discretization.get_communicator());
-      }
+        /**
+         * @brief The model's cell_indicator integrated over each cell, plus its face_indicator integrated
+         * over each interior face, added to the two cells of the face.
+         */
+        virtual void refinement_indicator(Vector<double> &indicator, const VectorType &solution_global) override
+        {
+          using Iterator = typename DoFHandler<dim>::active_cell_iterator;
+          using Scratch = IndicatorScratch;
+          struct CopyData {
+            struct Face {
+              std::array<uint, 2> cell_indices;
+              std::array<double, 2> values;
+            };
+            std::vector<Face> face_data;
+            double value = 0.;
+            uint cell_index = 0;
+          };
+          const auto evaluate = [&](const auto &fe_v, const uint n_q) {
+            std::vector<Vector<NumberType>> u(n_q, Vector<NumberType>(n_fe));
+            std::vector<std::vector<Tensor<1, dim, NumberType>>> du(n_q, std::vector<Tensor<1, dim, NumberType>>(n_fe));
+            std::vector<std::vector<Tensor<2, dim, NumberType>>> ddu(n_q,
+                                                                     std::vector<Tensor<2, dim, NumberType>>(n_fe));
+            fe_v.get_function_values(solution_global, u);
+            fe_v.get_function_gradients(solution_global, du);
+            fe_v.get_function_hessians(solution_global, ddu);
+            return std::make_tuple(u, du, ddu);
+          };
 
-      virtual const get_type::SparsityPattern<SparseMatrixType> &get_sparsity_pattern_jacobian() const override
-      {
-        return sparsity_pattern_jacobian;
-      }
-      virtual const SparseMatrixType &get_mass_matrix() const override { return mass_matrix; }
-
-      /**
-       * @brief refinement indicator for adaptivity. Calls the model's cell_indicator and face_indicator functions.
-       *
-       * @param indicator The vector to store the refinement indicator in.
-       * @param solution_global The global solution vector.
-       */
-      virtual void refinement_indicator(Vector<double> &indicator, const VectorType &solution_global) override
-      {
-        using Iterator = typename DoFHandler<dim>::active_cell_iterator;
-        using Scratch = internal::ScratchData<Discretization>;
-        using CopyData = internal::CopyData_I<NumberType>;
-
-        const auto cell_worker = [&](const Iterator &t_cell, Scratch &scratch_data, CopyData &copy_data) {
-          scratch_data.fe_values.reinit(t_cell);
-          const auto &fe_v = scratch_data.fe_values;
-          copy_data.cell_index = t_cell->active_cell_index();
-          copy_data.value = 0;
-
-          const auto &JxW = fe_v.get_JxW_values();
-          const auto &q_points = fe_v.get_quadrature_points();
-          const auto &q_indices = fe_v.quadrature_point_indices();
-
-          auto &solution = scratch_data.solution;
-          std::vector<std::vector<Tensor<1, dim, NumberType>>> solution_grad;
-          std::vector<std::vector<Tensor<2, dim, NumberType>>> solution_hess;
-          solution_grad.resize(q_points.size(), std::vector<Tensor<1, dim, NumberType>>(n_components));
-          solution_hess.resize(q_points.size(), std::vector<Tensor<2, dim, NumberType>>(n_components));
-          fe_v.get_function_values(solution_global, solution);
-          fe_v.get_function_gradients(solution_global, solution_grad);
-          fe_v.get_function_hessians(solution_global, solution_hess);
-
-          double local_indicator = 0.;
-          for (const auto &q_index : q_indices) {
-            const auto &x_q = q_points[q_index];
-            model.cell_indicator(local_indicator, x_q,
-                                 i_tie(solution[q_index], solution_grad[q_index], solution_hess[q_index]));
-            copy_data.value += JxW[q_index] * local_indicator;
-          }
-        };
-        const auto face_worker = [&](const Iterator &t_cell, const uint &f, const uint &sf, const Iterator &t_ncell,
-                                     const uint &nf, const unsigned int &nsf, Scratch &scratch_data,
-                                     CopyData &copy_data) {
-          scratch_data.fe_interface_values.reinit(t_cell, f, sf, t_ncell, nf, nsf);
-          const auto &fe_iv = scratch_data.fe_interface_values;
-          const auto &fe_iv_s = scratch_data.fe_interface_values.get_fe_face_values(0);
-          const auto &fe_iv_n = scratch_data.fe_interface_values.get_fe_face_values(1);
-
-          auto &copy_data_face = copy_data.face_data.emplace_back();
-          copy_data_face.cell_indices[0] = t_cell->active_cell_index();
-          copy_data_face.cell_indices[1] = t_ncell->active_cell_index();
-          copy_data_face.values[0] = 0;
-          copy_data_face.values[1] = 0;
-
-          const auto &JxW = fe_iv.get_JxW_values();
-          const auto &q_points = fe_iv.get_quadrature_points();
-          const auto &q_indices = fe_iv.quadrature_point_indices();
-          const std::vector<Tensor<1, dim>> &normals = fe_iv.get_normal_vectors();
-
-          auto &solution_s = scratch_data.solution_interface[0];
-          auto &solution_n = scratch_data.solution_interface[1];
-          std::vector<std::vector<Tensor<1, dim, NumberType>>> solution_grad_s;
-          std::vector<std::vector<Tensor<2, dim, NumberType>>> solution_hess_s;
-          solution_grad_s.resize(q_points.size(), std::vector<Tensor<1, dim, NumberType>>(n_components));
-          solution_hess_s.resize(q_points.size(), std::vector<Tensor<2, dim, NumberType>>(n_components));
-          std::vector<std::vector<Tensor<1, dim, NumberType>>> solution_grad_n;
-          std::vector<std::vector<Tensor<2, dim, NumberType>>> solution_hess_n;
-          solution_grad_n.resize(q_points.size(), std::vector<Tensor<1, dim, NumberType>>(n_components));
-          solution_hess_n.resize(q_points.size(), std::vector<Tensor<2, dim, NumberType>>(n_components));
-          fe_iv_s.get_function_values(solution_global, solution_s);
-          fe_iv_n.get_function_values(solution_global, solution_n);
-          fe_iv_s.get_function_gradients(solution_global, solution_grad_s);
-          fe_iv_n.get_function_gradients(solution_global, solution_grad_n);
-          fe_iv_s.get_function_hessians(solution_global, solution_hess_s);
-          fe_iv_n.get_function_hessians(solution_global, solution_hess_n);
-
-          array<double, 2> local_indicator{};
-          for (const auto &q_index : q_indices) {
-            const auto &x_q = q_points[q_index];
-            model.face_indicator(local_indicator, normals[q_index], x_q,
-                                 i_tie(solution_s[q_index], solution_grad_s[q_index], solution_hess_s[q_index]),
-                                 i_tie(solution_n[q_index], solution_grad_n[q_index], solution_hess_n[q_index]));
-
-            copy_data_face.values[0] += JxW[q_index] * local_indicator[0] * (1. + t_cell->at_boundary());
-            copy_data_face.values[1] += JxW[q_index] * local_indicator[1] * (1. + t_ncell->at_boundary());
-          }
-        };
-        const auto copier = [&](const CopyData &c) {
-          for (auto &cdf : c.face_data)
-            for (uint j = 0; j < 2; ++j)
-              indicator[cdf.cell_indices[j]] += cdf.values[j];
-          indicator[c.cell_index] += c.value;
-        };
-        const UpdateFlags update_flags =
-            update_values | update_gradients | update_quadrature_points | update_JxW_values | update_hessians;
-        const UpdateFlags interface_update_flags = update_values | update_gradients | update_quadrature_points |
-                                                   update_JxW_values | update_normal_vectors | update_hessians;
-
-        Scratch scratch_data(mapping, fe, quadrature, quadrature_face, update_flags, interface_update_flags);
-        CopyData copy_data;
-        // The face flags are load-bearing: a face_worker is passed below, and without
-        // assemble_own_interior_faces_once mesh_loop never calls it, so model.face_indicator
-        // contributed nothing at all to the refinement indicator -- DG refined on the cell term
-        // alone. ddg.hh and ldg.hh have always set it. assemble_ghost_faces_once then gives each
-        // partition-boundary face to exactly one rank, which is what the sum_reduce of the
-        // indicator under the distributed policy expects.
-        MeshWorker::AssembleFlags assemble_flags = MeshWorker::assemble_own_cells |
-                                                   MeshWorker::assemble_own_interior_faces_once |
-                                                   MeshWorker::assemble_ghost_faces_once;
-
-        // map() is collective and each rank visits only its own cells; see NoMapsHere.
-        const NoMapsHere no_maps_during_assembly;
-        const auto schedule = schedule_for(assembly_cost::local_fe);
-        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data,
-                              assemble_flags, nullptr, face_worker, schedule.queue_length, schedule.chunk_size);
-      }
-
-      virtual void mass(VectorType &mass, const VectorType &solution_global, const VectorType &solution_global_dot,
-                        NumberType weight) override
-      {
-        using Iterator = typename DoFHandler<dim>::active_cell_iterator;
-        using Scratch = internal::ScratchData<Discretization>;
-        using CopyData = internal::CopyData_R<NumberType>;
-        const auto &constraints = discretization.get_constraints();
-
-        const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
-          scratch_data.fe_values.reinit(cell);
-          const auto &fe_v = scratch_data.fe_values;
-          const uint n_dofs = fe_v.get_fe().n_dofs_per_cell();
-
-          copy_data.reinit(cell, n_dofs);
-          const auto &JxW = fe_v.get_JxW_values();
-          const auto &q_points = fe_v.get_quadrature_points();
-          const auto &q_indices = fe_v.quadrature_point_indices();
-
-          auto &solution = scratch_data.solution;
-          auto &solution_dot = scratch_data.solution_dot;
-          fe_v.get_function_values(solution_global, solution);
-          fe_v.get_function_values(solution_global_dot, solution_dot);
-
-          const auto &comp = scratch_data.comp;
-
-          array<NumberType, n_components> mass{};
-          for (const auto &q_index : q_indices) {
-            const auto &x_q = q_points[q_index];
-            model.mass(mass, x_q, solution[q_index], solution_dot[q_index]);
-
-            for (uint i = 0; i < n_dofs; ++i) {
-              const auto component_i = comp[i];
-              copy_data.cell_residual(i) += weight * JxW[q_index] *
-                                            fe_v.shape_value_component(i, q_index, component_i) *
-                                            mass[component_i]; // +phi_i(x_q) * mass(x_q, u_q)
+          const auto cell_worker = [&](const Iterator &cell, Scratch &scratch, CopyData &copy_data) {
+            auto &fe_v = scratch.fe_values;
+            fe_v.reinit(cell);
+            copy_data.cell_index = cell->active_cell_index();
+            copy_data.value = 0;
+            const auto [u, du, ddu] = evaluate(fe_v, fe_v.n_quadrature_points);
+            double local = 0.;
+            for (const auto &q : fe_v.quadrature_point_indices()) {
+              model.cell_indicator(local, fe_v.quadrature_point(q), i_tie(u[q], du[q], ddu[q]));
+              copy_data.value += fe_v.JxW(q) * local;
             }
-          }
-        };
-        const auto copier = [&](const CopyData &c) {
-          constraints.distribute_local_to_global(c.cell_residual, c.local_dof_indices, mass);
-        };
-
-        Scratch scratch_data(mapping, fe, quadrature, quadrature_face);
-        CopyData copy_data;
-        MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
-
-        // map() is collective and each rank visits only its own cells; see NoMapsHere.
-        const NoMapsHere no_maps_during_assembly;
-        const auto schedule = schedule_for(assembly_cost::local_fe);
-        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data, flags,
-                              nullptr, nullptr, schedule.queue_length, schedule.chunk_size);
-        // Resolve contributions this rank made to rows it does not own. A partition-boundary
-        // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
-        // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
-        // arrive here. A no-op for the serial types.
-        mass.compress(dealii::VectorOperation::add);
-      }
-
-      virtual void residual(VectorType &residual, const VectorType &solution_global, NumberType weight,
-                            const VectorType &solution_global_dot, NumberType weight_mass,
-                            const VectorType &variables = VectorType()) override
-      {
-        using Iterator = typename DoFHandler<dim>::active_cell_iterator;
-        using Scratch = internal::ScratchData<Discretization>;
-        using CopyData = internal::CopyData_R<NumberType>;
-        const auto &constraints = discretization.get_constraints();
-
-        // Find the EoM and extract whatever data is needed for the model.
-        std::array<NumberType, Components::count_extractors()> __extracted_data{{}};
-        if constexpr (Components::count_extractors() > 0)
-          this->extract(__extracted_data, solution_global, variables, true, false, true);
-        const auto &extracted_data = __extracted_data;
-
-        const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
-          const double cell_width = DiFfRG::internal::cell_width(cell);
-          scratch_data.fe_values.reinit(cell);
-          const auto &fe_v = scratch_data.fe_values;
-          const uint n_dofs = fe_v.get_fe().n_dofs_per_cell();
-
-          copy_data.reinit(cell, n_dofs);
-          const auto &JxW = fe_v.get_JxW_values();
-          const auto &q_points = fe_v.get_quadrature_points();
-          const auto &q_indices = fe_v.quadrature_point_indices();
-
-          auto &solution = scratch_data.solution;
-          auto &solution_dot = scratch_data.solution_dot;
-          fe_v.get_function_values(solution_global, solution);
-          fe_v.get_function_values(solution_global_dot, solution_dot);
-
-          const auto &comp = scratch_data.comp;
-
-          array<NumberType, n_components> mass{};
-          array<Tensor<1, dim, NumberType>, n_components> flux{};
-          array<NumberType, n_components> source{};
-          for (const auto &q_index : q_indices) {
-            const auto &x_q = q_points[q_index];
-            model.mass(mass, x_q, solution[q_index], solution_dot[q_index]);
-            model.flux(flux, x_q, fe_tie(solution[q_index], extracted_data, variables, cell_width));
-            model.source(source, x_q, fe_tie(solution[q_index], extracted_data, variables, cell_width));
-
-            for (uint i = 0; i < n_dofs; ++i) {
-              const auto component_i = comp[i];
-              copy_data.cell_mass(i) += weight_mass * JxW[q_index] *
-                                        fe_v.shape_value_component(i, q_index, component_i) *
-                                        mass[component_i];          // +phi_i(x_q) * mass(x_q, u_q)
-              copy_data.cell_residual(i) += JxW[q_index] * weight * // dx *
-                                            (-scalar_product(fe_v.shape_grad_component(i, q_index, component_i),
-                                                             flux[component_i]) // -dphi_i(x_q) * flux(x_q, u_q)
-                                             + fe_v.shape_value_component(i, q_index, component_i) *
-                                                   source[component_i]); // -phi_i(x_q) * source(x_q, u_q)
+          };
+          const auto face_worker = [&](const Iterator &cell, const uint &f, const uint &sf, const Iterator &ncell,
+                                       const uint &nf, const uint &nsf, Scratch &scratch, CopyData &copy_data) {
+            auto &fe_iv = scratch.fe_interface_values;
+            fe_iv.reinit(cell, f, sf, ncell, nf, nsf);
+            auto &face = copy_data.face_data.emplace_back();
+            face.cell_indices = {cell->active_cell_index(), ncell->active_cell_index()};
+            face.values = {0., 0.};
+            const uint n_q = fe_iv.n_quadrature_points;
+            const auto [u_s, du_s, ddu_s] = evaluate(fe_iv.get_fe_face_values(0), n_q);
+            const auto [u_n, du_n, ddu_n] = evaluate(fe_iv.get_fe_face_values(1), n_q);
+            array<double, 2> local{};
+            for (const auto &q : fe_iv.quadrature_point_indices()) {
+              model.face_indicator(local, fe_iv.normal_vector(q), fe_iv.quadrature_point(q),
+                                   i_tie(u_s[q], du_s[q], ddu_s[q]), i_tie(u_n[q], du_n[q], ddu_n[q]));
+              face.values[0] += fe_iv.JxW(q) * local[0] * (1. + cell->at_boundary());
+              face.values[1] += fe_iv.JxW(q) * local[1] * (1. + ncell->at_boundary());
             }
-          }
-        };
-        const auto boundary_worker = [&](const Iterator &cell, const uint &face_no, Scratch &scratch_data,
-                                         CopyData &copy_data) {
-          const double cell_width = DiFfRG::internal::cell_width(cell);
-          scratch_data.fe_interface_values.reinit(cell, face_no);
-          const auto &fe_fv = scratch_data.fe_interface_values.get_fe_face_values(0);
-          const uint n_dofs = fe_fv.get_fe().n_dofs_per_cell();
+          };
+          const auto copier = [&](const CopyData &c) {
+            for (const auto &face : c.face_data)
+              for (uint j = 0; j < 2; ++j)
+                indicator[face.cell_indices[j]] += face.values[j];
+            indicator[c.cell_index] += c.value;
+          };
 
-          const auto &JxW = fe_fv.get_JxW_values();
-          const auto &q_points = fe_fv.get_quadrature_points();
-          const auto &q_indices = fe_fv.quadrature_point_indices();
-          auto &solution = scratch_data.solution_interface[0];
-
-          array<Tensor<1, dim, NumberType>, n_components> numflux{};
-
-          fe_fv.get_function_values(solution_global, solution);
-          const std::vector<Tensor<1, dim>> &normals = fe_fv.get_normal_vectors();
-
-          const auto &comp = scratch_data.comp;
-
-          for (const auto &q_index : q_indices) {
-            const auto &x_q = q_points[q_index];
-            model.boundary_numflux(numflux, normals[q_index], x_q,
-                                   fe_tie(solution[q_index], extracted_data, variables, cell_width));
-
-            for (uint i = 0; i < n_dofs; ++i) {
-              const auto component_i = comp[i];
-              copy_data.cell_residual(i) +=
-                  weight * JxW[q_index] * // dx
-                  (fe_fv.shape_value_component(i, q_index, component_i) *
-                   scalar_product(numflux[component_i], normals[q_index])); // phi_i(x_q) * numflux(x_q, u_q) * n(x_q)
-            }
-          }
-        };
-        const auto face_worker = [&](const Iterator &cell, const uint &f, const uint &sf, const Iterator &ncell,
-                                     const uint &nf, const uint &nsf, Scratch &scratch_data, CopyData &copy_data) {
-          const double cell_width = DiFfRG::internal::cell_width(cell);
-          const double ncell_width = DiFfRG::internal::cell_width(ncell);
-          scratch_data.fe_interface_values.reinit(cell, f, sf, ncell, nf, nsf);
-          const auto &fe_iv = scratch_data.fe_interface_values;
-          const auto &fe_iv_s = scratch_data.fe_interface_values.get_fe_face_values(0);
-          const auto &fe_iv_n = scratch_data.fe_interface_values.get_fe_face_values(1);
-          const uint n_dofs = fe_iv.n_current_interface_dofs();
-
-          copy_data.face_data.emplace_back();
-          auto &copy_data_face = copy_data.face_data.back();
-          copy_data_face.reinit(fe_iv);
-
-          const auto &JxW = fe_iv.get_JxW_values();
-          const auto &q_points = fe_iv.get_quadrature_points();
-          const auto &q_indices = fe_iv.quadrature_point_indices();
-          auto &solution_s = scratch_data.solution_interface[0];
-          auto &solution_n = scratch_data.solution_interface[1];
-
-          array<Tensor<1, dim, NumberType>, n_components> numflux{};
-
-          fe_iv_s.get_function_values(solution_global, solution_s);
-          fe_iv_n.get_function_values(solution_global, solution_n);
-          const std::vector<Tensor<1, dim>> &normals = fe_iv.get_normal_vectors();
-
-          // Pre-compute component indices for interface DoFs
-          const auto &comp = scratch_data.comp;
-          std::vector<uint> iface_comp(n_dofs);
-          for (uint i = 0; i < n_dofs; ++i) {
-            const auto &cd_i = fe_iv.interface_dof_to_dof_indices(i);
-            iface_comp[i] = cd_i[0] == numbers::invalid_unsigned_int ? comp[cd_i[1]] : comp[cd_i[0]];
-          }
-
-          for (const auto &q_index : q_indices) {
-            const auto &x_q = q_points[q_index];
-            model.numflux(numflux, normals[q_index], x_q,
-                          fe_tie(solution_s[q_index], extracted_data, variables, cell_width),
-                          fe_tie(solution_n[q_index], extracted_data, variables, ncell_width));
-
-            for (uint i = 0; i < n_dofs; ++i) {
-              const auto component_i = iface_comp[i];
-              copy_data_face.cell_residual(i) +=
-                  weight * JxW[q_index] * // dx
-                  (fe_iv.jump_in_shape_values(i, q_index, component_i) *
-                   scalar_product(numflux[component_i],
-                                  normals[q_index])); // [[phi_i(x_q)]] * numflux(x_q, u_q) * n(x_q)
-            }
-          }
-        };
-        const auto copier = [&](const CopyData &c) {
-          constraints.distribute_local_to_global(c.cell_residual, c.local_dof_indices, residual);
-          constraints.distribute_local_to_global(c.cell_mass, c.local_dof_indices, residual);
-          for (auto &cdf : c.face_data)
-            constraints.distribute_local_to_global(cdf.cell_residual, cdf.joint_dof_indices, residual);
-        };
-
-        Scratch scratch_data(mapping, fe, quadrature, quadrature_face);
-        CopyData copy_data;
-        MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells | MeshWorker::assemble_boundary_faces |
-                                          MeshWorker::assemble_own_interior_faces_once |
-                                          MeshWorker::assemble_ghost_faces_once;
-
-        Timer timer;
-        // map() is collective and each rank visits only its own cells; see NoMapsHere.
-        const NoMapsHere no_maps_during_assembly;
-        const auto schedule = schedule_for(assembly_cost::momentum_integral);
-        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data, flags,
-                              boundary_worker, face_worker, schedule.queue_length, schedule.chunk_size);
-        // Resolve contributions this rank made to rows it does not own. A partition-boundary
-        // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
-        // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
-        // arrive here. A no-op for the serial types.
-        residual.compress(dealii::VectorOperation::add);
-        timings_residual.push_back(timer.wall_time());
-      }
-
-      virtual void jacobian_mass(SparseMatrixType &jacobian, const VectorType &solution_global,
-                                 const VectorType &solution_global_dot, NumberType alpha = 1.,
-                                 NumberType beta = 1.) override
-      {
-        using Iterator = typename DoFHandler<dim>::active_cell_iterator;
-        using Scratch = internal::ScratchData<Discretization>;
-        using CopyData = internal::CopyData_J<NumberType>;
-        const auto &constraints = discretization.get_constraints();
-
-        const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
-          scratch_data.fe_values.reinit(cell);
-          const auto &fe_v = scratch_data.fe_values;
-          const uint n_dofs = fe_v.get_fe().n_dofs_per_cell();
-
-          copy_data.reinit(cell, n_dofs, Components::count_extractors());
-          const auto &JxW = fe_v.get_JxW_values();
-          const auto &q_points = fe_v.get_quadrature_points();
-          const auto &q_indices = fe_v.quadrature_point_indices();
-
-          auto &solution = scratch_data.solution;
-          auto &solution_dot = scratch_data.solution_dot;
-          fe_v.get_function_values(solution_global, solution);
-          fe_v.get_function_values(solution_global_dot, solution_dot);
-
-          const auto &comp = scratch_data.comp;
-
-          SimpleMatrix<NumberType, n_components> j_mass;
-          SimpleMatrix<NumberType, n_components> j_mass_dot;
-          for (const auto &q_index : q_indices) {
-            const auto &x_q = q_points[q_index];
-            model.template jacobian_mass<0>(j_mass, x_q, solution[q_index], solution_dot[q_index]);
-            model.template jacobian_mass<1>(j_mass_dot, x_q, solution[q_index], solution_dot[q_index]);
-
-            for (uint i = 0; i < n_dofs; ++i) {
-              const auto component_i = comp[i];
-              for (uint j = 0; j < n_dofs; ++j) {
-                const auto component_j = comp[j];
-                copy_data.cell_jacobian(i, j) +=
-                    JxW[q_index] * fe_v.shape_value_component(j, q_index, component_j) *
-                    fe_v.shape_value_component(i, q_index, component_i) *
-                    (alpha * j_mass_dot(component_i, component_j) + beta * j_mass(component_i, component_j));
-              }
-            }
-          }
-        };
-        const auto copier = [&](const CopyData &c) {
-          constraints.distribute_local_to_global(c.cell_jacobian, c.local_dof_indices, jacobian);
-        };
-
-        Scratch scratch_data(mapping, fe, quadrature, quadrature_face);
-        CopyData copy_data;
-        MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells;
-
-        Timer timer;
-        // map() is collective and each rank visits only its own cells; see NoMapsHere.
-        const NoMapsHere no_maps_during_assembly;
-        const auto schedule = schedule_for(assembly_cost::local_fe);
-        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data, flags,
-                              nullptr, nullptr, schedule.queue_length, schedule.chunk_size);
-        // Resolve contributions this rank made to rows it does not own. A partition-boundary
-        // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
-        // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
-        // arrive here. A no-op for the serial types.
-        jacobian.compress(dealii::VectorOperation::add);
-        timings_jacobian.push_back(timer.wall_time());
-      }
-
-      virtual void jacobian(SparseMatrixType &jacobian, const VectorType &solution_global, NumberType weight,
-                            const VectorType &solution_global_dot, NumberType alpha, NumberType beta,
-                            const VectorType &variables = VectorType()) override
-      {
-        using Iterator = typename DoFHandler<dim>::active_cell_iterator;
-        using Scratch = internal::ScratchData<Discretization>;
-        using CopyData = internal::CopyData_J<NumberType>;
-        const auto &constraints = discretization.get_constraints();
-
-        // Find the EoM and extract whatever data is needed for the model.
-        std::array<NumberType, Components::count_extractors()> extracted_data{{}};
-        if constexpr (Components::count_extractors() > 0) {
-          this->extract(extracted_data, solution_global, variables, true, true, true);
-          if (this->jacobian_extractors(this->extractor_jacobian, solution_global, variables))
-            reinit_la_matrix(jacobian, sparsity_pattern_jacobian, discretization.get_locally_owned_dofs(),
-                             discretization.get_communicator());
+          Scratch scratch(mapping, fe, quadrature, quadrature_face);
+          CopyData copy_data;
+          // assemble_ghost_faces_once gives each partition-boundary face to exactly one rank, which is what the
+          // sum_reduce of the indicator under the distributed policy expects.
+          const auto flags = MeshWorker::assemble_own_cells | MeshWorker::assemble_own_interior_faces_once |
+                             MeshWorker::assemble_ghost_faces_once;
+          // map() is collective and each rank visits only its own cells; see NoMapsHere.
+          const NoMapsHere no_maps_during_assembly;
+          const auto schedule = schedule_for(assembly_cost::local_fe);
+          MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch, copy_data, flags,
+                                nullptr, face_worker, schedule.queue_length, schedule.chunk_size);
         }
 
-        const auto cell_worker = [&](const Iterator &cell, Scratch &scratch_data, CopyData &copy_data) {
-          const double cell_width = DiFfRG::internal::cell_width(cell);
-          scratch_data.fe_values.reinit(cell);
-          const auto &fe_v = scratch_data.fe_values;
-          const uint n_dofs = fe_v.get_fe().n_dofs_per_cell();
-
-          copy_data.reinit(cell, n_dofs, Components::count_extractors());
-          const auto &JxW = fe_v.get_JxW_values();
-          const auto &q_points = fe_v.get_quadrature_points();
-          const auto &q_indices = fe_v.quadrature_point_indices();
-
-          auto &solution = scratch_data.solution;
-          auto &solution_dot = scratch_data.solution_dot;
-          fe_v.get_function_values(solution_global, solution);
-          fe_v.get_function_values(solution_global_dot, solution_dot);
-
-          const auto &comp = scratch_data.comp;
-
-          SimpleMatrix<NumberType, n_components> j_mass;
-          SimpleMatrix<NumberType, n_components> j_mass_dot;
-          SimpleMatrix<Tensor<1, dim>, n_components> j_flux;
-          SimpleMatrix<Tensor<1, dim>, n_components, Components::count_extractors()> j_extr_flux;
-          SimpleMatrix<NumberType, n_components> j_source;
-          SimpleMatrix<NumberType, n_components, Components::count_extractors()> j_extr_source;
-          for (const auto &q_index : q_indices) {
-            const auto &x_q = q_points[q_index];
-            model.template jacobian_mass<0>(j_mass, x_q, solution[q_index], solution_dot[q_index]);
-            model.template jacobian_mass<1>(j_mass_dot, x_q, solution[q_index], solution_dot[q_index]);
-            model.template jacobian_flux_source<0, 0>(j_flux, j_source, x_q,
-                                                      fe_tie(solution[q_index], extracted_data, variables, cell_width));
-            if constexpr (Components::count_extractors() > 0) {
-              model.template jacobian_flux_source_extr<1>(
-                  j_extr_flux, j_extr_source, x_q, fe_tie(solution[q_index], extracted_data, variables, cell_width));
+        virtual void mass(VectorType &mass, const VectorType &solution_global, const VectorType &solution_global_dot,
+                          NumberType weight) override
+        {
+          scatter_residual(mass, [&](const size_t, CellScratch &s, Vector<NumberType> &r) {
+            const auto &fe_v = s.fe_values;
+            fe_v.get_function_values(solution_global, s.values);
+            fe_v.get_function_values(solution_global_dot, s.values_dot);
+            array<NumberType, n_fe> m{};
+            for (const auto &q : fe_v.quadrature_point_indices()) {
+              model.mass(m, fe_v.quadrature_point(q), s.values[q], s.values_dot[q]);
+              for (uint i = 0; i < r.size(); ++i)
+                r(i) += weight * fe_v.JxW(q) * fe_v.shape_value_component(i, q, s.comp[i]) * m[s.comp[i]];
             }
+          });
+        }
 
-            for (uint i = 0; i < n_dofs; ++i) {
-              const auto component_i = comp[i];
-              for (uint j = 0; j < n_dofs; ++j) {
-                const auto component_j = comp[j];
-                copy_data.cell_jacobian(i, j) += weight * JxW[q_index] *
-                                                 fe_v.shape_value_component(j, q_index, component_j) * // dx * phi_j * (
-                                                 (-scalar_product(fe_v.shape_grad_component(i, q_index, component_i),
-                                                                  j_flux(component_i, component_j)) // -dphi_i * jflux
-                                                  + fe_v.shape_value_component(i, q_index, component_i) *
-                                                        j_source(component_i, component_j)); // -phi_i * jsource)
-                copy_data.cell_mass_jacobian(i, j) +=
-                    JxW[q_index] * fe_v.shape_value_component(j, q_index, component_j) *
-                    fe_v.shape_value_component(i, q_index, component_i) *
-                    (alpha * j_mass_dot(component_i, component_j) + beta * j_mass(component_i, component_j));
+        virtual void residual(VectorType &residual, const VectorType &solution_global, NumberType weight,
+                              const VectorType &solution_global_dot, NumberType weight_mass,
+                              const VectorType &variables = VectorType()) override
+        {
+          Timer timer, phase;
+          Extractors extracted_data{{}};
+          if constexpr (n_extr > 0) this->extract(extracted_data, solution_global, variables, true, false, true);
+          gather(solution_global, extracted_data, variables);
+          residual_times.gather += phase.wall_time();
+
+          phase.restart();
+          cell_result.reinit(cell_batch.size(), Term::flux | Term::source);
+          model.evaluate_batch(cell_result, cell_batch);
+          boundary_result.reinit(boundary_batch.size(), Term::flux);
+          evaluate_boundary_numflux(model, boundary_result, boundary_normals, boundary_batch);
+          face_result.reinit(face_batch[0].size(), Term::flux);
+          evaluate_numflux(model, face_result, face_normals, face_batch[0], face_batch[1]);
+          residual_times.evaluate += phase.wall_time();
+
+          phase.restart();
+          scatter_residual(residual, [&](const size_t k, CellScratch &s, Vector<NumberType> &r) {
+            const auto &fe_v = s.fe_values;
+            fe_v.get_function_values(solution_global, s.values);
+            fe_v.get_function_values(solution_global_dot, s.values_dot);
+            array<Tensor<1, dim, NumberType>, n_fe> flux;
+            array<NumberType, n_fe> source, mass{};
+            for (const auto &q : fe_v.quadrature_point_indices()) {
+              const size_t p = k * n_q + q;
+              for (size_t c = 0; c < n_fe; ++c) {
+                for (uint d = 0; d < dim; ++d)
+                  flux[c][d] = cell_result.flux(c, d)[p];
+                source[c] = cell_result.source(c)[p];
               }
-              // extractor contribution
-              if constexpr (Components::count_extractors() > 0)
-                for (uint e = 0; e < Components::count_extractors(); ++e)
-                  copy_data.extractor_cell_jacobian(i, e) +=
-                      weight * JxW[q_index] * // dx * phi_j * (
-                      (-scalar_product(fe_v.shape_grad_component(i, q_index, component_i),
-                                       j_extr_flux(component_i, e)) // -dphi_i * jflux
-                       + fe_v.shape_value_component(i, q_index, component_i) *
-                             j_extr_source(component_i, e)); // -phi_i * jsource)
-            }
-          }
-        };
-        const auto boundary_worker = [&](const Iterator &cell, const uint &face_no, Scratch &scratch_data,
-                                         CopyData &copy_data) {
-          const double cell_width = DiFfRG::internal::cell_width(cell);
-          scratch_data.fe_interface_values.reinit(cell, face_no);
-          const auto &fe_fv = scratch_data.fe_interface_values.get_fe_face_values(0);
-          const uint n_dofs = fe_fv.get_fe().n_dofs_per_cell();
-
-          const auto &JxW = fe_fv.get_JxW_values();
-          const auto &q_points = fe_fv.get_quadrature_points();
-          const auto &q_indices = fe_fv.quadrature_point_indices();
-          auto &solution = scratch_data.solution_interface[0];
-
-          SimpleMatrix<Tensor<1, dim>, n_components> j_boundary_numflux;
-          SimpleMatrix<Tensor<1, dim>, n_components, Components::count_extractors()> j_extr_boundary_numflux;
-
-          fe_fv.get_function_values(solution_global, solution);
-          const std::vector<Tensor<1, dim>> &normals = fe_fv.get_normal_vectors();
-
-          const auto &comp = scratch_data.comp;
-
-          for (const auto &q_index : q_indices) {
-            const auto &x_q = q_points[q_index];
-            model.template jacobian_boundary_numflux<0, 0>(
-                j_boundary_numflux, normals[q_index], x_q,
-                fe_tie(solution[q_index], extracted_data, variables, cell_width));
-            if constexpr (Components::count_extractors() > 0)
-              model.template jacobian_boundary_numflux_extr<1>(
-                  j_extr_boundary_numflux, normals[q_index], x_q,
-                  fe_tie(solution[q_index], extracted_data, variables, cell_width));
-
-            for (uint i = 0; i < n_dofs; ++i) {
-              const auto component_i = comp[i];
-              for (uint j = 0; j < n_dofs; ++j) {
-                const auto component_j = comp[j];
-                copy_data.cell_jacobian(i, j) +=
-                    weight * JxW[q_index] * fe_fv.shape_value_component(j, q_index, component_j) * // dx * phi_j(x_q)
-                    (fe_fv.shape_value_component(i, q_index, component_i) *
-                     scalar_product(j_boundary_numflux(component_i, component_j),
-                                    normals[q_index])); // phi_i(x_q) * j_numflux(x_q, u_q) * n(x_q)
+              model.mass(mass, fe_v.quadrature_point(q), s.values[q], s.values_dot[q]);
+              for (uint i = 0; i < r.size(); ++i) {
+                const auto c = s.comp[i];
+                r(i) += fe_v.JxW(q) * (weight * (-scalar_product(fe_v.shape_grad_component(i, q, c), flux[c]) +
+                                                 fe_v.shape_value_component(i, q, c) * source[c]) +
+                                       weight_mass * fe_v.shape_value_component(i, q, c) * mass[c]);
               }
-              // extractor contribution
-              if constexpr (Components::count_extractors() > 0)
-                for (uint e = 0; e < Components::count_extractors(); ++e)
-                  copy_data.extractor_cell_jacobian(i, e) +=
-                      weight * JxW[q_index] * // dx * phi_j(x_q)
-                      (fe_fv.shape_value_component(i, q_index, component_i) *
-                       scalar_product(j_extr_boundary_numflux(component_i, e),
-                                      normals[q_index])); // phi_i(x_q) * j_numflux(x_q, u_q) * n(x_q)
             }
+            for (size_t f = boundary_begin[k]; f < boundary_begin[k + 1]; ++f) {
+              auto &fe_fv = s.fe_face_values;
+              fe_fv.reinit(cells[k], boundary_faces[f].second);
+              for (const auto &q : fe_fv.quadrature_point_indices())
+                for (uint i = 0; i < r.size(); ++i) {
+                  const auto c = s.comp[i];
+                  r(i) += weight * fe_fv.JxW(q) * fe_fv.shape_value_component(i, q, c) *
+                          normal_component(boundary_result, c, f * n_q_face + q, fe_fv.normal_vector(q));
+                }
+            }
+            // [[phi_i]] * numflux * n: the trace of phi_i on its own side, with a minus sign on side 1.
+            for (size_t ref = face_ref_begin[k]; ref < face_ref_begin[k + 1]; ++ref) {
+              const auto [f, side] = face_refs[ref];
+              const auto &fe_iv = reinit_interface(s, f);
+              const auto &fe_fv = fe_iv.get_fe_face_values(side);
+              const double sign = side == 0 ? 1. : -1.;
+              for (const auto &q : fe_iv.quadrature_point_indices())
+                for (uint i = 0; i < r.size(); ++i) {
+                  const auto c = s.comp[i];
+                  r(i) += sign * weight * fe_iv.JxW(q) * fe_fv.shape_value_component(i, q, c) *
+                          normal_component(face_result, c, f * n_q_face + q, fe_iv.normal_vector(q));
+                }
+            }
+          });
+          residual_times.scatter += phase.wall_time();
+          ++residual_times.calls;
+          timings_residual.push_back(timer.wall_time());
+        }
+
+        virtual void jacobian_mass(SparseMatrixType &jacobian, const VectorType &solution_global,
+                                   const VectorType &solution_global_dot, NumberType alpha, NumberType beta) override
+        {
+          Timer timer;
+          scatter_jacobian(jacobian, [&](const size_t, CellScratch &s, LocalData &out) {
+            add_mass_jacobian(s, out.jacobian, solution_global, solution_global_dot, alpha, beta);
+          });
+          timings_jacobian.push_back(timer.wall_time());
+        }
+
+        virtual void jacobian(SparseMatrixType &jacobian, const VectorType &solution_global, NumberType weight,
+                              const VectorType &solution_global_dot, NumberType alpha, NumberType beta,
+                              const VectorType &variables = VectorType()) override
+        {
+          Timer timer, phase;
+          Extractors extracted_data{{}};
+          if constexpr (n_extr > 0) {
+            this->extract(extracted_data, solution_global, variables, true, true, true);
+            if (this->jacobian_extractors(this->extractor_jacobian, solution_global, variables))
+              reinit_la_matrix(jacobian, sparsity_pattern_jacobian, discretization.get_locally_owned_dofs(),
+                               discretization.get_communicator());
           }
-        };
-        const auto face_worker = [&](const Iterator &cell, const uint &f, const uint &sf, const Iterator &ncell,
-                                     const uint &nf, const uint &nsf, Scratch &scratch_data, CopyData &copy_data) {
-          const double cell_width = DiFfRG::internal::cell_width(cell);
-          const double ncell_width = DiFfRG::internal::cell_width(ncell);
-          scratch_data.fe_interface_values.reinit(cell, f, sf, ncell, nf, nsf);
-          const auto &fe_iv = scratch_data.fe_interface_values;
-          const auto &fe_iv_s = scratch_data.fe_interface_values.get_fe_face_values(0);
-          const auto &fe_iv_n = scratch_data.fe_interface_values.get_fe_face_values(1);
-          const uint n_dofs = fe_iv.n_current_interface_dofs();
+          gather(solution_global, extracted_data, variables);
+          jacobian_times.gather += phase.wall_time();
 
-          copy_data.face_data.emplace_back();
-          auto &copy_data_face = copy_data.face_data.back();
-          copy_data_face.reinit(fe_iv, Components::count_extractors());
+          phase.restart();
+          evaluate_flux_source_jacobian(model, cell_jacobians, cell_batch, max_stacked_points, cell_workspace);
+          evaluate_boundary_numflux_jacobian(model, boundary_jacobians, boundary_normals, boundary_batch,
+                                             max_stacked_points, boundary_workspace);
+          evaluate_numflux_jacobian(model, face_jacobians, face_normals, face_batch[0], face_batch[1],
+                                    max_stacked_points, face_workspace);
+          jacobian_times.evaluate += phase.wall_time();
 
-          const auto &JxW = fe_iv.get_JxW_values();
-          const auto &q_points = fe_iv.get_quadrature_points();
-          const auto &q_indices = fe_iv.quadrature_point_indices();
-          auto &solution_s = scratch_data.solution_interface[0];
-          auto &solution_n = scratch_data.solution_interface[1];
-
-          fe_iv_s.get_function_values(solution_global, solution_s);
-          fe_iv_n.get_function_values(solution_global, solution_n);
-          const std::vector<Tensor<1, dim>> &normals = fe_iv.get_normal_vectors();
-
-          // Pre-compute component indices and face numbers for interface DoFs
-          const auto &comp = scratch_data.comp;
-          std::vector<uint> iface_comp(n_dofs);
-          std::vector<uint> iface_face_no(n_dofs);
-          std::vector<uint> iface_local_dof(n_dofs);
-          for (uint i = 0; i < n_dofs; ++i) {
-            const auto &cd_i = fe_iv.interface_dof_to_dof_indices(i);
-            const uint fno = cd_i[0] == numbers::invalid_unsigned_int ? 1 : 0;
-            iface_face_no[i] = fno;
-            iface_local_dof[i] = cd_i[fno];
-            iface_comp[i] = comp[cd_i[fno]];
-          }
-
-          array<SimpleMatrix<Tensor<1, dim>, n_components>, 2> j_numflux;
-          array<SimpleMatrix<Tensor<1, dim>, n_components, Components::count_extractors()>, 2> j_extr_numflux;
-          for (const auto &q_index : q_indices) {
-            const auto &x_q = q_points[q_index];
-            model.template jacobian_numflux<0, 0>(j_numflux, normals[q_index], x_q,
-                                                  fe_tie(solution_s[q_index], extracted_data, variables, cell_width),
-                                                  fe_tie(solution_n[q_index], extracted_data, variables, ncell_width));
-            if constexpr (Components::count_extractors() > 0)
-              model.template jacobian_numflux_extr<1>(
-                  j_extr_numflux, normals[q_index], x_q,
-                  fe_tie(solution_s[q_index], extracted_data, variables, cell_width),
-                  fe_tie(solution_n[q_index], extracted_data, variables, ncell_width));
-
-            for (uint i = 0; i < n_dofs; ++i) {
-              const auto component_i = iface_comp[i];
-              const uint face_no_i = iface_face_no[i];
-              for (uint j = 0; j < n_dofs; ++j) {
-                const auto component_j = iface_comp[j];
-                const uint face_no_j = iface_face_no[j];
-
-                copy_data_face.cell_jacobian(i, j) +=
-                    weight * JxW[q_index] *
-                    fe_iv.get_fe_face_values(face_no_j).shape_value_component(iface_local_dof[j], q_index,
-                                                                              component_j) * // dx * phi_j(x_q)
-                    (fe_iv.jump_in_shape_values(i, q_index, component_i) *
-                     scalar_product(j_numflux[face_no_j](component_i, component_j),
-                                    normals[q_index])); // [[phi_i(x_q)]] * j_numflux(x_q, u_q)
+          phase.restart();
+          scatter_jacobian(jacobian, [&](const size_t k, CellScratch &s, LocalData &out) {
+            add_mass_jacobian(s, out.jacobian, solution_global, solution_global_dot, alpha, beta);
+            const auto &fe_v = s.fe_values;
+            for (const auto &q : fe_v.quadrature_point_indices()) {
+              s.trace[0].cache(fe_v, q, s.comp);
+              add_flux_source_jacobian(s, out, cell_jacobians[k * n_q + q], weight * fe_v.JxW(q));
+            }
+            for (size_t f = boundary_begin[k]; f < boundary_begin[k + 1]; ++f) {
+              auto &fe_fv = s.fe_face_values;
+              fe_fv.reinit(cells[k], boundary_faces[f].second);
+              for (const auto &q : fe_fv.quadrature_point_indices()) {
+                s.trace[0].cache(fe_fv, q, s.comp);
+                add_face_jacobian(s, out, out.jacobian, 0, 0, boundary_jacobians[f * n_q_face + q],
+                                  fe_fv.normal_vector(q), weight * fe_fv.JxW(q), true);
               }
-              // extractor contribution
-              if constexpr (Components::count_extractors() > 0)
-                for (uint e = 0; e < Components::count_extractors(); ++e)
-                  copy_data_face.extractor_cell_jacobian(i, e) +=
-                      weight * JxW[q_index] * // dx * phi_j(x_q)
-                      (fe_iv.jump_in_shape_values(i, q_index, component_i) *
-                       scalar_product(j_extr_numflux[face_no_i](component_i, e),
-                                      normals[q_index])); // [[phi_i(x_q)]] * j_numflux(x_q, u_q)
+            }
+            for (size_t ref = face_ref_begin[k]; ref < face_ref_begin[k + 1]; ++ref) {
+              const auto [f, side] = face_refs[ref];
+              const auto &fe_iv = reinit_interface(s, f);
+              const uint slot = ref - face_ref_begin[k];
+              auto &neighbor = out.neighbor_jacobian[slot];
+              neighbor.reinit(out.dofs.size(), fe.n_dofs_per_cell());
+              out.neighbor_dofs[slot].resize(fe.n_dofs_per_cell());
+              faces[f].cell[1 - side]->get_dof_indices(out.neighbor_dofs[slot]);
+              const double sign = side == 0 ? 1. : -1.;
+              for (const auto &q : fe_iv.quadrature_point_indices()) {
+                s.trace[0].cache(fe_iv.get_fe_face_values(0), q, s.comp);
+                s.trace[1].cache(fe_iv.get_fe_face_values(1), q, s.comp);
+                const auto &Jq = face_jacobians[f * n_q_face + q];
+                const NumberType w = sign * weight * fe_iv.JxW(q);
+                add_face_jacobian(s, out, out.jacobian, side, side, Jq[side], fe_iv.normal_vector(q), w, false);
+                add_face_jacobian(s, out, neighbor, side, 1 - side, Jq[1 - side], fe_iv.normal_vector(q), w, false);
+                add_face_extractor_jacobian(s, out, side, Jq[0], fe_iv.normal_vector(q), w);
+              }
+            }
+          });
+          jacobian_times.scatter += phase.wall_time();
+          ++jacobian_times.calls;
+          timings_jacobian.push_back(timer.wall_time());
+        }
+
+        const PhaseTimes &residual_phase_times() const { return residual_times; }
+        const PhaseTimes &jacobian_phase_times() const { return jacobian_times; }
+        void reset_phase_times() { residual_times = jacobian_times = PhaseTimes{}; }
+
+        SummaryEvent summary() const override
+        {
+          SummaryEvent result{.component = with_derivatives ? "dDG" : "DG"};
+          result.timing("reinit", average(timings_reinit) * 1000, timings_reinit.size())
+              .timing("residual", average(timings_residual) * 1000, timings_residual.size())
+              .timing("jac", average(timings_jacobian) * 1000, timings_jacobian.size());
+          if (jacobian_times.calls > 0)
+            result.timing("jac eval", jacobian_times.evaluate / jacobian_times.calls * 1000, jacobian_times.calls);
+          return result;
+        }
+
+        double average_time_reinit() const { return average(timings_reinit); }
+        uint num_reinits() const { return timings_reinit.size(); }
+        double average_time_residual_assembly() const { return average(timings_residual); }
+        uint num_residuals() const { return timings_residual.size(); }
+        double average_time_jacobian_assembly() const { return average(timings_jacobian); }
+        uint num_jacobians() const { return timings_jacobian.size(); }
+
+      protected:
+        using Base::discretization;
+        using Base::dof_handler;
+        using Base::extractor_dof_indices;
+        using Base::fe;
+        using Base::mapping;
+        using Base::model;
+        using Base::schedule_for;
+
+        QGauss<dim> quadrature;
+        QGauss<dim - 1> quadrature_face;
+
+        get_type::SparsityPattern<SparseMatrixType> sparsity_pattern_mass;
+        get_type::SparsityPattern<SparseMatrixType> sparsity_pattern_jacobian;
+        SparseMatrixType mass_matrix;
+
+        std::vector<double> timings_reinit;
+        std::vector<double> timings_residual;
+        std::vector<double> timings_jacobian;
+
+      private:
+        static constexpr bool reads_derivatives = with_derivatives && batch_reads_derivatives<Model>();
+        static constexpr bool reads_hessians = with_derivatives && batch_reads_hessians<Model>();
+
+        static double average(const std::vector<double> &t)
+        {
+          return t.empty() ? 0. : std::accumulate(t.begin(), t.end(), 0.) / t.size();
+        }
+
+        /// About 256 MB of AD inputs and outputs per seed-stacked evaluation.
+        static uint default_stacked_points()
+        {
+          constexpr size_t per_point = sizeof(autodiff::real) * n_fe *
+                                       (2 + dim + (reads_derivatives ? dim : 0) + (reads_hessians ? dim * dim : 0));
+          return std::max<size_t>(1, (size_t(256) << 20) / per_point);
+        }
+
+        static UpdateFlags gather_flags()
+        {
+          return update_values | update_gradients | update_quadrature_points | update_JxW_values |
+                 (reads_hessians ? update_hessians : update_default);
+        }
+
+        /**
+         * @brief An interior face, as mesh_loop hands it to a face worker: cell[0] is the finer of the two
+         * cells (or the one mesh_loop would visit first), the normal points out of it, and its numerical
+         * flux takes cell[0] as trace s.
+         */
+        struct InteriorFace {
+          std::array<typename DoFHandler<dim>::cell_iterator, 2> cell;
+          std::array<uint, 2> face_no, subface_no;
+        };
+        /// Interior face f seen from the owned cell on its side `side`.
+        struct FaceRef {
+          size_t face;
+          uint side;
+        };
+
+        /// FE data of refinement_indicator's mesh_loop.
+        struct IndicatorScratch {
+          static UpdateFlags flags()
+          {
+            return update_values | update_gradients | update_hessians | update_quadrature_points | update_JxW_values;
+          }
+          IndicatorScratch(const Mapping<dim> &mapping, const FiniteElement<dim> &fe, const Quadrature<dim> &q,
+                           const Quadrature<dim - 1> &q_face)
+              : fe_values(mapping, fe, q, flags()),
+                fe_interface_values(mapping, fe, q_face, flags() | update_normal_vectors)
+          {
+          }
+          IndicatorScratch(const IndicatorScratch &s)
+              : IndicatorScratch(s.fe_values.get_mapping(), s.fe_values.get_fe(), s.fe_values.get_quadrature(),
+                                 s.fe_interface_values.get_quadrature())
+          {
+          }
+          FEValues<dim> fe_values;
+          FEInterfaceValues<dim> fe_interface_values;
+        };
+
+        /// One cell's contribution to its own rows of the global system, before insertion.
+        struct LocalData {
+          std::vector<types::global_dof_index> dofs;
+          /// Whether a dof of the cell is constrained, i.e. insertion has to go through the constraints.
+          bool constrained = false;
+          Vector<NumberType> residual;
+          FullMatrix<NumberType> jacobian;
+          /// Columns of the neighbors across the cell's interior faces, one block per face.
+          std::vector<std::vector<types::global_dof_index>> neighbor_dofs;
+          std::vector<FullMatrix<NumberType>> neighbor_jacobian;
+          FullMatrix<NumberType> extractor_jacobian;
+          FullMatrix<NumberType> extractor_dependence;
+        };
+
+        /// Shape values, gradients and (if read) hessians of every dof of one cell at one point. The gradients
+        /// are needed even when the model reads no derivatives: the flux is tested with them.
+        struct Shapes {
+          explicit Shapes(const uint n_dofs) : v(n_dofs), g(n_dofs), h(n_dofs) {}
+          template <typename FEV> void cache(const FEV &fe_v, const uint q, const std::vector<uint> &comp)
+          {
+            for (uint i = 0; i < comp.size(); ++i) {
+              v[i] = fe_v.shape_value_component(i, q, comp[i]);
+              g[i] = fe_v.shape_grad_component(i, q, comp[i]);
+              if constexpr (reads_hessians) h[i] = fe_v.shape_hessian_component(i, q, comp[i]);
             }
           }
+          std::vector<double> v;
+          std::vector<Tensor<1, dim>> g;
+          std::vector<Tensor<2, dim>> h;
         };
-        const auto copier = [&](const CopyData &c) {
-          constraints.distribute_local_to_global(c.cell_jacobian, c.local_dof_indices, jacobian);
-          constraints.distribute_local_to_global(c.cell_mass_jacobian, c.local_dof_indices, jacobian);
-          for (auto &cdf : c.face_data) {
-            constraints.distribute_local_to_global(cdf.cell_jacobian, cdf.joint_dof_indices, jacobian);
-            if constexpr (Components::count_extractors() > 0) {
-              FullMatrix<NumberType> extractor_dependence(cdf.joint_dof_indices.size(), extractor_dof_indices.size());
-              cdf.extractor_cell_jacobian.mmult(extractor_dependence, this->extractor_jacobian);
-              constraints.distribute_local_to_global(extractor_dependence, cdf.joint_dof_indices, extractor_dof_indices,
-                                                     jacobian);
+
+        /// Per-thread FE data, for the gather and the scatter.
+        struct CellScratch {
+          CellScratch(const Mapping<dim> &mapping, const FiniteElement<dim> &fe,
+                      const dealii::Quadrature<dim> &quadrature, const dealii::Quadrature<dim - 1> &quadrature_face,
+                      const UpdateFlags flags)
+              : fe_values(mapping, fe, quadrature, flags),
+                fe_face_values(mapping, fe, quadrature_face, flags | update_normal_vectors),
+                fe_interface_values(mapping, fe, quadrature_face, flags | update_normal_vectors),
+                values(quadrature.size(), Vector<NumberType>(n_fe)), values_dot(values),
+                gradients(quadrature.size(), std::vector<Tensor<1, dim, NumberType>>(n_fe)),
+                hessians(quadrature.size(), std::vector<Tensor<2, dim, NumberType>>(n_fe)),
+                face_values(quadrature_face.size(), Vector<NumberType>(n_fe)),
+                face_gradients(quadrature_face.size(), std::vector<Tensor<1, dim, NumberType>>(n_fe)),
+                face_hessians(quadrature_face.size(), std::vector<Tensor<2, dim, NumberType>>(n_fe)),
+                comp(fe.n_dofs_per_cell()), trace{Shapes(fe.n_dofs_per_cell()), Shapes(fe.n_dofs_per_cell())}
+          {
+            for (uint i = 0; i < comp.size(); ++i)
+              comp[i] = fe.system_to_component_index(i).first;
+          }
+
+          FEValues<dim> fe_values;
+          FEFaceValues<dim> fe_face_values;
+          FEInterfaceValues<dim> fe_interface_values;
+          std::vector<Vector<NumberType>> values, values_dot;
+          std::vector<std::vector<Tensor<1, dim, NumberType>>> gradients;
+          std::vector<std::vector<Tensor<2, dim, NumberType>>> hessians;
+          std::vector<Vector<NumberType>> face_values;
+          std::vector<std::vector<Tensor<1, dim, NumberType>>> face_gradients;
+          std::vector<std::vector<Tensor<2, dim, NumberType>>> face_hessians;
+          std::vector<uint> comp;
+          /// Shapes at the current point, of the cell (trace[0]) or of both traces of an interior face.
+          std::array<Shapes, 2> trace;
+          LocalData local;
+        };
+
+        /**
+         * @brief Number the owned cells, their boundary faces and the interior faces adjacent to them, and
+         * color the cells for the scatter.
+         *
+         * An interior face is listed once, with the cell pair and (sub)face numbers mesh_loop hands its face
+         * worker, and referenced by each of its cells that this rank owns. Faces to ghost cells are listed
+         * too, including those mesh_loop would leave to the other rank: here each rank adds only into its own
+         * rows, so it needs every face of its cells.
+         */
+        void setup_faces()
+        {
+          n_q = quadrature.size();
+          n_q_face = quadrature_face.size();
+          cells.reinit(dof_handler, discretization.get_constraints());
+          boundary_faces.clear();
+          boundary_begin.assign(1, 0);
+          faces.clear();
+          constexpr uint none = numbers::invalid_unsigned_int;
+          const auto add = [&](const auto &a, const uint fa, const uint sfa, const auto &b, const uint fb,
+                               const uint sfb) { faces.push_back({{a, b}, {fa, fb}, {sfa, sfb}}); };
+
+          for (const auto &cell : cells.all()) {
+            for (const uint f : cell->face_indices()) {
+              const bool periodic = cell->has_periodic_neighbor(f);
+              if (cell->at_boundary(f) && !periodic) {
+                boundary_faces.emplace_back(cell, f);
+                continue;
+              }
+              const auto neighbor = cell->neighbor_or_periodic_neighbor(f);
+              if (neighbor->has_children()) {
+                // The finer cells list this face, unless they are not ours.
+                if constexpr (dim == 1) {
+                  auto child = neighbor;
+                  while (child->has_children())
+                    child = child->child(1 - f);
+                  if (!child->is_locally_owned()) add(child, 1 - f, none, cell, f, none);
+                } else {
+                  const uint nf =
+                      periodic ? cell->periodic_neighbor_of_periodic_neighbor(f) : cell->neighbor_of_neighbor(f);
+                  for (uint sf = 0; sf < cell->face(f)->n_children(); ++sf) {
+                    const auto child = periodic ? cell->periodic_neighbor_child_on_subface(f, sf)
+                                                : cell->neighbor_child_on_subface(f, sf);
+                    if (!child->is_locally_owned()) add(child, nf, none, cell, f, sf);
+                  }
+                }
+                continue;
+              }
+              bool coarser;
+              if constexpr (dim == 1)
+                coarser = cell->level() > neighbor->level();
+              else
+                coarser = periodic ? cell->periodic_neighbor_is_coarser(f) : cell->neighbor_is_coarser(f);
+              if (coarser) {
+                if constexpr (dim == 1)
+                  add(cell, f, none, neighbor,
+                      periodic ? cell->periodic_neighbor_face_no(f) : cell->neighbor_face_no(f), none);
+                else {
+                  const auto [nf, nsf] = periodic ? cell->periodic_neighbor_of_coarser_periodic_neighbor(f)
+                                                  : cell->neighbor_of_coarser_neighbor(f);
+                  add(cell, f, none, neighbor, nf, nsf);
+                }
+                continue;
+              }
+              // Same level: listed from the smaller of two owned cells, as mesh_loop does.
+              if (neighbor->is_locally_owned() && neighbor < cell) continue;
+              add(cell, f, none, neighbor, periodic ? cell->periodic_neighbor_face_no(f) : cell->neighbor_face_no(f),
+                  none);
             }
+            boundary_begin.push_back(boundary_faces.size());
           }
-          if constexpr (Components::count_extractors() > 0) {
-            FullMatrix<NumberType> extractor_dependence(c.local_dof_indices.size(), extractor_dof_indices.size());
-            c.extractor_cell_jacobian.mmult(extractor_dependence, this->extractor_jacobian);
-            constraints.distribute_local_to_global(extractor_dependence, c.local_dof_indices, extractor_dof_indices,
-                                                   jacobian);
+
+          // Each face is referenced by its owned cells, in face order.
+          std::vector<int> owned_index(dof_handler.get_triangulation().n_active_cells(), -1);
+          for (size_t k = 0; k < cells.size(); ++k)
+            owned_index[cells[k]->active_cell_index()] = k;
+          face_ref_begin.assign(cells.size() + 1, 0);
+          for (const auto &face : faces)
+            for (uint side = 0; side < 2; ++side)
+              if (face.cell[side]->is_locally_owned())
+                ++face_ref_begin[owned_index[face.cell[side]->active_cell_index()] + 1];
+          std::partial_sum(face_ref_begin.begin(), face_ref_begin.end(), face_ref_begin.begin());
+          face_refs.resize(face_ref_begin.back());
+          std::vector<size_t> next(face_ref_begin.begin(), face_ref_begin.end() - 1);
+          for (size_t f = 0; f < faces.size(); ++f)
+            for (uint side = 0; side < 2; ++side)
+              if (faces[f].cell[side]->is_locally_owned())
+                face_refs[next[owned_index[faces[f].cell[side]->active_cell_index()]]++] = {f, side};
+
+          scratch = std::make_unique<tbb::enumerable_thread_specific<CellScratch>>(
+              [this]() { return CellScratch(mapping, fe, quadrature, quadrature_face, gather_flags()); });
+        }
+
+        const FEInterfaceValues<dim> &reinit_interface(CellScratch &s, const size_t f) const
+        {
+          const auto &face = faces[f];
+          s.fe_interface_values.reinit(face.cell[0], face.face_no[0], face.subface_no[0], face.cell[1], face.face_no[1],
+                                       face.subface_no[1]);
+          return s.fe_interface_values;
+        }
+
+        /// The flux of component c at point p of @p result, dotted with @p normal.
+        static NumberType normal_component(const BatchOutput<dim, NumberType, n_fe> &result, const size_t c,
+                                           const size_t p, const Tensor<1, dim> &normal)
+        {
+          NumberType value = 0.;
+          for (uint d = 0; d < dim; ++d)
+            value += result.flux(c, d)[p] * normal[d];
+          return value;
+        }
+
+        /// Phase 1: the solution at every quadrature point of the owned cells and their faces.
+        void gather(const VectorType &solution_global, const Extractors &extracted_data, const VectorType &variables)
+        {
+          cell_batch.reinit(cells.size() * n_q, reads_derivatives, reads_hessians);
+          boundary_batch.reinit(boundary_faces.size() * n_q_face, reads_derivatives, reads_hessians);
+          for (auto &b : face_batch)
+            b.reinit(faces.size() * n_q_face, reads_derivatives, reads_hessians);
+          for (auto *b : {&cell_batch, &boundary_batch, &face_batch[0], &face_batch[1]})
+            b->set_shared(extracted_data, variables);
+          boundary_normals.resize(boundary_batch.size());
+          face_normals.resize(face_batch[0].size());
+
+          const auto store = [&](Batch &batch, const size_t first, const auto &fe_v, auto &values, auto &gradients,
+                                 auto &hessians, const double width) {
+            fe_v.get_function_values(solution_global, values);
+            if constexpr (reads_derivatives) fe_v.get_function_gradients(solution_global, gradients);
+            if constexpr (reads_hessians) fe_v.get_function_hessians(solution_global, hessians);
+            for (const auto &q : fe_v.quadrature_point_indices()) {
+              const size_t i = first + q;
+              for (size_t c = 0; c < n_fe; ++c) {
+                batch.value(c, i) = values[q][c];
+                for (uint d1 = 0; d1 < dim; ++d1) {
+                  if constexpr (reads_derivatives) batch.derivative(c, d1, i) = gradients[q][c][d1];
+                  if constexpr (reads_hessians)
+                    for (uint d2 = 0; d2 < dim; ++d2)
+                      batch.hessian(c, d1, d2, i) = hessians[q][c][d1][d2];
+                }
+              }
+              for (uint d = 0; d < dim; ++d)
+                batch.coordinate(d, i) = fe_v.quadrature_point(q)[d];
+              batch.width(i) = width;
+            }
+          };
+
+          tbb::parallel_for(tbb::blocked_range<size_t>(0, cells.size()), [&](const tbb::blocked_range<size_t> &r) {
+            auto &s = scratch->local();
+            for (size_t k = r.begin(); k != r.end(); ++k) {
+              s.fe_values.reinit(cells[k]);
+              store(cell_batch, k * n_q, s.fe_values, s.values, s.gradients, s.hessians,
+                    DiFfRG::internal::cell_width(cells[k]));
+            }
+          });
+          tbb::parallel_for(tbb::blocked_range<size_t>(0, boundary_faces.size()),
+                            [&](const tbb::blocked_range<size_t> &r) {
+                              auto &s = scratch->local();
+                              for (size_t f = r.begin(); f != r.end(); ++f) {
+                                const auto &[cell, face_no] = boundary_faces[f];
+                                s.fe_face_values.reinit(cell, face_no);
+                                store(boundary_batch, f * n_q_face, s.fe_face_values, s.face_values, s.face_gradients,
+                                      s.face_hessians, DiFfRG::internal::cell_width(cell));
+                                for (uint q = 0; q < n_q_face; ++q)
+                                  boundary_normals[f * n_q_face + q] = s.fe_face_values.normal_vector(q);
+                              }
+                            });
+          tbb::parallel_for(tbb::blocked_range<size_t>(0, faces.size()), [&](const tbb::blocked_range<size_t> &r) {
+            auto &s = scratch->local();
+            for (size_t f = r.begin(); f != r.end(); ++f) {
+              const auto &fe_iv = reinit_interface(s, f);
+              for (uint side = 0; side < 2; ++side)
+                store(face_batch[side], f * n_q_face, fe_iv.get_fe_face_values(side), s.face_values, s.face_gradients,
+                      s.face_hessians, DiFfRG::internal::cell_width(faces[f].cell[side]));
+              for (uint q = 0; q < n_q_face; ++q)
+                face_normals[f * n_q_face + q] = fe_iv.normal_vector(q);
+            }
+          });
+        }
+
+        /// Phase 3: assemble(k, scratch, local) every owned cell, after reinit of its FEValues and dof indices.
+        template <typename Global, typename Assemble, typename Insert>
+        void scatter(Global &global, const Assemble &assemble, const Insert &insert)
+        {
+          cells.scatter(
+              global, *scratch, &CellScratch::local, local_buffer,
+              [&](const size_t k, CellScratch &s, LocalData &local) {
+                s.fe_values.reinit(cells[k]);
+                local.dofs.resize(fe.n_dofs_per_cell());
+                cells[k]->get_dof_indices(local.dofs);
+                local.constrained = cells.is_constrained(k);
+                assemble(k, s, local);
+              },
+              insert);
+        }
+
+        template <typename Assemble> void scatter_residual(VectorType &residual, const Assemble &assemble)
+        {
+          const auto &constraints = discretization.get_constraints();
+          scatter(
+              residual,
+              [&](const size_t k, CellScratch &s, LocalData &local) {
+                local.residual.reinit(local.dofs.size());
+                assemble(k, s, local.residual);
+              },
+              [&](LocalData &local) {
+                if (local.constrained)
+                  constraints.distribute_local_to_global(local.residual, local.dofs, residual);
+                else
+                  residual.add(local.dofs, local.residual);
+              });
+        }
+
+        template <typename Assemble> void scatter_jacobian(SparseMatrixType &jacobian, const Assemble &assemble)
+        {
+          const auto &constraints = discretization.get_constraints();
+          const bool any_constraints = constraints.n_constraints() > 0;
+          scatter(
+              jacobian,
+              [&](const size_t k, CellScratch &s, LocalData &local) {
+                local.jacobian.reinit(local.dofs.size(), local.dofs.size());
+                const size_t n_neighbors = face_ref_begin[k + 1] - face_ref_begin[k];
+                local.neighbor_jacobian.resize(n_neighbors);
+                local.neighbor_dofs.resize(n_neighbors);
+                for (auto &block : local.neighbor_jacobian)
+                  block.reinit(0, 0);
+                if constexpr (n_extr > 0) local.extractor_jacobian.reinit(local.dofs.size(), n_extr);
+                assemble(k, s, local);
+              },
+              [&](LocalData &local) {
+                if (local.constrained)
+                  constraints.distribute_local_to_global(local.jacobian, local.dofs, jacobian);
+                else
+                  jacobian.add(local.dofs, local.jacobian, false);
+                for (size_t n = 0; n < local.neighbor_jacobian.size(); ++n) {
+                  if (local.neighbor_jacobian[n].m() == 0) continue;
+                  if (any_constraints)
+                    constraints.distribute_local_to_global(local.neighbor_jacobian[n], local.dofs,
+                                                           local.neighbor_dofs[n], jacobian);
+                  else
+                    jacobian.add(local.dofs, local.neighbor_dofs[n], local.neighbor_jacobian[n], false);
+                }
+                if constexpr (n_extr > 0) {
+                  local.extractor_dependence.reinit(local.dofs.size(), extractor_dof_indices.size());
+                  local.extractor_jacobian.mmult(local.extractor_dependence, this->extractor_jacobian);
+                  constraints.distribute_local_to_global(local.extractor_dependence, local.dofs, extractor_dof_indices,
+                                                         jacobian);
+                }
+              });
+        }
+
+        /// J += alpha d(mass)/d(u_dot) + beta d(mass)/du, contracted with the shape values.
+        void add_mass_jacobian(CellScratch &s, FullMatrix<NumberType> &J, const VectorType &u, const VectorType &u_dot,
+                               const NumberType alpha, const NumberType beta) const
+        {
+          const auto &fe_v = s.fe_values;
+          fe_v.get_function_values(u, s.values);
+          fe_v.get_function_values(u_dot, s.values_dot);
+          SimpleMatrix<NumberType, n_fe> j_mass, j_mass_dot;
+          for (const auto &q : fe_v.quadrature_point_indices()) {
+            model.template jacobian_mass<0>(j_mass, fe_v.quadrature_point(q), s.values[q], s.values_dot[q]);
+            model.template jacobian_mass<1>(j_mass_dot, fe_v.quadrature_point(q), s.values[q], s.values_dot[q]);
+            for (uint i = 0; i < J.m(); ++i)
+              for (uint j = 0; j < J.n(); ++j)
+                J(i, j) += fe_v.JxW(q) * fe_v.shape_value_component(i, q, s.comp[i]) *
+                           fe_v.shape_value_component(j, q, s.comp[j]) *
+                           (alpha * j_mass_dot(s.comp[i], s.comp[j]) + beta * j_mass(s.comp[i], s.comp[j]));
           }
-        };
+        }
 
-        Scratch scratch_data(mapping, fe, quadrature, quadrature_face);
-        CopyData copy_data;
-        MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells | MeshWorker::assemble_boundary_faces |
-                                          MeshWorker::assemble_own_interior_faces_once |
-                                          MeshWorker::assemble_ghost_faces_once;
+        /// The flux/source jacobian blocks Jq at one cell point, contracted with the cached shapes, times w.
+        template <typename PJ>
+        void add_flux_source_jacobian(const CellScratch &s, LocalData &out, const PJ &Jq, const NumberType w) const
+        {
+          const auto &comp = s.comp;
+          const auto &[sv, sg, sh] = std::tie(s.trace[0].v, s.trace[0].g, s.trace[0].h);
+          for (uint i = 0; i < comp.size(); ++i) {
+            const auto ci = comp[i];
+            const auto &grad_i = sg[i];
+            for (uint j = 0; j < comp.size(); ++j) {
+              const auto cj = comp[j];
+              NumberType c = sv[j] * (-scalar_product(grad_i, Jq.j_flux(ci, cj)) + sv[i] * Jq.j_source(ci, cj));
+              if constexpr (reads_derivatives)
+                c += scalar_product(sg[j],
+                                    -scalar_product(grad_i, Jq.j_grad_flux(ci, cj)) + sv[i] * Jq.j_grad_source(ci, cj));
+              if constexpr (reads_hessians)
+                c += scalar_product(sh[j],
+                                    -scalar_product(grad_i, Jq.j_hess_flux(ci, cj)) + sv[i] * Jq.j_hess_source(ci, cj));
+              out.jacobian(i, j) += w * c;
+            }
+            for (uint e = 0; e < n_extr; ++e)
+              out.extractor_jacobian(i, e) +=
+                  w * (-scalar_product(grad_i, Jq.j_extr_flux(ci, e)) + sv[i] * Jq.j_extr_source(ci, e));
+          }
+        }
 
-        Timer timer;
-        // map() is collective and each rank visits only its own cells; see NoMapsHere.
-        const NoMapsHere no_maps_during_assembly;
-        const auto schedule = schedule_for(assembly_cost::momentum_integral);
-        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data, flags,
-                              boundary_worker, face_worker, schedule.queue_length, schedule.chunk_size);
-        // Resolve contributions this rank made to rows it does not own. A partition-boundary
-        // face is assembled by exactly one of its two neighbours (mesh_loop hands it to the
-        // smaller subdomain id), and that rank writes BOTH sides -- so the other side's rows
-        // arrive here. A no-op for the serial types.
-        jacobian.compress(dealii::VectorOperation::add);
-        timings_jacobian.push_back(timer.wall_time());
-      }
-      SummaryEvent summary() const override
-      {
-        SummaryEvent result{.component = "DG"};
-        result.timing("reinit", average_time_reinit() * 1000, num_reinits())
-            .timing("residual", average_time_residual_assembly() * 1000, num_residuals())
-            .timing("jac", average_time_jacobian_assembly() * 1000, num_jacobians());
-        return result;
-      }
+        /**
+         * @brief M(i, j) += w phi_i d(numflux.n)/d(trial_j) at one face point, for test functions of trace
+         * `row_side` and trial functions of trace `column_side`, whose jacobian blocks are Jq. With
+         * @p with_extractors, also the extractor blocks of Jq (at boundary faces; interior faces add their
+         * total extractor dependence once, see add_face_extractor_jacobian).
+         */
+        template <typename PJ>
+        void add_face_jacobian(const CellScratch &s, LocalData &out, FullMatrix<NumberType> &M, const uint row_side,
+                               const uint column_side, const PJ &Jq, const Tensor<1, dim> &normal, const NumberType w,
+                               const bool with_extractors) const
+        {
+          const auto &comp = s.comp;
+          const auto &rows = s.trace[row_side];
+          const auto &cols = s.trace[column_side];
+          for (uint i = 0; i < comp.size(); ++i) {
+            const auto ci = comp[i];
+            for (uint j = 0; j < comp.size(); ++j) {
+              const auto cj = comp[j];
+              NumberType c = cols.v[j] * scalar_product(Jq.j_flux(ci, cj), normal);
+              if constexpr (reads_derivatives)
+                c += scalar_product(cols.g[j], scalar_product(Jq.j_grad_flux(ci, cj), normal));
+              if constexpr (reads_hessians)
+                c += scalar_product(cols.h[j], scalar_product(Jq.j_hess_flux(ci, cj), normal));
+              M(i, j) += w * rows.v[i] * c;
+            }
+            if (with_extractors)
+              for (uint e = 0; e < n_extr; ++e)
+                out.extractor_jacobian(i, e) += w * rows.v[i] * scalar_product(Jq.j_extr_flux(ci, e), normal);
+          }
+        }
 
-      double average_time_reinit() const
-      {
-        double t = 0.;
-        double n = timings_reinit.size();
-        for (const auto &t_ : timings_reinit)
-          t += t_ / n;
-        return t;
-      }
-      uint num_reinits() const { return timings_reinit.size(); }
+        /// The extractor dependence of an interior face's numerical flux, for the test functions of trace `side`.
+        template <typename PJ>
+        void add_face_extractor_jacobian(const CellScratch &s, LocalData &out, const uint side, const PJ &Jq,
+                                         const Tensor<1, dim> &normal, const NumberType w) const
+        {
+          for (uint i = 0; i < s.comp.size(); ++i)
+            for (uint e = 0; e < n_extr; ++e)
+              out.extractor_jacobian(i, e) +=
+                  w * s.trace[side].v[i] * scalar_product(Jq.j_extr_flux(s.comp[i], e), normal);
+        }
 
-      double average_time_residual_assembly() const
-      {
-        double t = 0.;
-        double n = timings_residual.size();
-        for (const auto &t_ : timings_residual)
-          t += t_ / n;
-        return t;
-      }
-      uint num_residuals() const { return timings_residual.size(); }
+        const uint max_stacked_points;
 
-      double average_time_jacobian_assembly() const
-      {
-        double t = 0.;
-        double n = timings_jacobian.size();
-        for (const auto &t_ : timings_jacobian)
-          t += t_ / n;
-        return t;
-      }
-      uint num_jacobians() const { return timings_jacobian.size(); }
+        uint n_q = 0, n_q_face = 0;
+        DiFfRG::internal::ColoredCells<dim> cells;
+        /// Boundary faces in cell order; those of cell k are [boundary_begin[k], boundary_begin[k + 1]).
+        std::vector<std::pair<typename DoFHandler<dim>::active_cell_iterator, uint>> boundary_faces;
+        std::vector<size_t> boundary_begin;
+        /// Interior faces; those of owned cell k are face_refs[face_ref_begin[k] .. face_ref_begin[k + 1]).
+        std::vector<InteriorFace> faces;
+        std::vector<FaceRef> face_refs;
+        std::vector<size_t> face_ref_begin;
+        std::unique_ptr<tbb::enumerable_thread_specific<CellScratch>> scratch;
+        std::vector<LocalData> local_buffer;
 
-    protected:
-      using Base::discretization;
-      using Base::dof_handler;
-      using Base::fe;
-      using Base::mapping;
-      using Base::model;
+        Batch cell_batch, boundary_batch;
+        std::array<Batch, 2> face_batch;
+        std::vector<Tensor<1, dim>> boundary_normals, face_normals;
+        BatchOutput<dim, NumberType, n_fe> cell_result, boundary_result, face_result;
+        std::vector<PointJacobian<dim, n_fe, n_extr>> cell_jacobians, boundary_jacobians;
+        std::vector<FaceJacobian<dim, n_fe, n_extr>> face_jacobians;
+        SeedStackWorkspace<dim, n_fe, n_extr, VectorType> cell_workspace, boundary_workspace;
+        SeedStackWorkspace<dim, n_fe, n_extr, VectorType, 2> face_workspace;
 
-      QGauss<dim> quadrature;
-      QGauss<dim - 1> quadrature_face;
-      using Base::schedule_for;
+        PhaseTimes residual_times, jacobian_times;
+      };
+    } // namespace internal
 
-      get_type::SparsityPattern<SparseMatrixType> sparsity_pattern_mass;
-      get_type::SparsityPattern<SparseMatrixType> sparsity_pattern_jacobian;
-      SparseMatrixType mass_matrix;
-
-      std::vector<double> timings_reinit;
-      std::vector<double> timings_residual;
-      std::vector<double> timings_jacobian;
-
-      using Base::extractor_dof_indices;
+    /**
+     * @brief The DG assembler: the model's flux, source and numerical flux see the FE values only. See
+     * internal::BatchedAssembler.
+     */
+    template <typename Discretization,
+              typename Model = typename DiFfRG::internal::assembler_model_of<Discretization>::type>
+    class Assembler : public internal::BatchedAssembler<Discretization, Model, false>
+    {
+    public:
+      using internal::BatchedAssembler<Discretization, Model, false>::BatchedAssembler;
     };
   } // namespace DG
 } // namespace DiFfRG

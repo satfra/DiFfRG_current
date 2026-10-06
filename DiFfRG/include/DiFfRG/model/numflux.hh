@@ -67,6 +67,62 @@ namespace DiFfRG
             NF[i][d] = 0.5 * (F_s[i][d] + F_n[i][d]) - 0.5 * alpha * (u_n[i] - u_s[i]);
         }
       }
+
+      /**
+       * @brief numflux at all points of an interior-face batch: the same formula, with every flux it needs
+       * (both traces, and each trace with one component perturbed for the finite-difference wave speed)
+       * evaluated by ONE evaluate_batch call over 2 + 2 n_fe stacked copies of the traces.
+       */
+      template <typename Out, typename Normals, typename Batch>
+      void numflux_batch(Out &out, const Normals &normals, const Batch &batch_s, const Batch &batch_n) const
+      {
+        using std::max, std::abs;
+        using namespace autodiff;
+        using NT = typename Batch::number_type;
+        constexpr int dim = Batch::dim;
+        constexpr size_t n_fe = Batch::n_fe_functions;
+        // Block 0: trace s, block 1: trace n, block 2 + 2c (3 + 2c): trace s (n) with component c perturbed.
+        constexpr size_t n_blocks = 2 + 2 * n_fe;
+        const size_t n = batch_s.size();
+
+        Batch stacked;
+        stacked.reinit(n_blocks * n, batch_s.has_derivatives(), batch_s.has_hessians());
+        stacked.set_shared(batch_s.extractors(), batch_s.variables());
+        std::vector<NT> du(n_fe * n);
+        tbb::parallel_for(tbb::blocked_range<size_t>(0, n), [&](const tbb::blocked_range<size_t> &r) {
+          for (size_t i = r.begin(); i != r.end(); ++i)
+            for (size_t b = 0; b < n_blocks; ++b) {
+              stacked.copy_point(b * n + i, b % 2 == 0 ? batch_s : batch_n, i);
+              if (b < 2) continue;
+              const size_t c = (b - 2) / 2;
+              const NT u_s = batch_s.values(c).data[i], u_n = batch_n.values(c).data[i];
+              du[c * n + i] = 1e-5 * (0.5 * (abs(u_s) + abs(u_n)) + 1e-9);
+              stacked.value(c, b * n + i) += du[c * n + i];
+            }
+        });
+
+        BatchOutput<dim, NT, n_fe> F;
+        F.reinit(n_blocks * n, Term::flux);
+        asImp().evaluate_batch(F, stacked);
+
+        tbb::parallel_for(tbb::blocked_range<size_t>(0, n), [&](const tbb::blocked_range<size_t> &r) {
+          for (size_t i = r.begin(); i != r.end(); ++i)
+            for (size_t c = 0; c < n_fe; ++c) {
+              const auto at = [&](const size_t b, const int d) { return F.flux(c, d)[b * n + i]; };
+              NT f_s = 0., f_n = 0., df_s = 0., df_n = 0.;
+              for (int d = 0; d < dim; ++d) {
+                f_s += at(0, d) * normals[i][d];
+                f_n += at(1, d) * normals[i][d];
+                df_s += at(2 + 2 * c, d) * normals[i][d];
+                df_n += at(3 + 2 * c, d) * normals[i][d];
+              }
+              const NT alpha = max(abs(df_s - f_s), abs(df_n - f_n)) / du[c * n + i];
+              const NT jump = batch_n.values(c).data[i] - batch_s.values(c).data[i];
+              for (int d = 0; d < dim; ++d)
+                out.flux(c, d)[i] = 0.5 * (at(0, d) + at(1, d)) - 0.5 * alpha * jump;
+            }
+        });
+      }
     };
 
     constexpr uint from_right = 0;
@@ -141,6 +197,12 @@ namespace DiFfRG
                       "Internal error: template parameter M must be the same as Model. "
                       "Do not explicitly specify the M template parameter.");
       }
+
+      /// The batched numflux: nothing, the output is zero on entry.
+      template <typename Out, typename Normals, typename Batch>
+      void numflux_batch(Out &, const Normals &, const Batch &, const Batch &) const
+      {
+      }
     };
 
     template <typename Model> class FlowBoundaries
@@ -159,12 +221,12 @@ namespace DiFfRG
         asImp().flux(F, p, sol);
       }
 
-      /// Batched boundary_numflux: the model's flux_source_batch at all points of a boundary batch. The
-      /// source columns of @p out are not part of the result.
+      /// Batched boundary_numflux: the model's evaluate_batch at all points of a boundary batch, which
+      /// requests only the flux.
       template <typename Out, typename Normals, typename Batch>
       void boundary_numflux_batch(Out &out, const Normals & /*normals*/, const Batch &batch) const
       {
-        asImp().flux_source_batch(out, batch);
+        asImp().evaluate_batch(out, batch);
       }
 
       template <uint dependent, int dim, typename NumberType, typename Solutions, typename M = Model>

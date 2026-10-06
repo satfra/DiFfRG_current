@@ -5,6 +5,8 @@
 setup_test(cg.cc)
 setup_test(cg_consistency.cc)
 setup_test(dg.cc)
+setup_test(dg_consistency.cc)
+setup_test(dg_batch_equivalence.cc)
 setup_test(ddg.cc)
 setup_test(ldg.cc)
 setup_test(ldg_consistency.cc)

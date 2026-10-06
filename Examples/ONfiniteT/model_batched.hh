@@ -33,7 +33,7 @@ namespace ON_batched
   /**
    * @tparam backend integrator of the batched flux; the per-point flux always uses the TBB one, as a
    * GPU get() must not be called from several threads at once.
-   * @tparam batched whether the model evaluates its flux with map_points. Without it, flux_source_batch is
+   * @tparam batched whether the model evaluates its flux with map_points. Without it, evaluate_batch is
    * AbstractModel's default: the per-point flux in a flat parallel loop.
    */
   template <Backend backend = Backend::TBB, bool batched = true>
@@ -83,10 +83,10 @@ namespace ON_batched
       flow_equations.V.get(flux[idxf("m2")][0], k, prm.N, prm.T, m2Pi, m2Sigma);
     }
 
-    template <typename Out, typename Batch> void flux_source_batch(Out &out, const Batch &batch) const
+    template <typename Out, typename Batch> void evaluate_batch(Out &out, const Batch &batch) const
     {
       if constexpr (!batched) {
-        def::AbstractModel<Model, Components>::flux_source_batch(out, batch);
+        def::AbstractModel<Model, Components>::evaluate_batch(out, batch);
         return;
       }
       using NT = typename Batch::number_type;

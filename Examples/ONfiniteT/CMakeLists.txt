@@ -45,16 +45,16 @@ foreach(pfile parameter.toml parameter_KT.toml parameter_KT_sigma.toml)
 endforeach()
 
 # ##############################################################################
-# Batched CG assembly pilot (flows_batched/, model_batched.hh). Needs a DiFfRG
-# with CG::BatchedAssembler and map_points.
+# Batched assembly pilot (flows_batched/, model_batched.hh), CG and dDG. Needs a
+# DiFfRG with the batched assemblers and map_points.
 # ##############################################################################
 
-option(ONFINITET_BATCHED "Build CG_batched and bench_batched" OFF)
+option(ONFINITET_BATCHED "Build flow_batched and bench_batched" OFF)
 if(ONFINITET_BATCHED)
   add_subdirectory(flows_batched)
 
-  add_executable(CG_batched CG_batched.cc)
-  target_link_libraries(CG_batched PRIVATE DiFfRG::DiFfRG ONFiniteTBatchedFlows)
+  add_executable(flow_batched flow_batched.cc)
+  target_link_libraries(flow_batched PRIVATE DiFfRG::DiFfRG ONFiniteTBatchedFlows)
 
   add_executable(bench_batched bench_batched.cc)
   target_link_libraries(bench_batched PRIVATE DiFfRG::DiFfRG ONFiniteTBatchedFlows)

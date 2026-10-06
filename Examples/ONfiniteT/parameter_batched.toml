@@ -44,5 +44,7 @@ folder = "./"
 name = "output"
 
 [batched]
-  # per_point, tbb, gpu or gpu_float; see CG_batched.cc
+  # cg or ddg; see flow_batched.cc
+  assembler = "cg"
+  # per_point, tbb, gpu or gpu_float
   backend = "tbb"

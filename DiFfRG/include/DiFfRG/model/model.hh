@@ -241,26 +241,30 @@ namespace DiFfRG
       }
 
       /**
-       * @brief Flux and source at all quadrature points of a batch at once; this is what the CG assembler
-       * calls.
+       * @brief The flux, source and/or diffusion flux at all points of a batch at once; this is what the
+       * batched assemblers (CG, DG, dDG) call.
        *
-       * The standard implementation evaluates flux() and source() point by point, in one flat parallel
-       * loop over the batch. Override it to evaluate the expensive part, typically the momentum
-       * integrals, for all points in one go, e.g. with an integrator's map_points(), which also runs on
-       * the GPU. A model that overrides it gets batched jacobians automatically through def::AD.
+       * The assembler requests only the terms it uses (`out.requested(Term::flux)` etc.): fluxes at
+       * faces, flux and source at cell points. The standard implementation evaluates the requested
+       * per-point callbacks (flux(), source(), diffusion_flux()) in one flat parallel loop over the batch.
+       * Override it to evaluate the expensive part, typically the momentum integrals, for all points in
+       * one go, e.g. with an integrator's map_points(), which also runs on the GPU; skip the terms that
+       * were not requested. A model that overrides it gets batched jacobians automatically through def::AD,
+       * and def::LLFFlux / def::FlowBoundaries evaluate the face fluxes through it.
        *
-       * @param out the result, a FluxSourceBatch: `out.flux(c, d)` and `out.source(c)` point to the
-       * columns of component c (and direction d) over all points, zero on entry.
+       * @param out the result, a BatchOutput: `out.flux(c, d)`, `out.source(c)` and
+       * `out.diffusion_flux(c, d)` point to the columns of component c (and direction d) over all points,
+       * zero on entry; only requested terms exist.
        * @param batch the solution at the points, a PointBatch: columns `values(c)`, `derivatives(c, d)`,
        * `hessians(c, d1, d2)`, `coordinates(d)` (each a PointArray, directly usable as a per-point argument
        * of map_points()), plus `extractors()`, `variables()`, `size()`, and `x(i)`, `cell_width(i)`.
        *
        * @note Set `static constexpr bool batch_reads_hessians = false` (or `batch_reads_derivatives`) in
-       * the model when neither flux nor source reads them: the assembler then skips computing them.
+       * the model when no term reads them: the assembler then skips computing them. DG never gathers them.
        */
-      template <typename Out, typename Batch> void flux_source_batch(Out &out, const Batch &batch) const
+      template <typename Out, typename Batch> void evaluate_batch(Out &out, const Batch &batch) const
       {
-        DiFfRG::internal::flux_source_per_point(asImp(), out, batch);
+        DiFfRG::internal::evaluate_per_point(asImp(), out, batch);
       }
 
       /**

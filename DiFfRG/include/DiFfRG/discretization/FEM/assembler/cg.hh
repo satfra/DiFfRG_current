@@ -3,16 +3,15 @@
 // DiFfRG
 #include <DiFfRG/common/linear_algebra.hh>
 #include <DiFfRG/discretization/FEM/assembler/common.hh>
+#include <DiFfRG/discretization/common/batched_scatter.hh>
 #include <DiFfRG/discretization/common/cell_geometry.hh>
 #include <DiFfRG/discretization/common/types.hh>
 #include <DiFfRG/model/batch.hh>
-#include <DiFfRG/physics/integration/map_scheduler.hh>
 
 // external libraries
 #include <tbb/enumerable_thread_specific.h>
 
 // standard library
-#include <bit>
 #include <memory>
 #include <numeric>
 
@@ -35,14 +34,12 @@ namespace DiFfRG
      * Residual and jacobian are assembled in three phases:
      *  1. gather: the FE solution at every quadrature point of the locally owned cells and boundary
      *     faces, into a PointBatch;
-     *  2. evaluate: the model's flux_source_batch (and boundary numflux) over the whole batch, or their
-     *     jacobians, see model/batch.hh. The default flux_source_batch calls the per-point flux and
+     *  2. evaluate: the model's evaluate_batch (and boundary numflux) over the whole batch, or their
+     *     jacobians, see model/batch.hh. The default evaluate_batch calls the per-point flux and
      *     source in a flat parallel loop; a model can override it to evaluate its momentum integrals
      *     with one map_points() call per batch, on the CPU or the GPU;
-     *  3. scatter: the contraction with the shape functions, in a parallel loop over cell colors. Cells
-     *     of one color share no dof (nor a constraint master), so they add into deal.II's serial matrix
-     *     and vector concurrently; other types (PETSc) are filled serially from per-cell results
-     *     computed in parallel.
+     *  3. scatter: the contraction with the shape functions, in a parallel loop over cell colors, see
+     *     internal::ColoredCells.
      *
      * Each MPI rank batches its own cells and phase 2 communicates nothing. The results do not depend on
      * the thread count: contributions to a global entry are summed in color order.
@@ -204,9 +201,9 @@ namespace DiFfRG
         residual_times.gather += phase.wall_time();
 
         phase.restart();
-        cell_result.reinit(cell_batch.size());
-        model.flux_source_batch(cell_result, cell_batch);
-        face_result.reinit(face_batch.size());
+        cell_result.reinit(cell_batch.size(), Term::flux | Term::source);
+        model.evaluate_batch(cell_result, cell_batch);
+        face_result.reinit(face_batch.size(), Term::flux);
         evaluate_boundary_numflux(model, face_result, face_normals, face_batch);
         residual_times.evaluate += phase.wall_time();
 
@@ -347,6 +344,7 @@ namespace DiFfRG
       std::vector<double> timings_jacobian;
 
     private:
+      static constexpr bool reads_derivatives = batch_reads_derivatives<Model>();
       static constexpr bool reads_hessians = batch_reads_hessians<Model>();
 
       static double average(const std::vector<double> &t)
@@ -357,7 +355,8 @@ namespace DiFfRG
       /// About 256 MB of AD inputs and outputs per seed-stacked evaluation.
       static uint default_stacked_points()
       {
-        constexpr size_t per_point = sizeof(autodiff::real) * n_fe * (2 + 2 * dim + (reads_hessians ? dim * dim : 0));
+        constexpr size_t per_point = sizeof(autodiff::real) * n_fe *
+                                     (2 + dim + (reads_derivatives ? dim : 0) + (reads_hessians ? dim * dim : 0));
         return std::max<size_t>(1, (size_t(256) << 20) / per_point);
       }
 
@@ -385,9 +384,12 @@ namespace DiFfRG
                     const UpdateFlags flags)
             : fe_values(mapping, fe, quadrature, flags),
               fe_face_values(mapping, fe, quadrature_face, flags | update_normal_vectors),
-              values(std::max(quadrature.size(), quadrature_face.size()), Vector<NumberType>(fe.n_components())),
-              values_dot(values), gradients(values.size(), std::vector<Tensor<1, dim, NumberType>>(fe.n_components())),
-              hessians(values.size(), std::vector<Tensor<2, dim, NumberType>>(fe.n_components())),
+              values(quadrature.size(), Vector<NumberType>(fe.n_components())), values_dot(values),
+              gradients(quadrature.size(), std::vector<Tensor<1, dim, NumberType>>(fe.n_components())),
+              hessians(quadrature.size(), std::vector<Tensor<2, dim, NumberType>>(fe.n_components())),
+              face_values(quadrature_face.size(), Vector<NumberType>(fe.n_components())),
+              face_gradients(quadrature_face.size(), std::vector<Tensor<1, dim, NumberType>>(fe.n_components())),
+              face_hessians(quadrature_face.size(), std::vector<Tensor<2, dim, NumberType>>(fe.n_components())),
               comp(fe.n_dofs_per_cell()), sv(fe.n_dofs_per_cell()), sg(fe.n_dofs_per_cell()), sh(fe.n_dofs_per_cell())
         {
           for (uint i = 0; i < comp.size(); ++i)
@@ -409,6 +411,10 @@ namespace DiFfRG
         std::vector<Vector<NumberType>> values, values_dot;
         std::vector<std::vector<Tensor<1, dim, NumberType>>> gradients;
         std::vector<std::vector<Tensor<2, dim, NumberType>>> hessians;
+        // Sized for the face quadrature: deal.II's get_function_* fill as many points as the output holds.
+        std::vector<Vector<NumberType>> face_values;
+        std::vector<std::vector<Tensor<1, dim, NumberType>>> face_gradients;
+        std::vector<std::vector<Tensor<2, dim, NumberType>>> face_hessians;
         std::vector<uint> comp;
         std::vector<double> sv;
         std::vector<Tensor<1, dim>> sg;
@@ -421,45 +427,14 @@ namespace DiFfRG
       {
         n_q = quadrature.size();
         n_q_face = quadrature_face.size();
-        cells.clear();
+        cells.reinit(dof_handler, discretization.get_constraints());
         boundary_faces.clear();
         face_begin.assign(1, 0);
-        // The cells and faces mesh_loop visits with assemble_own_cells | assemble_boundary_faces.
-        for (const auto &cell : locally_owned_cells(dof_handler)) {
-          cells.push_back(cell);
+        for (const auto &cell : cells.all()) {
           for (const uint f : cell->face_indices())
             if (cell->at_boundary(f) && !cell->has_periodic_neighbor(f)) boundary_faces.emplace_back(cell, f);
           face_begin.push_back(boundary_faces.size());
         }
-
-        // Greedy coloring, one bit per color and row. A cell writes the rows of its dofs and, through the
-        // constraints, those of their masters; no two cells of a color may share one.
-        const auto &constraints = discretization.get_constraints();
-        std::vector<std::uint64_t> row_colors(dof_handler.n_dofs(), 0);
-        std::vector<types::global_dof_index> rows;
-        colors.clear();
-        constrained_cell.assign(cells.size(), false);
-        for (size_t k = 0; k < cells.size(); ++k) {
-          rows.resize(fe.n_dofs_per_cell());
-          cells[k]->get_dof_indices(rows);
-          for (uint i = 0; i < fe.n_dofs_per_cell(); ++i)
-            if (constraints.is_constrained(rows[i])) {
-              constrained_cell[k] = true;
-              if (const auto *entries = constraints.get_constraint_entries(rows[i]))
-                for (const auto &entry : *entries)
-                  rows.push_back(entry.first);
-            }
-          std::uint64_t taken = 0;
-          for (const auto row : rows)
-            taken |= row_colors[row];
-          if (~taken == 0) throw std::runtime_error("CG::Assembler: more than 64 cell colors needed.");
-          const uint color = std::countr_one(taken);
-          for (const auto row : rows)
-            row_colors[row] |= std::uint64_t(1) << color;
-          if (color >= colors.size()) colors.resize(color + 1);
-          colors[color].push_back(k);
-        }
-
         scratch = std::make_unique<tbb::enumerable_thread_specific<CellScratch>>(
             [this]() { return CellScratch(mapping, fe, quadrature, quadrature_face, gather_flags()); });
       }
@@ -467,25 +442,26 @@ namespace DiFfRG
       /// Phase 1: the solution at every quadrature point of the owned cells and boundary faces.
       void gather(const VectorType &solution_global, const Extractors &extracted_data, const VectorType &variables)
       {
-        cell_batch.reinit(cells.size() * n_q, reads_hessians);
+        cell_batch.reinit(cells.size() * n_q, reads_derivatives, reads_hessians);
         cell_batch.set_shared(extracted_data, variables);
-        face_batch.reinit(boundary_faces.size() * n_q_face, reads_hessians);
+        face_batch.reinit(boundary_faces.size() * n_q_face, reads_derivatives, reads_hessians);
         face_batch.set_shared(extracted_data, variables);
         face_normals.resize(face_batch.size());
 
-        const auto store = [&](Batch &batch, const size_t first, const auto &fe_v, CellScratch &s, const double width) {
-          fe_v.get_function_values(solution_global, s.values);
-          fe_v.get_function_gradients(solution_global, s.gradients);
-          if constexpr (reads_hessians) fe_v.get_function_hessians(solution_global, s.hessians);
+        const auto store = [&](Batch &batch, const size_t first, const auto &fe_v, auto &values, auto &gradients,
+                               auto &hessians, const double width) {
+          fe_v.get_function_values(solution_global, values);
+          if constexpr (reads_derivatives) fe_v.get_function_gradients(solution_global, gradients);
+          if constexpr (reads_hessians) fe_v.get_function_hessians(solution_global, hessians);
           for (const auto &q : fe_v.quadrature_point_indices()) {
             const size_t i = first + q;
             for (size_t c = 0; c < n_fe; ++c) {
-              batch.value(c, i) = s.values[q][c];
+              batch.value(c, i) = values[q][c];
               for (uint d1 = 0; d1 < dim; ++d1) {
-                batch.derivative(c, d1, i) = s.gradients[q][c][d1];
+                if constexpr (reads_derivatives) batch.derivative(c, d1, i) = gradients[q][c][d1];
                 if constexpr (reads_hessians)
                   for (uint d2 = 0; d2 < dim; ++d2)
-                    batch.hessian(c, d1, d2, i) = s.hessians[q][c][d1][d2];
+                    batch.hessian(c, d1, d2, i) = hessians[q][c][d1][d2];
               }
             }
             for (uint d = 0; d < dim; ++d)
@@ -498,7 +474,8 @@ namespace DiFfRG
           auto &s = scratch->local();
           for (size_t k = r.begin(); k != r.end(); ++k) {
             s.fe_values.reinit(cells[k]);
-            store(cell_batch, k * n_q, s.fe_values, s, DiFfRG::internal::cell_width(cells[k]));
+            store(cell_batch, k * n_q, s.fe_values, s.values, s.gradients, s.hessians,
+                  DiFfRG::internal::cell_width(cells[k]));
           }
         });
         tbb::parallel_for(tbb::blocked_range<size_t>(0, boundary_faces.size()),
@@ -507,55 +484,29 @@ namespace DiFfRG
                             for (size_t f = r.begin(); f != r.end(); ++f) {
                               const auto &[cell, face_no] = boundary_faces[f];
                               s.fe_face_values.reinit(cell, face_no);
-                              store(face_batch, f * n_q_face, s.fe_face_values, s, DiFfRG::internal::cell_width(cell));
+                              store(face_batch, f * n_q_face, s.fe_face_values, s.face_values, s.face_gradients,
+                                    s.face_hessians, DiFfRG::internal::cell_width(cell));
                               for (uint q = 0; q < n_q_face; ++q)
                                 face_normals[f * n_q_face + q] = s.fe_face_values.normal_vector(q);
                             }
                           });
       }
 
-      /**
-       * @brief Phase 3: assemble(k, scratch, local) every owned cell, after reinit of the cell's FEValues and
-       * dof indices, and insert(local) the result.
-       *
-       * deal.II's serial vector and matrix are written concurrently, one parallel loop per color. Other types
-       * (PETSc) are assembled in parallel into per-cell buffers and inserted serially in the same order.
-       */
+      /// Phase 3: assemble(k, scratch, local) every owned cell, after reinit of its FEValues and dof indices,
+      /// and insert(local) the result; see internal::ColoredCells::scatter.
       template <typename Global, typename Assemble, typename Insert>
       void scatter(Global &global, const Assemble &assemble, const Insert &insert)
       {
-        constexpr bool concurrent = std::is_same_v<Global, dealii::Vector<NumberType>> ||
-                                    std::is_same_v<Global, dealii::SparseMatrix<NumberType>>;
-        const auto run = [&](const size_t k, CellScratch &s, LocalData &local) {
-          s.fe_values.reinit(cells[k]);
-          local.dofs.resize(fe.n_dofs_per_cell());
-          cells[k]->get_dof_indices(local.dofs);
-          local.constrained = constrained_cell[k];
-          assemble(k, s, local);
-        };
-        // map() is collective and each rank visits only its own cells; see NoMapsHere.
-        const NoMapsHere no_maps_during_assembly;
-        if constexpr (concurrent) {
-          for (const auto &color : colors)
-            tbb::parallel_for(tbb::blocked_range<size_t>(0, color.size()), [&](const tbb::blocked_range<size_t> &r) {
-              auto &s = scratch->local();
-              for (size_t i = r.begin(); i != r.end(); ++i) {
-                run(color[i], s, s.local);
-                insert(s.local);
-              }
-            });
-        } else {
-          local_buffer.resize(cells.size());
-          tbb::parallel_for(tbb::blocked_range<size_t>(0, cells.size()), [&](const tbb::blocked_range<size_t> &r) {
-            auto &s = scratch->local();
-            for (size_t k = r.begin(); k != r.end(); ++k)
-              run(k, s, local_buffer[k]);
-          });
-          for (const auto &color : colors)
-            for (const size_t k : color)
-              insert(local_buffer[k]);
-        }
-        global.compress(dealii::VectorOperation::add);
+        cells.scatter(
+            global, *scratch, &CellScratch::local, local_buffer,
+            [&](const size_t k, CellScratch &s, LocalData &local) {
+              s.fe_values.reinit(cells[k]);
+              local.dofs.resize(fe.n_dofs_per_cell());
+              cells[k]->get_dof_indices(local.dofs);
+              local.constrained = cells.is_constrained(k);
+              assemble(k, s, local);
+            },
+            insert);
       }
 
       template <typename Assemble> void scatter_residual(VectorType &residual, const Assemble &assemble)
@@ -664,19 +615,16 @@ namespace DiFfRG
       const uint max_stacked_points;
 
       uint n_q = 0, n_q_face = 0;
-      std::vector<typename DoFHandler<dim>::active_cell_iterator> cells;
+      DiFfRG::internal::ColoredCells<dim> cells;
       /// Boundary faces in cell order; those of cell k are [face_begin[k], face_begin[k + 1]).
       std::vector<std::pair<typename DoFHandler<dim>::active_cell_iterator, uint>> boundary_faces;
       std::vector<size_t> face_begin;
-      /// Cell indices k by color, and whether cell k has a constrained dof.
-      std::vector<std::vector<size_t>> colors;
-      std::vector<bool> constrained_cell;
       std::unique_ptr<tbb::enumerable_thread_specific<CellScratch>> scratch;
       std::vector<LocalData> local_buffer;
 
       Batch cell_batch, face_batch;
       std::vector<Tensor<1, dim>> face_normals;
-      FluxSourceBatch<dim, NumberType, n_fe> cell_result, face_result;
+      BatchOutput<dim, NumberType, n_fe> cell_result, face_result;
       std::vector<PointJacobian<dim, n_fe, n_extr>> cell_jacobians, face_jacobians;
       SeedStackWorkspace<dim, n_fe, n_extr, VectorType> cell_workspace, face_workspace;
 

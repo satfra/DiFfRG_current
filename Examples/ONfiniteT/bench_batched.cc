@@ -11,20 +11,23 @@ using namespace DiFfRG;
 #include <sstream>
 
 /**
- * Times residual() and jacobian() of the ONfiniteT CG assembly for one configuration of the flux:
- *   B0  -- per-point flux with the TBB integrator (AbstractModel's default flux_source_batch)
- *   B1  -- flux_source_batch with one map_points call on TBB
- *   G64 -- flux_source_batch with one map_points call on the GPU, double precision
- *   G32 -- flux_source_batch with one map_points call on the GPU, single precision
+ * Times residual() and jacobian() of the ONfiniteT assembly (--assembler cg or ddg) for one configuration of
+ * the flux:
+ *   B0  -- per-point flux with the TBB integrator (AbstractModel's default evaluate_batch)
+ *   B1  -- evaluate_batch with one map_points call on TBB
+ *   G64 -- evaluate_batch with one map_points call on the GPU, double precision
+ *   G32 -- evaluate_batch with one map_points call on the GPU, single precision
  *
- * Usage: bench_batched --config B1 --cells 1024 --xorder 32 [--reps 10] [--threads 0] [--policy auto]
- *                      [--parameters parameter.toml]
+ * Usage: bench_batched --config B1 --cells 1024 --xorder 32 [--assembler cg] [--reps 10] [--threads 0]
+ *                      [--policy auto] [--parameters parameter.toml]
+ * Phase times are reported as 0 for an assembler that does not record them.
  * Prints one line "RESULT,<csv>" with the header given by --header.
  */
 namespace
 {
   struct Options {
     std::string config = "B1";
+    std::string assembler = "cg";
     uint cells = 64;
     uint xorder = 32;
     uint reps = 10;
@@ -32,6 +35,9 @@ namespace
     std::string policy = "auto";
     std::string parameters = "parameter.toml";
   };
+
+  template <typename Model> using CGDiscretization = CG::Discretization<Model, RectangularMesh<Model::dim>>;
+  template <typename Model> using DGDiscretization = DG::Discretization<Model, RectangularMesh<Model::dim>>;
 
   double median(std::vector<double> v)
   {
@@ -46,11 +52,12 @@ namespace
     return MapPointsPolicy::automatic;
   }
 
-  template <typename Model> void run(const Options &opt, const ConfigTree &config)
+  template <typename Model, template <typename> typename Discretization_, template <typename> typename Assembler_>
+  void run(const Options &opt, const ConfigTree &config)
   {
     constexpr uint dim = Model::dim;
-    using Discretization = CG::Discretization<Model, RectangularMesh<dim>>;
-    using Assembler = CG::Assembler<Discretization>;
+    using Discretization = Discretization_<Model>;
+    using Assembler = Assembler_<Discretization>;
     using VectorType = typename Discretization::VectorType;
     using SparseMatrixType = typename Discretization::SparseMatrixType;
     using clock = std::chrono::steady_clock;
@@ -88,7 +95,8 @@ namespace
       time_residual();
       time_jacobian();
     }
-    assembler.reset_phase_times();
+    constexpr bool has_phases = requires { assembler.reset_phase_times(); };
+    if constexpr (has_phases) assembler.reset_phase_times();
 
     std::vector<double> t_res, t_jac;
     for (uint i = 0; i < opt.reps; ++i)
@@ -96,15 +104,17 @@ namespace
     for (uint i = 0; i < opt.reps; ++i)
       t_jac.push_back(time_jacobian());
 
-    const auto &r = assembler.residual_phase_times();
-    const auto &j = assembler.jacobian_phase_times();
-    const std::array<double, 6> phases = {r.gather / r.calls * 1e3,   r.evaluate / r.calls * 1e3,
-                                          r.scatter / r.calls * 1e3,  j.gather / j.calls * 1e3,
-                                          j.evaluate / j.calls * 1e3, j.scatter / j.calls * 1e3};
+    std::array<double, 6> phases{};
+    if constexpr (has_phases) {
+      const auto &r = assembler.residual_phase_times();
+      const auto &j = assembler.jacobian_phase_times();
+      phases = {r.gather / r.calls * 1e3,  r.evaluate / r.calls * 1e3, r.scatter / r.calls * 1e3,
+                j.gather / j.calls * 1e3,  j.evaluate / j.calls * 1e3, j.scatter / j.calls * 1e3};
+    }
 
     const size_t n_points = discretization.get_triangulation().n_active_cells() * (discretization.get_fe().degree + 1);
     std::ostringstream line;
-    line << std::setprecision(6) << "RESULT," << opt.config << "," << opt.cells << "," << opt.xorder << "," << n_points << ","
+    line << std::setprecision(6) << "RESULT," << opt.assembler << "," << opt.config << "," << opt.cells << "," << opt.xorder << "," << n_points << ","
          << (opt.threads == 0 ? DiFfRG::n_threads() : opt.threads) << "," << opt.policy << "," << median(t_res) << "," << median(t_jac);
     for (const double p : phases)
       line << "," << p;
@@ -130,6 +140,8 @@ int main(int argc, char *argv[])
       opt.threads = std::stoul(value);
     else if (key == "--policy")
       opt.policy = value;
+    else if (key == "--assembler")
+      opt.assembler = value;
     else if (key == "--parameters")
       opt.parameters = value;
     else {
@@ -138,7 +150,7 @@ int main(int argc, char *argv[])
     }
   }
   if (argc == 2 && std::strcmp(argv[1], "--header") == 0) {
-    std::cout << "config,cells,xorder,points,threads,policy,residual_ms,jacobian_ms,res_gather_ms,res_evaluate_ms,"
+    std::cout << "assembler,config,cells,xorder,points,threads,policy,residual_ms,jacobian_ms,res_gather_ms,res_evaluate_ms,"
                  "res_scatter_ms,jac_gather_ms,jac_evaluate_ms,jac_scatter_ms,residual_norm,jacobian_norm"
               << std::endl;
     return 0;
@@ -159,16 +171,26 @@ int main(int argc, char *argv[])
   config.set_uint("/output/verbosity", 0);
 
   using namespace ON_batched;
-  if (opt.config == "B0")
-    run<Model<Backend::TBB, false>>(opt, config);
-  else if (opt.config == "B1")
-    run<Model<Backend::TBB>>(opt, config);
-  else if (opt.config == "G64")
-    run<Model<Backend::GPU>>(opt, config);
-  else if (opt.config == "G32")
-    run<Model<Backend::GPU_float>>(opt, config);
-  else {
-    std::cerr << "Unknown --config " << opt.config << std::endl;
+  const auto run_config = [&]<template <typename> typename D, template <typename> typename A>() {
+    if (opt.config == "B0")
+      run<Model<Backend::TBB, false>, D, A>(opt, config);
+    else if (opt.config == "B1")
+      run<Model<Backend::TBB>, D, A>(opt, config);
+    else if (opt.config == "G64")
+      run<Model<Backend::GPU>, D, A>(opt, config);
+    else if (opt.config == "G32")
+      run<Model<Backend::GPU_float>, D, A>(opt, config);
+    else
+      return false;
+    return true;
+  };
+  bool known = false;
+  if (opt.assembler == "cg")
+    known = run_config.template operator()<CGDiscretization, CG::Assembler>();
+  else if (opt.assembler == "ddg")
+    known = run_config.template operator()<DGDiscretization, dDG::Assembler>();
+  if (!known) {
+    std::cerr << "Unknown --assembler " << opt.assembler << " or --config " << opt.config << std::endl;
     return 1;
   }
   return 0;
