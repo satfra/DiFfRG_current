@@ -4,8 +4,8 @@ using namespace DiFfRG;
 #include "model_batched.hh"
 
 /**
- * CG.cc / dDG.cc with a batched flux. /batched/assembler is cg or ddg; /batched/backend selects how the model
- * evaluates the flux:
+ * CG.cc / dDG.cc / LDG.cc with a batched flux. /batched/assembler is cg, ddg or ldg; /batched/backend selects
+ * how the model evaluates the flux:
  *   per_point -- per-point flux with the TBB integrator (AbstractModel's default evaluate_batch)
  *   tbb       -- one map_points call with the TBB integrator
  *   gpu       -- one map_points call with the GPU integrator in double precision
@@ -17,7 +17,7 @@ template <typename Model, typename Discretization, typename Assembler> int run(c
   using TimeStepper = TimeStepperSUNDIALS_IDA<Assembler>;
 
   Model model(config);
-  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(config)};
+  typename Discretization::Mesh mesh{Config::ConfigurationMesh<dim>(config)};
   OutputSession<Assembler> data_out(config);
   const auto log = data_out.report_port();
   Discretization discretization(mesh, config, log);
@@ -46,19 +46,24 @@ int main(int argc, char *argv[])
 
   using namespace ON_batched;
   const std::string assembler = config.get_string("/batched/assembler", "cg");
-  const auto with_assembler = [&]<typename M>() {
+  // b = backend: Backend and whether the model evaluates its flux batched.
+  const auto with_assembler = [&]<Backend b, bool batched>() {
+    using M = Model<b, batched>;
+    using ML = ModelLDG<b, batched>;
     using CGD = CG::Discretization<M, RectangularMesh<M::dim>>;
     using DGD = DG::Discretization<M, RectangularMesh<M::dim>>;
+    using LDGD = LDG::Discretization<ML, RectangularMeshSerial<ML::dim>>;
     if (assembler == "cg") return run<M, CGD, CG::Assembler<CGD>>(config);
     if (assembler == "ddg") return run<M, DGD, dDG::Assembler<DGD>>(config);
+    if (assembler == "ldg") return run<ML, LDGD, LDG::Assembler<LDGD>>(config);
     std::cerr << "Unknown /batched/assembler: " << assembler << std::endl;
     return 1;
   };
   const std::string backend = config.get_string("/batched/backend", "tbb");
-  if (backend == "per_point") return with_assembler.template operator()<Model<Backend::TBB, false>>();
-  if (backend == "tbb") return with_assembler.template operator()<Model<Backend::TBB>>();
-  if (backend == "gpu") return with_assembler.template operator()<Model<Backend::GPU>>();
-  if (backend == "gpu_float") return with_assembler.template operator()<Model<Backend::GPU_float>>();
+  if (backend == "per_point") return with_assembler.template operator()<Backend::TBB, false>();
+  if (backend == "tbb") return with_assembler.template operator()<Backend::TBB, true>();
+  if (backend == "gpu") return with_assembler.template operator()<Backend::GPU, true>();
+  if (backend == "gpu_float") return with_assembler.template operator()<Backend::GPU_float, true>();
   std::cerr << "Unknown /batched/backend: " << backend << std::endl;
   return 1;
 }

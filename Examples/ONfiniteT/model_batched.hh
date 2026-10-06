@@ -136,4 +136,116 @@ namespace ON_batched
         return flow_equations.V_GPU_f;
     }
   };
+
+  using LDGFunctionDesc = FEFunctionDescriptor<Scalar<"dm2">>;
+  using LDGComponents = ComponentDescriptor<FEFunctionDesc, VariableDescriptor<>, ExtractorDescriptor<>, LDGFunctionDesc>;
+  constexpr auto idxl = LDGFunctionDesc{};
+
+  template <typename M>
+  using LDGFluxes = def::LDGUpDownFluxes<M, def::UpDownFlux<def::FlowDirections<0>, def::UpDown<def::from_right>>>;
+
+  /**
+   * The model of model_LDG.hh with a batched flux: m2' is the LDG level 1, built from m2 by an upwind flux, and
+   * the main flux at all quadrature points is one map_points() call. Same template parameters as Model.
+   */
+  template <Backend backend = Backend::TBB, bool batched = true>
+  class ModelLDG : public def::AbstractModel<ModelLDG<backend, batched>, LDGComponents>,
+                   public def::fRG,
+                   public def::LLFFlux<ModelLDG<backend, batched>>,
+                   public LDGFluxes<ModelLDG<backend, batched>>,
+                   public def::FlowBoundaries<ModelLDG<backend, batched>>,
+                   public def::AD<ModelLDG<backend, batched>>
+  {
+  public:
+    static constexpr uint dim = 1;
+    using Components = LDGComponents;
+
+  protected:
+    const Parameters prm;
+    mutable ONFiniteTBatchedFlows flow_equations;
+
+  public:
+    ModelLDG(const ConfigTree &config) : def::fRG(config.get_double("/physical/Lambda")), prm(config), flow_equations(config)
+    {
+      flow_equations.set_k(Lambda);
+      flow_equations.set_T(prm.T);
+      this->components().add_dependency(1, 0, 0, 0);
+      this->components().set_jacobian_constant(1, 0);
+    }
+
+    template <typename Vector> void initial_condition(const Point<dim> &pos, Vector &values) const
+    {
+      const auto &rho = pos[0];
+      values[idxf("m2")] = prm.lambda2 + prm.lambda4 * rho + prm.lambda6 * powr<2>(rho);
+    }
+
+    void set_time(double t_)
+    {
+      t = t_;
+      k = std::exp(-t) * prm.Lambda;
+      flow_equations.set_k(k);
+    }
+
+    template <typename NT, typename Solution> void flux(std::array<Tensor<1, dim, NT>, Components::count_fe_functions(0)> &flux, const Point<dim> &x, const Solution &sol) const
+    {
+      const auto rho = x[0];
+      const auto &fe_functions = get<"fe_functions">(sol);
+      const auto &derivatives = get<"LDG1">(sol);
+      const auto m2Pi = fe_functions[idxf("m2")];
+      const auto m2Sigma = fe_functions[idxf("m2")] + 2. * rho * derivatives[idxl("dm2")];
+      flow_equations.V.get(flux[idxf("m2")][0], k, prm.N, prm.T, m2Pi, m2Sigma);
+    }
+
+    template <uint submodel, typename NT, typename Variables>
+    void ldg_flux(std::array<Tensor<1, dim, NT>, Components::count_fe_functions(submodel)> &flux, const Point<dim> & /*pos*/, const Variables &u) const
+    {
+      flux[idxl("dm2")][0] = u[idxf("m2")];
+    }
+
+    template <typename Out, typename Batch> void evaluate_batch(Out &out, const Batch &batch) const
+    {
+      if constexpr (!batched) {
+        def::AbstractModel<ModelLDG, Components>::evaluate_batch(out, batch);
+        return;
+      }
+      using NT = typename Batch::number_type;
+      const size_t n = batch.size();
+      const auto m2Pi = batch.values(idxf("m2"));
+      const auto dm2 = batch.ldg_values(1, idxl("dm2"));
+      const auto rho = batch.coordinates(0);
+
+      std::vector<NT> m2Sigma(n);
+      for (size_t i = 0; i < n; ++i)
+        m2Sigma[i] = m2Pi.data[i] + 2. * rho.data[i] * dm2.data[i];
+
+      integrator().map_points(out.flux(idxf("m2"), 0), n, k, prm.N, prm.T, m2Pi, PointArray<NT>{m2Sigma.data(), n});
+    }
+
+    template <int dim, typename DataOut, typename Solutions> void readouts(DataOut &output, const Point<dim> &x, const Solutions &sol) const
+    {
+      const auto &fe_functions = get<"fe_functions">(sol);
+      const auto &derivatives = get<"LDG1">(sol);
+      const double rho = x[0];
+      const double m2Pi = fe_functions[idxf("m2")];
+      const double m2Sigma = fe_functions[idxf("m2")] + 2. * rho * derivatives[idxl("dm2")];
+
+      auto out_file = output.table("data.csv");
+      out_file.set_Lambda(Lambda);
+      out_file.value("sigma [GeV]", std::sqrt(2. * rho));
+      out_file.value("m^2_{pi} [GeV^2]", m2Pi);
+      out_file.value("m^2_{sigma} [GeV^2]", m2Sigma);
+      out_file.value("m_{pi} [GeV]", m2Pi > 0. ? std::sqrt(m2Pi) : 0.);
+      out_file.value("m_{sigma} [GeV]", m2Sigma > 0. ? std::sqrt(m2Sigma) : 0.);
+    }
+
+    auto &integrator() const
+    {
+      if constexpr (backend == Backend::TBB)
+        return flow_equations.V;
+      else if constexpr (backend == Backend::GPU)
+        return flow_equations.V_GPU;
+      else
+        return flow_equations.V_GPU_f;
+    }
+  };
 } // namespace ON_batched

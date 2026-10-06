@@ -288,9 +288,9 @@ namespace DiFfRG
                                        weight_mass * fe_v.shape_value_component(i, q, c) * mass[c]);
               }
             }
-            for (size_t f = boundary_begin[k]; f < boundary_begin[k + 1]; ++f) {
+            for (size_t f = topology.boundary_begin[k]; f < topology.boundary_begin[k + 1]; ++f) {
               auto &fe_fv = s.fe_face_values;
-              fe_fv.reinit(cells[k], boundary_faces[f].second);
+              fe_fv.reinit(cells[k], topology.boundary_faces[f].second);
               for (const auto &q : fe_fv.quadrature_point_indices())
                 for (uint i = 0; i < r.size(); ++i) {
                   const auto c = s.comp[i];
@@ -299,8 +299,8 @@ namespace DiFfRG
                 }
             }
             // [[phi_i]] * numflux * n: the trace of phi_i on its own side, with a minus sign on side 1.
-            for (size_t ref = face_ref_begin[k]; ref < face_ref_begin[k + 1]; ++ref) {
-              const auto [f, side] = face_refs[ref];
+            for (size_t ref = topology.face_ref_begin[k]; ref < topology.face_ref_begin[k + 1]; ++ref) {
+              const auto [f, side] = topology.face_refs[ref];
               const auto &fe_iv = reinit_interface(s, f);
               const auto &fe_fv = fe_iv.get_fe_face_values(side);
               const double sign = side == 0 ? 1. : -1.;
@@ -358,23 +358,23 @@ namespace DiFfRG
               s.trace[0].cache(fe_v, q, s.comp);
               add_flux_source_jacobian(s, out, cell_jacobians[k * n_q + q], weight * fe_v.JxW(q));
             }
-            for (size_t f = boundary_begin[k]; f < boundary_begin[k + 1]; ++f) {
+            for (size_t f = topology.boundary_begin[k]; f < topology.boundary_begin[k + 1]; ++f) {
               auto &fe_fv = s.fe_face_values;
-              fe_fv.reinit(cells[k], boundary_faces[f].second);
+              fe_fv.reinit(cells[k], topology.boundary_faces[f].second);
               for (const auto &q : fe_fv.quadrature_point_indices()) {
                 s.trace[0].cache(fe_fv, q, s.comp);
                 add_face_jacobian(s, out, out.jacobian, 0, 0, boundary_jacobians[f * n_q_face + q],
                                   fe_fv.normal_vector(q), weight * fe_fv.JxW(q), true);
               }
             }
-            for (size_t ref = face_ref_begin[k]; ref < face_ref_begin[k + 1]; ++ref) {
-              const auto [f, side] = face_refs[ref];
+            for (size_t ref = topology.face_ref_begin[k]; ref < topology.face_ref_begin[k + 1]; ++ref) {
+              const auto [f, side] = topology.face_refs[ref];
               const auto &fe_iv = reinit_interface(s, f);
-              const uint slot = ref - face_ref_begin[k];
+              const uint slot = ref - topology.face_ref_begin[k];
               auto &neighbor = out.neighbor_jacobian[slot];
               neighbor.reinit(out.dofs.size(), fe.n_dofs_per_cell());
               out.neighbor_dofs[slot].resize(fe.n_dofs_per_cell());
-              faces[f].cell[1 - side]->get_dof_indices(out.neighbor_dofs[slot]);
+              topology.faces[f].cell[1 - side]->get_dof_indices(out.neighbor_dofs[slot]);
               const double sign = side == 0 ? 1. : -1.;
               for (const auto &q : fe_iv.quadrature_point_indices()) {
                 s.trace[0].cache(fe_iv.get_fe_face_values(0), q, s.comp);
@@ -456,21 +456,6 @@ namespace DiFfRG
           return update_values | update_gradients | update_quadrature_points | update_JxW_values |
                  (reads_hessians ? update_hessians : update_default);
         }
-
-        /**
-         * @brief An interior face, as mesh_loop hands it to a face worker: cell[0] is the finer of the two
-         * cells (or the one mesh_loop would visit first), the normal points out of it, and its numerical
-         * flux takes cell[0] as trace s.
-         */
-        struct InteriorFace {
-          std::array<typename DoFHandler<dim>::cell_iterator, 2> cell;
-          std::array<uint, 2> face_no, subface_no;
-        };
-        /// Interior face f seen from the owned cell on its side `side`.
-        struct FaceRef {
-          size_t face;
-          uint side;
-        };
 
         /// FE data of refinement_indicator's mesh_loop.
         struct IndicatorScratch {
@@ -559,104 +544,20 @@ namespace DiFfRG
           LocalData local;
         };
 
-        /**
-         * @brief Number the owned cells, their boundary faces and the interior faces adjacent to them, and
-         * color the cells for the scatter.
-         *
-         * An interior face is listed once, with the cell pair and (sub)face numbers mesh_loop hands its face
-         * worker, and referenced by each of its cells that this rank owns. Faces to ghost cells are listed
-         * too, including those mesh_loop would leave to the other rank: here each rank adds only into its own
-         * rows, so it needs every face of its cells.
-         */
+        /// Number the owned cells, their boundary and interior faces, and color the cells for the scatter.
         void setup_faces()
         {
           n_q = quadrature.size();
           n_q_face = quadrature_face.size();
           cells.reinit(dof_handler, discretization.get_constraints());
-          boundary_faces.clear();
-          boundary_begin.assign(1, 0);
-          faces.clear();
-          constexpr uint none = numbers::invalid_unsigned_int;
-          const auto add = [&](const auto &a, const uint fa, const uint sfa, const auto &b, const uint fb,
-                               const uint sfb) { faces.push_back({{a, b}, {fa, fb}, {sfa, sfb}}); };
-
-          for (const auto &cell : cells.all()) {
-            for (const uint f : cell->face_indices()) {
-              const bool periodic = cell->has_periodic_neighbor(f);
-              if (cell->at_boundary(f) && !periodic) {
-                boundary_faces.emplace_back(cell, f);
-                continue;
-              }
-              const auto neighbor = cell->neighbor_or_periodic_neighbor(f);
-              if (neighbor->has_children()) {
-                // The finer cells list this face, unless they are not ours.
-                if constexpr (dim == 1) {
-                  auto child = neighbor;
-                  while (child->has_children())
-                    child = child->child(1 - f);
-                  if (!child->is_locally_owned()) add(child, 1 - f, none, cell, f, none);
-                } else {
-                  const uint nf =
-                      periodic ? cell->periodic_neighbor_of_periodic_neighbor(f) : cell->neighbor_of_neighbor(f);
-                  for (uint sf = 0; sf < cell->face(f)->n_children(); ++sf) {
-                    const auto child = periodic ? cell->periodic_neighbor_child_on_subface(f, sf)
-                                                : cell->neighbor_child_on_subface(f, sf);
-                    if (!child->is_locally_owned()) add(child, nf, none, cell, f, sf);
-                  }
-                }
-                continue;
-              }
-              bool coarser;
-              if constexpr (dim == 1)
-                coarser = cell->level() > neighbor->level();
-              else
-                coarser = periodic ? cell->periodic_neighbor_is_coarser(f) : cell->neighbor_is_coarser(f);
-              if (coarser) {
-                if constexpr (dim == 1)
-                  add(cell, f, none, neighbor,
-                      periodic ? cell->periodic_neighbor_face_no(f) : cell->neighbor_face_no(f), none);
-                else {
-                  const auto [nf, nsf] = periodic ? cell->periodic_neighbor_of_coarser_periodic_neighbor(f)
-                                                  : cell->neighbor_of_coarser_neighbor(f);
-                  add(cell, f, none, neighbor, nf, nsf);
-                }
-                continue;
-              }
-              // Same level: listed from the smaller of two owned cells, as mesh_loop does.
-              if (neighbor->is_locally_owned() && neighbor < cell) continue;
-              add(cell, f, none, neighbor, periodic ? cell->periodic_neighbor_face_no(f) : cell->neighbor_face_no(f),
-                  none);
-            }
-            boundary_begin.push_back(boundary_faces.size());
-          }
-
-          // Each face is referenced by its owned cells, in face order.
-          std::vector<int> owned_index(dof_handler.get_triangulation().n_active_cells(), -1);
-          for (size_t k = 0; k < cells.size(); ++k)
-            owned_index[cells[k]->active_cell_index()] = k;
-          face_ref_begin.assign(cells.size() + 1, 0);
-          for (const auto &face : faces)
-            for (uint side = 0; side < 2; ++side)
-              if (face.cell[side]->is_locally_owned())
-                ++face_ref_begin[owned_index[face.cell[side]->active_cell_index()] + 1];
-          std::partial_sum(face_ref_begin.begin(), face_ref_begin.end(), face_ref_begin.begin());
-          face_refs.resize(face_ref_begin.back());
-          std::vector<size_t> next(face_ref_begin.begin(), face_ref_begin.end() - 1);
-          for (size_t f = 0; f < faces.size(); ++f)
-            for (uint side = 0; side < 2; ++side)
-              if (faces[f].cell[side]->is_locally_owned())
-                face_refs[next[owned_index[faces[f].cell[side]->active_cell_index()]]++] = {f, side};
-
+          topology.reinit(cells);
           scratch = std::make_unique<tbb::enumerable_thread_specific<CellScratch>>(
               [this]() { return CellScratch(mapping, fe, quadrature, quadrature_face, gather_flags()); });
         }
 
         const FEInterfaceValues<dim> &reinit_interface(CellScratch &s, const size_t f) const
         {
-          const auto &face = faces[f];
-          s.fe_interface_values.reinit(face.cell[0], face.face_no[0], face.subface_no[0], face.cell[1], face.face_no[1],
-                                       face.subface_no[1]);
-          return s.fe_interface_values;
+          return topology.reinit(s.fe_interface_values, f, dof_handler);
         }
 
         /// The flux of component c at point p of @p result, dotted with @p normal.
@@ -673,9 +574,9 @@ namespace DiFfRG
         void gather(const VectorType &solution_global, const Extractors &extracted_data, const VectorType &variables)
         {
           cell_batch.reinit(cells.size() * n_q, reads_derivatives, reads_hessians);
-          boundary_batch.reinit(boundary_faces.size() * n_q_face, reads_derivatives, reads_hessians);
+          boundary_batch.reinit(topology.boundary_faces.size() * n_q_face, reads_derivatives, reads_hessians);
           for (auto &b : face_batch)
-            b.reinit(faces.size() * n_q_face, reads_derivatives, reads_hessians);
+            b.reinit(topology.faces.size() * n_q_face, reads_derivatives, reads_hessians);
           for (auto *b : {&cell_batch, &boundary_batch, &face_batch[0], &face_batch[1]})
             b->set_shared(extracted_data, variables);
           boundary_normals.resize(boundary_batch.size());
@@ -711,11 +612,11 @@ namespace DiFfRG
                     DiFfRG::internal::cell_width(cells[k]));
             }
           });
-          tbb::parallel_for(tbb::blocked_range<size_t>(0, boundary_faces.size()),
+          tbb::parallel_for(tbb::blocked_range<size_t>(0, topology.boundary_faces.size()),
                             [&](const tbb::blocked_range<size_t> &r) {
                               auto &s = scratch->local();
                               for (size_t f = r.begin(); f != r.end(); ++f) {
-                                const auto &[cell, face_no] = boundary_faces[f];
+                                const auto &[cell, face_no] = topology.boundary_faces[f];
                                 s.fe_face_values.reinit(cell, face_no);
                                 store(boundary_batch, f * n_q_face, s.fe_face_values, s.face_values, s.face_gradients,
                                       s.face_hessians, DiFfRG::internal::cell_width(cell));
@@ -723,17 +624,19 @@ namespace DiFfRG
                                   boundary_normals[f * n_q_face + q] = s.fe_face_values.normal_vector(q);
                               }
                             });
-          tbb::parallel_for(tbb::blocked_range<size_t>(0, faces.size()), [&](const tbb::blocked_range<size_t> &r) {
-            auto &s = scratch->local();
-            for (size_t f = r.begin(); f != r.end(); ++f) {
-              const auto &fe_iv = reinit_interface(s, f);
-              for (uint side = 0; side < 2; ++side)
-                store(face_batch[side], f * n_q_face, fe_iv.get_fe_face_values(side), s.face_values, s.face_gradients,
-                      s.face_hessians, DiFfRG::internal::cell_width(faces[f].cell[side]));
-              for (uint q = 0; q < n_q_face; ++q)
-                face_normals[f * n_q_face + q] = fe_iv.normal_vector(q);
-            }
-          });
+          tbb::parallel_for(tbb::blocked_range<size_t>(0, topology.faces.size()),
+                            [&](const tbb::blocked_range<size_t> &r) {
+                              auto &s = scratch->local();
+                              for (size_t f = r.begin(); f != r.end(); ++f) {
+                                const auto &fe_iv = reinit_interface(s, f);
+                                for (uint side = 0; side < 2; ++side)
+                                  store(face_batch[side], f * n_q_face, fe_iv.get_fe_face_values(side), s.face_values,
+                                        s.face_gradients, s.face_hessians,
+                                        DiFfRG::internal::cell_width(topology.faces[f].cell[side]));
+                                for (uint q = 0; q < n_q_face; ++q)
+                                  face_normals[f * n_q_face + q] = fe_iv.normal_vector(q);
+                              }
+                            });
         }
 
         /// Phase 3: assemble(k, scratch, local) every owned cell, after reinit of its FEValues and dof indices.
@@ -777,7 +680,7 @@ namespace DiFfRG
               jacobian,
               [&](const size_t k, CellScratch &s, LocalData &local) {
                 local.jacobian.reinit(local.dofs.size(), local.dofs.size());
-                const size_t n_neighbors = face_ref_begin[k + 1] - face_ref_begin[k];
+                const size_t n_neighbors = topology.face_ref_begin[k + 1] - topology.face_ref_begin[k];
                 local.neighbor_jacobian.resize(n_neighbors);
                 local.neighbor_dofs.resize(n_neighbors);
                 for (auto &block : local.neighbor_jacobian)
@@ -898,13 +801,7 @@ namespace DiFfRG
 
         uint n_q = 0, n_q_face = 0;
         DiFfRG::internal::ColoredCells<dim> cells;
-        /// Boundary faces in cell order; those of cell k are [boundary_begin[k], boundary_begin[k + 1]).
-        std::vector<std::pair<typename DoFHandler<dim>::active_cell_iterator, uint>> boundary_faces;
-        std::vector<size_t> boundary_begin;
-        /// Interior faces; those of owned cell k are face_refs[face_ref_begin[k] .. face_ref_begin[k + 1]).
-        std::vector<InteriorFace> faces;
-        std::vector<FaceRef> face_refs;
-        std::vector<size_t> face_ref_begin;
+        DiFfRG::internal::FaceTopology<dim> topology;
         std::unique_ptr<tbb::enumerable_thread_specific<CellScratch>> scratch;
         std::vector<LocalData> local_buffer;
 
@@ -912,10 +809,10 @@ namespace DiFfRG
         std::array<Batch, 2> face_batch;
         std::vector<Tensor<1, dim>> boundary_normals, face_normals;
         BatchOutput<dim, NumberType, n_fe> cell_result, boundary_result, face_result;
-        std::vector<PointJacobian<dim, n_fe, n_extr>> cell_jacobians, boundary_jacobians;
-        std::vector<FaceJacobian<dim, n_fe, n_extr>> face_jacobians;
-        SeedStackWorkspace<dim, n_fe, n_extr, VectorType> cell_workspace, boundary_workspace;
-        SeedStackWorkspace<dim, n_fe, n_extr, VectorType, 2> face_workspace;
+        std::vector<PointJacobian<dim, n_fe, n_fe, n_extr>> cell_jacobians, boundary_jacobians;
+        std::vector<FaceJacobian<dim, n_fe, n_fe, n_extr>> face_jacobians;
+        SeedStackWorkspace<Batch, n_fe> cell_workspace, boundary_workspace;
+        SeedStackWorkspace<Batch, n_fe, 2> face_workspace;
 
         PhaseTimes residual_times, jacobian_times;
       };

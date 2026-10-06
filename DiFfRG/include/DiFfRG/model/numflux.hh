@@ -80,7 +80,8 @@ namespace DiFfRG
         using namespace autodiff;
         using NT = typename Batch::number_type;
         constexpr int dim = Batch::dim;
-        constexpr size_t n_fe = Batch::n_fe_functions;
+        // The FE functions; under LDG the batch also holds the LDG levels after them.
+        constexpr size_t n_fe = Out::n_components;
         // Block 0: trace s, block 1: trace n, block 2 + 2c (3 + 2c): trace s (n) with component c perturbed.
         constexpr size_t n_blocks = 2 + 2 * n_fe;
         const size_t n = batch_s.size();
@@ -184,6 +185,40 @@ namespace DiFfRG
         for (uint i = 0; i < Components::count_fe_functions(dependent); ++i)
           NF[i][Dirs::value[i]] = F[UD::value[i]][i][Dirs::value[i]];
       }
+
+      /// The batched ldg_numflux: ldg_flux_source_batch on both traces, then the same upwind selection per point.
+      template <uint dependent, typename Out, typename Normals, typename Batch>
+      void ldg_numflux_batch(Out &out, const Normals &normals, const Batch &batch_s, const Batch &batch_n) const
+      {
+        static_assert(dependent >= 1, "ldg_numflux requires dependent >= 1 (use numflux for dependent == 0).");
+        using Dirs = typename C<dependent - 1>::template value<0>;
+        using UD = typename C<dependent - 1>::template value<1>;
+        constexpr int dim = Batch::dim;
+        constexpr size_t n_out = Out::n_components;
+        static_assert(Dirs::size == UD::size && UD::size >= n_out,
+                      "LDG numflux: FlowDirections::size and UpDown::size must both be >= count_fe_functions(dependent).");
+
+        const size_t n = batch_s.size();
+        BatchOutput<dim, typename Batch::number_type, n_out> F_s, F_n;
+        F_s.reinit(n, Term::flux);
+        F_n.reinit(n, Term::flux);
+        asImp().template ldg_flux_source_batch<dependent>(F_s, batch_s);
+        asImp().template ldg_flux_source_batch<dependent>(F_n, batch_n);
+
+        Tensor<1, dim> t;
+        for (int d = 0; d < dim; ++d)
+          t[d] = -1.;
+        tbb::parallel_for(tbb::blocked_range<size_t>(0, n), [&](const tbb::blocked_range<size_t> &r) {
+          for (size_t i = r.begin(); i != r.end(); ++i) {
+            // As in ldg_numflux: F[0] is the flux from the right, F[1] the one from the left.
+            const bool normal_points_left = scalar_product(t, normals[i]) >= 0;
+            const std::array<const BatchOutput<dim, typename Batch::number_type, n_out> *, 2> F{
+                {normal_points_left ? &F_s : &F_n, normal_points_left ? &F_n : &F_s}};
+            for (uint c = 0; c < n_out; ++c)
+              out.flux(c, Dirs::value[c])[i] = F[UD::value[c]]->flux(c, Dirs::value[c])[i];
+          }
+        });
+      }
     };
 
     template <typename Model> class NoNumFlux
@@ -238,6 +273,13 @@ namespace DiFfRG
                       "Internal error: template parameter M must be the same as Model. "
                       "Do not explicitly specify the M template parameter.");
         asImp().template ldg_flux<dependent>(BNF, p, u);
+      }
+
+      /// Batched ldg_boundary_numflux: the model's ldg_flux_source_batch, which is asked for the flux only.
+      template <uint dependent, typename Out, typename Normals, typename Batch>
+      void ldg_boundary_numflux_batch(Out &out, const Normals & /*normals*/, const Batch &batch) const
+      {
+        asImp().template ldg_flux_source_batch<dependent>(out, batch);
       }
     };
   } // namespace def

@@ -11,7 +11,7 @@ using namespace DiFfRG;
 #include <sstream>
 
 /**
- * Times residual() and jacobian() of the ONfiniteT assembly (--assembler cg or ddg) for one configuration of
+ * Times residual() and jacobian() of the ONfiniteT assembly (--assembler cg, ddg or ldg) for one configuration of
  * the flux:
  *   B0  -- per-point flux with the TBB integrator (AbstractModel's default evaluate_batch)
  *   B1  -- evaluate_batch with one map_points call on TBB
@@ -38,6 +38,7 @@ namespace
 
   template <typename Model> using CGDiscretization = CG::Discretization<Model, RectangularMesh<Model::dim>>;
   template <typename Model> using DGDiscretization = DG::Discretization<Model, RectangularMesh<Model::dim>>;
+  template <typename Model> using LDGDiscretization = LDG::Discretization<Model, RectangularMeshSerial<Model::dim>>;
 
   double median(std::vector<double> v)
   {
@@ -67,7 +68,7 @@ namespace
     model.integrator().integrator.set_map_points_policy(parse_policy(opt.policy));
     model.integrator().integrator_AD.set_map_points_policy(parse_policy(opt.policy));
 
-    RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(config)};
+    typename Discretization::Mesh mesh{Config::ConfigurationMesh<dim>(config)};
     Discretization discretization(mesh, config);
     Assembler assembler(discretization, model, config);
 
@@ -171,24 +172,27 @@ int main(int argc, char *argv[])
   config.set_uint("/output/verbosity", 0);
 
   using namespace ON_batched;
-  const auto run_config = [&]<template <typename> typename D, template <typename> typename A>() {
+  const auto run_config = [&]<template <Backend, bool> typename M, template <typename> typename D,
+                               template <typename> typename A>() {
     if (opt.config == "B0")
-      run<Model<Backend::TBB, false>, D, A>(opt, config);
+      run<M<Backend::TBB, false>, D, A>(opt, config);
     else if (opt.config == "B1")
-      run<Model<Backend::TBB>, D, A>(opt, config);
+      run<M<Backend::TBB, true>, D, A>(opt, config);
     else if (opt.config == "G64")
-      run<Model<Backend::GPU>, D, A>(opt, config);
+      run<M<Backend::GPU, true>, D, A>(opt, config);
     else if (opt.config == "G32")
-      run<Model<Backend::GPU_float>, D, A>(opt, config);
+      run<M<Backend::GPU_float, true>, D, A>(opt, config);
     else
       return false;
     return true;
   };
   bool known = false;
   if (opt.assembler == "cg")
-    known = run_config.template operator()<CGDiscretization, CG::Assembler>();
+    known = run_config.template operator()<Model, CGDiscretization, CG::Assembler>();
   else if (opt.assembler == "ddg")
-    known = run_config.template operator()<DGDiscretization, dDG::Assembler>();
+    known = run_config.template operator()<Model, DGDiscretization, dDG::Assembler>();
+  else if (opt.assembler == "ldg")
+    known = run_config.template operator()<ModelLDG, LDGDiscretization, LDG::Assembler>();
   if (!known) {
     std::cerr << "Unknown --assembler " << opt.assembler << " or --config " << opt.config << std::endl;
     return 1;

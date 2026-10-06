@@ -242,7 +242,7 @@ namespace DiFfRG
 
       /**
        * @brief The flux, source and/or diffusion flux at all points of a batch at once; this is what the
-       * batched assemblers (CG, DG, dDG) call.
+       * batched assemblers (CG, DG, dDG, and LDG for its main level) call.
        *
        * The assembler requests only the terms it uses (`out.requested(Term::flux)` etc.): fluxes at
        * faces, flux and source at cell points. The standard implementation evaluates the requested
@@ -257,7 +257,8 @@ namespace DiFfRG
        * zero on entry; only requested terms exist.
        * @param batch the solution at the points, a PointBatch: columns `values(c)`, `derivatives(c, d)`,
        * `hessians(c, d1, d2)`, `coordinates(d)` (each a PointArray, directly usable as a per-point argument
-       * of map_points()), plus `extractors()`, `variables()`, `size()`, and `x(i)`, `cell_width(i)`.
+       * of map_points()), plus `extractors()`, `variables()`, `size()`, and `x(i)`, `cell_width(i)`. Under LDG it
+       * is an LDGPointBatch: values only, and `ldg_values(k, c)` for component c of level k.
        *
        * @note Set `static constexpr bool batch_reads_hessians = false` (or `batch_reads_derivatives`) in
        * the model when no term reads them: the assembler then skips computing them. DG never gathers them.
@@ -451,6 +452,20 @@ namespace DiFfRG
       void ldg_source([[maybe_unused]] std::array<NumberType, n_fe_functions_dep> &s,
                       [[maybe_unused]] const Point<dim> &x, [[maybe_unused]] const Vector &u) const
       {
+      }
+
+      /**
+       * @brief LDG level `dependent` at all quadrature points of a batch of level dependent - 1 at once: the
+       * batched counterpart of ldg_flux and ldg_source, which the LDG assembler calls.
+       *
+       * The standard implementation evaluates the requested per-point ldg_flux / ldg_source (see
+       * `out.requested(Term::...)`) in one flat parallel loop. Override it to evaluate them for all points in one
+       * go. `batch.values(c)` is component c of level dependent - 1, a PointArray over all points; `out.flux(c, d)`
+       * and `out.source(c)` are the columns of component c of level dependent.
+       */
+      template <uint dependent, typename Out, typename Batch> void ldg_flux_source_batch(Out &out, const Batch &batch) const
+      {
+        DiFfRG::internal::ldg_evaluate_per_point<dependent>(asImp(), out, batch);
       }
 
       template <int dim, typename NumberType, typename Solutions_s, typename Solutions_n>

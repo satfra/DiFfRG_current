@@ -625,8 +625,8 @@ namespace DiFfRG
       Batch cell_batch, face_batch;
       std::vector<Tensor<1, dim>> face_normals;
       BatchOutput<dim, NumberType, n_fe> cell_result, face_result;
-      std::vector<PointJacobian<dim, n_fe, n_extr>> cell_jacobians, face_jacobians;
-      SeedStackWorkspace<dim, n_fe, n_extr, VectorType> cell_workspace, face_workspace;
+      std::vector<PointJacobian<dim, n_fe, n_fe, n_extr>> cell_jacobians, face_jacobians;
+      SeedStackWorkspace<Batch, n_fe> cell_workspace, face_workspace;
 
       PhaseTimes residual_times, jacobian_times;
     };
