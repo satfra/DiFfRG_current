@@ -43,6 +43,15 @@ namespace DiFfRG
   constexpr Term operator|(const Term a, const Term b) { return Term(unsigned(a) | unsigned(b)); }
   /// Whether the set of terms @p set contains @p t.
   constexpr bool contains(const Term set, const Term t) { return (unsigned(set) & unsigned(t)) != 0; }
+  /// The terms a batch's per-point tuple can be evaluated for: Batch::terms if it declares them (the KT traces
+  /// carry the tuple of one term only), otherwise all.
+  template <typename Batch> constexpr Term batch_terms()
+  {
+    if constexpr (requires { Batch::terms; })
+      return Batch::terms;
+    else
+      return Term::flux | Term::source | Term::diffusion_flux;
+  }
 
   namespace internal
   {
@@ -106,6 +115,12 @@ namespace DiFfRG
     {
       m_extractors = &extractors;
       m_variables = &variables;
+    }
+    /// Forget the shared extractors and variables, e.g. when the call that owns them returns.
+    void clear_shared()
+    {
+      m_extractors = nullptr;
+      m_variables = nullptr;
     }
 
     size_t size() const { return n; }
@@ -422,7 +437,8 @@ namespace DiFfRG
     static constexpr size_t n_extr = std::tuple_size_v<typename Batch::extractors_type>;
     std::array<ADBatch, n_sides> batches;
     BatchOutput<Batch::dim, autodiff::real, n_out> out;
-    std::array<autodiff::real, n_extr> extractors;
+    /// AD numbers, unless the batch freezes its extractors (rebind keeps them double).
+    typename ADBatch::extractors_type extractors;
     std::vector<dealii::Tensor<1, Batch::dim>> normals;
   };
 
@@ -502,22 +518,26 @@ namespace DiFfRG
       using NT = typename Batch::number_type;
       constexpr int dim = Batch::dim;
       constexpr size_t n_out = Out::n_components;
+      constexpr Term available = batch_terms<Batch>();
       for_each_point(batch, [&](const size_t i, const auto &x, const auto &sol) {
-        if (out.requested(Term::flux)) {
-          std::array<dealii::Tensor<1, dim, NT>, n_out> F{};
-          model.flux(F, x, sol);
-          out.store_flux(i, F);
-        }
-        if (out.requested(Term::source)) {
-          std::array<NT, n_out> S{};
-          model.source(S, x, sol);
-          out.store_source(i, S);
-        }
-        if (out.requested(Term::diffusion_flux)) {
-          std::array<dealii::Tensor<1, dim, NT>, n_out> D{};
-          model.diffusion_flux(D, x, sol);
-          out.store_diffusion_flux(i, D);
-        }
+        if constexpr (contains(available, Term::flux))
+          if (out.requested(Term::flux)) {
+            std::array<dealii::Tensor<1, dim, NT>, n_out> F{};
+            model.flux(F, x, sol);
+            out.store_flux(i, F);
+          }
+        if constexpr (contains(available, Term::source))
+          if (out.requested(Term::source)) {
+            std::array<NT, n_out> S{};
+            model.source(S, x, sol);
+            out.store_source(i, S);
+          }
+        if constexpr (contains(available, Term::diffusion_flux))
+          if (out.requested(Term::diffusion_flux)) {
+            std::array<dealii::Tensor<1, dim, NT>, n_out> D{};
+            model.diffusion_flux(D, x, sol);
+            out.store_diffusion_flux(i, D);
+          }
       });
     }
 
@@ -682,11 +702,14 @@ namespace DiFfRG
      * @param jacobian_at callable(i, side) -> PointJacobian & of point i with respect to trace `side`
      * @param batches the n_sides traces of the points (one for cells and boundary faces, two for interior faces)
      * @param terms the terms evaluate produces; only those are read
+     * @param extractor_seeds whether to differentiate with respect to the extractors, too; must be false for a
+     * batch that freezes its extractors (Batch::rebind keeps them double, e.g. the KT TraceBatch)
      */
     template <size_t n_out, size_t n_sides, typename Evaluate, typename JacobianAt, typename Batch>
     void seed_stacked_jacobian(const Evaluate &evaluate, const JacobianAt &jacobian_at,
                                const std::array<const Batch *, n_sides> &batches, const size_t max_stacked,
-                               const Term terms, SeedStackWorkspace<Batch, n_out, n_sides> &workspace)
+                               const Term terms, SeedStackWorkspace<Batch, n_out, n_sides> &workspace,
+                               const bool extractor_seeds = true)
     {
       constexpr int dim = Batch::dim;
       constexpr size_t n_in = Batch::n_fe_functions;
@@ -779,27 +802,32 @@ namespace DiFfRG
         });
       }
 
-      for (size_t e = 0; e < n_extr; ++e) {
-        prepare(1);
-        tbb::parallel_for(tbb::blocked_range<size_t>(0, n), [&](const tbb::blocked_range<size_t> &r) {
-          for (size_t i = r.begin(); i != r.end(); ++i)
-            copy_block_point(0, i);
-        });
-        seed_direction(ad_extractors[e]);
-        evaluate(ad_out, std::as_const(ad_batches), 1);
-        clear_direction(ad_extractors[e]);
-        tbb::parallel_for(tbb::blocked_range<size_t>(0, n), [&](const tbb::blocked_range<size_t> &r) {
-          for (size_t i = r.begin(); i != r.end(); ++i) {
-            auto &Ji = jacobian_at(i, 0);
-            for (uint ci = 0; ci < n_out; ++ci) {
-              if (with_flux)
-                for (int d = 0; d < dim; ++d)
-                  Ji.j_extr_flux(ci, e)[d] = along_direction(ad_out.flux(ci, d)[i]);
-              if (with_source) Ji.j_extr_source(ci, e) = along_direction(ad_out.source(ci)[i]);
+      constexpr bool seedable_extractors =
+          std::is_same_v<std::remove_cvref_t<decltype(ad_extractors[0])>, autodiff::real>;
+      if (extractor_seeds && n_extr > 0 && !seedable_extractors)
+        throw std::logic_error("seed_stacked_jacobian: the batch freezes its extractors; they cannot be seeded.");
+      if constexpr (seedable_extractors)
+        for (size_t e = 0; extractor_seeds && e < n_extr; ++e) {
+          prepare(1);
+          tbb::parallel_for(tbb::blocked_range<size_t>(0, n), [&](const tbb::blocked_range<size_t> &r) {
+            for (size_t i = r.begin(); i != r.end(); ++i)
+              copy_block_point(0, i);
+          });
+          seed_direction(ad_extractors[e]);
+          evaluate(ad_out, std::as_const(ad_batches), 1);
+          clear_direction(ad_extractors[e]);
+          tbb::parallel_for(tbb::blocked_range<size_t>(0, n), [&](const tbb::blocked_range<size_t> &r) {
+            for (size_t i = r.begin(); i != r.end(); ++i) {
+              auto &Ji = jacobian_at(i, 0);
+              for (uint ci = 0; ci < n_out; ++ci) {
+                if (with_flux)
+                  for (int d = 0; d < dim; ++d)
+                    Ji.j_extr_flux(ci, e)[d] = along_direction(ad_out.flux(ci, d)[i]);
+                if (with_source) Ji.j_extr_source(ci, e) = along_direction(ad_out.source(ci)[i]);
+              }
             }
-          }
-        });
-      }
+          });
+        }
     }
 
     /// n_blocks copies of @p normals, one per block of a seed-stacked AD batch.

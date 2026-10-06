@@ -5,6 +5,10 @@
 #include "./V/V.hh"
 #include "./V_GPU/V_GPU.hh"
 #include "./V_GPU_f/V_GPU_f.hh"
+#include "./V_pion/V_pion.hh"
+#include "./V_pion_GPU/V_pion_GPU.hh"
+#include "./V_sigma/V_sigma.hh"
+#include "./V_sigma_GPU/V_sigma_GPU.hh"
 
 class ONFiniteTBatchedFlows
 {
@@ -31,4 +35,12 @@ class ONFiniteTBatchedFlows
   V_GPU_integrator V_GPU;
 
   V_GPU_f_integrator V_GPU_f;
+
+  V_pion_integrator V_pion;
+
+  V_pion_GPU_integrator V_pion_GPU;
+
+  V_sigma_integrator V_sigma;
+
+  V_sigma_GPU_integrator V_sigma_GPU;
 };

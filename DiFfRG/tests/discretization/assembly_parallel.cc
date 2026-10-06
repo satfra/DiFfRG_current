@@ -175,10 +175,9 @@ namespace
 
   // The converse half of the rule above: a partitioned mesh must bring the distributed pair with
   // it, so ParallelMesh<dim> alone is a complete spelling.
-  static_assert(
-      std::is_same_v<typename CG::Discretization<Testing::ModelBurgers<1>, ParallelMesh<1>>::VectorType,
-                     dealii::PETScWrappers::MPI::Vector>,
-      "A partitioned mesh must default to distributed linear algebra.");
+  static_assert(std::is_same_v<typename CG::Discretization<Testing::ModelBurgers<1>, ParallelMesh<1>>::VectorType,
+                               dealii::PETScWrappers::MPI::Vector>,
+                "A partitioned mesh must default to distributed linear algebra.");
 
   /**
    * @brief Assemble one residual serially and one distributed, and require them to agree.
@@ -396,6 +395,43 @@ TEST_CASE("KT residual is unchanged by distribution", "[discretization][kt][mpi]
       model, make_json());
 }
 
+TEST_CASE("KT jacobian is unchanged by distribution", "[discretization][kt][mpi]")
+{
+  DiFfRG::Init();
+  constexpr uint dim = 1;
+  using Model = Testing::ModelBurgersKT<dim>;
+  using SerialDisc = FV::Discretization<Model, RectangularMeshSerial<dim>>;
+  using ParallelDisc = FV::Discretization<Model, ParallelMesh<dim>>;
+  Model model(nontrivial_parameters());
+  require_distributed_jacobian_matches_serial<FV::KurganovTadmor::Assembler<SerialDisc, Model>, SerialDisc,
+                                              FV::KurganovTadmor::Assembler<ParallelDisc, Model>, ParallelDisc,
+                                              FV::FlowingVariables<SerialDisc>, FV::FlowingVariables<ParallelDisc>>(
+      model, make_json());
+}
+
+// In 2D the partition boundaries run along many faces, some of them described from a cell another rank owns.
+TEST_CASE("KT residual and jacobian are unchanged by distribution in 2D", "[discretization][kt][mpi]")
+{
+  DiFfRG::Init();
+  constexpr uint dim = 2;
+  using Model = Testing::ModelBurgers2DKT;
+  using SerialDisc = FV::Discretization<Model, RectangularMeshSerial<dim>>;
+  using ParallelDisc = FV::Discretization<Model, ParallelMesh<dim>>;
+  using SerialAssembler = FV::KurganovTadmor::Assembler<SerialDisc, Model>;
+  using ParallelAssembler = FV::KurganovTadmor::Assembler<ParallelDisc, Model>;
+  auto prm = nontrivial_parameters();
+  prm.initial_x2 = {{0.3, 0., 0.}};
+  Model model(prm);
+  ConfigTree json = make_json();
+  json.set_string("/discretization/grid/x_grid", "0:0.125:1");
+  json.set_string("/discretization/grid/y_grid", "0:0.125:1");
+  require_distributed_residual_matches_serial<SerialAssembler, SerialDisc, ParallelAssembler, ParallelDisc,
+                                              FV::FlowingVariables<SerialDisc>, FV::FlowingVariables<ParallelDisc>>(
+      model, json);
+  require_distributed_jacobian_matches_serial<SerialAssembler, SerialDisc, ParallelAssembler, ParallelDisc,
+                                              FV::FlowingVariables<SerialDisc>, FV::FlowingVariables<ParallelDisc>>(
+      model, json);
+}
 
 TEST_CASE("HAdaptivity transfers the solution identically under distribution", "[discretization][adaptivity][mpi]")
 {

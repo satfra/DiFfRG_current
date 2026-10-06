@@ -97,7 +97,7 @@ namespace DiFfRG
           return false;
         else {
           atol.reinit(dof_handler.n_dofs());
-          const Quadrature<dim> support(fe.get_unit_support_points());
+          const dealii::Quadrature<dim> support(fe.get_unit_support_points());
           FEValues<dim> fe_v(mapping, fe, support,
                              update_values | update_gradients | update_hessians | update_quadrature_points);
           std::vector<Vector<NumberType>> vals(support.size(), Vector<NumberType>(n));

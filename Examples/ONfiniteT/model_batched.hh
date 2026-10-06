@@ -1,5 +1,12 @@
 #pragma once
 
+// The KT headers come before DiFfRG.hh, see KT.cc.
+#include <DiFfRG/discretization/FV/assembler/KurganovTadmor.hh>
+#include <DiFfRG/discretization/FV/discretization.hh>
+#include <DiFfRG/discretization/FV/limiter/minmod_limiter.hh>
+#include <DiFfRG/discretization/FV/reconstructor/advection/tvd_reconstructor.hh>
+#include <DiFfRG/model/fv_boundaries.hh>
+
 #include <DiFfRG/DiFfRG.hh>
 using namespace DiFfRG;
 
@@ -89,6 +96,8 @@ namespace ON_batched
         def::AbstractModel<Model, Components>::evaluate_batch(out, batch);
         return;
       }
+      // The flux is the only term; the source is zero and never computed.
+      if (!out.requested(Term::flux)) return;
       using NT = typename Batch::number_type;
       const size_t n = batch.size();
       const auto m2Pi = batch.values(idxf("m2"));
@@ -208,6 +217,8 @@ namespace ON_batched
         def::AbstractModel<ModelLDG, Components>::evaluate_batch(out, batch);
         return;
       }
+      // The flux is the only term; the source is zero and never computed.
+      if (!out.requested(Term::flux)) return;
       using NT = typename Batch::number_type;
       const size_t n = batch.size();
       const auto m2Pi = batch.values(idxf("m2"));
@@ -246,6 +257,123 @@ namespace ON_batched
         return flow_equations.V_GPU;
       else
         return flow_equations.V_GPU_f;
+    }
+  };
+
+  struct KTParameters {
+    KTParameters(const ConfigTree &config)
+        : Lambda(config.get_double("/physical/Lambda")), N(config.get_double("/physical/N")), T(config.get_double("/physical/T")), m2(config.get_double("/physical/m2")),
+          lambda(config.get_double("/physical/lambda"))
+    {
+    }
+    double Lambda, N, T, m2, lambda;
+  };
+
+  /**
+   * The model of model_KT.hh (parameter_KT.toml) with a batched flux: the advection flux (pion loop) and the
+   * diffusion flux (sigma loop) at all face traces of the KT assembler are one map_points() call each. Same
+   * template parameters as Model; the GPU backends run both integrals in double.
+   */
+  template <Backend backend = Backend::TBB, bool batched = true>
+  class ModelKT : public def::AbstractModel<ModelKT<backend, batched>, Components>,
+                  public def::fRG,
+                  public def::RhoSymmetricLinearExtrapolationBoundaries<ModelKT<backend, batched>>,
+                  public def::AD<ModelKT<backend, batched>>
+  {
+  public:
+    static constexpr uint dim = 1;
+
+  protected:
+    const KTParameters prm;
+    mutable ONFiniteTBatchedFlows flow_equations;
+
+  public:
+    ModelKT(const ConfigTree &config) : def::fRG(config.get_double("/physical/Lambda")), prm(config), flow_equations(config)
+    {
+      flow_equations.set_k(Lambda);
+      flow_equations.set_T(prm.T);
+    }
+
+    template <typename Vector> void initial_condition(const Point<dim> &pos, Vector &values) const
+    {
+      values[idxf("m2")] = prm.m2 + prm.lambda / 2. * pos[0];
+    }
+
+    void set_time(double t_)
+    {
+      t = t_;
+      k = std::exp(-t) * prm.Lambda;
+      flow_equations.set_k(k);
+    }
+
+    /// Advection flux: (N-1) times the pion loop, which depends on m^2 only.
+    template <typename NT, typename Solution> void flux(std::array<Tensor<1, dim, NT>, Components::count_fe_functions(0)> &F, const Point<dim> & /*x*/, const Solution &sol) const
+    {
+      NT pion_loop;
+      flow_equations.V_pion.get(pion_loop, k, prm.N, prm.T, get<0>(sol)[idxf("m2")]);
+      F[idxf("m2")][0] = (prm.N - 1.) * pion_loop;
+    }
+
+    /// Diffusion flux: the sigma loop, m^2_sigma = m^2 + 2 rho dm^2/drho.
+    template <typename NT, typename Solution> void diffusion_flux(std::array<Tensor<1, dim, NT>, Components::count_fe_functions(0)> &F, const Point<dim> &x, const Solution &sol) const
+    {
+      const auto m2Sigma = get<0>(sol)[idxf("m2")] + 2. * x[0] * get<1>(sol)[idxf("m2")][0];
+      NT sigma_loop;
+      flow_equations.V_sigma.get(sigma_loop, k, prm.N, prm.T, m2Sigma);
+      F[idxf("m2")][0] = sigma_loop;
+    }
+
+    template <typename Out, typename Batch> void evaluate_batch(Out &out, const Batch &batch) const
+    {
+      if constexpr (!batched) {
+        def::AbstractModel<ModelKT, Components>::evaluate_batch(out, batch);
+        return;
+      }
+      using NT = typename Batch::number_type;
+      const size_t n = batch.size();
+      const auto m2 = batch.values(idxf("m2"));
+      if (out.requested(Term::flux)) {
+        pion_integrator().map_points(out.flux(idxf("m2"), 0), n, k, prm.N, prm.T, m2);
+        for (size_t i = 0; i < n; ++i)
+          out.flux(idxf("m2"), 0)[i] *= prm.N - 1.;
+      }
+      if (out.requested(Term::diffusion_flux)) {
+        const auto dm2 = batch.derivatives(idxf("m2"), 0);
+        const auto rho = batch.coordinates(0);
+        std::vector<NT> m2Sigma(n);
+        for (size_t i = 0; i < n; ++i)
+          m2Sigma[i] = m2.data[i] + 2. * rho.data[i] * dm2.data[i];
+        sigma_integrator().map_points(out.diffusion_flux(idxf("m2"), 0), n, k, prm.N, prm.T, PointArray<NT>{m2Sigma.data(), n});
+      }
+    }
+
+    template <int dim, typename DataOut, typename Solutions> void readouts(DataOut &output, const Point<dim> &x, const Solutions &sol) const
+    {
+      const double rho = x[0];
+      const double m2Pi = get<"fe_functions">(sol)[idxf("m2")];
+      const double m2Sigma = m2Pi + 2. * rho * get<"fe_derivatives">(sol)[idxf("m2")][0];
+      auto out_file = output.table("data.csv");
+      out_file.set_Lambda(Lambda);
+      out_file.value("sigma [GeV]", std::sqrt(2. * rho));
+      out_file.value("m^2_{pi} [GeV^2]", m2Pi);
+      out_file.value("m^2_{sigma} [GeV^2]", m2Sigma);
+      out_file.value("m_{pi} [GeV]", m2Pi > 0. ? std::sqrt(m2Pi) : 0.);
+      out_file.value("m_{sigma} [GeV]", m2Sigma > 0. ? std::sqrt(m2Sigma) : 0.);
+    }
+
+    auto &pion_integrator() const
+    {
+      if constexpr (backend == Backend::TBB)
+        return flow_equations.V_pion;
+      else
+        return flow_equations.V_pion_GPU;
+    }
+    auto &sigma_integrator() const
+    {
+      if constexpr (backend == Backend::TBB)
+        return flow_equations.V_sigma;
+      else
+        return flow_equations.V_sigma_GPU;
     }
   };
 } // namespace ON_batched

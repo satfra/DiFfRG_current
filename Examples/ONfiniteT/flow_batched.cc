@@ -4,8 +4,8 @@ using namespace DiFfRG;
 #include "model_batched.hh"
 
 /**
- * CG.cc / dDG.cc / LDG.cc with a batched flux. /batched/assembler is cg, ddg or ldg; /batched/backend selects
- * how the model evaluates the flux:
+ * CG.cc / dDG.cc / LDG.cc / KT.cc with a batched flux. /batched/assembler is cg, ddg, ldg or kt (the latter with
+ * parameter_KT.toml); /batched/backend selects how the model evaluates the flux:
  *   per_point -- per-point flux with the TBB integrator (AbstractModel's default evaluate_batch)
  *   tbb       -- one map_points call with the TBB integrator
  *   gpu       -- one map_points call with the GPU integrator in double precision
@@ -22,10 +22,22 @@ template <typename Model, typename Discretization, typename Assembler> int run(c
   const auto log = data_out.report_port();
   Discretization discretization(mesh, config, log);
   Assembler assembler(discretization, model, config);
-  HAdaptivity mesh_adaptor(assembler, config);
+  constexpr bool is_kt = requires { typename Assembler::Reconstructor; };
+  // KT requires a fixed rectangular mesh; no h-adaptivity.
+  auto mesh_adaptor = [&] {
+    if constexpr (is_kt)
+      return NoAdaptivity(assembler);
+    else
+      return HAdaptivity(assembler, config);
+  }();
   TimeStepper time_stepper(config, assembler, data_out, mesh_adaptor);
 
-  FE::FlowingVariables initial_condition(discretization);
+  auto initial_condition = [&] {
+    if constexpr (is_kt)
+      return FV::FlowingVariables(discretization);
+    else
+      return FE::FlowingVariables(discretization);
+  }();
   initial_condition.interpolate(model);
 
   Timer timer;
@@ -53,9 +65,13 @@ int main(int argc, char *argv[])
     using CGD = CG::Discretization<M, RectangularMesh<M::dim>>;
     using DGD = DG::Discretization<M, RectangularMesh<M::dim>>;
     using LDGD = LDG::Discretization<ML, RectangularMeshSerial<ML::dim>>;
+    using MK = ModelKT<b, batched>;
+    using KTD = FV::Discretization<MK, RectangularMesh<MK::dim>>;
+    using KTA = FV::KurganovTadmor::Assembler<KTD, MK, def::TVDReconstructor<1, def::MinModLimiter, double>>;
     if (assembler == "cg") return run<M, CGD, CG::Assembler<CGD>>(config);
     if (assembler == "ddg") return run<M, DGD, dDG::Assembler<DGD>>(config);
     if (assembler == "ldg") return run<ML, LDGD, LDG::Assembler<LDGD>>(config);
+    if (assembler == "kt") return run<MK, KTD, KTA>(config);
     std::cerr << "Unknown /batched/assembler: " << assembler << std::endl;
     return 1;
   };

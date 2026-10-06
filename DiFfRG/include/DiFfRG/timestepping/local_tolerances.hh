@@ -3,8 +3,13 @@
 // DiFfRG
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 
+// external libraries
+#include <deal.II/base/mpi.h>
+#include <deal.II/lac/vector_operation.h>
+
 // standard library
 #include <algorithm>
+#include <limits>
 
 namespace DiFfRG
 {
@@ -44,8 +49,15 @@ namespace DiFfRG
       if (!active || !(refresh > 1.)) return false;
       compute(candidate, solution);
       bool drifted = candidate.size() != atol.size();
-      for (uint i = 0; !drifted && i < atol.size(); ++i)
-        drifted = candidate[i] * refresh < atol[i];
+      if (!drifted)
+        for (const auto i : atol.locally_owned_elements())
+          if (candidate(i) * refresh < atol(i)) {
+            drifted = true;
+            break;
+          }
+      // Every rank has to take the same decision: the stepper restarts IDA collectively.
+      if constexpr (requires { atol.get_mpi_communicator(); })
+        drifted = dealii::Utilities::MPI::max(int(drifted), atol.get_mpi_communicator()) > 0;
       if (drifted) {
         atol = candidate;
         ++n_refreshes;
@@ -56,16 +68,36 @@ namespace DiFfRG
     bool is_active() const { return active; }
     uint refreshes() const { return n_refreshes; }
     VectorType &get() { return atol; }
-    double min() const { return atol.size() ? *std::min_element(atol.begin(), atol.end()) : abs_tol; }
-    double max() const { return atol.size() ? *std::max_element(atol.begin(), atol.end()) : abs_tol; }
+    double min() const
+    {
+      return extreme([](double a, double b) { return std::min(a, b); }, true);
+    }
+    double max() const
+    {
+      return extreme([](double a, double b) { return std::max(a, b); }, false);
+    }
 
   private:
+    /// The smallest (largest) tolerance over all ranks.
+    template <typename Pick> double extreme(const Pick &pick, const bool smallest) const
+    {
+      if (atol.size() == 0) return abs_tol;
+      double result = smallest ? std::numeric_limits<double>::max() : std::numeric_limits<double>::lowest();
+      for (const auto i : atol.locally_owned_elements())
+        result = pick(result, double(atol(i)));
+      if constexpr (requires { atol.get_mpi_communicator(); })
+        result = smallest ? dealii::Utilities::MPI::min(result, atol.get_mpi_communicator())
+                          : dealii::Utilities::MPI::max(result, atol.get_mpi_communicator());
+      return result;
+    }
+
     bool compute(VectorType &out, const VectorType &solution) const
     {
       if (!assembler.local_abs_tolerances(out, solution, abs_tol, rel_tol)) return false;
       // IDA needs strictly positive tolerances
-      for (auto &x : out)
-        if (!(x > 0.)) x = abs_tol;
+      for (const auto i : out.locally_owned_elements())
+        if (!(out(i) > 0.)) out(i) = abs_tol;
+      out.compress(dealii::VectorOperation::insert);
       return true;
     }
 

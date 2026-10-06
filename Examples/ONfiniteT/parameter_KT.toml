@@ -32,3 +32,8 @@ hdf5 = true
 verbosity = 1
 folder = "./"
 name = "output"
+
+[batched]
+  # see flow_batched.cc; KT.cc ignores this section
+  assembler = "kt"
+  backend = "tbb"

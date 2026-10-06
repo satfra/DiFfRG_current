@@ -463,8 +463,8 @@ namespace DiFfRG
           {
             return update_values | update_gradients | update_hessians | update_quadrature_points | update_JxW_values;
           }
-          IndicatorScratch(const Mapping<dim> &mapping, const FiniteElement<dim> &fe, const Quadrature<dim> &q,
-                           const Quadrature<dim - 1> &q_face)
+          IndicatorScratch(const Mapping<dim> &mapping, const FiniteElement<dim> &fe, const dealii::Quadrature<dim> &q,
+                           const dealii::Quadrature<dim - 1> &q_face)
               : fe_values(mapping, fe, q, flags()),
                 fe_interface_values(mapping, fe, q_face, flags() | update_normal_vectors)
           {

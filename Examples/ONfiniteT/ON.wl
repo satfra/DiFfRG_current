@@ -159,12 +159,12 @@ UpdateFlows["ONFiniteTFlows"]
 
 
 (* ::Text:: *)
-(*The batched CG assembler evaluates the flux at all quadrature points in one map_points call. flows_batched holds the full flux for it on the CPU (TBB) and on the GPU, in double and in single precision.*)
+(*The batched assemblers evaluate the flux at all quadrature points in one map_points call. flows_batched holds the full flux for CG, dDG and LDG on the CPU (TBB) and on the GPU, in double and in single precision, and the two KT halves on the CPU and the GPU in double.*)
 
 
 (* ::Input::Initialization:: *)
 SetFlowName["flows_batched"];
-MakeVBatched[name_,device_,computeType_]:=MakeKernel[SafeFiniteTFunctions[flowV,T],
+MakeVBatched[expr_,name_,parameters_,device_,computeType_]:=MakeKernel[SafeFiniteTFunctions[expr,T],
 	"Name"->name,
 	"Integrator"->"Integrator_p2",
 	"d"->3,
@@ -172,10 +172,14 @@ MakeVBatched[name_,device_,computeType_]:=MakeKernel[SafeFiniteTFunctions[flowV,
 	"Device"->device,
 	"ComputeType"->computeType,
 	"MapPoints"->True,
-	"Parameters"->kernelParameterList,
+	"Parameters"->parameters,
 	"IntegrationVariables"->{"l1"}
 ];
-MakeVBatched["V","TBB","double"];
-MakeVBatched["V_GPU","GPU","double"];
-MakeVBatched["V_GPU_f","GPU","float"];
+MakeVBatched[flowV,"V",kernelParameterList,"TBB","double"];
+MakeVBatched[flowV,"V_GPU",kernelParameterList,"GPU","double"];
+MakeVBatched[flowV,"V_GPU_f",kernelParameterList,"GPU","float"];
+MakeVBatched[flowVPion,"V_pion",kernelParameterList[[{1,2,3,4}]],"TBB","double"];
+MakeVBatched[flowVSigma,"V_sigma",kernelParameterList[[{1,2,3,5}]],"TBB","double"];
+MakeVBatched[flowVPion,"V_pion_GPU",kernelParameterList[[{1,2,3,4}]],"GPU","double"];
+MakeVBatched[flowVSigma,"V_sigma_GPU",kernelParameterList[[{1,2,3,5}]],"GPU","double"];
 UpdateFlows["ONFiniteTBatchedFlows"]

@@ -11,15 +11,15 @@ using namespace DiFfRG;
 #include <sstream>
 
 /**
- * Times residual() and jacobian() of the ONfiniteT assembly (--assembler cg, ddg or ldg) for one configuration of
- * the flux:
+ * Times residual() and jacobian() of the ONfiniteT assembly (--assembler cg, ddg, ldg or kt) for one configuration
+ * of the flux:
  *   B0  -- per-point flux with the TBB integrator (AbstractModel's default evaluate_batch)
  *   B1  -- evaluate_batch with one map_points call on TBB
  *   G64 -- evaluate_batch with one map_points call on the GPU, double precision
  *   G32 -- evaluate_batch with one map_points call on the GPU, single precision
  *
  * Usage: bench_batched --config B1 --cells 1024 --xorder 32 [--assembler cg] [--reps 10] [--threads 0]
- *                      [--policy auto] [--parameters parameter.toml]
+ *                      [--policy auto] [--parameters parameter.toml] [--time 1]
  * Phase times are reported as 0 for an assembler that does not record them.
  * Prints one line "RESULT,<csv>" with the header given by --header.
  */
@@ -34,11 +34,15 @@ namespace
     uint threads = 0;
     std::string policy = "auto";
     std::string parameters = "parameter.toml";
+    double time = 1.;
   };
 
   template <typename Model> using CGDiscretization = CG::Discretization<Model, RectangularMesh<Model::dim>>;
   template <typename Model> using DGDiscretization = DG::Discretization<Model, RectangularMesh<Model::dim>>;
   template <typename Model> using LDGDiscretization = LDG::Discretization<Model, RectangularMeshSerial<Model::dim>>;
+  template <typename Model> using KTDiscretization = FV::Discretization<Model, RectangularMesh<Model::dim>>;
+  template <typename Discretization>
+  using KTAssembler = FV::KurganovTadmor::Assembler<Discretization, typename Discretization::Model, def::TVDReconstructor<1, def::MinModLimiter, double>>;
 
   double median(std::vector<double> v)
   {
@@ -53,8 +57,7 @@ namespace
     return MapPointsPolicy::automatic;
   }
 
-  template <typename Model, template <typename> typename Discretization_, template <typename> typename Assembler_>
-  void run(const Options &opt, const ConfigTree &config)
+  template <typename Model, template <typename> typename Discretization_, template <typename> typename Assembler_> void run(const Options &opt, const ConfigTree &config)
   {
     constexpr uint dim = Model::dim;
     using Discretization = Discretization_<Model>;
@@ -64,15 +67,30 @@ namespace
     using clock = std::chrono::steady_clock;
 
     Model model(config);
-    model.set_time(1.);
-    model.integrator().integrator.set_map_points_policy(parse_policy(opt.policy));
-    model.integrator().integrator_AD.set_map_points_policy(parse_policy(opt.policy));
+    model.set_time(opt.time);
+    // Every number type of every integral the model evaluates (the KT model has two, and its flux jacobian runs
+    // through the second-order AD integrator).
+    const auto set_policy = [&](auto &flow) {
+      flow.integrator.set_map_points_policy(parse_policy(opt.policy));
+      flow.integrator_AD.set_map_points_policy(parse_policy(opt.policy));
+      if constexpr (requires { flow.integrator_AD2; }) flow.integrator_AD2.set_map_points_policy(parse_policy(opt.policy));
+    };
+    if constexpr (requires { model.sigma_integrator(); }) {
+      set_policy(model.pion_integrator());
+      set_policy(model.sigma_integrator());
+    } else
+      set_policy(model.integrator());
 
     typename Discretization::Mesh mesh{Config::ConfigurationMesh<dim>(config)};
     Discretization discretization(mesh, config);
     Assembler assembler(discretization, model, config);
 
-    FE::FlowingVariables state(discretization);
+    auto state = [&] {
+      if constexpr (requires { typename Assembler::Reconstructor; })
+        return FV::FlowingVariables(discretization);
+      else
+        return FE::FlowingVariables(discretization);
+    }();
     state.interpolate(model);
     const VectorType &u = state.spatial_data();
     const VectorType u_dot(u);
@@ -109,8 +127,7 @@ namespace
     if constexpr (has_phases) {
       const auto &r = assembler.residual_phase_times();
       const auto &j = assembler.jacobian_phase_times();
-      phases = {r.gather / r.calls * 1e3,  r.evaluate / r.calls * 1e3, r.scatter / r.calls * 1e3,
-                j.gather / j.calls * 1e3,  j.evaluate / j.calls * 1e3, j.scatter / j.calls * 1e3};
+      phases = {r.gather / r.calls * 1e3, r.evaluate / r.calls * 1e3, r.scatter / r.calls * 1e3, j.gather / j.calls * 1e3, j.evaluate / j.calls * 1e3, j.scatter / j.calls * 1e3};
     }
 
     const size_t n_points = discretization.get_triangulation().n_active_cells() * (discretization.get_fe().degree + 1);
@@ -141,6 +158,8 @@ int main(int argc, char *argv[])
       opt.threads = std::stoul(value);
     else if (key == "--policy")
       opt.policy = value;
+    else if (key == "--time")
+      opt.time = std::stod(value);
     else if (key == "--assembler")
       opt.assembler = value;
     else if (key == "--parameters")
@@ -172,8 +191,7 @@ int main(int argc, char *argv[])
   config.set_uint("/output/verbosity", 0);
 
   using namespace ON_batched;
-  const auto run_config = [&]<template <Backend, bool> typename M, template <typename> typename D,
-                               template <typename> typename A>() {
+  const auto run_config = [&]<template <Backend, bool> typename M, template <typename> typename D, template <typename> typename A>() {
     if (opt.config == "B0")
       run<M<Backend::TBB, false>, D, A>(opt, config);
     else if (opt.config == "B1")
@@ -193,6 +211,8 @@ int main(int argc, char *argv[])
     known = run_config.template operator()<Model, DGDiscretization, dDG::Assembler>();
   else if (opt.assembler == "ldg")
     known = run_config.template operator()<ModelLDG, LDGDiscretization, LDG::Assembler>();
+  else if (opt.assembler == "kt")
+    known = run_config.template operator()<ModelKT, KTDiscretization, KTAssembler>();
   if (!known) {
     std::cerr << "Unknown --assembler " << opt.assembler << " or --config " << opt.config << std::endl;
     return 1;
