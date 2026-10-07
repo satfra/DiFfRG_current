@@ -241,27 +241,34 @@ namespace DiFfRG
       }
 
       /**
-       * @brief The flux, source and/or diffusion flux at all points of a batch at once; this is what the
-       * batched assemblers (CG, DG, dDG, and LDG for its main level) call.
+       * @brief The flux, source and/or diffusion flux at all points of a batch at once. Every assembler evaluates
+       * the model through this (CG, DG, dDG, the main level of LDG, and the face traces and cells of KT); see
+       * Tutorial 6.
        *
-       * The assembler requests only the terms it uses (`out.requested(Term::flux)` etc.): fluxes at
-       * faces, flux and source at cell points. The standard implementation evaluates the requested
-       * per-point callbacks (flux(), source(), diffusion_flux()) in one flat parallel loop over the batch.
-       * Override it to evaluate the expensive part, typically the momentum integrals, for all points in
-       * one go, e.g. with an integrator's map_points(), which also runs on the GPU; skip the terms that
-       * were not requested. A model that overrides it gets batched jacobians automatically through def::AD,
-       * and def::LLFFlux / def::FlowBoundaries evaluate the face fluxes through it.
+       * The assembler requests only the terms it uses (`out.requested(Term::flux)` etc.): fluxes at faces, flux
+       * and source at cell points; KT asks for one term per call (flux, diffusion_flux or source). The standard
+       * implementation evaluates the requested per-point callbacks (flux(), source(), diffusion_flux()) in one
+       * flat parallel loop over the batch. Override it to evaluate the expensive part, typically the momentum
+       * integrals, for all points in one go with an integrator's map_points(), which also runs on the GPU; skip
+       * the terms that were not requested. A model deriving from def::AD then gets its jacobians from the same
+       * function, and def::LLFFlux / def::FlowBoundaries evaluate the face fluxes through it.
        *
-       * @param out the result, a BatchOutput: `out.flux(c, d)`, `out.source(c)` and
-       * `out.diffusion_flux(c, d)` point to the columns of component c (and direction d) over all points,
-       * zero on entry; only requested terms exist.
-       * @param batch the solution at the points, a PointBatch: columns `values(c)`, `derivatives(c, d)`,
-       * `hessians(c, d1, d2)`, `coordinates(d)` (each a PointArray, directly usable as a per-point argument
-       * of map_points()), plus `extractors()`, `variables()`, `size()`, and `x(i)`, `cell_width(i)`. Under LDG it
-       * is an LDGPointBatch: values only, and `ldg_values(k, c)` for component c of level k.
+       * The number type of the batch (`typename Batch::number_type`) is double or an AD type, and the batch may
+       * hold several stacked copies of the assembler's points (AD seeds, LLF perturbations): size everything
+       * from `batch.size()` and never keep per-point state across calls.
        *
-       * @note Set `static constexpr bool batch_reads_hessians = false` (or `batch_reads_derivatives`) in
-       * the model when no term reads them: the assembler then skips computing them. DG never gathers them.
+       * @param out the result, a BatchOutput: `out.flux(c, d)`, `out.source(c)` and `out.diffusion_flux(c, d)`
+       * are the columns (PointSpan) of component c (and direction d) over all points, zero on entry; asking for a
+       * term that was not requested throws.
+       * @param batch the solution at the points: columns `values(c)`, `derivatives(c, d)`, `hessians(c, d1, d2)`,
+       * `coordinates(d)` (each a PointSpan, directly usable as a per-point argument of map_points()), plus
+       * `extractors()`, `variables()`, `size()`, `x(i)` and `cell_width(i)`. Which inputs exist depends on the
+       * assembler and is known at compile time (`Batch::has_derivatives`, `Batch::has_hessians`; reading an
+       * absent one does not compile): DG has values only, LDG has values and `ldg_values(k, c)` for component c
+       * of level k, KT's diffusion traces add `third_derivatives(c, d0, d1, d2)` (`Batch::with_third`).
+       *
+       * @note Set `static constexpr bool batch_reads_hessians = false` (or `batch_reads_derivatives`) in the model
+       * when no term reads them: CG and dDG then skip gathering them, and the AD jacobians skip their seeds.
        */
       template <typename Out, typename Batch> void evaluate_batch(Out &out, const Batch &batch) const
       {
@@ -460,10 +467,11 @@ namespace DiFfRG
        *
        * The standard implementation evaluates the requested per-point ldg_flux / ldg_source (see
        * `out.requested(Term::...)`) in one flat parallel loop. Override it to evaluate them for all points in one
-       * go. `batch.values(c)` is component c of level dependent - 1, a PointArray over all points; `out.flux(c, d)`
+       * go. `batch.values(c)` is component c of level dependent - 1, a PointSpan over all points; `out.flux(c, d)`
        * and `out.source(c)` are the columns of component c of level dependent.
        */
-      template <uint dependent, typename Out, typename Batch> void ldg_flux_source_batch(Out &out, const Batch &batch) const
+      template <uint dependent, typename Out, typename Batch>
+      void ldg_evaluate_batch(Out &out, const Batch &batch) const
       {
         DiFfRG::internal::ldg_evaluate_per_point<dependent>(asImp(), out, batch);
       }

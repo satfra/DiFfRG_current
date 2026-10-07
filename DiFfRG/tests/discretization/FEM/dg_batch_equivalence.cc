@@ -20,6 +20,25 @@ namespace
     REQUIRE(scale > 0.);
     REQUIRE(worst <= 1e-12 * scale);
   }
+
+  // An input the assembler does not gather is absent at compile time, in the batch and in the per-point tuple, so a
+  // model cannot read zeros by mistake.
+  template <bool derivatives, bool hessians>
+  using TestBatch = PointBatch<1, double, 2, std::array<double, 0>, Vector<double>, derivatives, hessians>;
+  template <typename Batch>
+  using PointTuple = decltype(std::declval<const Batch &>().tie(std::declval<typename Batch::State &>()));
+  template <typename Batch> constexpr bool has_derivative_column = requires(const Batch &b) { b.derivatives(0, 0); };
+  template <typename Batch> constexpr bool has_hessian_column = requires(const Batch &b) { b.hessians(0, 0, 0); };
+
+  static_assert(!has_derivative_column<TestBatch<false, false>> && !has_hessian_column<TestBatch<false, false>>);
+  static_assert(has_derivative_column<TestBatch<true, false>> && !has_hessian_column<TestBatch<true, false>>);
+  static_assert(has_derivative_column<TestBatch<true, true>> && has_hessian_column<TestBatch<true, true>>);
+  static_assert(!tuple_has<"fe_derivatives", PointTuple<TestBatch<false, false>>> &&
+                !tuple_has<"fe_hessians", PointTuple<TestBatch<false, false>>>);
+  static_assert(tuple_has<"fe_derivatives", PointTuple<TestBatch<true, false>>> &&
+                !tuple_has<"fe_hessians", PointTuple<TestBatch<true, false>>>);
+  static_assert(tuple_has<"fe_derivatives", PointTuple<TestBatch<true, true>>> &&
+                tuple_has<"fe_hessians", PointTuple<TestBatch<true, true>>>);
 } // namespace
 
 TEST_CASE("A model's own evaluate_batch matches the per-point default under dDG", "[discretization][dg]")

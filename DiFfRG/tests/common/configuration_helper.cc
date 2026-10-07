@@ -70,9 +70,14 @@ TEST_CASE("The snapshot flags create their keys", "[config][common][snapshot]")
     std::ofstream file(filename);
     file << json::value({{"timestepping", {{"final_time", 1.}}}, {"output", {{"verbosity", 0}}}});
   }
-  char *argv[] = {(char *)"test",          (char *)"-p",  (char *)filename.c_str(),
-                  (char *)"--snapshots-k", (char *)"2,0.5", (char *)"--snapshots-t",
-                  (char *)"1.5",           (char *)"--stop-after-last-snapshot"};
+  char *argv[] = {(char *)"test",
+                  (char *)"-p",
+                  (char *)filename.c_str(),
+                  (char *)"--snapshots-k",
+                  (char *)"2,0.5",
+                  (char *)"--snapshots-t",
+                  (char *)"1.5",
+                  (char *)"--stop-after-last-snapshot"};
   ConfigurationHelper helper(8, argv);
   const auto &config = helper.get_config();
 
@@ -123,8 +128,8 @@ TEST_CASE("A restart takes its configuration from the snapshot", "[config][commo
   {
     const json::value config = parse({"--snapshots-k", "0.2"});
     REQUIRE(config.at_pointer("/timestepping/snapshots/k") == json::value(json::array{0.2}));
-    REQUIRE_FALSE(config.as_object().at("timestepping").as_object().at("snapshots").as_object().contains(
-        "stop_after_last"));
+    REQUIRE_FALSE(
+        config.as_object().at("timestepping").as_object().at("snapshots").as_object().contains("stop_after_last"));
   }
   SECTION("Every override is printed at the start")
   {
@@ -168,11 +173,8 @@ TEST_CASE("A restart takes its configuration from the snapshot", "[config][commo
 
     REQUIRE(restart({}).at_pointer("/timestepping/snapshots/t") == json::value(json::array{0.5, 1.}));
     // Into another output it is a new run, without the schedule ...
-    REQUIRE_FALSE(restart({"-ss", "/output/name=other"})
-                      .as_object()
-                      .at("timestepping")
-                      .as_object()
-                      .contains("snapshots"));
+    REQUIRE_FALSE(
+        restart({"-ss", "/output/name=other"}).as_object().at("timestepping").as_object().contains("snapshots"));
     // ... and snapshot flags replace the schedule as a whole.
     const auto replaced = restart({"--snapshots-k", "0.2"});
     REQUIRE(replaced.at_pointer("/timestepping/snapshots/k") == json::value(json::array{0.2}));
@@ -244,7 +246,7 @@ verbosity = 0
 
 TEST_CASE("probe() reads the configuration without diagnostics or exiting", "[config][common][threads]")
 {
-  const std::string document = R"JSON({"discretization": {"threads": 3, "fe_order": 2, "mesh_workers": 7}})JSON";
+  const std::string document = R"JSON({"discretization": {"threads": 3, "fe_order": 2, "overintegration": 7}})JSON";
 
   SECTION("A -p file and CLI overrides are honoured just like the normal parse")
   {
@@ -263,7 +265,7 @@ TEST_CASE("probe() reads the configuration without diagnostics or exiting", "[co
 
     CHECK(config.get_uint("/discretization/threads", 0) == 5);
     CHECK(config.get_uint("/discretization/fe_order", 0) == 1);
-    CHECK(config.get_uint("/discretization/mesh_workers", 0) == 7);
+    CHECK(config.get_uint("/discretization/overintegration", 0) == 7);
 
     std::filesystem::remove(filename);
   }
@@ -294,11 +296,11 @@ TEST_CASE("contains() distinguishes a missing key from a present one", "[config]
   const ConfigTree config(json::value{{"discretization", {{"threads", 4}}}});
 
   CHECK(config.contains("/discretization/threads"));
-  CHECK_FALSE(config.contains("/discretization/mesh_workers"));
+  CHECK_FALSE(config.contains("/discretization/overintegration"));
   CHECK_FALSE(config.contains("/nonexistent/section/key"));
   // A defaulted getter must agree with contains().
   CHECK(config.get_uint("/discretization/threads", 99) == 4);
-  CHECK(config.get_uint("/discretization/mesh_workers", 99) == 99);
+  CHECK(config.get_uint("/discretization/overintegration", 99) == 99);
 }
 
 namespace
@@ -325,7 +327,7 @@ TEST_CASE("set_thread_limit caps the process thread count", "[config][common][th
   // A tree without the key means "decide from the CPUs this process actually has", which is the
   // affinity mask -- the whole machine unless a launcher or taskset narrowed it. Notably it must
   // recompute rather than inherit the cap set just above.
-  set_thread_limit(ConfigTree(json::value{{"discretization", {{"mesh_workers", 8}}}}));
+  set_thread_limit(ConfigTree(json::value{{"discretization", {{"overintegration", 8}}}}));
   CHECK(dealii::MultithreadInfo::n_threads() == available_cpus());
 
   set_thread_limit(ConfigTree(json::value{{"discretization", {{"threads", 3}}}}));

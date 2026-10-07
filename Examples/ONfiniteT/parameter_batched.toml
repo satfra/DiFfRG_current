@@ -44,7 +44,7 @@ folder = "./"
 name = "output"
 
 [batched]
-  # cg, ddg or ldg; see flow_batched.cc
+  # cg, ddg or ldg; see flow_batched.cc. For kt use parameter_KT.toml.
   assembler = "cg"
   # per_point, tbb, gpu or gpu_float
   backend = "tbb"

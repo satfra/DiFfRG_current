@@ -104,13 +104,12 @@ namespace DiFfRG
     newton.lin_solve = [&](VectorType &Du, const VectorType &res) {
       CalcDtTimer calc_timer;
       const auto sol_iterations = linSolver.solve(res, Du, std::min(impl.abs_tol, impl.rel_tol * res.l2_norm()));
-      if (sol_iterations >= 0) {
-        this->log.progress({.topic = progress_topics::implicit_linear_solve,
-                            .time = tc.get_t(),
-                            .duration_ms = calc_timer.lap(),
-                            .iterations = sol_iterations,
-                            .minimum_verbosity = 2});
-      }
+      // A direct solver reports no iterations (-1), but its time counts all the same.
+      this->log.progress({.topic = progress_topics::implicit_linear_solve,
+                          .time = tc.get_t(),
+                          .duration_ms = calc_timer.lap(),
+                          .iterations = sol_iterations,
+                          .minimum_verbosity = 2});
     };
 
     newton.reinit(solution);

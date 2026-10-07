@@ -48,7 +48,7 @@ namespace DiFfRG
     double lap()
     {
       const auto now = std::chrono::high_resolution_clock::now();
-      const double ms = double(std::chrono::duration_cast<std::chrono::milliseconds>(now - mark).count());
+      const double ms = std::chrono::duration<double, std::milli>(now - mark).count();
       mark = now;
       return ms;
     }

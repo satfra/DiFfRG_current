@@ -26,7 +26,7 @@
  *    \ref DiFfRG::def::fRG "def::fRG" (RG time / cutoff scale),
  *    \ref DiFfRG::def::LLFFlux "def::LLFFlux" (local Lax-Friedrichs numerical flux),
  *    \ref DiFfRG::def::FlowBoundaries "def::FlowBoundaries" (inflow/outflow boundaries) and
- *    \ref DiFfRG::def::ADjacobian_flux "def::AD" (automatic-differentiation Jacobians). Finite
+ *    \ref DiFfRG::def::AD "def::AD" (automatic-differentiation Jacobians). Finite
  *    volume models additionally pick a boundary stencil, e.g.
  *    \ref DiFfRG::def::FVDefaultBoundaries "def::FVDefaultBoundaries" or
  *    \ref DiFfRG::def::RhoSymmetricLinearExtrapolationBoundaries

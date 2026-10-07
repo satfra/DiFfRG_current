@@ -9,32 +9,99 @@
 
 // standard library
 #include <cstddef>
+#include <memory>
+#include <stdexcept>
+#include <string>
 #include <type_traits>
+#include <vector>
 
 namespace DiFfRG
 {
   /**
-   * @brief Host-side array of per-point values, one per evaluation point of a map_points() call.
+   * @brief A host array of per-point values: a column of a batch, a batch output, or the destination and
+   * per-point arguments of map_points(). Does not own its data.
+   *
+   * `PointSpan<const T>` is read-only, `PointSpan<T>` writable; the latter converts to the former.
    */
-  template <typename T> struct PointArray {
-    const T *data;
-    size_t size;
+  template <typename T> class PointSpan
+  {
+  public:
+    using value_type = std::remove_const_t<T>;
+
+    PointSpan() = default;
+    PointSpan(T *data, const size_t size) : m_data(data), m_size(size) {}
+    /// A view of all of @p v.
+    PointSpan(std::vector<value_type> &v) : m_data(v.data()), m_size(v.size()) {}
+    PointSpan(const std::vector<value_type> &v)
+      requires std::is_const_v<T>
+        : m_data(v.data()), m_size(v.size())
+    {
+    }
+    operator PointSpan<const value_type>() const
+      requires(!std::is_const_v<T>)
+    {
+      return {m_data, m_size};
+    }
+
+    T &operator[](const size_t i) const { return m_data[i]; }
+    T *data() const { return m_data; }
+    size_t size() const { return m_size; }
+    T *begin() const { return m_data; }
+    T *end() const { return m_data + m_size; }
+
+  private:
+    T *m_data = nullptr;
+    size_t m_size = 0;
   };
 
   /**
-   * @brief One kernel argument of QuadratureIntegrator::map_points(): either a single value shared by
-   * all points, or a PointArray holding one value per point.
+   * @brief One kernel argument of map_points(): either a single value shared by all points, or one value per
+   * point.
    *
-   * Implicitly constructible from both, so a map_points() signature can take every argument as a
-   * `const PointArg<T> &` and the caller decides per call which arguments vary.
+   * Implicitly constructible from a value (shared), and from a PointSpan or std::vector (per point), so a
+   * map_points() signature can take every argument as a `const PointArg<T> &` and the caller decides per call
+   * which arguments vary. Values and arrays of another type convertible to T are converted, e.g. a double
+   * column passed to an argument that is an AD number; a converted array is copied.
    */
-  template <typename T> struct PointArg {
+  template <typename T> class PointArg
+  {
+  public:
     PointArg(const T &value) : value(value) {}
-    PointArg(const PointArray<T> &array) : values(array.data), size(array.size) {}
+    template <typename U>
+      requires(!std::is_same_v<std::remove_cvref_t<U>, T> && std::is_convertible_v<const U &, T>)
+    PointArg(const U &value) : value(T(value))
+    {
+    }
+    PointArg(const PointSpan<const T> &span) : values(span.data()), size(span.size()) {}
+    PointArg(const PointSpan<T> &span) : values(span.data()), size(span.size()) {}
+    PointArg(const std::vector<T> &v) : values(v.data()), size(v.size()) {}
+    template <typename U>
+      requires(!std::is_same_v<std::remove_const_t<U>, T> && std::is_convertible_v<const U &, T>)
+    PointArg(const PointSpan<U> &span)
+        : owned(std::make_shared<std::vector<T>>(span.begin(), span.end())), values(owned->data()), size(span.size())
+    {
+    }
+    template <typename U>
+      requires(!std::is_same_v<U, T> && std::is_convertible_v<const U &, T>)
+    PointArg(const std::vector<U> &v) : PointArg(PointSpan<const U>(v))
+    {
+    }
 
     bool per_point() const { return values != nullptr; }
     const T &operator[](const size_t i) const { return values != nullptr ? values[i] : value; }
 
+    /// Throws unless the argument is shared or holds exactly @p n values.
+    void check_size(const size_t n) const
+    {
+      if (per_point() && size != n)
+        throw std::runtime_error("map_points: a per-point argument holds " + std::to_string(size) + " values for " +
+                                 std::to_string(n) + " points.");
+    }
+
+  private:
+    std::shared_ptr<const std::vector<T>> owned;
+
+  public:
     const T *values = nullptr;
     size_t size = 0;
     T value{};
@@ -42,6 +109,22 @@ namespace DiFfRG
 
   namespace internal
   {
+    /// The value type of a map_points() argument: T for a PointArg<T>, a PointSpan<T> or a std::vector<T>,
+    /// otherwise the argument's own type.
+    template <typename A> struct point_arg_value {
+      using type = A;
+    };
+    template <typename T> struct point_arg_value<PointArg<T>> {
+      using type = T;
+    };
+    template <typename T> struct point_arg_value<PointSpan<T>> {
+      using type = std::remove_const_t<T>;
+    };
+    template <typename T> struct point_arg_value<std::vector<T>> {
+      using type = T;
+    };
+    template <typename A> using point_arg_value_t = typename point_arg_value<std::remove_cvref_t<A>>::type;
+
     template <typename T> struct _single_precision {
       using value = T;
     };

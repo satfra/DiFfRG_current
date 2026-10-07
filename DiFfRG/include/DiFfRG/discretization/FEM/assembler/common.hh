@@ -1,7 +1,6 @@
 #pragma once
 
 // external libraries
-#include <deal.II/base/multithread_info.h>
 #include <deal.II/base/quadrature_lib.h>
 #include <deal.II/base/timer.h>
 #include <deal.II/dofs/dof_handler.h>
@@ -63,9 +62,9 @@ namespace DiFfRG
     using Components = typename Discretization::Components;
     static constexpr uint dim = Discretization::dim;
     FEMAssembler(Discretization &discretization, Model &model, const ConfigTree &config)
-        : discretization(discretization), model(model), report_port(discretization.report_port()),
-          fe(discretization.get_fe()), dof_handler(discretization.get_dof_handler()),
-          mapping(discretization.get_mapping()), EoM_cell(*(dof_handler.active_cell_iterators().end())),
+        : discretization(discretization), model(model), fe(discretization.get_fe()),
+          dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
+          EoM_cell(*(dof_handler.active_cell_iterators().end())),
           old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
           old_extractor_cell(*(dof_handler.active_cell_iterators().end())),
           EoM_config(DiFfRG::internal::resolve_eom_config(dof_handler, Config::EoMConfig(config)))
@@ -414,7 +413,6 @@ namespace DiFfRG
   protected:
     Discretization &discretization;
     Model &model;
-    ReportPort report_port;
     const FiniteElement<dim> &fe;
     const DoFHandler<dim> &dof_handler;
     const Mapping<dim> &mapping;

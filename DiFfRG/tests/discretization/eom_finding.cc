@@ -1470,12 +1470,14 @@ TEST_CASE("EoM gradient-jump damping is symmetric positive semidefinite on adapt
   Vector<double> damped_rhs(potential_dof_handler.n_dofs());
   const auto zero_eom = [](const auto &, const auto &) { return std::array<double, dim>{{0., 0.}}; };
 
-  DiFfRG::internal::assemble_potential_system(solution, solution_dof_handler, potential_dof_handler, potential_fe,
-                                              mapping, zero_eom, quadrature, face_quadrature, constraints, undamped,
-                                              undamped_rhs, 0., /*assemble_matrix = */ true);
-  DiFfRG::internal::assemble_potential_system(solution, solution_dof_handler, potential_dof_handler, potential_fe,
-                                              mapping, zero_eom, quadrature, face_quadrature, constraints, damped,
-                                              damped_rhs, 0.25, /*assemble_matrix = */ true);
+  DiFfRG::internal::PotentialAssemblyData<dim, double> assembly(potential_dof_handler, constraints, mapping,
+                                                                solution_fe, potential_fe, quadrature, face_quadrature);
+  DiFfRG::internal::assemble_potential_system(solution, solution_dof_handler, potential_fe, mapping, zero_eom,
+                                              constraints, assembly, undamped, undamped_rhs, 0.,
+                                              /*assemble_matrix = */ true);
+  DiFfRG::internal::assemble_potential_system(solution, solution_dof_handler, potential_fe, mapping, zero_eom,
+                                              constraints, assembly, damped, damped_rhs, 0.25,
+                                              /*assemble_matrix = */ true);
 
   double penalty_norm = 0.;
   double symmetry_error = 0.;

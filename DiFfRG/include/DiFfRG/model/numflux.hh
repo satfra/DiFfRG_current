@@ -95,7 +95,7 @@ namespace DiFfRG
         auto &stacked = stacked_buffer;
         auto &F = F_buffer;
         auto &du = du_buffer;
-        stacked.reinit(n_blocks * n, batch_s.has_derivatives(), batch_s.has_hessians());
+        stacked.reinit(n_blocks * n);
         stacked.set_shared(batch_s.extractors(), batch_s.variables());
         du.resize(n_fe * n);
         tbb::parallel_for(tbb::blocked_range<size_t>(0, n), [&](const tbb::blocked_range<size_t> &r) {
@@ -104,7 +104,7 @@ namespace DiFfRG
               stacked.copy_point(b * n + i, b % 2 == 0 ? batch_s : batch_n, i);
               if (b < 2) continue;
               const size_t c = (b - 2) / 2;
-              const NT u_s = batch_s.values(c).data[i], u_n = batch_n.values(c).data[i];
+              const NT u_s = batch_s.values(c)[i], u_n = batch_n.values(c)[i];
               du[c * n + i] = 1e-5 * (0.5 * (abs(u_s) + abs(u_n)) + 1e-9);
               stacked.value(c, b * n + i) += du[c * n + i];
             }
@@ -125,7 +125,7 @@ namespace DiFfRG
                 df_n += at(3 + 2 * c, d) * normals[i][d];
               }
               const NT alpha = max(abs(df_s - f_s), abs(df_n - f_n)) / du[c * n + i];
-              const NT jump = batch_n.values(c).data[i] - batch_s.values(c).data[i];
+              const NT jump = batch_n.values(c)[i] - batch_s.values(c)[i];
               for (int d = 0; d < dim; ++d)
                 out.flux(c, d)[i] = 0.5 * (at(0, d) + at(1, d)) - 0.5 * alpha * jump;
             }
@@ -194,7 +194,7 @@ namespace DiFfRG
           NF[i][Dirs::value[i]] = F[UD::value[i]][i][Dirs::value[i]];
       }
 
-      /// The batched ldg_numflux: ldg_flux_source_batch on both traces, then the same upwind selection per point.
+      /// The batched ldg_numflux: ldg_evaluate_batch on both traces, then the same upwind selection per point.
       template <uint dependent, typename Out, typename Normals, typename Batch>
       void ldg_numflux_batch(Out &out, const Normals &normals, const Batch &batch_s, const Batch &batch_n) const
       {
@@ -214,8 +214,8 @@ namespace DiFfRG
         auto &F_n = F_n_buffer;
         F_s.reinit(n, Term::flux);
         F_n.reinit(n, Term::flux);
-        asImp().template ldg_flux_source_batch<dependent>(F_s, batch_s);
-        asImp().template ldg_flux_source_batch<dependent>(F_n, batch_n);
+        asImp().template ldg_evaluate_batch<dependent>(F_s, batch_s);
+        asImp().template ldg_evaluate_batch<dependent>(F_n, batch_n);
 
         Tensor<1, dim> t;
         for (int d = 0; d < dim; ++d)
@@ -284,11 +284,11 @@ namespace DiFfRG
         asImp().template ldg_flux<dependent>(BNF, p, u);
       }
 
-      /// Batched ldg_boundary_numflux: the model's ldg_flux_source_batch, which is asked for the flux only.
+      /// Batched ldg_boundary_numflux: the model's ldg_evaluate_batch, which is asked for the flux only.
       template <uint dependent, typename Out, typename Normals, typename Batch>
       void ldg_boundary_numflux_batch(Out &out, const Normals & /*normals*/, const Batch &batch) const
       {
-        asImp().template ldg_flux_source_batch<dependent>(out, batch);
+        asImp().template ldg_evaluate_batch<dependent>(out, batch);
       }
     };
   } // namespace def

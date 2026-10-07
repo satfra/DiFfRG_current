@@ -37,7 +37,7 @@ target_link_libraries(KT_sigma PRIVATE DiFfRG::DiFfRG ONFiniteTFlows)
 # Symlink the parameter files into the build directory
 # ##############################################################################
 
-foreach(pfile parameter.toml parameter_KT.toml parameter_KT_sigma.toml)
+foreach(pfile parameter.toml parameter_batched.toml parameter_KT.toml parameter_KT_sigma.toml)
   execute_process(
     COMMAND ${CMAKE_COMMAND} "-E" "create_symlink"
             "${CMAKE_CURRENT_SOURCE_DIR}/${pfile}"
@@ -45,8 +45,8 @@ foreach(pfile parameter.toml parameter_KT.toml parameter_KT_sigma.toml)
 endforeach()
 
 # ##############################################################################
-# Batched assembly pilot (flows_batched/, model_batched.hh), CG and dDG. Needs a
-# DiFfRG with the batched assemblers and map_points.
+# Batched assembly pilot (flows_batched/, model_batched.hh) for CG, dDG, LDG and KT:
+# flow_batched runs a flow, bench_batched times single residual and jacobian calls.
 # ##############################################################################
 
 option(ONFINITET_BATCHED "Build flow_batched and bench_batched" OFF)

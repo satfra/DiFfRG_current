@@ -7,6 +7,7 @@ using namespace DiFfRG;
 #include <chrono>
 #include <cstring>
 #include <iomanip>
+#include <numeric>
 #include <optional>
 #include <sstream>
 
@@ -20,8 +21,9 @@ using namespace DiFfRG;
  *
  * Usage: bench_batched --config B1 --cells 1024 --xorder 32 [--assembler cg] [--reps 10] [--threads 0]
  *                      [--policy auto] [--parameters parameter.toml] [--time 1]
- * Phase times are reported as 0 for an assembler that does not record them.
- * Prints one line "RESULT,<csv>" with the header given by --header.
+ * Prints one line "RESULT,<csv>" with the header given by --header: the median and mean wall time of a call, then
+ * per call the assembler's own stages (extract, gather, evaluate, scatter; see AssemblyPhaseTimes) and what the
+ * stages leave of the mean ("other"), each for the residual and the jacobian.
  */
 namespace
 {
@@ -49,6 +51,8 @@ namespace
     std::sort(v.begin(), v.end());
     return v[v.size() / 2];
   }
+
+  double mean(const std::vector<double> &v) { return std::accumulate(v.begin(), v.end(), 0.) / v.size(); }
 
   MapPointsPolicy parse_policy(const std::string &p)
   {
@@ -114,8 +118,7 @@ namespace
       time_residual();
       time_jacobian();
     }
-    constexpr bool has_phases = requires { assembler.reset_phase_times(); };
-    if constexpr (has_phases) assembler.reset_phase_times();
+    assembler.reset_phase_times();
 
     std::vector<double> t_res, t_jac;
     for (uint i = 0; i < opt.reps; ++i)
@@ -123,18 +126,21 @@ namespace
     for (uint i = 0; i < opt.reps; ++i)
       t_jac.push_back(time_jacobian());
 
-    std::array<double, 6> phases{};
-    if constexpr (has_phases) {
-      const auto &r = assembler.residual_phase_times();
-      const auto &j = assembler.jacobian_phase_times();
-      phases = {r.gather / r.calls * 1e3, r.evaluate / r.calls * 1e3, r.scatter / r.calls * 1e3, j.gather / j.calls * 1e3, j.evaluate / j.calls * 1e3, j.scatter / j.calls * 1e3};
-    }
+    // Per call, in ms: the four stages and what they leave of the mean call time.
+    const auto stages = [](const AssemblyPhaseTimes &t, const double mean_ms) {
+      const double per_call = 1e3 / t.calls;
+      return std::array<double, 5>{t.extract * per_call, t.gather * per_call, t.evaluate * per_call, t.scatter * per_call, mean_ms - t.total() * per_call};
+    };
+    const auto res_stages = stages(assembler.residual_phase_times(), mean(t_res));
+    const auto jac_stages = stages(assembler.jacobian_phase_times(), mean(t_jac));
 
     const size_t n_points = discretization.get_triangulation().n_active_cells() * (discretization.get_fe().degree + 1);
     std::ostringstream line;
     line << std::setprecision(6) << "RESULT," << opt.assembler << "," << opt.config << "," << opt.cells << "," << opt.xorder << "," << n_points << ","
-         << (opt.threads == 0 ? DiFfRG::n_threads() : opt.threads) << "," << opt.policy << "," << median(t_res) << "," << median(t_jac);
-    for (const double p : phases)
+         << (opt.threads == 0 ? DiFfRG::n_threads() : opt.threads) << "," << opt.policy << "," << median(t_res) << "," << median(t_jac) << "," << mean(t_res) << "," << mean(t_jac);
+    for (const double p : res_stages)
+      line << "," << p;
+    for (const double p : jac_stages)
       line << "," << p;
     line << std::setprecision(15) << "," << residual.l2_norm() << "," << jacobian.frobenius_norm();
     std::cout << line.str() << std::endl;
@@ -170,8 +176,9 @@ int main(int argc, char *argv[])
     }
   }
   if (argc == 2 && std::strcmp(argv[1], "--header") == 0) {
-    std::cout << "assembler,config,cells,xorder,points,threads,policy,residual_ms,jacobian_ms,res_gather_ms,res_evaluate_ms,"
-                 "res_scatter_ms,jac_gather_ms,jac_evaluate_ms,jac_scatter_ms,residual_norm,jacobian_norm"
+    std::cout << "assembler,config,cells,xorder,points,threads,policy,residual_ms,jacobian_ms,residual_mean_ms,jacobian_mean_ms,"
+                 "res_extract_ms,res_gather_ms,res_evaluate_ms,res_scatter_ms,res_other_ms,jac_extract_ms,jac_gather_ms,"
+                 "jac_evaluate_ms,jac_scatter_ms,jac_other_ms,residual_norm,jacobian_norm"
               << std::endl;
     return 0;
   }

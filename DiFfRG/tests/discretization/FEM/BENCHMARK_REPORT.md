@@ -1,5 +1,8 @@
 # FEM Assembler Benchmark Report
 
+Historical: measured on the per-point `mesh_loop` assemblers, which the batched assemblers have replaced. For
+those see `doc/batched_assembly/RESULTS.md` at the repository root.
+
 ## Baseline Results (pre-optimization)
 
 ### CG Burgers (1-component)
@@ -161,8 +164,9 @@
 
 ## Assembly-schedule calibration (2026-08-21)
 
-Basis for the constants in `DiFfRG/include/DiFfRG/discretization/common/assembly_schedule.hh`,
-which replaced the `/discretization/mesh_workers` and `/discretization/batch_size` config keys.
+Superseded: `assembly_schedule.hh` and the `DIFFRG_BENCH_QUEUE` / `DIFFRG_BENCH_CHUNK` overrides are gone with
+`mesh_loop`. Kept as the record of what the schedule was based on: the constants in `assembly_schedule.hh`, which
+replaced the `/discretization/mesh_workers` and `/discretization/batch_size` config keys.
 
 ### Per-cell cost, measured
 

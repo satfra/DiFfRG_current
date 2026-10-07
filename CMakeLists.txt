@@ -358,7 +358,7 @@ if(GPU
             "  To silence this warning, configure with -DGPU=OFF\n")
 endif()
 
-# DiFfRG's CPU parallelism is TBB: deal.II's MeshWorker drives a tbb::parallel_pipeline, and every
+# DiFfRG's CPU parallelism is TBB: the assemblers' loops are tbb::parallel_for, and every
 # production flow instantiates its integrators with TBB_exec. A Kokkos std::threads host backend
 # would be a *second* pool of spinning workers on the same cores -- and not an idle one, since
 # deal.II routes its own vector kernels through Kokkos::DefaultHostExecutionSpace

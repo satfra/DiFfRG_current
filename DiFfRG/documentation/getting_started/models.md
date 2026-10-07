@@ -135,26 +135,33 @@ The standard implementation of this method simply sets $s_i = 0$.
 
 Which entries `sol` actually carries depends on the assembler, and the entries are addressed by name:
 
-| assembler | entries of `sol` in `source` |
+| assembler | entries of `sol` in `flux` and `source` |
 | --- | --- |
-| CG, dDG | `"fe_functions"`, `"fe_derivatives"`, `"fe_hessians"`, `"extractors"`, `"variables"` |
-| DG | `"fe_functions"`, `"extractors"`, `"variables"` |
-| KT-FV | `"fe_functions"`, `"fe_derivatives"`, `"extractors"`, `"variables"` |
+| CG, dDG | `"fe_functions"`, `"fe_derivatives"`, `"fe_hessians"`, `"extractors"`, `"variables"`, `"cell_width"` |
+| DG, LDG main level | `"fe_functions"` (LDG: and `"LDG1"`, `"LDG2"`, ...), `"extractors"`, `"variables"`, `"cell_width"` |
+| KT-FV | `"fe_functions"`, `"fe_derivatives"`, `"extractors"`, `"variables"`, `"cell_width"` |
 
-`flux` gets the same entries as `source` in every scheme, and KT-FV's `diffusion_flux` gets them with
-`"fe_third_derivatives"` inserted after `"fe_derivatives"`. All of them additionally carry
-`"cell_width"`.
+KT-FV's `diffusion_flux` gets `"fe_third_derivatives"` after `"fe_derivatives"`, and its `source` gets
+`"fe_hessians"` after `"fe_derivatives"` if the model declares `static constexpr bool source_uses_hessians = true`.
+Under CG and dDG, a model that declares `static constexpr bool batch_reads_hessians = false` (or
+`batch_reads_derivatives = false`) gets no `"fe_hessians"` (or neither of the two): the assembler then skips
+computing them.
 
-A model that reads an entry its assembler does not provide fails to compile. For KT-FV, `"fe_derivatives"`
-is the scheme's own reconstructed cell gradient (the limited slope at the cell centre), and there are no
-hessians.
+A model that reads an entry its assembler does not provide fails to compile. A model shared between assemblers
+can ask `if constexpr (tuple_has<"fe_derivatives", Solution>)`. For KT-FV, `"fe_derivatives"` is the scheme's own
+reconstructed cell gradient (the limited slope at the cell centre).
 
 `"extractors"` holds the result of the model's own `extract()`, run once before the residual and once
-before the jacobian. It is a plain number even inside the assembler's AD loops, so an extractor's
-dependence on the FE solution does not appear in the flux or source jacobian -- extractors are frozen
-within a Newton step. A model that solves something at the EoM in `extract()` and reads it back in
-`flux()` is the intended use of this, and it gets an approximate jacobian: that costs Newton iterations,
+before the jacobian. Under the FEM assemblers with `def::AD`, the jacobian includes the extractors' dependence on
+the FE solution (through `jacobian_extractors`). Under KT-FV, and with `def::FE_AD`, the extractors are frozen
+within a Newton step: their dependence does not appear in the jacobian. A model that solves something at the EoM
+in `extract()` and reads it back in `flux()` then gets an approximate jacobian: that costs Newton iterations,
 not accuracy, because the extraction is redone for every residual.
+
+The assemblers do not call `flux` and `source` one point at a time themselves: they call the model's
+`evaluate_batch` for all points at once, whose default runs the per-point callbacks in a parallel loop. A model
+that overrides it can evaluate its momentum integrals for all points in a single `map_points()` call, also on the
+GPU; see [Tutorial 6](../tutorials/tut6.md).
 
 Picking up the example from above, we can now sketch the implementation of the numerical model as follows:
 ```cpp

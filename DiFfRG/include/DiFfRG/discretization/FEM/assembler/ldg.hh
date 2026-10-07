@@ -7,7 +7,6 @@
 #include <sstream>
 
 // external libraries
-#include <deal.II/base/multithread_info.h>
 #include <deal.II/base/quadrature_lib.h>
 #include <deal.II/base/timer.h>
 #include <deal.II/dofs/dof_handler.h>
@@ -30,6 +29,7 @@
 #include <DiFfRG/discretization/common/batched_scatter.hh>
 #include <DiFfRG/discretization/common/cell_geometry.hh>
 #include <DiFfRG/discretization/common/eom.hh>
+#include <DiFfRG/discretization/common/phase_times.hh>
 #include <DiFfRG/discretization/common/solution_sample.hh>
 #include <DiFfRG/discretization/common/types.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
@@ -57,9 +57,9 @@ namespace DiFfRG
       using Components = typename Discretization::Components;
       static constexpr uint dim = Discretization::dim;
       LDGAssemblerBase(Discretization &discretization, Model &model, const ConfigTree &config)
-          : discretization(discretization), model(model), report_port(discretization.report_port()),
-            fe(discretization.get_fe()), dof_handler(discretization.get_dof_handler()),
-            mapping(discretization.get_mapping()), EoM_cell(*(dof_handler.active_cell_iterators().end())),
+          : discretization(discretization), model(model), fe(discretization.get_fe()),
+            dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
+            EoM_cell(*(dof_handler.active_cell_iterators().end())),
             old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
             old_extractor_cell(*(dof_handler.active_cell_iterators().end())),
             EoM_config(DiFfRG::internal::resolve_eom_config(dof_handler, Config::EoMConfig(config)))
@@ -191,7 +191,6 @@ namespace DiFfRG
     protected:
       Discretization &discretization;
       Model &model;
-      ReportPort report_port;
       const FiniteElement<dim> &fe;
       const DoFHandler<dim> &dof_handler;
       const Mapping<dim> &mapping;
@@ -233,8 +232,6 @@ namespace DiFfRG
       mutable DiFfRG::internal::PotentialSystemCache<dim, NumberType> potential_cache;
       FullMatrix<NumberType> extractor_jacobian;
       FullMatrix<NumberType> extractor_jacobian_u;
-      FullMatrix<NumberType> extractor_jacobian_du;
-      FullMatrix<NumberType> extractor_jacobian_ddu;
       std::vector<types::global_dof_index> extractor_dof_indices;
 
       std::vector<double> timings_variable_residual;
@@ -248,7 +245,7 @@ namespace DiFfRG
      * Each level, and the main level, is assembled in three phases, as in CG::Assembler:
      *  1. gather: the values of the previous level (main level: of all levels) at every quadrature point of the
      *     cells, boundary faces and interior faces (both traces), into a batch;
-     *  2. evaluate: ldg_flux_source_batch<k> (main level: evaluate_batch) and the numerical fluxes over the whole
+     *  2. evaluate: ldg_evaluate_batch<k> (main level: evaluate_batch) and the numerical fluxes over the whole
      *     batch, or their seed-stacked AD jacobians, see model/batch.hh; each interior face once;
      *  3. scatter: every cell contracts its cell term and its share of each of its faces into its own rows
      *     (internal::ColoredCells).
@@ -257,7 +254,7 @@ namespace DiFfRG
      * the level jacobians by the chain rule and cached while the model declares them constant.
      *
      * Config: /discretization/batched/max_stacked_points bounds the size of one AD evaluation of the
-     * jacobian (default: 256 MB of AD inputs), see DiFfRG::internal::seed_stacked_jacobian.
+     * jacobian (default: 256 MB of AD inputs and outputs), see DiFfRG::internal::seed_stacked_jacobian.
      */
     template <typename Discretization_,
               typename Model_ = typename DiFfRG::internal::assembler_model_of<Discretization_>::type>
@@ -284,15 +281,10 @@ namespace DiFfRG
       static constexpr size_t n_all = MainBatch::n_fe_functions;
       /// The batch level `from` hands to the construction of level from + 1: its values, nothing shared.
       template <uint from>
-      using LevelBatch =
-          PointBatch<dim, NumberType, Components::count_fe_functions(from), std::array<NumberType, 0>, VectorType>;
+      using LevelBatch = PointBatch<dim, NumberType, Components::count_fe_functions(from), std::array<NumberType, 0>,
+                                    VectorType, false, false>;
 
-      /// Wall time of the assembly phases of the main level, summed over all calls. `gather` includes building
-      /// the LDG levels (and, for the jacobian, their jacobians).
-      struct PhaseTimes {
-        double gather = 0., evaluate = 0., scatter = 0.;
-        uint calls = 0;
-      };
+      using PhaseTimes = AssemblyPhaseTimes;
 
     private:
       template <typename... T> auto fe_more_conv(std::tuple<T &...> &t) const
@@ -505,6 +497,8 @@ namespace DiFfRG
         };
         tbb::enumerable_thread_specific<std::unique_ptr<IndicatorScratch>> indicator_scratch(
             [&] { return std::make_unique<IndicatorScratch>(mapping, dof_handler_list, quadrature, quadrature_face); });
+        // map() is collective and each rank visits only its own cells; see NoMapsHere.
+        const NoMapsHere no_maps_during_assembly;
 
         std::vector<std::array<double, 2>> face_values(topology.faces.size());
         tbb::parallel_for(tbb::blocked_range<size_t>(0, topology.faces.size()), [&](const auto &r) {
@@ -591,26 +585,26 @@ namespace DiFfRG
                             const VectorType &solution_global_dot, NumberType weight_mass,
                             const VectorType &variables = VectorType()) override
       {
-        Timer timer, phase;
+        DiFfRG::internal::PhaseTimer phase(residual_times);
         // Find the EoM and extract whatever data is needed for the model; extract() builds the LDG levels.
         Extractors extracted_data{{}};
         if constexpr (n_extr > 0)
           this->extract(extracted_data, solution_global, variables, true, false, true);
         else
           rebuild_ldg_vectors(solution_global);
+        phase.lap(&PhaseTimes::extract);
         gather_main(solution_global, extracted_data, variables);
-        residual_times.gather += phase.wall_time();
-
-        phase.restart();
-        cell_result.reinit(cell_batch.size(), Term::flux | Term::source);
-        model.evaluate_batch(cell_result, cell_batch);
-        boundary_result.reinit(boundary_batch.size(), Term::flux);
-        evaluate_boundary_numflux(model, boundary_result, boundary_normals, boundary_batch);
-        face_result.reinit(face_batch[0].size(), Term::flux);
-        evaluate_numflux(model, face_result, face_normals, face_batch[0], face_batch[1]);
-        residual_times.evaluate += phase.wall_time();
-
-        phase.restart();
+        phase.lap(&PhaseTimes::gather);
+        {
+          const NoMapsHere no_maps_during_assembly; // map() is collective, the points are rank-local
+          cell_result.reinit(cell_batch.size(), Term::flux | Term::source);
+          model.evaluate_batch(cell_result, cell_batch);
+          boundary_result.reinit(boundary_batch.size(), Term::flux);
+          evaluate_boundary_numflux(model, boundary_result, boundary_normals, boundary_batch);
+          face_result.reinit(face_batch[0].size(), Term::flux);
+          evaluate_numflux(model, face_result, face_normals, face_batch[0], face_batch[1]);
+        }
+        phase.lap(&PhaseTimes::evaluate);
         scatter_residual(residual, [&](const size_t k, Scratch &s, Vector<NumberType> &r) {
           const auto &fe_v = *s.fe_v[0];
           const auto &comp = s.comp[0];
@@ -632,9 +626,8 @@ namespace DiFfRG
           }
           add_face_terms(s, k, 0, r, boundary_result, face_result, weight);
         });
-        residual_times.scatter += phase.wall_time();
-        ++residual_times.calls;
-        timings_residual.push_back(timer.wall_time());
+        phase.lap(&PhaseTimes::scatter);
+        timings_residual.push_back(phase.finish());
       }
 
       virtual void jacobian_mass(BlockSparseMatrix<NumberType> &jacobian, const VectorType &solution_global,
@@ -657,7 +650,7 @@ namespace DiFfRG
                             NumberType weight, const VectorType &solution_global_dot, NumberType alpha, NumberType beta,
                             const VectorType &variables = VectorType()) override
       {
-        Timer timer, phase;
+        DiFfRG::internal::PhaseTimer phase(jacobian_times);
         // Find the EoM and extract whatever data is needed for the model; extract() builds the LDG levels.
         Extractors extracted_data{{}};
         if constexpr (n_extr > 0) {
@@ -671,21 +664,21 @@ namespace DiFfRG
           if (!ldg_matrix_built[k] || !model.get_components().jacobians_constant(k, k - 1))
             rebuild_ldg_jacobian<k>(solution_global);
         });
+        phase.lap(&PhaseTimes::extract);
         gather_main(solution_global, extracted_data, variables);
-        jacobian_times.gather += phase.wall_time();
-
-        phase.restart();
-        evaluate_flux_source_jacobian(model, cell_jacobians, cell_batch, max_stacked_points, cell_workspace);
-        evaluate_boundary_numflux_jacobian(model, boundary_jacobians, boundary_normals, boundary_batch,
-                                           max_stacked_points, boundary_workspace);
-        evaluate_numflux_jacobian(model, face_jacobians, face_normals, face_batch[0], face_batch[1], max_stacked_points,
-                                  face_workspace);
+        phase.lap(&PhaseTimes::gather);
+        {
+          const NoMapsHere no_maps_during_assembly; // map() is collective, the points are rank-local
+          evaluate_flux_source_jacobian(model, cell_jacobians, cell_batch, max_stacked_points, cell_workspace);
+          evaluate_boundary_numflux_jacobian(model, boundary_jacobians, boundary_normals, boundary_batch,
+                                             max_stacked_points, boundary_workspace);
+          evaluate_numflux_jacobian(model, face_jacobians, face_normals, face_batch[0], face_batch[1],
+                                    max_stacked_points, face_workspace);
+        }
         require_finite(cell_jacobians);
         require_finite(boundary_jacobians);
         require_finite(face_jacobians);
-        jacobian_times.evaluate += phase.wall_time();
-
-        phase.restart();
+        phase.lap(&PhaseTimes::evaluate);
         for (uint k = 1; k < n_levels; ++k)
           j_ug[k] = 0;
         scatter_jacobian(jacobian, true, [&](const size_t k, Scratch &s, LocalData &out) {
@@ -742,9 +735,8 @@ namespace DiFfRG
             for (uint k = 1; k < n_levels; ++k)
               jacobian.block(b / n_fe, b % n_fe).add(NumberType(1.), jacobian_tmp[k].block(b / n_fe, b % n_fe));
         });
-        jacobian_times.scatter += phase.wall_time();
-        ++jacobian_times.calls;
-        timings_jacobian.push_back(timer.wall_time());
+        phase.lap(&PhaseTimes::scatter);
+        timings_jacobian.push_back(phase.finish());
       }
 
       const PhaseTimes &residual_phase_times() const { return residual_times; }
@@ -819,6 +811,8 @@ namespace DiFfRG
       }
 
       /// About 256 MB of AD inputs and outputs per seed-stacked evaluation.
+      /// Unlike KT, the FEM assemblers stack whole seed directions, never part of the points, so a smaller budget does
+      /// not keep the batch in cache; fewer, larger evaluations are faster.
       static uint default_stacked_points()
       {
         constexpr size_t per_point = sizeof(autodiff::real) * (n_all + n_fe * (1 + dim) + dim);
@@ -951,10 +945,10 @@ namespace DiFfRG
       template <typename Batch, typename Store>
       void gather(Batch &cells_b, Batch &boundary_b, std::array<Batch, 2> &faces_b, const Store &store)
       {
-        cells_b.reinit(cells[0].size() * n_q, false, false);
-        boundary_b.reinit(topology.boundary_faces.size() * n_q_face, false, false);
+        cells_b.reinit(cells[0].size() * n_q);
+        boundary_b.reinit(topology.boundary_faces.size() * n_q_face);
         for (auto &b : faces_b)
-          b.reinit(topology.faces.size() * n_q_face, false, false);
+          b.reinit(topology.faces.size() * n_q_face);
         boundary_normals.resize(boundary_b.size());
         face_normals.resize(faces_b[0].size());
 
@@ -1310,6 +1304,7 @@ namespace DiFfRG
         std::array<LevelBatch<from>, 2> faces_b;
         self.template gather_level<from>(cells_b, boundary_b, faces_b, source);
 
+        const NoMapsHere no_maps_during_assembly; // map() is collective, the points are rank-local
         BatchOutput<dim, NumberType, n_to> cell_out, boundary_out, face_out;
         cell_out.reinit(cells_b.size(), Term::flux | Term::source);
         evaluate_ldg_level<to>(model, cell_out, cells_b);
@@ -1370,6 +1365,7 @@ namespace DiFfRG
         std::vector<FaceJacobian<dim, n_to, n_from, 0>> J_faces;
         SeedStackWorkspace<LevelBatch<from>, n_to> workspace;
         SeedStackWorkspace<LevelBatch<from>, n_to, 2> face_workspace;
+        const NoMapsHere no_maps_during_assembly; // map() is collective, the points are rank-local
         evaluate_ldg_level_jacobian<to>(model, J_cells, cells_b, max_stacked_points, workspace);
         evaluate_ldg_boundary_numflux_jacobian<to>(model, J_boundary, boundary_normals, boundary_b, max_stacked_points,
                                                    workspace);
@@ -1806,13 +1802,6 @@ namespace DiFfRG
       template <typename... T> static constexpr auto v_tie(T &&...t)
       {
         return named_tuple<std::tuple<T &...>, StringSet<"variables", "extractors">>(std::tie(t...));
-      }
-
-      template <typename... T> static constexpr auto e_tie(T &&...t)
-      {
-        return named_tuple<std::tuple<T &...>,
-                           StringSet<"fe_functions", "fe_derivatives", "fe_hessians", "extractors", "variables">>(
-            std::tie(t...));
       }
 
       virtual void residual_variables(VectorType &residual, const VectorType &variables,

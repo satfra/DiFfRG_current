@@ -297,7 +297,7 @@ the ordering above a lie. Where that would happen, `Init` removes it from the en
 first `set_thread_limit()` call and says so in the warning.
 
 The resolved number is published as `DiFfRG::n_threads()` (`DiFfRG/common/threads.hh`), which is
-what the assembly schedule and the map scheduler's host/device split size themselves against. Read
+what the map scheduler's host/device split sizes itself against. Read
 it from there rather than from `dealii::MultithreadInfo::n_threads()`: the latter is a mutable
 static that any `set_thread_limit()` call rewrites, so it is not necessarily the number DiFfRG
 resolved. The two are kept in agreement by construction.
@@ -643,10 +643,11 @@ These were consciously left out of this increment:
      node-local ranks > 1); several ranks per node does not. Until FE is distributed, prefer one rank
      per node for any model with FE functions, and measure before assuming more ranks help.
 
-  A related rule while this stands: **never call `map()` from inside a threaded FE cell worker.**
-  `MapScheduler` and `MapCompletion` are single-threaded by design, and cell order across threads is
-  not deterministic, so the per-rank plans would diverge. That fails loudly rather than silently —
-  the plan checksum calls `MPI_Abort` — but it is a design constraint, not a diagnostic.
+  A related rule while this stands: **never call `map()` during assembly** -- from a model's `flux`,
+  `source` or `evaluate_batch`. `map()` is collective, while each rank assembles only its own cells,
+  so the per-rank plans would diverge. The assemblers open a `NoMapsHere` scope around every model
+  evaluation, and a `map()` inside it aborts with a message instead of hanging. Use `map_points()`
+  there: it is rank-local and never touches the scheduler.
 
   The SPMD choice was made partly so that distributing FE later is an orthogonal addition rather than
   a rewrite: deal.II is SPMD, so the mesh partitioning it already supports drops into this model.

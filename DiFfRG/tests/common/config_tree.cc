@@ -116,8 +116,8 @@ TEST_CASE("ConfigTree integer getters accept values stored as unsigned", "[confi
   // parsed from a file never hit this; one built in C++ from unsigned values always did, and it
   // failed quietly, because get_uint_or_warn catches the exception and returns its default. The
   // caller then silently ran with the default instead of the value it had set.
-  const ConfigTree config = boost::json::value(
-      {{"unsigned_value", 4u}, {"signed_value", 4}, {"negative", -1}, {"text", "no"}});
+  const ConfigTree config =
+      boost::json::value({{"unsigned_value", 4u}, {"signed_value", 4}, {"negative", -1}, {"text", "no"}});
 
   REQUIRE(config.get_uint("/unsigned_value") == 4u);
   REQUIRE(config.get_uint("/signed_value") == 4u);
@@ -210,8 +210,7 @@ TEST_CASE("The file format is chosen by extension", "[config][common][toml]")
   REQUIRE(ConfigTree(filename) == ConfigTree::from_json_string(json_document));
 }
 
-TEST_CASE("Warning getters return the value when present and the default when not",
-          "[config][common][defaults]")
+TEST_CASE("Warning getters return the value when present and the default when not", "[config][common][defaults]")
 {
   const ConfigTree config = ConfigTree::from_json_string(R"JSON({
     "physical": {"Lambda": 0.65},
@@ -229,7 +228,7 @@ TEST_CASE("Warning getters return the value when present and the default when no
 
   // Absent keys fall back to the default (and print one warning per key to stderr).
   CHECK(config.get_double_or_warn("/physical/T", 0.1) == Catch::Approx(0.1));
-  CHECK(config.get_uint_or_warn("/discretization/mesh_workers", 8) == 8);
+  CHECK(config.get_uint_or_warn("/discretization/overintegration", 8) == 8);
   CHECK(config.get_int_or_warn("/output/verbosity", 0) == 0);
   CHECK(config.get_string_or_warn("/output/folder", "./") == "./");
   CHECK(config.get_bool_or_warn("/output/hdf5", true) == true);

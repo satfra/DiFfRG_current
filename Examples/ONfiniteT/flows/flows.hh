@@ -9,7 +9,7 @@
 class ONFiniteTFlows
 {
   public:
-  ONFiniteTFlows(const DiFfRG::ConfigTree& json)
+  ONFiniteTFlows(const DiFfRG::ConfigTree& config)
   ;
 
   void set_k(const double k)

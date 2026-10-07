@@ -1,7 +1,8 @@
 #include "./flows.hh"
 
-ONFiniteTFlows::ONFiniteTFlows(const DiFfRG::ConfigTree& json) : quadrature_provider(json), V(quadrature_provider, json), V_pion(quadrature_provider, json), V_sigma(quadrature_provider, json)
-{}
+ONFiniteTFlows::ONFiniteTFlows(const DiFfRG::ConfigTree& config) : quadrature_provider(config), V(quadrature_provider, config), V_pion(quadrature_provider, config), V_sigma(quadrature_provider, config)
+{
+}
 void ONFiniteTFlows::set_k(const double k)
 {
   DiFfRG::all_set_k(V, k);DiFfRG::all_set_k(V_pion, k);DiFfRG::all_set_k(V_sigma, k);

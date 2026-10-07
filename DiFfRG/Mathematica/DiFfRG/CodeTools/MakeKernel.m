@@ -13,7 +13,7 @@ These are prepended to the respective methods of the integration kernel, allowin
 
 The options \"KernelReturnTransform\" and \"ConstantReturnTransform\" (default Identity) accept a Mathematica function applied to the optimized expression before code generation, which lets you wrap the return value, e.g. \"KernelReturnTransform\" -> Re renders the kernel return as real(...).
 The option \"ComputeType\" (default \"double\") is the value type the kernel is evaluated and integrated in: \"double\", \"float\", \"DiFfRG::complex<double>\" or \"DiFfRG::complex<float>\". With a float type the kernel, its literals and the integrator run in single precision, while map()/get() still write double results.
-The option \"MapPoints\" (default False) additionally emits map_points(dest, n, args...), which evaluates the integral at n points in one launch; every argument is a DiFfRG::PointArg, i.e. a single value or a DiFfRG::PointArray of n values. The batched FEM assemblers call this.
+The option \"MapPoints\" (default False) additionally emits map_points(dest, args...), which evaluates the integral at dest.size() points in one launch (dest is a DiFfRG::PointSpan); every argument is a DiFfRG::PointArg, i.e. a single value or one value per point (a DiFfRG::PointSpan or std::vector). A model's evaluate_batch calls this. Supported by the vacuum and finite-temperature integrators, not by the lattice ones.
 The option \"KernelTraits\" declares integrator traits on the emitted kernel class, as a list of names or name -> Boolean rules, e.g. \"KernelTraits\" -> {\"matsubara_finite_extent\"} or {\"matsubara_split\" -> True}. Each becomes a `static constexpr bool <name> = <value>;` member. \"MatsubaraEven\" stays a separate option because it carries a symbolic evenness check that a generic mechanism cannot.";
 
 MakeKernel::Invalid = "The given arguments are invalid. See MakeKernel::usage";
@@ -29,6 +29,8 @@ MakeKernel::MissingType = "Parameter \"`1`\" has no Type specified, defaulting t
 MakeKernel::InvalidKey = "The key \"`1`\" is invalid: `2`";
 
 MakeKernel::exportFailed = "Export of sources.m to `1` failed.";
+
+MakeKernel::noMapPoints = "\"MapPoints\" -> True is not available for the lattice integrator `1`: it has no map_points().";
 
 MakeKernel::notEven = "MatsubaraEven requested for kernel \"`1`\" but it is not even in \"`2`\"; emitting the standard kernel (the integrator keeps the explicit kernel(+f0)+kernel(-f0) form). This is expected when the loop contains fermionic dressings evaluated at f0-shifted arguments.";
 
@@ -151,11 +153,11 @@ kernelTraitMembers[traits_] :=
 
 (* Internal functions added here with Internal`*::usage *)
 
-(* Parameters of a map_points() method: the destination array and point count, then every
-   argument as a PointArg, so the caller decides per call which arguments vary between points. *)
+(* Parameters of a map_points() method: the destination array, then every argument as a PointArg,
+   so the caller decides per call which arguments vary between points. *)
 mapPointsParameters[returnType_String, args_List] :=
     Join[
-        {<|"Name" -> "dest", "Type" -> returnType <> "*", "Const" -> False, "Reference" -> False|>, <|"Name" -> "n", "Type" -> "size_t", "Const" -> True, "Reference" -> False|>}
+        {<|"Name" -> "dest", "Type" -> "DiFfRG::PointSpan<" <> returnType <> ">", "Const" -> True, "Reference" -> False|>}
         ,
         Map[Merge[{#, <|"Type" -> "DiFfRG::PointArg<" <> #["Type"] <> ">", "Reference" -> True, "Const" -> True|>}, Last]&, args]
     ];
@@ -177,6 +179,10 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
         spec = resolveComputeType[spec];
         If[Not @ KernelSpecQ[spec],
             Message[MakeKernel::InvalidSpec];
+            Abort[]
+        ];
+        If[TrueQ[spec["MapPoints"]] && StringContainsQ[spec["Integrator"], "IntegratorLat"],
+            Message[MakeKernel::noMapPoints, spec["Integrator"]];
             Abort[]
         ];
         expr = kernelExpr;
@@ -260,7 +266,8 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
         If[preArguments =!= "",
             preArguments = preArguments <> ", "
         ];
-        (* Choose the execution space. Default is TBB, as only TBB is compatible with the FEM assemblers. *)
+        (* Choose the execution space. Default is TBB: the per-point get() of a GPU integrator must not be called
+           from several threads at once, as the assemblers' per-point callbacks are. map_points() runs on any. *)
         exec =
             If[KeyFreeQ[spec, "Device"] || FreeQ[{"GPU", "Threads"}, spec["Device"]],
                 "DiFfRG::TBB_exec"
@@ -374,8 +381,8 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
             ];
         integratorCpp["CT", "get"] = FunKit`MakeCppBlock["Includes" -> {"../kernel.hh"}, "Body" -> {StringTemplate["#include \"../`Name`.hh\"\n"][spec], FunKit`MakeCppFunction["Name" -> "get", "Class" -> StringTemplate["`Name`_integrator"][spec], "Body" -> StringTemplate["integrator.get(dest, `1` `2`);"][preArguments, arguments], "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> returnType, "Reference" -> True, "Const" -> False|>}, getArgs, params], "Return" -> "void"]}];
         integratorCpp["AD", "get"] = FunKit`MakeCppBlock["Includes" -> {"../kernel.hh"}, "Body" -> Join[{StringTemplate["#include \"../`Name`.hh\"\n"][spec]}, Map[FunKit`MakeCppFunction["Name" -> "get", "Class" -> StringTemplate["`Name`_integrator"][spec], "Body" -> StringTemplate["integrator_`1`.get(dest, `2` `3`);"][#["Suffix"], preArguments, arguments], "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> #["ReturnType"], "Reference" -> True, "Const" -> False|>}, getArgs, #["Params"]], "Return" -> "void"]&, adSpecs]]];
-        integratorCpp["CT", "map_points"] = FunKit`MakeCppBlock["Includes" -> {"../kernel.hh"}, "Body" -> {StringTemplate["#include \"../`Name`.hh\"\n"][spec], FunKit`MakeCppFunction["Name" -> "map_points", "Class" -> StringTemplate["`Name`_integrator"][spec], "Body" -> StringTemplate["integrator.map_points(dest, n, `1` `2`);"][preArguments, arguments], "Parameters" -> mapPointsParameters[returnType, Join[getArgs, params]], "Return" -> "void"]}];
-        integratorCpp["AD", "map_points"] = FunKit`MakeCppBlock["Includes" -> {"../kernel.hh"}, "Body" -> Join[{StringTemplate["#include \"../`Name`.hh\"\n"][spec]}, Map[FunKit`MakeCppFunction["Name" -> "map_points", "Class" -> StringTemplate["`Name`_integrator"][spec], "Body" -> StringTemplate["integrator_`1`.map_points(dest, n, `2` `3`);"][#["Suffix"], preArguments, arguments], "Parameters" -> mapPointsParameters[#["ReturnType"], Join[getArgs, #["Params"]]], "Return" -> "void"]&, adSpecs]]];
+        integratorCpp["CT", "map_points"] = FunKit`MakeCppBlock["Includes" -> {"../kernel.hh"}, "Body" -> {StringTemplate["#include \"../`Name`.hh\"\n"][spec], FunKit`MakeCppFunction["Name" -> "map_points", "Class" -> StringTemplate["`Name`_integrator"][spec], "Body" -> StringTemplate["integrator.map_points(dest, `1` `2`);"][preArguments, arguments], "Parameters" -> mapPointsParameters[returnType, Join[getArgs, params]], "Return" -> "void"]}];
+        integratorCpp["AD", "map_points"] = FunKit`MakeCppBlock["Includes" -> {"../kernel.hh"}, "Body" -> Join[{StringTemplate["#include \"../`Name`.hh\"\n"][spec]}, Map[FunKit`MakeCppFunction["Name" -> "map_points", "Class" -> StringTemplate["`Name`_integrator"][spec], "Body" -> StringTemplate["integrator_`1`.map_points(dest, `2` `3`);"][#["Suffix"], preArguments, arguments], "Parameters" -> mapPointsParameters[#["ReturnType"], Join[getArgs, #["Params"]]], "Return" -> "void"]&, adSpecs]]];
         integratorCpp["CT", "map"] = Map[FunKit`MakeCppBlock["Includes" -> {"../kernel.hh"}, "Body" -> {StringTemplate["#include \"../`Name`.hh\"\n"][spec], FunKit`MakeCppFunction["Name" -> "map", "Return" -> exec, "Class" -> StringTemplate["`Name`_integrator"][spec], "Body" -> StringTemplate["return integrator.map(dest, coordinates, `1`);"][arguments], "Parameters" -> Join[{<|"Name" -> "dest", "Type" -> returnTypePointer, "Const" -> False, "Reference" -> False|>, <|"Name" -> "coordinates", "Reference" -> True, "Type" -> #, "Const" -> True|>}, params]]}]&, coordinates];
         integratorCpp["AD", "map"] =
             Map[

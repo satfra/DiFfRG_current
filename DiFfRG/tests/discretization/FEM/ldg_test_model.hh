@@ -10,8 +10,8 @@
 #include <DiFfRG/model/model.hh>
 
 #include <catch2/catch_all.hpp>
-#include <deal.II/meshworker/mesh_loop.h>
 #include <deal.II/lac/sparse_direct.h>
+#include <deal.II/meshworker/mesh_loop.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #include <cmath>
@@ -89,10 +89,10 @@ namespace ldg_test
       }
       using NT = typename Batch::number_type;
       for (size_t i = 0; i < batch.size(); ++i) {
-        const std::array<NT, 2> u{{batch.values(0).data[i], batch.values(1).data[i]}};
-        const std::array<NT, 2> l1{{batch.ldg_values(1, 0).data[i], batch.ldg_values(1, 1).data[i]}};
+        const std::array<NT, 2> u{{batch.values(0)[i], batch.values(1)[i]}};
+        const std::array<NT, 2> l1{{batch.ldg_values(1, 0)[i], batch.ldg_values(1, 1)[i]}};
         NT l2 = 0.;
-        if constexpr (Components::count_fe_subsystems() > 2) l2 = batch.ldg_values(2, 0).data[i];
+        if constexpr (Components::count_fe_subsystems() > 2) l2 = batch.ldg_values(2, 0)[i];
         NT e = 0.;
         if constexpr (extractors) e = batch.extractors()[0];
         std::array<Tensor<1, dim, NT>, 2> F;

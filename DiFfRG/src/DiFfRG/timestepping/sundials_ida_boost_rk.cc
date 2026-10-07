@@ -518,16 +518,15 @@ namespace DiFfRG
       CalcDtTimer calc_timer;
       try {
         const auto sol_iterations = linSolver.solve(src, dst, tol);
-        if (sol_iterations >= 0) {
-          const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-          ProgressEvent solve_event{.topic = progress_topics::implicit_linear_solve,
-                                    .time = stuck_t,
-                                    .duration_ms = calc_timer.lap(),
-                                    .iterations = sol_iterations,
-                                    .minimum_verbosity = 2};
-          current_diagnostics.append_to(solve_event);
-          this->log.progress(solve_event);
-        }
+        // A direct solver reports no iterations (-1), but its time counts all the same.
+        const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+        ProgressEvent solve_event{.topic = progress_topics::implicit_linear_solve,
+                                  .time = stuck_t,
+                                  .duration_ms = calc_timer.lap(),
+                                  .iterations = sol_iterations,
+                                  .minimum_verbosity = 2};
+        current_diagnostics.append_to(solve_event);
+        this->log.progress(solve_event);
       } catch (std::exception &) {
         callback_diagnostics.linear_solver_failures++;
         return ++failure_counter;

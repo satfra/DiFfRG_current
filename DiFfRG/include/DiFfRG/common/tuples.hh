@@ -114,9 +114,24 @@ namespace DiFfRG
                                                "\" not found. Available names are: " + ((std::string("") + "; ") + ""));
     }
 
+    /// Whether an element has the given name.
+    static consteval bool contains(const char *name)
+    {
+      for (size_t i = 0; i < names.size(); ++i)
+        if (strings_equal(names[i], name)) return true;
+      return false;
+    }
+
     template <size_t idx> auto &get() { return std::get<idx>(tuple); }
     template <size_t idx> const auto &get() const { return std::get<idx>(tuple); }
   };
+
+  /**
+   * @brief Whether the named_tuple type @p NamedTuple has an element called @p name, e.g.
+   * `if constexpr (tuple_has<"fe_derivatives", Solution>)` in a model whose flux serves several assemblers.
+   */
+  template <FixedString name, typename NamedTuple>
+  constexpr bool tuple_has = std::remove_cvref_t<NamedTuple>::contains(name);
 
   /**
    * @brief get a reference to the element with the given name

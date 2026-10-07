@@ -153,11 +153,9 @@ TEST_CASE("DG refinement indicator sees face contributions", "[discretization][d
   Vector<double> indicator(mesh.get_triangulation().n_active_cells());
   assembler.refinement_indicator(indicator, initial_condition.spatial_data());
 
-  // Regression: dg.hh passed a face_worker to mesh_loop but omitted
-  // assemble_own_interior_faces_once from the flags, so mesh_loop never called it and
-  // model.face_indicator contributed exactly nothing -- DG refined on the cell term alone.
-  // With a model whose only indicator contribution is the face one, that bug makes every
-  // entry zero. ddg.hh and ldg.hh always set the flag.
+  // Regression: DG's indicator once dropped the face term (a mesh_loop flag was missing), so
+  // DG refined on the cell term alone. With a model whose only indicator contribution is the
+  // face one, that bug makes every entry zero.
   REQUIRE(indicator.linfty_norm() > 0.);
 }
 

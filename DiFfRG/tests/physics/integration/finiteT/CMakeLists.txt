@@ -3,6 +3,7 @@
 # ##############################################################################
 
 setup_test(quadrature_integrator_fT.cc)
+setup_test(map_points_fT.cc)
 
 # ##############################################################################
 # Tests for derived integrators

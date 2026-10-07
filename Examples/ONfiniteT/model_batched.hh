@@ -15,9 +15,9 @@ using namespace DiFfRG;
 #include <vector>
 
 /**
- * The O(N) model of model.hh with a batched flux: the flux at all quadrature points of the CG assembler is
- * one map_points() call of the V integrator, on the backend chosen at compile time. Physics and parameters
- * are those of model.hh.
+ * The O(N) model of model.hh with a batched flux: the flux at all points of a batch (the quadrature points of the
+ * CG or dDG assembler) is one map_points() call of the V integrator, on the backend chosen at compile time. Physics
+ * and parameters are those of model.hh.
  */
 namespace ON_batched
 {
@@ -106,9 +106,9 @@ namespace ON_batched
 
       std::vector<NT> m2Sigma(n);
       for (size_t i = 0; i < n; ++i)
-        m2Sigma[i] = m2Pi.data[i] + 2. * rho.data[i] * dm2.data[i];
+        m2Sigma[i] = m2Pi[i] + 2. * rho[i] * dm2[i];
 
-      integrator().map_points(out.flux(idxf("m2"), 0), n, k, prm.N, prm.T, m2Pi, PointArray<NT>{m2Sigma.data(), n});
+      integrator().map_points(out.flux(idxf("m2"), 0), k, prm.N, prm.T, m2Pi, m2Sigma);
     }
 
     template <int dim, typename NumberType, typename Solution> void cell_indicator(NumberType &indicator, const Point<dim> & /*p*/, const Solution &sol) const
@@ -227,9 +227,9 @@ namespace ON_batched
 
       std::vector<NT> m2Sigma(n);
       for (size_t i = 0; i < n; ++i)
-        m2Sigma[i] = m2Pi.data[i] + 2. * rho.data[i] * dm2.data[i];
+        m2Sigma[i] = m2Pi[i] + 2. * rho[i] * dm2[i];
 
-      integrator().map_points(out.flux(idxf("m2"), 0), n, k, prm.N, prm.T, m2Pi, PointArray<NT>{m2Sigma.data(), n});
+      integrator().map_points(out.flux(idxf("m2"), 0), k, prm.N, prm.T, m2Pi, m2Sigma);
     }
 
     template <int dim, typename DataOut, typename Solutions> void readouts(DataOut &output, const Point<dim> &x, const Solutions &sol) const
@@ -333,17 +333,18 @@ namespace ON_batched
       const size_t n = batch.size();
       const auto m2 = batch.values(idxf("m2"));
       if (out.requested(Term::flux)) {
-        pion_integrator().map_points(out.flux(idxf("m2"), 0), n, k, prm.N, prm.T, m2);
-        for (size_t i = 0; i < n; ++i)
-          out.flux(idxf("m2"), 0)[i] *= prm.N - 1.;
+        const auto F = out.flux(idxf("m2"), 0);
+        pion_integrator().map_points(F, k, prm.N, prm.T, m2);
+        for (auto &f : F)
+          f *= prm.N - 1.;
       }
       if (out.requested(Term::diffusion_flux)) {
         const auto dm2 = batch.derivatives(idxf("m2"), 0);
         const auto rho = batch.coordinates(0);
         std::vector<NT> m2Sigma(n);
         for (size_t i = 0; i < n; ++i)
-          m2Sigma[i] = m2.data[i] + 2. * rho.data[i] * dm2.data[i];
-        sigma_integrator().map_points(out.diffusion_flux(idxf("m2"), 0), n, k, prm.N, prm.T, PointArray<NT>{m2Sigma.data(), n});
+          m2Sigma[i] = m2[i] + 2. * rho[i] * dm2[i];
+        sigma_integrator().map_points(out.diffusion_flux(idxf("m2"), 0), k, prm.N, prm.T, m2Sigma);
       }
     }
 

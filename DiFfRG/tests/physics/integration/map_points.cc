@@ -74,12 +74,11 @@ namespace
       for (auto &v : values[k])
         v = make_value<AT>(rng, k == 1 ? 0.2 : -1., k == 1 ? 2. : 1.);
     }
-    auto arg = [&](const int k) {
-      return vary[k] ? PointArg<AT>(PointArray<AT>{values[k].data(), n}) : PointArg<AT>(values[k][0]);
-    };
+    // Shared arguments as plain values, per-point ones as the std::vector itself.
+    auto arg = [&](const int k) { return vary[k] ? PointArg<AT>(values[k]) : PointArg<AT>(values[k][0]); };
 
     std::vector<OT> mapped(n);
-    integrator.map_points(mapped.data(), n, arg(0), arg(1), arg(2));
+    integrator.map_points(PointSpan<OT>(mapped), arg(0), arg(1), arg(2));
 
     for (size_t i = 0; i < n; ++i) {
       OT reference{};
@@ -100,7 +99,7 @@ namespace
       const size_t j = n / 2;
       values[k][j] += AT(0.25);
       std::vector<OT> perturbed(n);
-      integrator.map_points(perturbed.data(), n, arg(0), arg(1), arg(2));
+      integrator.map_points(PointSpan<OT>(perturbed), arg(0), arg(1), arg(2));
       for (size_t i = 0; i < n; ++i)
         if (i == j)
           REQUIRE(value_of(perturbed[i]) != value_of(mapped[i]));
@@ -170,14 +169,37 @@ TEMPLATE_TEST_CASE_SIG("map_points matches a loop of get()", "[integration][quad
   SECTION("GPU") { kokkos_checks(GPU_exec()); }
 }
 
-TEST_CASE("map_points rejects a short per-point argument", "[integration][quadrature][map_points]")
+TEST_CASE("map_points rejects a per-point argument of the wrong size", "[integration][quadrature][map_points]")
 {
   DiFfRG::Init();
   QuadratureProvider provider;
   auto integrator = make_integrator<1, double, GPU_exec>(provider);
   auto integrator_tbb = make_integrator<1, double, TBB_exec>(provider);
-  std::vector<double> short_array(4, 1.), dest(8);
-  const PointArg<double> a(PointArray<double>{short_array.data(), short_array.size()});
-  CHECK_THROWS(integrator.map_points(dest.data(), dest.size(), a, PointArg<double>(1.), PointArg<double>(1.)));
-  CHECK_THROWS(integrator_tbb.map_points(dest.data(), dest.size(), a, PointArg<double>(1.), PointArg<double>(1.)));
+  std::vector<double> short_array(4, 1.), long_array(9, 1.), dest(8);
+  CHECK_THROWS(integrator.map_points(PointSpan<double>(dest), short_array, 1., 1.));
+  CHECK_THROWS(integrator_tbb.map_points(PointSpan<double>(dest), short_array, 1., 1.));
+  CHECK_THROWS(integrator.map_points(PointSpan<double>(dest), long_array, 1., 1.));
+  CHECK_THROWS(integrator_tbb.map_points(PointSpan<double>(dest), long_array, 1., 1.));
+}
+
+TEST_CASE("map_points converts arguments to the kernel's argument type", "[integration][quadrature][map_points]")
+{
+  DiFfRG::Init();
+  QuadratureProvider provider;
+  auto integrator = make_integrator<1, autodiff::real, TBB_exec>(provider);
+  const size_t n = 5;
+  std::vector<double> a(n);
+  for (size_t i = 0; i < n; ++i)
+    a[i] = 0.1 * i;
+  std::vector<autodiff::real> a_ad(a.begin(), a.end()), mapped(n), reference(n);
+  // A double column and a double scalar reach AD-typed arguments.
+  const auto args = [&](const auto &first) {
+    return std::make_tuple(PointArg<autodiff::real>(first), PointArg<autodiff::real>(0.7),
+                           PointArg<autodiff::real>(-0.3));
+  };
+  std::apply([&](const auto &...p) { integrator.map_points(PointSpan<autodiff::real>(mapped), p...); },
+             args(PointSpan<const double>(a)));
+  std::apply([&](const auto &...p) { integrator.map_points(PointSpan<autodiff::real>(reference), p...); }, args(a_ad));
+  for (size_t i = 0; i < n; ++i)
+    REQUIRE(value_of(mapped[i]) == value_of(reference[i]));
 }

@@ -93,20 +93,36 @@ namespace dg_test
       S[1] = exp(0.1 * u[0]) * u[1] + du[0][0] * du[1][0];
     }
 
+    // DG hands the per-point callbacks no derivatives and hessians: the physics then sees zeros.
+    template <typename NT, typename Solution> static auto derivatives_of(const Solution &sol)
+    {
+      if constexpr (tuple_has<"fe_derivatives", Solution>)
+        return as_tensors<NT, 1>(get<"fe_derivatives">(sol));
+      else
+        return std::array<Tensor<1, dim, NT>, 2>{};
+    }
+    template <typename NT, typename Solution> static auto hessians_of(const Solution &sol)
+    {
+      if constexpr (tuple_has<"fe_hessians", Solution>)
+        return as_tensors<NT, 2>(get<"fe_hessians">(sol));
+      else
+        return std::array<Tensor<2, dim, NT>, 2>{};
+    }
+
     template <typename NT, typename Solution>
     void flux(std::array<Tensor<1, dim, NT>, 2> &F, const Point<dim> &x, const Solution &sol) const
     {
       std::array<NT, 2> S;
-      evaluate(F, S, x, as_array<NT>(get<"fe_functions">(sol)), as_tensors<NT, 1>(get<"fe_derivatives">(sol)),
-               as_tensors<NT, 2>(get<"fe_hessians">(sol)), get<"extractors">(sol));
+      evaluate(F, S, x, as_array<NT>(get<"fe_functions">(sol)), derivatives_of<NT>(sol), hessians_of<NT>(sol),
+               get<"extractors">(sol));
     }
 
     template <typename NT, typename Solution>
     void source(std::array<NT, 2> &S, const Point<dim> &x, const Solution &sol) const
     {
       std::array<Tensor<1, dim, NT>, 2> F;
-      evaluate(F, S, x, as_array<NT>(get<"fe_functions">(sol)), as_tensors<NT, 1>(get<"fe_derivatives">(sol)),
-               as_tensors<NT, 2>(get<"fe_hessians">(sol)), get<"extractors">(sol));
+      evaluate(F, S, x, as_array<NT>(get<"fe_functions">(sol)), derivatives_of<NT>(sol), hessians_of<NT>(sol),
+               get<"extractors">(sol));
     }
 
     /// LLF, or a central flux with a nonlinear, trace-coupling dissipation.
@@ -144,18 +160,17 @@ namespace dg_test
       }
       using NT = typename Batch::number_type;
       for (size_t i = 0; i < batch.size(); ++i) {
-        std::array<NT, 2> ui{{batch.values(0).data[i], batch.values(1).data[i]}};
-        std::array<Tensor<1, dim, NT>, 2> dui;
-        std::array<Tensor<2, dim, NT>, 2> ddui;
+        std::array<NT, 2> ui{{batch.values(0)[i], batch.values(1)[i]}};
+        std::array<Tensor<1, dim, NT>, 2> dui{};
+        std::array<Tensor<2, dim, NT>, 2> ddui{};
         Point<dim> x;
         for (uint d1 = 0; d1 < dim; ++d1) {
-          x[d1] = batch.coordinates(d1).data[i];
+          x[d1] = batch.coordinates(d1)[i];
           for (uint c = 0; c < 2; ++c) {
-            if (batch.has_derivatives()) dui[c][d1] = batch.derivatives(c, d1).data[i];
-            if constexpr (hessians)
-              if (batch.has_hessians())
-                for (uint d2 = 0; d2 < dim; ++d2)
-                  ddui[c][d1][d2] = batch.hessians(c, d1, d2).data[i];
+            if constexpr (Batch::has_derivatives) dui[c][d1] = batch.derivatives(c, d1)[i];
+            if constexpr (hessians && Batch::has_hessians)
+              for (uint d2 = 0; d2 < dim; ++d2)
+                ddui[c][d1][d2] = batch.hessians(c, d1, d2)[i];
           }
         }
         std::array<Tensor<1, dim, NT>, 2> F;
@@ -328,7 +343,10 @@ namespace dg_test
       }
       return p;
     };
-    const auto at = [&](PointData &p) { return batch_tie(p.u, p.du, p.ddu, no_extractors, s.u, cell_width); };
+    // The full tuple, with zeros for what the assembler does not gather.
+    const auto at = [&](PointData &p) {
+      return batch_tie<true, true>(p.u, p.du, p.ddu, no_extractors, s.u, cell_width);
+    };
 
     const auto cell_worker = [&](const Iterator &cell, Scratch &sc, Copy &copy) {
       copy.parts.clear();

@@ -26,13 +26,27 @@
 namespace DiFfRG
 {
   /**
-   * @brief Per-point solution tuple with the names of CG::fe_tie, so the per-point model callbacks
-   * (flux, source, numflux, boundary_numflux and their jacobians) accept it.
+   * @brief The per-point solution tuple the per-point model callbacks (flux, source, numflux, boundary_numflux and
+   * their jacobians) receive from a batched FEM assembler. It holds only the inputs the assembler gathered:
+   * - values only (DG, or batch_reads_derivatives = false): "fe_functions", "extractors", "variables", "cell_width"
+   * - with derivatives (batch_reads_hessians = false): "fe_functions", "fe_derivatives", "extractors", ...
+   * - with derivatives and hessians: "fe_functions", "fe_derivatives", "fe_hessians", "extractors", ...
+   *
+   * A model that reads an entry its assembler does not provide therefore fails to compile.
    */
-  template <typename... T> auto batch_tie(T &&...t)
+  template <bool with_derivatives, bool with_hessians, typename... T> auto batch_tie(T &&...t)
   {
-    return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "fe_derivatives", "fe_hessians", "extractors",
-                                                     "variables", "cell_width">>(std::tie(t...));
+    static_assert(with_derivatives || !with_hessians, "Hessians are only gathered together with derivatives.");
+    if constexpr (with_hessians)
+      return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "fe_derivatives", "fe_hessians", "extractors",
+                                                       "variables", "cell_width">>(std::tie(t...));
+    else if constexpr (with_derivatives)
+      return named_tuple<std::tuple<T &...>,
+                         StringSet<"fe_functions", "fe_derivatives", "extractors", "variables", "cell_width">>(
+          std::tie(t...));
+    else
+      return named_tuple<std::tuple<T &...>, StringSet<"fe_functions", "extractors", "variables", "cell_width">>(
+          std::tie(t...));
   }
 
   /**
@@ -74,39 +88,47 @@ namespace DiFfRG
   };
 
   /**
-   * @brief The FE solution at a set of points: values and (optionally) derivatives and hessians of every
+   * @brief The FE solution at a set of points: values and (if gathered) derivatives and hessians of every
    * FE function, plus the position and cell width of each point. Extractors and variables are shared by
    * all points.
    *
    * Storage is component-major with the points fastest, so values(c), derivatives(c, d) and
-   * hessians(c, d1, d2) are contiguous columns that can be passed directly as per-point arguments to
-   * an integrator's map_points().
+   * hessians(c, d1, d2) are contiguous columns (PointSpan) that can be passed directly as per-point
+   * arguments to an integrator's map_points().
    *
    * Point i means the same point in every column, and in every column of the output BatchOutput.
    * The order of the points carries no meaning for the model.
+   *
+   * @tparam with_derivatives, with_hessians which inputs the assembler gathers. Reading one it does not gather
+   * (derivatives() / hessians(), or the matching entry of the per-point tuple) does not compile; a model
+   * shared between assemblers asks `if constexpr (Batch::has_derivatives)`.
    */
-  template <int dim_, typename NT, size_t n_fe, typename Extractors, typename Variables> class PointBatch
+  template <int dim_, typename NT, size_t n_fe, typename Extractors, typename Variables, bool with_derivatives,
+            bool with_hessians>
+  class PointBatch
   {
+    static_assert(with_derivatives || !with_hessians, "Hessians are only gathered together with derivatives.");
+
   public:
     static constexpr int dim = dim_;
     static constexpr size_t n_fe_functions = n_fe;
+    static constexpr bool has_derivatives = with_derivatives;
+    static constexpr bool has_hessians = with_hessians;
     using number_type = NT;
     using extractors_type = Extractors;
-    using variables_type = Variables;
     /// The same batch in another number type, e.g. for AD.
     template <typename NT2>
-    using rebind = PointBatch<dim, NT2, n_fe, std::array<NT2, std::tuple_size_v<Extractors>>, Variables>;
+    using rebind = PointBatch<dim, NT2, n_fe, std::array<NT2, std::tuple_size_v<Extractors>>, Variables,
+                              with_derivatives, with_hessians>;
     /// The copy of one point that the per-point callbacks see, see tie().
     using State = PointState<dim, NT, n_fe>;
     /// Where tie() puts the extractors, i.e. the tuple index of the per-point extractor jacobians.
-    static constexpr uint extractor_index = 3;
+    static constexpr uint extractor_index = 1 + with_derivatives + with_hessians;
 
-    void reinit(const size_t n_points, const bool with_derivatives, const bool with_hessians)
+    void reinit(const size_t n_points)
     {
       n = n_points;
-      m_derivatives = with_derivatives;
-      m_hessians = with_hessians;
-      state.resize(n * n_columns());
+      state.resize(n * n_columns);
       positions.resize(n * dim);
       widths.resize(n);
     }
@@ -124,23 +146,21 @@ namespace DiFfRG
     }
 
     size_t size() const { return n; }
-    bool has_derivatives() const { return m_derivatives; }
-    bool has_hessians() const { return m_hessians; }
 
-    PointArray<NT> values(const size_t c) const { return {column(value_column(c)), n}; }
-    PointArray<NT> derivatives(const size_t c, const size_t d) const
+    PointSpan<const NT> values(const size_t c) const { return {column(value_column(c)), n}; }
+    /// Only if the assembler gathers derivatives (not under DG, nor with batch_reads_derivatives = false).
+    PointSpan<const NT> derivatives(const size_t c, const size_t d) const
+      requires with_derivatives
     {
-      if (!m_derivatives)
-        throw std::logic_error("PointBatch: derivatives were not gathered (DG, or batch_reads_derivatives = false).");
       return {column(derivative_column(c, d)), n};
     }
-    PointArray<NT> hessians(const size_t c, const size_t d1, const size_t d2) const
+    /// Only if the assembler gathers hessians (not under DG, nor with batch_reads_hessians = false).
+    PointSpan<const NT> hessians(const size_t c, const size_t d1, const size_t d2) const
+      requires with_hessians
     {
-      if (!m_hessians)
-        throw std::logic_error("PointBatch: hessians were not gathered (DG, or batch_reads_hessians = false).");
       return {column(hessian_column(c, d1, d2)), n};
     }
-    PointArray<double> coordinates(const size_t d) const { return {positions.data() + d * n, n}; }
+    PointSpan<const double> coordinates(const size_t d) const { return {positions.data() + d * n, n}; }
 
     dealii::Point<dim> x(const size_t i) const
     {
@@ -154,47 +174,60 @@ namespace DiFfRG
     const Extractors &extractors() const { return *m_extractors; }
     const Variables &variables() const { return *m_variables; }
 
-    /// Point i as a State; inputs that were not gathered are zero.
+    /// Point i as a State; only the gathered inputs are loaded.
     void load(const size_t i, State &s) const
     {
       for (size_t c = 0; c < n_fe; ++c) {
         s.values[c] = column(value_column(c))[i];
-        for (int d1 = 0; d1 < dim; ++d1) {
-          s.derivatives[c][d1] = m_derivatives ? column(derivative_column(c, d1))[i] : NT(0);
-          for (int d2 = 0; d2 < dim; ++d2)
-            s.hessians[c][d1][d2] = m_hessians ? column(hessian_column(c, d1, d2))[i] : NT(0);
-        }
+        if constexpr (with_derivatives)
+          for (int d1 = 0; d1 < dim; ++d1) {
+            s.derivatives[c][d1] = column(derivative_column(c, d1))[i];
+            if constexpr (with_hessians)
+              for (int d2 = 0; d2 < dim; ++d2)
+                s.hessians[c][d1][d2] = column(hessian_column(c, d1, d2))[i];
+          }
       }
       s.cell_width = widths[i];
     }
 
-    /// The named tuple the per-point callbacks receive for a loaded State.
+    /// The named tuple the per-point callbacks receive for a loaded State; see batch_tie.
     auto tie(State &s) const
     {
-      return batch_tie(s.values, s.derivatives, s.hessians, extractors(), variables(), s.cell_width);
+      if constexpr (with_hessians)
+        return batch_tie<true, true>(s.values, s.derivatives, s.hessians, extractors(), variables(), s.cell_width);
+      else if constexpr (with_derivatives)
+        return batch_tie<true, false>(s.values, s.derivatives, extractors(), variables(), s.cell_width);
+      else
+        return batch_tie<false, false>(s.values, extractors(), variables(), s.cell_width);
     }
 
     /// Point j of this batch = point i of @p src, which has the same inputs but may differ in number type.
     template <typename Src> void copy_point(const size_t j, const Src &src, const size_t i)
     {
       for (size_t c = 0; c < n_fe; ++c) {
-        value(c, j) = src.values(c).data[i];
-        for (int d1 = 0; d1 < dim; ++d1) {
-          if (m_derivatives) derivative(c, d1, j) = src.derivatives(c, d1).data[i];
-          if (m_hessians)
-            for (int d2 = 0; d2 < dim; ++d2)
-              hessian(c, d1, d2, j) = src.hessians(c, d1, d2).data[i];
-        }
+        value(c, j) = src.values(c)[i];
+        if constexpr (with_derivatives)
+          for (int d1 = 0; d1 < dim; ++d1) {
+            derivative(c, d1, j) = src.derivatives(c, d1)[i];
+            if constexpr (with_hessians)
+              for (int d2 = 0; d2 < dim; ++d2)
+                hessian(c, d1, d2, j) = src.hessians(c, d1, d2)[i];
+          }
       }
       for (int d = 0; d < dim; ++d)
-        coordinate(d, j) = src.coordinates(d).data[i];
+        coordinate(d, j) = src.coordinates(d)[i];
       width(j) = src.cell_width(i);
     }
 
     // Writable access for whoever fills the batch.
     NT &value(const size_t c, const size_t i) { return column(value_column(c))[i]; }
-    NT &derivative(const size_t c, const size_t d, const size_t i) { return column(derivative_column(c, d))[i]; }
+    NT &derivative(const size_t c, const size_t d, const size_t i)
+      requires with_derivatives
+    {
+      return column(derivative_column(c, d))[i];
+    }
     NT &hessian(const size_t c, const size_t d1, const size_t d2, const size_t i)
+      requires with_hessians
     {
       return column(hessian_column(c, d1, d2))[i];
     }
@@ -206,16 +239,15 @@ namespace DiFfRG
     NT *column(const size_t col) { return state.data() + col * n; }
 
   private:
-    size_t n_columns() const { return n_fe * (1 + (m_derivatives ? dim : 0) + (m_hessians ? dim * dim : 0)); }
+    static constexpr size_t n_columns = n_fe * (1 + (with_derivatives ? dim : 0) + (with_hessians ? dim * dim : 0));
     static constexpr size_t value_column(const size_t c) { return c; }
     static constexpr size_t derivative_column(const size_t c, const size_t d) { return n_fe + c * dim + d; }
-    size_t hessian_column(const size_t c, const size_t d1, const size_t d2) const
+    static constexpr size_t hessian_column(const size_t c, const size_t d1, const size_t d2)
     {
-      return n_fe * (1 + (m_derivatives ? dim : 0)) + (c * dim + d1) * dim + d2;
+      return n_fe * (1 + dim) + (c * dim + d1) * dim + d2;
     }
 
     size_t n = 0;
-    bool m_derivatives = true, m_hessians = true;
     std::vector<NT> state;
     std::vector<double> positions;
     std::vector<double> widths;
@@ -264,11 +296,11 @@ namespace DiFfRG
   class LDGPointBatch : public PointBatch<dim_, NT,
                                           internal::count_all_levels<Components>(
                                               std::make_index_sequence<Components::count_fe_subsystems()>{}),
-                                          Extractors, Variables>
+                                          Extractors, Variables, false, false>
   {
     using Base = PointBatch<
         dim_, NT, internal::count_all_levels<Components>(std::make_index_sequence<Components::count_fe_subsystems()>{}),
-        Extractors, Variables>;
+        Extractors, Variables, false, false>;
 
   public:
     static constexpr uint n_levels = Components::count_fe_subsystems();
@@ -285,7 +317,7 @@ namespace DiFfRG
       return offset;
     }
 
-    PointArray<NT> ldg_values(const uint k, const size_t c) const { return Base::values(level_offset(k) + c); }
+    PointSpan<const NT> ldg_values(const uint k, const size_t c) const { return Base::values(level_offset(k) + c); }
     NT &ldg_value(const uint k, const size_t c, const size_t i) { return Base::value(level_offset(k) + c, i); }
 
     struct State {
@@ -315,8 +347,8 @@ namespace DiFfRG
 
   /**
    * @brief The requested terms (flux, source, diffusion flux) of every FE function at the points of a
-   * PointBatch, as contiguous columns. Only requested terms are stored; reinit() zeroes them, so a model
-   * only writes what it computes.
+   * PointBatch, as contiguous columns (PointSpan). Only requested terms are stored, and asking for another one
+   * throws; reinit() zeroes them, so a model only writes what it computes.
    */
   template <int dim, typename NT, size_t n_fe> class BatchOutput
   {
@@ -342,16 +374,18 @@ namespace DiFfRG
     size_t size() const { return n; }
     /// Whether the assembler asked for @p t; a model may skip computing anything else.
     bool requested(const Term t) const { return contains(m_terms, t); }
-    Term terms() const { return m_terms; }
 
-    NT *flux(const size_t c, const size_t d) { return column(flux_offset, c * dim + d, "flux"); }
-    const NT *flux(const size_t c, const size_t d) const { return column(flux_offset, c * dim + d, "flux"); }
-    NT *source(const size_t c) { return column(source_offset, c, "source"); }
-    const NT *source(const size_t c) const { return column(source_offset, c, "source"); }
-    NT *diffusion_flux(const size_t c, const size_t d) { return column(diffusion_offset, c * dim + d, "diffusion"); }
-    const NT *diffusion_flux(const size_t c, const size_t d) const
+    PointSpan<NT> flux(const size_t c, const size_t d) { return column(flux_offset, c * dim + d, "flux"); }
+    PointSpan<const NT> flux(const size_t c, const size_t d) const { return column(flux_offset, c * dim + d, "flux"); }
+    PointSpan<NT> source(const size_t c) { return column(source_offset, c, "source"); }
+    PointSpan<const NT> source(const size_t c) const { return column(source_offset, c, "source"); }
+    PointSpan<NT> diffusion_flux(const size_t c, const size_t d)
     {
-      return column(diffusion_offset, c * dim + d, "diffusion");
+      return column(diffusion_offset, c * dim + d, "diffusion flux");
+    }
+    PointSpan<const NT> diffusion_flux(const size_t c, const size_t d) const
+    {
+      return column(diffusion_offset, c * dim + d, "diffusion flux");
     }
 
     void store_flux(const size_t i, const std::array<dealii::Tensor<1, dim, NT>, n_fe> &F)
@@ -374,15 +408,16 @@ namespace DiFfRG
 
   private:
     static constexpr size_t no_column = size_t(-1);
-    NT *column(const size_t offset, const size_t col, const char *term)
+    PointSpan<NT> column(const size_t offset, const size_t col, const char *term)
     {
-      return const_cast<NT *>(std::as_const(*this).column(offset, col, term));
+      const auto c = std::as_const(*this).column(offset, col, term);
+      return {const_cast<NT *>(c.data()), c.size()};
     }
-    const NT *column(const size_t offset, const size_t col, const char *term) const
+    PointSpan<const NT> column(const size_t offset, const size_t col, const char *term) const
     {
       if (offset == no_column)
         throw std::logic_error(std::string("BatchOutput: the ") + term + " was not requested by the assembler.");
-      return data.data() + (offset + col) * n;
+      return {data.data() + (offset + col) * n, n};
     }
 
     size_t n = 0;
@@ -543,7 +578,7 @@ namespace DiFfRG
 
     /**
      * @brief Level `dependent` of an LDG model at all points of a batch of level dependent - 1, from the model's
-     * per-point ldg_flux and ldg_source. This is def::AbstractModel::ldg_flux_source_batch's default.
+     * per-point ldg_flux and ldg_source. This is def::AbstractModel::ldg_evaluate_batch's default.
      */
     template <uint dependent, typename Model, typename Out, typename Batch>
     void ldg_evaluate_per_point(const Model &model, Out &out, const Batch &batch)
@@ -611,12 +646,12 @@ namespace DiFfRG
 
   /**
    * @brief Level `to` of an LDG model at all points of a batch of level to - 1: flux and/or source, as @p out
-   * requests. See Model::ldg_flux_source_batch.
+   * requests. See Model::ldg_evaluate_batch.
    */
   template <uint to, typename Model, typename Out, typename Batch>
   void evaluate_ldg_level(const Model &model, Out &out, const Batch &batch)
   {
-    model.template ldg_flux_source_batch<to>(out, batch);
+    model.template ldg_evaluate_batch<to>(out, batch);
   }
 
   /// The boundary numflux of LDG level `to`: the model's ldg_boundary_numflux_batch, else its per-point one.
@@ -726,7 +761,7 @@ namespace DiFfRG
       auto &ad_out = workspace.out;
       const auto prepare = [&](const size_t n_blocks) {
         for (size_t s = 0; s < n_sides; ++s) {
-          ad_batches[s].reinit(n_blocks * n, batches[s]->has_derivatives(), batches[s]->has_hessians());
+          ad_batches[s].reinit(n_blocks * n);
           ad_batches[s].set_shared(ad_extractors, batches[s]->variables());
         }
         ad_out.reinit(n_blocks * n, terms);
@@ -737,7 +772,7 @@ namespace DiFfRG
           ad_batches[s].copy_point(b * n + i, *batches[s], i);
       };
 
-      const auto seeds = batch_seeds<dim, n_in>(n_sides, batches[0]->has_derivatives(), batches[0]->has_hessians());
+      const auto seeds = batch_seeds<dim, n_in>(n_sides, Batch::has_derivatives, Batch::has_hessians);
       const size_t per_group = std::max<size_t>(1, max_stacked / n);
       for (size_t g0 = 0; g0 < seeds.size(); g0 += per_group) {
         const size_t G = std::min(per_group, seeds.size() - g0);
@@ -749,13 +784,16 @@ namespace DiFfRG
               const auto &s = seeds[g0 + b];
               auto &ad = ad_batches[s.side];
               const size_t j = b * n + i;
+              // batch_seeds() only lists the derivatives and hessians a batch holds.
               if (s.kind == BatchSeed::value)
                 seed_direction(ad.value(s.c, j));
-              else if (s.kind == BatchSeed::derivative)
-                seed_direction(ad.derivative(s.c, s.d1, j));
-              else {
-                seed_direction(ad.hessian(s.c, s.d1, s.d2, j));
-                if (s.d1 != s.d2) seed_direction(ad.hessian(s.c, s.d2, s.d1, j));
+              else if constexpr (Batch::has_derivatives) {
+                if (s.kind == BatchSeed::derivative)
+                  seed_direction(ad.derivative(s.c, s.d1, j));
+                else if constexpr (Batch::has_hessians) {
+                  seed_direction(ad.hessian(s.c, s.d1, s.d2, j));
+                  if (s.d1 != s.d2) seed_direction(ad.hessian(s.c, s.d2, s.d1, j));
+                }
               }
             }
         });
@@ -841,14 +879,10 @@ namespace DiFfRG
       return stacked;
     }
 
-    template <typename Model>
-    constexpr bool has_ad_flux_source_jacobians =
-        std::is_base_of_v<def::ADjacobian_flux_source<Model, autodiff::real>, Model>;
-    template <typename Model>
-    constexpr bool has_ad_boundary_jacobians =
-        std::is_base_of_v<def::ADjacobian_boundary_numflux<Model, autodiff::real>, Model>;
-    template <typename Model>
-    constexpr bool has_ad_numflux_jacobians = std::is_base_of_v<def::ADjacobian_numflux<Model, autodiff::real>, Model>;
+    /// Whether the model's flux, source and numflux jacobians are the seed-stacked AD of its batch evaluation.
+    template <typename Model> constexpr bool has_batch_ad_jacobians = std::is_base_of_v<def::BatchADJacobians, Model>;
+    /// Whether those jacobians include the extractor directions (not for def::FE_AD).
+    template <typename Model> constexpr bool seeds_extractors = !std::is_base_of_v<def::FrozenExtractors, Model>;
 
     template <typename Batch> constexpr bool is_ldg_batch = requires { Batch::n_levels; };
   } // namespace internal
@@ -866,11 +900,11 @@ namespace DiFfRG
   {
     constexpr int dim = Batch::dim;
     internal::parallel_assign(J, batch.size(), {});
-    if constexpr (internal::has_ad_flux_source_jacobians<Model>)
+    if constexpr (internal::has_batch_ad_jacobians<Model>)
       internal::seed_stacked_jacobian<n_out, 1>(
           [&](auto &out, const auto &ad, size_t) { model.evaluate_batch(out, ad[0]); },
           [&](const size_t i, uint) -> auto & { return J[i]; }, std::array{&batch}, max_stacked,
-          Term::flux | Term::source, workspace);
+          Term::flux | Term::source, workspace, internal::seeds_extractors<Model>);
     else
       internal::for_each_point(batch, [&](const size_t i, const auto &x, const auto &sol) {
         auto &Ji = J[i];
@@ -909,12 +943,13 @@ namespace DiFfRG
   {
     constexpr int dim = Batch::dim;
     internal::parallel_assign(J, batch.size(), {});
-    if constexpr (internal::has_ad_boundary_jacobians<Model>)
+    if constexpr (internal::has_batch_ad_jacobians<Model>)
       internal::seed_stacked_jacobian<n_out, 1>(
           [&](auto &out, const auto &ad, const size_t n_blocks) {
             evaluate_boundary_numflux(model, out, internal::stack_normals(workspace.normals, normals, n_blocks), ad[0]);
           },
-          [&](const size_t i, uint) -> auto & { return J[i]; }, std::array{&batch}, max_stacked, Term::flux, workspace);
+          [&](const size_t i, uint) -> auto & { return J[i]; }, std::array{&batch}, max_stacked, Term::flux, workspace,
+          internal::seeds_extractors<Model>);
     else
       internal::for_each_point(batch, [&](const size_t i, const auto &x, const auto &sol) {
         auto &Ji = J[i];
@@ -953,13 +988,13 @@ namespace DiFfRG
     constexpr size_t n_in = Batch::n_fe_functions;
     using T1 = dealii::Tensor<1, dim>;
     internal::parallel_assign(J, batch_s.size(), {});
-    if constexpr (internal::has_ad_numflux_jacobians<Model>)
+    if constexpr (internal::has_batch_ad_jacobians<Model>)
       internal::seed_stacked_jacobian<n_out, 2>(
           [&](auto &out, const auto &ad, const size_t n_blocks) {
             evaluate_numflux(model, out, internal::stack_normals(workspace.normals, normals, n_blocks), ad[0], ad[1]);
           },
           [&](const size_t i, const uint side) -> auto & { return J[i][side]; }, std::array{&batch_s, &batch_n},
-          max_stacked, Term::flux, workspace);
+          max_stacked, Term::flux, workspace, internal::seeds_extractors<Model>);
     else
       internal::for_each_point_pair(
           batch_s, batch_n, [&](const size_t i, const auto &x, const auto &sol_s, const auto &sol_n) {
@@ -997,7 +1032,7 @@ namespace DiFfRG
 
   /**
    * @brief Jacobian of LDG level `to` (flux and source) at all points of a batch of level to - 1: for a model with
-   * AD jacobians the seed-stacked AD of ldg_flux_source_batch, otherwise its per-point jacobian_flux_source<to - 1,
+   * AD jacobians the seed-stacked AD of ldg_evaluate_batch, otherwise its per-point jacobian_flux_source<to - 1,
    * to>.
    */
   template <uint to, typename Model, typename Batch, size_t n_out>
@@ -1007,11 +1042,11 @@ namespace DiFfRG
                                    SeedStackWorkspace<Batch, n_out> &workspace)
   {
     internal::parallel_assign(J, batch.size(), {});
-    if constexpr (internal::has_ad_flux_source_jacobians<Model>)
+    if constexpr (internal::has_batch_ad_jacobians<Model>)
       internal::seed_stacked_jacobian<n_out, 1>(
           [&](auto &out, const auto &ad, size_t) { evaluate_ldg_level<to>(model, out, ad[0]); },
           [&](const size_t i, uint) -> auto & { return J[i]; }, std::array{&batch}, max_stacked,
-          Term::flux | Term::source, workspace);
+          Term::flux | Term::source, workspace, internal::seeds_extractors<Model>);
     else
       internal::for_each_state(batch, [&](const size_t i, const auto &x, const auto &s) {
         model.template jacobian_flux_source<to - 1, to>(J[i].j_flux, J[i].j_source, x, s.values);
@@ -1027,13 +1062,14 @@ namespace DiFfRG
                                          const size_t max_stacked, SeedStackWorkspace<Batch, n_out> &workspace)
   {
     internal::parallel_assign(J, batch.size(), {});
-    if constexpr (internal::has_ad_boundary_jacobians<Model>)
+    if constexpr (internal::has_batch_ad_jacobians<Model>)
       internal::seed_stacked_jacobian<n_out, 1>(
           [&](auto &out, const auto &ad, const size_t n_blocks) {
             evaluate_ldg_boundary_numflux<to>(model, out, internal::stack_normals(workspace.normals, normals, n_blocks),
                                               ad[0]);
           },
-          [&](const size_t i, uint) -> auto & { return J[i]; }, std::array{&batch}, max_stacked, Term::flux, workspace);
+          [&](const size_t i, uint) -> auto & { return J[i]; }, std::array{&batch}, max_stacked, Term::flux, workspace,
+          internal::seeds_extractors<Model>);
     else
       internal::for_each_state(batch, [&](const size_t i, const auto &x, const auto &s) {
         model.template jacobian_boundary_numflux<to - 1, to>(J[i].j_flux, normals[i], x, s.values);
@@ -1050,14 +1086,14 @@ namespace DiFfRG
   {
     using T1 = dealii::Tensor<1, Batch::dim>;
     internal::parallel_assign(J, batch_s.size(), {});
-    if constexpr (internal::has_ad_numflux_jacobians<Model>)
+    if constexpr (internal::has_batch_ad_jacobians<Model>)
       internal::seed_stacked_jacobian<n_out, 2>(
           [&](auto &out, const auto &ad, const size_t n_blocks) {
             evaluate_ldg_numflux<to>(model, out, internal::stack_normals(workspace.normals, normals, n_blocks), ad[0],
                                      ad[1]);
           },
           [&](const size_t i, const uint side) -> auto & { return J[i][side]; }, std::array{&batch_s, &batch_n},
-          max_stacked, Term::flux, workspace);
+          max_stacked, Term::flux, workspace, internal::seeds_extractors<Model>);
     else
       internal::for_each_state_pair(batch_s, batch_n, [&](const size_t i, const auto &x, const auto &s, const auto &n) {
         std::array<SimpleMatrix<T1, n_out, Batch::n_fe_functions>, 2> jF;

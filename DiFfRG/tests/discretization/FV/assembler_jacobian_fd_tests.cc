@@ -1278,3 +1278,103 @@ TEST_CASE("KT 2D hessian-dependent source Jacobian matches FD", "[FV][KT][hessia
 
   REQUIRE(jacobian_matches_fd(assembler, sol, 1e-7, 2e-4, "2D hessian source"));
 }
+
+// A potential-flow-like model on the rho-symmetric boundary: a gradient-free advective flux and a diffusion
+// flux that depends on rho and on the gradient, as for a pion loop 1/(1 + u) and a sigma loop
+// 1/(1 + u + 2 rho u'). The flat profile has neighbouring one-sided slopes that differ by ~6e-9, i.e. it sits
+// close to, but not on, a minmod kink -- as a potential does in its convexity-restored region.
+template <bool with_advection, bool with_diffusion, bool flat = false>
+class RhoSymmetricPotentialModel
+    : public def::AbstractModel<RhoSymmetricPotentialModel<with_advection, with_diffusion, flat>,
+                                ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>>>,
+      public def::Time,
+      public def::RhoSymmetricLinearExtrapolationBoundaries<
+          RhoSymmetricPotentialModel<with_advection, with_diffusion, flat>>,
+      public def::AD<RhoSymmetricPotentialModel<with_advection, with_diffusion, flat>>
+{
+public:
+  template <typename Vector> void initial_condition(const Point<1> &pos, Vector &values) const
+  {
+    if constexpr (flat)
+      values[0] = 0.5 + 1e-7 * pos[0] + 3e-8 * pos[0] * pos[0];
+    else
+      values[0] = 0.1 + 0.5 * pos[0] * pos[0];
+  }
+
+  template <typename NT, typename Solution>
+  void flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution &sol) const
+  {
+    const auto &u = get<"fe_functions">(sol);
+    if constexpr (with_advection) F_i[0][0] = NT(1.) / (NT(1.) + u[0]);
+  }
+
+  template <typename NT, typename Solution>
+  void diffusion_flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> &pos, const Solution &sol) const
+  {
+    const auto &u = get<"fe_functions">(sol);
+    const auto &grad_u = get<"fe_derivatives">(sol);
+    if constexpr (with_diffusion) F_i[0][0] = NT(1.) / (NT(1.) + u[0] + NT(2. * pos[0]) * grad_u[0][0]);
+  }
+
+  template <typename NT, typename Solution>
+  void source(std::array<NT, 1> &s_i, const Point<1> & /*pos*/, const Solution & /*sol*/) const
+  {
+    s_i[0] = NT(0);
+  }
+};
+
+template <typename Model> static bool rho_symmetric_jacobian_matches_fd(const char *label, const double eps = 1.0e-7)
+{
+  using Discretization = FV::Discretization<Model, RectangularMesh<1>, double>;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+  const ConfigTree json = make_json();
+  Model model;
+  RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+  const VectorType sol = state.spatial_data();
+  const int n_dofs = static_cast<int>(sol.size());
+  VectorType sol_dot(n_dofs);
+
+  SparseMatrix<double> analytic(assembler.get_sparsity_pattern_jacobian());
+  assembler.jacobian(analytic, sol, 1.0, sol_dot, 0.0, 0.0);
+
+  const double tolerance = 1.0e-5;
+  bool pass = true;
+  for (int j = 0; j < n_dofs; ++j) {
+    VectorType u_plus = sol, u_minus = sol;
+    u_plus[j] += eps;
+    u_minus[j] -= eps;
+    VectorType r_plus(n_dofs), r_minus(n_dofs);
+    assembler.residual(r_plus, u_plus, 1.0, sol_dot, 0.0);
+    assembler.residual(r_minus, u_minus, 1.0, sol_dot, 0.0);
+    for (int i = 0; i < n_dofs; ++i) {
+      const double fd = (r_plus[i] - r_minus[i]) / (2.0 * eps);
+      const double actual = assembler.get_sparsity_pattern_jacobian().exists(i, j) ? analytic.el(i, j) : 0.0;
+      if (std::abs(actual - fd) > tolerance * std::max(1.0, std::abs(fd))) {
+        std::cout << label << " Jacobian mismatch at [" << i << "," << j << "]: analytic=" << actual << " fd=" << fd
+                  << "\n";
+        pass = false;
+      }
+    }
+  }
+  return pass;
+}
+
+TEST_CASE("KT Jacobian matches FD on the rho-symmetric boundary", "[FV][KT][boundary]")
+{
+  SECTION("advection") { REQUIRE(rho_symmetric_jacobian_matches_fd<RhoSymmetricPotentialModel<true, false>>("adv")); }
+  SECTION("diffusion") { REQUIRE(rho_symmetric_jacobian_matches_fd<RhoSymmetricPotentialModel<false, true>>("diff")); }
+  SECTION("both") { REQUIRE(rho_symmetric_jacobian_matches_fd<RhoSymmetricPotentialModel<true, true>>("both")); }
+  // The difference step must stay below the slope gap, or it straddles the kink itself.
+  SECTION("near a limiter kink")
+  {
+    REQUIRE(rho_symmetric_jacobian_matches_fd<RhoSymmetricPotentialModel<true, true, true>>("flat", 1.0e-10));
+  }
+}

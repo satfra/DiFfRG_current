@@ -105,13 +105,13 @@ namespace
       }
       using NT = typename Batch::number_type;
       for (size_t i = 0; i < batch.size(); ++i) {
-        std::array<NT, 2> u{{batch.values(0).data[i], batch.values(1).data[i]}};
+        std::array<NT, 2> u{{batch.values(0)[i], batch.values(1)[i]}};
         std::array<Tensor<1, dim, NT>, 2> du;
         Point<dim> x;
         for (uint d = 0; d < dim; ++d) {
-          x[d] = batch.coordinates(d).data[i];
+          x[d] = batch.coordinates(d)[i];
           for (uint c = 0; c < 2; ++c)
-            du[c][d] = batch.derivatives(c, d).data[i];
+            du[c][d] = batch.derivatives(c, d)[i];
         }
         if (out.requested(Term::flux)) {
           std::array<Tensor<1, dim, NT>, 2> F;
@@ -121,7 +121,7 @@ namespace
         if constexpr (Batch::with_third)
           if (out.requested(Term::diffusion_flux)) {
             std::array<Tensor<1, dim, NT>, 2> D;
-            diffusion(D, u, du, [&](uint c, uint d) { return batch.third_derivatives(c, d, d, d).data[i]; });
+            diffusion(D, u, du, [&](uint c, uint d) { return batch.third_derivatives(c, d, d, d)[i]; });
             out.store_diffusion_flux(i, D);
           }
         if (out.requested(Term::source)) {

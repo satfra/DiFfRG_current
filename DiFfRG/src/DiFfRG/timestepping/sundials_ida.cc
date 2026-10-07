@@ -555,16 +555,15 @@ namespace DiFfRG
                                 "nonfinite-solution", &src, &dst, nullptr);
           return agreed_ida_result(assembler.get_communicator(), true);
         }
-        if (sol_iterations >= 0) {
-          const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-          ProgressEvent event{.topic = progress_topics::implicit_linear_solve,
-                              .time = stuck_t,
-                              .duration_ms = calc_timer.lap(),
-                              .iterations = sol_iterations,
-                              .minimum_verbosity = 2};
-          current_diagnostics.append_to(event);
-          this->log.progress(event);
-        }
+        // A direct solver reports no iterations (-1), but its time counts all the same.
+        const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+        ProgressEvent event{.topic = progress_topics::implicit_linear_solve,
+                            .time = stuck_t,
+                            .duration_ms = calc_timer.lap(),
+                            .iterations = sol_iterations,
+                            .minimum_verbosity = 2};
+        current_diagnostics.append_to(event);
+        this->log.progress(event);
       } catch (std::exception &) {
         callback_diagnostics.linear_solver_failures++;
         ++failure_counter;

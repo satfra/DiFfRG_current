@@ -545,6 +545,109 @@ namespace DiFfRG
       return volume;
     }
 
+    /**
+     * @brief Evaluate the integral at dest.size() points in a single launch; see QuadratureIntegrator::map_points.
+     * The frequency rule (Matsubara sum, exact sum or vacuum integral) is the one get() uses, i.e. the one chosen
+     * for the current T, k and typical_E: it is shared by all points.
+     */
+    template <typename OT, typename... A>
+      requires(
+          internal::is_map_result<OT, NT> &&
+          is_valid_kernel<NT, KERNEL, ctype, dim, internal::compute_arg_t<internal::point_arg_value_t<A>, ctype>...>)
+    void map_points(const PointSpan<OT> dest, const A &...args)
+    {
+      run_map_points(dest, PointArg<internal::point_arg_value_t<A>>(args)...);
+    }
+
+    void set_map_points_policy(const MapPointsPolicy policy) { m_map_points_policy = policy; }
+
+    /// The kernel launch of map_points(). Public only because nvcc rejects extended device lambdas
+    /// inside non-public member functions.
+    template <typename ResultView, typename DeviceArgs>
+    void launch_map_points(const ResultView &result, const size_t n, const DeviceArgs &device_args)
+    {
+      using OT = typename ResultView::value_type;
+
+      const auto &nd = nodes;
+      const auto &w = weights;
+      const auto &m_n = matsubara_nodes;
+      const auto &m_w = matsubara_weights;
+      const size_t n_tail = m_n_tail;
+      const auto &start = grid_start;
+      const auto &scale = grid_scale;
+      const auto gs = grid_size;
+      const auto args = device_args;
+
+      size_t total = 1;
+      for (int d = 0; d < dim; ++d)
+        total *= grid_size[d];
+      device::array<size_t, dim> strides;
+      strides[dim - 1] = 1;
+      for (int d = dim - 2; d >= 0; --d)
+        strides[d] = strides[d + 1] * gs[d + 1];
+
+      // The integrand at grid node `flat` (row-major, the frequency axis last) for the arguments of point i.
+      const auto node = KOKKOS_LAMBDA(const size_t flat, const size_t i)->NT
+      {
+        device::array<ctype, sdim> x;
+        ctype weight = 1;
+        size_t remainder = flat;
+        for (int d = 0; d < sdim; ++d) {
+          const size_t id = remainder / strides[d];
+          remainder -= id * strides[d];
+          x[d] = Kokkos::fma(scale[d], nd[d][id], start[d]);
+          weight *= w[d][id] * scale[d];
+        }
+        const size_t jt = remainder;
+        // References, not copies: a shared argument may be an interpolator (see node_value).
+        const auto point_args = device::apply([&](const auto &...a) { return device::tie(a(i)...); }, args);
+        return weight * node_value(x, device::tuple<>{}, point_args, m_n[jt], m_w[jt], jt < n_tail);
+      };
+
+      if (internal::resolve_policy(m_map_points_policy, n, total) == MapPointsPolicy::thread_per_point) {
+        Kokkos::parallel_for(
+            "QuadratureIntegrator_fT_map_points", Kokkos::RangePolicy<ExecutionSpace>(space, 0, n),
+            KOKKOS_LAMBDA(const size_t i) {
+              NT sum = device::apply([&](const auto &...a) { return NT(KERNEL::constant(a(i)...)); }, args);
+              NT integral{};
+              for (size_t flat = 0; flat < total; ++flat)
+                integral += node(flat, i);
+              sum += integral;
+              result(i) = static_cast<OT>(sum);
+            });
+      } else {
+        using TeamType = typename Kokkos::TeamPolicy<ExecutionSpace>::member_type;
+        constexpr int vector_width = 32;
+        const size_t n_outer = (total + vector_width - 1) / vector_width;
+        Kokkos::parallel_for(
+            "QuadratureIntegrator_fT_map_points_team",
+            Kokkos::TeamPolicy<ExecutionSpace>(space, n, Kokkos::AUTO, vector_width),
+            KOKKOS_LAMBDA(const TeamType &team) {
+              const size_t i = team.league_rank();
+              NT integral{};
+              Kokkos::parallel_reduce(
+                  Kokkos::TeamThreadRange(team, n_outer),
+                  [&](const size_t outer, NT &team_update) {
+                    NT vec_sum{};
+                    Kokkos::parallel_reduce(
+                        Kokkos::ThreadVectorRange(team, vector_width),
+                        [&](const size_t inner, NT &vec_update) {
+                          const size_t flat = outer * vector_width + inner;
+                          if (flat < total) vec_update += node(flat, i);
+                        },
+                        vec_sum);
+                    team_update += vec_sum;
+                  },
+                  integral);
+              Kokkos::single(Kokkos::PerTeam(team), [&]() {
+                NT sum = device::apply([&](const auto &...a) { return NT(KERNEL::constant(a(i)...)); }, args);
+                sum += integral;
+                result(i) = static_cast<OT>(sum);
+              });
+            });
+      }
+    }
+
     template <typename OT, typename Coordinates, typename... Args>
       requires internal::is_map_result<OT, NT>
     auto map(OT *dest, const Coordinates &coordinates, const Args &...args)
@@ -611,6 +714,14 @@ namespace DiFfRG
     }
 
   private:
+    template <typename OT, typename... T> void run_map_points(const PointSpan<OT> dest, const PointArg<T> &...args)
+    {
+      const size_t n = dest.size();
+      if (n == 0) return;
+      const auto device_args = m_map_points.template stage<ctype>(space, n, args...);
+      m_map_points.run(space, dest, [&](const auto &result) { launch_map_points(result, n, device_args); });
+    }
+
     /**
      * @brief Re-select and re-fetch the frequency rule after T, k, typical_E or the cutoff changed.
      *
@@ -824,6 +935,9 @@ namespace DiFfRG
     mutable Kokkos::View<ctype *, typename ExecutionSpace::memory_space> m_positions;
     mutable std::string m_positions_key;
     mutable internal::MapStagingSet<NT, ExecutionSpace> m_staging;
+    // map_points() buffers, separate from map()'s, whose staging may still be pending in a DeferredMaps scope.
+    internal::MapPointsBuffers<NT, ExecutionSpace> m_map_points;
+    MapPointsPolicy m_map_points_policy = MapPointsPolicy::automatic;
     mutable Kokkos::View<NT, typename ExecutionSpace::memory_space> m_result_view;
     mutable typename Kokkos::View<NT, typename ExecutionSpace::memory_space>::host_mirror_type m_result_host;
     mutable bool m_result_views_initialized = false;
@@ -891,6 +1005,16 @@ namespace DiFfRG
       NT result;
       get(result, t...);
       dest = OT(result);
+    }
+
+    /// See QuadratureIntegrator_fT::map_points. One get() per point inside a flat parallel loop, so every
+    /// result is bitwise identical to the corresponding get().
+    template <typename OT, typename... A>
+      requires(internal::is_map_result<OT, NT> &&
+               is_valid_kernel<NT, KERNEL, ctype, dim, internal::point_arg_value_t<A>...>)
+    void map_points(const PointSpan<OT> dest, const A &...args) const
+    {
+      internal::map_points_by_get(*this, dest, PointArg<internal::point_arg_value_t<A>>(args)...);
     }
 
     template <typename OT, typename Coordinates, typename... Args>

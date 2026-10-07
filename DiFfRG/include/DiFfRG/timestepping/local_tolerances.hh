@@ -58,15 +58,10 @@ namespace DiFfRG
       // Every rank has to take the same decision: the stepper restarts IDA collectively.
       if constexpr (requires { atol.get_mpi_communicator(); })
         drifted = dealii::Utilities::MPI::max(int(drifted), atol.get_mpi_communicator()) > 0;
-      if (drifted) {
-        atol = candidate;
-        ++n_refreshes;
-      }
+      if (drifted) atol = candidate;
       return drifted;
     }
 
-    bool is_active() const { return active; }
-    uint refreshes() const { return n_refreshes; }
     VectorType &get() { return atol; }
     double min() const
     {
@@ -105,6 +100,5 @@ namespace DiFfRG
     const double abs_tol, rel_tol, refresh;
     VectorType atol, candidate;
     bool active = false;
-    uint n_refreshes = 0;
   };
 } // namespace DiFfRG

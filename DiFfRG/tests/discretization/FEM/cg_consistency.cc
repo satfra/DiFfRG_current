@@ -79,12 +79,21 @@ namespace
       S[1] = exp(0.1 * u[0]) * u[1] + du[0][0] * du[1][0];
     }
 
+    // With batch_reads_hessians = false the per-point tuple has no hessians: the physics then sees zeros.
+    template <typename NT, typename Solution> static auto hessians_of(const Solution &sol)
+    {
+      if constexpr (tuple_has<"fe_hessians", Solution>)
+        return as_tensors<NT, 2>(get<"fe_hessians">(sol));
+      else
+        return std::array<Tensor<2, dim, NT>, 2>{};
+    }
+
     template <typename NT, typename Solution>
     void flux(std::array<Tensor<1, dim, NT>, 2> &F, const Point<dim> &x, const Solution &sol) const
     {
       std::array<NT, 2> S;
       evaluate(F, S, x, as_array<NT>(get<"fe_functions">(sol)), as_tensors<NT, 1>(get<"fe_derivatives">(sol)),
-               as_tensors<NT, 2>(get<"fe_hessians">(sol)), get<"extractors">(sol));
+               hessians_of<NT>(sol), get<"extractors">(sol));
     }
 
     template <typename NT, typename Solution>
@@ -92,7 +101,7 @@ namespace
     {
       std::array<Tensor<1, dim, NT>, 2> F;
       evaluate(F, S, x, as_array<NT>(get<"fe_functions">(sol)), as_tensors<NT, 1>(get<"fe_derivatives">(sol)),
-               as_tensors<NT, 2>(get<"fe_hessians">(sol)), get<"extractors">(sol));
+               hessians_of<NT>(sol), get<"extractors">(sol));
     }
 
     template <typename Out, typename Batch> void evaluate_batch(Out &out, const Batch &batch) const
@@ -104,17 +113,17 @@ namespace
       using NT = typename Batch::number_type;
       const auto u = batch.values(0), v = batch.values(1);
       for (size_t i = 0; i < batch.size(); ++i) {
-        std::array<NT, 2> ui{{u.data[i], v.data[i]}};
+        std::array<NT, 2> ui{{u[i], v[i]}};
         std::array<Tensor<1, dim, NT>, 2> dui;
         std::array<Tensor<2, dim, NT>, 2> ddui;
         Point<dim> x;
         for (uint d1 = 0; d1 < dim; ++d1) {
-          x[d1] = batch.coordinates(d1).data[i];
+          x[d1] = batch.coordinates(d1)[i];
           for (uint c = 0; c < 2; ++c) {
-            dui[c][d1] = batch.derivatives(c, d1).data[i];
+            dui[c][d1] = batch.derivatives(c, d1)[i];
             if constexpr (hessians)
               for (uint d2 = 0; d2 < dim; ++d2)
-                ddui[c][d1][d2] = batch.hessians(c, d1, d2).data[i];
+                ddui[c][d1][d2] = batch.hessians(c, d1, d2)[i];
           }
         }
         std::array<Tensor<1, dim, NT>, 2> F;
@@ -224,7 +233,9 @@ namespace
     std::vector<std::vector<Tensor<2, dim>>> ddu(quadrature.size(), std::vector<Tensor<2, dim>>(2));
     const std::array<double, 0> no_extractors{};
     const double cell_width = 0.;
-    const auto at = [&](const uint q) { return batch_tie(u[q], du[q], ddu[q], no_extractors, s.u, cell_width); };
+    const auto at = [&](const uint q) {
+      return batch_tie<true, true>(u[q], du[q], ddu[q], no_extractors, s.u, cell_width);
+    };
 
     for (const auto &cell : s.discretization.get_dof_handler().active_cell_iterators()) {
       cell->get_dof_indices(dofs);

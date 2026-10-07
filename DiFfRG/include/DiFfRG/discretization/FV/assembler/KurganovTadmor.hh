@@ -37,6 +37,7 @@
 #include <DiFfRG/discretization/common/batched_scatter.hh>
 #include <DiFfRG/discretization/common/eom.hh>
 #include <DiFfRG/discretization/common/la_policy.hh>
+#include <DiFfRG/discretization/common/phase_times.hh>
 #include <DiFfRG/discretization/common/solution_sample.hh>
 #include <DiFfRG/model/abs_tolerances.hh>
 #include <DiFfRG/physics/integration/map_scheduler.hh>
@@ -159,7 +160,7 @@ namespace DiFfRG
         }
 
         /**
-         * @brief Result struct for compute_kt_flux_and_speeds.
+         * @brief The two traces' fluxes and the wave speeds of a face, see kt_flux_from_traces.
          */
         template <int dim, typename NumberType, size_t n_components> struct KTFluxData {
           std::array<dealii::Tensor<1, dim, NumberType>, n_components> F_plus;
@@ -211,78 +212,6 @@ namespace DiFfRG
                      dealii::ExcMessage("A component marked no_wave_speed by wave_speed_blocks() wrote a flux."));
 
           return result;
-        }
-
-        /**
-         * @brief The KT flux data of a face, see kt_flux_from_traces, with the model's flux and its value jacobian
-         * evaluated point by point by forward AD. The assembler evaluates them batched instead.
-         */
-        template <typename WaveSpeedStrategy, typename Model, typename NumberType, int dim, size_t n_components,
-                  typename ExtractorArray, typename VariableVector>
-        KTFluxData<dim, NumberType, n_components> compute_kt_flux_and_speeds(
-            const std::array<NumberType, n_components> &u_plus, const std::array<NumberType, n_components> &u_minus,
-            const GradientType<dim, NumberType, n_components> &grad_u_plus,
-            const GradientType<dim, NumberType, n_components> &grad_u_minus, const dealii::Point<dim> &x_q,
-            const double cell_width_plus, const double cell_width_minus, const ExtractorArray &extractors,
-            const VariableVector &variables, const Model &model)
-        {
-          using ADNumberType = autodiff::Real<1, NumberType>;
-
-          std::array<ADNumberType, n_components> u_plus_AD{}, u_minus_AD{};
-          GradientType<dim, ADNumberType, n_components> grad_u_plus_AD{}, grad_u_minus_AD{};
-          for (size_t i = 0; i < n_components; ++i) {
-            u_plus_AD[i] = ADNumberType(u_plus[i]);
-            u_minus_AD[i] = ADNumberType(u_minus[i]);
-            for (size_t d = 0; d < dim; ++d) {
-              grad_u_plus_AD[i][d] = ADNumberType(grad_u_plus[i][d]);
-              grad_u_minus_AD[i][d] = ADNumberType(grad_u_minus[i][d]);
-            }
-          }
-
-          std::array<dealii::Tensor<1, dim, ADNumberType>, n_components> F_AD_plus{}, F_AD_minus{};
-          std::array<dealii::Tensor<1, dim, NumberType>, n_components> F_plus{}, F_minus{};
-          std::array<JacobianMatrix<NumberType, n_components>, dim> J_plus{}, J_minus{};
-
-          for (size_t j = 0; j < n_components; ++j) {
-            seed(u_plus_AD[j]);
-            seed(u_minus_AD[j]);
-
-            F_AD_plus = {};
-            F_AD_minus = {};
-            model.flux(F_AD_plus, x_q, flux_tie(u_plus_AD, grad_u_plus_AD, extractors, variables, cell_width_plus));
-            model.flux(F_AD_minus, x_q, flux_tie(u_minus_AD, grad_u_minus_AD, extractors, variables, cell_width_minus));
-
-            for (size_t d = 0; d < dim; ++d) {
-              for (size_t i = 0; i < n_components; ++i) {
-                J_plus[d][i][j] = autodiff::derivative(F_AD_plus[i][d]);
-                J_minus[d][i][j] = autodiff::derivative(F_AD_minus[i][d]);
-
-                if (j == 0) {
-                  F_plus[i][d] = F_AD_plus[i][d].val();
-                  F_minus[i][d] = F_AD_minus[i][d].val();
-                }
-              }
-            }
-
-            unseed(u_plus_AD[j]);
-            unseed(u_minus_AD[j]);
-          }
-
-          return kt_flux_from_traces<WaveSpeedStrategy, Model, NumberType, dim, n_components>(F_plus, F_minus, J_plus,
-                                                                                              J_minus, model);
-        }
-
-        template <typename WaveSpeedStrategy, typename Model, typename NumberType, int dim, size_t n_components,
-                  typename ExtractorArray, typename VariableVector>
-        KTFluxData<dim, NumberType, n_components> compute_kt_flux_and_speeds(
-            const std::array<NumberType, n_components> &u_plus, const std::array<NumberType, n_components> &u_minus,
-            const dealii::Point<dim> &x_q, const double cell_width_plus, const double cell_width_minus,
-            const ExtractorArray &extractors, const VariableVector &variables, const Model &model)
-        {
-          const GradientType<dim, NumberType, n_components> zero_grad{};
-          return compute_kt_flux_and_speeds<WaveSpeedStrategy>(u_plus, u_minus, zero_grad, zero_grad, x_q,
-                                                               cell_width_plus, cell_width_minus, extractors, variables,
-                                                               model);
         }
 
         template <int dim, typename NumberType, size_t n_components>
@@ -387,157 +316,6 @@ namespace DiFfRG
           }
 
           return j_numflux;
-        }
-
-        template <typename Model, typename NumberType, int dim, size_t n_components, typename ExtractorArray,
-                  typename VariableVector>
-        std::array<dealii::Tensor<1, dim, NumberType>, n_components> compute_diffusion_flux(
-            const std::array<NumberType, n_components> &u_minus, const std::array<NumberType, n_components> &u_plus,
-            const GradientType<dim, NumberType, n_components> &grad_u_minus,
-            const GradientType<dim, NumberType, n_components> &grad_u_plus,
-            const ThirdDerivativeType<dim, NumberType, n_components> &third_derivatives_minus,
-            const ThirdDerivativeType<dim, NumberType, n_components> &third_derivatives_plus,
-            const dealii::Point<dim> &x_q, const double cell_width_minus, const double cell_width_plus,
-            const ExtractorArray &extractors, const VariableVector &variables, const Model &model)
-        {
-          std::array<dealii::Tensor<1, dim, NumberType>, n_components> D_minus{};
-          std::array<dealii::Tensor<1, dim, NumberType>, n_components> D_plus{};
-          std::array<dealii::Tensor<1, dim, NumberType>, n_components> D{};
-          model.diffusion_flux(D_minus, x_q,
-                               diffusion_flux_tie(u_minus, grad_u_minus, third_derivatives_minus, extractors, variables,
-                                                  cell_width_minus));
-          model.diffusion_flux(
-              D_plus, x_q,
-              diffusion_flux_tie(u_plus, grad_u_plus, third_derivatives_plus, extractors, variables, cell_width_plus));
-          for (size_t c = 0; c < n_components; ++c)
-            D[c] = NumberType(0.5) * (D_minus[c] + D_plus[c]);
-          return D;
-        }
-
-        /// Half the derivative of the diffusion flux on one trace with respect to its inputs: the face's diffusion
-        /// flux is the average of the two traces' fluxes.
-        template <int dim, typename NumberType, size_t n_components> struct DiffusionSideJacobian {
-          SimpleMatrix<dealii::Tensor<1, dim, NumberType>, n_components> u{};
-          SimpleMatrix<dealii::Tensor<1, dim, dealii::Tensor<1, dim, NumberType>>, n_components> grad{};
-          SimpleMatrix<dealii::Tensor<1, dim, dealii::Tensor<3, dim, NumberType>>, n_components> third_derivatives{};
-        };
-
-        template <int dim, typename NumberType, size_t n_components> struct DiffusionFluxJacobianData {
-          std::array<SimpleMatrix<dealii::Tensor<1, dim, NumberType>, n_components>, 2> u{};
-          std::array<SimpleMatrix<dealii::Tensor<1, dim, dealii::Tensor<1, dim, NumberType>>, n_components>, 2> grad{};
-          std::array<SimpleMatrix<dealii::Tensor<1, dim, dealii::Tensor<3, dim, NumberType>>, n_components>, 2>
-              third_derivatives{};
-        };
-
-        template <typename Model, typename NumberType, int dim, size_t n_components, typename ExtractorArray,
-                  typename VariableVector>
-        DiffusionFluxJacobianData<dim, NumberType, n_components> compute_diffusion_flux_jacobian(
-            const std::array<NumberType, n_components> &u_minus, const std::array<NumberType, n_components> &u_plus,
-            const GradientType<dim, NumberType, n_components> &grad_u_minus,
-            const GradientType<dim, NumberType, n_components> &grad_u_plus,
-            const ThirdDerivativeType<dim, NumberType, n_components> &third_derivatives_minus,
-            const ThirdDerivativeType<dim, NumberType, n_components> &third_derivatives_plus,
-            const dealii::Point<dim> &x_q, const double cell_width_minus, const double cell_width_plus,
-            const ExtractorArray &extractors, const VariableVector &variables, const Model &model)
-        {
-          using ADNumberType = autodiff::Real<1, NumberType>;
-
-          DiffusionFluxJacobianData<dim, NumberType, n_components> result{};
-
-          std::array<ADNumberType, n_components> u_minus_AD{};
-          std::array<ADNumberType, n_components> u_plus_AD{};
-          std::array<dealii::Tensor<1, dim, ADNumberType>, n_components> grad_u_minus_AD{};
-          std::array<dealii::Tensor<1, dim, ADNumberType>, n_components> grad_u_plus_AD{};
-          ThirdDerivativeType<dim, ADNumberType, n_components> third_derivatives_minus_AD{};
-          ThirdDerivativeType<dim, ADNumberType, n_components> third_derivatives_plus_AD{};
-          for (size_t c = 0; c < n_components; ++c) {
-            u_minus_AD[c] = ADNumberType(u_minus[c]);
-            u_plus_AD[c] = ADNumberType(u_plus[c]);
-            for (size_t d = 0; d < dim; ++d) {
-              grad_u_minus_AD[c][d] = ADNumberType(grad_u_minus[c][d]);
-              grad_u_plus_AD[c][d] = ADNumberType(grad_u_plus[c][d]);
-            }
-            for (size_t d0 = 0; d0 < dim; ++d0)
-              for (size_t d1 = 0; d1 < dim; ++d1)
-                for (size_t d2 = 0; d2 < dim; ++d2) {
-                  third_derivatives_minus_AD[c][d0][d1][d2] = ADNumberType(third_derivatives_minus[c][d0][d1][d2]);
-                  third_derivatives_plus_AD[c][d0][d1][d2] = ADNumberType(third_derivatives_plus[c][d0][d1][d2]);
-                }
-          }
-
-          std::array<dealii::Tensor<1, dim, ADNumberType>, n_components> D_AD{};
-
-          for (size_t c = 0; c < n_components; ++c) {
-            seed(u_minus_AD[c]);
-            D_AD = {};
-            model.diffusion_flux(D_AD, x_q,
-                                 diffusion_flux_tie(u_minus_AD, grad_u_minus_AD, third_derivatives_minus_AD, extractors,
-                                                    variables, cell_width_minus));
-            for (size_t i = 0; i < n_components; ++i)
-              for (size_t d = 0; d < dim; ++d)
-                result.u[0](i, c)[d] = NumberType(0.5) * derivative(D_AD[i][d]);
-            unseed(u_minus_AD[c]);
-
-            seed(u_plus_AD[c]);
-            D_AD = {};
-            model.diffusion_flux(D_AD, x_q,
-                                 diffusion_flux_tie(u_plus_AD, grad_u_plus_AD, third_derivatives_plus_AD, extractors,
-                                                    variables, cell_width_plus));
-            for (size_t i = 0; i < n_components; ++i)
-              for (size_t d = 0; d < dim; ++d)
-                result.u[1](i, c)[d] = NumberType(0.5) * derivative(D_AD[i][d]);
-            unseed(u_plus_AD[c]);
-
-            for (size_t d_in = 0; d_in < dim; ++d_in) {
-              seed(grad_u_minus_AD[c][d_in]);
-              D_AD = {};
-              model.diffusion_flux(D_AD, x_q,
-                                   diffusion_flux_tie(u_minus_AD, grad_u_minus_AD, third_derivatives_minus_AD,
-                                                      extractors, variables, cell_width_minus));
-              for (size_t i = 0; i < n_components; ++i)
-                for (size_t d_out = 0; d_out < dim; ++d_out)
-                  result.grad[0](i, c)[d_out][d_in] = NumberType(0.5) * derivative(D_AD[i][d_out]);
-              unseed(grad_u_minus_AD[c][d_in]);
-
-              seed(grad_u_plus_AD[c][d_in]);
-              D_AD = {};
-              model.diffusion_flux(D_AD, x_q,
-                                   diffusion_flux_tie(u_plus_AD, grad_u_plus_AD, third_derivatives_plus_AD, extractors,
-                                                      variables, cell_width_plus));
-              for (size_t i = 0; i < n_components; ++i)
-                for (size_t d_out = 0; d_out < dim; ++d_out)
-                  result.grad[1](i, c)[d_out][d_in] = NumberType(0.5) * derivative(D_AD[i][d_out]);
-              unseed(grad_u_plus_AD[c][d_in]);
-            }
-
-            for (size_t d0 = 0; d0 < dim; ++d0)
-              for (size_t d1 = 0; d1 < dim; ++d1)
-                for (size_t d2 = 0; d2 < dim; ++d2) {
-                  seed(third_derivatives_minus_AD[c][d0][d1][d2]);
-                  D_AD = {};
-                  model.diffusion_flux(D_AD, x_q,
-                                       diffusion_flux_tie(u_minus_AD, grad_u_minus_AD, third_derivatives_minus_AD,
-                                                          extractors, variables, cell_width_minus));
-                  for (size_t i = 0; i < n_components; ++i)
-                    for (size_t d_out = 0; d_out < dim; ++d_out)
-                      result.third_derivatives[0](i, c)[d_out][d0][d1][d2] =
-                          NumberType(0.5) * derivative(D_AD[i][d_out]);
-                  unseed(third_derivatives_minus_AD[c][d0][d1][d2]);
-
-                  seed(third_derivatives_plus_AD[c][d0][d1][d2]);
-                  D_AD = {};
-                  model.diffusion_flux(D_AD, x_q,
-                                       diffusion_flux_tie(u_plus_AD, grad_u_plus_AD, third_derivatives_plus_AD,
-                                                          extractors, variables, cell_width_plus));
-                  for (size_t i = 0; i < n_components; ++i)
-                    for (size_t d_out = 0; d_out < dim; ++d_out)
-                      result.third_derivatives[1](i, c)[d_out][d0][d1][d2] =
-                          NumberType(0.5) * derivative(D_AD[i][d_out]);
-                  unseed(third_derivatives_plus_AD[c][d0][d1][d2]);
-                }
-          }
-
-          return result;
         }
 
         /**
@@ -670,10 +448,8 @@ namespace DiFfRG
               dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
               triangulation(discretization.get_triangulation()), fe(discretization.get_fe()),
               EoM_cell(*(dof_handler.active_cell_iterators().end())),
-              old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
               EoM_config(DiFfRG::internal::resolve_eom_config(dof_handler, Config::EoMConfig(config))),
               quadrature(1 + config.get_uint("/discretization/overintegration", 0)),
-              quadrature_face(1 + config.get_uint("/discretization/overintegration", 0)),
               diagnose_flux_conditioning(config.get_bool("/discretization/diagnose_flux_conditioning", false))
         {
           AssertThrow(fe.dofs_per_cell == n_components,
@@ -800,13 +576,6 @@ namespace DiFfRG
             MatrixCreator::create_mass_matrix(dof_handler, quadrature, mass_matrix,
                                               static_cast<Function<dim, NumberType> *>(nullptr), constraints);
           }
-          // // Jacobian sparsity pattern
-          // {
-          //   DynamicSparsityPattern dsp(dof_handler.n_dofs());
-          //   DoFTools::make_flux_sparsity_pattern(dof_handler, dsp, discretization.get_constraints(),
-          //                                        /*keep_constrained_dofs = */ true);
-          //   sparsity_pattern_jacobian.copy_from(dsp);
-          // }
 
           // Hoisted out of probe_diffusion_flux_conditioning(): GridTools::diameter is COLLECTIVE
           // on a partitioned triangulation, and that function is entered conditionally
@@ -1513,12 +1282,7 @@ namespace DiFfRG
         using DiffusionSideJacobian = internal::DiffusionSideJacobian<dim, NumberType, n_components>;
         using SourceJacobian = PointJacobian<dim, n_components, n_components, Components::count_extractors()>;
 
-        /// Wall time of the assembly phases, summed over all calls: gather (reconstruction and the batches),
-        /// evaluate (the model) and scatter (the per-face contraction and the row-owner scatter).
-        struct PhaseTimes {
-          double gather = 0., evaluate = 0., scatter = 0.;
-          uint calls = 0;
-        };
+        using PhaseTimes = AssemblyPhaseTimes;
         const PhaseTimes &residual_phase_times() const { return residual_times; }
         const PhaseTimes &jacobian_phase_times() const { return jacobian_times; }
         void reset_phase_times() { residual_times = jacobian_times = PhaseTimes{}; }
@@ -1651,21 +1415,10 @@ namespace DiFfRG
          */
         void evaluate_residual_terms()
         {
-          using autodiff::detail::derivative;
+          const auto evaluate = [&](auto &out, const auto &batch) { model.evaluate_batch(out, batch); };
           const size_t n_traces = flux_traces.size();
-          trace_F.resize(n_traces);
-          trace_J.resize(n_traces);
-          internal::stacked_directions<autodiff::Real<1, NumberType>, n_components>(
-              value_seed_workspace, flux_traces, 0, n_traces, n_components, max_stacked_points, Term::flux,
-              [&](auto &out, const auto &batch) { model.evaluate_batch(out, batch); },
-              [](auto &batch, const size_t c, const size_t j) { autodiff::detail::seed<1>(batch.value(c, j), 1.); },
-              [&](const auto &out, const size_t c_in, const size_t i, const size_t j) {
-                for (uint c = 0; c < n_components; ++c)
-                  for (uint d = 0; d < dim; ++d) {
-                    trace_J[i][d][c][c_in] = derivative<1>(out.flux(c, d)[j]);
-                    if (c_in == 0) trace_F[i][c][d] = out.flux(c, d)[j].val();
-                  }
-              });
+          internal::flux_value_jacobians<n_components>(value_seed_workspace, flux_traces, 0, n_traces,
+                                                       max_stacked_points, evaluate, trace_F, trace_J);
 
           BatchOutput<dim, NumberType, n_components> diffusion;
           diffusion.reinit(n_traces, Term::diffusion_flux);
@@ -1684,140 +1437,22 @@ namespace DiFfRG
 
         /// The flux and the diffusion flux directions evaluate_trace_jacobians() differentiates along per trace.
         static constexpr std::array<size_t, 2> n_flux_diffusion_directions{
-            n_components + n_components * (n_components - 1) / 2 + n_components * dim +
-                n_components * n_components * dim,
-            n_components + n_components * dim + (dim == 1 ? n_components : 0)};
+            internal::n_flux_derivative_directions<dim, n_components>,
+            internal::n_diffusion_derivative_directions<dim, n_components>};
 
         /**
          * @brief Phase 2 of the jacobian for the traces [begin, end): the flux derivatives the numerical flux
-         * jacobian needs (J, H, grad_J, mixed_H; second-order forward AD, the polarisation directions of
-         * compute_flux_derivatives_ad stacked along the points) and the diffusion flux jacobian, into
-         * trace_derivatives and trace_diffusion_jacobians at index i - begin.
+         * jacobian needs (internal::flux_derivatives) and the diffusion flux jacobian
+         * (internal::diffusion_flux_jacobians), into trace_derivatives and trace_diffusion_jacobians at index i -
+         * begin.
          */
         void evaluate_trace_jacobians(const size_t begin, const size_t end)
         {
-          using autodiff::detail::derivative;
-          using autodiff::detail::seed;
-          constexpr uint n = n_components;
-
-          // Directions of the flux: u_j (diagonal), u_j + u_c (j < c), grad_{c,d}, u_j + grad_{c,d}.
-          struct Direction {
-            int u1 = -1, u2 = -1, grad_c = -1, grad_d = -1;
-          };
-          std::vector<Direction> directions;
-          for (uint j = 0; j < n; ++j)
-            directions.push_back({int(j), -1, -1, -1});
-          for (uint j = 0; j < n; ++j)
-            for (uint c = j + 1; c < n; ++c)
-              directions.push_back({int(j), int(c), -1, -1});
-          for (uint c = 0; c < n; ++c)
-            for (uint d = 0; d < dim; ++d)
-              directions.push_back({-1, -1, int(c), int(d)});
-          for (uint j = 0; j < n; ++j)
-            for (uint c = 0; c < n; ++c)
-              for (uint d = 0; d < dim; ++d)
-                directions.push_back({int(j), -1, int(c), int(d)});
-          Assert(directions.size() == n_flux_diffusion_directions[0], ExcInternalError());
-          // First and second derivative of every flux entry (i, d_out) along every direction, at the traces of one
-          // stacked evaluation; they are combined into trace_derivatives as soon as all its directions are in.
-          const size_t per_point = n * dim;
-          const size_t chunk = internal::stacked_chunk_size(end - begin, directions.size(), max_stacked_points);
-          auto &first = flux_first_derivatives, &second = flux_second_derivatives;
-          first.resize(directions.size() * chunk * per_point);
-          second.resize(directions.size() * chunk * per_point);
-          trace_derivatives.resize(end - begin);
-          internal::stacked_directions<autodiff::Real<2, NumberType>, n>(
-              flux_derivative_workspace, flux_traces, begin, end, directions.size(), max_stacked_points, Term::flux,
-              [&](auto &out, const auto &batch) { model.evaluate_batch(out, batch); },
-              [&](auto &batch, const size_t k, const size_t j) {
-                const auto &dir = directions[k];
-                if (dir.u1 >= 0) seed<1>(batch.value(dir.u1, j), NumberType(1));
-                if (dir.u2 >= 0) seed<1>(batch.value(dir.u2, j), NumberType(1));
-                if (dir.grad_c >= 0) seed<1>(batch.derivative(dir.grad_c, dir.grad_d, j), NumberType(1));
-              },
-              [&](const auto &out, const size_t k, const size_t i, const size_t j) {
-                for (uint c = 0; c < n; ++c)
-                  for (uint d = 0; d < dim; ++d) {
-                    const size_t at = (k * chunk + (i - begin) % chunk) * per_point + c * dim + d;
-                    first[at] = derivative<1>(out.flux(c, d)[j]);
-                    second[at] = derivative<2>(out.flux(c, d)[j]);
-                  }
-              },
-              [&](const size_t p0, const size_t m) {
-                tbb::parallel_for(tbb::blocked_range<size_t>(0, m), [&](const tbb::blocked_range<size_t> &r) {
-                  for (size_t l = r.begin(); l != r.end(); ++l) {
-                    auto &result = trace_derivatives[p0 + l - begin];
-                    result = {};
-                    internal::FluxGradientJacobian<NumberType, dim, n> grad_diagonal_H{};
-                    const auto d1 = [&](const size_t k, const uint c, const uint d) {
-                      return first[(k * chunk + l) * per_point + c * dim + d];
-                    };
-                    const auto d2 = [&](const size_t k, const uint c, const uint d) {
-                      return second[(k * chunk + l) * per_point + c * dim + d];
-                    };
-                    size_t k = 0;
-                    for (uint j = 0; j < n; ++j, ++k)
-                      for (uint c = 0; c < n; ++c)
-                        for (uint d = 0; d < dim; ++d) {
-                          result.J[d][c][j] = d1(k, c, d);
-                          result.H[d][c][j][j] = d2(k, c, d);
-                        }
-                    for (uint j = 0; j < n; ++j)
-                      for (uint jc = j + 1; jc < n; ++jc, ++k)
-                        for (uint c = 0; c < n; ++c)
-                          for (uint d = 0; d < dim; ++d)
-                            result.H[d][c][j][jc] = result.H[d][c][jc][j] =
-                                (d2(k, c, d) - result.H[d][c][j][j] - result.H[d][c][jc][jc]) / NumberType(2);
-                    for (uint gc = 0; gc < n; ++gc)
-                      for (uint d_in = 0; d_in < dim; ++d_in, ++k)
-                        for (uint c = 0; c < n; ++c)
-                          for (uint d = 0; d < dim; ++d) {
-                            result.grad_J[c][gc][d][d_in] = d1(k, c, d);
-                            grad_diagonal_H[c][gc][d][d_in] = d2(k, c, d);
-                          }
-                    for (uint j = 0; j < n; ++j)
-                      for (uint gc = 0; gc < n; ++gc)
-                        for (uint d_in = 0; d_in < dim; ++d_in, ++k)
-                          for (uint c = 0; c < n; ++c)
-                            for (uint d = 0; d < dim; ++d)
-                              result.mixed_H[d_in][d][c][j][gc] =
-                                  (d2(k, c, d) - result.H[d][c][j][j] - grad_diagonal_H[c][gc][d][d_in]) /
-                                  NumberType(2);
-                  }
-                });
-              });
-
-          // The diffusion flux: half its derivative along every value, gradient and third-derivative entry. Third
-          // derivatives are only reconstructed in 1D; elsewhere they are zero and nothing depends on them.
-          constexpr uint n_dirs_value = n, n_dirs_grad = n * dim;
-          trace_diffusion_jacobians.assign(end - begin, DiffusionSideJacobian{});
-          internal::stacked_directions<autodiff::Real<1, NumberType>, n>(
-              diffusion_derivative_workspace, diffusion_traces, begin, end, n_flux_diffusion_directions[1],
-              max_stacked_points, Term::diffusion_flux,
-              [&](auto &out, const auto &batch) { model.evaluate_batch(out, batch); },
-              [&](auto &batch, size_t k, const size_t j) {
-                if (k < n_dirs_value) return seed<1>(batch.value(k, j), NumberType(1));
-                k -= n_dirs_value;
-                if (k < n_dirs_grad) return seed<1>(batch.derivative(k / dim, k % dim, j), NumberType(1));
-                if constexpr (dim == 1) seed<1>(batch.third_derivative(k - n_dirs_grad, 0, 0, 0, j), NumberType(1));
-              },
-              [&](const auto &out, size_t k, const size_t i, const size_t j) {
-                auto &result = trace_diffusion_jacobians[i - begin];
-                for (uint c = 0; c < n; ++c)
-                  for (uint d = 0; d < dim; ++d) {
-                    const NumberType half = NumberType(0.5) * derivative<1>(out.diffusion_flux(c, d)[j]);
-                    if (k < n_dirs_value) {
-                      result.u(c, k)[d] = half;
-                      continue;
-                    }
-                    const size_t kg = k - n_dirs_value;
-                    if (kg < n_dirs_grad) {
-                      result.grad(c, kg / dim)[d][kg % dim] = half;
-                      continue;
-                    }
-                    result.third_derivatives(c, kg - n_dirs_grad)[d][0][0][0] = half; // 1D only
-                  }
-              });
+          const auto evaluate = [&](auto &out, const auto &batch) { model.evaluate_batch(out, batch); };
+          internal::flux_derivatives<n_components>(flux_derivative_workspace, flux_traces, begin, end,
+                                                   max_stacked_points, evaluate, trace_derivatives);
+          internal::diffusion_flux_jacobians<n_components>(diffusion_derivative_workspace, diffusion_traces, begin, end,
+                                                           max_stacked_points, evaluate, trace_diffusion_jacobians);
         }
 
         /// Phase 2 of the jacobian at the cell points: the source jacobian.
@@ -1826,7 +1461,7 @@ namespace DiFfRG
           constexpr uint n = n_components;
           // The source. Extractors and variables stay frozen within a Newton step.
           DiFfRG::internal::parallel_assign(source_jacobians, source_points.size(), SourceJacobian{});
-          if constexpr (DiFfRG::internal::has_ad_flux_source_jacobians<Model>)
+          if constexpr (DiFfRG::internal::has_batch_ad_jacobians<Model>)
             DiFfRG::internal::seed_stacked_jacobian<n, 1>(
                 [&](auto &out, const auto &ad, size_t) { model.evaluate_batch(out, ad[0]); },
                 [&](const size_t i, uint) -> auto & { return source_jacobians[i]; },
@@ -1920,7 +1555,7 @@ namespace DiFfRG
             assembler.diffusion_traces.clear_shared();
             assembler.source_points.clear_shared();
             assembler.value_seed_workspace.ad.clear_shared();
-            assembler.flux_derivative_workspace.ad.clear_shared();
+            assembler.flux_derivative_workspace.stacked.ad.clear_shared();
             assembler.diffusion_derivative_workspace.ad.clear_shared();
           }
         };
@@ -1976,28 +1611,24 @@ namespace DiFfRG
          * stacked evaluation, so the per-trace derivatives never exist for more than one chunk.
          */
         void face_jacobians(const SolutionReconstructionCache &cache, const VectorType &solution_global,
-                            const NumberType weight)
+                            const NumberType weight, DiFfRG::internal::PhaseTimer &phase)
         {
           const size_t n_faces = trace_faces.size();
           const size_t faces_per_chunk = std::max<size_t>(
               1, max_stacked_points / (2 * std::max(n_flux_diffusion_directions[0], n_flux_diffusion_directions[1])));
           face_blocks.resize(n_faces);
-          Timer timer;
+          // map() is collective, the faces are rank-local; apply_boundary_stencil may be a model callback, too.
+          const NoMapsHere no_maps_during_assembly;
           for (size_t f0 = 0; f0 < n_faces; f0 += faces_per_chunk) {
             const size_t f1 = std::min(n_faces, f0 + faces_per_chunk);
-            timer.restart();
             evaluate_trace_jacobians(2 * f0, 2 * f1);
-            jacobian_times.evaluate += timer.wall_time();
-
-            timer.restart();
-            // apply_boundary_stencil may be a model callback; see NoMapsHere.
-            const NoMapsHere no_maps_during_assembly;
+            phase.lap(&PhaseTimes::evaluate);
             tbb::parallel_for(tbb::blocked_range<size_t>(f0, f1), [&](const tbb::blocked_range<size_t> &r) {
               auto &scratch = row_scratch.local().scratch;
               for (size_t p = r.begin(); p != r.end(); ++p)
                 face_jacobian(p, 2 * f0, cache, solution_global, weight, scratch, face_blocks[p]);
             });
-            jacobian_times.scatter += timer.wall_time();
+            phase.lap(&PhaseTimes::scatter);
           }
         }
 
@@ -2269,39 +1900,41 @@ namespace DiFfRG
           // filling `extracted_data` this is what gives a model the chance to refresh whatever internal state its
           // flux depends on (interpolators, self-consistently solved anomalous dimensions, ...) before the fluxes
           // are evaluated. Models without extractors are unaffected.
+          DiFfRG::internal::PhaseTimer phase(residual_times);
           Extractors extracted{};
           if constexpr (Components::count_extractors() > 0)
             extract(extracted, solution_global, variables, true, false, true);
           const SharedScope shared_scope{*this};
+          phase.lap(&PhaseTimes::extract);
 
-          Timer timer, phase;
           rebuild_solution_reconstruction_cache<Reconstructor>(solution_global, residual_reconstruction_cache);
           const auto &reconstruction_cache = residual_reconstruction_cache;
           run_pre_assembly(AssemblyStage::residual, reconstruction_cache);
           gather_traces(reconstruction_cache, extracted, variables);
           gather_sources<Reconstructor>(reconstruction_cache, extracted, variables);
-          residual_times.gather += phase.wall_time();
+          phase.lap(&PhaseTimes::gather);
 
           // Runs on the first residual assembly only, so it costs nothing on the hot path. The first assembly is
           // also the most informative sample: for an fRG flow it happens at k = Lambda, where a flux baseline is
           // largest.
           if (diagnose_flux_conditioning && !flux_conditioning_probed) {
             flux_conditioning_probed = true;
+            const NoMapsHere no_maps_during_assembly; // the probe calls the model's per-point diffusion flux
             probe_diffusion_flux_conditioning(reconstruction_cache, extracted, variables);
           }
 
-          phase.restart();
-          evaluate_residual_terms();
-          residual_times.evaluate += phase.wall_time();
+          {
+            const NoMapsHere no_maps_during_assembly; // map() is collective, the points are rank-local
+            evaluate_residual_terms();
+          }
+          phase.lap(&PhaseTimes::evaluate);
 
-          phase.restart();
           face_residuals(reconstruction_cache, weight);
           scatter_rows(residual, [&](const size_t k, Scratch &scratch, CellRows &local) {
             assemble_cell_residual(k, scratch, local, solution_global, solution_global_dot, weight, weight_mass);
           });
-          residual_times.scatter += phase.wall_time();
-          ++residual_times.calls;
-          timings_residual.push_back(timer.wall_time());
+          phase.lap(&PhaseTimes::scatter);
+          timings_residual.push_back(phase.finish());
         }
 
         virtual void jacobian_mass(SparseMatrixType &jacobian, const VectorType &solution_global,
@@ -2339,33 +1972,34 @@ namespace DiFfRG
           // linearised about. The extractor jacobian contribution itself is not assembled here, so extractors are
           // treated as frozen w.r.t. the FE solution within a Newton step -- fine for the IDA/explicit split where
           // Variables are stepped explicitly, but it is why jacobian_variables is still a no-op.
+          DiFfRG::internal::PhaseTimer phase(jacobian_times);
           Extractors extracted{};
           if constexpr (Components::count_extractors() > 0)
             extract(extracted, solution_global, variables, true, false, true);
           const SharedScope shared_scope{*this};
+          phase.lap(&PhaseTimes::extract);
 
-          Timer timer, phase;
           rebuild_solution_reconstruction_cache<JacobianReconstructor>(solution_global, jacobian_reconstruction_cache);
           const auto &reconstruction_cache = jacobian_reconstruction_cache;
           run_pre_assembly(AssemblyStage::jacobian, reconstruction_cache);
           gather_traces(reconstruction_cache, extracted, variables);
           gather_sources<JacobianReconstructor>(reconstruction_cache, extracted, variables);
-          jacobian_times.gather += phase.wall_time();
+          phase.lap(&PhaseTimes::gather);
 
-          phase.restart();
-          evaluate_source_jacobians();
-          jacobian_times.evaluate += phase.wall_time();
+          {
+            const NoMapsHere no_maps_during_assembly; // map() is collective, the points are rank-local
+            evaluate_source_jacobians();
+          }
+          phase.lap(&PhaseTimes::evaluate);
 
-          face_jacobians(reconstruction_cache, solution_global, weight);
+          face_jacobians(reconstruction_cache, solution_global, weight, phase);
 
-          phase.restart();
           scatter_rows(jacobian, [&](const size_t k, Scratch &scratch, CellRows &local) {
             assemble_cell_jacobian(k, scratch, local, reconstruction_cache, solution_global, solution_global_dot,
                                    weight, alpha, beta);
           });
-          jacobian_times.scatter += phase.wall_time();
-          ++jacobian_times.calls;
-          timings_jacobian.push_back(timer.wall_time());
+          phase.lap(&PhaseTimes::scatter);
+          timings_jacobian.push_back(phase.finish());
         }
 
         virtual void refinement_indicator([[maybe_unused]] Vector<double> &indicator,
@@ -2738,13 +2372,11 @@ namespace DiFfRG
         BatchOutput<dim, NumberType, n_components> source_values;
         std::vector<SourceJacobian> source_jacobians;
         SeedStackWorkspace<SourcePoints, n_components> source_workspace;
-        /// The AD workspaces of the trace evaluations (see internal::StackedWorkspace), and the flux derivatives of
-        /// one stacked evaluation before they are combined.
+        /// The AD workspaces of the trace evaluations (see internal::StackedWorkspace).
         internal::StackedWorkspace<autodiff::Real<1, NumberType>, FluxTraces, n_components> value_seed_workspace;
-        internal::StackedWorkspace<autodiff::Real<2, NumberType>, FluxTraces, n_components> flux_derivative_workspace;
+        internal::FluxDerivativeWorkspace<FluxTraces, n_components> flux_derivative_workspace;
         internal::StackedWorkspace<autodiff::Real<1, NumberType>, DiffusionTraces, n_components>
             diffusion_derivative_workspace;
-        std::vector<NumberType> flux_first_derivatives, flux_second_derivatives;
         PhaseTimes residual_times, jacobian_times;
         /// Per trace face: its residual contribution and its jacobian block, as its u^- cell sees it.
         std::vector<std::array<NumberType, n_components>> face_values;
@@ -2755,14 +2387,12 @@ namespace DiFfRG
 
         mutable Point EoM;
         mutable Iterator EoM_cell;
-        Iterator old_EoM_cell;
         const Config::EoMConfig EoM_config;
         mutable std::optional<Point> EoM_minimum_guess;
         /// Mesh-dependent half of the potential reconstructions, built once and reused; see PotentialSystemCache.
         mutable DiFfRG::internal::PotentialSystemCache<dim, NumberType> potential_cache;
 
         const QGauss<dim> quadrature;
-        const QGauss<dim - 1> quadrature_face;
 
         get_type::SparsityPattern<SparseMatrixType> sparsity_pattern_mass;
         get_type::SparsityPattern<SparseMatrixType> sparsity_pattern_jacobian;

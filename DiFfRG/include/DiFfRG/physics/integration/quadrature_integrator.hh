@@ -14,9 +14,11 @@
 #include <DiFfRG/physics/integration/point_arg.hh>
 
 // std
+#include <array>
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <utility>
 
 namespace DiFfRG
 {
@@ -109,6 +111,134 @@ namespace DiFfRG
         return view.data();
       }
     };
+
+    /**
+     * @brief The buffers of a device map_points(): its per-point arguments, staged on the host and copied to the
+     * device in one go, and its results. Kept by the integrator across calls.
+     */
+    template <typename NT, typename ExecutionSpace> struct MapPointsBuffers {
+      using memory_space = typename ExecutionSpace::memory_space;
+      static constexpr bool host_memory = std::is_same_v<memory_space, CPU_memory>;
+
+      ByteBuffer<PinnedHost_memory> args_host;
+      ByteBuffer<memory_space> args_device;
+      MapStagingSet<NT, ExecutionSpace> result;
+
+      /**
+       * @brief Copy the per-point arguments to the device, converted to the compute precision ctype, and return
+       * them as a tuple of DevicePointArg.
+       *
+       * All per-point arrays share one staging buffer, so the upload is a single copy. On a host memory space an
+       * argument that needs no conversion is used in place.
+       */
+      template <typename ctype, typename... T>
+      auto stage(const ExecutionSpace &space, const size_t n, const PointArg<T> &...args)
+      {
+        // Types that cannot be placed in the staging buffer (an interpolator: no default constructor, no copy
+        // assignment) can only be shared by all points, and are passed to the device by value.
+        constexpr auto stageable = []<typename U>() {
+          return std::is_default_constructible_v<U> && std::is_copy_assignable_v<U>;
+        };
+        constexpr size_t alignment = 64;
+        constexpr size_t n_args = sizeof...(T);
+
+        // Byte offset of each staged argument; arguments that are broadcast, or used in place, stay unstaged.
+        std::array<size_t, n_args> offsets{};
+        std::array<bool, n_args> staged{};
+        size_t total = 0;
+        {
+          size_t k = 0;
+          (
+              [&] {
+                using U = compute_arg_t<T, ctype>;
+                args.check_size(n);
+                if constexpr (!stageable.template operator()<U>())
+                  if (args.per_point())
+                    throw std::runtime_error("map_points: this argument type can only be shared by all points.");
+                staged[k] = args.per_point() && !(host_memory && std::is_same_v<U, T>);
+                if (staged[k]) {
+                  offsets[k] = total;
+                  total += (n * sizeof(U) + alignment - 1) / alignment * alignment;
+                }
+                ++k;
+              }(),
+              ...);
+        }
+
+        char *host = nullptr;
+        char *device = nullptr;
+        if (total > 0) {
+          host = args_host.reserve(total);
+          device = host_memory ? host : args_device.reserve(total);
+          size_t k = 0;
+          (
+              [&] {
+                using U = compute_arg_t<T, ctype>;
+                if constexpr (stageable.template operator()<U>())
+                  if (staged[k]) {
+                    U *out = reinterpret_cast<U *>(host + offsets[k]);
+                    parallel_chunks(n, [&](const size_t begin, const size_t end) {
+                      for (size_t i = begin; i < end; ++i)
+                        out[i] = static_cast<U>(args.values[i]);
+                    });
+                  }
+                ++k;
+              }(),
+              ...);
+          if constexpr (!host_memory)
+            Kokkos::deep_copy(space, Kokkos::subview(args_device.view, Kokkos::make_pair(size_t(0), total)),
+                              Kokkos::subview(args_host.view, Kokkos::make_pair(size_t(0), total)));
+        }
+
+        return [&]<size_t... I>(std::index_sequence<I...>) {
+          return device::make_tuple([&] {
+            using U = compute_arg_t<T, ctype>;
+            if constexpr (!stageable.template operator()<U>())
+              return DevicePointArg<U>{nullptr, static_cast<U>(args.value)};
+            else {
+              const U *values = staged[I] ? reinterpret_cast<const U *>(device + offsets[I])
+                                          : (args.per_point() ? reinterpret_cast<const U *>(args.values) : nullptr);
+              return DevicePointArg<U>{values, args.per_point() ? U{} : static_cast<U>(args.value)};
+            }
+          }()...);
+        }(std::index_sequence_for<T...>{});
+      }
+
+      /**
+       * @brief Run launch(result_view) and copy its n results to @p dest: in place on a host memory space,
+       * otherwise through a device buffer and page-locked staging.
+       */
+      template <typename OT, typename Launch>
+      void run(ExecutionSpace &space, const PointSpan<OT> dest, const Launch &launch)
+      {
+        const size_t n = dest.size();
+        if constexpr (host_memory) {
+          launch(Kokkos::View<OT *, CPU_memory, Kokkos::MemoryUnmanaged>(dest.data(), n));
+          space.fence();
+        } else {
+          auto &stage = result.template get<OT>();
+          const auto device_result = stage.device_view(space, n);
+          const auto pinned = stage.pinned_view(n);
+          launch(device_result);
+          Kokkos::deep_copy(space, pinned, device_result);
+          space.fence();
+          parallel_chunks(n, [&](const size_t begin, const size_t end) {
+            std::memcpy(dest.data() + begin, pinned.data() + begin, (end - begin) * sizeof(OT));
+          });
+        }
+      }
+    };
+
+    /// map_points() of a host integrator: integrator.get() at every point, in a flat parallel loop.
+    template <typename Integrator, typename OT, typename... T>
+    void map_points_by_get(const Integrator &integrator, const PointSpan<OT> dest, const PointArg<T> &...args)
+    {
+      (args.check_size(dest.size()), ...);
+      tbb::parallel_for(tbb::blocked_range<size_t>(0, dest.size()), [&](const tbb::blocked_range<size_t> &r) {
+        for (size_t i = r.begin(); i != r.end(); ++i)
+          integrator.get(dest[i], args[i]...);
+      });
+    }
   } // namespace internal
 
   /**
@@ -119,6 +249,18 @@ namespace DiFfRG
    * better choice almost everywhere. automatic picks between the two from these sizes.
    */
   enum class MapPointsPolicy { automatic, thread_per_point, team_per_point };
+
+  namespace internal
+  {
+    /// The policy a device map_points() over n points of total quadrature nodes each runs with. Measured on an
+    /// RTX 4070 (ONfiniteT, 64..2e5 points, 16..8192 nodes): a team per point wins nearly everywhere, by up to
+    /// 18x; a thread per point only pays off for very many cheap points.
+    inline MapPointsPolicy resolve_policy(const MapPointsPolicy policy, const size_t n, const size_t total)
+    {
+      if (policy != MapPointsPolicy::automatic) return policy;
+      return (n >= 65536 && total <= 1024) ? MapPointsPolicy::thread_per_point : MapPointsPolicy::team_per_point;
+    }
+  } // namespace internal
 
   /**
    * @brief This class performs numerical integration over a d-dimensional hypercube using quadrature rules.
@@ -479,40 +621,26 @@ namespace DiFfRG
     }
 
     /**
-     * @brief Evaluate the integral at n points in a single launch: dest[i] is the integral with
-     * every per-point argument taken at index i.
+     * @brief Evaluate the integral at dest.size() points in a single launch: dest[i] is the integral with every
+     * per-point argument taken at index i.
      *
-     * Each argument is a PointArg, i.e. either one value shared by all points or a PointArray of n
-     * values, so any argument of the kernel may vary between points. The nodes are summed on the fly,
-     * without an intermediate (points x nodes) buffer.
+     * Each argument is either one value shared by all points, or one value per point (a PointSpan, a
+     * std::vector, or a PointArg holding either), so any argument of the kernel may vary between points. A
+     * per-point argument must hold exactly dest.size() values. The nodes are summed on the fly, without an
+     * intermediate (points x nodes) buffer.
      *
      * Rank-local: unlike map(), this is never split across MPI ranks and never touches MapScheduler,
-     * so every rank may call it with its own n, also between collective operations.
+     * so every rank may call it with its own number of points, also between collective operations.
      *
      * A single-precision integrator receives its arguments converted to single precision.
      */
-    template <typename OT, typename... T>
-      requires(internal::is_map_result<OT, NT> &&
-               is_valid_kernel<NT, KERNEL, ctype, dim, internal::compute_arg_t<T, ctype>...>)
-    void map_points(OT *dest, const size_t n, const PointArg<T> &...args)
+    template <typename OT, typename... A>
+      requires(
+          internal::is_map_result<OT, NT> &&
+          is_valid_kernel<NT, KERNEL, ctype, dim, internal::compute_arg_t<internal::point_arg_value_t<A>, ctype>...>)
+    void map_points(const PointSpan<OT> dest, const A &...args)
     {
-      if (n == 0) return;
-      const auto device_args = stage_point_args(n, args...);
-
-      if constexpr (std::is_same_v<typename ExecutionSpace::memory_space, CPU_memory>) {
-        launch_map_points(Kokkos::View<OT *, CPU_memory, Kokkos::MemoryUnmanaged>(dest, n), n, device_args);
-        space.fence();
-      } else {
-        auto &stage = m_points_result.template get<OT>();
-        const auto result = stage.device_view(space, n);
-        const auto pinned = stage.pinned_view(n);
-        launch_map_points(result, n, device_args);
-        Kokkos::deep_copy(space, pinned, result);
-        space.fence();
-        internal::parallel_chunks(n, [&](const size_t begin, const size_t end) {
-          std::memcpy(dest + begin, pinned.data() + begin, (end - begin) * sizeof(OT));
-        });
-      }
+      run_map_points(dest, PointArg<internal::point_arg_value_t<A>>(args)...);
     }
 
     void set_map_points_policy(const MapPointsPolicy policy) { m_map_points_policy = policy; }
@@ -538,9 +666,9 @@ namespace DiFfRG
       // other ranks perform, leaving the collectives mismatched.
       if (scheduler.active() && scheduler.plan_contains(integrator_id())) MapCompletion::flush();
 
-      const MapSlice slice = scheduler.schedule(integrator_id(), dest, sizeof(OT), coordinates.size(),
-                                                quadrature_volume(), /* splittable */ true,
-                                                map_target<ExecutionSpace>());
+      const MapSlice slice =
+          scheduler.schedule(integrator_id(), dest, sizeof(OT), coordinates.size(), quadrature_volume(),
+                             /* splittable */ true, map_target<ExecutionSpace>());
 
       if (slice.count == 0) {
         // Not an owner: no kernels, but the plan entry is registered, so this rank still has to
@@ -593,75 +721,12 @@ namespace DiFfRG
     }
 
   private:
-    /**
-     * @brief Copy the per-point arguments of map_points() to the device, converted to the compute
-     * precision, and return them as a tuple of DevicePointArg.
-     *
-     * All per-point arrays share one staging buffer, so the upload is a single copy. On a host memory
-     * space an argument that needs no conversion is used in place.
-     */
-    template <typename... T> auto stage_point_args(const size_t n, const PointArg<T> &...args)
+    template <typename OT, typename... T> void run_map_points(const PointSpan<OT> dest, const PointArg<T> &...args)
     {
-      constexpr bool host_memory = std::is_same_v<typename ExecutionSpace::memory_space, CPU_memory>;
-      constexpr size_t alignment = 64;
-      constexpr size_t n_args = sizeof...(T);
-
-      // Byte offset of each staged argument; arguments that are broadcast, or used in place, stay unstaged.
-      std::array<size_t, n_args> offsets{};
-      std::array<bool, n_args> staged{};
-      size_t total = 0;
-      {
-        size_t k = 0;
-        (
-            [&] {
-              using U = internal::compute_arg_t<T, ctype>;
-              if (args.per_point()) {
-                if (args.size < n)
-                  throw std::runtime_error("map_points: a per-point argument holds " + std::to_string(args.size) +
-                                           " values for " + std::to_string(n) + " points.");
-                staged[k] = !(host_memory && std::is_same_v<U, T>);
-              }
-              if (staged[k]) {
-                offsets[k] = total;
-                total += (n * sizeof(U) + alignment - 1) / alignment * alignment;
-              }
-              ++k;
-            }(),
-            ...);
-      }
-
-      char *host = nullptr;
-      char *device = nullptr;
-      if (total > 0) {
-        host = m_point_args_host.reserve(total);
-        device = host_memory ? host : m_point_args_device.reserve(total);
-        size_t k = 0;
-        (
-            [&] {
-              using U = internal::compute_arg_t<T, ctype>;
-              if (staged[k]) {
-                U *out = reinterpret_cast<U *>(host + offsets[k]);
-                internal::parallel_chunks(n, [&](const size_t begin, const size_t end) {
-                  for (size_t i = begin; i < end; ++i)
-                    out[i] = static_cast<U>(args.values[i]);
-                });
-              }
-              ++k;
-            }(),
-            ...);
-        if constexpr (!host_memory)
-          Kokkos::deep_copy(space, Kokkos::subview(m_point_args_device.view, Kokkos::make_pair(size_t(0), total)),
-                            Kokkos::subview(m_point_args_host.view, Kokkos::make_pair(size_t(0), total)));
-      }
-
-      return [&]<size_t... I>(std::index_sequence<I...>) {
-        return device::make_tuple([&] {
-          using U = internal::compute_arg_t<T, ctype>;
-          const U *values = staged[I] ? reinterpret_cast<const U *>(device + offsets[I])
-                                      : (args.per_point() ? reinterpret_cast<const U *>(args.values) : nullptr);
-          return internal::DevicePointArg<U>{values, args.per_point() ? U{} : static_cast<U>(args.value)};
-        }()...);
-      }(std::index_sequence_for<T...>{});
+      const size_t n = dest.size();
+      if (n == 0) return;
+      const auto device_args = m_map_points.template stage<ctype>(space, n, args...);
+      m_map_points.run(space, dest, [&](const auto &result) { launch_map_points(result, n, device_args); });
     }
 
   public:
@@ -683,11 +748,7 @@ namespace DiFfRG
       for (int d = 0; d < dim; ++d)
         total *= grid_size[d];
 
-      // Measured on an RTX 4070 (ONfiniteT, 64..2e5 points, 16..8192 nodes): a team per point wins
-      // nearly everywhere, by up to 18x; a thread per point only pays off for very many cheap points.
-      MapPointsPolicy policy = m_map_points_policy;
-      if (policy == MapPointsPolicy::automatic)
-        policy = (n >= 65536 && total <= 1024) ? MapPointsPolicy::thread_per_point : MapPointsPolicy::team_per_point;
+      const MapPointsPolicy policy = internal::resolve_policy(m_map_points_policy, n, total);
 
       if (policy == MapPointsPolicy::thread_per_point) {
         // Row-major node order and the constant added first, as in the serial TBBReduction path.
@@ -832,9 +893,7 @@ namespace DiFfRG
     mutable std::string m_positions_key;
     mutable internal::MapStagingSet<NT, ExecutionSpace> m_staging;
     // map_points() buffers, separate from map()'s, whose staging may still be pending in a DeferredMaps scope.
-    internal::MapStagingSet<NT, ExecutionSpace> m_points_result;
-    internal::ByteBuffer<PinnedHost_memory> m_point_args_host;
-    internal::ByteBuffer<typename ExecutionSpace::memory_space> m_point_args_device;
+    internal::MapPointsBuffers<NT, ExecutionSpace> m_map_points;
     MapPointsPolicy m_map_points_policy = MapPointsPolicy::automatic;
     mutable Kokkos::View<NT, typename ExecutionSpace::memory_space> m_result_view;
     mutable typename Kokkos::View<NT, typename ExecutionSpace::memory_space>::host_mirror_type m_result_host;
@@ -903,20 +962,13 @@ namespace DiFfRG
 
     /// See QuadratureIntegrator::map_points. One get() per point inside a flat parallel loop, so every
     /// result is bitwise identical to the corresponding get().
-    template <typename OT, typename... T>
-      requires(internal::is_map_result<OT, NT> &&
-               is_valid_kernel<NT, KERNEL, ctype, dim, internal::compute_arg_t<T, ctype>...>)
-    void map_points(OT *dest, const size_t n, const PointArg<T> &...args) const
+    template <typename OT, typename... A>
+      requires(
+          internal::is_map_result<OT, NT> &&
+          is_valid_kernel<NT, KERNEL, ctype, dim, internal::compute_arg_t<internal::point_arg_value_t<A>, ctype>...>)
+    void map_points(const PointSpan<OT> dest, const A &...args) const
     {
-      ((args.per_point() && args.size < n
-            ? throw std::runtime_error("map_points: a per-point argument holds " + std::to_string(args.size) +
-                                       " values for " + std::to_string(n) + " points.")
-            : void()),
-       ...);
-      tbb::parallel_for(tbb::blocked_range<size_t>(0, n), [&](const tbb::blocked_range<size_t> &r) {
-        for (size_t i = r.begin(); i != r.end(); ++i)
-          get(dest[i], args[i]...);
-      });
+      internal::map_points_by_get(*this, dest, PointArg<internal::point_arg_value_t<A>>(args)...);
     }
 
     template <typename OT, typename Coordinates, typename... Args>
@@ -948,9 +1000,9 @@ namespace DiFfRG
       // overload for why that distinction is what keeps the collectives matched.
       if (scheduler.active() && scheduler.plan_contains(this->integrator_id())) MapCompletion::flush();
 
-      const MapSlice slice = scheduler.schedule(this->integrator_id(), dest, sizeof(OT), coordinates.size(),
-                                                Base::quadrature_volume(), /* splittable */ true,
-                                                map_target<execution_space>());
+      const MapSlice slice =
+          scheduler.schedule(this->integrator_id(), dest, sizeof(OT), coordinates.size(), Base::quadrature_volume(),
+                             /* splittable */ true, map_target<execution_space>());
 
       if (slice.count == 0) {
         // Not an owner, but still part of the batch -- see the GPU overload.
