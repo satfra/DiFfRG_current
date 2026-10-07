@@ -50,13 +50,13 @@ namespace DiFfRG
       void initialize(const dealii::SparseMatrix<double> &matrix)
       {
         clear();
-        const SuiteSparse_long n = matrix.m();
+        const dealii::types::suitesparse_index n = matrix.m();
         // The rows of A, handed to UMFPACK as columns: it factorizes A^T, and solve() asks for the transpose.
         Ap.assign(n + 1, 0);
         Ai.clear();
         Ax.clear();
-        std::vector<std::pair<SuiteSparse_long, double>> row;
-        for (SuiteSparse_long r = 0; r < n; ++r) {
+        std::vector<std::pair<dealii::types::suitesparse_index, double>> row;
+        for (dealii::types::suitesparse_index r = 0; r < n; ++r) {
           row.clear();
           for (auto it = matrix.begin(r); it != matrix.end(r); ++it)
             if (it->value() != 0.) row.emplace_back(it->column(), it->value());
@@ -108,7 +108,7 @@ namespace DiFfRG
         if (numeric) umfpack_dl_free_numeric(&numeric);
       }
 
-      std::vector<SuiteSparse_long> Ap, Ai;
+      std::vector<dealii::types::suitesparse_index> Ap, Ai;
       std::vector<double> Ax;
       double control[UMFPACK_CONTROL];
       void *symbolic = nullptr, *numeric = nullptr;

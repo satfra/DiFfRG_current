@@ -1,0 +1,37 @@
+--- a/cmake/modules/FindDEAL_II_MUMPS.cmake
++++ b/cmake/modules/FindDEAL_II_MUMPS.cmake
+@@ -59,6 +59,19 @@ deal_ii_find_library(PORD_LIBRARY
+   PATH_SUFFIXES lib${LIB_SUFFIX} lib64 lib
+   )
+ 
++#
++# DiFfRG: a MUMPS built with ParMETIS orderings (e.g. PETSc's
++# --download-mumps --download-parmetis) needs libparmetis on the link line,
++# after the static MUMPS archives that reference it. Without it, linkers that
++# default to --as-needed (Debian/Ubuntu) drop libparmetis before reaching
++# libmumps_common.a and fail with "undefined reference to ParMETIS_V32_NodeND".
++#
++deal_ii_find_library(PARMETIS_LIBRARY
++  NAMES parmetis
++  HINTS ${MUMPS_DIR} ${METIS_DIR}
++  PATH_SUFFIXES lib${LIB_SUFFIX} lib64 lib
++  )
++
+ if(EXISTS ${MUMPS_INCLUDE_DIR}/dmumps_c.h)
+   file(STRINGS "${MUMPS_INCLUDE_DIR}/dmumps_c.h" MUMPS_VERSION_STRING
+     REGEX "#define.*MUMPS_VERSION")
+@@ -81,12 +94,13 @@ process_feature(MUMPS
+     REQUIRED DMUMPS_LIBRARY MUMPS_COMMON_LIBRARY SCALAPACK_LIBRARIES
+     OPTIONAL BLACS_LIBRARIES
+     OPTIONAL PORD_LIBRARY
++    OPTIONAL PARMETIS_LIBRARY
+     OPTIONAL METIS_LIBRARIES MPI_Fortran_LIBRARIES
+   INCLUDE_DIRS
+     REQUIRED MUMPS_INCLUDE_DIR
+   LINKER_FLAGS
+     OPTIONAL LAPACK_LINKER_FLAGS
+   CLEAR
+-    DMUMPS_LIBRARY MUMPS_COMMON_LIBRARY PORD_LIBRARY
++    DMUMPS_LIBRARY MUMPS_COMMON_LIBRARY PORD_LIBRARY PARMETIS_LIBRARY
+     MUMPS_INCLUDE_DIR
+   )

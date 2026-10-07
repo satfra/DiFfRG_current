@@ -330,7 +330,7 @@ namespace DiFfRG
       constexpr_for<0, n_levels, 1>([&](auto l) {
         auto &level = std::get<l>(s.levels);
         for (size_t c = 0; c < level.size(); ++c)
-          level[c] = Base::column(level_offset(l) + c)[i];
+          level[c] = this->column(level_offset(l) + c)[i]; // not Base::, GCC 13 ICEs on it
       });
       s.cell_width = this->cell_width(i);
     }

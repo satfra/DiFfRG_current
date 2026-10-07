@@ -1417,8 +1417,9 @@ ExternalProject_Add(
   GIT_REPOSITORY https://github.com/dealii/dealii.git
   GIT_TAG v9.7.1
   GIT_SHALLOW ON
-  # Patch deal.II 9.7.1 for DiFfRG's IDA diagnostics/max-step handling and for
-  # clang-CUDA + Kokkos 5.x + Boost 1.9x (see deal.II issue #18797). Idempotent:
+  # Patch deal.II 9.7.1 for DiFfRG's IDA diagnostics/max-step handling, for
+  # clang-CUDA + Kokkos 5.x + Boost 1.9x (see deal.II issue #18797), and so its
+  # MUMPS interface links the ParMETIS that PETSc's static MUMPS needs. Idempotent:
   # check-reverse first (silently) so an already-patched tree is detected without
   # the forward apply spewing "patch does not apply" errors on every re-run/
   # re-clone. If neither reverse-check nor forward-apply succeeds the tree is in a
@@ -1431,6 +1432,9 @@ ExternalProject_Add(
     COMMAND
     sh -c
     "git apply --reverse --check --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-clang-cuda.patch' 2>/dev/null && echo 'deal.II patch already applied' || git apply --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-clang-cuda.patch'"
+    COMMAND
+    sh -c
+    "git apply --reverse --check --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-mumps-parmetis.patch' 2>/dev/null && echo 'deal.II MUMPS patch already applied' || git apply --whitespace=nowarn '${CMAKE_CURRENT_SOURCE_DIR}/patches/dealii-9.7.1-mumps-parmetis.patch'"
   PREFIX ${CMAKE_CURRENT_BINARY_DIR}/deal.II
   INSTALL_DIR ${DEPEND_INSTALL_PREFIX}
   DEPENDS general_dep kokkos_dep ${_boost_dep} ${is_petsc_dep} ${_sundials_dep}
@@ -1608,6 +1612,14 @@ endif()
 # Record the target CPU architecture the bundle was compiled for (informational;
 # consumed by packaging manifests and diagnostics, not by find_package).
 string(APPEND _pin_content "\nset(DiFfRG_PINNED_MARCH \"${_march_value}\")\n")
+
+# Record whether deal.II (and with it the whole bundle) was built with MPI; a standalone
+# library build defaults its own MPI option to this, so it matches DEAL_II_WITH_MPI.
+if(MPI)
+  string(APPEND _pin_content "set(DiFfRG_PINNED_MPI ON)\n")
+else()
+  string(APPEND _pin_content "set(DiFfRG_PINNED_MPI OFF)\n")
+endif()
 
 file(WRITE "${DEPEND_INSTALL_PREFIX}/DiFfRG_bundled_config.cmake" "${_pin_content}")
 message(

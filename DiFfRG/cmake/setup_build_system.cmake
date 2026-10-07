@@ -5,16 +5,9 @@
 # We need to find the bundle directory, which contains several external
 # dependencies
 if(${CMAKE_PROJECT_NAME} STREQUAL "DiFfRG")
-  if(NOT DEFINED MPI)
-    set(MPI
-        OFF
-        CACHE BOOL "Whether to build with MPI support (default: OFF)")
-  endif()
-
   # If we are building DiFfRG as a standalone project, we need to set the base
-  # directory
+  # directory. (Its MPI option is resolved below, once the bundle's pin is loaded.)
   set(BASE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-  set(DiFfRG_MPI ${MPI})
 else()
   # If we are building a DiFfRG-based project, we need to set the bundle
   # directory relative to the DiFfRG base directory
@@ -105,6 +98,19 @@ set(_diffrg_pin "${BUNDLED_DIR}/DiFfRG_bundled_config.cmake")
 if(EXISTS "${_diffrg_pin}")
   message(STATUS "Loading pinned dependency configuration: ${_diffrg_pin}")
   include("${_diffrg_pin}")
+endif()
+
+# A standalone library build defaults MPI to whatever the bundle was built with: deal.II's
+# DEAL_II_WITH_MPI has to match it anyway (checked below). An explicit -DMPI= still wins.
+if(${CMAKE_PROJECT_NAME} STREQUAL "DiFfRG")
+  set(_diffrg_mpi_default OFF)
+  if(DEFINED DiFfRG_PINNED_MPI)
+    set(_diffrg_mpi_default ${DiFfRG_PINNED_MPI})
+  endif()
+  set(MPI
+      ${_diffrg_mpi_default}
+      CACHE BOOL "Whether to build with MPI support (default: as the dependency bundle)")
+  set(DiFfRG_MPI ${MPI})
 endif()
 
 # The pin sets the upper-case BOOST_ROOT (the convention used by the superbuild
