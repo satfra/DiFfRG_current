@@ -7,8 +7,8 @@
 #include <Eigen/QR>
 
 #include <deal.II/base/point.h>
-#include <deal.II/distributed/tria_base.h>
 #include <deal.II/base/quadrature_lib.h>
+#include <deal.II/distributed/tria_base.h>
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_tools.h>
 #include <deal.II/fe/fe_dgq.h>
@@ -24,9 +24,9 @@
 #include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/sparsity_pattern.h>
 #include <deal.II/lac/vector.h>
-#include <deal.II/meshworker/mesh_loop.h>
 #include <deal.II/numerics/fe_field_function.h>
 
+#include <DiFfRG/discretization/common/batched_scatter.hh>
 #include <DiFfRG/discretization/common/cell_geometry.hh>
 #include <DiFfRG/discretization/common/eom_config.hh>
 #include <DiFfRG/discretization/common/serial_mirror.hh>
@@ -339,15 +339,15 @@ namespace DiFfRG
         bool describes(const dealii::Triangulation<dim> &tria, const dealii::DoFHandler<dim> &solution_dof_handler,
                        const double smoothing, const uint potential_fe_degree) const
         {
-          return !stale && connection.connected() && triangulation == &tria &&
-                 solution_dofs == &solution_dof_handler && n_active_cells == tria.n_active_cells() &&
-                 n_levels == tria.n_levels() && n_vertices == tria.n_vertices() &&
-                 solution_fe_degree == solution_dof_handler.get_fe().degree && smoothing_length == smoothing &&
-                 finite_element != nullptr && finite_element->degree == potential_fe_degree;
+          return !stale && connection.connected() && triangulation == &tria && solution_dofs == &solution_dof_handler &&
+                 n_active_cells == tria.n_active_cells() && n_levels == tria.n_levels() &&
+                 n_vertices == tria.n_vertices() && solution_fe_degree == solution_dof_handler.get_fe().degree &&
+                 smoothing_length == smoothing && finite_element != nullptr &&
+                 finite_element->degree == potential_fe_degree;
         }
 
-        void note_built_for(const dealii::Triangulation<dim> &tria,
-                            const dealii::DoFHandler<dim> &solution_dof_handler, const double smoothing)
+        void note_built_for(const dealii::Triangulation<dim> &tria, const dealii::DoFHandler<dim> &solution_dof_handler,
+                            const double smoothing)
         {
           triangulation = &tria;
           solution_dofs = &solution_dof_handler;
@@ -858,15 +858,14 @@ namespace DiFfRG
                                    const dealii::Quadrature<dim - 1> &face_quadrature,
                                    const dealii::AffineConstraints<typename VectorType::value_type> &constraints,
                                    dealii::SparseMatrix<typename VectorType::value_type> &matrix,
-                                   dealii::Vector<typename VectorType::value_type> &rhs,
-                                   const double smoothing_length, const bool assemble_matrix)
+                                   dealii::Vector<typename VectorType::value_type> &rhs, const double smoothing_length,
+                                   const bool assemble_matrix)
     {
       using NumberType = typename VectorType::value_type;
       using Iterator = typename dealii::DoFHandler<dim>::active_cell_iterator;
       using Scratch = PotentialAssemblyScratch<dim, NumberType>;
       using Copy = PotentialAssemblyCopy<NumberType>;
 
-      const FEValuesExtractors::Scalar scalar(0);
       const bool recover_dg0_gradient = solution_dof_handler.get_fe().degree == 0;
       const auto dg0_gradient_models = recover_dg0_gradient
                                            ? recover_dg0_gradient_models(sol, solution_dof_handler, mapping, get_EoM)
@@ -904,20 +903,14 @@ namespace DiFfRG
           }
         }
       };
-      const auto boundary_worker = []([[maybe_unused]] const Iterator &cell, [[maybe_unused]] const uint &face_no,
-                                      [[maybe_unused]] Scratch &scratch, [[maybe_unused]] Copy &copy) {};
       // Every constraint on the potential is homogeneous -- hanging nodes, plus the gauge DoF pinned to
       // zero -- so distributing the right-hand side alone needs no local matrix to carry an inhomogeneity.
-      const auto copier = [&](const Copy &copy) {
-        if (assemble_matrix) {
-          constraints.distribute_local_to_global(copy.cell_matrix, copy.cell_rhs, copy.cell_dof_indices, matrix, rhs);
-          for (const auto &face : copy.face_data)
-            constraints.distribute_local_to_global(face.matrix, face.rhs, face.dof_indices, matrix, rhs);
-        } else {
-          constraints.distribute_local_to_global(copy.cell_rhs, copy.cell_dof_indices, rhs);
-          for (const auto &face : copy.face_data)
-            constraints.distribute_local_to_global(face.rhs, face.dof_indices, rhs);
-        }
+      const auto insert = [&](const FullMatrix<NumberType> &local_matrix, const Vector<NumberType> &local_rhs,
+                              const std::vector<types::global_dof_index> &dofs) {
+        if (assemble_matrix)
+          constraints.distribute_local_to_global(local_matrix, local_rhs, dofs, matrix, rhs);
+        else
+          constraints.distribute_local_to_global(local_rhs, dofs, rhs);
       };
       const auto face_worker = [&](const Iterator &potential_cell, const uint &face_no, const uint &subface_no,
                                    const Iterator &potential_neighbor, const uint &neighbor_face_no,
@@ -933,9 +926,10 @@ namespace DiFfRG
         const auto &solution_fe_interface_values = scratch.solution_fe_interface_values;
         const auto &potential_fe_interface_values = scratch.potential_fe_interface_values;
 
+        // The potential is scalar, so the plain shape functions serve; FEValues views (operator[]) are built lazily
+        // through a deal.II task the caller waits for, which deadlocks when every TBB worker does it at once.
         const uint n_interface_dofs = potential_fe_interface_values.n_current_interface_dofs();
         auto &face_data = copy.new_face_data(potential_fe_interface_values);
-        const auto potential_view = potential_fe_interface_values[scalar];
         const auto &solution_fe_values_s = solution_fe_interface_values.get_fe_face_values(0);
         const auto &solution_fe_values_n = solution_fe_interface_values.get_fe_face_values(1);
         const auto &q_points = potential_fe_interface_values.get_quadrature_points();
@@ -960,17 +954,19 @@ namespace DiFfRG
           const double rhs_flux = scalar_product(average_eom, normal);
 
           for (uint i = 0; i < n_interface_dofs; ++i) {
-            const double jump_i = potential_view.jump_in_values(i, q);
-            const Tensor<1, dim> average_grad_i = potential_view.average_of_gradients(i, q);
-            const double normal_gradient_jump_i = scalar_product(potential_view.jump_in_gradients(i, q), normal);
+            const double jump_i = potential_fe_interface_values.jump_in_shape_values(i, q);
+            const Tensor<1, dim> average_grad_i = potential_fe_interface_values.average_of_shape_gradients(i, q);
+            const double normal_gradient_jump_i =
+                scalar_product(potential_fe_interface_values.jump_in_shape_gradients(i, q), normal);
 
             face_data.rhs(i) += -potential_fe_interface_values.JxW(q) * rhs_flux * jump_i;
 
             if (!assemble_matrix) continue;
             for (uint j = 0; j < n_interface_dofs; ++j) {
-              const double jump_j = potential_view.jump_in_values(j, q);
-              const Tensor<1, dim> average_grad_j = potential_view.average_of_gradients(j, q);
-              const double normal_gradient_jump_j = scalar_product(potential_view.jump_in_gradients(j, q), normal);
+              const double jump_j = potential_fe_interface_values.jump_in_shape_values(j, q);
+              const Tensor<1, dim> average_grad_j = potential_fe_interface_values.average_of_shape_gradients(j, q);
+              const double normal_gradient_jump_j =
+                  scalar_product(potential_fe_interface_values.jump_in_shape_gradients(j, q), normal);
 
               face_data.matrix(i, j) +=
                   potential_fe_interface_values.JxW(q) *
@@ -981,20 +977,33 @@ namespace DiFfRG
         }
       };
 
-      Scratch scratch(mapping, solution_dof_handler.get_fe(), potential_fe, quadrature, face_quadrature);
-      Copy copy;
-      const MeshWorker::AssembleFlags flags = MeshWorker::assemble_own_cells | MeshWorker::assemble_boundary_faces |
-                                              MeshWorker::assemble_own_interior_faces_once;
-
-      // Driven by the POTENTIAL DoFHandler, not the solution one. Under the distributed policy the
-      // solution handler sits on a partitioned triangulation, and MeshWorker::mesh_loop then skips
-      // every cell this rank does not own and every face between two cells it does not own -- and
-      // those face skips cannot be recovered with any combination of AssembleFlags. Since
-      // solve_potential gives the potential its own serial copy of the mesh, driving from that side
-      // makes the traversal complete, identical on every rank, and unchanged in the serial case
-      // (there the two handlers share a triangulation, so this is the same loop it always was).
-      MeshWorker::mesh_loop(potential_dof_handler.begin_active(), potential_dof_handler.end(), cell_worker, copier,
-                            scratch, copy, flags, boundary_worker, face_worker);
+      // Driven by the POTENTIAL DoFHandler, not the solution one: solve_potential gives the potential its own
+      // serial copy of the mesh, so every rank visits every cell and every face, and the traversal is the same on
+      // every rank and in the serial case. The cells and the interior faces (each once, as FaceTopology lists them)
+      // are assembled in parallel into their own local systems, then inserted in a fixed order.
+      DiFfRG::internal::ColoredCells<dim> cells;
+      cells.reinit(potential_dof_handler, constraints);
+      DiFfRG::internal::FaceTopology<dim> topology;
+      topology.reinit(cells);
+      tbb::enumerable_thread_specific<Scratch> scratches(
+          Scratch(mapping, solution_dof_handler.get_fe(), potential_fe, quadrature, face_quadrature));
+      std::vector<Copy> cell_copies(cells.size()), face_copies(topology.faces.size());
+      tbb::parallel_for(tbb::blocked_range<size_t>(0, cells.size()), [&](const auto &r) {
+        for (size_t k = r.begin(); k != r.end(); ++k)
+          cell_worker(cells[k], scratches.local(), cell_copies[k]);
+      });
+      tbb::parallel_for(tbb::blocked_range<size_t>(0, topology.faces.size()), [&](const auto &r) {
+        for (size_t f = r.begin(); f != r.end(); ++f) {
+          const auto &face = topology.faces[f];
+          face_worker(Iterator(face.cell[0]), face.face_no[0], face.subface_no[0], Iterator(face.cell[1]),
+                      face.face_no[1], face.subface_no[1], scratches.local(), face_copies[f]);
+        }
+      });
+      for (const auto &copy : cell_copies)
+        insert(copy.cell_matrix, copy.cell_rhs, copy.cell_dof_indices);
+      for (const auto &copy : face_copies)
+        for (const auto &face : copy.face_data)
+          insert(face.matrix, face.rhs, face.dof_indices);
     }
 
     template <int dim, typename NumberType> struct PotentialMinimum {
@@ -1188,14 +1197,12 @@ namespace DiFfRG
     }
 
     template <int dim, typename NumberType>
-    PotentialMinimum<dim, NumberType>
-    find_potential_minimum(const dealii::DoFHandler<dim> &potential_dof_handler,
-                           const dealii::FiniteElement<dim> &potential_fe, const dealii::Mapping<dim> &mapping,
-                           const dealii::Vector<NumberType> &potential, const dealii::Quadrature<dim> &quadrature,
-                           const Config::EoMConfig &config,
-                           const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt,
-                           const std::map<dealii::types::global_dof_index, dealii::Point<dim>> *cached_support_points =
-                               nullptr)
+    PotentialMinimum<dim, NumberType> find_potential_minimum(
+        const dealii::DoFHandler<dim> &potential_dof_handler, const dealii::FiniteElement<dim> &potential_fe,
+        const dealii::Mapping<dim> &mapping, const dealii::Vector<NumberType> &potential,
+        const dealii::Quadrature<dim> &quadrature, const Config::EoMConfig &config,
+        const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt,
+        const std::map<dealii::types::global_dof_index, dealii::Point<dim>> *cached_support_points = nullptr)
     {
       PotentialMinimum<dim, NumberType> minimum;
 
@@ -1303,8 +1310,8 @@ namespace DiFfRG
       //    ParallelShared::distribute_dofs), while this whole call chain runs inside readouts(),
       //    which OutputSession invokes on rank 0 only. Rank 0 would enter a collective nobody
       //    else reaches, and the run hangs with no diagnostic.
-      //  * even if it did not hang, MeshWorker::mesh_loop over a partitioned mesh visits only the
-      //    calling rank's cells, so the potential system would be assembled with entire rows left
+      //  * even if it did not hang, the assembly over a partitioned mesh visits only the calling
+      //    rank's (owned) cells, so the potential system would be assembled with entire rows left
       //    at zero -- a singular matrix handed to UMFPACK, or silently wrong readouts.
       //
       // The mesh is replicated at this rung and the solution is a full replica, so a serial copy is
@@ -1342,8 +1349,8 @@ namespace DiFfRG
         system.sparsity_pattern.copy_from(dsp);
         system.matrix.reinit(system.sparsity_pattern);
 
-        const uint quadrature_order = std::max<uint>(
-            std::max<uint>(solution_dof_handler.get_fe().degree, system.finite_element->degree) + 2, 2);
+        const uint quadrature_order =
+            std::max<uint>(std::max<uint>(solution_dof_handler.get_fe().degree, system.finite_element->degree) + 2, 2);
         system.quadrature = QGauss<dim>(quadrature_order);
         system.face_quadrature = QGauss<dim - 1>(quadrature_order);
       }
@@ -1362,9 +1369,8 @@ namespace DiFfRG
       system.factorization.vmult(potential, rhs);
       system.constraints.distribute(potential);
 
-      return {.finite_element = system.finite_element,
-              .dof_handler = system.dof_handler,
-              .values = std::move(potential)};
+      return {
+          .finite_element = system.finite_element, .dof_handler = system.dof_handler, .values = std::move(potential)};
     }
 
     template <int dim, typename VectorType, typename EoMFUN>
@@ -1375,8 +1381,7 @@ namespace DiFfRG
                           const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt,
                           PotentialSystemCache<dim, typename VectorType::value_type> *cache = nullptr)
     {
-      auto potential =
-          solve_potential(sol, solution_dof_handler, mapping, get_EoM, config, PotentialKind::eom, cache);
+      auto potential = solve_potential(sol, solution_dof_handler, mapping, get_EoM, config, PotentialKind::eom, cache);
 
       // The minimum search wants the same quadrature the system was assembled with, and the same support
       // points the gauge choice used. Both come from the cache when there is one: deal.II builds Gauss
@@ -1387,10 +1392,10 @@ namespace DiFfRG
           cache != nullptr ? std::nullopt : std::optional<QGauss<dim>>(quadrature_order);
       const auto *system = cache != nullptr ? &cache->entry(PotentialKind::eom) : nullptr;
 
-      const auto minimum = find_potential_minimum(
-          *potential.dof_handler, *potential.finite_element, mapping, potential.values,
-          system != nullptr ? system->quadrature : *own_quadrature, config, initial_guess,
-          system != nullptr ? &system->support_points : nullptr);
+      const auto minimum =
+          find_potential_minimum(*potential.dof_handler, *potential.finite_element, mapping, potential.values,
+                                 system != nullptr ? system->quadrature : *own_quadrature, config, initial_guess,
+                                 system != nullptr ? &system->support_points : nullptr);
       EoM_cell = GridTools::find_active_cell_around_point(solution_dof_handler, minimum.point);
       return {.minimum = minimum.point,
               .finite_element = std::move(potential.finite_element),
@@ -1529,13 +1534,12 @@ namespace DiFfRG
    * locally refined minimum of that potential.
    */
   template <int dim, typename VectorType, typename EoMFUN, typename EoMPFUN>
-  dealii::Point<dim> get_EoM_point(typename dealii::DoFHandler<dim>::cell_iterator &EoM_cell, const VectorType &sol,
-                                   const dealii::DoFHandler<dim> &dof_handler, const dealii::Mapping<dim> &mapping,
-                                   const EoMFUN &get_EoM, const EoMPFUN &EoM_postprocess,
-                                   const Config::EoMConfig &config,
-                                   const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt,
-                                   internal::PotentialSystemCache<dim, typename VectorType::value_type> *cache =
-                                       nullptr)
+  dealii::Point<dim>
+  get_EoM_point(typename dealii::DoFHandler<dim>::cell_iterator &EoM_cell, const VectorType &sol,
+                const dealii::DoFHandler<dim> &dof_handler, const dealii::Mapping<dim> &mapping, const EoMFUN &get_EoM,
+                const EoMPFUN &EoM_postprocess, const Config::EoMConfig &config,
+                const std::optional<dealii::Point<dim>> &initial_guess = std::nullopt,
+                internal::PotentialSystemCache<dim, typename VectorType::value_type> *cache = nullptr)
   {
     return get_EoM_point_with_potential(EoM_cell, sol, dof_handler, mapping, get_EoM, EoM_postprocess, config,
                                         initial_guess, cache)

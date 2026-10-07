@@ -34,6 +34,12 @@ namespace DiFfRG
       initialized = true;
     }
 
+    /// Forwarded to the inner solver, if it has the switch; see UMFPack::set_iterative_refinement.
+    void set_iterative_refinement(const bool on)
+    {
+      if constexpr (requires { inner_solver.set_iterative_refinement(on); }) inner_solver.set_iterative_refinement(on);
+    }
+
     bool invert()
     {
       if (!initialized) throw std::runtime_error("ScaledLinearSolver::invert: solver not initialized");

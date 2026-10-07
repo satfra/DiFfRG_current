@@ -261,8 +261,7 @@ namespace DiFfRG
     }
   }
 
-  template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename...> typename LinearSolver>
+  template <typename VectorType, typename SparseMatrixType, uint dim, template <typename...> typename LinearSolver>
   void TimeStepperSUNDIALS_IDA_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(VectorType &initial_data,
                                                                                           const double t_start,
                                                                                           const double t_stop)
@@ -273,6 +272,8 @@ namespace DiFfRG
     assembler.reinit_matrix(jacobian);
     LinearSolver<SparseMatrixType, VectorType> linSolver;
     linSolver.set_report_port(this->log);
+    if constexpr (requires { linSolver.set_iterative_refinement(true); })
+      linSolver.set_iterative_refinement(this->impl.iterative_refinement);
     const bool jacobian_diagnostics_enabled = impl.jacobian_diagnostics;
     const DiagnosticPort jacobian_diagnostic_port =
         jacobian_diagnostics_enabled ? data_out.diagnostic_port() : DiagnosticPort{};
@@ -590,8 +591,7 @@ namespace DiFfRG
     this->drain_output();
   }
 
-  template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename...> typename LinearSolver>
+  template <typename VectorType, typename SparseMatrixType, uint dim, template <typename...> typename LinearSolver>
   void TimeStepperSUNDIALS_IDA_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(BlockVectorType &initial_data,
                                                                                           const double t_start,
                                                                                           const double t_stop)
@@ -607,6 +607,8 @@ namespace DiFfRG
     assembler.reinit_matrix(spatial_jacobian);
     LinearSolver<SparseMatrixType, VectorType> linSolver;
     linSolver.set_report_port(this->log);
+    if constexpr (requires { linSolver.set_iterative_refinement(true); })
+      linSolver.set_iterative_refinement(this->impl.iterative_refinement);
     const uint n_FE_dofs = initial_data.block(0).size();
     const uint n_vars = initial_data.block(1).size();
     FullMatrix<NumberType> variable_jacobian(n_vars);
@@ -716,8 +718,7 @@ namespace DiFfRG
         sol_dot_view.refresh(sol_dot.block(0));
         residual_view.refresh((*residual).block(0));
         data_out.write_frame(t, [&](auto &frame) {
-          assembler.attach_data_output(frame, sol_view.get(), vars_view.get(), sol_dot_view.get(),
-                                        residual_view.get());
+          assembler.attach_data_output(frame, sol_view.get(), vars_view.get(), sol_dot_view.get(), residual_view.get());
         });
 
         last_save = t;
@@ -969,8 +970,7 @@ namespace DiFfRG
     this->drain_output();
   }
 
-  template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename...> typename LinearSolver>
+  template <typename VectorType, typename SparseMatrixType, uint dim, template <typename...> typename LinearSolver>
   void TimeStepperSUNDIALS_IDA_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run_vars(VectorType &initial_data,
                                                                                                const double t_start,
                                                                                                const double t_stop)

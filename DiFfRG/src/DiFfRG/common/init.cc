@@ -120,8 +120,7 @@ namespace DiFfRG
         trimmed.erase(trimmed.find_last_not_of(" \t") + 1);
         if (trimmed == digits) return parsed;
       }
-      std::cerr << "WARNING: " << name << "='" << text << "' is not a positive thread count; ignoring it."
-                << std::endl;
+      std::cerr << "WARNING: " << name << "='" << text << "' is not a positive thread count; ignoring it." << std::endl;
       return std::nullopt;
     }
 
@@ -378,8 +377,7 @@ namespace DiFfRG
       return CpuBudget{std::max(1u, my_cpus / sharing), sharing, sharing == 1 && local_size > 1};
 #else
       // No portable way to read an affinity mask; fall back to an even split of the node.
-      return CpuBudget{std::max(1u, dealii::MultithreadInfo::n_cores() / std::max(1u, local_size)), local_size,
-                       false};
+      return CpuBudget{std::max(1u, dealii::MultithreadInfo::n_cores() / std::max(1u, local_size)), local_size, false};
 #endif
     }
 
@@ -517,15 +515,9 @@ namespace DiFfRG
                   << std::endl;
 
       if (config.contains("/discretization/mesh_workers") || config.contains("/discretization/batch_size"))
-        std::cerr << "WARNING: '/discretization/mesh_workers' and '/discretization/batch_size' are deprecated.\n"
-                     "         The assembly schedule -- the MeshWorker queue length and chunk size -- is now\n"
-                     "         derived per loop from how expensive its cell worker is, the thread budget, and\n"
-                     "         the number of cells this rank owns.\n"
-                     "         They are still honoured, but setting either one pins every loop to a single\n"
-                     "         hand-tuned pair: the cheap loops and the ones calling the momentum integrals\n"
-                     "         stop being scheduled differently, and the adaptation to mesh size, thread count\n"
-                     "         and MPI partitioning is switched off. Please delete them from your parameter\n"
-                     "         file unless you are deliberately benchmarking the schedule itself.\n"
+        std::cerr << "WARNING: '/discretization/mesh_workers' and '/discretization/batch_size' are ignored.\n"
+                     "         They sized the MeshWorker pipeline of the assemblers, which no longer use one.\n"
+                     "         Please delete them from your parameter file.\n"
                   << std::endl;
 
       // Everything except the automatic tier is knowable here, before MPI is up. Resolving now is
@@ -623,8 +615,8 @@ namespace DiFfRG
 
       if (device >= 0 && local_size > 1 && !Kokkos::is_initialized() && !Kokkos::is_finalized()) {
         dealii::internal::dealii_initialized_kokkos = true;
-        Kokkos::initialize(Kokkos::InitializationSettings().set_device_id(device).set_num_threads(
-            static_cast<int>(n_threads())));
+        Kokkos::initialize(
+            Kokkos::InitializationSettings().set_device_id(device).set_num_threads(static_cast<int>(n_threads())));
         std::atexit([]() { Kokkos::finalize(); });
       } else {
         dealii::internal::ensure_kokkos_initialized();

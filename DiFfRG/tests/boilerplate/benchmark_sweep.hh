@@ -11,26 +11,19 @@
 #include <vector>
 
 /**
- * Environment-driven overrides for the assembly-schedule calibration sweep.
+ * Environment-driven overrides for the assembly benchmarks, so that a sweep needs no rebuild. The
+ * benchmarks are linked against Catch2WithMain, which rejects unknown command-line flags, so the
+ * environment is the remaining channel.
  *
- * The sweep has to visit a few dozen (queue_length, chunk_size, n_cells) points, and rebuilding
- * for each one is not viable. The benchmarks are linked against Catch2WithMain, which rejects
- * unknown command-line flags, so the environment is the remaining channel.
- *
- *   DIFFRG_BENCH_QUEUE  -> /discretization/mesh_workers
- *   DIFFRG_BENCH_CHUNK  -> /discretization/batch_size
  *   DIFFRG_BENCH_CELLS  -> cells per axis; rewrites the grid spec
  *   DIFFRG_BENCH_FE     -> restricts the fe_order GENERATE to a single value
  *
- * The first two keys are deprecated for normal runs and DiFfRG warns about them; sweeping the
- * schedule is exactly the case that warning excepts.
- *
- * Unset variables leave the config alone, so an un-exported run measures the automatic schedule.
+ * Unset variables leave the config alone.
  */
 namespace DiFfRG
 {
   namespace Testing
-    {
+  {
     inline std::optional<unsigned int> env_uint(const char *name)
     {
       const char *raw = std::getenv(name);
@@ -41,9 +34,6 @@ namespace DiFfRG
     /// Apply the sweep overrides in place.
     inline void apply_benchmark_sweep(DiFfRG::ConfigTree &json)
     {
-      if (const auto queue = env_uint("DIFFRG_BENCH_QUEUE")) json.set_uint("/discretization/mesh_workers", *queue);
-      if (const auto chunk = env_uint("DIFFRG_BENCH_CHUNK")) json.set_uint("/discretization/batch_size", *chunk);
-
       if (const auto requested = env_uint("DIFFRG_BENCH_CELLS")) {
         const unsigned int cells = std::max(1u, *requested);
         // Full precision: six decimals is already off by a cell at 2048.

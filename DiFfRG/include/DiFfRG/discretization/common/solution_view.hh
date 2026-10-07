@@ -91,7 +91,7 @@ namespace DiFfRG
    * (VectorBase::extract_subvector_to) calls VecGhostGetLocalForm / VecGhostRestoreLocalForm around
    * every read, and those two do PetscObjectReference / PetscObjectDereference on the local form
    * plus a PetscObjectStateSet on both vectors -- a non-atomic refcount and a shared write. Every
-   * assembler reads the solution from inside a MeshWorker::mesh_loop cell worker, i.e. from N TBB
+   * assembler reads the solution from inside its parallel cell loops, i.e. from N TBB
    * worker threads at once, so the refcount races; a lost increment takes it to zero, PETSc frees
    * the local form, and the next thread segfaults in VecGetSize_Seq on freed memory (the
    * accompanying "free(): invalid pointer" is the double free). PETSc is not thread safe unless

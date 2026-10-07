@@ -166,13 +166,13 @@ namespace DiFfRG
      * @brief The boundary faces and interior faces of the cells of a ColoredCells, for a batched assembler whose
      * scatter adds each face into the rows of its own cell.
      *
-     * An interior face is listed once, with the cell pair and (sub)face numbers mesh_loop hands its face worker,
-     * and referenced by each of its cells that this rank owns. Faces to ghost cells are listed too, including
-     * those mesh_loop would leave to the other rank: each rank adds only into its own rows, so it needs every
-     * face of its cells.
+     * An interior face is listed once, seen from its finer cell (between cells of one level: from the smaller one),
+     * with that cell pair's (sub)face numbers, and referenced by each of its cells that this rank owns. Faces to
+     * ghost cells are listed on every rank that owns one of their cells: each rank adds only into its own rows, so
+     * it needs every face of its cells.
      */
     template <int dim> struct FaceTopology {
-      /// An interior face: cell[0] is the finer of the two cells (or the one mesh_loop would visit first), the
+      /// An interior face: cell[0] is the finer of the two cells (between cells of one level, the smaller one), the
       /// normal points out of it, and the numerical flux takes cell[0] as trace s.
       struct InteriorFace {
         std::array<typename dealii::DoFHandler<dim>::cell_iterator, 2> cell;
@@ -243,7 +243,7 @@ namespace DiFfRG
               }
               continue;
             }
-            // Same level: listed from the smaller of two owned cells, as mesh_loop does.
+            // Same level: listed from the smaller of two owned cells.
             if (neighbor->is_locally_owned() && neighbor < cell) continue;
             add(cell, f, none, neighbor, periodic ? cell->periodic_neighbor_face_no(f) : cell->neighbor_face_no(f),
                 none);

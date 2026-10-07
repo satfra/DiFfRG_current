@@ -39,8 +39,8 @@ namespace DiFfRG
           "TimeStepperSUNDIALS_IDA_BoostRK_impl::run: initial condition must have at least two blocks!");
   }
 
-  template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename...> typename LinearSolver, int prec>
+  template <typename VectorType, typename SparseMatrixType, uint dim, template <typename...> typename LinearSolver,
+            int prec>
   void TimeStepperSUNDIALS_IDA_BoostRK_impl<VectorType, SparseMatrixType, dim, LinearSolver, prec>::run(
       BlockVectorType &initial_data, const double t_start, const double t_stop)
   {
@@ -54,6 +54,8 @@ namespace DiFfRG
     SparseMatrixType spatial_jacobian(assembler.get_sparsity_pattern_jacobian());
     LinearSolver<SparseMatrixType, VectorType> linSolver;
     linSolver.set_report_port(this->log);
+    if constexpr (requires { linSolver.set_iterative_refinement(true); })
+      linSolver.set_iterative_refinement(this->impl.iterative_refinement);
     const bool jacobian_diagnostics_enabled = impl.jacobian_diagnostics;
     const DiagnosticPort jacobian_diagnostic_port =
         jacobian_diagnostics_enabled ? data_out.diagnostic_port() : DiagnosticPort{};

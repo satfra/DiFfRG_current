@@ -31,9 +31,8 @@ namespace DiFfRG
       {
         using std::max, std::abs;
         using namespace autodiff;
-        static_assert(std::is_same<M, Model>::value,
-                      "Internal error: template parameter M must be the same as Model. "
-                      "Do not explicitly specify the M template parameter.");
+        static_assert(std::is_same<M, Model>::value, "Internal error: template parameter M must be the same as Model. "
+                                                     "Do not explicitly specify the M template parameter.");
         using Components = typename M::Components;
 
         std::array<Tensor<1, dim, NumberType>, Components::count_fe_functions(0)> F_s{};
@@ -86,10 +85,19 @@ namespace DiFfRG
         constexpr size_t n_blocks = 2 + 2 * n_fe;
         const size_t n = batch_s.size();
 
-        Batch stacked;
+        // Kept across calls (one set per number type and calling thread): allocating them anew costs page faults on
+        // every call, and the jacobian calls this once per seed group. The parallel loops below must see the calling
+        // thread's buffers, hence the references: inside a lambda run by another thread, the name of a thread_local
+        // refers to that thread's instance.
+        static thread_local Batch stacked_buffer;
+        static thread_local BatchOutput<dim, NT, n_fe> F_buffer;
+        static thread_local std::vector<NT> du_buffer;
+        auto &stacked = stacked_buffer;
+        auto &F = F_buffer;
+        auto &du = du_buffer;
         stacked.reinit(n_blocks * n, batch_s.has_derivatives(), batch_s.has_hessians());
         stacked.set_shared(batch_s.extractors(), batch_s.variables());
-        std::vector<NT> du(n_fe * n);
+        du.resize(n_fe * n);
         tbb::parallel_for(tbb::blocked_range<size_t>(0, n), [&](const tbb::blocked_range<size_t> &r) {
           for (size_t i = r.begin(); i != r.end(); ++i)
             for (size_t b = 0; b < n_blocks; ++b) {
@@ -102,7 +110,6 @@ namespace DiFfRG
             }
         });
 
-        BatchOutput<dim, NT, n_fe> F;
         F.reinit(n_blocks * n, Term::flux);
         asImp().evaluate_batch(F, stacked);
 
@@ -123,6 +130,7 @@ namespace DiFfRG
                 out.flux(c, d)[i] = 0.5 * (at(0, d) + at(1, d)) - 0.5 * alpha * jump;
             }
         });
+        stacked.clear_shared();
       }
     };
 
@@ -153,15 +161,15 @@ namespace DiFfRG
                        const Tensor<1, dim> &normal, const Point<dim> &p, const Solutions_s &u_s,
                        const Solutions_n &u_n) const
       {
-        static_assert(std::is_same<M, Model>::value,
-                      "Internal error: template parameter M must be the same as Model. "
-                      "Do not explicitly specify the M template parameter.");
+        static_assert(std::is_same<M, Model>::value, "Internal error: template parameter M must be the same as Model. "
+                                                     "Do not explicitly specify the M template parameter.");
         static_assert(dependent >= 1, "ldg_numflux requires dependent >= 1 (use numflux for dependent == 0).");
 
         using Dirs = typename C<dependent - 1>::template value<0>;
         using UD = typename C<dependent - 1>::template value<1>;
-        static_assert(Dirs::size == UD::size && UD::size >= M::Components::count_fe_functions(dependent),
-                      "LDG numflux: FlowDirections::size and UpDown::size must both be >= count_fe_functions(dependent).");
+        static_assert(
+            Dirs::size == UD::size && UD::size >= M::Components::count_fe_functions(dependent),
+            "LDG numflux: FlowDirections::size and UpDown::size must both be >= count_fe_functions(dependent).");
         using Components = typename M::Components;
 
         Tensor<1, dim> t;
@@ -195,11 +203,15 @@ namespace DiFfRG
         using UD = typename C<dependent - 1>::template value<1>;
         constexpr int dim = Batch::dim;
         constexpr size_t n_out = Out::n_components;
-        static_assert(Dirs::size == UD::size && UD::size >= n_out,
-                      "LDG numflux: FlowDirections::size and UpDown::size must both be >= count_fe_functions(dependent).");
+        static_assert(
+            Dirs::size == UD::size && UD::size >= n_out,
+            "LDG numflux: FlowDirections::size and UpDown::size must both be >= count_fe_functions(dependent).");
 
         const size_t n = batch_s.size();
-        BatchOutput<dim, typename Batch::number_type, n_out> F_s, F_n;
+        // Kept across calls, and referenced from the parallel loop, as in LLFFlux::numflux_batch.
+        static thread_local BatchOutput<dim, typename Batch::number_type, n_out> F_s_buffer, F_n_buffer;
+        auto &F_s = F_s_buffer;
+        auto &F_n = F_n_buffer;
         F_s.reinit(n, Term::flux);
         F_n.reinit(n, Term::flux);
         asImp().template ldg_flux_source_batch<dependent>(F_s, batch_s);
@@ -228,9 +240,8 @@ namespace DiFfRG
       void numflux(std::array<Tensor<1, dim, NumberType>, M::Components::count_fe_functions(0)> &,
                    const Tensor<1, dim> &, const Point<dim> &, const Solutions_s &, const Solutions_n &) const
       {
-        static_assert(std::is_same<M, Model>::value,
-                      "Internal error: template parameter M must be the same as Model. "
-                      "Do not explicitly specify the M template parameter.");
+        static_assert(std::is_same<M, Model>::value, "Internal error: template parameter M must be the same as Model. "
+                                                     "Do not explicitly specify the M template parameter.");
       }
 
       /// The batched numflux: nothing, the output is zero on entry.
@@ -250,9 +261,8 @@ namespace DiFfRG
       void boundary_numflux(std::array<Tensor<1, dim, NumberType>, M::Components::count_fe_functions(0)> &F,
                             const Tensor<1, dim> & /*normal*/, const Point<dim> &p, const Solutions &sol) const
       {
-        static_assert(std::is_same<M, Model>::value,
-                      "Internal error: template parameter M must be the same as Model. "
-                      "Do not explicitly specify the M template parameter.");
+        static_assert(std::is_same<M, Model>::value, "Internal error: template parameter M must be the same as Model. "
+                                                     "Do not explicitly specify the M template parameter.");
         asImp().flux(F, p, sol);
       }
 
@@ -269,9 +279,8 @@ namespace DiFfRG
       ldg_boundary_numflux(std::array<Tensor<1, dim, NumberType>, M::Components::count_fe_functions(dependent)> &BNF,
                            const Tensor<1, dim> & /*normal*/, const Point<dim> &p, const Solutions &u) const
       {
-        static_assert(std::is_same<M, Model>::value,
-                      "Internal error: template parameter M must be the same as Model. "
-                      "Do not explicitly specify the M template parameter.");
+        static_assert(std::is_same<M, Model>::value, "Internal error: template parameter M must be the same as Model. "
+                                                     "Do not explicitly specify the M template parameter.");
         asImp().template ldg_flux<dependent>(BNF, p, u);
       }
 

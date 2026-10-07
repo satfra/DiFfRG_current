@@ -2,9 +2,9 @@
 
 #include "DiFfRG/common/math.hh"
 
-#include <DiFfRG/discretization/common/types.hh>
 #include <DiFfRG/discretization/FV/reconstructor/advection/abstract_reconstructor.hh>
 #include <DiFfRG/discretization/FV/reconstructor/diffusion/corrected_weighted_least_squares_reconstructor.hh>
+#include <DiFfRG/discretization/common/types.hh>
 #include <DiFfRG/model/fv_boundaries.hh>
 
 #include <algorithm>
@@ -65,8 +65,14 @@ namespace DiFfRG
           GradientType<dim, NumberType, n_components> diffusion_grad_plus{};
           std::array<NumberType, n_components> diffusion_u{};
           GradientType<dim, NumberType, n_components> diffusion_grad{};
-          ThirdDerivativeType<dim, NumberType, n_components> third_derivatives_minus{};
-          ThirdDerivativeType<dim, NumberType, n_components> third_derivatives_plus{};
+          /// Only 1D reconstructs third derivatives; in more dimensions they would be zeros (half the state in 2D),
+          /// so they are not stored.
+          struct NoThirdDerivatives {
+          };
+          using ThirdDerivatives =
+              std::conditional_t<dim == 1, ThirdDerivativeType<dim, NumberType, n_components>, NoThirdDerivatives>;
+          [[no_unique_address]] ThirdDerivatives third_derivatives_minus{};
+          [[no_unique_address]] ThirdDerivatives third_derivatives_plus{};
         };
 
         template <int dim, typename NumberType, size_t n_components>
@@ -126,8 +132,7 @@ namespace DiFfRG
         template <int dim, typename NumberType, size_t n_components> struct SolutionReconstructionCache {
           static constexpr size_t n_faces = 2 * dim;
           std::vector<CellStencilData<dim, NumberType, n_components>> cell_stencils;
-          std::vector<std::array<FaceReconstructionState<dim, NumberType, n_components>, n_faces>>
-              face_reconstructions;
+          std::vector<std::array<FaceReconstructionState<dim, NumberType, n_components>, n_faces>> face_reconstructions;
           std::vector<std::array<bool, n_faces>> face_reconstruction_valid;
           bool topology_initialized = false;
         };
@@ -141,10 +146,9 @@ namespace DiFfRG
         };
 
         template <int dim, typename NumberType, size_t n_components>
-        std::array<NumberType, n_components> reconstruct_u(const std::array<NumberType, n_components> &u_center,
-                                                           const dealii::Point<dim> &center,
-                                                           const dealii::Point<dim> &x,
-                                                           const GradientType<dim, NumberType, n_components> &u_grad)
+        std::array<NumberType, n_components>
+        reconstruct_u(const std::array<NumberType, n_components> &u_center, const dealii::Point<dim> &center,
+                      const dealii::Point<dim> &x, const GradientType<dim, NumberType, n_components> &u_grad)
         {
           AssertDimension(u_center.size(), n_components);
           std::array<NumberType, n_components> result;
@@ -180,9 +184,10 @@ namespace DiFfRG
         }
 
         template <int dim, typename NumberType, size_t n_components>
-        FourPointStencil<dim, NumberType, n_components> make_interior_third_derivative_stencil(
-            const CellStencilData<dim, NumberType, n_components> &minus_stencil,
-            const CellStencilData<dim, NumberType, n_components> &plus_stencil, const dealii::Point<dim> &x_q)
+        FourPointStencil<dim, NumberType, n_components>
+        make_interior_third_derivative_stencil(const CellStencilData<dim, NumberType, n_components> &minus_stencil,
+                                               const CellStencilData<dim, NumberType, n_components> &plus_stencil,
+                                               const dealii::Point<dim> &x_q)
         {
           static_assert(dim == 1, "Third-derivative FV stencils currently support only dim=1.");
 
@@ -229,22 +234,19 @@ namespace DiFfRG
         }
 
         template <int dim, typename NumberType, size_t n_components>
-        DiffusionFaceState<dim, NumberType, n_components> compute_diffusion_face_state(
-            const CellStencilData<dim, NumberType, n_components> &minus_stencil,
-            const CellStencilData<dim, NumberType, n_components> &plus_stencil)
+        DiffusionFaceState<dim, NumberType, n_components>
+        compute_diffusion_face_state(const CellStencilData<dim, NumberType, n_components> &minus_stencil,
+                                     const CellStencilData<dim, NumberType, n_components> &plus_stencil)
         {
-          using DiffusionReconstructor =
-              def::CorrectedWeightedLeastSquaresDiffusionReconstructor<dim, NumberType>;
+          using DiffusionReconstructor = def::CorrectedWeightedLeastSquaresDiffusionReconstructor<dim, NumberType>;
           return DiffusionReconstructor::template compute_face_state<n_components>(minus_stencil, plus_stencil);
         }
 
         template <int dim, typename NumberType, size_t n_components>
-        std::array<ReconstructionDerivativeData<dim, NumberType, n_components>, 2>
-        extract_diffusion_face_derivatives(
+        std::array<ReconstructionDerivativeData<dim, NumberType, n_components>, 2> extract_diffusion_face_derivatives(
             const DiffusionFaceState<dim, autodiff::Real<1, NumberType>, n_components> &state)
         {
-          using DiffusionReconstructor =
-              def::CorrectedWeightedLeastSquaresDiffusionReconstructor<dim, NumberType>;
+          using DiffusionReconstructor = def::CorrectedWeightedLeastSquaresDiffusionReconstructor<dim, NumberType>;
           return DiffusionReconstructor::template extract_derivatives<n_components>(state);
         }
 
@@ -259,12 +261,13 @@ namespace DiFfRG
             data.u[i] = solution_global(topology.dof_indices[i]);
         }
 
-        template <def::HasReconstructor Reconstructor, int dim, typename NumberType, size_t n_components,
-                  typename DiffusionReconstructor =
-                      def::CorrectedWeightedLeastSquaresDiffusionReconstructor<dim, NumberType>>
-        FaceReconstructionState<dim, NumberType, n_components> compute_interior_face_reconstruction_state(
-            const CellStencilData<dim, NumberType, n_components> &minus_stencil,
-            const CellStencilData<dim, NumberType, n_components> &plus_stencil, const dealii::Point<dim> &x_q)
+        template <
+            def::HasReconstructor Reconstructor, int dim, typename NumberType, size_t n_components,
+            typename DiffusionReconstructor = def::CorrectedWeightedLeastSquaresDiffusionReconstructor<dim, NumberType>>
+        FaceReconstructionState<dim, NumberType, n_components>
+        compute_interior_face_reconstruction_state(const CellStencilData<dim, NumberType, n_components> &minus_stencil,
+                                                   const CellStencilData<dim, NumberType, n_components> &plus_stencil,
+                                                   const dealii::Point<dim> &x_q)
         {
           FaceReconstructionState<dim, NumberType, n_components> state{};
           state.center_grad_minus = Reconstructor::template compute_gradient<n_components>(
@@ -298,9 +301,8 @@ namespace DiFfRG
 
         template <def::HasReconstructor Reconstructor, int dim, typename NumberType, size_t n_components>
         std::array<NumberType, n_components> reconstruct_u_derivative(
-            const std::array<autodiff::Real<1, NumberType>, n_components> &u_center,
-            const dealii::Point<dim> &center, const dealii::Point<dim> &x,
-            const std::array<dealii::Point<dim>, 2 * dim> &x_n,
+            const std::array<autodiff::Real<1, NumberType>, n_components> &u_center, const dealii::Point<dim> &center,
+            const dealii::Point<dim> &x, const std::array<dealii::Point<dim>, 2 * dim> &x_n,
             const std::array<std::array<autodiff::Real<1, NumberType>, n_components>, 2 * dim> &u_n)
         {
           const auto u_grad_deriv =
@@ -368,8 +370,9 @@ namespace DiFfRG
         };
 
         template <typename BoundaryNumberType, int dim, size_t n_components, typename VectorType>
-        BoundaryStencilData<dim, BoundaryNumberType, n_components> fill_boundary_stencil_from_topology(
-            const BoundaryStencilTopologyData<dim, n_components> &topology, const VectorType &solution_global)
+        BoundaryStencilData<dim, BoundaryNumberType, n_components>
+        fill_boundary_stencil_from_topology(const BoundaryStencilTopologyData<dim, n_components> &topology,
+                                            const VectorType &solution_global)
         {
           BoundaryStencilData<dim, BoundaryNumberType, n_components> boundary_stencil{};
           boundary_stencil.x = topology.x;
@@ -383,9 +386,9 @@ namespace DiFfRG
           for (size_t stencil_index = 0; stencil_index < boundary_stencil.u.size(); ++stencil_index) {
             for (size_t c = 0; c < n_components; ++c) {
               const auto dof = topology.dof_indices[stencil_index][c];
-              boundary_stencil.u[stencil_index][c] =
-                  dof == dealii::numbers::invalid_dof_index ? BoundaryNumberType{} :
-                                                               BoundaryNumberType(solution_global(dof));
+              boundary_stencil.u[stencil_index][c] = dof == dealii::numbers::invalid_dof_index
+                                                         ? BoundaryNumberType{}
+                                                         : BoundaryNumberType(solution_global(dof));
             }
           }
           return boundary_stencil;
@@ -398,8 +401,8 @@ namespace DiFfRG
             const VectorType &solution_global)
         {
           BoundaryReconstructionStencilData<dim, BoundaryNumberType, n_components> result{};
-          result.primary = fill_boundary_stencil_from_topology<BoundaryNumberType, dim, n_components>(
-              topology.primary, solution_global);
+          result.primary = fill_boundary_stencil_from_topology<BoundaryNumberType, dim, n_components>(topology.primary,
+                                                                                                      solution_global);
           result.tangential_ghost_neighbor_valid = topology.tangential_ghost_neighbor_valid;
           result.corner_tangential_stencil_valid = topology.corner_tangential_stencil_valid;
           for (size_t face = 0; face < result.n_faces; ++face) {
@@ -469,20 +472,21 @@ namespace DiFfRG
             const CellStencilData<dim, NumberType, n_components> & /*physical_stencil*/,
             const dealii::Point<dim> & /*x_q*/)
           requires(dim == 1)
-        {}
+        {
+        }
 
         template <int dim, typename NumberType, size_t n_components>
-        void prepare_boundary_reconstruction_stencil(
-            BoundaryStencilData<dim, NumberType, n_components> &boundary_stencil,
-            const CellStencilData<dim, NumberType, n_components> &physical_stencil,
-            const dealii::Point<dim> &x_q)
+        void
+        prepare_boundary_reconstruction_stencil(BoundaryStencilData<dim, NumberType, n_components> &boundary_stencil,
+                                                const CellStencilData<dim, NumberType, n_components> &physical_stencil,
+                                                const dealii::Point<dim> &x_q)
           requires(dim == 2)
         {
           const unsigned int axis = boundary_stencil.cell_face / 2;
-          const size_t ghost_center = boundary_stencil.lower_boundary ? def::BoundaryStencilIndex::lower_inner :
-                                                                        def::BoundaryStencilIndex::upper_inner;
-          const size_t ghost_outer = boundary_stencil.lower_boundary ? def::BoundaryStencilIndex::lower_outer :
-                                                                       def::BoundaryStencilIndex::upper_outer;
+          const size_t ghost_center = boundary_stencil.lower_boundary ? def::BoundaryStencilIndex::lower_inner
+                                                                      : def::BoundaryStencilIndex::upper_inner;
+          const size_t ghost_outer = boundary_stencil.lower_boundary ? def::BoundaryStencilIndex::lower_outer
+                                                                     : def::BoundaryStencilIndex::upper_outer;
           boundary_stencil.ghost_center = ghost_center;
           boundary_stencil.ghost_left =
               boundary_stencil.lower_boundary ? ghost_outer : def::BoundaryStencilIndex::physical_cell;
@@ -559,49 +563,47 @@ namespace DiFfRG
         }
 
         template <int dim, typename NumberType, size_t n_components>
-        CellStencilData<dim, NumberType, n_components> make_physical_boundary_side_stencil(
-            const BoundaryStencilData<dim, NumberType, n_components> &boundary_stencil,
-            const CellStencilData<dim, NumberType, n_components> & /*physical_stencil*/)
+        CellStencilData<dim, NumberType, n_components>
+        make_physical_boundary_side_stencil(const BoundaryStencilData<dim, NumberType, n_components> &boundary_stencil,
+                                            const CellStencilData<dim, NumberType, n_components> & /*physical_stencil*/)
           requires(dim == 1)
         {
           return make_physical_boundary_side_stencil<dim, NumberType, n_components>(boundary_stencil);
         }
 
         template <int dim, typename NumberType, size_t n_components>
-        CellStencilData<dim, NumberType, n_components> make_physical_boundary_side_stencil(
-            const BoundaryStencilData<dim, NumberType, n_components> &boundary_stencil,
-            const CellStencilData<dim, NumberType, n_components> &physical_stencil)
+        CellStencilData<dim, NumberType, n_components>
+        make_physical_boundary_side_stencil(const BoundaryStencilData<dim, NumberType, n_components> &boundary_stencil,
+                                            const CellStencilData<dim, NumberType, n_components> &physical_stencil)
           requires(dim == 2)
         {
           CellStencilData<dim, NumberType, n_components> result = physical_stencil;
           const unsigned int normal_face = boundary_stencil.cell_face;
           result.neighbors.x[normal_face] = boundary_stencil.x[boundary_stencil.ghost_center];
           result.neighbors.u[normal_face] = boundary_stencil.u[boundary_stencil.ghost_center];
-          result.neighbors.dof_indices[normal_face] =
-              boundary_stencil.dof_indices[boundary_stencil.ghost_center];
+          result.neighbors.dof_indices[normal_face] = boundary_stencil.dof_indices[boundary_stencil.ghost_center];
           return result;
         }
 
         template <int dim, typename NumberType, size_t n_components>
-        CellStencilData<dim, NumberType, n_components> make_ghost_boundary_side_stencil(
-            const BoundaryStencilData<dim, NumberType, n_components> &boundary_stencil,
-            const CellStencilData<dim, NumberType, n_components> & /*physical_stencil*/)
+        CellStencilData<dim, NumberType, n_components>
+        make_ghost_boundary_side_stencil(const BoundaryStencilData<dim, NumberType, n_components> &boundary_stencil,
+                                         const CellStencilData<dim, NumberType, n_components> & /*physical_stencil*/)
           requires(dim == 1)
         {
           return make_ghost_boundary_side_stencil<dim, NumberType, n_components>(boundary_stencil);
         }
 
         template <int dim, typename NumberType, size_t n_components>
-        CellStencilData<dim, NumberType, n_components> make_ghost_boundary_side_stencil(
-            const BoundaryStencilData<dim, NumberType, n_components> &boundary_stencil,
-            const CellStencilData<dim, NumberType, n_components> &physical_stencil)
+        CellStencilData<dim, NumberType, n_components>
+        make_ghost_boundary_side_stencil(const BoundaryStencilData<dim, NumberType, n_components> &boundary_stencil,
+                                         const CellStencilData<dim, NumberType, n_components> &physical_stencil)
           requires(dim == 2)
         {
           (void)boundary_stencil;
           (void)physical_stencil;
-          AssertThrow(false,
-                      dealii::ExcMessage(
-                          "KT 2D ghost boundary side stencils require model-owned tangential ghost support."));
+          AssertThrow(false, dealii::ExcMessage(
+                                 "KT 2D ghost boundary side stencils require model-owned tangential ghost support."));
           return {};
         }
 
@@ -627,8 +629,8 @@ namespace DiFfRG
           const unsigned int tangential_minus = 2 * tangential_axis;
           const unsigned int tangential_plus = tangential_minus + 1;
 
-          const size_t normal_outer = boundary_stencil.lower_boundary ? boundary_stencil.ghost_left :
-                                                                        boundary_stencil.ghost_right;
+          const size_t normal_outer =
+              boundary_stencil.lower_boundary ? boundary_stencil.ghost_left : boundary_stencil.ghost_right;
           if (boundary_stencil.lower_boundary) {
             result.neighbors.x[normal_minus] = boundary_stencil.x[normal_outer];
             result.neighbors.u[normal_minus] = boundary_stencil.u[normal_outer];
@@ -658,8 +660,7 @@ namespace DiFfRG
             }
             result.neighbors.x[result_face] = neighbor_stencil.x[neighbor_stencil.ghost_center];
             result.neighbors.u[result_face] = neighbor_stencil.u[neighbor_stencil.ghost_center];
-            result.neighbors.dof_indices[result_face] =
-                neighbor_stencil.dof_indices[neighbor_stencil.ghost_center];
+            result.neighbors.dof_indices[result_face] = neighbor_stencil.dof_indices[neighbor_stencil.ghost_center];
           };
 
           set_model_tangential_neighbor(tangential_minus);
@@ -675,14 +676,13 @@ namespace DiFfRG
             const dealii::Point<1> &x_q, const Model &model)
         {
           const bool boundary_supported = model.apply_boundary_stencil(boundary_stencil.u, boundary_stencil.x, x_q);
-          AssertThrow(
-              boundary_supported,
-              dealii::ExcMessage("KT boundary stencil was rejected while populating a boundary-adjacent cell stencil."));
+          AssertThrow(boundary_supported,
+                      dealii::ExcMessage(
+                          "KT boundary stencil was rejected while populating a boundary-adjacent cell stencil."));
 
           cell_stencil.neighbors.x[face_index] = boundary_stencil.x[boundary_stencil.ghost_center];
           cell_stencil.neighbors.u[face_index] = boundary_stencil.u[boundary_stencil.ghost_center];
-          cell_stencil.neighbors.dof_indices[face_index] =
-              boundary_stencil.dof_indices[boundary_stencil.ghost_center];
+          cell_stencil.neighbors.dof_indices[face_index] = boundary_stencil.dof_indices[boundary_stencil.ghost_center];
         }
 
         template <typename Model, typename NumberType, size_t n_components>
@@ -695,22 +695,21 @@ namespace DiFfRG
           prepare_boundary_reconstruction_stencil(boundary_stencil, cell_stencil, x_q);
 
           const bool boundary_supported = model.apply_boundary_stencil(boundary_stencil.u, boundary_stencil.x, x_q);
-          AssertThrow(
-              boundary_supported,
-              dealii::ExcMessage("KT boundary stencil was rejected while populating a boundary-adjacent cell stencil."));
+          AssertThrow(boundary_supported,
+                      dealii::ExcMessage(
+                          "KT boundary stencil was rejected while populating a boundary-adjacent cell stencil."));
 
           cell_stencil.neighbors.x[face_index] = boundary_stencil.x[boundary_stencil.ghost_center];
           cell_stencil.neighbors.u[face_index] = boundary_stencil.u[boundary_stencil.ghost_center];
-          cell_stencil.neighbors.dof_indices[face_index] =
-              boundary_stencil.dof_indices[boundary_stencil.ghost_center];
+          cell_stencil.neighbors.dof_indices[face_index] = boundary_stencil.dof_indices[boundary_stencil.ghost_center];
         }
 
         template <typename Model, typename NumberType, size_t n_components>
         std::pair<CellStencilData<1, NumberType, n_components>, CellStencilData<1, NumberType, n_components>>
         make_model_boundary_reconstruction_side_stencils(
             BoundaryStencilData<1, NumberType, n_components> boundary_stencil,
-            const CellStencilData<1, NumberType, n_components> &physical_cell_stencil,
-            const dealii::Point<1> &x_q, const Model &model)
+            const CellStencilData<1, NumberType, n_components> &physical_cell_stencil, const dealii::Point<1> &x_q,
+            const Model &model)
         {
           prepare_boundary_reconstruction_stencil(boundary_stencil, physical_cell_stencil, x_q);
 
@@ -726,8 +725,8 @@ namespace DiFfRG
         std::pair<CellStencilData<1, NumberType, n_components>, CellStencilData<1, NumberType, n_components>>
         make_model_boundary_reconstruction_side_stencils(
             BoundaryReconstructionStencilData<1, NumberType, n_components> boundary_reconstruction_stencil,
-            const CellStencilData<1, NumberType, n_components> &physical_cell_stencil,
-            const dealii::Point<1> &x_q, const Model &model)
+            const CellStencilData<1, NumberType, n_components> &physical_cell_stencil, const dealii::Point<1> &x_q,
+            const Model &model)
         {
           return make_model_boundary_reconstruction_side_stencils(boundary_reconstruction_stencil.primary,
                                                                   physical_cell_stencil, x_q, model);
@@ -737,8 +736,8 @@ namespace DiFfRG
         std::pair<CellStencilData<2, NumberType, n_components>, CellStencilData<2, NumberType, n_components>>
         make_model_boundary_reconstruction_side_stencils(
             BoundaryStencilData<2, NumberType, n_components> boundary_stencil,
-            const CellStencilData<2, NumberType, n_components> &physical_cell_stencil,
-            const dealii::Point<2> &x_q, const Model &model)
+            const CellStencilData<2, NumberType, n_components> &physical_cell_stencil, const dealii::Point<2> &x_q,
+            const Model &model)
         {
           prepare_boundary_reconstruction_stencil(boundary_stencil, physical_cell_stencil, x_q);
 
@@ -754,8 +753,8 @@ namespace DiFfRG
         std::pair<CellStencilData<2, NumberType, n_components>, CellStencilData<2, NumberType, n_components>>
         make_model_boundary_reconstruction_side_stencils(
             BoundaryReconstructionStencilData<2, NumberType, n_components> boundary_reconstruction_stencil,
-            const CellStencilData<2, NumberType, n_components> &physical_cell_stencil,
-            const dealii::Point<2> &x_q, const Model &model)
+            const CellStencilData<2, NumberType, n_components> &physical_cell_stencil, const dealii::Point<2> &x_q,
+            const Model &model)
         {
           boundary_reconstruction_stencil.primary.face_center = x_q;
           apply_boundary_reconstruction_stencil(boundary_reconstruction_stencil.primary, physical_cell_stencil, model);
@@ -767,8 +766,8 @@ namespace DiFfRG
         template <def::HasReconstructor Reconstructor, typename Model, typename NumberType, size_t n_components>
         FaceReconstructionState<1, NumberType, n_components> compute_boundary_face_reconstruction_state(
             BoundaryStencilData<1, NumberType, n_components> boundary_stencil,
-            const CellStencilData<1, NumberType, n_components> &physical_cell_stencil,
-            const dealii::Point<1> &x_q, const Model &model)
+            const CellStencilData<1, NumberType, n_components> &physical_cell_stencil, const dealii::Point<1> &x_q,
+            const Model &model)
         {
           const auto [physical_stencil, ghost_stencil] =
               make_model_boundary_reconstruction_side_stencils(boundary_stencil, physical_cell_stencil, x_q, model);
@@ -778,18 +777,18 @@ namespace DiFfRG
         template <def::HasReconstructor Reconstructor, typename Model, typename NumberType, size_t n_components>
         FaceReconstructionState<1, NumberType, n_components> compute_boundary_face_reconstruction_state(
             BoundaryReconstructionStencilData<1, NumberType, n_components> boundary_reconstruction_stencil,
-            const CellStencilData<1, NumberType, n_components> &physical_cell_stencil,
-            const dealii::Point<1> &x_q, const Model &model)
+            const CellStencilData<1, NumberType, n_components> &physical_cell_stencil, const dealii::Point<1> &x_q,
+            const Model &model)
         {
-          return compute_boundary_face_reconstruction_state<Reconstructor>(
-              boundary_reconstruction_stencil.primary, physical_cell_stencil, x_q, model);
+          return compute_boundary_face_reconstruction_state<Reconstructor>(boundary_reconstruction_stencil.primary,
+                                                                           physical_cell_stencil, x_q, model);
         }
 
         template <def::HasReconstructor Reconstructor, typename Model, typename NumberType, size_t n_components>
         FaceReconstructionState<2, NumberType, n_components> compute_boundary_face_reconstruction_state(
             BoundaryStencilData<2, NumberType, n_components> boundary_stencil,
-            const CellStencilData<2, NumberType, n_components> &physical_cell_stencil,
-            const dealii::Point<2> &x_q, const Model &model)
+            const CellStencilData<2, NumberType, n_components> &physical_cell_stencil, const dealii::Point<2> &x_q,
+            const Model &model)
         {
           const auto [physical_stencil, ghost_stencil] =
               make_model_boundary_reconstruction_side_stencils(boundary_stencil, physical_cell_stencil, x_q, model);
@@ -799,12 +798,11 @@ namespace DiFfRG
         template <def::HasReconstructor Reconstructor, typename Model, typename NumberType, size_t n_components>
         FaceReconstructionState<2, NumberType, n_components> compute_boundary_face_reconstruction_state(
             BoundaryReconstructionStencilData<2, NumberType, n_components> boundary_reconstruction_stencil,
-            const CellStencilData<2, NumberType, n_components> &physical_cell_stencil,
-            const dealii::Point<2> &x_q, const Model &model)
+            const CellStencilData<2, NumberType, n_components> &physical_cell_stencil, const dealii::Point<2> &x_q,
+            const Model &model)
         {
-          const auto [physical_stencil, ghost_stencil] =
-              make_model_boundary_reconstruction_side_stencils(boundary_reconstruction_stencil, physical_cell_stencil,
-                                                               x_q, model);
+          const auto [physical_stencil, ghost_stencil] = make_model_boundary_reconstruction_side_stencils(
+              boundary_reconstruction_stencil, physical_cell_stencil, x_q, model);
           return compute_interior_face_reconstruction_state<Reconstructor>(physical_stencil, ghost_stencil, x_q);
         }
 
@@ -906,6 +904,6 @@ namespace DiFfRG
         }
 
       } // namespace internal
-    }   // namespace KurganovTadmor
-  }     // namespace FV
+    } // namespace KurganovTadmor
+  } // namespace FV
 } // namespace DiFfRG

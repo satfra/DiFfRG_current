@@ -156,20 +156,12 @@ namespace DiFfRG
         /**
          * @brief The model's cell_indicator integrated over each cell, plus its face_indicator integrated
          * over each interior face, added to the two cells of the face.
+         *
+         * Each interior face is evaluated once; then every owned cell adds its own integral and its shares of its
+         * faces into its own entry, so under MPI each entry has exactly one writer before the sum_reduce.
          */
         virtual void refinement_indicator(Vector<double> &indicator, const VectorType &solution_global) override
         {
-          using Iterator = typename DoFHandler<dim>::active_cell_iterator;
-          using Scratch = IndicatorScratch;
-          struct CopyData {
-            struct Face {
-              std::array<uint, 2> cell_indices;
-              std::array<double, 2> values;
-            };
-            std::vector<Face> face_data;
-            double value = 0.;
-            uint cell_index = 0;
-          };
           const auto evaluate = [&](const auto &fe_v, const uint n_q) {
             std::vector<Vector<NumberType>> u(n_q, Vector<NumberType>(n_fe));
             std::vector<std::vector<Tensor<1, dim, NumberType>>> du(n_q, std::vector<Tensor<1, dim, NumberType>>(n_fe));
@@ -180,55 +172,46 @@ namespace DiFfRG
             fe_v.get_function_hessians(solution_global, ddu);
             return std::make_tuple(u, du, ddu);
           };
-
-          const auto cell_worker = [&](const Iterator &cell, Scratch &scratch, CopyData &copy_data) {
-            auto &fe_v = scratch.fe_values;
-            fe_v.reinit(cell);
-            copy_data.cell_index = cell->active_cell_index();
-            copy_data.value = 0;
-            const auto [u, du, ddu] = evaluate(fe_v, fe_v.n_quadrature_points);
-            double local = 0.;
-            for (const auto &q : fe_v.quadrature_point_indices()) {
-              model.cell_indicator(local, fe_v.quadrature_point(q), i_tie(u[q], du[q], ddu[q]));
-              copy_data.value += fe_v.JxW(q) * local;
-            }
-          };
-          const auto face_worker = [&](const Iterator &cell, const uint &f, const uint &sf, const Iterator &ncell,
-                                       const uint &nf, const uint &nsf, Scratch &scratch, CopyData &copy_data) {
-            auto &fe_iv = scratch.fe_interface_values;
-            fe_iv.reinit(cell, f, sf, ncell, nf, nsf);
-            auto &face = copy_data.face_data.emplace_back();
-            face.cell_indices = {cell->active_cell_index(), ncell->active_cell_index()};
-            face.values = {0., 0.};
-            const uint n_q = fe_iv.n_quadrature_points;
-            const auto [u_s, du_s, ddu_s] = evaluate(fe_iv.get_fe_face_values(0), n_q);
-            const auto [u_n, du_n, ddu_n] = evaluate(fe_iv.get_fe_face_values(1), n_q);
-            array<double, 2> local{};
-            for (const auto &q : fe_iv.quadrature_point_indices()) {
-              model.face_indicator(local, fe_iv.normal_vector(q), fe_iv.quadrature_point(q),
-                                   i_tie(u_s[q], du_s[q], ddu_s[q]), i_tie(u_n[q], du_n[q], ddu_n[q]));
-              face.values[0] += fe_iv.JxW(q) * local[0] * (1. + cell->at_boundary());
-              face.values[1] += fe_iv.JxW(q) * local[1] * (1. + ncell->at_boundary());
-            }
-          };
-          const auto copier = [&](const CopyData &c) {
-            for (const auto &face : c.face_data)
-              for (uint j = 0; j < 2; ++j)
-                indicator[face.cell_indices[j]] += face.values[j];
-            indicator[c.cell_index] += c.value;
-          };
-
-          Scratch scratch(mapping, fe, quadrature, quadrature_face);
-          CopyData copy_data;
-          // assemble_ghost_faces_once gives each partition-boundary face to exactly one rank, which is what the
-          // sum_reduce of the indicator under the distributed policy expects.
-          const auto flags = MeshWorker::assemble_own_cells | MeshWorker::assemble_own_interior_faces_once |
-                             MeshWorker::assemble_ghost_faces_once;
+          tbb::enumerable_thread_specific<IndicatorScratch> indicator_scratch(
+              [&] { return IndicatorScratch(mapping, fe, quadrature, quadrature_face); });
           // map() is collective and each rank visits only its own cells; see NoMapsHere.
           const NoMapsHere no_maps_during_assembly;
-          const auto schedule = schedule_for(assembly_cost::local_fe);
-          MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch, copy_data, flags,
-                                nullptr, face_worker, schedule.queue_length, schedule.chunk_size);
+
+          std::vector<std::array<double, 2>> face_values(topology.faces.size());
+          tbb::parallel_for(tbb::blocked_range<size_t>(0, topology.faces.size()), [&](const auto &r) {
+            auto &fe_iv = indicator_scratch.local().fe_interface_values;
+            for (size_t f = r.begin(); f != r.end(); ++f) {
+              topology.reinit(fe_iv, f, dof_handler);
+              const auto &face = topology.faces[f];
+              const uint n_q = fe_iv.n_quadrature_points;
+              const auto [u_s, du_s, ddu_s] = evaluate(fe_iv.get_fe_face_values(0), n_q);
+              const auto [u_n, du_n, ddu_n] = evaluate(fe_iv.get_fe_face_values(1), n_q);
+              array<double, 2> local{};
+              face_values[f] = {0., 0.};
+              for (const auto &q : fe_iv.quadrature_point_indices()) {
+                model.face_indicator(local, fe_iv.normal_vector(q), fe_iv.quadrature_point(q),
+                                     i_tie(u_s[q], du_s[q], ddu_s[q]), i_tie(u_n[q], du_n[q], ddu_n[q]));
+                face_values[f][0] += fe_iv.JxW(q) * local[0] * (1. + face.cell[0]->at_boundary());
+                face_values[f][1] += fe_iv.JxW(q) * local[1] * (1. + face.cell[1]->at_boundary());
+              }
+            }
+          });
+          tbb::parallel_for(tbb::blocked_range<size_t>(0, cells.size()), [&](const auto &r) {
+            auto &fe_v = indicator_scratch.local().fe_values;
+            for (size_t k = r.begin(); k != r.end(); ++k) {
+              const auto &cell = cells[k];
+              fe_v.reinit(cell);
+              const auto [u, du, ddu] = evaluate(fe_v, fe_v.n_quadrature_points);
+              double value = 0., local = 0.;
+              for (const auto &q : fe_v.quadrature_point_indices()) {
+                model.cell_indicator(local, fe_v.quadrature_point(q), i_tie(u[q], du[q], ddu[q]));
+                value += fe_v.JxW(q) * local;
+              }
+              for (size_t i = topology.face_ref_begin[k]; i < topology.face_ref_begin[k + 1]; ++i)
+                value += face_values[topology.face_refs[i].face][topology.face_refs[i].side];
+              indicator[cell->active_cell_index()] += value;
+            }
+          });
         }
 
         virtual void mass(VectorType &mass, const VectorType &solution_global, const VectorType &solution_global_dot,
@@ -421,7 +404,6 @@ namespace DiFfRG
         using Base::fe;
         using Base::mapping;
         using Base::model;
-        using Base::schedule_for;
 
         QGauss<dim> quadrature;
         QGauss<dim - 1> quadrature_face;
@@ -457,7 +439,7 @@ namespace DiFfRG
                  (reads_hessians ? update_hessians : update_default);
         }
 
-        /// FE data of refinement_indicator's mesh_loop.
+        /// FE data of refinement_indicator, per thread.
         struct IndicatorScratch {
           static UpdateFlags flags()
           {

@@ -11,18 +11,16 @@
 #include <deal.II/lac/full_matrix.h>
 #include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/vector.h>
-#include <deal.II/meshworker/mesh_loop.h>
 #include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/vector_tools.h>
 #include <spdlog/spdlog.h>
 #include <tbb/tbb.h>
 
 #include <DiFfRG/common/utils.hh>
-#include <DiFfRG/discretization/common/la_policy.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
-#include <DiFfRG/discretization/common/assembly_schedule.hh>
 #include <DiFfRG/discretization/common/eom.hh>
+#include <DiFfRG/discretization/common/la_policy.hh>
 #include <DiFfRG/discretization/common/solution_sample.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
 
@@ -67,15 +65,11 @@ namespace DiFfRG
     FEMAssembler(Discretization &discretization, Model &model, const ConfigTree &config)
         : discretization(discretization), model(model), report_port(discretization.report_port()),
           fe(discretization.get_fe()), dof_handler(discretization.get_dof_handler()),
-          mapping(discretization.get_mapping()), schedule_overrides(AssemblyScheduleOverrides::from_config(config)),
-          EoM_cell(*(dof_handler.active_cell_iterators().end())),
+          mapping(discretization.get_mapping()), EoM_cell(*(dof_handler.active_cell_iterators().end())),
           old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
           old_extractor_cell(*(dof_handler.active_cell_iterators().end())),
           EoM_config(DiFfRG::internal::resolve_eom_config(dof_handler, Config::EoMConfig(config)))
     {
-      // reinit() refreshes this, but a derived assembler is not obliged to call it before its
-      // first mesh_loop, and an unset schedule would be a zero queue length.
-      update_assembly_schedules();
     }
 
     virtual IndexSet get_differential_indices() const override
@@ -143,8 +137,6 @@ namespace DiFfRG
       DoFTools::make_hanging_node_constraints(dof_handler, constraints);
       internal::apply_model_affine_constraints(model, constraints, context);
       constraints.close();
-
-      update_assembly_schedules();
     }
 
     virtual void rebuild_jacobian_sparsity() = 0;
@@ -254,9 +246,8 @@ namespace DiFfRG
             const auto extractor_solution = evaluate_at(x, cell, solution_global, raw_potential);
             model.extract(__extracted_data, x,
                           e_tie(extractor_solution.values[0], extractor_solution.gradients[0],
-                                extractor_solution.hessians[0], nothing, variables,
-                                extractor_solution.potential.value, extractor_solution.potential.gradient,
-                                extractor_solution.potential.mass_hessian));
+                                extractor_solution.hessians[0], nothing, variables, extractor_solution.potential.value,
+                                extractor_solution.potential.gradient, extractor_solution.potential.mass_hessian));
           }
           const auto &extracted_data = __extracted_data;
 
@@ -427,45 +418,6 @@ namespace DiFfRG
     const FiniteElement<dim> &fe;
     const DoFHandler<dim> &dof_handler;
     const Mapping<dim> &mapping;
-
-    /**
-     * @brief The mesh_loop schedule for a loop whose cell worker costs @p cost_ns nanoseconds.
-     *
-     * Pure arithmetic on the cached cell count, so it is called per loop rather than stored per
-     * cost: the loops do not fall into two classes, and anything between the reference points in
-     * namespace assembly_cost gets its own schedule instead of being rounded to one of them.
-     */
-    AssemblySchedule schedule_for(const double cost_ns) const
-    {
-      return make_assembly_schedule(n_owned_cells, DiFfRG::n_threads(), cost_ns,
-                                    schedule_overrides);
-    }
-
-    /**
-     * @brief Re-count the cells the schedules are sized from.
-     *
-     * Called from reinit(), because h-adaptivity moves the cell count. Logs only on a change, so
-     * an adaptive run does not narrate every refinement.
-     */
-    void update_assembly_schedules()
-    {
-      const uint n_owned = n_locally_owned_cells(discretization);
-      const bool unchanged = n_owned == n_owned_cells;
-      n_owned_cells = n_owned;
-      if (unchanged) return;
-
-      const uint threads = DiFfRG::n_threads();
-      const auto cheap = schedule_for(assembly_cost::local_fe);
-      const auto integral = schedule_for(assembly_cost::momentum_integral);
-      report_port.info("FEM: Assembling {} cells on {} threads -- {}x{} workers/cells for a cheap cell loop, "
-                    "{}x{} for an integral one.",
-                    n_owned_cells, threads, cheap.queue_length, cheap.chunk_size, integral.queue_length,
-                    integral.chunk_size);
-    }
-
-    /// Cells this rank assembles. Refreshed in reinit(); the per-loop schedules are sized from it.
-    uint n_owned_cells = 0;
-    const AssemblyScheduleOverrides schedule_overrides;
 
     mutable typename DoFHandler<dim>::cell_iterator EoM_cell;
     typename DoFHandler<dim>::cell_iterator old_EoM_cell;

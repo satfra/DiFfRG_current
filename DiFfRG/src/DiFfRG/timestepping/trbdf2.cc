@@ -16,21 +16,18 @@
 
 namespace DiFfRG
 {
-  template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename...> typename LinearSolver>
+  template <typename VectorType, typename SparseMatrixType, uint dim, template <typename...> typename LinearSolver>
   uint TimeStepperTRBDF2_impl<VectorType, SparseMatrixType, dim, LinearSolver>::get_jacobians()
   {
     return ptr_newton_TR->get_jacobians() + ptr_newton_BDF2->get_jacobians();
   }
 
-  template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename...> typename LinearSolver>
+  template <typename VectorType, typename SparseMatrixType, uint dim, template <typename...> typename LinearSolver>
   double TimeStepperTRBDF2_impl<VectorType, SparseMatrixType, dim, LinearSolver>::get_error()
   {
     return std::sqrt(powr<2>(ptr_newton_TR->get_error()) + powr<2>(ptr_newton_BDF2->get_error()));
   }
-  template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename...> typename LinearSolver>
+  template <typename VectorType, typename SparseMatrixType, uint dim, template <typename...> typename LinearSolver>
   void TimeStepperTRBDF2_impl<VectorType, SparseMatrixType, dim, LinearSolver>::set_ignore_nonconv(bool x)
   {
     ptr_newton_TR->set_ignore_nonconv(x);
@@ -65,6 +62,8 @@ namespace DiFfRG
     SparseMatrixType jacobian(assembler.get_sparsity_pattern_jacobian());
     LinearSolver<SparseMatrixType, VectorType> linSolver;
     linSolver.set_report_port(this->log);
+    if constexpr (requires { linSolver.set_iterative_refinement(true); })
+      linSolver.set_iterative_refinement(this->impl.iterative_refinement);
     const bool jacobian_diagnostics_enabled = impl.jacobian_diagnostics;
     const DiagnosticPort jacobian_diagnostic_port =
         jacobian_diagnostics_enabled ? data_out.diagnostic_port() : DiagnosticPort{};

@@ -10,6 +10,7 @@
 #include <DiFfRG/model/model.hh>
 
 #include <catch2/catch_all.hpp>
+#include <deal.II/meshworker/mesh_loop.h>
 #include <deal.II/lac/sparse_direct.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 

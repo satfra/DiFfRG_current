@@ -654,8 +654,9 @@ namespace DiFfRG
         };
         struct CellTopologyCacheEntry {
           internal::CellStencilTopologyData<dim, n_components> stencil;
-          std::array<internal::BoundaryReconstructionStencilTopologyData<dim, n_components>, n_faces>
-              boundary_stencils{};
+          /// Index into boundary_stencil_topologies of each physical boundary face, -1 for the others: the boundary
+          /// topology is large (kilobytes in 2D) and only boundary faces have one.
+          std::array<int, n_faces> boundary_stencil_slot{};
           std::array<FaceJacobianDependencyCacheEntry, n_faces> face_jacobian_dependencies{};
           FaceJacobianDependencyCacheEntry source_jacobian_dependencies{};
           std::vector<Point> quadrature_points;
@@ -679,11 +680,14 @@ namespace DiFfRG
                       ExcMessage("FV Kurganov-Tadmor assembler expects one dof per component."));
           for (uint i = 0; i < n_components; ++i)
             local_component_of_dof[i] = fe.system_to_component_index(i).first;
-          // About 256 MB of AD inputs per stacked evaluation.
+          // About 16 MB of AD inputs per stacked evaluation: the derivative passes stream the traces through the AD
+          // batch once per direction, and a batch that stays in cache is ~1.5x faster than one that does not (2D,
+          // 160^2 cells: 59 vs 89 ms per jacobian evaluation). A model whose evaluate_batch launches GPU work may
+          // want more points per call.
           constexpr size_t per_point =
               sizeof(autodiff::Real<2, NumberType>) * n_components * (2 + 2 * dim + dim * dim * dim);
           max_stacked_points = config.get_uint("/discretization/batched/max_stacked_points",
-                                               std::max<size_t>(1, (size_t(256) << 20) / per_point));
+                                               std::max<size_t>(1, (size_t(16) << 20) / per_point));
 
           reinit();
         }
@@ -1126,7 +1130,7 @@ namespace DiFfRG
         build_boundary_stencil_from_cache_impl(const Iterator &cell, const unsigned int boundary_face_no,
                                                const VectorType &solution_global) const
         {
-          const auto &topology = get_cell_topology(cell).boundary_stencils[boundary_face_no].primary;
+          const auto &topology = boundary_stencil_topology(cell->active_cell_index(), boundary_face_no).primary;
           return internal::fill_boundary_stencil_from_topology<BoundaryNumberType, boundary_dim, n_components>(
               topology, solution_global);
         }
@@ -1145,7 +1149,7 @@ namespace DiFfRG
         build_boundary_reconstruction_stencil_from_cache(const Iterator &cell, const unsigned int boundary_face_no,
                                                          const VectorType &solution_global) const
         {
-          const auto &topology = get_cell_topology(cell).boundary_stencils[boundary_face_no];
+          const auto &topology = boundary_stencil_topology(cell->active_cell_index(), boundary_face_no);
           return internal::fill_boundary_reconstruction_stencil_from_topology<BoundaryNumberType, dim, n_components>(
               topology, solution_global);
         }
@@ -1207,7 +1211,7 @@ namespace DiFfRG
                   const auto &x_q = descriptor.face_center;
 
                   if (descriptor.boundary) {
-                    const auto &topology = cell_topology_cache[cell_index].boundary_stencils[face_index];
+                    const auto &topology = boundary_stencil_topology(cell_index, face_index);
                     auto boundary_stencil =
                         internal::fill_boundary_reconstruction_stencil_from_topology<NumberType, dim, n_components>(
                             topology, solution_global);
@@ -1296,7 +1300,7 @@ namespace DiFfRG
             }
 
             auto boundary_stencil = internal::fill_boundary_stencil_from_topology<NumberType, dim, n_components>(
-                cell_topology_cache[cell_index].boundary_stencils[face_index].primary, solution_global);
+                boundary_stencil_topology(cell_index, face_index).primary, solution_global);
             internal::populate_boundary_neighbor_from_model_stencil(boundary_stencil, stencil, face_index,
                                                                     topology.face_centers[face_index], model);
           }
@@ -1593,8 +1597,10 @@ namespace DiFfRG
                   store(flux_traces, 2 * p + 1, state.u_plus, state.face_grad_plus, width_plus);
                   store(diffusion_traces, 2 * p, state.diffusion_u_minus, state.diffusion_grad_minus, width_minus);
                   store(diffusion_traces, 2 * p + 1, state.diffusion_u_plus, state.diffusion_grad_plus, width_plus);
-                  store_third(2 * p, state.third_derivatives_minus);
-                  store_third(2 * p + 1, state.third_derivatives_plus);
+                  if constexpr (dim == 1) {
+                    store_third(2 * p, state.third_derivatives_minus);
+                    store_third(2 * p + 1, state.third_derivatives_plus);
+                  }
                 }
               });
           flux_traces.set_shared(extractors, variables);
@@ -1650,7 +1656,7 @@ namespace DiFfRG
           trace_F.resize(n_traces);
           trace_J.resize(n_traces);
           internal::stacked_directions<autodiff::Real<1, NumberType>, n_components>(
-              flux_traces, n_components, max_stacked_points, Term::flux,
+              value_seed_workspace, flux_traces, 0, n_traces, n_components, max_stacked_points, Term::flux,
               [&](auto &out, const auto &batch) { model.evaluate_batch(out, batch); },
               [](auto &batch, const size_t c, const size_t j) { autodiff::detail::seed<1>(batch.value(c, j), 1.); },
               [&](const auto &out, const size_t c_in, const size_t i, const size_t j) {
@@ -1676,17 +1682,23 @@ namespace DiFfRG
           model.evaluate_batch(source_values, source_points);
         }
 
+        /// The flux and the diffusion flux directions evaluate_trace_jacobians() differentiates along per trace.
+        static constexpr std::array<size_t, 2> n_flux_diffusion_directions{
+            n_components + n_components * (n_components - 1) / 2 + n_components * dim +
+                n_components * n_components * dim,
+            n_components + n_components * dim + (dim == 1 ? n_components : 0)};
+
         /**
-         * @brief Phase 2 of the jacobian: at every trace the flux derivatives the numerical flux jacobian needs (J, H,
-         * grad_J, mixed_H; second-order forward AD, the polarisation directions of compute_flux_derivatives_ad
-         * stacked along the points), the diffusion flux jacobian, and the source jacobian at every cell point.
+         * @brief Phase 2 of the jacobian for the traces [begin, end): the flux derivatives the numerical flux
+         * jacobian needs (J, H, grad_J, mixed_H; second-order forward AD, the polarisation directions of
+         * compute_flux_derivatives_ad stacked along the points) and the diffusion flux jacobian, into
+         * trace_derivatives and trace_diffusion_jacobians at index i - begin.
          */
-        void evaluate_jacobian_terms()
+        void evaluate_trace_jacobians(const size_t begin, const size_t end)
         {
           using autodiff::detail::derivative;
           using autodiff::detail::seed;
           constexpr uint n = n_components;
-          const size_t n_traces = flux_traces.size();
 
           // Directions of the flux: u_j (diagonal), u_j + u_c (j < c), grad_{c,d}, u_j + grad_{c,d}.
           struct Direction {
@@ -1705,12 +1717,17 @@ namespace DiFfRG
             for (uint c = 0; c < n; ++c)
               for (uint d = 0; d < dim; ++d)
                 directions.push_back({int(j), -1, int(c), int(d)});
-          // First and second derivative of every flux entry (i, d_out) along every direction, at every trace.
+          Assert(directions.size() == n_flux_diffusion_directions[0], ExcInternalError());
+          // First and second derivative of every flux entry (i, d_out) along every direction, at the traces of one
+          // stacked evaluation; they are combined into trace_derivatives as soon as all its directions are in.
           const size_t per_point = n * dim;
-          std::vector<NumberType> first(directions.size() * n_traces * per_point),
-              second(directions.size() * n_traces * per_point);
+          const size_t chunk = internal::stacked_chunk_size(end - begin, directions.size(), max_stacked_points);
+          auto &first = flux_first_derivatives, &second = flux_second_derivatives;
+          first.resize(directions.size() * chunk * per_point);
+          second.resize(directions.size() * chunk * per_point);
+          trace_derivatives.resize(end - begin);
           internal::stacked_directions<autodiff::Real<2, NumberType>, n>(
-              flux_traces, directions.size(), max_stacked_points, Term::flux,
+              flux_derivative_workspace, flux_traces, begin, end, directions.size(), max_stacked_points, Term::flux,
               [&](auto &out, const auto &batch) { model.evaluate_batch(out, batch); },
               [&](auto &batch, const size_t k, const size_t j) {
                 const auto &dir = directions[k];
@@ -1721,70 +1738,71 @@ namespace DiFfRG
               [&](const auto &out, const size_t k, const size_t i, const size_t j) {
                 for (uint c = 0; c < n; ++c)
                   for (uint d = 0; d < dim; ++d) {
-                    const size_t at = (k * n_traces + i) * per_point + c * dim + d;
+                    const size_t at = (k * chunk + (i - begin) % chunk) * per_point + c * dim + d;
                     first[at] = derivative<1>(out.flux(c, d)[j]);
                     second[at] = derivative<2>(out.flux(c, d)[j]);
                   }
-              });
-          trace_derivatives.resize(n_traces);
-          tbb::parallel_for(tbb::blocked_range<size_t>(0, n_traces), [&](const tbb::blocked_range<size_t> &r) {
-            for (size_t i = r.begin(); i != r.end(); ++i) {
-              auto &result = trace_derivatives[i];
-              result = {};
-              internal::FluxGradientJacobian<NumberType, dim, n> grad_diagonal_H{};
-              const auto d1 = [&](const size_t k, const uint c, const uint d) {
-                return first[(k * n_traces + i) * per_point + c * dim + d];
-              };
-              const auto d2 = [&](const size_t k, const uint c, const uint d) {
-                return second[(k * n_traces + i) * per_point + c * dim + d];
-              };
-              size_t k = 0;
-              for (uint j = 0; j < n; ++j, ++k)
-                for (uint c = 0; c < n; ++c)
-                  for (uint d = 0; d < dim; ++d) {
-                    result.J[d][c][j] = d1(k, c, d);
-                    result.H[d][c][j][j] = d2(k, c, d);
+              },
+              [&](const size_t p0, const size_t m) {
+                tbb::parallel_for(tbb::blocked_range<size_t>(0, m), [&](const tbb::blocked_range<size_t> &r) {
+                  for (size_t l = r.begin(); l != r.end(); ++l) {
+                    auto &result = trace_derivatives[p0 + l - begin];
+                    result = {};
+                    internal::FluxGradientJacobian<NumberType, dim, n> grad_diagonal_H{};
+                    const auto d1 = [&](const size_t k, const uint c, const uint d) {
+                      return first[(k * chunk + l) * per_point + c * dim + d];
+                    };
+                    const auto d2 = [&](const size_t k, const uint c, const uint d) {
+                      return second[(k * chunk + l) * per_point + c * dim + d];
+                    };
+                    size_t k = 0;
+                    for (uint j = 0; j < n; ++j, ++k)
+                      for (uint c = 0; c < n; ++c)
+                        for (uint d = 0; d < dim; ++d) {
+                          result.J[d][c][j] = d1(k, c, d);
+                          result.H[d][c][j][j] = d2(k, c, d);
+                        }
+                    for (uint j = 0; j < n; ++j)
+                      for (uint jc = j + 1; jc < n; ++jc, ++k)
+                        for (uint c = 0; c < n; ++c)
+                          for (uint d = 0; d < dim; ++d)
+                            result.H[d][c][j][jc] = result.H[d][c][jc][j] =
+                                (d2(k, c, d) - result.H[d][c][j][j] - result.H[d][c][jc][jc]) / NumberType(2);
+                    for (uint gc = 0; gc < n; ++gc)
+                      for (uint d_in = 0; d_in < dim; ++d_in, ++k)
+                        for (uint c = 0; c < n; ++c)
+                          for (uint d = 0; d < dim; ++d) {
+                            result.grad_J[c][gc][d][d_in] = d1(k, c, d);
+                            grad_diagonal_H[c][gc][d][d_in] = d2(k, c, d);
+                          }
+                    for (uint j = 0; j < n; ++j)
+                      for (uint gc = 0; gc < n; ++gc)
+                        for (uint d_in = 0; d_in < dim; ++d_in, ++k)
+                          for (uint c = 0; c < n; ++c)
+                            for (uint d = 0; d < dim; ++d)
+                              result.mixed_H[d_in][d][c][j][gc] =
+                                  (d2(k, c, d) - result.H[d][c][j][j] - grad_diagonal_H[c][gc][d][d_in]) /
+                                  NumberType(2);
                   }
-              for (uint j = 0; j < n; ++j)
-                for (uint jc = j + 1; jc < n; ++jc, ++k)
-                  for (uint c = 0; c < n; ++c)
-                    for (uint d = 0; d < dim; ++d)
-                      result.H[d][c][j][jc] = result.H[d][c][jc][j] =
-                          (d2(k, c, d) - result.H[d][c][j][j] - result.H[d][c][jc][jc]) / NumberType(2);
-              for (uint gc = 0; gc < n; ++gc)
-                for (uint d_in = 0; d_in < dim; ++d_in, ++k)
-                  for (uint c = 0; c < n; ++c)
-                    for (uint d = 0; d < dim; ++d) {
-                      result.grad_J[c][gc][d][d_in] = d1(k, c, d);
-                      grad_diagonal_H[c][gc][d][d_in] = d2(k, c, d);
-                    }
-              for (uint j = 0; j < n; ++j)
-                for (uint gc = 0; gc < n; ++gc)
-                  for (uint d_in = 0; d_in < dim; ++d_in, ++k)
-                    for (uint c = 0; c < n; ++c)
-                      for (uint d = 0; d < dim; ++d)
-                        result.mixed_H[d_in][d][c][j][gc] =
-                            (d2(k, c, d) - result.H[d][c][j][j] - grad_diagonal_H[c][gc][d][d_in]) / NumberType(2);
-            }
-          });
+                });
+              });
 
           // The diffusion flux: half its derivative along every value, gradient and third-derivative entry. Third
           // derivatives are only reconstructed in 1D; elsewhere they are zero and nothing depends on them.
-          constexpr uint n_dirs_value = n, n_dirs_grad = n * dim, n_dirs_third = dim == 1 ? n : 0;
-          trace_diffusion_jacobians.assign(n_traces, DiffusionSideJacobian{});
+          constexpr uint n_dirs_value = n, n_dirs_grad = n * dim;
+          trace_diffusion_jacobians.assign(end - begin, DiffusionSideJacobian{});
           internal::stacked_directions<autodiff::Real<1, NumberType>, n>(
-              diffusion_traces, n_dirs_value + n_dirs_grad + n_dirs_third, max_stacked_points, Term::diffusion_flux,
+              diffusion_derivative_workspace, diffusion_traces, begin, end, n_flux_diffusion_directions[1],
+              max_stacked_points, Term::diffusion_flux,
               [&](auto &out, const auto &batch) { model.evaluate_batch(out, batch); },
               [&](auto &batch, size_t k, const size_t j) {
                 if (k < n_dirs_value) return seed<1>(batch.value(k, j), NumberType(1));
                 k -= n_dirs_value;
                 if (k < n_dirs_grad) return seed<1>(batch.derivative(k / dim, k % dim, j), NumberType(1));
-                k -= n_dirs_grad;
-                const uint c = k / (dim * dim * dim), d0 = (k / (dim * dim)) % dim, d1 = (k / dim) % dim, d2 = k % dim;
-                seed<1>(batch.third_derivative(c, d0, d1, d2, j), NumberType(1));
+                if constexpr (dim == 1) seed<1>(batch.third_derivative(k - n_dirs_grad, 0, 0, 0, j), NumberType(1));
               },
               [&](const auto &out, size_t k, const size_t i, const size_t j) {
-                auto &result = trace_diffusion_jacobians[i];
+                auto &result = trace_diffusion_jacobians[i - begin];
                 for (uint c = 0; c < n; ++c)
                   for (uint d = 0; d < dim; ++d) {
                     const NumberType half = NumberType(0.5) * derivative<1>(out.diffusion_flux(c, d)[j]);
@@ -1797,13 +1815,15 @@ namespace DiFfRG
                       result.grad(c, kg / dim)[d][kg % dim] = half;
                       continue;
                     }
-                    const size_t kt = kg - n_dirs_grad;
-                    const uint cin = kt / (dim * dim * dim), d0 = (kt / (dim * dim)) % dim, d1 = (kt / dim) % dim,
-                               d2 = kt % dim;
-                    result.third_derivatives(c, cin)[d][d0][d1][d2] = half;
+                    result.third_derivatives(c, kg - n_dirs_grad)[d][0][0][0] = half; // 1D only
                   }
               });
+        }
 
+        /// Phase 2 of the jacobian at the cell points: the source jacobian.
+        void evaluate_source_jacobians()
+        {
+          constexpr uint n = n_components;
           // The source. Extractors and variables stay frozen within a Newton step.
           DiFfRG::internal::parallel_assign(source_jacobians, source_points.size(), SourceJacobian{});
           if constexpr (DiFfRG::internal::has_ad_flux_source_jacobians<Model>)
@@ -1899,6 +1919,9 @@ namespace DiFfRG
             assembler.flux_traces.clear_shared();
             assembler.diffusion_traces.clear_shared();
             assembler.source_points.clear_shared();
+            assembler.value_seed_workspace.ad.clear_shared();
+            assembler.flux_derivative_workspace.ad.clear_shared();
+            assembler.diffusion_derivative_workspace.ad.clear_shared();
           }
         };
 
@@ -1946,25 +1969,42 @@ namespace DiFfRG
         }
 
         /**
-         * @brief Phase 3 of the jacobian, per face: d(weight * JxW * (H + D) . n)/du_j in the rows of the face's u^-
-         * cell, for the dofs u_j its reconstruction stencils read (face_jacobian_dependencies of that side); its u^+
-         * cell gets the negative. The model's flux jacobians come from phase 2, chained here into the derivatives of
-         * the reconstruction (traces, face gradients, third derivatives), one stencil dof at a time.
+         * @brief Phases 2 and 3 of the jacobian at the faces, chunk by chunk: the model's flux and diffusion flux
+         * derivatives at the chunk's traces (evaluate_trace_jacobians), then per face d(weight * JxW * (H + D) .
+         * n)/du_j in the rows of its u^- cell, for the dofs u_j its reconstruction stencils read
+         * (face_jacobian_dependencies of that side); its u^+ cell gets the negative. A chunk holds as many faces as one
+         * stacked evaluation, so the per-trace derivatives never exist for more than one chunk.
          */
         void face_jacobians(const SolutionReconstructionCache &cache, const VectorType &solution_global,
                             const NumberType weight)
         {
-          face_blocks.resize(trace_faces.size());
-          tbb::parallel_for(tbb::blocked_range<size_t>(0, trace_faces.size()),
-                            [&](const tbb::blocked_range<size_t> &r) {
-                              auto &scratch = row_scratch.local().scratch;
-                              for (size_t p = r.begin(); p != r.end(); ++p)
-                                face_jacobian(p, cache, solution_global, weight, scratch, face_blocks[p]);
-                            });
+          const size_t n_faces = trace_faces.size();
+          const size_t faces_per_chunk = std::max<size_t>(
+              1, max_stacked_points / (2 * std::max(n_flux_diffusion_directions[0], n_flux_diffusion_directions[1])));
+          face_blocks.resize(n_faces);
+          Timer timer;
+          for (size_t f0 = 0; f0 < n_faces; f0 += faces_per_chunk) {
+            const size_t f1 = std::min(n_faces, f0 + faces_per_chunk);
+            timer.restart();
+            evaluate_trace_jacobians(2 * f0, 2 * f1);
+            jacobian_times.evaluate += timer.wall_time();
+
+            timer.restart();
+            // apply_boundary_stencil may be a model callback; see NoMapsHere.
+            const NoMapsHere no_maps_during_assembly;
+            tbb::parallel_for(tbb::blocked_range<size_t>(f0, f1), [&](const tbb::blocked_range<size_t> &r) {
+              auto &scratch = row_scratch.local().scratch;
+              for (size_t p = r.begin(); p != r.end(); ++p)
+                face_jacobian(p, 2 * f0, cache, solution_global, weight, scratch, face_blocks[p]);
+            });
+            jacobian_times.scatter += timer.wall_time();
+          }
         }
 
-        void face_jacobian(const size_t p, const SolutionReconstructionCache &cache, const VectorType &solution_global,
-                           const NumberType weight, Scratch &scratch_data, FullMatrix<NumberType> &block) const
+        /// The chain rule of face p; the derivatives of its traces sit at 2 p - first_trace in the trace stores.
+        void face_jacobian(const size_t p, const size_t first_trace, const SolutionReconstructionCache &cache,
+                           const VectorType &solution_global, const NumberType weight, Scratch &scratch_data,
+                           FullMatrix<NumberType> &block) const
         {
           const auto &d = face_reconstruction_descriptors[trace_faces[p]];
           const auto &cell = active_cells[d.cell_index];
@@ -2083,9 +2123,10 @@ namespace DiFfRG
           const auto &state = cache.face_reconstructions[d.cell_index][f];
           const auto j_numflux =
               internal::kt_numflux_jacobian_from_derivatives<WaveSpeedStrategy, Model, NumberType, dim, n_components>(
-                  trace_derivatives[2 * p + 1], trace_derivatives[2 * p], state.u_plus, state.u_minus, model);
-          const std::array<const DiffusionSideJacobian *, 2> j_diffusion{&trace_diffusion_jacobians[2 * p],
-                                                                         &trace_diffusion_jacobians[2 * p + 1]};
+                  trace_derivatives[2 * p + 1 - first_trace], trace_derivatives[2 * p - first_trace], state.u_plus,
+                  state.u_minus, model);
+          const std::array<const DiffusionSideJacobian *, 2> j_diffusion{
+              &trace_diffusion_jacobians[2 * p - first_trace], &trace_diffusion_jacobians[2 * p + 1 - first_trace]};
 
           // Chain rule: (dH/d trace) * (d trace/du_j) + (dD/d trace) * (d trace/du_j), both sides, dotted with n.
           block.reinit(n_components, n_from);
@@ -2102,12 +2143,9 @@ namespace DiFfRG
                           n_face[d_out] *
                           (j_numflux.grad[side](i, c)[d_out][d_in] * reconstructed_deriv[side][j].grad[c][d_in] +
                            j_diffusion[side]->grad(i, c)[d_out][d_in] * diffusion_deriv[side][j].grad[c][d_in]);
-                  for (size_t d0 = 0; d0 < dim; ++d0)
-                    for (size_t d1 = 0; d1 < dim; ++d1)
-                      for (size_t d2 = 0; d2 < dim; ++d2)
-                        for (size_t d_out = 0; d_out < dim; ++d_out)
-                          contribution += j_diffusion[side]->third_derivatives(i, c)[d_out][d0][d1][d2] *
-                                          n_face[d_out] * reconstructed_deriv[side][j].third_derivatives[c][d0][d1][d2];
+                  if constexpr (dim == 1) // the only dimension with reconstructed third derivatives
+                    contribution += j_diffusion[side]->third_derivatives(i, c)[0][0][0][0] * n_face[0] *
+                                    reconstructed_deriv[side][j].third_derivatives[c][0][0][0];
                 }
               block(i, j) = weight * JxW * contribution;
             }
@@ -2315,15 +2353,12 @@ namespace DiFfRG
           jacobian_times.gather += phase.wall_time();
 
           phase.restart();
-          evaluate_jacobian_terms();
+          evaluate_source_jacobians();
           jacobian_times.evaluate += phase.wall_time();
 
+          face_jacobians(reconstruction_cache, solution_global, weight);
+
           phase.restart();
-          {
-            // apply_boundary_stencil may be a model callback; see NoMapsHere.
-            const NoMapsHere no_maps_during_assembly;
-            face_jacobians(reconstruction_cache, solution_global, weight);
-          }
           scatter_rows(jacobian, [&](const size_t k, Scratch &scratch, CellRows &local) {
             assemble_cell_jacobian(k, scratch, local, reconstruction_cache, solution_global, solution_global_dot,
                                    weight, alpha, beta);
@@ -2357,24 +2392,20 @@ namespace DiFfRG
           dofs.erase(std::unique(dofs.begin(), dofs.end()), dofs.end());
         }
 
-        void append_reconstruction_neighbor_dofs(std::vector<types::global_dof_index> &from_dofs,
-                                                 const Iterator &root_cell) const
+        /**
+         * @brief The dofs @p cell's reconstruction stencil reads: the cell and its 2*dim face neighbours, or, across a
+         * physical boundary face, the dofs the model's ghost value there is built from.
+         */
+        void append_cell_stencil_dofs(std::vector<types::global_dof_index> &from_dofs, const Iterator &cell) const
         {
-          std::vector<types::global_dof_index> neighbor_dof_indices(fe.dofs_per_cell);
-
-          const auto append_recursive = [&](const auto &self, const Iterator &cell, const unsigned int depth) -> void {
-            for (const auto face_index : cell->face_indices()) {
-              if (is_physical_boundary_face(cell, face_index)) continue;
-
-              const auto neighbor = face_neighbor(cell, face_index);
-              neighbor->get_dof_indices(neighbor_dof_indices);
-              from_dofs.insert(from_dofs.end(), neighbor_dof_indices.begin(), neighbor_dof_indices.end());
-
-              if (depth > 1) self(self, neighbor, depth - 1);
-            }
-          };
-
-          append_recursive(append_recursive, root_cell, 2);
+          const auto &cell_topology = cell_topology_cache[cell->active_cell_index()].stencil;
+          append_dofs(from_dofs, cell_topology.cell.dof_indices);
+          for (const auto face_index : cell->face_indices()) {
+            if (is_physical_boundary_face(cell, face_index))
+              append_boundary_reconstruction_dofs(from_dofs, cell->active_cell_index(), face_index);
+            else
+              append_valid_dofs(from_dofs, cell_topology.neighbors.dof_indices[face_index]);
+          }
         }
 
         void append_boundary_reconstruction_dofs(std::vector<types::global_dof_index> &from_dofs,
@@ -2386,7 +2417,7 @@ namespace DiFfRG
                   append_valid_dofs(from_dofs, dofs);
               };
 
-          const auto &topology = cell_topology_cache[cell_index].boundary_stencils[face_index];
+          const auto &topology = boundary_stencil_topology(cell_index, face_index);
           append_boundary_stencil_dofs(topology.primary);
           for (size_t face = 0; face < topology.tangential_ghost_neighbor_valid.size(); ++face) {
             if (topology.tangential_ghost_neighbor_valid[face])
@@ -2408,13 +2439,16 @@ namespace DiFfRG
           if (!is_physical_boundary_face(cell, face_index))
             append_dofs(dependencies.to_dofs, cell_topology.neighbors.dof_indices[face_index]);
 
+          // The two traces of a face are reconstructed from the stencils of the two cells (a boundary face's ghost
+          // side from the boundary stencil), so a row reaches jacobian_stencil_radius = 2 cells. A first-order
+          // reconstruction reads the two cells only.
           dependencies.from_dofs = dependencies.to_dofs;
           if (is_physical_boundary_face(cell, face_index))
             append_boundary_reconstruction_dofs(dependencies.from_dofs, cell->active_cell_index(), face_index);
           if constexpr (JacobianReconstructor::jacobian_stencil_radius > 1) {
-            append_reconstruction_neighbor_dofs(dependencies.from_dofs, cell);
+            append_cell_stencil_dofs(dependencies.from_dofs, cell);
             if (!is_physical_boundary_face(cell, face_index))
-              append_reconstruction_neighbor_dofs(dependencies.from_dofs, face_neighbor(cell, face_index));
+              append_cell_stencil_dofs(dependencies.from_dofs, face_neighbor(cell, face_index));
           }
           sort_unique_dofs(dependencies.from_dofs);
         }
@@ -2434,13 +2468,8 @@ namespace DiFfRG
           dependencies.to_dofs.clear();
           append_dofs(dependencies.to_dofs, cell_topology.cell.dof_indices);
 
-          dependencies.from_dofs = dependencies.to_dofs;
-          for (const auto face_index : cell->face_indices()) {
-            if (is_physical_boundary_face(cell, face_index))
-              append_boundary_reconstruction_dofs(dependencies.from_dofs, cell->active_cell_index(), face_index);
-            else
-              append_valid_dofs(dependencies.from_dofs, cell_topology.neighbors.dof_indices[face_index]);
-          }
+          dependencies.from_dofs.clear();
+          append_cell_stencil_dofs(dependencies.from_dofs, cell);
           sort_unique_dofs(dependencies.from_dofs);
         }
 
@@ -2524,6 +2553,7 @@ namespace DiFfRG
           FEValues<dim> fe_values(mapping, fe, quadrature, update_quadrature_points | update_JxW_values);
           cell_topology_cache.clear();
           cell_topology_cache.resize(triangulation.n_active_cells());
+          boundary_stencil_topologies.clear();
 
           std::vector<types::global_dof_index> dof_indices(fe.dofs_per_cell);
           // Every cell, not just the owned ones: the stencil reaches two cells out, so an owned
@@ -2536,19 +2566,7 @@ namespace DiFfRG
             stencil_topology.face_centers = {};
             for (auto &neighbor_dofs : stencil_topology.neighbors.dof_indices)
               neighbor_dofs.fill(numbers::invalid_dof_index);
-            for (auto &boundary_reconstruction_topology : cache_entry.boundary_stencils) {
-              boundary_reconstruction_topology.tangential_ghost_neighbor_valid.fill(false);
-              boundary_reconstruction_topology.corner_tangential_stencil_valid.fill(false);
-              for (auto &dofs : boundary_reconstruction_topology.primary.dof_indices)
-                dofs.fill(numbers::invalid_dof_index);
-              for (auto &topology : boundary_reconstruction_topology.tangential_ghost_neighbors)
-                for (auto &dofs : topology.dof_indices)
-                  dofs.fill(numbers::invalid_dof_index);
-              for (auto &corner_stencils : boundary_reconstruction_topology.corner_tangential_stencils)
-                for (auto &topology : corner_stencils)
-                  for (auto &dofs : topology.dof_indices)
-                    dofs.fill(numbers::invalid_dof_index);
-            }
+            cache_entry.boundary_stencil_slot.fill(-1);
 
             fe_values.reinit(cell);
             cell->get_dof_indices(dof_indices);
@@ -2565,7 +2583,19 @@ namespace DiFfRG
               if (is_physical_boundary_face(cell, face_index)) {
                 stencil_topology.boundary_ids[face_index] = face->boundary_id();
                 stencil_topology.neighbors.x[face_index] = face->center();
-                auto &boundary_reconstruction_topology = cache_entry.boundary_stencils[face_index];
+                cache_entry.boundary_stencil_slot[face_index] = boundary_stencil_topologies.size();
+                auto &boundary_reconstruction_topology = boundary_stencil_topologies.emplace_back();
+                boundary_reconstruction_topology.tangential_ghost_neighbor_valid.fill(false);
+                boundary_reconstruction_topology.corner_tangential_stencil_valid.fill(false);
+                for (auto &dofs : boundary_reconstruction_topology.primary.dof_indices)
+                  dofs.fill(numbers::invalid_dof_index);
+                for (auto &topology : boundary_reconstruction_topology.tangential_ghost_neighbors)
+                  for (auto &dofs : topology.dof_indices)
+                    dofs.fill(numbers::invalid_dof_index);
+                for (auto &corner_stencils : boundary_reconstruction_topology.corner_tangential_stencils)
+                  for (auto &topology : corner_stencils)
+                    for (auto &dofs : topology.dof_indices)
+                      dofs.fill(numbers::invalid_dof_index);
                 fill_boundary_topology(boundary_reconstruction_topology.primary, cell, face_index, dof_indices);
 
                 if constexpr (dim == 2) {
@@ -2610,12 +2640,25 @@ namespace DiFfRG
               for (uint i = 0; i < n_components; ++i)
                 stencil_topology.neighbors.dof_indices[face_index][i] = dof_indices[i];
             }
+          }
 
+          // The dependencies read the neighbours' stencils, so every cell's topology has to be in place first.
+          for (const auto &cell : dof_handler.active_cell_iterators()) {
+            auto &cache_entry = cell_topology_cache[cell->active_cell_index()];
             for (const auto face_index : cell->face_indices())
               build_face_jacobian_dependency_cache(cell, face_index,
                                                    cache_entry.face_jacobian_dependencies[face_index]);
             build_source_jacobian_dependency_cache(cell, cache_entry.source_jacobian_dependencies);
           }
+        }
+
+        /// The boundary reconstruction topology of physical boundary face @p face_index of a cell.
+        const internal::BoundaryReconstructionStencilTopologyData<dim, n_components> &
+        boundary_stencil_topology(const unsigned int cell_index, const unsigned int face_index) const
+        {
+          const int slot = cell_topology_cache[cell_index].boundary_stencil_slot[face_index];
+          Assert(slot >= 0, ExcMessage("Not a physical boundary face."));
+          return boundary_stencil_topologies[slot];
         }
 
         const CellTopologyCacheEntry &get_cell_topology(const Iterator &cell) const
@@ -2685,15 +2728,23 @@ namespace DiFfRG
         FluxTraces flux_traces;
         DiffusionTraces diffusion_traces;
         SourcePoints source_points;
-        /// Per trace point: the advection flux, its value jacobian, the diffusion flux (residual); the advection flux
-        /// derivatives and the diffusion flux jacobian (jacobian).
+        /// Per trace point: the advection flux, its value jacobian and the diffusion flux (residual).
         std::vector<TraceFlux> trace_F, trace_D;
         std::vector<TraceJacobian> trace_J;
+        /// Per trace point of the current face chunk of face_jacobians(): the advection flux derivatives and the
+        /// diffusion flux jacobian.
         std::vector<FluxDerivatives> trace_derivatives;
         std::vector<DiffusionSideJacobian> trace_diffusion_jacobians;
         BatchOutput<dim, NumberType, n_components> source_values;
         std::vector<SourceJacobian> source_jacobians;
         SeedStackWorkspace<SourcePoints, n_components> source_workspace;
+        /// The AD workspaces of the trace evaluations (see internal::StackedWorkspace), and the flux derivatives of
+        /// one stacked evaluation before they are combined.
+        internal::StackedWorkspace<autodiff::Real<1, NumberType>, FluxTraces, n_components> value_seed_workspace;
+        internal::StackedWorkspace<autodiff::Real<2, NumberType>, FluxTraces, n_components> flux_derivative_workspace;
+        internal::StackedWorkspace<autodiff::Real<1, NumberType>, DiffusionTraces, n_components>
+            diffusion_derivative_workspace;
+        std::vector<NumberType> flux_first_derivatives, flux_second_derivatives;
         PhaseTimes residual_times, jacobian_times;
         /// Per trace face: its residual contribution and its jacobian block, as its u^- cell sees it.
         std::vector<std::array<NumberType, n_components>> face_values;
@@ -2722,6 +2773,7 @@ namespace DiFfRG
         std::vector<double> timings_jacobian;
         std::array<unsigned int, n_components> local_component_of_dof{};
         std::vector<CellTopologyCacheEntry> cell_topology_cache;
+        std::vector<internal::BoundaryReconstructionStencilTopologyData<dim, n_components>> boundary_stencil_topologies;
         std::vector<FaceReconstructionDescriptor> face_reconstruction_descriptors;
         SolutionReconstructionCache residual_reconstruction_cache;
         SolutionReconstructionCache jacobian_reconstruction_cache;

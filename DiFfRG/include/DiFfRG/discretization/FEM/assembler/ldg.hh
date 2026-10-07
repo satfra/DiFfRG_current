@@ -19,7 +19,6 @@
 #include <deal.II/lac/full_matrix.h>
 #include <deal.II/lac/vector.h>
 #include <deal.II/lac/vector_memory.h>
-#include <deal.II/meshworker/mesh_loop.h>
 #include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/vector_tools.h>
 #include <tbb/tbb.h>
@@ -28,7 +27,6 @@
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
-#include <DiFfRG/discretization/common/assembly_schedule.hh>
 #include <DiFfRG/discretization/common/batched_scatter.hh>
 #include <DiFfRG/discretization/common/cell_geometry.hh>
 #include <DiFfRG/discretization/common/eom.hh>
@@ -61,15 +59,11 @@ namespace DiFfRG
       LDGAssemblerBase(Discretization &discretization, Model &model, const ConfigTree &config)
           : discretization(discretization), model(model), report_port(discretization.report_port()),
             fe(discretization.get_fe()), dof_handler(discretization.get_dof_handler()),
-            mapping(discretization.get_mapping()), schedule_overrides(AssemblyScheduleOverrides::from_config(config)),
-            EoM_cell(*(dof_handler.active_cell_iterators().end())),
+            mapping(discretization.get_mapping()), EoM_cell(*(dof_handler.active_cell_iterators().end())),
             old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
             old_extractor_cell(*(dof_handler.active_cell_iterators().end())),
             EoM_config(DiFfRG::internal::resolve_eom_config(dof_handler, Config::EoMConfig(config)))
       {
-        // reinit() refreshes this, but a derived assembler is not obliged to call it before its
-        // first mesh_loop, and an unset schedule would be a zero queue length.
-        update_assembly_schedules();
       }
 
       virtual IndexSet get_differential_indices() const override
@@ -166,8 +160,6 @@ namespace DiFfRG
         DoFTools::make_hanging_node_constraints(dof_handler, constraints);
         DiFfRG::internal::apply_model_affine_constraints(model, constraints, context);
         constraints.close();
-
-        update_assembly_schedules();
       }
 
       virtual void rebuild_jacobian_sparsity() = 0;
@@ -204,29 +196,6 @@ namespace DiFfRG
       const DoFHandler<dim> &dof_handler;
       const Mapping<dim> &mapping;
 
-      /// @see FEMAssembler::schedule_for
-      AssemblySchedule schedule_for(const double cost_ns) const
-      {
-        return make_assembly_schedule(n_owned_cells, DiFfRG::n_threads(), cost_ns, schedule_overrides);
-      }
-
-      /// @see FEMAssembler::update_assembly_schedules
-      void update_assembly_schedules()
-      {
-        const uint n_owned = n_locally_owned_cells(discretization);
-        const bool unchanged = n_owned == n_owned_cells;
-        n_owned_cells = n_owned;
-        if (unchanged) return;
-
-        const uint threads = DiFfRG::n_threads();
-        const auto cheap = schedule_for(assembly_cost::local_fe);
-        const auto integral = schedule_for(assembly_cost::momentum_integral);
-        report_port.info("FEM: Assembling {} cells on {} threads -- {}x{} workers/cells for a cheap cell loop, "
-                         "{}x{} for an integral one.",
-                         n_owned_cells, threads, cheap.queue_length, cheap.chunk_size, integral.queue_length,
-                         integral.chunk_size);
-      }
-
       /// @see FEMAssembler::extractor_raw_potential
       auto extractor_raw_potential(const VectorType &solution_global) const
       {
@@ -253,10 +222,6 @@ namespace DiFfRG
           return {EoM_point, EoM_cell_};
       }
 
-      /// @see FEMAssembler::n_owned_cells
-      uint n_owned_cells = 0;
-      const AssemblyScheduleOverrides schedule_overrides;
-
       mutable typename DoFHandler<dim>::cell_iterator EoM_cell;
       typename DoFHandler<dim>::cell_iterator old_EoM_cell;
       /// @see FEMAssembler::old_extractor_cell
@@ -275,135 +240,6 @@ namespace DiFfRG
       std::vector<double> timings_variable_residual;
       std::vector<double> timings_variable_jacobian;
     };
-
-    namespace internal
-    {
-      /**
-       * @brief Class to hold data for each assembly thread, i.e. FEValues for cells, interfaces, as well as
-       * pre-allocated data structures for the solutions
-       */
-      template <typename Discretization> struct ScratchData {
-        static constexpr uint dim = Discretization::dim;
-        using NumberType = typename Discretization::NumberType;
-        static constexpr uint n_fe_subsystems = Discretization::Components::count_fe_subsystems();
-        using Iterator = typename DoFHandler<dim>::active_cell_iterator;
-        using t_Iterator = typename Triangulation<dim>::active_cell_iterator;
-
-        ScratchData(const Mapping<dim> &mapping, const vector<const DoFHandler<dim> *> &dofh,
-                    const dealii::Quadrature<dim> &quadrature, const dealii::Quadrature<dim - 1> &quadrature_face,
-                    const UpdateFlags update_flags = update_values | update_gradients | update_quadrature_points |
-                                                     update_JxW_values,
-                    const UpdateFlags interface_update_flags = update_values | update_gradients |
-                                                               update_quadrature_points | update_JxW_values |
-                                                               update_normal_vectors)
-        {
-          AssertThrow(dofh.size() >= n_fe_subsystems,
-                      StandardExceptions::ExcDimensionMismatch(dofh.size(), n_fe_subsystems));
-
-          for (uint i = 0; i < n_fe_subsystems; ++i) {
-            const auto &fe = dofh[i]->get_fe();
-            fe_values[i] = std::make_unique<FEValues<dim>>(mapping, fe, quadrature, update_flags);
-            fe_interface_values[i] =
-                std::make_unique<FEInterfaceValues<dim>>(mapping, fe, quadrature_face, interface_update_flags);
-            fe_boundary_values[i] =
-                std::make_unique<FEFaceValues<dim>>(mapping, fe, quadrature_face, interface_update_flags);
-
-            n_components[i] = fe.n_components();
-            solution[i].resize(quadrature.size(), Vector<NumberType>(n_components[i]));
-            solution_interface[0][i].resize(quadrature_face.size(), Vector<NumberType>(n_components[i]));
-            solution_interface[1][i].resize(quadrature_face.size(), Vector<NumberType>(n_components[i]));
-
-            const uint n_dofs_per_cell = fe.n_dofs_per_cell();
-            comp[i].resize(n_dofs_per_cell);
-            for (uint d = 0; d < n_dofs_per_cell; ++d)
-              comp[i][d] = fe.system_to_component_index(d).first;
-
-            cell[i] = dofh[i]->begin_active();
-            ncell[i] = dofh[i]->begin_active();
-          }
-          solution_dot.resize(quadrature.size(), Vector<NumberType>(n_components[0]));
-        }
-
-        ScratchData(const ScratchData<Discretization> &scratch_data)
-        {
-          for (uint i = 0; i < n_fe_subsystems; ++i) {
-            const auto &old_fe = scratch_data.fe_values[i];
-            const auto &old_fe_i = scratch_data.fe_interface_values[i];
-            const auto &old_fe_b = scratch_data.fe_boundary_values[i];
-
-            fe_values[i] = unique_ptr<FEValues<dim>>(new FEValues<dim>(
-                old_fe->get_mapping(), old_fe->get_fe(), old_fe->get_quadrature(), old_fe->get_update_flags()));
-            fe_interface_values[i] = unique_ptr<FEInterfaceValues<dim>>(new FEInterfaceValues<dim>(
-                old_fe_i->get_mapping(), old_fe_i->get_fe(), old_fe_i->get_quadrature(), old_fe_i->get_update_flags()));
-            fe_boundary_values[i] = unique_ptr<FEFaceValues<dim>>(new FEFaceValues<dim>(
-                old_fe_b->get_mapping(), old_fe_b->get_fe(), old_fe_b->get_quadrature(), old_fe_b->get_update_flags()));
-
-            n_components[i] = scratch_data.n_components[i];
-            comp[i] = scratch_data.comp[i];
-            solution[i].resize(scratch_data.solution[i].size(), Vector<NumberType>(n_components[i]));
-            solution_interface[0][i].resize(scratch_data.solution_interface[0][i].size(),
-                                            Vector<NumberType>(n_components[i]));
-            solution_interface[1][i].resize(scratch_data.solution_interface[1][i].size(),
-                                            Vector<NumberType>(n_components[i]));
-
-            cell[i] = scratch_data.cell[i];
-            ncell[i] = scratch_data.ncell[i];
-          }
-          solution_dot.resize(scratch_data.solution_dot.size(), Vector<NumberType>(n_components[0]));
-        }
-
-        const auto &new_fe_values(const t_Iterator &t_cell)
-        {
-          for (uint i = 0; i < n_fe_subsystems; ++i) {
-            cell[i]->copy_from(*t_cell);
-            fe_values[i]->reinit(cell[i]);
-          }
-          return fe_values;
-        }
-        const auto &new_fe_interface_values(const t_Iterator &t_cell, uint f, uint sf, const t_Iterator &t_ncell,
-                                            uint nf, unsigned int nsf)
-        {
-          for (uint i = 0; i < n_fe_subsystems; ++i) {
-            cell[i]->copy_from(*t_cell);
-            ncell[i]->copy_from(*t_ncell);
-            fe_interface_values[i]->reinit(cell[i], f, sf, ncell[i], nf, nsf);
-          }
-          return fe_interface_values;
-        }
-        const auto &new_fe_boundary_values(const t_Iterator &t_cell, uint face_no)
-        {
-          for (uint i = 0; i < n_fe_subsystems; ++i) {
-            cell[i]->copy_from(*t_cell);
-            fe_boundary_values[i]->reinit(cell[i], face_no);
-          }
-          return fe_boundary_values;
-        }
-
-        array<uint, n_fe_subsystems> n_components;
-        array<Iterator, n_fe_subsystems> cell;
-        array<Iterator, n_fe_subsystems> ncell;
-
-        array<unique_ptr<FEValues<dim>>, n_fe_subsystems> fe_values;
-        array<unique_ptr<FEInterfaceValues<dim>>, n_fe_subsystems> fe_interface_values;
-        array<unique_ptr<FEFaceValues<dim>>, n_fe_subsystems> fe_boundary_values;
-
-        array<std::vector<uint>, n_fe_subsystems> comp;
-
-        array<vector<Vector<NumberType>>, n_fe_subsystems> solution;
-        vector<Vector<NumberType>> solution_dot;
-        array<array<vector<Vector<NumberType>>, n_fe_subsystems>, 2> solution_interface;
-      };
-
-      template <typename NumberType> struct CopyData_I {
-        struct CopyFaceData_I {
-          std::array<uint, 2> cell_indices;
-          std::array<double, 2> values;
-        };
-        std::vector<CopyFaceData_I> face_data;
-        double value = 0.;
-        uint cell_index = 0;
-      };
-    } // namespace internal
 
     /**
      * @brief The LDG assembler: the FE functions (level 0) plus up to three LDG levels, level k built from
@@ -629,87 +465,90 @@ namespace DiFfRG
           jacobian_tmp[k].reinit(sparsity_pattern_jacobian);
       }
 
+      /**
+       * @brief The model's cell_indicator integrated over each cell, plus its face_indicator integrated over each
+       * interior face, added to the two cells of the face; every level's values at the points.
+       *
+       * Each interior face is evaluated once; then every owned cell adds its own integral and its shares of its faces
+       * into its own entry.
+       */
       virtual void refinement_indicator(Vector<double> &indicator, const VectorType &solution_global) override
       {
-        using Iterator = typename Triangulation<dim>::active_cell_iterator;
-        using Scratch = internal::ScratchData<Discretization>;
-        using CopyData = internal::CopyData_I<NumberType>;
-
-        const auto cell_worker = [&](const Iterator &t_cell, Scratch &scratch_data, CopyData &copy_data) {
-          const auto &fe_v = scratch_data.new_fe_values(t_cell);
-          copy_data.cell_index = t_cell->active_cell_index();
-          copy_data.value = 0;
-
-          const auto &JxW = fe_v[0]->get_JxW_values();
-          const auto &q_points = fe_v[0]->get_quadrature_points();
-          const auto &q_indices = fe_v[0]->quadrature_point_indices();
-
-          auto &solution = scratch_data.solution;
-          fe_v[0]->get_function_values(solution_global, solution[0]);
-          for (uint i = 1; i < Components::count_fe_subsystems(); ++i)
-            fe_v[i]->get_function_values(sol_vector[i], solution[i]);
-
-          double local_indicator = 0.;
-          for (const auto &q_index : q_indices) {
-            const auto &x_q = q_points[q_index];
-            auto sol_q = local_sol_q(solution, q_index);
-            model.cell_indicator(local_indicator, x_q, ref_conv(sol_q));
-
-            copy_data.value += JxW[q_index] * local_indicator;
+        constexpr uint n_sub = Components::count_fe_subsystems();
+        struct IndicatorScratch {
+          IndicatorScratch(const Mapping<dim> &mapping, const vector<const DoFHandler<dim> *> &dofh,
+                           const dealii::Quadrature<dim> &q, const dealii::Quadrature<dim - 1> &q_face)
+          {
+            const UpdateFlags flags = update_values | update_quadrature_points | update_JxW_values;
+            for (uint i = 0; i < n_sub; ++i) {
+              const auto &fe = dofh[i]->get_fe();
+              fe_values[i] = std::make_unique<FEValues<dim>>(mapping, fe, q, flags);
+              fe_interface_values[i] =
+                  std::make_unique<FEInterfaceValues<dim>>(mapping, fe, q_face, flags | update_normal_vectors);
+              solution[i].resize(q.size(), Vector<NumberType>(fe.n_components()));
+              for (auto &side : solution_interface)
+                side[i].resize(q_face.size(), Vector<NumberType>(fe.n_components()));
+            }
           }
+          array<unique_ptr<FEValues<dim>>, n_sub> fe_values;
+          array<unique_ptr<FEInterfaceValues<dim>>, n_sub> fe_interface_values;
+          array<vector<Vector<NumberType>>, n_sub> solution;
+          array<array<vector<Vector<NumberType>>, n_sub>, 2> solution_interface;
         };
-        const auto face_worker = [&](const Iterator &t_cell, const uint &f, const uint &sf, const Iterator &t_ncell,
-                                     const uint &nf, const unsigned int &nsf, Scratch &scratch_data,
-                                     CopyData &copy_data) {
-          const auto &fe_iv = scratch_data.new_fe_interface_values(t_cell, f, sf, t_ncell, nf, nsf);
-
-          auto &copy_data_face = copy_data.face_data.emplace_back();
-          copy_data_face.cell_indices[0] = t_cell->active_cell_index();
-          copy_data_face.cell_indices[1] = t_ncell->active_cell_index();
-          copy_data_face.values[0] = 0;
-          copy_data_face.values[1] = 0;
-
-          const auto &JxW = fe_iv[0]->get_JxW_values();
-          const auto &q_points = fe_iv[0]->get_quadrature_points();
-          const auto &q_indices = fe_iv[0]->quadrature_point_indices();
-          const std::vector<Tensor<1, dim>> &normals = fe_iv[0]->get_normal_vectors();
-          array<double, 2> local_indicator{};
-
-          auto &solution = scratch_data.solution_interface;
-          fe_iv[0]->get_fe_face_values(0).get_function_values(solution_global, solution[0][0]);
-          fe_iv[0]->get_fe_face_values(1).get_function_values(solution_global, solution[1][0]);
-          for (uint i = 1; i < Components::count_fe_subsystems(); ++i) {
-            fe_iv[i]->get_fe_face_values(0).get_function_values(sol_vector[i], solution[0][i]);
-            fe_iv[i]->get_fe_face_values(1).get_function_values(sol_vector[i], solution[1][i]);
-          }
-
-          for (const auto &q_index : q_indices) {
-            const auto &x_q = q_points[q_index];
-            auto sol_q_s = local_sol_q(solution[0], q_index);
-            auto sol_q_n = local_sol_q(solution[1], q_index);
-            model.face_indicator(local_indicator, normals[q_index], x_q, ref_conv(sol_q_s), ref_conv(sol_q_n));
-
-            copy_data_face.values[0] += JxW[q_index] * local_indicator[0] * (1. + t_cell->at_boundary());
-            copy_data_face.values[1] += JxW[q_index] * local_indicator[1] * (1. + t_ncell->at_boundary());
-          }
-        };
-        const auto copier = [&](const CopyData &c) {
-          for (auto &cdf : c.face_data)
-            for (uint j = 0; j < 2; ++j)
-              indicator[cdf.cell_indices[j]] += cdf.values[j];
-          indicator[c.cell_index] += c.value;
-        };
-
-        const UpdateFlags update_flags = update_values | update_quadrature_points | update_JxW_values;
-        Scratch scratch_data(mapping, dof_handler_list, quadrature, quadrature_face, update_flags);
-        CopyData copy_data;
-        MeshWorker::AssembleFlags assemble_flags =
-            MeshWorker::assemble_own_cells | MeshWorker::assemble_own_interior_faces_once;
-
         rebuild_ldg_vectors(solution_global);
-        const auto schedule = schedule_for(assembly_cost::local_fe);
-        MeshWorker::mesh_loop(locally_owned_cells(dof_handler), cell_worker, copier, scratch_data, copy_data,
-                              assemble_flags, nullptr, face_worker, schedule.queue_length, schedule.chunk_size);
+        // Level 0 is the solution, the levels above it the LDG vectors (of another type).
+        const auto read = [&](const auto &fe_v, const uint i, vector<Vector<NumberType>> &values) {
+          if (i == 0)
+            fe_v.get_function_values(solution_global, values);
+          else
+            fe_v.get_function_values(sol_vector[i], values);
+        };
+        tbb::enumerable_thread_specific<std::unique_ptr<IndicatorScratch>> indicator_scratch(
+            [&] { return std::make_unique<IndicatorScratch>(mapping, dof_handler_list, quadrature, quadrature_face); });
+
+        std::vector<std::array<double, 2>> face_values(topology.faces.size());
+        tbb::parallel_for(tbb::blocked_range<size_t>(0, topology.faces.size()), [&](const auto &r) {
+          auto &s = *indicator_scratch.local();
+          for (size_t f = r.begin(); f != r.end(); ++f) {
+            const auto &face = topology.faces[f];
+            for (uint i = 0; i < n_sub; ++i) {
+              const auto &fe_iv = topology.reinit(*s.fe_interface_values[i], f, *dof_handler_list[i]);
+              read(fe_iv.get_fe_face_values(0), i, s.solution_interface[0][i]);
+              read(fe_iv.get_fe_face_values(1), i, s.solution_interface[1][i]);
+            }
+            const auto &fe_iv = *s.fe_interface_values[0];
+            array<double, 2> local{};
+            face_values[f] = {0., 0.};
+            for (const auto &q : fe_iv.quadrature_point_indices()) {
+              auto sol_q_s = local_sol_q(s.solution_interface[0], q);
+              auto sol_q_n = local_sol_q(s.solution_interface[1], q);
+              model.face_indicator(local, fe_iv.normal_vector(q), fe_iv.quadrature_point(q), ref_conv(sol_q_s),
+                                   ref_conv(sol_q_n));
+              face_values[f][0] += fe_iv.JxW(q) * local[0] * (1. + face.cell[0]->at_boundary());
+              face_values[f][1] += fe_iv.JxW(q) * local[1] * (1. + face.cell[1]->at_boundary());
+            }
+          }
+        });
+        tbb::parallel_for(tbb::blocked_range<size_t>(0, cells[0].size()), [&](const auto &r) {
+          auto &s = *indicator_scratch.local();
+          for (size_t k = r.begin(); k != r.end(); ++k) {
+            const auto &cell = cells[0][k];
+            for (uint i = 0; i < n_sub; ++i) {
+              s.fe_values[i]->reinit(DiFfRG::internal::on(*dof_handler_list[i], cell));
+              read(*s.fe_values[i], i, s.solution[i]);
+            }
+            const auto &fe_v = *s.fe_values[0];
+            double value = 0., local = 0.;
+            for (const auto &q : fe_v.quadrature_point_indices()) {
+              auto sol_q = local_sol_q(s.solution, q);
+              model.cell_indicator(local, fe_v.quadrature_point(q), ref_conv(sol_q));
+              value += fe_v.JxW(q) * local;
+            }
+            for (size_t i = topology.face_ref_begin[k]; i < topology.face_ref_begin[k + 1]; ++i)
+              value += face_values[topology.face_refs[i].face][topology.face_refs[i].side];
+            indicator[cell->active_cell_index()] += value;
+          }
+        });
       }
 
       virtual const BlockSparsityPattern &get_sparsity_pattern_jacobian() const override
@@ -939,7 +778,6 @@ namespace DiFfRG
 
       QGauss<dim> quadrature;
       QGauss<dim - 1> quadrature_face;
-      using Base::schedule_for;
 
       std::vector<const DoFHandler<dim> *> dof_handler_list;
 
