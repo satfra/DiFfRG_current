@@ -7,7 +7,7 @@ using namespace DiFfRG;
 using Model = ON_finiteT;
 constexpr uint dim = Model::dim;
 using Discretization = DG::Discretization<Model, RectangularMesh<dim>>;
-using Assembler = dDG::Assembler<Discretization>;
+using Assembler = DG::Assembler<Discretization>;
 using TimeStepper = TimeStepperSUNDIALS_IDA<Assembler>;
 
 int main(int argc, char *argv[])

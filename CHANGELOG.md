@@ -4,7 +4,7 @@
 
 ### Changed
 
-- **Breaking:** every assembler (CG, DG, dDG, LDG, KT-FV) evaluates the model in batches: it gathers the
+- **Breaking:** every assembler (CG, DG, LDG, KT-FV) evaluates the model in batches: it gathers the
   solution at all quadrature points (or face traces), calls the model's `evaluate_batch(out, batch)` once for
   all of them, and scatters the results; no `MeshWorker::mesh_loop` remains. The default `evaluate_batch` calls
   the per-point `flux`, `source` and `diffusion_flux` in a parallel loop, so a model that does not override it
@@ -12,10 +12,12 @@
   `map_points()` call, on the CPU or the GPU (Tutorial 6). Jacobians of a `def::AD` model are the forward AD of
   `evaluate_batch`, with all seed directions stacked into one batch.
   **Migration:** none for most models. Changes a model can notice:
-  - DG passes the per-point callbacks `"fe_functions"`, `"extractors"`, `"variables"`, `"cell_width"`, and CG and
-    dDG drop `"fe_hessians"` (and `"fe_derivatives"`) when the model declares `batch_reads_hessians = false`
+  - The dDG assembler is removed: DG now hands the model the same inputs as CG. CG and DG drop `"fe_hessians"`
+    (and `"fe_derivatives"`) when the model declares `batch_reads_hessians = false`
     (`batch_reads_derivatives = false`); reading an absent entry does not compile (`tuple_has<name, Solution>`
-    tests for one).
+    tests for one). **Migration:** replace `dDG::Assembler` by `DG::Assembler`; a DG model that reads only the
+    values should declare `static constexpr bool batch_reads_derivatives = false`, otherwise its jacobian
+    carries unused derivative seeds.
   - `def::AD_dual` is removed, and with it the per-point AD jacobian classes (`def::ADjacobian_flux`,
     `_source`, `_flux_source`, `_numflux`, `_boundary_numflux`). `def::AD` and `def::FE_AD` keep working; a
     model with hand-written per-point jacobians and without `def::AD` is evaluated per point as before.
@@ -26,6 +28,11 @@
   `PointSpan` or `std::vector`). Rank-local, unlike `map()`. `MakeKernel[..., "MapPoints" -> True]` emits the
   wrappers (`CT_map_points.cc`, `AD_map_points.cc`).
 - **Added:** `/discretization/batched/max_stacked_points` bounds the points of one stacked AD evaluation.
+- The four assemblers share one implementation of the EoM search, extractors, readouts, variables, constraints,
+  mass matrix and timings (`internal::AssemblerCore`). Visible changes: the KT readouts see the unlimited
+  3-point `"fe_hessians"` the KT extractors already saw (they were zero); KT reports the variables' residual time
+  and `jac eval` in its summary; `reinit()` forgets the EoM and extractor cells of the previous mesh; LDG agrees
+  on an extractor-cell change across ranks as CG and DG do.
 - The batched assemblers report the wall time of their stages (`residual_phase_times()`,
   `jacobian_phase_times()`, an `AssemblyPhaseTimes`: extract, gather, evaluate, scatter).
 - **Breaking** for custom timesteppers: `AbstractTimestepper::run(ic, t_start, t_stop)` is now a

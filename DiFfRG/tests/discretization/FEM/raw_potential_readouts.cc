@@ -175,12 +175,6 @@ TEST_CASE("Spatial assemblers expose one raw-potential view to readouts and extr
     using Discretization = DG::Discretization<RawPotentialProbe, RectangularMeshSerial<1>>;
     check_raw_potential_readout<Discretization, DG::Assembler<Discretization>>(model, 1);
   }
-  SECTION("dDG")
-  {
-    RawPotentialProbe model;
-    using Discretization = DG::Discretization<RawPotentialProbe, RectangularMeshSerial<1>>;
-    check_raw_potential_readout<Discretization, dDG::Assembler<Discretization>>(model, 1);
-  }
   SECTION("LDG")
   {
     RawPotentialLDGProbe model;

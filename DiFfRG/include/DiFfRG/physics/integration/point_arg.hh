@@ -37,10 +37,11 @@ namespace DiFfRG
         : m_data(v.data()), m_size(v.size())
     {
     }
-    operator PointSpan<const value_type>() const
-      requires(!std::is_const_v<T>)
+    /// The read-only view of a writable span. A template, so that it is not the copy constructor of PointSpan<T>.
+    template <typename U>
+      requires(std::is_const_v<T> && std::is_same_v<U, value_type>)
+    PointSpan(const PointSpan<U> &other) : m_data(other.data()), m_size(other.size())
     {
-      return {m_data, m_size};
     }
 
     T &operator[](const size_t i) const { return m_data[i]; }

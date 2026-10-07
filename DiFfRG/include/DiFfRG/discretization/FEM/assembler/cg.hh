@@ -14,7 +14,6 @@
 
 // standard library
 #include <memory>
-#include <numeric>
 
 namespace DiFfRG
 {
@@ -74,61 +73,23 @@ namespace DiFfRG
       using PhaseTimes = AssemblyPhaseTimes;
 
       Assembler(Discretization &discretization, Model &model, const ConfigTree &config)
-          : Base(discretization, model, config),
+          : Base(discretization, model, config, "CG"),
             quadrature(fe.degree + 1 + config.get_uint("/discretization/overintegration", 0)),
             quadrature_face(fe.degree + 1 + config.get_uint("/discretization/overintegration", 0)),
-            max_stacked_points(config.get_uint("/discretization/batched/max_stacked_points", default_stacked_points()))
+            max_stacked_points(Base::read_max_stacked_points(config, stacked_point_bytes, Base::fem_stacked_budget))
       {
         static_assert(Components::count_fe_subsystems() == 1, "A CG model cannot have multiple submodels!");
         reinit();
       }
 
-      virtual void reinit_vector(VectorType &vec) const override
-      {
-        reinit_la_vector(vec, discretization.get_locally_owned_dofs(), discretization.get_communicator());
-      }
-      virtual void reinit_matrix(SparseMatrixType &matrix) const override
-      {
-        reinit_la_matrix(matrix, get_sparsity_pattern_jacobian(), discretization.get_locally_owned_dofs(),
-                         discretization.get_communicator());
-      }
-
-      virtual MPI_Comm get_communicator() const override { return discretization.get_communicator(); }
-      virtual void reinit_solution_view(SolutionView<VectorType> &view) const override
-      {
-        view.reinit(discretization.get_locally_owned_dofs(), discretization.get_locally_relevant_dofs(),
-                    discretization.get_communicator());
-      }
-
       virtual void reinit() override
       {
         Timer timer;
-        Base::reinit();
-
-        DynamicSparsityPattern dsp(discretization.get_locally_relevant_dofs());
-        DoFTools::make_sparsity_pattern(dof_handler, dsp, discretization.get_constraints(),
-                                        /*keep_constrained_dofs = */ true);
-        finalize_la_sparsity<SparseMatrixType>(dsp, sparsity_pattern_mass, discretization.get_locally_owned_dofs(),
-                                               discretization.get_locally_relevant_dofs(),
-                                               discretization.get_communicator());
-        reinit_la_matrix(mass_matrix, sparsity_pattern_mass, discretization.get_locally_owned_dofs(),
-                         discretization.get_communicator());
-        MatrixCreator::create_mass_matrix(dof_handler, quadrature, mass_matrix, (Function<dim, NumberType> *)nullptr,
-                                          discretization.get_constraints());
-        finalize_la_sparsity<SparseMatrixType>(dsp, sparsity_pattern_jacobian, discretization.get_locally_owned_dofs(),
-                                               discretization.get_locally_relevant_dofs(),
-                                               discretization.get_communicator());
-        timings_reinit.push_back(timer.wall_time());
-
-        const auto metadata = DiFfRG::internal::build_affine_constraint_metadata<Components, dim>(discretization);
-        const AffineConstraintContext<Components, dim> context(metadata);
-        auto &constraints = discretization.get_constraints();
-        constraints.clear();
-        DoFTools::make_hanging_node_constraints(dof_handler, constraints);
-        DiFfRG::internal::apply_model_affine_constraints(model, constraints, context);
-        constraints.close();
-
+        this->reinit_common();
+        this->build_mass_matrix(quadrature);
+        rebuild_jacobian_sparsity();
         setup_cells();
+        timings_reinit.push_back(timer.wall_time());
       }
 
       virtual void rebuild_jacobian_sparsity() override
@@ -144,14 +105,8 @@ namespace DiFfRG
                                                discretization.get_communicator());
       }
 
-      virtual const get_type::SparsityPattern<SparseMatrixType> &get_sparsity_pattern_jacobian() const override
-      {
-        return sparsity_pattern_jacobian;
-      }
-      virtual const SparseMatrixType &get_mass_matrix() const override { return mass_matrix; }
-
       /// The model's cell_indicator integrated over each cell; CG has no face contribution.
-      virtual void refinement_indicator(Vector<double> &indicator, const VectorType &solution_global) override
+      void refinement_indicator(Vector<double> &indicator, const VectorType &solution_global)
       {
         tbb::enumerable_thread_specific<CellScratch> scratch([this]() {
           return CellScratch(mapping, fe, quadrature, quadrature_face, gather_flags() | update_hessians);
@@ -266,10 +221,7 @@ namespace DiFfRG
         DiFfRG::internal::PhaseTimer phase(jacobian_times);
         Extractors extracted_data{{}};
         if constexpr (n_extr > 0) {
-          this->extract(extracted_data, solution_global, variables, true, true, true);
-          if (this->jacobian_extractors(this->extractor_jacobian, solution_global, variables))
-            reinit_la_matrix(jacobian, sparsity_pattern_jacobian, discretization.get_locally_owned_dofs(),
-                             discretization.get_communicator());
+          if (this->extract_with_jacobian(extracted_data, solution_global, variables)) this->reinit_matrix(jacobian);
         }
         phase.lap(&PhaseTimes::extract);
         gather(solution_global, extracted_data, variables);
@@ -302,62 +254,27 @@ namespace DiFfRG
         timings_jacobian.push_back(phase.finish());
       }
 
-      const PhaseTimes &residual_phase_times() const { return residual_times; }
-      const PhaseTimes &jacobian_phase_times() const { return jacobian_times; }
-      void reset_phase_times() { residual_times = jacobian_times = PhaseTimes{}; }
-
-      SummaryEvent summary() const override
-      {
-        SummaryEvent result{.component = "CG"};
-        result.timing("reinit", average(timings_reinit) * 1000, timings_reinit.size())
-            .timing("residual", average(timings_residual) * 1000, timings_residual.size())
-            .timing("jac", average(timings_jacobian) * 1000, timings_jacobian.size());
-        if (jacobian_times.calls > 0)
-          result.timing("jac eval", jacobian_times.evaluate / jacobian_times.calls * 1000, jacobian_times.calls);
-        return result;
-      }
-
-      double average_time_reinit() const { return average(timings_reinit); }
-      uint num_reinits() const { return timings_reinit.size(); }
-      double average_time_residual_assembly() const { return average(timings_residual); }
-      uint num_residuals() const { return timings_residual.size(); }
-      double average_time_jacobian_assembly() const { return average(timings_jacobian); }
-      uint num_jacobians() const { return timings_jacobian.size(); }
-
     protected:
       using Base::discretization;
       using Base::dof_handler;
       using Base::extractor_dof_indices;
       using Base::fe;
+      using Base::jacobian_times;
       using Base::mapping;
       using Base::model;
+      using Base::residual_times;
+      using Base::sparsity_pattern_jacobian;
+      using Base::timings_jacobian;
+      using Base::timings_reinit;
+      using Base::timings_residual;
 
       QGauss<dim> quadrature;
       QGauss<dim - 1> quadrature_face;
 
-      get_type::SparsityPattern<SparseMatrixType> sparsity_pattern_mass;
-      get_type::SparsityPattern<SparseMatrixType> sparsity_pattern_jacobian;
-      SparseMatrixType mass_matrix;
-
-      std::vector<double> timings_reinit;
-      std::vector<double> timings_residual;
-      std::vector<double> timings_jacobian;
-
     private:
-      static double average(const std::vector<double> &t)
-      {
-        return t.empty() ? 0. : std::accumulate(t.begin(), t.end(), 0.) / t.size();
-      }
-
-      /// About 256 MB of AD inputs and outputs per seed-stacked evaluation.
-      /// Unlike KT, the FEM assemblers stack whole seed directions, never part of the points, so a smaller budget does
-      /// not keep the batch in cache; fewer, larger evaluations are faster.
-      static uint default_stacked_points()
-      {
-        constexpr size_t per_point = sizeof(autodiff::real) * n_fe *
-                                     (2 + dim + (reads_derivatives ? dim : 0) + (reads_hessians ? dim * dim : 0));
-        return std::max<size_t>(1, (size_t(256) << 20) / per_point);
-      }
+      /// AD inputs and outputs of one point of a seed-stacked evaluation; see Base::fem_stacked_budget.
+      static constexpr size_t stacked_point_bytes =
+          sizeof(autodiff::real) * n_fe * (2 + dim + (reads_derivatives ? dim : 0) + (reads_hessians ? dim * dim : 0));
 
       static UpdateFlags gather_flags()
       {
@@ -611,7 +528,7 @@ namespace DiFfRG
         }
       }
 
-      const uint max_stacked_points;
+      const size_t max_stacked_points;
 
       uint n_q = 0, n_q_face = 0;
       DiFfRG::internal::ColoredCells<dim> cells;
@@ -626,8 +543,6 @@ namespace DiFfRG
       BatchOutput<dim, NumberType, n_fe> cell_result, face_result;
       std::vector<PointJacobian<dim, n_fe, n_fe, n_extr>> cell_jacobians, face_jacobians;
       SeedStackWorkspace<Batch, n_fe> cell_workspace, face_workspace;
-
-      PhaseTimes residual_times, jacobian_times;
     };
   } // namespace CG
 } // namespace DiFfRG

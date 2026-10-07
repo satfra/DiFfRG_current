@@ -11,8 +11,8 @@
 #include <DiFfRG/model/model.hh>
 
 #include <limits>
-#include <type_traits>
 #include <spdlog/sinks/stdout_color_sinks.h>
+#include <type_traits>
 
 // A model may need its extractors evaluated somewhere other than the EoM -- at a shock, say, whose
 // position is not expressible as a pointwise EoM field. It says so by defining extractor_point().
@@ -122,10 +122,11 @@ namespace
   using LDGProbeComponents = ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>, VariableDescriptor<>,
                                                  ExtractorDescriptor<Scalar<"e">>, FEFunctionDescriptor<Scalar<"du">>>;
 
-  template <typename Derived> class StandardBases : public def::LLFFlux<Derived>,
-                                                    public def::FlowBoundaries<Derived>,
-                                                    public def::FVDefaultBoundaries<Derived>,
-                                                    public def::AD<Derived>
+  template <typename Derived>
+  class StandardBases : public def::LLFFlux<Derived>,
+                        public def::FlowBoundaries<Derived>,
+                        public def::FVDefaultBoundaries<Derived>,
+                        public def::AD<Derived>
   {
   };
 
@@ -136,9 +137,8 @@ namespace
   {
   };
 
-  template <typename Derived> class LDGBases : public def::NoNumFlux<Derived>,
-                                               public def::FlowBoundaries<Derived>,
-                                               public def::AD<Derived>
+  template <typename Derived>
+  class LDGBases : public def::NoNumFlux<Derived>, public def::FlowBoundaries<Derived>, public def::AD<Derived>
   {
   public:
     template <uint dependent, int dim, typename NT, typename Solutions_s, typename Solutions_n>
@@ -248,12 +248,6 @@ TEST_CASE("A model can move its extractors off the EoM", "[discretization][extra
     MovedProbe model;
     using D = DG::Discretization<MovedProbe, RectangularMeshSerial<1>>;
     check_moved<D, DG::Assembler<D>>(model, 1, fem_tol);
-  }
-  SECTION("dDG")
-  {
-    MovedProbe model;
-    using D = DG::Discretization<MovedProbe, RectangularMeshSerial<1>>;
-    check_moved<D, dDG::Assembler<D>>(model, 1, fem_tol);
   }
   SECTION("LDG")
   {

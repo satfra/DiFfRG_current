@@ -41,7 +41,7 @@ namespace
                 tuple_has<"fe_hessians", PointTuple<TestBatch<true, true>>>);
 } // namespace
 
-TEST_CASE("A model's own evaluate_batch matches the per-point default under dDG", "[discretization][dg]")
+TEST_CASE("A model's own evaluate_batch matches the per-point default under DG", "[discretization][dg]")
 {
   DiFfRG::Init();
   Setup<1, true, true, true, true> batched(2, "0:0.1:1");
@@ -59,7 +59,7 @@ TEST_CASE("The batched LLF numflux matches the per-point LLF numflux", "[discret
 
 // Thousands of cells, so that the cells of one color really are assembled on many threads at once. The
 // result must not depend on the thread count at all.
-TEST_CASE("dDG assembly does not depend on the thread count", "[discretization][dg]")
+TEST_CASE("DG assembly does not depend on the thread count", "[discretization][dg]")
 {
   DiFfRG::Init();
   Setup<1, true, true, false, false> s(2, "0:0.00025:1");

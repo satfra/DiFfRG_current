@@ -32,8 +32,7 @@
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/FV/reconstructor/advection/first_order_reconstructor.hh>
 #include <DiFfRG/discretization/FV/reconstructor/advection/tvd_reconstructor.hh>
-#include <DiFfRG/discretization/common/abstract_assembler.hh>
-#include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
+#include <DiFfRG/discretization/common/assembler_core.hh>
 #include <DiFfRG/discretization/common/batched_scatter.hh>
 #include <DiFfRG/discretization/common/eom.hh>
 #include <DiFfRG/discretization/common/la_policy.hh>
@@ -375,25 +374,14 @@ namespace DiFfRG
                 def::HasWaveSpeed WaveSpeedStrategy_ = MaxEigenvalueWaveSpeed,
                 def::HasReconstructor JacobianReconstructor_ = Reconstructor_>
         requires MeshIsRectangular<typename Discretization_::Mesh>
-      class Assembler : public AbstractAssembler<typename Discretization_::VectorType,
-                                                 typename Discretization_::SparseMatrixType, Discretization_::dim>
+      class Assembler
+          : public DiFfRG::internal::AssemblerCore<
+                Assembler<Discretization_, Model_, Reconstructor_, WaveSpeedStrategy_, JacobianReconstructor_>,
+                Discretization_, Model_>
       {
-      protected:
-        // Placeholder for the "extractors" slot of e_tie() when the extractors are being computed and so cannot
-        // be passed to themselves. Same trick as DiFfRG::FEMAssembler.
-        constexpr static int nothing = 0;
-
-        template <typename... T> static constexpr auto v_tie(T &&...t)
-        {
-          return named_tuple<std::tuple<T &...>, StringSet<"variables", "extractors">>(std::tie(t...));
-        }
-
-        template <typename... T> static constexpr auto e_tie(T &&...t)
-        {
-          return named_tuple<std::tuple<T &...>,
-                             StringSet<"fe_functions", "fe_derivatives", "fe_hessians", "extractors", "variables",
-                                       "potential", "potential_gradient", "potential_hessian">>(std::tie(t...));
-        }
+        using Base = DiFfRG::internal::AssemblerCore<
+            Assembler<Discretization_, Model_, Reconstructor_, WaveSpeedStrategy_, JacobianReconstructor_>,
+            Discretization_, Model_>;
 
       public:
         using Discretization = Discretization_;
@@ -444,11 +432,8 @@ namespace DiFfRG
           double cell_width = 0.;
         };
         Assembler(Discretization &discretization, Model &model, const ConfigTree &config)
-            : discretization(discretization), model(model), report_port(discretization.report_port()),
-              dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
-              triangulation(discretization.get_triangulation()), fe(discretization.get_fe()),
-              EoM_cell(*(dof_handler.active_cell_iterators().end())),
-              EoM_config(DiFfRG::internal::resolve_eom_config(dof_handler, Config::EoMConfig(config))),
+            : Base(discretization, model, config, "FV"), report_port(discretization.report_port()),
+              triangulation(discretization.get_triangulation()),
               quadrature(1 + config.get_uint("/discretization/overintegration", 0)),
               diagnose_flux_conditioning(config.get_bool("/discretization/diagnose_flux_conditioning", false))
         {
@@ -462,37 +447,9 @@ namespace DiFfRG
           // want more points per call.
           constexpr size_t per_point =
               sizeof(autodiff::Real<2, NumberType>) * n_components * (2 + 2 * dim + dim * dim * dim);
-          max_stacked_points = config.get_uint("/discretization/batched/max_stacked_points",
-                                               std::max<size_t>(1, (size_t(16) << 20) / per_point));
+          max_stacked_points = Base::read_max_stacked_points(config, per_point, size_t(16) << 20);
 
           reinit();
-        }
-
-        virtual void reinit_vector(VectorType &vec) const override
-        {
-          reinit_la_vector(vec, discretization.get_locally_owned_dofs(), discretization.get_communicator());
-        }
-
-        virtual void reinit_matrix(SparseMatrixType &matrix) const override
-        {
-          reinit_la_matrix(matrix, get_sparsity_pattern_jacobian(), discretization.get_locally_owned_dofs(),
-                           discretization.get_communicator());
-        }
-
-        virtual MPI_Comm get_communicator() const override { return discretization.get_communicator(); }
-
-        virtual void reinit_solution_view(SolutionView<VectorType> &view) const override
-        {
-          view.reinit(discretization.get_locally_owned_dofs(), discretization.get_locally_relevant_dofs(),
-                      discretization.get_communicator());
-        }
-
-        virtual IndexSet get_differential_indices() const override
-        {
-          ComponentMask component_mask(model.template differential_components<dim>());
-          // See FEMAssembler::get_differential_indices for why this is restricted to owned rows.
-          return restrict_to_owned<VectorType>(DoFTools::extract_dofs(dof_handler, component_mask),
-                                               discretization.get_locally_owned_dofs());
         }
 
         /// The solution handed to Model::abs_tolerances: the readout reconstruction at each cell centre.
@@ -513,13 +470,13 @@ namespace DiFfRG
                         !std::is_same_v<VectorType, dealii::Vector<NumberType>>)
             return false;
           else {
-            reinit_vector(atol);
+            this->reinit_vector(atol);
             std::array<double, n_components> cell_atol{};
             std::vector<types::global_dof_index> dofs(n_components);
             for (const auto &cell : dof_handler.active_cell_iterators()) {
               if (!cell->is_locally_owned()) continue;
               const Point x = cell->center();
-              auto sol = reconstruct_readout_solution(cell, solution, x, /*with_hessians=*/true);
+              auto sol = reconstruct_readout_solution(cell, solution, x);
               cell_atol.fill(abs_tol);
               model.abs_tolerances(cell_atol, x, AbsTolSolution(std::tie(sol.values, sol.gradients, sol.hessians)),
                                    abs_tol, rel_tol);
@@ -531,51 +488,11 @@ namespace DiFfRG
           }
         }
 
-        virtual void attach_data_output(OutputFrame<dim, VectorType> &data_out, const VectorType &solution,
-                                        const VectorType &variables, const VectorType &dt_solution = VectorType(),
-                                        const VectorType &residual = VectorType()) override
-        {
-          const auto fe_function_names = Components::FEFunction_Descriptor::get_names_vector();
-          std::vector<std::string> fe_function_names_residual;
-          for (const auto &name : fe_function_names)
-            fe_function_names_residual.push_back(name + "_residual");
-          std::vector<std::string> fe_function_names_dot;
-          for (const auto &name : fe_function_names)
-            fe_function_names_dot.push_back(name + "_dot");
-
-          auto fe_out = data_out.fields();
-          fe_out.attach(dof_handler, solution, fe_function_names);
-          if (dt_solution.size() > 0) fe_out.attach(dof_handler, dt_solution, fe_function_names_dot);
-          if (residual.size() > 0) fe_out.attach(dof_handler, residual, fe_function_names_residual);
-
-          readouts(data_out, solution, variables);
-        }
-
         virtual void reinit() override
         {
           Timer timer;
-
-          const auto metadata = DiFfRG::internal::build_affine_constraint_metadata<Components, dim>(discretization);
-          const AffineConstraintContext<Components, dim> context(metadata);
-
-          auto &constraints = discretization.get_constraints();
-          constraints.clear();
-          DoFTools::make_hanging_node_constraints(dof_handler, constraints);
-          DiFfRG::internal::apply_model_affine_constraints(model, constraints, context);
-          constraints.close();
-
-          // Mass sparsity pattern
-          {
-            DynamicSparsityPattern dsp(discretization.get_locally_relevant_dofs());
-            DoFTools::make_sparsity_pattern(dof_handler, dsp, constraints, /*keep_constrained_dofs = */ true);
-            finalize_la_sparsity<SparseMatrixType>(dsp, sparsity_pattern_mass, discretization.get_locally_owned_dofs(),
-                                                   discretization.get_locally_relevant_dofs(),
-                                                   discretization.get_communicator());
-            reinit_la_matrix(mass_matrix, sparsity_pattern_mass, discretization.get_locally_owned_dofs(),
-                             discretization.get_communicator());
-            MatrixCreator::create_mass_matrix(dof_handler, quadrature, mass_matrix,
-                                              static_cast<Function<dim, NumberType> *>(nullptr), constraints);
-          }
+          this->reinit_common();
+          this->build_mass_matrix(quadrature);
 
           // Hoisted out of probe_diffusion_flux_conditioning(): GridTools::diameter is COLLECTIVE
           // on a partitioned triangulation, and that function is entered conditionally
@@ -595,47 +512,6 @@ namespace DiFfRG
           timings_reinit.push_back(timer.wall_time());
         }
 
-        virtual void set_time(double t) override { model.set_time(t); }
-
-        virtual SnapshotSpatialState capture_snapshot_state(const VectorType &spatial_replica) const override
-        {
-          return DiFfRG::internal::capture_cellwise_state(dof_handler, spatial_replica);
-        }
-
-        virtual void restore_snapshot_state(const SnapshotSpatialState &state, VectorType &spatial) override
-        {
-          DiFfRG::internal::restore_spatial_state(state, discretization, *this, spatial);
-        }
-
-        virtual void save_model_state(ModelState &state) const override
-        {
-          DiFfRG::internal::save_model_state(model, state);
-        }
-
-        virtual bool load_model_state(const ModelState &state) override
-        {
-          return DiFfRG::internal::load_model_state(model, state);
-        }
-
-        virtual const get_type::SparsityPattern<SparseMatrixType> &get_sparsity_pattern_jacobian() const override
-        {
-          return sparsity_pattern_jacobian;
-        }
-        virtual const SparseMatrixType &get_mass_matrix() const override { return mass_matrix; }
-
-        virtual void residual_variables(VectorType &residual, const VectorType &variables,
-                                        const VectorType &spatial_solution) override
-        {
-          // Mirrors DiFfRG::FEMAssembler::residual_variables: run the extractors at the EoM first, then hand
-          // dt_variables the v_tie(variables, extractors) tuple. Without the extractors a model whose
-          // Variables flow depends on its FE solution cannot be assembled.
-          std::array<NumberType, Components::count_extractors()> __extracted_data{{}};
-          if constexpr (Components::count_extractors() > 0)
-            extract(__extracted_data, spatial_solution, variables, true, false, false);
-          const auto &extracted_data = __extracted_data;
-          model.dt_variables(residual, v_tie(variables, extracted_data));
-        };
-
         virtual void jacobian_variables([[maybe_unused]] FullMatrix<NumberType> &jacobian,
                                         [[maybe_unused]] const VectorType &variables, const VectorType &) override {
           // Not assembled: KT treats the variables as frozen within a Newton step.
@@ -647,100 +523,13 @@ namespace DiFfRG
           std::array<Tensor<2, dim, NumberType>, n_components> hessians{};
         };
 
-        void readouts(OutputFrame<dim, VectorType> &data_out, const VectorType &solution_global,
-                      const VectorType &variables) const
-        {
-          auto raw_potential = reconstruct_raw_potential(
-              solution_global, dof_handler, mapping,
-              [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config,
-              &potential_cache);
-          auto helper = [&](auto &&...args) {
-            if constexpr (sizeof...(args) == 3) {
-              auto &&[id, EoMfun, outputter] = std::forward_as_tuple(std::forward<decltype(args)>(args)...);
-              data_out.register_readout(id);
-              auto EoM_cell = this->EoM_cell;
-              auto EoM_result = get_EoM_point_with_potential(
-                  EoM_cell, solution_global, dof_handler, mapping, EoMfun,
-                  [](const auto &point, const auto &) { return point; }, EoM_config, EoM_minimum_guess,
-                  &potential_cache);
-              if (EoM_result.potential) EoM_minimum_guess = EoM_result.potential->minimum;
-              const auto EoM = EoM_result.point;
-              this->EoM_cell = EoM_cell;
-
-              auto solution = reconstruct_readout_solution(EoM_cell, solution_global, EoM);
-              const auto potential = evaluate_raw_potential(raw_potential, mapping, EoM);
-
-              // The readout is always at this readout's EoM. The extractors may not be: a model that
-              // defines extractor_point reads them elsewhere, and dt_variables must see the same
-              // values here as it does during assembly.
-              std::array<NumberType, Components::count_extractors()> extracted_data{{}};
-              if constexpr (Components::count_extractors() > 0) {
-                const auto [x, cell] = resolve_extractor_point(EoM, EoM_cell, solution_global);
-                const auto extractor_solution =
-                    reconstruct_readout_solution(cell, solution_global, x, /*with_hessians=*/true);
-                const auto extractor_potential = evaluate_raw_potential(raw_potential, mapping, x);
-                model.extract(extracted_data, x,
-                              e_tie(extractor_solution.values, extractor_solution.gradients,
-                                    extractor_solution.hessians, nothing, variables, extractor_potential.value,
-                                    extractor_potential.gradient, extractor_potential.mass_hessian));
-              }
-              outputter(data_out, EoM,
-                        e_tie(solution.values, solution.gradients, solution.hessians, extracted_data, variables,
-                              potential.value, potential.gradient, potential.mass_hessian));
-              data_out.attach_eom_potential(std::move(EoM_result));
-            } else {
-              DiFfRG::internal::validate_readout_helper_arity<decltype(args)...>();
-            }
-          };
-          model.readouts_multiple(helper, data_out);
-          data_out.attach_raw_potential(std::move(raw_potential));
-        }
-
         /**
-         * @param with_hessians Also fill ReadoutSolution::hessians. Off by default and intended ONLY for the
-         * single EoM-point evaluation in extract(): it is a plain unlimited difference, not part of the
-         * scheme, and must not be wired into the flux path.
+         * @brief The solution at @p x in @p cell, for the extractors, readouts and abs tolerances: the cell value
+         * reconstructed to @p x with the Reconstructor's gradient, and an unlimited 3-point curvature. Meant only for
+         * single points like these: the curvature is not part of the scheme and must not be wired into the flux path.
          */
-        /**
-         * @brief Where the model wants its extractors evaluated, and the cell holding that point.
-         *
-         * The EoM itself when the model does not define `extractor_point` -- and then this costs
-         * nothing, because building the SolutionSample is inside the `if constexpr`.
-         *
-         * Values are read straight off the dofs -- with one dof per cell they are the cell averages
-         * already -- and gradients are recovered by central differences afterwards. Deliberately not
-         * the Reconstructor's limited slopes: reconstructing per cell means a stencil fill over the
-         * whole mesh on every residual evaluation, which is serial work that dominates the assembly
-         * (it cost a factor of four here). The limited slope stays where it belongs, in the flux
-         * path. The FE path in make_solution_sample() is no use for either, since DG0 shape
-         * functions have zero gradient.
-         */
-        std::pair<Point, Iterator> resolve_extractor_point(const Point &EoM_point, const Iterator &EoM_cell_,
-                                                           [[maybe_unused]] const VectorType &solution_global) const
-        {
-          if constexpr (HasExtractorPoint<Model, dim, NumberType>) {
-            // One dof per cell, so the value at the cell centre is that dof -- no reconstruction
-            // needed, and none wanted: this runs on every residual evaluation, and a per-cell
-            // stencil fill over the whole mesh is serial work that would dominate the assembly.
-            std::vector<types::global_dof_index> cell_dofs(n_components);
-            auto sample = make_solution_sample<dim, NumberType>(dof_handler, mapping, n_components,
-                                                                [&](const Iterator &cell, const Point &,
-                                                                    std::vector<NumberType> &values,
-                                                                    std::vector<Tensor<1, dim, NumberType>> &) {
-                                                                  cell->get_dof_indices(cell_dofs);
-                                                                  for (uint c = 0; c < n_components; ++c)
-                                                                    values[c] = solution_global[cell_dofs[c]];
-                                                                });
-            sample.compute_central_difference_gradients();
-            const auto point = model.template extractor_point<dim, NumberType>(EoM_point, sample);
-            if (point == EoM_point) return {EoM_point, EoM_cell_};
-            return {point, GridTools::find_active_cell_around_point(dof_handler, point)};
-          } else
-            return {EoM_point, EoM_cell_};
-        }
-
         ReadoutSolution reconstruct_readout_solution(const Iterator &cell, const VectorType &solution_global,
-                                                     const Point &x, bool with_hessians = false) const
+                                                     const Point &x) const
         {
           CellStencilData stencil;
           fill_cell_stencil(cell, solution_global, stencil);
@@ -753,72 +542,54 @@ namespace DiFfRG
           solution.gradients = Reconstructor::template compute_gradient_at_point<n_components>(
               stencil.cell.x, x, stencil.cell.u, stencil.neighbors.x, stencil.neighbors.u);
 
-          if (with_hessians) solution.hessians = internal::stencil_hessians(stencil);
+          solution.hessians = internal::stencil_hessians(stencil);
           return solution;
         }
 
-        /**
-         * @brief Evaluate the model's extractors at the EoM point.
-         *
-         * This is the FV counterpart of DiFfRG::FEMAssembler::extract, and exists for the same reason: it is the
-         * only bridge by which a model's FE (field-space) solution reaches its Variables. Models that couple the
-         * two -- e.g. an effective potential whose flux depends on momentum-dependent dressings which in turn flow
-         * with the potential's derivatives at the EoM -- cannot be assembled without it.
-         *
-         * The reconstruction is the same one readouts() uses: the EoM point is found from the cell-averaged
-         * solution, then values and gradients are reconstructed there by the Reconstructor. Hessians are
-         * additionally reconstructed here (and ONLY here -- see reconstruct_readout_solution): one extra
-         * three-point difference at a single point per step is free, whereas doing it per cell in the flux
-         * path would be neither cheap nor meaningful.
-         *
-         * @param data           Output: the extractor values.
-         * @param search_EoM     Re-locate the EoM point instead of reusing the cached one.
-         * @param set_EoM        Store the located point/cell as the new cache.
-         * @param postprocess    Apply the model's EoM_postprocess to the located point.
-         */
-        /**
-         * @brief The raw potential for the extractors, or an inert placeholder if the model does not read it.
-         *
-         * Reconstructing it is a direct solve over the whole mesh, and extract() runs on every residual and
-         * every jacobian -- so a model that never touches the potential slots should say so and skip it.
-         */
-        auto extractor_raw_potential(const VectorType &solution_global) const
+        // The point evaluation of the extractors and readouts; see DiFfRG::internal::AssemblerCore.
+        template <typename PotentialEvaluation> struct PointEvaluation : ReadoutSolution {
+          PotentialEvaluation potential;
+        };
+
+        template <typename RawPotential>
+        auto evaluate_at(const Point &x, const typename Base::CellIterator &cell, const VectorType &solution,
+                         const RawPotential &raw_potential) const
         {
-          if constexpr (Model::extract_uses_potential)
-            return reconstruct_raw_potential(
-                solution_global, dof_handler, mapping,
-                [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config,
-                &potential_cache);
-          else
-            return UnusedPotential{};
+          PointEvaluation<decltype(evaluate_raw_potential(raw_potential, mapping, x))> evaluation;
+          static_cast<ReadoutSolution &>(evaluation) = reconstruct_readout_solution(Iterator(cell), solution, x);
+          evaluation.potential = evaluate_raw_potential(raw_potential, mapping, x);
+          return evaluation;
         }
 
-        void extract(std::array<NumberType, Components::count_extractors()> &data, const VectorType &solution_global,
-                     const VectorType &variables, bool search_EoM, bool set_EoM, bool postprocess) const
+        template <typename Evaluation, typename Extractors_>
+        static auto solution_tie(const Evaluation &e, const Extractors_ &extractors, const VectorType &variables)
         {
-          auto EoM = this->EoM;
-          auto EoM_cell = this->EoM_cell;
-          if (search_EoM || EoM_cell == *(dof_handler.active_cell_iterators().end())) {
-            auto EoM_result = get_EoM_point_with_potential(
-                EoM_cell, solution_global, dof_handler, mapping,
-                [&](const auto &p, const auto &values) { return model.EoM(p, values); },
-                [&](const auto &p, const auto &values) { return postprocess ? model.EoM_postprocess(p, values) : p; },
-                EoM_config, EoM_minimum_guess, &potential_cache);
-            EoM = EoM_result.point;
-            if (EoM_result.potential) EoM_minimum_guess = EoM_result.potential->minimum;
-          }
-          if (set_EoM) {
-            this->EoM = EoM;
-            this->EoM_cell = EoM_cell;
-          }
+          return Base::e_tie(e.values, e.gradients, e.hessians, extractors, variables, e.potential.value,
+                             e.potential.gradient, e.potential.mass_hessian);
+        }
 
-          const auto [x, cell] = resolve_extractor_point(EoM, EoM_cell, solution_global);
-          auto solution = reconstruct_readout_solution(cell, solution_global, x, /*with_hessians=*/true);
-          const auto raw_potential = extractor_raw_potential(solution_global);
-          const auto potential = evaluate_raw_potential(raw_potential, mapping, x);
-          model.extract(data, x,
-                        e_tie(solution.values, solution.gradients, solution.hessians, nothing, variables,
-                              potential.value, potential.gradient, potential.mass_hessian));
+        /**
+         * @brief The solution sample a model's extractor_point sees.
+         *
+         * Values are read straight off the dofs -- with one dof per cell they are the cell averages already -- and
+         * gradients are recovered by central differences afterwards. Deliberately not the Reconstructor's limited
+         * slopes: reconstructing per cell means a stencil fill over the whole mesh on every residual evaluation,
+         * which is serial work that dominates the assembly (it cost a factor of four here). The FE path of
+         * make_solution_sample() is no use either, since DG0 shape functions have zero gradient.
+         */
+        auto extractor_sample(const VectorType &solution_global) const
+        {
+          std::vector<types::global_dof_index> cell_dofs(n_components);
+          auto sample = make_solution_sample<dim, NumberType>(dof_handler, mapping, n_components,
+                                                              [&](const Iterator &cell, const Point &,
+                                                                  std::vector<NumberType> &values,
+                                                                  std::vector<Tensor<1, dim, NumberType>> &) {
+                                                                cell->get_dof_indices(cell_dofs);
+                                                                for (uint c = 0; c < n_components; ++c)
+                                                                  values[c] = solution_global[cell_dofs[c]];
+                                                              });
+          sample.compute_central_difference_gradients();
+          return sample;
         }
 
         virtual void mass(VectorType &mass, const VectorType &solution_global, const VectorType &solution_global_dot,
@@ -1283,9 +1054,6 @@ namespace DiFfRG
         using SourceJacobian = PointJacobian<dim, n_components, n_components, Components::count_extractors()>;
 
         using PhaseTimes = AssemblyPhaseTimes;
-        const PhaseTimes &residual_phase_times() const { return residual_times; }
-        const PhaseTimes &jacobian_phase_times() const { return jacobian_times; }
-        void reset_phase_times() { residual_times = jacobian_times = PhaseTimes{}; }
 
         /**
          * @brief Number the faces the owned cells need: each face once, in face_reconstruction_descriptors order,
@@ -1903,7 +1671,7 @@ namespace DiFfRG
           DiFfRG::internal::PhaseTimer phase(residual_times);
           Extractors extracted{};
           if constexpr (Components::count_extractors() > 0)
-            extract(extracted, solution_global, variables, true, false, true);
+            this->extract(extracted, solution_global, variables, true, false, true);
           const SharedScope shared_scope{*this};
           phase.lap(&PhaseTimes::extract);
 
@@ -1975,7 +1743,7 @@ namespace DiFfRG
           DiFfRG::internal::PhaseTimer phase(jacobian_times);
           Extractors extracted{};
           if constexpr (Components::count_extractors() > 0)
-            extract(extracted, solution_global, variables, true, false, true);
+            this->extract(extracted, solution_global, variables, true, false, true);
           const SharedScope shared_scope{*this};
           phase.lap(&PhaseTimes::extract);
 
@@ -2002,8 +1770,8 @@ namespace DiFfRG
           timings_jacobian.push_back(phase.finish());
         }
 
-        virtual void refinement_indicator([[maybe_unused]] Vector<double> &indicator,
-                                          [[maybe_unused]] const VectorType &solution_global)
+        void refinement_indicator([[maybe_unused]] Vector<double> &indicator,
+                                  [[maybe_unused]] const VectorType &solution_global)
         {
         }
 
@@ -2301,53 +2069,22 @@ namespace DiFfRG
           AssertIndexRange(cell_index, cell_topology_cache.size());
           return cell_topology_cache[cell_index];
         }
-        SummaryEvent summary() const override
-        {
-          SummaryEvent result{.component = "FV"};
-          result.timing("reinit", average_time_reinit() * 1000, num_reinits())
-              .timing("residual", average_time_residual_assembly() * 1000, num_residuals())
-              .timing("jac", average_time_jacobian_assembly() * 1000, num_jacobians());
-          return result;
-        }
-
-        double average_time_reinit() const
-        {
-          double t = 0.;
-          double n = timings_reinit.size();
-          for (const auto &t_ : timings_reinit)
-            t += t_ / n;
-          return t;
-        }
-        uint num_reinits() const { return timings_reinit.size(); }
-
-        double average_time_residual_assembly() const
-        {
-          double t = 0.;
-          double n = timings_residual.size();
-          for (const auto &t_ : timings_residual)
-            t += t_ / n;
-          return t;
-        }
-        uint num_residuals() const { return timings_residual.size(); }
-
-        double average_time_jacobian_assembly() const
-        {
-          double t = 0.;
-          double n = timings_jacobian.size();
-          for (const auto &t_ : timings_jacobian)
-            t += t_ / n;
-          return t;
-        }
-        uint num_jacobians() const { return timings_jacobian.size(); }
 
       protected:
-        Discretization &discretization;
-        Model &model;
+        using Base::discretization;
+        using Base::dof_handler;
+        using Base::fe;
+        using Base::jacobian_times;
+        using Base::mapping;
+        using Base::model;
+        using Base::residual_times;
+        using Base::sparsity_pattern_jacobian;
+        using Base::timings_jacobian;
+        using Base::timings_reinit;
+        using Base::timings_residual;
+
         ReportPort report_port;
-        const DoFHandler<dim> &dof_handler;
-        const Mapping<dim> &mapping;
         const Triangulation<dim> &triangulation;
-        const FiniteElement<dim> &fe;
 
         /// The bound on one stacked AD evaluation: /discretization/batched/max_stacked_points.
         size_t max_stacked_points = 0;
@@ -2377,7 +2114,6 @@ namespace DiFfRG
         internal::FluxDerivativeWorkspace<FluxTraces, n_components> flux_derivative_workspace;
         internal::StackedWorkspace<autodiff::Real<1, NumberType>, DiffusionTraces, n_components>
             diffusion_derivative_workspace;
-        PhaseTimes residual_times, jacobian_times;
         /// Per trace face: its residual contribution and its jacobian block, as its u^- cell sees it.
         std::vector<std::array<NumberType, n_components>> face_values;
         std::vector<FullMatrix<NumberType>> face_blocks;
@@ -2385,22 +2121,8 @@ namespace DiFfRG
         /// The cells' rows for the non-concurrent (PETSc) scatter.
         std::vector<CellRows> row_buffer;
 
-        mutable Point EoM;
-        mutable Iterator EoM_cell;
-        const Config::EoMConfig EoM_config;
-        mutable std::optional<Point> EoM_minimum_guess;
-        /// Mesh-dependent half of the potential reconstructions, built once and reused; see PotentialSystemCache.
-        mutable DiFfRG::internal::PotentialSystemCache<dim, NumberType> potential_cache;
-
         const QGauss<dim> quadrature;
 
-        get_type::SparsityPattern<SparseMatrixType> sparsity_pattern_mass;
-        get_type::SparsityPattern<SparseMatrixType> sparsity_pattern_jacobian;
-        SparseMatrixType mass_matrix;
-
-        std::vector<double> timings_reinit;
-        std::vector<double> timings_residual;
-        std::vector<double> timings_jacobian;
         std::array<unsigned int, n_components> local_component_of_dof{};
         std::vector<CellTopologyCacheEntry> cell_topology_cache;
         std::vector<internal::BoundaryReconstructionStencilTopologyData<dim, n_components>> boundary_stencil_topologies;

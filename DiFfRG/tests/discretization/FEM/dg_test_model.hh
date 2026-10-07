@@ -1,7 +1,7 @@
 #pragma once
 
 // Shared by dg_consistency.cc and dg_batch_equivalence.cc: a nonlinear two-component model, its setup on the
-// DG/dDG assembler, and a plain mesh_loop assembly of its residual as an independent reference.
+// DG assembler, and a plain mesh_loop assembly of its residual as an independent reference.
 
 #include <DiFfRG/common/configuration_helper.hh>
 #include <DiFfRG/common/init.hh>
@@ -33,17 +33,18 @@ namespace dg_test
    * the position and (optionally) an extractor. With `batched`, the model evaluates them itself in
    * evaluate_batch from the batch columns; otherwise it uses the default, which calls flux/source.
    */
-  template <uint dim, bool batched, bool hessians, bool extractors, NumFlux numflux_kind>
-  class Model
-      : public def::AbstractModel<Model<dim, batched, hessians, extractors, numflux_kind>, RichComponents<extractors>>,
-        public def::Time,
-        public def::LLFFlux<Model<dim, batched, hessians, extractors, numflux_kind>>,
-        public def::FlowBoundaries<Model<dim, batched, hessians, extractors, numflux_kind>>,
-        public def::AD<Model<dim, batched, hessians, extractors, numflux_kind>>
+  template <uint dim, bool batched, bool hessians, bool extractors, NumFlux numflux_kind, bool derivatives>
+  class Model : public def::AbstractModel<Model<dim, batched, hessians, extractors, numflux_kind, derivatives>,
+                                          RichComponents<extractors>>,
+                public def::Time,
+                public def::LLFFlux<Model<dim, batched, hessians, extractors, numflux_kind, derivatives>>,
+                public def::FlowBoundaries<Model<dim, batched, hessians, extractors, numflux_kind, derivatives>>,
+                public def::AD<Model<dim, batched, hessians, extractors, numflux_kind, derivatives>>
   {
     using LLF = def::LLFFlux<Model>;
 
   public:
+    static constexpr bool batch_reads_derivatives = derivatives;
     static constexpr bool batch_reads_hessians = hessians;
 
     template <typename Vector> void initial_condition(const Point<dim> &x, Vector &values) const
@@ -231,16 +232,17 @@ namespace dg_test
     return mesh;
   }
 
-  /// Everything a test needs: the DG (ddg = false) or dDG assembler on a nontrivial state.
-  template <uint dim, bool ddg, bool batched, bool hessians, bool extractors, NumFlux numflux = NumFlux::llf>
+  /// Everything a test needs: the DG assembler on a nontrivial state, with a model that reads the derivatives (and,
+  /// with `hessians`, the hessians) or the values only.
+  template <uint dim, bool derivatives, bool batched, bool hessians, bool extractors, NumFlux numflux = NumFlux::llf>
   struct Setup {
-    using Model = dg_test::Model<dim, batched, hessians, extractors, numflux>;
+    using Model = dg_test::Model<dim, batched, hessians, extractors, numflux, derivatives>;
     using Discretization = DG::Discretization<Model, RectangularMesh<dim>>;
-    using Assembler = std::conditional_t<ddg, dDG::Assembler<Discretization>, DG::Assembler<Discretization>>;
+    using Assembler = DG::Assembler<Discretization>;
     using VectorType = typename Discretization::VectorType;
     using SparseMatrixType = typename Discretization::SparseMatrixType;
-    static constexpr bool with_derivatives = ddg;
-    static constexpr bool with_hessians = ddg && hessians;
+    static constexpr bool with_derivatives = derivatives;
+    static constexpr bool with_hessians = derivatives && hessians;
 
     Setup(const int fe_order, const std::string &grid, const bool refine = false)
         : config(make_config(fe_order, grid)), mesh(Config::ConfigurationMesh<dim>(config)),

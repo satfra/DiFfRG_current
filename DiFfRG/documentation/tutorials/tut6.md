@@ -12,7 +12,7 @@ by the finite-temperature integrator.
 
 ## How the assemblers call the model
 
-Every assembler (CG, DG, dDG, LDG and KT) assembles a residual or a jacobian in four stages:
+Every assembler (CG, DG, LDG and KT) assembles a residual or a jacobian in four stages:
 
 | stage | what happens |
 | --- | --- |
@@ -157,7 +157,7 @@ A model also declares which inputs its flux and source read:
 static constexpr bool batch_reads_hessians = false;
 ```
 
-The CG and dDG assemblers then neither compute the hessians nor seed them in the jacobian.
+The CG and DG assemblers then neither compute the hessians nor seed them in the jacobian.
 (`batch_reads_derivatives = false` does the same for the first derivatives.) Which inputs a batch holds is
 fixed at compile time: `batch.hessians()` of a batch without them does not compile, nor does
 `get<"fe_hessians">(sol)` in a per-point callback. A model used with several assemblers can ask
@@ -165,7 +165,7 @@ fixed at compile time: `batch.hessians()` of a batch without them does not compi
 
 ## Faces and boundaries
 
-`def::LLFFlux` (the numerical flux of DG and dDG) and `def::FlowBoundaries` evaluate the model at the faces
+`def::LLFFlux` (the numerical flux of DG) and `def::FlowBoundaries` evaluate the model at the faces
 through the same `evaluate_batch`, with only `Term::flux` requested. `LLFFlux` needs the flux on both sides of the
 face plus a finite-difference wave speed, and evaluates all of them in one call over $2 + 2N_f$ stacked copies of
 the face points. A model with its own numerical flux can define `numflux_batch(out, normals, batch_s, batch_n)`
@@ -216,9 +216,8 @@ template <typename Out, typename Batch> void evaluate_batch(Out &out, const Batc
 | assembler | inputs at a point | terms per call | number types |
 | --- | --- | --- | --- |
 | CG | values, derivatives, hessians (unless `batch_reads_*` is false) | flux and source (cells), flux (boundary) | `double`, `autodiff::real` |
-| dDG | as CG | flux and source (cells), flux (faces) | `double`, `autodiff::real` |
-| DG | values | as dDG | `double`, `autodiff::real` |
-| LDG | values of the FE functions and of every level (`batch.ldg_values(k, c)`) | as dDG | `double`, `autodiff::real` |
+| DG | as CG | flux and source (cells), flux (faces) | `double`, `autodiff::real` |
+| LDG | values of the FE functions and of every level (`batch.ldg_values(k, c)`) | as DG | `double`, `autodiff::real` |
 | KT | values, reconstructed derivatives; third derivatives (diffusion, 1D); hessians (source, if requested) | one term per call | `Real<1>` (flux, residual), `Real<2>` (flux, jacobian), `double` and `autodiff::real` (= `Real<1>`; diffusion flux and source) |
 
 The LDG levels themselves are built by `ldg_evaluate_batch<k>(out, batch)`, whose default calls the per-point
@@ -293,6 +292,6 @@ single calls on larger meshes.
 
 ## Next steps
 
-* `Examples/ONfiniteT` (`-DONFINITET_BATCHED=ON`) has the same model for CG, dDG, LDG and KT, and `bench_batched`,
+* `Examples/ONfiniteT` (`-DONFINITET_BATCHED=ON`) has the same model for CG, DG, LDG and KT, and `bench_batched`,
   which times single residual and jacobian calls stage by stage.
 * [Models](../getting_started/models.md) lists what each assembler hands the per-point callbacks.

@@ -15,7 +15,6 @@
 // DiFfRG
 #include <DiFfRG/common/run_reporter.hh>
 #include <DiFfRG/common/utils.hh>
-#include <DiFfRG/discretization/FEM/assembler/ddg.hh>
 #include <DiFfRG/discretization/FEM/assembler/dg.hh>
 #include <DiFfRG/discretization/common/parallel_dofs.hh>
 #include <DiFfRG/discretization/common/types.hh>

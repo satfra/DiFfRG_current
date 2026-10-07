@@ -12,7 +12,7 @@ using namespace DiFfRG;
 #include <sstream>
 
 /**
- * Times residual() and jacobian() of the ONfiniteT assembly (--assembler cg, ddg, ldg or kt) for one configuration
+ * Times residual() and jacobian() of the ONfiniteT assembly (--assembler cg, dg, ldg or kt) for one configuration
  * of the flux:
  *   B0  -- per-point flux with the TBB integrator (AbstractModel's default evaluate_batch)
  *   B1  -- evaluate_batch with one map_points call on TBB
@@ -214,8 +214,8 @@ int main(int argc, char *argv[])
   bool known = false;
   if (opt.assembler == "cg")
     known = run_config.template operator()<Model, CGDiscretization, CG::Assembler>();
-  else if (opt.assembler == "ddg")
-    known = run_config.template operator()<Model, DGDiscretization, dDG::Assembler>();
+  else if (opt.assembler == "dg")
+    known = run_config.template operator()<Model, DGDiscretization, DG::Assembler>();
   else if (opt.assembler == "ldg")
     known = run_config.template operator()<ModelLDG, LDGDiscretization, LDG::Assembler>();
   else if (opt.assembler == "kt")

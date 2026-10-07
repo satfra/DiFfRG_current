@@ -6,7 +6,6 @@
 
 #include <DiFfRG/common/init.hh>
 #include <DiFfRG/discretization/FEM/assembler/cg.hh>
-#include <DiFfRG/discretization/FEM/assembler/ddg.hh>
 #include <DiFfRG/discretization/FEM/assembler/dg.hh>
 #include <DiFfRG/discretization/FEM/assembler/ldg.hh>
 #include <DiFfRG/discretization/FEM/cg.hh>
@@ -259,14 +258,6 @@ TEST_CASE("Cell-wise state restores into a fresh discretization", "[snapshot]")
     Model model(linear_profile());
     using Discretization = DG::Discretization<Model, RectangularMesh<2>>;
     require_roundtrip<Discretization, DG::Assembler<Discretization>, FE::FlowingVariables<Discretization>>(
-        config, model, false);
-  }
-  SECTION("dDG")
-  {
-    using Model = Testing::ModelExp<2>;
-    Model model(linear_profile());
-    using Discretization = DG::Discretization<Model, RectangularMesh<2>>;
-    require_roundtrip<Discretization, dDG::Assembler<Discretization>, FE::FlowingVariables<Discretization>>(
         config, model, false);
   }
   SECTION("LDG")

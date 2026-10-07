@@ -16,7 +16,7 @@ using namespace DiFfRG;
 
 /**
  * The O(N) model of model.hh with a batched flux: the flux at all points of a batch (the quadrature points of the
- * CG or dDG assembler) is one map_points() call of the V integrator, on the backend chosen at compile time. Physics
+ * CG or DG assembler) is one map_points() call of the V integrator, on the backend chosen at compile time. Physics
  * and parameters are those of model.hh.
  */
 namespace ON_batched
@@ -150,8 +150,7 @@ namespace ON_batched
   using LDGComponents = ComponentDescriptor<FEFunctionDesc, VariableDescriptor<>, ExtractorDescriptor<>, LDGFunctionDesc>;
   constexpr auto idxl = LDGFunctionDesc{};
 
-  template <typename M>
-  using LDGFluxes = def::LDGUpDownFluxes<M, def::UpDownFlux<def::FlowDirections<0>, def::UpDown<def::from_right>>>;
+  template <typename M> using LDGFluxes = def::LDGUpDownFluxes<M, def::UpDownFlux<def::FlowDirections<0>, def::UpDown<def::from_right>>>;
 
   /**
    * The model of model_LDG.hh with a batched flux: m2' is the LDG level 1, built from m2 by an upwind flux, and
@@ -294,10 +293,7 @@ namespace ON_batched
       flow_equations.set_T(prm.T);
     }
 
-    template <typename Vector> void initial_condition(const Point<dim> &pos, Vector &values) const
-    {
-      values[idxf("m2")] = prm.m2 + prm.lambda / 2. * pos[0];
-    }
+    template <typename Vector> void initial_condition(const Point<dim> &pos, Vector &values) const { values[idxf("m2")] = prm.m2 + prm.lambda / 2. * pos[0]; }
 
     void set_time(double t_)
     {
@@ -315,7 +311,8 @@ namespace ON_batched
     }
 
     /// Diffusion flux: the sigma loop, m^2_sigma = m^2 + 2 rho dm^2/drho.
-    template <typename NT, typename Solution> void diffusion_flux(std::array<Tensor<1, dim, NT>, Components::count_fe_functions(0)> &F, const Point<dim> &x, const Solution &sol) const
+    template <typename NT, typename Solution>
+    void diffusion_flux(std::array<Tensor<1, dim, NT>, Components::count_fe_functions(0)> &F, const Point<dim> &x, const Solution &sol) const
     {
       const auto m2Sigma = get<0>(sol)[idxf("m2")] + 2. * x[0] * get<1>(sol)[idxf("m2")][0];
       NT sigma_loop;

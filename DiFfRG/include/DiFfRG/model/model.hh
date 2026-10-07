@@ -156,12 +156,7 @@ namespace DiFfRG
        * @param F_i the resulting flux function \f$F_i\f$, with \f$N_f\f$ components.
        * This method should fill this argument with the desired structure of the flow equation.
        * @param x a d-dimensional dealii::Point<dim> representing field coordinates.
-       * @param sol a `std::tuple<...>` which contains
-       * 1. the array u_j
-       * 2. the array of arrays \f$\partial_x u_j\f$
-       * 3. the array of arrays of arrays \f$\partial_x^2 u_j\f$ (CG/dDG only)
-       * 4. the array of extractors \f$e_b\f$
-       * 5. the array of variables \f$v_a\f$
+       * @param sol a named tuple; which entries it carries depends on the assembler, see source().
        *
        * @note The extractors are those of the last extract() call, i.e. of the state the assembler is
        * currently linearising about, and they are plain numbers rather than AD types. Their dependence
@@ -225,9 +220,10 @@ namespace DiFfRG
        * This method should fill this argument with the desired structure of the flow equation.
        * @param x a d-dimensional dealii::Point<dim> representing field coordinates.
        * @param sol a named tuple; which entries it carries depends on the assembler:
-       * - CG and dDG: `"fe_functions"` \f$u_j\f$, `"fe_derivatives"` \f$\partial_x u_j\f$,
-       *   `"fe_hessians"` \f$\partial_x^2 u_j\f$, `"extractors"` \f$e_b\f$, `"variables"` \f$v_a\f$
-       * - DG: `"fe_functions"`, `"extractors"`, `"variables"`
+       * - CG and DG: `"fe_functions"` \f$u_j\f$, `"fe_derivatives"` \f$\partial_x u_j\f$,
+       *   `"fe_hessians"` \f$\partial_x^2 u_j\f$, `"extractors"` \f$e_b\f$, `"variables"` \f$v_a\f$; no
+       *   hessians (derivatives) if the model declares `batch_reads_hessians` (`batch_reads_derivatives`) false
+       * - LDG main level: `"fe_functions"`, `"LDG1"`, ..., `"extractors"`, `"variables"`
        * - KT-FV: `"fe_functions"`, `"fe_derivatives"`, `"extractors"`, `"variables"` -- no hessians, and
        *   the derivatives are the scheme's reconstructed cell gradient
        *
@@ -242,7 +238,7 @@ namespace DiFfRG
 
       /**
        * @brief The flux, source and/or diffusion flux at all points of a batch at once. Every assembler evaluates
-       * the model through this (CG, DG, dDG, the main level of LDG, and the face traces and cells of KT); see
+       * the model through this (CG, DG, the main level of LDG, and the face traces and cells of KT); see
        * Tutorial 6.
        *
        * The assembler requests only the terms it uses (`out.requested(Term::flux)` etc.): fluxes at faces, flux
@@ -264,11 +260,11 @@ namespace DiFfRG
        * `coordinates(d)` (each a PointSpan, directly usable as a per-point argument of map_points()), plus
        * `extractors()`, `variables()`, `size()`, `x(i)` and `cell_width(i)`. Which inputs exist depends on the
        * assembler and is known at compile time (`Batch::has_derivatives`, `Batch::has_hessians`; reading an
-       * absent one does not compile): DG has values only, LDG has values and `ldg_values(k, c)` for component c
+       * absent one does not compile): LDG has values and `ldg_values(k, c)` for component c
        * of level k, KT's diffusion traces add `third_derivatives(c, d0, d1, d2)` (`Batch::with_third`).
        *
        * @note Set `static constexpr bool batch_reads_hessians = false` (or `batch_reads_derivatives`) in the model
-       * when no term reads them: CG and dDG then skip gathering them, and the AD jacobians skip their seeds.
+       * when no term reads them: CG and DG then skip gathering them, and the AD jacobians skip their seeds.
        */
       template <typename Out, typename Batch> void evaluate_batch(Out &out, const Batch &batch) const
       {

@@ -4,7 +4,7 @@ using namespace DiFfRG;
 #include "model_batched.hh"
 
 /**
- * CG.cc / dDG.cc / LDG.cc / KT.cc with a batched flux. /batched/assembler is cg, ddg, ldg or kt (the latter with
+ * CG.cc / DG.cc / LDG.cc / KT.cc with a batched flux. /batched/assembler is cg, dg, ldg or kt (the latter with
  * parameter_KT.toml); /batched/backend selects how the model evaluates the flux:
  *   per_point -- per-point flux with the TBB integrator (AbstractModel's default evaluate_batch)
  *   tbb       -- one map_points call with the TBB integrator
@@ -69,7 +69,7 @@ int main(int argc, char *argv[])
     using KTD = FV::Discretization<MK, RectangularMesh<MK::dim>>;
     using KTA = FV::KurganovTadmor::Assembler<KTD, MK, def::TVDReconstructor<1, def::MinModLimiter, double>>;
     if (assembler == "cg") return run<M, CGD, CG::Assembler<CGD>>(config);
-    if (assembler == "ddg") return run<M, DGD, dDG::Assembler<DGD>>(config);
+    if (assembler == "dg") return run<M, DGD, DG::Assembler<DGD>>(config);
     if (assembler == "ldg") return run<ML, LDGD, LDG::Assembler<LDGD>>(config);
     if (assembler == "kt") return run<MK, KTD, KTA>(config);
     std::cerr << "Unknown /batched/assembler: " << assembler << std::endl;

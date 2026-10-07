@@ -3,7 +3,6 @@
 // standard library
 #include <functional>
 #include <memory>
-#include <numeric>
 #include <sstream>
 
 // external libraries
@@ -24,8 +23,7 @@
 
 // DiFfRG
 #include <DiFfRG/common/utils.hh>
-#include <DiFfRG/discretization/common/abstract_assembler.hh>
-#include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
+#include <DiFfRG/discretization/common/assembler_core.hh>
 #include <DiFfRG/discretization/common/batched_scatter.hh>
 #include <DiFfRG/discretization/common/cell_geometry.hh>
 #include <DiFfRG/discretization/common/eom.hh>
@@ -42,201 +40,6 @@ namespace DiFfRG
   {
     using namespace dealii;
     using std::array, std::vector, std::unique_ptr;
-
-    template <typename Discretization_, typename Model_>
-    class LDGAssemblerBase : public AbstractAssembler<typename Discretization_::VectorType,
-                                                      typename Discretization_::SparseMatrixType, Discretization_::dim>
-    {
-    public:
-      using Discretization = Discretization_;
-      using Model = Model_;
-      using NumberType = typename Discretization::NumberType;
-      using VectorType = typename Discretization::VectorType;
-      using SparseMatrixType = typename Discretization::SparseMatrixType;
-
-      using Components = typename Discretization::Components;
-      static constexpr uint dim = Discretization::dim;
-      LDGAssemblerBase(Discretization &discretization, Model &model, const ConfigTree &config)
-          : discretization(discretization), model(model), fe(discretization.get_fe()),
-            dof_handler(discretization.get_dof_handler()), mapping(discretization.get_mapping()),
-            EoM_cell(*(dof_handler.active_cell_iterators().end())),
-            old_EoM_cell(*(dof_handler.active_cell_iterators().end())),
-            old_extractor_cell(*(dof_handler.active_cell_iterators().end())),
-            EoM_config(DiFfRG::internal::resolve_eom_config(dof_handler, Config::EoMConfig(config)))
-      {
-      }
-
-      virtual IndexSet get_differential_indices() const override
-      {
-        ComponentMask component_mask(model.template differential_components<dim>());
-        return DoFTools::extract_dofs(dof_handler, component_mask);
-      }
-
-      /**
-       * @brief Per-dof absolute tolerances from Model::abs_tolerances, evaluated at each dof's support point on
-       * the FE solution (values, gradients, hessians of the primary FE functions; not the LDG auxiliaries).
-       * @see AbstractAssembler::local_abs_tolerances. Serial vectors only.
-       */
-      virtual bool local_abs_tolerances(VectorType &atol, const VectorType &solution, double abs_tol,
-                                        double rel_tol) const override
-      {
-        constexpr uint n = Components::count_fe_functions(0);
-        using Values = std::array<NumberType, n>;
-        using Gradients = std::array<Tensor<1, dim, NumberType>, n>;
-        using Hessians = std::array<Tensor<2, dim, NumberType>, n>;
-        using Solution = named_tuple<std::tuple<Values &, Gradients &, Hessians &>,
-                                     StringSet<"fe_functions", "fe_derivatives", "fe_hessians">>;
-        if constexpr (!def::HasAbsTolerances<Model, dim, Solution, n> ||
-                      !std::is_same_v<VectorType, dealii::Vector<NumberType>>)
-          return false;
-        else {
-          atol.reinit(dof_handler.n_dofs());
-          const dealii::Quadrature<dim> support(fe.get_unit_support_points());
-          FEValues<dim> fe_v(mapping, fe, support,
-                             update_values | update_gradients | update_hessians | update_quadrature_points);
-          std::vector<Vector<NumberType>> vals(support.size(), Vector<NumberType>(n));
-          std::vector<std::vector<Tensor<1, dim, NumberType>>> grads(support.size(),
-                                                                     std::vector<Tensor<1, dim, NumberType>>(n));
-          std::vector<std::vector<Tensor<2, dim, NumberType>>> hess(support.size(),
-                                                                    std::vector<Tensor<2, dim, NumberType>>(n));
-          std::vector<types::global_dof_index> dofs(fe.n_dofs_per_cell());
-          Values v{};
-          Gradients g{};
-          Hessians h{};
-          std::array<double, n> point_atol{};
-          for (const auto &cell : dof_handler.active_cell_iterators()) {
-            if (!cell->is_locally_owned()) continue;
-            fe_v.reinit(cell);
-            fe_v.get_function_values(solution, vals);
-            fe_v.get_function_gradients(solution, grads);
-            fe_v.get_function_hessians(solution, hess);
-            cell->get_dof_indices(dofs);
-            // the quadrature is the list of dof support points, so point q belongs to dof q
-            for (uint q = 0; q < support.size(); ++q) {
-              for (uint c = 0; c < n; ++c) {
-                v[c] = vals[q][c];
-                g[c] = grads[q][c];
-                h[c] = hess[q][c];
-              }
-              point_atol.fill(abs_tol);
-              model.abs_tolerances(point_atol, fe_v.quadrature_point(q), Solution(std::tie(v, g, h)), abs_tol, rel_tol);
-              atol[dofs[q]] = point_atol[fe.system_to_component_index(q).first];
-            }
-          }
-          return true;
-        }
-      }
-
-      const auto &get_discretization() const { return discretization; }
-      auto &get_discretization() { return discretization; }
-
-      virtual SnapshotSpatialState capture_snapshot_state(const VectorType &spatial_replica) const override
-      {
-        return DiFfRG::internal::capture_cellwise_state(dof_handler, spatial_replica);
-      }
-
-      virtual void restore_snapshot_state(const SnapshotSpatialState &state, VectorType &spatial) override
-      {
-        DiFfRG::internal::restore_spatial_state(state, discretization, *this, spatial);
-      }
-
-      virtual void save_model_state(ModelState &state) const override
-      {
-        DiFfRG::internal::save_model_state(model, state);
-      }
-
-      virtual bool load_model_state(const ModelState &state) override
-      {
-        return DiFfRG::internal::load_model_state(model, state);
-      }
-
-      virtual void reinit() override
-      {
-        const auto metadata = DiFfRG::internal::build_affine_constraint_metadata<Components, dim>(discretization);
-        const AffineConstraintContext<Components, dim> context(metadata);
-
-        auto &constraints = discretization.get_constraints();
-        constraints.clear();
-        DoFTools::make_hanging_node_constraints(dof_handler, constraints);
-        DiFfRG::internal::apply_model_affine_constraints(model, constraints, context);
-        constraints.close();
-      }
-
-      virtual void rebuild_jacobian_sparsity() = 0;
-
-      virtual void set_time(double t) override { model.set_time(t); }
-
-      virtual void refinement_indicator(Vector<double> & /*indicator*/, const VectorType & /*solution*/) = 0;
-
-      double average_time_variable_residual_assembly()
-      {
-        double t = 0.;
-        double n = timings_variable_residual.size();
-        for (const auto &t_ : timings_variable_residual)
-          t += t_ / n;
-        return t;
-      }
-      uint num_variable_residuals() const { return timings_variable_residual.size(); }
-
-      double average_time_variable_jacobian_assembly()
-      {
-        double t = 0.;
-        double n = timings_variable_jacobian.size();
-        for (const auto &t_ : timings_variable_jacobian)
-          t += t_ / n;
-        return t;
-      }
-      uint num_variable_jacobians() const { return timings_variable_jacobian.size(); }
-
-    protected:
-      Discretization &discretization;
-      Model &model;
-      const FiniteElement<dim> &fe;
-      const DoFHandler<dim> &dof_handler;
-      const Mapping<dim> &mapping;
-
-      /// @see FEMAssembler::extractor_raw_potential
-      auto extractor_raw_potential(const VectorType &solution_global) const
-      {
-        if constexpr (Model::extract_uses_potential)
-          return reconstruct_raw_potential(
-              solution_global, dof_handler, mapping,
-              [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config,
-              &potential_cache);
-        else
-          return UnusedPotential{};
-      }
-
-      /// @see FEMAssembler::resolve_extractor_point
-      std::pair<Point<dim>, typename DoFHandler<dim>::cell_iterator>
-      resolve_extractor_point(const Point<dim> &EoM_point, const typename DoFHandler<dim>::cell_iterator &EoM_cell_,
-                              [[maybe_unused]] const VectorType &solution_global) const
-      {
-        if constexpr (HasExtractorPoint<Model, dim, NumberType>) {
-          const auto sample = make_solution_sample(solution_global, dof_handler, mapping);
-          const auto point = model.template extractor_point<dim, NumberType>(EoM_point, sample);
-          if (point == EoM_point) return {EoM_point, EoM_cell_};
-          return {point, GridTools::find_active_cell_around_point(dof_handler, point)};
-        } else
-          return {EoM_point, EoM_cell_};
-      }
-
-      mutable typename DoFHandler<dim>::cell_iterator EoM_cell;
-      typename DoFHandler<dim>::cell_iterator old_EoM_cell;
-      /// @see FEMAssembler::old_extractor_cell
-      typename DoFHandler<dim>::cell_iterator old_extractor_cell;
-      const Config::EoMConfig EoM_config;
-      mutable Point<dim> EoM;
-      mutable std::optional<Point<dim>> EoM_minimum_guess;
-      /// @see FEMAssembler::potential_cache
-      mutable DiFfRG::internal::PotentialSystemCache<dim, NumberType> potential_cache;
-      FullMatrix<NumberType> extractor_jacobian;
-      FullMatrix<NumberType> extractor_jacobian_u;
-      std::vector<types::global_dof_index> extractor_dof_indices;
-
-      std::vector<double> timings_variable_residual;
-      std::vector<double> timings_variable_jacobian;
-    };
 
     /**
      * @brief The LDG assembler: the FE functions (level 0) plus up to three LDG levels, level k built from
@@ -258,9 +61,11 @@ namespace DiFfRG
      */
     template <typename Discretization_,
               typename Model_ = typename DiFfRG::internal::assembler_model_of<Discretization_>::type>
-    class Assembler : public LDGAssemblerBase<Discretization_, Model_>
+    class Assembler
+        : public DiFfRG::internal::AssemblerCore<Assembler<Discretization_, Model_>, Discretization_, Model_>
     {
-      using Base = LDGAssemblerBase<Discretization_, Model_>;
+      using Base = DiFfRG::internal::AssemblerCore<Assembler<Discretization_, Model_>, Discretization_, Model_>;
+      friend Base;
 
     public:
       using Discretization = Discretization_;
@@ -319,11 +124,11 @@ namespace DiFfRG
 
     public:
       Assembler(Discretization &discretization, Model &model, const ConfigTree &config)
-          : Base(discretization, model, config),
+          : Base(discretization, model, config, "LDG"),
             quadrature(fe.degree + 1 + config.get_uint("/discretization/overintegration", 0)),
             quadrature_face(fe.degree + 1 + config.get_uint("/discretization/overintegration", 0)),
             dof_handler_list(discretization.get_dof_handler_list()),
-            max_stacked_points(config.get_uint("/discretization/batched/max_stacked_points", default_stacked_points()))
+            max_stacked_points(Base::read_max_stacked_points(config, stacked_point_bytes, Base::fem_stacked_budget))
       {
         static_assert(Components::count_fe_subsystems() > 1, "LDG must have a submodel with index 1.");
         reinit();
@@ -332,42 +137,71 @@ namespace DiFfRG
       virtual void reinit_vector(VectorType &vec) const override { vec.reinit(dof_handler.n_dofs()); }
       // LDG stays on the serial policy (see LDG::Discretization for why), so this is the plain
       // pattern-based reinit rather than a policy call.
-      virtual void reinit_matrix(SparseMatrixType &matrix) const override
+      virtual void reinit_matrix(SparseMatrixType &matrix) const override { matrix.reinit(sparsity_pattern_jacobian); }
+      /**
+       * @brief Per-dof absolute tolerances from Model::abs_tolerances, evaluated at each dof's support point on
+       * the FE solution (values, gradients, hessians of the primary FE functions; not the LDG auxiliaries).
+       * @see AbstractAssembler::local_abs_tolerances. Serial vectors only.
+       */
+      virtual bool local_abs_tolerances(VectorType &atol, const VectorType &solution, double abs_tol,
+                                        double rel_tol) const override
       {
-        matrix.reinit(get_sparsity_pattern_jacobian());
-      }
-      virtual MPI_Comm get_communicator() const override { return discretization.get_communicator(); }
-      virtual void reinit_solution_view(SolutionView<VectorType> &view) const override
-      {
-        view.reinit(discretization.get_locally_owned_dofs(), discretization.get_locally_relevant_dofs(),
-                    discretization.get_communicator());
+        constexpr uint n = Components::count_fe_functions(0);
+        using Values = std::array<NumberType, n>;
+        using Gradients = std::array<Tensor<1, dim, NumberType>, n>;
+        using Hessians = std::array<Tensor<2, dim, NumberType>, n>;
+        using Solution = named_tuple<std::tuple<Values &, Gradients &, Hessians &>,
+                                     StringSet<"fe_functions", "fe_derivatives", "fe_hessians">>;
+        if constexpr (!def::HasAbsTolerances<Model, dim, Solution, n> ||
+                      !std::is_same_v<VectorType, dealii::Vector<NumberType>>)
+          return false;
+        else {
+          atol.reinit(dof_handler.n_dofs());
+          const dealii::Quadrature<dim> support(fe.get_unit_support_points());
+          FEValues<dim> fe_v(mapping, fe, support,
+                             update_values | update_gradients | update_hessians | update_quadrature_points);
+          std::vector<Vector<NumberType>> vals(support.size(), Vector<NumberType>(n));
+          std::vector<std::vector<Tensor<1, dim, NumberType>>> grads(support.size(),
+                                                                     std::vector<Tensor<1, dim, NumberType>>(n));
+          std::vector<std::vector<Tensor<2, dim, NumberType>>> hess(support.size(),
+                                                                    std::vector<Tensor<2, dim, NumberType>>(n));
+          std::vector<types::global_dof_index> dofs(fe.n_dofs_per_cell());
+          Values v{};
+          Gradients g{};
+          Hessians h{};
+          std::array<double, n> point_atol{};
+          for (const auto &cell : dof_handler.active_cell_iterators()) {
+            if (!cell->is_locally_owned()) continue;
+            fe_v.reinit(cell);
+            fe_v.get_function_values(solution, vals);
+            fe_v.get_function_gradients(solution, grads);
+            fe_v.get_function_hessians(solution, hess);
+            cell->get_dof_indices(dofs);
+            // the quadrature is the list of dof support points, so point q belongs to dof q
+            for (uint q = 0; q < support.size(); ++q) {
+              for (uint c = 0; c < n; ++c) {
+                v[c] = vals[q][c];
+                g[c] = grads[q][c];
+                h[c] = hess[q][c];
+              }
+              point_atol.fill(abs_tol);
+              model.abs_tolerances(point_atol, fe_v.quadrature_point(q), Solution(std::tie(v, g, h)), abs_tol, rel_tol);
+              atol[dofs[q]] = point_atol[fe.system_to_component_index(q).first];
+            }
+          }
+          return true;
+        }
       }
 
-      /**
-       * @brief Attach all intermediate (ldg) vectors to the data output
-       *
-       * @param data_out The scoped output frame
-       * @param sol The current global solution
-       */
+      using Base::attach_data_output;
+      /// The FE functions, the readouts and every LDG level.
       virtual void attach_data_output(OutputFrame<dim, VectorType> &data_out, const VectorType &solution,
                                       const VectorType &variables, const VectorType &dt_solution = VectorType(),
                                       const VectorType &residual = VectorType()) override
       {
-        rebuild_ldg_vectors(solution);
-        readouts(data_out, solution, variables);
-
-        const auto fe_function_names = Components::FEFunction_Descriptor::get_names_vector();
-        std::vector<std::string> fe_function_names_residual;
-        for (const auto &name : fe_function_names)
-          fe_function_names_residual.push_back(name + "_residual");
-        std::vector<std::string> fe_function_names_dot;
-        for (const auto &name : fe_function_names)
-          fe_function_names_dot.push_back(name + "_dot");
-
+        // The readouts in Base::attach_data_output build the levels attached below.
+        Base::attach_data_output(data_out, solution, variables, dt_solution, residual);
         auto fe_out = data_out.fields();
-        fe_out.attach(*dof_handler_list[0], solution, fe_function_names);
-        if (dt_solution.size() > 0) fe_out.attach(dof_handler, dt_solution, fe_function_names_dot);
-        if (residual.size() > 0) fe_out.attach(dof_handler, residual, fe_function_names_residual);
         for (uint k = 1; k < Components::count_fe_subsystems(); ++k) {
           sol_vector_vec_tmp[k] = sol_vector[k];
           fe_out.attach(*dof_handler_list[k], sol_vector_vec_tmp[k], "LDG" + std::to_string(k));
@@ -434,7 +268,7 @@ namespace DiFfRG
 
         Timer timer;
 
-        Base::reinit();
+        this->reinit_common();
 
         vector<std::thread> init_threads;
         for (uint i = 0; i < Components::count_fe_subsystems(); ++i)
@@ -450,7 +284,7 @@ namespace DiFfRG
         timings_reinit.push_back(timer.wall_time());
       }
 
-      virtual void rebuild_jacobian_sparsity() override
+      void rebuild_jacobian_sparsity()
       {
         build_ldg_sparsity(sparsity_pattern_jacobian, *(dof_handler_list[0]), *(dof_handler_list[0]), stencil, true);
         for (uint k = 1; k < Components::count_fe_subsystems(); ++k)
@@ -464,7 +298,7 @@ namespace DiFfRG
        * Each interior face is evaluated once; then every owned cell adds its own integral and its shares of its faces
        * into its own entry.
        */
-      virtual void refinement_indicator(Vector<double> &indicator, const VectorType &solution_global) override
+      void refinement_indicator(Vector<double> &indicator, const VectorType &solution_global)
       {
         constexpr uint n_sub = Components::count_fe_subsystems();
         struct IndicatorScratch {
@@ -544,12 +378,6 @@ namespace DiFfRG
           }
         });
       }
-
-      virtual const BlockSparsityPattern &get_sparsity_pattern_jacobian() const override
-      {
-        return sparsity_pattern_jacobian;
-      }
-      virtual const BlockSparseMatrix<NumberType> &get_mass_matrix() const override { return mass_matrix; }
 
       /**
        * @brief Construct the mass
@@ -634,9 +462,11 @@ namespace DiFfRG
                                  const VectorType &solution_global_dot, NumberType alpha = 1.,
                                  NumberType beta = 1.) override
       {
+        Timer timer;
         scatter_jacobian(jacobian, false, [&](const size_t, Scratch &s, LocalData &out) {
           add_mass_jacobian(s, out.blocks[0][0], solution_global, solution_global_dot, alpha, beta);
         });
+        timings_jacobian.push_back(timer.wall_time());
       }
 
       /**
@@ -654,9 +484,7 @@ namespace DiFfRG
         // Find the EoM and extract whatever data is needed for the model; extract() builds the LDG levels.
         Extractors extracted_data{{}};
         if constexpr (n_extr > 0) {
-          this->extract(extracted_data, solution_global, variables, true, true, true);
-          if (this->jacobian_extractors(this->extractor_jacobian, solution_global, variables))
-            jacobian.reinit(sparsity_pattern_jacobian);
+          if (this->extract_with_jacobian(extracted_data, solution_global, variables)) this->reinit_matrix(jacobian);
         } else
           rebuild_ldg_vectors(solution_global);
         // The levels are current now, so the jacobians built from them are, too.
@@ -739,28 +567,6 @@ namespace DiFfRG
         timings_jacobian.push_back(phase.finish());
       }
 
-      const PhaseTimes &residual_phase_times() const { return residual_times; }
-      const PhaseTimes &jacobian_phase_times() const { return jacobian_times; }
-      void reset_phase_times() { residual_times = jacobian_times = PhaseTimes{}; }
-
-      SummaryEvent summary() const override
-      {
-        SummaryEvent result{.component = "LDG"};
-        result.timing("reinit", average(timings_reinit) * 1000, timings_reinit.size())
-            .timing("residual", average(timings_residual) * 1000, timings_residual.size())
-            .timing("jac", average(timings_jacobian) * 1000, timings_jacobian.size());
-        if (jacobian_times.calls > 0)
-          result.timing("jac eval", jacobian_times.evaluate / jacobian_times.calls * 1000, jacobian_times.calls);
-        return result;
-      }
-
-      double average_time_reinit() const { return average(timings_reinit); }
-      uint num_reinits() const { return timings_reinit.size(); }
-      double average_time_residual_assembly() const { return average(timings_residual); }
-      uint num_residuals() const { return timings_residual.size(); }
-      double average_time_jacobian_assembly() const { return average(timings_jacobian); }
-      uint num_jacobians() const { return timings_jacobian.size(); }
-
     protected:
       using Base::discretization;
       using Base::dof_handler;
@@ -778,46 +584,35 @@ namespace DiFfRG
       mutable array<Vector<NumberType>, Components::count_fe_subsystems()> sol_vector_vec_tmp;
       mutable BlockVector<NumberType> sol_block; // FE solution in component blocks, for j_gu[k].vmult
 
-      BlockSparsityPattern sparsity_pattern_jacobian;
-      BlockSparsityPattern sparsity_pattern_mass;
       array<BlockSparsityPattern, Components::count_fe_subsystems()> sparsity_pattern_ug;
       array<BlockSparsityPattern, Components::count_fe_subsystems()> sparsity_pattern_gu;
       array<BlockSparsityPattern, Components::count_fe_subsystems()> sparsity_pattern_wg;
 
       array<BlockSparseMatrix<NumberType>, Components::count_fe_subsystems()> jacobian_tmp;
 
-      BlockSparseMatrix<NumberType> mass_matrix;
       SparseMatrix<NumberType> component_mass_matrix_inverse;
       array<BlockSparseMatrix<NumberType>, Components::count_fe_subsystems()> j_ug;
       mutable array<BlockSparseMatrix<NumberType>, Components::count_fe_subsystems()> j_gu;
       mutable array<BlockSparseMatrix<NumberType>, Components::count_fe_subsystems()> j_wg;
       mutable array<BlockSparseMatrix<NumberType>, Components::count_fe_subsystems()> j_wg_tmp;
 
-      std::vector<double> timings_reinit;
-      std::vector<double> timings_residual;
-      std::vector<double> timings_jacobian;
-
       /// Whether j_gu[k] has been built; it is rebuilt on every jacobian unless the model declares level k's
       /// jacobian constant.
       mutable array<bool, Components::count_fe_subsystems()> ldg_matrix_built{};
 
-      using Base::EoM_config;
       using Base::extractor_dof_indices;
+      using Base::jacobian_times;
+      using Base::mass_matrix;
+      using Base::residual_times;
+      using Base::sparsity_pattern_jacobian;
+      using Base::sparsity_pattern_mass;
+      using Base::timings_jacobian;
+      using Base::timings_reinit;
+      using Base::timings_residual;
 
     private:
-      static double average(const std::vector<double> &t)
-      {
-        return t.empty() ? 0. : std::accumulate(t.begin(), t.end(), 0.) / t.size();
-      }
-
-      /// About 256 MB of AD inputs and outputs per seed-stacked evaluation.
-      /// Unlike KT, the FEM assemblers stack whole seed directions, never part of the points, so a smaller budget does
-      /// not keep the batch in cache; fewer, larger evaluations are faster.
-      static uint default_stacked_points()
-      {
-        constexpr size_t per_point = sizeof(autodiff::real) * (n_all + n_fe * (1 + dim) + dim);
-        return std::max<size_t>(1, (size_t(256) << 20) / per_point);
-      }
+      /// AD inputs and outputs of one point of a seed-stacked evaluation; see Base::fem_stacked_budget.
+      static constexpr size_t stacked_point_bytes = sizeof(autodiff::real) * (n_all + n_fe * (1 + dim) + dim);
 
       template <typename Js> static void require_finite(const Js &J)
       {
@@ -1573,7 +1368,7 @@ namespace DiFfRG
         });
       }
 
-      const uint max_stacked_points;
+      const size_t max_stacked_points;
       uint n_q = 0, n_q_face = 0;
       /// The owned cells, numbered alike on every level; colored by the constraints of their level.
       array<DiFfRG::internal::ColoredCells<dim>, n_levels> cells;
@@ -1592,19 +1387,14 @@ namespace DiFfRG
       SeedStackWorkspace<MainBatch, n_fe> cell_workspace, boundary_workspace;
       SeedStackWorkspace<MainBatch, n_fe, 2> face_workspace;
 
-      PhaseTimes residual_times, jacobian_times;
+      // The point evaluation of the extractors and readouts; see DiFfRG::internal::AssemblerCore.
+      /// The extractors see the levels in the tuple slots of the derivatives.
+      static constexpr bool extractors_see_derivatives = false;
 
-    protected:
-      constexpr static int nothing = 0;
-      using Base::EoM;
-      using Base::EoM_cell;
-      using Base::EoM_minimum_guess;
-      using Base::extractor_jacobian_u;
-      using Base::old_EoM_cell;
-      using Base::old_extractor_cell;
+      void prepare_point_evaluation(const VectorType &solution) const { rebuild_ldg_vectors(solution); }
 
       /// The LDG solution across all subsystems, its gradients and hessians, and the raw potential,
-      /// all at one point. Built by evaluate_at() and consumed by readouts/extract/jacobian_extractors.
+      /// all at one point. Built by evaluate_at().
       template <typename PotentialEvaluation = RawPotentialEvaluation<dim, NumberType>> struct PointEvaluation {
         std::vector<Vector<NumberType>> solutions;
         std::vector<std::vector<Tensor<1, dim, NumberType>>> gradients{
@@ -1656,178 +1446,13 @@ namespace DiFfRG
         return evaluation;
       }
 
-      void readouts(OutputFrame<dim, VectorType> &data_out, const VectorType &solution_global,
-                    const VectorType &variables) const
+      template <typename Evaluation, typename Extractors_>
+      auto solution_tie(const Evaluation &e, const Extractors_ &extractors, const VectorType &variables) const
       {
-        auto raw_potential = reconstruct_raw_potential(
-            solution_global, dof_handler, mapping,
-            [&](const auto &p, const auto &values) { return model.raw_potential_gradient(p, values); }, EoM_config,
-            &this->potential_cache);
-        auto helper = [&](auto &&...args) {
-          if constexpr (sizeof...(args) == 3) {
-            auto &&[id, EoMfun, outputter] = std::forward_as_tuple(std::forward<decltype(args)>(args)...);
-            data_out.register_readout(id);
-            auto EoM_cell = this->EoM_cell;
-            auto EoM_result = get_EoM_point_with_potential(
-                EoM_cell, solution_global, this->dof_handler, this->mapping, EoMfun,
-                [&](const auto &p, const auto &) { return p; }, this->EoM_config, this->EoM_minimum_guess,
-                &this->potential_cache);
-            if (EoM_result.potential) this->EoM_minimum_guess = EoM_result.potential->minimum;
-            const auto EoM = EoM_result.point;
-
-            // GCC 16 does not find dependent-base members from inside this variadic lambda; keep `this->`.
-            const auto readout_solution = this->evaluate_at(EoM, EoM_cell, solution_global, raw_potential);
-            const auto &potential = readout_solution.potential;
-
-            // The readout is always at this readout's EoM. The extractors may not be: a model that
-            // defines extractor_point reads them elsewhere, and dt_variables must see the same
-            // values here as it does during assembly.
-            std::array<NumberType, Components::count_extractors()> __extracted_data{{}};
-            if constexpr (Components::count_extractors() > 0) {
-              const auto [x, cell] = this->resolve_extractor_point(EoM, EoM_cell, solution_global);
-              const auto evaluation = this->evaluate_at(x, cell, solution_global, raw_potential);
-              auto extractor_tuple =
-                  std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(evaluation.solutions),
-                                 std::tie(evaluation.gradients[0], evaluation.hessians[0], this->nothing, variables,
-                                          evaluation.potential.value, evaluation.potential.gradient,
-                                          evaluation.potential.mass_hessian));
-              this->model.extract(__extracted_data, x, fe_more_conv(extractor_tuple));
-            }
-            const auto &extracted_data = __extracted_data;
-
-            auto solution_tuple =
-                std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(readout_solution.solutions),
-                               std::tie(readout_solution.gradients[0], readout_solution.hessians[0], extracted_data,
-                                        variables, potential.value, potential.gradient, potential.mass_hessian));
-
-            outputter(data_out, EoM, fe_more_conv(solution_tuple));
-            data_out.attach_eom_potential(std::move(EoM_result));
-          } else {
-            DiFfRG::internal::validate_readout_helper_arity<decltype(args)...>();
-          }
-        };
-        model.readouts_multiple(helper, data_out);
-        data_out.attach_raw_potential(std::move(raw_potential));
-      }
-
-      void extract(std::array<NumberType, Components::count_extractors()> &data, const VectorType &solution_global,
-                   const VectorType &variables, bool search_EoM, bool set_EoM, bool postprocess) const
-      {
-        auto EoM = this->EoM;
-        auto EoM_cell = this->EoM_cell;
-        if (search_EoM || EoM_cell == *(dof_handler.active_cell_iterators().end())) {
-          auto EoM_result = get_EoM_point_with_potential(
-              EoM_cell, solution_global, dof_handler, mapping,
-              [&](const auto &p, const auto &values) { return model.EoM(p, values); },
-              [&](const auto &p, const auto &values) { return postprocess ? model.EoM_postprocess(p, values) : p; },
-              EoM_config, EoM_minimum_guess, &this->potential_cache);
-          EoM = EoM_result.point;
-          if (EoM_result.potential) EoM_minimum_guess = EoM_result.potential->minimum;
-        }
-        if (set_EoM) {
-          this->EoM = EoM;
-          this->EoM_cell = EoM_cell;
-        }
-        rebuild_ldg_vectors(solution_global);
-
-        const auto raw_potential = this->extractor_raw_potential(solution_global);
-
-        const auto [x, cell] = this->resolve_extractor_point(EoM, EoM_cell, solution_global);
-        const auto evaluation = evaluate_at(x, cell, solution_global, raw_potential);
-
-        auto solution_tuple = std::tuple_cat(
-            vector_to_tuple<Components::count_fe_subsystems()>(evaluation.solutions),
-            std::tie(evaluation.gradients[0], evaluation.hessians[0], this->nothing, variables,
-                     evaluation.potential.value, evaluation.potential.gradient, evaluation.potential.mass_hessian));
-
-        model.extract(data, x, fe_more_conv(solution_tuple));
-      }
-
-      bool jacobian_extractors(FullMatrix<NumberType> &extractor_jacobian, const VectorType &solution_global,
-                               const VectorType &variables)
-      {
-        if (extractor_jacobian_u.m() != Components::count_extractors() ||
-            extractor_jacobian_u.n() != Components::count_fe_functions())
-          extractor_jacobian_u =
-              FullMatrix<NumberType>(Components::count_extractors(), Components::count_fe_functions());
-
-        auto EoM_result = get_EoM_point_with_potential(
-            EoM_cell, solution_global, dof_handler, mapping,
-            [&](const auto &p, const auto &values) { return model.EoM(p, values); },
-            [&](const auto &p, const auto &values) { return model.EoM_postprocess(p, values); }, EoM_config,
-            EoM_minimum_guess, &this->potential_cache);
-        EoM = EoM_result.point;
-        if (EoM_result.potential) EoM_minimum_guess = EoM_result.potential->minimum;
-        const auto raw_potential = this->extractor_raw_potential(solution_global);
-
-        // The extractor jacobian couples to the dofs of the cell the extractors are actually
-        // evaluated in, which is the extractor point's cell, not the EoM's.
-        const auto [x, cell] = this->resolve_extractor_point(EoM, EoM_cell, solution_global);
-        bool new_cell = (old_extractor_cell != cell);
-        old_EoM_cell = EoM_cell;
-        old_extractor_cell = cell;
-
-        const auto evaluation = evaluate_at(x, cell, solution_global, raw_potential);
-        const auto &fe_v = *evaluation.fe_values;
-        const uint n_dofs = fe_v.get_fe().n_dofs_per_cell();
-        if (new_cell) {
-          extractor_dof_indices.resize(n_dofs);
-          cell->get_dof_indices(extractor_dof_indices);
-          rebuild_jacobian_sparsity();
-        }
-
-        auto solution_tuple = std::tuple_cat(
-            vector_to_tuple<Components::count_fe_subsystems()>(evaluation.solutions),
-            std::tie(evaluation.gradients[0], evaluation.hessians[0], this->nothing, variables,
-                     evaluation.potential.value, evaluation.potential.gradient, evaluation.potential.mass_hessian));
-
-        extractor_jacobian_u = 0;
-        model.template jacobian_extractors<0>(extractor_jacobian_u, x, fe_more_conv(solution_tuple));
-
-        if (extractor_jacobian.m() != Components::count_extractors() || extractor_jacobian.n() != n_dofs)
-          extractor_jacobian = FullMatrix<NumberType>(Components::count_extractors(), n_dofs);
-
-        for (uint e = 0; e < Components::count_extractors(); ++e)
-          for (uint i = 0; i < n_dofs; ++i) {
-            const auto component_i = fe_v.get_fe().system_to_component_index(i).first;
-            extractor_jacobian(e, i) =
-                extractor_jacobian_u(e, component_i) * fe_v.shape_value_component(i, 0, component_i);
-          }
-
-        return new_cell;
-      }
-
-      using Base::timings_variable_jacobian;
-      using Base::timings_variable_residual;
-      template <typename... T> static constexpr auto v_tie(T &&...t)
-      {
-        return named_tuple<std::tuple<T &...>, StringSet<"variables", "extractors">>(std::tie(t...));
-      }
-
-      virtual void residual_variables(VectorType &residual, const VectorType &variables,
-                                      const VectorType &spatial_solution) override
-      {
-        Timer timer;
-        std::array<NumberType, Components::count_extractors()> __extracted_data{{}};
-        if constexpr (Components::count_extractors() > 0)
-          extract(__extracted_data, spatial_solution, variables, true, false, false);
-        const auto &extracted_data = __extracted_data;
-        model.dt_variables(residual, v_tie(variables, extracted_data));
-        Kokkos::fence();
-        timings_variable_residual.push_back(timer.wall_time());
-      }
-
-      virtual void jacobian_variables(FullMatrix<NumberType> &jacobian, const VectorType &variables,
-                                      const VectorType &spatial_solution) override
-      {
-        Timer timer;
-        std::array<NumberType, Components::count_extractors()> __extracted_data{{}};
-        if constexpr (Components::count_extractors() > 0)
-          extract(__extracted_data, spatial_solution, variables, true, false, false);
-        const auto &extracted_data = __extracted_data;
-        model.template jacobian_variables<0>(jacobian, v_tie(variables, extracted_data));
-        Kokkos::fence();
-        timings_variable_jacobian.push_back(timer.wall_time());
+        auto t = std::tuple_cat(vector_to_tuple<Components::count_fe_subsystems()>(e.solutions),
+                                std::tie(e.gradients[0], e.hessians[0], extractors, variables, e.potential.value,
+                                         e.potential.gradient, e.potential.mass_hessian));
+        return fe_more_conv(t);
       }
     };
   } // namespace LDG

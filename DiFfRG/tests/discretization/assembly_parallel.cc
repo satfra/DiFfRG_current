@@ -366,15 +366,21 @@ TEST_CASE("DG residual is unchanged by distribution", "[discretization][dg][mpi]
                                               FE::FlowingVariables<ParallelDisc>>(model, make_json());
 }
 
-TEST_CASE("dDG residual is unchanged by distribution", "[discretization][ddg][mpi]")
+/// Burgers with derivatives and hessians in its batches, so the DG gather and scatter of those run distributed.
+template <uint dim> struct BurgersWithDerivatives : Testing::ModelBurgers<dim> {
+  using Testing::ModelBurgers<dim>::ModelBurgers;
+  static constexpr bool batch_reads_derivatives = true;
+};
+
+TEST_CASE("DG residual with derivatives is unchanged by distribution", "[discretization][dg][mpi]")
 {
   DiFfRG::Init();
   constexpr uint dim = 1;
-  using Model = Testing::ModelBurgers<dim>;
+  using Model = BurgersWithDerivatives<dim>;
   using SerialDisc = DG::Discretization<Model, RectangularMeshSerial<dim>>;
   using ParallelDisc = DG::Discretization<Model, ParallelMesh<dim>>;
   Model model(nontrivial_parameters());
-  require_distributed_residual_matches_serial<dDG::Assembler<SerialDisc>, SerialDisc, dDG::Assembler<ParallelDisc>,
+  require_distributed_residual_matches_serial<DG::Assembler<SerialDisc>, SerialDisc, DG::Assembler<ParallelDisc>,
                                               ParallelDisc, FE::FlowingVariables<SerialDisc>,
                                               FE::FlowingVariables<ParallelDisc>>(model, make_json());
 }

@@ -885,6 +885,15 @@ namespace DiFfRG
     template <typename Model> constexpr bool seeds_extractors = !std::is_base_of_v<def::FrozenExtractors, Model>;
 
     template <typename Batch> constexpr bool is_ldg_batch = requires { Batch::n_levels; };
+
+    /// Copy @p src, a jacobian block by the components of LDG level k, into the columns of level k of @p dst.
+    template <typename Batch, uint k, typename Dst, typename NT, uint n_rows, uint n_columns>
+    void copy_level_columns(Dst &dst, const SimpleMatrix<NT, n_rows, n_columns> &src)
+    {
+      for (uint r = 0; r < n_rows; ++r)
+        for (uint c = 0; c < n_columns; ++c)
+          dst(r, Batch::level_offset(k) + c) = src(r, c);
+    }
   } // namespace internal
 
   /**
@@ -914,11 +923,8 @@ namespace DiFfRG
             SimpleMatrix<dealii::Tensor<1, dim>, n_out, Model::Components::count_fe_functions(k)> jF{};
             SimpleMatrix<double, n_out, Model::Components::count_fe_functions(k)> jS{};
             model.template jacobian_flux_source<k, 0>(jF, jS, x, sol);
-            for (uint r = 0; r < n_out; ++r)
-              for (uint c = 0; c < Model::Components::count_fe_functions(k); ++c) {
-                Ji.j_flux(r, Batch::level_offset(k) + c) = jF(r, c);
-                Ji.j_source(r, Batch::level_offset(k) + c) = jS(r, c);
-              }
+            internal::copy_level_columns<Batch, k>(Ji.j_flux, jF);
+            internal::copy_level_columns<Batch, k>(Ji.j_source, jS);
           });
         } else {
           model.template jacobian_flux_source<0, 0>(Ji.j_flux, Ji.j_source, x, sol);
@@ -957,9 +963,7 @@ namespace DiFfRG
           constexpr_for<0, Batch::n_levels, 1>([&](auto k) {
             SimpleMatrix<dealii::Tensor<1, dim>, n_out, Model::Components::count_fe_functions(k)> jF{};
             model.template jacobian_boundary_numflux<k, 0>(jF, normals[i], x, sol);
-            for (uint r = 0; r < n_out; ++r)
-              for (uint c = 0; c < Model::Components::count_fe_functions(k); ++c)
-                Ji.j_flux(r, Batch::level_offset(k) + c) = jF(r, c);
+            internal::copy_level_columns<Batch, k>(Ji.j_flux, jF);
           });
         } else {
           model.template jacobian_boundary_numflux<0, 0>(Ji.j_flux, normals[i], x, sol);
@@ -1003,9 +1007,7 @@ namespace DiFfRG
                 std::array<SimpleMatrix<T1, n_out, Model::Components::count_fe_functions(k)>, 2> jF{};
                 model.template jacobian_numflux<k, 0>(jF, normals[i], x, sol_s, sol_n);
                 for (uint side = 0; side < 2; ++side)
-                  for (uint r = 0; r < n_out; ++r)
-                    for (uint c = 0; c < Model::Components::count_fe_functions(k); ++c)
-                      J[i][side].j_flux(r, Batch::level_offset(k) + c) = jF[side](r, c);
+                  internal::copy_level_columns<Batch, k>(J[i][side].j_flux, jF[side]);
               });
             } else {
               std::array<SimpleMatrix<T1, n_out, n_in>, 2> j_value;

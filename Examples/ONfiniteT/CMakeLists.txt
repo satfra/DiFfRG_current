@@ -20,8 +20,8 @@ target_link_libraries(LDG PRIVATE DiFfRG::DiFfRG ONFiniteTFlows)
 add_executable(CG CG.cc)
 target_link_libraries(CG PRIVATE DiFfRG::DiFfRG ONFiniteTFlows)
 
-add_executable(dDG dDG.cc)
-target_link_libraries(dDG PRIVATE DiFfRG::DiFfRG ONFiniteTFlows)
+add_executable(DG DG.cc)
+target_link_libraries(DG PRIVATE DiFfRG::DiFfRG ONFiniteTFlows)
 
 # ##############################################################################
 # Kurganov-Tadmor finite volume, in rho- and in sigma-coordinates
@@ -45,7 +45,7 @@ foreach(pfile parameter.toml parameter_batched.toml parameter_KT.toml parameter_
 endforeach()
 
 # ##############################################################################
-# Batched assembly pilot (flows_batched/, model_batched.hh) for CG, dDG, LDG and KT:
+# Batched assembly pilot (flows_batched/, model_batched.hh) for CG, DG, LDG and KT:
 # flow_batched runs a flow, bench_batched times single residual and jacobian calls.
 # ##############################################################################
 

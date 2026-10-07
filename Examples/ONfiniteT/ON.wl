@@ -152,14 +152,14 @@ MakeV[expr_,name_,parameters_]:=MakeKernel[SafeFiniteTFunctions[expr,T],
 	"IntegrationVariables"->{"l1"}
 ];
 
-MakeV[flowV,"V",kernelParameterList];                                    (*full flux: CG, dDG and LDG*)
+MakeV[flowV,"V",kernelParameterList];                                    (*full flux: CG, DG and LDG*)
 MakeV[flowVPion,"V_pion",kernelParameterList[[{1,2,3,4}]]];              (*single pion mode: KT advection flux*)
 MakeV[flowVSigma,"V_sigma",kernelParameterList[[{1,2,3,5}]]];            (*sigma loop: KT diffusion flux*)
 UpdateFlows["ONFiniteTFlows"]
 
 
 (* ::Text:: *)
-(*The batched assemblers evaluate the flux at all quadrature points in one map_points call. flows_batched holds the full flux for CG, dDG and LDG on the CPU (TBB) and on the GPU, in double and in single precision, and the two KT halves on the CPU and the GPU in double.*)
+(*The batched assemblers evaluate the flux at all quadrature points in one map_points call. flows_batched holds the full flux for CG, DG and LDG on the CPU (TBB) and on the GPU, in double and in single precision, and the two KT halves on the CPU and the GPU in double.*)
 
 
 (* ::Input::Initialization:: *)
