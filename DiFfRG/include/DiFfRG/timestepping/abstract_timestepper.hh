@@ -49,7 +49,7 @@ namespace DiFfRG
     double lap()
     {
       const auto now = std::chrono::high_resolution_clock::now();
-      const double ms = double(std::chrono::duration_cast<std::chrono::milliseconds>(now - mark).count());
+      const double ms = std::chrono::duration<double, std::milli>(now - mark).count();
       mark = now;
       return ms;
     }
@@ -134,6 +134,10 @@ namespace DiFfRG
    * - /timestepping/implicit/maximal_dt: The maximal timestep size for an implicit timestepping algorithm.
    * - /timestepping/implicit/abs_tol: The absolute tolerance for an implicit timestepping algorithm.
    * - /timestepping/implicit/rel_tol: The relative tolerance for an implicit timestepping algorithm.
+   * - /timestepping/implicit/local_tolerance_refresh: For models with per-dof absolute tolerances
+   *   (def::HasAbsTolerances), restart IDA with fresh tolerances once some dof needs one tighter by this factor
+   *   (default 4; <= 1 keeps the initial set).
+   * - /timestepping/implicit/iterative_refinement: Whether UMFPACK refines its direct solves (default true).
    * - /timestepping/implicit/max_steps: The maximal number of internal SUNDIALS steps between outputs.
    * - /timestepping/implicit/max_non_linear_iterations: The maximal number of nonlinear IDA iterations.
    * - /timestepping/implicit/jacobian_diagnostics: Whether the Jacobian diagnostics tables are written (default false).
@@ -222,6 +226,8 @@ namespace DiFfRG
         // Stuff you should really set
         impl.abs_tol = config.get_double_or_warn("/timestepping/implicit/abs_tol", 1e-13);
         impl.rel_tol = config.get_double_or_warn("/timestepping/implicit/rel_tol", 1e-7);
+        impl.local_tolerance_refresh = config.get_double("/timestepping/implicit/local_tolerance_refresh", 4.);
+        impl.iterative_refinement = config.get_bool("/timestepping/implicit/iterative_refinement", true);
 
         // Stuff you can set, but defaults are reasonable
         impl.dt = config.get_double("/timestepping/implicit/dt", 1e-4);
@@ -362,8 +368,8 @@ namespace DiFfRG
         const auto path = snapshot_file(data_out.path(), snapshot_count + i);
         if (!std::filesystem::exists(path)) continue;
         if (continues_own_run)
-          throw std::runtime_error("This run already continued past the snapshot it restarts from: '" +
-                                   path.string() + "' exists. Restart from the latest snapshot instead.");
+          throw std::runtime_error("This run already continued past the snapshot it restarts from: '" + path.string() +
+                                   "' exists. Restart from the latest snapshot instead.");
         throw std::runtime_error("The snapshot '" + path.string() +
                                  "' already exists; snapshots are never overwritten. Choose another /output/name or "
                                  "/output/folder, or remove the old snapshots.");
@@ -554,7 +560,6 @@ namespace DiFfRG
     const bool m_is_implicit;
     const bool m_is_explicit;
 
-
     double output_dt;
     struct ImplicitParameters {
       double dt;
@@ -562,6 +567,11 @@ namespace DiFfRG
       double maximal_dt;
       double abs_tol;
       double rel_tol;
+      double local_tolerance_refresh;
+      /** UMFPACK's iterative refinement of every direct solve (default true). Off halves the cost of a solve;
+       * inside IDA the Newton iteration corrects the solve's error anyway (2D O(2) KT flow, 80^2: 16.3 -> 12.8 s),
+       * but a badly scaled system then only gets ~1e-7 relative accuracy per solve. */
+      bool iterative_refinement;
       uint max_steps;
       uint max_non_linear_iterations;
       /** Enables the `<run>_jacobian_diagnostics.csv` tables. Off by default because the records

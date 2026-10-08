@@ -142,9 +142,10 @@ namespace DiFfRG
     if (NoMapsHere::active())
       MPI::abort(m_comm, "map() was called from inside a distributed FE assembly scope (integrator id " +
                              std::to_string(integrator_id) +
-                             "). map() is collective and must be issued identically on every rank, but a cell "
-                             "worker only visits this rank's cells. Move the map() out of the assembly loop -- "
-                             "compute it once before assembly and read the result inside.");
+                             "). map() is collective and must be issued identically on every rank, but the "
+                             "assembly only visits this rank's cells. Move the map() out of the model's flux, "
+                             "source or evaluate_batch -- compute it once before assembly (e.g. in extract()) and "
+                             "read the result inside, or use map_points(), which is rank-local.");
 
     if (!active() || grid_size == 0) return MapSlice{0, grid_size};
 
@@ -163,8 +164,7 @@ namespace DiFfRG
     const double quantum =
         m_quantum_override > 0.
             ? m_quantum_override
-            : (m_batched ? target.fill_threshold
-                         : std::min(target.fill_threshold, internal::launch_threshold));
+            : (m_batched ? target.fill_threshold : std::min(target.fill_threshold, internal::launch_threshold));
 
     size_t r = 1;
     if (splittable && grid_size > 1 && quantum > 0.) {
@@ -226,12 +226,11 @@ namespace DiFfRG
        << (m_quantum_override > 0. ? "quantum (override) " + std::to_string(m_quantum_override)
                                    : "quantum auto: device " + std::to_string(internal::device_fill_threshold()) +
                                          ", host " + std::to_string(internal::host_fill_threshold()))
-       << ", " << m_plan.size()
-       << " maps in this batch\n";
+       << ", " << m_plan.size() << " maps in this batch\n";
     for (size_t e = 0; e < m_plan.size(); ++e) {
       const auto &en = m_plan[e];
-      ss << "  map " << e << ": " << to_string(en.resource) << ", G=" << en.grid_size << " split "
-         << en.owners.size() << "x over ranks {";
+      ss << "  map " << e << ": " << to_string(en.resource) << ", G=" << en.grid_size << " split " << en.owners.size()
+         << "x over ranks {";
       for (size_t j = 0; j < en.owners.size(); ++j)
         ss << en.owners[j] << (j + 1 < en.owners.size() ? "," : "");
       ss << "}\n";
@@ -314,9 +313,8 @@ namespace DiFfRG
     m_counts.assign(m_n_ranks, 0);
     for (const auto &e : m_plan)
       for (size_t j = 0; j < e.owners.size(); ++j)
-        m_counts[e.owners[j]] +=
-            static_cast<int>((part(e.grid_size, e.owners.size(), j + 1) - part(e.grid_size, e.owners.size(), j)) *
-                             e.elem_size);
+        m_counts[e.owners[j]] += static_cast<int>(
+            (part(e.grid_size, e.owners.size(), j + 1) - part(e.grid_size, e.owners.size(), j)) * e.elem_size);
 
     m_displs.assign(m_n_ranks, 0);
     size_t total = 0;

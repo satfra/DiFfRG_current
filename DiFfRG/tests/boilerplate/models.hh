@@ -50,6 +50,8 @@ namespace DiFfRG
           public def::AD<ModelConstant<dim, components>>              // define all jacobians per AD
     {
     public:
+      // The flux and source read only the values: the batches skip derivatives and hessians.
+      static constexpr bool batch_reads_derivatives = false;
       const PhysicalParameters prm;
 
       ModelConstant(PhysicalParameters prm) : prm(prm) {}
@@ -121,6 +123,8 @@ namespace DiFfRG
       const PhysicalParameters prm;
 
     public:
+      // The flux and source read only the values: the batches skip derivatives and hessians.
+      static constexpr bool batch_reads_derivatives = false;
       ModelExp(PhysicalParameters prm) : prm(prm) {}
 
       template <typename Vector> void initial_condition(const Point<dim> &pos, Vector &values) const
@@ -154,6 +158,8 @@ namespace DiFfRG
       const PhysicalParameters prm;
 
     public:
+      // The flux and source read only the values: the batches skip derivatives and hessians.
+      static constexpr bool batch_reads_derivatives = false;
       ModelBurgers(PhysicalParameters prm) : prm(prm) {}
 
       template <typename Vector> void initial_condition(const Point<dim> &pos, Vector &values) const
@@ -164,8 +170,7 @@ namespace DiFfRG
       std::array<double, 1> solution(const Point<dim> &pos) const
       {
         // Explicit return type: see the note in ModelConstant::solution.
-        return std::array<double, 1>{(prm.initial_x0[0] + prm.initial_x1[0] * pos[0]) /
-                                     (prm.initial_x1[0] * t + 1.)};
+        return std::array<double, 1>{(prm.initial_x0[0] + prm.initial_x1[0] * pos[0]) / (prm.initial_x1[0] * t + 1.)};
       }
 
       template <typename NT, typename Solution>
@@ -207,6 +212,8 @@ namespace DiFfRG
           public def::AD<ModelHybridRollback<dim>> // define all jacobians per AD
     {
     public:
+      // The flux and source read only the values: the batches skip derivatives and hessians.
+      static constexpr bool batch_reads_derivatives = false;
       static constexpr double K = 30.;     // sharpness of the FEM transition
       static constexpr double t_mid = 0.5; // location of the FEM transition
       static constexpr double v0 = 1.;     // initial value of the explicit variable
@@ -286,6 +293,8 @@ namespace DiFfRG
           public def::AD<ModelHybridSmooth<dim>>
     {
     public:
+      // The flux and source read only the values: the batches skip derivatives and hessians.
+      static constexpr bool batch_reads_derivatives = false;
       static constexpr double K = 2.;
       static constexpr double u0 = 1.;
       static constexpr double v0 = 0.;
@@ -357,6 +366,8 @@ namespace DiFfRG
           public def::AD<ModelHybridTwoWay<dim>>
     {
     public:
+      // The flux and source read only the values: the batches skip derivatives and hessians.
+      static constexpr bool batch_reads_derivatives = false;
       static constexpr double K = 5.;
       static constexpr double u0 = 1.;
       static constexpr double v0 = 0.;
@@ -427,12 +438,14 @@ namespace DiFfRG
               ModelHybridWeakCoupling<dim>,
               ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>, VariableDescriptor<Scalar<"v">>,
                                   ExtractorDescriptor<Scalar<"u_eom">, Scalar<"v_eom">>>>,
-          public def::Time,                                  // this handles time
+          public def::Time, // this handles time
           public def::NoNumFlux<ModelHybridWeakCoupling<dim>>,
           public def::FlowBoundaries<ModelHybridWeakCoupling<dim>>,
           public def::AD<ModelHybridWeakCoupling<dim>>
     {
     public:
+      // The flux and source read only the values: the batches skip derivatives and hessians.
+      static constexpr bool batch_reads_derivatives = false;
       static constexpr double K = 5.;
       static constexpr double eps = 0.1; // weak dependence of the explicit variable on u
       static constexpr double u0 = 1.;

@@ -6,6 +6,7 @@
 #include <deal.II/base/tensor.h>
 
 // standard library
+#include <array>
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -14,6 +15,7 @@
 // DiFfRG
 #include <DiFfRG/discretization/common/affine_constraint_metadata.hh>
 #include <DiFfRG/discretization/common/solution_sample.hh>
+#include <DiFfRG/model/abs_tolerances.hh>
 #include <DiFfRG/model/ad.hh>
 #include <DiFfRG/model/component_descriptor.hh>
 #include <DiFfRG/model/fv_boundaries.hh>
@@ -154,12 +156,7 @@ namespace DiFfRG
        * @param F_i the resulting flux function \f$F_i\f$, with \f$N_f\f$ components.
        * This method should fill this argument with the desired structure of the flow equation.
        * @param x a d-dimensional dealii::Point<dim> representing field coordinates.
-       * @param sol a `std::tuple<...>` which contains
-       * 1. the array u_j
-       * 2. the array of arrays \f$\partial_x u_j\f$
-       * 3. the array of arrays of arrays \f$\partial_x^2 u_j\f$ (CG/dDG only)
-       * 4. the array of extractors \f$e_b\f$
-       * 5. the array of variables \f$v_a\f$
+       * @param sol a named tuple; which entries it carries depends on the assembler, see source().
        *
        * @note The extractors are those of the last extract() call, i.e. of the state the assembler is
        * currently linearising about, and they are plain numbers rather than AD types. Their dependence
@@ -223,9 +220,10 @@ namespace DiFfRG
        * This method should fill this argument with the desired structure of the flow equation.
        * @param x a d-dimensional dealii::Point<dim> representing field coordinates.
        * @param sol a named tuple; which entries it carries depends on the assembler:
-       * - CG and dDG: `"fe_functions"` \f$u_j\f$, `"fe_derivatives"` \f$\partial_x u_j\f$,
-       *   `"fe_hessians"` \f$\partial_x^2 u_j\f$, `"extractors"` \f$e_b\f$, `"variables"` \f$v_a\f$
-       * - DG: `"fe_functions"`, `"extractors"`, `"variables"`
+       * - CG and DG: `"fe_functions"` \f$u_j\f$, `"fe_derivatives"` \f$\partial_x u_j\f$,
+       *   `"fe_hessians"` \f$\partial_x^2 u_j\f$, `"extractors"` \f$e_b\f$, `"variables"` \f$v_a\f$; no
+       *   hessians (derivatives) if the model declares `batch_reads_hessians` (`batch_reads_derivatives`) false
+       * - LDG main level: `"fe_functions"`, `"LDG1"`, ..., `"extractors"`, `"variables"`
        * - KT-FV: `"fe_functions"`, `"fe_derivatives"`, `"extractors"`, `"variables"` -- no hessians, and
        *   the derivatives are the scheme's reconstructed cell gradient
        *
@@ -236,6 +234,41 @@ namespace DiFfRG
       void source([[maybe_unused]] std::array<NumberType, n_fe_functions> &s_i, [[maybe_unused]] const Point<dim> &x,
                   [[maybe_unused]] const Solutions &sol) const
       {
+      }
+
+      /**
+       * @brief The flux, source and/or diffusion flux at all points of a batch at once. Every assembler evaluates
+       * the model through this (CG, DG, the main level of LDG, and the face traces and cells of KT); see
+       * Tutorial 6.
+       *
+       * The assembler requests only the terms it uses (`out.requested(Term::flux)` etc.): fluxes at faces, flux
+       * and source at cell points; KT asks for one term per call (flux, diffusion_flux or source). The standard
+       * implementation evaluates the requested per-point callbacks (flux(), source(), diffusion_flux()) in one
+       * flat parallel loop over the batch. Override it to evaluate the expensive part, typically the momentum
+       * integrals, for all points in one go with an integrator's map_points(), which also runs on the GPU; skip
+       * the terms that were not requested. A model deriving from def::AD then gets its jacobians from the same
+       * function, and def::LLFFlux / def::FlowBoundaries evaluate the face fluxes through it.
+       *
+       * The number type of the batch (`typename Batch::number_type`) is double or an AD type, and the batch may
+       * hold several stacked copies of the assembler's points (AD seeds, LLF perturbations): size everything
+       * from `batch.size()` and never keep per-point state across calls.
+       *
+       * @param out the result, a BatchOutput: `out.flux(c, d)`, `out.source(c)` and `out.diffusion_flux(c, d)`
+       * are the columns (PointSpan) of component c (and direction d) over all points, zero on entry; asking for a
+       * term that was not requested throws.
+       * @param batch the solution at the points: columns `values(c)`, `derivatives(c, d)`, `hessians(c, d1, d2)`,
+       * `coordinates(d)` (each a PointSpan, directly usable as a per-point argument of map_points()), plus
+       * `extractors()`, `variables()`, `size()`, `x(i)` and `cell_width(i)`. Which inputs exist depends on the
+       * assembler and is known at compile time (`Batch::has_derivatives`, `Batch::has_hessians`; reading an
+       * absent one does not compile): LDG has values and `ldg_values(k, c)` for component c
+       * of level k, KT's diffusion traces add `third_derivatives(c, d0, d1, d2)` (`Batch::with_third`).
+       *
+       * @note Set `static constexpr bool batch_reads_hessians = false` (or `batch_reads_derivatives`) in the model
+       * when no term reads them: CG and DG then skip gathering them, and the AD jacobians skip their seeds.
+       */
+      template <typename Out, typename Batch> void evaluate_batch(Out &out, const Batch &batch) const
+      {
+        DiFfRG::internal::evaluate_per_point(asImp(), out, batch);
       }
 
       /**
@@ -422,6 +455,21 @@ namespace DiFfRG
       void ldg_source([[maybe_unused]] std::array<NumberType, n_fe_functions_dep> &s,
                       [[maybe_unused]] const Point<dim> &x, [[maybe_unused]] const Vector &u) const
       {
+      }
+
+      /**
+       * @brief LDG level `dependent` at all quadrature points of a batch of level dependent - 1 at once: the
+       * batched counterpart of ldg_flux and ldg_source, which the LDG assembler calls.
+       *
+       * The standard implementation evaluates the requested per-point ldg_flux / ldg_source (see
+       * `out.requested(Term::...)`) in one flat parallel loop. Override it to evaluate them for all points in one
+       * go. `batch.values(c)` is component c of level dependent - 1, a PointSpan over all points; `out.flux(c, d)`
+       * and `out.source(c)` are the columns of component c of level dependent.
+       */
+      template <uint dependent, typename Out, typename Batch>
+      void ldg_evaluate_batch(Out &out, const Batch &batch) const
+      {
+        DiFfRG::internal::ldg_evaluate_per_point<dependent>(asImp(), out, batch);
       }
 
       template <int dim, typename NumberType, typename Solutions_s, typename Solutions_n>

@@ -18,10 +18,19 @@ on:
       cuda_arch:
         description: "Kokkos CUDA architecture floor (applications retarget via DiFfRG_CUDA_ARCH)"
         default: TURING75
+      mpi:
+        description: "MPI implementation the bundle links (openmpi adds the -openmpi variant: PETSc, hypre, MUMPS)"
+        type: choice
+        options: [none, openmpi]
+        default: none
       draft_release:
         description: "Attach the result to a draft release deps-v<version>"
         type: boolean
         default: false
+
+env:
+  # The bundle variant: linux-x86_64-v3-cuda12, or linux-x86_64-v3-cuda12-openmpi.
+  VARIANT: linux-x86_64-v3-cuda12${{ inputs.mpi != 'none' && format('-{0}', inputs.mpi) || '' }}
 
 permissions:
   contents: write # only used when draft_release=true
@@ -31,7 +40,7 @@ defaults:
     shell: bash
 
 concurrency:
-  group: release-deps-linux-cuda
+  group: release-deps-linux-cuda-${{ inputs.mpi }}
   cancel-in-progress: false
 
 jobs:
@@ -59,10 +68,12 @@ jobs:
           docker buildx build --load \
             -t diffrg-deps-release:cuda \
             -f containers/release/linux-x86_64-v3-cuda12.Dockerfile \
+            --build-arg "mpi=${{ inputs.mpi }}" \
             --build-arg threads=4 \
             --build-arg "bundle_version=${{ inputs.bundle_version }}" \
             --build-arg "cuda_arch=${{ inputs.cuda_arch }}" \
             --build-arg "git_sha=${GITHUB_SHA}" \
+            --build-arg "deps_inputs_hash=$(bash containers/release/deps-inputs-hash.sh "${VARIANT}")" \
             --progress=plain .
           mkdir -p containers/release/dist
           cid="$(docker create diffrg-deps-release:cuda)"
@@ -71,7 +82,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: diffrg-deps-${{ inputs.bundle_version }}-linux-x86_64-v3-cuda12
+          name: diffrg-deps-${{ inputs.bundle_version }}-${{ env.VARIANT }}
           path: containers/release/dist/
           if-no-files-found: error
 
@@ -100,14 +111,14 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: diffrg-deps-${{ inputs.bundle_version }}-linux-x86_64-v3-cuda12
+          name: diffrg-deps-${{ inputs.bundle_version }}-${{ env.VARIANT }}
           path: containers/release/dist/
 
       - name: Validate on ${{ matrix.distro }} (build-only, no GPU)
         run: |
           bash ./containers/release/test-tarball.sh \
-            -f "containers/release/dist/diffrg-deps-${{ inputs.bundle_version }}-linux-x86_64-v3-cuda12.tar.zst" \
-            -j 4 -d "${{ matrix.distro }}" -g -s
+            -f "containers/release/dist/diffrg-deps-${{ inputs.bundle_version }}-${{ env.VARIANT }}.tar.zst" \
+            -j 4 -d "${{ matrix.distro }}" -g -s $([[ "${{ inputs.mpi }}" != none ]] && echo -m)
 
       # Runs even after a wedge, and the disk report distinguishes exhaustion
       # from other kills when a leg dies with SIGTERM.
@@ -120,7 +131,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-log-${{ matrix.distro }}
-          path: containers/release/logs/${{ matrix.distro }}.log
+          path: containers/release/logs/${{ matrix.distro }}*.log
 
   finalize:
     needs: [build, test]
@@ -128,19 +139,19 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: diffrg-deps-${{ inputs.bundle_version }}-linux-x86_64-v3-cuda12
+          name: diffrg-deps-${{ inputs.bundle_version }}-${{ env.VARIANT }}
           path: dist/
 
       # Build-only here: GPU-executed ctest must happen on a real GPU machine,
       # which upgrades the stamp before publishing.
       - name: Write the tested stamp
         run: |
-          name="diffrg-deps-${{ inputs.bundle_version }}-linux-x86_64-v3-cuda12"
+          name="diffrg-deps-${{ inputs.bundle_version }}-${{ env.VARIANT }}"
           echo "tested-build-only" > "dist/${name}.tar.zst.tested"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: diffrg-deps-${{ inputs.bundle_version }}-linux-x86_64-v3-cuda12
+          name: diffrg-deps-${{ inputs.bundle_version }}-${{ env.VARIANT }}
           path: dist/
           overwrite: true
 
@@ -159,6 +170,6 @@ jobs:
 
       - name: Summary
         run: |
-          echo "## diffrg-deps ${{ inputs.bundle_version }} (linux-x86_64-v3-cuda12)" >> "$GITHUB_STEP_SUMMARY"
+          echo "## diffrg-deps ${{ inputs.bundle_version }} (${{ env.VARIANT }})" >> "$GITHUB_STEP_SUMMARY"
           echo "- CUDA arch floor: ${{ inputs.cuda_arch }} (+ PTX for newer GPUs; applications retarget via DiFfRG_CUDA_ARCH)" >> "$GITHUB_STEP_SUMMARY"
           echo "- validation: BUILD-ONLY (no GPU on hosted runners) -- run test-tarball.sh -g on a GPU machine before publishing" >> "$GITHUB_STEP_SUMMARY"

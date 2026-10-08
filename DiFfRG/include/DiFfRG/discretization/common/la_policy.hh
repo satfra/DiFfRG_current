@@ -37,8 +37,8 @@ namespace DiFfRG
   /**
    * @brief Turn a freshly built DynamicSparsityPattern into the pattern type the matrix wants.
    *
-   * Distributed: the rows a rank builds are not the rows it owns -- a cell worker touching a
-   * partition-boundary cell adds entries to rows owned by a neighbour. distribute_sparsity_pattern
+   * Distributed: the rows a rank builds are not the rows it owns -- assembling a partition-boundary
+   * cell adds entries to rows owned by a neighbour. distribute_sparsity_pattern
    * ships those to their owner. Skipping it does not fail loudly; it produces a matrix that is
    * missing exactly the couplings across partition boundaries, and PETSc then drops the
    * corresponding matrix entries at assembly time.

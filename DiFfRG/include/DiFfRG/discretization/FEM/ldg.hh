@@ -57,7 +57,7 @@ namespace DiFfRG
       // combination here instead, where the message can name the cause.
       static_assert(!Mesh::is_parallel,
                     "LDG does not support a partitioned mesh. Use RectangularMeshSerial<dim>, or pick "
-                    "CG/DG/dDG/KT for a distributed run. Note that a plain RectangularMesh<dim> is "
+                    "CG/DG/KT for a distributed run. Note that a plain RectangularMesh<dim> is "
                     "partitioned in an MPI build, so LDG has to name the serial mesh explicitly.");
 
       Discretization(Mesh &mesh, const ConfigTree &config, ReportPort report_port = {})

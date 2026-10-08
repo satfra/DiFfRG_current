@@ -266,7 +266,9 @@ TEST_CASE("A CLI override reaches the resolver before the libraries come up",
   char parameter_flag[] = "-p";
   char threads_flag[] = "-si";
   char threads_override[] = "/discretization/threads=4";
-  char *argv[] = {program, parameter_flag, const_cast<char *>(filename.c_str()), threads_flag, threads_override};
+  // argv[argc] must be a null pointer, as for main(): MPI_Init (Open MPI 5) walks argv up to it.
+  char *argv[] = {program, parameter_flag, const_cast<char *>(filename.c_str()), threads_flag, threads_override,
+                  nullptr};
 
   DiFfRG::Init init(5, argv);
 

@@ -6,7 +6,6 @@
 
 #include <DiFfRG/common/init.hh>
 #include <DiFfRG/discretization/FEM/assembler/cg.hh>
-#include <DiFfRG/discretization/FEM/assembler/ddg.hh>
 #include <DiFfRG/discretization/FEM/assembler/dg.hh>
 #include <DiFfRG/discretization/FEM/assembler/ldg.hh>
 #include <DiFfRG/discretization/FEM/cg.hh>
@@ -95,13 +94,26 @@ namespace
     return worst;
   }
 
+  /// Capture through a replicated view: capture_cellwise_state reads every dof, which a distributed vector
+  /// cannot serve. Serially the view is a passthrough.
+  template <typename Discretization, typename Assembler>
+  SnapshotSpatialState capture_replicated(const Discretization &discretization, const Assembler &assembler,
+                                          const typename Discretization::VectorType &spatial)
+  {
+    SolutionView<typename Discretization::VectorType> view;
+    assembler.reinit_solution_view(view);
+    view.refresh(spatial);
+    return DiFfRG::internal::capture_cellwise_state(discretization.get_dof_handler(), view.get());
+  }
+
   /// Interpolate on one discretization, capture, restore into a fresh one, capture again.
   template <typename Discretization, typename Assembler, typename FlowingVariables, typename Model>
   void require_roundtrip(const ConfigTree &config, Model &model, const bool adapt_source)
   {
     constexpr uint dim = Discretization::dim;
+    using Mesh = typename Discretization::Mesh;
 
-    RectangularMesh<dim> source_mesh{Config::ConfigurationMesh<dim>(config)};
+    Mesh source_mesh{Config::ConfigurationMesh<dim>(config)};
     Discretization source(source_mesh, config);
     Assembler source_assembler(source, model, config);
     if (adapt_source) {
@@ -111,8 +123,7 @@ namespace
     }
     FlowingVariables source_state(source);
     source_state.interpolate(model);
-    const auto captured =
-        DiFfRG::internal::capture_cellwise_state(source.get_dof_handler(), source_state.spatial_data());
+    const auto captured = capture_replicated(source, source_assembler, source_state.spatial_data());
 
     REQUIRE(captured.active_cells.size() == source.get_triangulation().n_active_cells());
     REQUIRE(captured.values.size() == captured.active_cells.size() * captured.dofs_per_cell);
@@ -121,7 +132,7 @@ namespace
                 *std::min_element(captured.values.begin(), captured.values.end()) >
             0.5);
 
-    RectangularMesh<dim> target_mesh{Config::ConfigurationMesh<dim>(config)};
+    Mesh target_mesh{Config::ConfigurationMesh<dim>(config)};
     Discretization target(target_mesh, config);
     Assembler target_assembler(target, model, config);
     FlowingVariables target_state(target);
@@ -130,14 +141,14 @@ namespace
     target_assembler.restore_snapshot_state(captured, target_state.spatial_data());
 
     REQUIRE(target.get_triangulation().n_active_cells() == source.get_triangulation().n_active_cells());
-    const auto recaptured =
-        DiFfRG::internal::capture_cellwise_state(target.get_dof_handler(), target_state.spatial_data());
+    const auto recaptured = capture_replicated(target, target_assembler, target_state.spatial_data());
     REQUIRE(by_cell(recaptured) == by_cell(captured));
   }
 } // namespace
 
 TEST_CASE("ModelState stores named values", "[snapshot]")
 {
+  DiFfRG::Init();
   ModelState state;
   state.set("lock", true);
   state.set("last", 0.125);
@@ -155,6 +166,7 @@ TEST_CASE("ModelState stores named values", "[snapshot]")
 
 TEST_CASE("config_diff lists changed, added and removed leaves", "[snapshot]")
 {
+  DiFfRG::Init();
   const json::value before = json::parse(R"({"physical": {"T": 0.1, "Nc": 3, "mu": 0.0},
                                              "output": {"name": "a"}, "grid": "0:1:2"})");
   const json::value after = json::parse(R"({"physical": {"T": 0.2, "Nc": 3.0, "extra": true},
@@ -170,6 +182,7 @@ TEST_CASE("config_diff lists changed, added and removed leaves", "[snapshot]")
 
 TEST_CASE("SnapshotSchedule converts, snaps and bounds snapshot times", "[snapshot]")
 {
+  DiFfRG::Init();
   ConfigTree config = make_config();
   config().as_object()["timestepping"].as_object()["snapshots"] =
       json::parse(R"({"k": [0.5, 0.25], "t": [0.33, 5.0, 0.0]})");
@@ -200,6 +213,7 @@ TEST_CASE("SnapshotSchedule converts, snaps and bounds snapshot times", "[snapsh
 
 TEST_CASE("Snapshot files round-trip", "[snapshot]")
 {
+  DiFfRG::Init();
   const auto root = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "snapshot_io", "snapshot_io");
   const auto path = root.run_file("_snapshot_000", ".h5");
 
@@ -244,6 +258,7 @@ TEST_CASE("Snapshot files round-trip", "[snapshot]")
 
 TEST_CASE("Cell-wise state restores into a fresh discretization", "[snapshot]")
 {
+  DiFfRG::Init();
   const auto config = make_config();
   SECTION("CG")
   {
@@ -261,19 +276,12 @@ TEST_CASE("Cell-wise state restores into a fresh discretization", "[snapshot]")
     require_roundtrip<Discretization, DG::Assembler<Discretization>, FE::FlowingVariables<Discretization>>(
         config, model, false);
   }
-  SECTION("dDG")
-  {
-    using Model = Testing::ModelExp<2>;
-    Model model(linear_profile());
-    using Discretization = DG::Discretization<Model, RectangularMesh<2>>;
-    require_roundtrip<Discretization, dDG::Assembler<Discretization>, FE::FlowingVariables<Discretization>>(
-        config, model, false);
-  }
   SECTION("LDG")
   {
     using Model = Testing::LDGModelConstant<1>;
     Model model(linear_profile());
-    using Discretization = LDG::Discretization<Model, RectangularMesh<1>>;
+    // LDG is serial-only; a plain RectangularMesh is partitioned in an MPI build.
+    using Discretization = LDG::Discretization<Model, RectangularMeshSerial<1>>;
     require_roundtrip<Discretization, LDG::Assembler<Discretization>, FE::FlowingVariables<Discretization>>(
         config, model, false);
   }
@@ -289,6 +297,7 @@ TEST_CASE("Cell-wise state restores into a fresh discretization", "[snapshot]")
 
 TEST_CASE("An adapted mesh is rebuilt from its cell ids", "[snapshot]")
 {
+  DiFfRG::Init();
   const auto config = make_config();
   SECTION("CG, with hanging nodes")
   {
@@ -327,6 +336,7 @@ TEST_CASE("An adapted mesh is rebuilt from its cell ids", "[snapshot]")
 
 TEST_CASE("A snapshot of a different finite element is rejected", "[snapshot]")
 {
+  DiFfRG::Init();
   using Model = Testing::ModelExp<2>;
   Model model(linear_profile());
   using Discretization = CG::Discretization<Model, RectangularMesh<2>>;
@@ -337,7 +347,7 @@ TEST_CASE("A snapshot of a different finite element is rejected", "[snapshot]")
   CG::Assembler<Discretization> source_assembler(source, model, config);
   FE::FlowingVariables<Discretization> state(source);
   state.interpolate(model);
-  const auto captured = DiFfRG::internal::capture_cellwise_state(source.get_dof_handler(), state.spatial_data());
+  const auto captured = capture_replicated(source, source_assembler, state.spatial_data());
 
   const auto other_config = make_config(1);
   RectangularMesh<2> other_mesh{Config::ConfigurationMesh<2>(other_config)};

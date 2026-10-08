@@ -3,13 +3,14 @@
 #include "DiFfRG/physics/integration.hh"
 #include "DiFfRG/physics/physics.hh"
 #include "DiFfRG/physics/interpolation.hh"
+#include "kernel.hh"
 
-namespace DiFfRG { template<typename> class V_kernel;
+namespace DiFfRG {
 
   class V_integrator
   {
     public:
-    V_integrator(DiFfRG::QuadratureProvider& quadrature_provider, const DiFfRG::ConfigTree& json)
+    V_integrator(DiFfRG::QuadratureProvider& quadrature_provider, const DiFfRG::ConfigTree& config)
     ;
 
 

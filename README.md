@@ -120,7 +120,7 @@ bash <(curl -s -L https://github.com/satfra/DiFfRG_current/raw/refs/heads/main/i
 ```
 A short wizard walks through the typical choices — pre-built dependency bundle or full self-build, install prefix, build folder, features (MPI, GPU, ...), and an optional copy of the examples and tutorials — then performs the complete installation. Every question also has a command-line flag (`--help`) for scripted use.
 
-The **pre-built dependency bundle** downloads deal.II, Kokkos, Boost, TBB, SUNDIALS, HDF5 and friends as a ~50 MB binary from [GitHub Releases](https://github.com/satfra/DiFfRG_current/releases) instead of compiling them for hours; only the DiFfRG library itself is compiled locally (minutes). Bundles come in a CPU-only and a CUDA variant (the wizard offers the latter when it finds an NVIDIA GPU), both without MPI, and need Linux x86_64 with AVX2 (any consumer CPU from ~2013 on) and glibc ≥ 2.34. For MPI, other CPUs, or other platforms the wizard's self-build path covers the full feature set.
+The **pre-built dependency bundle** downloads deal.II, Kokkos, Boost, TBB, SUNDIALS, HDF5 and friends as a ~50 MB binary from [GitHub Releases](https://github.com/satfra/DiFfRG_current/releases) instead of compiling them for hours; only the DiFfRG library itself is compiled locally (minutes). Bundles come in a CPU-only and a CUDA variant (the wizard offers the latter when it finds an NVIDIA GPU), each with or without MPI (Open MPI, with PETSc and MUMPS; needs the distro's Open MPI development package), and need Linux x86_64 with AVX2 (any consumer CPU from ~2013 on) and glibc ≥ 2.34. For other MPIs (Intel MPI, Cray MPICH, ... — typical on clusters), other CPUs, or other platforms the wizard's self-build path covers the full feature set.
 
 ### From source
 

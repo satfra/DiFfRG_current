@@ -3,6 +3,9 @@
 #include <Eigen/Dense>
 #include <deal.II/lac/block_vector.h>
 #include <deal.II/lac/vector.h>
+#ifdef DEAL_II_WITH_PETSC
+#include <deal.II/lac/petsc_vector.h>
+#endif
 
 namespace DiFfRG
 {
@@ -37,4 +40,21 @@ namespace DiFfRG
    * @param dealii a dealii block vector
    */
   void eigen_to_dealii(const Eigen::VectorXd &eigen, dealii::BlockVector<double> &dealii);
+
+#ifdef DEAL_II_WITH_PETSC
+  /**
+   * @brief Converts a process-local PETSc vector to an Eigen vector
+   *
+   * Only for vectors that hold every entry on this rank (MPI_COMM_SELF, a complete index set), such as
+   * the replicated extra variables of the hybrid steppers; throws for a partitioned vector.
+   */
+  void dealii_to_eigen(const dealii::PETScWrappers::MPI::Vector &dealii, Eigen::VectorXd &eigen);
+
+  /**
+   * @brief Converts an Eigen vector to a process-local PETSc vector
+   *
+   * Same restriction as the reverse direction. An unsized vector is created on MPI_COMM_SELF.
+   */
+  void eigen_to_dealii(const Eigen::VectorXd &eigen, dealii::PETScWrappers::MPI::Vector &dealii);
+#endif
 } // namespace DiFfRG

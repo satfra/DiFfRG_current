@@ -10,6 +10,7 @@
 #include <spdlog/spdlog.h>
 
 #include <vector>
+#include <DiFfRG/common/init.hh>
 
 namespace
 {
@@ -40,6 +41,7 @@ namespace
 
 TEST_CASE("FV FlowingVariables stores cell averages", "[FV][data]")
 {
+  DiFfRG::Init();
   ensure_logger();
 
   ConfigTree json =

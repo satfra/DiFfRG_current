@@ -11,6 +11,7 @@
 #include <deal.II/base/tensor.h>
 
 #include <boilerplate/kt_models.hh>
+#include <boilerplate/kt_trace_evaluation.hh>
 
 using NumberType = double;
 using namespace dealii;
@@ -262,7 +263,7 @@ TEST_CASE("compute_speed_derivatives 1D 1-component — Burgers FD validation", 
   // Compute J and H at u0
   const std::array<NumberType, nc> u = {u0};
   const auto [F, J, H] =
-      KT::internal::compute_flux_jacobian_and_hessian<DiFfRG::Testing::ModelBurgersKT<dim>, NumberType, dim, nc>(
+      DiFfRG::Testing::compute_flux_jacobian_and_hessian<DiFfRG::Testing::ModelBurgersKT<dim>, NumberType, dim, nc>(
           u, x_q, test_cell_width, no_extractors, no_variables, model);
 
   // Use J for both plus and minus (self-consistent test)
@@ -272,10 +273,10 @@ TEST_CASE("compute_speed_derivatives 1D 1-component — Burgers FD validation", 
   const std::array<NumberType, nc> u_fwd = {u0 + eps};
   const std::array<NumberType, nc> u_bwd = {u0 - eps};
   const auto [F_fwd, J_fwd, H_fwd] =
-      KT::internal::compute_flux_jacobian_and_hessian<DiFfRG::Testing::ModelBurgersKT<dim>, NumberType, dim, nc>(
+      DiFfRG::Testing::compute_flux_jacobian_and_hessian<DiFfRG::Testing::ModelBurgersKT<dim>, NumberType, dim, nc>(
           u_fwd, x_q, test_cell_width, no_extractors, no_variables, model);
   const auto [F_bwd, J_bwd, H_bwd] =
-      KT::internal::compute_flux_jacobian_and_hessian<DiFfRG::Testing::ModelBurgersKT<dim>, NumberType, dim, nc>(
+      DiFfRG::Testing::compute_flux_jacobian_and_hessian<DiFfRG::Testing::ModelBurgersKT<dim>, NumberType, dim, nc>(
           u_bwd, x_q, test_cell_width, no_extractors, no_variables, model);
 
   const auto a_fwd = MaxEigenvalueWaveSpeed::compute_speeds<NumberType, dim, nc>(J_fwd, J_fwd);
@@ -296,7 +297,7 @@ TEST_CASE("compute_speed_derivatives 1D 2-component — SymCoupledModel FD valid
   const NumberType eps = 1e-6;
 
   // Compute J and H at u
-  const auto [F, J, H] = KT::internal::compute_flux_jacobian_and_hessian<SymCoupledModel, NumberType, dim, nc>(
+  const auto [F, J, H] = DiFfRG::Testing::compute_flux_jacobian_and_hessian<SymCoupledModel, NumberType, dim, nc>(
       u, x_q, test_cell_width, no_extractors, no_variables, model);
 
   const auto [da_plus, da_minus] = MaxEigenvalueWaveSpeed::compute_speed_derivatives<NumberType, dim, nc>(J, J, H, H);
@@ -308,10 +309,10 @@ TEST_CASE("compute_speed_derivatives 1D 2-component — SymCoupledModel FD valid
     u_bwd[c] -= eps;
 
     const auto [F_fwd, J_fwd, H_fwd] =
-        KT::internal::compute_flux_jacobian_and_hessian<SymCoupledModel, NumberType, dim, nc>(
+        DiFfRG::Testing::compute_flux_jacobian_and_hessian<SymCoupledModel, NumberType, dim, nc>(
             u_fwd, x_q, test_cell_width, no_extractors, no_variables, model);
     const auto [F_bwd, J_bwd, H_bwd] =
-        KT::internal::compute_flux_jacobian_and_hessian<SymCoupledModel, NumberType, dim, nc>(
+        DiFfRG::Testing::compute_flux_jacobian_and_hessian<SymCoupledModel, NumberType, dim, nc>(
             u_bwd, x_q, test_cell_width, no_extractors, no_variables, model);
 
     const auto a_fwd = MaxEigenvalueWaveSpeed::compute_speeds<NumberType, dim, nc>(J_fwd, J_fwd);
@@ -334,9 +335,9 @@ TEST_CASE("compute_speed_derivatives 1D 2-component — asymmetric plus/minus FD
   const std::array<NumberType, nc> u_minus_val = {1.0, 4.0};
   const NumberType eps = 1e-6;
 
-  const auto [F_p, J_p, H_p] = KT::internal::compute_flux_jacobian_and_hessian<SymCoupledModel, NumberType, dim, nc>(
+  const auto [F_p, J_p, H_p] = DiFfRG::Testing::compute_flux_jacobian_and_hessian<SymCoupledModel, NumberType, dim, nc>(
       u_plus_val, x_q, test_cell_width, no_extractors, no_variables, model);
-  const auto [F_m, J_m, H_m] = KT::internal::compute_flux_jacobian_and_hessian<SymCoupledModel, NumberType, dim, nc>(
+  const auto [F_m, J_m, H_m] = DiFfRG::Testing::compute_flux_jacobian_and_hessian<SymCoupledModel, NumberType, dim, nc>(
       u_minus_val, x_q, test_cell_width, no_extractors, no_variables, model);
 
   const auto [da_plus, da_minus] =
@@ -348,9 +349,9 @@ TEST_CASE("compute_speed_derivatives 1D 2-component — asymmetric plus/minus FD
     u_fwd[c] += eps;
     u_bwd[c] -= eps;
 
-    const auto [Ff, Jf, Hf] = KT::internal::compute_flux_jacobian_and_hessian<SymCoupledModel, NumberType, dim, nc>(
+    const auto [Ff, Jf, Hf] = DiFfRG::Testing::compute_flux_jacobian_and_hessian<SymCoupledModel, NumberType, dim, nc>(
         u_fwd, x_q, test_cell_width, no_extractors, no_variables, model);
-    const auto [Fb, Jb, Hb] = KT::internal::compute_flux_jacobian_and_hessian<SymCoupledModel, NumberType, dim, nc>(
+    const auto [Fb, Jb, Hb] = DiFfRG::Testing::compute_flux_jacobian_and_hessian<SymCoupledModel, NumberType, dim, nc>(
         u_bwd, x_q, test_cell_width, no_extractors, no_variables, model);
 
     // da_plus is the derivative of rho(J_plus) w.r.t. u_plus components,
@@ -367,9 +368,9 @@ TEST_CASE("compute_speed_derivatives 1D 2-component — asymmetric plus/minus FD
     u_fwd[c] += eps;
     u_bwd[c] -= eps;
 
-    const auto [Ff, Jf, Hf] = KT::internal::compute_flux_jacobian_and_hessian<SymCoupledModel, NumberType, dim, nc>(
+    const auto [Ff, Jf, Hf] = DiFfRG::Testing::compute_flux_jacobian_and_hessian<SymCoupledModel, NumberType, dim, nc>(
         u_fwd, x_q, test_cell_width, no_extractors, no_variables, model);
-    const auto [Fb, Jb, Hb] = KT::internal::compute_flux_jacobian_and_hessian<SymCoupledModel, NumberType, dim, nc>(
+    const auto [Fb, Jb, Hb] = DiFfRG::Testing::compute_flux_jacobian_and_hessian<SymCoupledModel, NumberType, dim, nc>(
         u_bwd, x_q, test_cell_width, no_extractors, no_variables, model);
 
     const NumberType a_minus_fwd = MaxEigenvalueWaveSpeed::compute_speeds<NumberType, dim, nc>(Jf, Jf)[0];

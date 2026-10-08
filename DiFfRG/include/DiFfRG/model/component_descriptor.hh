@@ -87,7 +87,21 @@ namespace DiFfRG
     consteval char const *name(size_t index) const { return names[index]; }
 
     consteval std::array<const char *, sizeof...(_descriptors)> get_names() const { return names; }
-    static std::vector<std::string> get_names_vector() { return {names.begin(), names.end()}; }
+    /**
+     * @brief One name per component: a descriptor of size n > 1 contributes name_0, ..., name_{n-1}.
+     */
+    static std::vector<std::string> get_names_vector()
+    {
+      std::vector<std::string> result;
+      for (size_t i = 0; i < names.size(); ++i) {
+        if (sizes[i] == 1)
+          result.emplace_back(names[i]);
+        else
+          for (size_t j = 0; j < sizes[i]; ++j)
+            result.push_back(std::string(names[i]) + "_" + std::to_string(j));
+      }
+      return result;
+    }
 
     template<unsigned N>
     consteval size_t size(char const(&arr)[N]) const

@@ -144,7 +144,15 @@ namespace DiFfRG
                                                                                    dof_handler.get_fe().n_components());
           VectorTools::interpolate(dof_handler, initial_condition_function, m_data.block(0));
         }
-        if (m_data.n_blocks() > 1) model.initial_condition_variables(m_data.block(1));
+        if (m_data.n_blocks() > 1) {
+          // Under distribution rank 0 owns the variables block outright; the model writes every entry on every rank,
+          // which elsewhere would stage off-process inserts that the next compress() of the block flushes over the
+          // owner's values. compute_variables_into lands only what each rank owns.
+          VectorType scratch;
+          reinit_local_variables_vector(scratch, block_structure[1]);
+          compute_variables_into(m_data.block(1), scratch,
+                                 [&](VectorType &out) { model.initial_condition_variables(out); });
+        }
       }
 
       /**
@@ -266,7 +274,15 @@ namespace DiFfRG
           // no-op for the serial vector types.
           m_data.block(0).compress(dealii::VectorOperation::insert);
         }
-        if (m_data.n_blocks() > 1) model.initial_condition_variables(m_data.block(1));
+        if (m_data.n_blocks() > 1) {
+          // Under distribution rank 0 owns the variables block outright; the model writes every entry on every rank,
+          // which elsewhere would stage off-process inserts that the next compress() of the block flushes over the
+          // owner's values. compute_variables_into lands only what each rank owns.
+          VectorType scratch;
+          reinit_local_variables_vector(scratch, block_structure[1]);
+          compute_variables_into(m_data.block(1), scratch,
+                                 [&](VectorType &out) { model.initial_condition_variables(out); });
+        }
       }
 
       /**

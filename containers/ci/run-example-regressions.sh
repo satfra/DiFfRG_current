@@ -3,7 +3,7 @@
 # committed baselines. Run with UPDATE_BASELINES=1 to refresh baselines.
 set -euo pipefail
 
-workspace="${WORKSPACE:-/work}"
+workspace="${WORKSPACE:-$(cd -- "$(dirname "$0")/../.." >/dev/null 2>&1 && pwd -P)}"
 examples_build_root="${DIFFRG_EXAMPLES_BUILD_ROOT:-${workspace}/.ci/examples}"
 run_root="${DIFFRG_EXAMPLE_RUN_ROOT:-${workspace}/.ci/run-results}"
 log_dir="${DIFFRG_EXAMPLE_REGRESSION_LOG_DIR:-${workspace}/.ci/logs/example-regressions}"

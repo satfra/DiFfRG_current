@@ -1,102 +1,46 @@
-# CI dependency images
+# CI scripts
 
-CI for DiFfRG keeps the expensive dependency superbuild out of the regular
-library test path:
+CI (`.github/workflows/ci.yml`) builds and tests the DiFfRG library against the
+same pre-built dependency bundle users install (`containers/release/`,
+`install-diffrg-deps.sh`), so the multi-hour dependency superbuild stays out of
+the regular test path and CI tests exactly what users get.
 
-1. **Dependency image** (this directory) — bakes the bundled superbuild
-   dependencies (deal.II, Kokkos, autodiff, GSL, Eigen, spdlog, …) into
-   `/opt/diffrg/bundled` (exposed as `$DiFfRG_BUNDLED_DIR`). The stable image is
-   built rarely and pushed to GHCR as a Docker/OCI image.
-2. **Library build + tests** (`.github/workflows/ci.yml`) — on every push to a main
-   branch and every pull request, selects a dependency image, pulls it with
-   Singularity, builds *only* the DiFfRG library against the pre-built tree
-   (`-DBUNDLED_DIR=$DiFfRG_BUNDLED_DIR`), and runs `ctest`. Library-only changes
-   use `docker://ghcr.io/satfra/diffrg-deps:ubuntu24.04`; dependency-image
-   changes first build and test a commit-specific image.
-3. **Example and Wolfram probes** (`.github/workflows/ci.yml`) — additional jobs
-   reuse the same dependency image through Singularity. The example job installs
-   DiFfRG into `.ci/diffrg-install` and builds every current `Examples/*` CMake
-   project, while allowing explicitly listed legacy examples to remain
-   report-only. The Wolfram job bind-mounts the host `wolframscript`/FORM setup
-   into the container and reports generator status plus generated-flow drift
-   without baking licensed Wolfram files into the public image. If Wolfram
-   preflight passes, the job then rebuilds the examples and compares selected
-   short-run outputs against committed baselines.
+## The dependency bundle in CI
 
-This contrasts with `containers/Base/` and `containers/CUDA/`, which rebuild
-*everything* from scratch and are driven by `containers/test_all.sh` /
-`build-container.sh` for occasional multi-distro and GPU compatibility sweeps,
-and with `containers/release/`, which builds the *user-facing* relocatable
-binary dependency tarballs published on GitHub Releases (force-bundled
-Boost/TBB/HDF5/SUNDIALS, portable `x86-64-v3` ISA, not pinned to any distro).
+`.github/deps-bundle-version` pins the `deps-v<X.Y.Z>` release CI uses (its
+`linux-x86_64-v3-cpu` variant). The `Dependency bundle` job
+
+1. hashes the dependency inputs of the checkout
+   (`containers/release/deps-inputs-hash.sh`: the superbuild (`superbuild.cmake`),
+   `dependencies/` without PETSc, `patches/`, and the CPU variant's recipe and
+   post-processing);
+2. downloads the pinned bundle and compares that hash with the
+   `deps_inputs_hash` its `BUNDLE_MANIFEST.json` records;
+3. on a mismatch, builds a bundle from the checkout with
+   `containers/release/build-release.sh` (~3 h; version `0.0.0`) and caches it
+   under the input hash, so further pushes with the same inputs reuse it;
+4. hands the bundle to the build jobs, which install it with
+   `install-diffrg-deps.sh --file` in a plain `ubuntu:24.04` container.
+
+So a PR that changes dependencies is tested against bundles built from its own
+inputs. Before merging it, cut a release with those inputs (see
+`containers/release/README.md`) and bump `.github/deps-bundle-version`, so that
+later runs download it instead of rebuilding. Fork PRs cannot build a bundle
+(no cache writes); their dependency changes need a matching release first.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `ubuntu24.04-deps.Dockerfile` | CPU (GPU=OFF) dependency image. Multi-stage: builds the deps-only ExternalProject targets, then ships only the installed tree + toolchain. Consumed by `ci.yml` through Singularity. |
-| `ubuntu24.04-cuda-deps.Dockerfile` | CUDA (GPU=ON) dependency image, for **manual** GPU testing. Not used by automated CI (hosted runners have no GPU). |
-| `build-and-push.sh` | Build a dependency image, smoke-test it through Singularity (full library build + ctest), and push to GHCR. |
-| `build-examples.sh` | Runs inside the dependency image, installs DiFfRG into `.ci/diffrg-install`, and builds the current example CMake projects with per-example logs. |
-| `run-wolfram-in-container.sh` | Host-side wrapper that bind-mounts available Wolfram/Form paths and runs Wolfram checks inside the dependency image. |
-| `wolfram-example-checks.sh` | Runs inside the dependency image and records Wolfram preflight, generator, and generated-flow-drift results. |
+| `build-examples.sh` | Installs DiFfRG against the bundle at `$DiFfRG_BUNDLED_DIR` into `.ci/diffrg-install` and builds the current example CMake projects, with per-example logs. |
+| `run-wolfram-checks.sh` | Runs the Wolfram checks on a host with `wolframscript`, FORM, FunKit and FormTracer, then builds the examples and runs the baseline regressions. |
+| `wolfram-example-checks.sh` | Records Wolfram preflight, generator, and generated-flow-drift results. |
 | `run-example-regressions.sh` | Runs selected built examples with short CI overrides and compares text outputs against `Examples/ci_baselines/`. |
 | `compare-example-baseline.py` | Normalizes and compares or updates small text baselines for example regression outputs. |
 
-## Registry
-
-Images live under **`ghcr.io/satfra/diffrg-deps`**, tagged:
-
-- `ubuntu24.04` — stable moving tag consumed by `ci.yml` when dependency inputs
-  did not change.
-- `ci-<sha>` — commit-specific image built by `ci.yml` when dependency inputs
-  change; this exact image is tested before promotion.
-- `ubuntu24.04-<run_number>` — immutable record produced when CI promotes a
-  tested `ci-<sha>` image on `main`.
-- `ubuntu24.04-<YYYYMMDD>` — immutable dated record produced by the local
-  `build-and-push.sh` script.
-- `ubuntu24.04-cuda` — manual CUDA dependency image.
-
-Make the GHCR package **public** (its contents are all open-source dependencies)
-so `ci.yml` can pull it with no credentials. If you keep it private instead,
-`ci.yml` passes `SINGULARITY_DOCKER_USERNAME` / `SINGULARITY_DOCKER_PASSWORD`
-from the GitHub actor and token for the `singularity pull`.
-
-## Refreshing the image
-
-CI detects dependency-image inputs (`CMakeLists.txt`, `dependencies/**`,
-`patches/**`, and `containers/ci/**`). If one of these paths changes, `ci.yml`
-builds `ci-<sha>`, tests against that exact image, and promotes it to
-`ubuntu24.04` after a successful push to `main`. Library-only changes do **not**
-refresh the dependency image; `ci.yml` rebuilds the library from source every run.
-
-### Locally (primary path)
-
-```bash
-# One-time GHCR login (classic PAT with write:packages; add `repo` for the first
-# push of a brand-new package):
-echo "$GHCR_PAT" | docker login ghcr.io -u <github-user> --password-stdin
-
-# Build, smoke-test, and push the CPU image (half the host cores by default):
-containers/ci/build-and-push.sh
-
-# CUDA image (manual GPU testing); ctest in the smoke test runs only if a GPU is present:
-containers/ci/build-and-push.sh -c -a AMPERE80
-
-# Build + verify without pushing:
-containers/ci/build-and-push.sh -n
-```
-
-The first push of a new package is private by default — open it in the GitHub UI
-(`satfra` → Packages → `diffrg-deps`) and set visibility to public.
-
-### Via GitHub Actions (backup)
-
-The `Build dependency image` workflow (`.github/workflows/build-ci-images.yml`)
-is a manual `workflow_dispatch` fallback. It builds and pushes the requested
-stable tag directly, outside the main CI dependency chain. The normal automated
-path is the `deps-image` job in `ci.yml`, because that makes the test job depend
-on the exact image that was just built.
+The example and Wolfram jobs in `ci.yml` are currently disabled (`if: false`):
+the examples are too slow for hosted runners, and the Wolfram job needs a
+self-hosted runner with a Wolfram installation.
 
 ## Test-count badge (README)
 
@@ -123,15 +67,5 @@ so it needs no extra tooling.
 
 ## Verifying the CI path locally
 
-Reproduce exactly what `ci.yml` does, against the pushed image:
-
-```bash
-containers/singularity-run.sh \
-  -b "$(pwd):/src" \
-  -w /tmp \
-  docker://ghcr.io/satfra/diffrg-deps:ubuntu24.04 \
-  bash -lc '
-  cmake -S /src/DiFfRG -B /tmp/bin -DBUNDLED_DIR="${DiFfRG_BUNDLED_DIR:-/opt/diffrg/bundled}" \
-    -DCMAKE_BUILD_TYPE=Release -DDiFfRG_TEST=ON -DDiFfRG_DOCUMENTATION=OFF
-  cmake --build /tmp/bin -j4 && ctest --test-dir /tmp/bin --output-on-failure'
-```
+`containers/release/test-tarball.sh -f <tarball> -d ubuntu24.04` runs the same
+install, library build and quick test suite in a clean `ubuntu:24.04` image.

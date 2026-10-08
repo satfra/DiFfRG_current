@@ -15,10 +15,7 @@
 #include <DiFfRG/physics/integration/finiteT/integrator_fT_p2_1ang.hh>
 #include <DiFfRG/physics/integration/finiteT/integrator_fT_p2_4d_2ang.hh>
 
-#include <DiFfRG/physics/integration/lattice/integrator_lat_1d.hh>
-#include <DiFfRG/physics/integration/lattice/integrator_lat_2d.hh>
-#include <DiFfRG/physics/integration/lattice/integrator_lat_3d.hh>
-#include <DiFfRG/physics/integration/lattice/integrator_lat_4d.hh>
+#include <DiFfRG/physics/integration/lattice/integrator_lat.hh>
 
 namespace DiFfRG
 {

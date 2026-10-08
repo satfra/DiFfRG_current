@@ -11,6 +11,7 @@
 #include <DiFfRG/discretization/coordinates/coordinates.hh>
 #include <DiFfRG/physics/integration/abstract_integrator.hh>
 #include <DiFfRG/physics/integration/map_completion.hh>
+#include <DiFfRG/physics/integration/map_distribution.hh>
 // for has_cacheable_positions_v, shared with the vacuum integrator
 #include <DiFfRG/physics/integration/quadrature_integrator.hh>
 
@@ -305,7 +306,9 @@ namespace DiFfRG
       requires(!std::is_same_v<OT, NT> && !internal::is_widened_result<OT, NT>)
     void get(ExecutionSpace &space, OT &dest, const Args &...t) const
     {
-      const auto args = device::make_tuple(t...);
+      constexpr bool handles = internal::takes_handles<NT, KERNEL, ctype, dim, Args...>;
+      internal::check_kernel_precision<handles, ctype, Args...>();
+      const auto args = device::make_tuple(internal::to_kernel_arg<handles, ctype>(t)...);
 
       const auto &n = nodes;
       const auto &w = weights;
@@ -361,7 +364,9 @@ namespace DiFfRG
       // Create a Restrict-tagged alias of the cache for no-alias optimization
       const auto cache = KokkosNDViewRestrict<1 + dim, NT, ExecutionSpace>(m_cache);
 
-      const auto m_args = device::make_tuple(args...);
+      constexpr bool handles = internal::map_takes_handles<NT, KERNEL, ctype, dim, Coordinates, Args...>;
+      internal::check_kernel_precision<handles, ctype, Args...>();
+      const auto m_args = device::make_tuple(internal::to_kernel_arg<handles, ctype>(args)...);
 
       const auto &n = nodes;
       const auto &w = weights;
@@ -545,72 +550,140 @@ namespace DiFfRG
       return volume;
     }
 
+    /**
+     * @brief Evaluate the integral at dest.size() points in a single launch; see QuadratureIntegrator::map_points.
+     * The frequency rule (Matsubara sum, exact sum or vacuum integral) is the one get() uses, i.e. the one chosen
+     * for the current T, k and typical_E: it is shared by all points.
+     */
+    template <typename OT, typename... A>
+      requires(
+          internal::is_map_result<OT, NT> &&
+          internal::accepts_args<NT, KERNEL, ctype, dim, internal::point_arg_value_t<A>...>)
+    void map_points(const PointSpan<OT> dest, const A &...args)
+    {
+      run_map_points(dest, PointArg<internal::point_arg_value_t<A>>(args)...);
+    }
+
+    void set_map_points_policy(const MapPointsPolicy policy) { m_map_points_policy = policy; }
+
+    /// The kernel launch of map_points(). Public only because nvcc rejects extended device lambdas
+    /// inside non-public member functions.
+    template <typename ResultView, typename DeviceArgs>
+    void launch_map_points(const ResultView &result, const size_t n, const DeviceArgs &device_args)
+    {
+      using OT = typename ResultView::value_type;
+
+      const auto &nd = nodes;
+      const auto &w = weights;
+      const auto &m_n = matsubara_nodes;
+      const auto &m_w = matsubara_weights;
+      const size_t n_tail = m_n_tail;
+      const auto &start = grid_start;
+      const auto &scale = grid_scale;
+      const auto gs = grid_size;
+      const auto args = device_args;
+
+      size_t total = 1;
+      for (int d = 0; d < dim; ++d)
+        total *= grid_size[d];
+      device::array<size_t, dim> strides;
+      strides[dim - 1] = 1;
+      for (int d = dim - 2; d >= 0; --d)
+        strides[d] = strides[d + 1] * gs[d + 1];
+
+      // The integrand at grid node `flat` (row-major, the frequency axis last) for the arguments of point i.
+      const auto node = KOKKOS_LAMBDA(const size_t flat, const size_t i)->NT
+      {
+        device::array<ctype, sdim> x;
+        ctype weight = 1;
+        size_t remainder = flat;
+        for (int d = 0; d < sdim; ++d) {
+          const size_t id = remainder / strides[d];
+          remainder -= id * strides[d];
+          x[d] = Kokkos::fma(scale[d], nd[d][id], start[d]);
+          weight *= w[d][id] * scale[d];
+        }
+        const size_t jt = remainder;
+        // References, not copies: a shared argument may be an interpolator (see node_value).
+        const auto point_args = device::apply([&](const auto &...a) { return device::tie(a(i)...); }, args);
+        return weight * node_value(x, device::tuple<>{}, point_args, m_n[jt], m_w[jt], jt < n_tail);
+      };
+
+      if (internal::resolve_policy(m_map_points_policy, n, total) == MapPointsPolicy::thread_per_point) {
+        Kokkos::parallel_for(
+            "QuadratureIntegrator_fT_map_points", Kokkos::RangePolicy<ExecutionSpace>(space, 0, n),
+            KOKKOS_LAMBDA(const size_t i) {
+              NT sum = device::apply([&](const auto &...a) { return NT(KERNEL::constant(a(i)...)); }, args);
+              NT integral{};
+              for (size_t flat = 0; flat < total; ++flat)
+                integral += node(flat, i);
+              sum += integral;
+              result(i) = static_cast<OT>(sum);
+            });
+      } else {
+        using TeamType = typename Kokkos::TeamPolicy<ExecutionSpace>::member_type;
+        constexpr int vector_width = 32;
+        const size_t n_outer = (total + vector_width - 1) / vector_width;
+        Kokkos::parallel_for(
+            "QuadratureIntegrator_fT_map_points_team",
+            Kokkos::TeamPolicy<ExecutionSpace>(space, n, Kokkos::AUTO, vector_width),
+            KOKKOS_LAMBDA(const TeamType &team) {
+              const size_t i = team.league_rank();
+              NT integral{};
+              Kokkos::parallel_reduce(
+                  Kokkos::TeamThreadRange(team, n_outer),
+                  [&](const size_t outer, NT &team_update) {
+                    NT vec_sum{};
+                    Kokkos::parallel_reduce(
+                        Kokkos::ThreadVectorRange(team, vector_width),
+                        [&](const size_t inner, NT &vec_update) {
+                          const size_t flat = outer * vector_width + inner;
+                          if (flat < total) vec_update += node(flat, i);
+                        },
+                        vec_sum);
+                    team_update += vec_sum;
+                  },
+                  integral);
+              Kokkos::single(Kokkos::PerTeam(team), [&]() {
+                NT sum = device::apply([&](const auto &...a) { return NT(KERNEL::constant(a(i)...)); }, args);
+                sum += integral;
+                result(i) = static_cast<OT>(sum);
+              });
+            });
+      }
+    }
+
     template <typename OT, typename Coordinates, typename... Args>
       requires internal::is_map_result<OT, NT>
     auto map(OT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      auto &scheduler = MapScheduler::instance();
-
-      // See QuadratureIntegrator::map() for why this is decided from the plan, not from local state.
-      if (scheduler.active() && scheduler.plan_contains(integrator_id())) MapCompletion::flush();
-
-      const MapSlice slice =
-          scheduler.schedule(integrator_id(), dest, sizeof(OT), coordinates.size(), quadrature_volume(),
-                             /* splittable */ true, map_target<ExecutionSpace>());
-
-      if (slice.count == 0) {
-        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
-        return ExecutionSpace();
-      }
-      if (slice.owns_all(coordinates.size())) return map_dist(dest, coordinates, args...);
-
-      return map_dist(dest + slice.offset, SubCoordinates(coordinates, slice.offset, slice.count), args...);
+      internal::scheduled_map<ExecutionSpace>(integrator_id(), quadrature_volume(), dest, coordinates,
+                                              [&](auto *d, const auto &c) { this->map_dist(d, c, args...); });
+      return space;
     }
 
+    /// map() without the MapScheduler: computes the whole of `coordinates` on this rank.
     template <typename OT, typename Coordinates, typename... Args>
     auto map_dist(OT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      const size_t n = coordinates.size();
-      auto &stage = m_staging.template get<OT>();
-
-      if constexpr (std::is_same_v<typename ExecutionSpace::memory_space, CPU_memory>) {
-        // Host backend: "device" memory is host memory, so there is nothing to stage. The work is
-        // synchronous though, so inside a deferral scope it is queued rather than run here -- see
-        // run_or_queue_host().
-        run_or_queue_host(dest, coordinates, args...);
-        // Nothing to land, but the MPI slices still have to be exchanged before the caller reads.
-        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
-        return space;
-      } else {
-        // One staging buffer per integrator, so a second map() before a flush would clobber the
-        // first result. Land the outstanding one first; in the normal call pattern (each flow
-        // mapped once per flush interval) this never triggers.
-        if (stage.pinned_size > 0 && MapCompletion::has_pending(stage.pinned.data())) MapCompletion::flush();
-
-        auto dest_device_view = stage.device_view(space, n);
-        auto pinned_view = stage.pinned_view(n);
-
-        map(space, dest_device_view, coordinates, args...);
-
-        // Genuinely asynchronous, because the destination is page-locked. Copying straight into
-        // `dest` -- ordinary pageable caller memory, e.g. a dealii::Vector element range -- is not:
-        // the driver has to stage it, so the call blocks until the kernels feeding it have finished
-        // and the host gets no run-ahead at all. See MapCompletion for the measurement.
-        Kokkos::deep_copy(space, pinned_view, dest_device_view);
-
-        // Caller has promised not to read `dest` until its DeferredMaps scope closes, so leave the
-        // result in staging and keep the host running ahead of the device.
-        MapCompletion::record(dest, stage.pinned.data(), n * sizeof(OT));
-        // Original contract outside such a scope: `dest` is valid on return. flush() fences, lands
-        // the staged copy and -- under MPI -- exchanges this batch's slices, all of which must
-        // happen before the caller looks at `dest`.
-        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
-
-        return space;
-      }
+      internal::staged_map(space, m_staging.template get<OT>(), dest, coordinates.size(),
+                           [this, coordinates, args...](const auto &view) {
+                             this->map(this->space, view, coordinates, args...);
+                           });
+      return space;
     }
 
   private:
+    template <typename OT, typename... T> void run_map_points(const PointSpan<OT> dest, const PointArg<T> &...args)
+    {
+      const size_t n = dest.size();
+      if (n == 0) return;
+      constexpr bool handles = internal::takes_handles<NT, KERNEL, ctype, dim, T...>;
+      internal::check_kernel_precision<handles, ctype, T...>();
+      const auto device_args = m_map_points.template stage<ctype, handles>(space, n, args...);
+      m_map_points.run(space, dest, [&](const auto &result) { launch_map_points(result, n, device_args); });
+    }
+
     /**
      * @brief Re-select and re-fetch the frequency rule after T, k, typical_E or the cutoff changed.
      *
@@ -751,38 +824,6 @@ namespace DiFfRG
       grid_size[dim - 1] = matsubara_nodes.size();
     }
 
-    /// Run a host-backend map now, or queue it for flush time if a deferral scope is open. See
-    /// MapCompletion::record_work. Compiled out in a CUDA-less build.
-    template <typename OT, typename Coordinates, typename... Args>
-    void run_or_queue_host(OT *dest, const Coordinates &coordinates, const Args &...args)
-    {
-      if constexpr (internal::has_device_backend) {
-        if (MapCompletion::deferral_enabled()) {
-          MapCompletion::record_work(
-              [this, dest, coordinates, args...]() { this->run_host(dest, coordinates, args...); });
-          return;
-        }
-      }
-      run_host(dest, coordinates, args...);
-    }
-
-    /// The host-backend body of map_dist(). Queued jobs run one after another, so the shared
-    /// staging device scratch is written and drained before the next job touches it.
-    template <typename OT, typename Coordinates, typename... Args>
-    void run_host(OT *dest, const Coordinates &coordinates, const Args &...args)
-    {
-      const size_t n = coordinates.size();
-      auto dest_device_view = m_staging.template get<OT>().device_view(space, n);
-      // create unmanaged host view for dest
-      auto dest_view = Kokkos::View<OT *, CPU_memory, Kokkos::MemoryUnmanaged>(dest, n);
-
-      // run the map function
-      map(space, dest_device_view, coordinates, args...);
-
-      // copy the result from device to the unmanaged host view
-      Kokkos::deep_copy(space, dest_view, dest_device_view);
-    }
-
   protected:
     /// Mutable because the const get() overloads issue work on it: which stream instance a launch
     /// goes to is not part of the integrator's logical state.
@@ -824,6 +865,9 @@ namespace DiFfRG
     mutable Kokkos::View<ctype *, typename ExecutionSpace::memory_space> m_positions;
     mutable std::string m_positions_key;
     mutable internal::MapStagingSet<NT, ExecutionSpace> m_staging;
+    // map_points() buffers, separate from map()'s, whose staging may still be pending in a DeferredMaps scope.
+    internal::MapPointsBuffers<NT, ExecutionSpace> m_map_points;
+    MapPointsPolicy m_map_points_policy = MapPointsPolicy::automatic;
     mutable Kokkos::View<NT, typename ExecutionSpace::memory_space> m_result_view;
     mutable typename Kokkos::View<NT, typename ExecutionSpace::memory_space>::host_mirror_type m_result_host;
     mutable bool m_result_views_initialized = false;
@@ -854,38 +898,45 @@ namespace DiFfRG
     }
 
     template <typename... Args>
-      requires is_valid_kernel<NT, KERNEL, ctype, dim, Args...>
+      requires internal::accepts_args<NT, KERNEL, ctype, dim, Args...>
     void get(NT &dest, const Args &...t) const
     {
-      const auto args = device::tie(t...);
+      // a kernel that takes handles gets those
+      constexpr bool handles = internal::takes_handles<NT, KERNEL, ctype, dim, Args...>;
+      internal::check_kernel_precision<handles, ctype, Args...>();
+      if constexpr (handles && !(std::is_same_v<Args, kernel_handle_t<Args, ctype>> && ...))
+        get(dest, internal::to_kernel_arg<handles, ctype>(t)...);
+      else {
+        const auto args = device::tie(t...);
 
-      const auto &n = nodes;
-      const auto &w = weights;
-      const auto &m_n = matsubara_nodes;
-      const auto &m_w = matsubara_weights;
-      // Nodes before the boundary of the concatenated axis; 0 for an unsplit kernel, where the
-      // is_tail flag is dead code that the `if constexpr` in node_value() removes anyway.
-      const size_t n_tail = m_n_tail;
-      const auto &start = grid_start;
-      const auto &scale = grid_scale;
+        const auto &n = nodes;
+        const auto &w = weights;
+        const auto &m_n = matsubara_nodes;
+        const auto &m_w = matsubara_weights;
+        // Nodes before the boundary of the concatenated axis; 0 for an unsplit kernel, where the
+        // is_tail flag is dead code that the `if constexpr` in node_value() removes anyway.
+        const size_t n_tail = m_n_tail;
+        const auto &start = grid_start;
+        const auto &scale = grid_scale;
 
-      auto functor = [&](const device::array<size_t, dim> &idx) {
-        device::array<ctype, sdim> x;
-        ctype weight = 1;
-        for (int i = 0; i < sdim; ++i) {
-          x[i] = Kokkos::fma(scale[i], n[i][idx[i]], start[i]);
-          weight *= w[i][idx[i]] * scale[i];
-        }
-        const size_t jt = idx[dim - 1];
-        // Empty position pack: this overload's caller passes the external position inside `args`.
-        return weight * Base::node_value(x, device::tuple<>{}, args, m_n[jt], m_w[jt], jt < n_tail);
-      };
+        auto functor = [&](const device::array<size_t, dim> &idx) {
+          device::array<ctype, sdim> x;
+          ctype weight = 1;
+          for (int i = 0; i < sdim; ++i) {
+            x[i] = Kokkos::fma(scale[i], n[i][idx[i]], start[i]);
+            weight *= w[i][idx[i]] * scale[i];
+          }
+          const size_t jt = idx[dim - 1];
+          // Empty position pack: this overload's caller passes the external position inside `args`.
+          return weight * Base::node_value(x, device::tuple<>{}, args, m_n[jt], m_w[jt], jt < n_tail);
+        };
 
-      dest = KERNEL::constant(t...) + TBBReduction<dim, NT, decltype(functor)>(grid_size, functor);
+        dest = KERNEL::constant(t...) + TBBReduction<dim, NT, decltype(functor)>(grid_size, functor);
+      }
     }
 
     template <typename OT, typename... Args>
-      requires(internal::is_widened_result<OT, NT> && is_valid_kernel<NT, KERNEL, ctype, dim, Args...>)
+      requires(internal::is_widened_result<OT, NT> && internal::accepts_args<NT, KERNEL, ctype, dim, Args...>)
     void get(OT &dest, const Args &...t) const
     {
       NT result;
@@ -893,19 +944,40 @@ namespace DiFfRG
       dest = OT(result);
     }
 
+    /// See QuadratureIntegrator_fT::map_points. One get() per point inside a flat parallel loop, so every
+    /// result is bitwise identical to the corresponding get().
+    template <typename OT, typename... A>
+      requires(internal::is_map_result<OT, NT> &&
+               internal::accepts_args<NT, KERNEL, ctype, dim, internal::point_arg_value_t<A>...>)
+    void map_points(const PointSpan<OT> dest, const A &...args) const
+    {
+      internal::map_points_by_get(*this, dest, PointArg<internal::point_arg_value_t<A>>(args)...);
+    }
+
     template <typename OT, typename Coordinates, typename... Args>
       requires internal::is_map_result<OT, NT>
     void map(execution_space &, OT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      const auto m_args = device::tie(args...);
+      // Handles once here rather than per point in get().
+      constexpr bool handles = internal::map_takes_handles<NT, KERNEL, ctype, dim, Coordinates, Args...>;
+      internal::check_kernel_precision<handles, ctype, Args...>();
+      const auto m_args = [&] {
+        if constexpr (handles)
+          return device::make_tuple(DiFfRG::to_kernel_handle<ctype>(args)...);
+        else
+          return device::tie(args...);
+      }();
 
       tbb::parallel_for(tbb::blocked_range<uint>(0, coordinates.size()), [&](const tbb::blocked_range<uint> &r) {
         for (uint idx = r.begin(); idx != r.end(); ++idx) {
           const auto dis_idx = coordinates.from_linear_index(idx);
           const auto pos = coordinates.forward(dis_idx);
-          // make a tuple of all arguments
-          const auto full_args = device::tuple_cat(pos, m_args);
-          device::apply([&](const auto &...iargs) { get(dest[idx], iargs...); }, full_args);
+          // nested packs rather than tuple_cat, which would copy every argument per point
+          device::apply(
+              [&](const auto &...pargs) {
+                device::apply([&](const auto &...iargs) { get(dest[idx], pargs..., iargs...); }, m_args);
+              },
+              pos);
         }
       });
     }
@@ -914,45 +986,16 @@ namespace DiFfRG
       requires internal::is_map_result<OT, NT>
     auto map(OT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      auto space = execution_space();
-      auto &scheduler = MapScheduler::instance();
-
-      if (scheduler.active() && scheduler.plan_contains(this->integrator_id())) MapCompletion::flush();
-
-      const MapSlice slice =
-          scheduler.schedule(this->integrator_id(), dest, sizeof(OT), coordinates.size(), Base::quadrature_volume(),
-                             /* splittable */ true, map_target<execution_space>());
-
-      if (slice.count == 0) {
-        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
-        return space;
-      }
-      if (slice.owns_all(coordinates.size()))
-        run_or_queue(dest, coordinates, args...);
-      else
-        run_or_queue(dest + slice.offset, SubCoordinates(coordinates, slice.offset, slice.count), args...);
-
-      if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
-      return space;
-    }
-
-  private:
-    /// Run now, or queue for flush time inside a deferral scope -- see MapCompletion::record_work.
-    /// Compiled out in a CUDA-less build.
-    template <typename OT, typename Coordinates, typename... Args>
-    void run_or_queue(OT *dest, const Coordinates &coordinates, const Args &...args)
-    {
-      if constexpr (internal::has_device_backend) {
-        if (MapCompletion::deferral_enabled()) {
-          MapCompletion::record_work([this, dest, coordinates, args...]() {
-            auto sp = execution_space();
-            this->map(sp, dest, coordinates, args...);
+      internal::scheduled_map<execution_space>(
+          this->integrator_id(), Base::quadrature_volume(), dest, coordinates, [&](auto *d, const auto &c) {
+            // tbb::parallel_for writes straight into `dest`, so there is nothing to stage.
+            internal::run_or_queue_host([this, d, c, args...]() {
+              auto sp = execution_space();
+              this->map(sp, d, c, args...);
+            });
+            if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
           });
-          return;
-        }
-      }
-      auto sp = execution_space();
-      map(sp, dest, coordinates, args...);
+      return execution_space();
     }
 
   protected:

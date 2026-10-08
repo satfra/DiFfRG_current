@@ -26,7 +26,7 @@
  *    \ref DiFfRG::def::fRG "def::fRG" (RG time / cutoff scale),
  *    \ref DiFfRG::def::LLFFlux "def::LLFFlux" (local Lax-Friedrichs numerical flux),
  *    \ref DiFfRG::def::FlowBoundaries "def::FlowBoundaries" (inflow/outflow boundaries) and
- *    \ref DiFfRG::def::ADjacobian_flux "def::AD" (automatic-differentiation Jacobians). Finite
+ *    \ref DiFfRG::def::AD "def::AD" (automatic-differentiation Jacobians). Finite
  *    volume models additionally pick a boundary stencil, e.g.
  *    \ref DiFfRG::def::FVDefaultBoundaries "def::FVDefaultBoundaries" or
  *    \ref DiFfRG::def::RhoSymmetricLinearExtrapolationBoundaries
@@ -42,7 +42,7 @@
  * -# **Assembler.** An assembler implementing \ref DiFfRG::AbstractAssembler
  *    "AbstractAssembler" computes residuals and Jacobians from the model and discretization;
  *    the concrete variants are \ref DiFfRG::CG::Assembler "CG", \ref DiFfRG::DG::Assembler
- *    "DG", \ref DiFfRG::dDG::Assembler "dDG", \ref DiFfRG::LDG::Assembler "LDG" and
+ *    "DG", \ref DiFfRG::LDG::Assembler "LDG" and
  *    \ref DiFfRG::FV::KurganovTadmor::Assembler "FV".
  * -# **Finite volume policies.** The Kurganov-Tadmor assembler takes its advective face
  *    reconstruction, its wave-speed estimate and (optionally) a separate reconstruction for the

@@ -39,6 +39,8 @@ namespace DiFfRG
     SparseMatrixType jacobian(assembler.get_sparsity_pattern_jacobian());
     LinearSolver<SparseMatrixType, VectorType> linSolver;
     linSolver.set_report_port(this->log);
+    if constexpr (requires { linSolver.set_iterative_refinement(true); })
+      linSolver.set_iterative_refinement(this->impl.iterative_refinement);
     const bool jacobian_diagnostics_enabled = impl.jacobian_diagnostics;
     const DiagnosticPort jacobian_diagnostic_port =
         jacobian_diagnostics_enabled ? data_out.diagnostic_port() : DiagnosticPort{};
@@ -102,13 +104,12 @@ namespace DiFfRG
     newton.lin_solve = [&](VectorType &Du, const VectorType &res) {
       CalcDtTimer calc_timer;
       const auto sol_iterations = linSolver.solve(res, Du, std::min(impl.abs_tol, impl.rel_tol * res.l2_norm()));
-      if (sol_iterations >= 0) {
-        this->log.progress({.topic = progress_topics::implicit_linear_solve,
-                            .time = tc.get_t(),
-                            .duration_ms = calc_timer.lap(),
-                            .iterations = sol_iterations,
-                            .minimum_verbosity = 2});
-      }
+      // A direct solver reports no iterations (-1), but its time counts all the same.
+      this->log.progress({.topic = progress_topics::implicit_linear_solve,
+                          .time = tc.get_t(),
+                          .duration_ms = calc_timer.lap(),
+                          .iterations = sol_iterations,
+                          .minimum_verbosity = 2});
     };
 
     newton.reinit(solution);

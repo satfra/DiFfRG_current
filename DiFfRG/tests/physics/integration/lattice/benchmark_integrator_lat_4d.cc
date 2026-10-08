@@ -6,8 +6,8 @@
 #include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/polynomials.hh>
-#include <DiFfRG/physics/integration/lattice/integrator_lat_3d.hh>
-#include <DiFfRG/physics/integration/lattice/integrator_lat_4d.hh>
+#include <DiFfRG/physics/integration/lattice/integrator_lat.hh>
+#include <DiFfRG/physics/integration/lattice/integrator_lat.hh>
 
 using namespace DiFfRG;
 
@@ -45,7 +45,7 @@ TEST_CASE("Benchmark 4D lattice cpu momentum integrals", "[integration][lattice 
             for (uint k = 0; k < rsize; ++k) {
               // make subview
               auto subview = Kokkos::subview(integral_view, k);
-              integrator.get(subview, constant, poly[0], poly[1], poly[2], poly[3], 1., 0., 0., 0., 1., 0., 0., 0., 1.,
+              integrator.reduce(KokkosHost_exec(), subview, constant, poly[0], poly[1], poly[2], poly[3], 1., 0., 0., 0., 1., 0., 0., 0., 1.,
                              0., 0., 0.);
             }
             Kokkos::fence();
@@ -90,7 +90,7 @@ TEST_CASE("Benchmark 3D lattice cpu momentum integrals", "[integration][lattice 
             for (uint k = 0; k < rsize; ++k) {
               // make subview
               auto subview = Kokkos::subview(integral_view, k);
-              integrator.get(subview, constant, poly[0], poly[1], poly[2], poly[3], 1., 0., 0., 0., 1., 0., 0., 0.);
+              integrator.reduce(KokkosHost_exec(), subview, constant, poly[0], poly[1], poly[2], poly[3], 1., 0., 0., 0., 1., 0., 0., 0.);
             }
             Kokkos::fence();
           });

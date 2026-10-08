@@ -143,7 +143,10 @@ TEMPLATE_TEST_CASE_SIG("Test momentum + 1 angle integrals", "[integration][quadr
       // 1e-11: GPU summation reorders the reduction, so the higher-degree random-polynomial
       // integrand drifts above tighter gates (observed up to ~1.4e-12 on CI at order 32).
       constexpr ctype expected_precision = 1e-11;
-      const ctype rel_err = t_abs((integral - reference_integral) / reference_integral);
+      // Relative to the size of the summed parts: constant and integral are random and can nearly
+      // cancel, which would turn a roundoff-level absolute error into a large relative one.
+      const ctype rel_err =
+          t_abs(integral - reference_integral) / (t_abs(constant) + t_abs(reference_integral - constant));
       if (rel_err >= expected_precision) {
         std::cerr << "reference: " << std::scientific << std::setw(10) << reference_integral
                   << " | integral: " << std::setw(10) << integral << " | relative error: " << std::setw(12) << rel_err

@@ -20,11 +20,13 @@
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/common/la_policy.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
+#include <DiFfRG/timestepping/ida_rank_agreement.hh>
 #include <DiFfRG/timestepping/linear_solver/GMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/PETScDirect.hh>
 #include <DiFfRG/timestepping/linear_solver/PETScKrylov.hh>
 #include <DiFfRG/timestepping/linear_solver/ScaledGMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/UMFPack.hh>
+#include <DiFfRG/timestepping/local_tolerances.hh>
 #include <DiFfRG/timestepping/sundials_diagnostics.hh>
 #include <DiFfRG/timestepping/sundials_ida.hh>
 
@@ -35,29 +37,8 @@ namespace DiFfRG
 
   namespace
   {
-    constexpr int recoverable_ida_callback_failure = 1;
-
-    /**
-     * @brief Agree across ranks on whether an IDA callback failed.
-     *
-     * IDA reacts to a recoverable failure by cutting the step and retrying. That decision must be
-     * unanimous: if one rank reports failure and another success, they take different step
-     * sequences, and the next collective -- an assembly compress(), a norm, this very agreement --
-     * is entered by different numbers of ranks. The symptom is a hang, not a wrong number, and it
-     * appears only for the input that first made the ranks disagree.
-     *
-     * Disagreement is easy to produce. The vector/matrix finiteness probes happen to be safe by
-     * themselves, because l1_norm() and frobenius_norm() are collective for PETSc and already
-     * return a global answer. The exception handlers are not: a model that throws on one cell makes
-     * exactly the rank owning that cell return failure.
-     *
-     * Every exit path of every callback routes through here exactly once, success and failure
-     * alike, so the collectives always match up.
-     */
-    inline int agreed_ida_result(MPI_Comm comm, const bool failed)
-    {
-      return DiFfRG::MPI::any_of(comm, failed) ? recoverable_ida_callback_failure : 0;
-    }
+    using internal::agreed_ida_result;
+    using internal::recoverable_ida_callback_failure;
 
     template <typename VectorType> double l1_norm_or_nan(const VectorType *vector)
     {
@@ -260,8 +241,7 @@ namespace DiFfRG
     }
   }
 
-  template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename...> typename LinearSolver>
+  template <typename VectorType, typename SparseMatrixType, uint dim, template <typename...> typename LinearSolver>
   void TimeStepperSUNDIALS_IDA_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(VectorType &initial_data,
                                                                                           const double t_start,
                                                                                           const double t_stop)
@@ -272,6 +252,8 @@ namespace DiFfRG
     assembler.reinit_matrix(jacobian);
     LinearSolver<SparseMatrixType, VectorType> linSolver;
     linSolver.set_report_port(this->log);
+    if constexpr (requires { linSolver.set_iterative_refinement(true); })
+      linSolver.set_iterative_refinement(this->impl.iterative_refinement);
     const bool jacobian_diagnostics_enabled = impl.jacobian_diagnostics;
     const DiagnosticPort jacobian_diagnostic_port =
         jacobian_diagnostics_enabled ? data_out.diagnostic_port() : DiagnosticPort{};
@@ -309,11 +291,26 @@ namespace DiFfRG
     residual_placeholder *= 0.;
     VectorType *residual = &residual_placeholder;
 
-    // Tells SUNDIALS to do an internal reset, e.g. if we do local refinement
+    // Per-dof absolute tolerances, if the model sets them (def::HasAbsTolerances); see LocalAbsTolerances.
+    LocalAbsTolerances<VectorType, SparseMatrixType, dim> local_tol(assembler, impl.abs_tol, impl.rel_tol,
+                                                                    impl.local_tolerance_refresh);
+    if (local_tol.init(y)) {
+      time_stepper.get_local_tolerances = [&]() -> VectorType & { return local_tol.get(); };
+      this->log.info("IDA: per-dof absolute tolerances from the model, {:.3e} .. {:.3e}", local_tol.min(),
+                     local_tol.max());
+    }
+
+    // Tells SUNDIALS to do an internal reset, e.g. if we do local refinement, or if the per-dof tolerances drifted
     time_stepper.solver_should_restart = [&](const double t, VectorType &sol, VectorType &sol_dot) -> bool {
       if (adaptor(t, sol)) {
         assembler.reinit_vector(sol_dot);
         assembler.reinit_matrix(jacobian);
+        local_tol.init(sol);
+        return true;
+      }
+      if (local_tol.refresh_needed(sol)) {
+        this->log.info("IDA: per-dof absolute tolerances refreshed at t = {:.5f} ({:.3e} .. {:.3e}), restarting", t,
+                       local_tol.min(), local_tol.max());
         return true;
       }
       return false;
@@ -538,16 +535,15 @@ namespace DiFfRG
                                 "nonfinite-solution", &src, &dst, nullptr);
           return agreed_ida_result(assembler.get_communicator(), true);
         }
-        if (sol_iterations >= 0) {
-          const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
-          ProgressEvent event{.topic = progress_topics::implicit_linear_solve,
-                              .time = stuck_t,
-                              .duration_ms = calc_timer.lap(),
-                              .iterations = sol_iterations,
-                              .minimum_verbosity = 2};
-          current_diagnostics.append_to(event);
-          this->log.progress(event);
-        }
+        // A direct solver reports no iterations (-1), but its time counts all the same.
+        const auto current_diagnostics = make_timestepping_diagnostics(time_stepper, callback_diagnostics);
+        ProgressEvent event{.topic = progress_topics::implicit_linear_solve,
+                            .time = stuck_t,
+                            .duration_ms = calc_timer.lap(),
+                            .iterations = sol_iterations,
+                            .minimum_verbosity = 2};
+        current_diagnostics.append_to(event);
+        this->log.progress(event);
       } catch (std::exception &) {
         callback_diagnostics.linear_solver_failures++;
         ++failure_counter;
@@ -574,8 +570,7 @@ namespace DiFfRG
     this->drain_output();
   }
 
-  template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename...> typename LinearSolver>
+  template <typename VectorType, typename SparseMatrixType, uint dim, template <typename...> typename LinearSolver>
   void TimeStepperSUNDIALS_IDA_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run(BlockVectorType &initial_data,
                                                                                           const double t_start,
                                                                                           const double t_stop)
@@ -591,6 +586,8 @@ namespace DiFfRG
     assembler.reinit_matrix(spatial_jacobian);
     LinearSolver<SparseMatrixType, VectorType> linSolver;
     linSolver.set_report_port(this->log);
+    if constexpr (requires { linSolver.set_iterative_refinement(true); })
+      linSolver.set_iterative_refinement(this->impl.iterative_refinement);
     const uint n_FE_dofs = initial_data.block(0).size();
     const uint n_vars = initial_data.block(1).size();
     FullMatrix<NumberType> variable_jacobian(n_vars);
@@ -700,8 +697,7 @@ namespace DiFfRG
         sol_dot_view.refresh(sol_dot.block(0));
         residual_view.refresh((*residual).block(0));
         data_out.write_frame(t, [&](auto &frame) {
-          assembler.attach_data_output(frame, sol_view.get(), vars_view.get(), sol_dot_view.get(),
-                                        residual_view.get());
+          assembler.attach_data_output(frame, sol_view.get(), vars_view.get(), sol_dot_view.get(), residual_view.get());
         });
 
         last_save = t;
@@ -953,8 +949,7 @@ namespace DiFfRG
     this->drain_output();
   }
 
-  template <typename VectorType, typename SparseMatrixType, uint dim,
-            template <typename...> typename LinearSolver>
+  template <typename VectorType, typename SparseMatrixType, uint dim, template <typename...> typename LinearSolver>
   void TimeStepperSUNDIALS_IDA_impl<VectorType, SparseMatrixType, dim, LinearSolver>::run_vars(VectorType &initial_data,
                                                                                                const double t_start,
                                                                                                const double t_stop)
@@ -1308,10 +1303,10 @@ template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, deal
 // file, constructing its own matrices and vectors rather than asking the assembler for them. The
 // count measures the timestepper body, not the work that unblocked it.
 //
-// Only the implicit path is instantiated, and only PETScKrylov. The explicit and Boost-hybrid
-// steppers stay serial deliberately: they are not viable for these stiff flows anyway, and they
-// route through common/eigen.hh, which assumes contiguous serial storage. dim == 0 is pure
-// variables and has no FE space to distribute.
+// The purely explicit steppers stay serial deliberately: they are not viable for these stiff flows
+// anyway, and they integrate the whole state through Eigen. (The Boost-hybrid IDA steppers are
+// distributed: their explicit part only ever holds the small, replicated variables.) dim == 0 is
+// pure variables and has no FE space to distribute.
 
 #ifdef DEAL_II_WITH_PETSC
 template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::PETScWrappers::MPI::Vector,

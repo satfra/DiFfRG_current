@@ -14,6 +14,7 @@ add_subdirectory(algorithm_benchmarking)
 
 setup_test(optimize.cc)
 setup_test(quadrature_integrator.cc)
+setup_test(map_points.cc)
 setup_test(map_scheduler.cc)
 setup_mpi_test(distributed_quadrature_integrator.cc)
 

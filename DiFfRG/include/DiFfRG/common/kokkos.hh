@@ -23,9 +23,9 @@ namespace DiFfRG
    * @brief The CPU execution space: TBB, the one host thread pool DiFfRG runs on.
    *
    * Not a Kokkos backend but a tag that routes an integrator through tbb::parallel_for instead, so
-   * that its work is stolen by the same arena deal.II's MeshWorker pipeline uses. This is what every
+   * that its work is stolen by the same arena the assemblers' parallel loops use. This is what every
    * production flow's CPU integrators are instantiated with, and it is optimal in conjunction with
-   * the FE discretizations, whose cell workers it nests inside.
+   * the discretizations, whose cell loops it nests inside.
    *
    * Its sibling KokkosHost_exec is the *Kokkos* host backend, which is Kokkos::Serial unless the
    * build sets KOKKOS_THREADS=ON. Keeping it serial is deliberate: a second pool of spinning
@@ -231,8 +231,7 @@ namespace DiFfRG
   };
 #else
   template <int dim, typename ExecutionSpace> struct KokkosNDRangeHelper {
-    using type = Kokkos::MDRangePolicy<Kokkos::Rank<dim>, ExecutionSpace,
-                                       Kokkos::LaunchBounds<DIFFRG_LAUNCH_BOUNDS>>;
+    using type = Kokkos::MDRangePolicy<Kokkos::Rank<dim>, ExecutionSpace, Kokkos::LaunchBounds<DIFFRG_LAUNCH_BOUNDS>>;
   };
   template <typename ExecutionSpace> struct KokkosNDRangeHelper<1, ExecutionSpace> {
     using type = Kokkos::RangePolicy<ExecutionSpace, Kokkos::LaunchBounds<DIFFRG_LAUNCH_BOUNDS>>;
@@ -388,7 +387,7 @@ namespace DiFfRG
 
   template <int dim, typename ExecutionSpace>
   auto make_kokkos_nd_range(ExecutionSpace &space, const device::array<size_t, dim> start,
-                         const device::array<size_t, dim> end)
+                            const device::array<size_t, dim> end)
   {
     if constexpr (dim == 1) {
       return KokkosNDRange<dim, ExecutionSpace>(space, start[0], end[0]);
@@ -405,7 +404,7 @@ namespace DiFfRG
 
   template <int dim, typename ExecutionSpace>
   auto make_kokkos_nd_range(ExecutionSpace &space, const device::array<size_t, dim> start,
-                         const device::array<size_t, dim> end, const device::array<size_t, dim> tile)
+                            const device::array<size_t, dim> end, const device::array<size_t, dim> tile)
   {
     if constexpr (dim == 1) {
       return KokkosNDRange<dim, ExecutionSpace>(space, start[0], end[0]);
@@ -458,7 +457,8 @@ namespace DiFfRG
   }
 
   template <int dim, typename TeamType>
-  KOKKOS_FORCEINLINE_FUNCTION auto make_kokkos_nd_thread_range(const TeamType &team, const device::array<size_t, dim> end)
+  KOKKOS_FORCEINLINE_FUNCTION auto make_kokkos_nd_thread_range(const TeamType &team,
+                                                               const device::array<size_t, dim> end)
   {
     if constexpr (dim == 1) {
       return Kokkos::TeamThreadRange(team, end[0]);

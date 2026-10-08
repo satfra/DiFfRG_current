@@ -113,6 +113,7 @@ cat > "$BUNDLE/BUNDLE_MANIFEST.json" <<EOF
   "mpi": "none",
   "diffrg_version": "${DIFFRG_VERSION}",
   "diffrg_git_sha": "${GIT_SHA}",
+  "deps_inputs_hash": "${DEPS_INPUTS_HASH:-unknown}",
   "build_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "build_prefix": "/opt/diffrg",
   "min_macos": "${MIN_MACOS}",

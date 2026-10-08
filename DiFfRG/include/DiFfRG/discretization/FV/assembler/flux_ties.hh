@@ -29,9 +29,8 @@ namespace DiFfRG
          * from it has to vanish as the mesh is refined, or the scheme it belongs to does not
          * converge.
          *
-         * The slot order matches the FEM assemblers' fe_tie and this scheme's own fv_tie: the
-         * discretization-specific solution entries first, then "extractors", "variables",
-         * "cell_width".
+         * The slot order matches the FEM assemblers' batch_tie: the discretization-specific solution
+         * entries first, then "extractors", "variables", "cell_width".
          */
         template <typename... T> auto flux_tie(T &&...t)
         {

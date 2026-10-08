@@ -45,10 +45,9 @@ namespace DiFfRG
       using Components = typename Model_::Components;
       static constexpr uint dim = 0;
 
-      /// This assembler has no FE space at all (dim == 0) and never runs a mesh_loop, so it
-      /// needs neither an assembly schedule nor a report port; the config is unused.
-      Assembler(Model &model, const ConfigTree & /*config*/)
-          : model(model)
+      /// This assembler has no FE space at all (dim == 0), so it needs no report port; the config is
+      /// unused.
+      Assembler(Model &model, const ConfigTree & /*config*/) : model(model)
       {
         static_assert(Components::count_fe_functions() == 0, "The pure variable assembler cannot handle FE functions!");
         reinit();

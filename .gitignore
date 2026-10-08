@@ -288,3 +288,6 @@ TSWLatexianTemp*
 # standalone packages
 *.sta
 *.DS_STORE
+
+## Julia Pkg manifests (generated)
+DiFfRG/julia/**/Manifest.toml

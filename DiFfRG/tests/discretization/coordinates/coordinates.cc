@@ -70,3 +70,31 @@ TEST_CASE("Test coordinate periodicity traits", "[coordinates]")
   // coordinate systems which do not expose their axes as types are never reported periodic
   STATIC_REQUIRE(!is_periodic_axis_v<LinCoordinates, 0>);
 }
+TEST_CASE("Test finite-T coordinates extend the Matsubara stack O(4)-symmetrically", "[coordinates]")
+{
+  using namespace DiFfRG;
+  const double T = 0.01, p = 0.3;
+  const LogarithmicCoordinates1D<double> radial(24, 1e-2, 6., 5.);
+
+  // inside the stack: row of the nearest frequency, radial momentum unchanged
+  const BosonicCoordinates1DFiniteT<int, double> bos(radial, 0, 4, T);
+  const auto [b_in, bp_in] = bos.backward(2. * 2. * M_PI * T, p);
+  CHECK(b_in == Catch::Approx(2.).epsilon(1e-14)); // a continuous row coordinate, not an integer
+  CHECK(bp_in == Catch::Approx(radial.backward(p)));
+
+  // beyond the last row (n = 3): read row 3 at the spatial momentum that keeps m^2 + p^2 fixed
+  const double m = 7. * 2. * M_PI * T, m3 = 3. * 2. * M_PI * T;
+  const auto [b_out, bp_out] = bos.backward(m, p);
+  CHECK(b_out == 3);
+  CHECK(bp_out == Catch::Approx(radial.backward(std::sqrt(p * p + m * m - m3 * m3))));
+
+  // fermionic stack n = -4..3, (2n+1) pi T: both edges
+  const FermionicCoordinates1DFiniteT<int, double> ferm(radial, -4, 4, T);
+  const double mf = 11. * M_PI * T, mf_edge = 7. * M_PI * T;
+  const auto [f_hi, fp_hi] = ferm.backward(mf, p);
+  CHECK(f_hi == 7);
+  CHECK(fp_hi == Catch::Approx(radial.backward(std::sqrt(p * p + mf * mf - mf_edge * mf_edge))));
+  const auto [f_lo, fp_lo] = ferm.backward(-mf, p);
+  CHECK(f_lo == 0);
+  CHECK(fp_lo == Catch::Approx(radial.backward(std::sqrt(p * p + mf * mf - mf_edge * mf_edge))));
+}

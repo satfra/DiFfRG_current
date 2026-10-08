@@ -18,7 +18,7 @@ namespace DiFfRG
      *
      * Momentum grids in DiFfRG are small - a radial 1D integral typically has 32 Gauss-Legendre
      * nodes - and TBBReduction is almost always called from inside an already parallel region:
-     * a deal.II MeshWorker::mesh_loop cell worker, or the outer tbb::parallel_for of
+     * an assembler's parallel cell loop, or the outer tbb::parallel_for of
      * Integrator::map. Spawning a task tree for such a reduction is pure overhead; measured on a
      * 32-node O(N) kernel it costs a factor 16 when called serially and a factor 5 when nested.
      *

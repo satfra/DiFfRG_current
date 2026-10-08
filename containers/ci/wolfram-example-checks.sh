@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Executes inside the dependency container. Wolfram itself is expected to come
-# from bind mounts prepared by run-wolfram-in-container.sh.
+# Runs the Wolfram example generators on the host, with the host's
+# wolframscript, FORM, FunKit and FormTracer, and records preflight, generator
+# and generated-flow-drift results. Driven by run-wolfram-checks.sh.
 set -euo pipefail
 
-workspace="${WORKSPACE:-/work}"
+workspace="${WORKSPACE:-$(cd -- "$(dirname "$0")/../.." >/dev/null 2>&1 && pwd -P)}"
 log_dir="${DIFFRG_WOLFRAM_LOG_DIR:-${workspace}/.ci/logs/wolfram}"
 summary_file="${DIFFRG_WOLFRAM_SUMMARY:-${workspace}/.ci/logs/wolfram-summary.md}"
 required_examples="${REQUIRED_WOLFRAM_EXAMPLES:-}"
@@ -18,11 +19,7 @@ examples=(
 )
 
 mkdir -p "${log_dir}" "$(dirname "${summary_file}")"
-path_prefix="${PREPEND_PATH:-}"
-if [[ -d /host-bin/wolfram-bin ]]; then
-  path_prefix="/host-bin/wolfram-bin${path_prefix:+:${path_prefix}}"
-fi
-export PATH="${path_prefix}:/usr/local/bin:/usr/bin:/bin:/opt/Wolfram/WolframEngine/Executables:/opt/Wolfram/Wolfram/Executables:${PATH:-}"
+export PATH="${PATH:-/usr/local/bin:/usr/bin:/bin}:/opt/Wolfram/WolframEngine/Executables:/opt/Wolfram/Wolfram/Executables"
 
 is_required() {
   local name="$1"
@@ -49,7 +46,6 @@ preflight_log="${log_dir}/preflight.log"
 set +e
 (
   echo "PATH: ${PATH}"
-  echo "PREPEND_PATH: ${PREPEND_PATH:-}"
   echo "PWD: $(pwd)"
   echo "HOME: ${HOME:-}"
   echo
@@ -115,7 +111,7 @@ else
   echo "---- ${preflight_log#${workspace}/} ----"
   cat "${preflight_log}"
   echo "---- end ${preflight_log#${workspace}/} ----"
-  echo "| preflight | failed | \`${preflight_log#${workspace}/}\` | Wolfram/FunKit/tform not fully available inside container |" >> "${summary_file}"
+  echo "| preflight | failed | \`${preflight_log#${workspace}/}\` | Wolfram/FunKit/tform not fully available on this host |" >> "${summary_file}"
   echo >> "${summary_file}"
   echo "Preflight failed; generator execution skipped." >> "${summary_file}"
   exit 75
@@ -133,7 +129,7 @@ for item in "${examples[@]}"; do
 
   set +e
   if [[ "${entry}" == *.m ]]; then
-    run_wolfram -code 'AppendTo[$Path, "/work/DiFfRG/Mathematica"]; SetDirectory["'"${example_dir}"'"]; Get["'"${entry}"'"]' > "${log}" 2>&1
+    run_wolfram -code 'AppendTo[$Path, "'"${workspace}"'/DiFfRG/Mathematica"]; SetDirectory["'"${example_dir}"'"]; Get["'"${entry}"'"]' > "${log}" 2>&1
     status=$?
   elif [[ "${entry}" == *.nb || "${entry}" == *.wl ]]; then
     (

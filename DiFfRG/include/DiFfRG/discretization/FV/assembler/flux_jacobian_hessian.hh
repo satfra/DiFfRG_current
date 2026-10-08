@@ -1,13 +1,14 @@
 #pragma once
 
-#include <array>
-#include <autodiff/forward/real/real.hpp>
-#include <cstddef>
-#include <deal.II/base/point.h>
-#include <deal.II/base/tensor.h>
-#include <tuple>
+// DiFfRG
+#include <DiFfRG/common/tuples.hh>
 
-#include <DiFfRG/discretization/FV/assembler/flux_ties.hh>
+// external libraries
+#include <deal.II/base/tensor.h>
+
+// standard library
+#include <array>
+#include <cstddef>
 
 namespace DiFfRG
 {
@@ -36,6 +37,8 @@ namespace DiFfRG
         template <typename NumberType, int dim, size_t n_components>
         using MixedHessianTensor = std::array<HessianTensor<NumberType, dim, n_components>, dim>;
 
+        /// The flux at a trace and its derivatives with respect to the trace's values and gradients, as the numerical
+        /// flux jacobian needs them (see flux_derivatives).
         template <typename NumberType, int dim, size_t n_components> struct FluxDerivativeData {
           std::array<dealii::Tensor<1, dim, NumberType>, n_components> F{};
           std::array<JacobianMatrix<NumberType, n_components>, dim> J{};
@@ -44,127 +47,13 @@ namespace DiFfRG
           MixedHessianTensor<NumberType, dim, n_components> mixed_H{};
         };
 
-        /**
-         * @brief Compute F, dF/du, d2F/du2, dF/dgrad(u), and d2F/(du dgrad(u)) with second-order forward AD.
-         *
-         * The gradient is held fixed while extracting dF/du. The Hessian and mixed derivatives are used by the
-         * wave-speed strategy to differentiate the physical KT speed.
-         */
-        template <typename Model, typename NumberType, int dim, size_t n_components, typename ExtractorArray,
-                  typename VariableVector>
-        FluxDerivativeData<NumberType, dim, n_components>
-        compute_flux_derivatives_ad(const std::array<NumberType, n_components> &u,
-                                    const std::array<dealii::Tensor<1, dim, NumberType>, n_components> &grad_u,
-                                    const dealii::Point<dim> &x_q, const double cell_width,
-                                    const ExtractorArray &extractors, const VariableVector &variables,
-                                    const Model &model)
-        {
-          using ADNumberType = autodiff::Real<2, NumberType>;
-          using autodiff::detail::derivative;
-          using autodiff::detail::seed;
-
-          auto unseed = [](ADNumberType &x) { seed<1>(x, NumberType(0)); };
-
-          std::array<ADNumberType, n_components> u_AD{};
-          std::array<dealii::Tensor<1, dim, ADNumberType>, n_components> grad_u_AD{};
-          for (size_t c = 0; c < n_components; ++c) {
-            u_AD[c] = ADNumberType(u[c]);
-            for (size_t d = 0; d < dim; ++d)
-              grad_u_AD[c][d] = ADNumberType(grad_u[c][d]);
-          }
-
-          FluxDerivativeData<NumberType, dim, n_components> result{};
-          FluxGradientJacobian<NumberType, dim, n_components> grad_diagonal_H{};
-          std::array<dealii::Tensor<1, dim, ADNumberType>, n_components> F_AD{};
-
-          model.flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD, extractors, variables, cell_width));
-          for (size_t i = 0; i < n_components; ++i)
-            for (size_t d_out = 0; d_out < dim; ++d_out)
-              result.F[i][d_out] = F_AD[i][d_out].val();
-
-          // Diagonal u passes provide J and the diagonal u-Hessian.
-          for (size_t j = 0; j < n_components; ++j) {
-            seed<1>(u_AD[j], NumberType(1));
-            F_AD = {};
-            model.flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD, extractors, variables, cell_width));
-            for (size_t i = 0; i < n_components; ++i)
-              for (size_t d_out = 0; d_out < dim; ++d_out) {
-                result.J[d_out][i][j] = derivative<1>(F_AD[i][d_out]);
-                result.H[d_out][i][j][j] = derivative<2>(F_AD[i][d_out]);
-              }
-            unseed(u_AD[j]);
-          }
-
-          // Off-diagonal u-Hessian entries via polarization.
-          for (size_t j = 0; j < n_components; ++j)
-            for (size_t c = j + 1; c < n_components; ++c) {
-              seed<1>(u_AD[j], NumberType(1));
-              seed<1>(u_AD[c], NumberType(1));
-              F_AD = {};
-              model.flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD, extractors, variables, cell_width));
-              for (size_t i = 0; i < n_components; ++i)
-                for (size_t d_out = 0; d_out < dim; ++d_out) {
-                  const NumberType cross =
-                      (derivative<2>(F_AD[i][d_out]) - result.H[d_out][i][j][j] - result.H[d_out][i][c][c]) /
-                      NumberType(2);
-                  result.H[d_out][i][j][c] = result.H[d_out][i][c][j] = cross;
-                }
-              unseed(u_AD[j]);
-              unseed(u_AD[c]);
-            }
-
-          // Gradient diagonal passes provide dF/dgrad(u) and the diagonal terms used by mixed polarization.
-          for (size_t c = 0; c < n_components; ++c)
-            for (size_t d_in = 0; d_in < dim; ++d_in) {
-              seed<1>(grad_u_AD[c][d_in], NumberType(1));
-              F_AD = {};
-              model.flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD, extractors, variables, cell_width));
-              for (size_t i = 0; i < n_components; ++i)
-                for (size_t d_out = 0; d_out < dim; ++d_out) {
-                  result.grad_J[i][c][d_out][d_in] = derivative<1>(F_AD[i][d_out]);
-                  grad_diagonal_H[i][c][d_out][d_in] = derivative<2>(F_AD[i][d_out]);
-                }
-              unseed(grad_u_AD[c][d_in]);
-            }
-
-          // Mixed d2F/(du_j dgrad(u_c)_d_in) entries via polarization.
-          for (size_t j = 0; j < n_components; ++j)
-            for (size_t c = 0; c < n_components; ++c)
-              for (size_t d_in = 0; d_in < dim; ++d_in) {
-                seed<1>(u_AD[j], NumberType(1));
-                seed<1>(grad_u_AD[c][d_in], NumberType(1));
-                F_AD = {};
-                model.flux(F_AD, x_q, flux_tie(u_AD, grad_u_AD, extractors, variables, cell_width));
-                for (size_t i = 0; i < n_components; ++i)
-                  for (size_t d_out = 0; d_out < dim; ++d_out)
-                    result.mixed_H[d_in][d_out][i][j][c] = (derivative<2>(F_AD[i][d_out]) - result.H[d_out][i][j][j] -
-                                                            grad_diagonal_H[i][c][d_out][d_in]) /
-                                                           NumberType(2);
-                unseed(u_AD[j]);
-                unseed(grad_u_AD[c][d_in]);
-              }
-
-          return result;
-        }
-
-        /**
-         * @brief Backward-compatible state-only view of the full AD derivative extraction.
-         *
-         * This is intentionally not a second derivative strategy: it calls
-         * compute_flux_derivatives_ad with a zero gradient and returns its F/J/H subset.
-         */
-        template <typename Model, typename NumberType, int dim, size_t n_components, typename ExtractorArray,
-                  typename VariableVector>
-        auto compute_flux_jacobian_and_hessian(const std::array<NumberType, n_components> &u,
-                                               const dealii::Point<dim> &x_q, const double cell_width,
-                                               const ExtractorArray &extractors, const VariableVector &variables,
-                                               const Model &model)
-        {
-          const std::array<dealii::Tensor<1, dim, NumberType>, n_components> grad_u{};
-          const auto derivatives = compute_flux_derivatives_ad<Model, NumberType, dim, n_components>(
-              u, grad_u, x_q, cell_width, extractors, variables, model);
-          return std::make_tuple(derivatives.F, derivatives.J, derivatives.H);
-        }
+        /// Half the derivative of the diffusion flux on one trace with respect to its inputs: the face's diffusion
+        /// flux is the average of the two traces' fluxes.
+        template <int dim, typename NumberType, size_t n_components> struct DiffusionSideJacobian {
+          SimpleMatrix<dealii::Tensor<1, dim, NumberType>, n_components> u{};
+          SimpleMatrix<dealii::Tensor<1, dim, dealii::Tensor<1, dim, NumberType>>, n_components> grad{};
+          SimpleMatrix<dealii::Tensor<1, dim, dealii::Tensor<3, dim, NumberType>>, n_components> third_derivatives{};
+        };
 
       } // namespace internal
     } // namespace KurganovTadmor

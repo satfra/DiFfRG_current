@@ -11,8 +11,8 @@
 #include <deal.II/numerics/solution_transfer.h>
 
 // DiFfRG
-#include <DiFfRG/common/utils.hh>
 #include <DiFfRG/common/mpi.hh>
+#include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/solution_view.hh>
 
@@ -89,13 +89,12 @@ namespace DiFfRG
       assembler.refinement_indicator(indicator, view.get());
 
       if constexpr (Discretization::Mesh::is_parallel) {
-        // The indicator is filled by a mesh_loop with assemble_own_cells, so on a partitioned mesh
-        // each rank only contributes its own cells and every other entry is still zero. Refining on
+        // Each rank fills only the entries of the cells it owns, so on a partitioned mesh every
+        // other entry is still zero. Refining on
         // that unreduced vector is not a crash -- it silently refines a different set of cells on
         // every rank, which then diverge. Sum first; the mesh is replicated, so after this every
         // rank holds the identical, complete indicator.
-        MPI::sum_reduce(triangulation.get_mpi_communicator(), indicator.data(),
-                        static_cast<int>(indicator.size()));
+        MPI::sum_reduce(triangulation.get_mpi_communicator(), indicator.data(), static_cast<int>(indicator.size()));
       }
 
       GridRefinement::refine_and_coarsen_fixed_fraction(triangulation, indicator, adapt_upper, adapt_lower);

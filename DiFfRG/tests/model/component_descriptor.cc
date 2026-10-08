@@ -27,3 +27,14 @@ TEST_CASE("Test", "[model]")
   REQUIRE(data_u == data[0]);
   REQUIRE(data_v == data[1]);
 }
+
+TEST_CASE("get_names_vector gives one name per component", "[model]")
+{
+  using namespace DiFfRG;
+
+  using FEFunctions = FEFunctionDescriptor<Scalar<"u">, FunctionND<"phi", 3>, FunctionND<"A", 2, 2>, Scalar<"v">>;
+
+  const std::vector<std::string> expected{"u", "phi_0", "phi_1", "phi_2", "A_0", "A_1", "A_2", "A_3", "v"};
+  REQUIRE(FEFunctions::get_names_vector() == expected);
+  REQUIRE(FEFunctions::get_names_vector().size() == FEFunctions::total_size);
+}

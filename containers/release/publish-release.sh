@@ -8,11 +8,13 @@
 #   - the working tree is clean (the tag must point at the code that built it),
 #   - `gh auth status` succeeds.
 #
-# Creates the annotated tag deps-v<version>, pushes it, and creates the GitHub
-# release with the tarball, checksum, and manifest attached.
+# Creates the GitHub release deps-v<version> (and with it the tag) with the
+# tarball, checksum, and manifest attached. The variants of one version share
+# that release: publishing a further variant uploads its assets into it.
 #
-# Usage: publish-release.sh -v <bundle_version> [-o <distdir>]
+# Usage: publish-release.sh -v <bundle_version> [-V <variant>] [-o <distdir>]
 #   -v <version>  bundle version, e.g. 1.0.0 (as passed to build-release.sh)
+#   -V <variant>  bundle variant (default: linux-x86_64-v3-cpu)
 #   -o <distdir>  where the tarball lives (default: containers/release/dist)
 # ##############################################################################
 set -euo pipefail
@@ -27,9 +29,10 @@ variant="linux-x86_64-v3-cpu"
 version=''
 distdir="${scriptpath}/dist"
 
-while getopts v:o: flag; do
+while getopts v:V:o: flag; do
   case "${flag}" in
   v) version=${OPTARG} ;;
+  V) variant=${OPTARG} ;;
   o) distdir=${OPTARG} ;;
   *)
     echo "Unknown flag." >&2
@@ -49,7 +52,7 @@ tag="deps-v${version}"
 
 for f in "${tarball}" "${tarball}.sha256"; do
   [[ -f ${f} ]] || {
-    echo "Missing ${f} -- run build-release.sh -v ${version} first." >&2
+    echo "Missing ${f} -- run build-release.sh -v ${version} -V ${variant} first." >&2
     exit 1
   }
 done
@@ -74,7 +77,8 @@ workdir="$(mktemp -d)"
 trap 'rm -rf "${workdir}"' EXIT
 tar --zstd -xf "${tarball}" -C "${workdir}" "${name}/BUNDLE_MANIFEST.json"
 manifest="${workdir}/${name}/BUNDLE_MANIFEST.json"
-cp "${manifest}" "${workdir}/BUNDLE_MANIFEST.json"
+# Named per variant: the variants of a version share one release.
+cp "${manifest}" "${workdir}/${name}.manifest.json"
 
 field() { grep -oE "\"$1\": *\"[^\"]*\"" "${manifest}" | head -1 | sed -E 's/.*: *"([^"]*)"/\1/'; }
 glibc_floor="$(field glibc_floor)"
@@ -89,14 +93,21 @@ sed -e "s|@VERSION@|${version}|g" \
   "${scriptpath}/RELEASE_NOTES.md.in" >"${notes}"
 printf '\n### Bundled dependency versions\n\n%s\n' "${dep_list}" >>"${notes}"
 
-# gh creates the tag on the remote as part of the release; doing it in one
-# step avoids a stray pushed tag when the release upload fails.
-echo "Creating release ${tag}..."
-gh release create "${tag}" \
-  "${tarball}" "${tarball}.sha256" "${workdir}/BUNDLE_MANIFEST.json" \
-  --target "$(git -C "${repo}" rev-parse HEAD)" \
-  --title "DiFfRG dependency bundle ${version}" \
-  --notes-file "${notes}"
+assets=("${tarball}" "${tarball}.sha256" "${workdir}/${name}.manifest.json")
+if gh release view "${tag}" >/dev/null 2>&1; then
+  echo "Release ${tag} exists; adding ${variant}..."
+  gh release upload "${tag}" "${assets[@]}"
+  echo "Release notes were written for the first variant published; add a line"
+  echo "for ${variant} by hand if needed: sha256 $(cut -d' ' -f1 "${tarball}.sha256")"
+else
+  # gh creates the tag on the remote as part of the release; doing it in one
+  # step avoids a stray pushed tag when the release upload fails.
+  echo "Creating release ${tag}..."
+  gh release create "${tag}" "${assets[@]}" \
+    --target "$(git -C "${repo}" rev-parse HEAD)" \
+    --title "DiFfRG dependency bundle ${version}" \
+    --notes-file "${notes}"
+fi
 git -C "${repo}" fetch origin "refs/tags/${tag}:refs/tags/${tag}" 2>/dev/null || true
 
 echo "Published ${tag}."

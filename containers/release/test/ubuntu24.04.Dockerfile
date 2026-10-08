@@ -11,3 +11,10 @@ RUN apt-get -y update && apt-get -y install --no-install-recommends \
         libopenblas-dev libgsl-dev zlib1g-dev \
         python3 patch ca-certificates curl zstd file pkg-config \
     && rm -rf /var/lib/apt/lists/*
+
+# MPI-variant validation (test-tarball.sh -m): the host Open MPI consumers build with.
+ARG mpi=none
+RUN if [ "${mpi}" = openmpi ]; then \
+      apt-get -y update && apt-get -y install --no-install-recommends libopenmpi-dev openmpi-bin \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi

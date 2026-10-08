@@ -111,7 +111,8 @@ bool run(std::string test_name, double expected_precision, const std::string &re
 
   // Define the objects needed to run the simulation
   Model model(p_prm);
-  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(config)};
+  // The discretization names its mesh; a serial-only test pins RectangularMeshSerial there.
+  typename Discretization::Mesh mesh{Config::ConfigurationMesh<dim>(config)};
   Discretization discretization(mesh, config);
   Assembler assembler(discretization, model, config);
   auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, test_name, test_name);

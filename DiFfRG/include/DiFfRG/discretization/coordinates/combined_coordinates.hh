@@ -63,24 +63,28 @@ namespace DiFfRG
     /**
      * @brief Transform from the physical space to the grid
      *
-     * @param y physical coordinate
-     * @return double grid coordinate
+     * The Matsubara coordinate is fractional: a frequency between two rows (a quadrature node of the
+     * Matsubara sum, or the vacuum integral) lies between them, and the interpolator blends the rows
+     * linearly instead of snapping to the nearest one. A stack starting at n >= 0 stores only
+     * non-negative frequencies; the dressing is then taken even in the frequency, as for a neutral
+     * boson, and m is mirrored to |m|. A frequency beyond the stack is read from the outermost row
+     * m_edge at the spatial momentum that keeps the four-momentum fixed,
+     * p'^2 = p^2 + m^2 - m_edge^2, i.e. the stack is extended O(4)-symmetrically.
+     *
+     * @param m frequency
+     * @param p spatial momentum
+     * @return fractional Matsubara index and radial grid coordinate
      */
-    std::tuple<Idx, NT> KOKKOS_FUNCTION backward(const NT m, const NT p) const
+    std::tuple<NT, NT> KOKKOS_FUNCTION backward(NT m, const NT p) const
     {
-      Idx m_idx = matsubara_values.backward(m);
-      NT p_idx = 0;
-      if (m_idx >= int(m_size)) {
-        m_idx = m_size - 1;
-        const auto new_p = std::sqrt(powr<2>(p) + powr<2>(m - matsubara_values.forward(m_idx)));
-        p_idx = radial_coordinates.backward(new_p);
-      } else if (m_idx < 0) {
-        m_idx = 0;
-        const auto new_p = std::sqrt(powr<2>(p) + powr<2>(m - matsubara_values.forward(m_idx)));
-        p_idx = radial_coordinates.backward(new_p);
-      } else
-        p_idx = radial_coordinates.backward(p);
-      return {m_idx, p_idx};
+      if (m_start >= 0) m = Kokkos::abs(m);
+      const NT s = matsubara_values.backward_continuous(m);
+      if (s >= NT(0) && s <= NT(m_size - 1)) return {s, radial_coordinates.backward(p)};
+      const Idx m_idx = s < NT(0) ? Idx(0) : Idx(m_size) - 1;
+      const NT m_edge = matsubara_values.forward(m_idx);
+      // max(): a stack not containing 0 can be left towards 0, where |m| < |m_edge|
+      const NT new_p = std::sqrt(Kokkos::max(NT(0), powr<2>(p) + powr<2>(m) - powr<2>(m_edge)));
+      return {NT(m_idx), radial_coordinates.backward(new_p)};
     }
 
     device::array<size_t, 2> KOKKOS_INLINE_FUNCTION from_linear_index(auto i) const
@@ -166,24 +170,24 @@ namespace DiFfRG
     /**
      * @brief Transform from the physical space to the grid
      *
-     * @param y physical coordinate
-     * @return double grid coordinate
+     * The Matsubara coordinate is fractional, as in BosonicCoordinates1DFiniteT::backward. No mirroring:
+     * a fermionic stack covers both signs itself and is not even in the frequency at mu != 0. A
+     * frequency beyond the stack is read from the outermost row m_edge at the spatial momentum that
+     * keeps the four-momentum fixed, p'^2 = p^2 + m^2 - m_edge^2, i.e. the stack is extended O(4)-symmetrically.
+     *
+     * @param m frequency
+     * @param p spatial momentum
+     * @return fractional Matsubara index and radial grid coordinate
      */
-    std::tuple<Idx, NT> KOKKOS_FUNCTION backward(const NT m, const NT p) const
+    std::tuple<NT, NT> KOKKOS_FUNCTION backward(const NT m, const NT p) const
     {
-      Idx m_idx = matsubara_values.backward(m);
-      NT p_idx = 0;
-      if (m_idx >= int(m_size)) {
-        m_idx = m_size - 1;
-        const auto new_p = std::sqrt(powr<2>(p) + powr<2>(m - matsubara_values.forward(m_idx)));
-        p_idx = radial_coordinates.backward(new_p);
-      } else if (m_idx < 0) {
-        m_idx = 0;
-        const auto new_p = std::sqrt(powr<2>(p) + powr<2>(m - matsubara_values.forward(m_idx)));
-        p_idx = radial_coordinates.backward(new_p);
-      } else
-        p_idx = radial_coordinates.backward(p);
-      return {m_idx, p_idx};
+      const NT s = matsubara_values.backward_continuous(m);
+      if (s >= NT(0) && s <= NT(m_size - 1)) return {s, radial_coordinates.backward(p)};
+      const Idx m_idx = s < NT(0) ? Idx(0) : Idx(m_size) - 1;
+      const NT m_edge = matsubara_values.forward(m_idx);
+      // max(): a stack not containing 0 can be left towards 0, where |m| < |m_edge|
+      const NT new_p = std::sqrt(Kokkos::max(NT(0), powr<2>(p) + powr<2>(m) - powr<2>(m_edge)));
+      return {NT(m_idx), radial_coordinates.backward(new_p)};
     }
 
     device::array<size_t, 2> KOKKOS_INLINE_FUNCTION from_linear_index(auto i) const
@@ -222,4 +226,16 @@ namespace DiFfRG
   using FocusedBosonicCoordinates1DFiniteT = BosonicCoordinates1DFiniteT<int, double, FocusedLogCoordinates1D<double>>;
   using FocusedFermionicCoordinates1DFiniteT =
       FermionicCoordinates1DFiniteT<int, double, FocusedLogCoordinates1D<double>>;
+
+  // see rebind_ctype in coordinates.hh
+  template <typename Idx, typename NT0, typename Radial, typename NT>
+    requires requires { typename rebind_ctype<Radial, NT>::type; }
+  struct rebind_ctype<BosonicCoordinates1DFiniteT<Idx, NT0, Radial>, NT> {
+    using type = BosonicCoordinates1DFiniteT<Idx, NT, rebind_ctype_t<Radial, NT>>;
+  };
+  template <typename Idx, typename NT0, typename Radial, typename NT>
+    requires requires { typename rebind_ctype<Radial, NT>::type; }
+  struct rebind_ctype<FermionicCoordinates1DFiniteT<Idx, NT0, Radial>, NT> {
+    using type = FermionicCoordinates1DFiniteT<Idx, NT, rebind_ctype_t<Radial, NT>>;
+  };
 } // namespace DiFfRG

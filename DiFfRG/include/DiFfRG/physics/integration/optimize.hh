@@ -12,10 +12,12 @@ namespace DiFfRG
 
     if (already_run) return x_extent;
 
-    const uint order = config.get_uint_or_warn("/integration/x_order", 32);
     const int verbosity = config.get_int("/output/verbosity", 0);
     const double x_extent_tolerance = config.get_double_or_warn("/integration/x_extent_tolerance", 1e-5);
-    constexpr uint quadrature_factor = 8;
+    // Fixed rules, independent of /integration/x_order: they only locate the cutoff of a smooth regulator
+    // function, and deal.II builds a QGauss of order n in O(n^2), so scaling them with x_order made startup
+    // take minutes at x_order = 512. These are the orders x_order = 32 used to give.
+    constexpr uint order = 256;
     auto optimize_x = [](double x) -> double { return 1. / (x + Regulator::RB(1., x)) * Regulator::RBdot(1., x); };
 
     // Optimize the extent of the momentum integral
@@ -23,9 +25,9 @@ namespace DiFfRG
     // = [0, x_extent * 10] and then search for an x_extent such that (I2 + I1) / I1 < x_extent_tolerance and (I2 +
     // I3) / I2 < x_extent_tolerance
 
-    const dealii::QGauss<1> quadrature_1(quadrature_factor * 1 * order);
-    const dealii::QGauss<1> quadrature_2(quadrature_factor * 2 * order);
-    const dealii::QGauss<1> quadrature_3(quadrature_factor * 10 * order);
+    const dealii::QGauss<1> quadrature_1(1 * order);
+    const dealii::QGauss<1> quadrature_2(2 * order);
+    const dealii::QGauss<1> quadrature_3(10 * order);
 
     double eps1 = 1., eps2 = 1.;
     uint decrease_counter = 0;
@@ -55,8 +57,7 @@ namespace DiFfRG
       else
         decrease_counter = 0;
       if (decrease_counter > 2)
-        throw std::runtime_error("Cannot reach requested precision for x_extent - increase x_quadrature_order or "
-                                 "decrease x_extent_tolerance.");
+        throw std::runtime_error("Cannot reach requested precision for x_extent - increase x_extent_tolerance.");
 
       eps1 = std::abs((I2 - I1) / I1);
       eps2 = std::abs((I2 - I3) / I2);

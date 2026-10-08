@@ -29,8 +29,8 @@ namespace DiFfRG
   /**
    * @brief The CPU thread budget this process resolved.
    *
-   * This is the number every DiFfRG component sizes itself against: the assembly schedule, the
-   * host/device split of the map scheduler, and the TBB arena itself. Resolved once by
+   * This is the number every DiFfRG component sizes itself against: the host/device split of the
+   * map scheduler, and the TBB arena itself. Resolved once by
    * DiFfRG::Init, or by set_thread_limit() for embedders that never construct an Init.
    *
    * Deliberately not a synonym for dealii::MultithreadInfo::n_threads(). That is a mutable static

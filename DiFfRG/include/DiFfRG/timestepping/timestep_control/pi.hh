@@ -65,12 +65,15 @@ namespace DiFfRG
     }
 
     /**
-     * @brief On a fail, decrease the timestep.
+     * @brief On a fail, decrease the timestep by at least a factor of 2 relative to the failed step.
+     *
+     * The error estimate alone cannot guarantee that: a failure need not come with EEst > 1, and the failed step may
+     * have been clipped below sug_dt (to hit max_t or an output time), so scaling sug_dt could retry the same step.
      */
     virtual void step_fail(const std::exception &) override
     {
       get_q();
-      sug_dt /= std::min(1. / qmin, q11 / gamma);
+      sug_dt = cur_dt / std::max(2., std::min(1. / qmin, q11 / gamma));
     }
 
     double beta1, beta2, qsteady_min, qsteady_max, qmin, qmax, qoldinit, qold, q11, q, gamma;

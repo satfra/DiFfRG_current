@@ -25,8 +25,8 @@ namespace DiFfRG
    * not from what the caller intends:
    *
    *  * DoFHandler::distribute_dofs() on a parallel triangulation is collective.
-   *  * MeshWorker::mesh_loop() visits only the calling rank's cells, and drops faces between two
-   *    non-owned cells no matter which AssembleFlags are set.
+   *  * A loop over the locally owned cells (internal::ColoredCells) visits only the calling rank's
+   *    cells.
    *  * DataOut::add_data_vector() routes every vector type through a ghosted
    *    LinearAlgebra::distributed::BlockVector built on dof_handler.get_mpi_communicator().
    *

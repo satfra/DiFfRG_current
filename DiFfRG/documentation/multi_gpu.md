@@ -17,6 +17,7 @@ register, nothing to tune per flow.
 |---|---|---|
 | `MapScheduler` | `include/DiFfRG/physics/integration/map_scheduler.hh`, `src/.../map_scheduler.cc` | Decides which rank computes which part of each `map()`, and performs the batched exchange |
 | `MapCompletion` | `include/DiFfRG/physics/integration/map_completion.hh` | Lands deferred device results, then drives the exchange |
+| `scheduled_map`, `staged_map` | `include/DiFfRG/physics/integration/map_distribution.hh` | The scheduler and staging half of every integrator's `map()`: vacuum and finite-T quadrature, and the lattice sums |
 | Rank → GPU affinity | `src/DiFfRG/common/init.cc` | Gives each rank its own device and its share of the CPU threads |
 | MPI utilities | `include/DiFfRG/common/mpi.hh`, `src/.../mpi.cc` | `allgatherv`, `agree`, `bcast`, `any_of`, `split_shared`, `abort` |
 
@@ -297,7 +298,7 @@ the ordering above a lie. Where that would happen, `Init` removes it from the en
 first `set_thread_limit()` call and says so in the warning.
 
 The resolved number is published as `DiFfRG::n_threads()` (`DiFfRG/common/threads.hh`), which is
-what the assembly schedule and the map scheduler's host/device split size themselves against. Read
+what the map scheduler's host/device split sizes itself against. Read
 it from there rather than from `dealii::MultithreadInfo::n_threads()`: the latter is a mutable
 static that any `set_thread_limit()` call rewrites, so it is not necessarily the number DiFfRG
 resolved. The two are kept in agreement by construction.
@@ -444,6 +445,9 @@ The library-level part of this contract is already covered by tests:
 - `tests/physics/integration/distributed_quadrature_integrator.cc` — compares `map()` against
   `map_dist()` bitwise, and is registered under `mpirun` at 2, 3 and 4 ranks when the build has MPI
   (`setup_mpi_test`, `MPI_TEST_RANKS`).
+- `tests/physics/integration/lattice/distributed_lattice_integrator.cc` — the same check for
+  `IntegratorLat<1..4>` on a 2D external grid, also inside a `DeferredMaps` scope; registered under
+  `mpirun` the same way.
 
 ---
 
@@ -643,10 +647,11 @@ These were consciously left out of this increment:
      node-local ranks > 1); several ranks per node does not. Until FE is distributed, prefer one rank
      per node for any model with FE functions, and measure before assuming more ranks help.
 
-  A related rule while this stands: **never call `map()` from inside a threaded FE cell worker.**
-  `MapScheduler` and `MapCompletion` are single-threaded by design, and cell order across threads is
-  not deterministic, so the per-rank plans would diverge. That fails loudly rather than silently —
-  the plan checksum calls `MPI_Abort` — but it is a design constraint, not a diagnostic.
+  A related rule while this stands: **never call `map()` during assembly** -- from a model's `flux`,
+  `source` or `evaluate_batch`. `map()` is collective, while each rank assembles only its own cells,
+  so the per-rank plans would diverge. The assemblers open a `NoMapsHere` scope around every model
+  evaluation, and a `map()` inside it aborts with a message instead of hanging. Use `map_points()`
+  there: it is rank-local and never touches the scheduler.
 
   The SPMD choice was made partly so that distributing FE later is an orthogonal addition rather than
   a rewrite: deal.II is SPMD, so the mesh partitioning it already supports drops into this model.

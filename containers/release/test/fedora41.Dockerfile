@@ -9,3 +9,13 @@ RUN dnf -y install \
         openblas-devel gsl-devel zlib-devel \
         python3 patch curl zstd file pkgconf-pkg-config \
     && dnf clean all
+
+# MPI-variant validation (test-tarball.sh -m): the host Open MPI consumers build
+# with. The EL/Fedora package keeps it off the default paths (normally `module
+# load mpi/openmpi-x86_64`); export them for the test driver's login shell.
+ARG mpi=none
+RUN if [ "${mpi}" = openmpi ]; then \
+      dnf -y install openmpi-devel && dnf clean all \
+      && echo 'export PATH=/usr/lib64/openmpi/bin:$PATH LD_LIBRARY_PATH=/usr/lib64/openmpi/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}' \
+           > /etc/profile.d/zz-openmpi.sh; \
+    fi

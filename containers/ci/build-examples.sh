@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Build all current Examples against an installed DiFfRG prefix inside the CI
-# dependency container.
+# Install DiFfRG against the dependency bundle at $DiFfRG_BUNDLED_DIR and build
+# all current Examples against that install.
 set -euo pipefail
 
-workspace="${WORKSPACE:-/work}"
+workspace="${WORKSPACE:-$(cd -- "$(dirname "$0")/../.." >/dev/null 2>&1 && pwd -P)}"
 build_jobs="${DIFFRG_BUILD_JOBS:-4}"
 install_prefix="${DIFFRG_EXAMPLES_INSTALL_PREFIX:-${workspace}/.ci/diffrg-install}"
 library_build_dir="${DIFFRG_EXAMPLES_LIBRARY_BUILD_DIR:-${workspace}/.ci/diffrg-examples-lib}"
 examples_build_root="${DIFFRG_EXAMPLES_BUILD_ROOT:-${workspace}/.ci/examples}"
 log_dir="${DIFFRG_EXAMPLES_LOG_DIR:-${workspace}/.ci/logs/examples}"
 summary_file="${DIFFRG_EXAMPLES_SUMMARY:-${workspace}/.ci/logs/examples-summary.md}"
-bundle_dir="${DiFfRG_BUNDLED_DIR:-/opt/diffrg/bundled}"
+bundle_dir="${DiFfRG_BUNDLED_DIR:?set DiFfRG_BUNDLED_DIR to an installed dependency bundle}"
 
 examples=(
   "ONfiniteT:Examples/ONfiniteT"
@@ -42,11 +42,11 @@ cmake -S "${workspace}/DiFfRG" -B "${library_build_dir}" \
   -DCMAKE_BUILD_TYPE=Release \
   -DDiFfRG_TEST=OFF \
   -DDiFfRG_DOCUMENTATION=OFF \
-  -DNATIVE=OFF >> "${library_log}" 2>&1
+  -DMARCH=none >> "${library_log}" 2>&1
 cmake --build "${library_build_dir}" --target install -j "${build_jobs}" >> "${library_log}" 2>&1
 
-# DiFfRGConfig.cmake records ${CMAKE_INSTALL_PREFIX}/bundled. Reuse the bundle
-# baked into the dependency image instead of copying it into the workspace.
+# DiFfRGConfig.cmake records ${CMAKE_INSTALL_PREFIX}/bundled. Reuse the
+# installed bundle instead of copying it into the workspace.
 rm -rf "${install_prefix}/bundled"
 ln -s "${bundle_dir}" "${install_prefix}/bundled"
 

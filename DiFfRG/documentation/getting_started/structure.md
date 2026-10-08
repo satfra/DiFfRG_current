@@ -11,7 +11,7 @@ DiFfRG follows a **Model → Discretization → Assembler → TimeStepper → Ou
 3. **Discretization / Assembler** — An assembler takes the model and a mesh, then computes residuals and Jacobians using a chosen spatial discretization:
    - **CG** (Continuous Galerkin)
    - **DG** (Discontinuous Galerkin)
-   - **DDG / LDG** (Direct/Local Discontinuous Galerkin, for higher-order derivatives)
+   - **LDG** (Local Discontinuous Galerkin, for higher-order derivatives)
    - **FV** (Finite Volume, Kurganov-Tadmor scheme)
 
 4. **TimeStepper** — Evolves the discretized system in RG time. Options include:

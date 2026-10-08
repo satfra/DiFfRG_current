@@ -10,6 +10,7 @@
 #include <deal.II/lac/affine_constraints.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
+#include <DiFfRG/common/init.hh>
 
 namespace
 {
@@ -177,6 +178,7 @@ TEST_CASE("Affine-constraint metadata captures interior support points for scala
 
 TEST_CASE("Affine-constraint context exposes named component views", "[discretization][constraints]")
 {
+  DiFfRG::Init();
   using namespace DiFfRG;
 
   constexpr uint dim = 1;

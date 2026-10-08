@@ -17,14 +17,15 @@ template <typename Model> void run_benchmarks(const std::string &label, const Co
 {
   constexpr uint dim = 1;
   using NumberType = double;
-  using Discretization = CG::Discretization<Model, RectangularMesh<dim>, NumberType>;
+  // Serial on purpose: this tests serial linear algebra, and a plain RectangularMesh is partitioned in an MPI build.
+  using Discretization = CG::Discretization<Model, RectangularMeshSerial<dim>, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using Assembler = CG::Assembler<Discretization>;
 
   Testing::PhysicalParameters p_prm = {/*x0_initial = */ {0., 0., 0.}, /*x1_initial = */ {3.14, 2.72, 1.41}};
 
   Model model(p_prm);
-  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  RectangularMeshSerial<dim> mesh{Config::ConfigurationMesh<dim>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 

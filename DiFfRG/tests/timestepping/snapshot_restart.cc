@@ -162,7 +162,9 @@ namespace
     using VectorType = typename Discretization::VectorType;
 
     Model model(linear_profile());
-    RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(config)};
+    // Serial on purpose: this tests serial-only steppers among others;
+    // a plain RectangularMesh is partitioned in an MPI build.
+    RectangularMeshSerial<dim> mesh{Config::ConfigurationMesh<dim>(config)};
     Discretization discretization(mesh, config);
     Assembler assembler(discretization, model, config);
     OutputSession<Assembler> data_out(path, config);
@@ -269,7 +271,7 @@ namespace
       REQUIRE_THAT(restarted.variables[i], Catch::Matchers::WithinAbs(seed.variables[i], tolerance));
   }
 
-  template <typename Model> using DGDisc = DG::Discretization<Model, RectangularMesh<1>>;
+  template <typename Model> using DGDisc = DG::Discretization<Model, RectangularMeshSerial<1>>;
   template <typename Model> using DGAsm = DG::Assembler<DGDisc<Model>>;
   template <typename Assembler> using IDA = TimeStepperSUNDIALS_IDA<Assembler>;
   template <typename Assembler> using IDA_ABM = TimeStepperSUNDIALS_IDA_BoostABM<Assembler>;
@@ -370,7 +372,7 @@ TEST_CASE("Explicit stepper: restart reproduces the flow", "[snapshot][timestepp
 TEST_CASE("Hybrid stepper: restart reproduces spatial state and variables", "[snapshot][timestepping]")
 {
   using Model = Testing::ModelHybridTwoWay<1>;
-  using Disc = CG::Discretization<Model, RectangularMesh<1>>;
+  using Disc = CG::Discretization<Model, RectangularMeshSerial<1>>;
   using Asm = CG::Assembler<Disc>;
   const auto root = OutputPath::temporary(TemporaryRetention::remove_on_destruction, "hybrid", "hybrid");
   const auto config = base_config();
@@ -425,7 +427,7 @@ TEST_CASE("Every stepper restarts exactly where the seed run continues", "[snaps
   SECTION("IDA + Boost RK")
   {
     using Hybrid = Testing::ModelHybridTwoWay<1>;
-    using Disc = CG::Discretization<Hybrid, RectangularMesh<1>>;
+    using Disc = CG::Discretization<Hybrid, RectangularMeshSerial<1>>;
     require_restart_reproduces<Hybrid, Disc, CG::Assembler<Disc>, IDA_RK>("ida_rk", 1e-10);
   }
 }

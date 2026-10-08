@@ -11,10 +11,16 @@
 #include <DiFfRG/discretization/coordinates/coordinates.hh>
 #include <DiFfRG/physics/integration/abstract_integrator.hh>
 #include <DiFfRG/physics/integration/map_completion.hh>
+#include <DiFfRG/physics/integration/map_distribution.hh>
+#include <DiFfRG/physics/integration/point_arg.hh>
+#include <DiFfRG/physics/interpolation/interpolator_handle.hh>
 
 // std
+#include <array>
 #include <cstdio>
+#include <cstring>
 #include <string>
+#include <utility>
 
 namespace DiFfRG
 {
@@ -41,49 +47,246 @@ namespace DiFfRG
     template <typename OT, typename NT>
     inline constexpr bool is_map_result = std::is_same_v<OT, NT> || is_widened_result<OT, NT>;
 
-    /// Grow-only result buffers of map(): device scratch, plus page-locked staging so the copy back
-    /// is genuinely asynchronous (see MapCompletion).
-    template <typename T, typename ExecutionSpace> struct MapStaging {
-      Kokkos::View<T *, ExecutionSpace> device;
-      size_t device_size = 0;
-      Kokkos::View<T *, PinnedHost_memory> pinned;
-      size_t pinned_size = 0;
+    /// What a kernel computing in ctype receives for an argument of type T: an interpolator's
+    /// handle (see has_kernel_handle), anything else in the kernel's precision.
+    template <typename T, typename ctype> using kernel_arg_t = compute_arg_t<kernel_handle_t<T, ctype>, ctype>;
 
-      auto device_view(const ExecutionSpace &space, const size_t n)
-      {
-        if (device_size < n) {
-          device = Kokkos::View<T *, ExecutionSpace>(Kokkos::view_alloc(space, "MapIntegrators_device_view"), n);
-          device_size = n;
-        }
-        return Kokkos::View<T *, ExecutionSpace>(device, Kokkos::make_pair(size_t(0), n));
-      }
+    /// Whether KERNEL takes handles. Kernels generated before handles existed name the interpolator
+    /// types in their signature; they are passed the interpolators themselves.
+    template <typename NT, typename KERNEL, typename ctype, int dim, typename... T>
+    inline constexpr bool takes_handles = is_valid_kernel<NT, KERNEL, ctype, dim, kernel_arg_t<T, ctype>...>;
 
-      auto pinned_view(const size_t n)
+    template <size_t, typename T> using repeat_t = T;
+
+    /// takes_handles for map(), whose kernel also receives the cdim grid positions of Coordinates.
+    template <typename NT, typename KERNEL, typename ctype, int dim, typename Coordinates, typename... Args>
+    inline constexpr bool map_takes_handles = []<size_t... I>(std::index_sequence<I...>) {
+      return takes_handles<NT, KERNEL, ctype, dim, repeat_t<I, typename Coordinates::ctype>..., Args...>;
+    }(std::make_index_sequence<Coordinates::dim>{});
+
+    template <typename NT, typename KERNEL, typename ctype, int dim, typename... T>
+    concept accepts_args = takes_handles<NT, KERNEL, ctype, dim, T...> ||
+                           is_valid_kernel<NT, KERNEL, ctype, dim, compute_arg_t<T, ctype>...>;
+
+    template <bool handles, typename T, typename ctype>
+    using launch_arg_t = std::conditional_t<handles, kernel_arg_t<T, ctype>, compute_arg_t<T, ctype>>;
+
+    /// An argument of get() or map_points() as the kernel receives it.
+    template <bool handles, typename ctype, typename T> launch_arg_t<handles, T, ctype> to_launch_arg(const T &t)
+    {
+      if constexpr (handles)
+        return launch_arg_t<handles, T, ctype>(to_kernel_handle<ctype>(t));
+      else
+        return launch_arg_t<handles, T, ctype>(t);
+    }
+
+    /// An argument as the kernel receives it. Unlike to_launch_arg, scalars keep their precision.
+    template <bool handles, typename ctype, typename T> decltype(auto) to_kernel_arg(const T &t)
+    {
+      if constexpr (handles)
+        return to_kernel_handle<ctype>(t);
+      else
+        return (t);
+    }
+
+    // Through if constexpr: in a plain `has_kernel_handle<T> && ...` the right operand still names
+    // T::value_type, a hard error for argument types such as double that have none.
+    template <typename T> constexpr bool is_double_interpolator_impl()
+    {
+      if constexpr (has_kernel_handle<T>)
+        return std::is_same_v<typename T::value_type, double> ||
+               std::is_same_v<typename T::value_type, complex<double>>;
+      else
+        return false;
+    }
+    template <typename T> inline constexpr bool is_double_interpolator = is_double_interpolator_impl<T>();
+
+    [[deprecated("a single-precision kernel names double interpolator types, so it is passed the interpolators "
+                 "and looks them up in double. Regenerate it: a kernel taking its interpolators as const auto& "
+                 "reads their single-precision copy.")]]
+    constexpr void double_lookups_in_float_kernel()
+    {
+    }
+
+    /// Warns at compile time when a float kernel would silently read double interpolators.
+    template <bool handles, typename ctype, typename... T> constexpr void check_kernel_precision()
+    {
+      if constexpr (std::is_same_v<ctype, float> && !handles && (is_double_interpolator<T> || ...))
+        double_lookups_in_float_kernel();
+    }
+
+    /// f(begin, end) over [0, n), in parallel chunks once n is large enough to pay for it.
+    template <typename F> void parallel_chunks(const size_t n, const F &f)
+    {
+      constexpr size_t grain = 1 << 15;
+      if (n < 2 * grain)
+        f(size_t(0), n);
+      else
+        tbb::parallel_for(tbb::blocked_range<size_t>(0, n, grain),
+                          [&](const tbb::blocked_range<size_t> &r) { f(r.begin(), r.end()); });
+    }
+
+    /// Grow-only byte buffer, used to stage the per-point arguments of map_points().
+    template <typename MemorySpace> struct ByteBuffer {
+      Kokkos::View<char *, MemorySpace> view;
+
+      char *reserve(const size_t bytes)
       {
-        if (pinned_size < n) {
-          pinned = Kokkos::View<T *, PinnedHost_memory>(
-              Kokkos::view_alloc(Kokkos::WithoutInitializing, "MapIntegrators_pinned_view"), n);
-          pinned_size = n;
-        }
-        return Kokkos::View<T *, PinnedHost_memory>(pinned, Kokkos::make_pair(size_t(0), n));
+        if (view.extent(0) < bytes)
+          view = Kokkos::View<char *, MemorySpace>(Kokkos::view_alloc(Kokkos::WithoutInitializing, "PointArgs"), bytes);
+        return view.data();
       }
     };
 
-    /// map() result buffers for value type NT and, when that is single precision, for its double
-    /// counterpart. The kernel writes each result straight into the destination-typed buffer, so a
-    /// float integrator mapping into double converts on the device.
-    template <typename NT, typename ExecutionSpace> struct MapStagingSet {
-      MapStaging<NT, ExecutionSpace> native;
-      MapStaging<get_type::double_precision<NT>, ExecutionSpace> widened;
+    /// Types that cannot be placed in map_points' staging buffer (an interpolator: no default constructor, no copy
+    /// assignment) can only be shared by all points, and are passed to the device by value. A variable template, not
+    /// a constexpr generic lambda: CUDA 12's front end aborts on calling the latter's operator()<U>().
+    template <typename U>
+    inline constexpr bool is_stageable = std::is_default_constructible_v<U> && std::is_copy_assignable_v<U>;
 
-      template <typename OT> auto &get()
+    /**
+     * @brief The buffers of a device map_points(): its per-point arguments, staged on the host and copied to the
+     * device in one go, and its results. Kept by the integrator across calls.
+     */
+    template <typename NT, typename ExecutionSpace> struct MapPointsBuffers {
+      using memory_space = typename ExecutionSpace::memory_space;
+      static constexpr bool host_memory = std::is_same_v<memory_space, CPU_memory>;
+
+      ByteBuffer<PinnedHost_memory> args_host;
+      ByteBuffer<memory_space> args_device;
+      MapStagingSet<NT, ExecutionSpace> result;
+
+      /**
+       * @brief Copy the per-point arguments to the device, converted to the compute precision ctype, and return
+       * them as a tuple of DevicePointArg.
+       *
+       * All per-point arrays share one staging buffer, so the upload is a single copy. On a host memory space an
+       * argument that needs no conversion is used in place.
+       */
+      template <typename ctype, bool handles, typename... T>
+      auto stage(const ExecutionSpace &space, const size_t n, const PointArg<T> &...args)
       {
-        if constexpr (std::is_same_v<OT, NT>)
-          return native;
-        else
-          return widened;
+        constexpr size_t alignment = 64;
+        constexpr size_t n_args = sizeof...(T);
+
+        // Byte offset of each staged argument; arguments that are broadcast, or used in place, stay unstaged.
+        std::array<size_t, n_args> offsets{};
+        std::array<bool, n_args> staged{};
+        size_t total = 0;
+        {
+          size_t k = 0;
+          (
+              [&] {
+                using U = launch_arg_t<handles, T, ctype>;
+                args.check_size(n);
+                if constexpr (!is_stageable<U>)
+                  if (args.per_point())
+                    throw std::runtime_error("map_points: this argument type can only be shared by all points.");
+                staged[k] = args.per_point() && !(host_memory && std::is_same_v<U, T>);
+                if (staged[k]) {
+                  offsets[k] = total;
+                  total += (n * sizeof(U) + alignment - 1) / alignment * alignment;
+                }
+                ++k;
+              }(),
+              ...);
+        }
+
+        char *host = nullptr;
+        char *device = nullptr;
+        if (total > 0) {
+          host = args_host.reserve(total);
+          device = host_memory ? host : args_device.reserve(total);
+          size_t k = 0;
+          (
+              [&] {
+                using U = launch_arg_t<handles, T, ctype>;
+                if constexpr (is_stageable<U>)
+                  if (staged[k]) {
+                    U *out = reinterpret_cast<U *>(host + offsets[k]);
+                    parallel_chunks(n, [&](const size_t begin, const size_t end) {
+                      for (size_t i = begin; i < end; ++i)
+                        out[i] = to_launch_arg<handles, ctype>(args.values[i]);
+                    });
+                  }
+                ++k;
+              }(),
+              ...);
+          if constexpr (!host_memory)
+            Kokkos::deep_copy(space, Kokkos::subview(args_device.view, Kokkos::make_pair(size_t(0), total)),
+                              Kokkos::subview(args_host.view, Kokkos::make_pair(size_t(0), total)));
+        }
+
+        return [&]<size_t... I>(std::index_sequence<I...>) {
+          return device::make_tuple([&] {
+            using U = launch_arg_t<handles, T, ctype>;
+            if constexpr (!is_stageable<U>)
+              return DevicePointArg<U>{nullptr, to_launch_arg<handles, ctype>(args.value)};
+            else {
+              const U *values = staged[I] ? reinterpret_cast<const U *>(device + offsets[I])
+                                          : (args.per_point() ? reinterpret_cast<const U *>(args.values) : nullptr);
+              return DevicePointArg<U>{values, args.per_point() ? U{} : to_launch_arg<handles, ctype>(args.value)};
+            }
+          }()...);
+        }(std::index_sequence_for<T...>{});
+      }
+
+      /**
+       * @brief Run launch(result_view) and copy its n results to @p dest: in place on a host memory space,
+       * otherwise through a device buffer and page-locked staging.
+       */
+      template <typename OT, typename Launch>
+      void run(ExecutionSpace &space, const PointSpan<OT> dest, const Launch &launch)
+      {
+        const size_t n = dest.size();
+        if constexpr (host_memory) {
+          launch(Kokkos::View<OT *, CPU_memory, Kokkos::MemoryUnmanaged>(dest.data(), n));
+          space.fence();
+        } else {
+          auto &stage = result.template get<OT>();
+          const auto device_result = stage.device_view(space, n);
+          const auto pinned = stage.pinned_view(n);
+          launch(device_result);
+          Kokkos::deep_copy(space, pinned, device_result);
+          space.fence();
+          parallel_chunks(n, [&](const size_t begin, const size_t end) {
+            std::memcpy(dest.data() + begin, pinned.data() + begin, (end - begin) * sizeof(OT));
+          });
+        }
       }
     };
+
+    /// map_points() of a host integrator: integrator.get() at every point, in a flat parallel loop.
+    template <typename Integrator, typename OT, typename... T>
+    void map_points_by_get(const Integrator &integrator, const PointSpan<OT> dest, const PointArg<T> &...args)
+    {
+      (args.check_size(dest.size()), ...);
+      tbb::parallel_for(tbb::blocked_range<size_t>(0, dest.size()), [&](const tbb::blocked_range<size_t> &r) {
+        for (size_t i = r.begin(); i != r.end(); ++i)
+          integrator.get(dest[i], args[i]...);
+      });
+    }
+  } // namespace internal
+
+  /**
+   * @brief How a device map_points() distributes its work.
+   *
+   * thread_per_point: one thread sums all quadrature nodes of one point; only competitive for very
+   * many points with few nodes. team_per_point: one team reduces over the nodes of one point; the
+   * better choice almost everywhere. automatic picks between the two from these sizes.
+   */
+  enum class MapPointsPolicy { automatic, thread_per_point, team_per_point };
+
+  namespace internal
+  {
+    /// The policy a device map_points() over n points of total quadrature nodes each runs with. Measured on an
+    /// RTX 4070 (ONfiniteT, 64..2e5 points, 16..8192 nodes): a team per point wins nearly everywhere, by up to
+    /// 18x; a thread per point only pays off for very many cheap points.
+    inline MapPointsPolicy resolve_policy(const MapPointsPolicy policy, const size_t n, const size_t total)
+    {
+      if (policy != MapPointsPolicy::automatic) return policy;
+      return (n >= 65536 && total <= 1024) ? MapPointsPolicy::thread_per_point : MapPointsPolicy::team_per_point;
+    }
   } // namespace internal
 
   /**
@@ -137,7 +340,7 @@ namespace DiFfRG
     }
 
     template <typename... T>
-      requires is_valid_kernel<NT, KERNEL, ctype, dim, T...>
+      requires internal::accepts_args<NT, KERNEL, ctype, dim, T...>
     void get(NT &dest, const T &...t) const
     {
       // create an execution space
@@ -156,7 +359,8 @@ namespace DiFfRG
 
     /// Single-precision integration handing back a double result.
     template <typename OT, typename... T>
-      requires(internal::is_widened_result<OT, NT> && is_valid_kernel<NT, KERNEL, ctype, dim, T...>)
+      requires(internal::is_widened_result<OT, NT> &&
+               internal::accepts_args<NT, KERNEL, ctype, dim, T...>)
     void get(OT &dest, const T &...t) const
     {
       NT result;
@@ -165,7 +369,8 @@ namespace DiFfRG
     }
 
     template <typename OT, typename... T>
-      requires(!std::is_same_v<OT, NT> && !internal::is_widened_result<OT, NT> && is_valid_kernel<NT, KERNEL, ctype, dim, T...>)
+      requires(!std::is_same_v<OT, NT> && !internal::is_widened_result<OT, NT> &&
+               internal::accepts_args<NT, KERNEL, ctype, dim, T...>)
     void get(OT &dest, const T &...t) const
     {
       ExecutionSpace space;
@@ -173,10 +378,13 @@ namespace DiFfRG
     }
 
     template <typename OT, typename... T>
-      requires(!std::is_same_v<OT, NT> && !internal::is_widened_result<OT, NT> && is_valid_kernel<NT, KERNEL, ctype, dim, T...>)
+      requires(!std::is_same_v<OT, NT> && !internal::is_widened_result<OT, NT> &&
+               internal::accepts_args<NT, KERNEL, ctype, dim, T...>)
     void get(ExecutionSpace &space, OT &dest, const T &...t) const
     {
-      const auto args = device::make_tuple(t...);
+      constexpr bool handles = internal::takes_handles<NT, KERNEL, ctype, dim, T...>;
+      internal::check_kernel_precision<handles, ctype, T...>();
+      const auto args = device::make_tuple(internal::to_launch_arg<handles, ctype>(t)...);
 
       const auto &n = nodes;
       const auto &w = weights;
@@ -225,7 +433,9 @@ namespace DiFfRG
       // Create a Restrict-tagged alias of the cache for no-alias optimization
       const auto cache = KokkosNDViewRestrict<1 + dim, NT, ExecutionSpace>(m_cache);
 
-      const auto m_args = device::make_tuple(args...);
+      constexpr bool handles = internal::map_takes_handles<NT, KERNEL, ctype, dim, Coordinates, Args...>;
+      internal::check_kernel_precision<handles, ctype, Args...>();
+      const auto m_args = device::make_tuple(internal::to_kernel_arg<handles, ctype>(args)...);
 
       const auto &n = nodes;
       const auto &w = weights;
@@ -441,6 +651,31 @@ namespace DiFfRG
           });
     }
 
+    /**
+     * @brief Evaluate the integral at dest.size() points in a single launch: dest[i] is the integral with every
+     * per-point argument taken at index i.
+     *
+     * Each argument is either one value shared by all points, or one value per point (a PointSpan, a
+     * std::vector, or a PointArg holding either), so any argument of the kernel may vary between points. A
+     * per-point argument must hold exactly dest.size() values. The nodes are summed on the fly, without an
+     * intermediate (points x nodes) buffer.
+     *
+     * Rank-local: unlike map(), this is never split across MPI ranks and never touches MapScheduler,
+     * so every rank may call it with its own number of points, also between collective operations.
+     *
+     * A single-precision integrator receives its arguments converted to single precision.
+     */
+    template <typename OT, typename... A>
+      requires(
+          internal::is_map_result<OT, NT> &&
+          internal::accepts_args<NT, KERNEL, ctype, dim, internal::point_arg_value_t<A>...>)
+    void map_points(const PointSpan<OT> dest, const A &...args)
+    {
+      run_map_points(dest, PointArg<internal::point_arg_value_t<A>>(args)...);
+    }
+
+    void set_map_points_policy(const MapPointsPolicy policy) { m_map_points_policy = policy; }
+
     /// Points evaluated per external grid point. Half of the scheduler's cost score.
     size_t quadrature_volume() const
     {
@@ -454,104 +689,136 @@ namespace DiFfRG
       requires internal::is_map_result<OT, NT>
     auto map(OT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      auto &scheduler = MapScheduler::instance();
-
-      // One staging buffer per integrator, so a second map() from this integrator before a flush
-      // would clobber the first result. The *plan* is what decides, not the local pending list: a
-      // rank that owned no slice of the earlier map has nothing pending and would skip a flush the
-      // other ranks perform, leaving the collectives mismatched.
-      if (scheduler.active() && scheduler.plan_contains(integrator_id())) MapCompletion::flush();
-
-      const MapSlice slice = scheduler.schedule(integrator_id(), dest, sizeof(OT), coordinates.size(),
-                                                quadrature_volume(), /* splittable */ true,
-                                                map_target<ExecutionSpace>());
-
-      if (slice.count == 0) {
-        // Not an owner: no kernels, but the plan entry is registered, so this rank still has to
-        // take part in the exchange.
-        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
-        return ExecutionSpace();
-      }
-      if (slice.owns_all(coordinates.size())) return map_dist(dest, coordinates, args...);
-
-      return map_dist(dest + slice.offset, SubCoordinates(coordinates, slice.offset, slice.count), args...);
+      internal::scheduled_map<ExecutionSpace>(integrator_id(), quadrature_volume(), dest, coordinates,
+                                              [&](auto *d, const auto &c) { this->map_dist(d, c, args...); });
+      return space;
     }
 
+    /// map() without the MapScheduler: computes the whole of `coordinates` on this rank.
     template <typename OT, typename Coordinates, typename... Args>
     auto map_dist(OT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      const size_t n = coordinates.size();
-      auto &stage = m_staging.template get<OT>();
-      auto dest_device_view = stage.device_view(space, n);
-
-      if constexpr (std::is_same_v<typename ExecutionSpace::memory_space, CPU_memory>) {
-        // Host backend: "device" memory is host memory, so there is nothing to stage. The work is
-        // synchronous though, so inside a deferral scope it is queued rather than run here -- see
-        // run_or_queue_host().
-        run_or_queue_host(dest, coordinates, args...);
-        // Nothing to land, but the MPI slices still have to be exchanged before the caller reads.
-        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
-        return space;
-      } else {
-        // One staging buffer per integrator, so a second map() before a flush would clobber the
-        // first result. Land the outstanding one first; in the normal call pattern (each flow
-        // mapped once per flush interval) this never triggers.
-        if (stage.pinned_size > 0 && MapCompletion::has_pending(stage.pinned.data())) MapCompletion::flush();
-        auto pinned_view = stage.pinned_view(n);
-
-        map(space, dest_device_view, coordinates, args...);
-
-        // Genuinely asynchronous, because the destination is page-locked.
-        Kokkos::deep_copy(space, pinned_view, dest_device_view);
-
-        // Caller has promised not to read `dest` until its DeferredMaps scope closes, so leave the
-        // result in staging and keep the host running ahead of the device.
-        MapCompletion::record(dest, stage.pinned.data(), n * sizeof(OT));
-        // Original contract outside such a scope: `dest` is valid on return. flush() fences, lands
-        // the staged copy and -- under MPI -- exchanges this batch's slices, all of which must
-        // happen before the caller looks at `dest`.
-        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
-
-        return space;
-      }
+      internal::staged_map(space, m_staging.template get<OT>(), dest, coordinates.size(),
+                           [this, coordinates, args...](const auto &view) {
+                             this->map(this->space, view, coordinates, args...);
+                           });
+      return space;
     }
 
   private:
-    /**
-     * @brief Run a host-backend map now, or queue it for flush time if a deferral scope is open.
-     *
-     * A host kernel is synchronous, so running it inline blocks the host thread and delays the
-     * launch of any device map issued after it. Queuing makes the call order inside a DeferredMaps
-     * scope irrelevant: flush() runs the queue before it fences, i.e. while the device work already
-     * launched is still running. See MapCompletion::record_work.
-     *
-     * Compiled out entirely in a CUDA-less build, where there is no device to overlap with.
-     */
-    template <typename OT, typename Coordinates, typename... Args>
-    void run_or_queue_host(OT *dest, const Coordinates &coordinates, const Args &...args)
+    template <typename OT, typename... T> void run_map_points(const PointSpan<OT> dest, const PointArg<T> &...args)
     {
-      if constexpr (internal::has_device_backend) {
-        if (MapCompletion::deferral_enabled()) {
-          // Everything the job needs is captured by value; `this` and `dest` are covered by the
-          // DeferredMaps contract, which already requires them to outlive the scope.
-          MapCompletion::record_work(
-              [this, dest, coordinates, args...]() { this->run_host(dest, coordinates, args...); });
-          return;
-        }
-      }
-      run_host(dest, coordinates, args...);
+      const size_t n = dest.size();
+      if (n == 0) return;
+      constexpr bool handles = internal::takes_handles<NT, KERNEL, ctype, dim, T...>;
+      internal::check_kernel_precision<handles, ctype, T...>();
+      const auto device_args = m_map_points.template stage<ctype, handles>(space, n, args...);
+      m_map_points.run(space, dest, [&](const auto &result) { launch_map_points(result, n, device_args); });
     }
 
-    /// The host-backend body of map_dist(). Queued jobs run one after another, so the shared
-    /// staging device scratch is written and drained before the next job touches it.
-    template <typename OT, typename Coordinates, typename... Args>
-    void run_host(OT *dest, const Coordinates &coordinates, const Args &...args)
+  public:
+    /// The kernel launch of map_points(). Public only because nvcc rejects extended device lambdas
+    /// inside non-public member functions.
+    template <typename ResultView, typename DeviceArgs>
+    void launch_map_points(const ResultView &result, const size_t n, const DeviceArgs &device_args)
     {
-      const size_t n = coordinates.size();
-      auto dest_device_view = m_staging.template get<OT>().device_view(space, n);
-      auto dest_view = Kokkos::View<OT *, CPU_memory, Kokkos::MemoryUnmanaged>(dest, n);
-      map(space, dest_device_view, coordinates, args...);
-      Kokkos::deep_copy(space, dest_view, dest_device_view);
+      using OT = typename ResultView::value_type;
+
+      const auto &nd = nodes;
+      const auto &w = weights;
+      const auto &start = grid_start;
+      const auto &scale = grid_scale;
+      const auto gs = grid_size;
+      const auto args = device_args;
+
+      size_t total = 1;
+      for (int d = 0; d < dim; ++d)
+        total *= grid_size[d];
+
+      const MapPointsPolicy policy = internal::resolve_policy(m_map_points_policy, n, total);
+
+      if (policy == MapPointsPolicy::thread_per_point) {
+        // Row-major node order and the constant added first, as in the serial TBBReduction path.
+        Kokkos::parallel_for(
+            "QuadratureIntegrator_map_points", Kokkos::RangePolicy<ExecutionSpace>(space, 0, n),
+            KOKKOS_LAMBDA(const size_t i) {
+              NT sum = device::apply([&](const auto &...a) { return NT(KERNEL::constant(a(i)...)); }, args);
+              NT integral{};
+              device::array<size_t, dim> idx{};
+              for (size_t flat = 0; flat < total; ++flat) {
+                device::array<ctype, dim> x;
+                ctype weight = 1;
+                for (int d = 0; d < dim; ++d) {
+                  x[d] = Kokkos::fma(scale[d], nd[d][idx[d]], start[d]);
+                  weight *= w[d][idx[d]] * scale[d];
+                }
+                device::apply(
+                    [&](const auto &...xs) {
+                      device::apply([&](const auto &...a) { integral += weight * KERNEL::kernel(xs..., a(i)...); },
+                                    args);
+                    },
+                    x);
+                for (int d = dim - 1; d >= 0; --d) {
+                  if (++idx[d] < gs[d]) break;
+                  idx[d] = 0;
+                }
+              }
+              sum += integral;
+              result(i) = static_cast<OT>(sum);
+            });
+      } else {
+        using TeamType = typename Kokkos::TeamPolicy<ExecutionSpace>::member_type;
+        constexpr int vector_width = 32;
+        const size_t n_outer = (total + vector_width - 1) / vector_width;
+
+        device::array<size_t, dim> strides;
+        strides[dim - 1] = 1;
+        for (int d = dim - 2; d >= 0; --d)
+          strides[d] = strides[d + 1] * grid_size[d + 1];
+
+        Kokkos::parallel_for(
+            "QuadratureIntegrator_map_points_team",
+            Kokkos::TeamPolicy<ExecutionSpace>(space, n, Kokkos::AUTO, vector_width),
+            KOKKOS_LAMBDA(const TeamType &team) {
+              const size_t i = team.league_rank();
+              NT integral{};
+              Kokkos::parallel_reduce(
+                  Kokkos::TeamThreadRange(team, n_outer),
+                  [&](const size_t outer, NT &team_update) {
+                    NT vec_sum{};
+                    Kokkos::parallel_reduce(
+                        Kokkos::ThreadVectorRange(team, vector_width),
+                        [&](const size_t inner, NT &vec_update) {
+                          const size_t flat = outer * vector_width + inner;
+                          if (flat >= total) return;
+                          device::array<ctype, dim> x;
+                          ctype weight = 1;
+                          size_t remainder = flat;
+                          for (int d = 0; d < dim; ++d) {
+                            const size_t id = remainder / strides[d];
+                            remainder -= id * strides[d];
+                            x[d] = Kokkos::fma(scale[d], nd[d][id], start[d]);
+                            weight *= w[d][id] * scale[d];
+                          }
+                          device::apply(
+                              [&](const auto &...xs) {
+                                device::apply(
+                                    [&](const auto &...a) { vec_update += weight * KERNEL::kernel(xs..., a(i)...); },
+                                    args);
+                              },
+                              x);
+                        },
+                        vec_sum);
+                    team_update += vec_sum;
+                  },
+                  integral);
+              Kokkos::single(Kokkos::PerTeam(team), [&]() {
+                NT sum = device::apply([&](const auto &...a) { return NT(KERNEL::constant(a(i)...)); }, args);
+                sum += integral;
+                result(i) = static_cast<OT>(sum);
+              });
+            });
+      }
     }
 
   protected:
@@ -574,6 +841,9 @@ namespace DiFfRG
     mutable Kokkos::View<ctype *, typename ExecutionSpace::memory_space> m_positions;
     mutable std::string m_positions_key;
     mutable internal::MapStagingSet<NT, ExecutionSpace> m_staging;
+    // map_points() buffers, separate from map()'s, whose staging may still be pending in a DeferredMaps scope.
+    internal::MapPointsBuffers<NT, ExecutionSpace> m_map_points;
+    MapPointsPolicy m_map_points_policy = MapPointsPolicy::automatic;
     mutable Kokkos::View<NT, typename ExecutionSpace::memory_space> m_result_view;
     mutable typename Kokkos::View<NT, typename ExecutionSpace::memory_space>::host_mirror_type m_result_host;
     mutable bool m_result_views_initialized = false;
@@ -600,34 +870,41 @@ namespace DiFfRG
     }
 
     template <typename... T>
-      requires is_valid_kernel<NT, KERNEL, ctype, dim, T...>
+      requires internal::accepts_args<NT, KERNEL, ctype, dim, T...>
     void get(NT &dest, const T &...t) const
     {
-      const auto args = device::tie(t...);
+      // A single-precision integrator evaluates its kernel in single precision, and a kernel that
+      // takes handles gets those.
+      constexpr bool handles = internal::takes_handles<NT, KERNEL, ctype, dim, T...>;
+      internal::check_kernel_precision<handles, ctype, T...>();
+      if constexpr (!(std::is_same_v<T, internal::launch_arg_t<handles, T, ctype>> && ...))
+        get(dest, internal::to_launch_arg<handles, ctype>(t)...);
+      else {
+        const auto args = device::tie(t...);
 
-      const auto &n = nodes;
-      const auto &w = weights;
-      const auto &start = grid_start;
-      const auto &scale = grid_scale;
+        const auto &n = nodes;
+        const auto &w = weights;
+        const auto &start = grid_start;
+        const auto &scale = grid_scale;
 
-      auto functor = [&](const device::array<size_t, dim> &idx) {
-        device::array<ctype, dim> x;
-        ctype weight = 1;
-        bool is_first = true;
-        for (size_t i = 0; i < dim; ++i) {
-          x[i] = Kokkos::fma(scale[i], n[i][idx[i]], start[i]);
-          weight *= w[i][idx[i]] * scale[i];
-          is_first &= idx[i] == 0;
-        }
-        return device::apply([&](const auto &...iargs) { return weight * KERNEL::kernel(iargs...); },
-                             device::tuple_cat(x, args));
-      };
+        auto functor = [&](const device::array<size_t, dim> &idx) {
+          device::array<ctype, dim> x;
+          ctype weight = 1;
+          for (size_t i = 0; i < dim; ++i) {
+            x[i] = Kokkos::fma(scale[i], n[i][idx[i]], start[i]);
+            weight *= w[i][idx[i]] * scale[i];
+          }
+          return device::apply([&](const auto &...iargs) { return weight * KERNEL::kernel(iargs...); },
+                               device::tuple_cat(x, args));
+        };
 
-      dest = KERNEL::constant(t...) + TBBReduction<dim, NT, decltype(functor)>(grid_size, functor);
+        dest = KERNEL::constant(t...) + TBBReduction<dim, NT, decltype(functor)>(grid_size, functor);
+      }
     }
 
     template <typename OT, typename... T>
-      requires(internal::is_widened_result<OT, NT> && is_valid_kernel<NT, KERNEL, ctype, dim, T...>)
+      requires(internal::is_widened_result<OT, NT> &&
+               internal::accepts_args<NT, KERNEL, ctype, dim, T...>)
     void get(OT &dest, const T &...t) const
     {
       NT result;
@@ -635,19 +912,41 @@ namespace DiFfRG
       dest = OT(result);
     }
 
+    /// See QuadratureIntegrator::map_points. One get() per point inside a flat parallel loop, so every
+    /// result is bitwise identical to the corresponding get().
+    template <typename OT, typename... A>
+      requires(
+          internal::is_map_result<OT, NT> &&
+          internal::accepts_args<NT, KERNEL, ctype, dim, internal::point_arg_value_t<A>...>)
+    void map_points(const PointSpan<OT> dest, const A &...args) const
+    {
+      internal::map_points_by_get(*this, dest, PointArg<internal::point_arg_value_t<A>>(args)...);
+    }
+
     template <typename OT, typename Coordinates, typename... Args>
       requires internal::is_map_result<OT, NT>
     void map(execution_space &, OT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      const auto m_args = device::tie(args...);
+      // Handles once here rather than per point in get().
+      constexpr bool handles = internal::map_takes_handles<NT, KERNEL, ctype, dim, Coordinates, Args...>;
+      internal::check_kernel_precision<handles, ctype, Args...>();
+      const auto m_args = [&] {
+        if constexpr (handles)
+          return device::make_tuple(DiFfRG::to_kernel_handle<ctype>(args)...);
+        else
+          return device::tie(args...);
+      }();
 
       tbb::parallel_for(tbb::blocked_range<uint>(0, coordinates.size()), [&](const tbb::blocked_range<uint> &r) {
         for (uint idx = r.begin(); idx != r.end(); ++idx) {
           const auto dis_idx = coordinates.from_linear_index(idx);
           const auto pos = coordinates.forward(dis_idx);
-          // make a tuple of all arguments
-          const auto full_args = device::tuple_cat(pos, m_args);
-          device::apply([&](const auto &...iargs) { get(dest[idx], iargs...); }, full_args);
+          // nested packs rather than tuple_cat, which would copy every argument per point
+          device::apply(
+              [&](const auto &...pargs) {
+                device::apply([&](const auto &...iargs) { get(dest[idx], pargs..., iargs...); }, m_args);
+              },
+              pos);
         }
       });
     }
@@ -656,52 +955,16 @@ namespace DiFfRG
       requires internal::is_map_result<OT, NT>
     auto map(OT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      auto space = execution_space();
-      auto &scheduler = MapScheduler::instance();
-
-      // A second map() from this integrator would overwrite `dest` before the first one's slices
-      // have been exchanged, so land the open batch first. Plan-driven, not local -- see the GPU
-      // overload for why that distinction is what keeps the collectives matched.
-      if (scheduler.active() && scheduler.plan_contains(this->integrator_id())) MapCompletion::flush();
-
-      const MapSlice slice = scheduler.schedule(this->integrator_id(), dest, sizeof(OT), coordinates.size(),
-                                                Base::quadrature_volume(), /* splittable */ true,
-                                                map_target<execution_space>());
-
-      if (slice.count == 0) {
-        // Not an owner, but still part of the batch -- see the GPU overload.
-        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
-        return space;
-      }
-      if (slice.owns_all(coordinates.size()))
-        run_or_queue(dest, coordinates, args...);
-      else
-        run_or_queue(dest + slice.offset, SubCoordinates(coordinates, slice.offset, slice.count), args...);
-
-      // This backend writes straight into `dest`, so there is nothing to land -- but the slices
-      // still have to be exchanged before the caller reads them.
-      if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
-      return space;
-    }
-
-  private:
-    /// Run now, or queue for flush time inside a deferral scope. `tbb::parallel_for` is
-    /// synchronous, so running it inline would stall the launch of any device map issued after it;
-    /// see MapCompletion::record_work. Compiled out in a CUDA-less build.
-    template <typename OT, typename Coordinates, typename... Args>
-    void run_or_queue(OT *dest, const Coordinates &coordinates, const Args &...args)
-    {
-      if constexpr (internal::has_device_backend) {
-        if (MapCompletion::deferral_enabled()) {
-          MapCompletion::record_work([this, dest, coordinates, args...]() {
-            auto sp = execution_space();
-            this->map(sp, dest, coordinates, args...);
+      internal::scheduled_map<execution_space>(
+          this->integrator_id(), Base::quadrature_volume(), dest, coordinates, [&](auto *d, const auto &c) {
+            // tbb::parallel_for writes straight into `dest`, so there is nothing to stage.
+            internal::run_or_queue_host([this, d, c, args...]() {
+              auto sp = execution_space();
+              this->map(sp, d, c, args...);
+            });
+            if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
           });
-          return;
-        }
-      }
-      auto sp = execution_space();
-      map(sp, dest, coordinates, args...);
+      return execution_space();
     }
 
   protected:

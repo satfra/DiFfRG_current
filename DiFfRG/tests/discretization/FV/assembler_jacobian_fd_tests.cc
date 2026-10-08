@@ -323,7 +323,8 @@ TEST_CASE("KT Jacobian matches FD Jacobian for traveling wave model (detects mis
 {
   using Model = Testing::ModelBurgersTravelingWaveKT<1>;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<1>, NumberType>;
+  // Serial on purpose: this tests serial linear algebra, and a plain RectangularMesh is partitioned in an MPI build.
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<1>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -333,7 +334,7 @@ TEST_CASE("KT Jacobian matches FD Jacobian for traveling wave model (detects mis
   const ConfigTree json = make_json();
 
   Model model(p_prm);
-  RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
+  RectangularMeshSerial<1> mesh{Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -392,7 +393,7 @@ TEST_CASE("KT Jacobian matches FD Jacobian for third-derivative diffusion model 
 {
   using Model = ThirdDerivativeDiffusionModel;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<1>, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<1>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -401,7 +402,7 @@ TEST_CASE("KT Jacobian matches FD Jacobian for third-derivative diffusion model 
   const ConfigTree json = make_json();
 
   Model model;
-  RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
+  RectangularMeshSerial<1> mesh{Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -460,7 +461,7 @@ TEST_CASE("KT Jacobian matches FD Jacobian for pure advection Burgers model", "[
 {
   using Model = Testing::ModelBurgersKT<1>;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<1>, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<1>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -472,7 +473,7 @@ TEST_CASE("KT Jacobian matches FD Jacobian for pure advection Burgers model", "[
   const ConfigTree json = make_json();
 
   Model model(p_prm);
-  RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
+  RectangularMeshSerial<1> mesh{Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -523,7 +524,7 @@ TEST_CASE("KT gradient-dependent flux and separate diffusion Jacobian match FD",
 {
   using Model = GradientDependentKTModel;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<1>, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<1>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -531,7 +532,7 @@ TEST_CASE("KT gradient-dependent flux and separate diffusion Jacobian match FD",
 
   const ConfigTree json = make_json();
   Model model;
-  RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
+  RectangularMeshSerial<1> mesh{Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -584,7 +585,7 @@ TEST_CASE("KT Jacobian for x-dependent source-only model is diagonal", "[FV][KT]
 {
   using Model = SourceOnlyModel;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<1>, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<1>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -593,7 +594,7 @@ TEST_CASE("KT Jacobian for x-dependent source-only model is diagonal", "[FV][KT]
   const ConfigTree json = make_json();
 
   Model model;
-  RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
+  RectangularMeshSerial<1> mesh{Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -624,7 +625,7 @@ TEST_CASE("KT first-order Jacobian strategy does not use reconstruction-neighbor
 {
   using Model = Testing::ModelBurgersKT<1>;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<1>, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<1>, NumberType>;
   using ResidualReconstructor = def::TVDReconstructor<Discretization::dim, def::MinModLimiter, NumberType>;
   using JacobianReconstructor = def::FirstOrderReconstructor<Discretization::dim, NumberType>;
   using ExactAssembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
@@ -641,7 +642,7 @@ TEST_CASE("KT first-order Jacobian strategy does not use reconstruction-neighbor
   const ConfigTree json = make_json();
 
   Model model(p_prm);
-  RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
+  RectangularMeshSerial<1> mesh{Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   ExactAssembler exact_assembler(discretization, model, json);
   ApproxJacobianAssembler approx_assembler(discretization, model, json);
@@ -687,7 +688,7 @@ TEST_CASE("KT TVD Jacobian strategy keeps reconstruction-neighbor columns", "[FV
 {
   using Model = Testing::ModelBurgersKT<1>;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<1>, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<1>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -699,7 +700,7 @@ TEST_CASE("KT TVD Jacobian strategy keeps reconstruction-neighbor columns", "[FV
   const ConfigTree json = make_json();
 
   Model model(p_prm);
-  RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
+  RectangularMeshSerial<1> mesh{Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -733,7 +734,7 @@ TEST_CASE("KT 2D Jacobian matches FD Jacobian for diagonal Burgers model", "[FV]
 {
   using Model = Testing::ModelBurgers2DKT;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<2>, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<2>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -746,7 +747,7 @@ TEST_CASE("KT 2D Jacobian matches FD Jacobian for diagonal Burgers model", "[FV]
   const ConfigTree json = make_json_2d();
 
   Model model(p_prm);
-  RectangularMesh<2> mesh{Config::ConfigurationMesh<2>(json)};
+  RectangularMeshSerial<2> mesh{Config::ConfigurationMesh<2>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -802,7 +803,7 @@ TEST_CASE("KT 2D boundary Jacobian matches FD for affine ghost diffusion", "[FV]
 {
   using Model = DiffusiveAffineBoundary2DModel;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<2>, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<2>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -810,7 +811,7 @@ TEST_CASE("KT 2D boundary Jacobian matches FD for affine ghost diffusion", "[FV]
 
   const ConfigTree json = make_json_2d();
   Model model;
-  RectangularMesh<2> mesh{Config::ConfigurationMesh<2>(json)};
+  RectangularMeshSerial<2> mesh{Config::ConfigurationMesh<2>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -880,7 +881,7 @@ TEST_CASE("KT 2D boundary Jacobian uses model-owned tangential ghost derivatives
 {
   using Model = DiffusiveNonAffineTangentialBoundary2DModel;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<2>, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<2>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -888,7 +889,7 @@ TEST_CASE("KT 2D boundary Jacobian uses model-owned tangential ghost derivatives
 
   const ConfigTree json = make_json_2d();
   Model model;
-  RectangularMesh<2> mesh{Config::ConfigurationMesh<2>(json)};
+  RectangularMeshSerial<2> mesh{Config::ConfigurationMesh<2>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -1042,6 +1043,87 @@ public:
   }
 };
 
+/**
+ * A source that reads "fe_hessians" (opted in via source_uses_hessians), nonlinear in the curvature so the
+ * chain-rule term dS/du'' * du''/du_j is not a constant. As for the gradient source, flux and diffusion flux
+ * vanish, so the source is the only contribution to the Jacobian.
+ */
+class HessianSourceKTModel
+    : public def::AbstractModel<HessianSourceKTModel, ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>>>,
+      public def::Time,
+      public def::LLFFlux<HessianSourceKTModel>,
+      public def::FlowBoundaries<HessianSourceKTModel>,
+      public def::FVDefaultBoundaries<HessianSourceKTModel>,
+      public def::AD<HessianSourceKTModel>
+{
+public:
+  static constexpr bool source_uses_hessians = true;
+
+  template <typename Vector> void initial_condition(const Point<1> &pos, Vector &values) const
+  {
+    values[0] = 1.0 + 0.2 * pos[0] + 0.4 * pos[0] * pos[0];
+  }
+
+  template <typename NT, typename Solution>
+  void flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution & /*sol*/) const
+  {
+    F_i[0][0] = NT(0);
+  }
+
+  template <typename NT, typename Solution>
+  void diffusion_flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution & /*sol*/) const
+  {
+    F_i[0][0] = NT(0);
+  }
+
+  template <typename NT, typename Solution>
+  void source(std::array<NT, 1> &s_i, const Point<1> & /*pos*/, const Solution &sol) const
+  {
+    const auto &u = get<"fe_functions">(sol);
+    const auto &hess_u = get<"fe_hessians">(sol);
+    s_i[0] = NT(0.3) * u[0] * u[0] + NT(0.7) * hess_u[0][0][0] + NT(0.5) * u[0] * hess_u[0][0][0] +
+             NT(0.2) * hess_u[0][0][0] * hess_u[0][0][0];
+  }
+};
+
+class HessianSource2DModel
+    : public def::AbstractModel<HessianSource2DModel, ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>>>,
+      public def::Time,
+      public def::LLFFlux<HessianSource2DModel>,
+      public def::FlowBoundaries<HessianSource2DModel>,
+      public def::FVDefaultBoundaries<HessianSource2DModel>,
+      public def::AD<HessianSource2DModel>
+{
+public:
+  static constexpr bool source_uses_hessians = true;
+
+  template <typename Vector> void initial_condition(const Point<2> &pos, Vector &values) const
+  {
+    values[0] = 1.0 + 0.2 * pos[0] + 0.35 * pos[1] + 0.3 * pos[0] * pos[0] + 0.15 * pos[1] * pos[1];
+  }
+
+  template <typename NT, typename Solution>
+  void flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/, const Solution & /*sol*/) const
+  {
+    F_i[0] = Tensor<1, 2, NT>();
+  }
+
+  template <typename NT, typename Solution>
+  void diffusion_flux(std::array<Tensor<1, 2, NT>, 1> &F_i, const Point<2> & /*pos*/, const Solution & /*sol*/) const
+  {
+    F_i[0] = Tensor<1, 2, NT>();
+  }
+
+  template <typename NT, typename Solution>
+  void source(std::array<NT, 1> &s_i, const Point<2> & /*pos*/, const Solution &sol) const
+  {
+    const auto &u = get<"fe_functions">(sol);
+    const auto &hess_u = get<"fe_hessians">(sol);
+    s_i[0] = NT(0.3) * u[0] * u[0] + NT(0.7) * hess_u[0][0][0] - NT(0.4) * hess_u[0][1][1] +
+             NT(0.5) * u[0] * hess_u[0][1][1] + NT(0.1) * hess_u[0][0][0] * hess_u[0][1][1];
+  }
+};
+
 namespace
 {
   /**
@@ -1086,7 +1168,7 @@ namespace
 TEST_CASE("KT gradient-dependent source Jacobian matches FD", "[FV][KT][gradient][source]")
 {
   using Model = GradientSourceKTModel;
-  using Discretization = FV::Discretization<Model, RectangularMesh<1>, double>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<1>, double>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1094,7 +1176,7 @@ TEST_CASE("KT gradient-dependent source Jacobian matches FD", "[FV][KT][gradient
   const ConfigTree json = make_json();
 
   Model model;
-  RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
+  RectangularMeshSerial<1> mesh{Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -1115,7 +1197,7 @@ TEST_CASE("KT gradient-dependent source Jacobian matches FD", "[FV][KT][gradient
 TEST_CASE("KT 2D gradient-dependent source Jacobian matches FD", "[FV][KT][gradient][source][2d]")
 {
   using Model = GradientSource2DModel;
-  using Discretization = FV::Discretization<Model, RectangularMesh<2>, double>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<2>, double>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1123,7 +1205,7 @@ TEST_CASE("KT 2D gradient-dependent source Jacobian matches FD", "[FV][KT][gradi
   const ConfigTree json = make_json_2d();
 
   Model model;
-  RectangularMesh<2> mesh{Config::ConfigurationMesh<2>(json)};
+  RectangularMeshSerial<2> mesh{Config::ConfigurationMesh<2>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -1137,4 +1219,163 @@ TEST_CASE("KT 2D gradient-dependent source Jacobian matches FD", "[FV][KT][gradi
     sol[i] = 1.0 + 0.05 * static_cast<double>(i) + 0.004 * static_cast<double>(i * i);
 
   REQUIRE(jacobian_matches_fd(assembler, sol, 1e-7, 2e-4, "2D gradient source"));
+}
+
+TEST_CASE("KT hessian-dependent source Jacobian matches FD", "[FV][KT][hessian][source]")
+{
+  using Model = HessianSourceKTModel;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<1>, double>;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+  const ConfigTree json = make_json();
+
+  Model model;
+  RectangularMeshSerial<1> mesh{Config::ConfigurationMesh<1>(json)};
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+  VectorType sol = state.spatial_data();
+  const int n_dofs = static_cast<int>(sol.size());
+  REQUIRE(n_dofs > 8);
+
+  // A cubic term on top of the convex profile, so the curvature varies from cell to cell.
+  for (int i = 0; i < n_dofs; ++i) {
+    const double x = static_cast<double>(i);
+    sol[i] = 1.0 + 0.05 * x + 0.004 * x * x + 0.0007 * x * x * x;
+  }
+
+  REQUIRE(jacobian_matches_fd(assembler, sol, 1e-7, 2e-4, "hessian source"));
+}
+
+TEST_CASE("KT 2D hessian-dependent source Jacobian matches FD", "[FV][KT][hessian][source][2d]")
+{
+  using Model = HessianSource2DModel;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<2>, double>;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+  const ConfigTree json = make_json_2d();
+
+  Model model;
+  RectangularMeshSerial<2> mesh{Config::ConfigurationMesh<2>(json)};
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+  VectorType sol = state.spatial_data();
+  const int n_dofs = static_cast<int>(sol.size());
+  REQUIRE(n_dofs > 8);
+
+  for (int i = 0; i < n_dofs; ++i) {
+    const double x = static_cast<double>(i);
+    sol[i] = 1.0 + 0.05 * x + 0.004 * x * x + 0.0007 * x * x * x;
+  }
+
+  REQUIRE(jacobian_matches_fd(assembler, sol, 1e-7, 2e-4, "2D hessian source"));
+}
+
+// A potential-flow-like model on the rho-symmetric boundary: a gradient-free advective flux and a diffusion
+// flux that depends on rho and on the gradient, as for a pion loop 1/(1 + u) and a sigma loop
+// 1/(1 + u + 2 rho u'). The flat profile has neighbouring one-sided slopes that differ by ~6e-9, i.e. it sits
+// close to, but not on, a minmod kink -- as a potential does in its convexity-restored region.
+template <bool with_advection, bool with_diffusion, bool flat = false>
+class RhoSymmetricPotentialModel
+    : public def::AbstractModel<RhoSymmetricPotentialModel<with_advection, with_diffusion, flat>,
+                                ComponentDescriptor<FEFunctionDescriptor<Scalar<"u">>>>,
+      public def::Time,
+      public def::RhoSymmetricLinearExtrapolationBoundaries<
+          RhoSymmetricPotentialModel<with_advection, with_diffusion, flat>>,
+      public def::AD<RhoSymmetricPotentialModel<with_advection, with_diffusion, flat>>
+{
+public:
+  template <typename Vector> void initial_condition(const Point<1> &pos, Vector &values) const
+  {
+    if constexpr (flat)
+      values[0] = 0.5 + 1e-7 * pos[0] + 3e-8 * pos[0] * pos[0];
+    else
+      values[0] = 0.1 + 0.5 * pos[0] * pos[0];
+  }
+
+  template <typename NT, typename Solution>
+  void flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> & /*pos*/, const Solution &sol) const
+  {
+    const auto &u = get<"fe_functions">(sol);
+    if constexpr (with_advection) F_i[0][0] = NT(1.) / (NT(1.) + u[0]);
+  }
+
+  template <typename NT, typename Solution>
+  void diffusion_flux(std::array<Tensor<1, 1, NT>, 1> &F_i, const Point<1> &pos, const Solution &sol) const
+  {
+    const auto &u = get<"fe_functions">(sol);
+    const auto &grad_u = get<"fe_derivatives">(sol);
+    if constexpr (with_diffusion) F_i[0][0] = NT(1.) / (NT(1.) + u[0] + NT(2. * pos[0]) * grad_u[0][0]);
+  }
+
+  template <typename NT, typename Solution>
+  void source(std::array<NT, 1> &s_i, const Point<1> & /*pos*/, const Solution & /*sol*/) const
+  {
+    s_i[0] = NT(0);
+  }
+};
+
+template <typename Model> static bool rho_symmetric_jacobian_matches_fd(const char *label, const double eps = 1.0e-7)
+{
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<1>, double>;
+  using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
+  using VectorType = typename Discretization::VectorType;
+
+  ensure_logger();
+  const ConfigTree json = make_json();
+  Model model;
+  RectangularMeshSerial<1> mesh{Config::ConfigurationMesh<1>(json)};
+  Discretization discretization(mesh, json);
+  Assembler assembler(discretization, model, json);
+
+  FV::FlowingVariables<Discretization> state(discretization);
+  state.interpolate(model);
+  const VectorType sol = state.spatial_data();
+  const int n_dofs = static_cast<int>(sol.size());
+  VectorType sol_dot(n_dofs);
+
+  SparseMatrix<double> analytic(assembler.get_sparsity_pattern_jacobian());
+  assembler.jacobian(analytic, sol, 1.0, sol_dot, 0.0, 0.0);
+
+  const double tolerance = 1.0e-5;
+  bool pass = true;
+  for (int j = 0; j < n_dofs; ++j) {
+    VectorType u_plus = sol, u_minus = sol;
+    u_plus[j] += eps;
+    u_minus[j] -= eps;
+    VectorType r_plus(n_dofs), r_minus(n_dofs);
+    assembler.residual(r_plus, u_plus, 1.0, sol_dot, 0.0);
+    assembler.residual(r_minus, u_minus, 1.0, sol_dot, 0.0);
+    for (int i = 0; i < n_dofs; ++i) {
+      const double fd = (r_plus[i] - r_minus[i]) / (2.0 * eps);
+      const double actual = assembler.get_sparsity_pattern_jacobian().exists(i, j) ? analytic.el(i, j) : 0.0;
+      if (std::abs(actual - fd) > tolerance * std::max(1.0, std::abs(fd))) {
+        std::cout << label << " Jacobian mismatch at [" << i << "," << j << "]: analytic=" << actual << " fd=" << fd
+                  << "\n";
+        pass = false;
+      }
+    }
+  }
+  return pass;
+}
+
+TEST_CASE("KT Jacobian matches FD on the rho-symmetric boundary", "[FV][KT][boundary]")
+{
+  SECTION("advection") { REQUIRE(rho_symmetric_jacobian_matches_fd<RhoSymmetricPotentialModel<true, false>>("adv")); }
+  SECTION("diffusion") { REQUIRE(rho_symmetric_jacobian_matches_fd<RhoSymmetricPotentialModel<false, true>>("diff")); }
+  SECTION("both") { REQUIRE(rho_symmetric_jacobian_matches_fd<RhoSymmetricPotentialModel<true, true>>("both")); }
+  // The difference step must stay below the slope gap, or it straddles the kink itself.
+  SECTION("near a limiter kink")
+  {
+    REQUIRE(rho_symmetric_jacobian_matches_fd<RhoSymmetricPotentialModel<true, true, true>>("flat", 1.0e-10));
+  }
 }

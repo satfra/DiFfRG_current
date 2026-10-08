@@ -99,7 +99,10 @@ TEST_CASE("Test 4D momentum + 2 angle integrals", "[integration][quadrature]")
                      cos1_poly[3], cos2_poly[0], cos2_poly[1], cos2_poly[2], cos2_poly[3]);
 
       constexpr ctype expected_precision = 1e-12;
-      const ctype rel_err = t_abs((integral - reference_integral) / reference_integral);
+      // Relative to the size of the summed parts: constant and integral are random and can nearly
+      // cancel, which would turn a roundoff-level absolute error into a large relative one.
+      const ctype rel_err =
+          t_abs(integral - reference_integral) / (t_abs(constant) + t_abs(reference_integral - constant));
       if (rel_err >= expected_precision) {
         std::cerr << "reference: " << std::scientific << std::setw(10) << reference_integral
                   << " | integral: " << std::setw(10) << integral << " | relative error: " << std::setw(12) << rel_err

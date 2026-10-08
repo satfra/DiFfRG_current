@@ -180,7 +180,7 @@ MakeKernel[
 - **`"Name" -> "V"`** — names everything after the potential: it produces a kernel class `V_kernel`, an integrator class `V_integrator`, and writes them under `flows/V/`.
 - **`"Integrator" -> "Integrator_p2"`** together with **`"d" -> 3`** selects DiFfRG's `DiFfRG::Integrator_p2` for a 3-dimensional spatial loop integral (the `_p2` integrator integrates over the magnitude `l1` and angles).
 - **`"AD" -> True`** additionally generates an `autodiff::real` instantiation of the integrator, used for the Jacobian.
-- **`"Device" -> "TBB"`** selects the execution space. `TBB` runs the integral on the CPU and is required for compatibility with the FEM assemblers; `"GPU"` and `"Threads"` are also available for standalone integrators.
+- **`"Device" -> "TBB"`** selects the execution space. `TBB` runs the integral on the CPU, and it is what a model's per-point `flux` needs: the assemblers call it from many threads at once, and a GPU integrator's `get` must not be. `"GPU"` and `"Threads"` work for `map()` and for `map_points()`, which a batched model calls once for all points ([Tutorial 6](tut6.md)).
 - **`"Parameters"`** and **`"IntegrationVariables"`** supply the parameter list above and name the loop variable `l1`.
 
 `MakeKernel` writes the following into `flows/V/`:

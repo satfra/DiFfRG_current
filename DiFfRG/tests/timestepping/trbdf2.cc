@@ -15,7 +15,8 @@ TEST_CASE("Test TRBDF2 with DG constant model", "[timestepping][constant][trbdf2
   constexpr uint dim = 1;
   using Model = Testing::ModelConstant<dim>;
   using NumberType = double;
-  using Discretization = DG::Discretization<Model, RectangularMesh<dim>, NumberType>;
+  // Serial on purpose: this tests a serial-only stepper, and a plain RectangularMesh is partitioned in an MPI build.
+  using Discretization = DG::Discretization<Model, RectangularMeshSerial<dim>, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = DG::Assembler<Discretization>;
@@ -29,7 +30,7 @@ TEST_CASE("Test TRBDF2 with DG exponential model", "[timestepping][exponential][
   constexpr uint dim = 1;
   using Model = Testing::ModelExp<dim>;
   using NumberType = double;
-  using Discretization = DG::Discretization<Model, RectangularMesh<dim>, NumberType>;
+  using Discretization = DG::Discretization<Model, RectangularMeshSerial<dim>, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = DG::Assembler<Discretization>;
@@ -41,7 +42,7 @@ TEST_CASE("Test TRBDF2 with DG Burgers model", "[timestepping][Burgers][trbdf2][
   constexpr uint dim = 1;
   using Model = Testing::ModelBurgers<dim>;
   using NumberType = double;
-  using Discretization = DG::Discretization<Model, RectangularMesh<dim>, NumberType>;
+  using Discretization = DG::Discretization<Model, RectangularMeshSerial<dim>, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = DG::Assembler<Discretization>;
