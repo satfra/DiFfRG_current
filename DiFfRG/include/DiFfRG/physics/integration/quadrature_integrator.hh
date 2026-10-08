@@ -217,18 +217,30 @@ namespace DiFfRG
                               Kokkos::subview(args_host.view, Kokkos::make_pair(size_t(0), total)));
         }
 
-        return [&]<size_t... I>(std::index_sequence<I...>) {
-          return device::make_tuple([&] {
-            using U = launch_arg_t<handles, T, ctype>;
-            if constexpr (!is_stageable<U>)
-              return DevicePointArg<U>{nullptr, to_launch_arg<handles, ctype>(args.value)};
-            else {
-              const U *values = staged[I] ? reinterpret_cast<const U *>(device + offsets[I])
-                                          : (args.per_point() ? reinterpret_cast<const U *>(args.values) : nullptr);
-              return DevicePointArg<U>{values, args.per_point() ? U{} : to_launch_arg<handles, ctype>(args.value)};
-            }
-          }()...);
-        }(std::index_sequence_for<T...>{});
+        return device_args<ctype, handles>(std::index_sequence_for<T...>{}, staged, offsets, device, args...);
+      }
+
+      // The tuple of DevicePointArg that stage() returns. Plain function templates rather than a lambda expanded
+      // over two packs inside a templated lambda: CUDA 12's device front end (cicc) aborts on the latter.
+      template <typename ctype, bool handles, size_t... I, typename... T>
+      static auto device_args(std::index_sequence<I...>, const std::array<bool, sizeof...(T)> &staged,
+                              const std::array<size_t, sizeof...(T)> &offsets, const char *device,
+                              const PointArg<T> &...args)
+      {
+        return device::make_tuple(device_arg<ctype, handles>(staged[I], offsets[I], device, args)...);
+      }
+
+      template <typename ctype, bool handles, typename T>
+      static auto device_arg(const bool staged, const size_t offset, const char *device, const PointArg<T> &arg)
+      {
+        using U = launch_arg_t<handles, T, ctype>;
+        if constexpr (!is_stageable<U>)
+          return DevicePointArg<U>{nullptr, to_launch_arg<handles, ctype>(arg.value)};
+        else {
+          const U *values = staged ? reinterpret_cast<const U *>(device + offset)
+                                   : (arg.per_point() ? reinterpret_cast<const U *>(arg.values) : nullptr);
+          return DevicePointArg<U>{values, arg.per_point() ? U{} : to_launch_arg<handles, ctype>(arg.value)};
+        }
       }
 
       /**
