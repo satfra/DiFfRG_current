@@ -11,6 +11,7 @@
 #include <DiFfRG/discretization/coordinates/coordinates.hh>
 #include <DiFfRG/physics/integration/abstract_integrator.hh>
 #include <DiFfRG/physics/integration/map_completion.hh>
+#include <DiFfRG/physics/integration/map_distribution.hh>
 // for has_cacheable_positions_v, shared with the vacuum integrator
 #include <DiFfRG/physics/integration/quadrature_integrator.hh>
 
@@ -656,65 +657,20 @@ namespace DiFfRG
       requires internal::is_map_result<OT, NT>
     auto map(OT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      auto &scheduler = MapScheduler::instance();
-
-      // See QuadratureIntegrator::map() for why this is decided from the plan, not from local state.
-      if (scheduler.active() && scheduler.plan_contains(integrator_id())) MapCompletion::flush();
-
-      const MapSlice slice =
-          scheduler.schedule(integrator_id(), dest, sizeof(OT), coordinates.size(), quadrature_volume(),
-                             /* splittable */ true, map_target<ExecutionSpace>());
-
-      if (slice.count == 0) {
-        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
-        return ExecutionSpace();
-      }
-      if (slice.owns_all(coordinates.size())) return map_dist(dest, coordinates, args...);
-
-      return map_dist(dest + slice.offset, SubCoordinates(coordinates, slice.offset, slice.count), args...);
+      internal::scheduled_map<ExecutionSpace>(integrator_id(), quadrature_volume(), dest, coordinates,
+                                              [&](auto *d, const auto &c) { this->map_dist(d, c, args...); });
+      return space;
     }
 
+    /// map() without the MapScheduler: computes the whole of `coordinates` on this rank.
     template <typename OT, typename Coordinates, typename... Args>
     auto map_dist(OT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      const size_t n = coordinates.size();
-      auto &stage = m_staging.template get<OT>();
-
-      if constexpr (std::is_same_v<typename ExecutionSpace::memory_space, CPU_memory>) {
-        // Host backend: "device" memory is host memory, so there is nothing to stage. The work is
-        // synchronous though, so inside a deferral scope it is queued rather than run here -- see
-        // run_or_queue_host().
-        run_or_queue_host(dest, coordinates, args...);
-        // Nothing to land, but the MPI slices still have to be exchanged before the caller reads.
-        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
-        return space;
-      } else {
-        // One staging buffer per integrator, so a second map() before a flush would clobber the
-        // first result. Land the outstanding one first; in the normal call pattern (each flow
-        // mapped once per flush interval) this never triggers.
-        if (stage.pinned_size > 0 && MapCompletion::has_pending(stage.pinned.data())) MapCompletion::flush();
-
-        auto dest_device_view = stage.device_view(space, n);
-        auto pinned_view = stage.pinned_view(n);
-
-        map(space, dest_device_view, coordinates, args...);
-
-        // Genuinely asynchronous, because the destination is page-locked. Copying straight into
-        // `dest` -- ordinary pageable caller memory, e.g. a dealii::Vector element range -- is not:
-        // the driver has to stage it, so the call blocks until the kernels feeding it have finished
-        // and the host gets no run-ahead at all. See MapCompletion for the measurement.
-        Kokkos::deep_copy(space, pinned_view, dest_device_view);
-
-        // Caller has promised not to read `dest` until its DeferredMaps scope closes, so leave the
-        // result in staging and keep the host running ahead of the device.
-        MapCompletion::record(dest, stage.pinned.data(), n * sizeof(OT));
-        // Original contract outside such a scope: `dest` is valid on return. flush() fences, lands
-        // the staged copy and -- under MPI -- exchanges this batch's slices, all of which must
-        // happen before the caller looks at `dest`.
-        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
-
-        return space;
-      }
+      internal::staged_map(space, m_staging.template get<OT>(), dest, coordinates.size(),
+                           [this, coordinates, args...](const auto &view) {
+                             this->map(this->space, view, coordinates, args...);
+                           });
+      return space;
     }
 
   private:
@@ -866,38 +822,6 @@ namespace DiFfRG
         matsubara_weights = fe_rule->template sum_weights<mem_space>();
       }
       grid_size[dim - 1] = matsubara_nodes.size();
-    }
-
-    /// Run a host-backend map now, or queue it for flush time if a deferral scope is open. See
-    /// MapCompletion::record_work. Compiled out in a CUDA-less build.
-    template <typename OT, typename Coordinates, typename... Args>
-    void run_or_queue_host(OT *dest, const Coordinates &coordinates, const Args &...args)
-    {
-      if constexpr (internal::has_device_backend) {
-        if (MapCompletion::deferral_enabled()) {
-          MapCompletion::record_work(
-              [this, dest, coordinates, args...]() { this->run_host(dest, coordinates, args...); });
-          return;
-        }
-      }
-      run_host(dest, coordinates, args...);
-    }
-
-    /// The host-backend body of map_dist(). Queued jobs run one after another, so the shared
-    /// staging device scratch is written and drained before the next job touches it.
-    template <typename OT, typename Coordinates, typename... Args>
-    void run_host(OT *dest, const Coordinates &coordinates, const Args &...args)
-    {
-      const size_t n = coordinates.size();
-      auto dest_device_view = m_staging.template get<OT>().device_view(space, n);
-      // create unmanaged host view for dest
-      auto dest_view = Kokkos::View<OT *, CPU_memory, Kokkos::MemoryUnmanaged>(dest, n);
-
-      // run the map function
-      map(space, dest_device_view, coordinates, args...);
-
-      // copy the result from device to the unmanaged host view
-      Kokkos::deep_copy(space, dest_view, dest_device_view);
     }
 
   protected:
@@ -1062,45 +986,16 @@ namespace DiFfRG
       requires internal::is_map_result<OT, NT>
     auto map(OT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      auto space = execution_space();
-      auto &scheduler = MapScheduler::instance();
-
-      if (scheduler.active() && scheduler.plan_contains(this->integrator_id())) MapCompletion::flush();
-
-      const MapSlice slice =
-          scheduler.schedule(this->integrator_id(), dest, sizeof(OT), coordinates.size(), Base::quadrature_volume(),
-                             /* splittable */ true, map_target<execution_space>());
-
-      if (slice.count == 0) {
-        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
-        return space;
-      }
-      if (slice.owns_all(coordinates.size()))
-        run_or_queue(dest, coordinates, args...);
-      else
-        run_or_queue(dest + slice.offset, SubCoordinates(coordinates, slice.offset, slice.count), args...);
-
-      if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
-      return space;
-    }
-
-  private:
-    /// Run now, or queue for flush time inside a deferral scope -- see MapCompletion::record_work.
-    /// Compiled out in a CUDA-less build.
-    template <typename OT, typename Coordinates, typename... Args>
-    void run_or_queue(OT *dest, const Coordinates &coordinates, const Args &...args)
-    {
-      if constexpr (internal::has_device_backend) {
-        if (MapCompletion::deferral_enabled()) {
-          MapCompletion::record_work([this, dest, coordinates, args...]() {
-            auto sp = execution_space();
-            this->map(sp, dest, coordinates, args...);
+      internal::scheduled_map<execution_space>(
+          this->integrator_id(), Base::quadrature_volume(), dest, coordinates, [&](auto *d, const auto &c) {
+            // tbb::parallel_for writes straight into `dest`, so there is nothing to stage.
+            internal::run_or_queue_host([this, d, c, args...]() {
+              auto sp = execution_space();
+              this->map(sp, d, c, args...);
+            });
+            if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
           });
-          return;
-        }
-      }
-      auto sp = execution_space();
-      map(sp, dest, coordinates, args...);
+      return execution_space();
     }
 
   protected:

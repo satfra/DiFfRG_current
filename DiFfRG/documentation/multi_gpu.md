@@ -17,6 +17,7 @@ register, nothing to tune per flow.
 |---|---|---|
 | `MapScheduler` | `include/DiFfRG/physics/integration/map_scheduler.hh`, `src/.../map_scheduler.cc` | Decides which rank computes which part of each `map()`, and performs the batched exchange |
 | `MapCompletion` | `include/DiFfRG/physics/integration/map_completion.hh` | Lands deferred device results, then drives the exchange |
+| `scheduled_map`, `staged_map` | `include/DiFfRG/physics/integration/map_distribution.hh` | The scheduler and staging half of every integrator's `map()`: vacuum and finite-T quadrature, and the lattice sums |
 | Rank → GPU affinity | `src/DiFfRG/common/init.cc` | Gives each rank its own device and its share of the CPU threads |
 | MPI utilities | `include/DiFfRG/common/mpi.hh`, `src/.../mpi.cc` | `allgatherv`, `agree`, `bcast`, `any_of`, `split_shared`, `abort` |
 
@@ -444,6 +445,9 @@ The library-level part of this contract is already covered by tests:
 - `tests/physics/integration/distributed_quadrature_integrator.cc` — compares `map()` against
   `map_dist()` bitwise, and is registered under `mpirun` at 2, 3 and 4 ranks when the build has MPI
   (`setup_mpi_test`, `MPI_TEST_RANKS`).
+- `tests/physics/integration/lattice/distributed_lattice_integrator.cc` — the same check for
+  `IntegratorLat<1..4>` on a 2D external grid, also inside a `DeferredMaps` scope; registered under
+  `mpirun` the same way.
 
 ---
 

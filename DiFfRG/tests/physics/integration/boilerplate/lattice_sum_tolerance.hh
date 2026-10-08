@@ -7,15 +7,15 @@
 /**
  * @brief How many weights an IntegratorLat<dim>D sums.
  *
- * The reduction runs over `grid_size[0] / q0_mult` points in the q0 direction and `grid_size[1] / 2`
- * in each of the remaining `dim - 1` directions.
+ * A halved axis of extent N visits n = 0 .. N/2, i.e. N/2 + 1 points; q0 is halved only when
+ * q0_symmetric is set, every further axis always.
  */
 constexpr std::size_t lattice_sum_terms(const unsigned int dim, const unsigned int size0, const unsigned int size1,
                                         const bool q0_symmetric)
 {
-  std::size_t n = size0 / (q0_symmetric ? 2u : 1u);
+  std::size_t n = q0_symmetric ? size0 / 2u + 1u : size0;
   for (unsigned int d = 1; d < dim; ++d)
-    n *= size1 / 2u;
+    n *= size1 / 2u + 1u;
   return n;
 }
 

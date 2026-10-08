@@ -11,6 +11,7 @@
 #include <DiFfRG/discretization/coordinates/coordinates.hh>
 #include <DiFfRG/physics/integration/abstract_integrator.hh>
 #include <DiFfRG/physics/integration/map_completion.hh>
+#include <DiFfRG/physics/integration/map_distribution.hh>
 #include <DiFfRG/physics/integration/point_arg.hh>
 #include <DiFfRG/physics/interpolation/interpolator_handle.hh>
 
@@ -114,50 +115,6 @@ namespace DiFfRG
         double_lookups_in_float_kernel();
     }
 
-    /// Grow-only result buffers of map(): device scratch, plus page-locked staging so the copy back
-    /// is genuinely asynchronous (see MapCompletion).
-    template <typename T, typename ExecutionSpace> struct MapStaging {
-      Kokkos::View<T *, ExecutionSpace> device;
-      size_t device_size = 0;
-      Kokkos::View<T *, PinnedHost_memory> pinned;
-      size_t pinned_size = 0;
-
-      auto device_view(const ExecutionSpace &space, const size_t n)
-      {
-        if (device_size < n) {
-          device = Kokkos::View<T *, ExecutionSpace>(Kokkos::view_alloc(space, "MapIntegrators_device_view"), n);
-          device_size = n;
-        }
-        return Kokkos::View<T *, ExecutionSpace>(device, Kokkos::make_pair(size_t(0), n));
-      }
-
-      auto pinned_view(const size_t n)
-      {
-        if (pinned_size < n) {
-          pinned = Kokkos::View<T *, PinnedHost_memory>(
-              Kokkos::view_alloc(Kokkos::WithoutInitializing, "MapIntegrators_pinned_view"), n);
-          pinned_size = n;
-        }
-        return Kokkos::View<T *, PinnedHost_memory>(pinned, Kokkos::make_pair(size_t(0), n));
-      }
-    };
-
-    /// map() result buffers for value type NT and, when that is single precision, for its double
-    /// counterpart. The kernel writes each result straight into the destination-typed buffer, so a
-    /// float integrator mapping into double converts on the device.
-    template <typename NT, typename ExecutionSpace> struct MapStagingSet {
-      MapStaging<NT, ExecutionSpace> native;
-      MapStaging<get_type::double_precision<NT>, ExecutionSpace> widened;
-
-      template <typename OT> auto &get()
-      {
-        if constexpr (std::is_same_v<OT, NT>)
-          return native;
-        else
-          return widened;
-      }
-    };
-
     /// f(begin, end) over [0, n), in parallel chunks once n is large enough to pay for it.
     template <typename F> void parallel_chunks(const size_t n, const F &f)
     {
@@ -181,6 +138,12 @@ namespace DiFfRG
       }
     };
 
+    /// Types that cannot be placed in map_points' staging buffer (an interpolator: no default constructor, no copy
+    /// assignment) can only be shared by all points, and are passed to the device by value. A variable template, not
+    /// a constexpr generic lambda: CUDA 12's front end aborts on calling the latter's operator()<U>().
+    template <typename U>
+    inline constexpr bool is_stageable = std::is_default_constructible_v<U> && std::is_copy_assignable_v<U>;
+
     /**
      * @brief The buffers of a device map_points(): its per-point arguments, staged on the host and copied to the
      * device in one go, and its results. Kept by the integrator across calls.
@@ -203,11 +166,6 @@ namespace DiFfRG
       template <typename ctype, bool handles, typename... T>
       auto stage(const ExecutionSpace &space, const size_t n, const PointArg<T> &...args)
       {
-        // Types that cannot be placed in the staging buffer (an interpolator: no default constructor, no copy
-        // assignment) can only be shared by all points, and are passed to the device by value.
-        constexpr auto stageable = []<typename U>() {
-          return std::is_default_constructible_v<U> && std::is_copy_assignable_v<U>;
-        };
         constexpr size_t alignment = 64;
         constexpr size_t n_args = sizeof...(T);
 
@@ -221,7 +179,7 @@ namespace DiFfRG
               [&] {
                 using U = launch_arg_t<handles, T, ctype>;
                 args.check_size(n);
-                if constexpr (!stageable.template operator()<U>())
+                if constexpr (!is_stageable<U>)
                   if (args.per_point())
                     throw std::runtime_error("map_points: this argument type can only be shared by all points.");
                 staged[k] = args.per_point() && !(host_memory && std::is_same_v<U, T>);
@@ -243,7 +201,7 @@ namespace DiFfRG
           (
               [&] {
                 using U = launch_arg_t<handles, T, ctype>;
-                if constexpr (stageable.template operator()<U>())
+                if constexpr (is_stageable<U>)
                   if (staged[k]) {
                     U *out = reinterpret_cast<U *>(host + offsets[k]);
                     parallel_chunks(n, [&](const size_t begin, const size_t end) {
@@ -262,7 +220,7 @@ namespace DiFfRG
         return [&]<size_t... I>(std::index_sequence<I...>) {
           return device::make_tuple([&] {
             using U = launch_arg_t<handles, T, ctype>;
-            if constexpr (!stageable.template operator()<U>())
+            if constexpr (!is_stageable<U>)
               return DevicePointArg<U>{nullptr, to_launch_arg<handles, ctype>(args.value)};
             else {
               const U *values = staged[I] ? reinterpret_cast<const U *>(device + offsets[I])
@@ -731,66 +689,20 @@ namespace DiFfRG
       requires internal::is_map_result<OT, NT>
     auto map(OT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      auto &scheduler = MapScheduler::instance();
-
-      // One staging buffer per integrator, so a second map() from this integrator before a flush
-      // would clobber the first result. The *plan* is what decides, not the local pending list: a
-      // rank that owned no slice of the earlier map has nothing pending and would skip a flush the
-      // other ranks perform, leaving the collectives mismatched.
-      if (scheduler.active() && scheduler.plan_contains(integrator_id())) MapCompletion::flush();
-
-      const MapSlice slice =
-          scheduler.schedule(integrator_id(), dest, sizeof(OT), coordinates.size(), quadrature_volume(),
-                             /* splittable */ true, map_target<ExecutionSpace>());
-
-      if (slice.count == 0) {
-        // Not an owner: no kernels, but the plan entry is registered, so this rank still has to
-        // take part in the exchange.
-        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
-        return ExecutionSpace();
-      }
-      if (slice.owns_all(coordinates.size())) return map_dist(dest, coordinates, args...);
-
-      return map_dist(dest + slice.offset, SubCoordinates(coordinates, slice.offset, slice.count), args...);
+      internal::scheduled_map<ExecutionSpace>(integrator_id(), quadrature_volume(), dest, coordinates,
+                                              [&](auto *d, const auto &c) { this->map_dist(d, c, args...); });
+      return space;
     }
 
+    /// map() without the MapScheduler: computes the whole of `coordinates` on this rank.
     template <typename OT, typename Coordinates, typename... Args>
     auto map_dist(OT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      const size_t n = coordinates.size();
-      auto &stage = m_staging.template get<OT>();
-      auto dest_device_view = stage.device_view(space, n);
-
-      if constexpr (std::is_same_v<typename ExecutionSpace::memory_space, CPU_memory>) {
-        // Host backend: "device" memory is host memory, so there is nothing to stage. The work is
-        // synchronous though, so inside a deferral scope it is queued rather than run here -- see
-        // run_or_queue_host().
-        run_or_queue_host(dest, coordinates, args...);
-        // Nothing to land, but the MPI slices still have to be exchanged before the caller reads.
-        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
-        return space;
-      } else {
-        // One staging buffer per integrator, so a second map() before a flush would clobber the
-        // first result. Land the outstanding one first; in the normal call pattern (each flow
-        // mapped once per flush interval) this never triggers.
-        if (stage.pinned_size > 0 && MapCompletion::has_pending(stage.pinned.data())) MapCompletion::flush();
-        auto pinned_view = stage.pinned_view(n);
-
-        map(space, dest_device_view, coordinates, args...);
-
-        // Genuinely asynchronous, because the destination is page-locked.
-        Kokkos::deep_copy(space, pinned_view, dest_device_view);
-
-        // Caller has promised not to read `dest` until its DeferredMaps scope closes, so leave the
-        // result in staging and keep the host running ahead of the device.
-        MapCompletion::record(dest, stage.pinned.data(), n * sizeof(OT));
-        // Original contract outside such a scope: `dest` is valid on return. flush() fences, lands
-        // the staged copy and -- under MPI -- exchanges this batch's slices, all of which must
-        // happen before the caller looks at `dest`.
-        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
-
-        return space;
-      }
+      internal::staged_map(space, m_staging.template get<OT>(), dest, coordinates.size(),
+                           [this, coordinates, args...](const auto &view) {
+                             this->map(this->space, view, coordinates, args...);
+                           });
+      return space;
     }
 
   private:
@@ -907,44 +819,6 @@ namespace DiFfRG
               });
             });
       }
-    }
-
-  private:
-    /**
-     * @brief Run a host-backend map now, or queue it for flush time if a deferral scope is open.
-     *
-     * A host kernel is synchronous, so running it inline blocks the host thread and delays the
-     * launch of any device map issued after it. Queuing makes the call order inside a DeferredMaps
-     * scope irrelevant: flush() runs the queue before it fences, i.e. while the device work already
-     * launched is still running. See MapCompletion::record_work.
-     *
-     * Compiled out entirely in a CUDA-less build, where there is no device to overlap with.
-     */
-    template <typename OT, typename Coordinates, typename... Args>
-    void run_or_queue_host(OT *dest, const Coordinates &coordinates, const Args &...args)
-    {
-      if constexpr (internal::has_device_backend) {
-        if (MapCompletion::deferral_enabled()) {
-          // Everything the job needs is captured by value; `this` and `dest` are covered by the
-          // DeferredMaps contract, which already requires them to outlive the scope.
-          MapCompletion::record_work(
-              [this, dest, coordinates, args...]() { this->run_host(dest, coordinates, args...); });
-          return;
-        }
-      }
-      run_host(dest, coordinates, args...);
-    }
-
-    /// The host-backend body of map_dist(). Queued jobs run one after another, so the shared
-    /// staging device scratch is written and drained before the next job touches it.
-    template <typename OT, typename Coordinates, typename... Args>
-    void run_host(OT *dest, const Coordinates &coordinates, const Args &...args)
-    {
-      const size_t n = coordinates.size();
-      auto dest_device_view = m_staging.template get<OT>().device_view(space, n);
-      auto dest_view = Kokkos::View<OT *, CPU_memory, Kokkos::MemoryUnmanaged>(dest, n);
-      map(space, dest_device_view, coordinates, args...);
-      Kokkos::deep_copy(space, dest_view, dest_device_view);
     }
 
   protected:
@@ -1081,52 +955,16 @@ namespace DiFfRG
       requires internal::is_map_result<OT, NT>
     auto map(OT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      auto space = execution_space();
-      auto &scheduler = MapScheduler::instance();
-
-      // A second map() from this integrator would overwrite `dest` before the first one's slices
-      // have been exchanged, so land the open batch first. Plan-driven, not local -- see the GPU
-      // overload for why that distinction is what keeps the collectives matched.
-      if (scheduler.active() && scheduler.plan_contains(this->integrator_id())) MapCompletion::flush();
-
-      const MapSlice slice =
-          scheduler.schedule(this->integrator_id(), dest, sizeof(OT), coordinates.size(), Base::quadrature_volume(),
-                             /* splittable */ true, map_target<execution_space>());
-
-      if (slice.count == 0) {
-        // Not an owner, but still part of the batch -- see the GPU overload.
-        if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
-        return space;
-      }
-      if (slice.owns_all(coordinates.size()))
-        run_or_queue(dest, coordinates, args...);
-      else
-        run_or_queue(dest + slice.offset, SubCoordinates(coordinates, slice.offset, slice.count), args...);
-
-      // This backend writes straight into `dest`, so there is nothing to land -- but the slices
-      // still have to be exchanged before the caller reads them.
-      if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
-      return space;
-    }
-
-  private:
-    /// Run now, or queue for flush time inside a deferral scope. `tbb::parallel_for` is
-    /// synchronous, so running it inline would stall the launch of any device map issued after it;
-    /// see MapCompletion::record_work. Compiled out in a CUDA-less build.
-    template <typename OT, typename Coordinates, typename... Args>
-    void run_or_queue(OT *dest, const Coordinates &coordinates, const Args &...args)
-    {
-      if constexpr (internal::has_device_backend) {
-        if (MapCompletion::deferral_enabled()) {
-          MapCompletion::record_work([this, dest, coordinates, args...]() {
-            auto sp = execution_space();
-            this->map(sp, dest, coordinates, args...);
+      internal::scheduled_map<execution_space>(
+          this->integrator_id(), Base::quadrature_volume(), dest, coordinates, [&](auto *d, const auto &c) {
+            // tbb::parallel_for writes straight into `dest`, so there is nothing to stage.
+            internal::run_or_queue_host([this, d, c, args...]() {
+              auto sp = execution_space();
+              this->map(sp, d, c, args...);
+            });
+            if (!MapCompletion::deferral_enabled()) MapCompletion::flush();
           });
-          return;
-        }
-      }
-      auto sp = execution_space();
-      map(sp, dest, coordinates, args...);
+      return execution_space();
     }
 
   protected:
