@@ -187,10 +187,12 @@ TEST_CASE("KT local tolerances sit at each cell centre, per component", "[timest
 {
   DiFfRG::Init();
   ensure_logger();
-  using Discretization = FV::Discretization<ModelKT, RectangularMesh<1>, double>;
+  // KT's local tolerances are serial-only (the reconstruction reads neighbour cells); a plain
+  // RectangularMesh is partitioned in an MPI build.
+  using Discretization = FV::Discretization<ModelKT, RectangularMeshSerial<1>, double>;
   const auto config = make_config(0);
   ModelKT model;
-  RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(config)};
+  RectangularMeshSerial<1> mesh{Config::ConfigurationMesh<1>(config)};
   Discretization discretization(mesh, config);
   FV::KurganovTadmor::Assembler<Discretization, ModelKT> assembler(discretization, model, config);
   FV::FlowingVariables<Discretization> state(discretization);

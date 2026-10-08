@@ -172,7 +172,9 @@ namespace
   /// Everything a test needs: the assembler on a nontrivial state.
   template <uint dim, bool batched, bool hessians, bool extractors> struct Setup {
     using Model = ModelRich<dim, batched, hessians, extractors>;
-    using Discretization = CG::Discretization<Model, RectangularMesh<dim>>;
+    // Serial linear algebra (plain-assembly comparisons, serial sparsity pattern): a plain
+    // RectangularMesh is partitioned in an MPI build, which would select PETSc types.
+    using Discretization = CG::Discretization<Model, RectangularMeshSerial<dim>>;
     using VectorType = typename Discretization::VectorType;
     using SparseMatrixType = typename Discretization::SparseMatrixType;
 
@@ -205,7 +207,7 @@ namespace
 
     ConfigTree config;
     Model model;
-    RectangularMesh<dim> mesh;
+    RectangularMeshSerial<dim> mesh;
     Discretization discretization;
     CG::Assembler<Discretization> assembler;
     FE::FlowingVariables<Discretization> state;

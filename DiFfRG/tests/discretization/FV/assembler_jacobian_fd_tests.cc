@@ -323,7 +323,8 @@ TEST_CASE("KT Jacobian matches FD Jacobian for traveling wave model (detects mis
 {
   using Model = Testing::ModelBurgersTravelingWaveKT<1>;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<1>, NumberType>;
+  // Serial on purpose: this tests serial linear algebra, and a plain RectangularMesh is partitioned in an MPI build.
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<1>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -333,7 +334,7 @@ TEST_CASE("KT Jacobian matches FD Jacobian for traveling wave model (detects mis
   const ConfigTree json = make_json();
 
   Model model(p_prm);
-  RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
+  RectangularMeshSerial<1> mesh{Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -392,7 +393,7 @@ TEST_CASE("KT Jacobian matches FD Jacobian for third-derivative diffusion model 
 {
   using Model = ThirdDerivativeDiffusionModel;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<1>, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<1>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -401,7 +402,7 @@ TEST_CASE("KT Jacobian matches FD Jacobian for third-derivative diffusion model 
   const ConfigTree json = make_json();
 
   Model model;
-  RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
+  RectangularMeshSerial<1> mesh{Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -460,7 +461,7 @@ TEST_CASE("KT Jacobian matches FD Jacobian for pure advection Burgers model", "[
 {
   using Model = Testing::ModelBurgersKT<1>;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<1>, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<1>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -472,7 +473,7 @@ TEST_CASE("KT Jacobian matches FD Jacobian for pure advection Burgers model", "[
   const ConfigTree json = make_json();
 
   Model model(p_prm);
-  RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
+  RectangularMeshSerial<1> mesh{Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -523,7 +524,7 @@ TEST_CASE("KT gradient-dependent flux and separate diffusion Jacobian match FD",
 {
   using Model = GradientDependentKTModel;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<1>, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<1>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -531,7 +532,7 @@ TEST_CASE("KT gradient-dependent flux and separate diffusion Jacobian match FD",
 
   const ConfigTree json = make_json();
   Model model;
-  RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
+  RectangularMeshSerial<1> mesh{Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -584,7 +585,7 @@ TEST_CASE("KT Jacobian for x-dependent source-only model is diagonal", "[FV][KT]
 {
   using Model = SourceOnlyModel;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<1>, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<1>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -593,7 +594,7 @@ TEST_CASE("KT Jacobian for x-dependent source-only model is diagonal", "[FV][KT]
   const ConfigTree json = make_json();
 
   Model model;
-  RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
+  RectangularMeshSerial<1> mesh{Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -624,7 +625,7 @@ TEST_CASE("KT first-order Jacobian strategy does not use reconstruction-neighbor
 {
   using Model = Testing::ModelBurgersKT<1>;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<1>, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<1>, NumberType>;
   using ResidualReconstructor = def::TVDReconstructor<Discretization::dim, def::MinModLimiter, NumberType>;
   using JacobianReconstructor = def::FirstOrderReconstructor<Discretization::dim, NumberType>;
   using ExactAssembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
@@ -641,7 +642,7 @@ TEST_CASE("KT first-order Jacobian strategy does not use reconstruction-neighbor
   const ConfigTree json = make_json();
 
   Model model(p_prm);
-  RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
+  RectangularMeshSerial<1> mesh{Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   ExactAssembler exact_assembler(discretization, model, json);
   ApproxJacobianAssembler approx_assembler(discretization, model, json);
@@ -687,7 +688,7 @@ TEST_CASE("KT TVD Jacobian strategy keeps reconstruction-neighbor columns", "[FV
 {
   using Model = Testing::ModelBurgersKT<1>;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<1>, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<1>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -699,7 +700,7 @@ TEST_CASE("KT TVD Jacobian strategy keeps reconstruction-neighbor columns", "[FV
   const ConfigTree json = make_json();
 
   Model model(p_prm);
-  RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
+  RectangularMeshSerial<1> mesh{Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -733,7 +734,7 @@ TEST_CASE("KT 2D Jacobian matches FD Jacobian for diagonal Burgers model", "[FV]
 {
   using Model = Testing::ModelBurgers2DKT;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<2>, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<2>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -746,7 +747,7 @@ TEST_CASE("KT 2D Jacobian matches FD Jacobian for diagonal Burgers model", "[FV]
   const ConfigTree json = make_json_2d();
 
   Model model(p_prm);
-  RectangularMesh<2> mesh{Config::ConfigurationMesh<2>(json)};
+  RectangularMeshSerial<2> mesh{Config::ConfigurationMesh<2>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -802,7 +803,7 @@ TEST_CASE("KT 2D boundary Jacobian matches FD for affine ghost diffusion", "[FV]
 {
   using Model = DiffusiveAffineBoundary2DModel;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<2>, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<2>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -810,7 +811,7 @@ TEST_CASE("KT 2D boundary Jacobian matches FD for affine ghost diffusion", "[FV]
 
   const ConfigTree json = make_json_2d();
   Model model;
-  RectangularMesh<2> mesh{Config::ConfigurationMesh<2>(json)};
+  RectangularMeshSerial<2> mesh{Config::ConfigurationMesh<2>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -880,7 +881,7 @@ TEST_CASE("KT 2D boundary Jacobian uses model-owned tangential ghost derivatives
 {
   using Model = DiffusiveNonAffineTangentialBoundary2DModel;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<2>, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<2>, NumberType>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -888,7 +889,7 @@ TEST_CASE("KT 2D boundary Jacobian uses model-owned tangential ghost derivatives
 
   const ConfigTree json = make_json_2d();
   Model model;
-  RectangularMesh<2> mesh{Config::ConfigurationMesh<2>(json)};
+  RectangularMeshSerial<2> mesh{Config::ConfigurationMesh<2>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -1167,7 +1168,7 @@ namespace
 TEST_CASE("KT gradient-dependent source Jacobian matches FD", "[FV][KT][gradient][source]")
 {
   using Model = GradientSourceKTModel;
-  using Discretization = FV::Discretization<Model, RectangularMesh<1>, double>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<1>, double>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1175,7 +1176,7 @@ TEST_CASE("KT gradient-dependent source Jacobian matches FD", "[FV][KT][gradient
   const ConfigTree json = make_json();
 
   Model model;
-  RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
+  RectangularMeshSerial<1> mesh{Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -1196,7 +1197,7 @@ TEST_CASE("KT gradient-dependent source Jacobian matches FD", "[FV][KT][gradient
 TEST_CASE("KT 2D gradient-dependent source Jacobian matches FD", "[FV][KT][gradient][source][2d]")
 {
   using Model = GradientSource2DModel;
-  using Discretization = FV::Discretization<Model, RectangularMesh<2>, double>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<2>, double>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1204,7 +1205,7 @@ TEST_CASE("KT 2D gradient-dependent source Jacobian matches FD", "[FV][KT][gradi
   const ConfigTree json = make_json_2d();
 
   Model model;
-  RectangularMesh<2> mesh{Config::ConfigurationMesh<2>(json)};
+  RectangularMeshSerial<2> mesh{Config::ConfigurationMesh<2>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -1223,7 +1224,7 @@ TEST_CASE("KT 2D gradient-dependent source Jacobian matches FD", "[FV][KT][gradi
 TEST_CASE("KT hessian-dependent source Jacobian matches FD", "[FV][KT][hessian][source]")
 {
   using Model = HessianSourceKTModel;
-  using Discretization = FV::Discretization<Model, RectangularMesh<1>, double>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<1>, double>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1231,7 +1232,7 @@ TEST_CASE("KT hessian-dependent source Jacobian matches FD", "[FV][KT][hessian][
   const ConfigTree json = make_json();
 
   Model model;
-  RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
+  RectangularMeshSerial<1> mesh{Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -1253,7 +1254,7 @@ TEST_CASE("KT hessian-dependent source Jacobian matches FD", "[FV][KT][hessian][
 TEST_CASE("KT 2D hessian-dependent source Jacobian matches FD", "[FV][KT][hessian][source][2d]")
 {
   using Model = HessianSource2DModel;
-  using Discretization = FV::Discretization<Model, RectangularMesh<2>, double>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<2>, double>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1261,7 +1262,7 @@ TEST_CASE("KT 2D hessian-dependent source Jacobian matches FD", "[FV][KT][hessia
   const ConfigTree json = make_json_2d();
 
   Model model;
-  RectangularMesh<2> mesh{Config::ConfigurationMesh<2>(json)};
+  RectangularMeshSerial<2> mesh{Config::ConfigurationMesh<2>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -1325,14 +1326,14 @@ public:
 
 template <typename Model> static bool rho_symmetric_jacobian_matches_fd(const char *label, const double eps = 1.0e-7)
 {
-  using Discretization = FV::Discretization<Model, RectangularMesh<1>, double>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<1>, double>;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
   ensure_logger();
   const ConfigTree json = make_json();
   Model model;
-  RectangularMesh<1> mesh{Config::ConfigurationMesh<1>(json)};
+  RectangularMeshSerial<1> mesh{Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 

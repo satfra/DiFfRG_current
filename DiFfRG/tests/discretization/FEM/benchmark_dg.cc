@@ -25,7 +25,8 @@ TEST_CASE("Benchmark DG Constant", "[benchmark][dg]")
   constexpr uint dim = 1;
   using Model = Testing::ModelConstant<dim>;
   using NumberType = double;
-  using Discretization = DG::Discretization<Model, RectangularMesh<dim>, NumberType>;
+  // Serial on purpose: this tests serial linear algebra, and a plain RectangularMesh is partitioned in an MPI build.
+  using Discretization = DG::Discretization<Model, RectangularMeshSerial<dim>, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using Assembler = DG::Assembler<Discretization>;
 
@@ -72,7 +73,7 @@ TEST_CASE("Benchmark DG Constant", "[benchmark][dg]")
   Model model(p_prm);
   Testing::apply_benchmark_sweep(json);
 
-  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  RectangularMeshSerial<dim> mesh{Config::ConfigurationMesh<dim>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 

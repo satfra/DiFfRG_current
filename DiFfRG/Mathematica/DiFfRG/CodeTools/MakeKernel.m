@@ -225,10 +225,16 @@ MakeKernel[kernelExpr_, constExpr_, OptionsPattern[]] :=
         (********************************************************************)
         (* First, the kernel itself *)
         (********************************************************************)
+(* Interpolators are `auto` in kernel() and constant(): the integrators pass a kernel their compact
+   handles in its own precision (has_kernel_handle in DiFfRG/physics/interpolation/interpolator_handle.hh),
+   so a single-precision kernel reads the single-precision copy of a double interpolator. *)
         parametersKernel =
             Map[
                 Which[
                     #["AD"] === True,
+                        Merge[{#, <|"Type" -> "auto"|>}, Last]
+                    ,
+                    StringQ[#["Type"]] && StringContainsQ[#["Type"], "Interpolator"],
                         Merge[{#, <|"Type" -> "auto"|>}, Last]
                     ,
                     KeyFreeQ[#, "Type"],

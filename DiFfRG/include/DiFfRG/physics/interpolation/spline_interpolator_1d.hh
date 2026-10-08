@@ -4,20 +4,92 @@
 #include <DiFfRG/common/kokkos.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/discretization/coordinates/coordinates.hh>
+#include <DiFfRG/physics/interpolation/interpolator_handle.hh>
 
 // std
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <vector>
 
 namespace DiFfRG
 {
+  namespace internal
+  {
+    /// The spline evaluation at a fractional grid index, shared by SplineInterpolator1D and its handle.
+    template <typename NT, typename CT, typename View>
+    KOKKOS_FORCEINLINE_FUNCTION NT spline_at(const View &values, const View &coeffs, const size_t size, const CT raw_idx)
+    {
+      // Clamp the index to the range [0, size - 1]
+      const CT idx = Kokkos::max(static_cast<CT>(0), Kokkos::min(raw_idx, static_cast<CT>(size - 1)));
+      const size_t lidx = Kokkos::min(size_t(Kokkos::floor(idx)), size - 2);
+      const size_t uidx = lidx + 1;
+      // t is the fractional part of the index
+      const CT t = idx - lidx;
+
+      const NT lower = values(lidx);
+      const NT upper = values(uidx);
+      const NT cl = coeffs(lidx);
+      const NT cu = coeffs(uidx);
+
+      const CT tm1 = t - 1;
+      const NT cubic = t * tm1 * ((t + 1) * cl - (t - 2) * cu);
+
+      if constexpr (std::is_arithmetic_v<NT>)
+        return Kokkos::fma(t, upper, Kokkos::fma(-t, lower, lower)) + cubic; // linear + cubic
+      else
+        return t * upper + (1 - t) * lower + cubic; // linear + cubic
+    }
+  } // namespace internal
+
+  /**
+   * @brief What a kernel receives in place of a SplineInterpolator1D: read-only views of its device
+   * and host buffers plus its coordinates, in one precision. See has_kernel_handle.
+   */
+  template <typename NT, typename Coordinates> class SplineInterpolator1DHandle
+  {
+  public:
+    using ctype = typename Coordinates::ctype;
+    using value_type = NT;
+    static constexpr size_t dim = 1;
+
+    SplineInterpolator1DHandle(const NT *device_values, const NT *device_coeffs, const NT *host_values,
+                               const NT *host_coeffs, const size_t size, const Coordinates &coordinates)
+        : device_values(device_values), device_coeffs(device_coeffs), host_values(host_values),
+          host_coeffs(host_coeffs), size(size), coordinates(coordinates)
+    {
+    }
+
+    ctype KOKKOS_FUNCTION index(const ctype x) const { return coordinates.backward(x); }
+
+    NT KOKKOS_FUNCTION at(const ctype raw_idx) const
+    {
+      KOKKOS_IF_ON_DEVICE(
+          (return internal::spline_at<NT>(View{device_values}, View{device_coeffs}, size, raw_idx);))
+      KOKKOS_IF_ON_HOST((return internal::spline_at<NT>(View{host_values}, View{host_coeffs}, size, raw_idx);))
+    }
+
+    NT KOKKOS_FUNCTION operator()(const ctype x) const { return at(index(x)); }
+
+    const Coordinates &get_coordinates() const { return coordinates; }
+
+  private:
+    using View = internal::RawView1D<NT>;
+    const NT *device_values, *device_coeffs, *host_values, *host_coeffs;
+    size_t size;
+    Coordinates coordinates;
+  };
+
   /**
    * @brief A spline interpolator for 1D data, callable from host AND device code.
    *
    * See LinearInterpolator1D for the host/device dispatch rationale.
+   *
+   * A double-precision interpolator also keeps a single-precision copy of its data and coordinates,
+   * refreshed by update() from the double data (so the spline itself is always solved in double).
+   * A single-precision kernel that takes handles (see has_kernel_handle) reads that copy.
    *
    * @tparam NT input data type
    * @tparam Coordinates coordinate system of the input data
@@ -39,6 +111,12 @@ namespace DiFfRG
     static constexpr bool has_separate_device =
         !std::is_same_v<typename ValueViewType::memory_space, typename HostValueViewType::memory_space>;
 
+    using Twin = SinglePrecisionTwin<NT, Coordinates>;
+    using NT32 = typename Twin::value_type;
+    using Coordinates32 = typename Twin::coordinates_type;
+    using ValueViewType32 = Kokkos::View<NT32 *, GPU_memory>;
+    using HostValueViewType32 = typename ValueViewType32::host_mirror_type;
+
   public:
     using ctype = typename Coordinates::ctype;
     using value_type = NT;
@@ -56,6 +134,18 @@ namespace DiFfRG
           host_values(Kokkos::create_mirror_view(device_values)),
           host_coeffs(Kokkos::create_mirror_view(device_coeffs))
     {
+      if constexpr (Twin::exists) {
+        // SequentialHostInit: Single holds device views, which must not be created or destroyed
+        // inside a host parallel region (the default for a view's element), or teardown deadlocks.
+        single = Kokkos::View<Single, Kokkos::HostSpace>(
+            Kokkos::view_alloc("SplineInterpolator1D_single", Kokkos::SequentialHostInit));
+        auto &s = single();
+        s.coordinates.emplace(coordinates);
+        s.device_values = ValueViewType32("SplineInterpolator1D_values32", size);
+        s.device_coeffs = ValueViewType32("SplineInterpolator1D_coeffs32", size);
+        s.host_values = Kokkos::create_mirror_view(s.device_values);
+        s.host_coeffs = Kokkos::create_mirror_view(s.device_coeffs);
+      }
     }
 
     /// Shallow copy of ALL views, valid in host and in device code. See LinearInterpolator1D.
@@ -78,12 +168,41 @@ namespace DiFfRG
       // Build the spline coefficients
       build_y2(lower_y1, upper_y1);
 
+      if constexpr (Twin::exists) {
+        auto &s = single();
+        for (size_t i = 0; i < size; ++i) {
+          s.host_values(i) = static_cast<NT32>(host_values(i));
+          s.host_coeffs(i) = static_cast<NT32>(host_coeffs(i));
+        }
+      }
+
       if constexpr (has_separate_device) {
         typename ValueViewType::execution_space exec;
         Kokkos::deep_copy(exec, device_values, host_values);
         Kokkos::deep_copy(exec, device_coeffs, host_coeffs);
+        if constexpr (Twin::exists) {
+          auto &s = single();
+          Kokkos::deep_copy(exec, s.device_values, s.host_values);
+          Kokkos::deep_copy(exec, s.device_coeffs, s.host_coeffs);
+        }
         exec.fence();
       }
+    }
+
+    /**
+     * @brief The compact view of this interpolator a kernel computing in CT receives, see
+     * has_kernel_handle: the single-precision copy for a float kernel, the data itself otherwise.
+     */
+    template <typename CT> auto handle() const
+    {
+      if constexpr (Twin::exists && std::is_same_v<CT, float>) {
+        const auto &s = single();
+        return SplineInterpolator1DHandle<NT32, Coordinates32>(s.device_values.data(), s.device_coeffs.data(),
+                                                               s.host_values.data(), s.host_coeffs.data(), size,
+                                                               *s.coordinates);
+      } else
+        return SplineInterpolator1DHandle<NT, Coordinates>(device_values.data(), device_coeffs.data(),
+                                                           host_values.data(), host_coeffs.data(), size, coordinates);
     }
 
     /**
@@ -115,26 +234,8 @@ namespace DiFfRG
      */
     NT KOKKOS_FUNCTION at(const ctype raw_idx) const
     {
-      // Clamp the index to the range [0, size - 1]
-      const ctype idx = Kokkos::max(static_cast<ctype>(0),
-                                    Kokkos::min(raw_idx, static_cast<ctype>(size - 1)));
-      const size_t lidx = Kokkos::min(size_t(Kokkos::floor(idx)), size - 2);
-      const size_t uidx = lidx + 1;
-      // t is the fractional part of the index
-      const ctype t = idx - lidx;
-
-      const NT lower = value(lidx);
-      const NT upper = value(uidx);
-      const NT cl = coeff(lidx);
-      const NT cu = coeff(uidx);
-
-      const ctype tm1 = t - 1;
-      const NT cubic = t * tm1 * ((t + 1) * cl - (t - 2) * cu);
-
-      if constexpr (std::is_arithmetic_v<NT>)
-        return Kokkos::fma(t, upper, Kokkos::fma(-t, lower, lower)) + cubic; // linear + cubic
-      else
-        return t * upper + (1 - t) * lower + cubic; // linear + cubic
+      KOKKOS_IF_ON_DEVICE((return internal::spline_at<NT>(device_values, device_coeffs, size, raw_idx);))
+      KOKKOS_IF_ON_HOST((return internal::spline_at<NT>(host_values, host_coeffs, size, raw_idx);))
     }
 
     /**
@@ -161,20 +262,6 @@ namespace DiFfRG
     const NT *data() const { return host_values.data(); }
 
   private:
-    /// Read one value from whichever buffer belongs to the executing side.
-    KOKKOS_FORCEINLINE_FUNCTION NT value(const size_t i) const
-    {
-      KOKKOS_IF_ON_DEVICE((return device_values(i);))
-      KOKKOS_IF_ON_HOST((return host_values(i);))
-    }
-
-    /// Read one spline coefficient from whichever buffer belongs to the executing side.
-    KOKKOS_FORCEINLINE_FUNCTION NT coeff(const size_t i) const
-    {
-      KOKKOS_IF_ON_DEVICE((return device_coeffs(i);))
-      KOKKOS_IF_ON_HOST((return host_coeffs(i);))
-    }
-
     const Coordinates coordinates;
     const size_t size;
 
@@ -182,6 +269,15 @@ namespace DiFfRG
     CoeffViewType device_coeffs;
     HostValueViewType host_values;
     HostCoeffViewType host_coeffs;
+
+    // The single-precision copy, allocated only if Twin::exists. Behind one host-side handle, so it
+    // adds 24 B to this object, which kernels naming the interpolator type still receive in full.
+    struct Single {
+      std::optional<Coordinates32> coordinates;
+      ValueViewType32 device_values, device_coeffs;
+      HostValueViewType32 host_values, host_coeffs;
+    };
+    Kokkos::View<Single, Kokkos::HostSpace> single;
 
     void build_y2(const ctype lower_y1, const ctype upper_y1)
     {

@@ -17,7 +17,8 @@ TEST_CASE("Test implicit euler with DG constant model", "[timestepping][constant
   constexpr uint dim = 1;
   using Model = Testing::ModelConstant<dim>;
   using NumberType = double;
-  using Discretization = DG::Discretization<Model, RectangularMesh<dim>, NumberType>;
+  // Serial on purpose: this tests a serial-only stepper, and a plain RectangularMesh is partitioned in an MPI build.
+  using Discretization = DG::Discretization<Model, RectangularMeshSerial<dim>, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = DG::Assembler<Discretization>;
@@ -31,7 +32,7 @@ TEST_CASE("Jacobian diagnostics are off unless switched on", "[timestepping][imp
   constexpr uint dim = 1;
   using Model = Testing::ModelConstant<dim>;
   using NumberType = double;
-  using Discretization = DG::Discretization<Model, RectangularMesh<dim>, NumberType>;
+  using Discretization = DG::Discretization<Model, RectangularMeshSerial<dim>, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = DG::Assembler<Discretization>;
@@ -45,7 +46,7 @@ TEST_CASE("Test implicit euler with DG exponential model", "[timestepping][expon
   constexpr uint dim = 1;
   using Model = Testing::ModelExp<dim>;
   using NumberType = double;
-  using Discretization = DG::Discretization<Model, RectangularMesh<dim>, NumberType>;
+  using Discretization = DG::Discretization<Model, RectangularMeshSerial<dim>, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = DG::Assembler<Discretization>;
@@ -57,7 +58,7 @@ TEST_CASE("Test implicit euler with DG Burgers model", "[timestepping][Burgers][
   constexpr uint dim = 1;
   using Model = Testing::ModelBurgers<dim>;
   using NumberType = double;
-  using Discretization = DG::Discretization<Model, RectangularMesh<dim>, NumberType>;
+  using Discretization = DG::Discretization<Model, RectangularMeshSerial<dim>, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = DG::Assembler<Discretization>;
@@ -69,7 +70,7 @@ TEST_CASE("Test implicit euler with KT Burgers model", "[timestepping][Burgers][
   constexpr uint dim = 1;
   using Model = Testing::ModelBurgersKT<dim>;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<dim>, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<dim>, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
@@ -81,7 +82,7 @@ TEST_CASE("Test implicit euler with 2D KT Burgers model", "[timestepping][Burger
   constexpr uint dim = 2;
   using Model = Testing::ModelBurgers2DKT;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<dim>, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<dim>, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
@@ -94,7 +95,7 @@ TEST_CASE("Test implicit euler with KT viscous Burgers traveling wave",
   constexpr uint dim = 1;
   using Model = Testing::ModelBurgersTravelingWaveKT<dim>;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<dim>, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<dim>, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;
@@ -107,7 +108,7 @@ TEST_CASE("Test implicit euler with KT two-component Burgers system",
   constexpr uint dim = 1;
   using Model = Testing::ModelTwoComponentBurgersKT<dim>;
   using NumberType = double;
-  using Discretization = FV::Discretization<Model, RectangularMesh<dim>, NumberType>;
+  using Discretization = FV::Discretization<Model, RectangularMeshSerial<dim>, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using SparseMatrixType = typename Discretization::SparseMatrixType;
   using Assembler = FV::KurganovTadmor::Assembler<Discretization, Model>;

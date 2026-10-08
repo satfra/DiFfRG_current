@@ -13,6 +13,7 @@
 
 #include <boilerplate/models.hh>
 
+#include <DiFfRG/common/init.hh>
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/common/utils.hh>
 #include <DiFfRG/discretization/FEM/cg.hh>
@@ -404,6 +405,7 @@ namespace
 
 TEST_CASE("CG EoM potential reconstruction finds 1D affine minima", "[discretization][EoM][cg][1d]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 1;
   const int fe_order = GENERATE(1, 2, 3, 4, 5);
   const double slope = GENERATE(1.25, 2., 2.5, 5., 10.);
@@ -416,6 +418,7 @@ TEST_CASE("CG EoM potential reconstruction finds 1D affine minima", "[discretiza
 
 TEST_CASE("CG EoM potential reconstruction finds 2D affine and boundary minima", "[discretization][EoM][cg][2d]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 2;
   const int fe_order = GENERATE(1, 2, 3, 4, 5);
   const uint case_index = GENERATE(0u, 1u, 2u, 3u);
@@ -436,6 +439,7 @@ TEST_CASE("CG EoM potential reconstruction finds 2D affine and boundary minima",
 
 TEST_CASE("CG EoM potential reconstruction finds 3D affine minima", "[discretization][EoM][cg][3d]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 3;
   const int fe_order = GENERATE(1, 2);
   const uint case_index = GENERATE(0u, 1u);
@@ -454,6 +458,7 @@ TEST_CASE("CG EoM potential reconstruction finds 3D affine minima", "[discretiza
 
 TEST_CASE("Detailed EoM reconstruction owns the scalar potential and its gauge", "[discretization][EoM][potential]")
 {
+  DiFfRG::Init();
   setup_logger();
 
   const auto check_result = []<int dim>() {
@@ -513,6 +518,7 @@ TEST_CASE("Detailed EoM reconstruction owns the scalar potential and its gauge",
 TEST_CASE("Raw potential evaluation stays independent of the EoM used to select the point",
           "[discretization][EoM][raw-potential]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 1;
   using Model = ModelAffineEoM<dim>;
   using Discretization = CG::Discretization<Model, RectangularMesh<dim>>;
@@ -558,6 +564,7 @@ TEST_CASE("Raw potential evaluation stays independent of the EoM used to select 
 TEST_CASE("Origin-centred FV vacuum keeps the diquark EoM near zero and its raw curvature positive",
           "[discretization][EoM][raw-potential][fv][origin]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 2;
   using Model = QMDVacuumModel;
   using Discretization = FV::Discretization<Model, RectangularMesh<dim>>;
@@ -651,6 +658,7 @@ TEST_CASE("Default raw potential gradient copies solution components instead of 
 TEST_CASE("EoM and raw potential reconstruction always target scalar CG2",
           "[discretization][EoM][raw-potential][potential][cg2]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 1;
   using Model = Testing::ModelConstant<dim, dim>;
   const Model model(parameters_with_minimum(Point<dim>(0.4)));
@@ -697,6 +705,7 @@ TEST_CASE("EoM and raw potential reconstruction always target scalar CG2",
 TEST_CASE("CG2 EoM potential reconstruction refines an off-grid 1D minimum",
           "[discretization][EoM][potential][cg2][minimum]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 1;
   const Point<dim> expected(0.437);
   const auto EoM = reconstruct_minimum<dim, CG::Discretization>(parameters_with_minimum(expected), 2);
@@ -707,6 +716,7 @@ TEST_CASE("CG2 EoM potential reconstruction refines an off-grid 1D minimum",
 TEST_CASE("CG2 EoM potential reconstruction refines multidimensional and constrained minima",
           "[discretization][EoM][potential][cg2][minimum]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 2;
 
   SECTION("rotated interior minimum")
@@ -740,6 +750,7 @@ TEST_CASE("CG2 EoM potential reconstruction refines multidimensional and constra
 TEST_CASE("CG2 EoM potential minimum follows a moving off-grid minimum",
           "[discretization][EoM][potential][cg2][minimum]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 1;
   const std::array<double, 4> positions{{0.413, 0.427, 0.441, 0.468}};
   std::optional<Point<dim>> previous_minimum;
@@ -757,6 +768,7 @@ TEST_CASE("CG2 EoM potential minimum follows a moving off-grid minimum",
 TEST_CASE("CG2 EoM potential refinement handles indefinite and singular Hessians",
           "[discretization][EoM][potential][cg2][minimum]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 2;
   const std::array<bool, dim> free{{false, false}};
   Tensor<1, dim> gradient;
@@ -986,6 +998,7 @@ TEST_CASE("CG2 EoM potential refinement checks the sampled winner's active neigh
 TEST_CASE("CG EoM potential reconstruction handles a 1D stitched polynomial minimum",
           "[discretization][EoM][cg][stitched][1d]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 1;
   const int fe_order = GENERATE(1, 2, 3, 4);
   const Point<dim> expected(0.4);
@@ -998,6 +1011,7 @@ TEST_CASE("CG EoM potential reconstruction handles a 1D stitched polynomial mini
 TEST_CASE("CG EoM potential reconstruction handles a 2D stitched polynomial minimum",
           "[discretization][EoM][cg][stitched][2d]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 2;
   const int fe_order = GENERATE(1, 2, 3);
   const Point<dim> expected(0.4, 0.6);
@@ -1009,6 +1023,7 @@ TEST_CASE("CG EoM potential reconstruction handles a 2D stitched polynomial mini
 
 TEST_CASE("CG2 EoM potential reconstruction supports DG0 sources", "[discretization][EoM][dg][p0]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 1;
   const Point<dim> expected(0.4);
   const auto EoM = reconstruct_minimum<dim, DG::Discretization>(parameters_with_minimum(expected), 0);
@@ -1126,6 +1141,7 @@ TEST_CASE("EoM configuration provides validated typed defaults", "[discretizatio
 TEST_CASE("Raw-potential mass-Hessian recovery damps FV face resets without changing the potential Hessian",
           "[discretization][EoM][raw-potential][hessian][fv]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 1;
   using Model = CubicGradientModel;
   using Discretization = FV::Discretization<Model, RectangularMesh<dim>>;
@@ -1200,6 +1216,7 @@ TEST_CASE("Raw-potential mass-Hessian recovery damps FV face resets without chan
 TEST_CASE("Analytical two-field Hessian-jump potential benchmarks masses beyond the non-analytic surface",
           "[discretization][EoM][raw-potential][hessian][fv][accuracy][multifield][nonanalytic]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 2;
   constexpr double angle = 0.35;
   using Model = KinkedRadialPotentialGradientModel;
@@ -1371,6 +1388,7 @@ TEST_CASE("Analytical two-field Hessian-jump potential benchmarks masses beyond 
 TEST_CASE("DG0 gradient recovery gives FV sources off-support moving minima with either smoothing policy",
           "[discretization][EoM][potential][smoothing][fv]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 1;
   const std::array<double, 4> positions{{0.413, 0.427, 0.441, 0.468}};
   for (const double position : positions) {
@@ -1391,6 +1409,7 @@ TEST_CASE("DG0 gradient recovery gives FV sources off-support moving minima with
 TEST_CASE("Physical gradient-jump smoothing preserves smooth affine CG minima",
           "[discretization][EoM][potential][smoothing][cg]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 2;
   const Point<dim> expected(0.437, 0.583);
   const ModelAffineEoM<dim> model(expected, {{{4., 1.25}, {1.25, 3.}}});
@@ -1405,6 +1424,7 @@ TEST_CASE("Physical gradient-jump smoothing preserves smooth affine CG minima",
 TEST_CASE("Physical gradient-jump smoothing gives a rotated FV source an interior minimum",
           "[discretization][EoM][potential][smoothing][fv][2d]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 2;
   const Point<dim> expected(0.437, 0.583);
   const ModelAffineEoM<dim> model(expected, {{{4., 1.25}, {1.25, 3.}}});
@@ -1421,6 +1441,7 @@ TEST_CASE("Physical gradient-jump smoothing gives a rotated FV source an interio
 TEST_CASE("A fixed physical EoM smoothing length is stable under uniform refinement",
           "[discretization][EoM][potential][smoothing][fv][refinement]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 1;
   constexpr double smoothing_length = 0.2;
   const Point<dim> expected(0.437);
@@ -1503,6 +1524,7 @@ TEST_CASE("EoM gradient-jump damping is symmetric positive semidefinite on adapt
 
 TEST_CASE("CG2 EoM potential reconstruction supports higher-order DG sources", "[discretization][EoM][dg]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 2;
   const int fe_order = GENERATE(1, 2);
   const Point<dim> expected(0.4, 0.6);
@@ -1513,6 +1535,7 @@ TEST_CASE("CG2 EoM potential reconstruction supports higher-order DG sources", "
 
 TEST_CASE("EoM potential reconstruction can return a boundary minimum", "[discretization][EoM][boundary]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 2;
   const Point<dim> expected(0., 0.);
   const auto EoM = reconstruct_minimum<dim, CG::Discretization>(parameters_with_boundary_minimum(), 2);
@@ -1522,6 +1545,7 @@ TEST_CASE("EoM potential reconstruction can return a boundary minimum", "[discre
 
 TEST_CASE("EoM max-iteration zero keeps the origin bypass", "[discretization][EoM][origin]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 2;
   using Model = Testing::ModelConstant<dim, dim>;
   using Discretization = CG::Discretization<Model, RectangularMesh<dim>>;

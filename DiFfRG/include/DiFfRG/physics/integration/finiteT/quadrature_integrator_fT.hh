@@ -305,7 +305,9 @@ namespace DiFfRG
       requires(!std::is_same_v<OT, NT> && !internal::is_widened_result<OT, NT>)
     void get(ExecutionSpace &space, OT &dest, const Args &...t) const
     {
-      const auto args = device::make_tuple(t...);
+      constexpr bool handles = internal::takes_handles<NT, KERNEL, ctype, dim, Args...>;
+      internal::check_kernel_precision<handles, ctype, Args...>();
+      const auto args = device::make_tuple(internal::to_kernel_arg<handles, ctype>(t)...);
 
       const auto &n = nodes;
       const auto &w = weights;
@@ -361,7 +363,9 @@ namespace DiFfRG
       // Create a Restrict-tagged alias of the cache for no-alias optimization
       const auto cache = KokkosNDViewRestrict<1 + dim, NT, ExecutionSpace>(m_cache);
 
-      const auto m_args = device::make_tuple(args...);
+      constexpr bool handles = internal::map_takes_handles<NT, KERNEL, ctype, dim, Coordinates, Args...>;
+      internal::check_kernel_precision<handles, ctype, Args...>();
+      const auto m_args = device::make_tuple(internal::to_kernel_arg<handles, ctype>(args)...);
 
       const auto &n = nodes;
       const auto &w = weights;
@@ -553,7 +557,7 @@ namespace DiFfRG
     template <typename OT, typename... A>
       requires(
           internal::is_map_result<OT, NT> &&
-          is_valid_kernel<NT, KERNEL, ctype, dim, internal::compute_arg_t<internal::point_arg_value_t<A>, ctype>...>)
+          internal::accepts_args<NT, KERNEL, ctype, dim, internal::point_arg_value_t<A>...>)
     void map_points(const PointSpan<OT> dest, const A &...args)
     {
       run_map_points(dest, PointArg<internal::point_arg_value_t<A>>(args)...);
@@ -718,7 +722,9 @@ namespace DiFfRG
     {
       const size_t n = dest.size();
       if (n == 0) return;
-      const auto device_args = m_map_points.template stage<ctype>(space, n, args...);
+      constexpr bool handles = internal::takes_handles<NT, KERNEL, ctype, dim, T...>;
+      internal::check_kernel_precision<handles, ctype, T...>();
+      const auto device_args = m_map_points.template stage<ctype, handles>(space, n, args...);
       m_map_points.run(space, dest, [&](const auto &result) { launch_map_points(result, n, device_args); });
     }
 
@@ -968,38 +974,45 @@ namespace DiFfRG
     }
 
     template <typename... Args>
-      requires is_valid_kernel<NT, KERNEL, ctype, dim, Args...>
+      requires internal::accepts_args<NT, KERNEL, ctype, dim, Args...>
     void get(NT &dest, const Args &...t) const
     {
-      const auto args = device::tie(t...);
+      // a kernel that takes handles gets those
+      constexpr bool handles = internal::takes_handles<NT, KERNEL, ctype, dim, Args...>;
+      internal::check_kernel_precision<handles, ctype, Args...>();
+      if constexpr (handles && !(std::is_same_v<Args, kernel_handle_t<Args, ctype>> && ...))
+        get(dest, internal::to_kernel_arg<handles, ctype>(t)...);
+      else {
+        const auto args = device::tie(t...);
 
-      const auto &n = nodes;
-      const auto &w = weights;
-      const auto &m_n = matsubara_nodes;
-      const auto &m_w = matsubara_weights;
-      // Nodes before the boundary of the concatenated axis; 0 for an unsplit kernel, where the
-      // is_tail flag is dead code that the `if constexpr` in node_value() removes anyway.
-      const size_t n_tail = m_n_tail;
-      const auto &start = grid_start;
-      const auto &scale = grid_scale;
+        const auto &n = nodes;
+        const auto &w = weights;
+        const auto &m_n = matsubara_nodes;
+        const auto &m_w = matsubara_weights;
+        // Nodes before the boundary of the concatenated axis; 0 for an unsplit kernel, where the
+        // is_tail flag is dead code that the `if constexpr` in node_value() removes anyway.
+        const size_t n_tail = m_n_tail;
+        const auto &start = grid_start;
+        const auto &scale = grid_scale;
 
-      auto functor = [&](const device::array<size_t, dim> &idx) {
-        device::array<ctype, sdim> x;
-        ctype weight = 1;
-        for (int i = 0; i < sdim; ++i) {
-          x[i] = Kokkos::fma(scale[i], n[i][idx[i]], start[i]);
-          weight *= w[i][idx[i]] * scale[i];
-        }
-        const size_t jt = idx[dim - 1];
-        // Empty position pack: this overload's caller passes the external position inside `args`.
-        return weight * Base::node_value(x, device::tuple<>{}, args, m_n[jt], m_w[jt], jt < n_tail);
-      };
+        auto functor = [&](const device::array<size_t, dim> &idx) {
+          device::array<ctype, sdim> x;
+          ctype weight = 1;
+          for (int i = 0; i < sdim; ++i) {
+            x[i] = Kokkos::fma(scale[i], n[i][idx[i]], start[i]);
+            weight *= w[i][idx[i]] * scale[i];
+          }
+          const size_t jt = idx[dim - 1];
+          // Empty position pack: this overload's caller passes the external position inside `args`.
+          return weight * Base::node_value(x, device::tuple<>{}, args, m_n[jt], m_w[jt], jt < n_tail);
+        };
 
-      dest = KERNEL::constant(t...) + TBBReduction<dim, NT, decltype(functor)>(grid_size, functor);
+        dest = KERNEL::constant(t...) + TBBReduction<dim, NT, decltype(functor)>(grid_size, functor);
+      }
     }
 
     template <typename OT, typename... Args>
-      requires(internal::is_widened_result<OT, NT> && is_valid_kernel<NT, KERNEL, ctype, dim, Args...>)
+      requires(internal::is_widened_result<OT, NT> && internal::accepts_args<NT, KERNEL, ctype, dim, Args...>)
     void get(OT &dest, const Args &...t) const
     {
       NT result;
@@ -1011,7 +1024,7 @@ namespace DiFfRG
     /// result is bitwise identical to the corresponding get().
     template <typename OT, typename... A>
       requires(internal::is_map_result<OT, NT> &&
-               is_valid_kernel<NT, KERNEL, ctype, dim, internal::point_arg_value_t<A>...>)
+               internal::accepts_args<NT, KERNEL, ctype, dim, internal::point_arg_value_t<A>...>)
     void map_points(const PointSpan<OT> dest, const A &...args) const
     {
       internal::map_points_by_get(*this, dest, PointArg<internal::point_arg_value_t<A>>(args)...);
@@ -1021,15 +1034,26 @@ namespace DiFfRG
       requires internal::is_map_result<OT, NT>
     void map(execution_space &, OT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      const auto m_args = device::tie(args...);
+      // Handles once here rather than per point in get().
+      constexpr bool handles = internal::map_takes_handles<NT, KERNEL, ctype, dim, Coordinates, Args...>;
+      internal::check_kernel_precision<handles, ctype, Args...>();
+      const auto m_args = [&] {
+        if constexpr (handles)
+          return device::make_tuple(DiFfRG::to_kernel_handle<ctype>(args)...);
+        else
+          return device::tie(args...);
+      }();
 
       tbb::parallel_for(tbb::blocked_range<uint>(0, coordinates.size()), [&](const tbb::blocked_range<uint> &r) {
         for (uint idx = r.begin(); idx != r.end(); ++idx) {
           const auto dis_idx = coordinates.from_linear_index(idx);
           const auto pos = coordinates.forward(dis_idx);
-          // make a tuple of all arguments
-          const auto full_args = device::tuple_cat(pos, m_args);
-          device::apply([&](const auto &...iargs) { get(dest[idx], iargs...); }, full_args);
+          // nested packs rather than tuple_cat, which would copy every argument per point
+          device::apply(
+              [&](const auto &...pargs) {
+                device::apply([&](const auto &...iargs) { get(dest[idx], pargs..., iargs...); }, m_args);
+              },
+              pos);
         }
       });
     }

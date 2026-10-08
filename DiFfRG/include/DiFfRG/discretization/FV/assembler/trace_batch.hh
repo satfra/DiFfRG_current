@@ -151,6 +151,12 @@ namespace DiFfRG
           return std::min(n_points, std::max<size_t>(1, max_stacked / n_directions));
         }
 
+        /// The default chunk_done of stacked_directions: does nothing. A named type rather than
+        /// decltype([](size_t, size_t) {}), which CUDA 12's front end cannot deduce through.
+        struct NoChunkCallback {
+          void operator()(size_t, size_t) const {}
+        };
+
         /**
          * @brief Forward-mode derivatives of a batch evaluation along n_directions input directions at every point,
          * with the directions stacked along the point axis as in DiFfRG::internal::seed_stacked_jacobian.
@@ -171,7 +177,7 @@ namespace DiFfRG
          * chunks start at begin + multiples of stacked_chunk_size()
          */
         template <typename ADNumber, size_t n_out, typename Batch, typename Evaluate, typename Seed, typename Read,
-                  typename ChunkDone = decltype([](size_t, size_t) {})>
+                  typename ChunkDone = NoChunkCallback>
         void stacked_directions(StackedWorkspace<ADNumber, Batch, n_out> &workspace, const Batch &batch,
                                 const size_t begin, const size_t end, const size_t n_directions,
                                 const size_t max_stacked, const Term terms, const Evaluate &evaluate, const Seed &seed,

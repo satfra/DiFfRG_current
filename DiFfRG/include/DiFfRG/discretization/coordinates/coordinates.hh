@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 // DiFfRG
@@ -84,6 +85,19 @@ namespace DiFfRG
      * @param coordinates the coordinate systems to combine
      */
     CoordinatePackND(Coordinates... coordinates) : coordinates(coordinates...) {}
+
+    /**
+     * @brief Convert axis by axis from a pack of the same coordinate systems in another precision,
+     * e.g. the float twin of a double grid. Implicit, like the converting constructors of the axes.
+     */
+    template <typename... Coordinates2>
+      requires(sizeof...(Coordinates2) == sizeof...(Coordinates) &&
+               !std::is_same_v<CoordinatePackND<Coordinates2...>, CoordinatePackND> &&
+               (std::is_constructible_v<Coordinates, const Coordinates2 &> && ...))
+    CoordinatePackND(const CoordinatePackND<Coordinates2...> &other)
+        : CoordinatePackND(other, std::index_sequence_for<Coordinates...>{})
+    {
+    }
 
     template <typename... I>
       requires(std::is_convertible_v<std::decay_t<I>, size_t> && ...)
@@ -183,6 +197,13 @@ namespace DiFfRG
 
   protected:
     const device::tuple<Coordinates...> coordinates;
+
+  private:
+    template <typename Other, size_t... Is>
+    CoordinatePackND(const Other &other, std::index_sequence<Is...>)
+        : coordinates(Coordinates(other.template get_coordinates<Is>())...)
+    {
+    }
   };
 
   /**
@@ -477,15 +498,13 @@ namespace DiFfRG
     using ctype = NT;
     static constexpr size_t dim = 1;
 
-    LogarithmicCoordinates1D(size_t grid_extent, NT start, NT stop, NT bias)
+    /// The map constants are computed in double whatever NT is, and only then rounded to NT.
+    LogarithmicCoordinates1D(size_t grid_extent, double start, double stop, double bias)
         : start(start), stop(stop), bias(bias), grid_extent(grid_extent), parent_extent(grid_extent),
-          gem1(grid_extent - 1.), gem1inv(1. / (grid_extent - 1.))
+          gem1(grid_extent - 1.), gem1inv(1. / (grid_extent - 1.)), a(bias), b((stop - start) / std::expm1(bias)),
+          c(start)
     {
       if (grid_extent == 0) throw std::runtime_error("LogarithmicCoordinates1D: grid_extent must be > 0");
-      using Kokkos::expm1;
-      a = bias;
-      b = (stop - start) / expm1(a);
-      c = start;
     }
 
     template <typename NT2>
@@ -640,42 +659,45 @@ namespace DiFfRG
      * @param stop last grid point, must be larger than start
      * @param center the scale to cluster around, in the same units as start and stop
      * @param focus clustering strength; 0 gives a pure logarithmic grid
+     *
+     * The map constants are computed in double whatever NT is, and only then rounded to NT.
      */
-    FocusedLogCoordinates1D(size_t grid_extent, NT start, NT stop, NT center, NT focus)
+    FocusedLogCoordinates1D(size_t grid_extent, double start, double stop, double center, double focus)
         : start(start), stop(stop), center(center), focus(focus), grid_extent(grid_extent), parent_extent(grid_extent)
     {
       if (grid_extent < 2) throw std::runtime_error("FocusedLogCoordinates1D: grid_extent must be > 1");
-      if (!(start > NT(0))) throw std::runtime_error("FocusedLogCoordinates1D: start must be > 0");
+      if (!(start > 0.)) throw std::runtime_error("FocusedLogCoordinates1D: start must be > 0");
       if (!(stop > start)) throw std::runtime_error("FocusedLogCoordinates1D: stop must be > start");
-      if (!(center > NT(0))) throw std::runtime_error("FocusedLogCoordinates1D: center must be > 0");
-      if (!(focus >= NT(0))) throw std::runtime_error("FocusedLogCoordinates1D: focus must be >= 0");
+      if (!(center > 0.)) throw std::runtime_error("FocusedLogCoordinates1D: center must be > 0");
+      if (!(focus >= 0.)) throw std::runtime_error("FocusedLogCoordinates1D: focus must be >= 0");
 
-      using Kokkos::log;
-      const NT u_start = log(start);
-      const NT u_stop = log(stop);
-
-      u0 = log(center);
-      c = focus;
+      const double u_start = std::log(start);
+      const double u_stop = std::log(stop);
+      const double u0_d = std::log(center);
       // sinh(s)/c is 0/0 at c == 0; below this threshold the map is a pure logarithmic grid to
       // within round-off anyway, so switch to it explicitly.
-      pure_log = !(focus > NT(1e-8));
+      pure_log = !(focus > 1e-8);
 
+      double s_min_d, a_d;
       if (pure_log) {
         // in this branch s *is* u, so forward() degenerates to start * exp(u - log(start))
-        c_inv = NT(1);
-        s_min = u_start;
-        a = (u_stop - u_start) / NT(grid_extent - 1);
-        g_min = s_min;
+        s_min_d = u_start;
+        a_d = (u_stop - u_start) / double(grid_extent - 1);
       } else {
-        c_inv = NT(1) / c;
-        s_min = s_of_u(u_start);
-        a = (s_of_u(u_stop) - s_min) / NT(grid_extent - 1);
-        using Kokkos::sinh;
-        // Store sinh(s_min), NOT sinh(s_min) * c_inv: forward() subtracts this BEFORE scaling by
-        // c_inv, which is what makes x == 0 cancel exactly. See the note in forward().
-        g_min = sinh(s_min);
+        s_min_d = s_of_u(u_start, focus, u0_d);
+        a_d = (s_of_u(u_stop, focus, u0_d) - s_min_d) / double(grid_extent - 1);
       }
-      a_inv = NT(1) / a;
+      u0 = u0_d;
+      c = focus;
+      c_inv = pure_log ? NT(1) : NT(1. / focus);
+      s_min = s_min_d;
+      a = a_d;
+      a_inv = NT(1. / a_d);
+      // Store sinh(s_min), NOT sinh(s_min) * c_inv: forward() subtracts this BEFORE scaling by
+      // c_inv, which is what makes x == 0 cancel exactly. See the note in forward(). For the same
+      // reason it is evaluated in NT on the ROUNDED s_min, i.e. on exactly what forward() sees.
+      using Kokkos::sinh;
+      g_min = pure_log ? s_min : sinh(s_min);
     }
 
     template <typename NT2>
@@ -758,7 +780,7 @@ namespace DiFfRG
     {
       using Kokkos::log;
       const NT u = log(y);
-      return ((pure_log ? u : s_of_u(u)) - s_min) * a_inv;
+      return ((pure_log ? u : s_of_u(u, c, u0)) - s_min) * a_inv;
     }
 
     NT KOKKOS_FORCEINLINE_FUNCTION backward_derivative(const NT &y) const
@@ -817,15 +839,15 @@ namespace DiFfRG
      *
      * Naively log(v + sqrt(v^2 + 1)) cancels catastrophically for v << 0 -- these grids reach
      * v ~ -40, where it loses several digits. Using (v + D)(D - v) = 1 to rewrite the negative
-     * branch as -log(D - v) makes both sides exact to round-off. Note this is called from the
-     * constructor, so it may only use members assigned before it.
+     * branch as -log(D - v) makes both sides exact to round-off. Static and templated on the
+     * precision, as the constructor evaluates it in double.
      */
-    NT KOKKOS_FORCEINLINE_FUNCTION s_of_u(const NT u) const
+    template <typename T> static KOKKOS_FORCEINLINE_FUNCTION T s_of_u(const T u, const T c, const T u0)
     {
       using Kokkos::log, Kokkos::sqrt;
-      const NT v = c * (u - u0);
-      const NT D = sqrt(v * v + NT(1));
-      return v >= NT(0) ? log(v + D) : -log(D - v);
+      const T v = c * (u - u0);
+      const T D = sqrt(v * v + T(1));
+      return v >= T(0) ? log(v + D) : -log(D - v);
     }
 
     // prefix(): the parent's parameters and spacing, fewer points
@@ -882,6 +904,30 @@ namespace DiFfRG
     }
     return grid;
   }
+
+  /**
+   * @brief The same coordinate system with ctype NT, e.g. the float twin of a double grid:
+   * rebind_ctype_t<CoordinatePackND<FocusedLogCoordinates1D<double>, LinearCoordinates1D<double>>, float>.
+   */
+  template <typename Coordinates, typename NT> struct rebind_ctype;
+  template <typename NT0, typename NT> struct rebind_ctype<LinearCoordinates1D<NT0>, NT> {
+    using type = LinearCoordinates1D<NT>;
+  };
+  template <typename NT0, typename NT> struct rebind_ctype<LinearPeriodicCoordinates1D<NT0>, NT> {
+    using type = LinearPeriodicCoordinates1D<NT>;
+  };
+  template <typename NT0, typename NT> struct rebind_ctype<LogarithmicCoordinates1D<NT0>, NT> {
+    using type = LogarithmicCoordinates1D<NT>;
+  };
+  template <typename NT0, typename NT> struct rebind_ctype<FocusedLogCoordinates1D<NT0>, NT> {
+    using type = FocusedLogCoordinates1D<NT>;
+  };
+  template <typename... Cs, typename NT>
+    requires(requires { typename rebind_ctype<Cs, NT>::type; } && ...)
+  struct rebind_ctype<CoordinatePackND<Cs...>, NT> {
+    using type = CoordinatePackND<typename rebind_ctype<Cs, NT>::type...>;
+  };
+  template <typename Coordinates, typename NT> using rebind_ctype_t = typename rebind_ctype<Coordinates, NT>::type;
 
   // Definitions of useful combined coordinates
   using LogCoordinates = LogarithmicCoordinates1D<double>;

@@ -91,6 +91,11 @@ namespace DiFfRG
      */
     Idx KOKKOS_FORCEINLINE_FUNCTION backward(const NT &y) const { return Idx(std::round(y / (2. * M_PI * T))) - start; }
 
+    /**
+     * @brief The fractional grid coordinate of an arbitrary frequency, integer on the Matsubara values.
+     */
+    NT KOKKOS_FORCEINLINE_FUNCTION backward_continuous(const NT &y) const { return y / (2. * M_PI * T) - NT(start); }
+
     size_t size() const { return m_size; }
 
     const Idx start, stop;
@@ -152,6 +157,14 @@ namespace DiFfRG
     Idx KOKKOS_FORCEINLINE_FUNCTION backward(const NT &y) const
     {
       return Idx(std::round((y - M_PI * T) / (2. * M_PI * T))) - start;
+    }
+
+    /**
+     * @brief The fractional grid coordinate of an arbitrary frequency, integer on the Matsubara values.
+     */
+    NT KOKKOS_FORCEINLINE_FUNCTION backward_continuous(const NT &y) const
+    {
+      return (y - M_PI * T) / (2. * M_PI * T) - NT(start);
     }
 
     size_t size() const { return m_size; }

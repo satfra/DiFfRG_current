@@ -12,6 +12,7 @@
 #include <DiFfRG/physics/integration/abstract_integrator.hh>
 #include <DiFfRG/physics/integration/map_completion.hh>
 #include <DiFfRG/physics/integration/point_arg.hh>
+#include <DiFfRG/physics/interpolation/interpolator_handle.hh>
 
 // std
 #include <array>
@@ -44,6 +45,74 @@ namespace DiFfRG
     /// Element types an integrator with value type NT can map() into.
     template <typename OT, typename NT>
     inline constexpr bool is_map_result = std::is_same_v<OT, NT> || is_widened_result<OT, NT>;
+
+    /// What a kernel computing in ctype receives for an argument of type T: an interpolator's
+    /// handle (see has_kernel_handle), anything else in the kernel's precision.
+    template <typename T, typename ctype> using kernel_arg_t = compute_arg_t<kernel_handle_t<T, ctype>, ctype>;
+
+    /// Whether KERNEL takes handles. Kernels generated before handles existed name the interpolator
+    /// types in their signature; they are passed the interpolators themselves.
+    template <typename NT, typename KERNEL, typename ctype, int dim, typename... T>
+    inline constexpr bool takes_handles = is_valid_kernel<NT, KERNEL, ctype, dim, kernel_arg_t<T, ctype>...>;
+
+    template <size_t, typename T> using repeat_t = T;
+
+    /// takes_handles for map(), whose kernel also receives the cdim grid positions of Coordinates.
+    template <typename NT, typename KERNEL, typename ctype, int dim, typename Coordinates, typename... Args>
+    inline constexpr bool map_takes_handles = []<size_t... I>(std::index_sequence<I...>) {
+      return takes_handles<NT, KERNEL, ctype, dim, repeat_t<I, typename Coordinates::ctype>..., Args...>;
+    }(std::make_index_sequence<Coordinates::dim>{});
+
+    template <typename NT, typename KERNEL, typename ctype, int dim, typename... T>
+    concept accepts_args = takes_handles<NT, KERNEL, ctype, dim, T...> ||
+                           is_valid_kernel<NT, KERNEL, ctype, dim, compute_arg_t<T, ctype>...>;
+
+    template <bool handles, typename T, typename ctype>
+    using launch_arg_t = std::conditional_t<handles, kernel_arg_t<T, ctype>, compute_arg_t<T, ctype>>;
+
+    /// An argument of get() or map_points() as the kernel receives it.
+    template <bool handles, typename ctype, typename T> launch_arg_t<handles, T, ctype> to_launch_arg(const T &t)
+    {
+      if constexpr (handles)
+        return launch_arg_t<handles, T, ctype>(to_kernel_handle<ctype>(t));
+      else
+        return launch_arg_t<handles, T, ctype>(t);
+    }
+
+    /// An argument as the kernel receives it. Unlike to_launch_arg, scalars keep their precision.
+    template <bool handles, typename ctype, typename T> decltype(auto) to_kernel_arg(const T &t)
+    {
+      if constexpr (handles)
+        return to_kernel_handle<ctype>(t);
+      else
+        return (t);
+    }
+
+    // Through if constexpr: in a plain `has_kernel_handle<T> && ...` the right operand still names
+    // T::value_type, a hard error for argument types such as double that have none.
+    template <typename T> constexpr bool is_double_interpolator_impl()
+    {
+      if constexpr (has_kernel_handle<T>)
+        return std::is_same_v<typename T::value_type, double> ||
+               std::is_same_v<typename T::value_type, complex<double>>;
+      else
+        return false;
+    }
+    template <typename T> inline constexpr bool is_double_interpolator = is_double_interpolator_impl<T>();
+
+    [[deprecated("a single-precision kernel names double interpolator types, so it is passed the interpolators "
+                 "and looks them up in double. Regenerate it: a kernel taking its interpolators as const auto& "
+                 "reads their single-precision copy.")]]
+    constexpr void double_lookups_in_float_kernel()
+    {
+    }
+
+    /// Warns at compile time when a float kernel would silently read double interpolators.
+    template <bool handles, typename ctype, typename... T> constexpr void check_kernel_precision()
+    {
+      if constexpr (std::is_same_v<ctype, float> && !handles && (is_double_interpolator<T> || ...))
+        double_lookups_in_float_kernel();
+    }
 
     /// Grow-only result buffers of map(): device scratch, plus page-locked staging so the copy back
     /// is genuinely asynchronous (see MapCompletion).
@@ -131,7 +200,7 @@ namespace DiFfRG
        * All per-point arrays share one staging buffer, so the upload is a single copy. On a host memory space an
        * argument that needs no conversion is used in place.
        */
-      template <typename ctype, typename... T>
+      template <typename ctype, bool handles, typename... T>
       auto stage(const ExecutionSpace &space, const size_t n, const PointArg<T> &...args)
       {
         // Types that cannot be placed in the staging buffer (an interpolator: no default constructor, no copy
@@ -150,7 +219,7 @@ namespace DiFfRG
           size_t k = 0;
           (
               [&] {
-                using U = compute_arg_t<T, ctype>;
+                using U = launch_arg_t<handles, T, ctype>;
                 args.check_size(n);
                 if constexpr (!stageable.template operator()<U>())
                   if (args.per_point())
@@ -173,13 +242,13 @@ namespace DiFfRG
           size_t k = 0;
           (
               [&] {
-                using U = compute_arg_t<T, ctype>;
+                using U = launch_arg_t<handles, T, ctype>;
                 if constexpr (stageable.template operator()<U>())
                   if (staged[k]) {
                     U *out = reinterpret_cast<U *>(host + offsets[k]);
                     parallel_chunks(n, [&](const size_t begin, const size_t end) {
                       for (size_t i = begin; i < end; ++i)
-                        out[i] = static_cast<U>(args.values[i]);
+                        out[i] = to_launch_arg<handles, ctype>(args.values[i]);
                     });
                   }
                 ++k;
@@ -192,13 +261,13 @@ namespace DiFfRG
 
         return [&]<size_t... I>(std::index_sequence<I...>) {
           return device::make_tuple([&] {
-            using U = compute_arg_t<T, ctype>;
+            using U = launch_arg_t<handles, T, ctype>;
             if constexpr (!stageable.template operator()<U>())
-              return DevicePointArg<U>{nullptr, static_cast<U>(args.value)};
+              return DevicePointArg<U>{nullptr, to_launch_arg<handles, ctype>(args.value)};
             else {
               const U *values = staged[I] ? reinterpret_cast<const U *>(device + offsets[I])
                                           : (args.per_point() ? reinterpret_cast<const U *>(args.values) : nullptr);
-              return DevicePointArg<U>{values, args.per_point() ? U{} : static_cast<U>(args.value)};
+              return DevicePointArg<U>{values, args.per_point() ? U{} : to_launch_arg<handles, ctype>(args.value)};
             }
           }()...);
         }(std::index_sequence_for<T...>{});
@@ -313,7 +382,7 @@ namespace DiFfRG
     }
 
     template <typename... T>
-      requires is_valid_kernel<NT, KERNEL, ctype, dim, internal::compute_arg_t<T, ctype>...>
+      requires internal::accepts_args<NT, KERNEL, ctype, dim, T...>
     void get(NT &dest, const T &...t) const
     {
       // create an execution space
@@ -333,7 +402,7 @@ namespace DiFfRG
     /// Single-precision integration handing back a double result.
     template <typename OT, typename... T>
       requires(internal::is_widened_result<OT, NT> &&
-               is_valid_kernel<NT, KERNEL, ctype, dim, internal::compute_arg_t<T, ctype>...>)
+               internal::accepts_args<NT, KERNEL, ctype, dim, T...>)
     void get(OT &dest, const T &...t) const
     {
       NT result;
@@ -343,7 +412,7 @@ namespace DiFfRG
 
     template <typename OT, typename... T>
       requires(!std::is_same_v<OT, NT> && !internal::is_widened_result<OT, NT> &&
-               is_valid_kernel<NT, KERNEL, ctype, dim, internal::compute_arg_t<T, ctype>...>)
+               internal::accepts_args<NT, KERNEL, ctype, dim, T...>)
     void get(OT &dest, const T &...t) const
     {
       ExecutionSpace space;
@@ -352,10 +421,12 @@ namespace DiFfRG
 
     template <typename OT, typename... T>
       requires(!std::is_same_v<OT, NT> && !internal::is_widened_result<OT, NT> &&
-               is_valid_kernel<NT, KERNEL, ctype, dim, internal::compute_arg_t<T, ctype>...>)
+               internal::accepts_args<NT, KERNEL, ctype, dim, T...>)
     void get(ExecutionSpace &space, OT &dest, const T &...t) const
     {
-      const auto args = device::make_tuple(internal::compute_arg_t<T, ctype>(t)...);
+      constexpr bool handles = internal::takes_handles<NT, KERNEL, ctype, dim, T...>;
+      internal::check_kernel_precision<handles, ctype, T...>();
+      const auto args = device::make_tuple(internal::to_launch_arg<handles, ctype>(t)...);
 
       const auto &n = nodes;
       const auto &w = weights;
@@ -404,7 +475,9 @@ namespace DiFfRG
       // Create a Restrict-tagged alias of the cache for no-alias optimization
       const auto cache = KokkosNDViewRestrict<1 + dim, NT, ExecutionSpace>(m_cache);
 
-      const auto m_args = device::make_tuple(args...);
+      constexpr bool handles = internal::map_takes_handles<NT, KERNEL, ctype, dim, Coordinates, Args...>;
+      internal::check_kernel_precision<handles, ctype, Args...>();
+      const auto m_args = device::make_tuple(internal::to_kernel_arg<handles, ctype>(args)...);
 
       const auto &n = nodes;
       const auto &w = weights;
@@ -637,7 +710,7 @@ namespace DiFfRG
     template <typename OT, typename... A>
       requires(
           internal::is_map_result<OT, NT> &&
-          is_valid_kernel<NT, KERNEL, ctype, dim, internal::compute_arg_t<internal::point_arg_value_t<A>, ctype>...>)
+          internal::accepts_args<NT, KERNEL, ctype, dim, internal::point_arg_value_t<A>...>)
     void map_points(const PointSpan<OT> dest, const A &...args)
     {
       run_map_points(dest, PointArg<internal::point_arg_value_t<A>>(args)...);
@@ -725,7 +798,9 @@ namespace DiFfRG
     {
       const size_t n = dest.size();
       if (n == 0) return;
-      const auto device_args = m_map_points.template stage<ctype>(space, n, args...);
+      constexpr bool handles = internal::takes_handles<NT, KERNEL, ctype, dim, T...>;
+      internal::check_kernel_precision<handles, ctype, T...>();
+      const auto device_args = m_map_points.template stage<ctype, handles>(space, n, args...);
       m_map_points.run(space, dest, [&](const auto &result) { launch_map_points(result, n, device_args); });
     }
 
@@ -921,12 +996,15 @@ namespace DiFfRG
     }
 
     template <typename... T>
-      requires is_valid_kernel<NT, KERNEL, ctype, dim, internal::compute_arg_t<T, ctype>...>
+      requires internal::accepts_args<NT, KERNEL, ctype, dim, T...>
     void get(NT &dest, const T &...t) const
     {
-      // A single-precision integrator evaluates its kernel in single precision.
-      if constexpr (!(std::is_same_v<T, internal::compute_arg_t<T, ctype>> && ...))
-        get(dest, internal::compute_arg_t<T, ctype>(t)...);
+      // A single-precision integrator evaluates its kernel in single precision, and a kernel that
+      // takes handles gets those.
+      constexpr bool handles = internal::takes_handles<NT, KERNEL, ctype, dim, T...>;
+      internal::check_kernel_precision<handles, ctype, T...>();
+      if constexpr (!(std::is_same_v<T, internal::launch_arg_t<handles, T, ctype>> && ...))
+        get(dest, internal::to_launch_arg<handles, ctype>(t)...);
       else {
         const auto args = device::tie(t...);
 
@@ -952,7 +1030,7 @@ namespace DiFfRG
 
     template <typename OT, typename... T>
       requires(internal::is_widened_result<OT, NT> &&
-               is_valid_kernel<NT, KERNEL, ctype, dim, internal::compute_arg_t<T, ctype>...>)
+               internal::accepts_args<NT, KERNEL, ctype, dim, T...>)
     void get(OT &dest, const T &...t) const
     {
       NT result;
@@ -965,7 +1043,7 @@ namespace DiFfRG
     template <typename OT, typename... A>
       requires(
           internal::is_map_result<OT, NT> &&
-          is_valid_kernel<NT, KERNEL, ctype, dim, internal::compute_arg_t<internal::point_arg_value_t<A>, ctype>...>)
+          internal::accepts_args<NT, KERNEL, ctype, dim, internal::point_arg_value_t<A>...>)
     void map_points(const PointSpan<OT> dest, const A &...args) const
     {
       internal::map_points_by_get(*this, dest, PointArg<internal::point_arg_value_t<A>>(args)...);
@@ -975,15 +1053,26 @@ namespace DiFfRG
       requires internal::is_map_result<OT, NT>
     void map(execution_space &, OT *dest, const Coordinates &coordinates, const Args &...args)
     {
-      const auto m_args = device::tie(args...);
+      // Handles once here rather than per point in get().
+      constexpr bool handles = internal::map_takes_handles<NT, KERNEL, ctype, dim, Coordinates, Args...>;
+      internal::check_kernel_precision<handles, ctype, Args...>();
+      const auto m_args = [&] {
+        if constexpr (handles)
+          return device::make_tuple(DiFfRG::to_kernel_handle<ctype>(args)...);
+        else
+          return device::tie(args...);
+      }();
 
       tbb::parallel_for(tbb::blocked_range<uint>(0, coordinates.size()), [&](const tbb::blocked_range<uint> &r) {
         for (uint idx = r.begin(); idx != r.end(); ++idx) {
           const auto dis_idx = coordinates.from_linear_index(idx);
           const auto pos = coordinates.forward(dis_idx);
-          // make a tuple of all arguments
-          const auto full_args = device::tuple_cat(pos, m_args);
-          device::apply([&](const auto &...iargs) { get(dest[idx], iargs...); }, full_args);
+          // nested packs rather than tuple_cat, which would copy every argument per point
+          device::apply(
+              [&](const auto &...pargs) {
+                device::apply([&](const auto &...iargs) { get(dest[idx], pargs..., iargs...); }, m_args);
+              },
+              pos);
         }
       });
     }

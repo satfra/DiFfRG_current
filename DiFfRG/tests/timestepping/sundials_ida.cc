@@ -5,6 +5,7 @@
 
 #include <boilerplate/kt_models.hh>
 #include <boilerplate/timestepping.hh>
+#include <DiFfRG/common/init.hh>
 
 using namespace DiFfRG;
 
@@ -14,6 +15,7 @@ using namespace DiFfRG;
 
 TEST_CASE("Test SUNDIALS IDA with DG constant model", "[timestepping][constant][sundials_ida][dg]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 1;
   using Model = Testing::ModelConstant<dim>;
   using NumberType = double;
@@ -28,6 +30,7 @@ TEST_CASE("Test SUNDIALS IDA with DG constant model", "[timestepping][constant][
 }
 TEST_CASE("Test SUNDIALS IDA with DG exponential model", "[timestepping][exponential][sundials_ida][dg]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 1;
   using Model = Testing::ModelExp<dim>;
   using NumberType = double;
@@ -40,6 +43,7 @@ TEST_CASE("Test SUNDIALS IDA with DG exponential model", "[timestepping][exponen
 }
 TEST_CASE("Test SUNDIALS IDA with DG Burgers model", "[timestepping][Burgers][sundials_ida][dg]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 1;
   using Model = Testing::ModelBurgers<dim>;
   using NumberType = double;
@@ -52,6 +56,7 @@ TEST_CASE("Test SUNDIALS IDA with DG Burgers model", "[timestepping][Burgers][su
 }
 TEST_CASE("Test SUNDIALS IDA with CG constant model", "[timestepping][constant][sundials_ida][fem]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 1;
   using Model = Testing::ModelConstant<dim>;
   using NumberType = double;
@@ -64,6 +69,7 @@ TEST_CASE("Test SUNDIALS IDA with CG constant model", "[timestepping][constant][
 }
 TEST_CASE("Test SUNDIALS IDA with CG exponential model", "[timestepping][exponential][sundials_ida][fem]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 1;
   using Model = Testing::ModelExp<dim>;
   using NumberType = double;
@@ -76,6 +82,7 @@ TEST_CASE("Test SUNDIALS IDA with CG exponential model", "[timestepping][exponen
 }
 TEST_CASE("Test SUNDIALS IDA with CG Burgers model", "[timestepping][Burgers][sundials_ida][fem]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 1;
   using Model = Testing::ModelBurgers<dim>;
   using NumberType = double;
@@ -89,6 +96,7 @@ TEST_CASE("Test SUNDIALS IDA with CG Burgers model", "[timestepping][Burgers][su
 
 TEST_CASE("Test SUNDIALS IDA with KT Burgers model", "[timestepping][Burgers][sundials_ida][kt]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 1;
   using Model = Testing::ModelBurgersKT<dim>;
   using NumberType = double;
@@ -102,6 +110,7 @@ TEST_CASE("Test SUNDIALS IDA with KT Burgers model", "[timestepping][Burgers][su
 
 TEST_CASE("Test SUNDIALS IDA with 2D KT Burgers model", "[timestepping][Burgers][sundials_ida][kt][2d]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 2;
   using Model = Testing::ModelBurgers2DKT;
   using NumberType = double;
@@ -116,6 +125,7 @@ TEST_CASE("Test SUNDIALS IDA with 2D KT Burgers model", "[timestepping][Burgers]
 TEST_CASE("Test SUNDIALS IDA with KT viscous Burgers traveling wave",
           "[timestepping][Burgers][sundials_ida][kt][traveling_wave]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 1;
   using Model = Testing::ModelBurgersTravelingWaveKT<dim>;
   using NumberType = double;
@@ -130,6 +140,7 @@ TEST_CASE("Test SUNDIALS IDA with KT viscous Burgers traveling wave",
 TEST_CASE("Test SUNDIALS IDA with KT two-component Burgers system",
           "[timestepping][Burgers][sundials_ida][kt][two_component]")
 {
+  DiFfRG::Init();
   constexpr uint dim = 1;
   using Model = Testing::ModelTwoComponentBurgersKT<dim>;
   using NumberType = double;

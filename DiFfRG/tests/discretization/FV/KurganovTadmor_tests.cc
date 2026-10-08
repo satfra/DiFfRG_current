@@ -784,7 +784,8 @@ static typename DoFHandler::active_cell_iterator find_2d_non_corner_boundary_cel
 TEST_CASE("KT 1D FV readouts use EoM potential reconstruction and write a time series", "[FV][KT][EoM][output]")
 {
   using Model = DiFfRG::Testing::ModelBurgersKT<1>;
-  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
+  // Serial on purpose: this tests serial linear algebra, and a plain RectangularMesh is partitioned in an MPI build.
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMeshSerial<1>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -796,7 +797,7 @@ TEST_CASE("KT 1D FV readouts use EoM potential reconstruction and write a time s
   prm.initial_x1[0] = 2.5;
 
   Model model(prm);
-  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  DiFfRG::RectangularMeshSerial<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -868,7 +869,7 @@ TEST_CASE("KT 1D FV readouts use EoM potential reconstruction and write a time s
 TEST_CASE("KT HDF5-only output keeps all field series in one file", "[FV][KT][EoM][output][hdf5]")
 {
   using Model = DiFfRG::Testing::ModelBurgersKT<1>;
-  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMeshSerial<1>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -883,7 +884,7 @@ TEST_CASE("KT HDF5-only output keeps all field series in one file", "[FV][KT][Eo
   prm.initial_x1[0] = 2.5;
 
   Model model(prm);
-  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  DiFfRG::RectangularMeshSerial<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -936,7 +937,7 @@ TEST_CASE("KT HDF5-only output keeps all field series in one file", "[FV][KT][Eo
 TEST_CASE("KT reconstruction cache recomputes cell stencil values per solution", "[FV][KT][cache]")
 {
   using Model = ResidualContributionModel;
-  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMeshSerial<1>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -944,7 +945,7 @@ TEST_CASE("KT reconstruction cache recomputes cell stencil values per solution",
 
   auto json = make_fv_test_json();
   Model model;
-  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  DiFfRG::RectangularMeshSerial<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -995,7 +996,7 @@ TEST_CASE("KT reconstruction cache recomputes cell stencil values per solution",
 TEST_CASE("KT solution reconstruction cache stores reversed interior face orientations", "[FV][KT][cache]")
 {
   using Model = ResidualContributionModel;
-  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMeshSerial<1>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1003,7 +1004,7 @@ TEST_CASE("KT solution reconstruction cache stores reversed interior face orient
 
   auto json = make_fv_test_json();
   Model model;
-  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  DiFfRG::RectangularMeshSerial<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -1033,7 +1034,7 @@ TEST_CASE("KT solution reconstruction cache stores reversed interior face orient
 TEST_CASE("KT solution reconstruction cache matches direct interior reconstruction", "[FV][KT][cache]")
 {
   using Model = ResidualContributionModel;
-  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMeshSerial<1>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1041,7 +1042,7 @@ TEST_CASE("KT solution reconstruction cache matches direct interior reconstructi
 
   auto json = make_fv_test_json();
   Model model;
-  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  DiFfRG::RectangularMeshSerial<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -1075,7 +1076,7 @@ TEST_CASE("KT solution reconstruction cache matches direct interior reconstructi
 TEST_CASE("KT solution reconstruction cache matches direct boundary reconstruction", "[FV][KT][cache]")
 {
   using Model = ResidualContributionModel;
-  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMeshSerial<1>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1083,7 +1084,7 @@ TEST_CASE("KT solution reconstruction cache matches direct boundary reconstructi
 
   auto json = make_fv_test_json();
   Model model;
-  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  DiFfRG::RectangularMeshSerial<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -1111,7 +1112,7 @@ TEST_CASE("KT solution reconstruction cache matches direct boundary reconstructi
 TEST_CASE("KT boundary stencil cache recomputes values per solution", "[FV][KT][cache]")
 {
   using Model = ResidualContributionModel;
-  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMeshSerial<1>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
   using BoundaryIndex = DiFfRG::FV::KurganovTadmor::internal::BoundaryStencilIndex<1>;
@@ -1120,7 +1121,7 @@ TEST_CASE("KT boundary stencil cache recomputes values per solution", "[FV][KT][
 
   auto json = make_fv_test_json();
   Model model;
-  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  DiFfRG::RectangularMeshSerial<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -1149,7 +1150,7 @@ TEST_CASE("KT boundary stencil cache recomputes values per solution", "[FV][KT][
 TEST_CASE("KT 2D topology cache stores four face neighbours for an interior cell", "[FV][KT][cache][2d]")
 {
   using Model = DiFfRG::Testing::ModelBurgers2DKT;
-  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<2>, NumberType>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMeshSerial<2>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
 
   ensure_logger();
@@ -1161,7 +1162,7 @@ TEST_CASE("KT 2D topology cache stores four face neighbours for an interior cell
   prm.initial_x2[0] = 0.5;
 
   Model model(prm);
-  DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
+  DiFfRG::RectangularMeshSerial<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -1188,7 +1189,7 @@ TEST_CASE("KT 2D topology cache stores four face neighbours for an interior cell
 TEST_CASE("KT 2D boundary stencil cache stores two interior cells behind boundary faces", "[FV][KT][cache][2d]")
 {
   using Model = DiFfRG::Testing::ModelBurgers2DKT;
-  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<2>, NumberType>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMeshSerial<2>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using namespace DiFfRG::def::BoundaryStencilIndex;
 
@@ -1201,7 +1202,7 @@ TEST_CASE("KT 2D boundary stencil cache stores two interior cells behind boundar
   prm.initial_x2[0] = 0.5;
 
   Model model(prm);
-  DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
+  DiFfRG::RectangularMeshSerial<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -1243,7 +1244,7 @@ TEST_CASE("KT 2D boundary stencil cache stores two interior cells behind boundar
 TEST_CASE("KT 2D solution reconstruction cache recomputes values per solution", "[FV][KT][cache][2d]")
 {
   using Model = DiFfRG::Testing::ModelBurgers2DKT;
-  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<2>, NumberType>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMeshSerial<2>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1256,7 +1257,7 @@ TEST_CASE("KT 2D solution reconstruction cache recomputes values per solution", 
   prm.initial_x2[0] = 0.5;
 
   Model model(prm);
-  DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
+  DiFfRG::RectangularMeshSerial<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -1297,7 +1298,7 @@ TEST_CASE("KT 2D solution reconstruction cache recomputes values per solution", 
 TEST_CASE("KT 2D solution reconstruction cache matches direct interior reconstruction", "[FV][KT][cache][2d]")
 {
   using Model = DiFfRG::Testing::ModelBurgers2DKT;
-  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<2>, NumberType>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMeshSerial<2>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1310,7 +1311,7 @@ TEST_CASE("KT 2D solution reconstruction cache matches direct interior reconstru
   prm.initial_x2[0] = 0.5;
 
   Model model(prm);
-  DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
+  DiFfRG::RectangularMeshSerial<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -1345,7 +1346,7 @@ TEST_CASE("KT 2D solution reconstruction cache matches direct interior reconstru
 TEST_CASE("KT 2D boundary reconstruction cache reconstructs affine ghost side", "[FV][KT][cache][2d]")
 {
   using Model = DiFfRG::Testing::ModelBurgers2DKT;
-  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<2>, NumberType>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMeshSerial<2>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1358,7 +1359,7 @@ TEST_CASE("KT 2D boundary reconstruction cache reconstructs affine ghost side", 
   prm.initial_x2[0] = 0.5;
 
   Model model(prm);
-  DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
+  DiFfRG::RectangularMeshSerial<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -1401,7 +1402,7 @@ TEST_CASE("KT 2D boundary reconstruction cache reconstructs affine ghost side", 
 TEST_CASE("KT 2D boundary reconstruction cache derives tangential ghost side from named slots", "[FV][KT][cache][2d]")
 {
   using Model = NamedSlotAffineBoundary2DModel;
-  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<2>, NumberType>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMeshSerial<2>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1409,7 +1410,7 @@ TEST_CASE("KT 2D boundary reconstruction cache derives tangential ghost side fro
 
   auto json = make_kt_boundary_json();
   Model model;
-  DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
+  DiFfRG::RectangularMeshSerial<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -1444,7 +1445,7 @@ TEST_CASE("KT 2D boundary reconstruction cache derives tangential ghost side fro
 TEST_CASE("KT 2D boundary reconstruction cache uses model-owned tangential ghost neighbours", "[FV][KT][cache][2d]")
 {
   using Model = NonAffineTangentialGhostBoundary2DModel;
-  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<2>, NumberType>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMeshSerial<2>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1452,7 +1453,7 @@ TEST_CASE("KT 2D boundary reconstruction cache uses model-owned tangential ghost
 
   auto json = make_kt_boundary_json();
   Model model;
-  DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
+  DiFfRG::RectangularMeshSerial<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -1486,7 +1487,7 @@ TEST_CASE("KT 2D boundary reconstruction cache uses model-owned tangential ghost
 TEST_CASE("KT origin-odd boundary reconstruction remains curl-free", "[FV][KT][cache][boundary][2d]")
 {
   using Model = OriginOddCurlFreeBoundary2DModel;
-  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<2>, NumberType>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMeshSerial<2>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1498,7 +1499,7 @@ TEST_CASE("KT origin-odd boundary reconstruction remains curl-free", "[FV][KT][c
 
   Model model;
   const DiFfRG::Config::ConfigurationMesh<2> mesh_config(json);
-  DiFfRG::RectangularMesh<2> mesh(mesh_config);
+  DiFfRG::RectangularMeshSerial<2> mesh(mesh_config);
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -1544,7 +1545,7 @@ TEST_CASE("KT origin-odd boundary reconstruction remains curl-free", "[FV][KT][c
 TEST_CASE("KT 2D solution reconstruction cache stores reversed interior face orientations", "[FV][KT][cache][2d]")
 {
   using Model = DiFfRG::Testing::ModelBurgers2DKT;
-  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<2>, NumberType>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMeshSerial<2>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1557,7 +1558,7 @@ TEST_CASE("KT 2D solution reconstruction cache stores reversed interior face ori
   prm.initial_x2[0] = 0.5;
 
   Model model(prm);
-  DiFfRG::RectangularMesh<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
+  DiFfRG::RectangularMeshSerial<2> mesh{DiFfRG::Config::ConfigurationMesh<2>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -1585,7 +1586,7 @@ TEST_CASE("KT 2D solution reconstruction cache stores reversed interior face ori
 TEST_CASE("KT face hook exposes cached reconstruction before residual flux", "[FV][KT][hook]")
 {
   using Model = FaceHookProbeModel;
-  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMeshSerial<1>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1593,7 +1594,7 @@ TEST_CASE("KT face hook exposes cached reconstruction before residual flux", "[F
 
   auto json = make_fv_test_json();
   Model model;
-  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  DiFfRG::RectangularMeshSerial<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -1639,7 +1640,7 @@ TEST_CASE("KT face hook exposes cached reconstruction before residual flux", "[F
 TEST_CASE("KT diffusion flux receives reconstructed third derivatives", "[FV][KT]")
 {
   using Model = ThirdDerivativeFluxProbeModel;
-  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMeshSerial<1>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
   using VectorType = typename Discretization::VectorType;
 
@@ -1647,7 +1648,7 @@ TEST_CASE("KT diffusion flux receives reconstructed third derivatives", "[FV][KT
 
   auto json = make_fv_test_json();
   Model model;
-  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  DiFfRG::RectangularMeshSerial<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -2328,7 +2329,7 @@ static double minmod(const double a, const double b)
 TEST_CASE("KT source receives the reconstructed cell gradient", "[FV][KT][source][gradient]")
 {
   using Model = SourceGradientProbeModel;
-  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMeshSerial<1>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
 
   ensure_logger();
@@ -2336,7 +2337,7 @@ TEST_CASE("KT source receives the reconstructed cell gradient", "[FV][KT][source
   auto json = make_fv_test_json();
   json.set_string("/discretization/grid/x_grid", "0:0.1:1");
   Model model;
-  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  DiFfRG::RectangularMeshSerial<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -2393,14 +2394,14 @@ TEST_CASE("KT source receives the reconstructed cell gradient", "[FV][KT][source
 TEST_CASE("KT source receives extractors and variables", "[FV][KT][source][extractors]")
 {
   using Model = SourceExtractorProbeModel;
-  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMeshSerial<1>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
 
   ensure_logger();
 
   auto json = make_fv_test_json();
   Model model;
-  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  DiFfRG::RectangularMeshSerial<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 
@@ -2493,12 +2494,12 @@ template <typename Model>
 static void assemble_flux_probe(VectorType &residual, dealii::SparsityPattern &sp,
                                 dealii::SparseMatrix<NumberType> &jacobian)
 {
-  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMesh<1>, NumberType>;
+  using Discretization = DiFfRG::FV::Discretization<Model, DiFfRG::RectangularMeshSerial<1>, NumberType>;
   using Assembler = DiFfRG::FV::KurganovTadmor::Assembler<Discretization, Model>;
 
   auto json = make_fv_test_json();
   Model model;
-  DiFfRG::RectangularMesh<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
+  DiFfRG::RectangularMeshSerial<1> mesh{DiFfRG::Config::ConfigurationMesh<1>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 

@@ -20,6 +20,7 @@
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
 #include <DiFfRG/discretization/common/la_policy.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
+#include <DiFfRG/timestepping/ida_rank_agreement.hh>
 #include <DiFfRG/timestepping/linear_solver/GMRES.hh>
 #include <DiFfRG/timestepping/linear_solver/PETScDirect.hh>
 #include <DiFfRG/timestepping/linear_solver/PETScKrylov.hh>
@@ -36,29 +37,8 @@ namespace DiFfRG
 
   namespace
   {
-    constexpr int recoverable_ida_callback_failure = 1;
-
-    /**
-     * @brief Agree across ranks on whether an IDA callback failed.
-     *
-     * IDA reacts to a recoverable failure by cutting the step and retrying. That decision must be
-     * unanimous: if one rank reports failure and another success, they take different step
-     * sequences, and the next collective -- an assembly compress(), a norm, this very agreement --
-     * is entered by different numbers of ranks. The symptom is a hang, not a wrong number, and it
-     * appears only for the input that first made the ranks disagree.
-     *
-     * Disagreement is easy to produce. The vector/matrix finiteness probes happen to be safe by
-     * themselves, because l1_norm() and frobenius_norm() are collective for PETSc and already
-     * return a global answer. The exception handlers are not: a model that throws on one cell makes
-     * exactly the rank owning that cell return failure.
-     *
-     * Every exit path of every callback routes through here exactly once, success and failure
-     * alike, so the collectives always match up.
-     */
-    inline int agreed_ida_result(MPI_Comm comm, const bool failed)
-    {
-      return DiFfRG::MPI::any_of(comm, failed) ? recoverable_ida_callback_failure : 0;
-    }
+    using internal::agreed_ida_result;
+    using internal::recoverable_ida_callback_failure;
 
     template <typename VectorType> double l1_norm_or_nan(const VectorType *vector)
     {
@@ -1323,10 +1303,10 @@ template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::Vector<double>, deal
 // file, constructing its own matrices and vectors rather than asking the assembler for them. The
 // count measures the timestepper body, not the work that unblocked it.
 //
-// Only the implicit path is instantiated, and only PETScKrylov. The explicit and Boost-hybrid
-// steppers stay serial deliberately: they are not viable for these stiff flows anyway, and they
-// route through common/eigen.hh, which assumes contiguous serial storage. dim == 0 is pure
-// variables and has no FE space to distribute.
+// The purely explicit steppers stay serial deliberately: they are not viable for these stiff flows
+// anyway, and they integrate the whole state through Eigen. (The Boost-hybrid IDA steppers are
+// distributed: their explicit part only ever holds the small, replicated variables.) dim == 0 is
+// pure variables and has no FE space to distribute.
 
 #ifdef DEAL_II_WITH_PETSC
 template class DiFfRG::TimeStepperSUNDIALS_IDA_impl<dealii::PETScWrappers::MPI::Vector,

@@ -11,7 +11,11 @@
 #include <spdlog/spdlog.h>
 #include <sstream>
 
+#include <DiFfRG/common/init.hh>
+#include <DiFfRG/common/mpi.hh>
 #include <DiFfRG/common/utils.hh>
+#include <DiFfRG/discretization/common/la_policy.hh>
+#include <DiFfRG/discretization/common/solution_view.hh>
 #include <DiFfRG/discretization/discretization.hh>
 #include <DiFfRG/model/model.hh>
 #include <DiFfRG/physics/physics.hh>
@@ -56,6 +60,7 @@ bool run_hybrid(const std::string &test_name, double expected_precision, double 
                 double expl_max_dt = -1., double expected_stepper_kind = std::numeric_limits<double>::quiet_NaN())
 {
   using namespace dealii;
+  DiFfRG::Init();
   // -1 means "pick a cap consistent with cur_dt". The diagnostics below deliberately set the
   // explicit substep to the output interval (5e-2, 2e-2), which is above the old fixed 1e-2
   // default -- an explicit.dt above explicit.maximal_dt that AbstractTimestepper now rejects at
@@ -109,7 +114,7 @@ bool run_hybrid(const std::string &test_name, double expected_precision, double 
 
   Testing::PhysicalParameters p_prm = {};
   Model model(p_prm);
-  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  typename Discretization::Mesh mesh{Config::ConfigurationMesh<dim>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
   auto data_out_path = OutputPath::temporary(TemporaryRetention::remove_on_destruction, test_name, test_name);
@@ -130,7 +135,10 @@ bool run_hybrid(const std::string &test_name, double expected_precision, double 
   model.set_time(final_time);
   bool valid = true;
 
-  if (std::isfinite(expected_stepper_kind)) {
+  // Under MPI only rank 0 writes the diagnostics table, and the state is distributed: the table is
+  // checked there, the state through replicated views on every rank, and the verdict agreed below.
+  const MPI_Comm comm = assembler.get_communicator();
+  if (std::isfinite(expected_stepper_kind) && MPI::rank(comm) == 0) {
     const auto table_path = data_out_path.root() / (data_out_path.run_name() + "_jacobian_diagnostics.csv");
     std::ifstream table(table_path);
     std::string header_line, data_line;
@@ -161,10 +169,16 @@ bool run_hybrid(const std::string &test_name, double expected_precision, double 
     }
   }
 
+  SolutionView<VectorType> fem_view, variables_view;
+  assembler.reinit_solution_view(fem_view);
+  fem_view.refresh(initial_condition.data().block(0));
+  reinit_variables_view(variables_view, initial_condition.data().block(1).size(), comm);
+  variables_view.refresh(initial_condition.data().block(1));
+
   // block 0: FEM solution
   const auto &support_points = discretization.get_support_points();
   for (uint i = 0; i < support_points.size(); ++i) {
-    const double is = initial_condition.data().block(0)[i];
+    const double is = fem_view[i];
     const double should = model.solution(support_points[i]);
     if (!is_close(is, should, expected_precision))
       std::cout << test_name << " FEM u: is " << is << " should be " << should << " (rel. error "
@@ -173,13 +187,14 @@ bool run_hybrid(const std::string &test_name, double expected_precision, double 
   }
 
   // block 1: explicit variable
-  const double v_is = initial_condition.data().block(1)[0];
+  const double v_is = variables_view[0];
   const double v_should = model.variable_solution();
   if (!is_close(v_is, v_should, expected_precision))
     std::cout << test_name << " explicit variable v: is " << v_is << " should be " << v_should << " (rel. error "
               << std::abs(v_is - v_should) / std::max(std::abs(v_should), 1e-30) << ")" << std::endl;
   valid &= is_close(v_is, v_should, expected_precision);
 
+  valid = !MPI::any_of(comm, !valid);
   if (!valid) std::cerr << "Failed " << test_name << std::endl;
   return valid;
 }
@@ -199,7 +214,7 @@ TEST_CASE("Test SUNDIALS IDA + Boost ABM hybrid stepper", "[timestepping][sundia
 TEST_CASE("Test SUNDIALS IDA + Boost RK hybrid stepper", "[timestepping][sundials_ida_boost][rk]")
 {
   using Model = Testing::ModelHybridRollback<1>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostRK<HybridAssembler<Model>, UMFPack, 0>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostRK<HybridAssembler<Model>, DefaultLinearSolver, 0>;
   REQUIRE(run_hybrid<Model, TimeStepper>("test_sundials_ida_boost_rk", 1e-3, 1e-3, 1., 5e-2, 1e-1, 1e-6, 0, 1e-2,
                                          static_cast<double>(ImplicitTimestepperKind::ida_boost_rk)));
 }
@@ -349,7 +364,7 @@ TEST_CASE("Hybrid RK stepper retains accuracy on smooth problem at ~1 substep pe
           "[timestepping][sundials_ida_boost][rk][diag]")
 {
   using Model = Testing::ModelHybridSmooth<1>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostRK<HybridAssembler<Model>, UMFPack, 0>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostRK<HybridAssembler<Model>, DefaultLinearSolver, 0>;
   REQUIRE(run_hybrid<Model, TimeStepper>("test_diag_rk_smooth", /*tol=*/1e-3, /*cur_dt=*/5e-2,
                                          /*final_time=*/1.0, /*output_dt=*/5e-2,
                                          /*impl_max_dt=*/5e-2));
@@ -382,7 +397,7 @@ TEST_CASE("Hybrid ABM stepper handles two-way FEM <-> variable coupling",
 TEST_CASE("Hybrid RK stepper handles two-way FEM <-> variable coupling", "[timestepping][sundials_ida_boost][rk][diag]")
 {
   using Model = Testing::ModelHybridTwoWay<1>;
-  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostRK<HybridAssembler<Model>, UMFPack, 0>;
+  using TimeStepper = TimeStepperSUNDIALS_IDA_BoostRK<HybridAssembler<Model>, DefaultLinearSolver, 0>;
   // cur_dt is the substep this diagnostic actually exercised all along: it used to request 2e-2
   // against an explicit maximal_dt of 1e-2, which clamped it. Now that AbstractTimestepper rejects
   // dt > maximal_dt instead of silently capping, the request has to be the value that ran -- and the

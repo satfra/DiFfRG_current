@@ -32,7 +32,7 @@ set(_all_passed TRUE)
 # Pass ALLOW_SYSTEM to additionally accept the dependency when it is provided by
 # a system install (outside BUNDLED_DIR). Used for Boost, TBB and HDF5, which
 # DiFfRG may consume from the system instead of the bundled build (see the
-# <LIB>_DIR / BUILD_<LIB> options in the top-level CMakeLists.txt).
+# <LIB>_DIR / BUILD_<LIB> options in superbuild.cmake).
 macro(verify_dep name)
   cmake_parse_arguments(_VD "ALLOW_SYSTEM" "" "CONFIG_NAMES" ${ARGN})
 

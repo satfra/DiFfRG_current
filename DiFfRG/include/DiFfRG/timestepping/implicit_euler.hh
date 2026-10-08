@@ -1,6 +1,7 @@
 #pragma once
 
 // DiFfRG
+#include <DiFfRG/common/linear_algebra.hh>
 #include <DiFfRG/common/math.hh>
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
@@ -16,6 +17,12 @@ namespace DiFfRG
             template <typename...> typename LinearSolver>
   class TimeStepperImplicitEuler_impl : public AbstractTimestepper<VectorType, SparseMatrixType, dim>
   {
+    static_assert(!is_distributed_la<VectorType>,
+                  "TimeStepperImplicitEuler has no distributed (PETSc) implementation yet. "
+                  "In an MPI build a plain RectangularMesh is partitioned and selects PETSc linear algebra: "
+                  "use RectangularMeshSerial<dim>, or TimeStepperSUNDIALS_IDA / _IDA_BoostABM / _IDA_BoostRK "
+                  "for a distributed run.");
+
     using Base = AbstractTimestepper<VectorType, SparseMatrixType, dim>;
 
   public:

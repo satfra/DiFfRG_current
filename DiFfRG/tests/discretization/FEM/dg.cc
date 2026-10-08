@@ -22,7 +22,9 @@ TEST_CASE("Test DG on Constant model", "[discretization][dg]")
   constexpr uint dim = 1;
   using Model = Testing::ModelConstant<dim>;
   using NumberType = double;
-  using Discretization = DG::Discretization<Model, RectangularMesh<dim>, NumberType>;
+  // Serial linear algebra (element-wise matrix checks, UMFPACK inverse mass): a plain
+  // RectangularMesh is partitioned in an MPI build, which would select PETSc types.
+  using Discretization = DG::Discretization<Model, RectangularMeshSerial<dim>, NumberType>;
   using VectorType = typename Discretization::VectorType;
   using Assembler = DG::Assembler<Discretization>;
 
@@ -75,7 +77,7 @@ TEST_CASE("Test DG on Constant model", "[discretization][dg]")
 
   // Define the objects needed to run the simulation
   Model model(p_prm);
-  RectangularMesh<dim> mesh{Config::ConfigurationMesh<dim>(json)};
+  RectangularMeshSerial<dim> mesh{Config::ConfigurationMesh<dim>(json)};
   Discretization discretization(mesh, json);
   Assembler assembler(discretization, model, json);
 

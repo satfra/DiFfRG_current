@@ -11,11 +11,17 @@
 
 // DiFfRG
 #include <DiFfRG/common/eigen.hh>
+#include <DiFfRG/common/mpi.hh>
 #include <DiFfRG/common/types.hh>
 #include <DiFfRG/discretization/common/abstract_adaptor.hh>
 #include <DiFfRG/discretization/common/abstract_assembler.hh>
+#include <DiFfRG/discretization/common/la_policy.hh>
+#include <DiFfRG/discretization/common/solution_view.hh>
 #include <DiFfRG/discretization/data/output_session.hh>
+#include <DiFfRG/timestepping/ida_rank_agreement.hh>
 #include <DiFfRG/timestepping/linear_solver/GMRES.hh>
+#include <DiFfRG/timestepping/linear_solver/PETScDirect.hh>
+#include <DiFfRG/timestepping/linear_solver/PETScKrylov.hh>
 #include <DiFfRG/timestepping/linear_solver/UMFPack.hh>
 #include <DiFfRG/timestepping/local_tolerances.hh>
 #include <DiFfRG/timestepping/sundials_diagnostics.hh>
@@ -51,7 +57,8 @@ namespace DiFfRG
           "TimeStepperSUNDIALS_BoostRK::run: y contains no variables, use a different timestepper!");
     // Start by setting up all needed matrices, i.e. jacobian, inverse of jacobian and the mass matrix (with two
     // sparsity patterns)
-    SparseMatrixType spatial_jacobian(assembler.get_sparsity_pattern_jacobian());
+    SparseMatrixType spatial_jacobian;
+    assembler.reinit_matrix(spatial_jacobian);
     LinearSolver<SparseMatrixType, VectorType> linSolver;
     linSolver.set_report_port(this->log);
     if constexpr (requires { linSolver.set_iterative_refinement(true); })
@@ -59,7 +66,8 @@ namespace DiFfRG
     const bool jacobian_diagnostics_enabled = impl.jacobian_diagnostics;
     const DiagnosticPort jacobian_diagnostic_port =
         jacobian_diagnostics_enabled ? data_out.diagnostic_port() : DiagnosticPort{};
-    const uint n_FE_dofs = initial_data.block(0).size();
+    const MPI_Comm comm = assembler.get_communicator();
+    const uint n_vars = initial_data.block(1).size();
 
     // Create a SUNDIALS IDA object with the right settings for spatial data
     typename SUNDIALS::IDA<VectorType>::AdditionalData ida_data(t_start, t_stop, impl.dt, output_dt, impl.minimal_dt, 5,
@@ -70,16 +78,41 @@ namespace DiFfRG
     // Initialize initial condition
     VectorType spatial_y = initial_data.block(0);
     VectorType spatial_y_dot = initial_data.block(0);
-    VectorType variable_y = initial_data.block(1);
 
-    // Initialize initial condition in eigen
-    Eigen::VectorXd variable_y_eigen(variable_y.size());
-    dealii_to_eigen(variable_y, variable_y_eigen);
+    // The explicit variables are integrated redundantly on every rank, so every rank holds all of them in
+    // process-local vectors. Under MPI the variables block of the state is owned by rank 0 alone and is read through
+    // a replicated view; serially the view is a passthrough and these are plain vectors as before.
+    SolutionView<VectorType> initial_variables_view;
+    reinit_variables_view(initial_variables_view, n_vars, comm);
+    initial_variables_view.refresh(initial_data.block(1));
+    const VectorType initial_variables = initial_variables_view.get();
+    VectorType variable_y = initial_variables;
 
-    // These are just buffers
-    dealii::Vector<double> variable_y_dealii(variable_y.size());
-    dealii::Vector<double> spatial_y_dealii(spatial_y.size());
-    dealii::Vector<double> variable_dy_dealii(variable_y.size());
+    // Buffers for the explicit right hand side: the variables it is evaluated at, its result, and the spatial state
+    // it couples to -- interpolated in time (spatial_eval) and replicated for the assembler (spatial_eval_view).
+    VectorType variable_eval = initial_variables;
+    VectorType variable_dy = initial_variables;
+    VectorType spatial_eval = spatial_y;
+    SolutionView<VectorType> spatial_eval_view;
+    assembler.reinit_solution_view(spatial_eval_view);
+
+    // dx/dt of the explicit variables at x, coupled to the spatial state currently in spatial_eval.
+    //
+    // Under MPI every rank evaluates this from identical inputs, but the model's reductions may still sum in a
+    // rank-dependent order. Rank 0's result is broadcast so the ranks stay bitwise identical: the explicit stepper
+    // branches on these values, and ranks taking different steps would enter the next collective out of step.
+    auto evaluate_variable_rhs = [&](const Eigen::VectorXd &x, Eigen::VectorXd &dxdt) {
+      eigen_to_dealii(x, variable_eval);
+      variable_dy = 0;
+      spatial_eval_view.refresh(spatial_eval);
+      assembler.residual_variables(variable_dy, variable_eval, spatial_eval_view.get());
+      // The model assigns entry by entry (=, as everywhere for the variables); a PETSc vector stages those writes.
+      variable_dy.compress(VectorOperation::insert);
+      dealii_to_eigen(variable_dy, dxdt);
+      dxdt *= -1;
+      if constexpr (is_distributed_la<VectorType>)
+        MPI::bcast(comm, dxdt.data(), static_cast<size_t>(dxdt.size()) * sizeof(double), /*root=*/0);
+    };
 
     // The explicit variables are integrated "on demand" with the spatial solution held
     // fixed over each IDA trial step. Rather than pinning it to the step's right endpoint
@@ -87,8 +120,8 @@ namespace DiFfRG
     // leads the true spatial trajectory -- the spatial solution is linearly interpolated
     // across the step between these two endpoints: spatial_lo at spatial_lo_time (the
     // start of the segment) and spatial_hi at spatial_hi_time (its end).
-    dealii::Vector<double> spatial_lo(spatial_y.size());
-    dealii::Vector<double> spatial_hi(spatial_y.size());
+    VectorType spatial_lo = spatial_y;
+    VectorType spatial_hi = spatial_y;
     double spatial_lo_time = t_start;
     double spatial_hi_time = t_start;
 
@@ -97,27 +130,19 @@ namespace DiFfRG
 
     auto get_variable_residual = [&](const Eigen::VectorXd &x, Eigen::VectorXd &dxdt, const double t) {
       CalcDtTimer calc_timer;
-      eigen_to_dealii(x, variable_y_dealii);
-
-      variable_dy_dealii = 0;
 
       // linearly interpolate the spatial solution across the current segment so the
       // coupling tracks the spatial trajectory instead of being pinned to one endpoint
       double alpha =
           (spatial_hi_time > spatial_lo_time) ? (t - spatial_lo_time) / (spatial_hi_time - spatial_lo_time) : 1.;
       alpha = std::clamp(alpha, 0., 1.);
-      spatial_y_dealii = spatial_lo;
-      spatial_y_dealii *= (1. - alpha);
-      spatial_y_dealii.add(alpha, spatial_hi);
+      spatial_eval = spatial_lo;
+      spatial_eval *= (1. - alpha);
+      spatial_eval.add(alpha, spatial_hi);
 
       assembler.set_time(t);
-      assembler.residual_variables(variable_dy_dealii, variable_y_dealii, spatial_y_dealii);
-
-      if (!std::isfinite(variable_dy_dealii.l2_norm()))
-        throw std::runtime_error("TimeStepperBoostRK_impl::run_vars: dy is not finite!");
-
-      dealii_to_eigen(variable_dy_dealii, dxdt);
-      dxdt *= -1;
+      evaluate_variable_rhs(x, dxdt);
+      if (!dxdt.allFinite()) throw std::runtime_error("TimeStepperBoostRK_impl::run_vars: dy is not finite!");
 
       this->log.progress({.topic = progress_topics::explicit_residual,
                           .time = t,
@@ -143,7 +168,7 @@ namespace DiFfRG
     // dt_variables evaluation cadence at the explicit timescale even when IDA collapses
     // its dt to << cur_dt at marginal points.
     double t_pending = t_start;
-    dealii::Vector<double> spatial_pending(spatial_y.size());
+    VectorType spatial_pending = spatial_y;
     // End time of the IDA trial step the controller is currently solving. A later
     // request at a strictly larger time means that trial step was accepted (the trial's
     // converged spatial state is then transferred to spatial_pending); a request at a
@@ -195,15 +220,9 @@ namespace DiFfRG
       }
       const std::size_t N = variable_buffer.size();
       if (N == 0) return;
-      eigen_to_dealii(variable_buffer[N - 1], variable_y_dealii);
-      variable_dy_dealii = 0;
-      spatial_y_dealii = spatial_lo;
+      spatial_eval = spatial_lo;
       assembler.set_time(t_committed);
-      assembler.residual_variables(variable_dy_dealii, variable_y_dealii, spatial_y_dealii);
-      if (dv_committed.size() != static_cast<Eigen::Index>(variable_dy_dealii.size()))
-        dv_committed.resize(variable_dy_dealii.size());
-      dealii_to_eigen(variable_dy_dealii, dv_committed);
-      dv_committed *= -1.;
+      evaluate_variable_rhs(variable_buffer[N - 1], dv_committed);
     };
 
     // Quadratic predictor at time t. Falls back to linear before the first d2v
@@ -225,7 +244,7 @@ namespace DiFfRG
     // and `accepted_spatial` (at `t`), both of which are converged values, so the
     // explicit integration sees a faithful spatial trajectory and never speculative
     // intermediate Newton iterates. Sub-steps are never allowed to overshoot t.
-    auto commit_segment_to = [&](const dealii::Vector<double> &accepted_spatial, const double t) {
+    auto commit_segment_to = [&](const VectorType &accepted_spatial, const double t) {
       spatial_hi = accepted_spatial;
       spatial_hi_time = t;
       // spatial_lo / spatial_lo_time were left at the previous committed point and are
@@ -267,7 +286,7 @@ namespace DiFfRG
     auto request_variables = [&](VectorType &variable_y, const VectorType &spatial_y, const double t) {
       if (variable_buffer.empty()) {
         // Initialise at t = t_start; the initial condition is by construction accepted.
-        variable_y = initial_data.block(1);
+        variable_y = initial_variables;
         dealii_to_eigen(variable_y, variable_sol);
         variable_buffer.push_back(variable_sol);
         variable_buffer_times.push_back(t);
@@ -343,6 +362,12 @@ namespace DiFfRG
     residual_placeholder *= 0.;
     VectorType *residual = &residual_placeholder;
 
+    // Replicated views of the state for the assembler and the output path: IDA's vectors hold only this rank's rows,
+    // while assembly and output read arbitrary dofs. See SolutionView and the same views in sundials_ida.cc.
+    SolutionView<VectorType> y_state, y_dot_state, sol_view, sol_dot_view, residual_view;
+    for (auto *view : {&y_state, &y_dot_state, &sol_view, &sol_dot_view, &residual_view})
+      assembler.reinit_solution_view(*view);
+
     // Per-dof absolute tolerances, if the model sets them (def::HasAbsTolerances); see LocalAbsTolerances.
     LocalAbsTolerances<VectorType, SparseMatrixType, dim> local_tol(assembler, impl.abs_tol, impl.rel_tol,
                                                                     impl.local_tolerance_refresh);
@@ -356,7 +381,9 @@ namespace DiFfRG
     time_stepper.solver_should_restart = [&](const double t, VectorType &sol, VectorType &sol_dot) -> bool {
       if (adaptor(t, sol)) {
         assembler.reinit_vector(sol_dot);
-        spatial_jacobian.reinit(assembler.get_sparsity_pattern_jacobian());
+        assembler.reinit_matrix(spatial_jacobian);
+        for (auto *view : {&y_state, &y_dot_state, &sol_view, &sol_dot_view, &residual_view, &spatial_eval_view})
+          assembler.reinit_solution_view(*view);
         local_tol.init(sol);
         return true;
       }
@@ -368,12 +395,7 @@ namespace DiFfRG
       return false;
     };
 
-    time_stepper.differential_components = [&]() {
-      IndexSet dof_indices = assembler.get_differential_indices();
-      IndexSet differential_indices(n_FE_dofs);
-      differential_indices.add_indices(dof_indices.begin(), dof_indices.end());
-      return differential_indices;
-    };
+    time_stepper.differential_components = [&]() { return assembler.get_differential_indices(); };
 
     // Called whenever a vector needs to initalized
     time_stepper.reinit_vector = [&](VectorType &v) { assembler.reinit_vector(v); };
@@ -391,8 +413,13 @@ namespace DiFfRG
 
         commit_variables(variable_y, sol, t);
         assembler.set_time(t);
-        data_out.write_frame(
-            t, [&](auto &frame) { assembler.attach_data_output(frame, sol, variable_y, sol_dot, (*residual)); });
+        // Refreshed here, OUTSIDE write_frame: it runs its contributor on rank 0 only, and a refresh communicates.
+        sol_view.refresh(sol);
+        sol_dot_view.refresh(sol_dot);
+        residual_view.refresh(*residual);
+        data_out.write_frame(t, [&](auto &frame) {
+          assembler.attach_data_output(frame, sol_view.get(), variable_y, sol_dot_view.get(), residual_view.get());
+        });
 
         last_save = t;
       }
@@ -420,6 +447,7 @@ namespace DiFfRG
         return ++failure_counter;
       }
 
+      bool failed = false;
       try {
         res = 0;
         assembler.set_time(t);
@@ -428,12 +456,16 @@ namespace DiFfRG
         request_diagnostics.append_to(variables_event);
         this->log.progress(variables_event);
         request_variables(variable_y, y, t);
-        assembler.residual(res, y, 1., y_dot, 1., variable_y);
+        y_state.refresh(y);
+        y_dot_state.refresh(y_dot);
+        assembler.residual(res, y_state.get(), 1., y_dot_state.get(), 1., variable_y);
         residual = &res;
       } catch (std::exception &e) {
         callback_diagnostics.residual_exceptions++;
-        return ++failure_counter;
+        failed = true;
       }
+      // An exception is local to the rank that threw; agree before the next collective.
+      if (internal::agreed_ida_result(comm, failed) != 0) return ++failure_counter;
 
       if (!std::isfinite(res.l1_norm())) {
         callback_diagnostics.nonfinite_residual_failures++;
@@ -470,6 +502,7 @@ namespace DiFfRG
                                     matrix_diagnostics, factorization_diagnostics);
       };
 
+      bool failed = false;
       try {
         spatial_jacobian = 0;
         assembler.set_time(t);
@@ -478,7 +511,9 @@ namespace DiFfRG
         request_diagnostics.append_to(variables_event);
         this->log.progress(variables_event);
         request_variables(variable_y, y, t);
-        assembler.jacobian(spatial_jacobian, y, 1., y_dot, alpha, 1., variable_y);
+        y_state.refresh(y);
+        y_dot_state.refresh(y_dot);
+        assembler.jacobian(spatial_jacobian, y_state.get(), 1., y_dot_state.get(), alpha, 1., variable_y);
         if (jacobian_diagnostics_enabled) matrix_diagnostics = analyze_jacobian_matrix(spatial_jacobian);
         linSolver.init(spatial_jacobian);
 
@@ -506,8 +541,9 @@ namespace DiFfRG
             factorization_diagnostics.factorization_success = 0.;
         record_diagnostics();
         callback_diagnostics.jacobian_failures++;
-        return ++failure_counter;
+        failed = true;
       }
+      if (internal::agreed_ida_result(comm, failed) != 0) return ++failure_counter;
 
       failure_counter = 0;
       return 0;
@@ -516,6 +552,7 @@ namespace DiFfRG
     // Solve the linear system J dst = src
     time_stepper.solve_with_jacobian = [&](const VectorType &src, VectorType &dst, const double tol) -> int {
       CalcDtTimer calc_timer;
+      bool failed = false;
       try {
         const auto sol_iterations = linSolver.solve(src, dst, tol);
         // A direct solver reports no iterations (-1), but its time counts all the same.
@@ -529,8 +566,9 @@ namespace DiFfRG
         this->log.progress(solve_event);
       } catch (std::exception &) {
         callback_diagnostics.linear_solver_failures++;
-        return ++failure_counter;
+        failed = true;
       }
+      if (internal::agreed_ida_result(comm, failed) != 0) return ++failure_counter;
       return 0;
     };
 
@@ -544,7 +582,10 @@ namespace DiFfRG
     }
 
     initial_data.block(0) = spatial_y;
-    commit_variables(initial_data.block(1), spatial_y, t_stop);
+    commit_variables(variable_y, spatial_y, t_stop);
+    VectorType variables_scratch;
+    reinit_local_variables_vector(variables_scratch, n_vars);
+    compute_variables_into(initial_data.block(1), variables_scratch, [&](VectorType &out) { out = variable_y; });
     this->drain_output();
   }
 } // namespace DiFfRG
@@ -632,3 +673,51 @@ template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostRK_impl<dealii::Vector<doubl
                                                             2, DiFfRG::DefaultLinearSolver, 1>;
 template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostRK_impl<dealii::Vector<double>, dealii::BlockSparseMatrix<double>,
                                                             3, DiFfRG::DefaultLinearSolver, 1>;
+
+// ##############################################################################
+// Distributed (PETSc-backed) instantiations
+// ##############################################################################
+//
+// An MPI build's default mesh is partitioned and its default linear algebra is PETSc-backed, so
+// TimeStepper<Assembler> resolves here. IDA advances the distributed spatial block; the explicit
+// variables are small and integrated redundantly on every rank (see evaluate_variable_rhs).
+#ifdef DEAL_II_WITH_PETSC
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostRK_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 1, DiFfRG::PETScKrylov, 0>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostRK_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 2, DiFfRG::PETScKrylov, 0>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostRK_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 3, DiFfRG::PETScKrylov, 0>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostRK_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 1, DiFfRG::PETScKrylov, 1>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostRK_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 2, DiFfRG::PETScKrylov, 1>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostRK_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 3, DiFfRG::PETScKrylov, 1>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostRK_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 1, DiFfRG::DefaultLinearSolver, 0>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostRK_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 2, DiFfRG::DefaultLinearSolver, 0>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostRK_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 3, DiFfRG::DefaultLinearSolver, 0>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostRK_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 1, DiFfRG::DefaultLinearSolver, 1>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostRK_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 2, DiFfRG::DefaultLinearSolver, 1>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostRK_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 3, DiFfRG::DefaultLinearSolver, 1>;
+#ifdef DEAL_II_PETSC_WITH_MUMPS
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostRK_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 1, DiFfRG::PETScDirect, 0>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostRK_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 2, DiFfRG::PETScDirect, 0>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostRK_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 3, DiFfRG::PETScDirect, 0>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostRK_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 1, DiFfRG::PETScDirect, 1>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostRK_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 2, DiFfRG::PETScDirect, 1>;
+template class DiFfRG::TimeStepperSUNDIALS_IDA_BoostRK_impl<
+    dealii::PETScWrappers::MPI::Vector, dealii::PETScWrappers::MPI::SparseMatrix, 3, DiFfRG::PETScDirect, 1>;
+#endif
+#endif

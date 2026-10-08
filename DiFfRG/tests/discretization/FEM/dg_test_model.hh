@@ -237,7 +237,9 @@ namespace dg_test
   template <uint dim, bool derivatives, bool batched, bool hessians, bool extractors, NumFlux numflux = NumFlux::llf>
   struct Setup {
     using Model = dg_test::Model<dim, batched, hessians, extractors, numflux, derivatives>;
-    using Discretization = DG::Discretization<Model, RectangularMesh<dim>>;
+    // Serial linear algebra (plain-assembly comparisons, serial sparsity pattern): a plain
+    // RectangularMesh is partitioned in an MPI build, which would select PETSc types.
+    using Discretization = DG::Discretization<Model, RectangularMeshSerial<dim>>;
     using Assembler = DG::Assembler<Discretization>;
     using VectorType = typename Discretization::VectorType;
     using SparseMatrixType = typename Discretization::SparseMatrixType;
@@ -278,7 +280,7 @@ namespace dg_test
 
     ConfigTree config;
     Model model;
-    RectangularMesh<dim> mesh;
+    RectangularMeshSerial<dim> mesh;
     Discretization discretization;
     Assembler assembler;
     FE::FlowingVariables<Discretization> state;

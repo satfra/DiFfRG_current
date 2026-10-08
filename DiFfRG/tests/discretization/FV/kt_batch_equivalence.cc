@@ -183,13 +183,14 @@ namespace
   /// One KT assembler on its own mesh, with a nonsmooth state (so the limiter is active somewhere).
   template <uint dim, bool batched> struct Setup {
     using M = Model<dim, batched>;
-    using Discretization = FV::Discretization<M, RectangularMesh<dim>, double>;
+    // Serial on purpose: this tests serial linear algebra, and a plain RectangularMesh is partitioned in an MPI build.
+    using Discretization = FV::Discretization<M, RectangularMeshSerial<dim>, double>;
     using Assembler = FV::KurganovTadmor::Assembler<Discretization, M>;
     using VectorType = typename Discretization::VectorType;
 
     ConfigTree config;
     M model;
-    RectangularMesh<dim> mesh;
+    RectangularMeshSerial<dim> mesh;
     Discretization discretization;
     Assembler assembler;
     VectorType u, u_dot;
@@ -265,17 +266,22 @@ TEST_CASE("A model's own evaluate_batch matches the per-point default under KT",
   }
 }
 
+// Grouping and thread count must not change the result beyond rounding. Not bitwise: under -ffast-math the
+// compiler handles a loop's vector body and its remainder differently (e.g. vectorised libm calls), and both
+// knobs move points between the two, which shows up as a few ulps on some compilers and -march targets.
+constexpr double rounding_tol = 1e-14;
+
 // A bound far below one stack splits every AD evaluation into many groups, each a separate call.
 TEST_CASE("The KT stacking bound does not change the assembly", "[FV][KT][batch]")
 {
   DiFfRG::Init();
   Setup<2, false> grouped("0:0.125:1", 7);
   Setup<2, false> whole("0:0.125:1");
-  require_same_assembly(grouped, whole, 0.);
+  require_same_assembly(grouped, whole, rounding_tol);
 }
 
 // Thousands of points, so that every phase really runs on many threads. The result must not depend on the
-// thread count at all.
+// thread count beyond rounding.
 TEST_CASE("KT assembly does not depend on the thread count", "[FV][KT][batch]")
 {
   DiFfRG::Init();
@@ -292,8 +298,8 @@ TEST_CASE("KT assembly does not depend on the thread count", "[FV][KT][batch]")
   auto deviation = r_all;
   deviation -= r_one;
   REQUIRE(max_abs(r_all) > 0.);
-  REQUIRE(max_abs(deviation) == 0.);
+  REQUIRE(max_abs(deviation) <= rounding_tol * max_abs(r_all));
   const auto [worst, scale] = matrix_deviation(J_all, J_one);
   REQUIRE(scale > 0.);
-  REQUIRE(worst == 0.);
+  REQUIRE(worst <= rounding_tol * scale);
 }

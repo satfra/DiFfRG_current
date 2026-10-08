@@ -126,14 +126,9 @@ namespace DiFfRG
     };
     template <typename A> using point_arg_value_t = typename point_arg_value<std::remove_cvref_t<A>>::type;
 
+    // get_type::single_precision, extended to the integrators' autodiff scalars
     template <typename T> struct _single_precision {
-      using value = T;
-    };
-    template <> struct _single_precision<double> {
-      using value = float;
-    };
-    template <> struct _single_precision<complex<double>> {
-      using value = complex<float>;
+      using value = get_type::single_precision<T>;
     };
     template <size_t N> struct _single_precision<autodiff::Real<N, double>> {
       using value = autodiff::Real<N, float>;
