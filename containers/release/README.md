@@ -5,9 +5,8 @@ bundles that `install-diffrg-deps.sh` (repo root) installs for users: a
 relocatable tarball of the full superbuild output (`bundled/`) attached to a
 GitHub Release under a `deps-v<X.Y.Z>` tag.
 
-This is distinct from `containers/ci/`, which bakes the same dependency tree
-into a GHCR **container image** for CI, pinned to the CI distro's system
-libraries. The release bundle instead force-bundles Boost/TBB/HDF5/SUNDIALS
+CI builds and tests the library against these same bundles (see
+`containers/ci/README.md`). A bundle force-bundles Boost/TBB/HDF5/SUNDIALS
 (`-DBUILD_*=ON`), is compiled for the portable `x86-64-v3` ISA baseline
 (`-DMARCH=x86-64-v3`), is built on Rocky 9 for a glibc 2.34 floor, and is
 post-processed to be relocatable to any install prefix.
@@ -40,12 +39,23 @@ containers/release/test-tarball.sh -f containers/release/dist/diffrg-deps-1.0.0-
 containers/release/publish-release.sh -v 1.0.0
 ```
 
+Other variants take `-V <variant>` in `build-release.sh` and
+`publish-release.sh` (which then adds them to the existing release), and their
+flags in `test-tarball.sh` (`-g` for CUDA, `-m` for Open MPI). In CI the
+`mpi` input of both Linux workflows selects the `-openmpi` variant.
+
 ## Versioning
 
 Bundle versions are their own `deps-vX.Y.Z` counter, independent of the DiFfRG
 version (one bundle serves many DiFfRG commits; the manifest inside records the
 exact git SHA it was built from). Bump the patch level for a rebuild, minor for
 a dependency version bump, major for a deal.II/Boost/Kokkos major change.
+
+The manifest also records `deps_inputs_hash` (`deps-inputs-hash.sh`), the hash
+of everything that variant is built from. CI uses the release pinned in
+`.github/deps-bundle-version` while that hash matches the checkout, and builds
+its own bundle otherwise -- so after publishing a bundle for new dependency
+inputs, bump the pin.
 
 ## What makes the tarball relocatable
 
@@ -74,17 +84,15 @@ libraries' dev packages.
 
 ## Variants
 
-The full set is `cpu` and `cuda12` (plus the experimental macOS build). There
-are deliberately **no MPI variants**, now or planned: MPI's audience is
-clusters, and a cluster build must link the site's fabric- and
-Slurm-integrated MPI -- that is inherently a source build (the wizard's
-self-build path with `-DMPI=ON`).
+The full set is `cpu` and `cuda12`, each also as an Open MPI build
+(`cpu-openmpi`, `cuda12-openmpi`), plus the experimental macOS build.
 
 - **cpu** (`linux-x86_64-v3-cpu`): the baseline, described above.
 - **cuda12** (`linux-x86_64-v3-cuda12`, `build-release.sh -V ...`): CUDA-enabled
-  Kokkos at the sm_80/Ampere floor -- Kokkos allows exactly one CUDA arch per
-  build, and sm_80 embeds compute_80 PTX so every newer GPU runs via JIT
-  (cached after first launch). Consumers need the CUDA 12 toolkit anyway (their
+  Kokkos at the sm_75/Turing floor -- Kokkos allows exactly one CUDA arch per
+  build, and sm_75 embeds compute_75 PTX so every newer GPU runs the bundle's
+  own kernels via JIT (cached after first launch); libDiFfRG and applications
+  compile for the local GPU through `DiFfRG_CUDA_ARCH`. Consumers need the CUDA 12 toolkit anyway (their
   apps compile device code), so the bundle resolves the host's libcudart. The
   host compiler must be **GCC 12 or >= 14** (never 13: nvcc's frontend
   miscompiles GCC 13's libstdc++ in C++20 mode -- the `iterator_traits<char*>`
@@ -94,5 +102,32 @@ self-build path with `-DMPI=ON`).
   any C++20 compiler, GCC >= 12, works.
   GPU-executed validation needs a GPU host: `test-tarball.sh -g` (uses the
   `*-cuda` test images; CI does build-only).
+- **openmpi** (`<cpu|cuda12>-openmpi`, `build-release.sh -V linux-x86_64-v3-cpu-openmpi`):
+  the superbuild's `MPI=ON` configuration -- MPI-enabled deal.II and SUNDIALS
+  plus PETSc with hypre and MUMPS -- linked against EL9's Open MPI 4.1. Open
+  MPI itself is not bundled: consumers compile with the host's `mpicc` anyway,
+  and need Open MPI's development package (`libopenmpi-dev openmpi-bin`,
+  `openmpi-devel` + `module load mpi/openmpi-x86_64`, `openmpi`). Every Open
+  MPI library the bundle links (`libmpi`, `libmpi_mpifh`, `libmpi_usempif08`,
+  `libmpi_usempi_ignore_tkr`) keeps soname `.40` from 4.x through 5.x, so 4.1
+  is the floor and newer hosts work; a hard audit rejects any other Open MPI
+  library (`libmpi_cxx`, `libopen-pal`, ...), which is renamed or gone on one
+  side. Open MPI keeps the C ABI from 4.x to 5.0, but PETSc's `petscsys.h`
+  refuses any newer Open MPI major at compile time; postprocessing removes
+  exactly that check (a host *older* than the build's 4.1.1 is still refused).
+  EL9's 4.1 wrappers are also stripped of the MPI-2 C++ bindings
+  (`-lmpi_cxx`, which Open MPI 5 dropped) before the superbuild sees them.
+  Two deal.II patches matter here (`patches/`): `mumps-parmetis` makes
+  deal.II's MUMPS interface list ParMETIS and the Fortran runtime after
+  PETSc's *static* MUMPS archives (Debian/Ubuntu link `--as-needed` and fail
+  otherwise), and `vector-pool-teardown` stops a PETSc run from segfaulting
+  at exit after `DiFfRG::Init()`. The installer rewrites the recorded `/usr/lib64/openmpi` paths to the
+  host's Open MPI, and a library build picks MPI up from the bundle's pin file
+  without `-DMPI=ON`. Other MPIs (Intel MPI, Cray MPICH, MVAPICH -- i.e. most
+  clusters with a fabric- and Slurm-integrated site MPI) are ABI-incompatible
+  and stay a source build (the wizard's self-build path with MPI on).
+  Validate with `test-tarball.sh -m` (adds `-g` for the CUDA one): the distro
+  matrix covers Open MPI 4.1 (Ubuntu 24.04, Rocky 9) and 5.x (Debian 13,
+  Fedora 41), and ctest includes the multi-rank `mpi`-labelled tests.
 - **macOS arm64** (`macos-arm64-cpu.sh`): experimental, see above; no `-march`
   pinning needed (all M-series share Apple clang's arm64 baseline).

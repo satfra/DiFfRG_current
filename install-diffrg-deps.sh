@@ -15,6 +15,8 @@
 #   --prefix DIR      install prefix (default: $HOME/.local/share/DiFfRG; env FOLDER)
 #   --version X.Y.Z   bundle version (default: latest deps-v* release)
 #   --variant NAME    bundle variant (default: auto-detected, linux-x86_64-v3-cpu)
+#   --mpi             the Open MPI variant of the (default or given) bundle,
+#                     e.g. linux-x86_64-v3-cpu-openmpi; needs Open MPI on the host
 #   --file TARBALL    install from a local tarball instead of downloading
 #   --force           replace an existing <prefix>/bundled tree
 #   --skip-cpu-check  do not gate on x86-64-v3 CPU support (the binaries will
@@ -23,9 +25,10 @@
 #                     running inside a DiFfRG checkout)
 #   -h, --help        this text
 #
-# For CPUs without AVX2 (pre-2013), MPI builds, or any other configuration
-# the binary bundles do not cover, use the self-build path instead:
-# install_diffrg.sh --mode source (in the same repository).
+# For CPUs without AVX2 (pre-2013), an MPI other than Open MPI (Intel MPI,
+# Cray MPICH, MVAPICH, ...), or any other configuration the binary bundles do
+# not cover, use the self-build path instead: install_diffrg.sh --mode source
+# (in the same repository).
 # ##############################################################################
 set -euo pipefail
 
@@ -42,6 +45,8 @@ Options:
   --prefix DIR      install prefix (default: $HOME/.local/share/DiFfRG; env FOLDER)
   --version X.Y.Z   bundle version (default: latest deps-v* release)
   --variant NAME    bundle variant (default: auto-detected, linux-x86_64-v3-cpu)
+  --mpi             the Open MPI variant of the bundle (e.g. linux-x86_64-v3-cpu-openmpi);
+                    needs Open MPI's development package on this machine
   --file TARBALL    install from a local tarball instead of downloading
   --force           replace an existing <prefix>/bundled tree
   --skip-cpu-check  do not gate on x86-64-v3 CPU support
@@ -49,8 +54,8 @@ Options:
                     running inside a DiFfRG checkout)
   -h, --help        this text
 
-For CPUs without AVX2 (pre-2013), MPI builds, or any other configuration
-the binary bundles do not cover, use the self-build path instead:
+For CPUs without AVX2 (pre-2013), an MPI other than Open MPI, or any other
+configuration the binary bundles do not cover, use the self-build path instead:
 install_diffrg.sh --mode source (in the same repository).
 EOF
 }
@@ -78,6 +83,7 @@ sha256_verify() { # <checksum-file> (run from its directory)
 prefix="${FOLDER:-$HOME/.local/share/DiFfRG}"
 version=''
 variant=''
+want_mpi=0
 tarball=''
 force=0
 skip_cpu_check=0
@@ -88,6 +94,7 @@ while [[ $# -gt 0 ]]; do
   --prefix) prefix="$2"; shift 2 ;;
   --version) version="$2"; shift 2 ;;
   --variant) variant="$2"; shift 2 ;;
+  --mpi) want_mpi=1; shift ;;
   --file) tarball="$2"; shift 2 ;;
   --force) force=1; shift ;;
   --skip-cpu-check) skip_cpu_check=1; shift ;;
@@ -113,6 +120,10 @@ esac
   || err "Pre-built bundles exist for Linux x86_64 and macOS arm64 only ($(uname -s) $(uname -m) detected). Use install_diffrg.sh --mode source to build from source."
 
 [[ -z $variant ]] && variant="$DEFAULT_VARIANT"
+if [[ $want_mpi -eq 1 && $variant != *-openmpi ]]; then
+  [[ ${os_name} == Linux ]] || err "MPI bundles exist for Linux only. Use install_diffrg.sh --mode source."
+  variant="${variant}-openmpi"
+fi
 if [[ $skip_cpu_check -eq 0 && ${os_name} == Linux ]]; then
   # The v3 bundles need AVX2/FMA (any consumer CPU from ~2013 on). Prefer the
   # authoritative glibc probe; fall back to /proc/cpuinfo flags.
@@ -176,6 +187,15 @@ srcdir="$(find "$workdir" -maxdepth 1 -type d -name 'diffrg-deps-*' | head -1)"
 
 manifest="$srcdir/bundled/BUNDLE_MANIFEST.json"
 [[ -f $manifest ]] || err "Bundle has no BUNDLE_MANIFEST.json."
+# The bundle names its own variant; it is what the checks below must follow
+# (a --file install would otherwise be checked as the platform default).
+bundle_name="$(grep -oE '"name": *"[^"]*"' "$manifest" | sed -E 's/.*: *"([^"]*)"/\1/' || true)"
+bundle_variant="$(sed -E 's/^diffrg-deps-[0-9]+\.[0-9]+\.[0-9]+-//' <<<"$bundle_name")"
+if [[ -n $bundle_variant && $bundle_variant != "$variant" ]]; then
+  [[ -n $tarball && $want_mpi -eq 0 && $variant == "$DEFAULT_VARIANT" ]] \
+    || warn "Requested variant '$variant', but the tarball is '$bundle_variant'; using the tarball's."
+  variant="$bundle_variant"
+fi
 if [[ ${os_name} == Linux ]]; then
   glibc_floor="$(grep -oE '"glibc_floor": *"[0-9.]+"' "$manifest" | grep -oE '[0-9.]+' || echo '')"
   if [[ -n $glibc_floor ]]; then
@@ -287,6 +307,50 @@ a CUDA 12 toolkit is installed."
   fi
 fi
 
+# MPI variants record the builder's Open MPI (EL9 layout, /usr/lib64/openmpi)
+# by absolute path in deal.II's and PETSc's configs; point them at this
+# machine's Open MPI, located through its mpicc wrapper. Distros differ: e.g.
+# Debian's lives in /usr/lib/x86_64-linux-gnu/openmpi/{lib,include}, Arch's in
+# /usr/lib and /usr/include, where the wrapper reports no libdir at all.
+mpi_missing=''
+builder_mpi_libdir="$(manifest_field builder_mpi_libdir)"
+host_mpi_libdir=''
+if [[ -n $builder_mpi_libdir ]]; then
+  host_mpicc="${MPICC:-mpicc}"
+  # EL/Fedora keep Open MPI off PATH until `module load mpi/openmpi-x86_64`.
+  if ! command -v "$host_mpicc" >/dev/null 2>&1 && [[ -z ${MPICC:-} && -x /usr/lib64/openmpi/bin/mpicc ]]; then
+    host_mpicc=/usr/lib64/openmpi/bin/mpicc
+  fi
+  host_mpi_version="$("$host_mpicc" --showme:version 2>&1 || true)"
+  host_mpi_version="${host_mpi_version%%$'\n'*}"
+  if [[ $host_mpi_version == *"Open MPI"* ]]; then
+    for d in $("$host_mpicc" --showme:libdirs) /usr/lib /usr/lib64 /usr/lib/x86_64-linux-gnu; do
+      if [[ -e $d/libmpi.so ]]; then host_mpi_libdir="$d"; break; fi
+    done
+    host_mpi_incdir=''
+    for d in $("$host_mpicc" --showme:incdirs) /usr/include; do
+      if [[ -e $d/mpi.h ]]; then host_mpi_incdir="$d"; break; fi
+    done
+    if [[ -n $host_mpi_libdir && -n $host_mpi_incdir ]]; then
+      rewrite_bundle_path "$builder_mpi_libdir" "$host_mpi_libdir"
+      rewrite_bundle_path "$(manifest_field builder_mpi_incdir)" "$host_mpi_incdir"
+      rewrite_bundle_path "$(manifest_field builder_mpi_bindir)" "$(dirname "$(command -v "$host_mpicc")")"
+      info "Open MPI paths point at $host_mpi_libdir ($host_mpi_version)"
+    else
+      host_mpi_libdir=''
+      mpi_missing="'$host_mpicc' is Open MPI, but its libmpi.so or mpi.h was not found -- is the development package installed?"
+    fi
+  elif command -v "$host_mpicc" >/dev/null 2>&1; then
+    mpi_missing="'$host_mpicc' is not Open MPI ($host_mpi_version); this bundle needs Open MPI >= 4.1. Other MPIs need a self-build (install_diffrg.sh --mode source)."
+  else
+    mpi_missing="Open MPI >= 4.1 with its development files and 'mpicc' on PATH (package 'libopenmpi-dev openmpi-bin' / 'openmpi-devel' + 'module load mpi/openmpi-x86_64' on EL/Fedora / 'openmpi' on Arch)"
+  fi
+  if [[ -n $mpi_missing ]]; then
+    warn "The bundle's Open MPI paths were left at the build machine's $builder_mpi_libdir.
+Install Open MPI and re-run this installer with --force before building DiFfRG."
+  fi
+fi
+
 cat > "$prefix/bundled/INSTALL_RECEIPT.json" <<EOF
 {
   "installed_to": "${prefix}",
@@ -334,6 +398,28 @@ compiler is recorded into the bundle), then configure DiFfRG with
   fi
 fi
 
+# MPI bundles link the Fortran runtime (PETSc's MUMPS) through the C++
+# compiler, which only searches its own GCC version's directories: g++-14 with
+# only the distro's default gfortran-13 installed finds no libgfortran.so.
+if [[ -n $builder_mpi_libdir ]]; then
+  cxx_bin="${CXX:-c++}"
+  gfortran_lib="$("$cxx_bin" -print-file-name=libgfortran.so 2>/dev/null || true)"
+  if [[ $gfortran_lib != /* ]]; then
+    cxx_major="$("$cxx_bin" -dumpversion 2>/dev/null | cut -d. -f1 || true)"
+    missing+=("the Fortran runtime for '$cxx_bin' (libgfortran.so; install the gfortran matching it, e.g. 'gfortran-${cxx_major:-N}')")
+  fi
+fi
+
+# deal.II links Open MPI's libraries by path, including the Fortran ones some
+# distros split into a separate package; each must exist on this machine.
+if [[ -n $mpi_missing ]]; then
+  missing+=("$mpi_missing")
+elif [[ -n $host_mpi_libdir ]]; then
+  while IFS= read -r lib; do
+    [[ -e $lib ]] || missing+=("$lib (recorded by deal.II; part of the Open MPI development/Fortran packages)")
+  done < <(grep -ohE "${host_mpi_libdir}/libmpi[A-Za-z0-9_]*\.so" "$prefix"/bundled/lib/cmake/deal.II/deal.II*.cmake 2>/dev/null | sort -u || true)
+fi
+
 if [[ ${#missing[@]} -gt 0 ]]; then
   warn "The bundle is installed, but building DiFfRG will additionally need:"
   for m in "${missing[@]}"; do echo "  - $m" >&2; done
@@ -372,4 +458,10 @@ else
     echo "  The default -march=native is safe on this machine (its CPU is a superset"
     echo "  of the bundle's x86-64-v3 baseline)."
   fi
+fi
+if [[ -n $builder_mpi_libdir ]]; then
+  echo
+  echo "  MPI is enabled by the bundle (no -DMPI=ON needed). Launch applications with"
+  echo "  mpirun -n <ranks>; where Open MPI lives in a module (EL, Fedora), load it in"
+  echo "  every shell that builds or runs them: module load mpi/openmpi-x86_64"
 fi

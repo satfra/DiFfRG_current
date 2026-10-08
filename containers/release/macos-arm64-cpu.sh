@@ -62,6 +62,7 @@ cmake --build "${build_dir}" \
   -j "${threads}"
 
 GIT_SHA="$(git -C "${repo}" rev-parse HEAD 2>/dev/null || echo unknown)" \
+  DEPS_INPUTS_HASH="$(bash "${scriptpath}/deps-inputs-hash.sh" "${variant}" "${repo}")" \
   bash "${scriptpath}/postprocess-bundle-macos.sh" \
   /opt/diffrg/bundled "${repo}" "${version}" "${variant}" "${MACOSX_DEPLOYMENT_TARGET}"
 

@@ -12,7 +12,8 @@
 #   - pre-built dependency bundle (fast; Linux x86_64 with AVX2) or full
 #     self-build of the dependency superbuild,
 #   - install prefix and temporary build folder,
-#   - features for self-builds (MPI, GPU, MUMPS, documentation, -march),
+#   - features for self-builds (MPI, GPU, MUMPS, documentation, -march); the
+#     pre-built bundles come with or without GPU (CUDA) and MPI (Open MPI),
 #   - optional copy of the Examples/Tutorials and documentation sources.
 #
 # Every question can instead be answered with a flag for non-interactive use:
@@ -24,7 +25,7 @@
 #                              bundle; wizard offers the CUDA one when a GPU is found)
 #   --deps-file TARBALL        prebuilt: install from a local bundle tarball
 #   --threads N                build threads         (default 6)
-#   --mpi / --no-mpi           self-build: MPI support
+#   --mpi / --no-mpi           MPI support (prebuilt: the Open MPI bundle variant)
 #   --gpu / --no-gpu           self-build: GPU (CUDA) support
 #   --mumps / --no-mumps       self-build: PETSc MUMPS solver (default: follow MPI)
 #   --docs / --no-docs         build the documentation
@@ -57,7 +58,7 @@ complete installation. Flags for non-interactive use:
   --deps-variant NAME        prebuilt bundle variant (default: platform CPU bundle)
   --deps-file TARBALL        prebuilt: install from a local bundle tarball
   --threads N                build threads         (default 6)
-  --mpi / --no-mpi           self-build: MPI support
+  --mpi / --no-mpi           MPI support (prebuilt: the Open MPI bundle variant)
   --gpu / --no-gpu           self-build: GPU (CUDA) support
   --mumps / --no-mumps       self-build: PETSc MUMPS solver (default: follow MPI)
   --docs / --no-docs         build the documentation
@@ -113,6 +114,7 @@ deps_variant=''
 deps_file=''
 threads="${THREADS:-6}"
 opt_mpi=0
+mpi_given=0 # --mpi/--no-mpi decided it; otherwise the prebuilt wizard asks
 opt_gpu=2   # 2 = auto (on when nvcc is found)
 opt_mumps=2 # 2 = follow MPI
 opt_docs=0
@@ -155,11 +157,11 @@ while [[ $# -gt 0 ]]; do
     shift 2
     ;;
   --mpi)
-    opt_mpi=1
+    opt_mpi=1 mpi_given=1
     shift
     ;;
   --no-mpi)
-    opt_mpi=0
+    opt_mpi=0 mpi_given=1
     shift
     ;;
   --gpu)
@@ -472,7 +474,7 @@ ask build_dir "Temporary build folder" "${build_dir}"
 case "${prefix}" in /*) ;; *) prefix="$(pwd)/${prefix}" ;; esac
 case "${build_dir}" in /*) ;; *) build_dir="$(pwd)/${build_dir}" ;; esac
 
-# With an NVIDIA GPU present, offer the CUDA bundle (Ampere/sm_80 or newer;
+# With an NVIDIA GPU present, offer the CUDA bundle (Turing/sm_75 or newer;
 # needs the CUDA 12 toolkit installed to build applications).
 if [[ ${mode} == prebuilt && -z ${deps_variant} && -z ${deps_file} && "$(uname -s)" == Linux ]] &&
   command -v nvidia-smi >/dev/null 2>&1; then
@@ -480,6 +482,30 @@ if [[ ${mode} == prebuilt && -z ${deps_variant} && -z ${deps_file} && "$(uname -
     "CPU bundle -- no GPU support" \
     "CUDA bundle -- GPU-enabled (Turing/RTX 20xx or newer; requires the CUDA >=12 toolkit)"
   [[ ${_c} -eq 1 ]] && deps_variant="linux-x86_64-v3-cuda12"
+fi
+
+# EL/Fedora keep Open MPI off PATH until `module load mpi/openmpi-x86_64`; put
+# it there for this run so the probe below and the library build both see it.
+if ! command -v mpicc >/dev/null 2>&1 && [[ -x /usr/lib64/openmpi/bin/mpicc ]]; then
+  export PATH="/usr/lib64/openmpi/bin:${PATH}"
+  export LD_LIBRARY_PATH="/usr/lib64/openmpi/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+fi
+
+# Both Linux bundles also come linked against Open MPI (with PETSc + MUMPS).
+# Default to it when this machine has Open MPI; never switch unasked.
+if [[ ${mode} == prebuilt && -z ${deps_file} && ${deps_variant} != *-openmpi && "$(uname -s)" == Linux &&
+  ${mpi_given} -eq 0 && ${interactive} -eq 1 ]]; then
+  if [[ "$(mpicc --showme:version 2>&1 || true)" == *"Open MPI"* ]]; then
+    choose _c "Open MPI was found -- which bundle?" \
+      "MPI bundle -- multi-process runs (Open MPI, PETSc, MUMPS)" \
+      "Single-process bundle -- no MPI"
+    [[ ${_c} -eq 0 ]] && opt_mpi=1
+  else
+    choose _c "Multi-process (MPI) support?" \
+      "No -- single-process bundle" \
+      "Yes -- Open MPI bundle (install your distro's Open MPI development package first)"
+    [[ ${_c} -eq 1 ]] && opt_mpi=1
+  fi
 fi
 
 if [[ ${mode} == prebuilt && -z ${deps_version} && -z ${deps_file} ]]; then
@@ -561,7 +587,7 @@ ask threads "Build threads" "${threads}"
 echo
 echo "  ---------------------------------------------"
 echo "   Mode:            ${mode}"
-[[ ${mode} == prebuilt ]] && echo "   Bundle:          ${deps_file:-deps-v${deps_version}} (${deps_variant:-platform default})"
+[[ ${mode} == prebuilt ]] && echo "   Bundle:          ${deps_file:-deps-v${deps_version}} (${deps_variant:-platform default}$([[ -z ${deps_file} && ${opt_mpi} -eq 1 && ${deps_variant} != *-openmpi ]] && echo ", Open MPI"))"
 if [[ ${mode} == source ]]; then
   echo "   MPI:             $([[ ${opt_mpi} -eq 1 ]] && echo on || echo off)"
   echo "   GPU (CUDA):      $([[ ${opt_gpu} -eq 1 ]] && echo on || echo off)"
@@ -616,6 +642,8 @@ if [[ ${mode} == prebuilt ]]; then
   info "Installing the pre-built dependency bundle..."
   variant_arg=''
   [[ -n ${deps_variant} ]] && variant_arg="--variant ${deps_variant}"
+  # A local tarball is whatever variant it is; --mpi only selects downloads.
+  [[ -z ${deps_file} && ${opt_mpi} -eq 1 ]] && variant_arg="${variant_arg} --mpi"
   if [[ -n ${deps_file} ]]; then
     bash "${src}/install-diffrg-deps.sh" --file "${deps_file}" --prefix "${prefix}" ${variant_arg} ${force_arg}
   else

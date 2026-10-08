@@ -9,10 +9,14 @@
 #
 # Usage: build-release.sh -v <bundle_version> [-V <variant>] [-j <threads>] [-o <outdir>]
 #   -v <version>  bundle version, e.g. 1.0.0 (required; becomes the deps-v<version> tag)
-#   -V <variant>  bundle variant with a <variant>.Dockerfile in this directory
-#                 (default: linux-x86_64-v3-cpu; also: linux-x86_64-v3-cuda12)
+#   -V <variant>  bundle variant: <base>[-openmpi], where <base> has a
+#                 <base>.Dockerfile in this directory (default: linux-x86_64-v3-cpu;
+#                 also linux-x86_64-v3-cuda12 and the -openmpi variants of both)
 #   -j <threads>  build threads (default: 6 -- deal.II TUs are RAM-hungry)
 #   -o <outdir>   where to place the tarball (default: containers/release/dist)
+#
+# DOCKER_NETWORK=host builds on the host network -- needed where a VPN client
+# blocks docker's bridge network (downloads then fail with DNS errors).
 #
 # Test the result with containers/release/test-tarball.sh, publish it with
 # containers/release/publish-release.sh.
@@ -43,8 +47,14 @@ while getopts v:V:j:o: flag; do
   esac
 done
 
-[[ -f "${scriptpath}/${variant}.Dockerfile" ]] \
-  || { echo "Unknown variant '${variant}' (no ${scriptpath}/${variant}.Dockerfile)" >&2; exit 1; }
+# An MPI suffix selects the base variant's Dockerfile with its mpi build arg.
+base="${variant}"
+mpi=none
+case "${variant}" in
+*-openmpi) base="${variant%-openmpi}" mpi=openmpi ;;
+esac
+[[ -f "${scriptpath}/${base}.Dockerfile" ]] \
+  || { echo "Unknown variant '${variant}' (no ${scriptpath}/${base}.Dockerfile)" >&2; exit 1; }
 
 if [[ -z ${version} ]]; then
   echo "A bundle version is required: build-release.sh -v 1.0.0" >&2
@@ -60,11 +70,14 @@ image="diffrg-deps-release:${version}-${variant}"
 
 echo "Building ${name}.tar.zst with ${threads} threads (context: ${repo})"
 docker buildx build --load \
+  --network "${DOCKER_NETWORK:-default}" \
   -t "${image}" \
-  -f "${scriptpath}/${variant}.Dockerfile" \
+  -f "${scriptpath}/${base}.Dockerfile" \
+  --build-arg "mpi=${mpi}" \
   --build-arg "threads=${threads}" \
   --build-arg "bundle_version=${version}" \
   --build-arg "git_sha=$(git -C "${repo}" rev-parse HEAD 2>/dev/null || echo unknown)" \
+  --build-arg "deps_inputs_hash=$(bash "${scriptpath}/deps-inputs-hash.sh" "${variant}" "${repo}")" \
   --progress=plain \
   "${repo}"
 

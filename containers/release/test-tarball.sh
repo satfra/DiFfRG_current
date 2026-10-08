@@ -9,11 +9,12 @@
 #      logic, relocation fixups, verify_install),
 #   2. audit linkage of the relocated bundle,
 #   3. build the DiFfRG library + tests against it,
-#   4. run the quick test suite (skipped when the host CPU lacks x86-64-v3),
+#   4. run the quick test suite (skipped when the host CPU lacks x86-64-v3;
+#      for MPI bundles this includes the multi-rank `mpi`-labelled tests),
 #   5. install the tarball a SECOND time at another prefix and check no
 #      build-prefix references survive (move-prefix/relocatability test).
 #
-# Usage: test-tarball.sh -f <tarball> [-j <threads>] [-d <distro>[,<distro>...]] [-s] [-g]
+# Usage: test-tarball.sh -f <tarball> [-j <threads>] [-d <distro>[,<distro>...]] [-s] [-g] [-m]
 #   -f <tarball>  the diffrg-deps-*.tar.zst to validate (required)
 #   -j <threads>  build threads inside each container (default: 6)
 #   -d <list>     comma-separated subset of: ubuntu24.04 debian13 fedora41 rockylinux9
@@ -22,6 +23,11 @@
 #   -g            CUDA bundle: use the -cuda test images, pass the host GPU
 #                 through (docker --gpus), allow CUDA libs in the linkage audit;
 #                 without a host GPU ctest is skipped automatically
+#   -m            MPI (Open MPI) bundle: install the distro's Open MPI in the
+#                 test images and allow it in the linkage audit
+#
+# DOCKER_NETWORK=host runs image builds and docker runs on the host network
+# (for hosts whose VPN client blocks docker's bridge network).
 #
 # On success writes <tarball>.tested (consumed by publish-release.sh).
 # Logs land in containers/release/logs/.
@@ -39,20 +45,26 @@ threads=6
 distros=''
 skip_tests=0
 gpu=0
+mpi=none
 
-while getopts f:j:d:sg flag; do
+while getopts f:j:d:sgm flag; do
   case "${flag}" in
   f) tarball=${OPTARG} ;;
   j) threads=${OPTARG} ;;
   d) distros="${OPTARG//,/ }" ;;
   s) skip_tests=1 ;;
   g) gpu=1 ;;
+  m) mpi=openmpi ;;
   *)
     echo "Unknown flag." >&2
     exit 1
     ;;
   esac
 done
+
+# The variant is in the tarball's name; follow it rather than trust the flags to match.
+case "$(basename "${tarball}")" in *-openmpi.tar.zst) mpi=openmpi ;; esac
+case "$(basename "${tarball}")" in *-cuda*) gpu=1 ;; esac
 
 if [[ -z ${distros} ]]; then
   # CUDA test images exist only where NVIDIA publishes devel bases.
@@ -103,7 +115,9 @@ run_in_image() { # <image> <bind>... -- <script>
     local -a args=()
     [[ ${gpu} -eq 1 && ${run_tests} -eq 1 ]] && args+=(--gpus all)
     for b in "${binds[@]}"; do args+=(-v "${b}"); done
-    docker run --rm -e "CHECK_LINKAGE_CUDA=${gpu}" "${args[@]}" "${image}" bash -lc "${script}"
+    # Open MPI's shared-memory transport needs more than docker's 64 MB /dev/shm.
+    [[ ${mpi} != none ]] && args+=(--shm-size=1g)
+    docker run --rm --network "${DOCKER_NETWORK:-default}" -e "CHECK_LINKAGE_CUDA=${gpu}" "${args[@]}" "${image}" bash -lc "${script}"
   fi
 }
 
@@ -116,12 +130,14 @@ for distro in ${distros}; do
     echo "Unknown distro '${distro}' (no ${dockerfile})" >&2
     exit 1
   }
-  image="diffrg-deps-release-test:${distro}"
-  log="${logdir}/${distro}.log"
+  tag="${distro}$([[ ${mpi} == none ]] || echo "-${mpi}")"
+  image="diffrg-deps-release-test:${tag}"
+  log="${logdir}/${tag}.log"
   workdir="$(mktemp -d)"
 
   echo "=== ${distro}: building test image..."
-  if ! docker buildx build --load -t "${image}" -f "${dockerfile}" "${repo}" >"${log}" 2>&1; then
+  if ! docker buildx build --load --network "${DOCKER_NETWORK:-default}" -t "${image}" -f "${dockerfile}" \
+    --build-arg "mpi=${mpi}" "${repo}" >"${log}" 2>&1; then
     results[${distro}]="FAIL (image build)"
     overall=1
     rm -rf "${workdir}"
@@ -137,6 +153,12 @@ for distro in ${distros}; do
   if run_in_image "${image}" \
     "${repo}:/src" "$(dirname "${tarball}"):/dist" "${workdir}:/work" -- "
       set -ex
+      # Docker runs as root, which Open MPI refuses without these; oversubscribe
+      # (4.x and 5.x spellings) so multi-rank tests run on small CI runners.
+      if [[ ${mpi} != none ]]; then
+        export CHECK_LINKAGE_MPI=1 OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1
+        export OMPI_MCA_rmaps_base_oversubscribe=1 PRTE_MCA_rmaps_default_mapping_policy=:oversubscribe
+      fi
       # CUDA bundles reference the driver's libcuda.so.1; without a GPU mounted
       # (build-only validation) satisfy the ldd audit with the toolkit's stub.
       # Register the stub's own directory with the loader rather than guessing
@@ -153,10 +175,14 @@ for distro in ${distros}; do
       bash /src/install-diffrg-deps.sh --file /dist/${tarname} \
           --prefix /work/diffrg --skip-cpu-check
       bash /src/containers/release/check-linkage.sh /work/diffrg/bundled
+      # No -DMPI: the library must pick it up from the bundle's pin.
       cmake -S /src/DiFfRG -B /work/build \
           -DCMAKE_BUILD_TYPE=Release \
           -DBUNDLED_DIR=/work/diffrg/bundled \
-          -DDiFfRG_TEST=ON -DDiFfRG_DOCUMENTATION=OFF -DMARCH=none
+          -DDiFfRG_TEST=ON -DDiFfRG_DOCUMENTATION=OFF -DMARCH=none >/work/configure.log 2>&1 \
+        || { cat /work/configure.log; exit 1; }
+      cat /work/configure.log
+      grep -q 'MPI support has been set to $([[ ${mpi} == none ]] && echo OFF || echo ON)' /work/configure.log
       cmake --build /work/build -j ${threads}
       ${ctest_step}
       # Move-prefix test: a second install at a different prefix must be just as
