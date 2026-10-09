@@ -1,1 +1,0 @@
-#include "lambda7.cu"

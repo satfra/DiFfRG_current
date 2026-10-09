@@ -1,1 +1,0 @@
-#include "lambda10.cu"
