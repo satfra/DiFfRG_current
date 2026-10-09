@@ -4,6 +4,7 @@
 #include <cmath>
 #include <fstream>
 #include <limits>
+#include <locale>
 #include <ostream>
 #include <sstream>
 #include <stdexcept>
@@ -98,12 +99,21 @@ namespace DiFfRG
       if (text.empty()) return nan_value;
     }
 
-    double value = nan_value;
-    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
-
     // Anything the parser could not consume in full is not a number, and a non-finite value is
     // normalised to NaN so that downstream NaN filtering sees every gap in the data.
+    double value = nan_value;
+#if defined(__cpp_lib_to_chars)
+    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
     if (error != std::errc{} || end != text.data() + text.size() || !std::isfinite(value)) return nan_value;
+#else
+    // Older libc++ (e.g. AppleClang 15) has no floating-point from_chars; a classic-locale stream
+    // keeps the parse locale-independent. Unlike from_chars, a stream would accept "++5".
+    if (text.front() == '+') return nan_value;
+    std::istringstream stream{std::string(text)};
+    stream.imbue(std::locale::classic());
+    stream >> value;
+    if (stream.fail() || !stream.eof() || !std::isfinite(value)) return nan_value;
+#endif
     return value;
   }
 

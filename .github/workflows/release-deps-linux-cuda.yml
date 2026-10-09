@@ -118,7 +118,7 @@ jobs:
         run: |
           bash ./containers/release/test-tarball.sh \
             -f "containers/release/dist/diffrg-deps-${{ inputs.bundle_version }}-${{ env.VARIANT }}.tar.zst" \
-            -j 4 -d "${{ matrix.distro }}" -g -s $([[ "${{ inputs.mpi }}" != none ]] && echo -m)
+            -j 3 -d "${{ matrix.distro }}" -g -s $([[ "${{ inputs.mpi }}" != none ]] && echo -m)
 
       # Runs even after a wedge, and the disk report distinguishes exhaustion
       # from other kills when a leg dies with SIGTERM.
